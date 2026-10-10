@@ -1,0 +1,29 @@
+inicio=2026-10-07T14:02:59Z
+▶ Preparando o Supabase self-hosted self-hosted/v0.8.1
+▶ Subindo o Supabase local
+Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint deskcommcrm-supabase-api-gw-1 (<id>): Bind for 0.0.0.0:8000 failed: port is already allocated
+exit=1
+fim=2026-10-07T14:03:44Z
+API_GW_HTTP_PORT=8000
+TRAEFIK_ENABLE=true
+TRAEFIK_ENTRYPOINT=https
+COMPOSE_FILE=docker-compose.yml:docker-compose.deskcomm.yml
+0
+api-gw created
+auth restarting
+db running
+functions created
+imgproxy running
+meta running
+realtime restarting
+rest restarting
+storage created
+studio running
+supavisor running
+0
+0
+0
+0
+0
+shred: /root/install-c2.log: failed to open for writing: No such file or directory
+coolify coolify-db coolify-proxy coolify-realtime coolify-redis coolify-sentinel 

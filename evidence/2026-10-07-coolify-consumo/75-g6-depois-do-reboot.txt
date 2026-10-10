@@ -1,0 +1,39 @@
+# G6 depois do reboot (2026-10-07T20:03:22Z)
+reboot_disparado=2026-10-07T19:57:17Z boot=2026-10-07 16:57:44 (hora local -03)
+ipv4=3 ipv6=3 servico=active
+conteineres=23 fora_de_up=0
+coolify-db Up 5 minutes (healthy)
+coolify-proxy Up 5 minutes (healthy)
+coolify-realtime Up 5 minutes (healthy)
+coolify-redis Up 5 minutes (healthy)
+coolify-sentinel Up 5 minutes (healthy)
+coolify Up 5 minutes (healthy)
+deskcommcrm-app-1 Up 5 minutes (healthy)
+deskcommcrm-redis-1 Up 5 minutes (healthy)
+deskcommcrm-scheduler-1 Up 5 minutes (healthy)
+deskcommcrm-srh-1 Up 5 minutes
+deskcommcrm-supabase-api-gw-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-auth-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-db-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-functions-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-imgproxy-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-meta-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-realtime-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-rest-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-storage-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-studio-1 Up 5 minutes (healthy)
+deskcommcrm-supabase-supavisor-1 Up 5 minutes (healthy)
+deskcommcrm-waha-1 Up 5 minutes
+deskcommcrm-worker-1 Up 5 minutes (healthy)
+swap: /swapfile file   4G   0B   -2
+# portas de fora
+8000 fechada
+6001 fechada
+6002 fechada
+80 aberta
+443 aberta
+# site e banco
+raiz=307
+gotrue_pelo_dominio=200
+194|1|1|5
+tunel_login=200

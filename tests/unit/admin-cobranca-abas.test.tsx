@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ post: vi.fn(), patch: vi.fn(), refresh: vi.fn(), showApiError: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: h.refresh }) }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock("@/lib/api/client", () => ({ apiClient: { post: h.post, patch: h.patch } }));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: h.showApiError }));
 
@@ -21,6 +21,7 @@ import { ApiError } from "@/lib/api/types";
 import { montarChecklist, type DadosDaVisaoGeral } from "@/lib/cobranca/visao-geral";
 
 const CHAVE = ["sk", "test", "51HtelaDeConexao0042"].join("_");
+const CHAVE_ASAAS = "$" + ["aact", "hmlg", "000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6Oj0042"].join("_");
 const VAZIA: DadosDaVisaoGeral = {
   provedor: null, modo: null, chaveLast4: null, urlDoWebhook: "https://crm.exemplo.com/api/v1/webhooks/cobranca/stripe",
   ultimoAvisoEm: null, ultimaLeituraEm: null, compraConcluida: false, emailPronto: false, planoDoCadastro: false,
@@ -125,5 +126,72 @@ describe("Clientes", () => {
     render(<CopiarLinkDePagamento link="https://invoice.stripe.com/i/x" />);
     await u.click(screen.getByRole("button", { name: "Copiar link de pagamento" }));
     expect(await navigator.clipboard.readText()).toBe("https://invoice.stripe.com/i/x");
+  });
+});
+
+describe("Conexão com o Asaas (PR 3b)", () => {
+  it("⭐ a escolha Stripe × Asaas tem uma frase cada, sem prometer débito automático no Pix; escolher o Asaas troca o rótulo, a dica, o exemplo da chave e a URL do aviso", async () => {
+    render(<ConexaoDaCobranca provedor={null} modo={null} last4={null} urlDoWebhook={VAZIA.urlDoWebhook} />);
+    expect(screen.getByText(/cobra o cartão sozinho todo mês e aceita boleto, mas não tem Pix\./)).toBeTruthy();
+    expect(screen.getByText(/paga por Pix, boleto ou cartão/)).toBeTruthy();
+    expect(screen.getByText(/Recomendado se seus clientes estão no Brasil\./)).toBeTruthy();
+    expect(screen.queryByText(/recorrentes/)).toBeNull();
+    await userEvent.setup().selectOptions(screen.getByLabelText("Provedor"), "asaas");
+    expect((screen.getByLabelText("Chave de API do Asaas") as HTMLInputElement).placeholder).toBe("$aact_hmlg_…");
+    expect(screen.getByText(/No Asaas: menu Integrações/)).toBeTruthy();
+    expect(screen.getByText("https://crm.exemplo.com/api/v1/webhooks/cobranca/asaas")).toBeTruthy();
+  });
+
+  it("⭐ Asaas sem API de avisos: URL, token e eventos copiáveis UMA vez, e 'Pronto' fecha o passo", async () => {
+    const TOKEN = ["token", "do", "aviso", "0123456789abcdef"].join("_");
+    h.post.mockResolvedValue({
+      data: { modo: "teste", webhook: { manual: { url: "https://crm.exemplo.com/api/v1/webhooks/cobranca/asaas", segredo: TOKEN, eventos: ["PAYMENT_CONFIRMED", "PAYMENT_OVERDUE"] } }, publicadas: 0 },
+    });
+    const u = userEvent.setup();
+    render(<ConexaoDaCobranca provedor={null} modo={null} last4={null} urlDoWebhook={VAZIA.urlDoWebhook} />);
+    await u.selectOptions(screen.getByLabelText("Provedor"), "asaas");
+    await u.type(screen.getByLabelText("Chave de API do Asaas"), CHAVE_ASAAS);
+    await u.click(screen.getByRole("button", { name: "Testar e conectar" }));
+    await waitFor(() => expect(h.post).toHaveBeenCalledWith("/api/v1/admin/cobranca/conexao", { provedor: "asaas", chave: CHAVE_ASAAS }));
+    const nome = "Falta um passo: cadastre o aviso de pagamento no Asaas";
+    const passo = await screen.findByRole("region", { name: nome });
+    expect(passo.textContent).toContain(TOKEN);
+    // Os eventos se marcam um a um no painel do Asaas: um por linha, não uma lista para colar.
+    expect([...passo.querySelectorAll("li[data-evento]")].map((li) => li.textContent)).toEqual(["PAYMENT_CONFIRMED", "PAYMENT_OVERDUE"]);
+    // Cada campo do formulário do Asaas com o valor certo, e o aviso que já existir é EDITADO, não duplicado.
+    for (const campo of ["Versão da API: v3", "Fila de sincronização ativada: Sim", "Tipo de envio: Sequencial", "edite-o e troque só o token"]) {
+      expect(passo.textContent).toContain(campo);
+    }
+    const { toast } = await import("sonner");
+    expect(toast.warning).toHaveBeenCalledWith("Conectado. Falta um passo: cadastre o aviso no Asaas (veja abaixo).");
+    expect(toast.success).not.toHaveBeenCalled();
+    await u.click(screen.getByRole("button", { name: "Copiar token" }));
+    expect(await navigator.clipboard.readText()).toBe(TOKEN);
+    await u.click(screen.getByRole("button", { name: "Pronto, já cadastrei" }));
+    expect(screen.queryByRole("region", { name: nome })).toBeNull();
+  });
+});
+
+describe("Visão geral com o Asaas (PR 3b)", () => {
+  const ASAAS = { ...VAZIA, provedor: "asaas" as const };
+
+  it("⭐ avisos recusados do Asaas dizem que o token do aviso não é o do sistema e como trocá-lo, sem a palavra 'assinatura'", () => {
+    const d = { ...ASAAS, problemas: { ...VAZIA.problemas, avisosRecusados: 3 } };
+    render(<VisaoGeral dados={d} checklist={montarChecklist(d)} idioma="pt-BR" agora={new Date()} />);
+    expect(screen.getByText(/^3 avisos do Asaas recusados nas últimas 24 h/).textContent).toContain("troque nele o token pelo novo");
+    expect(screen.queryByText(/a assinatura não confere/)).toBeNull();
+  });
+
+  it("avisos sem empresa, no Asaas, lembram que a conta pode ter outras vendas (o aviso assina todos os pagamentos dela)", () => {
+    const d = { ...ASAAS, problemas: { ...VAZIA.problemas, avisosComErro: 1 } };
+    render(<VisaoGeral dados={d} checklist={montarChecklist(d)} idioma="pt-BR" agora={new Date()} />);
+    expect(screen.getByText(/^1 aviso do provedor sem empresa correspondente/).textContent).toContain("outras vendas");
+  });
+
+  it("controle: na Stripe, as frases de sempre", () => {
+    const d = { ...VAZIA, provedor: "stripe" as const, problemas: { ...VAZIA.problemas, avisosRecusados: 1, avisosComErro: 1 } };
+    render(<VisaoGeral dados={d} checklist={montarChecklist(d)} idioma="pt-BR" agora={new Date()} />);
+    expect(screen.getByText(/a assinatura não confere/)).toBeTruthy();
+    expect(screen.queryByText(/outras vendas/)).toBeNull();
   });
 });

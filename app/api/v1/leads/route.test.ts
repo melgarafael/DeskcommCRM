@@ -268,7 +268,15 @@ describe("POST /api/v1/leads — responsável padrão do Atendente no modo 'own'
 
     expect(res.status).toBe(201);
     expect(donoEnviado()).toBe(USER);
-    expect(filtros).toEqual([{ tabela: "organizations", coluna: "id", valor: ORG }]);
+    // A lista é o que o handler LEU, na ordem: o modo vem de `organizations`
+    // (é isto que este caso prova) e o #2591 acrescenta a leitura da carteira
+    // do contato — com os dois `.eq` de org junto, porque este client é
+    // service-role e não tem RLS atrás.
+    expect(filtros).toEqual([
+      { tabela: "organizations", coluna: "id", valor: ORG },
+      { tabela: "contacts", coluna: "id", valor: CONTATO },
+      { tabela: "contacts", coluna: "organization_id", valor: ORG },
+    ]);
   });
 
   it("Atendente em 'own' pedindo um COLEGA de responsável → o pedido segue como veio (a regra recusa)", async () => {

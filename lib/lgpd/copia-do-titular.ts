@@ -280,22 +280,139 @@ function soOQueAIaFez(toolCalls: unknown): unknown[] {
   }));
 }
 
-function semCampos(copia: Objeto, mapa: Readonly<Record<string, Readonly<Record<string, string>>>>) {
-  for (const [caminho, campos] of Object.entries(mapa)) {
-    const [raiz, filho] = caminho.split(".") as [string, string | undefined];
-    const topo = copia[raiz];
-    const valor = filho === undefined ? topo : ehObjeto(topo) ? topo[filho] : undefined;
-    for (const linha of linhasDe(valor)) for (const campo of Object.keys(campos)) delete linha[campo];
+// ---------------------------------------------------------------------------
+// A projeção — linha a linha, sem cópia profunda do payload (#2576)
+// ---------------------------------------------------------------------------
+
+/**
+ * O país decidido UMA vez na entrada: daí para baixo a projeção inteira depende
+ * só deste objeto, e é o mesmo objeto que o escritor em partes usa — não existe
+ * uma regra para a cópia em objeto e outra para o arquivo em stream.
+ */
+interface Projecao {
+  /** Doc 110, 3A: as seis notas da equipe sobre ele voltam em Portugal. */
+  recebeAsNotas: boolean;
+}
+
+const projecaoDe = (pais: string): Projecao => ({
+  recebeAsNotas: PAISES_QUE_RECEBEM_AS_NOTAS.has(pais),
+});
+
+/**
+ * As chaves que saem de UMA linha. Aqui só há DELEÇÃO (mais o `tool_calls` das
+ * ações da IA, que `projetaLinha` reescreve) — e é isto que a cópia profunda de
+ * antes tornava necessária: apagar no payload exigia primeiro copiá-lo. A lista
+ * do que sai cabe numa linha, então o payload não precisa ser copiado para
+ * alguém descobrir o que sobra (#2576).
+ */
+function chavesQueSaoDaLinha(secao: string, linha: Objeto, p: Projecao): Set<string> {
+  const saida = new Set<string>();
+  const campos = CAMPOS_DA_EQUIPE[secao];
+  if (campos) for (const campo of Object.keys(campos)) saida.add(campo);
+  if (!p.recebeAsNotas) {
+    const notas = NOTAS_SOBRE_O_TITULAR[secao];
+    if (notas) for (const campo of Object.keys(notas)) saida.add(campo);
+  }
+  if (secao === "passagens") {
+    // Antes de `origem` sair (doc 110, 1A): sem ele a régua não sabe mais quem
+    // digitou, e a ordem das duas decisões é a do cabeçalho — a de 1A primeiro.
+    if (linha.origem !== ORIGEM_ESCRITA_PELA_EQUIPE) saida.add("content");
+    if (ORIGENS_DIGITADAS_PELA_IA.has(String(linha.origem))) {
+      saida.add("title");
+      saida.add("tentativas");
+    }
+  }
+  if (secao === "case_events") {
+    const ator = String(linha.actor_kind);
+    if (ATORES_DO_CASO_QUE_ESCREVEM_PARA_A_EQUIPE.has(ator) || (!p.recebeAsNotas && ator === "human")) {
+      saida.add("body");
+    }
+  }
+  for (const campo of Object.keys(linha)) if (ehChaveDeBanco(campo)) saida.add(campo);
+  return saida;
+}
+
+/**
+ * Uma linha projetada, num objeto NOVO — a linha de origem nunca é mutada, e o
+ * PDF segue desenhado do payload inteiro. A chave de banco sai do NÍVEL DA
+ * LINHA: dentro de um `jsonb` do titular (campos personalizados, origem do
+ * anúncio) um `pedido_id` é dado dele, e fica.
+ */
+function projetaLinha(secao: string, linha: Objeto, p: Projecao): Objeto {
+  const fora = chavesQueSaoDaLinha(secao, linha, p);
+  const projetada: Objeto = {};
+  for (const campo of Object.keys(linha)) if (!fora.has(campo)) projetada[campo] = linha[campo];
+  // Reatribuição na chave JÁ EXISTENTE não muda a posição dela no objeto — é a
+  // mesma ordem que `run.tool_calls = soOQueAIaFez(...)` dava na cópia de antes.
+  if (secao === "ai_agent_runs") projetada.tool_calls = soOQueAIaFez(linha.tool_calls);
+  return projetada;
+}
+
+/** Em Portugal a seção de notas volta com SÓ o texto e a data (doc 110, 3A). */
+function linhaDoTitulo(secao: string, linha: Objeto, p: Projecao): Objeto {
+  if (secao !== "conversation_notes" || !p.recebeAsNotas) return linha;
+  // O anexo fica fora: o arquivo levaria o caminho interno no armazenamento e o
+  // nome de quem escreveu (art. 15.º, n.º 4: protege OUTRAS pessoas).
+  return { body: linha.body, created_at: linha.created_at };
+}
+
+/**
+ * Uma seção projetada. `contact` e `art15` são objetos (e viram uma "linha"
+ * para a régua de chave de banco, como na cópia de antes); `b2b` é a única que
+ * agrupa outras — cada bloco dela tem as suas linhas, com o caminho completo
+ * (`b2b.pessoa`), que é como `CAMPOS_DA_EQUIPE` e `NOTAS_SOBRE_O_TITULAR`
+ * nomeiam os campos dela.
+ */
+function projetaSecao(secao: string, valor: unknown, p: Projecao): unknown {
+  if (Array.isArray(valor)) {
+    const projetadas: unknown[] = [];
+    for (let i = 0; i < valor.length; i++) {
+      const item = valor[i];
+      // O que não é objeto não tem chave de banco a tirar; `undefined` de array
+      // é `null` no JSON, como deixava a cópia profunda de antes (`stringify`
+      // seguido de `parse`).
+      projetadas.push(ehObjeto(item) ? projetaLinha(secao, linhaDoTitulo(secao, item, p), p) : (item ?? null));
+    }
+    return projetadas;
+  }
+  if (secao === "b2b" && ehObjeto(valor)) {
+    const agrupada: Objeto = {};
+    for (const [chave, bloco] of Object.entries(valor)) {
+      if (bloco === undefined) continue;
+      agrupada[chave] = projetaSecao(`b2b.${chave}`, bloco, p);
+    }
+    return agrupada;
+  }
+  return ehObjeto(valor) ? projetaLinha(secao, valor, p) : valor;
+}
+
+/**
+ * As seções do arquivo, na ordem em que saem: o payload, menos o que é da
+ * equipe. `conversation_notes` é deixada de fora do laço e reescrita NO FIM em
+ * Portugal — a mesma ordem que o `delete` + reatribuição de antes dava ao
+ * arquivo (apagar e repor move a chave para o final).
+ *
+ * Seção com valor `undefined` não vira chave: é o que o `JSON.parse(
+ * JSON.stringify())` de antes descartava, e o arquivo não pode mudar por isto.
+ */
+function* planoDeSecoes(data: ExportPayload, pais: string): Generator<[string, unknown]> {
+  const daEquipe = new Set(Object.keys(SECOES_DA_EQUIPE));
+  for (const [secao, valor] of Object.entries(data)) {
+    if (valor === undefined || typeof valor === "function") continue;
+    if (secao === "conversation_notes" || daEquipe.has(secao)) continue;
+    yield [secao, valor];
+  }
+  if (PAISES_QUE_RECEBEM_AS_NOTAS.has(pais) && data.conversation_notes !== undefined) {
+    yield ["conversation_notes", data.conversation_notes];
   }
 }
 
 /**
  * O `data.json` do titular, para o país da organização (`perfil.codigo`, a
  * mesma leitura única do worker). Não altera `data` — o PDF é desenhado a
- * partir dele. A chave de banco sai do NÍVEL DA LINHA: dentro de um `jsonb` do
- * titular (campos personalizados, origem do anúncio) um `pedido_id` é dado
- * dele, e fica. Os argumentos das ações da IA, onde moravam `owner_user_id`,
- * `target_user_id` e `lead_id`, saem inteiros (doc 110, 1A).
+ * partir dele. O que era copiar o payload inteiro (`stringify` seguido de
+ * `parse`) e apagar em cima da cópia virou a projeção acima, linha a linha: o
+ * mesmo resultado, sem uma segunda cópia do payload em memória (#2576).
  *
  * No caso, o `body` de evento com ator humano (`human_replied`) é a nota de
  * quem resolveu, o motivo de quem escalou ou o pedido de quem precisou de mais
@@ -304,37 +421,103 @@ function semCampos(copia: Objeto, mapa: Readonly<Record<string, Readonly<Record<
  * país (`ATORES_DO_CASO_QUE_ESCREVEM_PARA_A_EQUIPE`); o que ele informou fica.
  */
 export function copiaDoTitular(data: ExportPayload, pais: string): Objeto {
-  const copia = JSON.parse(JSON.stringify(data)) as Objeto;
-  const recebeAsNotas = PAISES_QUE_RECEBEM_AS_NOTAS.has(pais);
-
-  for (const secao of Object.keys(SECOES_DA_EQUIPE)) delete copia[secao];
-  // Antes de `origem` sair (doc 110, 1A e 3A).
-  for (const p of linhasDe(copia.passagens)) {
-    if (p.origem !== ORIGEM_ESCRITA_PELA_EQUIPE) delete p.content;
-    if (ORIGENS_DIGITADAS_PELA_IA.has(String(p.origem))) {
-      delete p.title;
-      delete p.tentativas;
-    }
-  }
-  // O anexo fica fora: o arquivo levaria só o caminho interno no armazenamento.
-  if (recebeAsNotas && data.conversation_notes)
-    copia.conversation_notes = data.conversation_notes.map(({ body, created_at }) => ({ body, created_at }));
-
-  semCampos(copia, CAMPOS_DA_EQUIPE);
-  for (const evento of linhasDe(copia.case_events))
-    if (ATORES_DO_CASO_QUE_ESCREVEM_PARA_A_EQUIPE.has(String(evento.actor_kind))) delete evento.body;
-  if (!recebeAsNotas) {
-    semCampos(copia, NOTAS_SOBRE_O_TITULAR);
-    for (const evento of linhasDe(copia.case_events)) if (evento.actor_kind === "human") delete evento.body;
-  }
-
-  for (const run of linhasDe(copia.ai_agent_runs)) run.tool_calls = soOQueAIaFez(run.tool_calls);
-
-  for (const [secao, valor] of Object.entries(copia)) {
-    // `b2b` é a única seção que agrupa outras (pessoa, vínculos, linhas).
-    const linhas = secao === "b2b" && ehObjeto(valor) ? Object.values(valor).flatMap(linhasDe) : linhasDe(valor);
-    for (const linha of linhas) for (const campo of Object.keys(linha)) if (ehChaveDeBanco(campo)) delete linha[campo];
-  }
-
+  const p = projecaoDe(pais);
+  const copia: Objeto = {};
+  for (const [secao, valor] of planoDeSecoes(data, pais)) copia[secao] = projetaSecao(secao, valor, p);
   return copia;
+}
+
+// ---------------------------------------------------------------------------
+// O arquivo em partes — o mesmo resultado, escrito sem materializar
+// ---------------------------------------------------------------------------
+
+const INDENTE = "  ";
+
+const temJson = (valor: unknown): valor is { toJSON: () => unknown } =>
+  typeof valor === "object" &&
+  valor !== null &&
+  typeof (valor as { toJSON?: unknown }).toJSON === "function";
+
+/**
+ * `JSON.stringify(valor, null, 2)` de UM valor, com o recuo do nível em que ele
+ * vai dentro do documento — a regra é a do `JSON.stringify`, porque a escrita em
+ * partes tem de produzir byte a byte o mesmo arquivo que ele produzia.
+ */
+function escrito(valor: unknown, nivel: number): string {
+  const v = temJson(valor) ? valor.toJSON() : valor;
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "string") return JSON.stringify(v);
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "null";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "bigint") throw new TypeError("Do not know how to serialize a BigInt");
+  // função e símbolo: fora de objeto nem entram no JSON, de array viram null.
+  if (typeof v !== "object") return "null";
+  const recuo = INDENTE.repeat(nivel);
+  const filho = INDENTE.repeat(nivel + 1);
+  if (Array.isArray(v)) {
+    // Índice, e não `map`: array com buraco tem de virar `null`, como no de antes.
+    if (v.length === 0) return "[]";
+    const itens: string[] = [];
+    for (let i = 0; i < v.length; i++) itens.push(filho + escrito(v[i], nivel + 1));
+    return `[\n${itens.join(",\n")}\n${recuo}]`;
+  }
+  const campos: string[] = [];
+  for (const [chave, bruto] of Object.entries(v)) {
+    const campo = temJson(bruto) ? bruto.toJSON() : bruto;
+    if (campo === undefined || typeof campo === "function" || typeof campo === "symbol") continue;
+    campos.push(filho + JSON.stringify(chave) + ": " + escrito(campo, nivel + 1));
+  }
+  if (campos.length === 0) return "{}";
+  return `{\n${campos.join(",\n")}\n${recuo}}`;
+}
+
+/**
+ * Uma seção inteira, em partes. As LISTAS são o que importa: cada linha vira um
+ * `yield` dela mesma, então o maior pedaço que existe de uma vez é uma linha —
+ * e não a seção, nem o arquivo (`messages_completas` tem linhas de mais para
+ * caber em memória como texto, #2576).
+ */
+function* escreveSecao(secao: string, valor: unknown, nivel: number, p: Projecao): Generator<string> {
+  if (Array.isArray(valor)) {
+    if (valor.length === 0) {
+      yield "[]";
+      return;
+    }
+    yield "[\n";
+    const filho = INDENTE.repeat(nivel + 1);
+    for (let i = 0; i < valor.length; i++) {
+      if (i > 0) yield ",\n";
+      yield filho;
+      const item = valor[i];
+      yield escrito(
+        ehObjeto(item) ? projetaLinha(secao, linhaDoTitulo(secao, item, p), p) : (item ?? null),
+        nivel + 1,
+      );
+    }
+    yield `\n${INDENTE.repeat(nivel)}]`;
+    return;
+  }
+  yield escrito(projetaSecao(secao, valor, p), nivel);
+}
+
+/**
+ * O `data.json` do titular em PEDAÇOS, para o worker subir direto no upload
+ * (`workers/lgpd-export-worker.ts`) — sem a cópia profunda, sem string do
+ * arquivo inteiro e sem `Buffer` do arquivo inteiro morando na memória junto
+ * do payload (#2576). O maior pedaço de uma vez é uma linha.
+ *
+ * Byte a byte é o `JSON.stringify(copiaDoTitular(data, pais), null, 2)` de
+ * sempre: `tests/unit/lgpd-arquivo-em-stream.test.ts` compara os dois.
+ */
+export function* partesDoArquivoDoTitular(data: ExportPayload, pais: string): Generator<string> {
+  const p = projecaoDe(pais);
+  let primeiro = true;
+  yield "{";
+  for (const [secao, valor] of planoDeSecoes(data, pais)) {
+    yield primeiro ? "\n" : ",\n";
+    primeiro = false;
+    yield `${INDENTE}${JSON.stringify(secao)}: `;
+    yield* escreveSecao(secao, valor, 1, p);
+  }
+  yield primeiro ? "}" : "\n}";
 }

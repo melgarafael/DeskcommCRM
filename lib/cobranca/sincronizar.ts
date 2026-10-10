@@ -54,9 +54,11 @@ export type ResultadoDaSincronizacao =
 const COLUNAS =
   "organization_id, plano_id, plano_agendado_id, estado, trial_ate, provedor, provedor_cliente_id, provedor_assinatura_id, " +
   "vencida_desde, proximo_vencimento, cancela_no_fim, prazo_extra_ate, ultimo_aviso, ultimo_aviso_em, relida_em, " +
-  "link_de_pagamento, assinaturas_vivas, updated_at";
+  "link_de_pagamento, assinaturas_vivas, checkout_url, checkout_expira_em, updated_at";
 
 interface Linha {
+  checkout_url: string | null;
+  checkout_expira_em: string | null;
   organization_id: string;
   plano_id: string;
   plano_agendado_id: string | null;
@@ -177,7 +179,11 @@ export async function sincronizar(
       // Assinatura morta: o agendado era dela. Sem gravar o descarte, ele viraria na renovação seguinte.
       ...(r.descartarAgendado ? { plano_agendado_id: null } : {}),
       ...(r.zerarAviso ? { ultimo_aviso: null, ultimo_aviso_em: null } : {}),
-      ...(r.limparCheckout ? { checkout_url: null, checkout_expira_em: null } : {}),
+      // Reserva de checkout EM ANDAMENTO (sem link, prazo vivo) não é desta leitura: o
+      // checkout a fecha na fase 3 por compare-and-set nela. No Asaas o cliente é gravado
+      // ANTES de criar a assinatura, e o aviso dela pode chegar aqui no meio — limpar
+      // agora dava "link de pagamento não gravado" (500 falso) a quem acabou de assinar.
+      ...(r.limparCheckout && !reservaEmAndamento(linha, lidoEm) ? { checkout_url: null, checkout_expira_em: null } : {}),
     };
     // Duas guardas: a linha é a que foi lida (updated_at) e nenhuma leitura
     // mais NOVA já foi aplicada (relida_em) — sinal e cron correm juntos.
@@ -348,4 +354,8 @@ export async function aplicarRegua(
       return "cancelar_no_provedor";
     }
   }
+}
+
+function reservaEmAndamento(linha: Linha, agora: Date): boolean {
+  return linha.checkout_url === null && linha.checkout_expira_em !== null && new Date(linha.checkout_expira_em).getTime() > agora.getTime();
 }

@@ -1,0 +1,77 @@
+== janela F1
+antes 2026-10-07T15:25:18Z terceiros=1 available=5396 lock=ocupado alheio=0
+dentro-do-lock 2026-10-07T15:31:00Z terceiros=0 available=5996 lock=ocupado alheio=0
+amostras=10 linhas=230 host=10
+coolify-db Up 19 hours (healthy)
+coolify-proxy Up 19 hours (healthy)
+coolify-realtime Up 19 hours (healthy)
+coolify-redis Up 19 hours (healthy)
+coolify-sentinel Up 7 hours (healthy)
+coolify Up 19 hours (healthy)
+deskcommcrm-app-1 Up 39 minutes (healthy)
+deskcommcrm-redis-1 Up 57 minutes (healthy)
+deskcommcrm-scheduler-1 Up 57 minutes (healthy)
+deskcommcrm-srh-1 Up 57 minutes
+deskcommcrm-supabase-api-gw-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-auth-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-db-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-functions-1 Up 58 minutes (healthy)
+deskcommcrm-supabase-imgproxy-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-meta-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-realtime-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-rest-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-storage-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-studio-1 Up 59 minutes (healthy)
+deskcommcrm-supabase-supavisor-1 Up 59 minutes (healthy)
+deskcommcrm-waha-1 Up 57 minutes
+deskcommcrm-worker-1 Up 57 minutes (healthy)
+supabase=11
+oom_ou_reinicio=0
+restarting=0
+fim-dentro 2026-10-07T15:35:52Z terceiros=0 available=5971 lock=ocupado alheio=0
+exit=0
+depois 2026-10-07T15:35:52Z terceiros=0 available=5970 lock=ocupado alheio=0
+== janela F2
+antes 2026-10-07T15:37:59Z terceiros=1 available=5826 lock=ocupado alheio=0
+dentro-do-lock 2026-10-07T15:45:07Z terceiros=0 available=6216 lock=ocupado alheio=0
+estado-antes 15:45:07
+WAHA_API_KEY
+WAHA_API_KEY
+      1 "status":"FAILED"
+amostras=10 linhas=230 host=10
+estado-depois 15:49:58
+WAHA_API_KEY
+WAHA_API_KEY
+      1 "status":"FAILED"
+oom_ou_reinicio=0
+restarting=0
+fim-dentro 2026-10-07T15:49:58Z terceiros=0 available=6117 lock=ocupado alheio=0
+exit=0
+depois 2026-10-07T15:49:58Z terceiros=0 available=6118 lock=ocupado alheio=0
+== janela F3
+antes 2026-10-07T15:50:31Z terceiros=0 available=2372 lock=ocupado alheio=0
+dentro-do-lock 2026-10-07T16:05:51Z terceiros=0 available=5713 lock=ocupado alheio=0
+estado-waha 16:05:51
+      1 "status":"FAILED"
+drain-agora=0 drain-antes=1
+inicio-conversa=2026-10-07T16:05:51Z
+msg 1 -> 200
+msg 2 -> 200
+msg 3 -> 200
+msg 4 -> 200
+msg 5 -> 200
+amostras=48 linhas=1104 host=48
+inbound 5
+llm_calls 0
+event_log:done 12
+event_log_desde_inicio:done 12
+event_type_desde_inicio:lead.created 1
+event_type_desde_inicio:conversation.routing_requested 1
+event_type_desde_inicio:message.received 5
+event_type_desde_inicio:ai_agent.dispatch_requested 5
+oom_ou_reinicio=0
+fim-dentro 2026-10-07T16:12:30Z terceiros=0 available=6094 lock=ocupado alheio=0
+exit=0
+devolvido=IGUAL
+drain=1
+depois 2026-10-07T16:12:30Z terceiros=0 available=6084 lock=ocupado alheio=0

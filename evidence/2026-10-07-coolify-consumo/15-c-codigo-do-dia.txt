@@ -1,0 +1,22 @@
+R=8f220470b 8f220470b31f3c5ce02a1494361fa244f16061d1
+148:if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
+155:  set_env_var "$supabase_env" TRAEFIK_ENTRYPOINT "${TRAEFIK_ENTRYPOINT:-websecure}"
+163:set_env_var "$supabase_env" COMPOSE_FILE "docker-compose.yml:docker-compose.deskcomm.yml"
+165:gw_port="$(ler_env "$supabase_env" API_GW_HTTP_PORT)"
+177:if [[ -f "$CREDENTIALS_FILE" ]]; then
+200:set_env_var "$app_env" REVERSE_PROXY "${REVERSE_PROXY:-caddy}"
+204:set_env_var "$app_env" SUPABASE_INTERNAL_URL "http://127.0.0.1:${gw_port:-8000}"
+---
+394:SUPABASE_REF="self-hosted/v0.8.1"
+409:dc_supabase() {
+410:  (cd "$(dir_do_supabase)" && env -i PATH="$PATH" HOME="${HOME:-/root}" \
+561:atualizar_supabase_single_server() {
+570:    if ! (cd "$dir" && env -i PATH="$PATH" HOME="${HOME:-/root}" sh update.sh --to "$SUPABASE_REF" --yes); then
+---
+19:      - "127.0.0.1:${API_GW_HTTP_PORT:-8000}:8000"
+49:      traefik.docker.network: "${SINGLE_SERVER_NETWORK:-deskcomm_single_server}"
+127:    external: true
+---
+447:- **Instalação single-server atrás de um Traefik próprio ganha rota para as seis APIs do Supabase** Quem já tem um Traefik ocupando as portas 80/443 (em modo host, como na Hostinger; Traefik em bridge, como Coolify/Dokploy, ainda não é coberto) e instala o modo single-server com `REVERSE_PROXY=traefik` consegue concluir a instalação, desde que o entrypoint HTTPS desse Traefik se chame `websecure` ou que `TRAEFIK_ENTRYPOINT` seja exportado com o nome dele (a rota do Supabase lê o entrypoint só do ambiente; com outro nome, como `https`, ela é ignorada pelo Traefik): o Caddyfile do modo Caddy roteava `/auth/v1`, `/rest/v1`, `/realtime/v1`, `/storage/v1`, `/functions/v1` e `/graphql/v1` para o Envoy do Supabase, e o overlay do Traefik não tinha essa regra — o Traefik entregava esses caminhos ao app, que devolvia 404, e o instalador parava em "NEXT_PUBLIC_SUPABASE_ANON_KEY inválido". As seis prefixos agora viram etiquetas de rota no `api-gw`, ligadas só quando o instalador grava `TRAEFIK_ENABLE=true` no `.env` do Supabase, com prioridade acima da rota geral do app e abaixo do bloqueio do webhook do WAHA.
+---
+grava_API_GW=0

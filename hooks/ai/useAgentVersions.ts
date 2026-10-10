@@ -23,6 +23,8 @@ export interface AgentVersionRow {
   history_token_window: number;
   handoff_keywords: string[];
   handoff_tool_enabled: boolean;
+  /** Passagem por ASSUNTO JURÍDICO ligada nesta versão (#2156). Padrão: `true`. */
+  handoff_legal_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
   operator_enabled: boolean;

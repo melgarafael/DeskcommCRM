@@ -1,0 +1,36 @@
+2026-10-07T16:53:02Z
+backup_exit=0
+D=/root/deskcomm-guardado-2026-10-07-1353
+700 /root/deskcomm-guardado-2026-10-07-1353
+600 /root/deskcomm-guardado-2026-10-07-1353/env
+600 /root/deskcomm-guardado-2026-10-07-1353/env-supabase
+600 /root/deskcomm-guardado-2026-10-07-1353/admin-credentials
+      1 db-<ts>-134008.sql.gz
+      1 db-<ts>-135302.sql.gz
+      1 storage-<ts>-134008.tgz
+      1 storage-<ts>-135302.tgz
+      1 waha-<ts>-134008.tgz
+      1 waha-<ts>-135302.tgz
+2026-10-07T16:53:03Z
+337200 db-20261007-134008.sql.gz
+341997 db-20261007-135302.sql.gz
+107 storage-20261007-134008.tgz
+107 storage-20261007-135302.tgz
+3891 waha-20261007-134008.tgz
+3891 waha-20261007-135302.tgz
+600
+nao_zero=0
+91
+12
+
+▶ Dump do banco → /root/pr4/deskcommcrm/backups/db-20261007-135302.sql.gz
+✓ banco: 336K (conferido)
+
+▶ Snapshot das sessões do WhatsApp → /root/pr4/deskcommcrm/backups/waha-20261007-135302.tgz
+✓ sessões WhatsApp salvas (4.0K)
+
+▶ Arquivos anexados (Storage) → /root/pr4/deskcommcrm/backups/storage-20261007-135302.tgz
+✓ anexos: 4.0K
+
+▶ Limpando backups antigos (mantém 14)
+✓ backup concluído em /root/pr4/deskcommcrm/backups

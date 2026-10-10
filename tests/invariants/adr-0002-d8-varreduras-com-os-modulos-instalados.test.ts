@@ -169,6 +169,46 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "imutabilidade da parcela paga (status e financial_entry_id não mudam sem o caixa) e a " +
       "recusa de FK cross-org. A leitura cross-org por contagem é medida neste arquivo.",
   },
+  // #1907 — as cinco tabelas da comanda, que nascem em `fn_financeiro_provisionar()`
+  // (ADR-0002 D2/D3). A prova comportamental é a MESMA da lista de leitura
+  // org-scoped de `rls-isolation.test.ts`: linha REAL semeada por organização e
+  // contagem cross-org — o vizinho vê zero —, percorrida no `for` daquele arquivo.
+  sales: {
+    arquivo: "tests/invariants/rls-isolation.test.ts",
+    razao:
+      "Leitura cross-org por contagem com linha REAL de comanda semeada (insert em " +
+      "`public.sales` naquele seed) e percorrida na lista org-scoped: membro da organização B " +
+      "vê zero linhas da organização A. Vazar entrega preço praticado E carteira de clientes. " +
+      "O eixo de ESCRITA (manager/agent, 0350-0351) é medido à parte e não entra nesta lista.",
+  },
+  sale_items: {
+    arquivo: "tests/invariants/rls-isolation.test.ts",
+    razao:
+      "Mesmo seed: o item nasce da venda semeada (`select id into v_sale ... insert into " +
+      "`public.sale_items`) e cai na mesma contagem cross-org — vizinho vê zero. Sem a linha do " +
+      "vizinho a contagem seria 0 = 0 por ausência de dado, e é por isso que a semente existe.",
+  },
+  commission_rules: {
+    arquivo: "tests/invariants/rls-isolation.test.ts",
+    razao:
+      "Regra de comissão semeada por organização (`insert into public.commission_rules`) na " +
+      "mesma lista de leitura org-scoped: o vizinho conta zero regras. Vazar entrega a " +
+      "política de remuneração do atendente — o parâmetro comercial mais sensível da casa.",
+  },
+  commissions: {
+    arquivo: "tests/invariants/rls-isolation.test.ts",
+    razao:
+      "Comissão apurada semeada por organização (`insert into public.commissions`) e contada " +
+      "cross-org no mesmo laço: vizinho vê zero. Cada linha é quanto uma pessoa levou de um " +
+      "cliente que não é da organização dele — dado comercial e pessoal ao mesmo tempo.",
+  },
+  loyalty_ledger: {
+    arquivo: "tests/invariants/rls-isolation.test.ts",
+    razao:
+      "Extrato de pontos semeado por organização (`insert into public.loyalty_ledger`) na " +
+      "lista org-scoped: vizinho vê zero movimentações. A leitura é medida aqui; a decisão de " +
+      "NÃO redigir (razão `manter` do #1504) mora no redact-unificado, e é outra régua.",
+  },
 };
 
 /* ── probe 1: a varredura de RLS, copiada do irmão (rls-completude-varredura.test.ts) ── */
@@ -704,14 +744,25 @@ describe("D8 — as varreduras de RLS, security definer e cascata de LGPD com os
       expect(tabelasComDadoDePessoa()).toContain("contacts");
       expect(tabelasNaCascata()).toContain("contacts");
 
-      // Nenhum módulo real cai no escopo — e é pela RÉGUA (FK × coluna de dado pessoal), não
-      // por cegueira: a sonda do caso seguinte mostra que o escopo enxerga tabela de módulo.
+      // Nenhum módulo real cai no escopo SEM decisão — e é pela RÉGUA (FK × coluna de dado
+      // pessoal), não por cegueira: a sonda do caso seguinte mostra que o escopo enxerga
+      // tabela de módulo. A única entrada real é `sales` (#1907): FK para `contacts` E
+      // `notes`, alcançada pela SEÇÃO declarada `financeiro/sales` (D8/0485) — a asserção
+      // seguinte cobra a cobertura de cada entrada; aqui se cobra que a comanda seja a ÚNICA
+      // e que a seção dela exista de fato no banco, para a exceção não virar esconderijo.
       const escopoDeModulo = tabelasComDadoDePessoa().filter((t) => TABELAS_DE_MODULO.includes(t));
       expect(
         escopoDeModulo,
-        "tabela de honorários entrou no escopo da cascata — a 0480 decidiu que ela não tem " +
-          "dado de pessoa; se entrou, a régua mudou e a decisão precisa ser reavaliada",
-      ).toEqual([]);
+        "tabela de módulo com dado de pessoa no escopo da cascata — a comanda (`sales`) é a " +
+          "única decisão escrita deste PR (#1907, seção declarada `financeiro/sales`); se outra " +
+          "entrou, a régua mudou e a decisão dela precisa ser reavaliada",
+      ).toEqual(["sales"]);
+      expect(
+        declarada("financeiro", "sales"),
+        "`sales` está no escopo do irmão mas a seção `financeiro/sales` não está declarada em " +
+          "`modulo_secoes_lgpd` — a D8 manda a cobertura ser SQL dinâmico declarado, não passo " +
+          "nomeado no corpo da cascata",
+      ).toBe(true);
 
       const violacoes = PROVISIONAMENTOS.flatMap((p) => violacoesLgpd(p));
       expect(

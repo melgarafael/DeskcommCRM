@@ -1819,6 +1819,7 @@ export type Database = {
           followup: Json
           handoff_keywords: string[]
           handoff_tool_enabled: boolean
+          handoff_legal_enabled: boolean
           proposal_ai_draft_enabled: boolean
           history_message_window: number
           history_token_window: number
@@ -1858,6 +1859,7 @@ export type Database = {
           followup?: Json
           handoff_keywords?: string[]
           handoff_tool_enabled?: boolean
+          handoff_legal_enabled?: boolean
           proposal_ai_draft_enabled?: boolean
           history_message_window?: number
           history_token_window?: number
@@ -1897,6 +1899,7 @@ export type Database = {
           followup?: Json
           handoff_keywords?: string[]
           handoff_tool_enabled?: boolean
+          handoff_legal_enabled?: boolean
           proposal_ai_draft_enabled?: boolean
           history_message_window?: number
           history_token_window?: number
@@ -8630,6 +8633,7 @@ export type Database = {
       }
       platform_branding: {
         Row: {
+          accent_dark_hex: string | null
           accent_hex: string | null
           app_name: string | null
           fallback_at: string | null
@@ -8643,6 +8647,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          accent_dark_hex?: string | null
           accent_hex?: string | null
           app_name?: string | null
           fallback_at?: string | null
@@ -8656,6 +8661,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          accent_dark_hex?: string | null
           accent_hex?: string | null
           app_name?: string | null
           fallback_at?: string | null

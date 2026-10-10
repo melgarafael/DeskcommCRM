@@ -1,0 +1,59 @@
+APP_IMAGE="ghcr.io/melgarafael/deskcommcrm:1.76.0"
+WORKER_IMAGE="ghcr.io/melgarafael/deskcomm-worker:1.76.0"
+SCHEDULER_IMAGE="ghcr.io/melgarafael/deskcomm-scheduler:1.76.0"
+DOMAIN="<ip-da-vps>.sslip.io"
+REVERSE_PROXY="traefik"
+TRAEFIK_NETWORK="coolify"
+TRAEFIK_ENTRYPOINT_HTTP="http"
+TRAEFIK_ENTRYPOINT="https"
+TRAEFIK_CERTRESOLVER="letsencrypt"
+NEXT_PUBLIC_SUPABASE_URL="https://<ip-da-vps>.sslip.io"
+SINGLE_SERVER="1"
+SINGLE_SERVER_NETWORK="deskcommcrm_supabase"
+PSQL_DOCKER_NETWORK="deskcommcrm_supabase"
+SUPABASE_INTERNAL_URL="http://127.0.0.1:8001"
+SUPABASE_PUBLIC_URL=https://<ip-da-vps>.sslip.io
+API_EXTERNAL_URL=https://<ip-da-vps>.sslip.io/auth/v1
+SITE_URL=https://<ip-da-vps>.sslip.io
+ENABLE_EMAIL_AUTOCONFIRM=false
+SINGLE_SERVER_NETWORK=deskcommcrm_supabase
+TRAEFIK_ENABLE=true
+TRAEFIK_HOST=<ip-da-vps>.sslip.io
+TRAEFIK_ENTRYPOINT=https
+TRAEFIK_CERTRESOLVER=letsencrypt
+TRAEFIK_NETWORK=coolify
+COMPOSE_FILE=docker-compose.yml:docker-compose.deskcomm.yml:docker-compose.deskcomm-traefik.yml
+COMPOSE_PROJECT_NAME=deskcommcrm-supabase
+API_GW_HTTP_PORT=8001
+600 .env
+700 .runtime
+600 .runtime/supabase/.env
+600 .runtime/admin-credentials
+coolify deskcommcrm-supabase_default deskcommcrm_supabase |coolify|https|8000/tcp->127.0.0.1:8001 
+coolify deskcommcrm_internal deskcommcrm_supabase |coolify
+0
+coolify-db Up 21 hours (healthy)
+coolify-proxy Up 20 hours (healthy)
+coolify-realtime Up 21 hours (healthy)
+coolify-redis Up 21 hours (healthy)
+coolify-sentinel Up 8 hours (healthy)
+coolify Up 21 hours (healthy)
+deskcommcrm-app-1 Up 35 seconds (healthy)
+deskcommcrm-redis-1 Up About a minute (healthy)
+deskcommcrm-scheduler-1 Up 30 seconds (healthy)
+deskcommcrm-srh-1 Up 35 seconds
+deskcommcrm-supabase-api-gw-1 Up About a minute (healthy)
+deskcommcrm-supabase-auth-1 Up About a minute (healthy)
+deskcommcrm-supabase-db-1 Up About a minute (healthy)
+deskcommcrm-supabase-functions-1 Up About a minute (healthy)
+deskcommcrm-supabase-imgproxy-1 Up About a minute (healthy)
+deskcommcrm-supabase-meta-1 Up About a minute (healthy)
+deskcommcrm-supabase-realtime-1 Up About a minute (healthy)
+deskcommcrm-supabase-rest-1 Up About a minute (healthy)
+deskcommcrm-supabase-storage-1 Up About a minute (healthy)
+deskcommcrm-supabase-studio-1 Up About a minute (healthy)
+deskcommcrm-supabase-supavisor-1 Up About a minute (healthy)
+deskcommcrm-waha-1 Up About a minute
+deskcommcrm-worker-1 Up About a minute (healthy)
+deskcomm-test-db-116105 Up 27 seconds
+2

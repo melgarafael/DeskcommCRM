@@ -126,6 +126,8 @@ describe("busca de produtos do agente: 'não achei' não é sucesso (#484)", () 
     expect(auditoria?.metadata.success).toBe(false);
     expect(auditoria?.metadata.desfecho).toBe("sem_resultado");
     expect(auditoria?.metadata.motivo).toBe("nao_encontrado");
+    // 3) O vazio declarado também é resposta que volta ao modelo: o tamanho é gravado.
+    expect(auditoria?.metadata.result_bytes).toBe(Buffer.byteLength(JSON.stringify(resposta), "utf8"));
   });
 
   it("produto existe mas está sem estoque: falha também, e o motivo é outro", async () => {
