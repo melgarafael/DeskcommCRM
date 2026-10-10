@@ -107,6 +107,13 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   flow_not_active:
     "O funil escolhido não está ativo, então a inscrição não foi feita. Ative o funil ou escolha outro na automação.",
   live_enrollment_exists: "O contato já está em um funil ativo — esta ação não inscreve duas vezes.",
+  /* #2647 — o roteiro de ATENDIMENTO alcançado pela MESMA ação. Os dois motivos
+     nascem em lib/automation/actions/start-message-flow.ts e chegam pelos
+     mesmos dois canais (`detail.reason` e `action.error`). */
+  banco_do_roteiro_indisponivel:
+    "O roteiro de atendimento não começou: esta instalação não tem a conexão direta do banco configurada, e é por ela que o roteiro é conduzido. Configure-a e execute a regra de novo.",
+  roteiro_nao_iniciado:
+    "O roteiro de atendimento não começou para este contato: o fluxo pode não estar publicado, o contato já pode ter um roteiro em andamento, ou já ter concluído este sem poder recomeçar.",
   consent_declined: "O contato não autorizou o recebimento de mensagens de marketing.",
   fora_do_pre_go_live:
     "O número deste canal ainda não entrou no pré-go-live, então a mensagem escrita pela IA não sai por ele.",
