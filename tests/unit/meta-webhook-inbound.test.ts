@@ -151,7 +151,7 @@ describe("payload capenga não vira linha meia-boca", () => {
  * Clique em botão: o contato toca num botão do modelo e a Meta manda `type: "button"`
  * (ou `interactive`, na resposta interativa). Nenhum dos dois cabe no CHECK de
  * `messages.type` — gravados crus, o insert falhava e a resposta sumia do CRM
- * (piloto de 08/10/2026: "Algumas" clicado e a conversa seguia "nunca escreveu").
+ * ("Algumas" clicado e a conversa seguia "nunca escreveu").
  */
 describe("inbound — clique em botão", () => {
   const envelope = (message: Record<string, unknown>) =>
@@ -166,8 +166,8 @@ describe("inbound — clique em botão", () => {
               value: {
                 messaging_product: "whatsapp",
                 metadata: { phone_number_id: "PNID1" },
-                contacts: [{ wa_id: "5538991617260", profile: { name: "Fabiana" } }],
-                messages: [{ from: "5538991617260", id: "wamid.BTN1", timestamp: "1791483300", ...message }],
+                contacts: [{ wa_id: "5531900000001", profile: { name: "Ana" } }],
+                messages: [{ from: "5531900000001", id: "wamid.BTN1", timestamp: "1785342028", ...message }],
               },
             },
           ],
