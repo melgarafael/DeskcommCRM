@@ -47611,3 +47611,260 @@ $$;
 
 revoke execute on function public.fn_ig_webhook_token_por_path(text) from public, anon;
 grant  execute on function public.fn_ig_webhook_token_por_path(text) to service_role;
+
+-- ---- pol_leads, pol_lead_scores_history, pol_funnel_transitions (migration 0630) ----
+
+-- pol_leads — extensão política de contacts
+create table if not exists public.pol_leads (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  support_level           text         not null default 'novo_cadastro'
+                          check (support_level in (
+                            'novo_cadastro', 'simpatizante', 'apoiador', 'militante', 'voto_certo'
+                          )),
+  political_score         integer      not null default 0,
+  temperature             text         not null default 'frio'
+                          check (temperature in ('frio', 'morno', 'quente')),
+  zona_eleitoral          text,
+  secao_eleitoral         text,
+  mobilizer_id            uuid         references public.contacts(id) on delete set null,
+  leader_potential        boolean      not null default false,
+  community_role          text,
+  territory_id            uuid,
+  opt_out                 boolean      not null default false,
+  consent_origin          text,
+  consent_at              timestamptz,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now(),
+  constraint pol_leads_contact_org_uq unique (contact_id, organization_id)
+);
+
+create index if not exists pol_leads_org_support_idx
+  on public.pol_leads (organization_id, support_level);
+create index if not exists pol_leads_org_temp_idx
+  on public.pol_leads (organization_id, temperature);
+create index if not exists pol_leads_org_territory_idx
+  on public.pol_leads (organization_id, territory_id)
+  where territory_id is not null;
+create index if not exists pol_leads_org_mobilizer_idx
+  on public.pol_leads (organization_id, mobilizer_id)
+  where mobilizer_id is not null;
+create index if not exists pol_leads_contact_idx
+  on public.pol_leads (contact_id);
+
+create or replace trigger pol_leads_touch
+  before update on public.pol_leads
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_leads enable row level security;
+drop policy if exists tenant_isolation_pol_leads_all on public.pol_leads;
+create policy tenant_isolation_pol_leads_all
+  on public.pol_leads for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- pol_lead_scores_history — histórico de scoring multidimensional
+create table if not exists public.pol_lead_scores_history (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  score_type              text         not null
+                          check (score_type in (
+                            'political', 'trust', 'mobilization', 'influence'
+                          )),
+  old_value               integer,
+  new_value               integer      not null,
+  reason                  text,
+  changed_by              uuid         references auth.users(id) on delete set null,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_lead_scores_history_org_contact_idx
+  on public.pol_lead_scores_history (organization_id, contact_id);
+create index if not exists pol_lead_scores_history_org_type_idx
+  on public.pol_lead_scores_history (organization_id, score_type);
+create index if not exists pol_lead_scores_history_created_idx
+  on public.pol_lead_scores_history (created_at);
+
+alter table public.pol_lead_scores_history enable row level security;
+drop policy if exists tenant_isolation_pol_lead_scores_history_all on public.pol_lead_scores_history;
+create policy tenant_isolation_pol_lead_scores_history_all
+  on public.pol_lead_scores_history for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- pol_funnel_transitions — transições do funil político
+create table if not exists public.pol_funnel_transitions (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  from_stage              text         not null,
+  to_stage                text         not null,
+  changed_by              uuid         references auth.users(id) on delete set null,
+  reason                  text,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_funnel_transitions_org_contact_idx
+  on public.pol_funnel_transitions (organization_id, contact_id);
+create index if not exists pol_funnel_transitions_org_to_idx
+  on public.pol_funnel_transitions (organization_id, to_stage);
+create index if not exists pol_funnel_transitions_created_idx
+  on public.pol_funnel_transitions (created_at);
+
+alter table public.pol_funnel_transitions enable row level security;
+drop policy if exists tenant_isolation_pol_funnel_transitions_all on public.pol_funnel_transitions;
+create policy tenant_isolation_pol_funnel_transitions_all
+  on public.pol_funnel_transitions for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_territories, pol_territory_metrics, pol_tse_data, pol_territory_flags (migration 0631) ----
+
+-- pol_territories — territórios hierárquicos
+create table if not exists public.pol_territories (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  name                    text         not null check (char_length(name) between 1 and 200),
+  type                    text         not null
+                          check (type in (
+                            'estado', 'cidade', 'bairro', 'zona_eleitoral', 'secao', 'regiao', 'distrito'
+                          )),
+  parent_id               uuid         references public.pol_territories(id) on delete set null,
+  ibge_code               text,
+  state_code              char(2),
+  latitude                numeric,
+  longitude               numeric,
+  population              integer,
+  electorate              integer,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now(),
+  constraint pol_territories_org_ibge_uq unique (organization_id, ibge_code)
+);
+
+create index if not exists pol_territories_org_type_idx
+  on public.pol_territories (organization_id, type);
+create index if not exists pol_territories_parent_idx
+  on public.pol_territories (parent_id)
+  where parent_id is not null;
+create index if not exists pol_territories_org_state_idx
+  on public.pol_territories (organization_id, state_code)
+  where state_code is not null;
+
+create or replace trigger pol_territories_touch
+  before update on public.pol_territories
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_territories enable row level security;
+drop policy if exists tenant_isolation_pol_territories_all on public.pol_territories;
+create policy tenant_isolation_pol_territories_all
+  on public.pol_territories for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- FK de pol_leads.territory_id → pol_territories
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.table_constraints
+    where constraint_name = 'pol_leads_territory_fk'
+      and table_schema = 'public'
+  ) then
+    alter table public.pol_leads
+      add constraint pol_leads_territory_fk
+      foreign key (territory_id) references public.pol_territories(id) on delete set null;
+  end if;
+end $$;
+
+-- pol_territory_metrics — métricas periódicas por território
+create table if not exists public.pol_territory_metrics (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  territory_id            uuid         not null references public.pol_territories(id) on delete cascade,
+  period                  date         not null,
+  supporters              integer      not null default 0,
+  militants               integer      not null default 0,
+  participants            integer      not null default 0,
+  influence_score         numeric      not null default 0,
+  growth_rate             numeric      not null default 0,
+  dominance_score         numeric      not null default 0,
+  strategic_status        text         not null default 'normal'
+                          check (strategic_status in (
+                            'normal', 'prioritario', 'critico', 'consolidado', 'oportunidade'
+                          )),
+  created_at              timestamptz  not null default now(),
+  constraint pol_territory_metrics_territory_period_uq unique (territory_id, period)
+);
+
+create index if not exists pol_territory_metrics_org_idx
+  on public.pol_territory_metrics (organization_id);
+create index if not exists pol_territory_metrics_period_idx
+  on public.pol_territory_metrics (period);
+
+alter table public.pol_territory_metrics enable row level security;
+drop policy if exists tenant_isolation_pol_territory_metrics_all on public.pol_territory_metrics;
+create policy tenant_isolation_pol_territory_metrics_all
+  on public.pol_territory_metrics for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- pol_tse_data — dados eleitorais do TSE por território
+create table if not exists public.pol_tse_data (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  territory_id            uuid         not null references public.pol_territories(id) on delete cascade,
+  election_year           integer      not null,
+  cargo                   text         not null
+                          check (cargo in (
+                            'prefeito', 'vice_prefeito', 'vereador',
+                            'governador', 'vice_governador',
+                            'deputado_estadual', 'deputado_federal',
+                            'senador', 'presidente', 'vice_presidente'
+                          )),
+  total_voters            integer,
+  valid_votes             integer,
+  candidate_votes         integer,
+  turnout_rate            numeric,
+  created_at              timestamptz  not null default now(),
+  constraint pol_tse_data_territory_year_cargo_uq unique (territory_id, election_year, cargo)
+);
+
+create index if not exists pol_tse_data_org_idx
+  on public.pol_tse_data (organization_id);
+create index if not exists pol_tse_data_year_idx
+  on public.pol_tse_data (election_year);
+
+alter table public.pol_tse_data enable row level security;
+drop policy if exists tenant_isolation_pol_tse_data_all on public.pol_tse_data;
+create policy tenant_isolation_pol_tse_data_all
+  on public.pol_tse_data for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- pol_territory_flags — alertas e flags por território
+create table if not exists public.pol_territory_flags (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  territory_id            uuid         not null references public.pol_territories(id) on delete cascade,
+  flag_type               text         not null,
+  severity                text         not null default 'medium'
+                          check (severity in ('low', 'medium', 'high', 'critical')),
+  description             text,
+  resolved_at             timestamptz,
+  resolved_by             uuid         references auth.users(id) on delete set null,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_territory_flags_org_territory_idx
+  on public.pol_territory_flags (organization_id, territory_id);
+create index if not exists pol_territory_flags_org_open_idx
+  on public.pol_territory_flags (organization_id, severity)
+  where resolved_at is null;
+
+alter table public.pol_territory_flags enable row level security;
+drop policy if exists tenant_isolation_pol_territory_flags_all on public.pol_territory_flags;
+create policy tenant_isolation_pol_territory_flags_all
+  on public.pol_territory_flags for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));

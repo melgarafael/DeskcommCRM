@@ -770,6 +770,55 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
 
+  // ---- Político — War Room 2.0: funil político, territórios e mobilização ----
+  //
+  // Hub do módulo político (GIP War Room 2.0). Estende o CRM com funil político
+  // (novo_cadastro → simpatizante → apoiador → militante → voto_certo), scoring
+  // multidimensional, territórios hierárquicos e dados do TSE.
+  //
+  // Grupo "crm" porque pol_leads é extensão de contacts — mesma jornada de quem
+  // vende, mas o verbo é mobilizar em vez de fechar.
+  {
+    href: "/app/politico",
+    label: "Político",
+    description: "Hub do War Room — funil político, leads, territórios e mobilização.",
+    icon: "Flag",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
+    href: "/app/politico/leads",
+    label: "Leads Políticos",
+    description: "Contatos com dados eleitorais, nível de apoio, temperatura e mobilizador responsável.",
+    icon: "UsersThree",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
+  {
+    href: "/app/politico/territorios",
+    label: "Territórios",
+    description: "Mapa hierárquico: estado → cidade → bairro → zona → seção, com dados do IBGE e TSE.",
+    icon: "MapPin",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
+  {
+    href: "/app/politico/funil",
+    label: "Funil Político",
+    description: "Visualize a jornada de apoio e as transições entre estágios do funil político.",
+    icon: "Funnel",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
+
   // ---- Análise — olhar o sistema funcionando ----
   //
   // ── QUEM FICA NO MENU, E POR QUÊ ─────────────────────────────────────────
