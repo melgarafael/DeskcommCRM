@@ -1,0 +1,44 @@
+-- 0160 — O TETO SÓ MUDA PELA PORTA QUE TEM ESCADA, CARÊNCIA E AUDITORIA.
+--
+-- ═══ O DEFEITO MEDIDO ═══
+--
+-- A 0159 pôs em `ai_budgets` o campo que decide se a IA para de responder
+-- (`enforcement_mode`) e o que decide quando (`enforcement_effective_at`). Toda
+-- a regra que protege esses dois campos — a escada `off → avisar → bloquear`, a
+-- carência de 72h, o piso de US$ 1,00 e a linha em `api_audit_log` — mora na
+-- rota `PATCH /api/v1/ai/budget`, que usa service role.
+--
+-- Mas a tabela tem `GRANT ALL ... TO "anon"` e `TO "authenticated"`
+-- (`supabase/baseline.sql`, corpo do dump), a policy de escrita é
+-- `for all` com `fn_role_at_least(organization_id,'admin')`, e a 0159 termina
+-- com `notify pgrst, 'reload schema'`. Ou seja: as duas colunas novas passaram a
+-- ser servidas pelo PostgREST para a chave anon — a que vai ao browser. Um
+-- `PATCH` direto na REST do Supabase, com o JWT de um admin do tenant, escrevia
+-- `enforcement_mode='bloquear'` sem escada, sem carência, sem piso e sem
+-- auditoria.
+--
+-- O plano e o comentário da coluna afirmavam "escrito só por
+-- PATCH /api/v1/ai/budget (admin, auditado)". Era verdade sobre o CÓDIGO e falso
+-- sobre o SCHEMA. Esta migration faz o schema dizer a mesma coisa.
+--
+-- ⚠️ MEDIÇÃO ANTES DE REVOGAR: todo escritor de `ai_budgets` no repositório usa
+-- service role — a rota PATCH (`createAdminClient`), `lib/ai/budget/check.ts`,
+-- os dois painéis de admin, os workers e `scripts/qa-wave-11.ts` (que instancia
+-- o client com `SERVICE_KEY`). Nenhum caminho de produto escreve esta tabela com
+-- o JWT do usuário, então o revoke não quebra nada. `service_role` bypassa
+-- grants de tabela por ser `bypassrls` + superusuário-equivalente no Supabase e,
+-- de todo modo, seu GRANT continua intacto.
+--
+-- ═══ SELECT FICA ═══
+--
+-- Só as escritas saem. Ler o próprio orçamento pelo PostgREST continua
+-- possível e continua escopado pela policy de SELECT da 0150 — tirar a leitura
+-- fecharia uma porta que ninguém está usando para atacar e quebraria qualquer
+-- clone que tenha montado um painel próprio em cima da anon key.
+--
+-- Idempotente por natureza: `revoke` de privilégio que já não existe é no-op.
+
+revoke insert, update, delete on table public.ai_budgets from authenticated, anon;
+
+-- O PostgREST cacheia o catálogo de privilégios junto com o de schema.
+notify pgrst, 'reload schema';
