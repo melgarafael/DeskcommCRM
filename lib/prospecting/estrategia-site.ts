@@ -34,6 +34,8 @@ export interface EntradaDaEstrategia {
   temInstagram: boolean;
   ofertas: OfertaDaCampanha[];
   nicho: string;
+  /** Sobrescrita de vocabulário da org (`settings.prospeccao.vocabulario`). */
+  sobrescritaVocabulario?: Record<string, string> | null;
   status: string;
   followUpsEnviados: number;
 }
@@ -94,8 +96,13 @@ export function normalizarNicho(nicho: string): string {
     .trim();
 }
 
-export function vocabularioDoNicho(nicho: string): string {
+export function vocabularioDoNicho(nicho: string, sobrescrita?: Record<string, string> | null): string {
   const chave = normalizarNicho(nicho);
+  if (sobrescrita) {
+    for (const [termo, vocabulario] of Object.entries(sobrescrita)) {
+      if (chave.includes(normalizarNicho(termo))) return vocabulario;
+    }
+  }
   for (const [prefixo, vocabulario] of Object.entries(VOCABULARIO_POR_NICHO)) {
     if (chave.includes(prefixo)) return vocabulario;
   }
@@ -129,7 +136,7 @@ function juntarProblemas(problemas: string[]): string | null {
 export function montarEstrategia(entrada: EntradaDaEstrategia): EstrategiaDoLead {
   const ofertas: OfertaDaCampanha[] =
     entrada.ofertas.length > 0 ? entrada.ofertas : ["site"];
-  const vocabulario = vocabularioDoNicho(entrada.nicho);
+  const vocabulario = vocabularioDoNicho(entrada.nicho, entrada.sobrescritaVocabulario ?? null);
   const ganchos: string[] = [ganchoDeReputacao(entrada.nota, entrada.numAvaliacoes)];
   const faltas: ItemDoRaioX[] = entrada.checklist?.falta ?? [];
 
@@ -327,13 +334,19 @@ export interface DadosDeAbordagem {
  * inventar preenchimento. Fonte única — worker e prévia usam a mesma, ou o
  * par (tela × ferramenta) deixa de concordar.
  */
-export function instrucaoDeAbordagemFria(instruction: string, qualification: string): string {
-  return (
+export function instrucaoDeAbordagemFria(
+  instruction: string,
+  qualification: string,
+  voz?: string,
+): string {
+  const base =
     `${instruction}\nFaça uma primeira abordagem curta e transparente. ` +
     `Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. ` +
     `Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. ` +
-    `Critérios a confirmar durante a conversa: ${qualification}`
-  );
+    `Critérios a confirmar durante a conversa: ${qualification}`;
+  // Voz do vendedor (settings da org): some à moldura, nunca aos dados.
+  // Vazia = byte a byte igual ao sem-voz (o par tela×ferramenta não sente).
+  return voz ? `${base}\n${voz}` : base;
 }
 
 /**

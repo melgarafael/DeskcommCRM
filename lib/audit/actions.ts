@@ -249,6 +249,9 @@ export const AUDIT_ACTIONS = [
   // O ENRIQUECIMENTO que RODOU (spec 24). Só quando ≥1 candidato ganhou
   // `data.site` na rodada; metadata conta por classe, sem PII e sem URL.
   "prospecting.site_enriched",
+  // A PERSONALIZAÇÃO que MUDOU (spec 24): voz do vendedor e vocabulário por
+  // nicho em `organizations.settings.prospeccao`. Sem segredo no metadata.
+  "prospecting.settings_updated",
   "channel.pairing_code_requested",
   "channel.social_configured",
   "channel.social_disconnected",

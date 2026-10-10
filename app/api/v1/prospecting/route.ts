@@ -18,6 +18,7 @@ import {
   pontuarCandidato,
   type OfertaDaCampanha,
 } from "@/lib/prospecting/estrategia-site";
+import { blocoVozVendedor, lerPersonalizacao, personalizacaoDaOrganizacao } from "@/lib/prospecting/personalizar";
 import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { env } from "@/lib/env";
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest) {
     const org = auth.organizationId;
     const ordemCandidatos =
       ordenar === "score" ? ORDENACAO_POR_SCORE : "p.created_at desc";
-    const [settings, campaigns, candidates, agents, channels, stages] = await Promise.all([
+    const [settings, campaigns, candidates, agents, channels, stages, organizacao] = await Promise.all([
       db.query("select organization_id from prospecting_settings where organization_id=$1", [org]),
       db.query(
         "select id,name,search,config,status,search_status,run_id,cost_usd,result_count,skipped_count,error,next_send_at,created_at from prospecting_campaigns where organization_id=$1 order by created_at desc limit 50",
@@ -104,12 +105,17 @@ export async function GET(req: NextRequest) {
         "select s.id,s.name,s.pipeline_id,p.name as pipeline_name from crm_stages s join crm_pipelines p on p.id=s.pipeline_id and p.organization_id=s.organization_id where s.organization_id=$1 and not s.is_archived and not s.is_won and not s.is_lost order by p.name,s.position",
         [org],
       ),
+      db.query("select settings from organizations where id=$1", [org]),
     ]);
+    const personalizacao = lerPersonalizacao(
+      (organizacao.rows[0] as { settings?: unknown } | undefined)?.settings,
+    );
     return ok(
       {
         configured: !!settings.rows.length,
         campaigns: campaigns.rows,
         candidates: candidates.rows,
+        personalizacao,
         agents: agents.rows,
         channels: channels.rows.filter((c) => {
           try {
@@ -284,11 +290,18 @@ export async function POST(req: NextRequest) {
       if (!cfg.agent_id)
         throw new ProspectingError("Configure o agente da campanha para pré-visualizar.", 422);
       const ofertas = (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[];
+      // Mesmos fios do envio (voz + vocabulário da org): a prévia só vale se
+      // for byte a byte o que o tick mandaria.
+      const personalizacao = await personalizacaoDaOrganizacao(pool, org);
       const gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
         tenantId: org,
         agentId: cfg.agent_id,
         leadId: linha.contact_id ?? linha.id,
-        instrucao: instrucaoDeAbordagemFria(cfg.instruction, cfg.qualification),
+        instrucao: instrucaoDeAbordagemFria(
+          cfg.instruction,
+          cfg.qualification,
+          blocoVozVendedor(personalizacao) || undefined,
+        ),
         origem: "Pesquisa de empresas",
         origemDaAbordagem: "prospeccao_fria",
         dados: montarDadosDeAbordagem(linha.data, linha.data.site),
@@ -304,6 +317,7 @@ export async function POST(req: NextRequest) {
         temInstagram: /instagram/i.test((linha.data.socials ?? []).join(",")),
         ofertas,
         nicho: linha.search?.niche ?? linha.data.category ?? "",
+        sobrescritaVocabulario: personalizacao.vocabulario ?? null,
         status: linha.status,
         followUpsEnviados: 0,
       });

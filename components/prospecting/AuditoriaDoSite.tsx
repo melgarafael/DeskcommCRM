@@ -19,7 +19,6 @@ export interface AuditoriaDoSiteDados {
   problemas: string[];
   checklist: { tem: string[]; falta: string[] };
 }
-
 /**
  * Auditoria do site — só leitura. Mesma seção no painel do inbox
  * (`LeadEnrichment`) e no cockpit da prospecção. Ações (reanalisar, prévia)
@@ -33,6 +32,7 @@ export function AuditoriaDoSite({
   ofertas,
   nicho,
   status,
+  sobrescritaVocabulario,
 }: {
   site: AuditoriaDoSiteDados;
   nota: number | null;
@@ -41,6 +41,8 @@ export function AuditoriaDoSite({
   ofertas: OfertaDaCampanha[];
   nicho: string;
   status: string;
+  /** Sobrescrita de vocabulário da org. Ausente = mapa base. */
+  sobrescritaVocabulario?: Record<string, string> | null;
 }) {
   const t = useT();
   const tem: ItemDoRaioX[] = (site.checklist?.tem ?? []).filter((i): i is ItemDoRaioX => i in ROTULOS_DO_CHECKLIST);
@@ -54,6 +56,7 @@ export function AuditoriaDoSite({
     temInstagram,
     ofertas,
     nicho,
+    sobrescritaVocabulario: sobrescritaVocabulario ?? null,
     status,
     followUpsEnviados: 0,
   });

@@ -32,6 +32,7 @@ export function AuditoriaDoCandidato({
   nicho,
   status,
   disabled,
+  sobrescritaVocabulario,
   onReanalisar,
   onPrevia,
 }: {
@@ -41,6 +42,7 @@ export function AuditoriaDoCandidato({
   nicho: string;
   status: string;
   disabled: boolean;
+  sobrescritaVocabulario?: Record<string, string> | null;
   onReanalisar: (candidateId: string) => Promise<void>;
   onPrevia: (candidateId: string) => Promise<PreviaDaAbordagem | null>;
 }) {
@@ -71,6 +73,7 @@ export function AuditoriaDoCandidato({
         ofertas={ofertas}
         nicho={nicho}
         status={status}
+        sobrescritaVocabulario={sobrescritaVocabulario}
       />
       <div className="flex flex-wrap gap-2">
         <Button

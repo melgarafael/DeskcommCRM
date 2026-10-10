@@ -29,11 +29,13 @@ export function LeadEnrichment({
   loading,
   error,
   onRetry,
+  sobrescritaVocabulario,
 }: {
   data: (ProspectEnrichment & { collected_at: string }) | null;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
+  sobrescritaVocabulario?: Record<string, string> | null;
 }) {
   const t = useT();
   const locale = useLocaleDeData();
@@ -124,6 +126,7 @@ export function LeadEnrichment({
               ofertas={["site"]}
               nicho={data.category ?? ""}
               status=""
+              sobrescritaVocabulario={sobrescritaVocabulario ?? null}
             />
           )}
           <div className="space-y-1 border-t pt-2 text-muted-foreground">

@@ -23,6 +23,7 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { assertProspectingDelivery } from "./guard";
 import { instrucaoDeAbordagemFria, montarDadosDeAbordagem } from "./estrategia-site";
+import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
 import { enriquecerSitesPendentes } from "./site-enrich";
 import { campaignConfigSchema } from "./schema";
 import { ProspectingError } from "./provider";
@@ -225,7 +226,11 @@ export async function sendNextCandidate(
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: instrucaoDeAbordagemFria(cfg.instruction, cfg.qualification),
+      instrucao: instrucaoDeAbordagemFria(
+        cfg.instruction,
+        cfg.qualification,
+        blocoVozVendedor(await personalizacaoDaOrganizacao(db, c.organization_id)) || undefined,
+      ),
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.

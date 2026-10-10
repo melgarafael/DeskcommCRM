@@ -145,4 +145,19 @@ describe("estrategia-site", () => {
     });
     expect(cfg.ofertas).toEqual(["site"]);
   });
+
+  it("voz vazia não muda a instrução; com voz, soma o bloco", () => {
+    const semVoz = instrucaoDeAbordagemFria("Oi", "Q");
+    expect(instrucaoDeAbordagemFria("Oi", "Q", "")).toBe(semVoz);
+    const comVoz = instrucaoDeAbordagemFria("Oi", "Q", "Quem envia:\n- Nome: Ana");
+    expect(comVoz.startsWith(semVoz)).toBe(true);
+    expect(comVoz).toContain("Ana");
+  });
+
+  it("sobrescrita de vocabulário vence sem quebrar o default", () => {
+    const e = montarEstrategia({ ...base, sobrescritaVocabulario: { clinica: "convênios" } });
+    expect(e.angulo).toContain("convênios");
+    const sem = montarEstrategia(base);
+    expect(sem.angulo).toContain("concorrente");
+  });
 });

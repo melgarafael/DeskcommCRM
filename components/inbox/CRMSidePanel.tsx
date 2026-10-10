@@ -4,6 +4,7 @@ import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { AcervoSearch } from "./AcervoSearch";
 import { LeadEnrichment } from "./LeadEnrichment";
 import type { ProspectEnrichment } from "@/lib/prospecting/schema";
+import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -537,6 +538,8 @@ export function CRMSidePanel({ conversation }: Props) {
 
   const [enrichment, setEnrichment] = useState<(ProspectEnrichment & { collected_at: string }) | null>(null);
   const [enrichmentError, setEnrichmentError] = useState(false);
+  const [personalizacao, setPersonalizacao] =
+    useState<PersonalizacaoProspeccao | null>(null);
   const [leads, setLeads] = useState<LeadRow[] | null>(null);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [activities, setActivities] = useState<ActivityRow[] | null>(null);
@@ -588,6 +591,7 @@ export function CRMSidePanel({ conversation }: Props) {
           data: {
             enrichment?: (ProspectEnrichment & { collected_at: string }) | null;
             enrichment_error?: boolean;
+            personalizacao?: PersonalizacaoProspeccao | null;
             leads: LeadRow[];
             orders: OrderRow[];
             activities: ActivityRow[];
@@ -600,6 +604,7 @@ export function CRMSidePanel({ conversation }: Props) {
         setSummaryContactId(contactId);
         setEnrichment(r.data.enrichment ?? null);
         setEnrichmentError(r.data.enrichment_error ?? false);
+        setPersonalizacao(r.data.personalizacao ?? null);
         setLeads(r.data.leads);
         setOrders(r.data.orders);
         setActivities(r.data.activities);
@@ -728,6 +733,7 @@ export function CRMSidePanel({ conversation }: Props) {
         loading={sectionsLoading}
         error={erro || (summaryContactId === contactId && enrichmentError)}
         onRetry={recarregar}
+        sobrescritaVocabulario={personalizacao?.vocabulario ?? null}
       />
 
       {contactId && defaultPipeline.data && (

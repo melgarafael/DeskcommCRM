@@ -82,4 +82,32 @@ describe("site-classify", () => {
     expect(descreverProblema("construtor-Wix")).toContain("Wix");
     expect(descreverProblema("falta-whatsapp")).toContain("WhatsApp");
   });
+
+  it("todo código emitido pertence ao vocabulário fechado", async () => {
+    const { derivarClasse } = await import("@/lib/prospecting/site-classify");
+    const conhecidos = new Set([
+      "sem-https", "ssl-invalido", "fora-do-ar", "dns-morto", "nao-mobile", "lento",
+      "quase-vazia", "conteudo-misto", "sem-atualizacao",
+      "whatsapp", "tel", "mailto", "social", "mapa", "fotos", "titulo", "description", "favicon",
+    ]);
+    const amostras: Array<Parameters<typeof derivarClasse>[0]> = [
+      { agregador: true, semSite: false, urlFinal: "", problemas: [] },
+      { agregador: false, semSite: true, urlFinal: "", problemas: [] },
+      { agregador: false, semSite: false, urlFinal: "", erro: { tipo: "dns" }, problemas: [] },
+      { agregador: false, semSite: false, urlFinal: "", erro: { tipo: "ssl", codigo: "X" }, problemas: [] },
+      { agregador: false, semSite: false, urlFinal: "", erro: { tipo: "http", status: 500 }, problemas: [] },
+      { agregador: false, semSite: false, urlFinal: "http://x/", problemas: ["nao-mobile", "falta-tel"] },
+      { agregador: false, semSite: false, urlFinal: "https://x/", problemas: ["construtor-Wix", "lento"] },
+      { agregador: false, semSite: false, urlFinal: "https://x/", problemas: [] },
+    ];
+    for (const a of amostras) {
+      expect(["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar"]).toContain(
+        derivarClasse(a),
+      );
+      for (const p of a.problemas) {
+        const base = p.startsWith("http-") ? "http" : p.startsWith("construtor-") ? "construtor" : p.startsWith("falta-") ? p.slice(6) : p.startsWith("sem-atualizacao-desde-") ? "sem-atualizacao" : p;
+        expect(base === "http" || base === "construtor" || conhecidos.has(base), `código fora do vocabulário: ${p}`).toBe(true);
+      }
+    }
+  });
 });

@@ -28,6 +28,7 @@
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { prospectEnrichmentSchema } from "@/lib/prospecting/schema";
+import { lerPersonalizacao } from "@/lib/prospecting/personalizar";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
@@ -99,16 +100,28 @@ export async function GET(
   const enrichment = await (async () => {
     if (contactScope.is_anonymized) return { enrichment: null, enrichment_error: false };
     try {
-      const result = await createAdminClient().from("prospecting_candidates")
-        .select("data, created_at")
-        .eq("organization_id", contactScope.organization_id).eq("contact_id", contactId)
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (result.error) return { enrichment: null, enrichment_error: true };
-      if (!result.data) return { enrichment: null, enrichment_error: false };
-      const parsed = prospectEnrichmentSchema.safeParse(result.data.data);
-      return parsed.success
-        ? { enrichment: { ...parsed.data, collected_at: result.data.created_at }, enrichment_error: false }
-        : { enrichment: null, enrichment_error: true };
+      const admin = createAdminClient();
+      const [candidato, organizacao] = await Promise.all([
+        admin.from("prospecting_candidates")
+          .select("data, created_at")
+          .eq("organization_id", contactScope.organization_id).eq("contact_id", contactId)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        admin.from("organizations")
+          .select("settings")
+          .eq("id", contactScope.organization_id)
+          .maybeSingle(),
+      ]);
+      if (candidato.error) return { enrichment: null, enrichment_error: true };
+      if (!candidato.data) return { enrichment: null, enrichment_error: false };
+      const parsed = prospectEnrichmentSchema.safeParse(candidato.data.data);
+      if (!parsed.success) return { enrichment: null, enrichment_error: true };
+      return {
+        enrichment: { ...parsed.data, collected_at: candidato.data.created_at },
+        enrichment_error: false,
+        personalizacao: lerPersonalizacao(
+          (organizacao.data as { settings?: unknown } | null)?.settings,
+        ),
+      };
     } catch {
       return { enrichment: null, enrichment_error: true };
     }

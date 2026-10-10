@@ -15362,6 +15362,16 @@ export const DICIONARIO: Traducoes = {
   "Score": { es: "Score" },
   "Score médio": { es: "Score medio" },
   "O que esta campanha vende": { es: "Lo que vende esta campaña" },
+  "Voz e vocabulário": { es: "Voz y vocabulario" },
+  "A voz assina as mensagens; o vocabulário traduz o nicho para a dor dele.": {
+    es: "La voz firma los mensajes; el vocabulario traduce el nicho a su dolor.",
+  },
+  "O que você faz": { es: "A qué te dedicas" },
+  "Diferencial": { es: "Diferencial" },
+  "Vocabulário por nicho": { es: "Vocabulario por nicho" },
+  "Um por linha — termo: valor": { es: "Uno por línea — término: valor" },
+  "Salvar personalização": { es: "Guardar personalización" },
+  "Personalização salva.": { es: "Personalización guardada." },
   "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.": {
     es: "La auditoría del sitio elige el mejor argumento por empresa, en este orden.",
   },

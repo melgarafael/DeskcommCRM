@@ -20,6 +20,7 @@ import {
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
+import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import {
   pontuarCandidato,
   type OfertaDaCampanha,
@@ -55,6 +56,7 @@ type State = {
   campaigns: Campaign[];
   candidates: Candidate[];
   agents: { id: string; name: string }[];
+  personalizacao: PersonalizacaoProspeccao;
   channels: {
     id: string;
     display_name: string | null;
@@ -130,6 +132,10 @@ export function ProspectingClient() {
   // As desmarcadas ficam escondidas por padrão; este botão só decide se aparecem.
   const [mostrarDesmarcadas, setMostrarDesmarcadas] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  // Revisão do formulário de personalização: remonta com os valores gravados
+  // a cada save (sem effect e sem sobrescrever o que está digitado no refetch).
+  const [formRev, setFormRev] = useState(0);
+  const personalizacaoInicial = data?.personalizacao ?? null;
   // Edição do ritmo de uma campanha PAUSADA; vale para uma campanha por vez.
   const [ritmo, setRitmo] = useState<{
     campaignId: string;
@@ -367,6 +373,7 @@ export function ProspectingClient() {
       )}
       {!data && !query.error && <p role="status">{t("Carregando campanhas…")}</p>}
       {(settings || data?.configured === false) && (
+        <>
         <Card className="p-5">
           <form
             className="flex flex-col gap-3 sm:flex-row sm:items-end"
@@ -401,6 +408,98 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
+        <Card className="p-5">
+          <h2 className="text-lg font-semibold">{t("Voz e vocabulário")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("A voz assina as mensagens; o vocabulário traduz o nicho para a dor dele.")}
+          </p>
+          <form
+            key={formRev}
+            className="mt-4 space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError(null);
+              setNotice(null);
+              try {
+                const fd = new FormData(e.currentTarget);
+                const texto = (name: string) =>
+                  String(fd.get(name) ?? "").trim() || undefined;
+                const vocabulario: Record<string, string> = {};
+                for (const linha of String(fd.get("vocabulario") ?? "").split("\n")) {
+                  const corte = linha.indexOf(":");
+                  if (corte <= 0) continue;
+                  const termo = linha.slice(0, corte).trim();
+                  const valor = linha.slice(corte + 1).trim();
+                  if (termo && valor) vocabulario[termo] = valor;
+                }
+                await apiClient.patch("/api/v1/settings/prospeccao", {
+                  vendedor_nome: texto("vendedor_nome"),
+                  vendedor_apresentacao: texto("vendedor_apresentacao"),
+                  vendedor_diferencial: texto("vendedor_diferencial"),
+                  vocabulario,
+                });
+                await query.refetch();
+                setFormRev((r) => r + 1);
+                setNotice(t("Personalização salva."));
+              } catch (err) {
+                setError(err instanceof Error ? err.message : t("Não foi possível concluir a operação."));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <Label htmlFor="prospecting-vendedor-nome">{t("Seu nome")}</Label>
+                <Input
+                  id="prospecting-vendedor-nome"
+                  name="vendedor_nome"
+                  defaultValue={personalizacaoInicial?.vendedor_nome ?? ""}
+                  maxLength={80}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="prospecting-vendedor-apresentacao">{t("O que você faz")}</Label>
+                <Input
+                  id="prospecting-vendedor-apresentacao"
+                  name="vendedor_apresentacao"
+                  defaultValue={personalizacaoInicial?.vendedor_apresentacao ?? ""}
+                  maxLength={300}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="prospecting-vendedor-diferencial">{t("Diferencial")}</Label>
+                <Input
+                  id="prospecting-vendedor-diferencial"
+                  name="vendedor_diferencial"
+                  defaultValue={personalizacaoInicial?.vendedor_diferencial ?? ""}
+                  maxLength={300}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="prospecting-vocabulario">{t("Vocabulário por nicho")}</Label>
+              <Textarea
+                id="prospecting-vocabulario"
+                name="vocabulario"
+                defaultValue={Object.entries(personalizacaoInicial?.vocabulario ?? {})
+                  .map(([termo, valor]) => `${termo}: ${valor}`)
+                  .join("\n")}
+                rows={3}
+                className="mt-1"
+                placeholder={t("Um por linha — termo: valor")}
+              />
+            </div>
+            <Button disabled={busy} type="submit">
+              {t("Salvar personalização")}
+            </Button>
+          </form>
+        </Card>
+        </>
       )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <aside className="flex flex-col gap-5">
@@ -1309,6 +1408,7 @@ export function ProspectingClient() {
                                 nicho={nichoDaCampanha || c.data.category || ""}
                                 status={c.status ?? c.progress}
                                 disabled={busy}
+                                sobrescritaVocabulario={data?.personalizacao?.vocabulario ?? null}
                                 onReanalisar={reanalisarSite}
                                 onPrevia={preverAbordagem}
                               />
