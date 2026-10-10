@@ -104,6 +104,10 @@ describe("pr-mexe-na-imagem", () => {
   const SO_FORA_DA_IMAGEM = new Set([
     // seed das credenciais do E2E: roda no job de e2e, contra o Supabase local.
     "scripts/seed-e2e-credentials.ts",
+    // smoke do Asaas contra o sandbox (fora do CI, com a chave do dono): importa o
+    // dublê de tests/ DE PROPÓSITO — o trabalho dele é medir se as suposições do
+    // dublê (somarCiclo, cobranças geradas de saída) batem com o Asaas de verdade.
+    "scripts/smoke-asaas.ts",
   ]);
 
   it("nenhum arquivo que entra na imagem importa de pasta que o .dockerignore exclui", () => {

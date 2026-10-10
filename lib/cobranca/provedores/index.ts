@@ -3,14 +3,16 @@
  *
  * Um só lugar monta o adaptador de produção: a chave lida a CADA uso pela
  * configuração (que só aceita o que a tela de Cobrança gravou) e a base de
- * teste, que só existe em bancada (loopback com o app em loopback). O Asaas
- * entra na PR 3b, no mesmo contrato.
+ * teste, que só existe em bancada (loopback com o app em loopback). Stripe e
+ * Asaas no mesmo contrato; o dublê de bancada atende os dois nos caminhos das
+ * APIs reais: /v1 (Stripe) e /v3 (Asaas).
  */
 import { chaveDoProvedor } from "@/lib/cobranca/configuracao";
 import { env } from "@/lib/env";
 
+import { criarAdaptadorAsaas, modoDaChaveAsaas } from "./asaas";
 import { baseDeTesteDaCobranca } from "./base-de-teste";
-import { ErroDoProvedor, type AdaptadorDeCobranca, type Modo, type ProvedorDeCobranca } from "./contrato";
+import type { AdaptadorDeCobranca, Modo, ProvedorDeCobranca } from "./contrato";
 import { criarAdaptadorStripe, marcaDaInstalacao, modoDaChaveStripe } from "./stripe";
 
 export interface OpcoesDoAdaptador {
@@ -20,19 +22,23 @@ export interface OpcoesDoAdaptador {
 }
 
 export function adaptador(id: ProvedorDeCobranca, opcoes: OpcoesDoAdaptador = {}): AdaptadorDeCobranca {
-  if (id !== "stripe") throw new ErroDoProvedor(null, "provedor_nao_suportado", false);
   const teste = baseDeTesteDaCobranca();
-  return criarAdaptadorStripe({
-    lerChave: opcoes.chave ?? (() => chaveDoProvedor("stripe")),
+  const comum = {
+    lerChave: opcoes.chave ?? (() => chaveDoProvedor(id)),
     fetch: opcoes.fetch,
-    baseUrl: teste === null ? undefined : `${teste}/v1`,
     marca: marcaDaInstalacao(env.NEXT_PUBLIC_APP_URL ?? ""),
-  });
+  };
+  switch (id) {
+    case "stripe":
+      return criarAdaptadorStripe({ ...comum, baseUrl: teste === null ? undefined : `${teste}/v1` });
+    case "asaas":
+      return criarAdaptadorAsaas({ ...comum, baseUrl: teste === null ? undefined : `${teste}/v3` });
+  }
 }
 
-/** O modo da chave GRAVADA (teste ou produção). `null` = nada gravado, ou provedor ainda sem suporte. */
+/** O modo da chave GRAVADA (teste ou produção). `null` = nada gravado, ou prefixo desconhecido. */
 export async function modoDoProvedor(id: ProvedorDeCobranca): Promise<Modo | null> {
-  if (id !== "stripe") return null;
-  const chave = await chaveDoProvedor("stripe");
-  return chave === null ? null : modoDaChaveStripe(chave);
+  const chave = await chaveDoProvedor(id);
+  if (chave === null) return null;
+  return id === "stripe" ? modoDaChaveStripe(chave) : modoDaChaveAsaas(chave);
 }

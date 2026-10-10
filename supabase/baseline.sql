@@ -50358,6 +50358,300 @@ create trigger trg_anonimizar_aviso_de_remetente after update of is_anonymized o
  execute function public.fn_anonimizar_aviso_de_remetente();
 notify pgrst,'reload schema';
 
+-- ---- pausa agendada de conexões com retomada automática (migration 0626) ----
+-- Espelho exato da migration 20261009223404_0626_agenda_de_pausa_de_canais.sql.
+-- Antes da VARREDURA anon, que é o último bloco do arquivo de propósito.
+
+-- manifest: **Pausa AGENDADA de conexões com retomada automática (issue #2388).** Cria `channel_schedules` — a janela de manutenção (início, fim, um canal ou todos, estado `scheduled/running/done/cancelled` e a lista do que ela pausou) — e passa a gravar a ORIGEM da pausa em `channel_sessions.metadata` (`disabled_by`: `manual` × `schedule`, mais `disabled_schedule_id`): sem a origem, a retomada do fim da janela não distingue a pausa MANUAL feita durante a janela e a sobrescreveria (critério 3). A peça de escrita vira `fn_definir_pausa_de_canal(p_org, p_canal, p_desativado, p_origem, p_agenda)` e a RPC da tela `fn_definir_canal_desativado` mantém a MESMA assinatura de três argumentos e delega para ela com origem `manual` — nenhum chamador muda. Quem aplica é o cron `channel-pause-scheduler` (a cada minuto), pela mesma escrita de hoje: só a chave `disabled`, nada de transporte — a mensagem que chega durante a pausa continua sendo gravada e volta à inbox na retomada (lei do #2318). Idempotente; apêndice igual no `baseline.sql`.
+-- 0626: agenda de pausa por conexão, com retomada automática e origem da pausa.
+--
+-- ─── O defeito ──────────────────────────────────────────────────────────────
+--
+-- A pausa só existe como ação manual imediata (0545): ou alguém acorda às 3h
+-- para retomar, ou o número fica pausado até segunda ordem — a entrega é
+-- gravada e some da inbox em silêncio. Existe hoje UMA chave (`disabled: true`)
+-- e nenhuma agenda.
+--
+-- ─── Por que a ORIGEM da pausa é obrigatória, e não detalhe ─────────────────
+--
+-- Com uma chave só, "quem pausou?" não tem resposta: a retomada de fim de
+-- janela desligaria também o canal que o operador pausou DURANTE a janela
+-- (critério 3 da issue) e assumiria a posse de uma pausa manual já existente.
+-- Daí as duas chaves novas, gravadas pela MESMA escrita atômica do `disabled`
+-- (leitura-modificação-escrita perderia corrida contra a tela — a razão de a
+-- 0545 existir): `disabled_by` diz quem pausou; `disabled_schedule_id` diz por
+-- QUAL janela. Ausente ou nulo = pausa manual ou chave de banco anterior (sem
+-- origem ninguém retoma às cegas).
+--
+-- ─── Por que a tela não muda de assinatura ──────────────────────────────────
+--
+-- `fn_definir_canal_desativado(uuid, uuid, boolean)` continua existindo com os
+-- mesmos três argumentos e agora delega com origem `manual`: as rotas da
+-- Central, o teste do #2318 e a ação em lote do #2387 seguem iguais. Só o cron
+-- chama a peça nova, já com a origem explícita.
+
+create table if not exists public.channel_schedules (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  -- `null` = TODOS os canais não arquivados da organização ("para todas").
+  channel_session_id uuid references public.channel_sessions(id) on delete cascade,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  status text not null default 'scheduled'
+    check (status in ('scheduled', 'running', 'done', 'cancelled')),
+  -- O que ESTA agenda pausou: o registro da janela, lido pela retomada e pela tela.
+  paused_channel_ids jsonb not null default '[]'::jsonb,
+  created_by uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint channel_schedules_janela_valida check (ends_at > starts_at)
+);
+
+create index if not exists channel_schedules_org_status_idx
+  on public.channel_schedules (organization_id, status, starts_at);
+-- O que o cron lê por rodada: só as duas situações vivas, pelo início.
+create index if not exists channel_schedules_vivas_idx
+  on public.channel_schedules (starts_at)
+  where status in ('scheduled', 'running');
+
+alter table public.channel_schedules enable row level security;
+drop policy if exists tenant_isolation_channel_schedules_select on public.channel_schedules;
+create policy tenant_isolation_channel_schedules_select on public.channel_schedules
+  for select using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.channel_schedules from public, anon, authenticated;
+grant select on public.channel_schedules to authenticated;
+grant all on public.channel_schedules to service_role;
+
+-- ─── A peça de escrita, com origem explícita ────────────────────────────────
+--
+-- Mesmo desenho da 0545: valida, `jsonb_set` com `create_missing=true` (troc só
+-- as chaves da pausa, sem sobrescrever `ai_gate`, `ai_gate_mode` e cia.),
+-- `where archived_at is null` (arquivado não se pausa, se exclui) e devolve as
+-- linhas afetadas — 0 continua significando "canal não existe / arquivado na
+-- corrida". `p_origem` é exigido, não default: quem chama declara, e a ambiguidade
+-- de assinatura não existe.
+create or replace function public.fn_definir_pausa_de_canal(
+  p_org uuid,
+  p_canal uuid,
+  p_desativado boolean,
+  p_origem text,
+  p_agenda uuid
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_linhas integer;
+begin
+  if p_desativado is null then
+    raise exception 'estado do canal inválido' using errcode = '22023';
+  end if;
+  if p_origem is distinct from 'manual' and p_origem is distinct from 'schedule' then
+    raise exception 'origem de pausa inválida' using errcode = '22023';
+  end if;
+
+  update public.channel_sessions
+     set metadata = jsonb_set(
+       jsonb_set(
+         jsonb_set(
+           coalesce(metadata, '{}'::jsonb),
+           '{disabled}',
+           to_jsonb(p_desativado),
+           true
+         ),
+         -- Retomando, a origem some junto: quem está ligado não tem origem.
+         '{disabled_by}',
+         case when p_desativado then to_jsonb(p_origem) else 'null'::jsonb end,
+         true
+       ),
+       '{disabled_schedule_id}',
+       case
+         when p_desativado and p_agenda is not null then to_jsonb(p_agenda)
+         else 'null'::jsonb
+       end,
+       true
+     )
+   where organization_id = p_org
+     and id = p_canal
+     and archived_at is null;
+
+  get diagnostics v_linhas = row_count;
+  return v_linhas;
+end;
+$$;
+
+revoke execute on function public.fn_definir_pausa_de_canal(uuid, uuid, boolean, text, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_definir_pausa_de_canal(uuid, uuid, boolean, text, uuid)
+  to service_role;
+
+-- A RPC da tela: MESMA assinatura, MESMO efeito, origem `manual`. Delegar é o
+-- que garante que a pausa manual continue gravando a origem correta sem que
+-- nenhuma rota, teste ou chamador precise mudar (critério 8: o manual segue
+-- exatamente como hoje).
+create or replace function public.fn_definir_canal_desativado(
+  p_org uuid,
+  p_canal uuid,
+  p_desativado boolean
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  return public.fn_definir_pausa_de_canal(p_org, p_canal, p_desativado, 'manual', null);
+end;
+$$;
+
+-- ---- o rótulo da seção de LGPD preserva o nulo da coluna (migration 0628) ----
+-- Espelho exato da migration 20261010032318_0628_rotulo_da_secao_de_lgpd_preserva_o_nulo.sql.
+-- Antes da VARREDURA anon, que é o último bloco do arquivo de propósito.
+
+-- manifest: **O rótulo da seção de LGPD não inventa dado onde a coluna era nula (issue #2656).** A redação por seção declarada de módulo (`modulo_secoes_lgpd`, 0485, gatilho `trg_lgpd_secoes_de_modulo` → `fn_lgpd_redigir_secoes_de_modulo`) gravava o rótulo de anonimizado em TODA linha alcançada pelas colunas de `colunas_rotulo`, inclusive onde a coluna era `NULL` — um campo que nunca foi preenchido passava a dizer `Cliente Anonimizado #N`, e a linha afirmava que havia um texto ali (medido na triagem do #1907: `cancel_reason` preenchido numa comanda finalizada sem cancelamento). O `set` gerado passa a preservar o nulo: `%I = case when %I is null then null else %L end`, o mesmo predicado que `colunas_redigidas` já aplica desde a 0619. Forward-fix: migration NOVA que só reescreve a função (a 0485 e a 0619 continuam intocáveis, já aplicadas em toda instalação) + apêndice igual no `baseline.sql`. Nenhum módulo da `main` declara `colunas_rotulo` não vazio, então não há dado afetado em instalação nenhuma.
+-- 0628: o rótulo da seção de LGPD preserva o nulo da coluna.
+--
+-- ─── O defeito ──────────────────────────────────────────────────────────────────────────────
+--
+-- A 0485 montava o `set` da seção assim:
+--
+--   select string_agg(format('%I = %L', c, v_rotulo), ', ' order by c) into v_rotulos
+--     from unnest(s.colunas_rotulo) as c;
+--
+-- `%L` imprime o valor SEM testar nulidade, e o `update` alcança toda linha do
+-- contato na tabela declarada. Onde a coluna era `NULL`, ela passava a receber o
+-- rótulo: o dado é inventado, e em LGPD inventar é o mesmo erro de ler — a linha
+-- passa a afirmar que existia um texto sobre a pessoa.
+--
+-- ─── O conserto, e por que ele tem esta forma ───────────────────────────────────────────────
+--
+--   motivo = case when motivo is null then null else 'Cliente Anonimizado #N' end
+--
+-- É exatamente o que `colunas_redigidas` faz desde a 0619 (`[redigido]`) e o que
+-- o passo 6c da cascata fazia quando a comanda ainda era função do núcleo:
+-- `cancel_reason = case when cancel_reason is null then null else '[redigido]' end`.
+-- Trocar o lugar do passo (da cascata para a seção declarada) não pode mudar a
+-- saída de LGPD — é a régua escrita em `tests/invariants/comanda-anonimizada-pela-secao.test.ts`.
+--
+-- Preservar o nulo NÃO apaga o efeito: a coluna preenchida continua recebendo o
+-- rótulo do contato anonimizado, e `colunas` (que vira nulo) também não muda.
+-- Os quatro modos da seção, depois desta migration:
+--
+--   colunas          → null
+--   colunas_rotulo   → case when is null then null else <rótulo> end   ← ESTA migration
+--   colunas_redigidas→ case when is null then null else '[redigido]' end
+--   colunas_agora    → now()
+--
+-- ─── FORWARD-FIX, e não edição das antigas ──────────────────────────────────────────────────
+--
+-- A 0485 e a 0619 já estão aplicadas em toda instalação: reescrever o corpo
+-- delas muda a história sem mudar nenhum banco, e quem aplicasse a cadeia de
+-- novo receberia um arquivo diferente do que o `supabase_migrations` registra.
+-- Por isso o conserto é `create or replace` numa migration NOVA — a mesma porta
+-- pela qual todas as correções de função saem aqui (reaplicável: `if not exists`,
+-- `create or replace`, `drop trigger if exists`) —, com o apêndice idêntico no
+-- `baseline.sql`, ANTES do bloco da VARREDURA anon (0116), que proíbe `create
+-- function` depois dela.
+--
+-- ─── Alcance: nenhum dado afetado hoje ──────────────────────────────────────────────────────
+--
+-- Nenhum módulo da `main` declara `colunas_rotulo` não vazio (o `honorarios` não
+-- usa; o `financeiro` do #1907 passou a não usar — os motivos estão em
+-- `colunas_redigidas`), então a tabela nasce vazia de propósito e não há linha
+-- real com rótulo inventado a corrigir. A migration não backfilla nada: o que não
+-- existe não se conserta, e apagar dado real aqui seria adivinhar.
+--
+-- Evidência: `tests/invariants/rotulo-da-secao-nao-inventa-o-nulo.test.ts` (efeito
+-- no banco: nula continua nula, preenchida vira o rótulo) e
+-- `tests/unit/rotulo-da-secao-de-lgpd-preserva-o-nulo.test.ts` (a última definição
+-- da cadeia e do baseline montam o `set` preservando o nulo; a 0619 segue intacta).
+
+create or replace function public.fn_lgpd_redigir_secoes_de_modulo()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+declare
+  s record;
+  v_rel oid;
+  v_sets text;
+  v_nulos text;
+  v_rotulos text;
+  v_redigidas text;
+  v_agora text;
+  v_rotulo text := 'Cliente Anonimizado #' || substring(new.id::text from 1 for 8);
+begin
+  if not (new.is_anonymized and not old.is_anonymized) then
+    return null;
+  end if;
+
+  for s in
+    select modulo, tabela, ligacao, colunas, colunas_rotulo, colunas_redigidas, colunas_agora
+      from public.modulo_secoes_lgpd
+     order by modulo, tabela
+  loop
+    v_rel := to_regclass(format('public.%I', s.tabela));
+
+    if v_rel is null then
+      continue;
+    end if;
+
+    if btrim(s.ligacao) = ''
+       or (cardinality(s.colunas) = 0 and cardinality(s.colunas_rotulo) = 0
+           and cardinality(s.colunas_redigidas) = 0) then
+      raise exception 'modulo_secao_invalida: %/% declara ligação vazia ou sem coluna', s.modulo, s.tabela;
+    end if;
+
+    if exists (
+      select 1
+        from unnest(s.colunas || s.colunas_rotulo || s.colunas_redigidas || s.colunas_agora) as c(coluna)
+       where not exists (
+         select 1
+           from pg_attribute a
+          where a.attrelid = v_rel
+            and a.attname = c.coluna
+            and a.attnum > 0
+            and not a.attisdropped
+       )
+    ) then
+      raise exception 'modulo_secao_invalida: %/% tem coluna declarada que não existe', s.modulo, s.tabela;
+    end if;
+
+    select string_agg(format('%I = null', c), ', ' order by c) into v_nulos
+      from unnest(s.colunas) as c;
+    -- O conserto da #2656: o rótulo só entra onde JÁ havia valor. Um `null`
+    -- declarado continua nulo — a anonimização não dá conteúdo ao que era vazio.
+    select string_agg(format('%1$I = case when %1$I is null then null else %2$L end', c, v_rotulo), ', ' order by c)
+      into v_rotulos
+      from unnest(s.colunas_rotulo) as c;
+    select string_agg(format('%1$I = case when %1$I is null then null else %2$L end', c, '[redigido]'), ', ' order by c)
+      into v_redigidas
+      from unnest(s.colunas_redigidas) as c;
+    select string_agg(format('%I = now()', c), ', ' order by c) into v_agora
+      from unnest(s.colunas_agora) as c;
+    v_sets := concat_ws(', ', v_nulos, v_rotulos, v_redigidas, v_agora);
+
+    execute format('update public.%I set %s where (%s)', s.tabela, v_sets, s.ligacao)
+      using new.organization_id, new.id;
+  end loop;
+
+  return null;
+end $f$;
+
+revoke execute on function public.fn_lgpd_redigir_secoes_de_modulo() from public, anon, authenticated;
+
+-- A porta não muda: a mesma virada `false → true` de is_anonymized em contacts,
+-- pelos DOIS caminhos de anonimização (a cascata e `fn_lgpd_anonymize_contact`).
+drop trigger if exists trg_lgpd_secoes_de_modulo on public.contacts;
+create trigger trg_lgpd_secoes_de_modulo
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized and not old.is_anonymized)
+  execute function public.fn_lgpd_redigir_secoes_de_modulo();
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -52720,3 +53014,19 @@ begin
     ));
 end
 $pedido_sem_conector$;
+
+
+-- ---- cor da marca no tema escuro: coluna da instalação (migration 0627) ----
+alter table public.platform_branding
+  add column if not exists accent_dark_hex text;
+
+alter table public.platform_branding
+  drop constraint if exists platform_branding_accent_dark_hex;
+
+alter table public.platform_branding
+  add constraint platform_branding_accent_dark_hex check (
+    accent_dark_hex is null or accent_dark_hex ~ '^#[0-9a-f]{6}$'
+  );
+
+comment on column public.platform_branding.accent_dark_hex is
+  'Segunda semente da marca (#2482), só para o tema ESCURO: o bloco [data-theme=dark] deriva dela pela mesma derivarMarca, com os mesmos pisos de contraste. NULL = os dois temas derivam de accent_hex, como sempre. --color-brand continua sendo accent_hex (e-mail e logo nao tem tema). Lida/escrita so server-side (service_role), como o resto da tabela.';

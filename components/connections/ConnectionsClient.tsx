@@ -58,6 +58,7 @@ import { canalDesativado } from "@/lib/channels/desativado";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
 import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { useT } from "@/hooks/i18n/useT";
+import { AgendaDePausa } from "@/components/connections/AgendaDePausa";
 
 type Variant = "success" | "warning" | "error" | "neutral";
 
@@ -446,6 +447,11 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               {t("Retomar todas")} ({paraRetomar.length})
             </Button>
           )}
+          {/* A JANELA DE MANUTENÇÃO (#2388): o "todas" com HORÁRIO e RETOMADA
+              automática. Ela fica ao lado dos dois botões de lote de propósito:
+              os três são a mesma escrita (`metadata.disabled`), e a diferença é
+              quando — agora, ou quando o operador escolher. */}
+          <AgendaDePausa canais={list} />
           <Button size="sm" disabled={creating || !wahaConfigured} onClick={handleConnectNew}>
             {creating ? (
               <CircleNotch size={14} className="animate-spin" aria-hidden />

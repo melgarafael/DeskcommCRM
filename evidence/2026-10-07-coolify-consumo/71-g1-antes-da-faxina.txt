@@ -1,0 +1,37 @@
+2026-10-07T19:55:16Z
+deskcommcrm-supabase_db-config
+deskcommcrm-supabase_deno-cache
+deskcommcrm_waha-data
+deskcommcrm_waha-media
+-- imagens
+alpine:3.20
+coollabsio/coolify:4.3.23
+coollabsio/coolify-helper:1.0.17
+coollabsio/coolify-realtime:1.0.19
+coollabsio/sentinel:1.0.1
+coollabsio/sentinel:1.0.2
+darthsim/imgproxy:v3.31.4
+devlikeapro/waha:latest-2026.7.2
+envoyproxy/envoy:v1.39.1
+ghcr.io/melgarafael/deskcommcrm:1.76.0
+ghcr.io/melgarafael/deskcomm-scheduler:1.76.0
+ghcr.io/melgarafael/deskcomm-worker:1.76.0
+hiett/serverless-redis-http:<none>
+nginx:alpine
+pgvector/pgvector:pg15
+postgres:15-alpine
+postgres:17-alpine
+postgrest/postgrest:v14.17
+redis:7-alpine
+supabase/edge-runtime:v1.76.2
+supabase/gotrue:v2.196.0
+supabase/postgres:17.6.1.136
+supabase/postgres-meta:v0.99.0
+supabase/realtime:v2.134.10
+supabase/storage-api:v1.74.0
+supabase/studio:2026.09.07-sha-7996410
+supabase/supavisor:2.9.12
+traefik:v3.6
+arquivos=2815 db_kb=106896
+-- banco
+194|1|1|5

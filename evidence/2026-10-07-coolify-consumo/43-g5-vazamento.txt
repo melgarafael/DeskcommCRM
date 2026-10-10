@@ -1,0 +1,2 @@
+linhas=117 nao_zero=0
+600

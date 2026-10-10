@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
+import { caminhoDaPorta, ondeOModuloAparece } from "@/lib/navigation/onde-o-modulo-aparece";
 import { MENSAGEM_DA_RECUSA_DE_ESCRITA, ehRecusaDeEscrita } from "@/lib/auth/recusa-de-escrita-de-admin";
 import type {
   ChaveDeOrcamentoDaInstalacao,
@@ -244,7 +245,35 @@ export function FormularioDeComportamento({
  * `.env`). Mesmo desenho do cartão de cima: salva no clique, volta no erro.
  */
 /** Cada módulo, como ele aparece aqui. O texto diz o que ligar ABRE, não só o nome. */
-const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo: string; descricao: string }> = [
+export const MODULOS_NA_TELA: ReadonlyArray<{
+  modulo: ModuloPorFlag;
+  id: string;
+  rotulo: string;
+  descricao: string;
+  /**
+   * Onde o módulo aparece quando ele NÃO cria porta no menu do CRM. Só os que
+   * não têm porta declaram; para os outros, `OndeAparece` lê o caminho do
+   * próprio menu (`ondeOModuloAparece`) e esta linha não existe.
+   *
+   * O texto é literal AQUI, e não lido de uma tabela em `lib/`, porque é a
+   * forma que as duas catracas de espanhol conseguem ler — a mesma de
+   * `descricao`, logo acima. `t()` sobre parâmetro destrinchado
+   * (`([k, texto]) => t(texto)`) é reprovado por "parâmetro livre", e `t()`
+   * sobre `const` local, por "chave montada em runtime". Quem garante que
+   * nenhum módulo fica sem resposta é `tests/unit/porta-do-modulo-ligado.test.tsx`,
+   * que cruza esta lista com as portas reais do menu.
+   */
+  foraDoMenu?: string;
+  /**
+   * Quando o módulo não cria porta própria mas LIBERA um painel dentro de uma tela que já existe,
+   * aqui vai o `href` dessa tela — e o caminho é DERIVADO (`caminhoDaPorta`), nunca escrito.
+   *
+   * A primeira versão escrevia o caminho dentro do `foraDoMenu`, e errou: dizia
+   * "Agente de IA › Credenciais" quando `/app/ai/credentials` também é só-no-hub. Caminho à mão
+   * envelhece e ninguém percebe — hoje uma guarda proíbe `›` em `foraDoMenu`.
+   */
+  painelEm?: string;
+}> = [
   {
     modulo: "banco_externo",
     id: "modulo-banco-externo",
@@ -264,7 +293,7 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo
     id: "modulo-propostas",
     rotulo: "Propostas comerciais",
     descricao:
-      "Ligado, cada empresa pode ligar em Configurações › Propostas o módulo de proposta comercial: a IA levanta o que o cliente precisa, monta a proposta pelos modelos da empresa e o PDF sai pelo WhatsApp. Desligado, nenhuma empresa vê a tela, o menu nem as ferramentas do agente.",
+      "Ligado, cada empresa ainda precisa ligar o módulo de proposta comercial nas configurações dela — o caminho aparece abaixo. A IA levanta o que o cliente precisa, monta a proposta pelos modelos da empresa e o PDF sai pelo WhatsApp. Desligado, nenhuma empresa vê a tela, o menu nem as ferramentas do agente.",
   },
   {
     modulo: "crm_b2b",
@@ -279,6 +308,7 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo
     rotulo: "Cobrança dos seus clientes",
     descricao:
       "Ligado, você cria planos e cobra as empresas hospedadas aqui, com teste grátis e suspensão automática de quem não paga. Empresas que já existem ficam isentas; você escolhe quem passa a pagar. Desligado, os limites dos planos deixam de valer e as empresas suspensas por falta de pagamento são liberadas; nada é cancelado no provedor de pagamento.",
+    foraDoMenu: "Não cria porta no menu do CRM: a tela é Cobrança, aqui no Admin.",
   },
   {
     modulo: "login_codex",
@@ -286,8 +316,87 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo
     rotulo: "Login do Codex por assinatura",
     descricao:
       "Ligado, cada empresa vê em Credenciais o painel para conectar a própria conta do Codex. Desligado por padrão: sem este interruptor nada aparece para as empresas, e a reserva de chamada continua sendo a chave de API da organização.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera um painel em",
+    painelEm: "/app/ai/credentials",
   },
 ];
+
+/**
+ * ONDE O MÓDULO APARECE — a frase que faltava na tela do interruptor.
+ *
+ * O defeito: quem administra a instalação ligava um módulo aqui, ia ao CRM, não
+ * achava nada e concluía que o interruptor não funcionou. Às vezes com razão
+ * (dois módulos não criam porta nenhuma no menu do CRM), às vezes sem — a porta
+ * existia, dentro de Configurações, onde ninguém procurou.
+ *
+ * O caminho é LIDO DO MENU (`ondeOModuloAparece`), nunca escrito aqui: uma
+ * segunda lista de endereços divergiria na primeira tela que mudasse de grupo, e
+ * a tela passaria a mandar o operador para o lugar errado com ar de certeza.
+ */
+function OndeAparece({
+  modulo,
+  ligado,
+  foraDoMenu,
+  painelEm,
+}: {
+  modulo: ModuloPorFlag;
+  ligado: boolean;
+  /** JÁ TRADUZIDO por quem chama — ver o comentário no sítio da chamada. */
+  foraDoMenu?: string;
+  /** `href` da tela que hospeda o painel; o caminho até ela é derivado aqui. */
+  painelEm?: string;
+}) {
+  const t = useT();
+  const portas = ondeOModuloAparece(modulo);
+
+  // Sem porta E sem texto declarado é o único estado que a tela não sabe narrar;
+  // aí ela cala, em vez de inventar um caminho e mandar o operador procurar no
+  // lugar errado. O invariante de `tests/unit/porta-do-modulo-ligado.test.tsx`
+  // reprova esse estado na raiz, para nenhum módulo novo chegar assim.
+  if (portas.length === 0) {
+    if (!foraDoMenu) return null;
+    const painel = painelEm ? caminhoDaPorta(painelEm) : null;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {foraDoMenu}
+        {painel ? (
+          <>
+            {" "}
+            <span className="font-medium text-foreground">
+              {t(painel.grupo)} › {painel.hub ? <>{t(painel.hub)} › </> : null}
+              {t(painel.label)}
+            </span>
+            .
+          </>
+        ) : null}
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-sm text-muted-foreground">
+      {t(ligado ? "Aparece no menu em:" : "Ao ligar, aparece no menu em:")}{" "}
+      {portas.map((porta, i) => (
+        <span key={porta.href}>
+          {i > 0 && ", "}
+          <span className="font-medium text-foreground">
+            {/*
+              O PASSO DO HUB aparece quando a porta não sobe ao menu lateral — e ele é o conserto
+              do relato "liguei e não aparece no CRM": sem ele o texto dizia "CRM › Empresas" e
+              mandava procurar no menu diário, onde a porta não está.
+
+              Cada passo passa por `t()` no SÍTIO, sobre o campo do parâmetro de iteração: é a
+              forma que a catraca do espanhol resolve. Um array de passos com `t(passo)` seria
+              reprovado como "parâmetro livre".
+            */}
+            {t(porta.grupo)} › {porta.hub ? <>{t(porta.hub)} › </> : null}
+            {t(porta.label)}
+          </span>
+        </span>
+      ))}
+    </p>
+  );
+}
 
 export function FormularioDeModulos({
   ligados,
@@ -350,6 +459,17 @@ export function FormularioDeModulos({
                 {t(m.rotulo)}
               </Label>
               <p className="text-sm text-muted-foreground">{t(m.descricao)}</p>
+              <OndeAparece
+                modulo={m.modulo}
+                ligado={estado.has(m.modulo)}
+                /* Traduzido AQUI, e não dentro de `OndeAparece`: a catraca do
+                   espanhol recusa `t()` sobre parâmetro de função (seria dado de
+                   runtime, que não está em dicionário nenhum) e aceita
+                   `t(m.campo)` sobre a linha do módulo — a mesma forma de
+                   `t(m.descricao)`, logo acima. O componente recebe texto pronto. */
+                foraDoMenu={m.foraDoMenu ? t(m.foraDoMenu) : undefined}
+                painelEm={m.painelEm}
+              />
               {m.modulo === "cobranca" && estado.has("cobranca") && suspensasPorCobranca !== 0 && (
                 <p className="text-sm text-warning-fg">
                   {suspensasPorCobranca === null

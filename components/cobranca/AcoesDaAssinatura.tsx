@@ -6,15 +6,17 @@ import { useEffect, useRef, useState } from "react";
 import { FRASE_DO_EXCEDENTE } from "@/components/admin/tenants/CardDeCobranca";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { documentoDoPagador, exigeDocumento } from "@/lib/cobranca/documento";
 import { formatadorDeData } from "@/lib/cobranca/fuso";
 import { linkDePagamentoSeguro } from "@/lib/cobranca/link";
 import { abrirNoNavegador } from "@/lib/cobranca/navegar";
 import type { PlanoParaTroca } from "@/lib/cobranca/painel";
-import type { EstadoDaAssinatura } from "@/lib/cobranca/vocabulario";
+import type { EstadoDaAssinatura, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 
 export interface PropsDasAcoes {
@@ -30,6 +32,10 @@ export interface PropsDasAcoes {
   noHub: boolean;
   /** IANA da empresa; o mesmo dia do painel. Ausente, o padrão. */
   fuso?: string | null;
+  /** Quem cobra: o provedor da assinatura; sem ele, o da instalação (D-8). */
+  provedor: ProvedorDeCobranca | null;
+  /** CNPJ do cadastro, já conferido e sem máscara: pré-preenche o documento que o Asaas exige. */
+  documentoDoCadastro: string | null;
 }
 
 const BASE = "/api/v1/cobranca/assinatura";
@@ -44,6 +50,12 @@ const FRASE_DO_ERRO: Record<string, string> = {
   sem_link_de_pagamento: "Não há cobrança aberta para pagar agora. Atualize o cartão em Gerenciar pagamento: a próxima tentativa sai sozinha.",
   provedor_nao_conectado: "O administrador do sistema ainda não conectou a cobrança.",
   not_found: "Sua empresa não tem plano de cobrança.",
+  documento_invalido: "Confira o CPF ou CNPJ: os dígitos não batem.",
+  documento_obrigatorio: "Informe o CPF ou CNPJ de quem paga.",
+  documento_recusado: "O provedor de pagamento não aceitou este CPF ou CNPJ. Confira o número ou informe outro documento.",
+  pagamento_pendente: "Regularize o pagamento antes de trocar de plano.",
+  pagamento_do_periodo_pendente:
+    'A mensalidade de agora ainda não foi paga. Pague em "Pagar agora" e troque de plano depois que o pagamento for confirmado (Pix: minutos; boleto: até 1 dia útil).',
 };
 const FRASE_GENERICA = "Não foi possível concluir agora. Tente de novo.";
 type Leitura = { estado: EstadoDaAssinatura | null; assinaturas_vivas: number; org_operante: boolean };
@@ -63,6 +75,10 @@ export function AcoesDaAssinatura(p: PropsDasAcoes) {
   const [trocando, setTrocando] = useState(false);
   const [novo, setNovo] = useState(p.planosParaTroca[0]?.id ?? "");
   const [cancelando, setCancelando] = useState(false);
+  const [documento, setDocumento] = useState(p.documentoDoCadastro ?? "");
+  // A fatura do Asaas que o Assinar acabou de gerar: abre numa NOVA aba, por um link
+  // que a pessoa clica (popup aberto depois de um await é bloqueado no Safari).
+  const [fatura, setFatura] = useState<string | null>(null);
   const releu = useRef(false);
   // Falso depois do desmonte: a espera da volta do checkout para, sem setState nem router.
   const montado = useRef(true);
@@ -78,9 +94,18 @@ export function AcoesDaAssinatura(p: PropsDasAcoes) {
   const podeAssinar = p.assinaturasVivas === 0 && p.estado !== "ativa";
   // Em atraso com assinatura viva e sem fatura pagável agora (pausada; incobrável
   // sem página): o único caminho é trocar o cartão no portal — e a tela diz isso.
-  const soPeloPortal = emDivida && p.temProvedor && p.assinaturasVivas > 0 && !link;
+  // O Asaas não tem portal: "gerenciar" seria o link da cobrança, que já é o Pagar agora.
+  const temPortal = p.provedor !== "asaas";
+  const soPeloPortal = temPortal && emDivida && p.temProvedor && p.assinaturasVivas > 0 && !link;
+  // O Asaas só cria o cliente com CPF/CNPJ; quem já é cliente lá (reassinar) não digita de novo.
+  const pedeDocumento = exigeDocumento(p.provedor, p.temProvedor);
+  const documentoNormalizado = documentoDoPagador(documento);
+  const documentoErrado = documento.trim() !== "" && documentoNormalizado === null;
+  // A fatura do Asaas não devolve o cliente ao sistema: quem pagou o Pix volta à aba
+  // que ficou aberta e relê aqui, sem esperar o cron — também no teste grátis.
+  const aguardandoAsaas = p.provedor === "asaas" && (fatura !== null || (p.temProvedor && (p.estado === "trial" || link !== null)));
   // "Já paguei" só onde há o que reler: quem nunca assinou (teste que acabou) não pagou nada.
-  const podeDizerQuePagou = (emDivida && p.temProvedor) || p.noHub;
+  const podeDizerQuePagou = (emDivida && p.temProvedor) || p.noHub || aguardandoAsaas;
   const podeTrocar = p.planosParaTroca.length > 0 && (p.estado === "trial" || p.estado === "ativa") && !p.cancelaNoFim;
   const podeCancelar = p.temProvedor && p.assinaturasVivas > 0 && !p.cancelaNoFim && (p.estado === "ativa" || p.estado === "trial");
 
@@ -163,6 +188,40 @@ export function AcoesDaAssinatura(p: PropsDasAcoes) {
           {t("Não há cobrança aberta para pagar agora. Atualize o cartão em Gerenciar pagamento: a próxima tentativa sai sozinha.")}
         </p>
       )}
+      {podeAssinar && pedeDocumento && (
+        <div className="space-y-1">
+          <Label htmlFor="documento-de-quem-paga">{t("CPF ou CNPJ de quem paga")}</Label>
+          <Input
+            id="documento-de-quem-paga"
+            className="max-w-xs"
+            autoComplete="off"
+            value={documento}
+            onChange={(e) => setDocumento(e.target.value)}
+            aria-invalid={documentoErrado}
+            aria-describedby="documento-de-quem-paga-ajuda"
+          />
+          <p id="documento-de-quem-paga-ajuda" className="text-xs text-muted-foreground">
+            {documentoErrado
+              ? t("Confira o CPF ou CNPJ: os dígitos não batem.")
+              : t("Vai direto para o Asaas, que emite a cobrança neste documento; não fica guardado neste sistema. Confira antes de assinar: para trocar depois, fale com quem administra o sistema.")}
+          </p>
+        </div>
+      )}
+      {fatura && (
+        <div className="space-y-2 rounded-md border p-3 text-sm">
+          <p>{t("Sua fatura está pronta. Pague por Pix, boleto ou cartão.")}</p>
+          <Button asChild>
+            <a href={fatura} target="_blank" rel="noopener noreferrer">
+              {t("Abrir a fatura")}
+            </a>
+          </Button>
+        </div>
+      )}
+      {p.provedor === "asaas" && (fatura !== null || link !== null) && (
+        <p className="text-xs text-muted-foreground">
+          {t("A fatura abre no Asaas, numa nova aba. Depois de pagar, volte aqui e clique em Já paguei: Pix confirma em minutos; boleto, em até 1 dia útil.")}
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         {soPeloPortal && (
           <Button disabled={ocupado} onClick={gerenciar}>
@@ -172,18 +231,26 @@ export function AcoesDaAssinatura(p: PropsDasAcoes) {
         {link && (
           <Button asChild>
             <a href={link} target="_blank" rel="noopener noreferrer">
-              {t("Pagar agora")}
+              {/* Asaas em dia: o link é a cobrança seguinte, gerada até 40 dias antes. "Pagar agora" ao lado de "Em dia" leria como dívida. */}
+              {p.provedor === "asaas" && p.estado === "ativa" ? t("Adiantar a próxima mensalidade") : t("Pagar agora")}
             </a>
           </Button>
         )}
         {podeAssinar && (
           <Button
-            disabled={ocupado}
+            disabled={ocupado || (pedeDocumento && documentoNormalizado === null)}
             variant={link ? "outline" : "default"}
             onClick={() =>
               void agir(async () => {
-                const { data: r } = await apiClient.post<{ data: { url: string } }>(`${BASE}/checkout`, p.noHub ? { volta: "hub" } : {});
-                abrirNoNavegador(r.url);
+                const corpo = {
+                  ...(p.noHub ? { volta: "hub" } : {}),
+                  ...(pedeDocumento && documentoNormalizado !== null ? { documento: documentoNormalizado } : {}),
+                };
+                const { data: r } = await apiClient.post<{ data: { url: string } }>(`${BASE}/checkout`, corpo);
+                if (p.provedor !== "asaas") return abrirNoNavegador(r.url);
+                // O Asaas não devolve o cliente: a fatura vai para uma aba nova e esta fica, com o "Já paguei".
+                setFatura(linkDePagamentoSeguro(r.url));
+                router.refresh();
               })
             }
           >
@@ -203,7 +270,7 @@ export function AcoesDaAssinatura(p: PropsDasAcoes) {
             {t("Já paguei")}
           </Button>
         )}
-        {p.temProvedor && p.assinaturasVivas > 0 && !soPeloPortal && (
+        {temPortal && p.temProvedor && p.assinaturasVivas > 0 && !soPeloPortal && (
           <Button variant="outline" disabled={ocupado} onClick={gerenciar}>
             {t("Gerenciar pagamento")}
           </Button>

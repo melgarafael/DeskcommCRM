@@ -1,0 +1,18 @@
+2026-10-07T16:21:46Z
+UPDATE 1
+UPDATE 0
+fila 0
+bloqueado 1
+--- repeticao 5 min depois
+2026-10-07T16:22:40Z
+UPDATE 0
+UPDATE 0
+fila 0
+bloqueado 1
+(nota: a repeticao acima saiu so ~1 min depois da 1a, por engano do executor; NAO vale como a de 5 min — ver abaixo)
+--- repeticao 5 min depois da 1a (16:21:46Z)
+2026-10-07T16:26:51Z
+UPDATE 0
+UPDATE 0
+fila 0
+bloqueado 1

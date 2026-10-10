@@ -34,14 +34,15 @@ export async function provedorDaInstalacao(): Promise<ProvedorDeCobranca | null>
   return PROVEDORES_DE_COBRANCA.find((p) => p === bruto) ?? null;
 }
 
-/** A chave de API do provedor. O Asaas entra na PR 3b. */
+/**
+ * A chave de API do provedor. Um literal por provedor, de propósito: a cerca
+ * `painel-nao-promete-o-que-nao-cumpre` procura `valorDaInstalacao("<CHAVE>")`.
+ */
 export async function chaveDoProvedor(id: ProvedorDeCobranca): Promise<string | null> {
-  if (id === "stripe") return doBanco(await valorDaInstalacao("STRIPE_SECRET_KEY"));
-  return null;
+  return doBanco(id === "stripe" ? await valorDaInstalacao("STRIPE_SECRET_KEY") : await valorDaInstalacao("ASAAS_API_KEY"));
 }
 
-/** O segredo com que o webhook do provedor é conferido. O Asaas entra na PR 3b. */
+/** O segredo com que o aviso do provedor é conferido: o `whsec_` da Stripe, o token do Asaas. */
 export async function segredoDoWebhook(id: ProvedorDeCobranca): Promise<string | null> {
-  if (id === "stripe") return doBanco(await valorDaInstalacao("STRIPE_WEBHOOK_SECRET"));
-  return null;
+  return doBanco(id === "stripe" ? await valorDaInstalacao("STRIPE_WEBHOOK_SECRET") : await valorDaInstalacao("ASAAS_WEBHOOK_TOKEN"));
 }

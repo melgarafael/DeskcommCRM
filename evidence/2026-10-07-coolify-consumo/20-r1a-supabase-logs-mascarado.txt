@@ -1,0 +1,154 @@
+=== auth
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-10-07T14:30:42Z"}
+{"args":[0.020265902],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-10-07T14:30:42Z"}
+{"level":"fatal","msg":"running db migrations: Migrator: problem creating schema migrations: couldn't start a new transaction: could not create new transaction: failed to connect to `host=db user=supabase_auth_admin database=postgres`: failed SASL auth (FATAL: password authentication failed for user \"supabase_auth_admin\" (SQLSTATE 28P01))","time":"2026-10-07T14:30:42Z"}
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-10-07T14:30:45Z"}
+{"args":[0.022450389],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-10-07T14:30:45Z"}
+{"level":"fatal","msg":"running db migrations: Migrator: problem creating schema migrations: couldn't start a new transaction: could not create new transaction: failed to connect to `host=db user=supabase_auth_admin database=postgres`: failed SASL auth (FATAL: password authentication failed for user \"supabase_auth_admin\" (SQLSTATE 28P01))","time":"2026-10-07T14:30:45Z"}
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-10-07T14:30:52Z"}
+{"args":[0.04164894],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-10-07T14:30:52Z"}
+{"level":"fatal","msg":"running db migrations: Migrator: problem creating schema migrations: couldn't start a new transaction: could not create new transaction: failed to connect to `host=db user=supabase_auth_admin database=postgres`: failed SASL auth (FATAL: password authentication failed for user \"supabase_auth_admin\" (SQLSTATE 28P01))","time":"2026-10-07T14:30:52Z"}
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-10-07T14:31:05Z"}
+{"args":[0.019873799],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-10-07T14:31:05Z"}
+{"level":"fatal","msg":"running db migrations: Migrator: problem creating schema migrations: couldn't start a new transaction: could not create new transaction: failed to connect to `host=db user=supabase_auth_admin database=postgres`: failed SASL auth (FATAL: password authentication failed for user \"supabase_auth_admin\" (SQLSTATE 28P01))","time":"2026-10-07T14:31:05Z"}
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-10-07T14:31:31Z"}
+{"args":[0.02352446],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-10-07T14:31:31Z"}
+{"level":"fatal","msg":"running db migrations: Migrator: problem creating schema migrations: couldn't start a new transaction: could not create new transaction: failed to connect to `host=db user=supabase_auth_admin database=postgres`: failed SASL auth (FATAL: password authentication failed for user \"supabase_auth_admin\" (SQLSTATE 28P01))","time":"2026-10-07T14:31:31Z"}
+=== rest
+postgrest: thread killed
+07/Oct/2026:14:31:05 +0000: Starting PostgREST 14.17...
+07/Oct/2026:14:31:05 +0000: Admin server listening on [::1]:3001
+07/Oct/2026:14:31:05 +0000: API server listening on 0.0.0.0:3000
+07/Oct/2026:14:31:05 +0000: Failed listening for database notifications on the "pgrst" channel. connection to server at "db" (10.0.3.3), port 5432 failed: FATAL:  password authentication failed for user "authenticator"
+07/Oct/2026:14:31:05 +0000: Failed listening for database notifications on the "pgrst" channel. ExitFailure 1
+07/Oct/2026:14:31:05 +0000: Retrying listening for database notifications in 1 seconds...
+07/Oct/2026:14:31:05 +0000: Failed to establish a connection. {"code":"PGRST000","details":"connection to server at \"db\" (10.0.3.3), port 5432 failed: FATAL:  password authentication failed for user \"authenticator\"\n","hint":null,"message":"Database connection error."}
+07/Oct/2026:14:31:05 +0000: Failed to query the PostgreSQL version. {"code":"PGRST000","details":"connection to server at \"db\" (10.0.3.3), port 5432 failed: FATAL:  password authentication failed for user \"authenticator\"\n","hint":null,"message":"Database connection error."}
+postgrest: thread killed
+07/Oct/2026:14:31:31 +0000: Starting PostgREST 14.17...
+07/Oct/2026:14:31:31 +0000: API server listening on 0.0.0.0:3000
+07/Oct/2026:14:31:31 +0000: Admin server listening on [::1]:3001
+07/Oct/2026:14:31:31 +0000: Failed to establish a connection. {"code":"PGRST000","details":"connection to server at \"db\" (10.0.3.3), port 5432 failed: FATAL:  password authentication failed for user \"authenticator\"\n","hint":null,"message":"Database connection error."}
+postgrest: thread killed
+=== realtime
+    config :realtime, Realtime.Repo,
+      migration_source: "some_other_table_for_schema_migrations",
+      migration_repo: AnotherRepoForSchemaMigrations
+
+The full error report is shown below.
+
+** (Postgrex.Error) ERROR 3F000 (invalid_schema_name) no schema has been selected to create in
+    (ecto_sql 3.14.0) lib/ecto/adapters/sql.ex:1121: Ecto.Adapters.SQL.raise_sql_call_error/1
+    (elixir 1.19.5) lib/enum.ex:1688: Enum."-map/2-lists^map/1-1-"/2
+    (ecto_sql 3.14.0) lib/ecto/adapters/sql.ex:1242: Ecto.Adapters.SQL.execute_ddl/4
+    (ecto_sql 3.14.0) lib/ecto/migrator.ex:778: Ecto.Migrator.verbose_schema_migration/3
+    (ecto_sql 3.14.0) lib/ecto/migrator.ex:562: Ecto.Migrator.lock_for_migrations/4
+    (ecto_sql 3.14.0) lib/ecto/migrator.ex:431: Ecto.Migrator.run/4
+    (ecto_sql 3.14.0) lib/ecto/migrator.ex:169: Ecto.Migrator.with_repo/3
+    nofile:1: (file)
+=== storage
+{"level":50,"time":1791383441264,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383442920,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383444940,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383446853,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383449573,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383453489,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383458900,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383467560,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+{"level":50,"time":1791383483009,"pid":1,"hostname":"e9d0d41ce076","region":"stub","appVersion":"1.74.0","type":"startupError","error":{"raw":"{\"length\":118,\"name\":\"error\",\"severity\":\"FATAL\",\"code\":\"28P01\",\"file\":\"auth.c\",\"line\":\"329\",\"routine\":\"auth_failed\"}","name":"error","message":"password authentication failed for user \"supabase_storage_admin\"","stack":"error: password authentication failed for user \"supabase_storage_admin\"\n    at parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:305:11)\n    at Parser.handlePacket (/app/node_modules/pg-protocol/dist/parser.js:143:27)\n    at Parser.parse (/app/node_modules/pg-protocol/dist/parser.js:37:38)\n    at Socket.<anonymous> (/app/node_modules/pg-protocol/dist/index.js:12:42)\n    at Socket.emit (node:events:514:28)\n    at addChunk (node:internal/streams/readable:567:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:518:3)\n    at Readable.push (node:internal/streams/readable:398:5)\n    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)","statusCode":0,"errorCode":"UnknownError"},"msg":"Server not started with error"}
+=== db
+10.0.3.9 2026-10-07 14:31:31.808 UTC [253] authenticator@postgres FATAL:  password authentication failed for user "authenticator"
+10.0.3.9 2026-10-07 14:31:31.808 UTC [253] authenticator@postgres DETAIL:  User "authenticator" has no password assigned.
+	Connection matched file "/etc/postgresql/pg_hba.conf" line 91: "host  all  all  10.0.0.0/8  scram-sha-256"
+10.0.3.9 2026-10-07 14:31:31.810 UTC [252] authenticator@postgres FATAL:  password authentication failed for user "authenticator"
+10.0.3.9 2026-10-07 14:31:31.810 UTC [252] authenticator@postgres DETAIL:  User "authenticator" has no password assigned.
+	Connection matched file "/etc/postgresql/pg_hba.conf" line 91: "host  all  all  10.0.0.0/8  scram-sha-256"
+10.0.3.7 2026-10-07 14:31:34.419 UTC [263] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:34.421 UTC [264] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:35.498 UTC [265] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:35.689 UTC [266] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:37.823 UTC [277] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:38.732 UTC [278] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:41.581 UTC [279] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:45.023 UTC [288] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+10.0.3.7 2026-10-07 14:31:45.023 UTC [287] supabase_admin@_supabase FATAL:  database "_supabase" does not exist
+The files belonging to this database system will be owned by user "postgres".
+This user must also own the server process.
+
+Using language tag "en-US" for ICU locale "en_US.UTF-8".
+The database cluster will be initialized with this locale configuration:
+  locale provider:   icu
+  default collation: en-US
+  LC_COLLATE:  en_US.UTF-8
+  LC_CTYPE:    en_US.UTF-8
+  LC_MESSAGES: en_US.UTF-8
+  LC_MONETARY: en_US.UTF-8
+  LC_NUMERIC:  en_US.UTF-8
+  LC_TIME:     en_US.UTF-8
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+fixing permissions on existing directory /var/lib/postgresql/data ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default "max_connections" ... 100
+selecting default "shared_buffers" ... 128MB
+selecting default time zone ... UTC
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+initdb: warning: enabling "trust" authentication for local connections
+initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+syncing data to disk ... ok
+
+
+Success. You can now start the database server using:
+
+    /nix/var/nix/profiles/default/bin/pg_ctl -D /var/lib/postgresql/data -l logfile start
+
+waiting for server to start.... done
+server started
+
+/usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/init-scripts
+
+/usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/migrate.sh
+DO
+/docker-entrypoint-initdb.d/migrate.sh: running /docker-entrypoint-initdb.d/init-scripts/00-schema.sql
+CREATE ROLE
+REVOKE
+CREATE SCHEMA
+CREATE FUNCTION
+REVOKE
+GRANT
+/docker-entrypoint-initdb.d/migrate.sh: running /docker-entrypoint-initdb.d/init-scripts/00000000000000-initial-schema.sql
+CREATE PUBLICATION
+ALTER ROLE
+CREATE ROLE
+CREATE ROLE
+GRANT ROLE
+GRANT
+CREATE ROLE
+GRANT ROLE
+CREATE SCHEMA
+CREATE EXTENSION
+CREATE EXTENSION
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+GRANT ROLE
+GRANT ROLE
+GRANT ROLE
+GRANT ROLE
+GRANT
+ALTER DEFAULT PRIVILEGES
+ALTER DEFAULT PRIVILEGES
+ALTER DEFAULT PRIVILEGES
+GRANT
+ALTER ROLE
+ALTER DEFAULT PRIVILEGES
+ALTER DEFAULT PRIVILEGES
+ALTER DEFAULT PRIVILEGES
+ALTER ROLE
+ALTER ROLE

@@ -78,6 +78,14 @@ export const ROTULO_DO_PAPEL: Record<Role, string> = {
 };
 
 /**
+ * Para papel vindo da API como `string` (listas de membros e convites). Papel
+ * desconhecido devolve o próprio código: nunca some da tela.
+ */
+export function rotuloDoPapel(papel: string): string {
+  return (ROTULO_DO_PAPEL as Record<string, string>)[papel] ?? papel;
+}
+
+/**
  * Escopo de visualização de conversas por atendente (G4-01, spec 13 §3.5).
  * Só restringe o role `agent`; viewer/manager/admin seguem org-wide.
  */

@@ -49,7 +49,7 @@ export interface PassoDoChecklist {
   href: string | null;
 }
 
-const CHAVE_DO_PROVEDOR: Record<ProvedorDeCobranca, string | null> = { stripe: "STRIPE_SECRET_KEY", asaas: null };
+const CHAVE_DO_PROVEDOR: Record<ProvedorDeCobranca, string> = { stripe: "STRIPE_SECRET_KEY", asaas: "ASAAS_API_KEY" };
 
 export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisaoGeral> {
   const provedor = await provedorDaInstalacao();
@@ -70,7 +70,7 @@ export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisao
           .limit(1)
           .maybeSingle(),
     admin.rpc("fn_cobranca_reconciliaveis"),
-    admin.from("cobranca_assinaturas").select("estado, ultimo_erro, assinaturas_vivas").not("provedor", "is", null),
+    admin.from("cobranca_assinaturas").select("estado, ultimo_erro, assinaturas_vivas, provedor").not("provedor", "is", null),
     admin
       .from("webhook_events_log")
       .select("id", { count: "exact", head: true })
@@ -93,7 +93,7 @@ export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisao
     .map((l) => l.relida_em)
     .filter((v): v is string => v !== null)
     .sort();
-  const assinaturas = (linhas.data ?? []) as Array<{ estado: string; ultimo_erro: string | null; assinaturas_vivas: number }>;
+  const assinaturas = (linhas.data ?? []) as Array<{ estado: string; ultimo_erro: string | null; assinaturas_vivas: number; provedor?: string | null }>;
   return {
     provedor,
     modo,
@@ -103,7 +103,11 @@ export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisao
     ultimaLeituraEm: relidas.at(-1) ?? null,
     // Checkout concluído em teste grátis também conta: a Stripe só cobra quando o
     // teste acaba (14 dias por padrão), e o passo não pode ficar desmarcado até lá.
-    compraConcluida: assinaturas.some((a) => a.estado === "ativa" || (a.estado === "trial" && a.assinaturas_vivas > 0)),
+    // No Asaas, NÃO: o Assinar cria a assinatura ACTIVE sem pagamento nenhum, e o
+    // clique de quem fechou a fatura sem pagar passaria por compra.
+    compraConcluida: assinaturas.some(
+      (a) => a.estado === "ativa" || (a.estado === "trial" && a.assinaturas_vivas > 0 && a.provedor !== "asaas"),
+    ),
     emailPronto,
     planoDoCadastro: planoDoCadastro.data !== null,
     problemas: {
@@ -117,6 +121,7 @@ export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisao
 }
 
 export function montarChecklist(d: DadosDaVisaoGeral): PassoDoChecklist[] {
+  const asaas = d.provedor === "asaas";
   return [
     {
       id: "chave",
@@ -138,10 +143,16 @@ export function montarChecklist(d: DadosDaVisaoGeral): PassoDoChecklist[] {
     },
     {
       id: "aviso",
-      feito: d.ultimoAvisoEm !== null || d.compraConcluida,
+      // Prova, não promessa: só o primeiro aviso VÁLIDO marca o passo. Na Stripe, a
+      // compra concluída também (sobrevive à poda de 90 dias do arquivo de avisos);
+      // no Asaas, não: a releitura do cron ativa sem aviso nenhum, e um aviso
+      // cadastrado à mão com o token errado passaria por pronto.
+      feito: d.ultimoAvisoEm !== null || (!asaas && d.compraConcluida),
       titulo: "Receba o primeiro aviso de pagamento",
-      comoFazer: "Ele chega sozinho quando alguém paga. Faça a compra de teste do passo seguinte.",
-      href: null,
+      comoFazer: asaas
+        ? "Ele chega sozinho quando alguém assina ou paga. Se, ao conectar, o sistema pediu para cadastrar o aviso à mão no Asaas, confira lá a URL e o token (perdeu o token? Conecte de novo para gerar outro). A compra de teste do passo seguinte dispara o primeiro aviso."
+        : "Ele chega sozinho quando alguém paga. Faça a compra de teste do passo seguinte.",
+      href: asaas ? "/admin/cobranca?aba=conexao" : null,
     },
     {
       id: "compra",
@@ -150,7 +161,9 @@ export function montarChecklist(d: DadosDaVisaoGeral): PassoDoChecklist[] {
       comoFazer:
         d.modo === "producao"
           ? "Em produção, faça uma compra real de valor baixo com uma empresa sua e cancele depois — ou pule este passo."
-          : "Crie uma empresa de teste com outro e-mail seu (ex.: voce+teste@seudominio.com), abra o convite numa janela anônima, clique em Assinar em Plano e cobrança e pague com o cartão 4242 4242 4242 4242 (qualquer validade futura e qualquer CVC).",
+          : asaas
+            ? "Crie uma empresa de teste com outro e-mail seu (ex.: voce+teste@example.com), abra o convite numa janela anônima, clique em Assinar em Plano e cobrança informando um CPF válido e, no painel do sandbox do Asaas, confirme o recebimento da cobrança."
+            : "Crie uma empresa de teste com outro e-mail seu (ex.: voce+teste@seudominio.com), abra o convite numa janela anônima, clique em Assinar em Plano e cobrança e pague com o cartão 4242 4242 4242 4242 (qualquer validade futura e qualquer CVC).",
       href: "/admin/tenants/new",
     },
     {
@@ -164,8 +177,9 @@ export function montarChecklist(d: DadosDaVisaoGeral): PassoDoChecklist[] {
       id: "publicar",
       feito: d.modo === "producao",
       titulo: "Troque para a chave de produção",
-      comoFazer:
-        "Quando a compra de teste der certo, cole em Conexão a chave de produção (sk_live_ ou rk_live_). Até lá, clientes reais NÃO conseguem pagar.",
+      comoFazer: asaas
+        ? "Quando a compra de teste der certo, cole em Conexão a chave de produção do Asaas (começa com $aact_prod_). Até lá, clientes reais NÃO conseguem pagar."
+        : "Quando a compra de teste der certo, cole em Conexão a chave de produção (sk_live_ ou rk_live_). Até lá, clientes reais NÃO conseguem pagar.",
       href: "/admin/cobranca?aba=conexao",
     },
   ];

@@ -1,0 +1,15 @@
+amostras=1 linhas=24 host=1
+2026-10-07T18:17:57Z	used=1977	available=5409	swap_used=1736	swap_total=4095
+== 2026-10-07T18:17:57Z
+               total        used        free      shared  buff/cache   available
+Mem:            7940        1977        2950         249        3012        5409
+== antes de começar (fora do flock)
+2026-10-07T18:17:59Z
+sem-lock(conferencia) 2026-10-07T18:17:59Z
+gate-dentro 2026-10-07T18:17:59Z terceiros=1 available=5392 lock=ocupado alheio=0
+               total        used        free      shared  buff/cache   available
+Mem:            7940        1993        2934         249        3012        5393
+Swap:           4095        1736        2359
+NAME      TYPE SIZE USED PRIO
+/swapfile file   4G 1.7G   -2
+ram-para-swapoff OK available=5393 swap_used=1736 limite=2760

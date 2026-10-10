@@ -1,0 +1,6 @@
+https 307 -> https://<ip-da-vps>.sslip.io/app
+http 301 -> https://<ip-da-vps>.sslip.io/
+HTTP/2 307 
+307
+cadeia: 2 redirecionamentos, final 200 https://<ip-da-vps>.sslip.io/login?next=%2Fapp
+/app 307 -> https://<ip-da-vps>.sslip.io/login?next=%2Fapp
