@@ -5555,5 +5555,11 @@
   "Configure a assinatura da fonte antes de autorizar IA. Para remover a assinatura, desligue primeiro a autorização de IA.": "授权 AI 前请先配置来源签名。移除签名前，请先关闭 AI 授权。",
   "Atendimento por IA autorizado pelo consentimento explícito deste formulário.": "已根据此表单中的明确同意授权 AI 接待。",
   "Este envio não concedeu nova autorização de IA. Confira o consentimento e o estado do contato antes de configurar o atendimento.": "此次提交未授予新的 AI 授权。配置接待前，请先核对同意情况和联系人状态。",
-  "Uma resposta numérica não estava no formato aceito pelo formulário. Confira se o campo contém apenas números e use o formato BRL na pergunta de moeda.": "数字答案格式不符合表单要求。请确认字段仅包含数字，货币问题请使用巴西雷亚尔格式。"
+  "Uma resposta numérica não estava no formato aceito pelo formulário. Confira se o campo contém apenas números e use o formato BRL na pergunta de moeda.": "数字答案格式不符合表单要求。请确认字段仅包含数字，货币问题请使用巴西雷亚尔格式。",
+  "Buscar etiqueta": "搜索标签",
+  "Nenhuma etiqueta com esse texto": "没有与此文字匹配的标签",
+  "Destino da etiqueta": "标签目标",
+  "Card (comportamento atual)": "卡片（当前行为）",
+  "Contato do lead": "销售线索的联系人",
+  "Sem contato vinculado, a etiqueta não é aplicada.": "没有关联联系人时不会应用该标签。"
 }

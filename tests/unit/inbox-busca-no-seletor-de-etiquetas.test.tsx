@@ -34,8 +34,14 @@ import type { ChannelSession } from "@/hooks/channels/useChannelSessions";
 import type { ActiveOrg } from "@/lib/auth/types";
 
 const h = vi.hoisted(() => ({
-  /** As chaves de query que a tela pediu — uma por render, para comparar. */
-  contagens: vi.fn(() => ({ data: { fila: 3, mine: 2, all: 5 } })),
+  /**
+   * As chaves de query que a tela pediu — uma por render, para comparar.
+   * Tipada com os DOIS argumentos reais (`orgId`, filtros): é o segundo que é
+   * a chave da query, e `(...args: unknown[])` esconderia esse índice.
+   */
+  contagens: vi.fn((_orgId: string | null, _filtros: Record<string, unknown>) => ({
+    data: { fila: 3, mine: 2, all: 5 },
+  })),
 }));
 
 const activeOrgRef: { current: ActiveOrg | null } = { current: null };
