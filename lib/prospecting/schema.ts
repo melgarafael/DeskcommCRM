@@ -12,6 +12,15 @@ import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 const LIMITE_DIARIO = z.number().int().min(1).max(50);
 const INTERVALO_MINUTOS = z.number().int().min(5).max(1440);
 
+/** O que a campanha vende, em prioridade. Default = comportamento atual. */
+export const OFERTAS_DA_CAMPANHA = ["site", "automacao_crm", "automacao_n8n"] as const;
+export const ofertasDaCampanhaSchema = z
+  .array(z.enum(OFERTAS_DA_CAMPANHA))
+  .min(1)
+  .max(3)
+  .default(["site"]);
+export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
+
 export const campaignConfigSchema = z
   .object({
     agent_id: z.string().uuid(),
@@ -21,6 +30,7 @@ export const campaignConfigSchema = z
     qualified_stage_id: z.string().uuid(),
     instruction: z.string().trim().min(10).max(2000),
     qualification: z.string().trim().min(10).max(2000),
+    ofertas: ofertasDaCampanhaSchema,
     daily_limit: LIMITE_DIARIO.default(10),
     interval_minutes: INTERVALO_MINUTOS.default(15),
     legal_basis_ref: z.string().trim().min(3).max(500),
@@ -83,6 +93,24 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("discard_unselected"), id: z.string().uuid() }).strict(),
+  // Reanálise manual da auditoria (spec 24): reescreve `data.site` na hora.
+  // Fechada a token (fora de ACOES_ABERTAS_AO_TOKEN): exige sessão.
+  z
+    .object({
+      action: z.literal("reanalisar_site"),
+      id: z.string().uuid(),
+      candidate_ids: z.array(z.string().uuid()).min(1).max(50),
+    })
+    .strict(),
+  // Prévia da abordagem (spec 24): gera a copy SEM enviar. Somente leitura —
+  // não audita (sem mutação); o custo aparece em `llm_calls`. Fora da allowlist.
+  z
+    .object({
+      action: z.literal("prever_abordagem"),
+      id: z.string().uuid(),
+      candidate_id: z.string().uuid(),
+    })
+    .strict(),
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;

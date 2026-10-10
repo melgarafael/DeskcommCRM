@@ -18,15 +18,14 @@
  * com DNS sob controle; reavaliar se o threat-model pedir.
  */
 import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 
 import {
   derivarClasse,
   detectarConstrutor,
-  enderecoInterno,
   hostDeSite,
   MINIMO_CHARS_PAGINA_REAL,
   montarChecklist,
-  recusarSSRF,
   type ErroDeRede,
   type SiteEnrichment,
 } from "@/lib/prospecting/site-classify";
@@ -38,6 +37,83 @@ const LIMITE_LENTO_MS = 5000;
 const MAX_CHARS_RESUMO = 1200;
 const UA_NAVEGADOR =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+function ipv4Privado(partes: number[]): boolean {
+  const a = partes[0] ?? -1;
+  const b = partes[1] ?? -1;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 0) return true;
+  return false;
+}
+
+function ipv6Interno(normalizado: string): boolean {
+  const h = normalizado.toLowerCase();
+  if (h === "::1") return true;
+  if (h.startsWith("fc") || h.startsWith("fd")) return true;
+  if (h.startsWith("fe80:")) return true;
+  if (h === "::" || h.startsWith("::ffff:")) return true;
+  return false;
+}
+
+/**
+ * True para endereço que nunca pode ser alvo de fetch (privado, loopback,
+ * link-local, reservado). Vale para literal do URL e para IP resolvido no DNS
+ * (inclui mapeado IPv4 `::ffff:10.0.0.1`). Nomes passam — a recusa deles é no
+ * DNS, nunca aqui.
+ */
+export function enderecoInterno(ip: string): boolean {
+  const normalizado = ip.toLowerCase().replace(/^\[(.*)\]$/, "$1");
+  const mapeado = normalizado.startsWith("::ffff:") ? normalizado.slice("::ffff:".length) : null;
+  const alvo = mapeado ?? normalizado;
+  const versao = isIP(alvo);
+  if (versao === 4) {
+    const partes = alvo.split(".").map(Number);
+    if (partes.length !== 4 || !partes.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) return false;
+    if (ipv4Privado(partes)) return true;
+    if (mapeado !== null) return false;
+    return false;
+  }
+  if (versao === 6) {
+    return ipv6Interno(normalizado);
+  }
+  return false;
+}
+
+/**
+ * Guarda SSRF — parte pura (sem DNS). O fetch resolve o host e aplica a MESMA
+ * recusa a nomes antes de conectar; aqui caem os literais. Retorna o motivo ou
+ * null (liberado para a próxima etapa, nunca "seguro").
+ */
+export function recusarSSRF(url: string | null | undefined): string | null {
+  if (!url || url.trim() === "") return "url-invalida";
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return "url-invalida";
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "protocolo-bloqueado";
+  if (parsed.username !== "" || parsed.password !== "") return "credencial-na-url";
+  const host = parsed.hostname.replace(/^\[(.*)\]$/, "$1");
+  if (host.toLowerCase() === "localhost") return "rede-interna";
+  const versao = isIP(host);
+  if (versao === 4) {
+    const partes = host.split(".").map(Number);
+    if (partes.length === 4 && partes.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+      if (ipv4Privado(partes)) return "rede-interna";
+    }
+    return null;
+  }
+  if (versao === 6) {
+    if (ipv6Interno(host)) return "rede-interna";
+    return null;
+  }
+  return null;
+}
 
 function ehFalhaDeDns(erro: unknown): boolean {
   const texto = String((erro as { cause?: unknown })?.cause ?? erro).toLowerCase();

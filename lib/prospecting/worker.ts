@@ -22,6 +22,7 @@ import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consu
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { assertProspectingDelivery } from "./guard";
+import { instrucaoDeAbordagemFria, montarDadosDeAbordagem } from "./estrategia-site";
 import { enriquecerSitesPendentes } from "./site-enrich";
 import { campaignConfigSchema } from "./schema";
 import { ProspectingError } from "./provider";
@@ -224,19 +225,13 @@ export async function sendNextCandidate(
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: `${cfg.instruction}\nFaça uma primeira abordagem curta e transparente. Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. Critérios a confirmar durante a conversa: ${cfg.qualification}`,
+      instrucao: instrucaoDeAbordagemFria(cfg.instruction, cfg.qualification),
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
       origemDaAbordagem: "prospeccao_fria",
-      dados: {
-        Empresa: p.data.name,
-        Segmento: p.data.category ?? "",
-        Endereço: p.data.address ?? "",
-        Site: p.data.website ?? "",
-        Avaliação: String(p.data.rating ?? ""),
-        Redes: p.data.socials.join(", "),
-      },
+      // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
+      dados: montarDadosDeAbordagem(p.data, p.data.site ?? null),
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.

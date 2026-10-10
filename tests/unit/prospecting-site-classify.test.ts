@@ -8,7 +8,6 @@ import {
   hostDeSite,
   MINIMO_CHARS_PAGINA_REAL,
   montarChecklist,
-  recusarSSRF,
 } from "@/lib/prospecting/site-classify";
 
 describe("site-classify", () => {
@@ -71,19 +70,6 @@ describe("site-classify", () => {
     expect(derivarClasse({ ...base, urlFinal: "http://x.com/" })).toBe("site-ruim");
     expect(derivarClasse({ ...base, problemas: ["nao-mobile"] })).toBe("site-ruim");
     expect(derivarClasse(base)).toBe("site-ok");
-  });
-
-  it("barra SSRF literal sem rede", () => {
-    expect(recusarSSRF("http://127.0.0.1/")).toBe("rede-interna");
-    expect(recusarSSRF("http://10.0.0.5/")).toBe("rede-interna");
-    expect(recusarSSRF("http://192.168.1.1/")).toBe("rede-interna");
-    expect(recusarSSRF("http://169.254.169.254/")).toBe("rede-interna");
-    expect(recusarSSRF("http://localhost/")).toBe("rede-interna");
-    expect(recusarSSRF("http://[::1]/")).toBe("rede-interna");
-    expect(recusarSSRF("file:///etc/passwd")).toBe("protocolo-bloqueado");
-    expect(recusarSSRF("https://user:pass@x.com/")).toBe("credencial-na-url");
-    expect(recusarSSRF("https://clinica.com.br")).toBeNull();
-    expect(recusarSSRF("not a url")).toBe("url-invalida");
   });
 
   it("descreve problema em linguagem leiga", () => {

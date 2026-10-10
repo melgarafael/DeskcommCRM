@@ -49,6 +49,7 @@ const config = {
   daily_limit: 10,
   interval_minutes: 15,
   legal_basis_ref: "legítimo interesse",
+  ofertas: ["site" as const],
   // O caminho de sempre: contato, negócio e conversa nascem ao iniciar (#2105).
   funnel_entry: "on_start" as const,
 };

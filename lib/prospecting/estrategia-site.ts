@@ -9,16 +9,13 @@
  */
 import type { ClasseDeSite, ItemDoRaioX, RaioXDoSite } from "@/lib/prospecting/site-classify";
 import { descreverProblema } from "@/lib/prospecting/site-classify";
-
-/** Ofertas que uma campanha pode vender, em ordem de prioridade. Default `["site"]`. */
-export const OFERTAS_DA_CAMPANHA = ["site", "automacao_crm", "automacao_n8n"] as const;
-export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
+import type { OfertaDaCampanha } from "./schema";
+export type { OfertaDaCampanha } from "./schema";
 
 export interface ObjecaoComResposta {
   objecao: string;
   resposta: string;
 }
-
 export interface EstrategiaDoLead {
   cenario: string;
   angulo: string;
@@ -271,9 +268,10 @@ export function pontuarCandidato(
   ofertaPrimaria: OfertaDaCampanha = "site",
 ): Pontuacao {
   const pontosNota = Math.max(0, Math.min((nota ?? 0) - 4.0, 1.0)) * 40;
-  const faixa = PESO_AVALIACOES[ofertaPrimaria];
+  const faixa = PESO_AVALIACOES[ofertaPrimaria] ?? PESO_AVALIACOES.site;
   const pontosAvaliacoes = Math.min(numAvaliacoes ?? 0, faixa.teto) * faixa.porAvaliacao;
-  const pontosSite = PESOS_DO_SITE[ofertaPrimaria][classe] ?? 0;
+  const pesosSite = PESOS_DO_SITE[ofertaPrimaria] ?? PESOS_DO_SITE.site;
+  const pontosSite = pesosSite[classe] ?? 0;
   const valor = Math.round(pontosNota + pontosAvaliacoes + pontosSite);
   const parcelas: Array<[number, string]> = [
     [pontosNota, "nota alta"],
@@ -284,4 +282,94 @@ export function pontuarCandidato(
   const motivo =
     parcelas[0]![0] > 0 ? `${parcelas[0]![1]}${parcelas[1]![0] > 0 ? ` + ${parcelas[1]![1]}` : ""}` : "sem sinais positivos";
   return { valor, motivo };
+}
+
+/**
+ * Rótulos PT-BR por classe — `Record` fechado (padrão `SCORE_BAND_LABELS`):
+ * classe nova sem rótulo não compila. A tela aplica `t()` em cima.
+ */
+export const ROTULOS_DA_CLASSE = {
+  agregador: "Só rede social",
+  "sem-site": "Sem site próprio",
+  "site-ok": "Site em ordem",
+  "site-ruim": "Site com problemas",
+  "ssl-invalido": "Site inseguro",
+  "fora-do-ar": "Site fora do ar",
+} as const satisfies Record<ClasseDeSite, string>;
+
+export function rotuloDaClasse(classe: ClasseDeSite, t: (texto: string) => string = (texto) => texto): string {
+  return t(ROTULOS_DA_CLASSE[classe]);
+}
+
+/** Rótulos PT-BR dos itens do raio-X para a tela (a UI aplica `t()`). */
+export const ROTULOS_DO_CHECKLIST = {
+  whatsapp: "WhatsApp",
+  tel: "Telefone",
+  mailto: "E-mail",
+  social: "Redes sociais",
+  mapa: "Endereço e mapa",
+  fotos: "Fotos",
+  titulo: "Título",
+  description: "Descrição no Google",
+  favicon: "Ícone da aba",
+} as const satisfies Record<ItemDoRaioX, string>;
+
+export function rotuloDoItem(item: ItemDoRaioX, t: (texto: string) => string = (texto) => texto): string {
+  return t(ROTULOS_DO_CHECKLIST[item]);
+}
+
+export interface DadosDeAbordagem {
+  dados: Record<string, string>;
+}
+
+/**
+ * A instrução da abordagem fria: a do operador + a moldura que proíbe
+ * inventar preenchimento. Fonte única — worker e prévia usam a mesma, ou o
+ * par (tela × ferramenta) deixa de concordar.
+ */
+export function instrucaoDeAbordagemFria(instruction: string, qualification: string): string {
+  return (
+    `${instruction}\nFaça uma primeira abordagem curta e transparente. ` +
+    `Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. ` +
+    `Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. ` +
+    `Critérios a confirmar durante a conversa: ${qualification}`
+  );
+}
+
+/**
+ * Linha a linha para `gerarAbordagemDeFormulario`: os 6 campos que o envio já
+ * usava (mesmos valores, mesma ordem) + `Auditoria` e `Detalhe` quando há
+ * veredito. Fonte única — worker e prévia bebem daqui.
+ */
+export function montarDadosDeAbordagem(
+  data: {
+    name: string;
+    category: string | null;
+    address: string | null;
+    website: string | null;
+    rating: number | null;
+    socials: string[];
+  },
+  site: {
+    classe: ClasseDeSite;
+    problemas: string[];
+    conteudo_resumo: string | null;
+  } | null,
+): Record<string, string> {
+  const dados: Record<string, string> = {
+    Empresa: data.name,
+    Segmento: data.category ?? "",
+    Endereço: data.address ?? "",
+    Site: data.website ?? "",
+    Avaliação: String(data.rating ?? ""),
+    Redes: data.socials.join(", "),
+  };
+  if (site) {
+    const problemas = site.problemas.map(descreverProblema).filter(Boolean);
+    dados["Auditoria"] =
+      `${ROTULOS_DA_CLASSE[site.classe]}` +
+      (problemas.length > 0 ? ` — ${problemas.slice(0, 3).join("; ")}` : "");
+    if (site.conteudo_resumo) dados["Detalhe"] = site.conteudo_resumo;
+  }
+  return dados;
 }

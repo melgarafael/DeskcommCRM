@@ -9,7 +9,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { capabilitiesOf } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
 import { ProspectingError } from "@/lib/prospecting/provider";
-import { prospectingInputSchema } from "@/lib/prospecting/schema";
+import { campaignConfigSchema, prospectingInputSchema, type Prospect } from "@/lib/prospecting/schema";
+import { auditarSite } from "@/lib/prospecting/site-fetch";
+import {
+  instrucaoDeAbordagemFria,
+  montarDadosDeAbordagem,
+  montarEstrategia,
+  pontuarCandidato,
+  type OfertaDaCampanha,
+} from "@/lib/prospecting/estrategia-site";
+import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
+import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
+import { env } from "@/lib/env";
 import {
   activateCampaign,
   adjustPace,
@@ -26,6 +37,21 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 const headers = { "Cache-Control": "no-store" };
 const ACOES_ABERTAS_AO_TOKEN = new Set<string>(["configure", "search", "pause"]);
+/**
+ * Espelho SQL de `pontuarCandidato` (oferta `site` + automação via
+ * `c.config->'ofertas'->>0`). Ordenação com paginação; o TS exibe badge+motivo.
+ */
+const ORDENACAO_POR_SCORE = `(least(greatest(coalesce((p.data->>'rating')::float, 0) - 4.0, 0), 1) * 40
+  + least(coalesce((p.data->>'reviews')::int, 0), case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 150 else 100 end)
+    * case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 0.4 else 0.3 end
+  + case coalesce(p.data->'site'->>'classe', '')
+      when 'sem-site' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
+      when 'agregador' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
+      when 'site-ruim' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 14 else 22 end
+      when 'fora-do-ar' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 16 else 25 end
+      when 'ssl-invalido' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 16 else 25 end
+      when 'site-ok' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 14 else 10 end
+      else 0 end) desc, p.created_at desc`;
 function failure(error: unknown, requestId: string) {
   return fail(
     "prospecting_unavailable",
@@ -45,9 +71,17 @@ export async function GET(req: NextRequest) {
     scope: "mcp:read",
   });
   if (!auth.ok) return auth.response;
+  const ordenar = req.nextUrl.searchParams.get("ordenar");
+  if (ordenar !== null && ordenar !== "score")
+    return fail("validation_failed", "Ordenação inválida: use 'score' ou omita.", 422, {
+      requestId,
+      headers,
+    });
   try {
     const db = getRequestPool();
     const org = auth.organizationId;
+    const ordemCandidatos =
+      ordenar === "score" ? ORDENACAO_POR_SCORE : "p.created_at desc";
     const [settings, campaigns, candidates, agents, channels, stages] = await Promise.all([
       db.query("select organization_id from prospecting_settings where organization_id=$1", [org]),
       db.query(
@@ -55,7 +89,7 @@ export async function GET(req: NextRequest) {
         [org],
       ),
       db.query(
-        "select p.id,p.campaign_id,p.data,p.status,p.selected,p.error,p.lead_id,p.conversation_id,p.attempted_at,m.status as message_status,case when l.stage_id::text=c.config->>'qualified_stage_id' then 'qualified' when v.last_inbound_at is not null then 'replied' else p.status end as progress from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id left join crm_leads l on l.organization_id=p.organization_id and l.id=p.lead_id left join conversations v on v.organization_id=p.organization_id and v.id=p.conversation_id left join messages m on m.organization_id=p.organization_id and m.id=p.message_id where p.organization_id=$1 order by p.created_at desc limit 5000",
+        `select p.id,p.campaign_id,p.data,p.status,p.selected,p.error,p.lead_id,p.conversation_id,p.attempted_at,m.status as message_status,case when l.stage_id::text=c.config->>'qualified_stage_id' then 'qualified' when v.last_inbound_at is not null then 'replied' else p.status end as progress from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id left join crm_leads l on l.organization_id=p.organization_id and l.id=p.lead_id left join conversations v on v.organization_id=p.organization_id and v.id=p.conversation_id left join messages m on m.organization_id=p.organization_id and m.id=p.message_id where p.organization_id=$1 order by ${ordemCandidatos} limit 5000`,
         [org],
       ),
       db.query(
@@ -187,6 +221,97 @@ export async function POST(req: NextRequest) {
       // O histórico precisa dizer QUANTAS linhas saíram: apagar é o único gesto desta rota
       // que não tem volta, e "alguém excluiu" sem número não deixa conferir nada depois.
       auditMetadata = { operation: body.action, discarded: descarte.discarded };
+    } else if (body.action === "reanalisar_site") {
+      const reanalise = await withProspectingLock(pool, org, async (db) => {
+        const alvos = (
+          await db.query<{ id: string; website: string | null }>(
+            "select id, data->>'website' as website from prospecting_candidates where organization_id=$1 and campaign_id=$2 and id=any($3::uuid[])",
+            [org, body.id, body.candidate_ids],
+          )
+        ).rows;
+        const agoraIso = new Date().toISOString();
+        const classes: Record<string, number> = {};
+        let reenriquecidos = 0;
+        for (const alvo of alvos) {
+          if (!alvo.website || alvo.website.trim() === "") continue;
+          try {
+            const veredito = await auditarSite(alvo.website, agoraIso);
+            const atualizado = await db.query(
+              "update prospecting_candidates set data = data || jsonb_build_object('site', $4::jsonb), updated_at = now() where organization_id=$1 and campaign_id=$2 and id=$3",
+              [org, body.id, alvo.id, JSON.stringify(veredito)],
+            );
+            if ((atualizado.rowCount ?? 0) > 0) {
+              reenriquecidos++;
+              classes[veredito.classe] = (classes[veredito.classe] ?? 0) + 1;
+            }
+          } catch {
+            continue;
+          }
+        }
+        return { reenriquecidos, classes };
+      });
+      result = reanalise;
+      auditMetadata = {
+        operation: body.action,
+        reenriquecidos: reanalise.reenriquecidos,
+        classes: reanalise.classes,
+      };
+    } else if (body.action === "prever_abordagem") {
+      // Somente leitura: gera a copy sem enviar e sem auditar (sem mutação).
+      const linhas = await pool.query(
+        "select pc.id, pc.data, pc.status, pc.contact_id, pc.campaign_id, c.config, c.search from prospecting_candidates pc join prospecting_campaigns c on c.organization_id=pc.organization_id and c.id=pc.campaign_id where pc.organization_id=$1 and pc.campaign_id=$2 and pc.id=$3",
+        [org, body.id, body.candidate_id],
+      );
+      const linha = linhas.rows[0] as
+        | {
+            id: string;
+            data: Prospect;
+            status: string;
+            contact_id: string | null;
+            config: unknown;
+            search: { niche?: string };
+          }
+        | undefined;
+      if (!linha) throw new ProspectingError("Candidato não encontrado.", 404);
+      if (!linha.data.site)
+        throw new ProspectingError(
+          "Auditoria pendente para este candidato. Aguarde o tick ou use Reanalisar site.",
+          409,
+        );
+      if (!linha.config)
+        throw new ProspectingError("Configure o agente da campanha para pré-visualizar.", 422);
+      const cfg = campaignConfigSchema.parse(linha.config);
+      if (!cfg.agent_id)
+        throw new ProspectingError("Configure o agente da campanha para pré-visualizar.", 422);
+      const ofertas = (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[];
+      const gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
+        tenantId: org,
+        agentId: cfg.agent_id,
+        leadId: linha.contact_id ?? linha.id,
+        instrucao: instrucaoDeAbordagemFria(cfg.instruction, cfg.qualification),
+        origem: "Pesquisa de empresas",
+        origemDaAbordagem: "prospeccao_fria",
+        dados: montarDadosDeAbordagem(linha.data, linha.data.site),
+      });
+      if (!gerado.ok)
+        throw new ProspectingError(`A IA não produziu uma abordagem: ${gerado.reason}.`, 422);
+      const estrategia = montarEstrategia({
+        classe: linha.data.site.classe,
+        problemas: linha.data.site.problemas,
+        checklist: linha.data.site.checklist,
+        nota: linha.data.rating,
+        numAvaliacoes: linha.data.reviews,
+        temInstagram: /instagram/i.test((linha.data.socials ?? []).join(",")),
+        ofertas,
+        nicho: linha.search?.niche ?? linha.data.category ?? "",
+        status: linha.status,
+        followUpsEnviados: 0,
+      });
+      result = {
+        mensagem: gerado.texto,
+        estrategia,
+        score: pontuarCandidato(linha.data.rating, linha.data.reviews, linha.data.site.classe, ofertas[0] ?? "site"),
+      };
     } else {
       result = await withProspectingLock(pool, org, async (db) => {
         const c = (
@@ -214,6 +339,9 @@ export async function POST(req: NextRequest) {
       });
     }
     const resourceId = "id" in body ? body.id : null;
+    // Prévia é somente leitura: sem mutação, sem audit (a regra do cron vazio
+    // vale para rota de leitura; o custo aparece em `llm_calls`).
+    if (body.action === "prever_abordagem") return ok(result, { requestId, headers });
     await audit({
       action: "prospecting.changed",
       organizationId: org,

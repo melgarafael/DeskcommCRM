@@ -1,8 +1,8 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { auditarSite, auditarSites, type ResolvedorDns } from "@/lib/prospecting/site-fetch";
-import { enderecoInterno, vereditoPuro } from "@/lib/prospecting/site-classify";
+import { auditarSite, auditarSites, enderecoInterno, recusarSSRF, type ResolvedorDns } from "@/lib/prospecting/site-fetch";
+import { vereditoPuro } from "@/lib/prospecting/site-classify";
 import { prospectEnrichmentSchema } from "@/lib/prospecting/schema";
 
 const AGORA = "2026-10-10T12:00:00.000Z";
@@ -140,6 +140,21 @@ describe("site-fetch", () => {
       expect(v.classe).toBe("fora-do-ar");
       expect(v.final_url).toBeNull();
     }, 15000);
+  });
+});
+
+describe("recusarSSRF", () => {
+  it("barra literal sem rede", () => {
+    expect(recusarSSRF("http://127.0.0.1/")).toBe("rede-interna");
+    expect(recusarSSRF("http://10.0.0.5/")).toBe("rede-interna");
+    expect(recusarSSRF("http://192.168.1.1/")).toBe("rede-interna");
+    expect(recusarSSRF("http://169.254.169.254/")).toBe("rede-interna");
+    expect(recusarSSRF("http://localhost/")).toBe("rede-interna");
+    expect(recusarSSRF("http://[::1]/")).toBe("rede-interna");
+    expect(recusarSSRF("file:///etc/passwd")).toBe("protocolo-bloqueado");
+    expect(recusarSSRF("https://user:pass@x.com/")).toBe("credencial-na-url");
+    expect(recusarSSRF("https://clinica.com.br")).toBeNull();
+    expect(recusarSSRF("not a url")).toBe("url-invalida");
   });
 });
 
