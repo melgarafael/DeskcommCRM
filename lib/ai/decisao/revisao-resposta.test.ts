@@ -124,6 +124,17 @@ describe("JEV nativo com reserva", () => {
     const e=pacoteParaJev({candidate:"CPF 123.456.789-00",commercialEvidence:[{origem:"conhecimento",referencia:"x",titulo:"Teste",conteudo:"a@b.com"}],conversationContext:{mensagens:[{papel:"cliente",texto:"a@b.com"}],resumo:null,limitado:false,momento:"agora",fuso:"UTC"}});
     expect(JSON.stringify(e)).not.toMatch(/123\.456\.789-00|a@b\.com/);
   });
+  it("noul não recebe o contrato JSON nem as duas perguntas juntas",()=>{
+    const p=perguntasDaRevisao(true);
+    for(const q of Object.values(p)) {
+      expect(q.instrucao).not.toContain("Responda SOMENTE JSON");
+      expect(q.criterios).toMatchObject({true:expect.any(String),false:expect.any(String)});
+    }
+    expect(p.comercial.instrucao).not.toContain("## Pergunta 2");
+    expect(p.retorno.instrucao).not.toContain("humanReturnPhrase");
+    expect(p.comercial.instrucao).toContain("oferta gratuita aprovada autoriza informar essa oferta");
+    expect(p.retorno.instrucao).toContain("Leia SOMENTE a candidata");
+  });
   it("perguntas distintas não ativam a tarefa de pedido de humano",()=>{
     expect(Object.keys(perguntasDaRevisao(true))).toEqual(["comercial","retorno","so_assistente"]);
   });
