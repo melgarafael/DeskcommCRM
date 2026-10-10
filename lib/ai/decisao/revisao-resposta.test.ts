@@ -118,7 +118,7 @@ describe("JEV nativo com reserva", () => {
   it("leva mesmo conteúdo aprovado, histórico completo e omite referências internas",()=>{
     const p={candidate:"Aula experimental gratuita.",commercialEvidence:[{origem:"conhecimento" as const,referencia:"id-interno",titulo:"Oferta",conteudo:"Uma aula grátis de 40 minutos."}],conversationContext:{mensagens:[{papel:"cliente" as const,texto:"Tenho receio."}],resumo:"Quer nadar",limitado:false,momento:"2026-10-09T12:00:00Z",fuso:"America/Sao_Paulo"}};
     const e=pacoteParaJev(p);expect(e).toMatchObject({mensagem:p.candidate,contexto_conversa:p.conversationContext});
-    expect(JSON.stringify(e)).toContain(p.commercialEvidence[0].conteudo);expect(JSON.stringify(e)).not.toContain("id-interno");
+    expect(JSON.stringify(e)).toContain(p.commercialEvidence[0]!.conteudo);expect(JSON.stringify(e)).not.toContain("id-interno");
   });
   it("PII reconhecida é ocultada em candidata, evidência e histórico",()=>{
     const e=pacoteParaJev({candidate:"CPF 123.456.789-00",commercialEvidence:[{origem:"conhecimento",referencia:"x",titulo:"Teste",conteudo:"a@b.com"}],conversationContext:{mensagens:[{papel:"cliente",texto:"a@b.com"}],resumo:null,limitado:false,momento:"agora",fuso:"UTC"}});
