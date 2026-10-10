@@ -50589,12 +50589,12 @@ create trigger trg_lgpd_secoes_de_modulo
   when (new.is_anonymized and not old.is_anonymized)
   execute function public.fn_lgpd_redigir_secoes_de_modulo();
 
--- ---- A Resposta rápida guarda imagem do operador (migration 0629) ----
--- Espelho exato da migration 20261010121500_0629_midia_da_resposta_rapida.sql.
+-- ---- A Resposta rápida guarda imagem do operador (migration 0630) ----
+-- Espelho exato da migration 20261010121500_0630_midia_da_resposta_rapida.sql.
 -- Antes da VARREDURA anon, que é o último bloco do arquivo de propósito.
 
 -- manifest: A Resposta rápida ganha imagem carregada pelo próprio operador: coluna `midias` (jsonb) em `message_templates`, com os arquivos no bucket privado `whatsapp-media` (issue #2526).
--- 0629: `message_templates.midias` guarda a DESCRIÇÃO das imagens do template.
+-- 0630: `message_templates.midias` guarda a DESCRIÇÃO das imagens do template.
 --
 -- ─── Por que uma coluna, e por que jsonb ───────────────────────────────────
 --
