@@ -58,6 +58,7 @@ export interface DadosDoJev {
     modo: "observacao" | "decide";
     modo_roteador?: "comparacao" | "sob_demanda";
     aceite: { em: string; por: string } | null;
+    contexto_revisao?: { em: string; por: string; versao: 1 } | null;
   };
   tarefas: Array<{ id: string; rotulo: string; oQueOJevFaz: string }>;
   /**
@@ -96,6 +97,7 @@ export interface DadosDoJev {
   };
   /** `tarefa`: o rótulo da tarefa que falhou. Ausente na imagem anterior. */
   ultima_falha: { motivo: string | null; em: string; tarefa?: string | null } | null;
+  ultima_revisao?: Array<{ sinal: string; probabilidade: number; em: string }>;
   pode_editar: boolean;
 }
 
@@ -479,11 +481,52 @@ export function CartaoDoJev({
 
       {ligado && <Ligado dados={dados} estado={estado} recarregar={recarregar} />}
 
+      {dados.config.contexto_revisao !== undefined && (
+        <ContextoDaRevisao dados={dados} recarregar={recarregar} />
+      )}
+
+      {dados.config.contexto_revisao != null && <p className="mt-3 text-xs text-muted-foreground">{t("Com autorização própria, a revisão de respostas também envia a resposta candidata, as evidências consultadas e o contexto curado da conversa. Desative essa autorização quando quiser; a IA de reserva continua revisando.")}</p>}
+
       {!dados.pode_editar && estado !== "sem_chave" && (
         <p className="mt-3 text-xs text-muted-foreground">{t("Só quem administra a empresa pode mudar o Jev.")}</p>
       )}
     </Card>
   );
+}
+
+/** Esta autorização não herda nem amplia a do roteador. */
+function ContextoDaRevisao({ dados, recarregar }: { dados: DadosDoJev; recarregar: () => Promise<void> }) {
+  const t = useT();
+  const tag = useTagDeIdioma();
+  const { mudar, enviando } = useMudarOJev(recarregar);
+  const [confirmando, setConfirmando] = useState(false);
+  const autorizado = dados.config.contexto_revisao != null;
+  const pct = new Intl.NumberFormat(tag, { style: "percent", maximumFractionDigits: 1 });
+  const rotulos: Record<string, string> = {
+    comercial: "Oferta comercial não autorizada", retorno: "Compromisso de retorno", so_assistente: "Retorno só da IA",
+  };
+  return <div className="mt-4 space-y-2 border-t border-border pt-3" data-testid="jev-contexto-revisao">
+    <p className="text-sm font-medium">{t("Contexto para revisar ofertas e retornos")}</p>
+    <p className="text-sm text-muted-foreground">{autorizado
+      ? t("Contexto autorizado. Ative a tarefa de revisão acima para observar ou deixar o Jev decidir.")
+      : t("Revisão pelo Jev desativada até você autorizar a resposta, as evidências consultadas e o contexto da conversa.")}</p>
+    <p className="text-xs text-muted-foreground">{t("A IA configurada assume falhas ou probabilidades entre 20% e 80%. Probabilidade é a estimativa de sim, não a porcentagem de acerto.")}</p>
+    {(dados.ultima_revisao ?? []).filter(r => rotulos[r.sinal] && Number.isFinite(r.probabilidade)).map(r => (
+      <p key={r.sinal} className="text-sm" data-testid={`jev-revisao-${r.sinal}`}>{t(rotulos[r.sinal]!)}: {pct.format(r.probabilidade)}</p>
+    ))}
+    {dados.pode_editar && <Button size="sm" variant="outline" disabled={enviando} onClick={() => autorizado
+      ? void mudar({ contexto_revisao: false }, t("O contexto da revisão foi desativado."))
+      : setConfirmando(true)}>{autorizado ? t("Desativar contexto da revisão") : t("Autorizar contexto da revisão")}</Button>}
+    <AlertDialog open={confirmando} onOpenChange={setConfirmando}>
+      <AlertDialogContent><AlertDialogHeader>
+        <AlertDialogTitle>{t("Autorizar contexto da revisão?")}</AlertDialogTitle>
+        <AlertDialogDescription>{t("Você autoriza enviar à TypeSafe AI, nos Estados Unidos, a resposta candidata, os trechos da base e do catálogo consultados neste turno e o contexto curado da conversa, incluindo resumo e mensagens do cliente e dos atendentes. Telefones, e-mails e CPFs reconhecidos são ocultados; outros dados podem permanecer. Esta autorização serve apenas à revisão de ofertas e compromissos de retorno, não liga o Jev nem ativa a tarefa. Você pode revogá-la quando quiser.")}</AlertDialogDescription>
+      </AlertDialogHeader><AlertDialogFooter>
+        <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+        <AlertDialogAction disabled={enviando} onClick={() => void mudar({ contexto_revisao: true, aceite_contexto_revisao: true }, t("O contexto da revisão foi autorizado."))}>{t("Autorizar contexto da revisão")}</AlertDialogAction>
+      </AlertDialogFooter></AlertDialogContent>
+    </AlertDialog>
+  </div>;
 }
 
 function SeloDoEstado({ estado, emParte }: { estado: Estado; emParte: boolean }) {
@@ -928,8 +971,9 @@ function Ligado({
                 O nome é o que a tela do agente mostra — "Segurança" é só o nosso. */}
             {rodando && tarefa.estado !== "desligada" && tarefa.sem_camada && (
               <p className="text-sm text-muted-foreground" data-testid={`jev-sem-camada-${tarefa.id}`}>
-                {t(
-                  "Não roda agora: a verificação “Detectar tentativa de manipular o assistente” está desligada. Ela vale para a empresa toda: ligue-a abrindo qualquer agente, na aba “Confere antes de enviar”, em “Antes de o assistente ler”. O Jev só pergunta onde a sua IA de sempre também pergunta.",
+                {t(tarefa.id === "revisao_resposta"
+                  ? "Não roda agora: a revisão semântica de promessas está desligada. Ligue-a em um agente, na aba “Confere antes de enviar”."
+                  : "Não roda agora: a verificação “Detectar tentativa de manipular o assistente” está desligada. Ela vale para a empresa toda: ligue-a abrindo qualquer agente, na aba “Confere antes de enviar”, em “Antes de o assistente ler”. O Jev só pergunta onde a sua IA de sempre também pergunta.",
                 )}{" "}
                 <Link className="underline underline-offset-4" href="/app/ai/agents">
                   {t("Abrir os agentes")}

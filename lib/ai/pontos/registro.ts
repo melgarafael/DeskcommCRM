@@ -450,6 +450,10 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     sintomaDeFalha:
       "O agente promete ao cliente coisas que a operação não entrega, e a cobrança chega depois.",
     registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "noul",
+      oQueOJevFaz: "Confere a resposta, as evidências consultadas e o contexto da conversa: oferta comercial, compromisso de retorno e retorno só da IA.",
+    },
   },
 
   {

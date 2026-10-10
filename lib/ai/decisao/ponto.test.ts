@@ -448,3 +448,19 @@ describe("a allowlist de egress deriva da mesma base do cliente", () => {
     expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://127.0.0.1:4010/v1/systemone");
   });
 });
+
+
+describe("revisão de resposta revalida consentimento na busca da chave",()=>{
+  const aceite={em:"2026-10-09T12:00:00.000Z",por:"22222222-2222-4222-8222-222222222222"};
+  it("aceite amplo ou do roteador não permite pacote de revisão",async()=>{
+    banco.settings={jev:{ligado:true,aceite:{...aceite,alcance:"conversa"},contexto_roteador:{...aceite,versao:2},tarefas:{revisao_resposta:{estado:"decidindo"}}}};
+    expect(await chaveDaOrganizacao("org","promise_semantic")).toBeNull();
+    expect(banco.chamadas.some(([m,t])=>m==="from"&&t==="ai_provider_credentials")).toBe(false);
+  });
+  it("revogação entre configuração e rede impede busca de credencial",async()=>{
+    banco.settings={jev:{ligado:true,aceite,contexto_revisao:null,tarefas:{revisao_resposta:{estado:"decidindo"}}}};
+    const fetchImpl=vi.fn();
+    const r=await decidirNoPonto({organizationId:"org",ponto:"promise_semantic",estado:{mensagem:"Teste",evidencias:[]},perguntas:{retorno:{tipo:"noul",instrucao:"Compromisso?"}}},{fetchImpl});
+    expect(r).toMatchObject({ok:false,motivo:"sem_credencial"});expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

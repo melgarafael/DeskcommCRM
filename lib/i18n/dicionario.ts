@@ -37,6 +37,32 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Revisar ofertas e compromissos de retorno": { es: "Revisar ofertas y compromisos de respuesta posterior" },
+  "Confere a resposta, as evidências consultadas e o contexto da conversa: oferta comercial, compromisso de retorno e retorno só da IA.": { es: "Revisa la respuesta, las evidencias consultadas y el contexto de la conversación: oferta comercial, compromiso de respuesta posterior y respuesta solo de la IA." },
+  "O Jev revisa primeiro. A IA configurada assume quando ele falha ou fica em dúvida; casos e follow-ups continuam sendo conferidos pelo CRM.": { es: "JEV revisa primero. La IA configurada toma el relevo si falla o tiene dudas; el CRM sigue comprobando los casos y seguimientos." },
+  "O Jev revisa primeiro; o modelo abaixo é a reserva em caso de falha ou dúvida.": { es: "JEV revisa primero; el modelo de abajo es el respaldo en caso de fallo o duda." },
+  "O Jev passará a revisar ofertas e retornos. A IA configurada cobre falhas e dúvidas, sem alterar as exigências de caso ou follow-up.": { es: "JEV pasará a revisar ofertas y respuestas posteriores. La IA configurada cubre fallos y dudas, sin cambiar los requisitos de caso o seguimiento." },
+  "dias, o Jev e a IA de reserva chegaram à mesma conclusão em": { es: "días, JEV y la IA de respaldo llegaron a la misma conclusión en" },
+  "verificações de oferta, retorno ou autoria do retorno. Só entram as verificações em que ambos responderam.": { es: "verificaciones de oferta, respuesta posterior o quién responde. Solo se incluyen las verificaciones en las que ambos respondieron." },
+  "Para revisar com o Jev, confirme o envio da resposta, das evidências consultadas e do contexto da conversa à TypeSafe AI.": { es: "Para revisar con JEV, confirme el envío de la respuesta, las evidencias consultadas y el contexto de la conversación a TypeSafe AI." },
+  "Autorize o contexto da revisão antes de ativar esta tarefa.": { es: "Autorice el contexto de la revisión antes de activar esta tarea." },
+  "Cadastre uma IA de reserva antes de ativar a revisão pelo Jev.": { es: "Configure una IA de respaldo antes de activar la revisión por JEV." },
+  "Oferta comercial não autorizada": { es: "Oferta comercial no autorizada" },
+  "Compromisso de retorno": { es: "Compromiso de respuesta posterior" },
+  "Retorno só da IA": { es: "Respuesta posterior solo de la IA" },
+  "Contexto para revisar ofertas e retornos": { es: "Contexto para revisar ofertas y respuestas posteriores" },
+  "Contexto autorizado. Ative a tarefa de revisão acima para observar ou deixar o Jev decidir.": { es: "Contexto autorizado. Active la tarea de revisión de arriba para observar o dejar que JEV decida." },
+  "Revisão pelo Jev desativada até você autorizar a resposta, as evidências consultadas e o contexto da conversa.": { es: "La revisión por JEV está desactivada hasta que autorice la respuesta, las evidencias consultadas y el contexto de la conversación." },
+  "A IA configurada assume falhas ou probabilidades entre 20% e 80%. Probabilidade é a estimativa de sim, não a porcentagem de acerto.": { es: "La IA configurada toma el relevo ante fallos o probabilidades entre el 20% y el 80%. La probabilidad estima la respuesta sí, no el porcentaje de aciertos." },
+  "O contexto da revisão foi desativado.": { es: "El contexto de la revisión se desactivó." },
+  "Desativar contexto da revisão": { es: "Desactivar el contexto de la revisión" },
+  "Autorizar contexto da revisão": { es: "Autorizar el contexto de la revisión" },
+  "Autorizar contexto da revisão?": { es: "¿Autorizar el contexto de la revisión?" },
+  "Você autoriza enviar à TypeSafe AI, nos Estados Unidos, a resposta candidata, os trechos da base e do catálogo consultados neste turno e o contexto curado da conversa, incluindo resumo e mensagens do cliente e dos atendentes. Telefones, e-mails e CPFs reconhecidos são ocultados; outros dados podem permanecer. Esta autorização serve apenas à revisão de ofertas e compromissos de retorno, não liga o Jev nem ativa a tarefa. Você pode revogá-la quando quiser.": { es: "Autoriza enviar a TypeSafe AI, en Estados Unidos, la respuesta candidata, los fragmentos de la base y del catálogo consultados en este turno y el contexto seleccionado de la conversación, incluidos el resumen y los mensajes del cliente y de los agentes de atención. Se ocultan los teléfonos, correos y CPF reconocidos; otros datos pueden permanecer. Esta autorización solo se aplica a la revisión de ofertas y compromisos de respuesta posterior, no activa JEV ni la tarea. Puede revocarla cuando quiera." },
+  "O contexto da revisão foi autorizado.": { es: "El contexto de la revisión se autorizó." },
+  "Não roda agora: a revisão semântica de promessas está desligada. Ligue-a em um agente, na aba “Confere antes de enviar”.": { es: "No se ejecuta ahora: la revisión semántica de promesas está desactivada. Actívela en un agente, en la pestaña «Comprueba antes de enviar»." },
+  "Com autorização própria, a revisão de respostas também envia a resposta candidata, as evidências consultadas e o contexto curado da conversa. Desative essa autorização quando quiser; a IA de reserva continua revisando.": { es: "Con una autorización propia, la revisión de respuestas también envía la respuesta candidata, las evidencias consultadas y el contexto seleccionado de la conversación. Desactive esa autorización cuando quiera; la IA de respaldo sigue revisando." },
+
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",

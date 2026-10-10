@@ -312,7 +312,7 @@ function irritadosPercebidos(
 }
 
 function configPublica(c: ConfigDoJev) {
-  return { ligado: c.ligado, modo: c.modo, modo_roteador: c.modo_roteador, aceite: c.aceite };
+  return { ligado: c.ligado, modo: c.modo, modo_roteador: c.modo_roteador, aceite: c.aceite, contexto_revisao: c.contexto_revisao ?? null };
 }
 
 function diasAtras(dias: number): string {
@@ -542,6 +542,15 @@ export async function GET(): Promise<Response> {
     [...credenciais].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ??
     null;
 
+  const revisoesRecentes = await db.from("jev_observacoes")
+    .select("rotulo_jev, probabilidade_jev, created_at")
+    .eq("organization_id", org.orgId).eq("tarefa", "revisao_resposta")
+    .gte("created_at", diasAtras(DIAS_DA_CONCORDANCIA))
+    .order("created_at", { ascending: false }).limit(3);
+  const ultimaRevisao = (revisoesRecentes.data ?? []).map(r => ({
+    sinal: r.rotulo_jev.split(":")[0], probabilidade: Number(r.probabilidade_jev), em: r.created_at,
+  }));
+
   const { numeros, ultima_falha } = numerosDaSemana(semana.linhas);
   const config = lerConfigDoJev(orgRes.data?.settings);
   // O dreno descarta o turno do modo externo antes de tudo (spec 14), e o
@@ -572,6 +581,7 @@ export async function GET(): Promise<Response> {
         erro_de_validacao: mostrada?.validation_error ?? null,
       },
       config: configPublica(config),
+      ultima_revisao: ultimaRevisao,
       tarefas: TAREFAS,
       por_tarefa: porTarefa(
         config,
@@ -609,6 +619,8 @@ const corpoDoPatch = z
     modo_roteador: z.enum(["comparacao", "sob_demanda"]).optional(),
     /** A caixa marcada na tela. Só pesa ao ligar pela primeira vez. */
     aceite_lgpd: z.literal(true).optional(),
+    contexto_revisao: z.boolean().optional(),
+    aceite_contexto_revisao: z.literal(true).optional(),
     tarefa: idDaTarefaSchema.optional(),
     estado: z.enum(ESTADOS_DA_TAREFA).optional(),
   })
@@ -619,8 +631,11 @@ const corpoDoPatch = z
   .refine((c) => c.modo === undefined || c.tarefa === undefined, {
     message: "informe `modo` ou `tarefa`, não os dois",
   })
-  .refine((c) => c.ligado !== undefined || c.modo !== undefined || c.modo_roteador !== undefined || c.tarefa !== undefined, {
-    message: "informe `ligado`, `modo`, `modo_roteador` ou `tarefa`",
+  .refine((c) => c.aceite_contexto_revisao === undefined || c.contexto_revisao === true, {
+    message: "aceite de revisão exige ativar o contexto da revisão",
+  })
+  .refine((c) => c.ligado !== undefined || c.modo !== undefined || c.modo_roteador !== undefined || c.tarefa !== undefined || c.contexto_revisao !== undefined, {
+    message: "informe `ligado`, `modo`, `modo_roteador`, `tarefa` ou `contexto_revisao`",
   });
 
 export async function PATCH(req: NextRequest): Promise<Response> {
@@ -712,6 +727,23 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     mudanca.ligado = true;
   }
 
+  if (corpo.contexto_revisao === true && atual.contexto_revisao == null) {
+    if (corpo.aceite_contexto_revisao !== true) {
+      return fail("jev_exige_aceite", t("Para revisar com o Jev, confirme o envio da resposta, das evidências consultadas e do contexto da conversa à TypeSafe AI."), 422, { requestId });
+    }
+    mudanca.contexto_revisao = { em: new Date().toISOString(), por: user.id, versao: 1 };
+  } else if (corpo.contexto_revisao === false && atual.contexto_revisao != null) {
+    mudanca.contexto_revisao = null;
+  }
+  if (pedido?.tarefa === "revisao_resposta" && pedido.estado !== "desligada") {
+    if (mudanca.contexto_revisao === null || (mudanca.contexto_revisao === undefined && atual.contexto_revisao == null)) {
+      return fail("jev_exige_aceite", t("Autorize o contexto da revisão antes de ativar esta tarefa."), 422, { requestId });
+    }
+    if (!(await temIaDeSempre(getRequestPool(), llmEdgeConfigFromEnv(env), org.orgId))) {
+      return fail("jev_sem_ia_de_sempre", t("Cadastre uma IA de reserva antes de ativar a revisão pelo Jev."), 422, { requestId });
+    }
+  }
+
   // Pedir o estado que já vale não é mutação: sem escrita e sem auditoria.
   if (Object.keys(mudanca).length === 0) {
     return ok({ config: configPublica(atual), alterado: false }, { requestId });
@@ -751,6 +783,11 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       ...(mudanca.tarefas !== undefined && pedido
         ? { tarefa: pedido.tarefa, estado: pedido.estado, estado_anterior: estadoAnterior ?? null }
         : {}),
+      ...(mudanca.contexto_revisao !== undefined ? {
+        contexto_revisao: mudanca.contexto_revisao !== null,
+        contexto_revisao_anterior: atual.contexto_revisao != null,
+        aceite_revisao_registrado: mudanca.contexto_revisao !== null,
+      } : {}),
       aceite_registrado: mudanca.aceite !== undefined,
     },
   });

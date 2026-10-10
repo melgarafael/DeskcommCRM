@@ -102,6 +102,7 @@ export default async function PrivacyPage() {
               "quando o operador cadastra uma chave de Mapas (desligado por padrão), o Google, que recebe as coordenadas da localização que o cliente compartilhou, para devolver a rua e a cidade aproximadas;",
             )}
           </li>
+          <li>{t("Com autorização própria, a revisão de respostas também envia a resposta candidata, as evidências consultadas e o contexto curado da conversa. Desative essa autorização quando quiser; a IA de reserva continua revisando.")}</li>
           <li>{t("o provedor de infraestrutura onde o servidor está hospedado.")}</li>
         </ul>
         <p>{t("Os dados não são vendidos nem cedidos para publicidade de terceiros.")}</p>
