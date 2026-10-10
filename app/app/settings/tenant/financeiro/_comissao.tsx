@@ -34,6 +34,7 @@ export function RegrasDeComissao({
   podeEditar,
   carregando,
   onCriar,
+  onEditar,
   onInativar,
 }: {
   regras: Regra[];
@@ -42,12 +43,22 @@ export function RegrasDeComissao({
   podeEditar: boolean;
   carregando: boolean;
   onCriar: (corpo: Record<string, unknown>) => void;
+  /** #2641: editar sem desativar-e-recriar — o corpo é o mesmo da criação. */
+  onEditar: (id: string, corpo: Record<string, unknown>, aoSalvar: () => void) => void;
   onInativar: (id: string) => void;
 }) {
   const t = useT();
   const [pessoaId, setPessoaId] = useState("");
   const [servicoId, setServicoId] = useState("");
   const [percentual, setPercentual] = useState("");
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+
+  const limpar = () => {
+    setPessoaId("");
+    setServicoId("");
+    setPercentual("");
+    setEditandoId(null);
+  };
 
   const numero = Number(String(percentual).replace(",", "."));
   const percentualValido = Number.isFinite(numero) && numero >= 0 && numero <= 100;
@@ -60,6 +71,14 @@ export function RegrasDeComissao({
     return p?.name ?? p?.email ?? t("alguém");
   };
   const nomeDoServico = (id: string) => servicos.find((x) => x.id === id)?.name ?? t("um serviço");
+
+  /** O nome é rótulo de lista montado da mesma forma na criação e na edição. */
+  const nomeSugerido = () =>
+    pessoaId && servicoId
+      ? `${nomeDaPessoa(pessoaId)} · ${nomeDoServico(servicoId)}`
+      : pessoaId
+        ? nomeDaPessoa(pessoaId)
+        : nomeDoServico(servicoId);
 
   const rotuloDe = (r: Regra) => {
     if (r.attendant_user_id && r.event_type_id) {
@@ -124,24 +143,26 @@ export function RegrasDeComissao({
           <Button
             className="min-h-11"
             disabled={!temAlvo || !percentualValido || percentual === ""}
-            onClick={() =>
-              onCriar({
-                // O nome é montado a partir do que foi escolhido, e continua
-                // editável no banco: é rótulo de lista, não a regra.
-                name:
-                  pessoaId && servicoId
-                    ? `${nomeDaPessoa(pessoaId)} · ${nomeDoServico(servicoId)}`
-                    : pessoaId
-                      ? nomeDaPessoa(pessoaId)
-                      : nomeDoServico(servicoId),
+            onClick={() => {
+              // O nome é montado a partir do que foi escolhido, e continua
+              // editável no banco: é rótulo de lista, não a regra.
+              const corpo = {
+                name: nomeSugerido(),
                 attendant_user_id: pessoaId || null,
                 event_type_id: servicoId || null,
                 percent: numero,
-              })
-            }
+              };
+              if (editandoId) onEditar(editandoId, corpo, limpar);
+              else onCriar(corpo);
+            }}
           >
-            {t("Adicionar regra")}
+            {editandoId ? t("Salvar") : t("Adicionar regra")}
           </Button>
+          {editandoId ? (
+            <Button variant="ghost" className="min-h-11" onClick={limpar}>
+              {t("Cancelar")}
+            </Button>
+          ) : null}
 
           {!temAlvo ? (
             <p className="w-full text-xs text-text-muted">
@@ -168,14 +189,30 @@ export function RegrasDeComissao({
                 {rotuloDe(r)} · {r.percent}%
               </span>
               {podeEditar ? (
-                <button
-                  type="button"
-                  aria-label={t("Remover regra")}
-                  onClick={() => onInativar(r.id)}
-                  className="text-text-muted hover:text-text"
-                >
-                  ×
-                </button>
+                <span className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    className="min-h-11"
+                    onClick={() => {
+                      // Preenche o MESMO formulário da criação com a regra
+                      // escolhida; o Salvar manda o PATCH (#2641).
+                      setPessoaId(r.attendant_user_id ?? "");
+                      setServicoId(r.event_type_id ?? "");
+                      setPercentual(String(r.percent));
+                      setEditandoId(r.id);
+                    }}
+                  >
+                    {t("Editar")}
+                  </Button>
+                  <button
+                    type="button"
+                    aria-label={t("Remover regra")}
+                    onClick={() => onInativar(r.id)}
+                    className="text-text-muted hover:text-text"
+                  >
+                    ×
+                  </button>
+                </span>
               ) : null}
             </li>
           ))}

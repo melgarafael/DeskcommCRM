@@ -24,6 +24,8 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +51,11 @@ const movimentoSchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  // #1907 — `loyalty_ledger` é tabela do módulo `financeiro`: sem ele instalado a
+  // rota não existe (404), mesmo molde das rotas de comandas.
+  if (!(await moduloLigado(createAdminClient(), "financeiro"))) {
+    return fail("not_found", "Not found", 404, { requestId });
+  }
   const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
 
@@ -78,6 +85,11 @@ export async function GET(req: NextRequest): Promise<Response> {
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  // #1907 — `loyalty_ledger` é tabela do módulo `financeiro`: sem ele instalado a
+  // rota não existe (404), mesmo molde das rotas de comandas.
+  if (!(await moduloLigado(createAdminClient(), "financeiro"))) {
+    return fail("not_found", "Not found", 404, { requestId });
+  }
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 

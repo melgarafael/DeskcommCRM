@@ -1,0 +1,11 @@
+f3b-repeticao 2026-10-07T18:51:08Z (1a rodada 18:50:01Z)
+UPDATE 0
+UPDATE 0
+fila 0
+bloqueado 1
+ATENCAO: a rodada acima saiu ~1 min depois da 1a (18:51:08Z), NAO vale como a repeticao de 5 min.
+f3b-repeticao-valida 2026-10-07T18:55:06Z (1a rodada 18:50:01Z)
+UPDATE 0
+UPDATE 0
+fila 0
+bloqueado 1

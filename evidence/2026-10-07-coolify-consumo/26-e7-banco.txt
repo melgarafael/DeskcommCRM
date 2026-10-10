@@ -1,0 +1,30 @@
+porta=8001 gotrue_json=1
+porta=8001 http=200
+porta=8000 gotrue_json=0
+porta=8000 http=302
+# passo 2 (de fora)
+HTTP/2 200 
+1
+# passo 3 (de dentro do app)
+app->supabase 200 true
+# passo 4 (banco pela rede privada)
+tabelas_public 189
+auth_users 1
+organizations 1
+audit_log 0
+# passo 4 recontado depois do passo 5 (login + onboarding pela tela)
+tabelas_public 189
+auth_users 1
+organizations 1
+audit_log 12
+auth.login_success 2
+onboarding.welcome_completed 1
+attendant.presence_started 1
+onboarding.whatsapp_skipped 1
+ai_agents.created 1
+onboarding.quadro_pulado 1
+onboarding.team_invited 1
+onboarding.agente_teste_pulado 1
+tenant.onboarded 1
+onboarding.ai_configured 1
+# passo 5: tela.mjs crm-login exit=0, 12 fotos ui-crm-login-1..12 (onboarding welcome→done, Inbox, Funis /app/kanban, Configurações)

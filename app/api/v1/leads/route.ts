@@ -1,4 +1,7 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { carteiraDoContato } from "@/lib/carteira/dono";
+import { MOTIVO_DA_RECUSA, recusaNegocioNaCarteiraDeOutro } from "@/lib/carteira/negocio-novo";
+import { traduzir } from "@/lib/i18n/dicionario";
 /**
  * POST /api/v1/leads — create lead (handler em ./_handler.ts).
  */
@@ -66,7 +69,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     input.owner_user_id === undefined &&
     input.owner_agent_id === undefined
   ) {
-    const { data: orgRow, error: orgErr } = await createAdminClient()
+    // Um client só para as duas leituras do modo/carteira (service-role: RLS
+    // não segura nada aqui, então `organization_id` junto em todo `.eq`).
+    const admin = createAdminClient();
+    const { data: orgRow, error: orgErr } = await admin
       .from("organizations")
       .select("settings")
       .eq("id", activeOrg.orgId)
@@ -83,7 +89,32 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     }
     const modo = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)?.visibility_mode;
-    if (modo === "own") input = { ...input, owner_user_id: authUser.id };
+    if (modo === "own") {
+      // ─── CARTEIRA DE OUTRO VENDEDOR (issue #2591, regra 4) ─────────────────
+      //
+      // O padrão do #2547 acima dá o negócio a quem o criou — mas isso só é
+      // justo enquanto ninguém é o DONO do cliente. Com o contato na carteira
+      // de outro vendedor, o que o Atendente acabou de fazer foi riscar um
+      // cliente do colega sem ninguém avisar. A issue decide: com carteira de
+      // outro vendedor o negócio recusa com o motivo (403 explicado, molde do
+      // #2556) em vez de nascer silenciosamente no nome errado.
+      //
+      // O dono que NÃO conta (viewer, revogado, de outra org) passa como
+      // `donoDaCarteira: null` — aí nada muda, que é o padrão.
+      const carteira = await carteiraDoContato(admin, activeOrg.orgId, input.contact_id);
+      if (
+        recusaNegocioNaCarteiraDeOutro({
+          modo,
+          criadorId: authUser.id,
+          donoDaCarteira: carteira.qualificado ? carteira.dono : null,
+        })
+      ) {
+        return fail("carteira_de_outro_vendedor", traduzir(MOTIVO_DA_RECUSA, authUser.idioma), 403, {
+          requestId,
+        });
+      }
+      input = { ...input, owner_user_id: authUser.id };
+    }
   }
 
   const supabase = await createClient();

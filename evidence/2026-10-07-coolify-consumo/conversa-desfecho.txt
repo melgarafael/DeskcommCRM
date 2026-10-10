@@ -1,0 +1,8 @@
+inbound 5
+llm_calls 0
+event_log:done 12
+event_log_desde_inicio:done 12
+event_type_desde_inicio:lead.created 1
+event_type_desde_inicio:conversation.routing_requested 1
+event_type_desde_inicio:message.received 5
+event_type_desde_inicio:ai_agent.dispatch_requested 5

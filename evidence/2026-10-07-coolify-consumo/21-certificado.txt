@@ -1,0 +1,19 @@
+issuer=C = US, O = Let's Encrypt, CN = YR1
+notAfter=Jan  5 13:32:23 2027 GMT
+ratelimit=0
+issuer=C = US, O = Let's Encrypt, CN = YR1
+notAfter=Jan  5 13:32:23 2027 GMT
+ratelimit=0
+issuer=C = US, O = Let's Encrypt, CN = YR1
+notAfter=Jan  5 13:32:23 2027 GMT
+ratelimit=0
+issuer=C = US, O = Let's Encrypt, CN = YR1
+notAfter=Jan  5 13:32:23 2027 GMT
+ratelimit=0
+issuer=C = US, O = Let's Encrypt, CN = YR1
+notAfter=Jan  5 13:32:23 2027 GMT
+ratelimit=0
+notBefore=Oct  7 13:32:24 2026 GMT
+subject=CN = <ip-da-vps>.sslip.io
+X509v3 Subject Alternative Name: 
+    DNS:<ip-da-vps>.sslip.io

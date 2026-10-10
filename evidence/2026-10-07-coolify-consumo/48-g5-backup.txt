@@ -1,0 +1,11 @@
+2026-10-07T17:19:54Z
+backup_exit=0
+D=/root/deskcomm-guardado-2026-10-07-1419
+700 /root/deskcomm-guardado-2026-10-07-1419
+600 /root/deskcomm-guardado-2026-10-07-1419/env
+600 /root/deskcomm-guardado-2026-10-07-1419/env-supabase
+600 /root/deskcomm-guardado-2026-10-07-1419/admin-credentials
+      1 db-<ts>-141954.sql.gz
+      1 storage-<ts>-141954.tgz
+      1 waha-<ts>-141954.tgz
+linhas=136 nao_zero=0

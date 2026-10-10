@@ -48,7 +48,10 @@ function blocoDaFuncao(sql: string, nome: string): string {
   const inicio = sql.indexOf(`create or replace function public.${nome}(`);
   if (inicio < 0) return "";
   const fim = sql.indexOf("create or replace function", inicio + 10);
-  return sql.slice(inicio, fim < 0 ? inicio + 8000 : fim);
+  // Quando a função é a ÚLTIMA do arquivo, `fim < 0` e o bloco vai até o fim —
+  // nunca trunca em `+8000`: a fn_financeiro_provisionar() tem corpo longo (cria
+  // as tabelas do módulo) e o revoke/grant dela fica além de 8000 chars.
+  return sql.slice(inicio, fim < 0 ? sql.length : fim);
 }
 
 /** Toda provisionadora `fn_<modulo>_provisionar()` declarada numa origem. */
