@@ -23,6 +23,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
+import { documentoDoPagador, exigeDocumento } from "@/lib/cobranca/documento";
 import { limiteDoProvedorPorOrg, recusaDoProvedor } from "@/lib/cobranca/falhas";
 import { adaptador, modoDoProvedor } from "@/lib/cobranca/provedores";
 import { ErroDoProvedor } from "@/lib/cobranca/provedores/contrato";
@@ -37,8 +38,12 @@ export const dynamic = "force-dynamic";
 
 const RESERVA_MS = 2 * 60_000;
 const VALIDADE_PADRAO_MS = 24 * 3_600_000;
-/** Só um destino nomeado (nunca uma URL livre: sem redirecionamento aberto). */
-const corpoSchema = z.strictObject({ volta: z.enum(["hub"]).optional() });
+const corpoSchema = z.strictObject({
+  /** Só um destino nomeado (nunca uma URL livre: sem redirecionamento aberto). */
+  volta: z.enum(["hub"]).optional(),
+  /** CPF ou CNPJ de quem paga, com ou sem máscara. Vai direto ao provedor e NÃO é guardado (spec §2.3, LGPD). */
+  documento: z.string().max(32).optional(),
+});
 
 interface Lida {
   plano_id: string;
@@ -68,6 +73,10 @@ export async function POST(req: NextRequest) {
   const corpo = corpoSchema.safeParse(await req.json().catch(() => ({})));
   if (!corpo.success) return recusar(400, "validation_failed", "Pedido inválido.", corpo.error.flatten());
   const urlDeVolta = corpo.data.volta === "hub" ? urlDoHub() : urlDoPainelDaEmpresa();
+  const documento = corpo.data.documento === undefined ? null : documentoDoPagador(corpo.data.documento);
+  if (corpo.data.documento !== undefined && documento === null) {
+    return recusar(422, "documento_invalido", "Confira o CPF ou CNPJ: os dígitos não batem.");
+  }
 
   const { data, error } = await admin
     .from("cobranca_assinaturas")
@@ -86,6 +95,9 @@ export async function POST(req: NextRequest) {
   }
   const provedor = lida.provedor ?? (await provedorDaInstalacao());
   if (!provedor) return recusar(409, "provedor_nao_conectado", "O administrador do sistema ainda não conectou a cobrança.");
+  if (exigeDocumento(provedor, lida.provedor_cliente_id !== null) && documento === null) {
+    return recusar(422, "documento_obrigatorio", "Informe o CPF ou CNPJ de quem paga: o provedor de pagamento exige para emitir a cobrança.");
+  }
   if (!(await limiteDoProvedorPorOrg(orgId))) {
     return fail("rate_limited", "Muitas tentativas seguidas. Aguarde um minuto e tente de novo.", 429, {
       requestId,
@@ -111,6 +123,7 @@ export async function POST(req: NextRequest) {
     const url = await gerarCheckout(admin, orgId, lida, provedor, {
       reserva,
       email: authz.user.email,
+      documento,
       chaveIdempotencia: chave ?? randomUUID(),
       actorUserId: authz.user.id,
       requestId,
@@ -143,6 +156,11 @@ export async function POST(req: NextRequest) {
       });
       return recusar(500, "internal_error", "Não foi possível gerar o link de pagamento. Tente de novo em instantes.");
     }
+    if (e.codigo === "invalid_cpfCnpj") {
+      // Dígitos certos e o Asaas recusou (o CNPJ alfanumérico, por exemplo): é o
+      // documento, e quem clicou consegue resolver. Nunca o 502 "fale com quem administra".
+      return recusar(422, "documento_recusado", "O provedor de pagamento não aceitou este CPF ou CNPJ. Confira o número ou informe outro documento.");
+    }
     const r = recusaDoProvedor(e);
     return recusar(r.status, r.code, r.message);
   }
@@ -169,7 +187,7 @@ async function gerarCheckout(
   orgId: string,
   lida: Lida,
   provedor: ProvedorDeCobranca,
-  quem: { reserva: string; email: string; chaveIdempotencia: string; actorUserId: string; requestId: string; urlDeVolta: string },
+  quem: { reserva: string; email: string; documento: string | null; chaveIdempotencia: string; actorUserId: string; requestId: string; urlDeVolta: string },
 ): Promise<{ url: string } | { vivo: string | null }> {
   const ad = adaptador(provedor);
   if (lida.provedor_cliente_id) {
@@ -185,7 +203,22 @@ async function gerarCheckout(
   const p = plano.data as { id: string; nome: string; preco_cents: number; intervalo: Intervalo };
   const clienteRef =
     lida.provedor_cliente_id ??
-    (await ad.garantirCliente({ id: orgId, nome: nomes?.legal_name || nomes?.display_name || orgId, email: quem.email, documento: null }));
+    (await ad.garantirCliente({ id: orgId, nome: nomes?.legal_name || nomes?.display_name || orgId, email: quem.email, documento: quem.documento }));
+  if (provedor === "asaas" && lida.provedor_cliente_id === null) {
+    // O Asaas manda o SUBSCRIPTION_CREATED DURANTE o POST /subscriptions: sem o
+    // cliente gravado antes, o aviso não acha a empresa (cliente_desconhecido) e a
+    // Visão geral acusa um problema que não existe. A Stripe só cria a assinatura
+    // depois do pagamento, e nela a fase 3 basta. Mesmo compare-and-set da reserva.
+    const { data: comCliente, error: erroDoCliente } = await admin
+      .from("cobranca_assinaturas")
+      .update({ provedor, modo: await modoDoProvedor(provedor), provedor_cliente_id: clienteRef, updated_at: new Date().toISOString() })
+      .eq("organization_id", orgId)
+      .eq("checkout_expira_em", quem.reserva)
+      .is("checkout_url", null)
+      .select("organization_id")
+      .maybeSingle();
+    if (erroDoCliente || !comCliente) throw new Error(`cobranca: cliente do Asaas não gravado (${erroDoCliente?.code ?? "reserva_perdida"})`);
+  }
   const inicio = await ad.iniciarAssinatura({
     clienteRef,
     orgId,
@@ -201,6 +234,10 @@ async function gerarCheckout(
       provedor,
       modo,
       provedor_cliente_id: clienteRef,
+      // O Asaas cria a assinatura no Assinar (ACTIVE, à espera do 1º pagamento): sem a
+      // referência, a troca de plano no teste grátis não chegaria a ele (troca.ts).
+      // A Stripe devolve null, e a escrita dela fica como era.
+      ...(inicio.assinaturaRef ? { provedor_assinatura_id: inicio.assinaturaRef } : {}),
       checkout_url: inicio.url,
       checkout_expira_em: (inicio.expiraEm ?? new Date(Date.now() + VALIDADE_PADRAO_MS)).toISOString(),
       updated_at: new Date().toISOString(),

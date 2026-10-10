@@ -49,6 +49,7 @@ const AUTORIDADE = [
   "docs/doctrine",
   "docs/runbooks",
   "docs/adr",
+  "docs/saas",
   "triagem",
   // Skills embutidas: alguém as lê para AGIR (instalar, contribuir). A fonte é
   // `.agents/skills`; o espelho `.claude/skills` é byte-idêntico (gate próprio).

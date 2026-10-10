@@ -1,0 +1,19 @@
+✓ bases: https://api-sandbox.asaas.com/v3 → 200; https://api.asaas.com/v3 → 401
+✓ User-Agent padrão do Node → 200 (registre no PR; o adaptador manda o próprio)
+✓ testarChave: sandbox = teste
+✓ cliente: reaproveitado por externalReference; clienteExiste sim para o da conta, não para o inexistente
+✓ notificações do Asaas ao pagador (cliente criado com notificationDisabled): HTTP 200; 8 de 8 configuradas com algum canal ligado; ENTREGA não medida (a configuração por notificação não prova se a flag do cliente barra o envio)
+✓ CNPJ alfanumérico → 200 aceito (registre no PR)
+✓ dateCreated da assinatura = 2026-10-06 (a ordenação assume AAAA-MM-DD; registre no PR)
+✓ geração: 1 cobranças logo de saída; 1ª vence 2026-10-06; nextDueDate da assinatura = 2026-11-06
+✓ 1º vencimento em 2026-11-10: geradas na criação = 1; nextDueDate = 2026-12-10
+✓ só PENDING: existe=false, 1 viva, link de pagamento presente
+✓ trocarPlano recusa com o período em uso pendente (pagamento_do_periodo_pendente)
+✓ pago: existe, jaPagou; fim do período 2026-11-07T02:59:59.000Z (somarCiclo do dublê = calendário do Asaas)
+✓ trocarPlano (PUT): assinatura e 0 pendentes com R$ 99,90; a paga segue com R$ 49,90
+✓ cancelar: sem includeDeleted a assinatura some; com ele, deleted=true; cancelada e o período pago fica; pendentes que sobraram = 0 (a §6.2 passo 8 supõe 0)
+✓ webhook por API: 1 endpoint com 11 eventos; authToken de 43 caracteres aceito (não impresso)
+✓ reconexão: criou de novo pela API (URL com ?conexao=), e o confirmar deixou só o novo
+✓ desfazer apagou só o novo; o aviso anterior continua
+✓ releitura final da assinatura a 35 dias: 1 cobranças
+✓ SMOKE ASAAS OK

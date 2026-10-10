@@ -1,0 +1,12 @@
+exit=0
+pulados=0 ok=75 falhas=0
+Todos os testes da rota do Supabase no Traefik passaram.
+single-server-installer exit=0 ok=51 falhas=0 pulados=0
+single-server-operacao exit=0 ok=80 falhas=0 pulados=0
+single-server-traefik exit=0 ok=10 falhas=0 pulados=0
+gotrue-modelos-recuperacao exit=0 ok=21 falhas=0 pulados=0
+arquitetura-kit.test exit=0 ok=11 falhas=0
+update-guard.test exit=0 ok=113 falhas=0
+atualizacao-para-quem-fala-com-o-banco.test exit=0 ok=48 falhas=0
+atualizacao-preflight-e-rollback.test exit=0 ok=35 falhas=0
+test-validators exit=0 ok=300 falhas=0

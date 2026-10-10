@@ -122,6 +122,38 @@
       "sublabel": "regra do sim nas duas direções; sugestão só com o interruptor desligado",
       "type": "test",
       "dot": "amber"
+    },
+    {
+      "id": "ondeaparece",
+      "lane": "nucleo",
+      "label": "onde-o-modulo-aparece.ts",
+      "sublabel": "lib/navigation/ · caminho e grupo lidos do MENU; o grupo do rodapé vira \"Configurações\", que é o que a tela escreve",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "interfacemenu",
+      "lane": "nucleo",
+      "label": "destinosDaInterface",
+      "sublabel": "lib/navigation/interface.ts · porta de módulo LIGADO não é filtrada pelo preset enxuto; escolha item-a-item da empresa continua mandando",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "menucrm",
+      "lane": "telas",
+      "label": "Menu do CRM",
+      "sublabel": "app/app/layout.tsx → Sidebar · NavHub · CommandPalette · BarraInferior",
+      "type": "tela",
+      "dot": "green"
+    },
+    {
+      "id": "testeporta",
+      "lane": "guarda",
+      "label": "porta-do-modulo-ligado.test.tsx",
+      "sublabel": "reprova módulo sem resposta de \"onde aparece\" e porta de módulo escondida pelo preset",
+      "type": "teste",
+      "dot": "amber"
     }
   ],
   "edges": [
@@ -202,6 +234,54 @@
       "from": "testeAssinatura",
       "to": "assinatura",
       "label": "reprova o sim com número sem assinatura"
+    },
+    {
+      "id": "e14",
+      "from": "navcatalogo",
+      "to": "ondeaparece",
+      "label": "caminho + grupo de cada porta de módulo"
+    },
+    {
+      "id": "e15",
+      "from": "ondeaparece",
+      "to": "telaAdmin",
+      "label": "\"Aparece no menu em: CRM › Empresas\", antes e depois de ligar"
+    },
+    {
+      "id": "e16",
+      "from": "modulos",
+      "to": "interfacemenu",
+      "label": "a lista de ligados decide as portas com modulo:"
+    },
+    {
+      "id": "e17",
+      "from": "navcatalogo",
+      "to": "interfacemenu",
+      "label": "as portas e os papéis"
+    },
+    {
+      "id": "e18",
+      "from": "interfacemenu",
+      "to": "menucrm",
+      "label": "o que o menu mostra"
+    },
+    {
+      "id": "e19",
+      "from": "telaAdmin",
+      "to": "menucrm",
+      "label": "revalidatePath(\"/app\",\"layout\") ao ligar/desligar"
+    },
+    {
+      "id": "e20",
+      "from": "testeporta",
+      "to": "ondeaparece",
+      "label": "todo módulo responde: porta no menu ou onde fica"
+    },
+    {
+      "id": "e21",
+      "from": "testeporta",
+      "to": "interfacemenu",
+      "label": "módulo ligado acende no preset enxuto"
     }
   ]
 }

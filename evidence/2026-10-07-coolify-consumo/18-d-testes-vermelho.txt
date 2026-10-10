@@ -1,0 +1,33 @@
+exit=1
+pulados=0 ok=49 falhas=26
+  ✗ o kit traz o arquivo do Traefik em bridge
+    esperado [default,deskcomm_private,deskcomm_proxy], veio []
+  ✗ bridge: o Envoy entra também na rede do proxy
+    esperado [coolify], veio []
+  ✗ bridge: a rede do proxy é a exportada (TRAEFIK_NETWORK)
+    esperado [coolify], veio []
+  ✗ bridge: o Traefik procura o Envoy na rede dele
+    esperado [127.0.0.1:8001], veio []
+  ✗ bridge: a porta do host sai do API_GW_HTTP_PORT, só no loopback
+  ✗ porta 8001 exportada: gravada no .env do Supabase (o compose só lê de lá)
+  ✗ porta 8001 exportada: a URL interna do CRM segue a mesma porta
+  ✗ porta 'abc' é recusada
+  ✗ porta 'abc': a mensagem cita API_GW_HTTP_PORT
+  ✗ porta 'abc': nada sobe
+  ✗ porta '80' é recusada
+  ✗ porta '80': a mensagem cita API_GW_HTTP_PORT
+  ✗ porta '80': nada sobe
+  ✗ porta '1000' é recusada
+  ✗ porta '1000': a mensagem cita API_GW_HTTP_PORT
+  ✗ porta '1000': nada sobe
+  ✗ porta '08001' é recusada
+  ✗ porta '08001': a mensagem cita API_GW_HTTP_PORT
+  ✗ porta '08001': nada sobe
+  ✗ bridge: COMPOSE_FILE ganha o terceiro arquivo
+  ✗ bridge: o terceiro arquivo é a cópia do kit
+  ✗ bridge: TRAEFIK_NETWORK gravada no .env do Supabase
+  ✗ rede do proxy inexistente é recusada
+  ✗ rede inexistente: a mensagem ensina docker network ls
+  ✗ rede inexistente: nada sobe
+  ✗ update: o terceiro arquivo passa a ser o do kit
+26 teste(s) falharam.

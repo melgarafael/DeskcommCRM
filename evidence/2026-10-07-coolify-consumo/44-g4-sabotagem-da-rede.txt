@@ -1,0 +1,14 @@
+sem-rede 000
+com-rede 000
+coolify deskcommcrm-supabase_default deskcommcrm_supabase 
+# 2a rodada (15:0xZ), instrumento com -m 60 e controle do evento de contêiner
+inicio 15:07:17Z
+sem-rede 000 t=60.001157
+com-rede-so-connect 401 t=0.032639
+com-rede-so-connect+30s 401 t=0.036582
+depois-de-um-evento-de-conteiner 401 t=0.210779
+raiz 307
+coolify deskcommcrm-supabase_default deskcommcrm_supabase 
+fim 15:09:28Z
+ip-coolify-agora 10.0.1.8
+coolify-realtime=10.0.1.3/24 coolify=10.0.1.5/24 coolify-redis=10.0.1.2/24 coolify-db=10.0.1.4/24 coolify-proxy=10.0.1.7/24 deskcommcrm-app-1=10.0.1.9/24 coolify-sentinel=10.0.1.6/24 deskcommcrm-supabase-api-gw-1=10.0.1.8/24 

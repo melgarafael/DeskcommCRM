@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as RequirePlatformAdmin from "@/lib/auth/requirePlatformAdmin";
 
 import { argumentos, bancoFalso, operacao, valorDoFiltro, type BancoFalso, type Cadeia, type Resposta } from "@/tests/helpers/banco-falso-da-cobranca";
 
@@ -24,7 +25,7 @@ const h = vi.hoisted(() => ({
   banco: undefined as unknown as BancoFalso,
 }));
 vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
+  ...(await importOriginal<typeof RequirePlatformAdmin>()),
   requirePlatformAdminEscrita: h.escrita,
 }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligada }));
@@ -62,6 +63,9 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => n
 import { POST } from "./route";
 
 const CHAVE = ["sk", "test", "51HconexaoDeTeste0001"].join("_");
+const CHAVE_ASAAS = "$" + ["aact", "hmlg", "000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6Oj0001"].join("_");
+const TOKEN_ASAAS = ["token", "do", "aviso", "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"].join("_");
+const URL_ASAAS = "https://crm.example.com/api/v1/webhooks/cobranca/asaas";
 interface Mundo {
   comProvedor: Array<{ provedor: string; modo: string; provedor_cliente_id?: string }>;
   deTeste: Array<{ organization_id: string; plano_id: string }>;
@@ -122,7 +126,7 @@ describe("conexão da cobrança", () => {
       ["COBRANCA_PROVEDOR", false],
     ]);
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({
-      action: "cobranca.provedor_conectado", metadata: { provedor: "stripe", modo: "teste", last4_antigo: "9999", last4_novo: "0001" },
+      action: "cobranca.provedor_conectado", metadata: { provedor: "stripe", modo: "teste", last4_antigo: "9999", last4_novo: "0001", webhook: "automatico" },
     }));
     expect(JSON.stringify(h.audit.mock.calls)).not.toContain(CHAVE);
     expect(h.donos).toHaveBeenCalledWith(expect.anything(), { antigo: "9999", novo: "0001" });
@@ -298,6 +302,87 @@ describe("conexão da cobrança", () => {
     const res = await conectar();
     expect(res.status).toBe(502);
     expect((await erro(res)).code).toBe("provedor_recusou");
+    expect(h.gravar).not.toHaveBeenCalled();
+  });
+});
+
+describe("conexão da cobrança pelo Asaas (PR 3b)", () => {
+  it("⭐ Asaas com aviso criado pela API: as chaves do Asaas, cifradas, e o resto igual à Stripe", async () => {
+    const res = await conectar({ provedor: "asaas", chave: CHAVE_ASAAS });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toEqual({ modo: "teste", webhook: "automatico", publicadas: 0 });
+    expect(await h.chaveUsada?.()).toBe(CHAVE_ASAAS);
+    expect(h.gravar.mock.calls.map((c) => [c[0], c[2].ehSegredo])).toEqual([
+      ["ASAAS_API_KEY", true],
+      ["ASAAS_WEBHOOK_TOKEN", true],
+      ["COBRANCA_PROVEDOR", false],
+    ]);
+    expect(h.confirmar).toHaveBeenCalledOnce();
+  });
+
+  it("⭐ Asaas sem a API de avisos: grava o token cifrado, devolve URL+token+eventos UMA vez, e o token não vai ao audit", async () => {
+    h.ad.prepararWebhook.mockResolvedValue({ manual: { url: URL_ASAAS, segredo: TOKEN_ASAAS, eventos: ["PAYMENT_CONFIRMED", "PAYMENT_OVERDUE"] } });
+    const res = await conectar({ provedor: "asaas", chave: CHAVE_ASAAS });
+    expect(res.status).toBe(200);
+    // O token vai em claro neste corpo: nenhum cache pode guardá-lo.
+    expect(res.headers.get("cache-control")).toContain("no-store");
+    expect((await res.json()).data).toEqual({
+      modo: "teste",
+      webhook: { manual: { url: URL_ASAAS, segredo: TOKEN_ASAAS, eventos: ["PAYMENT_CONFIRMED", "PAYMENT_OVERDUE"] } },
+      publicadas: 0,
+    });
+    expect(h.gravar.mock.calls.map((c) => [c[0], c[1], c[2].ehSegredo])).toEqual([
+      ["ASAAS_API_KEY", CHAVE_ASAAS, true],
+      ["ASAAS_WEBHOOK_TOKEN", TOKEN_ASAAS, true],
+      ["COBRANCA_PROVEDOR", "asaas", false],
+    ]);
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "cobranca.provedor_conectado",
+      metadata: { provedor: "asaas", modo: "teste", last4_antigo: "9999", last4_novo: CHAVE_ASAAS.slice(-4), webhook: "manual" },
+    }));
+    expect(JSON.stringify(h.audit.mock.calls)).not.toContain(TOKEN_ASAAS);
+    expect(JSON.stringify(h.audit.mock.calls)).not.toContain(CHAVE_ASAAS);
+    expect(h.confirmar).not.toHaveBeenCalled();
+    // Os avisos antigos desta URL levariam o token velho (401 em laço): saem, depois de o token novo ser gravado.
+    expect(h.ad.removerWebhooks).toHaveBeenCalledWith(h.url);
+    expect(h.ad.removerWebhooks.mock.invocationCallOrder[0]).toBeGreaterThan(h.gravar.mock.invocationCallOrder[1] ?? Infinity);
+  });
+
+  it("Asaas manual em que nem apagar os avisos antigos a conta deixa: segue 200 com o passo a passo", async () => {
+    h.ad.prepararWebhook.mockResolvedValue({ manual: { url: URL_ASAAS, segredo: TOKEN_ASAAS, eventos: ["PAYMENT_CONFIRMED"] } });
+    h.ad.removerWebhooks.mockRejectedValue(new Error("a conta não deixa listar avisos"));
+    const res = await conectar({ provedor: "asaas", chave: CHAVE_ASAAS });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.webhook).toEqual({ manual: { url: URL_ASAAS, segredo: TOKEN_ASAAS, eventos: ["PAYMENT_CONFIRMED"] } });
+  });
+
+  it("⭐ chave do Asaas no formato antigo (sem _prod_/_hmlg_): 422 que manda gerar outra, sem testar nem gravar", async () => {
+    const antiga = "$" + ["aact", "YTU5YTE0M2M2N2I4MTliNzk0YTI5N2U5MzdjNWZmNDQ"].join("_");
+    const res = await conectar({ provedor: "asaas", chave: antiga });
+    expect(res.status).toBe(422);
+    const e = (await res.json()) as { error: { code: string; message: string; details: { motivo: string } } };
+    expect(e.error).toMatchObject({ code: "chave_recusada", details: { motivo: "chave_formato_antigo" } });
+    expect(e.error.message).toContain("formato antigo");
+    expect(h.ad.testarChave).not.toHaveBeenCalled();
+    expect(h.gravar).not.toHaveBeenCalled();
+  });
+
+  it("⭐ Asaas manual com gravação que falha: 500 explicado, e nada a desfazer no provedor (não há endpoint nosso lá)", async () => {
+    h.ad.prepararWebhook.mockResolvedValue({ manual: { url: URL_ASAAS, segredo: TOKEN_ASAAS, eventos: ["PAYMENT_CONFIRMED"] } });
+    h.gravar.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, motivo: "banco_recusou", detalhe: "x" });
+    const res = await conectar({ provedor: "asaas", chave: CHAVE_ASAAS });
+    expect(res.status).toBe(500);
+    expect((await erro(res)).code).toBe("internal_error");
+    expect(h.desfazer).not.toHaveBeenCalled();
+  });
+
+  it("chave recusada pelo Asaas: a frase fala do Asaas, não da Stripe", async () => {
+    h.ad.testarChave.mockResolvedValue({ ok: false, motivo: "chave_invalida" });
+    const res = await conectar({ provedor: "asaas", chave: CHAVE_ASAAS });
+    expect(res.status).toBe(422);
+    const e = (await res.json()) as { error: { code: string; message: string } };
+    expect(e.error.code).toBe("chave_recusada");
+    expect(e.error.message).toContain("Asaas");
     expect(h.gravar).not.toHaveBeenCalled();
   });
 });

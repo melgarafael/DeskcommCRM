@@ -49,6 +49,7 @@ import {
   type NavMetadata,
   type NavGroup,
   type NavGroupId,
+  sobeAoMenuLateral,
 } from "./catalogo";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
@@ -127,7 +128,10 @@ export function sidebarGroups(
   return NAV_GROUPS.map((group) => ({
     group,
     items: NAV_DESTINATIONS.filter(
-      (d) => d.group === group.id && (d.sidebar || (!group.hub && !!settings?.destinos)) && visible.has(d.href),
+      (d) =>
+        d.group === group.id &&
+        sobeAoMenuLateral(d, !!settings?.destinos) &&
+        visible.has(d.href),
     ),
   })).filter(
     (g) =>

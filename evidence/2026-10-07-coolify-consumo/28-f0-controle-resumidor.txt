@@ -1,0 +1,9 @@
+coolify	n=1	mem_med=250 MiB	mem_max=250 MiB	cpu_med=0.3%	cpu_max=0.3%
+deskcomm-test-db-1	n=1	mem_med=300 MiB	mem_max=300 MiB	cpu_med=5.0%	cpu_max=5.0%
+deskcommcrm-app-1	n=2	mem_med=356 MiB	mem_max=400 MiB	cpu_med=18.1%	cpu_max=35.0%
+deskcommcrm-supabase-db-1	n=2	mem_med=225 MiB	mem_max=250 MiB	cpu_med=1.5%	cpu_max=2.0%
+deskcommcrm-waha-1	n=2	mem_med=1013 MiB	mem_max=1126 MiB	cpu_med=0.3%	cpu_max=0.5%
+TOTAL-coolify	250 MiB	(maior soma num mesmo instante)
+TOTAL-crm	1439 MiB	(maior soma num mesmo instante)
+TOTAL-supabase	250 MiB	(maior soma num mesmo instante)
+TOTAL-terceiros	300 MiB	(maior soma num mesmo instante)

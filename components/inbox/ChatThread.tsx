@@ -231,9 +231,22 @@ export function ChatThread({
       const sc = scrollerRef.current;
       if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight > 120) return;
     }
-    // Fio ainda vazio não ancora nada: marcar aqui faria a guarda valer a partir
-    // da pintura em branco, que é exatamente o defeito acima.
-    if (items.length > 0) jaAncorou.current = true;
+    /**
+     * O CARTÃO PODE CHEGAR COM O ESQUELETO AINDA NA TELA (#2515).
+     *
+     * As passagens vêm de `usePassagensDaConversa`, uma consulta própria, e
+     * podem resolver ANTES da de mensagens. Aí `items.length` já é 1 enquanto
+     * `q.isLoading` ainda é verdadeiro — e o ramo do esqueleto NÃO monta
+     * `scrollerRef` nem `bottomRef`. Marcar `jaAncorou` nesse instante consumia
+     * a abertura sobre um `scrollIntoView` que roda em cima de um ref nulo:
+     * nada rolava, mas quando as mensagens chegassem a guarda de distância via
+     * 308px até o fim e devolvia sem rolar, deixando "Assumir e responder"
+     * abaixo da dobra (medido na run 37660047994: `base=1028`, `janela=720`).
+     *
+     * Por isso a marca só vale com o destino montado: enquanto o fio de
+     * verdade não existe, a abertura continua pendente.
+     */
+    if (items.length > 0 && bottomRef.current) jaAncorou.current = true;
 
     bottomRef.current?.scrollIntoView({
       behavior: primeiraAncoragem ? "auto" : "smooth",

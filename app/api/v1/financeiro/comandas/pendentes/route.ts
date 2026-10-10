@@ -21,6 +21,8 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +35,11 @@ const JANELA_PADRAO_DIAS = 30;
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  // #1907 item 4 — comanda é MÓDULO DE TABELA: sem `modulos_instalados` a
+  // linha ativa as cinco tabelas não existem e a rota não existe. 404,
+  // mesmo molde da cobrança desligada (falha fechada, dois lados).
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "financeiro"))) return fail("not_found", "Not found", 404, { requestId });
   const authz = await requireRole("agent", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
 

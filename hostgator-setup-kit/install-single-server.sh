@@ -77,6 +77,14 @@ if [[ -z "$domain" ]]; then
 fi
 domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 validar_dominio "$domain" || die "Dominio invalido. Informe somente o host, sem https:// nem caminho."
+# A porta do gateway do Supabase no host (loopback). O padrão da ref é 8000, que
+# num Coolify é a do painel. Validada aqui, antes de baixar qualquer coisa; é
+# gravada no .env do Supabase mais abaixo, porque o dc_supabase roda com `env -i`
+# e só lê de lá — e é de lá que o update.sh a herda.
+if [[ -n "${API_GW_HTTP_PORT:-}" ]]; then
+  [[ "$API_GW_HTTP_PORT" =~ ^[1-9][0-9]{3,4}$ ]] && (( API_GW_HTTP_PORT >= 1024 && API_GW_HTTP_PORT <= 65535 )) \
+    || die "API_GW_HTTP_PORT inválida ('${API_GW_HTTP_PORT}'): use um número entre 1024 e 65535, por exemplo 8001."
+fi
 
 command -v docker >/dev/null 2>&1 || die "Docker nao esta instalado. Rode primeiro ubuntu-production-installer.sh."
 docker info >/dev/null 2>&1 || die "Nao foi possivel acessar o daemon Docker."
@@ -105,7 +113,18 @@ if [[ ! -f "$SUPABASE_DIR/.env" ]]; then
   curl -fsSL --max-time 30 "$SUPABASE_SETUP_URL" -o "$setup_tmp"
   checksum="$(sha256sum "$setup_tmp" | awk '{print $1}')"
   [[ "$checksum" == "$SUPABASE_SETUP_SHA256" ]] || die "O instalador oficial do Supabase nao passou na verificacao SHA-256."
-  (cd "$ROOT_DIR" && sh "$setup_tmp" -y --skip-deps --ref "$SUPABASE_REF" --project-dir ".runtime/supabase")
+  # O setup.sh oficial imprime NOME=valor de cada segredo que gera (service_role,
+  # JWT_SECRET, senha do Postgres): a saída inteira vai para um arquivo que só o
+  # root lê, e a tela recebe só os passos (`===>`), ao vivo.
+  setup_log="$RUNTIME_DIR/supabase-setup.log"
+  (umask 077 && : > "$setup_log")
+  # umask 022 FIXO: o setup.sh grava os init-scripts do Postgres em volumes/db/, e
+  # com um umask restrito no terminal (077 ou 027) eles nasceriam ilegíveis a outros — o
+  # Postgres do contêiner não os lê e o Supabase não sobe, sem mensagem que aponte
+  # a causa. Quem protege os segredos é o .runtime 700, criado acima.
+  (umask 022 && cd "$ROOT_DIR" && sh "$setup_tmp" -y --skip-deps --ref "$SUPABASE_REF" --project-dir ".runtime/supabase") 2>&1 \
+    | tee "$setup_log" | { grep --line-buffered '^===>' || true; } \
+    || die "O instalador oficial do Supabase falhou. A saída completa está em $setup_log (contém as chaves geradas; não compartilhe)."
   rm -f "$setup_tmp"
   trap - EXIT
 fi
@@ -145,6 +164,7 @@ set_env_var "$supabase_env" SINGLE_SERVER_NETWORK "$SINGLE_SERVER_NETWORK"
 # modo; quem decide se o Traefik enxerga o Envoy é a chave gravada AQUI, ANTES
 # do `dc_supabase up -d --wait`: no primeiro boot o contêiner já nasce com a
 # rota, e numa re-execução o compose o recria porque o label mudou.
+compose_file="docker-compose.yml:docker-compose.deskcomm.yml"
 if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
   set_env_var "$supabase_env" TRAEFIK_ENABLE true
   set_env_var "$supabase_env" TRAEFIK_HOST "$domain"
@@ -154,14 +174,27 @@ if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
   # os mesmos do docker-compose.traefik.yml.
   set_env_var "$supabase_env" TRAEFIK_ENTRYPOINT "${TRAEFIK_ENTRYPOINT:-websecure}"
   set_env_var "$supabase_env" TRAEFIK_CERTRESOLVER "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+  # Traefik em BRIDGE (Coolify, Dokploy): ele só alcança o Envoy numa rede que
+  # os dois compartilhem. Com TRAEFIK_NETWORK exportado, um terceiro arquivo põe
+  # o api-gw nessa rede e manda o Traefik procurá-lo nela. Sem a variável
+  # (Traefik em modo host, como na Hostinger), nada muda: o host alcança
+  # qualquer bridge.
+  if [ -n "${TRAEFIK_NETWORK:-}" ]; then
+    docker network inspect "$TRAEFIK_NETWORK" >/dev/null 2>&1 \
+      || die "A rede Docker '${TRAEFIK_NETWORK}' (TRAEFIK_NETWORK) não existe. Confira o nome da rede do seu proxy com: docker network ls"
+    cp "$KIT_DIR/supabase-single-server.traefik.yml" "$SUPABASE_DIR/docker-compose.deskcomm-traefik.yml"
+    set_env_var "$supabase_env" TRAEFIK_NETWORK "$TRAEFIK_NETWORK"
+    compose_file="${compose_file}:docker-compose.deskcomm-traefik.yml"
+  fi
 else
   # Gravado explicitamente, não deixado em aberto: uma re-execução em modo
   # Caddy sobre uma árvore que já foi Traefik desliga a rota, em vez de deixar
   # um `true` órfão interpolando.
   set_env_var "$supabase_env" TRAEFIK_ENABLE false
 fi
-set_env_var "$supabase_env" COMPOSE_FILE "docker-compose.yml:docker-compose.deskcomm.yml"
+set_env_var "$supabase_env" COMPOSE_FILE "$compose_file"
 set_env_var "$supabase_env" COMPOSE_PROJECT_NAME "$(projeto_do_supabase)"
+[[ -n "${API_GW_HTTP_PORT:-}" ]] && set_env_var "$supabase_env" API_GW_HTTP_PORT "$API_GW_HTTP_PORT"
 gw_port="$(ler_env "$supabase_env" API_GW_HTTP_PORT)"
 
 step "Subindo o Supabase local"

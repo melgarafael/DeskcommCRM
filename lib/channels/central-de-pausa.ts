@@ -3,10 +3,12 @@
  *
  * A regra pura mora em `lib/channels/canal-pausado.ts`; este módulo é a parte
  * com I/O — leitura do item aberto, leitura do canal, e a escrita que a decisão
- * mandou. Existe separado porque CINCO caminhos precisam dele com a mesma conta:
+ * mandou. Existe separado porque SEIS caminhos precisam dele com a mesma conta:
  *
  *   * `PATCH …/channel-sessions/[id]/disabled` — pausar/retomar um canal;
  *   * `PATCH …/channel-sessions/disabled` — ação em lote (um item POR canal);
+ *   * o cron `channel-pause-scheduler` — a janela de manutenção agendada (#2388),
+ *     que pausa no início e retoma no fim pela mesma chave;
  *   * `DELETE|PATCH …/channel-sessions/[id]` — arquivar/excluir;
  *   * `disconnectSocialAccount` (Redes Sociais) e `despareaVoz` (voz) — os dois
  *     outros lugares que gravam `archived_at` em `channel_sessions`, via
