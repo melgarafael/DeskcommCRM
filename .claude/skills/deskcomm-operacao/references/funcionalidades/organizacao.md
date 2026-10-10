@@ -1,7 +1,7 @@
 # Funcionalidades — Organização
 
 O que há aqui: conta, empresa, equipe, acesso, LGPD e conversões.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -15,6 +15,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Organização → Conversões
 
+- **Etapa com evento que o canal não repassa vira pendência** — A pendência diz o que fazer (escolher um evento que o canal repassa, ou conectar a Meta direto), em vez de pedir uma conexão que a instalação não tem. Onde: Organização → Conversões → Histórico. _(desde 1.79.0)_
 - **Venda de anúncio no pixel** — Venda de quem veio de anúncio Meta é reportada ao pixel com valor da conversa. _(desde 1.70.0)_
 - **Etapa avisa a Meta** — Cada etapa do funil pode avisar a Meta, configurado em Conversões. _(desde 1.70.0)_
 - **Venda pelo canal intermediado** — Com chave ligada, a venda sai para a Meta pelo canal da conversa. _(desde 1.60.0)_
@@ -47,6 +48,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Organização → Equipe
 
+- **Papéis no idioma da interface** — A tela mostra Somente leitura, Atendente, Gerente e Administrador no lugar do código interno. Onde: Organização → Equipe. _(desde 1.79.0)_
 - **Copiar horários úteis** — O editor copia as faixas de um dia para segunda a sexta e mostra o resumo salvo. Onde: Organização → Equipe → Atendimento. _(desde 1.76.0)_
 - **Presença do atendente** — Aba aberta emite sinal a cada minuto; Equipe mostra selo e carimbo. Onde: Organização → Equipe → presença. _(desde 1.34.0)_
 - **Convites com estado** — Membros mostra convites com status e ações de reenviar e revogar. Onde: Organização → Equipe → Convites. _(desde 1.20.0)_
@@ -62,18 +64,21 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Organização → Financeiro
 
+- **Editar sem recadastrar** — Contas, formas de pagamento, plano de contas, regras de comissão e lançamentos recorrentes ganham Editar, sem desativar e recadastrar. Editar regra de comissão deixa de dar erro; editar conta deixa de zerar o saldo inicial e de voltar a moeda para BRL. Lançamentos e comissões já gerados não mudam. Onde: Organização → Financeiro → Editar. _(desde 1.79.0)_
 - **Financeiro com contas** — Tela guarda contas, formas de pagamento e plano de contas sem movimentar nada. _(desde 1.41.0)_
 - **Contas todo mês** — Seção guarda molde de conta mensal que abre pendente no dia certo. Onde: Organização → Financeiro → Todo mês. _(desde 1.41.0)_
 - **Regras de comissão** — Lista define percentual por pessoa, serviço ou ambos, valendo a específica. Onde: Organização → Financeiro → Comissão. _(desde 1.41.0)_
 
 ### Organização → LGPD
-- **Arquivo de dados para o titular (Brasil)** — Quem pede acesso aos próprios dados recebe também o arquivo com todas as mensagens e sem as anotações da equipe (LGPD, art. 18, II). Onde: Organização → LGPD. _(desde 1.78.0)_
+- **Arquivo de dados para o titular (Brasil)** — Quem pede acesso aos próprios dados recebe também o arquivo com todas as mensagens e sem as anotações da equipe (LGPD, art. 18, II). Na 1.79.0 o arquivo passa a ser montado em partes e usa cerca de um terço da memória de antes; o conteúdo é o mesmo, e se a leitura falhar no meio o arquivo avisa que pode estar incompleto. Onde: Organização → LGPD. _(desde 1.78.0)_
 
 - **Relatório cita o país** — Acesso cita a lei do país; sem revisão não cita nenhuma e conta feriado local. (alíneas do art. 15 para Portugal na 1.74.0). Onde: Organização → LGPD → relatório. _(desde 1.35.0)_
 - **Esquecer e exportar** — Pedido apaga em cascata por worker; anonimizar vale mais que excluir. _(desde 1.0.0)_
 
 ### Organização → Marca
 
+- **Cor da marca no tema escuro** — Campo opcional ao lado da cor principal, como o logo já tinha. Vazio, nada muda; preenchido, só o tema escuro usa essa cor (e-mails e tema claro seguem na principal). Na 1.79.0 o número do contraste no modo escuro passa a medir essa cor — é o do botão que aparece na tela. Onde: Organização → Marca e Administração → Marca → "Cor da marca no tema escuro". _(desde 1.79.0)_
+- **Dica em português de Portugal** — Em Portugal a dica da tela Marca manda conferir a "Denominação social" e fala de RGPD; no Brasil o texto não muda. _(desde 1.79.0)_
 - **Logo grande é ajustado** — Logo acima de 512 KB é recortado e reduzido no navegador antes de enviar. _(desde 1.51.0)_
 
 ### Organização → Notificações
@@ -94,11 +99,11 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Organização → Perfil
 
-- **Sistema em espanhol** — PT/ES no topo, na instalação e no perfil; datas acompanham o idioma. Onde: Organização → Perfil → idioma. _(desde 1.10.0)_
+- **Sistema em espanhol** — PT/ES no topo, na instalação e no perfil; datas acompanham o idioma. Na 1.79.0 a tela de erro fatal passa a aparecer em espanhol (tratando por "tú") para quem usa o navegador em espanhol; em português nada muda. Onde: Organização → Perfil → idioma. _(desde 1.10.0)_
 
 ### Organização → Recursos opcionais
 
-- **Tela de recursos opcionais** — Um lugar lista tudo que liga e desliga, o estado e o botão Ajustar de cada um. _(desde 1.62.0)_
+- **Tela de recursos opcionais** — Um lugar lista tudo que liga e desliga, o estado e o botão Ajustar de cada um. Na 1.79.0 cada linha passa a mostrar o caminho completo de onde o recurso aparece (e diz quando não cria menu); empresa com o menu enxuto passa a ver a entrada do recurso ligado. _(desde 1.62.0)_
 
 ### Organização → Segurança
 
@@ -117,7 +122,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Clientes pela agenda** — Regra etiqueta como cliente quem tem horário e marca data e funil. Onde: Organização → Tipos de agendamento → clientes. _(desde 1.28.0)_
 - **Lembrete mais de uma vez** — Tipo ganha E de novo com até três avisos adicionais. Onde: Organização → Tipos de agendamento → lembrete. _(desde 1.25.0)_
 - **Fechar dia na agenda** — Dá para fechar o dia em Configurações sem falso compromisso. Onde: Organização → Tipos de agendamento → fechar dia. _(desde 1.22.0)_
-- **Lembrete do compromisso** — Tipo ganha aviso com minutos e lista mostra quem está ligado. Onde: Organização → Tipos de agendamento → aviso. _(desde 1.18.0)_
+- **Lembrete do compromisso** — Tipo ganha aviso com minutos e lista mostra quem está ligado. Na 1.79.0 o lembrete não é mais dado como enviado quando o canal não pode entregá-lo: fora da janela de 24h ele tenta outro canal e, se nenhum pode, tenta de novo na próxima rodada. Onde: Organização → Tipos de agendamento → aviso. _(desde 1.18.0)_
 
 ### Outros
 

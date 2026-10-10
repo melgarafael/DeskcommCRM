@@ -1,12 +1,14 @@
 # Funcionalidades — Canais
 
 O que há aqui: conexões, Webhooks, integrações e proteções de envio.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
 ### Canais → Conexões
 
+- **Agendar pausa** — A janela de manutenção pausa e retoma sozinha: escolha início, fim e uma conexão ou todas; a mensagem que chega durante a janela é guardada e volta à fila na retomada. Janelas podem ser listadas e canceladas; ainda não dá para editar uma. Onde: Canais → Conexões → Agendar pausa. _(desde 1.79.0)_
+- **Modelos com parâmetros nomeados voltam a enviar** — Templates oficiais do WhatsApp com parâmetros nomeados (parameter_format NAMED) voltam a ser enviados pelo Inbox e pela API sem o erro meta_100, sem reconfigurar nada. Onde: Canais → Conexões → Modelos. _(desde 1.79.0)_
 - **Pausar e retomar todas** — A Central de Conexões ganha pausa em lote de todos os números com contagem. _(desde 1.75.0)_
 - **Desvincular perfil social** — Dá para excluir canais órfãos e desvincular o perfil para trocar de conta. Onde: Canais → Conexões → Redes sociais. _(desde 1.75.0)_
 - **Botão pausar canal** — Cada número ganha Pausar e Retomar; pausado não entra na inbox nem envia nada. _(desde 1.74.0)_
@@ -39,6 +41,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Loja Nuvemshop ligada** — Pedidos e clientes da loja entram no CRM sem digitação. (fora do menu desde 1.15.0, só pela busca). _(desde 1.0.0)_
 
 ### Canais → Webhooks
+- **Automação de tempo com funil e etapa** — "Quando ficar N dias sem mensagem" e "Quando um lead ficar N dias na mesma etapa" ganham seletores de funil e etapa, e salvar pela tela não apaga mais o recorte. Onde: Canais → Webhooks → regras. _(desde 1.79.0)_
 - **Formulário próprio por fonte** — Cada fonte de entrada gera um formulário com perguntas extras (listas, caixas, números, valores em reais), pode ser renomeada, e as respostas ficam no lead. Onde: Canais → Webhooks → Fontes. _(desde 1.78.0)_
 - **Automação limitada a uma fonte** — As automações de novos contatos podem valer só para uma fonte de entrada. Onde: Canais → Webhooks → regras. _(desde 1.78.0)_
 

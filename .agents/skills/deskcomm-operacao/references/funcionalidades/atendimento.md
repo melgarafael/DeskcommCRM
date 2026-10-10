@@ -1,7 +1,7 @@
 # Funcionalidades — Atendimento
 
 O que há aqui: tela de conversa, agenda, radar e avisos que chegam a quem atende.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -27,6 +27,8 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Agenda na tela** — Tipos, grade, marcar e remarcar com motivo; IA consulta e marca junto. _(desde 1.7.0)_
 
 ### Atendimento → Inbox
+- **Documento mostra o nome original** — O cartão de documento recebido mostra o nome original do arquivo, e não só a extensão. Vale para documentos recebidos depois da atualização; os antigos seguem mostrando a extensão. Onde: Atendimento → Inbox → documento. _(desde 1.79.0)_
+- **Toque em botão de modelo aparece na conversa** — A resposta de quem clica num botão do modelo (toque, respostas de botão e de lista) entra como texto com o nome do botão, e a IA passa a vê-lo. Onde: Atendimento → Inbox. _(desde 1.79.0)_
 - **Largura das colunas do Inbox ajustável** — Arraste a divisória da lista de conversas e da ficha do contato em tablet e notebook; a escolha fica no navegador e o duplo clique volta ao padrão. Onde: Atendimento → Inbox → divisória. _(desde 1.78.0)_
 - **Prévia do modelo aprovado com a janela fechada** — Na conversa com a janela de 24 horas fechada, escolher um modelo aprovado mostra cabeçalho, corpo, rodapé e botões, atualizados enquanto você preenche. Onde: Atendimento → Inbox → modelo. _(desde 1.78.0)_
 - **Aviso de mensagem para quem cuida** — O aviso de mensagem recebida vai ao atendente e aos administradores; sem atendente mas com negócio aberto, ao dono e aos administradores; sem responsável, à equipe toda. _(desde 1.78.0)_
@@ -48,7 +50,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Transferir por outro número** — O Transferir ganha aba Número para continuar no mesmo cliente em outro canal. Onde: Atendimento → Inbox → Transferir. _(desde 1.46.0)_
 - **Enriquecimento na conversa** — O painel mostra site, segmento e redes coletados na prospecção com fonte. Onde: Atendimento → Inbox → painel. _(desde 1.41.0)_
 - **Logo do canal na conversa** — Lista e cabeçalho mostram o logo da rede junto da identidade do contato. Onde: Atendimento → Inbox → logo. _(desde 1.41.0)_
-- **Cartão de passagem no fio** — A conversa mostra porquê, tentativas e aviso com botão Assumir e responder. Onde: Atendimento → Inbox → cartão. _(desde 1.38.0)_
+- **Cartão de passagem no fio** — A conversa mostra porquê, tentativas e aviso com botão Assumir e responder. Na 1.79.0 o fio volta a rolar até o fim quando o cartão chega antes das mensagens, e o "Assumir e responder" volta a ficar à vista ao abrir a conversa. Onde: Atendimento → Inbox → cartão. _(desde 1.38.0)_
 - **Contexto ao assumir** — Quem assume lê porquê e tentativas; aviso se fecha e repetido vira acréscimo. Onde: Atendimento → Inbox → cartão. _(desde 1.38.0)_
 - **Botão Novo Lead** — Botão Lead vira Novo Lead; existente segue em Leads recentes. Onde: Atendimento → Inbox → Novo Lead. _(desde 1.31.0)_
 - **Arquivar conversa da fila** — A conversa sai da fila para Arquivadas e volta sozinha se o cliente escrever. Onde: Atendimento → Inbox → Arquivar. _(desde 1.30.0)_

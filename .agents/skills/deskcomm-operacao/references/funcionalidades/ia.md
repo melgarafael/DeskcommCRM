@@ -1,12 +1,15 @@
 # Funcionalidades — Agente de IA
 
 O que há aqui: agentes, follow-ups, fluxos, roteadores, conhecimento e supervisão.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
 ### Agente de IA → Agentes
 
+- **Passagem por assunto jurídico por agente** — No cartão "Passar para uma pessoa", um interruptor novo (padrão ligado, só admin muda) desliga a passagem quando o cliente fala de assunto jurídico (Procon, advogado, processo) — para escritório onde esse é o vocabulário normal. O pedido explícito de pessoa e as palavras de passagem seguem valendo. Onde: Agente de IA → Agentes → Passar para uma pessoa. _(desde 1.79.0)_
+- **Teste diz quando o provedor bloqueia** — A prévia do Teste do agente diz quando o provedor bloqueou o conteúdo, separado de saldo, credencial e veto de promessas. Onde: Agente de IA → Agentes → Teste. _(desde 1.79.0)_
+- **Agente pela assinatura fecha o turno** — Com "OpenAI pela assinatura (ChatGPT)", a fita da resposta chega ao fechamento na prévia e no WhatsApp, e as sugestões com ferramenta (propostas, "preencher com a conversa") passam a funcionar. Onde: Agente de IA → Agentes → Teste. _(desde 1.79.0)_
 - **Modelos Gemini** — O seletor de modelos do Google traz o Gemini 3.5 Flash-Lite, com ferramentas e visão (ampliada na 1.78.0: 3.1 Flash-Lite e 3.6, 3.7 e 3.8 Flash). _(desde 1.77.0)_
 - **Bloqueio de afirmação clínica** — Proteção que barra diagnóstico, remédio e garantia de resultado; abre caso se insistir. Onde: Agente de IA → Agentes → Segurança. _(desde 1.74.0)_
 - **Aviso fora do horário** — Dá para configurar um texto de aviso para quem escreve fora do atendimento. Onde: Agente de IA → Agentes → gatilho de horário. _(desde 1.72.0)_
@@ -31,7 +34,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Escopo de funil no agente** — Você marca os funis em que ele pode escrever e nada além. Onde: Agente de IA → Agentes → escopo. _(desde 1.2.0)_
 - **Clima medido na conversa** — Cada mensagem ganha leitura de irritação para chamar gente. Onde: Agente de IA → Agentes → clima. _(desde 1.0.0)_
 - **IA sob as mesmas regras** — O agente obedece fileira, permissão e auditoria como gente. Onde: Agente de IA → Agentes → regras. _(desde 1.0.0)_
-- **Sete checagens no envio** — Cada saída passa por descadastro, LGPD, ritmo, promessa e aviso. Onde: Agente de IA → Agentes → Segurança. _(desde 1.0.0)_
+- **Sete checagens no envio** — Cada saída passa por descadastro, LGPD, ritmo, promessa e aviso. Na 1.79.0 o revisor passa a reconhecer ofertas com palavras acentuadas (matrícula, grátis, demonstração), a considerar o contexto (oferecer transferência não vira promessa) e a manter explícitas as gratuidades aprovadas na base; promessa sem respaldo segue vetada, sem nada a configurar. Onde: Agente de IA → Agentes → Segurança. _(desde 1.0.0)_
 
 ### Agente de IA → Alertas
 
@@ -71,7 +74,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Base que responde** — Material vira resposta com análise de clima junto. _(desde 1.0.0)_
 
 ### Agente de IA → Credenciais
-- **ChatGPT por assinatura com login próprio** — A conexão usa o "Sign in with ChatGPT" e a lista de modelos é por empresa; quem conectou antes precisa conectar de novo. Onde: Agente de IA → Credenciais. _(desde 1.78.0)_
+- **ChatGPT por assinatura com login próprio** — A conexão usa o "Sign in with ChatGPT" e a lista de modelos é por empresa; quem conectou antes precisa conectar de novo. Na 1.79.0 a lista passa a ser buscada no serviço do Codex (se a busca falhar, o seletor mostra o motivo); se a lista não vier, declare `CODEX_CLIENT_VERSION` no `.env` (ex.: `0.160.1`). Onde: Agente de IA → Credenciais. _(desde 1.78.0)_
 
 - **Login ChatGPT por assinatura** — Com interruptor da instalação, cada empresa conecta a assinatura no Credenciais. _(desde 1.74.0)_
 - **Provedor personalizado OpenAI** — Credenciais aceita endpoint próprio com teste de conexão antes de salvar. _(desde 1.50.0)_
@@ -93,6 +96,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Agente de IA → Follow-ups
 
+- **Texto fixo respeita janela e faixa** — O follow-up de texto fixo respeita a janela de disparo do canal e a faixa do agente; fora delas, o envio espera a próxima abertura em vez de sair de madrugada. Onde: Agente de IA → Follow-ups. _(desde 1.79.0)_
 - **Mover card e tag no follow-up** — O editor ganha caixas de mover lead no funil e editar tag do lead. Onde: Agente de IA → Follow-ups → editor. _(desde 1.70.0)_
 - **Silêncio espera para recomeçar** — O fluxo de silêncio pode esperar antes de recomeçar para quem já passou por ele. _(desde 1.70.0)_
 - **Pausa conta do último envio** — A pausa do gatilho de silêncio pode contar a partir do último envio do fluxo. _(desde 1.70.0)_

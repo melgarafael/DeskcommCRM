@@ -1,7 +1,7 @@
 # Funcionalidades — Administração e plataforma
 
 O que há aqui: telas de /admin e o que só o dono da VPS vê ou configura.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -49,6 +49,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Tema no Modo Plataforma** — A tarja ganha troca de claro, escuro e sistema com atalho de teclado. Onde: Administração → Modo Plataforma → tema. _(desde 1.54.0)_
 
 ### Administração → Sistema
+- **Cobrança pelo Asaas** — Opcional: em Conexão, escolha Asaas e cole a chave de API para cobrar com Pix e boleto todo mês (pagos a cada cobrança, não é débito automático); atraso, suspensão e reativação funcionam como na Stripe. Assinaturas existentes ficam no provedor em que nasceram. Onde: Administração → Cobrança → Conexão. _(desde 1.79.0)_
 - **Cobrança dos seus clientes** — Opcional e desligada: ligue em Recursos opcionais, conecte a Stripe em Administração › Cobrança e crie os planos. Empresa nova ganha teste grátis; pagamento atrasado gera aviso na Central, faixa no topo e e-mail, e suspensão depois da tolerância (5 a 30 dias, padrão 7, com aviso final 48 horas antes); paga, volta sozinha. O menu Billing da empresa passa a se chamar Plano e cobrança. Os limites por plano chegam travados: nenhuma empresa tem teto ainda. Onde: Administração → Cobrança. _(desde 1.78.0)_
 - **Módulos guardam informação própria** — Um módulo de nicho declara as fichas que guarda e o servidor cria as tabelas, isoladas por empresa; a informação aparece na ficha do contato. O catálogo oficial ainda não publica módulo desse tipo. _(desde 1.78.0)_
 - **Rota global do webhook do WhatsApp só da rede interna** — Quem roda o WAHA em outro servidor precisa apontar o webhook para o endereço com o token do canal; quem usa o WAHA da instalação não faz nada. _(desde 1.78.0)_
@@ -62,6 +63,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Administração → acompanhar organização
 
+- **Editar cadastro e excluir tenant pela tela** — O administrador da plataforma edita o cadastro, corrige o e-mail de acesso (a troca avisa a Central da empresa e o endereço antigo) e exclui o tenant. A exclusão só vale para tenant suspenso pelo administrador (nunca por falta de pagamento) e sem assinatura ativa, pede motivo e confirmação, fica na auditoria e confere a assinatura com o provedor de cobrança na hora — se o provedor não responder, nada é apagado, basta tentar de novo. Exige acesso completo à plataforma e a verificação em duas etapas. Onde: Administração → Tenants → painel do tenant. _(desde 1.79.0)_
 - **Acompanhar com prazo** — Administração abre a empresa com identidade real, edição ou leitura e banner. _(desde 1.17.0)_
 
 ### Administração → criar organização
@@ -111,6 +113,8 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Kit: install.sh
 
+- **Banco na VPS sem expor as chaves** — A instalação com o banco na própria VPS deixa de mostrar as chaves do banco na tela; a saída completa fica em `.runtime/supabase-setup.log`, só para o root. Instalações existentes não mudam. _(desde 1.79.0)_
+- **Banco na VPS atrás do Coolify** — Instalação com o banco na própria VPS passa a funcionar atrás do proxy do Coolify, com passo a passo medido em `docs/saas/coolify.md`. Quem instala sem as variáveis novas não vê mudança. _(desde 1.79.0)_
 - **Instalação com um comando** — Script sobe app, WhatsApp e banco com diagnóstico junto. _(desde 1.0.0)_
 
 ### Kit: install.sh pergunta IA

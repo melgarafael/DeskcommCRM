@@ -1,6 +1,6 @@
 # Mapa da interface
 
-Esta lista foi extraída do catálogo de navegação (`lib/navigation/catalogo.ts`) em 2026-10-08.
+Esta lista foi extraída do catálogo de navegação (`lib/navigation/catalogo.ts`) em 2026-10-10.
 O catálogo manda sobre este arquivo: se a tela disser diferente, a tela tem razão.
 Para consultar na hora, veja a seção 'Como consultar na hora' do SKILL.md.
 
@@ -30,7 +30,7 @@ Hub: "Ver tudo em CRM" → `/app/crm`
 | Tarefas | CRM → Tarefas `/app/tasks` | O que ficou combinado, com prazo — e o que já venceu sem ninguém fazer. | todos |  |
 | Planos de tarefa | CRM → Hub "Ver tudo em CRM" → Planos de tarefa `/app/tasks/planos` | Sequências reutilizáveis de tarefas — montar uma vez e aplicar a cada negócio. | todos |  |
 | Chamadas | CRM → Hub "Ver tudo em CRM" → Chamadas `/app/calls` | Histórico de ligações (voz por IA) com transcrição. | gerente ou acima |  |
-| Comandas | CRM → Hub "Ver tudo em CRM" → Comandas `/app/comandas` | O que foi feito, por quem, e quanto o cliente paga. | todos |  |
+| Comandas | CRM → Hub "Ver tudo em CRM" → Comandas `/app/comandas` | O que foi feito, por quem, e quanto o cliente paga. | todos | Só aparece se o módulo `financeiro` estiver ligado. |
 
 ### Preparar a venda
 
@@ -84,7 +84,7 @@ Hub: "Ver tudo em IA" → `/app/ai`
 
 | Tela | Caminho | Serve para | Quem vê | Observação |
 |---|---|---|---|---|
-| Conexões | Canais → Conexões `/app/connections` | Seus números de WhatsApp: por QR ou canal oficial da Meta, com saúde, reconexão e templates. | administrador | Mostra um ponto de saúde da conexão. |
+| Conexões | Canais → Conexões `/app/connections` | Seus números de WhatsApp: por QR ou canal oficial da Meta, com saúde, reconexão e templates. | administrador | Mostra um ponto de saúde da conexão. Botão Agendar pausa para janelas de manutenção. |
 | Nuvemshop | Canais → só pela busca → Nuvemshop `/app/integrations/nuvemshop` | Conecte a loja para trazer pedidos e clientes para dentro do CRM. | administrador | Não está no menu: só se chega pela busca. |
 | Webhooks | Canais → Webhooks `/app/webhooks` | Avise outros sistemas quando algo acontecer aqui dentro. | gerente ou acima |  |
 
@@ -138,12 +138,12 @@ Hub: "Configurações" → `/app/settings`
 | Organização | Organização → Hub "Configurações" → Organização `/app/settings/tenant` | Dados da empresa, retenção de dados e encarregado de LGPD. | administrador |  |
 | Conversões | Organização → Hub "Configurações" → Conversões `/app/settings/conversoes` | Devolver ao anúncio as vendas que ele trouxe, e marcar a origem de quem chega pelo site. | administrador |  |
 | Meta Ads | Organização → Hub "Configurações" → Meta Ads `/app/settings/meta-ads` | Conectar a conta de anúncios para ler o desempenho das campanhas. | administrador |  |
-| Marca | Organização → Hub "Configurações" → Marca `/app/settings/marca` | O nome e a cor que sua empresa mostra dentro do sistema. | administrador |  |
+| Marca | Organização → Hub "Configurações" → Marca `/app/settings/marca` | O nome e a cor que sua empresa mostra dentro do sistema. | administrador | Com cor opcional para o tema escuro. |
 | Plano e cobrança | Organização → Hub "Configurações" → Plano e cobrança `/app/settings/billing` | Pagamento, troca de plano e faturas da sua empresa. | administrador |  |
 | Tipos de agendamento | Organização → Hub "Configurações" → Tipos de agendamento `/app/settings/tenant/agenda` | O que se pode marcar, quanto dura, onde acontece e quem atende. | todos |  |
 | Propostas | Organização → Hub "Configurações" → Propostas `/app/settings/tenant/proposals` | Configure a validade padrão e condições para propostas comerciais. | gerente ou acima | Só aparece se o módulo `propostas` estiver ligado. |
 | Modelos de proposta | Organização → Hub "Configurações" → Modelos de proposta `/app/settings/tenant/proposals/modelos` | Personalize os modelos da plataforma ou crie os da sua empresa, inclusive a partir de uma proposta que você já usa. | gerente ou acima | Só aparece se o recurso `propostas` estiver ligado. |
-| Financeiro | Organização → Hub "Configurações" → Financeiro `/app/settings/tenant/financeiro` | Contas, formas de pagamento e como cada lançamento é classificado. | todos |  |
+| Financeiro | Organização → Hub "Configurações" → Financeiro `/app/settings/tenant/financeiro` | Contas, formas de pagamento e como cada lançamento é classificado. | todos | Com Editar em contas, formas, plano de contas, comissões e recorrências. |
 | Extensões | Organização → Hub "Configurações" → Extensões `/app/extensions` | Guias instalados para orientar o trabalho no CRM, com permissões e estado visíveis. | todos |  |
 
 ### Dados e acesso

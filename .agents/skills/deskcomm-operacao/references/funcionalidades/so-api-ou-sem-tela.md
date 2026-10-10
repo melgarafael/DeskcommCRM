@@ -1,12 +1,14 @@
 # Funcionalidades — Só API ou sem tela
 
 O que há aqui: o que só existe por rota, token, variável ou rotina.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
 | Funcionalidade | Desde | O que se sabe | Evidência |
 |---|---|---|---|
+| Pedido de plataforma sem conector vira origem genérica | 1.79.0 | Pedido de Tray, Loja Integrada ou WooCommerce entra com origem `external`, id `<plataforma>:<id>` e plataforma no `payload`. Os conectores nativos não mudam. Quem alargou a restrição à mão: pedidos antigos são convertidos sozinhos, mas troque a ponte para gravar `external` ANTES de atualizar — depois, gravar o nome da plataforma é recusado e o pedido novo se perde. | supabase/migrations/20261009175100_0623_pedido_sem_conector_nativo_vira_origem_generica.sql:tabela orders |
+| Teto de 36500 dias nos prazos | 1.79.0 | Os dois prazos do arquivo de webhooks com valor exagerado no `.env` não derrubam mais a poda: viram o teto, com aviso no log. | lib/retencao/politica.ts:RETENCAO_TETO_DIAS |
 | Prazo de guarda da IA | 1.77.0 | Sete tabelas da IA entram na limpeza diária com prazo configurável por variável no .env. | lib/env.ts:AI_TELEMETRY_RETENTION_DAYS |
 | Base de MCP externo | 1.77.0 | O agente pode chamar ferramentas de servidor MCP externo registrado; ainda sem tela. | app/actions/settings/definirServidorMcpExterno.ts |
 | Passo IA decide por API | 1.74.0 | Passo que deixa a IA escolher entre opções da regra; ainda sem tela. | lib/automation/ai-decide-da-org.ts |

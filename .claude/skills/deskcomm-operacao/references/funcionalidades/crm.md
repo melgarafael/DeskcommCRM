@@ -1,7 +1,7 @@
 # Funcionalidades — CRM
 
 O que há aqui: funil, contatos, empresas, tarefas, campanhas, produtos, propostas e chamadas.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -16,6 +16,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### CRM → Comandas
 
+- **Comandas vira módulo** — A tela só aparece se o módulo `financeiro` estiver ligado; instalação anterior a esta versão continua com Comandas ligada, instalação nova liga em Administração → Módulos. O caixa (contas, lançamentos, Faturamento) continua com ou sem o módulo, e os dados ficam como estão. Onde: CRM → Hub "Ver tudo em CRM" → Comandas (pré-requisito: Administração → Módulos → financeiro). _(desde 1.79.0)_
 - **Comanda com comissão** — Fechar comanda marca venda, comissão, entrada, ponto e conclui agendamento. _(desde 1.41.0)_
 - **Faturar atendimentos soltos** — Lista mostra o feito e não cobrado; marque, pague e fature de uma vez. Onde: CRM → Comandas → sem comanda. _(desde 1.41.0)_
 - **Fidelidade com saldo** — Saldo aparece na comanda; API devolve saldo e extrato; erro se corrige ao contrário. Onde: CRM → Comandas → pontos. _(desde 1.41.0)_
@@ -23,6 +24,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### CRM → Contatos
 
+- **Carteira do cliente (vendedor dono)** — O cliente pode ter um vendedor dono: o dono é avisado por tarefa quando o cliente escreve numa conversa que está com outro vendedor, e o negócio novo desse cliente nasce com ele. Por enquanto a carteira é definida pela API (gerente ou acima); o cartão na ficha do contato vem depois. Cliente sem carteira segue o rodízio de hoje. Onde: API `PATCH /api/v1/contacts/[id]/carteira`; o efeito aparece em CRM → Tarefas (aviso ao dono) e CRM → Funis (negócio nasce com o dono). _(desde 1.79.0)_
 - **Escolha do número ao iniciar** — Com mais de um número, iniciar conversa pelos contatos pergunta por qual número sai. Onde: CRM → Contatos → Iniciar conversa. _(desde 1.77.0)_
 - **Contato pessoal com toque** — Dá para marcar contato como pessoal e tirá-lo do inbox, funil, IA e envios. _(desde 1.75.0)_
 - **Data de nascimento no contato** — Ficha ganha o campo; o agente propõe a data ouvida para alguém confirmar. Onde: CRM → Contatos → ficha. _(desde 1.50.0)_
@@ -46,6 +48,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### CRM → Etapas do funil
 
+- **Quem pula o funil no onboarding liga três etapas** — Quem pula o passo do funil no onboarding já sai com Aguardando pagamento, Pago e Cancelado ligadas ao assistente, como no pacote "Loja". Empresas que já pularam ficam como estão; ligue em Configurações › Funis. _(desde 1.79.0)_
 - **Ganhar negócio abre comanda** — Por funil, dá para ligar a abertura automática de comanda com valor e contato ao ganhar. _(desde 1.77.0)_
 - **Tempo parado na etapa** — A tela de etapas mostra há quanto tempo cada negócio está na etapa agora. _(desde 1.73.0)_
 - **Taxa de ganho sugere chance** — A coluna mostra histórico de ganho e sugere a probabilidade; aceitar é manual. _(desde 1.71.0)_

@@ -1,7 +1,7 @@
 # Funcionalidades — Análise
 
 O que há aqui: desempenho, relatórios, faturamento e trilhas.
-Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.79.0 e conferido contra o menu e o código em 2026-10-10.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -12,6 +12,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Análise → Audit Log
 
+- **Poda de retenção conta os lotes e falha sozinha** — Poda interrompida no meio leva as contagens dos lotes que já passaram (o relatório e a auditoria deixam de registrar zero para o que já foi apagado); poda que falha não pula a anonimização do dia nem some com as contagens das outras — cada uma falha sozinha e é nomeada no relatório, e a retomada da LGPD roda de qualquer jeito. Onde: Análise → Audit Log (rodada do `data-retention`). _(desde 1.79.0)_
 - **Auditoria mostra antes e depois** — O log passa a trazer valor anterior e novo de valor, moeda, responsável e data. _(desde 1.73.0)_
 - **Auditoria que não apaga** — Todo feito fica registrado com retenção de cinco anos. _(desde 1.0.0)_
 
