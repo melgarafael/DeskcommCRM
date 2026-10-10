@@ -4348,6 +4348,7 @@ export type Database = {
           assinaturas_vivas: number
           cancela_no_fim: boolean
           checkout_expira_em: string | null
+          checkout_sessao_id: string | null
           checkout_url: string | null
           link_de_pagamento: string | null
           created_at: string
@@ -4374,6 +4375,7 @@ export type Database = {
           assinaturas_vivas?: number
           cancela_no_fim?: boolean
           checkout_expira_em?: string | null
+          checkout_sessao_id?: string | null
           checkout_url?: string | null
           link_de_pagamento?: string | null
           created_at?: string
@@ -4400,6 +4402,7 @@ export type Database = {
           assinaturas_vivas?: number
           cancela_no_fim?: boolean
           checkout_expira_em?: string | null
+          checkout_sessao_id?: string | null
           checkout_url?: string | null
           link_de_pagamento?: string | null
           created_at?: string

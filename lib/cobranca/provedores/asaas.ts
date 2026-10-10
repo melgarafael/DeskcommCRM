@@ -113,6 +113,8 @@ const assinaturaDoAsaas = z.object({
   deleted: z.boolean().nullish(),
   cycle: z.string(),
   dateCreated: z.string(),
+  /** Valor por ciclo, em reais — é o que `trocarPlano` grava (`precoCents / 100`). */
+  value: z.number().nullish(),
 });
 type AssinaturaDoAsaas = z.infer<typeof assinaturaDoAsaas>;
 /** Removida (`deleted`), INACTIVE ou EXPIRED. */
@@ -508,7 +510,29 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     if (primeira === undefined) throw new ErroDoProvedor(null, "cobranca_ainda_nao_gerada", true);
     const url = linkSeguro(primeira.invoiceUrl);
     if (url === null) throw new ErroDoProvedor(200, "resposta_invalida", false);
-    return { url, expiraEm: null, assinaturaRef };
+    // A cobrança é a "sessão" do Asaas: é a id que a troca de plano expira no
+    // provedor (#2609) — guardada junto com o link em `checkout_sessao_id`.
+    return { url, expiraEm: null, assinaturaRef, sessaoId: primeira.id };
+  }
+
+  /**
+   * `DELETE /v3/payments/{id}` (#2609): a cobrança pendente some e o link dela
+   * (`invoiceUrl`) para de aceitar pagamento — é o que deixa a troca de plano
+   * valer na hora sem deixar link vivo com o preço antigo. 404 é cobrança já
+   * apagada: o efeito desejado, não falha. Id que não é de cobrança do Asaas (id
+   * de OUTRO provedor na mesma linha) não apaga nada aqui, então recusa em vez
+   * de deixar quem chama limpar o link achando que ele morreu.
+   */
+  async function expirarSessao(sessaoId: string): Promise<void> {
+    if (!sessaoId.startsWith("pay_")) throw new ErroDoProvedor(422, "sessao_de_outro_provedor", false);
+    try {
+      await chamar("DELETE", `/payments/${encodeURIComponent(sessaoId)}`);
+    } catch (e) {
+      // 2xx sem corpo (204/200 vazio) também é apagado: o `chamar` só sabe que o
+      // DELETE foi aceito pelo status, e não há corpo que ler.
+      if (e instanceof ErroDoProvedor && (e.status === 404 || (e.codigo === "resposta_invalida" && (e.status ?? 0) < 300))) return;
+      throw e;
+    }
   }
 
   /**
@@ -567,6 +591,8 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
       emTesteNoProvedorAte: null,
       pagamentoSemAssinaturaViva: false,
       linkDePagamento: linkSeguro(aberta?.invoiceUrl),
+      // O preço do PLANO gravado contra este (#2609): o valor por ciclo da principal, em centavos.
+      precoCents: principal?.value === null || principal?.value === undefined ? null : Math.round(principal.value * 100),
       statusBruto: principal
         ? [principal.status, existe ? null : "sem_pagamento", emAtraso ? "em_atraso" : null].filter(Boolean).join(":")
         : referencia
@@ -620,6 +646,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     removerWebhooks,
     garantirCliente,
     iniciarAssinatura,
+    expirarSessao,
     lerSituacao,
     trocarPlano,
     cancelarNoFim,
