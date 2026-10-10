@@ -264,12 +264,9 @@ describe("segunda opinião configurável só de retorno humano", () => {
     expect(result).toEqual({ ...original, prometeuRetornoHumano: false });
     expect(call).toHaveBeenCalledTimes(2);
     const second = call.mock.calls[1]![2];
-    expect(second).toMatchObject({
-      purpose: binding.purpose,
-      model: binding.model_id,
-      tenantId: "org-do-servidor",
-      llmOverride: { provider: binding.provider, credentialId: binding.credential_id },
-    });
+    expect(second).toMatchObject({ purpose: binding.purpose, tenantId: "org-do-servidor" });
+    expect(second.model).toBeUndefined();
+    expect(second.llmOverride).toBeUndefined();
     expect(JSON.parse(second.messages[0]!.content as string)).toEqual({
       mensagem: args.candidate,
       evidencias: args.commercialEvidence,
