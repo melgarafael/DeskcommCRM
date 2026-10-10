@@ -14,10 +14,13 @@
  *
  * Páginas humanas: /checkout/:id, /fatura/:id (o "Pagar agora") e /portal/:cliente.
  * Controle do teste: `cobrarAgora`, `atrasar` e `enviarAvisoForjado`.
+ * O dialeto Asaas mora em /v3 e /i/:cobranca do MESMO servidor (provedor-de-cobranca-asaas.ts).
  */
 import { createHmac, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+
+import { criarDialetoAsaas, type DubleAsaas } from "./provedor-de-cobranca-asaas";
 
 const VERSAO_MINIMA = "2025-03-31";
 const DIA_EM_S = 86_400;
@@ -74,6 +77,8 @@ export interface ProvedorDeCobrancaFalso {
   atrasar(cliente: string): Promise<string>;
   /** Aviso com assinatura errada; devolve o status HTTP que o app respondeu. */
   enviarAvisoForjado(cliente: string): Promise<number>;
+  /** O dialeto Asaas, em /v3 do mesmo servidor. */
+  readonly asaas: DubleAsaas;
   fechar(): Promise<void>;
 }
 
@@ -136,6 +141,7 @@ export async function subirProvedorDeCobranca(opcoes: { porta: number }): Promis
   const faturas = new Map<string, FaturaDoDuble>();
   const portais: Array<{ id: string; marca: string }> = [];
   const retornosDoPortal = new Map<string, string>();
+  const asaas = criarDialetoAsaas(() => base);
 
   const criadoEm = () => (relogio = Math.max(relogio + 1, agoraS()));
   const itemDe = (a: AssinaturaDoDuble) => a.id.replace(/^sub_/, "si_");
@@ -419,6 +425,8 @@ export async function subirProvedorDeCobranca(opcoes: { porta: number }): Promis
       const url = new URL(req.url ?? "/", base);
       const bruto = await lerCorpo(req);
       if (url.pathname.startsWith("/v1/")) return api(req, res, url, bruto);
+      if (url.pathname.startsWith("/v3/")) return asaas.api(req, res, url, bruto);
+      if (url.pathname.startsWith("/i/")) return asaas.pagina(req, res, url);
       return paginas(req, res, url);
     })().catch((erro: unknown) => {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
@@ -438,6 +446,7 @@ export async function subirProvedorDeCobranca(opcoes: { porta: number }): Promis
     chamadas,
     avisos,
     falhas,
+    asaas: asaas.controle,
     urlDoWebhook: () => endpoint?.url ?? null,
     segredoDoWebhook: () => endpoint?.secret ?? null,
     clienteDaOrg: (orgId) => [...clientes.values()].find((c) => c.organizacao === orgId)?.id ?? null,

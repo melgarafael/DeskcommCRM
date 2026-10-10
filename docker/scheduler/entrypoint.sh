@@ -64,6 +64,13 @@ CRONS="
 * * * * *|45|api/v1/cron/campaign-worker
 */5 * * * *|60|api/v1/cron/webhook-log-retention
 */5 * * * *|45|api/v1/cron/channel-health
+# A JANELA DE MANUTENÇÃO (#2388). Minuto a minuto porque o que ela decide é a
+# borda de um horário ESCOLHIDO POR UMA PESSOA: perder a abertura ou a retomada
+# por causa de uma varredura a cada 5 minutos seria o defeito inteiro. Barata:
+# só lê as duas linhas vivas da agenda, e quem não tem janela não é escrito.
+# Quando escreve, escreve pela MESMA peça da pausa manual — não existe estado
+# paralelo.
+* * * * *|25|api/v1/cron/channel-pause-scheduler
 */10 * * * *|60|api/v1/cron/contact-avatars
 */10 * * * *|60|api/v1/cron/agenda-google-refresh
 */15 * * * *|90|api/v1/cron/agenda-google-sync

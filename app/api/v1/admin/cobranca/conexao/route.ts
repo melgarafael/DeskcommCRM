@@ -13,7 +13,8 @@
  *   5. testar a chave DIGITADA (nada é gravado antes de o provedor aceitá-la);
  *   6. publicação (teste → produção) só confirmada: quem assinou em teste
  *      volta ao teste grátis (D-7);
- *   7. criar o aviso de pagamento novo, gravar cifrado e SÓ ENTÃO apagar os
+ *   7. criar o aviso de pagamento novo (no Asaas sem a API de avisos: devolver
+ *      URL, token e eventos UMA vez, para o dono cadastrar à mão), gravar cifrado e SÓ ENTÃO apagar os
  *      antigos (gravação que falha desfaz o novo); converter; na publicação,
  *      apagar o aviso do modo de teste com a chave velha; auditar só os 4
  *      últimos e avisar todo dono com acesso total.
@@ -55,19 +56,28 @@ const corpoSchema = z.strictObject({
   confirmar_publicacao: z.boolean().optional(),
 });
 
-/** Onde mora a credencial de cada provedor. O Asaas entra na PR 3b. */
-const CREDENCIAIS: Record<ProvedorDeCobranca, { chave: string; segredo: string } | null> = {
+/** Onde mora a credencial de cada provedor (cifrada; a tela vê só os 4 últimos). */
+const CREDENCIAIS: Record<ProvedorDeCobranca, { chave: string; segredo: string }> = {
   stripe: { chave: "STRIPE_SECRET_KEY", segredo: "STRIPE_WEBHOOK_SECRET" },
-  asaas: null,
+  asaas: { chave: "ASAAS_API_KEY", segredo: "ASAAS_WEBHOOK_TOKEN" },
 };
 
-const MOTIVO_DA_RECUSA = {
-  chave_invalida: "O provedor não aceitou esta chave. Confira se copiou a chave secreta inteira.",
-  sem_permissao:
-    "Esta chave não tem permissão para cobrar. Use a chave secreta, ou uma restrita com acesso a clientes, assinaturas, faturas, checkout, portal e avisos (webhooks).",
-  provedor_fora: "O provedor de pagamento não respondeu. Tente de novo em alguns minutos.",
-  modo_divergente: "Com o endereço de teste ligado, só vale a chave de teste (sk_test_ ou rk_test_).",
-} as const;
+type MotivoDaRecusa = "chave_invalida" | "sem_permissao" | "provedor_fora" | "modo_divergente";
+const MOTIVO_DA_RECUSA: Record<ProvedorDeCobranca, Record<MotivoDaRecusa, string>> = {
+  stripe: {
+    chave_invalida: "O provedor não aceitou esta chave. Confira se copiou a chave secreta inteira.",
+    sem_permissao:
+      "Esta chave não tem permissão para cobrar. Use a chave secreta, ou uma restrita com acesso a clientes, assinaturas, faturas, checkout, portal e avisos (webhooks).",
+    provedor_fora: "O provedor de pagamento não respondeu. Tente de novo em alguns minutos.",
+    modo_divergente: "Com o endereço de teste ligado, só vale a chave de teste (sk_test_ ou rk_test_).",
+  },
+  asaas: {
+    chave_invalida: "O Asaas não aceitou esta chave. Confira se copiou a chave de API inteira (começa com $aact_).",
+    sem_permissao: "Esta chave do Asaas não tem permissão para cobrar. Gere uma chave nova no Asaas, em Integrações › Chaves de API.",
+    provedor_fora: "O Asaas não respondeu. Tente de novo em alguns minutos.",
+    modo_divergente: "Com o endereço de teste ligado, só vale a chave do sandbox do Asaas ($aact_hmlg_).",
+  },
+};
 
 const DIA_MS = 86_400_000;
 
@@ -90,7 +100,17 @@ export async function POST(req: NextRequest) {
   }
   const { provedor, chave, confirmar_publicacao } = corpo.data;
   const nomes = CREDENCIAIS[provedor];
-  if (!nomes) return fail("validation_failed", "O Asaas chega numa próxima versão. Por enquanto, conecte a Stripe.", 422, { requestId });
+  // Chave antiga do Asaas, ainda válida, mas sem a marca do ambiente: não dá para
+  // saber se é sandbox ou produção. "Confira se copiou inteira" seria mentira para
+  // quem copiou certo; a frase diz o que fazer.
+  if (provedor === "asaas" && /^\$aact_(?!prod_|hmlg_)/.test(chave)) {
+    return fail(
+      "chave_recusada",
+      "Esta chave do Asaas é do formato antigo, sem a marca de teste ou produção. Gere uma chave nova no Asaas, em Integrações › Chaves de API, e cole aqui.",
+      422,
+      { requestId, details: { motivo: "chave_formato_antigo" } },
+    );
+  }
 
   const url = urlDoWebhookDaCobranca(env.NEXT_PUBLIC_APP_URL ?? "", provedor, baseDeTesteDaCobranca() !== null);
   if (!url) {
@@ -128,7 +148,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return falhaDoProvedor(e, requestId);
   }
-  if (!teste.ok) return fail("chave_recusada", MOTIVO_DA_RECUSA[teste.motivo], 422, { requestId, details: { motivo: teste.motivo } });
+  if (!teste.ok) return fail("chave_recusada", MOTIVO_DA_RECUSA[provedor][teste.motivo], 422, { requestId, details: { motivo: teste.motivo } });
   const pagas = contagem.get(`${provedor}:producao`) ?? 0;
   if (teste.modo === "teste" && pagas > 0) {
     return fail(
@@ -181,9 +201,13 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return falhaDoProvedor(e, requestId);
   }
-  if (!("segredo" in preparo)) {
-    return fail("provedor_recusou", "O provedor não registrou o aviso de pagamento sozinho.", 502, { requestId });
-  }
+  // Asaas sem a API de avisos: o token já foi sorteado pelo adaptador; o dono o
+  // cadastra à mão com a URL e os eventos que a resposta devolve UMA vez. Não há
+  // endpoint nosso no provedor para confirmar nem desfazer.
+  const { segredo: segredoNovo, automatico, webhook } =
+    "segredo" in preparo
+      ? { segredo: preparo.segredo, automatico: preparo, webhook: "automatico" as const }
+      : { segredo: preparo.manual.segredo, automatico: null, webhook: { manual: preparo.manual } };
 
   const last4Antigo = (await estadoParaTela(nomes.chave, true)).last4;
   // Lidos ANTES de gravar: na publicação, a chave de teste velha apaga o aviso do modo de teste.
@@ -193,7 +217,7 @@ export async function POST(req: NextRequest) {
   // Lidos ANTES de gravar: se uma gravação falhar, as já feitas voltam ao que eram.
   const gravacoes = [
     [nomes.chave, chave, true, chaveVelha],
-    [nomes.segredo, preparo.segredo, true, await segredoDoWebhook(provedor)],
+    [nomes.segredo, segredoNovo, true, await segredoDoWebhook(provedor)],
     ["COBRANCA_PROVEDOR", provedor, false, atual],
   ] as const;
   const gravadas: Array<(typeof gravacoes)[number]> = [];
@@ -219,7 +243,7 @@ export async function POST(req: NextRequest) {
         await avisarTrocaDeChave(admin, { antigo: last4Antigo, novo: chave.slice(-4) });
       }
       // Com tudo restaurado, o antigo, com o segredo que voltou ao banco, segue valendo: some só o novo.
-      await preparo.desfazer().catch((e: unknown) =>
+      await automatico?.desfazer().catch((e: unknown) =>
         logger.warn("cobranca.webhook_novo_nao_desfeito", { codigo: e instanceof ErroDoProvedor ? e.codigo : "desconhecido" }),
       );
       return fail(
@@ -235,9 +259,20 @@ export async function POST(req: NextRequest) {
   }
   // ponytail: se apagar os antigos falhar, eles ficam (recusados com 401 e
   // contados na Visão geral) até a próxima conexão, que os apaga.
-  await preparo.confirmar().catch((e: unknown) =>
-    logger.warn("cobranca.webhook_antigo_nao_apagado", { codigo: e instanceof ErroDoProvedor ? e.codigo : "desconhecido" }),
-  );
+  if (automatico) {
+    await automatico.confirmar().catch((e: unknown) =>
+      logger.warn("cobranca.webhook_antigo_nao_apagado", { codigo: e instanceof ErroDoProvedor ? e.codigo : "desconhecido" }),
+    );
+  } else {
+    // Manual: o aviso desta URL que já existia no Asaas (automático de antes, ou
+    // cadastrado à mão) leva o token VELHO e passaria a levar 401 em laço até o
+    // Asaas parar a fila. Tenta apagá-lo, DEPOIS de o token novo estar gravado;
+    // a conta que não deixa criar talvez não deixe apagar, e isso não muda o 200:
+    // a tela manda editar o aviso que existir.
+    await ad.removerWebhooks(url).catch((e: unknown) =>
+      logger.warn("cobranca.webhook_manual_antigo_nao_apagado", { codigo: e instanceof ErroDoProvedor ? e.codigo : "desconhecido" }),
+    );
+  }
   if (chaveAnterior !== null) {
     await adaptador(provedor, { chave: async () => chaveAnterior })
       .removerWebhooks(url)
@@ -248,7 +283,11 @@ export async function POST(req: NextRequest) {
 
   // A credencial já mudou: auditar e avisar os donos AQUI, antes de publicar, que pode falhar.
   const quem = { actorUserId: ctx.user.id, actingAsPlatformAdmin: true, bypassedRls: true, resourceType: "platform_config", requestId };
-  void audit({ ...quem, action: "cobranca.provedor_conectado", metadata: { provedor, modo: teste.modo, last4_antigo: last4Antigo, last4_novo: chave.slice(-4) } });
+  void audit({
+    ...quem,
+    action: "cobranca.provedor_conectado",
+    metadata: { provedor, modo: teste.modo, last4_antigo: last4Antigo, last4_novo: chave.slice(-4), webhook: automatico ? "automatico" : "manual" },
+  });
   await avisarTrocaDeChave(admin, { antigo: last4Antigo, novo: chave.slice(-4) });
 
   const publicacao = { convertidas: 0 };
@@ -265,7 +304,8 @@ export async function POST(req: NextRequest) {
 
   const publicadas = publicacao.convertidas;
   if (publicadas > 0) void audit({ ...quem, action: "cobranca.modo_publicado", metadata: { provedor, convertidas: publicadas } });
-  return ok({ modo: teste.modo, webhook: "automatico", publicadas }, { requestId });
+  // No ramo manual o corpo leva o token do aviso em claro, mostrado UMA vez: nada de cache.
+  return ok({ modo: teste.modo, webhook, publicadas }, { requestId, headers: { "cache-control": "no-store, max-age=0" } });
 }
 
 function falhaDoProvedor(e: unknown, requestId: string) {

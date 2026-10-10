@@ -1,0 +1,23 @@
+▶ Subindo o Supabase local
+Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint deskcommcrm-supabase-api-gw-1 (<id>): Bind for 0.0.0.0:8000 failed: port is already allocated
+exit=1
+API_GW_HTTP_PORT=8000
+TRAEFIK_ENABLE=false
+coolify-proxy 0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:443->443/tcp, [::]:443->443/tcp, 0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp, 0.0.0.0:443->443/udp, [::]:443->443/udp
+6:▶ Preparando o Supabase self-hosted self-hosted/v0.8.1
+7:===> Setup starting in /root/pr4/deskcommcrm
+8:===> This may take several minutes...
+9:===> Skipping system-package installation (--skip-deps)
+10:===> Sparse-cloning supabase repo at self-hosted/v0.8.1
+11:===> Creating project at /root/pr4/deskcommcrm/.runtime/supabase
+12:===> Non-interactive: using default URLs (edit .env to change)
+13:===> Setting CERTBOT_EMAIL=admin@example.com
+14:===> Generating secrets and legacy API keys
+15:===> Generating asymmetric key pair and opaque API keys
+16:===> Recorded base version in .supabase-version (ref=self-hosted/v0.8.1)
+17:===> Pulling Docker images
+19:▶ Subindo o Supabase local
+87:Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint deskcommcrm-supabase-api-gw-1 (<id>): Bind for 0.0.0.0:8000 failed: port is already allocated
+ls: cannot access '/root/pr4/deskcommcrm/.env': No such file or directory
+COMPOSE_FILE=docker-compose.yml:docker-compose.deskcomm.yml
+api-gw created auth running db running functions created imgproxy running meta running realtime running rest running storage running studio running supavisor running 

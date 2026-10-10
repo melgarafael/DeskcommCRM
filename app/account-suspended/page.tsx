@@ -153,6 +153,8 @@ export default async function AccountSuspendedPage({
               linkDePagamento={painel.assinatura.link_de_pagamento}
               cancelaNoFim={painel.assinatura.cancela_no_fim}
               planosParaTroca={[]}
+              provedor={painel.checkout.provedor}
+              documentoDoCadastro={painel.checkout.documentoDoCadastro}
               fuso={painel.fuso}
               voltouDoCheckout={voltou === "1"}
               noHub

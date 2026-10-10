@@ -1,0 +1,7 @@
+2026-10-07T16:41:27Z
+/api/v1/webhooks/cobranca/stripe         404 com-x-request-id
+/api/v1/webhooks/cobranca/asaas          404 com-x-request-id
+/api/v1/webhooks/waha/token-qualquer     404 com-x-request-id
+/api/v1/health                           405 com-x-request-id
+/auth/v1/health                          401 SEM-x-request-id
+/rest/v1/                                401 SEM-x-request-id

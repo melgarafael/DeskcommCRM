@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
+import { sugestaoDoCadastro } from "@/lib/cobranca/documento";
 import { lerUsoDaOrganizacao, type UsoDaOrganizacao } from "@/lib/cobranca/uso";
-import type { EstadoDaAssinatura, Modo } from "@/lib/cobranca/vocabulario";
+import type { EstadoDaAssinatura, Modo, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 
 export interface AssinaturaDoPainel {
   estado: EstadoDaAssinatura;
@@ -42,6 +44,12 @@ export interface DadosDoPainel {
   planosParaTroca: PlanoParaTroca[];
   /** IANA da empresa (`organizations.timezone`): as datas do painel e do recado saem nele. */
   fuso: string | null;
+  /**
+   * O que o "Assinar" precisa saber: QUEM cobra — o provedor da assinatura; sem
+   * ele, o da instalação (D-8) — e o CNPJ do cadastro, só se o dígito confere,
+   * para pré-preencher o documento que o Asaas exige.
+   */
+  checkout: { provedor: ProvedorDeCobranca | null; documentoDoCadastro: string | null };
 }
 
 interface PlanoLido extends PlanoParaTroca {
@@ -69,13 +77,14 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
     .maybeSingle();
   if (error) throw new Error(`painel da assinatura: leitura falhou (${error.code})`);
 
-  const [planos, uso, gasto, org] = await Promise.all([
+  const [planos, uso, gasto, org, daInstalacao] = await Promise.all([
     db
       .from("cobranca_planos")
       .select("id, nome, preco_cents, intervalo, max_assentos, max_canais, teto_ia_usd_cents, arquivado_em, oferecido_ao_cliente"),
     lerUsoDaOrganizacao(db, orgId),
     db.rpc("fn_gasto_de_ia_do_mes", { p_org: orgId }),
-    db.from("organizations").select("timezone").eq("id", orgId).maybeSingle(),
+    db.from("organizations").select("timezone, cnpj").eq("id", orgId).maybeSingle(),
+    provedorDaInstalacao(),
   ]);
   if (planos.error || !uso || gasto.error || org.error) throw new Error("painel da assinatura: leitura falhou");
 
@@ -107,6 +116,10 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
     uso,
     gastoIaUsdCents: Number(gasto.data ?? 0),
     fuso: (org.data as { timezone: string | null } | null)?.timezone ?? null,
+    checkout: {
+      provedor: (a?.provedor as ProvedorDeCobranca | null | undefined) ?? daInstalacao,
+      documentoDoCadastro: sugestaoDoCadastro((org.data as { cnpj: string | null } | null)?.cnpj ?? null),
+    },
     planosParaTroca: plano
       ? todos
           .filter((p) => p.arquivado_em === null && p.oferecido_ao_cliente && p.intervalo === plano.intervalo && p.id !== plano.id)

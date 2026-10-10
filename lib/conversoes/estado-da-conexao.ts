@@ -18,6 +18,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { PlataformaDeAnuncio } from "@/lib/plataformas-de-anuncio/types";
+import { EVENTOS_DE_ETAPA_NO_CANAL, rotuloDoEventoDaMeta } from "./regras-meta";
 
 export interface EstadoDaConexao {
   conectada: boolean;
@@ -133,6 +134,13 @@ export async function contaEnviadas(
   return count ?? 0;
 }
 
+/** Os rótulos da tela, da MESMA lista que o envio usa, unidos com "ou" no fim. */
+const EVENTOS_QUE_O_CANAL_REPASSA = EVENTOS_DE_ETAPA_NO_CANAL.map(
+  (e) => `"${rotuloDoEventoDaMeta(e)}"`,
+)
+  .join(", ")
+  .replace(/, ([^,]*)$/, " ou $1");
+
 /**
  * O texto que o operador lê. O banco guarda slug estável; a tradução mora aqui,
  * para a contagem não depender do idioma de quem salvou — e para cada motivo
@@ -152,6 +160,7 @@ export const MOTIVO_LEGIVEL: Record<string, string> = {
     "A venda fechou sem valor preenchido. A Meta exige valor e moeda em uma compra — preencha o valor do negócio e use o botão de reprocessamento. No Google, você também pode escolher enviar a venda sem valor em \"Valor do negócio\".",
   sem_conexao:
     "Nenhuma conta de anúncios conectada nesta organização. Preencha o formulário acima.",
+  evento_fora_do_canal: `Este evento de etapa não sai pelo canal da conversa. Para esta etapa, escolha ${EVENTOS_QUE_O_CANAL_REPASSA}, ou configure a conexão direta da Meta no formulário acima.`,
   conexao_desabilitada: "A conexão existe mas está desligada. Ligue o envio no formulário acima.",
   credencial_incompleta:
     "Falta o identificador do destino ou o token. Complete o formulário acima.",

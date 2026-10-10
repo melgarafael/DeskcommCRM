@@ -1,0 +1,16 @@
+# Só entra com Traefik em BRIDGE (Coolify, Dokploy) e TRAEFIK_NETWORK exportado:
+# o install-single-server.sh o copia como docker-compose.deskcomm-traefik.yml e
+# o acrescenta ao COMPOSE_FILE do Supabase. Põe o Envoy na rede do proxy e faz o
+# Traefik procurá-lo nela — na bridge privada (o rótulo do override comum) um
+# Traefik em bridge acha o IP e não o alcança. Fora desse caso, nem é copiado.
+services:
+  api-gw:
+    networks:
+      deskcomm_proxy: {}
+    labels:
+      traefik.docker.network: "${TRAEFIK_NETWORK}"
+
+networks:
+  deskcomm_proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK}

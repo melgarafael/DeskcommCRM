@@ -617,6 +617,17 @@ jobs:
       # Única exceção HTTP do laboratório de extensões. O servidor é iniciado
       # pela própria spec, em loopback, com SQLite e PID exclusivos.
       EXTENSIONS_LOCAL_CATALOG_ORIGIN: "http://127.0.0.1:56331"
+      # `cobranca-asaas` [P0] entrou em 2026-10-06 (PR 3b da cobrança do
+      # revendedor) nesta parte, a de menor tempo de suíte medido no run
+      # 37407705650 (SHA 9f3e40ad2, o PR 3a verde): SUITE_SEGUNDOS por parte =
+      # 722 / 1002 / 884 / 47 / 877 / 962 (a parte 4 não conta: roda sem seeds,
+      # só instalação fresca). Usa o MESMO dublê da `cobranca-revendedor`
+      # (127.0.0.1:3995, dialeto /v3), mas em outro job: as duas nunca disputam
+      # a porta nem as chaves da instalação, que ela devolve como achou. Roda
+      # antes de `relogio-http-cron-externo` (ordem por caminho), então o tick
+      # global não a alcança no meio.
+      # MEDIDA no run 37483721555 (SHA bdc8f2ae9, 06/10/2026): 1,2 min de caso;
+      # SUITE_SEGUNDOS da parte 1 = 853.
       SPECS_PARTE_1: >-
         conversoes-reprocessamento.spec.ts
         pre-go-live-whatsapp.spec.ts
@@ -638,6 +649,7 @@ jobs:
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
         agenda-tela-do-produto.spec.ts
         notificacoes-diz-o-que-falta.spec.ts
+        cobranca-asaas.spec.ts
         relogio-http-cron-externo.spec.ts
         j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
         j20-elegibilidade-atendimento-manual.spec.ts

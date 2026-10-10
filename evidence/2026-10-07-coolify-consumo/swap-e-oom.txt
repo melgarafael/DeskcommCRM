@@ -1,0 +1,43 @@
+2026-10-07T16:26:59Z
+NAME      TYPE SIZE USED PRIO
+/swapfile file   4G 1.7G   -2
+swapfile mtime=2026-10-07 10:46:10.042929565 -0300
+1
+coolify	205 MiB
+coolify-db	17 MiB
+coolify-proxy	9 MiB
+coolify-realtime	46 MiB
+coolify-redis	2 MiB
+coolify-sentinel	1 MiB
+deskcommcrm-app-1	71 MiB
+deskcommcrm-redis-1	2 MiB
+deskcommcrm-scheduler-1	0 MiB
+deskcommcrm-srh-1	58 MiB
+deskcommcrm-supabase-api-gw-1	14 MiB
+deskcommcrm-supabase-auth-1	4 MiB
+deskcommcrm-supabase-db-1	98 MiB
+deskcommcrm-supabase-functions-1	24 MiB
+deskcommcrm-supabase-imgproxy-1	3 MiB
+deskcommcrm-supabase-meta-1	86 MiB
+deskcommcrm-supabase-realtime-1	165 MiB
+deskcommcrm-supabase-rest-1	1 MiB
+deskcommcrm-supabase-storage-1	90 MiB
+deskcommcrm-supabase-studio-1	167 MiB
+deskcommcrm-supabase-supavisor-1	145 MiB
+deskcommcrm-waha-1	227 MiB
+deskcommcrm-worker-1	176 MiB
+== OOM do kernel nas ultimas 6 h (so nome do processo e hora)
+2026-10-07T10:32:08-0300 kernel: Out of memory: Killed process 1770232 (node)
+2026-10-07T10:33:31-0300 kernel: Out of memory: Killed process 1782029 (node)
+2026-10-07T10:33:31-0300 kernel: Out of memory: Killed process 1792530 (node)
+2026-10-07T10:35:00-0300 kernel: Out of memory: Killed process 1807549 (node)
+2026-10-07T10:36:15-0300 kernel: Out of memory: Killed process 1811494 (node)
+2026-10-07T10:36:15-0300 kernel: Out of memory: Killed process 1812451 (node)
+2026-10-07T10:37:53-0300 kernel: Out of memory: Killed process 1826828 (node)
+2026-10-07T10:39:28-0300 kernel: Out of memory: Killed process 1832884 (node)
+2026-10-07T10:41:18-0300 kernel: Out of memory: Killed process 1846584 (node)
+2026-10-07T10:41:52-0300 kernel: Out of memory: Killed process 1855442 (node)
+2026-10-07T10:42:21-0300 kernel: Out of memory: Killed process 1865944 (node)
+2026-10-07T10:44:22-0300 kernel: Out of memory: Killed process 1868053 (node)
+2026-10-07T10:44:22-0300 kernel: Out of memory: Killed process 1872265 (node)
+2026-10-07T10:44:22-0300 kernel: Out of memory: Killed process 1470118 (node)

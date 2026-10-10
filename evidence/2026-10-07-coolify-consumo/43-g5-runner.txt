@@ -1,0 +1,12 @@
+sintaxe-ok
+3c3
+< a=$(free -m | awk 'NR==2{print $7}')
+---
+> a=$(free -m | awk "NR==2{print \$7}")
+4a5
+> echo "vars_no_ambiente=$(env | grep -cE "^(REVERSE_PROXY|TRAEFIK_[A-Z_]*|API_GW_HTTP_PORT)=")"
+7c8
+< REVERSE_PROXY=traefik TRAEFIK_NETWORK=coolify TRAEFIK_ENTRYPOINT=https TRAEFIK_ENTRYPOINT_HTTP=http API_GW_HTTP_PORT=8001 bash hostgator-setup-kit/install-single-server.sh --domain <ip-da-vps>.sslip.io
+---
+> bash hostgator-setup-kit/install-single-server.sh --domain <ip-da-vps>.sslip.io
+2026-10-07T17:20:51Z terceiros=1 available=6652 lock=ocupado alheio=0

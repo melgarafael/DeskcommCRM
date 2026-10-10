@@ -249,7 +249,7 @@ async function seedConversation(org: string, contactId: string): Promise<string>
   const { rows: sessRows } = await pool.query<{ id: string }>(
     `insert into channel_sessions (organization_id, waha_session_name, status, webhook_secret_encrypted)
      values ($1, $2, 'WORKING', '\\x00'::bytea) returning id`,
-    [org, `reactivity-session-${Date.now()}-${Math.random()}`],
+    [org, `reactivity-session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`],
   );
   const sessionId = sessRows[0]!.id;
   const { rows: convRows } = await pool.query<{ id: string }>(

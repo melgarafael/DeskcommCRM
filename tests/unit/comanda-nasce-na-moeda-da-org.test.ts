@@ -35,6 +35,16 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 // Isola o handler do gate de suporte (autoridade própria testada em
 // lib/impersonate/support.test.ts) — nenhum teste aqui exercita acompanhamento.
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
+// A rota tem o gate do módulo (`app/api/v1/financeiro/comandas/route.ts:38`):
+// `moduloLigado(admin, "financeiro")` lê `modulos_instalados` por fetch e, sem
+// rede, devolve false → 404 em todos os casos. O teste mede a MOEDA do payload,
+// não a instalação do módulo, então o gate fica ligado aqui. Molde de
+// `credenciais-login-codex-por-empresa.test.ts:64`: espalha o original e só
+// troca `moduloLigado`.
+vi.mock("@/lib/instalacao/modulos", async (orig) => ({
+  ...((await orig()) as Record<string, unknown>),
+  moduloLigado: vi.fn(async () => true),
+}));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const ORG_DE_FORA = "99999999-9999-4999-8999-999999999999";

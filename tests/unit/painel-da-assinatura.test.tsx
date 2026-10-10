@@ -23,6 +23,7 @@ const EM_TESTE: DadosDoPainel = {
   gastoIaUsdCents: 120,
   planosParaTroca: [],
   fuso: null,
+  checkout: { provedor: null, documentoDoCadastro: null },
 };
 
 describe("PainelDaAssinatura", () => {

@@ -23,6 +23,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { valorDaInstalacao } from "@/lib/instalacao/config";
 
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
@@ -58,7 +59,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
-import { copiaDoTitular } from "@/lib/lgpd/copia-do-titular";
+import { partesDoArquivoDoTitular } from "@/lib/lgpd/copia-do-titular";
 
 const MAX_ATTEMPTS = 3;
 const BUCKET = "lgpd-exports";
@@ -190,11 +191,25 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
 
     // O arquivo é o que o titular RECEBE (doc 103): o payload sem o que é da
     // equipe. O PDF acima foi desenhado do payload inteiro e não muda.
-    const jsonBytes = Buffer.from(JSON.stringify(copiaDoTitular(data, perfil.codigo), null, 2), "utf-8");
+    //
+    // #2576: ele sai em STREAM — seção a seção e linha a linha, direto no
+    // upload. O que existia antes (a cópia do país serializada INTEIRA e jogada
+    // num `Buffer`) mantinha payload, cópia profunda, string e buffer QUATRO
+    // vezes o arquivo na memória no mesmo instante; agora é o payload (que o
+    // PDF e os fixtures travam) e, no máximo, UMA linha. O storage-js passa o
+    // Readable direto ao fetch com `duplex: half` — o corpo vai em chunked,
+    // sem Buffer do arquivo inteiro em parte alguma.
+    const corpoDoJson = Readable.from(
+      (async function* () {
+        for await (const pedaco of partesDoArquivoDoTitular(data, perfil.codigo)) {
+          yield Buffer.from(pedaco, "utf-8");
+        }
+      })(),
+    );
 
     const { error: jsonUploadErr } = await admin.storage
       .from(BUCKET)
-      .upload(jsonPath, jsonBytes, {
+      .upload(jsonPath, corpoDoJson, {
         contentType: "application/json",
         upsert: true,
       });

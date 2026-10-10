@@ -94,7 +94,7 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
     renderClient({ canManage: false });
     expect(await screen.findByText("agente@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(screen.getByText("agent")).toBeInTheDocument();
+    expect(screen.getByText("Atendente")).toBeInTheDocument();
     expect(screen.getByText("Personalizada")).toBeInTheDocument();
   });
 
@@ -108,12 +108,12 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
     renderClient();
 
     const trigger = await screen.findByRole("combobox", { name: /Papel de Agente/i });
-    expect(trigger).toHaveTextContent("agent");
+    expect(trigger).toHaveTextContent("Atendente");
     await user.click(trigger);
-    await user.click(await screen.findByRole("option", { name: "manager" }));
+    await user.click(await screen.findByRole("option", { name: "Gerente" }));
 
     // Otimista: UI já mostra o novo papel ANTES da resposta do PATCH.
-    await waitFor(() => expect(trigger).toHaveTextContent("manager"));
+    await waitFor(() => expect(trigger).toHaveTextContent("Gerente"));
     expect(apiClient.patch).toHaveBeenCalledWith(`/api/v1/team/${AGENT_ID}`, {
       role: "manager",
     });
@@ -138,10 +138,10 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
 
     const trigger = await screen.findByRole("combobox", { name: /Papel de Agente/i });
     await user.click(trigger);
-    await user.click(await screen.findByRole("option", { name: "viewer" }));
+    await user.click(await screen.findByRole("option", { name: "Somente leitura" }));
 
     // Rollback: volta ao papel original após o erro.
-    await waitFor(() => expect(trigger).toHaveTextContent("agent"));
+    await waitFor(() => expect(trigger).toHaveTextContent("Atendente"));
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(toast.success).not.toHaveBeenCalled();
   });

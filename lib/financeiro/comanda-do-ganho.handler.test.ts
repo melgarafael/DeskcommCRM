@@ -44,12 +44,20 @@ import { dispatchEvent, registerHandler, type EventRow } from "@/lib/event-log/d
  * corpo do `vi.mock` é içado para o topo do arquivo: sem isto a fábrica lê uma
  * variável ainda não inicializada e o teste morre no import, não na promessa.
  */
-const estado = vi.hoisted(() => ({ banco: null as unknown }));
+const estado = vi.hoisted(() => ({ banco: null as unknown, financeiroInstalado: true }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => estado.banco) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => estado.banco) }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// O módulo `financeiro` (#1907): instalado por padrão aqui, que é o caso de todo
+// teste deste arquivo menos o (g); o banco falso não conhece `modulos_instalados`.
+vi.mock("@/lib/instalacao/modulos", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/instalacao/modulos")>()),
+  moduloLigado: vi.fn(async (_db: unknown, modulo: string) =>
+    modulo === "financeiro" ? estado.financeiroInstalado : false,
+  ),
+}));
 vi.mock("@/lib/leads/activity-emitter", () => ({
   emitLeadActivity: vi.fn(async () => ({ ok: true })),
   stageChangeReason: () => "movido",
@@ -340,6 +348,7 @@ async function fecharPeloBotaoGanhar(banco: BancoFalso): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  estado.financeiroInstalado = true;
   registerHandler(comandaDoGanhoHandler);
 });
 
@@ -661,5 +670,24 @@ describe("(f) moeda do negócio x moeda da organização + audit da comanda", ()
 
     const chamadas = vi.mocked(audit).mock.calls.map((c) => c[0]);
     expect(chamadas.find((e) => e.action === "comanda.aberta")).toBeUndefined();
+  });
+});
+
+describe("(g) sem o módulo financeiro instalado (#1907)", () => {
+  it("funil com a opção ligada, mas sem o módulo: pula e NADA é escrito no financeiro", async () => {
+    estado.financeiroInstalado = false;
+    const banco = montarBanco({ funil: { comanda_no_ganho: true } });
+
+    await fecharPeloArrasto(banco);
+    const r = await dispatchEvent(eventoDoGanho(banco), { orgParada: false });
+
+    expect(r).toContainEqual(
+      expect.objectContaining({
+        consumer_key: COMANDA_DO_GANHO_KEY,
+        status: "skipped",
+        detail: "modulo_financeiro_nao_instalado",
+      }),
+    );
+    expect(banco.escritasFinanceiras()).toHaveLength(0);
   });
 });

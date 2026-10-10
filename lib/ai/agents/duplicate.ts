@@ -33,7 +33,7 @@ export const DUPLICATE_AGENT_COLUMNS =
  * basta, se o INSERT não a escreve a cópia nasce com o default do banco.
  */
 export const DUPLICATE_VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
 
 export type DuplicateAgentError =
   | "not_found"
@@ -85,6 +85,10 @@ export function versionPayloadFrom(src: Record<string, unknown>) {
     history_token_window: src.history_token_window,
     handoff_keywords: src.handoff_keywords,
     handoff_tool_enabled: src.handoff_tool_enabled,
+    // A chave por ASSUNTO JURÍDICO acompanha a cópia junto (#2156): sem ela
+    // aqui, duplicar o agente ou aplicar uma proposta religaria a passagem em
+    // silêncio, e o dono só descobriria no atendimento seguinte.
+    handoff_legal_enabled: src.handoff_legal_enabled,
     proposal_ai_draft_enabled: src.proposal_ai_draft_enabled,
     cases_enabled: src.cases_enabled,
     // Papel Operador (spec 16). Duplicar um agente tem de duplicar o papel

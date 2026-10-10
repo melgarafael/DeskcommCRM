@@ -44,6 +44,19 @@ const booleano = z.boolean().nullish();
 const wahaMediaSchema = z.looseObject({
   url: texto,
   mimetype: texto,
+  /**
+   * Nome ORIGINAL do arquivo, só quando a mensagem TEM um (`"some-file.pdf"`;
+   * imagem e áudio vêm `null`) — é o campo `media.filename` documentado pelo
+   * WAHA em "Receive messages" (waha.devlike.pro/docs/how-to/receive-messages).
+   *
+   * Ganha tipo porque o código passa a LÊ-lo sem guarda própria
+   * (`mediaFilenameOf`, em `lib/waha/ingest.ts`) e gravá-lo em
+   * `metadata.media_filename`, que o cartão do Inbox já usa (#2613). `nullish`
+   * idem `url`/`mimetype`: WAHA escreve `null` para "não tenho este campo", e
+   * recusar o payload por isso transformaria mensagem com anexo em mensagem
+   * descartada.
+   */
+  filename: texto,
 });
 
 /**

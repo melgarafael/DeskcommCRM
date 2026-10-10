@@ -1,0 +1,26 @@
+== Decisão 8 GB x 16 GB, CORRIGIDA pelo controlador (2026-10-07), sobre a remedição SEM SWAP
+
+Por que corrigir o 65: a regra do plano soma o memory.peak INTEIRO do Supabase e do Coolify por cima
+de um mínimo (o used da máquina) que JÁ contém o residente deles naquele instante — conta a mesma
+memória duas vezes. O erro é da regra (escrita pelo controlador no plano), não da medição. O 65 fica
+como o resultado literal da regra escrita; esta é a conta sem a dupla contagem.
+
+Regra corrigida: recomendado = mínimo + folga até os mem_limit do CRM
+                               + (memory.peak − residente no instante do mínimo) do Supabase e do Coolify
+
+mínimo = used da máquina em 2026-10-07T18:45:59Z = 2815 MiB (r60/conversa.tsv.host; swap_used=0)
+residente por grupo NO MESMO INSTANTE (soma do MEM USAGE de r60/conversa.tsv em 18:45:59Z):
+       coolify 509 MiB · supabase 1322 MiB · crm 859 MiB
+       (usa o instante do mínimo, e não o maior valor do grupo na janela: o maior valor daria
+        acréscimos MENORES, ou seja, uma conta menos conservadora)
+folga até os mem_limit do CRM = 1774 MiB (65, sem mudança)
+acréscimo até o pico: supabase 2106 − 1322 = 784 MiB · coolify 997 − 509 = 488 MiB
+
+recomendado = 2815 + 1774 + 784 + 488 = 5861 MiB (5,72 GiB)
+5861 MiB <= 6348 MiB (80% de 7,8 GiB) -> DECISÃO: 8 GB. Folga de 487 MiB até o limiar.
+
+Ressalvas (todas puxam o número para CIMA, não para baixo):
+- o used da máquina inclui processos de outras sessões fora de contêiner (bancada compartilhada); não descontados;
+- memory.peak é "desde a subida" e pode incluir páginas que voltaram do swap no swapoff das 18:35Z;
+- a folga do CRM vai até o mem_limit, que é o teto e não o uso esperado.
+E uma que puxa para BAIXO: a conversa foi simulada, sem número real e com a IA desligada (F5: NÃO MEDIDO).
