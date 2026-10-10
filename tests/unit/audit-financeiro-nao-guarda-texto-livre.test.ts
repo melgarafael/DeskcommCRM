@@ -56,6 +56,17 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
+// As rotas de comanda têm o gate do módulo (`moduloLigado(admin, "financeiro")`,
+// `app/api/v1/financeiro/comandas/route.ts:38`): sem rede a leitura de
+// `modulos_instalados` falha, o módulo é tratado como desligado e a rota
+// responde 404 antes de chegar na sanitização. Este teste mede o que vai para o
+// AUDIT, não a instalação do módulo, então o gate fica ligado. Molde de
+// `credenciais-login-codex-por-empresa.test.ts:64`: espalha o original e só
+// troca `moduloLigado`.
+vi.mock("@/lib/instalacao/modulos", async (orig) => ({
+  ...((await orig()) as Record<string, unknown>),
+  moduloLigado: vi.fn(async () => true),
+}));
 
 const ORG = "f1a1ce00-0000-4000-8000-000000000001";
 const USUARIO = "f1a1ce00-0000-4000-8000-0000000000a1";

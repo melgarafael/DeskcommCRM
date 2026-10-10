@@ -53,6 +53,12 @@ function expressaoViva(tabela: string, policy: string): string {
 }
 
 beforeAll(() => {
+  // #1907 — o módulo financeiro INSTALADO antes de medir: as cinco tabelas da comanda
+  // (`sales`, `sale_items`, `commission_rules`, `commissions`, `loyalty_ledger`) saíram do
+  // `baseline.sql` e as policies dinâmicas de 0351 nascem em `fn_financeiro_provisionar()`
+  // (ADR-0002 D2/D3) — sem a chamada, `expressaoViva` não acha
+  // `tenant_isolation_sales_write` e este arquivo inteiro cai por um banco sem o módulo.
+  sql("select public.fn_financeiro_provisionar();");
   seedGov();
   sql(`
     delete from public.financial_accounts where organization_id = '${ORG}';

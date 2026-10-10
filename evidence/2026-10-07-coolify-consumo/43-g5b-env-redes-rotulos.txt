@@ -1,0 +1,23 @@
+REVERSE_PROXY="traefik"
+TRAEFIK_NETWORK="coolify"
+TRAEFIK_ENTRYPOINT="https"
+NEXT_PUBLIC_SUPABASE_URL="https://<ip-da-vps>.sslip.io"
+SINGLE_SERVER_NETWORK="deskcommcrm_supabase"
+SUPABASE_INTERNAL_URL="http://127.0.0.1:8001"
+TRAEFIK_ENABLE=true
+TRAEFIK_HOST=<ip-da-vps>.sslip.io
+TRAEFIK_ENTRYPOINT=https
+TRAEFIK_NETWORK=coolify
+COMPOSE_FILE=docker-compose.yml:docker-compose.deskcomm.yml:docker-compose.deskcomm-traefik.yml
+API_GW_HTTP_PORT=8001
+600 .env
+700 .runtime
+600 .runtime/supabase/.env
+600 .runtime/admin-credentials
+coolify deskcommcrm-supabase_default deskcommcrm_supabase |coolify|https|8000/tcp->127.0.0.1:8001 
+coolify deskcommcrm_internal deskcommcrm_supabase |coolify
+0
+2
+deskcommcrm-srh-1 Up 45 seconds
+deskcommcrm-waha-1 Up About a minute
+2

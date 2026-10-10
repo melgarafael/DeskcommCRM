@@ -1,0 +1,19 @@
+--- B5 passo 3 2026-10-06T21:01:27Z
+porta trocada pelo assistente (caixa 'Server is not reachable' > Port=22022 > Check Again) as 20:57:43Z; servers.port=22022, is_reachable=t, is_usable=t
+proxy SUBIU SOZINHO, sem 'Start Proxy': Created 2026-10-06T21:01:07Z (~3,4 min depois do Check Again); onboarding parado em Complete/'Create My First Project'
+coolify-proxy traefik:v3.6 Up 20 seconds (healthy) 0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:443->443/tcp, [::]:443->443/tcp, 0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp, 0.0.0.0:443->443/udp, [::]:443->443/udp
+bridge attachable=true
+coolify | coolify 
+--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http
+--certificatesresolvers.letsencrypt.acme.httpchallenge=true
+--entrypoints.http.address=:80
+--entrypoints.https.address=:443
+--providers.docker.exposedbydefault=false
+--- B5 passo 4 2026-10-06T21:01:33Z
+http_80=404
+8080-fechada
+http_8080_raiz=000
+http_8080_dashboard=000
+http_8080_api_rawdata=000
+--api.dashboard=true
+--api.insecure=false

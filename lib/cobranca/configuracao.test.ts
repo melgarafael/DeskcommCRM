@@ -57,8 +57,15 @@ describe("provedor e credenciais valem só quando vieram da tela (banco), nunca 
     expect(await segredoDoWebhook("stripe")).toBe("whsec_da_tela");
   });
 
-  it("o Asaas ainda não tem credencial nesta versão (PR 3b)", async () => {
+  it("⭐ Asaas: a chave e o token gravados pela tela valem; os do .env, não", async () => {
+    const chave = "$" + ["aact", "hmlg", "000daTela"].join("_");
+    valores.set("ASAAS_API_KEY", doEnv(chave));
+    valores.set("ASAAS_WEBHOOK_TOKEN", doEnv("token-do-env"));
     expect(await chaveDoProvedor("asaas")).toBeNull();
     expect(await segredoDoWebhook("asaas")).toBeNull();
+    valores.set("ASAAS_API_KEY", doBanco(chave));
+    valores.set("ASAAS_WEBHOOK_TOKEN", doBanco("token-da-tela"));
+    expect(await chaveDoProvedor("asaas")).toBe(chave);
+    expect(await segredoDoWebhook("asaas")).toBe("token-da-tela");
   });
 });

@@ -1,0 +1,39 @@
+2026-10-07T16:53:22Z
+terceiros_antes=1
+2
+0
+0
+0
+0
+0
+coolify
+de-fora 503
+2026-10-07T16:53:47Z
+terceiros_depois=1
+coolify coolify-db coolify-proxy coolify-realtime coolify-redis coolify-sentinel deskcomm-test-db-3812383 
+.
+..
+db-head.m.txt
+.dono-pr4
+install-r1.mascarado.log
+pr4.bundle
+pr4-u1.bundle
+rodar-r1.sh
+sb-logs.m.txt
+https-corpo no available server
+
+http 404
+0
+1
+2
+0
+== legenda (acrescentada em 2026-10-07 ~19:10Z, antes da primeira publicacao; reconstruida dos comandos que gravaram este arquivo, lidos na transcricao da Fase G)
+linha 1: hora (UTC); linha 2: terceiros_antes = conteineres que nao sao coolify*/deskcommcrm-*;
+linha 3 (2): linhas "deskcomm" no crontab do root ANTES da remocao;
+linhas 4-8 (0 0 0 0 0), depois da remocao: conteineres deskcommcrm*, volumes deskcommcrm*, redes deskcommcrm*, linhas deskcomm no crontab, 127.0.0.1:8001 escutando;
+linha 9 (coolify): a rede do proxy existe; "de-fora 503": codigo HTTP do dominio visto de fora;
+depois: hora, terceiros_depois, nomes dos conteineres vivos e "ls -a /root/pr4" (9 linhas);
+"https-corpo ...": primeiros 80 bytes do corpo https; a linha em branco seguinte NAO tem origem identificada (crontab vazio ou fim do corpo); "http 404": codigo no http;
+ultimas 4 linhas: 0 = cabecalhos x-request-id na resposta https; 1 = linhas "catchall" em /data/coolify/proxy/dynamic/default_redirect_503.yaml;
+2 = linhas de /root/medicao/crontab.antes; 0 = linhas de crontab.antes SEM "deskcomm".
+49-g5-remocao.txt: linhas 3-7 (0 0 0 0 0) na mesma ordem das linhas 4-8 acima, linha 8 = coolify.

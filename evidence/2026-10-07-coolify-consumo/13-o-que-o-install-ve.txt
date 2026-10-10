@@ -1,0 +1,4 @@
+dono=coolify-proxy|coolify-proxy|traefik:v3.6
+decide=traefik
+entrypoints=http https
+rede=coolify

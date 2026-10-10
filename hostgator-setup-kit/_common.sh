@@ -631,6 +631,10 @@ atualizar_supabase_single_server() {
   dir="$(dir_do_supabase)"
   [ -f "$dir/.env" ] || { c_red "⛔ $(t "Modo single-server sem {1}/.env — rode install-single-server.sh." "$dir")"; return 1; }
   cp "$KIT_DIR/supabase-single-server.override.yml" "$dir/docker-compose.deskcomm.yml" || return 1
+  # O terceiro arquivo (Traefik em bridge) só existe em quem instalou com ele.
+  if [ -f "$dir/docker-compose.deskcomm-traefik.yml" ]; then
+    cp "$KIT_DIR/supabase-single-server.traefik.yml" "$dir/docker-compose.deskcomm-traefik.yml" || return 1
+  fi
   set_env_var "$dir/.env" COMPOSE_PROJECT_NAME "$(projeto_do_supabase)"
   atual="$(sed -n 's/^ref=//p' "$dir/.supabase-version" 2>/dev/null | tail -1)"
   if [ "$atual" != "$SUPABASE_REF" ]; then

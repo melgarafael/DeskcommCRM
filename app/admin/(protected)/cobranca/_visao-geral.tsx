@@ -43,14 +43,22 @@ export function VisaoGeral({
   const quando = new Intl.DateTimeFormat(idioma, { dateStyle: "short", timeStyle: "short" });
   const proximo = checklist.find((p) => !p.feito);
   const atrasada = leituraAtrasada(dados.ultimaLeituraEm, agora, 7);
+  const asaas = dados.provedor === "asaas";
   const problemas = [
     [dados.problemas.credencialInvalida, (dados.problemas.credencialInvalida === 1 ? t("{n} cliente com leitura falhando: a chave não funciona mais. Conecte de novo na aba Conexão.") : t("{n} clientes com leitura falhando: a chave não funciona mais. Conecte de novo na aba Conexão."))],
     [dados.problemas.cobrancaDupla, (dados.problemas.cobrancaDupla === 1 ? t("{n} cliente com duas assinaturas ativas. Cancele uma no painel do provedor.") : t("{n} clientes com duas assinaturas ativas. Cancele uma de cada no painel do provedor."))],
     [dados.problemas.pagouCancelada, (dados.problemas.pagouCancelada === 1 ? t("{n} pagamento de assinatura já cancelada. Dê prazo à empresa ou estorne no provedor.") : t("{n} pagamentos de assinatura já cancelada. Dê prazo às empresas ou estorne no provedor."))],
-    [dados.problemas.avisosComErro, (dados.problemas.avisosComErro === 1 ? t("{n} aviso do provedor sem empresa correspondente nos últimos 90 dias.") : t("{n} avisos do provedor sem empresa correspondente nos últimos 90 dias."))],
+    [
+      dados.problemas.avisosComErro,
+      (dados.problemas.avisosComErro === 1 ? t("{n} aviso do provedor sem empresa correspondente nos últimos 90 dias.") : t("{n} avisos do provedor sem empresa correspondente nos últimos 90 dias.")) +
+        // O aviso do Asaas assina TODOS os pagamentos da conta: os de outras vendas também chegam aqui.
+        (asaas ? ` ${t("Se você usa esta conta do Asaas para outras vendas, estes avisos são delas e podem ser ignorados.")}` : ""),
+    ],
     [
       dados.problemas.avisosRecusados,
-      (dados.problemas.avisosRecusados === 1 ? t("{n} aviso de pagamento recusado nas últimas 24 h: a assinatura não confere. Conecte a chave de novo na aba Conexão.") : t("{n} avisos de pagamento recusados nas últimas 24 h: a assinatura não confere. Conecte a chave de novo na aba Conexão.")),
+      asaas
+        ? (dados.problemas.avisosRecusados === 1 ? t("{n} aviso do Asaas recusado nas últimas 24 h: o token do aviso cadastrado no Asaas não é o do sistema. Conecte de novo na aba Conexão; se o aviso foi cadastrado à mão, troque nele o token pelo novo.") : t("{n} avisos do Asaas recusados nas últimas 24 h: o token do aviso cadastrado no Asaas não é o do sistema. Conecte de novo na aba Conexão; se o aviso foi cadastrado à mão, troque nele o token pelo novo."))
+        : (dados.problemas.avisosRecusados === 1 ? t("{n} aviso de pagamento recusado nas últimas 24 h: a assinatura não confere. Conecte a chave de novo na aba Conexão.") : t("{n} avisos de pagamento recusados nas últimas 24 h: a assinatura não confere. Conecte a chave de novo na aba Conexão.")),
     ],
   ] as const;
 

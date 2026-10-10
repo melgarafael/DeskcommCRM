@@ -1,0 +1,7 @@
+# H3 2026-10-07T18:02:10Z: Supabase self-hosted da instalação no ar (G5 Passo 2, KIT_SHA 44c5df541)
+ref=self-hosted/v0.8.1
+848973911bd5fa03dfd714b67bff4132e49b1b7777b6edb6ab0a9d9e85bc813c  setup.sh
+# tag no GitHub (git ls-remote https://github.com/supabase/supabase):
+690080884040e238926ba22606e8c05a3536829b	refs/tags/self-hosted/v0.8.1
+8c7a4d9dbbaf8b552893822e89d7bf06f33f9220	refs/tags/self-hosted/v0.8.1^{}
+# upstream (raw.githubusercontent.com/supabase/supabase/8c7a4d9dbbaf8b552893822e89d7bf06f33f9220/docker/setup.sh): 848973911bd5fa03dfd714b67bff4132e49b1b7777b6edb6ab0a9d9e85bc813c (igual ao da VPS)

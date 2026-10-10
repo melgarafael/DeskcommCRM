@@ -1,0 +1,19 @@
+0.0.0.0:22022 0.0.0.0:443 0.0.0.0:6001 0.0.0.0:6002 0.0.0.0:80 0.0.0.0:8000 0.0.0.0:8080 127.0.0.1:32781 127.0.0.1:8001 127.0.0.53%lo:53 [::]:22022 [::]:443 [::]:6001 [::]:6002 [::]:80 [::]:8000 [::]:8080 
+studio-loopback 401
+22022 aberta
+80 aberta
+443 aberta
+8000 fechada
+8001 fechada
+6001 fechada
+6002 fechada
+8080 fechada
+5432 fechada
+6543 fechada
+3000 fechada
+4000 fechada
+raiz-do-dominio 307
+# passo 2 (painel do banco visto da rede coolify)
+coolify-net / HTTP/1.1 401
+coolify-net /pg/ HTTP/1.1 401
+coolify-net /auth/v1/health HTTP/1.1 401

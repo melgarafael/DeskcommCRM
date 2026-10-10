@@ -1,0 +1,6 @@
+app mem_limit=768 MiB
+worker mem_limit=512 MiB
+waha mem_limit=1280 MiB
+redis mem_limit=0 MiB
+srh mem_limit=0 MiB
+scheduler mem_limit=0 MiB

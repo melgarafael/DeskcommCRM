@@ -1,0 +1,25 @@
+8ef02dce49339208f5abc247bff0277c73d04538d7a36dcfd21331e314e0f2cd  /root/coolify-install.sh
+{"coolify":"4.3.23","helper":"1.0.17","realtime":"1.0.18"}
+--- B2 passo 3 2026-10-06T20:42:06Z
+29.8.2
+5.6.0
+AUTOUPDATE=false
+535c4196571232df754f6ba2666b50c7e069ccf487ece7ed7e0af1f2c72e9bb7  /data/coolify/source/upgrade.sh
+77f4723dfac49deeec550b412e366bde70a329ff8c66ceb44d5d10b146a24124  /data/coolify/source/docker-compose.prod.yml
+0223699dfef8a421116872b050830b21cfedfc58911576a0129c2082aeaadc59  /data/coolify/source/docker-compose.yml
+1
+coolify coollabsio/coolify:4.3.23 8000/tcp, 8443/tcp, 9000/tcp, 0.0.0.0:8000->8080/tcp, [::]:8000->8080/tcp
+coolify-db postgres:15-alpine 5432/tcp
+coolify-redis redis:7-alpine 6379/tcp
+coolify-realtime coollabsio/coolify-realtime:1.0.19 0.0.0.0:6001-6002->6001-6002/tcp, [::]:6001-6002->6001-6002/tcp
+Mem:            7940         808        1860         333        5271        6514
+jq=/usr/bin/jq
+--- complemento B2 passo 3
+REGISTRY_URL AUTOUPDATE 
+REGISTRY_URL=docker.io
+coollabsio/coolify:4.3.23 sha256:79d5c0443696f2fcb280a4d5a15fcc091a51784e566ab212889a08e424d8187c
+redis:7-alpine sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+postgres:15-alpine sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
+coollabsio/coolify-helper:1.0.17 sha256:c7a7748b233da32a7541213bd6c124d104d2221ac7d9020976dbfa02ba88e57d
+coollabsio/coolify-realtime:1.0.19 sha256:087c9d263ab0154d68d40c900bf729a8b59a262bd73d8407c2d1104b70cfdedf
+65:    image: '${REGISTRY_URL:-docker.io}/coollabsio/coolify-realtime:1.0.19'
