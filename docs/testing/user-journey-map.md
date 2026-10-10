@@ -1283,13 +1283,59 @@ os recursos que dependem do servidor em tela nenhuma.
 
 | Caso | Spec | Estado |
 |---|---|---|
-| Admin da empresa chega a Configurações › Recursos opcionais pelo hub, vê a lista e o **Ajustar** de "A conversa fica com quem atendeu" o leva a Distribuição de atendimento | `tests/e2e/recursos-opcionais.spec.ts` | CI (PARTE_2) |
-| Dono do servidor acha **Recursos opcionais** no menu do Admin; a tela tem Módulos, Comportamento e Depende do servidor (só leitura, "configurado"/"não configurado") | idem | CI (PARTE_2) |
+| Admin da empresa chega a Configurações › Recursos opcionais pelo hub, vê a lista e o **Ajustar** de "A conversa fica com quem atendeu" o leva a Distribuição de atendimento | `tests/e2e/recursos-opcionais.spec.ts` | CI (e2e) |
+| Dono do servidor acha **Recursos opcionais** no menu do Admin; a tela tem Módulos, Comportamento e Depende do servidor (só leitura, "configurado"/"não configurado") | idem | CI (e2e) |
 | Módulo/porta novo fora da lista reprova | `tests/unit/recursos-opcionais-catalogo.test.ts` | unit |
+| **Liga o módulo pela tela, a tela diz o caminho, a porta aparece no HUB do CRM ("Ver tudo em CRM"), desliga e ela sai** | `tests/e2e/recursos-opcionais.spec.ts` | CI (e2e) |
+| Toda linha de módulo responde "onde aparece": ou tem porta no menu, ou declara onde fica | `tests/unit/porta-do-modulo-ligado.test.tsx` | unit |
+| Módulo ligado acende a porta mesmo no preset "simplificada"; escolha item-a-item da empresa continua mandando | idem | unit |
+| Ligar/desligar revalida o layout de `/app`, não só `/admin/sistema` | `app/actions/settings/updateModuloDaInstalacao.test.ts` | unit |
+
+> A coluna dizia `PARTE_2` e a spec está em `SPECS_PARTE_6` — número de partição
+> envelhece sozinho a cada rebalanceamento do `e2e.yml`. Quem precisa do número
+> lê a fonte: `grep -n recursos-opcionais .github/workflows/e2e.yml`.
 
 **Não coberto pela tela:** gerente vendo a lista sem os botões de telas de admin
 (regra no `page.tsx`, sem spec); telefonia por SIP é "não dá para ver daqui" —
 ela vive nos contêineres, fora do alcance do app.
+
+### Achados de 2026-10-08 — "liguei e não aparece no CRM": DOIS medidos, um preventivo, e a causa real achada depois
+
+Relato do mantenedor: *"os módulos que são ativados aqui, eles não aparecem no
+CRM. Além de estarem em uma área de recursos opcionais, diferentes dos 'módulos'
+mesmo tendo o mesmo objetivo."* O gate de módulo nunca foi o problema — ele
+sempre soltou a porta assim que o módulo entrou na lista. O sintoma vinha de
+outros lugares — DOIS medidos e um preventivo:
+
+| # | Achado | Como foi medido | Conserto |
+|---|---|---|---|
+| 20 | 🟠 **A tela do interruptor não dizia onde o módulo apareceria.** O dado existia (`portaDoModuloNaEmpresa`, lido do menu) e tinha UM consumidor: `/app/settings/recursos`, a tela da EMPRESA. A tela de quem LIGA não o recebia | `grep -rn portaDoModuloNaEmpresa` devolve 1 consumidor, e ele não é `/admin/sistema` | `lib/navigation/onde-o-modulo-aparece.ts` + a frase em cada linha, antes e depois de ligar |
+| 20b | 🟠 **Dois dos seis módulos por interruptor não criam porta nenhuma no CRM** (`cobranca`, `login_codex`) — ligar e procurar no menu era procurar o que não existe | zero ocorrências deles como `modulo:` em `lib/navigation/catalogo.ts` | cada um declara `foraDoMenu` e a tela diz com todas as letras; invariante reprova módulo novo sem resposta |
+| 21 | 🟡 **PREVENTIVO, não medido.** `updateModuloDaInstalacao` revalidava só `/admin/sistema`, e a irmã que também mexe no menu (`atualizarInterfaceDaEmpresa`) já fazia `revalidatePath("/app", "layout")` com o motivo escrito. A linha entrou por ANALOGIA | ⚠️ **o que NÃO foi medido:** o passo de e2e usa `page.goto` (navegação completa) e afirma no hub `/app/crm`, que lê `modulosLigados()` a cada request — ele ficaria verde com ou sem a linha. Medir de verdade pede navegação pelo CLIENTE, com o cache do router em jogo | a mesma linha da irmã; o defeito segue **não demonstrado** |
+| 22 | 🟠 **Empresa no preset "simplificada" nunca via porta de módulo.** `destinosDaInterface` tratava igual as duas origens de `chosen`, e `SIMPLIFICADA` é lista do PRODUTO, escrita antes de existir módulo opcional | ⚠️ **a primeira medição foi na forma CRUA** `{ preset: "simplificada" }`, que a produção nunca entrega: `combinarInterfaces` (o caminho de `lib/auth/server.ts`) converte qualquer escolha em `{preset:"completa", destinos:[…]}`. O conserto era CÓDIGO MORTO e os 5 vermelhos mediam uma entrada que não existe. A medição que vale entra por `combinarInterfaces` | o preset sobrevive à combinação quando nenhum lado escreveu lista; lista explícita de uma pessoa continua mandando |
+
+### A CAUSA REAL do relato, achada só na revisão (2026-10-08, decisão do dono no doc 124)
+
+Os achados acima são reais (dois medidos, um preventivo) e **nenhum deles era o que o mantenedor tropeçou**. A causa é mais
+simples, e um cético a achou lendo o catálogo:
+
+| # | Achado | Como foi medido | Conserto |
+|---|---|---|---|
+| 23 | 🔴 **As telas de módulo não ficam no menu lateral.** Toda porta com `modulo:`/`capacidade:` tem `sidebar` AUSENTE, e no tipo isso é explícito: `NavMetadata.sidebar` = "Ausente = só no hub". O filtro de `sidebarGroups` é `d.sidebar \|\| (!group.hub && settings?.destinos)` — então elas só aparecem em "Ver tudo em CRM". E o texto que eu havia escrito dizia "CRM › Empresas", **mandando procurar no menu diário** | o número muda, então conte na fonte: `grep -cE '^\s+(modulo|capacidade): "' lib/navigation/catalogo.ts` (9 em `a2da47c5f`, 10 na main de 09/out, que ganhou `financeiro`), e nenhuma delas declara `sidebar`; o comentário do próprio catálogo diz "SEM sidebar… este trio mora no hub para não reabrir a corrida por pixel" | o texto passa a dizer o caminho COM o passo do hub ("CRM › Ver tudo em CRM › Empresas"), derivado do catálogo |
+| 23b | 🟠 **Eu reproduzi o mesmo defeito na prosa.** O texto de `login_codex` dizia "Agente de IA › Credenciais", e `/app/ai/credentials` TAMBÉM é só-no-hub — o caminho real tem "Ver tudo em IA". Nenhuma guarda lia aquele campo | o cético mediu o `sidebar` daquela tela; eu confirmei antes de consertar | o caminho virou DERIVADO (`caminhoDaPorta`), e uma guarda proíbe `›` em texto livre de `foraDoMenu` |
+
+**Por que a porta NÃO subiu para o menu lateral:** o menu foi medido em 15 itens com folga 0 a
+1280×900, e `crm_b2b` sozinho acrescenta 3. Levei três saídas ao dono com o custo de cada uma e ele
+escolheu manter no hub e consertar o texto (**opção B**, registrada em
+`~/DeskcommDecisoes/Decisão PRs - rafael/124 — …`). A opção de subir ao menu (ou subir só a primeira
+porta de cada módulo) segue disponível se a expectativa mudar.
+
+**O que a investigação mediu e NÃO consertou** — é decisão de produto, não
+defeito: as quatro superfícies onde se "instala" algo seguem separadas —
+`/admin/sistema` (bloco Módulos, 6 interruptores), `/admin/modulos` (ADR-0002,
+módulo com tabela própria; o catálogo tem 1), `/admin/extensoes` (só leitura do
+catálogo da instalação) e `/app/extensions` (a extensão declarativa, por
+empresa). A segunda metade do relato do mantenedor é sobre essa fragmentação.
 
 ## J36 — Perguntar ao acervo sem sair da conversa `[P1]` (2026-09-28)
 
