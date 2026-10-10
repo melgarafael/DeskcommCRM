@@ -8,6 +8,174 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.79.0] — 2026-10-10
+
+### ⚠️ Requer atenção
+
+- **Só para quem alargou à mão a restrição de origem dos pedidos para gravar Tray, Loja Integrada ou WooCommerce** Troque a sua ponte para gravar a origem `external` (id `<plataforma>:<id>`, plataforma no `payload`) ANTES de rodar `bash update.sh`: depois da atualização, gravar o nome da plataforma é recusado e o pedido novo se perde. Os pedidos antigos são convertidos sozinhos. Quem não mexeu na restrição não faz nada.
+
+### Adicionado
+
+- **O cliente pode ter um vendedor dono (carteira); o dono é avisado por tarefa quando o cliente escreve numa conversa que está com outro vendedor, e o negócio novo desse cliente nasce com ele** Por enquanto a carteira é definida pela API (gerente ou acima); o cartão na ficha do contato vem depois. Cliente sem carteira segue o rodízio de hoje, e a atualização não põe ninguém em carteira.
+
+  Contribuição de @webtecnica (#2667), a partir da proposta de @hudson-souza-mkt (#2591).
+
+- **Configurações › Financeiro ganha Editar em contas, formas de pagamento, plano de contas, regras de comissão e lançamentos recorrentes** Sem desativar e recadastrar. Junto, editar uma regra de comissão deixa de dar erro, e editar uma conta deixa de zerar o saldo inicial e de voltar a moeda para BRL. Lançamentos e comissões já gerados não mudam.
+
+  Contribuição de @webtecnica (#2661), a partir da issue #2641 de @carloshmlima.
+
+- **Você pode cobrar as empresas que atende pelo Asaas, com Pix e boleto todo mês** Opcional: em Admin › Cobrança › Conexão, escolha Asaas e cole a chave de API. Pix e boleto são pagos a cada cobrança (não é débito automático); atraso, suspensão e reativação funcionam como na Stripe. Assinaturas existentes ficam no provedor em que nasceram. Nada muda para quem não usa a cobrança.
+
+- **A marca própria ganha uma cor opcional para o tema escuro, ao lado da cor principal, como o logo já tinha** Em Marca e em Configurações › Marca, o campo "Cor da marca no tema escuro". Vazio, nada muda; preenchido, só o tema escuro usa essa cor (e-mails e tema claro seguem na principal).
+
+  Contribuição de @webtecnica (#2682), a partir da issue #2482 de @TOSTES-LAB.
+
+- **O administrador da plataforma edita o cadastro, corrige o e-mail de acesso e exclui um tenant pela tela** A troca de e-mail avisa a Central da empresa e o endereço antigo. A exclusão só vale para tenant suspenso pelo administrador (nunca por falta de pagamento) e sem assinatura ativa, pede motivo e confirmação, e fica na auditoria. Exige acesso completo à plataforma e a verificação em duas etapas de quem a tem.
+
+  Contribuição de @Draven9 (#1967, entrou pelo #2625).
+
+- **O cartão de documento do Inbox mostra o nome original do arquivo, e não só a extensão** Vale para documentos recebidos depois da atualização; os antigos seguem mostrando a extensão.
+
+  Contribuição de @webtecnica (#2619), a partir da issue #2613 de @gleisaum.
+
+- **Conexões ganha Agendar pausa — a janela de manutenção pausa e retoma sozinha** Escolha início, fim e uma conexão ou todas; a mensagem que chega durante a janela é guardada e volta à fila na retomada. Janelas podem ser listadas e canceladas; ainda não dá para editar uma.
+
+  Contribuição de @webtecnica (#2673, issue #2388), construído sobre o #2318 de @paulolimajr77.
+
+- **Pedidos de plataforma sem integração nativa (Tray, Loja Integrada, WooCommerce) entram por uma origem genérica** Grave o pedido com a origem `external`, o id como `<plataforma>:<id>` e a plataforma no `payload`. Os três conectores nativos não mudam. **Se você alargou a restrição de origem à mão, os pedidos antigos são convertidos sozinhos, mas troque a sua ponte para gravar `external` antes de atualizar: depois, gravar o nome da plataforma é recusado e o pedido novo se perde.**
+
+  Contribuição de @webtecnica (#2670), a partir da issue #2442 de @valterhjr.
+
+- **Automações de tempo agora deixam escolher o funil e a etapa pela tela** "N dias sem mensagem" e "N dias na mesma etapa" ganham os seletores, e salvar pela tela não apaga mais o recorte.
+
+  Contribuição de @Tong-bit-art (#2685), a partir da issue #2483 de @aleflores35.
+
+- **Instalação com o banco na própria VPS passa a funcionar atrás do proxy do Coolify** Passo a passo medido em `docs/saas/coolify.md`. Quem instala sem as variáveis novas não vê mudança.
+
+  Construído sobre o #2150 e o #2289 de @webtecnica, a partir da issue #2099 de @brunno-soaress.
+
+### Alterado
+
+- **Passar a conversa para uma pessoa por assunto jurídico vira uma chave por agente** Para um escritório de advocacia, "processo" e "advogado" são o vocabulário normal do cliente. No cartão "Passar para uma pessoa", um interruptor novo (padrão ligado, só admin muda) desliga essa passagem; o pedido explícito de pessoa e as palavras de passagem seguem valendo.
+
+  Contribuição de @webtecnica (#2156), a partir da issue #2097 de @melgacoadv.
+
+- **A tela de erro fatal passa a aparecer em espanhol para quem usa o navegador em espanhol, e os textos em espanhol passam a tratar por "tú"** Em português nada muda.
+
+  Contribuição de @JowaniOrantes (#2632).
+
+- **Comandas vira módulo — toda instalação anterior a esta versão continua com Comandas ligada; instalação nova liga em Administração › Módulos** Nada a fazer ao atualizar: os dados ficam como estão. O caixa (contas, lançamentos, Faturamento) continua com ou sem o módulo.
+
+  Contribuição de @webtecnica (#1907).
+
+### Corrigido
+
+- **Follow-up de texto fixo respeita a janela de disparo do canal e a faixa do agente** Fora delas, o envio espera a próxima abertura em vez de sair de madrugada.
+
+  Contribuição de @webtecnica (#2677), a partir da issue #2658 de @paulolimajr77.
+
+- **Com a assinatura do ChatGPT conectada, a lista de modelos passa a ser buscada no serviço do Codex, e não mais num endereço que recusava o token** Se a busca falhar, o seletor mostra o motivo. A conversa em si ainda cai na credencial de reserva (#2602, em aberto). Se a lista não vier, declare `CODEX_CLIENT_VERSION` no `.env` (ex.: `0.160.1`).
+
+  Contribuição de @webtecnica (#2622), a partir da issue #2602 de @GabrielBottan, construído sobre o #2456 de @omayklourenco.
+
+- **Conexão com o banco que falha no meio de uma operação deixa de ser reaproveitada** No motor de atendimento, a próxima tarefa podia herdar a operação de quem falhou; agora a conexão que falha é descartada.
+
+  Contribuição de @webtecnica (#2621, issue #2506), sobre o tempo limite trazido pelo #2501 de @rafaelbatistazz.
+
+- **A resposta de quem clica num botão do modelo agora aparece na conversa** O toque (e respostas de botão e de lista) entra como texto com o nome do botão, e a IA passa a vê-lo.
+
+  Contribuição de @ViktorHugodev (#2688).
+
+- **Comentários e mensagens do kit passam a dizer o que o Compose mede, sem mudança na atualização** Só texto e testes do kit; a instalação que funciona segue igual.
+
+  Contribuição de @webtecnica (#2517), a partir da issue #1060 de @AleksisDorsey.
+
+- **Conexão que falha no meio de uma transação deixa de voltar para o grupo de conexões** Nas rotinas da prospecção, nos casos obsoletos, na saúde do número, nos roteadores e na leitura de banco externo, a próxima tarefa podia herdar uma operação ou uma trava presa de quem falhou; agora a conexão que falha é descartada.
+
+  Contribuição de @webtecnica (#2652, issue #2624).
+
+- **Na tela de marca, o contraste do modo escuro passa a medir a cor do tema escuro** O número agora é o do botão que aparece na tela; as cores não mudam.
+
+  Achado na conferência pela tela do #2682 (@webtecnica).
+
+- **Em Portugal, a dica da tela Marca manda conferir a "Denominação social" e fala de RGPD** No Brasil o texto não muda.
+
+  Contribuição de @Tong-bit-art (#2646, issue #2503), construído sobre o #2502 de @webtecnica.
+
+- **Etapa da Meta com evento que o canal não repassa vira pendência com motivo visível** A pendência diz o que fazer (escolher um evento que o canal repassa, ou conectar a Meta direto), em vez de pedir uma conexão que a instalação não tem.
+
+  Contribuição de @webtecnica (#2660, issue #2457), construído sobre o #2455 de @jmpo.
+
+- **Excluir um tenant confere a assinatura com o provedor de cobrança na hora, e recusa se o provedor não responder** Nada é apagado nesse caso; basta tentar de novo.
+
+  Contribuição de @webtecnica (#2650, issue #2626).
+
+- **O fio da conversa volta a rolar até o fim quando o cartão de passagem chega antes das mensagens** O "Assumir e responder" volta a ficar à vista ao abrir a conversa.
+
+  Contribuição de @webtecnica (#2664, issue #2515).
+
+- **Quem pula o passo do funil no onboarding já sai com três etapas do quadro ligadas ao assistente** Aguardando pagamento, Pago e Cancelado, como no pacote "Loja". Empresas que já pularam ficam como estão; ligue em Configurações › Funis.
+
+  Contribuição de @webtecnica (#2663), a partir da issue #2451 de @TOSTES-LAB.
+
+- **O lembrete de compromisso não é mais dado como enviado quando o canal não pode entregá-lo** Fora da janela de 24h (ex.: Instagram) ele tenta outro canal; se nenhum pode, tenta de novo na próxima rodada.
+
+  Contribuição de @webtecnica (#2620), a partir da issue #2595 de @kristhianlumai-lgtm.
+
+- **O arquivo de dados que o titular recebe ao pedir acesso é montado em partes e usa cerca de um terço da memória de antes** O conteúdo é o mesmo; se a leitura falhar no meio, o arquivo passa a avisar que pode estar incompleto.
+
+  Contribuição de @webtecnica (#2651, issue #2576).
+
+- **A tela de Equipe mostra os papéis no idioma da interface** Somente leitura, Atendente, Gerente e Administrador no lugar do código interno.
+
+  Contribuição de @carloshmlima (#2689).
+
+- **Poda de retenção interrompida no meio leva as contagens dos lotes que já passaram** O relatório e a auditoria deixam de registrar zero para o que já foi apagado.
+
+  Contribuição de @Tong-bit-art (#2653, issue #2508).
+
+- **Uma poda de retenção que falha não pula mais a anonimização do dia nem some com as contagens das outras podas** Cada poda falha sozinha e é nomeada no relatório; a retomada da LGPD roda de qualquer jeito.
+
+  Contribuição de @Tong-bit-art (#2645, issue #2508).
+
+- **Ligar um recurso opcional passa a dizer onde ele aparece** Cada linha de Recursos opcionais mostra o caminho completo, e os que não criam menu dizem isso. Empresa com o menu enxuto passa a ver a entrada do recurso ligado.
+
+- **Encontre ofertas com palavras acentuadas antes de revisar a resposta** A revisão de promessas reconhece matrícula, grátis e demonstração.
+
+  Contribuição de @vitorlacerdadigital (#2629).
+
+- **O revisor considera o contexto e pedidos de transferência não viram promessas** Oferecer transferência não conta como promessa; promessas reais na mesma mensagem seguem barradas.
+
+  Contribuição de @vitorlacerdadigital (#2629).
+
+- **Ofertas aprovadas continuam explícitas nas respostas do agente** O revisor deixa de retirar a gratuidade aprovada na base; promessa sem respaldo segue vetada. Nada a configurar.
+
+  Contribuição de @vitorlacerdadigital (#2629).
+
+- **Identificar bloqueios de conteúdo do provedor no teste do agente** A prévia diz quando o provedor bloqueou o conteúdo, separado de saldo, credencial e veto de promessas.
+
+  Contribuição de @vitorlacerdadigital (#2629).
+
+- **Os dois prazos do arquivo de webhooks ganham o teto de 36500 dias** Um valor exagerado no `.env` não derruba mais a poda: é trocado pelo teto, com aviso no log.
+
+  Contribuição de @webtecnica (#2623, issue #2612).
+
+- **A anonimização por seção de módulo não grava mais o rótulo onde o campo estava vazio** Nenhum módulo oficial usa esse modo hoje; nenhum dado existente muda.
+
+  Contribuição de @webtecnica (#2683, issue #2656).
+
+- **Instalação com o banco na própria VPS deixa de mostrar as chaves do banco na tela** A saída completa fica em `.runtime/supabase-setup.log`, só para o root. Instalações existentes não mudam.
+
+- **Instalação com o banco na própria VPS não falha mais quando o terminal está com permissões restritas** O instalador fixa as permissões de que o banco precisa.
+
+- **Templates oficiais do WhatsApp com parâmetros nomeados (parameter_format NAMED) voltam a ser enviados pelo Inbox e pela API sem o erro meta_100** Sem reconfigurar nada.
+
+  Contribuição de @webtecnica (#2678), a partir da issue #2659 de @gleisaum.
+
+- **O agente pela assinatura fecha o turno — a fita da resposta chega ao fechamento** Com "OpenAI pela assinatura (ChatGPT)", o turno quebrava depois da resposta; agora fecha na prévia e no WhatsApp, e as sugestões com ferramenta (propostas, "preencher com a conversa") passam a funcionar.
+
+  Contribuição de @webtecnica (#2675), a partir da issue #2657 de @GabrielBottan.
+
 ## [1.78.0] — 2026-10-08
 
 ### ⚠️ Requer atenção
@@ -11121,7 +11289,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.78.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.79.0...HEAD
+[1.79.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.78.0...v1.79.0
 [1.78.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.77.0...v1.78.0
 [1.77.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.76.0...v1.77.0
 [1.76.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.75.0...v1.76.0

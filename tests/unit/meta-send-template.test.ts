@@ -137,6 +137,118 @@ describe("sendTemplate", () => {
     expect(r.message).toContain("localizable_params");
   });
 
+  // ─── NAMED (#2659): o formato vem do espelho e muda o payload de envio ───
+  // O Meta devolve `meta_100: Parameter name is missing or empty` quando um
+  // template `parameter_format = NAMED` sai como posicional: cada parâmetro
+  // textual precisa carregar `parameter_name` com o nome aprovado na Meta.
+  const NAMED_COMPONENTS = [
+    { type: "HEADER", format: "TEXT", text: "Olá {{primeiro_nome}}" },
+    { type: "BODY", text: "Seu pedido {{pedido_id}} saiu." },
+  ];
+  const NAMED_CURRENT = {
+    name: "pedido_saiu",
+    language: "pt_BR",
+    contractHash: "h-named",
+    status: "APPROVED",
+    parameter_format: "NAMED",
+    components: NAMED_COMPONENTS,
+  };
+  const NAMED_VALUES = { "header:primeiro_nome": "João", pedido_id: "DESK-001" };
+
+  it("template NAMED envia parameter_name em cada parâmetro textual (header e body)", async () => {
+    const spy = stubFetch({ messages: [{ id: "wamid.N" }] });
+    const r = await sendTemplate({
+      ...BASE,
+      binding: {
+        name: NAMED_CURRENT.name,
+        language: NAMED_CURRENT.language,
+        contractHash: NAMED_CURRENT.contractHash,
+        values: NAMED_VALUES,
+      },
+      current: NAMED_CURRENT,
+    });
+    expect(r).toEqual({ sent: true, externalId: "wamid.N" });
+
+    // Duplo espelho: o payload que SAI para o provedor tem de carregar o nome
+    // de cada parâmetro — é ele que a Meta cobra no meta_100.
+    const corpo = JSON.parse(spy.mock.calls[0]![1].body as string) as {
+      template: { components: { type: string; parameters: unknown[] }[] };
+    };
+    expect(corpo.template.components).toEqual([
+      {
+        type: "header",
+        parameters: [{ type: "text", parameter_name: "primeiro_nome", text: "João" }],
+      },
+      {
+        type: "body",
+        parameters: [{ type: "text", parameter_name: "pedido_id", text: "DESK-001" }],
+      },
+    ]);
+  });
+
+  it("template NAMED com HEADER de imagem: mídia sem parameter_name, body com", async () => {
+    const spy = stubFetch({ messages: [{ id: "wamid.M" }] });
+    await sendTemplate({
+      ...BASE,
+      binding: {
+        name: "pedido_foto",
+        language: "pt_BR",
+        contractHash: "h",
+        values: { "header:1": "https://exemplo.test/foto.jpg", pedido_id: "DESK-002" },
+      },
+      current: {
+        ...NAMED_CURRENT,
+        name: "pedido_foto",
+        contractHash: "h",
+        parameter_format: "NAMED",
+        components: [
+          { type: "HEADER", format: "IMAGE" },
+          { type: "BODY", text: "Seu pedido {{pedido_id}} saiu." },
+        ],
+      },
+    });
+    const corpo = JSON.parse(spy.mock.calls[0]![1].body as string) as {
+      template: { components: { type: string; parameters: unknown[] }[] };
+    };
+    expect(corpo.template.components).toEqual([
+      {
+        type: "header",
+        parameters: [{ type: "image", image: { link: "https://exemplo.test/foto.jpg" } }],
+      },
+      {
+        type: "body",
+        parameters: [{ type: "text", parameter_name: "pedido_id", text: "DESK-002" }],
+      },
+    ]);
+  });
+
+  it("template POSITIONAL segue sem parameter_name — o formato legado não muda", async () => {
+    // Controle: o fix do NAMED não pode envenenar o posicional. Os parâmetros
+    // saem na ORDEM, sem nome — é o contrato de todo template {{1}} {{2}}.
+    const spy = stubFetch({ messages: [{ id: "wamid.P" }] });
+    await sendTemplate({
+      ...BASE,
+      binding: {
+        name: "pedido_saiu",
+        language: "pt_BR",
+        contractHash: "h-pos",
+        values: { "header:primeiro_nome": "João", pedido_id: "DESK-003" },
+      },
+      current: {
+        ...NAMED_CURRENT,
+        contractHash: "h-pos",
+        parameter_format: "POSITIONAL",
+      },
+    });
+    const corpo = JSON.parse(spy.mock.calls[0]![1].body as string) as {
+      template: { components: { type: string; parameters: unknown[] }[] };
+    };
+    expect(corpo.template.components).toEqual([
+      { type: "header", parameters: [{ type: "text", text: "João" }] },
+      { type: "body", parameters: [{ type: "text", text: "DESK-003" }] },
+    ]);
+  });
+
   it("template SEM parâmetro não manda `components` vazio — a Meta recusa", async () => {
     const hello = FIXTURE.data.find((t) => t.name === "hello_world")!;
     const spy = stubFetch({ messages: [{ id: "wamid.X" }] });

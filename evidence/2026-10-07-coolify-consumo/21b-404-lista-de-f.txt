@@ -1,0 +1,8 @@
+um-f 503
+0
+HTTP/2 307 
+coolify coolify deskcommcrm_internal deskcommcrm_supabase 
+HTTP/2 307 
+http 301
+coolify coolify deskcommcrm_internal deskcommcrm_supabase  healthy
+2

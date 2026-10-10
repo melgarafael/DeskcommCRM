@@ -52,6 +52,7 @@
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { audit } from "@/lib/audit";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { comandaDoGanho, ORIGEM_DA_COMANDA_DO_GANHO } from "./comanda-do-ganho";
@@ -131,6 +132,13 @@ async function handle(row: EventRow): Promise<HandlerResult> {
     typeof settings === "object" &&
     (settings as Record<string, unknown>)[CHAVE_DA_COMANDA_NO_GANHO] === true;
   if (!ligado) return resultado("skipped", "comanda_no_ganho_desligada");
+  // A comanda é módulo de tabela (#1907): sem o `financeiro` instalado, `sales`
+  // não existe. O interruptor do funil pode ter ficado ligado de antes — quem
+  // decide é a instalação. Lido DEPOIS do funil para não custar uma ida ao banco
+  // em todo ganho de quem nunca ligou a comanda.
+  if (!(await moduloLigado(admin, "financeiro"))) {
+    return resultado("skipped", "modulo_financeiro_nao_instalado");
+  }
 
   // A descrição do item vem do FUNIL, nunca do título do negócio (que costuma
   // ser nome/telefone do contato e fica fora da cascata de redact se copiado):

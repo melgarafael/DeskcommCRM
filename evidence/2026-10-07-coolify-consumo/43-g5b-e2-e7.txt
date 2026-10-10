@@ -1,0 +1,16 @@
+# E2 (2026-10-07T17:49:06Z)
+https 307 -> https://<ip-da-vps>.sslip.io/app
+http 301 -> https://<ip-da-vps>.sslip.io/
+# E7 Passo 2
+HTTP/2 200 
+1
+# E7 Passo 3
+app->supabase 200 true
+# E7 Passo 4
+tabelas_public 189
+auth_users 1
+organizations 1
+audit_log 0
+# E4 rotas do Supabase
+/auth/v1/health      401 SEM-x-request-id
+/rest/v1/            401 SEM-x-request-id

@@ -81,16 +81,17 @@ export const planoDeContaSchema = z.object({
  * sem pessoa E sem serviço seria a regra "de tudo", que é outra coisa e mora em
  * outro lugar.
  */
-export const regraDeComissaoSchema = z
-  .object({
-    name: nome,
-    attendant_user_id: z.string().uuid().nullish(),
-    event_type_id: z.string().uuid().nullish(),
-    percent: z.number().min(0).max(100),
-  })
-  .refine((v) => Boolean(v.attendant_user_id) || Boolean(v.event_type_id), {
-    message: "Escolha ao menos uma pessoa ou um serviço.",
-  });
+const regraDeComissaoCampos = z.object({
+  name: nome,
+  attendant_user_id: z.string().uuid().nullish(),
+  event_type_id: z.string().uuid().nullish(),
+  percent: z.number().min(0).max(100),
+});
+const temAlvo = (v: { attendant_user_id?: string | null; event_type_id?: string | null }) =>
+  Boolean(v.attendant_user_id) || Boolean(v.event_type_id);
+const SEM_ALVO = { message: "Escolha ao menos uma pessoa ou um serviço." };
+
+export const regraDeComissaoSchema = regraDeComissaoCampos.refine(temAlvo, SEM_ALVO);
 
 /**
  * O molde recorrente.
@@ -116,6 +117,44 @@ export const SCHEMA_POR_ENTIDADE = {
   regras_de_comissao: regraDeComissaoSchema,
   recorrencias: recorrenciaSchema,
 } as const;
+
+/**
+ * O que a EDIÇÃO (PATCH) aceita: cada campo opcional.
+ *
+ * Não é `SCHEMA_POR_ENTIDADE[tipo].partial()` por um motivo de cada lado. A
+ * regra de comissão tem `.refine`, e no zod 4 `.partial()` sobre schema com
+ * refinamento LANÇA — o PATCH dela respondia 500 sempre. Daí o refinamento
+ * reaplicado aqui, só quando os dois alvos vêm no corpo: com um só, quem decide
+ * é o CHECK do banco, que conhece o outro.
+ */
+const SCHEMA_PARCIAL_POR_ENTIDADE = {
+  contas: contaSchema.partial(),
+  formas_de_pagamento: formaDePagamentoSchema.partial(),
+  planos_de_conta: planoDeContaSchema.partial(),
+  regras_de_comissao: regraDeComissaoCampos
+    .partial()
+    .refine((v) => !("attendant_user_id" in v && "event_type_id" in v) || temAlvo(v), SEM_ALVO),
+  recorrencias: recorrenciaSchema.partial(),
+} as const;
+
+/**
+ * Lê o corpo de uma edição e devolve SÓ as chaves que vieram nele.
+ *
+ * O filtro não é cosmético: no zod 4 o `.partial()` aplica o `.default()` à
+ * chave ausente, e editar o nome de uma conta zerava o saldo inicial e voltava a
+ * moeda para BRL. Filtrar pelo corpo cobre também todo default que nascer depois.
+ */
+export function lerAlteracao(
+  tipo: EntidadeDoCatalogo,
+  corpo: Record<string, unknown>,
+): { ok: true; campos: Record<string, unknown> } | { ok: false; mensagem: string } {
+  const lido = SCHEMA_PARCIAL_POR_ENTIDADE[tipo].safeParse(corpo);
+  if (!lido.success) return { ok: false, mensagem: lido.error.issues[0]?.message ?? "corpo inválido" };
+  return {
+    ok: true,
+    campos: Object.fromEntries(Object.entries(lido.data).filter(([k]) => k in corpo)),
+  };
+}
 
 /** As colunas que cada entidade devolve. */
 export const COLUNAS_POR_ENTIDADE: Record<EntidadeDoCatalogo, string> = {

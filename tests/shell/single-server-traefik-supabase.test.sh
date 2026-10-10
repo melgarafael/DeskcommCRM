@@ -19,7 +19,8 @@
 
 set -uo pipefail
 unset COMPOSE_PROJECT_NAME SINGLE_SERVER REVERSE_PROXY PSQL_DOCKER_NETWORK \
-  TRAEFIK_ENABLE TRAEFIK_HOST TRAEFIK_ENTRYPOINT TRAEFIK_CERTRESOLVER
+  TRAEFIK_ENABLE TRAEFIK_HOST TRAEFIK_ENTRYPOINT TRAEFIK_CERTRESOLVER \
+  TRAEFIK_NETWORK API_GW_HTTP_PORT
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 KIT="$ROOT_DIR/hostgator-setup-kit"
@@ -27,6 +28,7 @@ OVERRIDE="$KIT/supabase-single-server.override.yml"
 INSTALADOR="$KIT/install-single-server.sh"
 CADDYFILE="$ROOT_DIR/Caddyfile.single-server"
 TRAEFIK_YML="$ROOT_DIR/docker-compose.traefik.yml"
+PONTE="$KIT/supabase-single-server.traefik.yml"
 DOMINIO="crm.exemplo.com.br"
 FAILS=0
 
@@ -47,11 +49,15 @@ trap 'rm -rf "$WORK"' EXIT
 
 # ── Dublês ──────────────────────────────────────────────────────────────────
 # `docker`: sem ele o instalador morre na porta de entrada, e com ele ele não
-# toca em contêiner nenhum.
+# toca em contêiner nenhum. O `dc_supabase` roda sob `env -i`, e o DOCKER_LOG
+# não chega até ele: o caminho padrão vai ESCRITO no dublê, senão o `compose
+# up` nunca apareceria no registro e "não subiu nada" passaria calado. A rede
+# `nao-existe` é a única que o dublê diz não existir.
 mkdir -p "$WORK/bin"
-cat > "$WORK/bin/docker" <<'DUBLO'
+cat > "$WORK/bin/docker" <<DUBLO
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "${DOCKER_LOG:-/dev/null}"
+printf '%s\n' "\$*" >> "\${DOCKER_LOG:-$WORK/docker.log}"
+case "\$*" in "network inspect nao-existe"*) exit 1;; esac
 exit 0
 DUBLO
 chmod +x "$WORK/bin/docker"
@@ -73,6 +79,7 @@ montar_arvore() {  # montar_arvore <árvore>
   mkdir -p "$raiz/hostgator-setup-kit" "$raiz/.runtime/supabase"
   cp "$KIT"/*.sh "$raiz/hostgator-setup-kit/"
   cp "$OVERRIDE" "$raiz/hostgator-setup-kit/"
+  [ -f "$PONTE" ] && cp "$PONTE" "$raiz/hostgator-setup-kit/"
   instalador_canonico_dublo "$raiz"
   {
     printf 'ANON_KEY=anon_de_teste\n'
@@ -234,9 +241,154 @@ if [ -n "$DOCKER_REAL" ] && "$DOCKER_REAL" compose version >/dev/null 2>&1; then
   check "sem TRAEFIK_ENABLE o compose continua aceitando o override" test "$rc" -eq 0
   check "sem TRAEFIK_ENABLE a rota nasce desligada (false, não true)" \
     igual "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["traefik.enable"])' "$desligadas")" false
+
+  # (8) Traefik em BRIDGE (Coolify): o terceiro arquivo põe o Envoy na rede do
+  #     proxy, o Traefik o procura nela, e a porta do host vem do .env.
+  check "o kit traz o arquivo do Traefik em bridge" test -f "$PONTE"
+  cp "$PONTE" "$CFG/docker-compose.deskcomm-traefik.yml" 2>/dev/null
+  printf '%s\n' 'COMPOSE_FILE=docker-compose.yml:docker-compose.deskcomm.yml:docker-compose.deskcomm-traefik.yml' \
+    'COMPOSE_PROJECT_NAME=deskcommcrm-supabase' 'SINGLE_SERVER_NETWORK=deskcommcrm_supabase' \
+    'TRAEFIK_ENABLE=true' "TRAEFIK_HOST=$DOMINIO" 'TRAEFIK_NETWORK=coolify' 'API_GW_HTTP_PORT=8001' > "$CFG/.env"
+  ponte="$(cd "$CFG" && env -i PATH="$PATH" HOME="$HOME" "$DOCKER_REAL" compose config --format json 2>/dev/null \
+    | python3 -c 'import json,sys
+c=json.load(sys.stdin); g=c["services"]["api-gw"]
+print(",".join(sorted(g.get("networks",{}))))
+print(c["networks"].get("deskcomm_proxy",{}).get("name",""))
+print(g["labels"]["traefik.docker.network"])
+print(",".join("%s:%s" % (p.get("host_ip",""), p.get("published","")) for p in g.get("ports",[])))' 2>/dev/null)"
+  check "bridge: o Envoy entra também na rede do proxy" \
+    igual "$(sed -n 1p <<<"$ponte")" "default,deskcomm_private,deskcomm_proxy"
+  check "bridge: a rede do proxy é a exportada (TRAEFIK_NETWORK)" igual "$(sed -n 2p <<<"$ponte")" coolify
+  check "bridge: o Traefik procura o Envoy na rede dele" igual "$(sed -n 3p <<<"$ponte")" coolify
+  check "bridge: a porta do host sai do API_GW_HTTP_PORT, só no loopback" \
+    igual "$(sed -n 4p <<<"$ponte")" "127.0.0.1:8001"
 else
   echo "  - pulado: docker compose ausente (a prova da interpolação roda onde ele existe)"
 fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# (9) Porta do gateway e Traefik em bridge (Coolify) pelo instalador inteiro
+# ════════════════════════════════════════════════════════════════════════════
+echo "porta do gateway e Traefik em bridge"
+DOIS='COMPOSE_FILE=docker-compose.yml:docker-compose.deskcomm.yml'
+subiu() { grep -qF 'compose up' "$WORK/docker.log"; }
+falha() { ! "$@"; }  # o instalador é função deste shell: `bash -c` não a enxerga
+if [ -r /proc/meminfo ]; then
+PORTA="$WORK/porta"; montar_arvore "$PORTA"
+: > "$WORK/docker.log"
+check "porta 8001 exportada: o instalador roda até o fim" rodar_instalador "$PORTA" API_GW_HTTP_PORT=8001
+check "controle da sonda: a subida do Supabase aparece no registro do dublê" subiu
+check "porta 8001 exportada: gravada no .env do Supabase (o compose só lê de lá)" \
+  grep -qxF 'API_GW_HTTP_PORT=8001' "$PORTA/.runtime/supabase/.env"
+check "porta 8001 exportada: a URL interna do CRM segue a mesma porta" \
+  grep -qxF 'SUPABASE_INTERNAL_URL=http://127.0.0.1:8001' "$PORTA/.env"
+check "sem a variável: o .env do Supabase fica na 8000" \
+  grep -qxF 'API_GW_HTTP_PORT=8000' "$CONTROLE/.runtime/supabase/.env"
+check "sem a variável: a URL interna fica na 8000" \
+  grep -qxF 'SUPABASE_INTERNAL_URL=http://127.0.0.1:8000' "$CONTROLE/.env"
+INVALIDA="$WORK/invalida"; montar_arvore "$INVALIDA"
+for v in abc 80 1000 08001; do
+  : > "$WORK/docker.log"
+  check "porta '$v' é recusada" falha rodar_instalador "$INVALIDA" "API_GW_HTTP_PORT=$v"
+  check "porta '$v': a mensagem cita API_GW_HTTP_PORT" grep -qF 'API_GW_HTTP_PORT' "$WORK/saida.log"
+  check "porta '$v': nada sobe" bash -c '! grep -qF "compose up" "$1"' _ "$WORK/docker.log"
+done
+COOLIFY="$WORK/coolify"; montar_arvore "$COOLIFY"
+check "Traefik em bridge (TRAEFIK_NETWORK=coolify): roda até o fim" \
+  rodar_instalador "$COOLIFY" REVERSE_PROXY=traefik TRAEFIK_NETWORK=coolify
+check "bridge: COMPOSE_FILE ganha o terceiro arquivo" \
+  grep -qxF "$DOIS:docker-compose.deskcomm-traefik.yml" "$COOLIFY/.runtime/supabase/.env"
+check "bridge: o terceiro arquivo é a cópia do kit" \
+  cmp -s "$PONTE" "$COOLIFY/.runtime/supabase/docker-compose.deskcomm-traefik.yml"
+check "bridge: TRAEFIK_NETWORK gravada no .env do Supabase" \
+  grep -qxF 'TRAEFIK_NETWORK=coolify' "$COOLIFY/.runtime/supabase/.env"
+check "Traefik em modo host (sem TRAEFIK_NETWORK): dois arquivos, sem o terceiro" \
+  bash -c 'grep -qxF "$1" "$2/.env" && test ! -e "$2/docker-compose.deskcomm-traefik.yml"' _ "$DOIS" "$ARVORE/.runtime/supabase"
+SEMREDE="$WORK/semrede"; montar_arvore "$SEMREDE"
+: > "$WORK/docker.log"
+check "rede do proxy inexistente é recusada" \
+  falha rodar_instalador "$SEMREDE" REVERSE_PROXY=traefik TRAEFIK_NETWORK=nao-existe
+check "rede inexistente: a mensagem ensina docker network ls" grep -qF 'docker network ls' "$WORK/saida.log"
+check "rede inexistente: nada sobe" bash -c '! grep -qF "compose up" "$1"' _ "$WORK/docker.log"
+CADDYREDE="$WORK/caddyrede"; montar_arvore "$CADDYREDE"
+check "Caddy com TRAEFIK_NETWORK por engano: roda até o fim" \
+  rodar_instalador "$CADDYREDE" TRAEFIK_NETWORK=coolify
+check "Caddy: a rede do proxy não entra (dois arquivos, sem o terceiro)" \
+  bash -c 'grep -qxF "$1" "$2/.env" && test ! -e "$2/docker-compose.deskcomm-traefik.yml"' _ "$DOIS" "$CADDYREDE/.runtime/supabase"
+else
+  echo "$SEM_MEMINFO_MSG"
+fi
+
+# (10) Quem instalou com o terceiro arquivo o recebe atualizado pelo update.sh
+#      (atualizar_supabase_single_server, como no gotrue-modelos-recuperacao).
+#      A ref já é a pinada: o update.sh oficial do Supabase não é chamado.
+atualizar_arvore() {  # atualizar_arvore <árvore>
+  PATH="$WORK/bin:$PATH" PROJECT_DIR="$1" \
+    bash -c 'KIT_DIR="$1"; . "$KIT_DIR/_common.sh"; atualizar_supabase_single_server' _ "$KIT" \
+    > "$WORK/update.log" 2>&1
+}
+ref_pinada="$(bash -c 'KIT_DIR="$1"; . "$KIT_DIR/_common.sh"; printf %s "$SUPABASE_REF"' _ "$KIT")"
+for nome in com-ponte sem-ponte; do
+  mkdir -p "$WORK/upd-$nome/.runtime/supabase"
+  printf 'ref=%s\n' "$ref_pinada" > "$WORK/upd-$nome/.runtime/supabase/.supabase-version"
+  printf 'DISABLE_SIGNUP=false\n' > "$WORK/upd-$nome/.runtime/supabase/.env"
+done
+printf '# versão velha\n' > "$WORK/upd-com-ponte/.runtime/supabase/docker-compose.deskcomm-traefik.yml"
+check "update: termina bem em quem tem o terceiro arquivo" atualizar_arvore "$WORK/upd-com-ponte"
+check "update: o terceiro arquivo passa a ser o do kit" \
+  cmp -s "$PONTE" "$WORK/upd-com-ponte/.runtime/supabase/docker-compose.deskcomm-traefik.yml"
+check "update: termina bem em quem não tem o terceiro arquivo" atualizar_arvore "$WORK/upd-sem-ponte"
+check "update: quem não tinha o terceiro arquivo continua sem ele" \
+  test ! -e "$WORK/upd-sem-ponte/.runtime/supabase/docker-compose.deskcomm-traefik.yml"
+
+echo "saída do setup.sh oficial do Supabase"
+# O setup.sh da ref imprime NOME=valor de cada segredo que gera (service_role,
+# JWT_SECRET, senha do Postgres…). Medido na vps-teste em 07/10: 23 chaves na
+# tela de quem roda o comando do guia. Dublês: o `curl` entrega um setup.sh
+# falso que imprime um passo e um segredo, e o `sha256sum` devolve o SHA fixo
+# do instalador (o que está sob prova é o destino da saída, não o checksum).
+mkdir -p "$WORK/bin-setup"
+cat > "$WORK/setup-falso.sh" <<'DUBLO'
+#!/bin/sh
+echo "===> Gerando segredos"
+echo "JWT_SECRET=segredo_que_nao_pode_aparecer"
+umask > "${UMASK_DO_SETUP:-/dev/null}"
+while [ $# -gt 0 ]; do [ "$1" = --project-dir ] && d="$2"; shift; done
+mkdir -p "$d"
+printf 'ANON_KEY=a\nSERVICE_ROLE_KEY=s\nPOSTGRES_PASSWORD=p\nAPI_GW_HTTP_PORT=8000\nDISABLE_SIGNUP=false\n' > "$d/.env"
+DUBLO
+cat > "$WORK/bin-setup/curl" <<DUBLO
+#!/usr/bin/env bash
+while [ \$# -gt 0 ]; do [ "\$1" = -o ] && cp "$WORK/setup-falso.sh" "\$2"; shift; done
+DUBLO
+sha_fixo="$(sed -n 's/^readonly SUPABASE_SETUP_SHA256="\(.*\)"$/\1/p' "$KIT/install-single-server.sh")"
+printf '#!/usr/bin/env bash\necho "%s  -"\n' "$sha_fixo" > "$WORK/bin-setup/sha256sum"
+chmod +x "$WORK/bin-setup/curl" "$WORK/bin-setup/sha256sum"
+
+SETUP="$WORK/setup";  montar_arvore "$SETUP"; rm -f "$SETUP/.runtime/supabase/.env"
+LOG_SETUP="$SETUP/.runtime/supabase-setup.log"
+check "setup: instalador roda até o fim com o setup.sh baixado" \
+  rodar_instalador "$SETUP" PATH="$WORK/bin-setup:$WORK/bin:$PATH"
+check "setup: o passo do setup.sh aparece na tela" grep -qF '===> Gerando segredos' "$WORK/saida.log"
+check "setup: o segredo gerado NÃO aparece na tela" falha grep -qF 'segredo_que_nao_pode_aparecer' "$WORK/saida.log"
+check "setup: a saída inteira fica num arquivo" grep -qF 'segredo_que_nao_pode_aparecer' "$LOG_SETUP"
+check "setup: esse arquivo só o dono lê (600)" igual "$(stat -c %a "$LOG_SETUP" 2>/dev/null || stat -f %Lp "$LOG_SETUP")" 600
+# O setup.sh grava os init-scripts do Postgres em volumes/db/. Com um umask
+# restrito herdado do terminal (077 ou 027, servidor endurecido), eles nascem
+# de root sem leitura para outros, e o Postgres do contêiner não os lê: o
+# Supabase não sobe, sem mensagem que aponte a causa (medido na vps-teste em 07/10, rodada r1a do PR 4).
+UMASK_ARV="$WORK/setup-umask"; montar_arvore "$UMASK_ARV"; rm -f "$UMASK_ARV/.runtime/supabase/.env"
+rodar_em_077() ( umask 077; rodar_instalador "$@" )  # subshell: o 077 não vaza para os outros casos
+check "setup: roda com umask 022 mesmo de um terminal em 077" \
+  rodar_em_077 "$UMASK_ARV" PATH="$WORK/bin-setup:$WORK/bin:$PATH" UMASK_DO_SETUP="$WORK/umask-do-setup"
+check "setup: o umask visto pelo setup.sh foi 0022" igual "$(cat "$WORK/umask-do-setup" 2>/dev/null)" 0022
+
+# O filtro da tela não pode engolir a falha do setup.sh (pipefail).
+printf 'exit 7\n' >> "$WORK/setup-falso.sh"
+QUEBRA="$WORK/setup-quebra"; montar_arvore "$QUEBRA"; rm -f "$QUEBRA/.runtime/supabase/.env"
+check "setup: setup.sh que falha interrompe a instalação" \
+  falha rodar_instalador "$QUEBRA" PATH="$WORK/bin-setup:$WORK/bin:$PATH"
+check "setup: e a falha diz onde está a saída completa" grep -qF 'supabase-setup.log' "$WORK/saida.log"
 
 if [[ "$FAILS" -ne 0 ]]; then
   printf '\n%d teste(s) falharam.\n' "$FAILS"

@@ -1,0 +1,106 @@
+gate-fora 2026-10-07T18:28:27Z terceiros=0 available=4161 lock=ocupado alheio=0
+               total        used        free      shared  buff/cache   available
+Mem:            7940        3346        1373         116        3221        4146
+Swap:           4095        1730        2365
+NAME      TYPE SIZE USED PRIO
+/swapfile file   4G 1.7G   -2
+fila-do-flock 2026-10-07T18:28:27Z
+lock-obtido 2026-10-07T18:35:06Z
+gate-dentro 2026-10-07T18:35:06Z terceiros=0 available=6241 lock=ocupado alheio=0
+               total        used        free      shared  buff/cache   available
+Mem:            7940        1294        4973         107        1672        6232
+Swap:           4095        1800        2295
+NAME      TYPE SIZE USED PRIO
+/swapfile file   4G 1.8G   -2
+ram-para-swapoff OK available=6231 swap_used=1800 limite=2824
+swapoff-inicio 2026-10-07T18:35:06Z
+swapoff-fim 2026-10-07T18:35:18Z
+               total        used        free      shared  buff/cache   available
+Mem:            7940        2577        3421         373        1941        4683
+Swap:              0           0           0
+swapon_show_linhas=0
+assentar-60s 2026-10-07T18:35:18Z
+versoes-antes-gravado 2026-10-07T18:36:20Z
+f1-inicio 2026-10-07T18:36:20Z
+gate 2026-10-07T18:36:20Z terceiros=0 available=4646 lock=ocupado alheio=0
+amostras=10 linhas=230 host=10
+coolify-db Up 22 hours (healthy)
+coolify-proxy Up About an hour (healthy)
+coolify-realtime Up 22 hours (healthy)
+coolify-redis Up 22 hours (healthy)
+coolify-sentinel Up 10 hours (healthy)
+coolify Up 22 hours (healthy)
+deskcommcrm-app-1 Up 53 minutes (healthy)
+deskcommcrm-redis-1 Up 53 minutes (healthy)
+deskcommcrm-scheduler-1 Up 52 minutes (healthy)
+deskcommcrm-srh-1 Up 53 minutes
+deskcommcrm-supabase-api-gw-1 Up 54 minutes (healthy)
+deskcommcrm-supabase-auth-1 Up 55 minutes (healthy)
+deskcommcrm-supabase-db-1 Up 56 minutes (healthy)
+deskcommcrm-supabase-functions-1 Up 53 minutes (healthy)
+deskcommcrm-supabase-imgproxy-1 Up 56 minutes (healthy)
+deskcommcrm-supabase-meta-1 Up 55 minutes (healthy)
+deskcommcrm-supabase-realtime-1 Up 55 minutes (healthy)
+deskcommcrm-supabase-rest-1 Up 55 minutes (healthy)
+deskcommcrm-supabase-storage-1 Up 55 minutes (healthy)
+deskcommcrm-supabase-studio-1 Up 56 minutes (healthy)
+deskcommcrm-supabase-supavisor-1 Up 55 minutes (healthy)
+deskcommcrm-waha-1 Up 53 minutes
+deskcommcrm-worker-1 Up 53 minutes (healthy)
+supabase=11
+oom_ou_reinicio=0
+restarting=0
+f1-fim 2026-10-07T18:41:12Z
+gate 2026-10-07T18:41:12Z terceiros=0 available=4615 lock=ocupado alheio=0
+swap_used=0
+espera-qr 2026-10-07T18:41:12Z
+qr-recebido 2026-10-07T18:42:52Z
+estado-waha 18:42:52
+      1 "status":"SCAN_QR_CODE"
+drain-agora=0 drain-antes=1
+docker-run-runner-inicio:token 2026-10-07T18:42:52Z
+docker-run-runner-fim:token 2026-10-07T18:42:53Z
+conteineres-do-runner-vivos=0
+descarte-30s-depois-do-docker-run 2026-10-07T18:42:53Z
+inicio-conversa=2026-10-07T18:43:23Z
+msg 1 -> 200
+msg 2 -> 200
+msg 3 -> 200
+msg 4 -> 200
+msg 5 -> 200
+amostras=48 linhas=1104 host=48
+f3-amostragem-fim 2026-10-07T18:49:00Z
+docker-run-runner-inicio:desfecho 2026-10-07T18:50:00Z
+inbound 5
+llm_calls 0
+event_log:done 17
+event_log_desde_inicio:done 14
+event_type_desde_inicio:lead.created 1
+event_type_desde_inicio:channel_session.status_changed 1
+event_type_desde_inicio:conversation.routing_requested 1
+event_type_desde_inicio:message.received 5
+event_type_desde_inicio:central.aviso_criado 1
+event_type_desde_inicio:ai_agent.dispatch_requested 5
+docker-run-runner-fim:desfecho 2026-10-07T18:50:01Z
+oom_ou_reinicio=0
+restarting=0
+devolvido=IGUAL
+drain=1
+docker-run-runner-inicio:f3b 2026-10-07T18:50:01Z
+UPDATE 1
+UPDATE 0
+fila 0
+bloqueado 1
+docker-run-runner-fim:f3b 2026-10-07T18:50:02Z
+versoes-depois-gravado 2026-10-07T18:50:03Z
+== diff versoes-antes versoes-depois (arquivo inteiro)
+VERSOES-IGUAIS
+oom_kernel_desde_2026-10-07 18:35:18=0
+swap_used=0 swapon_show_linhas=0
+janelas-fim 2026-10-07T18:50:03Z
+gate 2026-10-07T18:50:03Z terceiros=0 available=4520 lock=ocupado alheio=0
+saida-janelas=0
+swap-religado 2026-10-07T18:50:03Z
+NAME      TYPE SIZE USED PRIO
+/swapfile file   4G   0B   -2
+fim-do-flock 2026-10-07T18:50:03Z

@@ -1,0 +1,15 @@
+2026-10-06T20:42:17Z
+22022 aberta
+80 fechada
+443 fechada
+8000 aberta
+6001 aberta
+6002 aberta
+8080 fechada
+dentro_8000=2
+DIVERGENCIA B3: 8000/6001/6002 ABERTAS de fora (plano esperava fechadas). /register respondia 200 pelo tunel. Acao do plano: B2b rodada no mesmo minuto. Admin criado 2026-10-06T20:43:14Z (users: 1 linha, id 0, coolify-admin@exemplo.com.br); /register passa a 302 -> /login. Janela exposta: instalador terminou 20:41:45Z, admin 20:43:14Z (~1,5 min).
+--- controle B3 pela rede, 2026-10-06T21:01:40Z
+:8000/login 200
+:8000/register 302
+:6001/ 200
+:8080/ 000

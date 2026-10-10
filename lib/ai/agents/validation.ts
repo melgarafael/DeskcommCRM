@@ -174,6 +174,11 @@ const versionShapeSchema = z
       .max(20)
       .default(["falar com humano", "atendente", "pessoa real"]),
     handoff_tool_enabled: z.boolean().default(true),
+    // Passar para uma pessoa por ASSUNTO JURÍDICO — irmão da linha acima, com
+    // o MESMO molde: booleano com default LIGADO (#2097, #2156). O default é
+    // `true` porque quem não mexer tem de ficar com o resultado de hoje; o
+    // efeito da chave (trocar a descrição da ferramenta) mora no turno.
+    handoff_legal_enabled: z.boolean().default(true),
     proposal_ai_draft_enabled: z.boolean().default(true),
     cases_enabled: z.boolean().default(false),
     // Onda 4 — quebra a resposta em bolhas curtas (splitIntoBubbles) espaçadas
@@ -261,6 +266,7 @@ export const versionPatchSchema = versionShapeSchema
     history_token_window: versionShapeSchema.shape.history_token_window.removeDefault(),
     handoff_keywords: versionShapeSchema.shape.handoff_keywords.removeDefault(),
     handoff_tool_enabled: versionShapeSchema.shape.handoff_tool_enabled.removeDefault(),
+    handoff_legal_enabled: versionShapeSchema.shape.handoff_legal_enabled.removeDefault(),
     proposal_ai_draft_enabled: versionShapeSchema.shape.proposal_ai_draft_enabled.removeDefault(),
     cases_enabled: versionShapeSchema.shape.cases_enabled.removeDefault(),
     split_messages: versionShapeSchema.shape.split_messages.removeDefault(),

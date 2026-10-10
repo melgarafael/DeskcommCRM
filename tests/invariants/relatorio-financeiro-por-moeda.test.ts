@@ -85,6 +85,11 @@ function relatorio(org: string, [de, ate]: readonly [string, string]): Relatorio
 }
 
 beforeAll(() => {
+  // O módulo financeiro INSTALADO antes de semear (#1907, item 3): `sales` e
+  // `sale_items` saíram do `baseline.sql` e nascem na provisionadora
+  // (ADR-0002 D2/D3) — sem ela o seed morre com `relation "sales" does not
+  // exist`. A D8 manda a varredura rodar COM o módulo, não perder cobertura.
+  sql("select public.fn_financeiro_provisionar();");
   sql(`
     insert into auth.users (id, email) values
       ('${USER_MULTI}', 'rel-fin-moeda-multi@invariant.test')

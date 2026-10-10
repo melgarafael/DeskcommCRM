@@ -204,6 +204,10 @@ export const AUDIT_ACTIONS = [
   "ai_agent.duplicated",
   "ai_agent.paused",
   "ai_agent.published",
+  // A chave por ASSUNTO JURÍDICO por agente mudou de valor numa publicação
+  // (#2156). À parte de `ai_agent.published`: este só emite quando o VALOR
+  // mudou, então dá para perguntar "quando esta empresa desligou a chave?".
+  "ai_agent.legal_handoff_changed",
   "ai_agent.version_created",
   "ai_agent.version_updated",
   "ai_agent.tested",
@@ -260,6 +264,11 @@ export const AUDIT_ACTIONS = [
   // trilha dizer nos dois sentidos, como `archived`/`reactivated`.
   "channel.disabled",
   "channel.enabled",
+  // A janela de manutenção (#2388): criar e cancelar são mutações da tela e
+  // auditam como toda mutação. A pausa e a retomada que a janela aplica saem
+  // como `channel.disabled`/`channel.enabled`, com `origem: schedule`.
+  "channel.schedule_created",
+  "channel.schedule_cancelled",
   // Chamada de voz WhatsApp (WaCalls, spec 18) — pareamento do segundo
   // dispositivo vinculado, opt-in por org. Admin only.
   //
@@ -1107,6 +1116,10 @@ export const AUDIT_ACTIONS = [
   // é o `phone_number is null` no UPDATE. Distinguir de `field_proposed` é o
   // que permite responder "quantos números entraram sozinhos, e de quem".
   "contact.field_auto_applied",
+  // O gestor mudou a carteira do cliente (põe/tira o dono) pela porta
+  // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
+  // então o audit é a única trilha de quem mudou o dono.
+  "contact.carteira_changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
