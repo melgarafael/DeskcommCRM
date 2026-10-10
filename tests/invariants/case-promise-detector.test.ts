@@ -125,3 +125,23 @@ describe("detectHumanPromise — extraHumanNames (nome próprio do tenant)", () 
     expect(detectHumanPromise("o Fulano é o nosso gerente de oficina", HANDOFF_KEYWORDS)).toBe(false);
   });
 });
+
+
+describe("consentimento para transferência não é operação executada", () => {
+  it.each([
+    "Você quer que eu te transfira para a equipe verificar?",
+    "Posso falar com o responsável para você?",
+    "Gostaria de ser encaminhado para o setor?",
+    "Quer que eu verifique com a equipe?",
+  ])("não exige caso antes de aceitar: %s", (body) => {
+    expect(detectHumanPromise(body)).toBe(false);
+  });
+  it.each([
+    "Já transferi para a equipe. Você quer continuar?",
+    "Vou encaminhar para o setor. Você quer?",
+    "Quer que eu te transfira? Nossa equipe vai retornar hoje.",
+    "Você quer falar com a equipe que já acabei de chamar?",
+  ])("conserva promessa independente: %s", (body) => {
+    expect(detectHumanPromise(body)).toBe(true);
+  });
+});

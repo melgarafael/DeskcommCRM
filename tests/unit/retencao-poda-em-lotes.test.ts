@@ -56,6 +56,15 @@ let respostaRpc: { data: number | null; error: { message: string } | null } = {
  */
 let contatosAnonimizados: Array<{ id: string; organization_id: string }> = [];
 /**
+ * As tabelas que o handler LEU nesta rodada, em ordem (#2508).
+ *
+ * É a prova de que a varredura de anonimização RODOU mesmo com poda parcial: a
+ * primeira leitura dela é em `contacts`, e a poda sozinha só toca
+ * `conversation_drafts` (o DELETE da décima poda) — sem esta lista, "a
+ * varredura não foi pulada" seria indistinguível de "não sei".
+ */
+let tabelasLidas: string[] = [];
+/**
  * As linhas que o DELETE da décima poda (`conversation_drafts`) devolve nesta
  * rodada. Vazio por padrão: os casos deste arquivo medem a PODA das irmãs, e um
  * expurgo com trabalho a fazer mudaria a contagem de auditoria. O caso em que
@@ -65,7 +74,8 @@ let rascunhosApagados: Array<{ id: string }> = [];
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async () => respostaRpc,
-    from: () => {
+    from: (tabela: string) => {
+      tabelasLidas.push(tabela);
       const q: Record<string, unknown> = {
         eq: () => q,
         in: () => q,
@@ -123,6 +133,20 @@ function bancoQueDevolve(sequencias: {
   rascunhos?: number[];
   /** A décima segunda poda (#1534) — um lote por posição, em JSONB. */
   midia?: Array<{ vencidas: number; orfas?: number; expurgadas?: number }>;
+  /**
+   * Nomes de `rpc` que FALHAM nesta rodada (#2508) — o que o banco devolve é o
+   * erro do PostgREST, e é ele que a poda tem de NOMEAR sem derrubar as irmãs.
+   */
+  erroEm?: string[];
+  /**
+   * O dreno que falha DEPOIS de N lotes bons (sugestão 1 do #2645): o parcial
+   * dos lotes já apagados tem de voltar no relatório.
+   */
+  falhaDepoisDe?: { nome: string; lotes: number };
+  /** A décima poda falha nesta rodada (erro do DELETE, não do rpc). */
+  erroRascunhos?: boolean;
+  /** A poda de mídia falha nesta rodada (JSONB com erro). */
+  erroMidia?: boolean;
 }): {
   db: PodaDb;
   chamadas: { nome: string; dias: number; limite: number }[];
@@ -132,6 +156,7 @@ function bancoQueDevolve(sequencias: {
   lotesDeMidia: number[];
 } {
   const chamadas: { nome: string; dias: number; limite: number }[] = [];
+  const chamadasPorNome = new Map<string, number>();
   const cortes: string[] = [];
   const lotesDeMidia: number[] = [];
   const restante = {
@@ -142,16 +167,32 @@ function bancoQueDevolve(sequencias: {
   };
   const db: PodaDb = {
     async rpc(nome, args) {
+      const numero = (chamadasPorNome.get(nome) ?? 0) + 1;
+      chamadasPorNome.set(nome, numero);
       chamadas.push({ nome, dias: args.p_retencao_dias, limite: args.p_limite });
+      if (sequencias.erroEm?.includes(nome)) {
+        // A mensagem do banco NÃO nomeia a função (o nome é do prefixo da poda):
+        // é o que permite medir o prefixo duplicado (#2645).
+        return { data: null, error: { message: "permission denied (dublê)" } };
+      }
+      if (sequencias.falhaDepoisDe?.nome === nome && numero > sequencias.falhaDepoisDe.lotes) {
+        return { data: null, error: { message: `timeout ao drenar ${nome}` } };
+      }
       const balde = nome === "fn_podar_fila_de_jobs" ? restante.fila : restante.auditoria;
       return { data: balde.shift() ?? 0, error: null };
     },
     async apagarRascunhos(corte) {
       cortes.push(corte);
+      if (sequencias.erroRascunhos) {
+        return { data: null, error: { message: "permission denied for table conversation_drafts" } };
+      }
       return { data: restante.rascunhos.shift() ?? 0, error: null };
     },
     async enfileirarMidia(lote) {
       lotesDeMidia.push(lote);
+      if (sequencias.erroMidia) {
+        return { data: null, error: { message: "permission denied for function fn_enfileirar_midia_vencida" } };
+      }
       return { data: restante.midia.shift() ?? { vencidas: 0, orfas: 0 }, error: null };
     },
   };
@@ -301,19 +342,97 @@ describe("podarHistorico — o laço de lotes", () => {
     expect(r.avisos).toEqual([expect.stringContaining("JEV_OBSERVACOES_RETENTION_DAYS")]);
   });
 
-  it("erro do banco sobe — a poda não engole falha em silêncio", async () => {
+  it("um dreno que falha é NOMEADO e as irmãs seguem — a rodada não é tudo-ou-nada (#2508)", async () => {
+    // Antes, o primeiro erro abortava a rodada: as podas seguintes não rodavam,
+    // a retomada de anonimização era pulada e o que já tinha sido apagado sumia
+    // da trilha. Agora a falha vira linha do relatório e o laço continua — um
+    // grant que não veio num clone derruba UMA tabela, não o dia.
+    const { db, chamadas } = bancoQueDevolve({
+      fila: [5],
+      auditoria: [0],
+      erroEm: ["fn_expurgar_auditoria_vencida"],
+    });
+    const r = await podarHistorico(db, {});
+
+    expect(r.jobs_apagados, "a poda que rodou ANTES da falha perdeu a contagem").toBe(5);
+    expect(r.auditoria_apagada).toBe(0);
+    expect(r.falhas).toEqual([expect.stringContaining("fn_expurgar_auditoria_vencida")]);
+    // O dreno que vem DEPOIS do que falhou continua sendo chamado.
+    expect(chamadas.some((c) => c.nome === "fn_expurgar_espelho_da_agenda")).toBe(true);
+  });
+
+  it("erro em TODOS os drenos: as 14 do rpc + mídia + rascunhos entram nomeadas, sem lançar", async () => {
     const db: PodaDb = {
-      async rpc() {
-        return { data: null, error: { message: "permission denied for table api_audit_log" } };
+      async rpc(nome) {
+        return { data: null, error: { message: `permission denied for function ${nome}` } };
       },
       async apagarRascunhos() {
         return { data: null, error: { message: "permission denied for table conversation_drafts" } };
       },
       async enfileirarMidia() {
+        return { data: null, error: { message: "permission denied for function fn_enfileirar_midia_vencida" } };
+      },
+    };
+    const r = await podarHistorico(db, {});
+
+    // 16 drenos: 14 pelo rpc + a mídia + a décima poda (o DELETE do admin).
+    expect(r.falhas).toHaveLength(16);
+    expect(r.falhas.some((f) => f.includes("conversation_drafts"))).toBe(true);
+    expect(r.falhas.some((f) => f.includes("fn_enfileirar_midia_vencida"))).toBe(true);
+    expect(r.jobs_apagados).toBe(0);
+  });
+
+  it("⭐ dreno interrompido no meio: os lotes que JÁ passaram ficam no relatório (#2645)", async () => {
+    // O banco falha no TERCEIRO lote da auditoria, com dois lotes cheios já
+    // apagados. Antes, o parcial sumia e o relatório registrava 0 — no expurgo
+    // da auditoria isso é apagar linhas e contá-las como zero NA PRÓPRIA TRILHA.
+    const { db } = bancoQueDevolve({
+      fila: [3],
+      auditoria: [TAMANHO_DO_LOTE, TAMANHO_DO_LOTE, TAMANHO_DO_LOTE],
+      falhaDepoisDe: { nome: "fn_expurgar_auditoria_vencida", lotes: 2 },
+    });
+    const r = await podarHistorico(db, {});
+
+    expect(r.auditoria_apagada, "o parcial dos lotes que passaram sumiu do relatório").toBe(
+      TAMANHO_DO_LOTE * 2,
+    );
+    expect(r.lotes_auditoria).toBe(2);
+    expect(r.falhas).toEqual([expect.stringContaining("fn_expurgar_auditoria_vencida")]);
+    // As irmãs seguem — inclusive as que vêm depois da que falhou.
+    expect(r.jobs_apagados).toBe(3);
+    expect(r.lotes_checkpoints).toBe(1);
+  });
+
+  it("o nome do dreno sai UMA vez em `falhas` — sem o prefixo duplicado (#2645)", async () => {
+    const { db } = bancoQueDevolve({
+      fila: [0],
+      auditoria: [0],
+      erroEm: ["fn_expurgar_auditoria_vencida"],
+    });
+    const r = await podarHistorico(db, {});
+
+    const linha = r.falhas.find((f) => f.includes("fn_expurgar_auditoria_vencida"))!;
+    expect(linha.startsWith("fn_expurgar_auditoria_vencida: ")).toBe(true);
+    expect(linha.match(/fn_expurgar_auditoria_vencida/g), "o nome saiu duplicado").toHaveLength(1);
+  });
+
+  it("mensagem de erro comprida é cortada em 300, como no caminho antigo (#2645)", async () => {
+    const db: PodaDb = {
+      async rpc() {
+        return { data: null, error: { message: "x".repeat(2000) } };
+      },
+      async apagarRascunhos() {
+        return { data: 0, error: null };
+      },
+      async enfileirarMidia() {
         return { data: { vencidas: 0, orfas: 0 }, error: null };
       },
     };
-    await expect(podarHistorico(db, {})).rejects.toThrow(/permission denied/);
+    const r = await podarHistorico(db, {});
+
+    // Só os 14 drenos do rpc falham nesta rodada (mídia e rascunhos vão bem).
+    expect(r.falhas).toHaveLength(14);
+    for (const f of r.falhas) expect(f.length).toBeLessThanOrEqual(300);
   });
 });
 
@@ -381,10 +500,10 @@ describe("a décima poda — o rascunho sugerido vencido (issue #1686)", () => {
     expect(r2.lotes_rascunhos).toBe(2);
   });
 
-  it("erro do banco sobe — a décima poda também não engole falha", async () => {
-    // Mesmo contrato das irmãs: falha ABERTA na ação e ABERTA na informação.
-    // Uma poda que falha em silêncio vira "o rascunho não some e ninguém sabe
-    // por quê" seis meses depois.
+  it("erro na décima poda é NOMEADO e as irmãs seguem (#2508)", async () => {
+    // Mesmo contrato das irmãs: falha ABERTA na ação e ABERTA na informação —
+    // uma poda que falha em silêncio vira "o rascunho não some e ninguém sabe
+    // por quê" seis meses depois. O que mudou é que ela não derruba o dia.
     const db: PodaDb = {
       async rpc() {
         return { data: 0, error: null };
@@ -396,10 +515,16 @@ describe("a décima poda — o rascunho sugerido vencido (issue #1686)", () => {
         return { data: { vencidas: 0, orfas: 0 }, error: null };
       },
     };
-    await expect(podarHistorico(db, {})).rejects.toThrow(/conversation_drafts/);
+    const r = await podarHistorico(db, {});
+
+    expect(r.falhas).toEqual([expect.stringContaining("conversation_drafts")]);
+    expect(r.rascunhos_apagados).toBe(0);
+    // As irmãs que vêm ANTES/DEPOIS continuam no relatório.
+    expect(r.lotes_fila).toBe(1);
+    expect(r.lotes_checkpoints).toBe(1);
   });
 
-  it("erro do banco sobe — a poda de mídia (#1534) também não engole falha", async () => {
+  it("erro na poda de mídia (#1534) é NOMEADO e as irmãs seguem (#2508)", async () => {
     const db: PodaDb = {
       async rpc() {
         return { data: 0, error: null };
@@ -411,7 +536,11 @@ describe("a décima poda — o rascunho sugerido vencido (issue #1686)", () => {
         return { data: null, error: { message: "permission denied for function fn_enfileirar_midia_vencida" } };
       },
     };
-    await expect(podarHistorico(db, {})).rejects.toThrow(/fn_enfileirar_midia_vencida/);
+    const r = await podarHistorico(db, {});
+
+    expect(r.falhas).toEqual([expect.stringContaining("fn_enfileirar_midia_vencida")]);
+    expect(r.midia_enfileirada).toBe(0);
+    expect(r.lotes_checkpoints).toBe(1);
   });
 });
 
@@ -491,6 +620,7 @@ describe("houveEfeito — as duas direções", () => {
     checkpoints_tem_resto: false,
     retencao_checkpoints_dias: 180,
     avisos: [] as string[],
+    falhas: [] as string[],
   };
 
   it("rodada que não apagou nada NÃO ocupa linha de auditoria", () => {
@@ -630,6 +760,7 @@ describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {
     auditou.mockClear();
     contatosAnonimizados = [];
     rascunhosApagados = [];
+    tabelasLidas = [];
   });
 
   it("rodada que não apagou nada responde 200 e NÃO audita", async () => {
@@ -680,5 +811,36 @@ describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {
       action: "retention.sweep_run",
       metadata: { falhou: true },
     });
+  });
+
+  it("⭐ poda parcial: a varredura de LGPD RODA mesmo assim, e a trilha leva as contagens do que foi apagado (#2508)", async () => {
+    // O defeito que o caso mede, na ordem: o primeiro dreno que falhava
+    // abortava o `try`, a retomada de anonimização (SLA D+15) era PULADA e a
+    // trilha registrava só `{falhou, erro}` — o que já tinha sido apagado
+    // sumia. Aqui a poda do rpc inteira falha E a décima poda (rascunhos)
+    // apaga 1: a varredura tem de rodar (o dublê prova pela leitura de
+    // `contacts`) e a linha de auditoria tem de carregar `rascunhos_apagados`.
+    respostaRpc = { data: null, error: { message: "permission denied for table api_audit_log" } };
+    rascunhosApagados = [{ id: "rascunho-1" }];
+    const resposta = await GET(requisicaoAutorizada());
+
+    expect(resposta.status, "poda parcial precisa continuar sinalizando 500").toBe(500);
+    expect(tabelasLidas, "a varredura de LGPD foi pulada por causa da poda").toContain("contacts");
+
+    expect(auditou).toHaveBeenCalledTimes(1);
+    const metadata = (auditou.mock.calls[0]?.[0] as { metadata: Record<string, unknown> }).metadata;
+    expect(metadata).toMatchObject({ falhou: true, rascunhos_apagados: 1 });
+    expect(Array.isArray(metadata.falhas), "as falhas têm de ir NOMEADAS na trilha").toBe(true);
+    expect((metadata.falhas as string[]).length).toBeGreaterThan(0);
+
+    // O 500 leva o RELATÓRIO no detalhe (#2645, sugestão 3): a resposta não pode
+    // perder o que a rodada conseguiu fazer — inclusive as contagens da
+    // varredura de anonimização, que só existiam no corpo do 200.
+    const corpo = (await resposta.json()) as { error: { details: Record<string, unknown> } };
+    expect(corpo.error.details, "o 500 perdeu o relatório da rodada").toMatchObject({
+      rascunhos_apagados: 1,
+      anonimizacoes_examinadas: 0,
+    });
+    expect(Array.isArray(corpo.error.details.falhas)).toBe(true);
   });
 });

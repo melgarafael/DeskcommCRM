@@ -64,6 +64,7 @@ describe("servidor MCP público — busca vazia não é sucesso (#484)", () => {
         success: false,
         desfecho: "sem_resultado",
         motivo: "nenhum produto casou o termo",
+        resultBytes: Buffer.byteLength(JSON.stringify({ produtos: [] }), "utf8"),
       }),
     );
   });

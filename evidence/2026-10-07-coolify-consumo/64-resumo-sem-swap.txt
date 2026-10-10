@@ -1,0 +1,103 @@
+== F4 Passo 1, remedicao SEM SWAP (2026-10-07; LC_ALL=C; resumir.awk da F0; janelas dentro de UM flock, swap desligado de 18:35:18Z a 18:50:03Z)
+F1 repouso sem canal: 18:36:20-18:41:09Z (10 x 30 s), 60 s depois do swapoff; nenhum docker run do runner na janela.
+F3 conversa: 18:43:23-18:48:57Z (48 x 5 s); docker run do runner (token) 18:42:52-18:42:53Z, amostragem comecou 30 s depois; proximo docker run (desfecho) 18:50:00Z, depois da ultima amostra.
+== repouso-sem-canal
+coolify	n=10	mem_med=342 MiB	mem_max=346 MiB	cpu_med=1.1%	cpu_max=3.9%
+coolify-db	n=10	mem_med=35 MiB	mem_max=36 MiB	cpu_med=0.5%	cpu_max=2.2%
+coolify-proxy	n=10	mem_med=43 MiB	mem_max=43 MiB	cpu_med=0.2%	cpu_max=0.4%
+coolify-realtime	n=10	mem_med=63 MiB	mem_max=64 MiB	cpu_med=0.5%	cpu_max=2.3%
+coolify-redis	n=10	mem_med=10 MiB	mem_max=10 MiB	cpu_med=0.9%	cpu_max=2.4%
+coolify-sentinel	n=10	mem_med=9 MiB	mem_max=9 MiB	cpu_med=0.4%	cpu_max=2.2%
+deskcommcrm-app-1	n=10	mem_med=236 MiB	mem_max=243 MiB	cpu_med=0.0%	cpu_max=0.1%
+deskcommcrm-redis-1	n=10	mem_med=3 MiB	mem_max=3 MiB	cpu_med=0.3%	cpu_max=0.3%
+deskcommcrm-scheduler-1	n=10	mem_med=5 MiB	mem_max=6 MiB	cpu_med=0.0%	cpu_max=0.0%
+deskcommcrm-srh-1	n=10	mem_med=65 MiB	mem_max=65 MiB	cpu_med=0.0%	cpu_max=0.1%
+deskcommcrm-supabase-api-gw-1	n=10	mem_med=30 MiB	mem_max=30 MiB	cpu_med=0.7%	cpu_max=2.1%
+deskcommcrm-supabase-auth-1	n=10	mem_med=19 MiB	mem_max=19 MiB	cpu_med=0.2%	cpu_max=1.6%
+deskcommcrm-supabase-db-1	n=10	mem_med=221 MiB	mem_max=223 MiB	cpu_med=1.1%	cpu_max=4.0%
+deskcommcrm-supabase-functions-1	n=10	mem_med=27 MiB	mem_max=27 MiB	cpu_med=0.6%	cpu_max=1.9%
+deskcommcrm-supabase-imgproxy-1	n=10	mem_med=33 MiB	mem_max=34 MiB	cpu_med=1.6%	cpu_max=5.6%
+deskcommcrm-supabase-meta-1	n=10	mem_med=111 MiB	mem_max=111 MiB	cpu_med=3.1%	cpu_max=8.0%
+deskcommcrm-supabase-realtime-1	n=10	mem_med=206 MiB	mem_max=206 MiB	cpu_med=0.6%	cpu_max=2.9%
+deskcommcrm-supabase-rest-1	n=10	mem_med=45 MiB	mem_max=45 MiB	cpu_med=1.0%	cpu_max=4.7%
+deskcommcrm-supabase-storage-1	n=10	mem_med=113 MiB	mem_max=113 MiB	cpu_med=0.5%	cpu_max=1.9%
+deskcommcrm-supabase-studio-1	n=10	mem_med=214 MiB	mem_max=214 MiB	cpu_med=0.5%	cpu_max=5.4%
+deskcommcrm-supabase-supavisor-1	n=10	mem_med=183 MiB	mem_max=183 MiB	cpu_med=0.3%	cpu_max=0.6%
+deskcommcrm-waha-1	n=10	mem_med=249 MiB	mem_max=249 MiB	cpu_med=0.1%	cpu_max=0.1%
+deskcommcrm-worker-1	n=10	mem_med=226 MiB	mem_max=227 MiB	cpu_med=0.3%	cpu_max=0.9%
+TOTAL-coolify	506 MiB	(maior soma num mesmo instante)
+TOTAL-crm	793 MiB	(maior soma num mesmo instante)
+TOTAL-supabase	1203 MiB	(maior soma num mesmo instante)
+MAQUINA	n=10	used_max=2615 MiB (em 2026-10-07T18:36:20Z)	available_min=4644 MiB	swap_used_max=0 MiB	(free -m: inclui dockerd/containerd/docker-proxy)
+TOTAL-terceiros: 0 linha (0 = nenhuma amostra com conteiner de terceiro nem do runner)
+== conversa
+coolify	n=48	mem_med=343 MiB	mem_max=403 MiB	cpu_med=4.0%	cpu_max=121.6%
+coolify-db	n=48	mem_med=35 MiB	mem_max=37 MiB	cpu_med=0.6%	cpu_max=3.8%
+coolify-proxy	n=48	mem_med=57 MiB	mem_max=67 MiB	cpu_med=0.7%	cpu_max=2.7%
+coolify-realtime	n=48	mem_med=63 MiB	mem_max=64 MiB	cpu_med=0.6%	cpu_max=2.4%
+coolify-redis	n=48	mem_med=10 MiB	mem_max=11 MiB	cpu_med=0.8%	cpu_max=2.4%
+coolify-sentinel	n=48	mem_med=9 MiB	mem_max=10 MiB	cpu_med=0.3%	cpu_max=2.2%
+deskcommcrm-app-1	n=48	mem_med=254 MiB	mem_max=264 MiB	cpu_med=0.6%	cpu_max=8.3%
+deskcommcrm-redis-1	n=48	mem_med=3 MiB	mem_max=3 MiB	cpu_med=0.4%	cpu_max=2.3%
+deskcommcrm-scheduler-1	n=48	mem_med=5 MiB	mem_max=6 MiB	cpu_med=0.1%	cpu_max=2.9%
+deskcommcrm-srh-1	n=48	mem_med=68 MiB	mem_max=68 MiB	cpu_med=0.1%	cpu_max=0.1%
+deskcommcrm-supabase-api-gw-1	n=48	mem_med=31 MiB	mem_max=32 MiB	cpu_med=0.6%	cpu_max=3.3%
+deskcommcrm-supabase-auth-1	n=48	mem_med=22 MiB	mem_max=23 MiB	cpu_med=0.4%	cpu_max=1.9%
+deskcommcrm-supabase-db-1	n=48	mem_med=317 MiB	mem_max=331 MiB	cpu_med=2.3%	cpu_max=10.9%
+deskcommcrm-supabase-functions-1	n=48	mem_med=27 MiB	mem_max=27 MiB	cpu_med=0.4%	cpu_max=2.3%
+deskcommcrm-supabase-imgproxy-1	n=48	mem_med=36 MiB	mem_max=37 MiB	cpu_med=1.3%	cpu_max=5.7%
+deskcommcrm-supabase-meta-1	n=48	mem_med=111 MiB	mem_max=111 MiB	cpu_med=1.6%	cpu_max=8.8%
+deskcommcrm-supabase-realtime-1	n=48	mem_med=207 MiB	mem_max=207 MiB	cpu_med=0.6%	cpu_max=3.2%
+deskcommcrm-supabase-rest-1	n=48	mem_med=49 MiB	mem_max=50 MiB	cpu_med=1.2%	cpu_max=5.8%
+deskcommcrm-supabase-storage-1	n=48	mem_med=117 MiB	mem_max=118 MiB	cpu_med=0.4%	cpu_max=2.1%
+deskcommcrm-supabase-studio-1	n=48	mem_med=215 MiB	mem_max=216 MiB	cpu_med=1.4%	cpu_max=7.9%
+deskcommcrm-supabase-supavisor-1	n=48	mem_med=183 MiB	mem_max=184 MiB	cpu_med=0.6%	cpu_max=3.5%
+deskcommcrm-waha-1	n=48	mem_med=293 MiB	mem_max=293 MiB	cpu_med=0.1%	cpu_max=1.7%
+deskcommcrm-worker-1	n=48	mem_med=228 MiB	mem_max=229 MiB	cpu_med=0.4%	cpu_max=2.2%
+TOTAL-coolify	590 MiB	(maior soma num mesmo instante)
+TOTAL-crm	862 MiB	(maior soma num mesmo instante)
+TOTAL-supabase	1331 MiB	(maior soma num mesmo instante)
+MAQUINA	n=48	used_max=2815 MiB (em 2026-10-07T18:45:59Z)	available_min=4430 MiB	swap_used_max=0 MiB	(free -m: inclui dockerd/containerd/docker-proxy)
+TOTAL-terceiros: 0 linha (0 = nenhuma amostra com conteiner de terceiro nem do runner)
+== soma dos tres grupos no mesmo instante (conversa)
+max 2741 MiB em 2026-10-07T18:43:58Z
+== memory.peak (com cache, desde a subida dos conteineres; picos.sh logo depois da amostragem da conversa)
+coolify	631 MiB
+coolify-db	112 MiB
+coolify-proxy	123 MiB
+coolify-realtime	91 MiB
+coolify-redis	20 MiB
+coolify-sentinel	20 MiB
+deskcommcrm-app-1	285 MiB
+deskcommcrm-redis-1	12 MiB
+deskcommcrm-scheduler-1	30 MiB
+deskcommcrm-srh-1	104 MiB
+deskcommcrm-supabase-api-gw-1	94 MiB
+deskcommcrm-supabase-auth-1	38 MiB
+deskcommcrm-supabase-db-1	349 MiB
+deskcommcrm-supabase-functions-1	109 MiB
+deskcommcrm-supabase-imgproxy-1	104 MiB
+deskcommcrm-supabase-meta-1	183 MiB
+deskcommcrm-supabase-realtime-1	252 MiB
+deskcommcrm-supabase-rest-1	57 MiB
+deskcommcrm-supabase-storage-1	284 MiB
+deskcommcrm-supabase-studio-1	294 MiB
+deskcommcrm-supabase-supavisor-1	342 MiB
+deskcommcrm-waha-1	570 MiB
+deskcommcrm-worker-1	398 MiB
+               total        used        free      shared  buff/cache   available
+Mem:            7940        2752        3035         374        2152        4510
+Swap:              0           0           0
+== mem_limit do CRM (docker inspect HostConfig.Memory)
+app mem_limit=768 MiB
+worker mem_limit=512 MiB
+waha mem_limit=1280 MiB
+redis mem_limit=0 MiB
+srh mem_limit=0 MiB
+scheduler mem_limit=0 MiB
+== OOM/reinicio
+oom_ou_reinicio=0
+restarting=0
+oom_ou_reinicio=0
+restarting=0
+oom_kernel_desde_2026-10-07 18:35:18=0

@@ -297,6 +297,21 @@ export const platformBrandingSchema = z.object({
     .trim()
     .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
     .nullable(),
+  /**
+   * A cor da marca NO TEMA ESCURO (#2482) — o par de `accent_hex`, do mesmo
+   * jeito que a tela já tem o par de logo.
+   *
+   * `.nullable()` como os irmãos: `null` é "apague", e os dois temas voltam a
+   * derivar da cor principal. A retrocompatibilidade que a issue pede não mora
+   * aqui — ela mora no BANCO (`accent_dark_hex` pode ser `null` em toda linha
+   * gravada antes da coluna) e no envelope (`corEscura` some do objeto
+   * resolvido), que são os dois lados que código antigo lê.
+   */
+  accent_dark_hex: z
+    .string()
+    .trim()
+    .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
+    .nullable(),
   show_powered_by: z.boolean(),
 });
 export type PlatformBrandingInput = z.infer<typeof platformBrandingSchema>;
@@ -323,6 +338,12 @@ export type PlatformBrandingInput = z.infer<typeof platformBrandingSchema>;
 export const marcaDaOrganizacaoSchema = z.object({
   app_name: z.string().trim().min(1).max(120).nullable(),
   accent_hex: z
+    .string()
+    .trim()
+    .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
+    .nullable(),
+  /** A cor do TEMA ESCURO (#2482) — o par de `accent_hex`, mesma validação. */
+  accent_dark_hex: z
     .string()
     .trim()
     .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })

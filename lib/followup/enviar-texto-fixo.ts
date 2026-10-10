@@ -11,6 +11,7 @@ import { ApiError } from "@/lib/api/types";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
+import { decidirAdiamentoPorJanela } from "@/lib/followup/janela-de-disparo";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { completeTurnForEnrollment, type TurnBridgeAdminClient } from "@/lib/followup/turn-bridge";
 import { logger } from "@/lib/logger";
@@ -70,8 +71,13 @@ export async function enviarTextoFixoPendente(
   if (error) throw new Error(error.message);
 
   const workerId=`inline-followup:${randomUUID()}`;
-  async function settle(org:string,id:string,acquiredAt:string,done:boolean,error?:string,deferred?:AgendaDeferredError){
-    const {data:held,error:failure}=await admin.rpc("fn_followup_inline_settle",{p_org:org,p_id:id,p_worker:workerId,p_acquired_at:acquiredAt,p_done:done,p_error:error??null,p_retry_at:deferred?.protection.reavaliar_em??null,p_hold:!!deferred&&deferred.protection.motivo!=="leitura_indisponivel"});
+  /**
+   * Fecha o job. `adiamento` devolve ele a `pending` apontando `retryAt` (sem
+   * gastar tentativa) — é o desfecho de uma espera LEGÍTIMA, não de falha: a
+   * janela de disparo do canal/da faixa (#2658) e a proteção de agenda.
+   */
+  async function settle(org:string,id:string,acquiredAt:string,done:boolean,error?:string,adiamento?:{retryAt:string|null;hold:boolean}){
+    const {data:held,error:failure}=await admin.rpc("fn_followup_inline_settle",{p_org:org,p_id:id,p_worker:workerId,p_acquired_at:acquiredAt,p_done:done,p_error:error??null,p_retry_at:adiamento?.retryAt??null,p_hold:adiamento?.hold===true});
     if(failure) throw failure;
     if(!held) throw new StaleServiceBoundaryError();
   }
@@ -135,6 +141,53 @@ export async function enviarTextoFixoPendente(
         continue;
       }
 
+      // #2658 — AS DUAS RÉGUAS DE HORÁRIO, TAMBÉM AQUI.
+      //
+      // Este atalho BYPASSA `executarTurnoDoAgente` e, junto com ele, as duas
+      // réguas que o turno aplica antes de falar com o cliente: a janela de
+      // DISPARO do canal (a tela de Proteção de envio) e a faixa PRÓPRIA do
+      // follow-up (`followup.send_window`). O texto fixo saía de madrugada —
+      // medido na issue: 8 envios de um mesmo fluxo entre 01h18 e 05h31 de
+      // Brasília, com a janela em 8h–18h, e nenhum `action_deferred` gravado.
+      // As duas réguas e os códigos de motivo moram em
+      // `lib/followup/janela-de-disparo.ts`; os motivos são os MESMOS do
+      // caminho do worker para o dossiê ter um vocabulário só.
+      const adiamento = await decidirAdiamentoPorJanela(admin, {
+        organizationId: job.organization_id as string,
+        contactId,
+        conversationId,
+        enrollmentId,
+      });
+      if (adiamento !== null) {
+        logger.info("[followup] texto fixo adiado — fora da janela de disparo", {
+          organization_id: job.organization_id,
+          conversation_id: conversationId,
+          enrollment_id: enrollmentId,
+          motivo: adiamento.reason,
+          next_run_at: adiamento.until.toISOString(),
+        });
+        // O adiamento VOLTA para o enrollment, como no caminho do worker
+        // (`followup-turn.ts`): sem o evento `action_deferred` o dead-man lê a
+        // espera como worker morto e marca `dead` uma inscrição cujo envio ainda
+        // vai sair na abertura. E o MESMO job volta pra `pending` apontando a
+        // abertura (hold: sem gastar tentativa) — o envio sai sozinho.
+        await completeTurnForEnrollment(
+          ponte,
+          job.organization_id,
+          enrollmentId,
+          nodeId,
+          { kind: "deferred", until: adiamento.until, reason: adiamento.reason },
+          undefined,
+          job.id,
+          jobClaim,
+        );
+        await settle(job.organization_id, job.id, jobClaim.acquired_at, false, undefined, {
+          retryAt: adiamento.until.toISOString(),
+          hold: true,
+        });
+        continue;
+      }
+
       const proactiveContext={organizationId:job.organization_id as string,contactId,enrollmentId,nodeId,jobId:job.id,jobClaim};
       await assertAgendaEffectSupabase(admin,proactiveContext);
       const resultado=await sendWithLedger(supabaseSendLedger(admin),{tenantId:job.organization_id,leadId:contactId,jobId:job.id,seq:1,body},async(key,messageId)=>sendMessageHandler(
@@ -157,7 +210,10 @@ export async function enviarTextoFixoPendente(
         const { error: falhaDoDescarte } = await admin.rpc("fn_followup_turno_descartado", { p_org: job.organization_id, p_job: job.id });
         if (falhaDoDescarte) throw falhaDoDescarte;
       }
-      await settle(job.organization_id,job.id,jobClaim.acquired_at,err instanceof StaleServiceBoundaryError||err instanceof OrgNaoOperanteError,message,err instanceof AgendaDeferredError?err:undefined);
+      await settle(job.organization_id,job.id,jobClaim.acquired_at,err instanceof StaleServiceBoundaryError||err instanceof OrgNaoOperanteError,message,
+        err instanceof AgendaDeferredError
+          ? { retryAt: err.protection.reavaliar_em ?? null, hold: err.protection.motivo !== "leitura_indisponivel" }
+          : undefined);
     }
   }
   return enviados;

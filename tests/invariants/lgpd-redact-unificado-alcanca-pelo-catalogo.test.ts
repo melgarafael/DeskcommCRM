@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { sql } from "./gov-helpers";
 
@@ -35,6 +35,15 @@ import { sql } from "./gov-helpers";
  *                        comando — o mesmo desenho da 0391: a virada de
  *                        `is_anonymized` é a porta por onde os DOIS caminhos e
  *                        qualquer um que venha passam;
+ *   redigir + secao    → a tabela está declarada em `modulo_secoes_lgpd` (D8,
+ *                        migration 0485) para o módulo que a criou, com o
+ *                        gatilho `trg_lgpd_secoes_de_modulo` de pé: SQL DINÂMICO
+ *                        que alcança onde o módulo está instalado e PULA, sem
+ *                        erro, onde não está — o que uma cascata nomeada não
+ *                        dá. É o caminho da comanda desde o #1907/0620: `sales`
+ *                        saiu do corpo da função única porque, sem o módulo, o
+ *                        passo nomeado abortava a ANONIMIZAÇÃO INTEIRA
+ *                        (`relation "sales" does not exist`, CI do #1907).
  *   manter             → razão escrita, e a tabela fica FORA da cascata (se
  *                        entrar, a decisão virou mentira e o teste reprova).
  *
@@ -79,6 +88,18 @@ function tabelasNaCascata(): string[] {
 }
 
 /**
+ * Tabelas declaradas em `modulo_secoes_lgpd` — o mecanismo da D8 (migration
+ * 0485): o registro que o módulo escreve na sua provisionadora/migration e que
+ * `trg_lgpd_secoes_de_modulo` consome com SQL dinâmico protegido por
+ * `to_regclass`. `sales` está aqui desde o #1907/0620.
+ */
+function tabelasDeclaradasEmSeccao(): string[] {
+  return lista(`
+    select tabela from public.modulo_secoes_lgpd order by tabela;
+  `);
+}
+
+/**
  * Tabelas alcançadas pela virada de `is_anonymized`: gatilho NÃO interno
  * instalado em `contacts`, cuja função tem o comando. Desativado não conta.
  */
@@ -115,7 +136,7 @@ function corpo(funcao: string): string {
 }
 
 type Decisao =
-  | { decidida: "redigir"; caminho: "cascata" | "gatilho"; razao: string }
+  | { decidida: "redigir"; caminho: "cascata" | "gatilho" | "secao"; razao: string }
   | { decidida: "manter"; razao: string };
 
 /**
@@ -158,8 +179,17 @@ const DECISOES: Record<string, Decisao> = {
   },
   sales: {
     decidida: "redigir",
-    caminho: "cascata",
-    razao: "Venda redigida no mesmo molde do pedido: o que é da pessoa sai, o que é do negócio (valor, data) fica pela mesma obrigação fiscal.",
+    caminho: "secao",
+    razao:
+      "PR #1907 (migration 0620): a comanda saiu do corpo da função única e passou para a " +
+      "SEÇÃO declarada `financeiro/sales` em `modulo_secoes_lgpd` (D8/0485) — o passo nomeado " +
+      "abortava a anonimização INTEIRA em instalação sem o módulo (`relation \"sales\" " +
+      "does not exist`, 68 ocorrências no CI). Na seção o efeito é o MESMO do passo 6c " +
+      "antigo: `notes` some (NULO), `cancel_reason` e `reverse_reason` viram '[redigido]' só " +
+      "onde havia texto (`colunas_redigidas`), `updated_at` = now(), e valor/status/datas e o vínculo com o " +
+      "contato FICAM (obrigação fiscal da venda); quem aplica é " +
+      "`trg_lgpd_secoes_de_modulo`, nos dois caminhos, com `to_regclass` pulando sem erro " +
+      "onde o módulo não existe.",
   },
   crm_proposals: {
     decidida: "redigir",
@@ -320,6 +350,20 @@ const DEZ_E_UM = [
   "entregas_de_aviso_de_caso",
 ];
 
+/**
+ * O módulo financeiro INSTALADO antes de medir — #1907, item 3.
+ *
+ * As cinco tabelas da comanda saíram do `baseline.sql` e nascem na
+ * provisionadora (ADR-0002 D2/D3): num banco sem o módulo elas não existem, o
+ * catálogo de FKs não as enxerga e as decisões escritas de `sales` e
+ * `loyalty_ledger` viram "dívida morta" — o teste reprovaria por o BANCO estar
+ * incompleto, não por a decisão estar errada. A D8 manda esta varredura rodar
+ * sobre um banco COM o módulo, e não perder cobertura.
+ */
+beforeAll(() => {
+  sql("select public.fn_financeiro_provisionar();");
+});
+
 describe("LGPD: redact unificado — catálogo de FKs com decisão escrita", () => {
   it("CONTROLE: o catálogo está vivo — `contacts` tem FK para si e há massa medida", () => {
     const escopo = tabelasComFkParaContato();
@@ -387,6 +431,35 @@ describe("LGPD: redact unificado — catálogo de FKs com decisão escrita", () 
     ).toEqual([]);
   });
 
+  it("`redigir` por seção declarada: a D8 alcança a tabela e o gatilho está de pé", () => {
+    const emSeccao = new Set(tabelasDeclaradasEmSeccao());
+    const fora = Object.entries(DECISOES)
+      .filter(([, d]) => d.decidida === "redigir" && d.caminho === "secao")
+      .map(([t]) => t)
+      .filter((t) => !emSeccao.has(t));
+    expect(
+      fora,
+      "Decisão `redigir` por seção declarada, mas `modulo_secoes_lgpd` não tem a linha da " +
+        "tabela — a decisão prometeu o SQL dinâmico que o registro é quem dá. O registro " +
+        "se escreve na provisionadora do módulo (e no topo da migration dele, para a " +
+        "comanda que já existe).",
+    ).toEqual([]);
+    // E o gatilho da D8 que consome o registro tem de estar instalado em contacts:
+    // sem ele o registro é só uma linha e ninguém redige nada.
+    const gatilho = lista(`
+      select tgname
+        from pg_trigger t
+        join pg_class c on c.oid = t.tgrelid
+       where c.relname = 'contacts' and t.tgname = 'trg_lgpd_secoes_de_modulo'
+         and not t.tgisinternal;
+    `);
+    expect(
+      gatilho,
+      "O gatilho `trg_lgpd_secoes_de_modulo` não está em `contacts` — a seção declarada " +
+        "não tem quem a aplique, e a cobertura seria só papel.",
+    ).toEqual(["trg_lgpd_secoes_de_modulo"]);
+  });
+
   it("`manter`: razão escrita, e a tabela fica FORA da cascata", () => {
     const naCascata = new Set(tabelasNaCascata());
     const semRazao: string[] = [];
@@ -408,14 +481,22 @@ describe("LGPD: redact unificado — catálogo de FKs com decisão escrita", () 
     ).toEqual([]);
   });
 
-  it("as 11 tabelas da issue estão na função única", () => {
+  it("as 11 tabelas da issue estão alcançadas — pela função única ou pela seção declarada", () => {
     const naCascata = new Set(tabelasNaCascata());
-    const ausentes = DEZ_E_UM.filter((t) => !naCascata.has(t));
+    const emSeccao = new Set(tabelasDeclaradasEmSeccao());
+    const ausentes = DEZ_E_UM.filter((t) => !naCascata.has(t) && !emSeccao.has(t));
     expect(
       ausentes,
-      "Tabela da issue #1504 fora de `fn_lgpd_cascade_redact_contact`: os dois " +
-        "caminhos passaram a chamar a mesma função justamente para alcançá-las.",
+      "Tabela da issue #1504 fora da função única E fora de `modulo_secoes_lgpd`: os dois " +
+        "caminhos passaram a chamar a mesma função justamente para alcançá-las, e a D8 " +
+        "acrescentou o terceiro caminho (seção declarada) para a comanda, que sem o " +
+        "módulo não existe na instalação. Nenhum dos dois ⇒ nada é redigido.",
     ).toEqual([]);
+    // O controle que impede a exceção de virar esconderijo: `sales` só saiu da
+    // cascata porque ENTROU na seção — as duas provas juntas, nunca uma só.
+    expect(emSeccao, "`sales` saiu da cascata e não entrou em nenhuma seção declarada").toContain(
+      "sales",
+    );
   });
 
   it("contacts: consent, source_metadata e tags zerados NO PASSO 1", () => {

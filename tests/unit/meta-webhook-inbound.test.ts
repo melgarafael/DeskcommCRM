@@ -146,3 +146,58 @@ describe("payload capenga não vira linha meia-boca", () => {
     expect(e).toMatchObject({ type: "location", text: null, media: null });
   });
 });
+
+/**
+ * Clique em botão: o contato toca num botão do modelo e a Meta manda `type: "button"`
+ * (ou `interactive`, na resposta interativa). Nenhum dos dois cabe no CHECK de
+ * `messages.type` — gravados crus, o insert falhava e a resposta sumia do CRM
+ * ("Algumas" clicado e a conversa seguia "nunca escreveu").
+ */
+describe("inbound — clique em botão", () => {
+  const envelope = (message: Record<string, unknown>) =>
+    ({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "WABA1",
+          changes: [
+            {
+              field: "messages",
+              value: {
+                messaging_product: "whatsapp",
+                metadata: { phone_number_id: "PNID1" },
+                contacts: [{ wa_id: "5531900000001", profile: { name: "Ana" } }],
+                messages: [{ from: "5531900000001", id: "wamid.BTN1", timestamp: "1785342028", ...message }],
+              },
+            },
+          ],
+        },
+      ],
+    }) as unknown as Parameters<typeof parseMetaWebhook>[0];
+
+  const unico = (message: Record<string, unknown>) => {
+    const eventos = parseMetaWebhook(envelope(message)).filter(
+      (e): e is InboundMessageEvent => e.kind === "inbound_message",
+    );
+    expect(eventos).toHaveLength(1);
+    return eventos[0]!;
+  };
+
+  it("botão de modelo entra como texto, com o rótulo tocado", () => {
+    const e = unico({ type: "button", button: { payload: "Algumas", text: "Algumas" } });
+    expect(e.type).toBe("text");
+    expect(e.text).toBe("Algumas");
+    expect(e.media).toBeNull();
+  });
+
+  it("sem `text`, o `payload` do botão é o rótulo", () => {
+    expect(unico({ type: "button", button: { payload: "NAO_SEI" } }).text).toBe("NAO_SEI");
+  });
+
+  it("resposta interativa (botão e lista) entra como texto com o título", () => {
+    const botao = unico({ type: "interactive", interactive: { type: "button_reply", button_reply: { id: "b1", title: "Quero ver" } } });
+    expect([botao.type, botao.text]).toEqual(["text", "Quero ver"]);
+    const lista = unico({ type: "interactive", interactive: { type: "list_reply", list_reply: { id: "l1", title: "Agenda" } } });
+    expect([lista.type, lista.text]).toEqual(["text", "Agenda"]);
+  });
+});

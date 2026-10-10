@@ -5,17 +5,21 @@ vi.mock("@/lib/cobranca/configuracao", () => ({ chaveDoProvedor: async () => h.c
 vi.mock("@/lib/cobranca/provedores/base-de-teste", () => ({ baseDeTesteDaCobranca: () => h.base }));
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://crm.example.com" } }));
 
-import { ErroDoProvedor } from "./contrato";
 import { adaptador, modoDoProvedor } from "./index";
 import { marcaDaInstalacao } from "./stripe";
 
+const CHAVE_ASAAS = "$" + ["aact", "hmlg", "000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjAwMDAw"].join("_");
+
 function fetchQueGuarda() {
   const urls: string[] = [];
-  const f = (async (entrada: string | URL | Request) => {
+  const chaves: Array<string | null> = [];
+  const f = (async (entrada: string | URL | Request, init?: RequestInit) => {
     urls.push(String(entrada));
-    return Response.json({ object: "list", data: [], has_more: false });
+    chaves.push(new Headers(init?.headers).get("access_token"));
+    // Lista vazia nos dois dialetos: Stripe (`has_more`) e Asaas (`hasMore`, `totalCount`).
+    return Response.json({ object: "list", data: [], has_more: false, hasMore: false, totalCount: 0, limit: 1, offset: 0 });
   }) as typeof fetch;
-  return { f, urls };
+  return { f, urls, chaves };
 }
 
 beforeEach(() => {
@@ -47,16 +51,30 @@ describe("registro dos adaptadores de cobrança", () => {
     expect(await s.testarChave()).toEqual({ ok: true, modo: "teste" });
   });
 
-  it("⭐ asaas ainda não: erro do provedor não transitório, nunca um adaptador pela metade", () => {
-    let erro: unknown;
-    try {
-      adaptador("asaas");
-    } catch (e) {
-      erro = e;
-    }
-    expect(erro).toBeInstanceOf(ErroDoProvedor);
-    expect((erro as ErroDoProvedor).codigo).toBe("provedor_nao_suportado");
-    expect((erro as ErroDoProvedor).transitorio).toBe(false);
+  it("⭐ asaas sem base de teste fala com a API do Asaas (/v3), a chave no header access_token, sem tocar a rede ao montar", async () => {
+    h.chave = CHAVE_ASAAS;
+    const { f, urls, chaves } = fetchQueGuarda();
+    const a = adaptador("asaas", { fetch: f });
+    expect(a.id).toBe("asaas");
+    expect(urls).toEqual([]);
+    expect(await a.testarChave()).toEqual({ ok: true, modo: "teste" });
+    expect(urls[0]).toMatch(/^https:\/\/api-sandbox\.asaas\.com\/v3\/customers\?/);
+    expect(chaves[0]).toBe(CHAVE_ASAAS);
+  });
+
+  it("⭐ asaas com a base de teste ligada vai ao dublê em loopback, com o /v3 (a Stripe fica no /v1)", async () => {
+    h.base = "http://127.0.0.1:3995";
+    h.chave = CHAVE_ASAAS;
+    const { f, urls } = fetchQueGuarda();
+    await adaptador("asaas", { fetch: f }).testarChave();
+    expect(urls[0]).toMatch(/^http:\/\/127\.0\.0\.1:3995\/v3\/customers\?/);
+  });
+
+  it("a chave do Asaas também pode vir de quem chama (a Conexão testa a DIGITADA)", async () => {
+    h.chave = null;
+    const { f, chaves } = fetchQueGuarda();
+    expect(await adaptador("asaas", { fetch: f, chave: async () => CHAVE_ASAAS }).testarChave()).toEqual({ ok: true, modo: "teste" });
+    expect(chaves[0]).toBe(CHAVE_ASAAS);
   });
 
   it("⭐ o endpoint nasce com a marca DESTA instalação (hash da origem do app)", async () => {
@@ -70,8 +88,12 @@ describe("registro dos adaptadores de cobrança", () => {
     expect(marca).toBe(marcaDaInstalacao("https://crm.example.com"));
   });
 
-  it("modoDoProvedor sai do prefixo da chave gravada", async () => {
+  it("modoDoProvedor sai do prefixo da chave gravada, nos dois provedores", async () => {
     expect(await modoDoProvedor("stripe")).toBe("teste");
+    h.chave = CHAVE_ASAAS;
+    expect(await modoDoProvedor("asaas")).toBe("teste");
+    h.chave = CHAVE_ASAAS.replace("_hmlg_", "_prod_");
+    expect(await modoDoProvedor("asaas")).toBe("producao");
     h.chave = null;
     expect(await modoDoProvedor("stripe")).toBeNull();
     expect(await modoDoProvedor("asaas")).toBeNull();

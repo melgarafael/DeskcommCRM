@@ -1,0 +1,19 @@
+== permissoes dos backups guardados (stat -c "%a %s %n", medido na VPS; nomes sem /root/deskcomm-)
+== quem gerou cada um (ledger): *-134008 = backup do update.sh da U1 Passo 2 (runner com umask 022 antes do update.sh);
+==   *-135302 = backup.sh da G3 Passo 0 (comando com umask 077); *-141954 = backup.sh da G5 Passo 1 (umask 077).
+== as pastas guardado-* sao 700 e foram copiadas com cp -rp (o modo de backups/ e dos arquivos e o da arvore do clone).
+2026-10-07T19:07:05Z
+755 4096 guardado-2026-10-07-1353/backups
+644 337200 guardado-2026-10-07-1353/backups/db-20261007-134008.sql.gz
+600 341997 guardado-2026-10-07-1353/backups/db-20261007-135302.sql.gz
+644 107 guardado-2026-10-07-1353/backups/storage-20261007-134008.tgz
+644 107 guardado-2026-10-07-1353/backups/storage-20261007-135302.tgz
+644 3891 guardado-2026-10-07-1353/backups/waha-20261007-134008.tgz
+644 3891 guardado-2026-10-07-1353/backups/waha-20261007-135302.tgz
+700 4096 guardado-2026-10-07-1419/backups
+600 324464 guardado-2026-10-07-1419/backups/db-20261007-141954.sql.gz
+644 107 guardado-2026-10-07-1419/backups/storage-20261007-141954.tgz
+644 3530 guardado-2026-10-07-1419/backups/waha-20261007-141954.tgz
+== leitura: db-*.sql.gz e a pasta backups/ seguem o umask do shell que rodou (022 -> 644/755; 077 -> 600/700).
+==   waha-*.tgz e storage-*.tgz sao 644 nos dois umasks: sao escritos pelo tar DENTRO do conteiner alpine:3.20
+==   (hostgator-setup-kit/backup.sh:48-49 e :66-67), que nao herda o umask do host.

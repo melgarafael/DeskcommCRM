@@ -2349,11 +2349,17 @@ if ! dc pull; then
   c_ylw "$(t "⚠ Não consegui puxar todas as imagens do registro.")"
   c_ylw "$(t "  Sigo assim mesmo: o que faltar é construído aqui (mais lento, mesmo resultado).")"
 fi
-# O "sigo assim mesmo" acima vale para o worker e o scheduler, que têm `build:`
-# ao lado do `image:` — mas NÃO para o app, que não tem: se a imagem dele não
-# veio do registro (arquitetura da VPS diferente da das imagens publicadas, tag
-# ainda publicando, pacote privado), o `up -d` morre e a instalação acabava sem
-# CRM no ar. A promessa da frase acima só se sustenta com esta guarda.
+# A frase de cima só é verdade com rede de segurança embaixo dela. Worker,
+# scheduler e voz têm `build:` ao lado do `image:` e o Compose os constrói em
+# QUALQUER falha de pull (medido, não só na de arquitetura); o `app` não tem,
+# de propósito (#1060). Se a imagem dele não veio do registro (arquitetura da
+# VPS diferente da das imagens publicadas, tag ainda publicando, pacote
+# privado, registro fora), o `up -d` morre e a instalação acabava sem CRM no
+# ar. Aqui a resposta é construir: o install.sh chama `construir_aqui_e_subir`
+# direto, SEM consultar `build_local_permitido` — então uma instalação nova
+# constrói o app nesta VPS em qualquer falha do `up -d`, inclusive com o
+# registro fora do ar. O portão de memória da #1955, que recusa construir
+# quando o registro não responde, hoje só existe no update.sh.
 CONSTRUIU_AQUI=""
 if ! dc up -d; then
   if construir_aqui_e_subir "$VERSAO_ALVO"; then

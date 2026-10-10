@@ -29,7 +29,8 @@
  * item, porque quem avisa disso é o `channel-health`. Dois avisos para o mesmo
  * silêncio seria a Central disputando com ela mesma a atenção de quem lê. Só
  * existe caminho para `abrir` partindo do booleano `metadata.disabled` — que só
- * muda quando uma PESSOA pausa. A saúde do transporte nem é lida.
+ * muda quando uma pessoa pausa, ou quando a janela de manutenção que uma pessoa
+ * agendou pausa e retoma (#2388). A saúde do transporte nem é lida.
  *
  * ── Sem PII de conversa ─────────────────────────────────────────────────────
  *

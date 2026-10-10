@@ -155,6 +155,7 @@ export function PipelinesClient({
   pipelines,
   etapas = {},
   podeEditarConfig,
+  comandaDisponivel = false,
 }: {
   pipelines: PipelineRow[];
   /**
@@ -165,6 +166,12 @@ export function PipelinesClient({
   etapas?: Record<string, EtapaDoFunil[]>;
   /** Vocabulário/custom fields são admin (a server action recusa o resto). */
   podeEditarConfig: boolean;
+  /**
+   * O módulo `financeiro` está instalado (#1907)? Sem ele não existe comanda, e o
+   * interruptor "abrir comanda ao ganhar" some. Ausente = desligado (falha
+   * fechada); a página sempre manda.
+   */
+  comandaDisponivel?: boolean;
 }) {
   const t = useT();
   if (pipelines.length === 0) {
@@ -197,7 +204,13 @@ export function PipelinesClient({
           <div className="border-t border-border pt-6">
             <AgentMappingSection pipelineId={p.id} ancoraEtapas={ancoraDasEtapas(p.id)} />
           </div>
-          {podeEditarConfig && <PipelineEditor pipeline={p} etapas={etapas[p.id] ?? []} />}
+          {podeEditarConfig && (
+            <PipelineEditor
+              pipeline={p}
+              etapas={etapas[p.id] ?? []}
+              comandaDisponivel={comandaDisponivel}
+            />
+          )}
         </Card>
       ))}
     </div>
@@ -207,9 +220,11 @@ export function PipelinesClient({
 function PipelineEditor({
   pipeline,
   etapas,
+  comandaDisponivel,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
+  comandaDisponivel: boolean;
 }) {
   const t = useT();
   const v = pipeline.vocabulary ?? {};
@@ -417,22 +432,26 @@ function PipelineEditor({
           Porta do consumidor de `lead.won`. Desligada por padrão, pela régua
           de `docs/doctrine/extensoes.md`: quem não ativar continua com a
           operação inteira, e em loja com checkout o valor do negócio não é
-          conta a receber. */}
-      <div className="space-y-1">
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={comandaNoGanho}
-            onChange={(e) => setComandaNoGanho(e.target.checked)}
-          />
-          {t("Abrir comanda ao ganhar um negócio neste funil")}
-        </label>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Desligado, ganhar não mexe no financeiro: loja com checkout, infoproduto e imobiliária não vivem de conta a receber. Ligado, o arrasto para a etapa de ganho e o botão Ganhar abrem uma comanda com o valor e o contato do negócio.",
-          )}
-        </p>
-      </div>
+          conta a receber. Sem o módulo `financeiro` instalado (#1907) não
+          há comanda, e o interruptor some; o valor salvo no funil fica como
+          está, e o consumidor também confere o módulo. */}
+      {comandaDisponivel && (
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={comandaNoGanho}
+              onChange={(e) => setComandaNoGanho(e.target.checked)}
+            />
+            {t("Abrir comanda ao ganhar um negócio neste funil")}
+          </label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Desligado, ganhar não mexe no financeiro: loja com checkout, infoproduto e imobiliária não vivem de conta a receber. Ligado, o arrasto para a etapa de ganho e o botão Ganhar abrem uma comanda com o valor e o contato do negócio.",
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label className="text-xs">{t("Campos do lead neste funil")}</Label>

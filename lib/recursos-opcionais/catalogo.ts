@@ -118,6 +118,13 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Honorários",
     oQueFaz: "Contratos de honorários com parcelas e o controle do que já foi pago.",
   },
+  // #1907 item 4 — a linha do catálogo de recursos opcionais (#1876): a
+  // comanda, o caixa e as comissões. Módulo de tabela, então o `href` do mapa
+  // (`MODULOS_OPCIONAIS_POR_FLAG`) já aponta para `/admin/modulos`.
+  financeiro: {
+    nome: "Comandas",
+    oQueFaz: "A comanda do atendimento: itens, forma de pagamento, comissões e fidelidade.",
+  },
   cobranca: {
     nome: "Cobrança dos seus clientes",
     oQueFaz: "Você cria planos e cobra as empresas desta instalação, com teste grátis e suspensão de quem não paga.",
@@ -613,6 +620,17 @@ const DA_EMPRESA: RecursoOpcional[] = [
 ];
 
 const DE_CADA_AGENTE: RecursoOpcional[] = [
+  {
+    id: "passagem_por_assunto_juridico",
+    nome: "Passagem por assunto jurídico",
+    oQueFaz:
+      "Por agente e decidido pelo admin: passar a conversa para uma pessoa quando o cliente falar de assunto jurídico (Procon, advogado, processo). Desligada, assunto jurídico passa a ser o trabalho normal deste agente e não é, sozinho, motivo de passagem — quem pede para falar com uma pessoa continua sendo passado. É OUTRA chave: a \"chamar uma pessoa\" de \"Ajustes de cada agente\" liga e desliga a ferramenta inteira; esta só tira a passagem por assunto jurídico.",
+    nivel: "agente",
+    padrao: "ligado",
+    quemDecide: "admin",
+    href: "/app/ai/agents",
+    ler: varia,
+  },
   {
     id: "ajustes_do_agente",
     nome: "Ajustes de cada agente",
