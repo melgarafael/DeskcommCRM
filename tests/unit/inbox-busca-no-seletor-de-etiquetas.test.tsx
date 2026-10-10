@@ -136,8 +136,9 @@ describe("digitar filtra — e só filtra", () => {
 
     const chaveDepois = JSON.stringify(h.contagens.mock.calls.at(-1)?.[1]);
     expect(chaveDepois).toBe(chaveAntes);
-    // E a tela inteira ficou sem pedir nada: o filtro não mudou de valor.
-    expect(h.contagens.mock.calls.at(-1)?.[1]).toMatchObject({ tag: undefined });
+    // E a chave continua dizendo "nenhuma etiqueta escolhida": a busca só
+    // decide o que está VISÍVEL na lista, nunca o que está FILTRADO na consulta.
+    expect(h.contagens.mock.calls.at(-1)?.[1]).toMatchObject({ tag: [] });
   });
 });
 
