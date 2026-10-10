@@ -37,6 +37,7 @@ import { runBeforeSend } from '../guardrails/before-send';
 import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { estadoDaJanela } from '@/lib/channels/janela';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
+import { contextoDoContato, renderizarTextoDeFollowup } from '@/lib/automation/texto-do-followup';
 import { isStatusSendable } from '@/lib/channels/meta/template-binding';
 import { deriveTemplateContract } from '@/lib/channels/meta/template-contract';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
@@ -687,7 +688,7 @@ async function runFlowDrivenTurn(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
-    let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, input);
+    let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, target.leadId, input);
     // O PLANO B DA MENSAGEM POR IA. Com a janela de 24 h fechada, o canal recusa
     // qualquer texto livre — o da IA inclusive —, e o passo terminava sem mandar
     // nada. A tela prometia "se a IA não conseguir escrever, mandar este modelo"
@@ -891,9 +892,25 @@ async function runDeterministicReentry(
   );
 }
 
-function interpolarVoltaDoPayload(texto: string, index: number | undefined, total: number | undefined): string {
-  if (index === undefined || total === undefined) return texto;
-  return texto.replaceAll('{{volta}}', String(index)).replaceAll('{{voltas}}', String(total));
+/**
+ * `{{volta}}`/`{{voltas}}` PRIMEIRO e, com o contexto do contato e do negócio
+ * (#2528), o resto pelo MESMO renderizador das automações: `{{nome}}`,
+ * `{{primeiro_nome}}`, `{{contact.*}}` e `{{lead.*}}` saem preenchidos, e
+ * marcação sem valor sai da frase junto com o espaço vizinho — nunca `{{...}}`
+ * cru ao cliente. Sem contexto (chamador que não leu) o comportamento é o de
+ * antes: só a volta.
+ */
+function interpolarVoltaDoPayload(
+  texto: string,
+  index: number | undefined,
+  total: number | undefined,
+  contexto?: Record<string, unknown> | null,
+): string {
+  const comVolta =
+    index === undefined || total === undefined
+      ? texto
+      : texto.replaceAll('{{volta}}', String(index)).replaceAll('{{voltas}}', String(total));
+  return contexto ? renderizarTextoDeFollowup(comVolta, contexto) : comVolta;
 }
 
 /**
@@ -917,6 +934,8 @@ async function resolveFlowSendBody(
   pool: pg.Pool,
   tenantId: string,
   channelSessionId: string,
+  /** `job.contact_id` — de quem é este texto (#2528). */
+  contactId: string,
   input: {
     fixedBody: string | undefined;
     templateId: string | undefined;
@@ -924,8 +943,19 @@ async function resolveFlowSendBody(
     voltaTotal: number | undefined;
   },
 ): Promise<PassoSemIa | null> {
+  // Sem passo de texto não há o que renderizar — as duas leituras do contexto
+  // (contato + negócio) só valem quando um dos dois corpos existe.
+  if (input.fixedBody === undefined && input.templateId === undefined) return null;
+  // #2528 — CONTEXTO DO CONTATO E DO NEGÓCIO, lido UMA vez para os dois corpos.
+  // É a segunda passada do render (a primeira é no enfileiramento, em
+  // `lib/followup/engine.ts`); o corpo de `message_templates` só existe aqui,
+  // então sem esta leitura o modo `template` continuaria saindo literal.
+  const contexto = await contextoDoContato(pool, tenantId, contactId);
   if (input.fixedBody !== undefined) {
-    return { tipo: 'texto', body: interpolarVoltaDoPayload(input.fixedBody, input.voltaIndex, input.voltaTotal) };
+    return {
+      tipo: 'texto',
+      body: interpolarVoltaDoPayload(input.fixedBody, input.voltaIndex, input.voltaTotal, contexto),
+    };
   }
   if (input.templateId === undefined) return null;
   const { rows } = await pool.query<{ body: string }>(
@@ -934,7 +964,7 @@ async function resolveFlowSendBody(
   );
   const body = rows[0]?.body;
   if (body !== undefined && body.length > 0) {
-    return { tipo: 'texto', body: interpolarVoltaDoPayload(body, input.voltaIndex, input.voltaTotal) };
+    return { tipo: 'texto', body: interpolarVoltaDoPayload(body, input.voltaIndex, input.voltaTotal, contexto) };
   }
   // Não é texto pronto: pode ser um modelo APROVADO do canal. Até aqui o passo só
   // lia `message_templates`, e um fluxo apontado para um modelo aprovado — o único
