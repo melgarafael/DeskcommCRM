@@ -5,6 +5,10 @@ import { useState, useTransition } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { signInWithGoogle } from "@/app/actions/auth/signInWithGoogle";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 /**
  * O botão "Entrar com Google" — o mesmo no login e no cadastro.
@@ -25,17 +29,25 @@ export function EntrarComGoogle({ next, convite }: { next?: string; convite?: st
   const onClick = () => {
     setErro(null);
     startTransition(async () => {
-      const res = await signInWithGoogle({ next, convite });
-      // `res` indefinido = o redirect do sucesso aconteceu (ele lança).
-      if (!res) return;
+      try {
+        const res = await comTetoDeEspera(signInWithGoogle({ next, convite }));
+        // `res` indefinido = o redirect do sucesso aconteceu (ele lança).
+        if (!res) return;
 
-      setErro(
-        res.error === "google_indisponivel"
-          ? t(
-              "O Google não está habilitado nesta instalação. Entre com e-mail e senha, ou peça a quem administra para habilitá-lo.",
-            )
-          : t("Não foi possível falar com o Google agora. Tente novamente em instantes."),
-      );
+        setErro(
+          res.error === "google_indisponivel"
+            ? t(
+                "O Google não está habilitado nesta instalação. Entre com e-mail e senha, ou peça a quem administra para habilitá-lo.",
+              )
+            : t("Não foi possível falar com o Google agora. Tente novamente em instantes."),
+        );
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setErro(t("Não consegui concluir agora. Tente novamente."));
+      }
     });
   };
 

@@ -8,6 +8,10 @@ import { TOTPInput } from "@/components/auth/TOTPInput";
 import { RecoveryCodesPanel } from "@/components/auth/RecoveryCodesPanel";
 import { enrollMfa } from "@/app/actions/auth/enrollMfa";
 import { confirmMfaEnroll } from "@/app/actions/auth/confirmMfaEnroll";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 type Step = "intro" | "scan" | "codes";
 
@@ -39,18 +43,26 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
   useEffect(() => {
     if (step !== "scan" || enrollState) return;
     startTransition(async () => {
-      const res = await enrollMfa();
-      if (!res.ok) {
-        setError(res.message ?? t("Não foi possível iniciar a configuração."));
-        setStep("intro");
-        return;
+      try {
+        const res = await comTetoDeEspera(enrollMfa());
+        if (!res.ok) {
+          setError(res.message ?? t("Não foi possível iniciar a configuração."));
+          setStep("intro");
+          return;
+        }
+        setEnrollState({
+          factor_id: res.factor_id,
+          qr_data_url: res.qr_data_url,
+          uri: res.uri,
+          secret: res.secret,
+        });
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setError(t("Não consegui concluir agora. Tente novamente."));
       }
-      setEnrollState({
-        factor_id: res.factor_id,
-        qr_data_url: res.qr_data_url,
-        uri: res.uri,
-        secret: res.secret,
-      });
     });
   }, [step, enrollState, t]);
 

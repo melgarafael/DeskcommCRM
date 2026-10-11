@@ -12,6 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signInWithPassword } from "@/app/actions/auth/signInWithPassword";
 import { Eye, EyeSlash } from "@/lib/ui/icons";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 export function LoginForm({ next }: { next?: string }) {
   const t = useT();
@@ -32,29 +36,37 @@ export function LoginForm({ next }: { next?: string }) {
   const onSubmit = (values: LoginInput) => {
     setServerError(null);
     startTransition(async () => {
-      // Server Action redirects on success — no return value reaches here.
-      // On failure, an error discriminator is returned and rendered inline.
-      const res = await signInWithPassword(values, next);
-      if (!res) {
-        // Should be unreachable (redirect throws), but guard anyway.
-        router.replace(next || "/app");
-        return;
-      }
-      if (res.error === "mfa_required") {
-        const params = new URLSearchParams();
-        if (next) params.set("next", next);
-        if (res.challengeId) params.set("factor", res.challengeId);
-        router.replace(`/login/mfa${params.toString() ? `?${params}` : ""}`);
-        return;
-      }
-      if (res.error === "invalid_credentials") {
-        setServerError(t("Email ou senha incorretos."));
-      } else if (res.error === "rate_limited") {
-        setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
-      } else if (res.error === "validation_error") {
-        setServerError(t("Dados inválidos. Confira os campos."));
-      } else {
-        setServerError(t("Erro inesperado. Tente novamente."));
+      try {
+        // Server Action redirects on success — no return value reaches here.
+        // On failure, an error discriminator is returned and rendered inline.
+        const res = await comTetoDeEspera(signInWithPassword(values, next));
+        if (!res) {
+          // Should be unreachable (redirect throws), but guard anyway.
+          router.replace(next || "/app");
+          return;
+        }
+        if (res.error === "mfa_required") {
+          const params = new URLSearchParams();
+          if (next) params.set("next", next);
+          if (res.challengeId) params.set("factor", res.challengeId);
+          router.replace(`/login/mfa${params.toString() ? `?${params}` : ""}`);
+          return;
+        }
+        if (res.error === "invalid_credentials") {
+          setServerError(t("Email ou senha incorretos."));
+        } else if (res.error === "rate_limited") {
+          setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
+        } else if (res.error === "validation_error") {
+          setServerError(t("Dados inválidos. Confira os campos."));
+        } else {
+          setServerError(t("Erro inesperado. Tente novamente."));
+        }
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setServerError(t("Não consegui concluir agora. Tente novamente."));
       }
     });
   };

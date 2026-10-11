@@ -9155,6 +9155,15 @@ export const DICIONARIO: Traducoes = {
   "Senha": { es: "Contraseña" },
   "Confirmar senha": { es: "Confirmar contraseña" },
   "Código inválido. Tente novamente.": { es: "Código inválido. Intenta de nuevo." },
+  // Os dois desfechos quando uma ação de autenticação NÃO RESPONDE no teto de
+  // espera. Genéricas de propósito: a tela não sabe se a ação chegou a
+  // acontecer do outro lado, e afirmar "falhou" seria inventar.
+  "Não consegui verificar o código agora. Tente novamente.": {
+    es: "No pude verificar el código ahora. Intenta de nuevo.",
+  },
+  "Não consegui concluir agora. Tente novamente.": {
+    es: "No pude completar ahora. Intenta de nuevo.",
+  },
   "Verificando...": { es: "Verificando..." },
   "Verificar": { es: "Verificar" },
   "Dados inválidos. Confira os campos.": { es: "Datos inválidos. Revisa los campos." },
