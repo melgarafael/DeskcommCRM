@@ -2355,13 +2355,37 @@ fi
 # de propósito (#1060). Se a imagem dele não veio do registro (arquitetura da
 # VPS diferente da das imagens publicadas, tag ainda publicando, pacote
 # privado, registro fora), o `up -d` morre e a instalação acabava sem CRM no
-# ar. Aqui a resposta é construir: o install.sh chama `construir_aqui_e_subir`
-# direto, SEM consultar `build_local_permitido` — então uma instalação nova
-# constrói o app nesta VPS em qualquer falha do `up -d`, inclusive com o
-# registro fora do ar. O portão de memória da #1955, que recusa construir
-# quando o registro não responde, hoje só existe no update.sh.
+# ar — e a resposta a qualquer falha era construir.
+#
+# ── O PORTÃO DO BUILD LOCAL, AQUI TAMBÉM (#1955, #2631) ──────────────────────
+# O gatilho continua sendo o CÓDIGO DE SAÍDA do `up -d` (nunca o texto do erro
+# — arquitetura, tag publicando, pacote privado e registro fora caem todos no
+# mesmo caminho), mas quem DECIDE se constrói é `build_local_permitido`, o
+# mesmo portão que o update.sh consultava sozinho. A assimetria é o defeito:
+# uma instalação nova com o registro fora do ar construía o `app` na VPS do
+# mesmo jeito, e o OOM do `next-build` (#1955) derruba o resto da VPS junto —
+# não há serviço no ar para proteger numa instalação, mas há uma memória para
+# não gastar.
+#
+# Quem tem registro respondendo continua se recuperando sozinho: é a
+# recuperação de arquitetura do #1060/#1143 e ela não pode sumir. Quem quer
+# construir de propósito pede com DESKCOMM_BUILD_LOCAL=1.
+#
+# Na instalação não há versão anterior para onde voltar (o update.sh devolve a
+# anterior e aponta o diagnóstico), então a recusa é UM die com a mensagem da
+# instalação — e o que ela DIZ sobre o motivo é separado (#2648): o veredito
+# 'indisponivel' que o portão lê junta causas com diagnósticos OPPOSTOS (sem
+# buildx, registro fora, tag ainda publicando, sonda estourada no prazo), e a
+# mesma separação que o preflight do update.sh já fazia agora cabe aqui. Quem
+# decide a frase é `motivo_da_recusa_do_build_local` (em _common.sh), na mesma
+# ordem em que o portão decide: o operador sem buildx recebe "instale o
+# buildx", não "mexa na rede". A saída de propósito continua sendo o
+# DESKCOMM_BUILD_LOCAL=1.
 CONSTRUIU_AQUI=""
 if ! dc up -d; then
+  if ! build_local_permitido "$VERSAO_ALVO"; then
+    die "$(t "Não coloquei o CRM no ar: {1} A construção local segue fechada por padrão, e numa instalação não há versão anterior para onde voltar. Para construir as imagens aqui DE PROPÓSITO (mais lento, exige memória): {2}" "$(motivo_da_recusa_do_build_local "$VERSAO_ALVO")" "DESKCOMM_BUILD_LOCAL=1 bash hostgator-setup-kit/install.sh --yes")"
+  fi
   if construir_aqui_e_subir "$VERSAO_ALVO"; then
     CONSTRUIU_AQUI=1
   else
