@@ -7,17 +7,23 @@
  * fuso PADRÃO enquanto o GET `/api/v1/channel-schedules` não respondia, e o
  * botão "Agendar" só ficava travado durante o salvamento. Organização em
  * `America/Manaus` que clicasse nesse intervalo gravava 03:00 como 06:00Z —
- * três horas erradas, sem erro nenhum na tela.
+ * uma hora errada, sem erro nenhum na tela.
  *
- * ─── Os dois casos que este arquivo cobre ────────────────────────────────────
+ * ─── Os três casos que este arquivo cobre ────────────────────────────────────
  *
  *  1. GET pendente: nenhum campo de data/hora e nem o "Agendar" respondem, e
- *     NENHUM payload sai — nem digitando e clicando por fora do desabilitado
- *     (`fireEvent` entrega o evento mesmo em controle desabilitado, que é
- *     justamente o caminho mais forte para provar a defesa);
+ *     NENHUM payload sai — nem digitando e clicando por cima do desabilitado.
+ *     O que este caso prova é o `disabled`, NÃO a guarda `if (!fuso)` dentro de
+ *     `agendar()`: o React não dispara `onClick` em botão desabilitado (o
+ *     react-dom filtra eventos de mouse em button/input/select/textarea
+ *     desabilitados), então o `fireEvent.click` nunca chega à guarda. Removendo
+ *     a guarda, este caso segue verde. Ela fica como segunda defesa;
  *  2. Fuso chega (`America/Manaus`): tudo habilita, e 03:00 digitado vira
  *     `starts_at = 07:00Z` — a conversão do PRÓPRIO diálogo (`paredeParaInstante`
- *     → `instanteDe`), não a do navegador.
+ *     → `instanteDe`), não a do navegador;
+ *  3. GET falha: aparece o aviso (`role="alert"`) e a tela trava; fechar e
+ *     reabrir o diálogo refaz o GET (com o `QueryClient` de PRODUÇÃO,
+ *     `makeQueryClient`) e tudo destrava — a tela não fica presa no erro.
  *
  * A conta de fuso é a da lógica do componente, medida neste runtime:
  * `America/Manaus` é UTC-4 o ano inteiro (sem horário de verão desde 2019),
@@ -42,6 +48,8 @@ vi.mock("@/lib/api/client", () => ({
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
+
+import { makeQueryClient } from "@/lib/query/client";
 
 import { AgendaDePausa } from "./AgendaDePausa";
 
@@ -123,6 +131,42 @@ describe("AgendaDePausa — o fuso da organização ainda não chegou (#2676)", 
         ends_at: "2026-10-10T09:00:00.000Z",
         channel_session_id: null,
       });
+    },
+  );
+
+  // Caso acrescentado na triagem do #2708 (sobre o conserto de @webtecnica).
+  it(
+    "se o GET falha, aparece o aviso e tudo trava; fechar e reabrir refaz o GET e destrava",
+    { timeout: 30_000 },
+    async () => {
+      getMock.mockRejectedValueOnce(new Error("GET falhou"));
+      getMock.mockResolvedValue({ data: { fuso: "America/Manaus", agendas: [] } });
+      const user = userEvent.setup({ delay: null });
+      // O client de produção: é a política de retry/staleTime dele que decide
+      // se reabrir o diálogo refaz o GET. Um `new QueryClient()` cru mediria outra coisa.
+      render(
+        <QueryClientProvider client={makeQueryClient()}>
+          <AgendaDePausa canais={[]} />
+        </QueryClientProvider>,
+      );
+      await user.click(screen.getByRole("button", { name: "Agendar pausa" }));
+
+      await screen.findByRole("alert");
+      expect(screen.getByLabelText("A pausa começa (hora local)")).toBeDisabled();
+      expect(screen.getByLabelText("A pausa termina (hora local)")).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Agendar" })).toBeDisabled();
+
+      // O X do Dialog também se chama "Fechar"; o primeiro é o botão do rodapé.
+      await user.click(screen.getAllByRole("button", { name: "Fechar" })[0]!);
+      await user.click(screen.getByRole("button", { name: "Agendar pausa" }));
+
+      await screen.findByText("America/Manaus", { exact: false });
+      expect(getMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByLabelText("A pausa começa (hora local)")).toBeEnabled();
+      expect(screen.getByLabelText("A pausa termina (hora local)")).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Agendar" })).toBeEnabled();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(postMock).not.toHaveBeenCalled();
     },
   );
 });
