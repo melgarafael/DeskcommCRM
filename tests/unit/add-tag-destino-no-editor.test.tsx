@@ -14,7 +14,9 @@
  *   1. o rótulo e as DUAS opções existem (padrão e contato);
  *   2. escolher "Contato do lead" grava `destino: "contato"` no config;
  *   3. o padrão continua sendo o card — quem nunca mexeu não ganha chave;
- *   4. escrever nas tags DEPOIS de escolher o destino preserva a escolha.
+ *   4. escrever nas tags DEPOIS de escolher o destino preserva a escolha;
+ *   5. o aviso "sem contato, não aplica" só aparece com o destino contato —
+ *      com o card ele é falso (o card recebe a etiqueta mesmo sem contato).
  */
 import * as React from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -122,5 +124,22 @@ describe("o editor de automações expõe o destino da etiqueta", () => {
     // "Contato do lead" e o payload salva card.
     expect(ultimo.config.destino).toBe("contato");
     expect(ultimo.config.tags).toEqual(["origem", "quente"]);
+  });
+
+  it("o aviso de 'sem contato' só aparece com o destino contato", async () => {
+    const aviso = "Sem contato vinculado, a etiqueta não é aplicada.";
+    const { user } = montar(defaultActionConfig("add_tag"));
+
+    // Padrão (sem a chave) e card: o card recebe a etiqueta mesmo sem
+    // contato, então a frase seria falsa aqui.
+    expect(screen.queryByText(aviso)).toBeNull();
+
+    const opcoes = await abrirDestino(user);
+    await user.click(opcoes.contato);
+    expect(screen.getByText(aviso)).toBeInTheDocument();
+
+    const devolta = await abrirDestino(user);
+    await user.click(devolta.card);
+    expect(screen.queryByText(aviso)).toBeNull();
   });
 });

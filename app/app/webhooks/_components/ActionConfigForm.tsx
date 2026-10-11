@@ -374,9 +374,11 @@ function AddTagForm({
             <SelectItem value="contato">{t("Contato do lead")}</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          {t("Sem contato vinculado, a etiqueta não é aplicada.")}
-        </p>
+        {config.destino === "contato" && (
+          <p className="text-xs text-muted-foreground">
+            {t("Sem contato vinculado, a etiqueta não é aplicada.")}
+          </p>
+        )}
       </div>
     </div>
   );
