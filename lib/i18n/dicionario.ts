@@ -15341,7 +15341,6 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível cancelar a janela.": { es: "No se pudo cancelar la ventana." },
   // #2647 — a ação "Iniciar fluxo de mensagem" alcança o fluxo de ATENDIMENTO.
   "Tipo de fluxo": { es: "Tipo de flujo" },
-  "Atendimento": { es: "Atención" },
   "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.": {
     es: "El guion de atención no comenzó: el módulo Flujos de atención está desactivado en esta instalación.",
   },
