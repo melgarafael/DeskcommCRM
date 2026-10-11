@@ -149,6 +149,15 @@ describe("texto fixo do follow-up (#2528)", () => {
     expect(payload.fixed_body).toBe("Oi!");
   });
 
+  it("o valor do cadastro entra como TEXTO — passada única, nunca vira modelo", async () => {
+    const payload = await enfileirar("Oi {{nome}}", {
+      contact: { name: "{{lead.title}}" },
+      lead: { title: "Obra" },
+    });
+
+    expect(payload.fixed_body).toBe("Oi {{lead.title}}");
+  });
+
   it("sem contexto no adaptador o comportamento é o de antes — marcação literais, nunca vazias", async () => {
     const payload = await enfileirar(BODY, null);
 
@@ -258,11 +267,15 @@ describe("modelo do follow-up (#2528)", () => {
     expect(runBeforeSend.mock.calls[0]![0].body).toBe("Fechou a reforma, Ana Souza?");
   });
 
-  it("⭐ o texto fixo reaproveitado pelo turno também sai renderizado", async () => {
+  it("⭐ o texto fixo NÃO passa pelo render de novo no turno — já chega renderizado do enfileiramento", async () => {
+    // O `fixed_body` traz o dado do cadastro já posto no lugar. Se o turno o
+    // renderizasse outra vez, um nome com marcação viraria modelo.
     const { d } = deps();
     runBeforeSend.mockClear();
-    await criarHandler(d)(job({ fixed_body: "Oi {{primeiro_nome}}, tudo?" }), fakePool(), { workerId: "w1" });
+    await criarHandler(d)(job({ fixed_body: "Oi {{lead.custom_fields.servico}}, tudo?" }), fakePool(), {
+      workerId: "w1",
+    });
 
-    expect(runBeforeSend.mock.calls[0]![0].body).toBe("Oi Ana, tudo?");
+    expect(runBeforeSend.mock.calls[0]![0].body).toBe("Oi {{lead.custom_fields.servico}}, tudo?");
   });
 });

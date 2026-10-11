@@ -943,19 +943,11 @@ async function resolveFlowSendBody(
     voltaTotal: number | undefined;
   },
 ): Promise<PassoSemIa | null> {
-  // Sem passo de texto não há o que renderizar — as duas leituras do contexto
-  // (contato + negócio) só valem quando um dos dois corpos existe.
-  if (input.fixedBody === undefined && input.templateId === undefined) return null;
-  // #2528 — CONTEXTO DO CONTATO E DO NEGÓCIO, lido UMA vez para os dois corpos.
-  // É a segunda passada do render (a primeira é no enfileiramento, em
-  // `lib/followup/engine.ts`); o corpo de `message_templates` só existe aqui,
-  // então sem esta leitura o modo `template` continuaria saindo literal.
-  const contexto = await contextoDoContato(pool, tenantId, contactId);
+  // O `fixed_body` já chega renderizado do enfileiramento (`lib/followup/engine.ts`),
+  // ou é a confirmação, que é dado do contato. Renderizar de novo leria o que veio
+  // do cadastro como modelo — por isso aqui ele só ganha a volta, nunca o contexto.
   if (input.fixedBody !== undefined) {
-    return {
-      tipo: 'texto',
-      body: interpolarVoltaDoPayload(input.fixedBody, input.voltaIndex, input.voltaTotal, contexto),
-    };
+    return { tipo: 'texto', body: interpolarVoltaDoPayload(input.fixedBody, input.voltaIndex, input.voltaTotal) };
   }
   if (input.templateId === undefined) return null;
   const { rows } = await pool.query<{ body: string }>(
@@ -964,6 +956,8 @@ async function resolveFlowSendBody(
   );
   const body = rows[0]?.body;
   if (body !== undefined && body.length > 0) {
+    // #2528 — o corpo de `message_templates` só existe aqui: esta é a passada única dele.
+    const contexto = await contextoDoContato(pool, tenantId, contactId);
     return { tipo: 'texto', body: interpolarVoltaDoPayload(body, input.voltaIndex, input.voltaTotal, contexto) };
   }
   // Não é texto pronto: pode ser um modelo APROVADO do canal. Até aqui o passo só
