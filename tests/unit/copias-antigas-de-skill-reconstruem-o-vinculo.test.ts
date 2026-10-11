@@ -7,9 +7,10 @@
  * `skill_versions.forked_from_version_id` e o `forkedFromVersionId` de
  * `installPlatformSkill` (`lib/ai/skills/install.ts`) nasceram JUNTOS na 0068
  * (2026-07-24, commit `999b952a2`). Quem quebrava era o editor: o
- * `PUT /api/v1/ai/skills/[name]` criava a versão nova sem herdar o vínculo até
- * o #1960 (merge `24b0f3c35`, 2026-09-30T00:04:41Z). Entre as duas datas toda
- * edição de cópia gravava uma versão com o vínculo nulo, o ponteiro passava a
+ * `PUT /api/v1/ai/skills/[name]`, que entrou na main com o #1484 (merge
+ * `28e0baf41`, 2026-09-23T03:50:24Z), criava a versão nova sem herdar o vínculo
+ * até o #1960 (commit `24b0f3c35`, merge `cd31a305c`, 2026-09-30T00:04:41Z).
+ * Entre essas duas datas toda edição de cópia gravava uma versão com o vínculo nulo, o ponteiro passava a
  * apontar para ela, o GET derivava `source: "manual"` e
  * `temVersaoNovaNoCatalogo(nulo, …)` era `false` para sempre — o badge de
  * versão nova nunca acendia, e não havia backfill (medido: nenhuma migration
@@ -21,7 +22,8 @@
  * vínculo a partir do próprio histórico (append-only pela regra dura 9): para
  * cada versão de ORG nula na janela do defeito, carrega o vínculo da versão
  * ANTERIOR mais recente do mesmo (org, name) que aponte versão de plataforma.
- * É a herança que o próprio PUT faz desde o #1960, aplicada retroativamente.
+ * É a mesma herança que o PUT faz desde o #1960, reconstruída pela ordem de
+ * criação das versões.
  *
  * Duas amarras, e cada uma fecha uma porta diferente:
  *
@@ -46,7 +48,7 @@ const MIGRATION =
   "supabase/migrations/20261010193000_0631_copias_antigas_de_skill_reconstroem_o_vinculo_com_o_catalogo.sql";
 
 /** As duas pontas da janela do defeito, com a razão de cada uma. */
-const INICIO_DA_JANELA = "2026-07-24T00:00:00Z"; // 0068: a coluna só existe desde aqui
+const INICIO_DA_JANELA = "2026-09-23T03:50:24Z"; // merge do #1484: o editor que gravava o nulo nasce aqui
 const FIM_DA_JANELA = "2026-09-30T00:04:41Z"; // merge do #1960: depois o PUT herda sozinho
 
 function ler(relativo: string): string {
@@ -138,7 +140,7 @@ describe("cópia editada antes do #1960 — o caso da issue #1974", () => {
   // editou antes do #1960: v2 nasceu nula e o ponteiro passou a apontar para ela.
   const copia: Versao[] = [
     { id: "v1", org: "org-aaa", nome: "playbook-x", criadaEm: "2026-08-05T10:00:00Z", forked: "plat-p1" },
-    { id: "v2", org: "org-aaa", nome: "playbook-x", criadaEm: "2026-09-10T10:00:00Z", forked: null },
+    { id: "v2", org: "org-aaa", nome: "playbook-x", criadaEm: "2026-09-25T10:00:00Z", forked: null },
   ];
   const plataforma: Versao[] = [
     { id: "plat-p1", org: null, nome: "playbook-x", criadaEm: "2026-08-01T10:00:00Z", forked: null },
@@ -165,7 +167,7 @@ describe("cópia editada antes do #1960 — o caso da issue #1974", () => {
 
 describe("cópia MANUAL — nunca veio do catálogo", () => {
   const manual: Versao[] = [
-    { id: "m1", org: "org-bbb", nome: "criada-no-zip", criadaEm: "2026-08-20T10:00:00Z", forked: null },
+    { id: "m1", org: "org-bbb", nome: "criada-no-zip", criadaEm: "2026-09-24T10:00:00Z", forked: null },
   ];
 
   it("continua sem vínculo e continua sem aviso", () => {
@@ -177,6 +179,19 @@ describe("cópia MANUAL — nunca veio do catálogo", () => {
 });
 
 describe("a janela é o que separa edição perdida de importação deliberada", () => {
+  it(".zip reimportado ANTES do editor (#1484) fica nulo", () => {
+    // Antes de 23/09 o editor não existia: versão de org com vínculo nulo só
+    // podia vir do import .zip, que o produto trata como manual.
+    const historico: Versao[] = [
+      { id: "plat-p1", org: null, nome: "playbook-x", criadaEm: "2026-08-01T10:00:00Z", forked: null },
+      { id: "z1", org: "org-eee", nome: "playbook-x", criadaEm: "2026-08-05T10:00:00Z", forked: "plat-p1" },
+      { id: "z2", org: "org-eee", nome: "playbook-x", criadaEm: "2026-09-01T10:00:00Z", forked: null },
+    ];
+    const depois = reconstruir(historico);
+    expect(depois.get("z2")).toBeNull();
+    expect(fonte(depois.get("z2"))).toBe("manual");
+  });
+
   it(".zip reimportado DEPOIS do #1960 não é ligado ao catálogo", () => {
     // A org instalou do catálogo e, depois do fix do #1960, importou um .zip
     // com o mesmo nome: o produto trata como manual, e o backfill também.

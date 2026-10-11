@@ -1,4 +1,4 @@
--- manifest: **As cópias de playbook editadas antes do #1960 voltam a apontar o catálogo (issue #1974).** O fork-on-install (`installPlatformSkill`, `lib/ai/skills/install.ts`) gravou `forked_from_version_id` desde a 0068, mas o editor (`PUT /api/v1/ai/skills/[name]`, `app/api/v1/ai/skills/[name]/route.ts`) só passou a herdar o vínculo na versão nova com o #1960 (merge `24b0f3c35`, 2026-09-30T00:04:41Z) — entre as duas datas toda edição de cópia gravava a versão nova com o vínculo nulo, o ponteiro apontava para ela, `source` virava `manual` e `temVersaoNovaNoCatalogo` (`lib/ai/skills/versao-nova-catalogo.ts`) nunca disparava. O histórico de versões é imutável (regra dura 9), então a primeira versão da cópia ainda traz a origem: o backfill percorre as versões de cada `(organization_id, name)` em ordem de criação e carrega o último vínculo não nulo para as versões nulas da janela do defeito — cópia manual (que nunca passou pelo catálogo) não tem vínculo nenhum na linhagem e fica intocada. Janela declarada: `>= 2026-07-24` (a coluna só existe desde a 0068) e `< 2026-09-30T00:04:41Z` (o merge do #1960: depois disso o PUT herda sozinho, então nulo = importação .zip deliberada = manual). Número `0631`: a `0628` é a última da `main` e `0629`/`0630` estão tomadas por PRs abertos. Gate: `tests/unit/copias-antigas-de-skill-reconstruem-o-vinculo.test.ts` e o mesmo bloco no `supabase/baseline.sql`.
+-- manifest: **As cópias de playbook editadas antes do #1960 voltam a apontar o catálogo (issue #1974).** O fork-on-install (`installPlatformSkill`, `lib/ai/skills/install.ts`) gravou `forked_from_version_id` desde a 0068, mas o editor (`PUT /api/v1/ai/skills/[name]`, `app/api/v1/ai/skills/[name]/route.ts`), que entrou na main com o #1484 (merge `28e0baf41`, 2026-09-23T03:50:24Z), só passou a herdar o vínculo na versão nova com o #1960 (commit `24b0f3c35`, merge `cd31a305c`, 2026-09-30T00:04:41Z) — entre essas duas datas toda edição de cópia gravava a versão nova com o vínculo nulo, o ponteiro apontava para ela, `source` virava `manual` e `temVersaoNovaNoCatalogo` (`lib/ai/skills/versao-nova-catalogo.ts`) nunca disparava. O histórico de versões é imutável (regra dura 9), então a primeira versão da cópia ainda traz a origem: o backfill percorre as versões de cada `(organization_id, name)` em ordem de criação e carrega o último vínculo não nulo para as versões nulas da janela do defeito — cópia manual (que nunca passou pelo catálogo) não tem vínculo nenhum na linhagem e fica intocada. Janela declarada: `>= 2026-09-23T03:50:24Z` (o merge do #1484: antes dele o editor não existia, e o único caminho que gravava versão de organização com vínculo nulo era o import .zip = manual) e `< 2026-09-30T00:04:41Z` (o merge do #1960: depois disso o PUT herda sozinho, então nulo = importação .zip deliberada = manual). Número `0631`: a `0628` é a última da `main` e `0629`/`0630` estão tomadas por PRs abertos. Gate: `tests/unit/copias-antigas-de-skill-reconstruem-o-vinculo.test.ts` e o mesmo bloco no `supabase/baseline.sql`.
 -- 0631: reconstrução do vínculo com o catálogo das cópias antigas de skill.
 --
 -- ─── O defeito, medido no código ─────────────────────────────────────────────────────────────
@@ -8,10 +8,13 @@
 --   `forkedFromVersionId: platform.id` desde o primeiro commit. Toda cópia
 --   instalada do catálogo tem, portanto, a SUA PRIMEIRA versão com o vínculo.
 -- * O `PUT /api/v1/ai/skills/[name]` (editor da tela) criava a versão nova SEM
---   passar o vínculo até o #1960 (merge `24b0f3c35`, 2026-09-30T00:04:41Z, que
---   acrescentou `forkedFromVersionId: atual?.forked_from_version_id ?? null`).
---   Entre as duas datas, cada edição de cópia gravava uma versão com o vínculo
---   nulo e o ponteiro passava a apontar para ela.
+--   passar o vínculo até o #1960 (commit `24b0f3c35`, merge `cd31a305c`,
+--   2026-09-30T00:04:41Z, que acrescentou
+--   `forkedFromVersionId: atual?.forked_from_version_id ?? null`). O próprio
+--   editor entrou na main com o #1484 (o commit mais antigo que introduz
+--   `ai.skill_saved` é `072ddd265`, mergeado em `28e0baf41` em
+--   2026-09-23T03:50:24Z). Entre as duas datas, cada edição de cópia gravava
+--   uma versão com o vínculo nulo e o ponteiro passava a apontar para ela.
 -- * O efeito é o badge que nunca acende: o GET /api/v1/ai/skills deriva
 --   `source` do vínculo da versão apontada e `versao_nova_catalogo` de
 --   `temVersaoNovaNoCatalogo(forked, versaoAtualDaPlataforma)` — com o nulo,
@@ -36,18 +39,21 @@
 --   2. só linhagem: quem nunca passou pelo catálogo não tem vínculo anterior em
 --      nenhuma versão do (org, name) — cópia manual fica intocada por
 --      construção;
---   3. só a janela: depois do merge do #1960 um vínculo nulo significa importação
---      .zip deliberada (manual), não edição perdida — e antes da 0068 a coluna
---      nem existia.
+--   3. só a janela: fora dela, um vínculo nulo significa importação .zip
+--      deliberada (manual), não edição perdida. Antes do merge do #1484 o editor
+--      não existia e o import .zip era o único caminho que gravava versão de
+--      organização sem vínculo; depois do merge do #1960 o PUT herda sozinho.
 --
 -- Caso limite declarado: uma cópia que foi instalada do catálogo e teve um .zip
--- reimportado POR CIMA dentro da janela é indistinguível de uma edição pelos
--- dados que o produto guarda (nenhum marcador distingue import de edit) e herda
+-- reimportado POR CIMA dentro da janela (sete dias) não é distinguido de uma
+-- edição por este bloco, que só lê `skill_versions`, e herda
 -- o vínculo da linhagem — escolha consciente no lado de avisar a equipe de uma
 -- cópia com origem conhecida, nunca no lado de inventar origem. Instalação que
 -- só atualizou MUITO depois do merge do #1960 e editou nesse intervalo não é
 -- curada por esta janela (nulo pós-merge = manual, sem reprocesso possível) —
--- declarado, sem forçar reconstrução.
+-- declarado, sem forçar reconstrução. Os dois casos poderiam ser separados pelo
+-- `api_audit_log` (`ai.skill_imported` × `ai.skill_saved`, ambos com
+-- `resource_id` = versão) num passo futuro, se valer.
 --
 -- O único obstáculo de escrita é a própria imutabilidade: UPDATE em
 -- `skill_versions` é vetado por `trg_skill_versions_immutable`. O backfill
@@ -84,7 +90,7 @@ begin
       from public.skill_versions v
      where v.organization_id is not null      -- só cópia de organização; o catálogo nunca é cópia
        and v.forked_from_version_id is null   -- vínculo já gravado nunca é reescrito
-       and v.created_at >= '2026-07-24T00:00:00Z'::timestamptz  -- 0068: a coluna só existe desde aqui
+       and v.created_at >= '2026-09-23T03:50:24Z'::timestamptz  -- #1484: o editor (PUT) que gravava o nulo nasce aqui; antes, nulo = import .zip
        and v.created_at <  '2026-09-30T00:04:41Z'::timestamptz  -- #1960: depois o PUT herda sozinho
   )
   update public.skill_versions v

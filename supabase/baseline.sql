@@ -50624,7 +50624,7 @@ begin
       from public.skill_versions v
      where v.organization_id is not null      -- só cópia de organização; o catálogo nunca é cópia
        and v.forked_from_version_id is null   -- vínculo já gravado nunca é reescrito
-       and v.created_at >= '2026-07-24T00:00:00Z'::timestamptz  -- 0068: a coluna só existe desde aqui
+       and v.created_at >= '2026-09-23T03:50:24Z'::timestamptz  -- #1484: o editor (PUT) que gravava o nulo nasce aqui; antes, nulo = import .zip
        and v.created_at <  '2026-09-30T00:04:41Z'::timestamptz  -- #1960: depois o PUT herda sozinho
   )
   update public.skill_versions v
