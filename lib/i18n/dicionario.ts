@@ -15340,6 +15340,7 @@ export const DICIONARIO: Traducoes = {
   },
   "Não foi possível cancelar a janela.": { es: "No se pudo cancelar la ventana." },
   "Auditoria do site": { es: "Auditoría del sitio" },
+  "verificação pendente, sem citar na abordagem": { es: "verificación pendiente, sin citar en el contacto" },
   "Auditoria": { es: "Auditoría" },
   "Só rede social": { es: "Solo redes sociales" },
   "Sem site próprio": { es: "Sin sitio propio" },
