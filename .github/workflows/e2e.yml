@@ -82,7 +82,67 @@ jobs:
       pull-requests: read
     outputs:
       e2e: ${{ steps.alcance.outputs.e2e }}
+      head_velho: ${{ steps.head_velho.outputs.head_velho }}
     steps:
+      # ── PASSO INICIAL: ESTE RUN AINDA É DO HEAD ATUAL DO PR? (#2449) ─────
+      #
+      # Medido no #2437: o run 37491737771, do head 8321bc06d, começou e foi
+      # cancelado 7 s depois porque o run do head anterior ba6a71d70 ainda
+      # disputava o grupo `e2e-e2e-parte1-2437`. Este passo existe para que um
+      # run de head superado NEM CHEGE a essa disputa: ele confere o
+      # `head.sha` congelado no payload do evento contra o head que o PR tem
+      # AGORA (a API do PR) e, se divergirem, entrega `head_velho=sim` e sai —
+      # e o job das partes, que é quem pede vaga no grupo, é pulado por essa
+      # saída.
+      #
+      # Por que a API e não o checkout: em `pull_request` o checkout traz o
+      # merge commit (`refs/pull/N/merge`), cujo SHA não é o do head de
+      # nenhum dos dois lados; e o payload do evento só envelhece — é ele que
+      # está sendo conferido, então não pode ser a referência.
+      #
+      # Falha ao ler NÃO trava o PR: sem a resposta não há como afirmar que o
+      # head está velho, e um gate que trava todo mundo por falta de uma
+      # leitura seria pior que o defeito. O mesmo tratamento que o passo
+      # `alcance` dá à listagem de arquivos (`::warning::` e segue).
+      #
+      # Fora de `pull_request` não há head de PR nenhum (push na main mede
+      # tudo) — sai cedo, sem chamada de API.
+      - name: O head deste run ainda é o head do PR?
+        id: head_velho
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_DO_EVENTO: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ]; then
+            echo "head_velho=nao" >> "$GITHUB_OUTPUT"
+            echo "evento ${GITHUB_EVENT_NAME}: não há head de PR para conferir"
+            exit 0
+          fi
+          if [ -z "${HEAD_DO_EVENTO:-}" ]; then
+            echo "head_velho=nao" >> "$GITHUB_OUTPUT"
+            echo "::warning::pull_request sem head.sha no payload — sem o que conferir, este run segue"
+            exit 0
+          fi
+          if ! atual=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.head.sha'); then
+            echo "head_velho=nao" >> "$GITHUB_OUTPUT"
+            echo "::warning::não consegui ler o head atual do PR #${PR} — sem a resposta, este run segue"
+            exit 0
+          fi
+          if [ -z "$atual" ]; then
+            echo "head_velho=nao" >> "$GITHUB_OUTPUT"
+            echo "::warning::a API do PR #${PR} devolveu head.sha vazio — sem o que conferir, este run segue"
+            exit 0
+          fi
+          if [ "$atual" != "$HEAD_DO_EVENTO" ]; then
+            echo "head_velho=sim" >> "$GITHUB_OUTPUT"
+            echo "head velho: este run é do ${HEAD_DO_EVENTO} e o PR #${PR} já está em ${atual} — sai cedo sem disputar a vaga; quem mede é o run do head novo"
+            exit 0
+          fi
+          echo "head_velho=nao" >> "$GITHUB_OUTPUT"
+          echo "head ${HEAD_DO_EVENTO} segue sendo o head do PR #${PR}"
+
       - uses: actions/checkout@v7
         if: github.event_name == 'pull_request'
         with:
@@ -151,7 +211,12 @@ jobs:
   # `tests/unit/e2e-parte-4-fala-com-os-servicos-do-runner.test.ts` reprova.
   e2e-parte:
     needs: [e2e-alcance]
-    if: needs.e2e-alcance.outputs.e2e == 'sim'
+    # Head superado não pede vaga no grupo (#2449): quem decide isso é o passo
+    # inicial do `e2e-alcance`, que compara o `head.sha` do evento com o head
+    # atual do PR. Pulando aqui (antes de o job existir para o Actions), o run
+    # velho nunca chega ao `concurrency:` — que é exatamente o ponto onde ele
+    # roubou a vaga do head novo no #2437.
+    if: needs.e2e-alcance.outputs.e2e == 'sim' && needs.e2e-alcance.outputs.head_velho != 'sim'
     # Executor próprio para trabalho NOSSO (push na main, PR de branch deste
     # repo) quando a variável de repositório EXECUTOR_PROPRIO vale `ligado`;
     # máquinas do GitHub para todo o resto, fork inclusive. A expressão decide
@@ -175,8 +240,32 @@ jobs:
     # rebalanceamento junto (o #1174), e com as partes em ~18 min o portão de 28
     # deixa de ser apertado sem que ninguém precise ceder.
     timeout-minutes: 30
+    # ── A CHAVE LEVA O SHA DO HEAD NA PRIMEIRA TENTATIVA TAMBÉM (#2449) ────
+    #
+    # Medido no #2437 (06/10/2026): o run 37491737771, do head ATUAL
+    # 8321bc06d, teve as 6 partes canceladas 7 s depois de começar, com a
+    # anotação `Canceling since a higher priority waiting request for
+    # e2e-e2e-parte1-2437 exists` — e quem ficou com a vaga foi o run
+    # 37489636913, do head ANTERIOR ba6a71d70. Sem o SHA na chave, os dois
+    # runs disputavam o MESMO grupo, e o Actions decide pela ordem de chegada
+    # ao grupo, não pela idade do head: o PR ficava vermelho sem defeito
+    # nenhum, e quem rodava era o head velho.
+    #
+    # Então a primeira tentativa entra como `-head-<sha>`: heads diferentes
+    # nunca dividem grupo, então o run de um head superado não cancela (nem é
+    # cancelado pelo) run do head novo. A reentrada continua com chave própria
+    # (`-reentrada-<sha>`) pela razão medida em d4c2b3f61 (#1446, #1431):
+    # rerun e aprovação de `action_required` não cancelam o head atual de
+    # outro commit — os dois sufixos são mutuamente exclusivos por
+    # `run_attempt`, então rerun do mesmo head também não colide com a
+    # primeira tentativa dele.
+    #
+    # O PAR desta chave é o passo "O head deste run ainda é o head do PR?" no
+    # `e2e-alcance`: com a chave por SHA o run velho deixa de atrapalhar o
+    # novo, mas continuaria gastando ~20 min de runner à toa — lá ele sai cedo
+    # (issue #2449, direção (b)).
     concurrency:
-      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
+      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt == '1' && format('-head-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
       # Sem fail-fast: se a parte 1 quebrar, ainda quero saber se a 2 também.
@@ -2310,20 +2399,33 @@ jobs:
           EVENTO: ${{ github.event_name }}
           PORTAO: ${{ needs.e2e-alcance.result }}
           ALCANCE: ${{ needs.e2e-alcance.outputs.e2e }}
+          HEAD_VELHO: ${{ needs.e2e-alcance.outputs.head_velho }}
           PARTES: ${{ needs.e2e-parte.result }}
         run: |
           set -euo pipefail
-          echo "evento=${EVENTO} e2e-alcance=${PORTAO} e2e=${ALCANCE:-<vazio>}"
+          echo "evento=${EVENTO} e2e-alcance=${PORTAO} e2e=${ALCANCE:-<vazio>} head_velho=${HEAD_VELHO:-<vazio>}"
           echo "e2e-parte: ${PARTES}"
           # A pergunta tem de ter sido RESPONDIDA: job de alcance que falhou
           # deixa as partes `skipped`, e isso não pode ler como aprovação.
           [ "$PORTAO" = "success" ]
-          # `skipped` das partes só é aceito com `e2e=nao` em pull_request — PR
-          # que não alcança nada que o e2e mede (scripts/pr-alcanca-o-e2e.sh).
+          # `skipped` das partes só é aceito em dois casos, e nenhum dos dois é
+          # "deu errado e ninguém viu":
+          #
+          #  (a) o run é de um head já superado (#2449): o passo inicial do
+          #      `e2e-alcance` conferiu o `head.sha` do evento contra o head
+          #      atual do PR e este run saiu cedo sem disputar a vaga — quem
+          #      mede é o run do head novo, e o resumo tem de dizer isto, não
+          #      a frase do (b);
+          #  (b) `e2e=nao` em pull_request — PR que não alcança nada que o
+          #      e2e mede (scripts/pr-alcanca-o-e2e.sh).
+          #
           # Qualquer outra combinação exige `success`: parte pulada não mediu
-          # nada, e ler isso como aprovação é o modo de falha que o `imagens-ok`
-          # documenta.
-          if [ "$EVENTO" = "pull_request" ] && [ "$ALCANCE" = "nao" ]; then
+          # nada, e ler isso como aprovação é o modo de falha que o
+          # `imagens-ok` documenta.
+          if [ "$HEAD_VELHO" = "sim" ]; then
+            [ "$PARTES" = "skipped" ]
+            echo "run de head superado — as partes pularam sem disputar a vaga; quem mede é o run do head atual (#2449)" | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [ "$EVENTO" = "pull_request" ] && [ "$ALCANCE" = "nao" ]; then
             [ "$PARTES" = "skipped" ]
             echo "PR não alcança nada que o e2e mede — partes puladas (scripts/pr-alcanca-o-e2e.sh)" | tee -a "$GITHUB_STEP_SUMMARY"
           else

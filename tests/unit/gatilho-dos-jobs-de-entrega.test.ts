@@ -218,11 +218,19 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
       "rodam e o agregador `e2e` reprova — o PORTAO dele exige `success` aqui.",
   },
   "e2e.yml::e2e-parte": {
-    condicao: "needs.e2e-alcance.outputs.e2e == 'sim'",
+    // #2449: ganhou um segundo pulo deliberado. O passo inicial do `e2e-alcance`
+    // compara o `head.sha` do evento com o head ATUAL do PR pela API; sendo
+    // velho, entrega `head_velho=sim` e este job nem nasce — é o pulo que tira
+    // o run superado da fila do grupo de concorrência, onde ele cancelou as
+    // partes do head novo no #2437 (run 37491737771). O agregador `e2e` ganhou
+    // o ramo correspondente, vigiado por e2e-so-aceita-pulo-declarado.test.ts.
+    condicao:
+      "needs.e2e-alcance.outputs.e2e == 'sim' && needs.e2e-alcance.outputs.head_velho != 'sim'",
     efeito:
-      "São as partes da matriz Playwright. Só pulam em PR que não alcança nada que o " +
-      "e2e mede (scripts/pr-alcanca-o-e2e.sh), e o agregador `e2e` só aceita o pulo com " +
-      "`e2e=nao` — vigiado por e2e-so-aceita-pulo-declarado.test.ts.",
+      "São as partes da matriz Playwright. Pulam em PR que não alcança nada que o " +
+      "e2e mede (scripts/pr-alcanca-o-e2e.sh) OU em run de head já superado (#2449), e o " +
+      "agregador `e2e` só aceita o pulo nessas duas condições — vigiado por " +
+      "e2e-so-aceita-pulo-declarado.test.ts.",
   },
   "e2e.yml::e2e": {
     condicao: "always()",
