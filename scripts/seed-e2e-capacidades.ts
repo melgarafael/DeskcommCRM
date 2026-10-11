@@ -57,7 +57,8 @@ async function main(): Promise<void> {
   let fixtures = creds.followup_agent_fixtures;
   if (!fixtures) {
     // RODA o pré-requisito em vez de mandar rodar. As fixtures moram no mesmo
-    // `.e2e-creds.json` que `seed-e2e-credentials.ts` reescreve por inteiro —
+    // `.e2e-creds.json` que `seed-e2e-credentials.ts` reescrevia por inteiro (hoje
+    // ele preserva os blocos quando a org é a mesma, mas um banco recriado os descarta) —
     // e ele é chamado de dentro do login quando o fator TOTP foi rotacionado
     // por outra sessão. O resultado é este bloco sumir no meio de uma execução
     // do Playwright, onde ninguém pode "rodar antes" coisa nenhuma: a bateria

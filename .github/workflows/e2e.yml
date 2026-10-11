@@ -855,29 +855,31 @@ jobs:
       # (main, 2026-08-09) semeia o catálogo no job, então a condição que a excluía
       # deixou de existir e ela voltou para a lista de execução.
       #
-      # `inbox-tempo-real` entrou aqui em 2026-08-26, no dia seguinte ao merge, e o
-      # motivo é medido nos dois eixos que importam — não é "está flaky, tira".
+      # `inbox-tempo-real` SAIU DAQUI em 2026-08-26, no dia seguinte ao merge, e o
+      # motivo foi medido nos dois eixos que importam — não era "está flaky,
+      # tira". O registro fica porque a volta (2026-10-07, logo abaixo) só
+      # significa alguma lendo o que a saída apagaria.
       #
-      #  (a) ELE NÃO DISCRIMINA O CONSERTO QUE DIZ GUARDAR. Bancada local fiel a
-      #      este job (Supabase local na major do `config.toml` — era pg17 em
-      #      2026-08-26, o dia da medição abaixo; quem cobre pg15 E pg17 hoje é a
-      #      matriz do job `invariants`, no ci.yml —, `baseline.sql`, Realtime
-      #      reiniciado depois do baseline, `next build` de produção, os mesmos
-      #      seeds), revertendo SÓ `lib/supabase/browser.ts` para a versão
-      #      anterior ao
-      #      #327 — e conferindo no bundle que o conserto saiu
-      #      (`grep -rc realtime-token .next/static` → 0, controle positivo
-      #      `sb-deskcomm-auth` → 1):
+      #  (a) ELA NÃO DISCRIMINAVA O CONSERTO QUE DIZIA GUARDAR. Bancada local
+      #      fiel a este job (Supabase local na major do `config.toml` — era pg17
+      #      em 2026-08-26; quem cobre pg15 E pg17 hoje é a matriz do job
+      #      `invariants`, no ci.yml —, `baseline.sql`, Realtime reiniciado
+      #      depois do baseline, `next build` de produção, os mesmos seeds),
+      #      revertendo SÓ `lib/supabase/browser.ts` para a versão anterior ao
+      #      #327 — e conferindo no bundle que o conserto saiu (`grep -rc
+      #      realtime-token .next/static` → 0, controle positivo `sb-deskcomm-auth`
+      #      → 1):
       #
       #          com o conserto  → 1 passed
-      #          sem o conserto  → 1 passed
+      #          sem o conserto  → 1 passed   ← não discrimina
       #
-      #      Causa provável: `useMessagesRealtime` liga `refetchOnWindowFocus:
-      #      true` e o `execFileSync` que injeta a mensagem devolve o foco à
-      #      janela. Dois caminhos, mesma saída. Quem discrimina de verdade é
+      #      Causa provável na época: `useMessagesRealtime` liga
+      #      `refetchOnWindowFocus: true` e o `execFileSync` que injetava a
+      #      mensagem devolvia o foco à janela. Dois caminhos, mesma saída.
+      #      Quem discrimina em unidade é
       #      `tests/unit/realtime-token-do-socket.test.ts`, no `verify`.
       #
-      #  (b) ELE REPROVA PR ALHEIO POR SORTE. Desde o conserto do locator:
+      #  (b) ELA REPROVAVA PR ALHEIO POR SORTE. Desde o conserto do locator:
       #      #327 `dd58ec7c` pass · #343 `b508208b` pass · #344 `4e5acb21` FAIL ·
       #      #344 rerun do MESMO sha FAIL. O #344 não toca uma linha de inbox,
       #      realtime ou socket.
@@ -886,20 +888,35 @@ jobs:
       #      time a reexecutar em vez de olhar, e foi assim que a degradação
       #      silenciosa passou despercebida da primeira vez.
       #
-      #      A spec CONTINUA no repositório e continua sendo a cerca de ponta a
-      #      ponta contra o sintoma relatado — roda local. Volta para a lista de
-      #      execução quando a issue #347 entregar entrega determinística (o
-      #      caminho provável é desligar o `refetchOnWindowFocus` durante a
-      #      asserção, para sobrar um caminho só).
+      # 2026-09-16 (PR #982): a spec deixou de asserir só a SAÍDA (o texto na
+      # tela, que tem dois caminhos) e passou a asserir a ENTRADA do caminho
+      # realtime — o `phx_join` com token do USUÁRIO e o frame `postgres_changes`
+      # com o corpo da mensagem. O item (a) caducou como motivo de exclusão; o
+      # que faltava era a matriz medida, porque código que "deve" discriminar não
+      # é prova de que discrimina.
       #
-      # Atualização de 2026-09-16 (issue #347): a spec ganhou o discriminador que
-      # faltava. Ela deixou de asserir só a SAÍDA (o texto na tela, que tem dois
-      # caminhos) e passou a asserir a ENTRADA do caminho realtime — o `phx_join`
-      # com token do USUÁRIO e o frame `postgres_changes` com o corpo da mensagem
-      # (ver o cabeçalho da spec). O item (a) acima caducou como motivo de
-      # exclusão; o que falta para voltar ao gate é fechar a matriz de sabotagem
-      # (reverter só `lib/supabase/browser.ts` e ver VERMELHO) numa rodada do
-      # runner — a bancada exige Docker, ausente na VPS onde a mudança foi escrita.
+      # ✅ 2026-10-07 (issue #347): MATRIZ FECHADA — e é ela que devolve a spec
+      #    à `SPECS_PARTE_3` (logo abaixo do bloco). Bancada fiel ao job, com
+      #    Docker: Supabase local na major do `config.toml`, extensões +
+      #    `baseline.sql`, Realtime reiniciado depois do baseline, `pnpm
+      #    e2e:build`, mesmos seeds. Quatro execuções, na ordem:
+      #
+      #          com o conserto              → 1 passed
+      #          com o conserto, repetido    → 1 passed   (determinístico)
+      #          sem o conserto              → 1 FAILED   (discrimina)
+      #          conserto restaurado         → 1 passed   (git, byte a byte)
+      #
+      #    A sabotagem foi o `lib/supabase/browser.ts` de antes do #327
+      #    (`a3588c160^`), com as duas exportações que o código de hoje importa
+      #    mantidas como no-op só para o build subir — nenhuma delas busca nem
+      #    devolve token. Bundle conferido NA perna vermelha: `grep -ro
+      #    realtime-token .next/static` → 0, `sb-deskcomm-auth` → 1 (grep vivo).
+      #
+      #    E o vermelho veio do produto, não do instrumento: a falha foi na
+      #    asserção "nenhum canal assinou com o token do USUÁRIO — o socket está
+      #    anônimo, que é o defeito do #327". A leitura de token (a `expect.poll`
+      #    que avisaria "instrumento quebrado") funcionou e devolveu `anon`; se
+      #    fosse ELA a falhar, a prova não teria fechado.
       #
       # ✅ `agenda-marcar-pela-tela` SAIU DAQUI — e o registro é o motivo.
       # Ela nasceu `skip` pela DECISÃO 21.3: a frente 1 é API e não tem pixel
@@ -982,6 +999,7 @@ jobs:
         logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts
+        inbox-tempo-real.spec.ts
         inbox-rotulo-de-origem.spec.ts
         troca-de-organizacao-tem-volta.spec.ts
         organizacoes-criacao-convite-e-cache.spec.ts
@@ -1276,7 +1294,6 @@ jobs:
       # verdade. Só esta prova que a Stripe real ainda responde o contrato da
       # versão fixada. Sem a chave, ela pula; o cabeçalho tem a receita.
       FORA_DO_CI: >-
-        inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts
         aviso-de-caso-chega-no-whatsapp.spec.ts
         jev-chave-real.spec.ts
