@@ -65,8 +65,15 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
       // que a tela fez no primeiro percurso real, enquanto a causa verdadeira
       // era outra: a versão não tinha credencial. Mentir sobre a causa manda a
       // pessoa procurar no lugar errado.
+      //
+      // #2686 — a rota devolve `ok` no payload quando há candidato e nenhuma
+      // mídia pendente (vocabulário de `llm_calls`), e grava `completed` só na
+      // linha de `ai_agent_runs`. Comparar com `completed` sozinho fazia a tela
+      // chamar de erro um turno que respondeu: "Ele não conseguiu responder —
+      // motivo: o ensaio terminou como 'ok'". Os dois vocabulários são legítimos
+      // no lugar deles; quem lê aqui tem de aceitar os dois como sucesso.
       const d = json.data;
-      if (d?.status && d.status !== "completed") {
+      if (d?.status && !["completed", "ok"].includes(d.status)) {
         setDesfecho({
           tipo: "erro",
           mensagem: d.error_message ?? d.error_code ?? `${t("o ensaio terminou como")} "${d.status}"`,
