@@ -726,7 +726,14 @@ async function processEnrollment(
   inboundBodyOverride?: string,
 ): Promise<void> {
   const { db, clock } = deps;
-  try { await db.assertServiceBoundary?.(enrollment); await db.assertAgenda?.(enrollment); }
+  // O despertar do `dormente` não é um efeito (nada é enviado aqui): a guarda
+  // de agenda (`fn_appointment_enrollment_current`, que só aceita
+  // `active`/`waiting_reply`) vetaria TODA inscrição dormente na hora do
+  // disparo. A guarda volta a valer nos efeitos, que a repetem com o status já
+  // `active` — ver `enviar-texto-fixo.ts`, `turn-bridge.ts` e `send-message.ts`.
+  // A fronteira continua valendo para o dormente: atendimento fechado cancela
+  // com aviso na Central, como antes.
+  try { await db.assertServiceBoundary?.(enrollment); if (enrollment.status !== "dormente") await db.assertAgenda?.(enrollment); }
   catch (error) {
     if(error instanceof AgendaDeferredError){
       if(error.protection.motivo === "leitura_indisponivel") throw error;
