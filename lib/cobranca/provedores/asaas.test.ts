@@ -636,11 +636,30 @@ describe("iniciarAssinatura", () => {
 
   it("⭐ cria com UNDEFINED (Pix, boleto ou cartão na fatura) e devolve a invoiceUrl da 1ª cobrança", async () => {
     const { adaptador, chamadas } = criando();
-    expect(await adaptador.iniciarAssinatura(PEDIDO)).toEqual({ url: "https://sandbox.asaas.com/i/pay_1", expiraEm: null, assinaturaRef: "sub_novo" });
+    expect(await adaptador.iniciarAssinatura(PEDIDO)).toEqual({
+      url: "https://sandbox.asaas.com/i/pay_1", expiraEm: null, assinaturaRef: "sub_novo", sessaoId: "pay_1",
+    });
     expect(chamadas.find((c) => c.rota === "POST /subscriptions")?.corpo).toEqual({
       customer: CLIENTE, billingType: "UNDEFINED", value: 49.9, cycle: "MONTHLY", nextDueDate: "2026-10-05",
       description: "Essencial", externalReference: ORG,
     });
+  });
+
+  it("⭐ #2609 expirar a sessão: DELETE /payments/{id} — a cobrança some e a invoiceUrl dela para de valer", async () => {
+    const { adaptador, chamadas } = montar({ "DELETE /payments/pay_aberta": { corpo: { id: "pay_aberta", deleted: true } } });
+    await adaptador.expirarSessao("pay_aberta");
+    expect(chamadas.map((c) => c.rota)).toEqual(["DELETE /payments/pay_aberta"]);
+  });
+
+  it("⭐ #2609 cobrança já apagada (404) é o efeito desejado; id que não é cobrança do Asaas recusa antes de chamar (422)", async () => {
+    const { adaptador } = montar({ "DELETE /payments/pay_aberta": { status: 404, corpo: { errors: [{ code: "not_found" }] } } });
+    await expect(adaptador.expirarSessao("pay_aberta")).resolves.toBeUndefined();
+    await expect(adaptador.expirarSessao("cs_aberta")).rejects.toMatchObject({ status: 422, codigo: "sessao_de_outro_provedor" });
+  });
+
+  it("#2609 provedor fora (5xx) ao expirar: propaga — quem chama não pode achar que o link morreu", async () => {
+    const { adaptador } = montar({ "DELETE /payments/pay_aberta": { status: 503, corpo: { errors: [{ code: "unavailable" }] } } });
+    await expect(adaptador.expirarSessao("pay_aberta")).rejects.toMatchObject({ status: 503, transitorio: true });
   });
 
   it("⭐ com teste grátis vigente, a 1ª cobrança vence no último dia do teste em São Paulo (Review Focus 5)", async () => {
@@ -719,7 +738,7 @@ describe("lerSituacao", () => {
       assinaturaRef: "sub_1", existe: true, assinaturasVivas: 1, cancelada: false, cancelaNoFim: false,
       emAtraso: false, vencidaDesde: null, proximoVencimento: fim("2026-11-01"), jaPagou: true,
       emTesteNoProvedorAte: null, pagamentoSemAssinaturaViva: false,
-      linkDePagamento: "https://sandbox.asaas.com/i/pay_nov", statusBruto: "ACTIVE",
+      linkDePagamento: "https://sandbox.asaas.com/i/pay_nov", precoCents: 4990, statusBruto: "ACTIVE",
     });
   });
 
@@ -946,7 +965,7 @@ describe("cancelarNoFim e urlDeGerenciar", () => {
     expect(a.id).toBe("asaas");
     expect(Object.keys(a).sort()).toEqual(
       ["id", "testarChave", "prepararWebhook", "removerWebhooks", "clienteExiste", "verificarWebhook", "garantirCliente",
-        "iniciarAssinatura", "lerSituacao", "trocarPlano", "cancelarNoFim", "urlDeGerenciar"].sort(),
+        "iniciarAssinatura", "expirarSessao", "lerSituacao", "trocarPlano", "cancelarNoFim", "urlDeGerenciar"].sort(),
     );
   });
 });

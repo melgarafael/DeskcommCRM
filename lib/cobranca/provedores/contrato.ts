@@ -63,6 +63,13 @@ export interface Situacao {
   readonly pagamentoSemAssinaturaViva: boolean;
   /** Só de cobrança da principal NÃO terminal. */
   readonly linkDePagamento: string | null;
+  /**
+   * Preço da assinatura principal NO PROVEDOR, em centavos (`Situacao` é o que
+   * a sincronização confere contra `cobranca_planos.preco_cents`, issue #2609).
+   * `null` = não há assinatura, ou o provedor não diz o valor — aí não há o que
+   * conferir.
+   */
+  readonly precoCents: number | null;
   /** Diagnóstico: vai para o audit `cobranca.estado_mudou`. */
   readonly statusBruto: string;
 }
@@ -140,10 +147,19 @@ export interface AdaptadorDeCobranca {
     trialAte: Date | null;
     urlDeVolta: string;
     chaveIdempotencia: string;
-  }): Promise<{ url: string; expiraEm: Date | null; assinaturaRef: string | null }>;
+  }): Promise<{ url: string; expiraEm: Date | null; assinaturaRef: string | null; sessaoId: string | null }>;
   lerSituacao(p: { clienteRef: string }): Promise<Situacao>;
   /** "Vale a partir da próxima cobrança gerada." Pode recusar com ErroDoProvedor não transitório. */
   trocarPlano(p: { assinaturaRef: string; plano: PlanoParaProvedor }): Promise<void>;
+  /**
+   * Mata NO PROVEDOR a sessão de pagamento aberta (issue #2609), para a troca de
+   * plano acontecer na hora sem deixar um link vivo com o preço antigo. `sessaoId`
+   * é o `sessaoId` que `iniciarAssinatura` devolveu, gravado em
+   * `cobranca_assinaturas.checkout_sessao_id` — id de OUTRO provedor não expira
+   * nada, e recusa (`ErroDoProvedor` não transitório) em vez de fingir sucesso.
+   * Já expirada/apagada (404) é o efeito desejado: não é falha.
+   */
+  expirarSessao(sessaoId: string): Promise<void>;
   cancelarNoFim(assinaturaRef: string): Promise<void>;
   urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string }): Promise<string | null>;
 }

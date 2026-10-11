@@ -408,6 +408,7 @@ describe("garantirCliente e iniciarAssinatura", () => {
       url: "https://checkout.stripe.com/c/pay/cs_test_1",
       expiraEm: new Date(1790086400 * 1000),
       assinaturaRef: null,
+      sessaoId: "cs_test_1",
     });
     const checkout = chamadas.find((c) => c.rota === "POST /checkout/sessions");
     expect(Object.fromEntries(checkout?.corpo ?? [])).toEqual({
@@ -429,6 +430,30 @@ describe("garantirCliente e iniciarAssinatura", () => {
     });
     // Sem payment_method_types: cartão e boleto aparecem conforme o painel da conta.
     expect(checkout?.headers.get("idempotency-key")).toBe(`${base.chaveIdempotencia}:checkout`);
+  });
+
+  it("⭐ #2609 expirar a sessão: POST /checkout/sessions/{id}/expire — é a chamada que mata o link no provedor", async () => {
+    const { adaptador, chamadas } = montar({ "POST /checkout/sessions/cs_aberta/expire": { corpo: { id: "cs_aberta", status: "expired" } } });
+    await adaptador.expirarSessao("cs_aberta");
+    expect(chamadas.map((c) => c.rota)).toEqual(["POST /checkout/sessions/cs_aberta/expire"]);
+  });
+
+  it("⭐ #2609 sessão já expirada (404) é o efeito desejado; id que não é checkout da Stripe recusa antes de chamar (422)", async () => {
+    const { adaptador } = montar({
+      "POST /checkout/sessions/cs_aberta/expire": {
+        status: 404,
+        corpo: { error: { type: "invalid_request_error", code: "resource_missing", message: "No such checkout session" } },
+      },
+    });
+    await expect(adaptador.expirarSessao("cs_aberta")).resolves.toBeUndefined();
+    await expect(adaptador.expirarSessao("pay_1")).rejects.toMatchObject({ status: 422, codigo: "sessao_de_outro_provedor" });
+  });
+
+  it("#2609 provedor fora (5xx) ao expirar: propaga — quem chama não pode achar que o link morreu", async () => {
+    const { adaptador } = montar({
+      "POST /checkout/sessions/cs_aberta/expire": { status: 500, corpo: { error: { type: "api_error", message: "boom" } } },
+    });
+    await expect(adaptador.expirarSessao("cs_aberta")).rejects.toMatchObject({ status: 500, transitorio: true });
   });
 
   it("teste grátis ≥ 48 h + 10 min vai como trial_end; 48 h cravadas não vão (relógio e novas tentativas comem a margem)", async () => {
@@ -506,6 +531,7 @@ describe("lerSituacao", () => {
       emTesteNoProvedorAte: null,
       pagamentoSemAssinaturaViva: false,
       linkDePagamento: null,
+      precoCents: 4990,
       statusBruto: "active",
     });
     const subs = chamadas.find((c) => c.rota === "GET /subscriptions");

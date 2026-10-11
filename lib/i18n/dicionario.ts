@@ -15325,6 +15325,9 @@ export const DICIONARIO: Traducoes = {
   "A pausa começa (hora local)": { es: "La pausa empieza (hora local)" },
   "A pausa termina (hora local)": { es: "La pausa termina (hora local)" },
   "Fuso da organização": { es: "Zona horaria de la organización" },
+  "Sem o fuso da organização não dá para agendar: a janela seria gravada com a hora errada.": {
+    es: "Sin la zona horaria de la organización no se puede agendar: la ventana se grabaría con la hora equivocada.",
+  },
   "Para todas as conexões": { es: "Para todas las conexiones" },
   "Janelas agendadas": { es: "Ventanas programadas" },
   "Cancelar janela": { es: "Cancelar ventana" },
@@ -15381,6 +15384,16 @@ export const DICIONARIO: Traducoes = {
   "Automações e integrações (N8N)": { es: "Automatizaciones e integraciones (N8N)" },
   "Site reanalisado.": { es: "Sitio reanalizado." },
   "Gerando prévia…": { es: "Generando vista previa…" },
+  // #2498 — busca dentro do seletor de etiquetas do Inbox.
+  "Buscar etiqueta": { es: "Buscar etiquetas" },
+  "Nenhuma etiqueta com esse texto": { es: "Ninguna etiqueta con ese texto" },
+  // #2498 — destino opcional da ação add_tag, no editor de automações.
+  "Destino da etiqueta": { es: "Destino de la etiqueta" },
+  "Card (comportamento atual)": { es: "Card (comportamiento actual)" },
+  "Contato do lead": { es: "Contacto del lead" },
+  "Sem contato vinculado, a etiqueta não é aplicada.": {
+    es: "Sin contacto vinculado, la etiqueta no se aplica.",
+  },
 };
 
 /**

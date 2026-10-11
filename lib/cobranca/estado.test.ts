@@ -15,8 +15,8 @@ function situacao(p: Partial<Situacao> = {}): Situacao {
     assinaturaRef: null, existe: false, assinaturasVivas: 0, cancelada: false, cancelaNoFim: false,
     emAtraso: false, vencidaDesde: null, proximoVencimento: null, jaPagou: false,
     emTesteNoProvedorAte: null, pagamentoSemAssinaturaViva: false, linkDePagamento: null,
-    statusBruto: "teste", ...p,
-  };
+    statusBruto: "teste", precoCents: null, ...p,
+    };
 }
 
 function atual(p: Partial<AssinaturaAtual> = {}): AssinaturaAtual {

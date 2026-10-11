@@ -35,12 +35,14 @@ function situacao(p: Partial<Situacao> = {}): Situacao {
   return {
     assinaturaRef: "sub_1", existe: true, assinaturasVivas: 1, cancelada: false, cancelaNoFim: false, emAtraso: false,
     vencidaDesde: null, proximoVencimento: new Date("2026-11-01T00:00:00Z"), jaPagou: true, emTesteNoProvedorAte: null,
-    pagamentoSemAssinaturaViva: false, linkDePagamento: null, statusBruto: "active", ...p,
+    pagamentoSemAssinaturaViva: false, linkDePagamento: null, statusBruto: "active", precoCents: null, ...p,
   };
 }
 
 interface Mundo {
   linha: Record<string, unknown> | null;
+  /** A linha de `cobranca_planos` que a leitura do preço da conferência devolve. */
+  plano: Record<string, unknown> | null;
   org: Record<string, unknown>;
   /** Quantas compare-and-set seguidas perdem; `aoPerder` é o escritor concorrente. */
   casPerdidos: number;
@@ -57,6 +59,7 @@ const enviarAviso = vi.fn();
 function responder(c: Cadeia): Resposta {
   if (c.tabela === "organizations") return { data: m.org };
   if (c.tabela === "agent_inbox_items") return { data: null };
+  if (c.tabela === "cobranca_planos") return { data: m.plano };
   const op = operacao(c);
   if (op === "select") return { data: m.linha };
   const campos = argumentos(c, "update")?.[0] as Record<string, unknown>;
@@ -91,6 +94,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   m = {
     linha: { ...LINHA },
+    plano: { id: "plano-a", preco_cents: 4990 },
     org: { status: "active", suspended_kind: null, locale: "pt-BR", timezone: "America/Sao_Paulo" },
     casPerdidos: 0,
     aoPerder: null,
@@ -136,6 +140,26 @@ describe("sincronizar", () => {
       action: "cobranca.estado_mudou", organizationId: ORG, metadata: { de: "ativa", para: "em_atraso", status_bruto: "past_due" },
     }));
     expect(enviarAviso.mock.calls[0]?.[3]).toBe("https://invoice.stripe.com/i/x");
+  });
+
+  // #2609: a sincronização CONFERE o preço da assinatura no provedor contra o
+  // preço do plano gravado. O alvo é o agendado, senão o atual — o mesmo que
+  // `troca.ts` leva ao provedor. Divergiu: os dois números vão para o audit.
+  it("⭐ #2609 preço da assinatura no provedor ≠ preço do plano gravado: detectado e auditado", async () => {
+    ler.mockResolvedValue(situacao({ precoCents: 9990 }));
+    expect(await rodar()).toMatchObject({ tipo: "aplicada" });
+    expect(acoes()).toContain("cobranca.preco_divergente");
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "cobranca.preco_divergente",
+      organizationId: ORG,
+      metadata: expect.objectContaining({ plano_id: "plano-a", preco_plano_cents: 4990, preco_provedor_cents: 9990, provedor: "stripe" }),
+    }));
+  });
+
+  it("#2609 controle: preço do provedor igual ao do plano — nada auditado", async () => {
+    ler.mockResolvedValue(situacao({ precoCents: 4990 }));
+    expect(await rodar()).toMatchObject({ tipo: "aplicada" });
+    expect(acoes()).not.toContain("cobranca.preco_divergente");
   });
 
   it("⭐ leitura mais velha que a já aplicada é descartada: nada de audit, nada de régua", async () => {

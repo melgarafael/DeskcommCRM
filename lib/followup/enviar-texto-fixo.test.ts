@@ -26,6 +26,7 @@ vi.mock("@/lib/followup/engine", () => ({ createSupabaseAdminClient: () => ({}) 
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 import { enviarTextoFixoPendente } from "./enviar-texto-fixo";
+import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 
 const boundary = { organization_id: "org-1", contact_id: "contact-1", conversation_id: "conv-1", service_revision: 1, demanda_id: null, demanda_revision: null };
@@ -79,7 +80,7 @@ function reiniciarConfig() {
 }
 
 /** Admin stub: job_queue (select pending / claim / status) + followup_enrollments. */
-function admin() {
+function admin(revogado = false, falhaDeLeitura: Error | null = null) {
   const make = (table: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -120,6 +121,7 @@ function admin() {
     return chain;
   };
   return { from: (t: string) => make(t), rpc: async (name:string,args:Record<string,unknown>) => {
+    if(name==="fn_autonomous_turn_revoked") { return {data:revogado,error:falhaDeLeitura}; }
     if(name==="fn_followup_inline_settle") {statusUpdates.push(args.p_done?"done":"pending");settleCalls.push(args);return {data:true,error:null};}
     if(name==="fn_followup_turno_descartado") {statusUpdates.push(`descartado:${args.p_org}:${args.p_job}`);return {data:true,error:null};}
     if(name==="fn_appointment_enrollment_current" || name==="fn_followup_job_current") return {data:true,error:null};
@@ -199,6 +201,25 @@ it("filtro de vencimento cobre o milissegundo corrente inteiro (run_after em µs
   const run = filtrosRunAfter.filter((f) => f.col === "run_after");
   expect(run.length).toBeGreaterThanOrEqual(2); // seleção e reivindicação
   for (const f of run) expect(f).toEqual({ op: "lt", col: "run_after", v: "2026-09-26T10:04:46.559Z" });
+});
+
+
+it.each([true, false])("fronteira obsoleta consulta a revogação canônica: %s", async revogado => {
+  decidir.mockResolvedValue({ permite: true });
+  sendMessageHandler.mockRejectedValueOnce(new StaleServiceBoundaryError());
+  const db = admin(revogado);
+  const rpc = vi.spyOn(db as {rpc: (name: string, args: Record<string, unknown>) => Promise<unknown>}, "rpc");
+  expect(await enviarTextoFixoPendente(db)).toBe(0);
+  expect(rpc).toHaveBeenCalledWith("fn_autonomous_turn_revoked", { p_org: "org-1", p_job: "job-1" });
+  expect(statusUpdates.some(s => s.startsWith("descartado"))).toBe(revogado);
+  expect(statusUpdates.at(-1)).toBe("done");
+  expect(completeTurnForEnrollment).not.toHaveBeenCalled();
+});
+it("falha ao consultar revogação não inventa fato nem settle", async () => {
+  decidir.mockResolvedValue({ permite: true });
+  sendMessageHandler.mockRejectedValueOnce(new StaleServiceBoundaryError());
+  await expect(enviarTextoFixoPendente(admin(false, new Error("rpc indisponível")))).rejects.toThrow("rpc indisponível");
+  expect(statusUpdates).toEqual(["running"]);
 });
 
 /**
