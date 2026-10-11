@@ -1632,13 +1632,29 @@ async function handleSessionStatus(
   const now = new Date().toISOString();
 
   const update: Record<string, unknown> = { status, last_status_change_at: now };
-  if (status === "WORKING" && session.warmup_started_at && !session.is_warmup_complete) {
-    // Só `warmup_completed_at`: `is_warmup_complete` é `GENERATED ALWAYS AS
-    // (warmup_completed_at IS NOT NULL)`, e atribuir a ela abortava o UPDATE
-    // INTEIRO — inclusive o `status`, que nada tem a ver com warm-up. Ou seja: a
-    // sessão que terminava o aquecimento parava de atualizar o próprio estado, e
-    // o espelho do canal congelava sem erro visível.
-    update.warmup_completed_at = now;
+  if (status === "WORKING" && !session.is_warmup_complete) {
+    if (session.warmup_started_at) {
+      // Só `warmup_completed_at`: `is_warmup_complete` é `GENERATED ALWAYS AS
+      // (warmup_completed_at IS NOT NULL)`, e atribuir a ela abortava o UPDATE
+      // INTEIRO — inclusive o `status`, que nada tem a ver com warm-up. Ou seja: a
+      // sessão que terminava o aquecimento parava de atualizar o próprio estado, e
+      // o espelho do canal congelava sem erro visível.
+      //
+      // Aqui o aquecimento TERMINA: a sessão reporta `WORKING` de novo com o
+      // aquecimento já iniciado — o critério que este guard já tinha e que era
+      // inatingível enquanto ninguém gravasse `warmup_started_at` (#2432).
+      update.warmup_completed_at = now;
+    } else {
+      // O escritor que a spec 03 descreveu e nunca foi implementado (#2432): a
+      // PRIMEIRA transição para `WORKING` marca o início do aquecimento
+      // (`docs/specs/03-spec-whatsapp-waha.md`, §5.3). Sem ele a condição de cima
+      // era sempre falsa — o ramo nunca executava — e `is_warmup_complete` era
+      // `false` fixo em toda instalação real, para quem lê a coluna.
+      //
+      // Só no `WORKING` e só enquanto o aquecimento não terminou: gravar isto
+      // depois de `warmup_completed_at` deixaria o início posterior ao fim.
+      update.warmup_started_at = now;
+    }
   }
   await admin.from("channel_sessions").update(update).eq("id", session.id);
 
