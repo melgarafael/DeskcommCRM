@@ -179,6 +179,39 @@ export default async function PoliticoHubPage() {
       icone: "\u{1F514}",
       badge: null,
     },
+    // Fase 4 — Dashboards & Views
+    {
+      href: "/app/politico/dashboard",
+      titulo: "Dashboard",
+      descricao:
+        "Painel central com KPIs consolidados, funil politico e fila de ligacoes.",
+      icone: "\u{1F4CA}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/projecao",
+      titulo: "Projecao Eleitoral",
+      descricao:
+        "Estimativa de votos por territorio — dados TSE cruzados com leads atuais.",
+      icone: "\u{1F4C8}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/rankings",
+      titulo: "Rankings",
+      descricao:
+        "Ranking de cidades por desempenho e liderancas por mobilizacao.",
+      icone: "\u{1F3C6}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/mapa-eleitoral",
+      titulo: "Mapa Eleitoral",
+      descricao:
+        "Mapa interativo de territorios — oportunidades e prioridades estrategicas.",
+      icone: "\u{1F4CD}",
+      badge: null,
+    },
   ];
 
   return (

@@ -909,6 +909,48 @@ export const NAV_CATALOG = [
     sidebar: false,
   },
 
+  // ── Fase 4: Dashboards & Views ──────────────────────────────────────
+  {
+    href: "/app/politico/dashboard",
+    label: "Dashboard",
+    description: "Painel central do War Room com KPIs consolidados, funil e fila de ligações.",
+    icon: "layout-dashboard",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/politico/projecao",
+    label: "Projeção Eleitoral",
+    description: "Estimativa de votos por território cruzando dados TSE com a base de leads.",
+    icon: "trending-up",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/politico/rankings",
+    label: "Rankings",
+    description: "Ranking de cidades por desempenho e lideranças por mobilização.",
+    icon: "trophy",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/politico/mapa-eleitoral",
+    label: "Mapa Eleitoral",
+    description: "Mapa interativo de territórios — oportunidades de conversão e prioridades estratégicas.",
+    icon: "map-pin",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
+
   // ---- Análise — olhar o sistema funcionando ----
   //
   // ── QUEM FICA NO MENU, E POR QUÊ ─────────────────────────────────────────
