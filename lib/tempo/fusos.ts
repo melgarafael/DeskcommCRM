@@ -38,6 +38,7 @@ export const FUSOS_OFERECIDOS: { codigo: string; rotulo: string }[] = [
   { codigo: "America/La_Paz", rotulo: "La Paz (Bolívia)" },
   { codigo: "America/Lima", rotulo: "Lima (Peru)" },
   { codigo: "America/Bogota", rotulo: "Bogotá (Colômbia)" },
+  { codigo: "America/Guayaquil", rotulo: "Quito e Guayaquil (Equador)" },
   { codigo: "America/Mexico_City", rotulo: "Cidade do México (México)" },
   { codigo: "America/Sao_Paulo", rotulo: "São Paulo (Brasil)" },
   { codigo: "America/Manaus", rotulo: "Manaus (Brasil)" },

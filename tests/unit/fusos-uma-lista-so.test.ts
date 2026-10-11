@@ -29,6 +29,12 @@ describe("fusos: uma lista só", () => {
     expect(fusoOferecidoOuPadrao("Europe/Madrid")).toBe("Europe/Madrid");
   });
 
+  // O Equador faltava (#2102): quem operava de Quito escolhia Bogotá ou Lima,
+  // que batem no relógio, mas não no nome do lugar.
+  it("quem opera do Equador encontra o próprio fuso", () => {
+    expect(fusoOferecidoOuPadrao("America/Guayaquil")).toBe("America/Guayaquil");
+  });
+
   it("toda opção é um fuso que o Intl aceita", () => {
     const invalidos = [...oferecidos, ...FUSOS_DO_ONBOARDING.map((f) => f.id)].filter((tz) => !fusoValido(tz));
     expect(invalidos).toEqual([]);

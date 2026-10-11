@@ -6482,6 +6482,7 @@ export const DICIONARIO: Traducoes = {
   "La Paz (Bolívia)": { es: "La Paz (Bolivia)" },
   "Lima (Peru)": { es: "Lima (Perú)" },
   "Bogotá (Colômbia)": { es: "Bogotá (Colombia)" },
+  "Quito e Guayaquil (Equador)": { es: "Quito y Guayaquil (Ecuador)" },
   "Cidade do México (México)": { es: "Ciudad de México (México)" },
   "São Paulo (Brasil)": { es: "São Paulo (Brasil)" },
   "Manaus (Brasil)": { es: "Manaus (Brasil)" },
