@@ -28,6 +28,7 @@
     "migration0372",
     "credenciais",
     "acesso",
+    "dialeto",
     "apiLeitura",
     "telaExplorador"
   ],
@@ -105,6 +106,22 @@
       "dot": "blue"
     },
     {
+      "id": "dialeto",
+      "lane": "nucleo",
+      "label": "dialeto.ts",
+      "sublabel": "o ÚNICO caminho de leitura: aplica as fontes liberadas e abre o pool",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "fontes",
+      "lane": "nucleo",
+      "label": "fontes.ts",
+      "sublabel": "esquema central das fontes liberadas + o que é visível (puro)",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
       "id": "apiConnections",
       "lane": "api",
       "label": "GET/POST/PATCH/DELETE connections",
@@ -125,6 +142,14 @@
       "lane": "api",
       "label": "GET .../schemas e .../tables/[schema]/[tabela]",
       "sublabel": "autenticado · sem filtro na querystring (PII não vai a log)",
+      "type": "api",
+      "dot": "green"
+    },
+    {
+      "id": "apiFontes",
+      "lane": "api",
+      "label": "GET catalog · GET/PUT sources",
+      "sublabel": "catálogo completo e troca da lista: admin · ler a lista: autenticado",
       "type": "api",
       "dot": "green"
     },
@@ -225,20 +250,20 @@
     {
       "id": "e13",
       "from": "introspeccao",
-      "to": "apiLeitura",
+      "to": "dialeto",
       "label": "catálogo"
     },
     {
       "id": "e15",
       "from": "leitura",
-      "to": "apiLeitura",
+      "to": "dialeto",
       "label": "dados paginados"
     },
     {
       "id": "e17",
       "from": "acesso",
       "to": "apiLeitura",
-      "label": "pool pronto"
+      "label": "dialeto pronto"
     },
     {
       "id": "e20",
@@ -286,19 +311,7 @@
       "id": "e31",
       "from": "acesso",
       "to": "toolsAgente",
-      "label": "pool pronto"
-    },
-    {
-      "id": "e32",
-      "from": "introspeccao",
-      "to": "toolsAgente",
-      "label": "catálogo"
-    },
-    {
-      "id": "e33",
-      "from": "leitura",
-      "to": "toolsAgente",
-      "label": "linhas"
+      "label": "dialeto pronto"
     },
     {
       "id": "e34",
@@ -311,6 +324,48 @@
       "from": "ingressos",
       "to": "auditlog",
       "label": "audita sem valores de filtro"
+    },
+    {
+      "id": "e36",
+      "from": "credenciais",
+      "to": "fontes",
+      "label": "modo + lista (validados, falha fechada)"
+    },
+    {
+      "id": "e37",
+      "from": "fontes",
+      "to": "dialeto",
+      "label": "o que é visível"
+    },
+    {
+      "id": "e38",
+      "from": "acesso",
+      "to": "dialeto",
+      "label": "abre o pool e liga a regra"
+    },
+    {
+      "id": "e39",
+      "from": "dialeto",
+      "to": "apiLeitura",
+      "label": "só o liberado"
+    },
+    {
+      "id": "e40",
+      "from": "dialeto",
+      "to": "toolsAgente",
+      "label": "só o liberado"
+    },
+    {
+      "id": "e41",
+      "from": "apiFontes",
+      "to": "migration0372",
+      "label": "grava source_mode e sources"
+    },
+    {
+      "id": "e42",
+      "from": "dialeto",
+      "to": "apiFontes",
+      "label": "catálogo completo (admin)"
     }
   ],
   "cards": [
@@ -333,10 +388,10 @@
       "body": "A leitura externa pode carregar PII. As ações `external_db_connection.*` registram a conexão, o schema e a tabela; nenhum valor de filtro e nenhuma linha lida entram em `api_audit_log`. Log é lugar de metadado, não de conteúdo."
     },
     {
-      "id": "card-nao-ligacao",
+      "id": "card-fontes-liberadas",
       "tone": "slate",
-      "title": "Não-ligação declarada: sem allowlist por tabela (D6)",
-      "body": "A IA lê QUALQUER tabela da conexão; a trava não é uma lista, é a conexão somente-leitura + teto de linhas + auditoria sem valores. Uma allowlist seria uma segunda lista para manter em sincronia com um schema que muda todo dia."
+      "title": "D6 revisada: o administrador marca o que o assistente pode ler",
+      "body": "A Spec 20 (D6) deixava a IA ler QUALQUER tabela da conexão, com o argumento de que uma lista seria uma segunda lista para manter em sincronia com um schema que muda todo dia. A Spec 23 revisa isso: a lista guarda NOMES (não cópia de schema), fonte que sumiu do banco é ignorada e sinalizada, e 'marcar todas' é uma lista explícita — não o modo `all`. Conexões que já existem ficam em `all` (a D6 original); as novas nascem em `list`. As travas anteriores continuam: somente leitura, tetos e auditoria sem valores."
     },
     {
       "id": "card-vazio-fica-vazio",
