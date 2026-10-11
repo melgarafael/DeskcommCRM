@@ -4,7 +4,8 @@ import { audit } from "@/lib/audit";
 import { auditarSites } from "@/lib/prospecting/site-fetch";
 import { enriquecerSitesPendentes } from "@/lib/prospecting/site-enrich";
 
-vi.mock("@/lib/prospecting/site-fetch", () => ({
+vi.mock("@/lib/prospecting/site-fetch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/prospecting/site-fetch")>()),
   auditarSites: vi.fn(),
 }));
 
@@ -63,6 +64,15 @@ describe("enriquecerSitesPendentes", () => {
     expect(resumo).toEqual({ enriquecidos: 2, classes: { "site-ok": 1, agregador: 1 } });
     expect(updates).toHaveLength(2);
     expect(updates[0]!.sql).toContain("data || jsonb_build_object('site'");
+    // A fiação da reverificação: o tick passa as tentativas acumuladas para o lote.
+    expect(vi.mocked(auditarSites)).toHaveBeenCalledWith(
+      ["https://a.com", "https://instagram.com/x"],
+      expect.any(String),
+      6,
+      expect.anything(),
+      undefined,
+      [0, 0],
+    );
     expect(vi.mocked(audit)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "prospecting.site_enriched" }),
