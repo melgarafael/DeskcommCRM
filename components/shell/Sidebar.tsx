@@ -173,8 +173,9 @@ export function SidebarContent({
               // `truncate` + `title`: o nome longo (uma clínica com nome grande,
               // medido no review) virava 3 linhas dentro de uma linha de 56px e
               // estourava a barra. Uma linha com reticências, e o nome completo
-              // continua no tooltip.
-              <span className="min-w-0 truncate dark:hidden" title={nome}>
+              // continua no tooltip. `block` porque este wrapper não é flex: inline,
+              // o `truncate` não corta e o nome passa por cima do botão.
+              <span className="block min-w-0 truncate dark:hidden" title={nome}>
                 {nome}
               </span>
             )}

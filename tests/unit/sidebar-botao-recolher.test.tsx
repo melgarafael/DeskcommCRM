@@ -181,4 +181,33 @@ describe("Sidebar — a marca não disputa a barra com o botão (#2722 / review 
     expect(nome.className).toContain("truncate");
     expect(nome).toHaveAttribute("title", "Clínica Odontológica Sorriso Feliz");
   });
+
+  it("só com a arte do escuro: o nome do tema claro também trunca (é bloco)", () => {
+    // Instalação que cadastrou só a arte do tema escuro: no claro a barra mostra
+    // o NOME dentro do wrapper da marca, que não é flex. Ali o `<span>` é inline,
+    // e `truncate` (overflow + ellipsis) não vale em elemento inline — medido
+    // numa réplica, o nome ia até x=255 numa barra de 240px, por cima do botão.
+    // `block` é o que faz o corte valer.
+    authRef.user = { is_platform_admin: false };
+    authRef.activeOrg = {
+      orgId: "org-1",
+      name: "Org",
+      role: "admin",
+      marca: {
+        nome: "Clínica Odontológica Sorriso Feliz",
+        logoUrl: null,
+        logoDarkUrl: "https://marca/logo-escuro.png",
+      },
+    };
+    render(
+      <MarcaDaInstalacaoProvider
+        marca={{ name: "Sistema do Revendedor", logoUrl: null, initial: "S" }}
+      >
+        <Sidebar collapsed={false} />
+      </MarcaDaInstalacaoProvider>,
+    );
+    const nome = screen.getByText("Clínica Odontológica Sorriso Feliz");
+    expect(nome.className).toContain("truncate");
+    expect(nome.className.split(/\s+/)).toContain("block");
+  });
 });
