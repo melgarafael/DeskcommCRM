@@ -12,6 +12,17 @@ describe("renderTemplate", () => {
     expect(renderTemplate("Use {{lead.custom_fields.cupom}}", ctx)).toBe("Use BF10"));
   it("alias {{nome}} resolve contact.name", () =>
     expect(renderTemplate("Oi {{nome}}", ctx)).toBe("Oi Ana"));
+  it("{{nome}} cai no nome do perfil do WhatsApp quando não há nome cadastrado", () => {
+    // Contato que chega pelo WhatsApp tem `name` nulo e o pushName em
+    // `display_name` — a automação "lead.created" saía "Olá , ..." em produção.
+    const doWhatsApp = { contact: { name: null, display_name: "Rafael Melgaço" } };
+    expect(renderTemplate("Olá {{nome}},", doWhatsApp)).toBe("Olá Rafael Melgaço,");
+    expect(renderTemplate("Olá {{primeiro_nome}},", doWhatsApp)).toBe("Olá Rafael,");
+  });
+  it("{{nome}} não usa identificador técnico como nome de gente", () =>
+    expect(
+      renderTemplate("Oi {{nome}}", { contact: { name: null, display_name: "59782320914646@lid" } }),
+    ).toBe("Oi "));
   it("variável ausente vira vazio, não '{{...}}' cru", () =>
     expect(renderTemplate("X{{lead.ghost}}Y", ctx)).toBe("XY"));
   it("espaços dentro das chaves tolerados", () =>
