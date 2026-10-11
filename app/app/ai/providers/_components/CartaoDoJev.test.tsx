@@ -1603,3 +1603,26 @@ describe("CartaoDoJev — o aviso da área da saúde (DEC-012 #2)", () => {
     expect(aviso).toHaveTextContent(/contrato da TypeSafe/);
   });
 });
+
+
+describe("autorização e probabilidades da revisão",()=>{
+  it("exige diálogo próprio antes de enviar aceite de revisão",async()=>{
+    montar(dados({config:{contexto_revisao:null}}));
+    fireEvent.click(screen.getByRole("button",{name:"Autorizar contexto da revisão"}));
+    const dialog=screen.getByRole("alertdialog");expect(dialog).toHaveTextContent("trechos da base e do catálogo");
+    fireEvent.click(within(dialog).getByRole("button",{name:"Autorizar contexto da revisão"}));
+    await waitFor(()=>expect(chamadas[0]?.corpo).toEqual({contexto_revisao:true,aceite_contexto_revisao:true}));
+  });
+  it("revogação não desliga o roteador e mostra porcentagens de sim",async()=>{
+    montar(dados({config:{contexto_revisao:{em:"2026-10-09T12:00:00Z",por:"admin",versao:1}},ultima_revisao:[{sinal:"comercial",probabilidade:0.03,em:"agora"},{sinal:"retorno",probabilidade:0.92,em:"agora"},{sinal:"so_assistente",probabilidade:0.37,em:"agora"}]}));
+    expect(screen.getByTestId("jev-revisao-comercial")).toHaveTextContent("3%");
+    expect(screen.getByTestId("jev-revisao-so_assistente")).toHaveTextContent("37%");
+    expect(screen.getByTestId("jev-contexto-revisao")).toHaveTextContent("não a porcentagem de acerto");
+    fireEvent.click(screen.getByRole("button",{name:"Desativar contexto da revisão"}));
+    await waitFor(()=>expect(chamadas[0]?.corpo).toEqual({contexto_revisao:false}));
+  });
+  it("gerente vê estado mas não autoriza",()=>{
+    montar(dados({config:{contexto_revisao:null},pode_editar:false}));
+    expect(screen.queryByRole("button",{name:"Autorizar contexto da revisão"})).toBeNull();
+  });
+});

@@ -57,13 +57,7 @@
  */
 
 /** O papel que o ponto cumpre — é como a tela agrupa, para quem não é engenheiro. */
-export type PapelDeIa =
-  | "atender"
-  | "entender"
-  | "proteger"
-  | "lembrar"
-  | "perceber"
-  | "melhorar";
+export type PapelDeIa = "atender" | "entender" | "proteger" | "lembrar" | "perceber" | "melhorar";
 
 export const PAPEIS: Record<PapelDeIa, { rotulo: string; explicacao: string }> = {
   atender: {
@@ -122,10 +116,7 @@ export interface CapacidadeExigida {
  * union é o que faz o `tsc` reprovar a volta, em vez de depender de alguém
  * reparar.
  */
-export type DestinoDeTelemetria =
-  | "llm_calls"
-  | "ai_agent_runs"
-  | "nenhum";
+export type DestinoDeTelemetria = "llm_calls" | "ai_agent_runs" | "nenhum";
 
 export interface PontoDeIa {
   /** Casa com o `purpose` passado ao seam, ou com o id do ponto fora dele. */
@@ -192,9 +183,10 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "agent_preview",
     rotulo: "Testar ou revisar resposta",
-    oQueFaz: "Prepara uma resposta com a versão e o conhecimento do agente, sem aplicar alterações ao cliente.",
+    oQueFaz:
+      "Prepara uma resposta com a versão e o conhecimento do agente, sem aplicar alterações ao cliente.",
     papel: "atender",
-    exige: {tools:true,imagem:true},
+    exige: { tools: true, imagem: true },
     emissor: "lib/agent-engine/agent/inbound-turn.ts",
     sintomaDeFalha: "O teste ou a sugestão não consegue preparar a resposta para revisão.",
     registraEm: "llm_calls",
@@ -241,18 +233,19 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "prospecting_agent_setup_chat",
     rotulo: "Montar agente por conversa",
-    oQueFaz: "Conversa com o administrador e prepara uma proposta de agente para uma campanha. A criação depende da confirmação no resumo.",
+    oQueFaz:
+      "Conversa com o administrador e prepara uma proposta de agente para uma campanha. A criação depende da confirmação no resumo.",
     papel: "melhorar",
     exige: {},
     emissor: "lib/prospecting/agent-chat.ts",
-    sintomaDeFalha: "A conversa de configuração mostra um erro e preserva o que foi escrito; nenhum agente é criado.",
+    sintomaDeFalha:
+      "A conversa de configuração mostra um erro e preserva o que foi escrito; nenhum agente é criado.",
     registraEm: "llm_calls",
   },
   {
     id: "draft_suggestion",
     rotulo: "Sugerir resposta ao atendente",
-    oQueFaz:
-      "Escreve um rascunho de resposta para o atendente humano revisar antes de enviar.",
+    oQueFaz: "Escreve um rascunho de resposta para o atendente humano revisar antes de enviar.",
     papel: "atender",
     exige: {},
     emissor: "lib/agent-engine/agent/draft-reply.ts",
@@ -313,8 +306,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "intent_router",
     rotulo: "Escolher qual agente atende",
-    oQueFaz:
-      "Lê a mensagem que chegou e decide qual dos seus agentes deve pegar aquela conversa.",
+    oQueFaz: "Lê a mensagem que chegou e decide qual dos seus agentes deve pegar aquela conversa.",
     papel: "entender",
     exige: {},
     emissor: "lib/agent-engine/agent/intent-classifier.ts",
@@ -330,8 +322,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "stage_classifier",
     rotulo: "Identificar a etapa do lead",
-    oQueFaz:
-      "Lê a conversa e sugere em que etapa do funil aquele cliente está de verdade.",
+    oQueFaz: "Lê a conversa e sugere em que etapa do funil aquele cliente está de verdade.",
     papel: "entender",
     exige: {},
     emissor: "lib/agent-engine/agent/stage-classifier.ts",
@@ -435,8 +426,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "jailbreak_detect",
     rotulo: "Barrar tentativa de manipulação",
-    oQueFaz:
-      "Percebe quando alguém tenta enganar o agente para ele fugir das suas regras.",
+    oQueFaz: "Percebe quando alguém tenta enganar o agente para ele fugir das suas regras.",
     papel: "proteger",
     exige: {},
     emissor: "lib/agent-engine/guardrails/jailbreak/classifier.ts",
@@ -459,6 +449,23 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/guardrails/promise/semantic.ts",
     sintomaDeFalha:
       "O agente promete ao cliente coisas que a operação não entrega, e a cobrança chega depois.",
+    registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "noul",
+      oQueOJevFaz: "Confere a resposta, as evidências consultadas e o contexto da conversa: oferta comercial, compromisso de retorno e retorno só da IA.",
+    },
+  },
+
+  {
+    id: "human_return_confirmation",
+    rotulo: "Confirmar compromisso de retorno humano",
+    oQueFaz:
+      "Segunda opinião somente quando a revisão marcou retorno ou ação humana. Distingue convite, avaliação durante o serviço e pedido ao cliente de um compromisso real. Só atua com escolha explícita habilitada neste ponto; sem ela, vale a revisão anterior. Não altera a decisão comercial.",
+    papel: "proteger",
+    exige: {},
+    emissor: "lib/agent-engine/guardrails/promise/semantic.ts",
+    sintomaDeFalha:
+      "A marcação da primeira revisão é preservada; descrições de serviço podem continuar exigindo um caso indevidamente. A falha da segunda opinião aparece nas Execuções.",
     registraEm: "llm_calls",
   },
 
@@ -511,8 +518,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "checkpoint",
     rotulo: "Fechar o atendimento",
-    oQueFaz:
-      "Escreve o resumo de encerramento do turno, que o próximo atendimento lê ao abrir.",
+    oQueFaz: "Escreve o resumo de encerramento do turno, que o próximo atendimento lê ao abrir.",
     papel: "lembrar",
     exige: {},
     emissor: "lib/agent-engine/agent/inbound-turn.ts",
@@ -543,8 +549,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "embedding_consultar",
     rotulo: "Buscar no seu material",
-    oQueFaz:
-      "Encontra, entre os seus documentos, os trechos que respondem à pergunta do cliente.",
+    oQueFaz: "Encontra, entre os seus documentos, os trechos que respondem à pergunta do cliente.",
     papel: "lembrar",
     exige: { embeddingDims: 1536 },
     emissor: "lib/agent-engine/edge/llm/embed.ts",
@@ -588,8 +593,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       // dois lados e reprova a volta de um provider fixo.
       escada: "transcricao",
     },
-    sintomaDeFalha:
-      "O cliente manda áudio e o agente responde como se não tivesse recebido nada.",
+    sintomaDeFalha: "O cliente manda áudio e o agente responde como se não tivesse recebido nada.",
     registraEm: "llm_calls",
   },
   {

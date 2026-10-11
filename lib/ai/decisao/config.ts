@@ -72,6 +72,7 @@ const tarefasSchema = z.object({
   campo_do_negocio: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   sinal_de_urgencia: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   afirmacao_de_fato: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
+  revisao_resposta: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
 });
 
 export const idDaTarefaSchema = tarefasSchema.keyof();
@@ -108,6 +109,10 @@ export const configDoJevSchema = z
      * chave — o objeto inteiro sumiria, e com ele as tarefas boas.
      */
     tarefas: tarefasSchema.optional(),
+    /** Aceite próprio para candidata, evidências consultadas e contexto curado. */
+    contexto_revisao: z.object({
+      em: z.string().datetime(), por: z.string().uuid(), versao: z.literal(1),
+    }).nullable().optional().catch(null),
     alterado_em: z.string().datetime().optional(),
     alterado_por: z.string().uuid().optional(),
   })
@@ -132,7 +137,7 @@ export type ResultadoDeGravarConfig =
   | { ok: true; config: ConfigDoJev }
   | { ok: false; motivo: "leitura_falhou" | "config_invalida" | "escrita_recusada" };
 
-export type MudancaDaConfig = Partial<Pick<ConfigDoJev, "ligado" | "modo" | "modo_roteador" | "aceite">> & {
+export type MudancaDaConfig = Partial<Pick<ConfigDoJev, "ligado" | "modo" | "modo_roteador" | "aceite" | "contexto_revisao">> & {
   /** Só as tarefas que mudam; as outras ficam como estão. */
   tarefas?: Partial<Record<IdDaTarefa, EstadoDaTarefa>>;
 };

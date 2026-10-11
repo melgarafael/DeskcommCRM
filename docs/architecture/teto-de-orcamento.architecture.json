@@ -50,7 +50,8 @@
 
     { "id": "handoff", "lane": "volta", "col": 2, "type": "service", "label": "performHumanHandoff / triggerHandoff", "sublabel": "conversa → fila humana, razão orcamento_de_ia, zero token" },
     { "id": "conversas", "lane": "volta", "col": 3, "type": "database", "label": "conversations / contacts", "sublabel": "status='pending' · bot_silenced_until='infinity' · force_human=true" },
-    { "id": "retrata", "lane": "volta", "col": 1, "type": "service", "label": "retratarAvisos + CTE retrata", "sublabel": "gasto abaixo do limiar, teto apagado ou afrouxamento pela tela" }
+    { "id": "retrata", "lane": "volta", "col": 1, "type": "service", "label": "retratarAvisos + CTE retrata", "sublabel": "gasto abaixo do limiar, teto apagado ou afrouxamento pela tela" },
+    {"id": "revisao-jev", "lane": "gasta", "col": 3, "type": "service", "label": "orcamento-da-revisao (classifyPromise antes do JEV)"}
   ],
   "edges": [
     { "id": "e1", "from": "card", "to": "hook", "label": "escolher o degrau · digitar o teto · marcar \"começar agora\"" },
@@ -100,7 +101,9 @@
     { "id": "e45", "from": "midia", "to": "llmcalls", "label": "o sucesso grava custo em visao_de_imagem e transcricao_de_audio (degrau 3) e soma no gasto do mês" },
     { "id": "e46", "from": "card", "to": "usoapi", "label": "a mesma tela: custo, chamadas, turnos e cache do período" },
     { "id": "e47", "from": "usoapi", "to": "usofn", "label": "RPC, security invoker — a RLS isola, p_org é defesa em profundidade" },
-    { "id": "e48", "from": "usofn", "to": "llmcalls", "label": "sum(cost_cents) por dia e por purpose; turnos = jobs com agent_turn ok" }
+    { "id": "e48", "from": "usofn", "to": "llmcalls", "label": "sum(cost_cents) por dia e por purpose; turnos = jobs com agent_turn ok" },
+    {"id": "e49", "from": "turno", "to": "revisao-jev", "label": "tarefa/aceite próprios habilitam revisão com três sinais"},
+    {"id": "e50", "from": "revisao-jev", "to": "runmodel", "label": "aplicarOrcamento antes da rede; mesma régua"}
   ],
   "cards": [
     {

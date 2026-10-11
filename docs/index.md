@@ -60,6 +60,7 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 
 | Spec | Domínio |
 |---|---|
+| [`specs/jev-revisao-resposta-reserva`](specs/jev-revisao-resposta-reserva.md) | Revisão comercial/retorno pelo JEV com contexto autorizado e reserva |
 | [`specs/01`](specs/01-spec-platform-base.md) | Plataforma base — tenancy, RLS, RBAC, API, audit |
 | [`specs/02`](specs/02-spec-customer-360.md) | Customer 360 |
 | [`specs/03`](specs/03-spec-whatsapp-waha.md) | WAHA — fila outbound, warm-up, spinning, crons |
