@@ -42,6 +42,8 @@
  *     npx vitest run tests/unit/pessoa-marca-fora-da-grade.test.ts
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withServiceJob, guardServiceTools } from "@/lib/atendimento/fronteira-server";
+import type { JobRow, Queryable } from "@/lib/agent-engine/queue/queue";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -635,4 +637,62 @@ describe("o intervalo antes do atendimento vale na ESCRITA, não só na leitura 
     ).rejects.toMatchObject(RECUSA);
     expect(criados(banco)).toHaveLength(0);
   });
+});
+
+// O par aqui mede wrapper de ferramenta e handler direto com os MESMOS dados.
+// Não é uma sessão com modelo/tela: estes dois lados são a camada nativa.
+describe("tomada durante consulta da agenda", () => {
+  it.each(["handler direto", "ferramenta do turno"])(
+    "%s não reserva após o humano assumir na consulta",
+    async (caminho) => {
+      const banco = agenda();
+      let vigente = true;
+      const rpc = banco.client.rpc.bind(banco.client);
+      vi.spyOn(banco.client, "rpc").mockImplementation(((nome: string, args?: Record<string, unknown>) => {
+        const resposta = rpc(nome, args);
+        return resposta.then((result) => {
+          if (nome === "fn_agenda_ocupacao_google_do_dono") vigente = false;
+          return result;
+        });
+      }) as typeof banco.client.rpc);
+      const fronteira = {
+        organization_id: ORG,
+        contact_id: "contato",
+        conversation_id: "conversa",
+        service_revision: 1,
+        demanda_id: null,
+        demanda_revision: null,
+        status: "open",
+        demanda_fechada_em: null,
+      };
+      const db = {
+        query: async (sql: string) => ({
+          rows: [sql.includes("from job_queue") ? { current: vigente } : fronteira],
+        }),
+      } as unknown as Queryable;
+      const trabalho = {
+        id: "trabalho",
+        organization_id: ORG,
+        contact_id: "contato",
+        kind: "inbound_turn",
+        locked_by: "worker",
+        claim_acquired_at: "2026-10-05T12:00:00Z",
+        payload: { service_boundary: fronteira },
+      } as unknown as JobRow;
+      const entrada = { event_type_id: TIPO, starts_at: NA_GRADE };
+      await withServiceJob(db, trabalho, async () => {
+        const efeito = async () => marcarAgendamentoHandler(banco.client, ctx(AGENTE), entrada);
+        const tools = guardServiceTools({
+          crm_book_appointment: { inputSchema: {} as never, execute: efeito },
+        });
+        await expect(
+          caminho === "handler direto"
+            ? efeito()
+            : tools!.crm_book_appointment!.execute!({}, {} as never),
+        ).rejects.toThrow("service_boundary_stale");
+      });
+      expect(vigente).toBe(false);
+      expect(criados(banco)).toHaveLength(0);
+    },
+  );
 });

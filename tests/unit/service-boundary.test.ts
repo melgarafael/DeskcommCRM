@@ -74,8 +74,15 @@ describe("fronteira imutável de atendimento", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("receiver");
     let current = { ...boundary };
-    const db = { query: async () => ({ rows: [current] }) } as unknown as Queryable;
+    const db = {
+      query: async (sql: string) => ({
+        rows: [sql.includes("from job_queue") ? { current: true } : current],
+      }),
+    } as unknown as Queryable;
     const job = {
+      id: "job",
+      locked_by: "worker",
+      claim_acquired_at: "2026-10-01T00:00:00Z",
       organization_id: "org",
       contact_id: "contact",
       kind: "inbound_turn",

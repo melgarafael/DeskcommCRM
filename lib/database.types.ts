@@ -10455,6 +10455,7 @@ export type Database = {
 
       fn_followup_job_current: { Args: { p_org: string; p_job: string; p_enrollment: string; p_node: string }; Returns: boolean }
       fn_agenda_minutes: { Args: { p_settings: Json; p_key: string; p_default: number }; Returns: number }
+      fn_autonomous_turn_revoked: { Args: { p_org: string; p_job: string }; Returns: boolean };
       fn_followup_claim_current: { Args: { p_org: string; p_job: string; p_worker: string; p_acquired_at: string }; Returns: boolean }
       fn_appointment_change: { Args: { p_org: string; p_id: string; p_revision: number; p_patch: Json }; Returns: Json }
       fn_appointment_recover: { Args: { p_org: string; p_event: string }; Returns: Json }
