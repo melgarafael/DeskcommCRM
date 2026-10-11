@@ -140,11 +140,12 @@ set_env_var "$supabase_env" SITE_URL "https://${domain}"
 set_env_var "$supabase_env" ADDITIONAL_REDIRECT_URLS "https://${domain}/auth/confirm,https://${domain}/**"
 # ── E-mails de acesso: o GoTrue busca o MOLDE no app (#2109) ────────────────
 # A função mora no _common.sh porque o update.sh também a chama, para quem
-# instalou antes deste conserto (o porquê está lá). Gravada ANTES do
+# instalou antes deste conserto (o porquê está lá). A base é a INTERNA do app,
+# pela rede privada, e não o domínio público (#2587, o porquê também está lá). Gravada ANTES do
 # `dc_supabase up -d --wait` de baixo: no primeiro boot o auth já nasce
 # configurado, e numa re-execução o compose recria o contêiner cujo ambiente
 # mudou.
-gravar_modelos_do_gotrue "$supabase_env" "https://${domain}"
+gravar_modelos_do_gotrue "$supabase_env" "$BASE_INTERNA_DO_APP"
 # Confirmacao de e-mail fica LIGADA: sem ela qualquer pessoa cria conta com
 # um e-mail que nao e dela. Fixada aqui, e nao herdada do default do Supabase,
 # para que um bump do SUPABASE_REF nao a desligue calado. Vigiado por

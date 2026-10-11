@@ -95,6 +95,27 @@ check "single-server sem moldes: não manda buscar token sbp_" nao_diz single-se
 check "single-server sem moldes: aponta o update.sh" diz single-sem-moldes 'update.sh'
 check "single-server sem moldes: anota a pendência para a tela final" com_pend single-sem-moldes
 
+# (2b) #2587 — `--render-em` imprime a linha a apontar no GoTrue. No
+#      single-server o auth alcança o app pela REDE PRIVADA; o domínio público
+#      sai pelo IP da VPS e, atrás de um Traefik externo, dá timeout.
+renderizar_em() {  # renderizar_em <nome>
+  env -u SUPABASE_ACCESS_TOKEN -u NEXT_PUBLIC_SUPABASE_URL -u SINGLE_SERVER -u NEXT_PUBLIC_APP_URL \
+    bash "$SCRIPT" --projeto "$WORK/$1" --render-em "$WORK/$1-html" > "$WORK/$1.out" 2>&1
+  echo $? > "$WORK/$1.rc"
+}
+montar single-render "$CRM_SINGLE"
+renderizar_em single-render
+check "single-server --render-em: sai 0" saiu_zero single-render
+check "single-server --render-em: sugere o molde pela rede privada" \
+  diz single-render 'GOTRUE_MAILER_TEMPLATES_RECOVERY=http://app:3000/email-templates/recovery'
+check "single-server --render-em: não sugere o domínio público" \
+  nao_diz single-render 'GOTRUE_MAILER_TEMPLATES_RECOVERY=https://crm.exemplo.com.br'
+montar proprio-render 'NEXT_PUBLIC_SUPABASE_URL=https://supabase.meucliente.com.br
+NEXT_PUBLIC_APP_URL=https://crm.meucliente.com.br'
+renderizar_em proprio-render
+check "Supabase próprio --render-em (controle): segue sugerindo o domínio do app" \
+  diz proprio-render 'GOTRUE_MAILER_TEMPLATES_RECOVERY=https://crm.meucliente.com.br/email-templates/recovery'
+
 # (3) Supabase próprio FORA do kit (não é single-server, nem nuvem): o caminho
 #     é a env do GoTrue — também não há token da nuvem a buscar.
 montar proprio 'NEXT_PUBLIC_SUPABASE_URL=https://supabase.meucliente.com.br'

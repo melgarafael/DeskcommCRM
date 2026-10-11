@@ -130,12 +130,30 @@ fetch('http://127.0.0.1:3000/email-templates/confirmation').then(r=>r.text()).th
       c_ylw "⚠ nenhum GoTrue desta máquina aponta para o molde do app."
       c_ylw "  Os e-mails de acesso vão sair no modelo padrão, e o link dele NÃO fecha"
       c_ylw "  a sessão quando o clique vem do webmail."
-      c_ylw "  Acrescente ao serviço 'auth' do SEU Supabase (não a este compose):"
-      c_ylw "    GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/confirmation"
-      c_ylw "    GOTRUE_MAILER_TEMPLATES_RECOVERY=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/recovery"
-      c_dim "  (se o seu Supabase roda em outra máquina, confira lá — daqui não dá para ver)"
+      if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+        # O Supabase é do kit: quem grava é o update.sh, pela rede privada (#2587).
+        c_ylw "  Rode: bash hostgator-setup-kit/update.sh  (ele grava os moldes no auth deste Supabase:"
+        c_ylw "    GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${BASE_INTERNA_DO_APP:-http://app:3000}/email-templates/confirmation"
+        c_ylw "    GOTRUE_MAILER_TEMPLATES_RECOVERY=${BASE_INTERNA_DO_APP:-http://app:3000}/email-templates/recovery )"
+      else
+        c_ylw "  Acrescente ao serviço 'auth' do SEU Supabase (não a este compose):"
+        c_ylw "    GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/confirmation"
+        c_ylw "    GOTRUE_MAILER_TEMPLATES_RECOVERY=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/recovery"
+        c_dim "  (se o seu Supabase roda em outra máquina, confira lá — daqui não dá para ver)"
+      fi
     else
+      # #2587 — no single-server, o padrão ANTIGO do kit (o domínio público) faz
+      # o auth buscar o molde pelo IP da própria VPS; atrás de um Traefik externo
+      # isso dá timeout. O update.sh migra esse valor para a rede privada.
+      if [ "${SINGLE_SERVER:-0}" = "1" ] && [ -n "${NEXT_PUBLIC_APP_URL:-}" ] \
+         && [ "$apontado" = "${NEXT_PUBLIC_APP_URL%/}/email-templates/confirmation" ]; then
+        c_ylw "⚠ o GoTrue ($dono) busca o molde pelo domínio público, não pela rede privada."
+        c_ylw "  Atrás de um proxy externo essa busca pode dar timeout. Rode: bash hostgator-setup-kit/update.sh"
+        c_dim "  $apontado"
+        apontado=""  # já avisado: não cair no ✓ abaixo, que diria o contrário
+      fi
       case "$apontado" in
+        "") ;;
         http*/email-templates/*)
           c_grn "✓ o GoTrue ($dono) busca o molde do app"
           c_dim "  $apontado" ;;

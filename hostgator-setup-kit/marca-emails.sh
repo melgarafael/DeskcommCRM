@@ -252,8 +252,15 @@ if [ -n "$RENDER_EM" ]; then
   c_grn "✓ modelos renderizados em $RENDER_EM (marca: $APP_NOME, accent: $ACCENT)"
   c_dim "  Isto e so o HTML renderizado -- NAO aponte GOTRUE_MAILER_TEMPLATES_* para estes arquivos."
   c_dim "  Num Supabase proprio, aponte para a rota do app, que resolve a marca pelo BANCO:"
-  c_dim "    GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/confirmation"
-  c_dim "    GOTRUE_MAILER_TEMPLATES_RECOVERY=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/recovery"
+  # No single-server o auth alcanca o app pela rede privada, nao pelo dominio
+  # publico (#2587) -- e quem grava e o update.sh.
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    c_dim "    GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${BASE_INTERNA_DO_APP:-http://app:3000}/email-templates/confirmation"
+    c_dim "    GOTRUE_MAILER_TEMPLATES_RECOVERY=${BASE_INTERNA_DO_APP:-http://app:3000}/email-templates/recovery"
+  else
+    c_dim "    GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/confirmation"
+    c_dim "    GOTRUE_MAILER_TEMPLATES_RECOVERY=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/recovery"
+  fi
   exit 0
 fi
 
