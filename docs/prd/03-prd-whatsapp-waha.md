@@ -163,7 +163,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 | `document` | sim | sim | PDF, DOCX, XLSX; max 16MB |
 | `sticker` | sim | sim | requer engine WEBJS pra animados |
 | `location` | sim | sim | lat/lng + label opcional |
-| `contact` | sim | sim | vCard |
+| `contact` | sim | sim | vCard; cartão e prévias de resposta/citação mostram o nome, e o telefone aceita propriedades `TEL` com grupo (`item1.TEL`) |
 | `reaction` | sim | sim | emoji em mensagem específica |
 | `system` | sim | não | eventos do WhatsApp (revogação, edit) — registra na timeline |
 

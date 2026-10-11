@@ -15,7 +15,7 @@ export interface SharedContact {
 }
 
 const VCARD_FN = /^FN:(.+)$/m;
-const VCARD_TEL = /^TEL[^:]*:(.+)$/m;
+const VCARD_TEL = /^(?:[\w-]+\.)?TEL[^:]*:(.+)$/mi;
 
 /** Extrai nome e telefone de um vCard em texto (mensagem inbound). */
 export function parseVcard(body: string | null | undefined): SharedContact | null {
@@ -54,7 +54,7 @@ export function resolveSharedContact(
   if (fromMeta) return fromMeta;
   const fromVcard = parseVcard(message.body);
   if (fromVcard) return fromVcard;
-  if (message.body?.trim()) {
+  if (message.body?.trim() && !message.body.includes("BEGIN:VCARD")) {
     return { name: message.body.trim(), phone_number: "" };
   }
   return null;
