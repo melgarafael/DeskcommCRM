@@ -128,7 +128,7 @@ export const pacingKnobsUpdateSchema = z
     resposta_end_hour: z.number().int().min(1).max(KNOB_BOUNDS.hourEnd).nullable().optional(),
     allow_sunday: z.boolean().nullable().optional(),
     /**
-     * Dias da prospecção (0630, 0=dom … 6=sáb). Omitido = mantém o que está
+     * Dias da prospecção (0642, 0=dom … 6=sáb). Omitido = mantém o que está
      * gravado (linha nova nasce no default do banco: todos os dias). Sem
      * `null`: dia não tem "voltar ao padrão" parcial — o padrão É a lista
      * cheia, e ela se declara marcando todos os dias na ficha.
@@ -192,7 +192,7 @@ export interface ChannelKnobsRow {
   atraso_minimo_ms?: number | null;
   atraso_maximo_ms?: number | null;
   allow_sunday: boolean | null;
-  /** Dias da prospecção (0630). Ausente/null = default (todos os dias). */
+  /** Dias da prospecção (0642). Ausente/null = default (todos os dias). */
   prospeccao_dias?: number[] | null;
   timezone: string | null;
   warmup_daily_caps: unknown;
@@ -231,7 +231,7 @@ export function effectiveKnobs(row: ChannelKnobsRow | null, fusoDaOrg?: string |
     respostaStartHour: row?.resposta_start_hour ?? row?.window_start_hour ?? PACING_DEFAULTS.respostaStartHour,
     respostaEndHour: row?.resposta_end_hour ?? row?.window_end_hour ?? PACING_DEFAULTS.respostaEndHour,
     allowSunday: row?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-    // Dias próprios da prospecção (0630). Inválido/vazio = todos os dias, que
+    // Dias próprios da prospecção (0642). Inválido/vazio = todos os dias, que
     // é o default do banco e o comportamento de antes — display não veta.
     prospeccaoDias: parseDiasDaProspeccao(row?.prospeccao_dias) ?? PACING_DEFAULTS.prospeccaoDias,
     timezone: fusoDaJanela(row?.timezone, fusoDaOrg),

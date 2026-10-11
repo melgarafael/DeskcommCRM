@@ -69,7 +69,7 @@ export interface PacingKnobs {
    * escreve no domingo espera resposta no domingo.
    *
    * Vale para resposta, disparo em massa e retomada — mas NÃO para a
-   * prospecção, que tem os dias próprios (`prospeccaoDias`, 0630). Desligar o
+   * prospecção, que tem os dias próprios (`prospeccaoDias`, 0642). Desligar o
    * domingo aqui não cala a prospecção de domingo (e vice-versa).
    */
   allowSunday: boolean;
@@ -133,7 +133,7 @@ export const PACING_DEFAULTS: PacingKnobs = {
   allowSunday: true,
   // Todos os dias = o comportamento de antes (o default do `allowSunday` também
   // é ligado). Quem tinha `allow_sunday = false` recebe seg–sáb no backfill da
-  // 0630, não aqui — default de fallback nunca reescreve escolha de ninguém.
+  // 0642, não aqui — default de fallback nunca reescreve escolha de ninguém.
   prospeccaoDias: [0, 1, 2, 3, 4, 5, 6],
   timezone: 'America/Sao_Paulo',
   // Número sem linha em channel_knobs é tratado como idade 0 (o degrau mais

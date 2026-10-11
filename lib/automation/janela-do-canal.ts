@@ -43,7 +43,7 @@ interface LinhaDeKnobs {
   window_start_hour: number | null;
   window_end_hour: number | null;
   allow_sunday: boolean | null;
-  /** Dias da prospecção (0630). Automação não é prospecção: lido por fidelidade, nunca usado. */
+  /** Dias da prospecção (0642). Automação não é prospecção: lido por fidelidade, nunca usado. */
   prospeccao_dias: unknown;
   timezone: string | null;
   warmup_daily_caps: unknown;

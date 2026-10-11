@@ -36,7 +36,7 @@ vi.mock("@/lib/agent-engine/pacing/store", () => ({
 }));
 vi.mock("@/lib/agent-engine/pacing/engine", () => ({
   janelaDeEnvioAberta: mocks.open,
-  // A prospecção lê o portão próprio (dias + horas, 0630) — o genérico não é
+  // A prospecção lê o portão próprio (dias + horas, 0642) — o genérico não é
   // mais chamado neste worker. Sem estas duas chaves o import morre e TODOS os
   // casos desta suíte falham com "not a function", não só os de janela.
   janelaDeProspeccaoAberta: mocks.prospeccaoAberta,

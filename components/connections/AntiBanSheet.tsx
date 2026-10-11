@@ -49,7 +49,7 @@ interface FormState {
   atraso_maximo_ms: string;
   daily_message_limit: string;
   allow_sunday: boolean;
-  /** Dias da prospecção (0630, 0=dom … 6=sáb). Sempre explícito: sem "herdar". */
+  /** Dias da prospecção (0642, 0=dom … 6=sáb). Sempre explícito: sem "herdar". */
   prospeccao_dias: number[];
   timezone: string;
   /** `yyyy-mm-dd` do input date; '' = não declarado (o motor trata como idade 0). */
@@ -91,7 +91,7 @@ const intOrNull = (s: string): number | null => (s.trim() === "" ? null : Math.r
 const msOrNull = (s: string): number | null =>
   s.trim() === "" ? null : Math.round(Number(s) * 1000);
 
-/** Dias da semana da caixa de prospecção (0630, 0=dom … 6=sáb, convenção `getDay`). */
+/** Dias da semana da caixa de prospecção (0642, 0=dom … 6=sáb, convenção `getDay`). */
 const DIAS_DA_SEMANA = [0, 1, 2, 3, 4, 5, 6] as const;
 
 export function AntiBanSheet({ item, canWrite, onClose }: Props) {

@@ -106,7 +106,7 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
     expect(windowIsValid(8, 8)).toBe(false);
   });
 
-  it("prospeccao_dias (0630): lista 1..7 de 0..6; vazio, fora da faixa e string rejeitados", () => {
+  it("prospeccao_dias (0642): lista 1..7 de 0..6; vazio, fora da faixa e string rejeitados", () => {
     const dias = (prospeccao_dias: unknown) =>
       pacingKnobsUpdateSchema.safeParse({ channel_session_id: SESSION, prospeccao_dias });
     expect(dias([1, 2, 3, 4, 5]).success).toBe(true);

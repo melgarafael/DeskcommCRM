@@ -49,7 +49,7 @@ export async function sendNextCandidate(
     cfg.channel_session_id,
   );
   const now = new Date();
-  // O PORTÃO DA PROSPECÇÃO: dias próprios (`prospeccao_dias`, 0630) + horas de
+  // O PORTÃO DA PROSPECÇÃO: dias próprios (`prospeccao_dias`, 0642) + horas de
   // disparo — e NÃO o domingo compartilhado. Fora dele, o envio fica agendado
   // para a próxima abertura, sem tentativa e sem queimar quota: a fila espera,
   // não morre. Resposta, massa e retomada seguem o portão genérico delas.

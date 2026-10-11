@@ -59,7 +59,7 @@ export interface PacingInput {
    * Esta decisão é para a PROSPECÇÃO fria (primeira abordagem a quem nunca
    * falou com a empresa)?
    *
-   * `true` lê os dias próprios da prospecção (`knobs.prospeccaoDias`, 0630) em
+   * `true` lê os dias próprios da prospecção (`knobs.prospeccaoDias`, 0642) em
    * vez do `allowSunday` compartilhado — é o que desamarra "respondo domingo"
    * de "prospecto domingo". As HORAS continuam as de disparo (`window*`):
    * `resposta` é ignorado quando este campo é `true` (prospecção nunca é
@@ -243,7 +243,7 @@ export function dayStartInTz(instant: Date, timezone: string): Date {
  * `resposta` separa as janelas: o turno inbound é RESPOSTA (lê `resposta*`) e
  * o disparo/retomada é `false` (lê `window*`). Omitir = disparo, que é o
  * comportamento de todo chamador anterior a 0495. A prospecção NÃO passa por
- * aqui: ela tem os dias próprios (`janelaDeProspeccaoAberta`, 0630).
+ * aqui: ela tem os dias próprios (`janelaDeProspeccaoAberta`, 0642).
  */
 export function janelaDeEnvioAberta(
   now: Date,
@@ -312,7 +312,7 @@ function insideWindow(
 ): boolean {
   const dias = diasValidos(diasProspeccao);
   if (dias) {
-    // Dias próprios (0630): o domingo compartilhado não entra — é o que permite
+    // Dias próprios (0642): o domingo compartilhado não entra — é o que permite
     // responder domingo sem prospectar domingo.
     if (!dias.includes(DIA_POR_NOME[wall.weekday] ?? -1)) return false;
     return wall.h >= janela.start && wall.h < janela.end;

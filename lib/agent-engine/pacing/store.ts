@@ -26,7 +26,7 @@ interface ChannelKnobsRow {
   atraso_minimo_ms: number | null;
   atraso_maximo_ms: number | null;
   allow_sunday: boolean | null;
-  /** Dias da prospecção (0630, `smallint[]`, 0=dom … 6=sáb). Coluna NOT NULL. */
+  /** Dias da prospecção (0642, `smallint[]`, 0=dom … 6=sáb). Coluna NOT NULL. */
   prospeccao_dias: number[] | null;
   timezone: string | null;
   warmup_daily_caps: unknown; // jsonb — shape validado em parseWarmupCaps (nunca confiado)
@@ -82,7 +82,7 @@ export function parseWarmupCaps(value: unknown): WarmupStep[] | null {
 }
 
 /**
- * Dias da prospecção vindos do banco (0630, `smallint[]`, 0=dom … 6=sáb).
+ * Dias da prospecção vindos do banco (0642, `smallint[]`, 0=dom … 6=sáb).
  * Fora do 0..6, duplicado ou vazio → null: o load cai na regra antiga
  * (`allowSunday`), com warn — a mesma falha fechada do warm-up (nunca exceção
  * no caminho de envio, nunca fila parada em silêncio por dado corrupto).
@@ -166,7 +166,7 @@ export async function loadChannelKnobs(
       respostaStartHour: row.resposta_start_hour ?? row.window_start_hour ?? PACING_DEFAULTS.respostaStartHour,
       respostaEndHour: row.resposta_end_hour ?? row.window_end_hour ?? PACING_DEFAULTS.respostaEndHour,
       allowSunday: row.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-      // Dias próprios da prospecção (0630). Inválido/vazio cai na regra antiga
+      // Dias próprios da prospecção (0642). Inválido/vazio cai na regra antiga
       // (`allowSunday`), com warn — nunca fila parada em silêncio.
       prospeccaoDias: (() => {
         const dias = parseDiasDaProspeccao(row.prospeccao_dias);

@@ -1,5 +1,5 @@
 /**
- * Dias da semana da prospecção por conexão (0630).
+ * Dias da semana da prospecção por conexão (0642).
  *
  * O domingo único de `allowSunday` valia para resposta e disparo juntos: quem
  * desliga o domingo para não prospectar no fim de semana calava junto a
@@ -44,7 +44,7 @@ const estado = { lastSentAt: null, sentToday: 0, numberActivatedAt: null };
 const SEG_A_SEX = [1, 2, 3, 4, 5];
 const TODA_A_SEMANA = [0, 1, 2, 3, 4, 5, 6];
 
-describe('dias da prospecção por conexão (0630)', () => {
+describe('dias da prospecção por conexão (0642)', () => {
   it('parseDiasDaProspeccao: filtra, dedup e ordena; vazio ou estranho é null', () => {
     expect(parseDiasDaProspeccao([5, 1, 1, 0])).toEqual([0, 1, 5]);
     expect(parseDiasDaProspeccao([])).toBeNull();

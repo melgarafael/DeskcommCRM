@@ -1,5 +1,5 @@
 -- manifest: **Dias da semana da prospecção por conexão.** O domingo único de `channel_knobs.allow_sunday` valia para resposta e disparo juntos: quem desliga o domingo para não prospectar no fim de semana cala junto a resposta de domingo — e quem escreve no domingo espera resposta no domingo. A prospecção ganha os dias próprios em `channel_knobs.prospeccao_dias` (`smallint[]`, 0=domingo … 6=sábado, convenção `getDay`); as horas continuam as da janela de disparo (`window_*_hour`). Coluna `NOT NULL` com default todos os dias (regressão zero para instalação nova) + backfill que congela o comportamento de quem tinha `allow_sunday = false` (seg a sáb) só nas linhas ainda no padrão — reaplicação nunca apaga personalização. CHECK forte (`<@` + `cardinality`), `drop constraint if exists` antes do `add` (reaplicável, como a 0495).
--- 0630: dias da prospecção por conexão.
+-- 0642: dias da prospecção por conexão.
 
 alter table public.channel_knobs
   add column if not exists prospeccao_dias smallint[] not null default '{0,1,2,3,4,5,6}';

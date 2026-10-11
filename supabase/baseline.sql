@@ -52968,7 +52968,7 @@ alter table public.platform_branding
 comment on column public.platform_branding.accent_dark_hex is
   'Segunda semente da marca (#2482), só para o tema ESCURO: o bloco [data-theme=dark] deriva dela pela mesma derivarMarca, com os mesmos pisos de contraste. NULL = os dois temas derivam de accent_hex, como sempre. --color-brand continua sendo accent_hex (e-mail e logo nao tem tema). Lida/escrita so server-side (service_role), como o resto da tabela.';
 
--- ---- dias da semana da prospecção por conexão (migration 0630) ----
+-- ---- dias da semana da prospecção por conexão (migration 0642) ----
 -- A prospecção ganha os dias próprios em channel_knobs.prospeccao_dias
 -- (smallint[], 0=domingo … 6=sábado); as horas continuam as da janela de
 -- disparo. Default todos os dias (regressão zero); o backfill congela seg–sáb
