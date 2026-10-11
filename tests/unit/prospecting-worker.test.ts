@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   knobs: vi.fn(),
   open: vi.fn(),
   prospeccaoAberta: vi.fn(),
+  pacing: vi.fn(),
   paradas: vi.fn(),
   prepare: vi.fn(),
 }));
@@ -40,7 +41,7 @@ vi.mock("@/lib/agent-engine/pacing/engine", () => ({
   // mais chamado neste worker. Sem estas duas chaves o import morre e TODOS os
   // casos desta suíte falham com "not a function", não só os de janela.
   janelaDeProspeccaoAberta: mocks.prospeccaoAberta,
-  decidePacing: () => ({ allow: true, waitMs: 0 }),
+  decidePacing: mocks.pacing,
   proximaAberturaDaJanela: () => new Date(Date.now() + 3600000),
   proximaAberturaDaProspeccao: () => new Date(Date.now() + 3600000),
   // O ritmo da esteira fria (`lib/prospecting/ritmo-da-esteira-fria.ts`) deriva
@@ -123,6 +124,7 @@ beforeEach(() => {
   mocks.knobs.mockResolvedValue({ knobs: {} });
   mocks.open.mockReturnValue(true);
   mocks.prospeccaoAberta.mockReturnValue(true);
+  mocks.pacing.mockReturnValue({ allow: true, waitMs: 0 });
   mocks.preflight.mockResolvedValue({ permite: true });
   mocks.guard.mockResolvedValue(undefined);
   mocks.boundary.mockResolvedValue(undefined);
@@ -197,6 +199,13 @@ describe("gradual outreach", () => {
     );
     expect(mocks.generate).not.toHaveBeenCalled();
     expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("pede o ritmo como prospecção: o gate genérico não veta o domingo que os dias próprios liberaram", async () => {
+    await sendNextCandidate({} as never, database() as never, {} as never, campaign);
+    // Sem a flag, o veto de domingo do gate genérico barra a abordagem que o
+    // portão próprio deixou passar: a prospecção de domingo é reagendada para
+    // segunda, calada, mesmo com o domingo marcado na caixa da prospecção.
+    expect(mocks.pacing).toHaveBeenCalledWith(expect.objectContaining({ prospeccao: true }));
   });
   it("keeps spacing across campaign switches", async () => {
     await sendNextCandidate(
