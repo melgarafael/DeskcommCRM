@@ -137,7 +137,10 @@ export function SidebarContent({
           // Sem arte própria para o escuro, preserva a proteção de contraste.
           <div
             className={cn(
-              "rounded-md",
+              // `min-w-0`: item de flex não encolhe abaixo do `min-width: auto`,
+              // que é o valor padrão — sem isso, uma arte própria larga empurra o
+              // botão de recolher para fora da barra em vez de encolher.
+              "min-w-0 rounded-md",
               !logoEscuro && "dark:bg-white dark:px-2 dark:py-1 dark:shadow-sm",
             )}
           >
@@ -152,19 +155,35 @@ export function SidebarContent({
                 src={logo}
                 alt={nome}
                 className={cn(
-                  "h-7 w-auto max-w-[10rem] object-contain",
+                  // `max-w-[min(10rem,100%)]` e não `max-w-[10rem]` sozinho, como o
+                  // review mediu (#2723): a linha da logo tem ~207px úteis na barra
+                  // aberta e o botão de recolher disputa o mesmo espaço. Uma arte
+                  // própria larga (160px) vazava 7px do fundo claro e ficava a 1px
+                  // do botão. O teto de 10rem continua valendo, mas agora a imagem
+                  // encolhe antes de estourar.
+                  //
+                  // `max-w-[10rem]` + `max-w-full` não valem os dois: disputam a
+                  // MESMA propriedade no CSS e só um sobrevive — a pegadinha que o
+                  // review apontou, e por isso o teto é um único `min()`.
+                  "h-7 w-auto max-w-[min(10rem,100%)] object-contain",
                   logoEscuro && "dark:hidden",
                 )}
               />
             ) : (
-              <span className="dark:hidden">{nome}</span>
+              // `truncate` + `title`: o nome longo (uma clínica com nome grande,
+              // medido no review) virava 3 linhas dentro de uma linha de 56px e
+              // estourava a barra. Uma linha com reticências, e o nome completo
+              // continua no tooltip.
+              <span className="min-w-0 truncate dark:hidden" title={nome}>
+                {nome}
+              </span>
             )}
             {logoEscuro ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={logoEscuro}
                 alt={nome}
-                className="hidden h-7 w-auto max-w-[10rem] object-contain dark:block"
+                className="hidden h-7 w-auto max-w-[min(10rem,100%)] object-contain dark:block"
               />
             ) : null}
           </div>
@@ -177,7 +196,15 @@ export function SidebarContent({
             <LogotipoDoProduto nome={nome} className="h-8 w-auto" />
           )
         ) : (
-          <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>{nome}</span>
+          <span
+            className={cn(
+              "min-w-0 truncate font-semibold tracking-tight",
+              collapsed && "sr-only",
+            )}
+            title={nome}
+          >
+            {nome}
+          </span>
         )}
         {collapsed && !marcaDoProduto && (
           <span aria-hidden className="text-lg font-bold text-primary">
@@ -191,10 +218,13 @@ export function SidebarContent({
         {/* Issue #2722 — o controle de recolher mora no ALTO, como no
             mercado: na linha da logo, à direita, quando a barra está aberta. */}
         {showCollapseControl && !collapsed && (
-          <div className="ml-auto pl-2">
+          // `shrink-0`: sem isso o botão é o primeiro a ser espremido quando a
+          // marca é larga — e ele é o controle, não sobra.
+          <div className="ml-auto shrink-0 pl-2">
             <BotaoDeRecolher
               collapsed={false}
               isPending={isPending}
+              soIcone
               onClick={() => startTransition(() => toggleSidebar(collapsed))}
             />
           </div>
@@ -388,10 +418,20 @@ function BotaoDeRecolher({
   collapsed,
   isPending,
   onClick,
+  soIcone = false,
 }: {
   collapsed: boolean;
   isPending: boolean;
   onClick: () => void;
+  /**
+   * Barra aberta, sem o rótulo. O review mediu (#2723) que o rótulo custa
+   * ~54px de uma linha com ~207px úteis, e uma logo-palavra de 5:1 (140px)
+   * já estourava por causa disso. Só o ícone devolve ~161px para a marca.
+   *
+   * Acessibilidade não muda: o `aria-label` é o mesmo ("Recolher sidebar"),
+   * e o `title` cobre o hover para quem só enxerga o desenho.
+   */
+  soIcone?: boolean;
 }) {
   const t = useT();
   return (
@@ -401,16 +441,17 @@ function BotaoDeRecolher({
       disabled={isPending}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        collapsed && "justify-center px-2",
+        (collapsed || soIcone) && "justify-center px-2",
       )}
       aria-label={collapsed ? t("Expandir sidebar") : t("Recolher sidebar")}
+      title={collapsed || soIcone ? t("Recolher sidebar") : undefined}
     >
       {collapsed ? (
         <CaretDoubleRight size={14} aria-hidden />
       ) : (
         <CaretDoubleLeft size={14} aria-hidden />
       )}
-      {!collapsed && <span>{t("Recolher")}</span>}
+      {!collapsed && !soIcone && <span>{t("Recolher")}</span>}
     </button>
   );
 }
