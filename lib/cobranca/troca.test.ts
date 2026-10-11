@@ -206,6 +206,20 @@ describe("trocarPlanoDaOrg", () => {
     expect(escritas()).toEqual([]);
   });
 
+  // A recusa NÃO transitória é a mais cara de perder: a Stripe recusa (400) expirar
+  // a sessão que já foi PAGA e cujo aviso ainda não chegou. Seguir com a troca aí
+  // gravaria o plano novo para quem acabou de pagar o antigo.
+  it("#2609 o provedor recusou expirar (sessão já paga): a mesma recusa de sempre, e nada muda", async () => {
+    m.linha = {
+      ...EM_TESTE, provedor: "stripe",
+      checkout_url: "https://pagar.exemplo/s1", checkout_expira_em: "2026-10-10T13:00:00Z", checkout_sessao_id: "cs_paga_1",
+    };
+    expirarSessao.mockRejectedValueOnce(new ErroDoProvedor(400, "invalid_request_error", false));
+    expect(await trocar("pro")).toMatchObject({ ok: false, status: 409, code: "checkout_em_aberto" });
+    expect(escritas()).toEqual([]);
+    expect(trocarNoProvedor).not.toHaveBeenCalled();
+  });
+
   it("teste grátis com link de pagamento já expirado: a troca vale na hora e o link sai junto", async () => {
     m.linha = { ...EM_TESTE, provedor: "stripe", checkout_url: "https://pagar.exemplo/s1", checkout_expira_em: "2026-10-10T11:00:00Z" };
     expect(await trocar("pro")).toMatchObject({ ok: true, quando: "imediato", planoId: "pro" });
