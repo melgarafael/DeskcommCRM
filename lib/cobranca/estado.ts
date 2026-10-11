@@ -51,7 +51,7 @@ export interface LeituraAplicada {
   readonly ultimoErro: ErroDeLeitura | null;
   /** true → `ultimo_aviso = null, ultimo_aviso_em = null`. */
   readonly zerarAviso: boolean;
-  /** true → `checkout_url = null, checkout_expira_em = null`. */
+  /** true → `checkout_url = null, checkout_expira_em = null, checkout_sessao_id = null`. */
   readonly limparCheckout: boolean;
   /**
    * true → `plano_agendado_id = null` SEM tocar `plano_id` e sem audit de troca.

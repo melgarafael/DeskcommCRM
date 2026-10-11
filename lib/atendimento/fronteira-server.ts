@@ -11,6 +11,7 @@ import {
   parseServiceBoundary,
   type CurrentServiceBoundary,
   type ServiceBoundary,
+  StaleServiceBoundaryError,
 } from "./fronteira";
 
 const execution = new AsyncLocalStorage<{
@@ -59,8 +60,32 @@ export function setExecutionAgentOperation(context: AgentOperationContext): void
   const scope = execution.getStore();
   if (scope) scope.agentOperation = context;
 }
+/** O lease original não volta a autorizar o turno depois de Assumir → Devolver.
+ * A atribuição invalida apenas trabalhos autônomos; aprovação humana, entrega
+ * de compromisso e operador têm outra autoridade e não passam por esta regra.
+ */
+export async function requireCurrentAutonomousTurn(
+  db: Queryable,
+  job: Pick<
+    JobRow,
+    "id" | "organization_id" | "contact_id" | "kind" | "locked_by" | "claim_acquired_at"
+  >,
+): Promise<void> {
+  if (!["inbound_turn", "followup_turn", "case_reply_turn"].includes(job.kind)) return;
+  const claim = claimOfJob(job);
+  if (!claim) throw new StaleServiceBoundaryError();
+  const { rows } = await db.query<{ current: boolean }>(
+    `select exists(select 1 from job_queue where organization_id=$1 and id=$2
+      and contact_id=$3 and kind=$4 and status='running'
+      and locked_by=$5 and locked_at=$6::timestamptz
+      and not public.fn_autonomous_turn_revoked($1,job_queue.id)) as current`,
+    [job.organization_id, job.id, job.contact_id, job.kind, claim.worker_id, claim.acquired_at],
+  );
+  if (!rows[0]?.current) throw new StaleServiceBoundaryError();
+}
 export async function guardServiceEffect(): Promise<void> {
   const scope = execution.getStore();
+  if (scope?.job) await requireCurrentAutonomousTurn(scope.db, scope.job);
   if (scope?.agentOperation) await assertAgentOperationPg(scope.db, scope.agentOperation);
   if (scope) await requireCurrentServiceBoundary(scope.db, scope.boundary);
   if (scope?.job?.kind === "transactional_delivery") {
@@ -117,6 +142,7 @@ export async function withServiceJob<T>(
     assertCurrentServiceBoundary(null, null);
   }
   await requireCurrentServiceBoundary(db, boundary);
+  await requireCurrentAutonomousTurn(db, job);
   return execution.run({ db, boundary, job }, () =>
     job.kind === "followup_turn" && job.contact_id
       ? withAgendaEffect(
