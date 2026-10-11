@@ -18,6 +18,7 @@ export interface AuditoriaDoSiteDados {
   classe: ClasseDeSite;
   problemas: string[];
   checklist: { tem: string[]; falta: string[] };
+  provisorio?: boolean;
 }
 /**
  * Auditoria do site — só leitura. Mesma seção no painel do inbox
@@ -57,6 +58,7 @@ export function AuditoriaDoSite({
     ofertas,
     nicho,
     sobrescritaVocabulario: sobrescritaVocabulario ?? null,
+    provisorio: site.provisorio ?? false,
     status,
     followUpsEnviados: 0,
   });
@@ -66,6 +68,7 @@ export function AuditoriaDoSite({
         <h4 className="font-medium">{t("Auditoria do site")}</h4>
         <p className="mt-1 text-xs text-muted-foreground">
           {rotuloDaClasse(site.classe, t)}
+          {site.provisorio === true ? ` — ${t("verificação pendente, sem citar na abordagem")}` : ""}
         </p>
       </div>
       {site.problemas.length > 0 && (

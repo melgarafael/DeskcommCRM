@@ -36,6 +36,8 @@ export interface EntradaDaEstrategia {
   nicho: string;
   /** Sobrescrita de vocabulário da org (`settings.prospeccao.vocabulario`). */
   sobrescritaVocabulario?: Record<string, string> | null;
+  /** Provisório = verificação inconclusiva: sem ângulo de conserto. */
+  provisorio: boolean;
   status: string;
   followUpsEnviados: number;
 }
@@ -136,6 +138,19 @@ function juntarProblemas(problemas: string[]): string | null {
 export function montarEstrategia(entrada: EntradaDaEstrategia): EstrategiaDoLead {
   const ofertas: OfertaDaCampanha[] =
     entrada.ofertas.length > 0 ? entrada.ofertas : ["site"];
+  // Provisório primeiro: verificação inconclusiva não gera ângulo de conserto
+  // (vender em cima de timeout seria queimar o lead com gancho falso).
+  if (entrada.provisorio) {
+    return {
+      cenario: "Verificação pendente",
+      angulo:
+        "A verificação do site foi inconclusiva (instabilidade de rede, não defeito comprovado). Sem gancho até a reverificação confirmar — abordar citando queda seria mentir com dados.",
+      ganchos: [],
+      objecoes: [],
+      proximoPasso:
+        "Aguardar a reverificação automática; se congelar como fora do ar, a estratégia de cortesia assume.",
+    };
+  }
   const vocabulario = vocabularioDoNicho(entrada.nicho, entrada.sobrescritaVocabulario ?? null);
   const ganchos: string[] = [ganchoDeReputacao(entrada.nota, entrada.numAvaliacoes)];
   const faltas: ItemDoRaioX[] = entrada.checklist?.falta ?? [];
@@ -273,12 +288,15 @@ export function pontuarCandidato(
   numAvaliacoes: number | null,
   classe: ClasseDeSite,
   ofertaPrimaria: OfertaDaCampanha = "site",
+  provisorio = false,
 ): Pontuacao {
   const pontosNota = Math.max(0, Math.min((nota ?? 0) - 4.0, 1.0)) * 40;
   const faixa = PESO_AVALIACOES[ofertaPrimaria] ?? PESO_AVALIACOES.site;
   const pontosAvaliacoes = Math.min(numAvaliacoes ?? 0, faixa.teto) * faixa.porAvaliacao;
   const pesosSite = PESOS_DO_SITE[ofertaPrimaria] ?? PESOS_DO_SITE.site;
-  const pontosSite = pesosSite[classe] ?? 0;
+  // Provisório não é classe de mérito: peso neutro até confirmar. Sem isso o
+  // não-verificado herdaria o peso do "fora do ar" e furaria a fila.
+  const pontosSite = provisorio ? 18 : (pesosSite[classe] ?? 0);
   const valor = Math.round(pontosNota + pontosAvaliacoes + pontosSite);
   const parcelas: Array<[number, string]> = [
     [pontosNota, "nota alta"],
@@ -286,9 +304,9 @@ export function pontuarCandidato(
     [pontosSite, classe === "site-ok" ? "site em ordem" : classe === "agregador" || classe === "sem-site" ? "sem site próprio" : "site com problemas"],
   ];
   parcelas.sort((a, b) => b[0] - a[0]);
-  const motivo =
+  const motivoBase =
     parcelas[0]![0] > 0 ? `${parcelas[0]![1]}${parcelas[1]![0] > 0 ? ` + ${parcelas[1]![1]}` : ""}` : "sem sinais positivos";
-  return { valor, motivo };
+  return { valor, motivo: provisorio ? `${motivoBase} · verificação pendente` : motivoBase };
 }
 
 /**
@@ -367,6 +385,8 @@ export function montarDadosDeAbordagem(
     classe: ClasseDeSite;
     problemas: string[];
     conteudo_resumo: string | null;
+    provisorio: boolean;
+    verificado_em: string;
   } | null,
 ): Record<string, string> {
   const dados: Record<string, string> = {
@@ -377,10 +397,13 @@ export function montarDadosDeAbordagem(
     Avaliação: String(data.rating ?? ""),
     Redes: data.socials.join(", "),
   };
-  if (site) {
+  // Só o DEFINITIVO é citável — e com a data, nunca "agora": o envio pode sair
+  // dias depois da medição, e "agora" envelhece em mentira.
+  if (site && !site.provisorio) {
     const problemas = site.problemas.map(descreverProblema).filter(Boolean);
+    const dataMedicao = site.verificado_em.slice(0, 10).split("-").reverse().join("/");
     dados["Auditoria"] =
-      `${ROTULOS_DA_CLASSE[site.classe]}` +
+      `${ROTULOS_DA_CLASSE[site.classe]} (verificado em ${dataMedicao})` +
       (problemas.length > 0 ? ` — ${problemas.slice(0, 3).join("; ")}` : "");
     if (site.conteudo_resumo) dados["Detalhe"] = site.conteudo_resumo;
   }

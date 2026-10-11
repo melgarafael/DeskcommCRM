@@ -266,6 +266,12 @@ export interface SiteEnrichment {
   /** Best-effort (§3.5 da spec 24). v1: sempre null; faixa lenta em fase posterior. */
   pagespeed: { nota: number; lcp: string | null; medida_em: string } | null;
   verificado_em: string;
+  /**
+   * Provisório = falha passageira (timeout, reset, DNS), NÃO citável e
+   * reverificado pelo tick até `tentativas` esgotar. Definitivo = comprovado.
+   */
+  provisorio: boolean;
+  tentativas: number;
 }
 
 /**
@@ -280,6 +286,7 @@ export function vereditoPuro(website: string | null | undefined, agoraIso: strin
       ver: 1, classe: "sem-site", problemas: [], checklist: vazio,
       final_url: null, http_status: null, tempo_ms: 0,
       conteudo_resumo: null, pagespeed: null, verificado_em: agoraIso,
+      provisorio: false, tentativas: 0,
     };
   }
   if (ehAgregador(website)) {
@@ -287,6 +294,7 @@ export function vereditoPuro(website: string | null | undefined, agoraIso: strin
       ver: 1, classe: "agregador", problemas: [], checklist: vazio,
       final_url: null, http_status: null, tempo_ms: 0,
       conteudo_resumo: null, pagespeed: null, verificado_em: agoraIso,
+      provisorio: false, tentativas: 0,
     };
   }
   return null;

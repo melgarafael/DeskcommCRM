@@ -204,6 +204,10 @@ export const siteEnrichmentSchema = z.object({
     })
     .nullable(),
   verificado_em: z.string().max(40),
+  // Com default para as linhas escritas antes do campo existir: ausência =
+  // definitivo antigo, nunca provisório fantasma.
+  provisorio: z.boolean().default(false),
+  tentativas: z.number().int().min(0).max(99).default(0),
 });
 export type SiteEnrichmentValidado = z.infer<typeof siteEnrichmentSchema>;
 export const prospectEnrichmentSchema = z.object({

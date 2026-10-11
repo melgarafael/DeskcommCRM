@@ -146,6 +146,15 @@ describe("o ramo frio não afirma nada que a pessoa não fez", () => {
     expect(prompt("formulario")).not.toContain("EXCEÇÃO: o campo `Auditoria`");
     expect(prompt("automacao")).not.toContain("EXCEÇÃO: o campo `Auditoria`");
   });
+
+  it("a exceção da auditoria é datada, nunca 'agora' (ponto 2 da triagem)", () => {
+    // O envio pode sair dias depois da medição: "agora" envelhece em mentira.
+    // A regra manda citar a data escrita no próprio campo — e proíbe o "agora".
+    const frio = prompt("prospeccao_fria");
+    expect(frio).toMatch(/na data escrita no próprio campo/);
+    expect(frio).toMatch(/nunca como medição de agora/);
+    expect(frio.toLowerCase()).not.toMatch(/pelo próprio sistema agora/);
+  });
 });
 
 describe("a prospecção usa o ramo frio — e não o de automação", () => {

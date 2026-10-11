@@ -13,7 +13,7 @@ import type pg from "pg";
 
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
-import { auditarSites } from "@/lib/prospecting/site-fetch";
+import { auditarSites, LIMITE_TENTATIVAS } from "@/lib/prospecting/site-fetch";
 
 /** Teto por org/rodada: 6 paralelos × ~1s médio medido cabem no deadline. */
 const TETO_POR_RODADA = 30;
@@ -24,9 +24,11 @@ export interface ResumoEnriquecimento {
 }
 
 /**
- * Enriquece candidatos com `data.site` ausente e `website` presente, qualquer
- * status (`new`, `queued` e `sent` — os já abordados ganham auditoria para a
- * retomada). Audita `prospecting.site_enriched` só quando houve efeito.
+ * Enriquece candidatos sem veredito e reverifica os provisórios
+ * (`provisorio=true`, abaixo de `LIMITE_TENTATIVAS`), qualquer status (`new`,
+ * `queued` e `sent` — os já abordados ganham auditoria para a retomada).
+ * Definitivo nunca é sobrescrito. Audita `prospecting.site_enriched` só quando
+ * houve efeito.
  */
 export async function enriquecerSitesPendentes(
   db: pg.PoolClient,
@@ -35,14 +37,18 @@ export async function enriquecerSitesPendentes(
   deadline: number,
 ): Promise<ResumoEnriquecimento> {
   const vazio: ResumoEnriquecimento = { enriquecidos: 0, classes: {} };
-  let rows: Array<{ id: string; website: string }>;
+  let rows: Array<{ id: string; website: string; tentativas: number }>;
   try {
-    const resultado = await db.query<{ id: string; website: string }>(
-      "select id, data->>'website' as website from prospecting_candidates " +
-        "where organization_id=$1 and data->'site' is null " +
+    const resultado = await db.query<{ id: string; website: string; tentativas: number }>(
+      "select id, data->>'website' as website, " +
+        "coalesce(nullif(data->'site'->>'tentativas', '')::int, 0) as tentativas " +
+        "from prospecting_candidates " +
+        "where organization_id=$1 " +
         "and nullif(trim(data->>'website'), '') is not null " +
+        "and (data->'site' is null or (coalesce((data->'site'->>'provisorio')::boolean, false) " +
+        "and coalesce(nullif(data->'site'->>'tentativas', '')::int, 0) < $3)) " +
         "order by created_at limit $2",
-      [org, TETO_POR_RODADA],
+      [org, TETO_POR_RODADA, LIMITE_TENTATIVAS],
     );
     rows = resultado.rows;
   } catch (error) {
@@ -62,6 +68,10 @@ export async function enriquecerSitesPendentes(
     veredictos = await auditarSites(
       rows.map((r) => r.website),
       agoraIso,
+      6,
+      fetch,
+      undefined,
+      rows.map((r) => r.tentativas ?? 0),
     );
   } catch (error) {
     logger.error("[prospecting.enriquecer-sites] lote falhou", {
@@ -79,7 +89,8 @@ export async function enriquecerSitesPendentes(
     try {
       const result = await db.query(
         "update prospecting_candidates set data = data || jsonb_build_object('site', $3::jsonb), " +
-          "updated_at = now() where organization_id = $1 and id = $2 and data->'site' is null",
+          "updated_at = now() where organization_id = $1 and id = $2 " +
+          "and (data->'site' is null or coalesce((data->'site'->>'provisorio')::boolean, false))",
         [org, rows[i]!.id, JSON.stringify(veredito)],
       );
       if ((result.rowCount ?? 0) > 0) {

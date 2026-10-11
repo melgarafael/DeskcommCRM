@@ -25,6 +25,7 @@ const base: EntradaDaEstrategia = {
   temInstagram: true,
   ofertas: ["site"],
   nicho: "clínica de estética",
+  provisorio: false,
   status: "novo",
   followUpsEnviados: 0,
 };
@@ -86,6 +87,20 @@ describe("estrategia-site", () => {
     expect(pontuarCandidato(null, null, "agregador").motivo).toContain("sem site próprio");
   });
 
+  it("provisório não gera ângulo, não é citado e pesa neutro", () => {
+    const e = montarEstrategia({ ...base, classe: "fora-do-ar", provisorio: true });
+    expect(e.cenario).toBe("Verificação pendente");
+    expect(e.ganchos).toEqual([]);
+    const dados = montarDadosDeAbordagem(
+      { name: "Vitta", category: "Estética", address: "Rua X", website: "https://x.com", rating: 5, socials: [] },
+      { classe: "fora-do-ar", problemas: ["fora-do-ar"], conteudo_resumo: "x", provisorio: true, verificado_em: "2026-10-10T12:00:00.000Z" },
+    );
+    expect(dados["Auditoria"]).toBeUndefined();
+    const score = pontuarCandidato(5.0, 120, "fora-do-ar", "site", true);
+    expect(score.valor).toBe(40 + 30 + 18);
+    expect(score.motivo).toContain("verificação pendente");
+  });
+
   it("rótulos cobrem todas as classes e itens (Record fechado)", () => {
     for (const classe of ["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar"] as const) {
       expect(rotuloDaClasse(classe, (s) => s).length).toBeGreaterThan(0);
@@ -98,11 +113,12 @@ describe("estrategia-site", () => {
   it("dados da abordagem mantêm os 6 campos do envio + auditoria", () => {
     const dados = montarDadosDeAbordagem(
       { name: "Vitta", category: "Estética", address: "Rua X", website: "https://x.com", rating: 5, socials: ["https://instagram.com/x"] },
-      { classe: "fora-do-ar", problemas: ["fora-do-ar"], conteudo_resumo: "Título: Vitta" },
+      { classe: "fora-do-ar", problemas: ["fora-do-ar"], conteudo_resumo: "Título: Vitta", provisorio: false, verificado_em: "2026-10-10T12:00:00.000Z" },
     );
     expect(dados["Empresa"]).toBe("Vitta");
     expect(dados["Site"]).toBe("https://x.com");
     expect(dados["Auditoria"]).toContain("Site fora do ar");
+    expect(dados["Auditoria"]).toContain("verificado em 10/10/2026");
     expect(dados["Detalhe"]).toBe("Título: Vitta");
     const semSite = montarDadosDeAbordagem(
       { name: "V", category: null, address: null, website: null, rating: null, socials: [] },

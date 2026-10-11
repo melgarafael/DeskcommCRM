@@ -54,7 +54,7 @@ export function AuditoriaDoCandidato({
     return <p className="text-xs text-muted-foreground">{t("A verificar")}</p>;
   }
   const temInstagram = /instagram/i.test((data.socials ?? []).join(","));
-  const score = pontuarCandidato(data.rating, data.reviews, site.classe, ofertas[0] ?? "site");
+  const score = pontuarCandidato(data.rating, data.reviews, site.classe, ofertas[0] ?? "site", site.provisorio ?? false);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">

@@ -45,14 +45,15 @@ const ACOES_ABERTAS_AO_TOKEN = new Set<string>(["configure", "search", "pause"])
 const ORDENACAO_POR_SCORE = `(least(greatest(coalesce((p.data->>'rating')::float, 0) - 4.0, 0), 1) * 40
   + least(coalesce((p.data->>'reviews')::int, 0), case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 150 else 100 end)
     * case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 0.4 else 0.3 end
-  + case coalesce(p.data->'site'->>'classe', '')
+  + case when coalesce((p.data->'site'->>'provisorio')::boolean, false) then 18
+    else case coalesce(p.data->'site'->>'classe', '')
       when 'sem-site' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
       when 'agregador' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
       when 'site-ruim' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 14 else 22 end
       when 'fora-do-ar' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 16 else 25 end
       when 'ssl-invalido' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 16 else 25 end
       when 'site-ok' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 14 else 10 end
-      else 0 end) desc, p.created_at desc`;
+      else 0 end end) desc, p.created_at desc`;
 function failure(error: unknown, requestId: string) {
   return fail(
     "prospecting_unavailable",
@@ -318,13 +319,14 @@ export async function POST(req: NextRequest) {
         ofertas,
         nicho: linha.search?.niche ?? linha.data.category ?? "",
         sobrescritaVocabulario: personalizacao.vocabulario ?? null,
+        provisorio: linha.data.site.provisorio ?? false,
         status: linha.status,
         followUpsEnviados: 0,
       });
       result = {
         mensagem: gerado.texto,
         estrategia,
-        score: pontuarCandidato(linha.data.rating, linha.data.reviews, linha.data.site.classe, ofertas[0] ?? "site"),
+        score: pontuarCandidato(linha.data.rating, linha.data.reviews, linha.data.site.classe, ofertas[0] ?? "site", linha.data.site.provisorio ?? false),
       };
     } else {
       result = await withProspectingLock(pool, org, async (db) => {

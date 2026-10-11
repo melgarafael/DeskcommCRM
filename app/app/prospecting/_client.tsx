@@ -251,6 +251,7 @@ export function ProspectingClient() {
               c.data.reviews,
               c.data.site.classe,
               ofertasDaCampanha[0] ?? "site",
+              c.data.site.provisorio ?? false,
             ).valor,
           ]
         : [],

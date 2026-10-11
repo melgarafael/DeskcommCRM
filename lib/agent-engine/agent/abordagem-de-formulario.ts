@@ -169,11 +169,12 @@ export function blocoDeModo(
       "- NÃO invente histórico, interesse, indicação ou contato anterior. Não existe nenhum.",
       "- NÃO repita os dados em forma de lista de volta para ela, e não demonstre saber mais do que o nome do negócio e o ramo.",
       // Exceção da auditoria verificada (spec 24): o campo `Auditoria` NÃO é
-      // declaração de terceiro — foi o próprio servidor que mediu o site há
-      // minutos (`verificado_em`). Citar a observação ("seu site está fora do
-      // ar") é gancho de venda sobre fato próprio, não invasão: continua
+      // declaração de terceiro — foi o próprio servidor que mediu, na data
+      // escrita no próprio campo ("verificado em DD/MM/AAAA"). Citar a
+      // observação ("seu site estava fora do ar quando verificamos em ...")
+      // é gancho de venda sobre fato próprio, não invasão: continua
       // proibido demonstrar saber dado pessoal ou histórico que não existe.
-      "- EXCEÇÃO: o campo `Auditoria` (quando existir) pode ser citado como o motivo do contato, porque é medição feita pelo próprio sistema agora — nunca como algo que ela disse, pediu ou publicou, e continua proibido citar dado pessoal ou histórico que não existe.",
+      "- EXCEÇÃO: o campo `Auditoria` (quando existir) pode ser citado como o motivo do contato, porque é medição feita pelo próprio sistema na data escrita no próprio campo — nunca como algo que ela disse, pediu ou publicou, nunca como medição de agora, e continua proibido citar dado pessoal ou histórico que não existe.",
       "- Termine com UMA pergunta aberta e fácil de recusar, para ela ter o que responder.",
     ],
   };
