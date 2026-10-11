@@ -4874,6 +4874,7 @@ export type Database = {
           channel: string
           channel_session_id: string
           contact_id: string
+          contato_trava_humano: boolean
           created_at: string
           current_demanda_id: string | null
           group_chat_id: string | null
@@ -4918,6 +4919,7 @@ export type Database = {
           channel?: string
           channel_session_id: string
           contact_id: string
+          contato_trava_humano?: boolean
           created_at?: string
           current_demanda_id?: string | null
           group_chat_id?: string | null
@@ -4962,6 +4964,7 @@ export type Database = {
           channel?: string
           channel_session_id?: string
           contact_id?: string
+          contato_trava_humano?: boolean
           created_at?: string
           current_demanda_id?: string | null
           group_chat_id?: string | null

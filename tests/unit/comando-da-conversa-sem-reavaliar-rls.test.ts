@@ -99,8 +99,12 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
     const idxDef0203 = baseline.indexOf(
       "create or replace function public.comando_da_conversa(c public.conversations)",
     );
-    const idxDrop = baseline.lastIndexOf(
-      "drop function if exists public.comando_da_conversa(public.conversations);",
+    // ⚠️ Âncora no COMENTÁRIO da 0404, e não no último `drop` do arquivo: a
+    // partir da 0645 existe OUTRO drop de `comando_da_conversa` (o que move a
+    // trava do contato para a coluna, issue #2739), e `lastIndexOf` passaria a
+    // fatiar o apêndice errado — a régua desta seção é o apêndice DA 0404.
+    const idxDrop = baseline.indexOf(
+      "-- `comando_da_conversa` segue a forma da 0404 (issue #1571, upstream):",
     );
 
     expect(idxDef0203, "a definição da 0203 sumiu do meio do baseline (não é esta que a 0404 corrige — ela continua lá, no formato antigo)").toBeGreaterThanOrEqual(0);
@@ -119,7 +123,7 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
     const sql = ler(path.join(DIR_MIGRACOES, arquivoDaMigration()!));
     const baseline = ler(path.join(RAIZ, "supabase", "baseline.sql"));
     const apendice = baseline.slice(
-      baseline.lastIndexOf("drop function if exists public.comando_da_conversa(public.conversations);"),
+      baseline.indexOf("-- `comando_da_conversa` segue a forma da 0404 (issue #1571, upstream):"),
     );
 
     const motivo =
