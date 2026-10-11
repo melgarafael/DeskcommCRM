@@ -1222,6 +1222,12 @@ jobs:
       # MODULO_COBRANCA é da instalação, e as duas a medem/restauram (a
       # `desligada` a apaga e confere a ausência; a outra devolve o valor
       # anterior no `finally`). PREVISÃO, não medida: ~1 min + ~2,5 min.
+      # `skills-versao-nova-do-catalogo` entrou em 2026-10-10 (PR da #1977) na
+      # PARTE_6: semeia as três `skill_versions` do cenário pelo service role
+      # (`scripts/seed-e2e-skill-versao-nova.ts`, idempotente e re-usado a cada
+      # rodada porque o "Adotar" do fim do caso move o ponteiro da org), lê só o
+      # banco local e não depende de WAHA, Redis, Resend nem de seed de passo.
+      # É o primeiro e2e de skills do repositório. Medido: 10,3s de caso.
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
@@ -1239,6 +1245,7 @@ jobs:
         qa-l12-inbox.spec.ts
         recursos-opcionais.spec.ts
         redes-sociais-volta-nao-desloga.spec.ts
+        skills-versao-nova-do-catalogo.spec.ts
         sons-dos-avisos.spec.ts
         suspensao-administrativa.spec.ts
 
