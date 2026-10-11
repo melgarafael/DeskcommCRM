@@ -63,13 +63,13 @@ const contato: Contact = {
   first_service_at: null,
 };
 
-function renderTabela() {
+function renderTabela(contacts: Contact[] = [contato]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <ContactsTable contacts={[contato]} orderBy="display_name" orderDir="asc" onSort={() => {}} />
+      <ContactsTable contacts={contacts} orderBy="display_name" orderDir="asc" onSort={() => {}} />
     </QueryClientProvider>,
   );
 }
@@ -114,5 +114,22 @@ describe("ContactsTable — atalho de edição na linha (issue #2715)", () => {
     );
     await user.click(botaoEditar());
     expect(await screen.findByText("Editar contato")).toBeInTheDocument();
+  });
+
+  it("contato anonimizado não ganha o lápis, como na ficha; a linha comum segue tendo", () => {
+    const anonimizado: Contact = {
+      ...contato,
+      id: "00000000-0000-4000-8000-000000000003",
+      name: "Cliente Anonimizado #7",
+      phone_number: null,
+      is_anonymized: true,
+      anonymized_at: "2026-10-02T12:00:00.000Z",
+    };
+    renderTabela([contato, anonimizado]);
+    const linhaAnon = screen.getByText("Cliente Anonimizado #7").closest("tr") as HTMLElement;
+    expect(within(linhaAnon).queryByRole("button", { name: /Editar contato/ })).toBeNull();
+    expect(
+      within(linhaDoContato()).getByRole("button", { name: "Editar contato Web Speed" }),
+    ).toBeInTheDocument();
   });
 });

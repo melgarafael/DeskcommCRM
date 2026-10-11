@@ -299,17 +299,20 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
                     <ChatCircle size={16} weight="regular" aria-hidden />
                   </Button>
                 ) : null}
-                {/* Issue #2715 — atalho de edição na linha: o MESMO diálogo da ficha (EditContactDialog), sem formulário novo. A lista já é invalidada pelo useUpdateContact (["contacts"]). */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  title={t("Editar contato")}
-                  aria-label={`${t("Editar contato")} ${displayName(c, t)}`}
-                  onClick={() => setContatoEmEdicao(c)}
-                >
-                  <PencilSimple size={16} weight="regular" aria-hidden />
-                </Button>
+                {/* Issue #2715 — atalho de edição na linha: o MESMO diálogo da ficha (EditContactDialog), sem formulário novo. A lista já é invalidada pelo useUpdateContact (["contacts"]).
+                    Anonimizado não ganha lápis, como na ficha: o servidor recusa com lgpd_anonymization_irreversible. */}
+                {!c.is_anonymized && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    title={t("Editar contato")}
+                    aria-label={`${t("Editar contato")} ${displayName(c, t)}`}
+                    onClick={() => setContatoEmEdicao(c)}
+                  >
+                    <PencilSimple size={16} weight="regular" aria-hidden />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
