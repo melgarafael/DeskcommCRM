@@ -8,6 +8,104 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.80.0] — 2026-10-11
+
+### Adicionado
+
+- **Editar um contato direto da lista, sem abrir a ficha** Na tela de Contatos, cada linha ganhou um ícone de lápis entre "Abrir conversa" e "Excluir". Ele abre o mesmo formulário de edição da ficha, já preenchido, para corrigir nome, e-mail, telefone, nascimento e etiquetas sem sair da lista. A lista se atualiza ao salvar. Os campos personalizados do funil continuam na ficha. Contatos anonimizados não mostram o lápis, como já acontecia na ficha.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#2717), a partir da issue #2715.
+
+- **A etiqueta já nasce colorida no editor de tags do contato e da conversa** Até aqui a cor de uma etiqueta só se escolhia depois, em Configurações › Etiquetas. Agora, ao criar uma tag no editor de tags do contato ou no da conversa, um botão ao lado do campo "Nova tag…" abre a mesma paleta de oito tons de Configurações, com o nome de cada tom e a opção "Sem cor". O "+" adiciona a tag e grava a cor no vocabulário da organização. O botão aparece só para gerente e administrador, que são os papéis que podem mudar as etiquetas; quem atende como agente continua criando a tag sem cor, como antes. Escolher uma cor ao adicionar uma etiqueta que já existe troca a cor dela para a organização inteira, como em Configurações.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#2720), a partir da issue #2718.
+
+- **Quito e Guayaquil (Equador) entram na lista de fusos** As telas que perguntam o fuso horário (Configurações › Empresa, Configurações › Perfil, a jornada do atendente e a janela de envio) passam a oferecer "Quito e Guayaquil (Equador)", `America/Guayaquil`. Antes, quem operava do Equador escolhia Bogotá ou Lima, que batem no relógio mas não no nome do lugar. O rótulo aparece traduzido em espanhol, inglês e chinês.
+
+  Você não precisa fazer nada. Quem já escolheu um fuso continua com ele.
+
+  Contribuição de @edaben (#2102).
+
+- **Inbox com abas na ordem do trabalho, busca no seletor de etiquetas e etiqueta de automação gravada no contato** A faixa de abas do Inbox passa a seguir a ordem do trabalho: Automático, Fila, Minhas, Todas, Fechadas, Arquivadas. Só a posição mudou; nomes, permissões e contadores são os mesmos. O seletor de etiquetas ganhou um campo de busca que filtra a lista já carregada, sem nova consulta a cada tecla, mantendo a seleção múltipla e o modo E/OU. Na ação "Adicionar tag" das automações agora dá para escolher o destino: o card (o comportamento de sempre, e o padrão) ou o contato do lead, uma das caixas que o filtro de etiquetas do Inbox consulta (a outra é a conversa). Com "Contato do lead", as etiquetas que o contato já tem são preservadas, e se o lead não tiver contato vinculado a ação é ignorada em vez de marcar o card no lugar.
+
+  Você não precisa fazer nada. As automações que já existem não têm o campo novo e continuam marcando o card como antes.
+
+  Contribuição de @webtecnica (#2701), a partir da issue #2498 de @vagnerrm122.
+
+- **Prospecção ganha dias da semana por conexão** A primeira abordagem da prospecção agora só sai nos dias marcados em Conexões › Proteção de envio › Dias da prospecção, dentro da janela de disparo do número. Fora do dia marcado, o envio fica agendado para a próxima abertura, sem tentativa e sem gastar o limite do dia — a fila espera, não morre.
+
+  Os dias são próprios da prospecção: dá para responder no domingo e não prospectar no domingo (ou o contrário). Antes, o domingo único valia para os dois, e quem desligava para não incomodar no fim de semana calava junto a resposta.
+
+  Quem instala agora começa com todos os dias marcados. Quem tinha o domingo desligado migra com segunda a sábado, sem mudar nada na operação — e qualquer mudança de dias fica registrada na auditoria. Nada a fazer na VPS além de atualizar.
+
+### Alterado
+
+- **Falha ao assinar o link de uma mídia vai para o log estruturado** Quando o sistema não conseguia gerar o link temporário de uma foto, áudio ou vídeo do WhatsApp guardado no armazenamento, o erro saía como uma linha solta no log do contêiner, sem dizer de qual mensagem era. Agora ele sai no mesmo formato estruturado dos demais erros, com o identificador da mensagem, o que facilita achar o caso no `docker compose logs`.
+
+  Você não precisa fazer nada. O comportamento da tela não muda.
+
+  Contribuição de @mrmateussiilva, a partir do #1921.
+
+### Corrigido
+
+- **Agendar pausa espera o fuso da organização antes de gravar** O diálogo "Agendar pausa" das Conexões convertia a hora digitada pelo fuso padrão (São Paulo) enquanto o GET `/api/v1/channel-schedules` ainda não tinha respondido. Organização em outro fuso — `America/Manaus`, por exemplo — que agendasse nesse intervalo gravava a pausa com uma hora de diferença, sem nenhum aviso na tela (#2676).
+
+  Agora não existe fuso padrão no cliente: enquanto o fuso não chega, os campos de data/hora e o botão "Agendar" ficam travados, e um clique forçado não vira payload nenhum. Se o GET falhar, o diálogo mostra o motivo em vermelho em vez de gravar na hora errada. Quando o fuso chega, tudo habilita e a conversão é a mesma de sempre — no fuso da organização, lido do banco.
+
+  A partir da issue #2676, da triagem da tela do #2673.
+
+- **Assumir a conversa interrompe o trabalho pendente da IA** Ao assumir ou transferir uma conversa para uma pessoa, os turnos de resposta autônoma daquela conversa perdem a autorização para continuar. A IA confere essa autorização antes de gravar uma reserva ou enviar outra mensagem, inclusive se a conversa for devolvida ao automático logo depois. Um acompanhamento já em execução também perde o turno, preservando a política de pausa ou cancelamento do fluxo e sua retomada. Se outra execução já tomou a tarefa, o trabalhador registra um aviso interno sem alterar aquela execução. Lembretes, respostas aprovadas e atribuição automática de responsável mantêm seus caminhos próprios. Uma operação externa já iniciada não pode ser desfeita por essa interrupção. Crédito: @ozzure.
+
+- **Cópias de playbook editadas antes da 1.64.1 voltam a avisar versão nova do catálogo** Até a 1.64.1, editar pela tela um playbook instalado do catálogo gravava a versão nova sem a ligação com a origem. A cópia passava a aparecer como "manual" e nunca mais avisava quando o catálogo trazia uma versão nova. A 1.64.1 corrigiu as edições daí em diante, mas as cópias editadas antes continuavam desligadas. Agora a atualização reconstrói essa ligação a partir do próprio histórico de versões da cópia, só para versões gravadas entre 23 e 30 de setembro de 2026 (do lançamento do editor até a correção), e só quando a cópia veio do catálogo. O conteúdo dos playbooks não muda, e cópias criadas por importação de pacote .zip fora desse período continuam manuais. Quem só atualizou para a 1.64.1 bem depois de 30 de setembro e editou nesse meio-tempo não é alcançado por esta reconstrução.
+
+  Você não precisa fazer nada. Depois da atualização, as cópias reconstruídas podem passar a mostrar o aviso de versão nova do catálogo.
+
+  Contribuição de @webtecnica (#2716), a partir da issue #1974.
+
+- **O passo "Veja ele atender" do onboarding deixa de chamar de erro uma resposta que deu certo** No último passo do onboarding, "Veja ele atender", a pessoa manda uma mensagem de teste para o funcionário de IA. Quando ele respondia normalmente, a tela mostrava "Ele não conseguiu responder", com o motivo `o ensaio terminou como "ok"`, e mandava a pessoa procurar defeito na chave de IA, onde não faltava nada. Agora a resposta aparece na tela. Falha de verdade (chave sem saldo, mídia que não sairia) continua aparecendo como erro.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#2692), a partir da issue #2686 de @Abel-Odorico.
+
+- **Edição e movimentação do mesmo negócio não se atrapalham no turno da IA** Quando o agente pede várias escritas no mesmo negócio no mesmo turno, elas aguardam a conclusão umas das outras. Isso evita que a edição da descrição invalide a movimentação que o próprio agente pediu junto. Antes de começar cada escrita, a ponte confere novamente a autoridade do atendimento, inclusive depois da espera na fila. Se uma chamada exceder a janela padrão de cinco minutos, a IA recebe um resultado incerto e orientação para pedir conferência humana; a operação em andamento não é cancelada, e novas escritas daquele negócio no mesmo processo são recusadas até ela terminar. Negócios diferentes e leituras continuam paralelos, e alterações humanas durante uma movimentação continuam protegidas pela conferência de versão. Não é preciso configurar nada. A correção cobre as ferramentas com negócio explícito e etiquetas do negócio; operações indiretas da agenda e processos distintos mantêm suas proteções existentes. Crédito: @ozzure.
+
+- **Mensagens de follow-up passam a chamar o cliente pelo nome** As mensagens de follow-up de texto fixo e de modelo de mensagem (o texto salvo em Modelos) passam a preencher `{{nome}}`, `{{primeiro_nome}}`, `{{contact.*}}` e `{{lead.*}}` com os dados do contato e do negócio, do mesmo jeito que as automações já faziam. Antes, só `{{volta}}` e `{{voltas}}` eram preenchidos, e o cliente recebia a marcação crua, como "Oi {{primeiro_nome}}". O modelo aprovado do WhatsApp oficial segue a regra própria dele.
+
+  Variável sem valor sai da frase junto com o espaço: "Oi {{primeiro_nome}}!" chega como "Oi!" quando o contato não tem nome.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#2695), a partir da issue #2528.
+
+- **Follow-up em espera pela data do retorno deixou de ser cancelado na hora de disparar** Quem usa espera longa no follow-up ("volte a falar em 28 dias") via a inscrição sumir no dia do disparo, com o motivo "Atendimento encerrado ou substituído" e um aviso na Central — mesmo com a conversa aberta. Medido numa instalação real: as inscrições em espera pela data cancelaram cerca de 1 minuto depois da hora programada, sem chegar a enviar. Agora a espera atravessa a data e o fluxo segue para o envio, e o aviso na Central só aparece quando o atendimento realmente acabou no meio da espera.
+
+  Você não precisa fazer nada. Inscrições que já foram canceladas por esse motivo não voltam sozinhas; se alguma ainda fizer sentido, crie o follow-up de novo pelo caminho de sempre.
+
+  Contribuição de @paulolimajr77.
+
+- **Worker de IA parado deixa de responder "saudável" em silêncio** O processamento que transforma as mensagens recebidas em respostas da IA roda num laço dentro do serviço do worker. Se uma consulta ao banco travasse no meio de uma volta, o laço parava — as mensagens continuavam chegando, mas nenhuma resposta era enfileirada — e o healthz do serviço continuava respondendo "ok": foi assim que uma instalação real ficou dois dias sem a IA responder, com o aviso verde. Agora o worker carimba cada volta concluída, o healthz responde não saudável quando esse carimbo passa de cinco minutos, e a Central da equipe abre um aviso quando o laço fica parado (o aviso é gravado no mesmo banco, então depende de ele ainda atender). O aviso se resolve sozinho quando o processamento volta.
+
+  Você não precisa fazer nada. Quem acompanha o `docker compose ps` pode ver o worker como `unhealthy` enquanto o laço estiver parado; isso não reinicia o worker nem reverte uma atualização. O `/healthz` do worker ganhou o campo `ia_drain`.
+
+  Contribuição de @Tong-bit-art (#2691), a partir da issue #2505.
+
+- **Trocar de plano no teste grátis não espera mais o link de pagamento vencer** Quando a empresa trocava de plano no teste grátis com um link de pagamento ainda em aberto, a troca era recusada até o link vencer (até 24 horas) ou ser pago. Agora o sistema cancela esse link no provedor de pagamento e a troca vale na hora; o próximo "Assinar" gera um link novo, já com o preço do plano escolhido. Se o provedor não confirmar o cancelamento, nada muda e a recusa de antes continua valendo, para nenhum link sobreviver com o preço antigo. Links criados antes desta versão seguem a regra antiga até vencerem.
+
+  A releitura da cobrança também passou a conferir o preço da assinatura no provedor contra o preço do plano gravado. Quando os dois divergem, o registro de auditoria ganha a ação `cobranca.preco_divergente`, com os dois valores. Nada é corrigido sozinho: quem administra decide.
+
+  Você não precisa fazer nada. A atualização acrescenta uma coluna opcional em `cobranca_assinaturas`, aplicada pelo próprio `update.sh`.
+
+  Contribuição de @webtecnica (#2697), a partir da issue #2609.
+
+- **Contatos compartilhados aparecem corretamente no Inbox** Cartões de contato com telefone no formato `item1.TEL` agora permitem abrir a conversa. Ao responder a um contato compartilhado, a prévia mostra o nome em vez do texto bruto do vCard. Nenhuma ação é necessária após atualizar.
+
+  Contribuição de @Natan2121 (#2712).
+
 ## [1.79.0] — 2026-10-10
 
 ### ⚠️ Requer atenção
@@ -11289,7 +11387,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.79.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.80.0...HEAD
+[1.80.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.79.0...v1.80.0
 [1.79.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.78.0...v1.79.0
 [1.78.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.77.0...v1.78.0
 [1.77.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.76.0...v1.77.0
