@@ -102,7 +102,7 @@ beforeAll(() => {
       from public.skill_versions where ${NAMESPACE} and organization_id is not null;
     select 'linhas_depois=' || count(*) from public.skill_versions where ${NAMESPACE};
     select 'conteudo_depois=' || ${CONTEUDO};
-    select 'trava=' || tgenabled from pg_trigger
+    select 'trava=' || tgenabled::text from pg_trigger
      where tgname = 'trg_skill_versions_immutable' and tgrelid = 'public.skill_versions'::regclass;
     select 'retrato_1=' || ${RETRATO};
     ${bloco}
