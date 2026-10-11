@@ -19,7 +19,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { cifrarSenha } from "@/lib/external-db/credenciais";
-import { fecharPool } from "@/lib/external-db/conexao";
+import { fecharPool } from "@/lib/external-db/drivers";
 import { validarHostDeBanco } from "@/lib/external-db/guardas";
 import { atualizarConexaoSchema } from "@/lib/external-db/schemas";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
@@ -32,7 +32,17 @@ import { seModuloDesligado } from "../../_falha";
 export const dynamic = "force-dynamic";
 
 const COLUNAS_SEGURAS =
-  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at";
+  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode, sources_count";
+
+/**
+ * As escritas (insert/update) voltam da TABELA BASE, que não tem as colunas calculadas da view
+ * (`sources_count` só existe em `external_db_connections_safe`). É um texto LITERAL de propósito:
+ * o cliente do Supabase tipa o resultado lendo o texto do `select` em compilação, e uma string
+ * calculada (`split/filter/join`) vira `GenericStringError`. Mantenha igual a `COLUNAS_SEGURAS`,
+ * menos as colunas calculadas.
+ */
+const COLUNAS_DA_TABELA =
+  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -127,7 +137,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .update(patch)
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
-    .select(COLUNAS_SEGURAS)
+    .select(COLUNAS_DA_TABELA)
     .maybeSingle();
 
   if (error) {

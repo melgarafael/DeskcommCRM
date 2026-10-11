@@ -3455,6 +3455,16 @@ Spec: `tests/e2e/mapas-em-provedores.spec.ts`.
 | J40.7 | O pino com endereço aproximado, aberto na conversa pela equipe | o cartão do pino mostra «Rua, Cidade, Estado (aprox.)», com o texto inteiro no `title` (o cartão corta com …) e o toque abre as COORDENADAS no mapa | **PASS pela tela** — Evidência: `evidence/triagem-16set-l12/mapas-03-pino-na-conversa.png` |
 | J40.8 | A API do canal intermediado não responde a tempo na ingestão do pino (medido 29/09/2026: timeout duas vezes seguidas) | a mensagem entra com o marcador e pede nova busca (`message.location_retry_requested`); 1 min depois, e a cada 2 min até 15, busca de novo e grava tipo `location` + link (+ endereço aproximado com chave); nunca rebaixa um pino que já tem coordenadas; desiste sem virar incidente | **PASS (unit)** — `tests/unit/pino-reintento.test.ts`, `tests/unit/channel-ingest-zernio.test.ts` |
 
+### Dados externos — o que o assistente pode ver
+
+| Prioridade | Caso | Prova |
+|---|---|---|
+| [P0] | Conexão nova nasce sem nada liberado e o painel leva a pessoa a escolher | `tests/e2e/integracao-dados-fontes-liberadas.spec.ts` passos 2 e 3 (catálogo simulado na rede; o catálogo real contra um PostgreSQL fica para a prova na VPS) |
+| [P0] | Marcar, descrever e salvar; a lista persiste | mesmo spec, passos 3 e 4 |
+| [P1] | Coluna do cliente travada; modo "tudo" com aviso forte | mesmo spec, passos 3 e 5 |
+| [P1] | Quem só lê vê a lista e não edita | mesmo spec, passo 6 |
+| [P2] | Fonte que sumiu do banco, catálogo fora do ar | só teste de componente (`PainelDeFontes.test.tsx` 6 e 9) |
+
 ## J42 — Gestão de tenants pelo admin da plataforma `[P1]` (2026-09-29, recortada em 2026-10-05)
 
 Corrigir o e-mail de acesso de um membro, editar o cadastro e excluir um tenant pela
