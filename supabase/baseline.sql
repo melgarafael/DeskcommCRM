@@ -54413,3 +54413,19 @@ on conflict (model) do update set
   completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
   notes = excluded.notes,
   superseded_at = null;
+
+-- ---- botão "Forçar atualização" nos estados de falha (migration 0647) ----
+-- A intenção e o alvo viajam NO RUN: o agente do host só lê o pedido no
+-- heartbeat seguinte. Sem `force_requested` ele rodaria `update.sh` sem
+-- `--force` — que, com o código já na versão alvo, responde "você já está na
+-- versão mais recente" e sai com 0: o falso sucesso que desligava o botão.
+-- `force_target` é o MESMO `--to` que a tela mostra ao lado do botão; o
+-- cliente manda só `{ force: true }`, nunca um comando.
+alter table public.system_update_runs
+  add column if not exists force_requested boolean not null default false,
+  add column if not exists force_target     text    not null default '';
+
+comment on column public.system_update_runs.force_requested is
+  'Pedido veio do botão "Forçar atualização" da tela: o agente do host roda o update.sh com --force.';
+comment on column public.system_update_runs.force_target is
+  'Tag que o update.sh instala neste pedido (o --to), derivada do run de falha que a tela mostrou. Vazio = sem --to: o host resolve o alvo.';

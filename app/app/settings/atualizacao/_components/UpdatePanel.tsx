@@ -35,7 +35,7 @@ function semV(versao: string | undefined): string {
  * de desenvolvimento (instalação fora de release), e aí não existe imagem
  * publicada com esse nome para puxar — nesse caso, só `--force`.
  */
-function comandoDeVolta(fromVersion: string | undefined): string {
+export function comandoDeVolta(fromVersion: string | undefined): string {
   const anterior = semV(fromVersion);
   return /^\d+\.\d+\.\d+/.test(anterior)
     ? `bash hostgator-setup-kit/update.sh --to v${anterior} --force`
@@ -55,22 +55,41 @@ export function UpdatePanel() {
   const queryClient = useQueryClient();
   const [erro, setErro] = useState<string | null>(null);
 
+  // Os dois cliques da tela — o de sempre e o de força — caem no MESMO
+  // endpoint, com o MESMO tratamento de sucesso e de erro. Só o corpo os
+  // separa, e é o corpo que muda o que o servidor faz lá na frente.
+  const aoConcluir = () => {
+    setErro(null);
+    queryClient.invalidateQueries({ queryKey: ["system-version"] });
+  };
+  const aoFalhar = (err: unknown) => {
+    // 409 é estado de negócio ("já tem um run rodando" / "já está em dia"),
+    // não falha técnica — mostra a mensagem que a API já escreveu em
+    // português em vez de um genérico "tente de novo".
+    const mensagem =
+      err instanceof ApiError && err.status === 409
+        ? t(err.message)
+        : t("Não consegui iniciar a atualização. Tente de novo em instantes.");
+    setErro(mensagem);
+  };
+
   const atualizar = useMutation({
     mutationFn: async () => apiClient.post("/api/v1/system/update", {}),
-    onSuccess: () => {
-      setErro(null);
-      queryClient.invalidateQueries({ queryKey: ["system-version"] });
-    },
-    onError: (err) => {
-      // 409 é estado de negócio ("já tem um run rodando" / "já está em dia"),
-      // não falha técnica — mostra a mensagem que a API já escreveu em
-      // português em vez de um genérico "tente de novo".
-      const mensagem =
-        err instanceof ApiError && err.status === 409
-          ? t(err.message)
-          : t("Não consegui iniciar a atualização. Tente de novo em instantes.");
-      setErro(mensagem);
-    },
+    onSuccess: aoConcluir,
+    onError: aoFalhar,
+  });
+
+  // O atalho dos estados de falha (#2756). Não é um caminho novo: é o MESMO
+  // endpoint com um corpo de uma chave. O cliente manda a intenção, nunca um
+  // comando — quem transforma isso no `--force` (e no `--to` da versão de
+  // onde a tentativa saiu) é o servidor, a partir do mesmo run que a tela leu
+  // para montar o comando visível logo abaixo. O botão normal continua fora
+  // deste estado de propósito: sem força, ele é o falso sucesso descrito em
+  // `Saida`.
+  const forcar = useMutation({
+    mutationFn: async () => apiClient.post("/api/v1/system/update", { force: true }),
+    onSuccess: aoConcluir,
+    onError: aoFalhar,
   });
 
   // O app reinicia no meio da atualização: a requisição falhar aqui é
@@ -245,6 +264,7 @@ export function UpdatePanel() {
           erro={erro}
           texto={`${t("Para deixar o servidor inteiro de volta na versão")} ${anterior} ${t("— inclusive o código, que já foi trocado —, quem tem acesso pode rodar:")}`}
           comando={comandoDeVolta(data.run.from_version)}
+          forcar={{ mutate: () => forcar.mutate(), isPending: forcar.isPending }}
         />
       </Layout>
     );
@@ -280,6 +300,7 @@ export function UpdatePanel() {
           erro={erro}
           texto={`${t("Para colocar o sistema de volta no ar na versão")} ${anterior}${t(", quem tem acesso ao servidor precisa rodar:")}`}
           comando={comandoDeVolta(data.run.from_version)}
+          forcar={{ mutate: () => forcar.mutate(), isPending: forcar.isPending }}
         />
       </Layout>
     );
@@ -590,11 +611,15 @@ function BotaoAtualizar({
  *
  * Depois de uma tentativa que falhou, o código do servidor já está na versão
  * nova (o `git checkout` deu certo; quem não subiu foi o container). Um novo
- * pedido pelo botão faria o agente rodar `update.sh --to <mesma tag>`, que
- * responde "você já está na versão mais recente", sai com sucesso e reportaria
- * um desfecho BOM sem ter trocado imagem nenhuma. Por isso o botão fica
- * desligado nos estados de falha: o que resolve ali é `--force`, e é o comando
- * — sempre presente — que leva a pessoa a ele.
+ * pedido pelo botão normal faria o agente rodar `update.sh --to <mesma tag>`,
+ * que responde "você já está na versão mais recente", sai com sucesso e
+ * reportaria um desfecho BOM sem ter trocado imagem nenhuma — por isso o botão
+ * normal continua DESLIGADO aqui, e o que resolve neste estado é `--force`.
+ *
+ * O que o #2756 adiciona é o atalho para esse `--force` (`BotaoForcar`), sem
+ * tirar o cuidado do desligado: o `--force` é um pedido DIFERENTE, e entra
+ * pelo MESMO endpoint com `{ force: true }`. O comando continua na tela — é o
+ * que ele executa, e é a prova de que o botão não faz nada escondido.
  */
 function Saida({
   botao,
@@ -603,6 +628,7 @@ function Saida({
   erro,
   texto,
   comando,
+  forcar,
 }: {
   botao: boolean;
   mutate: () => void;
@@ -610,6 +636,8 @@ function Saida({
   erro: string | null;
   texto: string;
   comando: string;
+  /** O clique de força deste estado, com o pendente dele; nulo onde não há. */
+  forcar?: { mutate: () => void; isPending: boolean } | null;
 }) {
   return (
     <div className="mt-6 border-t pt-4">
@@ -618,9 +646,51 @@ function Saida({
           <BotaoAtualizar mutate={mutate} isPending={isPending} erro={erro} />
         </div>
       )}
+      {forcar && (
+        <div className="mb-4">
+          <BotaoForcar mutate={forcar.mutate} isPending={forcar.isPending} erro={erro} />
+        </div>
+      )}
       <p className="text-sm text-muted-foreground">{texto}</p>
       <Comando comando={comando} />
     </div>
+  );
+}
+
+/**
+ * O atalho do comando que está logo abaixo (#2756).
+ *
+ * Dispara o MESMO `POST /system/update` do botão normal, com um corpo de uma
+ * chave: `{ force: true }`. O alvo (`--force` e, quando existe, `--to` da
+ * versão de onde a tentativa saiu) é resolvido no SERVIDOR, a partir do mesmo
+ * run que a tela leu — a tela não passa caminho nenhum, nem este botão. A
+ * diferença para o botão normal é exatamente o que a espera já cobre: um
+ * pedido que insiste num estado de falha precisa dizer que insiste.
+ */
+function BotaoForcar({
+  mutate,
+  isPending,
+  erro,
+}: {
+  mutate: () => void;
+  isPending: boolean;
+  erro: string | null;
+}) {
+  const t = useT();
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={mutate} disabled={isPending}>
+          {isPending ? t("Forçando…") : t("Forçar atualização")}
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          {t(
+            "Rodo o comando de baixo por você, sem precisar abrir o terminal. Faço uma cópia de segurança dos seus dados antes.",
+          )}
+        </span>
+      </div>
+      {erro && <p className="mt-3 text-sm text-error-fg">{erro}</p>}
+    </>
   );
 }
 

@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { UpdatePanel } from "./UpdatePanel";
+import { UpdatePanel, comandoDeVolta } from "./UpdatePanel";
+import { alvoDeVolta } from "@/lib/system/update-force";
+import { apiClient } from "@/lib/api/client";
 import type { SystemVersion } from "@/hooks/system/useSystemVersion";
 
 /**
@@ -181,5 +183,97 @@ describe("tela de atualização — a rodada conta a disputa do banco", () => {
 
     expect(screen.getByText(/foram 3 passadas e 2 retentativas/)).toBeInTheDocument();
     expect(screen.getByText(/\.update\.log/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * O #2756: o estado de falha ganha um botão, e ele faz EXATAMENTE o que a tela
+ * já mostrava para copiar. A saída daquele estado não virou um caminho novo —
+ * é o MESMO `POST /system/update`, com o corpo de uma chave. O alvo é resolvido
+ * no servidor (o `alvoDeVolta` de lib/system/update-force, a mesma conta que
+ * `comandoDeVolta` faz aqui); o teste de espelho no fim costura os dois lados.
+ */
+function falha(overrides: Partial<NonNullable<SystemVersion["run"]>> = {}): SystemVersion {
+  return {
+    ...rodada({
+      status: "failed",
+      last_step: null,
+      from_version: "1.0.0",
+      to_version: "1.1.0",
+      superseded: false,
+      log_tail: "docker respondeu com erro",
+      ...overrides,
+    }),
+    just_updated: false,
+    // Falha com o host anunciando a MESMA versão é o caso mais comum (o
+    // checkout deu certo, o container é que não subiu). A tela não depende
+    // disto, mas o fixture diz a verdade.
+    update_available: false,
+  };
+}
+
+describe("tela de atualização — o botão de força nos estados de falha (#2756)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("o comando que já estava na tela continua na tela: o botão é atalho, não substituto", () => {
+    renderTela(falha());
+
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh --to v1.0.0 --force")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Forçar atualização" })).toBeInTheDocument();
+  });
+
+  it("o botão normal continua FORA deste estado — ele é o falso sucesso que desligava", () => {
+    renderTela(falha());
+
+    expect(screen.queryByRole("button", { name: "Atualizar agora" })).not.toBeInTheDocument();
+  });
+
+  it("clicar manda { force: true } para o MESMO endpoint do botão normal", async () => {
+    renderTela(falha());
+
+    fireEvent.click(screen.getByRole("button", { name: "Forçar atualização" }));
+
+    await waitFor(() =>
+      expect(apiClient.post).toHaveBeenCalledWith("/api/v1/system/update", { force: true }),
+    );
+  });
+
+  it("no desfecho em que o servidor voltou atrás, o botão e o comando também aparecem", () => {
+    renderTela(falha({ status: "failed_rolled_back" }));
+
+    expect(screen.getByRole("button", { name: "Forçar atualização" })).toBeInTheDocument();
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh --to v1.0.0 --force")).toBeInTheDocument();
+  });
+
+  it("falha JÁ SUPERADA não ganha botão: quem não é mais o estado do servidor não manda mais", () => {
+    renderTela(falha({ superseded: true }));
+
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/update\.sh/)).not.toBeInTheDocument();
+  });
+
+  it("instalação de desenvolvimento (from_version sem versão): só --force — e o servidor deriva o mesmo", () => {
+    renderTela(falha({ from_version: "abc1234" }));
+
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh --force")).toBeInTheDocument();
+    expect(alvoDeVolta("abc1234")).toBe("");
+  });
+
+  it("fora do estado de falha não existe botão de força", () => {
+    renderTela(CHANGELOG_LONGO);
+
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).not.toBeInTheDocument();
+  });
+
+  it("espelho: o alvo que a rota deriva é o MESMO --to que a tela promete ao lado do botão", () => {
+    for (const from of ["1.0.0", "v1.0.0", "1.2.3-rc.1", "abc1234", "", undefined]) {
+      const alvo = alvoDeVolta(from);
+      const comando = comandoDeVolta(from);
+      if (alvo) {
+        expect(comando).toBe(`bash hostgator-setup-kit/update.sh --to ${alvo} --force`);
+      } else {
+        expect(comando).toBe("bash hostgator-setup-kit/update.sh --force");
+      }
+    }
   });
 });

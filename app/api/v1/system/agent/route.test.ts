@@ -136,6 +136,33 @@ describe("POST /api/v1/system/agent", () => {
     expect(body.data.run_id).toBe(RUN_ID);
   });
 
+  it("heartbeat devolve a intenção de força e o alvo: é o agent.sh que vira --force, nunca o payload", async () => {
+    // #2756: o botão da tela manda `{ force: true }`; a rota guarda nos DOIS o
+    // alvo; o agente lê aqui na frente, no heartbeat seguinte. Sem estes dois
+    // campos no corpo da resposta, o pedido chega ao host sem a força e o
+    // update.sh responde "você já está na versão mais recente" — sucesso sem
+    // trocar imagem nenhuma.
+    runRow = {
+      id: RUN_ID,
+      status: "dispatched",
+      dispatched_at: new Date().toISOString(),
+      force_requested: true,
+      force_target: "v1.0.0",
+    };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.force).toBe(true);
+    expect(body.data.force_target).toBe("v1.0.0");
+  });
+
+  it("pedido pelo botão de sempre: force=false e alvo vazio, na resposta do heartbeat", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.force).toBe(false);
+    expect(body.data.force_target).toBe("");
+  });
+
   it("o run em 'dispatched' basta como pedido — nenhum flag em system_version porteia", async () => {
     // Havia DUAS fontes de verdade para "alguém pediu": o run e o flag
     // `update_requested_at`, escrito por um segundo write sem transação e sem

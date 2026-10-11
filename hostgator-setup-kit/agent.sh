@@ -352,8 +352,31 @@ export API SECRET ERRLOG RUN_ID
 # roda sem --to: o update.sh resolve o alvo sozinho e recusa em português o
 # que não for atualização de verdade — o motivo chega à tela pelo log_tail,
 # em vez de o run sumir sem explicação.
+#
+# `force` é a intenção do botão "Forçar atualização" (#2756) — e é o único
+# caminho que o pedido tem até este script: o cliente manda `{ force: true }`,
+# a rota guarda nos DOIS o `force_target` (o mesmo `--to` que a tela mostra ao
+# lado do botão, derivado do run de falha) e quem vira flag é AQUI, nunca o
+# payload. Sem `--force`, com o código do host já na versão alvo, o update.sh
+# responderia "você já está na versão mais recente" e sairia com 0 — SUCESSO
+# SEM TROCAR IMAGEM, que é o falso sucesso que mantinha o botão desligado.
+FORCAR="$(json_field "$RESP" force)" || true
+ALVO_DA_FORCA="$(json_field "$RESP" force_target)" || true
 UPDATE_ARGS=()
-[ -n "$LATEST_TAG" ] && UPDATE_ARGS=(--to "$LATEST_TAG")
+if [ "$FORCAR" = "true" ]; then
+  # O alvo só entra se parecer tag de release (`v` + dígito), que é exatamente
+  # o que a tela aceita antes de prometer o comando. Qualquer outra coisa —
+  # instalação de desenvolvimento, alvo perdido — vira `--force` puro: o
+  # update.sh decide o alvo e recusa em português o que não puder instalar,
+  # em vez de rodar errado em silêncio. O valor vem entre aspas e nunca é
+  # avaliado, só casado.
+  case "$ALVO_DA_FORCA" in
+    v[0-9]*) UPDATE_ARGS=(--to "$ALVO_DA_FORCA" --force) ;;
+    *)       UPDATE_ARGS=(--force) ;;
+  esac
+elif [ -n "$LATEST_TAG" ]; then
+  UPDATE_ARGS=(--to "$LATEST_TAG")
+fi
 
 # Cada execução do agente começa sem medição nenhuma do banco: o arquivo da
 # rodada é desta rodada, e resíduo da execução anterior não pode virar história

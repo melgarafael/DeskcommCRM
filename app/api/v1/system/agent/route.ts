@@ -169,7 +169,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // um `update_requested: false` otimista.
     const { data: run, error: runLookupError } = await db
       .from("system_update_runs")
-      .select("id, status")
+      .select("id, status, force_requested, force_target")
       .eq("status", "dispatched")
       .order("dispatched_at", { ascending: false })
       .limit(1)
@@ -182,7 +182,19 @@ export async function POST(req: NextRequest): Promise<Response> {
       return fail("internal_error", "Não consegui checar o pedido de atualização.", 500);
     }
 
-    return ok({ update_requested: Boolean(run), run_id: run?.id ?? null });
+    // O pedido É o run (migration 0090). `force`/`force_target` são a intenção
+    // do botão "Forçar atualização" (#2756): o agente roda `update.sh --to
+    // <alvo> --force` — sem `--force`, com o código já na versão alvo, o script
+    // responderia "você já está na versão mais recente" e sairia com sucesso
+    // sem trocar imagem nenhuma (o falso sucesso que desligava o botão). Campos
+    // antigos no campo, novos aqui: agente antigo não lê `force` e continua
+    // rodando `update.sh --to <tag>` como antes, sem erro nenhum.
+    return ok({
+      update_requested: Boolean(run),
+      run_id: run?.id ?? null,
+      force: run?.force_requested ?? false,
+      force_target: run?.force_target ?? "",
+    });
   }
 
   // Erro de leitura ≠ "não existe": sem checar, uma falha de banco viraria 404
