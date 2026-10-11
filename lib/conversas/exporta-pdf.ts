@@ -356,6 +356,8 @@ interface DadosDoPdf {
   vazio: string;
   linhas: LinhaDoHistorico[];
   rotuloDeDirecao: (direcao: "inbound" | "outbound") => string;
+  /** "página {atual} de {total}", já traduzido — o render só troca os números. */
+  rotuloDePagina: string;
   controlador: string | null;
   marca: MarcaDaOrganizacaoParaPdf;
 }
@@ -406,7 +408,9 @@ function montarDocumento(d: DadosDoPdf): React.ReactElement<React.ComponentProps
         style: styles.footer,
         fixed: true,
         render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
-          `${d.controlador ?? d.titulo} — página ${pageNumber} de ${totalPages}`,
+          `${d.controlador ?? d.titulo} — ${d.rotuloDePagina
+            .replace("{atual}", String(pageNumber))
+            .replace("{total}", String(totalPages))}`,
       }),
     ),
   );
@@ -453,7 +457,11 @@ export async function montarPdfDaConversa(
       `${t("Aberta em")}: ${formatarDataHora(conversa.created_at, fuso, idioma)}`,
       `${t("Mensagens")}: ${linhas.length}`,
       ...(opcoes.exportadoPor
-        ? [`${t("Exportado por")}: ${opcoes.exportadoPor} em ${formatarDataHora(geradoEm, fuso, idioma)}`]
+        ? [
+            `${t("Exportado por")}: ${t("{quem} em {quando}")
+              .replace("{quem}", opcoes.exportadoPor)
+              .replace("{quando}", formatarDataHora(geradoEm, fuso, idioma))}`,
+          ]
         : []),
     ],
     aviso: opcoes.truncada
@@ -465,6 +473,7 @@ export async function montarPdfDaConversa(
     vazio: t("Nenhuma mensagem nesta conversa."),
     linhas,
     rotuloDeDirecao: (direcao) => (direcao === "inbound" ? t("recebida") : t("enviada")),
+    rotuloDePagina: t("página {atual} de {total}"),
     controlador,
     marca,
   };

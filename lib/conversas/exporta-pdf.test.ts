@@ -19,6 +19,7 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(), isServiceRoleConfigured: () => true }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/i18n/dicionario", () => ({ traduzir: (texto: string) => texto }));
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -33,6 +34,7 @@ vi.mock("@/lib/propostas/marca-da-organizacao-para-pdf", () => ({
   })),
 }));
 
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit } from "@/lib/audit";
 
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
@@ -108,7 +110,10 @@ type Linha = Record<string, unknown>;
  * escrita real, não de leitura: a rota pede DESC e `linhasDoHistorico`
  * reordena — é esse desacoplamento que o teste mede.
  */
-function clienteFalso(): SupabaseClient {
+function clienteFalso(
+  ajustar: (tabelas: Record<string, Linha[]>) => void = () => {},
+  erroEm: string | null = null,
+): SupabaseClient {
   const tabelas: Record<string, Linha[]> = {
     organizations: [
       {
@@ -180,6 +185,8 @@ function clienteFalso(): SupabaseClient {
     ],
   };
 
+  ajustar(tabelas);
+
   const criar = (tabela: string) => {
     const filtros: Array<[string, unknown]> = [];
     let ordenar: { campo: string; asc: boolean } | null = null;
@@ -212,11 +219,17 @@ function clienteFalso(): SupabaseClient {
         limite = n;
         return cadeia;
       },
-      maybeSingle: async () => ({ data: selecionar()[0] ?? null, error: null }),
+      maybeSingle: async () =>
+        tabela === erroEm
+          ? { data: null, error: { message: "falha simulada" } }
+          : { data: selecionar()[0] ?? null, error: null },
       then: (
         aoDar: ((v: unknown) => unknown) | null | undefined,
         aoFalhar: ((e: unknown) => unknown) | null | undefined,
-      ) => Promise.resolve({ data: selecionar(), error: null }).then(aoDar, aoFalhar),
+      ) =>
+        Promise.resolve(
+          tabela === erroEm ? { data: null, error: { message: "falha simulada" } } : { data: selecionar(), error: null },
+        ).then(aoDar, aoFalhar),
     };
     return cadeia;
   };
@@ -247,6 +260,7 @@ async function rota() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(nomesDosAtendentes).mockResolvedValue(new Map(nomesDosUsuarios));
+  vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, count: 1, limit: 5, window_sec: 60 });
 });
 
 describe("conversas/exporta-pdf", () => {
@@ -388,5 +402,73 @@ describe("conversas/exporta-pdf", () => {
 
     expect(res.status).toBe(422);
     expect(createClient).not.toHaveBeenCalled();
+  });
+  it("contato anonimizado: o PDF e o nome do arquivo saem com o rótulo anônimo, nunca o nome antigo", async () => {
+    permitir();
+    // O estado que `fn_lgpd_cascade_redact_contact` deixa no banco: nome e
+    // display_name viram o rótulo, telefone some, corpo e metadata redigidos.
+    vi.mocked(createClient).mockResolvedValue(
+      clienteFalso((tabelas) => {
+        tabelas.contacts = [
+          {
+            id: CONTATO_ID,
+            organization_id: ORG_ID,
+            name: "Cliente Anonimizado #7",
+            display_name: "Cliente Anonimizado #7",
+            phone_number: null,
+          },
+        ];
+        tabelas.messages = (tabelas.messages ?? []).map((m) => ({ ...m, body: "[mensagem anonimizada]", metadata: {} }));
+      }) as never,
+    );
+
+    const { GET } = await rota();
+    const res = await GET(requisicao(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toMatch(/filename="historico-conversa-cliente-anonimizado-7-/);
+    const texto = await extractPdfText(Buffer.from(await res.arrayBuffer()));
+    expect(texto).toContain("Cliente Anonimizado #7");
+    expect(texto).toContain("[mensagem anonimizada]");
+    expect(texto).not.toContain("José");
+    expect(texto).not.toContain("99999");
+    expect(texto).not.toContain("Primeira mensagem do cliente");
+  });
+
+  it("o rodapé numera as páginas pela frase traduzível", async () => {
+    const pdf = await montarPdfDaConversa(clienteFalso(), ORG_ID, conversa, mensagensDe3(), {
+      t,
+      exportadoPor: "Carlos Supervisor",
+      geradoEm: "2026-10-03T15:30:00.000Z",
+    });
+    expect(pdf.ok).toBe(true);
+    if (!pdf.ok) return;
+    const texto = await extractPdfText(pdf.buffer);
+    expect(texto).toContain("página 1 de 1");
+    expect(texto).toContain("Carlos Supervisor em 03/10/2026 12:30");
+  });
+
+  it("GET além do teto de exportações devolve 429 com Retry-After e não lê o banco", async () => {
+    permitir();
+    vi.mocked(checkRateLimit).mockResolvedValueOnce({ allowed: false, count: 6, limit: 5, window_sec: 60 });
+
+    const { GET } = await rota();
+    const res = await GET(requisicao(), ctx());
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(createClient).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("GET com falha ao ler o contato devolve 500 em vez de um PDF sem nome", async () => {
+    permitir();
+    vi.mocked(createClient).mockResolvedValue(clienteFalso(() => {}, "contacts") as never);
+
+    const { GET } = await rota();
+    const res = await GET(requisicao(), ctx());
+
+    expect(res.status).toBe(500);
+    expect(audit).not.toHaveBeenCalled();
   });
 });

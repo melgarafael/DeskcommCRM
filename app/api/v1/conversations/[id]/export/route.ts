@@ -29,6 +29,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit } from "@/lib/audit";
 import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -44,6 +45,13 @@ import { createClient } from "@/lib/supabase/server";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
+
+// O render é a parte cara: CPU e memória do mesmo processo que serve o CRM
+// inteiro. O teto por pessoa barra o clique repetido; o da organização, vários
+// atendentes exportando ao mesmo tempo. Mesmo padrão de `ai/knowledge/busca`.
+const TETO_POR_USUARIO = 5;
+const TETO_POR_ORGANIZACAO = 20;
+const JANELA_SEGUNDOS = 60;
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
@@ -67,6 +75,24 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const formato = new URL(req.url).searchParams.get("formato") ?? "pdf";
   if (formato !== "pdf") {
     return fail("validation_failed", t("Formato não suportado: use ?formato=pdf."), 422, { requestId });
+  }
+
+  const porUsuario = await checkRateLimit(`conversa-export:${authz.user.id}`, TETO_POR_USUARIO, JANELA_SEGUNDOS);
+  const porOrganizacao = await checkRateLimit(
+    `conversa-export-org:${authz.org.orgId}`,
+    TETO_POR_ORGANIZACAO,
+    JANELA_SEGUNDOS,
+  );
+  if (!porUsuario.allowed || !porOrganizacao.allowed) {
+    const barrou = porUsuario.allowed ? porOrganizacao : porUsuario;
+    return fail("rate_limited", t("Muitas exportações seguidas. Tente em um minuto."), 429, {
+      requestId,
+      headers: {
+        "Retry-After": String(JANELA_SEGUNDOS),
+        "X-RateLimit-Limit": String(barrou.limit),
+        "X-RateLimit-Remaining": String(Math.max(0, barrou.limit - barrou.count)),
+      },
+    });
   }
 
   const supabase = await createClient();
@@ -102,6 +128,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .order("created_at", { ascending: false })
       .limit(LIMITE_DE_MENSAGENS),
   ]);
+  if (contato.error) {
+    return fail("internal_error", t("Erro ao ler o contato."), 500, { requestId });
+  }
   if (mensagensLidas.error) {
     return fail("internal_error", t("Erro ao ler as mensagens."), 500, { requestId });
   }

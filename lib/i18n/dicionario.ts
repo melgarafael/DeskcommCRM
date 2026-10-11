@@ -14788,7 +14788,7 @@ export const DICIONARIO: Traducoes = {
   "Esta campanha já criou o contato e o negócio dessas empresas ao iniciar. Desmarcar só impede o envio: elas continuam no funil.": { es: "Esta campaña ya creó el contacto y el negocio de estas empresas al iniciar. Desmarcar solo impide el envío: siguen en el embudo." },
   // Exportação da conversa em PDF (#2229)
   "Celular": { es: "Móvil" },
-  "Mensagem apagada pelo autor.": { es: "Mensaje eliminada por el autor." },
+  "Mensagem apagada pelo autor.": { es: "Mensaje eliminado por el autor." },
   "(editada)": { es: "(editada)" },
   "Histórico da conversa": { es: "Historial de la conversación" },
   "Aberta em": { es: "Abierta el" },
@@ -14797,6 +14797,10 @@ export const DICIONARIO: Traducoes = {
   "recebida": { es: "recibida" },
   "enviada": { es: "enviada" },
   "Não foi possível gerar o PDF desta conversa.": { es: "No se pudo generar el PDF de esta conversación." },
+  "{quem} em {quando}": { es: "{quem} el {quando}" },
+  "página {atual} de {total}": { es: "página {atual} de {total}" },
+  "Muitas exportações seguidas. Tente em um minuto.": { es: "Demasiadas exportaciones seguidas. Inténtelo en un minuto." },
+  "Erro ao ler o contato.": { es: "Error al leer el contacto." },
   // ─── RELATÓRIOS: A ABA "POR ETIQUETA" (#1891) ───
   "Por etiqueta": { es: "Por etiqueta" },
   "Abertas": { es: "Abiertas" },
