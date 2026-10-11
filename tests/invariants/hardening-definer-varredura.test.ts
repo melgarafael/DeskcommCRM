@@ -218,6 +218,17 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "e da org vizinha, com a configuração intacta depois das recusas.",
   },
   {
+    fn: "fn_definir_google_meet_acesso_aberto(uuid,boolean)",
+    razao:
+      "app/actions/settings/definirMeetAberto.ts chama por rpc com o " +
+      "createClient da SESSÃO, e a própria função reconfere auth.uid(), " +
+      "manager, suporte de escrita e MFA comprovado antes de gravar — a " +
+      "mesma guarda da irmã fn_definir_colegas_podem_mexer_na_agenda acima. " +
+      "Só escreve uma chave de topo de organizations.settings " +
+      "(google_meet_acesso_aberto) e devolve {ligado,mudou}; a leitura é " +
+      "meetAbertoLigado (lib/schemas/settings.ts), sem nenhuma exposição.",
+  },
+  {
     fn: "fn_definir_cliente_pela_agenda(uuid,boolean)",
     razao:
       "app/actions/settings/definirClientePelaAgenda.ts chama com createClient da sessão; " +

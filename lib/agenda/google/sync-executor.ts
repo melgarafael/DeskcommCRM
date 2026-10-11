@@ -14,6 +14,7 @@ import {
   checkpoint,
   delta,
   groups,
+  hash,
   localProjection,
   remoteProjection,
   sameShared,
@@ -30,6 +31,9 @@ import {
 } from "./sync-store";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { classificarErroDoGoogle, type OperacaoNoGoogle } from "./erros";
+import { deveCriarEspacoAberto } from "./oauth";
+import { meetAbertoLigado } from "@/lib/schemas/settings";
+import { logger } from "@/lib/logger";
 
 /** A operação do Google que corresponde ao método HTTP usado na publicação. */
 const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
@@ -125,6 +129,41 @@ export async function tokenForConnection(db: SupabaseClient, org: string, connec
   if (!token) throw new Error("Reconecte a conta Google para continuar.");
   return token;
 }
+
+/**
+ * O gate de #2063: a reunião nasce aberta SÓ quando a organização ligou a opção
+ * (off por padrão) E a conexão tem o escopo opcional. Ler opção + escopo é um
+ * caminho frio (sem o gate, nada muda); erro de leitura vale como "desligado"
+ * — falha fechada, mesma disciplina do resto do executor.
+ */
+export async function decidirEspacoAberto(
+  db: SupabaseClient,
+  org: string,
+  connectionId: string | null,
+): Promise<boolean> {
+  if (!connectionId) return false;
+  try {
+    // As DUAS leituras vêm no envelope do PostgREST (`{data, error}`), não a
+    // linha crua: ler `scopes` do envelope achava `undefined` sempre, o gate
+    // ficava falso para TODO organização e a opção nunca abria espaço nenhum.
+    // Medido no executor de mentira de `agenda-google-meet-aberto-no-corpo`.
+    const [{ data: orgRow, error: erroOrg }, { data: connRow, error: erroConexao }] = await Promise.all([
+      db.from("organizations").select("settings").eq("id", org).maybeSingle(),
+      db
+        .from("calendar_connections")
+        .select("scopes")
+        .eq("organization_id", org)
+        .eq("id", connectionId)
+        .maybeSingle(),
+    ]);
+    if (erroOrg || erroConexao) return false;
+    const ligada = meetAbertoLigado((orgRow as { settings?: unknown } | null)?.settings);
+    const escopos = (connRow as { scopes?: string[] | null } | null)?.scopes ?? [];
+    return deveCriarEspacoAberto({ ligada }, escopos);
+  } catch {
+    return false;
+  }
+}
 export interface ExecuteOptions {
   transport?: GoogleFetch;
   calendarFence?: CalendarFence;
@@ -185,8 +224,59 @@ export async function reconcileAppointment(
       a = appointmentSnapshotSchema.parse(await call("meet", { result: { ...observation, etag } }));
       meetingObserved = true;
     };
-    let local = localProjection(a);
+    /**
+     * O espaço aberto do Meet (#2063): cria o espaço pela API do Meet e grava o
+     * link como `ready`. Devolve `false` em QUALQUER recusa — API desativada,
+     * cota, 403, escopo que o Google ignora.
+     *
+     * ⚠️ É chamado ANTES de o corpo ser finalizado (`send`), e não depois: a
+     * primeira publicação do caminho aberto sai JÁ com o link no `location`.
+     * O corpo é (re)montado da projeção que o link acabou de mudar, nunca
+     * injetado campo a campo — a montagem fica num lugar só, `localDoEvento`.
+     *
+     * ⚠️ A recusa NÃO segura a publicação: quem cai no Meet "confiável" do
+     * Calendar é o chamador — um link com "pedir para participar" é melhor que
+     * nenhum link, e um erro da API do Meet não pode deixar a reunião sem
+     * evento nenhum nessa passada.
+     */
+    const criarEspacoAberto = async (): Promise<boolean> => {
+      try {
+        const { meetingUri } = await api.criarEspacoAberto();
+        await saveMeeting({ state: "ready", received: true, url: meetingUri, error: null });
+        return true;
+      } catch (e) {
+        // Só o status: o corpo da recusa do Google não vai nem para o log.
+        logger.warn("[meet-aberto] a API do Meet recusou; o evento nasce com o Meet do Calendar", {
+          organization_id: org,
+          appointment_id: id,
+          meet_status: e instanceof GoogleHttpError ? e.status : null,
+        });
+        return false;
+      }
+    };
+    /** Se o espaço aberto nasceu nesta passada, o corpo ainda vai sair dele. */
+    let espacoAbertoAgora = false;
+    /**
+     * O marcador PERSISTENTE do espaço aberto (#2063, caminho 2 do review de
+     * 08/10): o `location` que mandamos ao Google é o link do espaço aberto.
+     *
+     * Não há coluna nova nem migration: a prova está no registro da própria
+     * publicação, que já existe — `google_base_projection.local.location` é o
+     * hash do `location` publicado, e ele é igual ao hash do `meeting_url` de
+     * hoje SÓ quando o link publicado é este. `meeting_url` sozinho não
+     * distingue: o link "confiável" do Calendar também mora ali.
+     *
+     * As duas regras da main valem por construção. Compromisso publicado com
+     * Meet do Calendar: `base.local.location` é o hash dos `location_details`,
+     * nunca o do link — sem marcador, `localDoEvento` devolve os detalhes e a
+     * projeção não muda. E ainda que mudasse por acaso (a pessoa escreveu o
+     * próprio link nos detalhes), o hash publicado e o do link seriam do MESMO
+     * texto: nada sai do lugar, nenhum PATCH.
+     */
+    const espacoAbertoPublicado = () =>
+      Boolean(a.meeting_url?.trim() && base?.local.location === hash(a.meeting_url));
     let base = a.google_base_projection;
+    let local = localProjection({ ...a, meet_aberto: espacoAbertoPublicado() });
     // Listagem é sinal de mudança, não versão para um PATCH: GET exato revalida.
     const event = await api.get(a.google_calendar_id, a.google_event_id);
     const linked = event?.extendedProperties?.private;
@@ -377,7 +467,7 @@ export async function reconcileAppointment(
         await commit({ base: next, conflict: null, clear_pending: true, etag: event.etag });
       }
     }
-    local = localProjection(a);
+    local = localProjection({ ...a, meet_aberto: espacoAbertoPublicado() });
     base = a.google_base_projection;
     if (!event) {
       if (wasPublished) {
@@ -500,6 +590,10 @@ export async function reconcileAppointment(
       shared: boolean,
     ) {
       let conferenceRequestId: string | undefined;
+      // O grupo `location` pode entrar AQUI, depois da decisão: quando o
+      // espaço aberto nasce nesta passada, a projeção nova manda o link e o
+      // `delta` tem de levá-lo. Fora disto `campos` é `fields`, sem mudança.
+      let campos = fields;
       if (
         method !== "DELETE" &&
         a.meeting_state === "pending" &&
@@ -515,20 +609,68 @@ export async function reconcileAppointment(
             error: a.meeting_allowed_types === null ? "unknown" : "unsupported",
           });
         } else {
-          conferenceRequestId = a.meeting_request_id;
-          body = {
-            ...body,
-            conferenceData: {
-              createRequest: {
-                requestId: conferenceRequestId,
-                conferenceSolutionKey: { type: "hangoutsMeet" },
+          // #2063 — o espaço aberto SÓ quando a organização ligou a opção E a
+          // conexão tem o escopo opcional; o link nasce via `spaces.create`
+          // (accessType OPEN) e entra no `location` pela projeção
+          // (`localDoEvento`, com o marcador `meet_aberto`) — nunca injetado
+          // campo a campo.
+          //
+          // Qualquer recusa da API do Meet (desativada, escopo ausente, 403,
+          // cota) cai no Meet "confiável" do Calendar: um link com "pedir para
+          // participar" é melhor que nenhum link, e a recusa não segura a
+          // publicação do evento nesta passada.
+          espacoAbertoAgora =
+            (await decidirEspacoAberto(db, org, a.google_connection_id)) && (await criarEspacoAberto());
+          if (!espacoAbertoAgora) {
+            conferenceRequestId = a.meeting_request_id;
+            body = {
+              ...body,
+              conferenceData: {
+                createRequest: {
+                  requestId: conferenceRequestId,
+                  conferenceSolutionKey: { type: "hangoutsMeet" },
+                },
               },
+            };
+          }
+        }
+      }
+      if (espacoAbertoAgora) {
+        // O espaço nasceu ANTES do envio, então esta escrita já sai com o
+        // link: o convidado recebe UM convite com a sala, não um convite sem
+        // link e um "alterado" cinco minutos depois (#2063, item 3).
+        //
+        // O corpo é remontado da projeção nova — o mesmo `localDoEvento` de
+        // sempre, agora com o marcador ligado —, nunca montado à mão aqui.
+        local = localProjection({ ...a, meet_aberto: true });
+        if (method === "POST") {
+          body = paraEventoDoGoogle({
+            ...a,
+            meet_aberto: true,
+            participantes: participantesDoAgendamento({
+              contactEmail: contato?.email,
+              contactName: contato?.nome,
+              guestEmail: a.guest_email,
+            }),
+          }) as unknown as Record<string, unknown>;
+        } else if (method === "PATCH") {
+          campos = [...new Set([...campos, "location" as const])];
+          body = delta(
+            {
+              ...a,
+              meet_aberto: true,
+              contact_email: contato?.email ?? null,
+              contact_nome: contato?.nome ?? null,
             },
-          };
+            event!,
+            base,
+            campos,
+            shared,
+          );
         }
       }
       // Se só faltava conferência e a capacidade foi recusada, nenhum PATCH vazio.
-      if (method === "PATCH" && !shared && !fields.length && !conferenceRequestId) return;
+      if (method === "PATCH" && !shared && !campos.length && !conferenceRequestId) return;
       const pending: PendingWrite = {
         ...(conferenceRequestId ? { conference_request_id: conferenceRequestId } : {}),
         operation_id: randomUUID(),
@@ -537,7 +679,7 @@ export async function reconcileAppointment(
         revision: a.revision,
         local_revision: a.google_local_revision,
         desired: local,
-        groups: fields,
+        groups: campos,
         shared,
       };
       await call("prepare", { operation: pending });
@@ -556,11 +698,11 @@ export async function reconcileAppointment(
         ? remoteProjection(response, local, base)
         : { ...local, shared: { ...local.shared, cancelled: true } };
       await commit({
-        base: checkpoint(base, local, observed, fields, shared),
+        base: checkpoint(base, local, observed, campos, shared),
         etag: response?.etag ?? null,
         operation_id: pending.operation_id,
         clear_pending: true,
-        ack: shared || fields.length > 0,
+        ack: shared || campos.length > 0,
       });
       if (conferenceRequestId && response && a.status !== "cancelled") {
         const observation = observeMeeting(response, conferenceRequestId) ?? {

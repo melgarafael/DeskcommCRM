@@ -4,7 +4,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
-import { clientePelaAgendaLigado, colegasPodemMexerNaAgendaLigado } from "@/lib/schemas/settings";
+import { clientePelaAgendaLigado, colegasPodemMexerNaAgendaLigado, meetAbertoLigado } from "@/lib/schemas/settings";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
@@ -122,6 +122,12 @@ export default async function TiposDeAgendamentoPage() {
         // `admin`, e não `manager` como os prazos ao lado: ligar reescreve as
         // etiquetas de todo contato com histórico. A RPC cobra de novo.
         podeLigarClientePelaAgenda={ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin}
+        // A opção da issue #2063 (migration 0579): DESLIGADA por padrão, e
+        // só o `true` explícito liga — a mesma régua de `meetAbertoLigado`.
+        meetAbertoLigado={meetAbertoLigado(org?.settings)}
+        // `manager` como a irmã ao lado: é regra da AGENDA e não reescreve
+        // dado nenhum. A RPC cobra de novo.
+        podeMudarMeetAberto={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager}
       />
     </div>
   );

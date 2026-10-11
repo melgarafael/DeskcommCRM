@@ -46192,6 +46192,47 @@ $function$;
 revoke execute on function public.fn_authorize_ai_form_capture(uuid, uuid, uuid, uuid, uuid, bigint) from public, anon, authenticated;
 grant execute on function public.fn_authorize_ai_form_capture(uuid, uuid, uuid, uuid, uuid, bigint) to service_role;
 
+-- ---- Porta de escrita da opção "Meet com acesso aberto" (migration 0579) ----
+--
+-- Issue #2063 (PR #2089). Espelho da migration 0579: o kit self-host aplica SÓ
+-- o baseline, e sem esta porta a opção da tela não tem como ser ligada.
+-- Corpo idêntico ao da cadeia de propósito — é o que
+-- `tests/unit/apendice-do-baseline-nao-diverge-da-cadeia.test.ts` mede.
+create or replace function public.fn_definir_google_meet_acesso_aberto(p_org uuid,p_ligado boolean)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v_atual boolean; v_linhas int;
+begin
+ if p_ligado is null then raise exception 'meet_acesso_aberto_invalido' using errcode='22023'; end if;
+ if auth.uid() is null
+    or not public.fn_role_at_least(p_org,'manager')
+    or not public.fn_support_write_allowed(p_org) then
+  raise exception 'meet_acesso_aberto_forbidden' using errcode='42501';
+ end if;
+ if not public.fn_session_mfa_proven() then raise exception 'mfa_required' using errcode='42501'; end if;
+ -- A MESMA régua de leitura de `meetAbertoLigado` (lib/schemas/settings.ts):
+ -- só o `true` explícito liga. Ausente, `false` ou qualquer lixo é desligado.
+ select coalesce(settings->'google_meet_acesso_aberto' = 'true'::jsonb,false)
+   into v_atual from public.organizations where id = p_org;
+ if v_atual is not distinct from p_ligado then
+  return jsonb_build_object('ligado',v_atual,'mudou',false);
+ end if;
+ -- Chave PRÓPRIA de topo (ver cabeçalho): `||` no objeto, nunca `settings.agenda`.
+ update public.organizations
+    set settings = coalesce(settings,'{}'::jsonb) || jsonb_build_object('google_meet_acesso_aberto',to_jsonb(p_ligado))
+  where id = p_org;
+ get diagnostics v_linhas = row_count;
+ if v_linhas = 0 then raise exception 'meet_acesso_aberto_sem_organizacao' using errcode='P0002'; end if;
+ return jsonb_build_object('ligado',p_ligado,'mudou',true);
+end; $$;
+
+revoke all on function public.fn_definir_google_meet_acesso_aberto(uuid,boolean) from public,anon;
+grant execute on function public.fn_definir_google_meet_acesso_aberto(uuid,boolean) to authenticated,service_role;
+
+comment on function public.fn_definir_google_meet_acesso_aberto(uuid,boolean) is
+  'Liga/desliga "Google Meet já com acesso aberto" (issue #2063, PR #2089). Gerente ou acima, suporte de escrita e MFA comprovado; ela mesma confere pelo auth.uid(). Grava settings.google_meet_acesso_aberto (chave de topo) e devolve {ligado,mudou}.';
+
+notify pgrst, 'reload schema';
+
 -- ---- o desfecho do negócio só nasce do negócio (migration 0581) ----
 -- Espelho idempotente da 0581. `lead.won`, `lead.lost`, `lead.reopened` e
 -- `lead.assigned` só entram no `event_log` pelo gatilho de `crm_leads` (ou pelo
