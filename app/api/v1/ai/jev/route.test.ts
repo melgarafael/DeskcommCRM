@@ -1320,11 +1320,12 @@ describe("contexto específico da revisão de resposta", () => {
     expect(audit).not.toHaveBeenCalled();
   });
   it("revoga v2 sem afetar o roteador, outras tarefas ou dados próprios",async()=>{
-    estado.settings.jev={ligado:true,aceite:ACEITE_ANTIGO,contexto_revisao:{...ACEITE_ANTIGO,versao:2},contexto_roteador:{...ACEITE_ANTIGO,versao:1}};
+    estado.settings.jev={ligado:true,aceite:ACEITE_ANTIGO,contexto_revisao:{...ACEITE_ANTIGO,versao:2},modo_roteador:"sob_demanda",tarefas:{humano:{estado:"observando"}}};
     estado.settings.dado_proprio="preservar";
     expect((await mudar({contexto_revisao:false})).status).toBe(200);
     expect((estado.settings.jev as Linha).contexto_revisao).toBeNull();
-    expect((estado.settings.jev as Linha).contexto_roteador).toMatchObject({versao:1});
+    expect((estado.settings.jev as Linha).modo_roteador).toBe("sob_demanda");
+    expect((estado.settings.jev as Linha).tarefas).toMatchObject({humano:{estado:"observando"}});
     expect(estado.settings.dado_proprio).toBe("preservar");
   });
   it("não herda aceite do roteador nem aceita autorização desacompanhada", async () => {
