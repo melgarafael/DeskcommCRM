@@ -87,6 +87,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   const atuais = ((linha as { midias: MidiaDeTemplate[] | null }).midias ?? []) as MidiaDeTemplate[];
   const novas = parsed.data.midias;
   let removidas: string[] = [];
+  let mantidas: MidiaDeTemplate[] | undefined;
   if (novas !== undefined) {
     if (novas.some((m) => !midiaPertenceAoTemplate(m.storage_path, org.orgId, id))) {
       return fail("validation_failed", t("Dados inválidos."), 422, {
@@ -100,11 +101,18 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
       return fail("conflict", t("As imagens mudaram. Recarregue a página."), 409, { requestId });
     }
     removidas = conferida.removidas;
+    mantidas = conferida.mantidas;
   }
 
   const { data, error } = await supabase
     .from("message_templates")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    // `midias` sai da LINHA conferida, nunca do corpo: o mime e o tamanho de
+    // cada imagem são do upload que conferiu os bytes.
+    .update({
+      ...parsed.data,
+      ...(mantidas ? { midias: mantidas } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
     .eq("organization_id", org.orgId)
     .select(COLS)
