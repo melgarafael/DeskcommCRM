@@ -98,7 +98,11 @@ export function AgendaDePausa({ canais }: { canais: CanalDaLista[] }) {
         .then((r) => r.data),
   });
 
-  const fuso = janelas.data?.fuso ?? "America/Sao_Paulo";
+  // SEM fuso padrão aqui, de propósito (#2676): `?? "America/Sao_Paulo"` gravava
+  // a janela de toda organização que não é São Paulo com uma hora de diferença
+  // quando o GET ainda não tinha respondido. Sem `fuso`, nada é convertível —
+  // e é isso que trava os campos e o "Agendar" logo abaixo.
+  const fuso = janelas.data?.fuso;
   const agendas = janelas.data?.agendas ?? [];
   const vivas = agendas.filter((a) => a.status === "scheduled" || a.status === "running");
   // A lista mostra a hora no MESMO fuso em que foi digitada (o da organização),
@@ -111,6 +115,14 @@ export function AgendaDePausa({ canais }: { canais: CanalDaLista[] }) {
   };
 
   async function agendar(): Promise<void> {
+    // Tecla de emergência do #2676: sem fuso não existe conversão honesta, então
+    // o clique não vira payload — nem se algum caminho torto chegar aqui.
+    if (!fuso) {
+      toast.error(
+        t("Sem o fuso da organização não dá para agendar: a janela seria gravada com a hora errada."),
+      );
+      return;
+    }
     const starts_at = paredeParaInstante(inicio, fuso);
     const ends_at = paredeParaInstante(fim, fuso);
     if (!starts_at || !ends_at) {
@@ -179,16 +191,30 @@ export function AgendaDePausa({ canais }: { canais: CanalDaLista[] }) {
               id="agenda-inicio"
               type="datetime-local"
               value={inicio}
+              disabled={!fuso}
               onChange={(e) => setInicio(e.target.value)}
             />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="agenda-fim">{t("A pausa termina (hora local)")}</Label>
-            <Input id="agenda-fim" type="datetime-local" value={fim} onChange={(e) => setFim(e.target.value)} />
+            <Input
+              id="agenda-fim"
+              type="datetime-local"
+              value={fim}
+              disabled={!fuso}
+              onChange={(e) => setFim(e.target.value)}
+            />
           </div>
           <p className="text-xs text-muted-foreground">
-            {t("Fuso da organização")}: {fuso}
+            {t("Fuso da organização")}: {fuso ?? "…"}
           </p>
+          {janelas.isError && (
+            <p className="text-xs text-error-fg" role="alert">
+              {t(
+                "Sem o fuso da organização não dá para agendar: a janela seria gravada com a hora errada.",
+              )}
+            </p>
+          )}
           <div className="grid gap-1.5">
             <Label>{t("Escopo")}</Label>
             <Select value={escopo} onValueChange={setEscopo}>
@@ -235,7 +261,7 @@ export function AgendaDePausa({ canais }: { canais: CanalDaLista[] }) {
           <Button variant="outline" onClick={() => setAberto(false)}>
             {t("Fechar")}
           </Button>
-          <Button onClick={agendar} disabled={salvando}>
+          <Button onClick={agendar} disabled={salvando || !fuso}>
             {salvando ? t("Agendando…") : t("Agendar")}
           </Button>
         </DialogFooter>

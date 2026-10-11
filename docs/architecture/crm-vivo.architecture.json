@@ -39,6 +39,8 @@
     { "id": "traces", "lane": "agente", "col": 0, "type": "database", "label": "before_send_traces", "sublabel": "os portões — e os vetos" },
     { "id": "ritual", "lane": "agente", "col": 1, "type": "service", "label": "inbound-turn (ritual)", "sublabel": "abre lendo checkpoint + lead_state" },
     { "id": "espelho", "lane": "agente", "col": 5, "type": "service", "label": "mirrorLeadStageToCrm", "sublabel": "propõe quando há conflito" },
+    { "id": "pontemcp", "lane": "agente", "col": 2, "type": "service", "label": "pickToolsFromMcp", "sublabel": "papel · contato · funil · auditoria" },
+    { "id": "filanegocio", "lane": "agente", "col": 3, "type": "service", "label": "Fila de escritas por negócio", "sublabel": "ordem no turno · prazo com resultado incerto · pendência em processo até desfecho" },
     { "id": "promocaocliente", "lane": "negocio", "col": 2, "type": "trigger", "label": "trg_agendamento_marca_cliente", "sublabel": "agendamento inserido/alterado/apagado (regra ligada) → first_service_at + etiqueta com dono" },
     { "id": "interruptorcliente", "lane": "humano", "col": 1, "type": "frontend", "label": "Clientes pela agenda", "sublabel": "Tipos de agendamento › fn_definir_cliente_pela_agenda (admin)" },
 
@@ -52,6 +54,10 @@
     { "id": "telaauditoria", "lane": "humano", "col": 0, "type": "frontend", "label": "/app/audit", "sublabel": "action + metadata na tela — onde o laço se fecha" }
   ],
   "edges": [
+    { "id": "mcp-entrada", "from": "ritual", "to": "pontemcp", "label": "ferramentas escolhidas para o turno" },
+    { "id": "mcp-fila", "from": "pontemcp", "to": "filanegocio", "label": "organização + negócio após traduzir contato" },
+    { "id": "mcp-escrita", "from": "filanegocio", "to": "leads", "label": "handlers nativos completos; updated_at ainda confere concorrência" },
+    { "id": "mcp-audit", "from": "pontemcp", "to": "auditoria", "label": "mcp.tool_called: resultado e falha preservados" },
     { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
     { "id": "e2", "from": "ritual", "to": "checkpoints", "label": "grava o turno" },
     { "id": "e3", "from": "ritual", "to": "traces", "label": "registra portões e veto" },

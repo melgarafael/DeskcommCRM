@@ -5,7 +5,7 @@ import type { JobClaim } from '../../queue/claim';
 import { assertAgendaEffectPg } from '@/lib/agenda/efeito';
 import { AgendaDeferredError } from '@/lib/agenda/protecao-followup';
 import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
-import { requireCurrentServiceBoundary } from '@/lib/atendimento/fronteira-server';
+import { requireCurrentAutonomousTurn, requireCurrentServiceBoundary } from '@/lib/atendimento/fronteira-server';
 import { parseServiceBoundary } from '@/lib/atendimento/fronteira';
 /**
  * Borda de saída pós-fusão: envio de mensagem SEMPRE via `sendMessageHandler` do
@@ -114,7 +114,7 @@ export async function sendTurnMessage(
   // Antes do ledger, não só no handler: recusada lá dentro, a bolha deixa uma
   // linha 'requested' que o disjuntor de saúde conta como envio (total_sends).
   if (input.agentOperation) await assertAgentOperationPg(db, input.agentOperation);
-  const { rows: sourceJobs } = await db.query<{ kind: string; payload: Record<string, unknown> }>(
+  const { rows: sourceJobs } = await db.query<Pick<JobRow, 'kind' | 'payload'>>(
     'select payload,kind from job_queue where id=$1 and organization_id=$2 and contact_id=$3',
     [input.jobId, input.tenantId, input.leadId],
   );
@@ -122,6 +122,14 @@ export async function sendTurnMessage(
     db,
     parseServiceBoundary(sourceJobs[0]?.payload.service_boundary),
   );
+  if (sourceJobs[0]) await requireCurrentAutonomousTurn(db, {
+    id: input.jobId,
+    organization_id: input.tenantId,
+    contact_id: input.leadId,
+    kind: sourceJobs[0].kind,
+    locked_by: input.jobClaim?.worker_id ?? null,
+    claim_acquired_at: input.jobClaim?.acquired_at,
+  });
   const proactiveContext =
     sourceJobs[0]?.kind === 'followup_turn' && input.leadId
       ? {

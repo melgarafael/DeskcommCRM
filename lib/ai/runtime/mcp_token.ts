@@ -16,8 +16,8 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-
-export const EPHEMERAL_TOKEN_TTL_SEC = 300;
+import { EPHEMERAL_TOKEN_TTL_SEC } from "@/lib/ai/runtime/prazo-do-token-mcp";
+export { EPHEMERAL_TOKEN_TTL_SEC } from "@/lib/ai/runtime/prazo-do-token-mcp";
 
 export interface MintEphemeralTokenInput {
   readOnly?: boolean;

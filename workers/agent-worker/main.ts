@@ -1,9 +1,9 @@
+import { disporJobAposFalha } from "./dispor-job-apos-falha";
 import { createApprovedReplyHandler } from "@/lib/agent-engine/agent/approved-reply";
 import { turnKnobsFromEnv } from "@/lib/agent-engine/agent/turn-knobs";
 import { createMeetDeliveryHandler } from "@/lib/agent-engine/agent/meet-delivery";
 import { claimOfJob } from "@/lib/agent-engine/queue/claim";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
-import { avisarRespostaDeCasoObsoleto } from "@/lib/atendimento/aviso-caso-obsoleto";
 import { withServiceJob } from "@/lib/atendimento/fronteira-server";
 import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 /**
@@ -117,10 +117,8 @@ import {
   jaNaoHaOQueResponder,
 } from "@/lib/agent-engine/queue/espera-de-saldo";
 import {
-  cancelJob,
   claimJobs,
   completeJob,
-  failJob,
   faltaParaOProximoJob,
   reapExpiredJobs,
   type JobKind,
@@ -513,18 +511,7 @@ export async function startWorker(
         Sentry.captureException(err);
       }
       try {
-        if (
-          err instanceof StaleServiceBoundaryError &&
-          job.kind === "case_reply_turn" &&
-          typeof job.payload.case_id === "string"
-        ) {
-          await avisarRespostaDeCasoObsoleto(pool, job.organization_id, job.payload.case_id);
-        }
-        if (terminal) {
-          await cancelJob(pool, job.id, workerId, errMsg(err), claimOfJob(job)?.acquired_at);
-        } else {
-          await failJob(pool, job.id, workerId, err, claimOfJob(job)?.acquired_at);
-        }
+        await disporJobAposFalha(pool, job, workerId, err, terminal, log);
       } catch (failErr) {
         log.error("disposição do job indisponível — lease expira via reaper", {
           job_id: job.id,

@@ -15332,6 +15332,9 @@ export const DICIONARIO: Traducoes = {
   "A pausa começa (hora local)": { es: "La pausa empieza (hora local)" },
   "A pausa termina (hora local)": { es: "La pausa termina (hora local)" },
   "Fuso da organização": { es: "Zona horaria de la organización" },
+  "Sem o fuso da organização não dá para agendar: a janela seria gravada com a hora errada.": {
+    es: "Sin la zona horaria de la organización no se puede agendar: la ventana se grabaría con la hora equivocada.",
+  },
   "Para todas as conexões": { es: "Para todas las conexiones" },
   "Janelas agendadas": { es: "Ventanas programadas" },
   "Cancelar janela": { es: "Cancelar ventana" },

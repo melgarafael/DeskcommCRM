@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
   const reserva = new Date(agora.getTime() + RESERVA_MS).toISOString();
   const { data: reservada, error: erroDaReserva } = await admin
     .from("cobranca_assinaturas")
-    .update({ checkout_url: null, checkout_expira_em: reserva })
+    .update({ checkout_url: null, checkout_expira_em: reserva, checkout_sessao_id: null })
     .eq("organization_id", orgId)
     .or(`checkout_expira_em.is.null,checkout_expira_em.lt."${agora.toISOString()}"`)
     .select("organization_id")
@@ -240,6 +240,9 @@ async function gerarCheckout(
       ...(inicio.assinaturaRef ? { provedor_assinatura_id: inicio.assinaturaRef } : {}),
       checkout_url: inicio.url,
       checkout_expira_em: (inicio.expiraEm ?? new Date(Date.now() + VALIDADE_PADRAO_MS)).toISOString(),
+      // A id da sessão NO PROVEDOR (#2609): é ela que a troca de plano expira,
+      // para o link antigo não sobreviver à troca. Reserva acima já a zerou.
+      checkout_sessao_id: inicio.sessaoId ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq("organization_id", orgId)

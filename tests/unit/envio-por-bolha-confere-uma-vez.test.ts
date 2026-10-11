@@ -63,7 +63,7 @@ const OPERACAO: AgentOperationContext = {
  * se simula o dono clicando "Pausar" entre dois pontos do envio.
  */
 function mundo() {
-  const estado = { pausado: false, revisao: 1 };
+  const estado = { pausado: false, revisao: 1, turnoVigente: true };
   const gatilhos: {
     pausarNaLeituraPg?: number;
     trocarFronteiraNaLeituraPg?: number;
@@ -87,6 +87,7 @@ function mundo() {
 
   const db = {
     query: async (sql: string) => {
+      if (sql.includes("from job_queue")) return { rows: [{ current: estado.turnoVigente }] };
       if (sql.includes("from ai_agents")) {
         const linha = agente();
         leiturasPgAgente += 1;
@@ -107,8 +108,19 @@ function mundo() {
       channel_session_id: SESSION,
       is_group: false,
       group_chat_id: null,
-      contacts: { phone_number: "+5531999998888", wa_identity: null, wa_lid: null, is_blocked: false },
-      channel_sessions: { provider: "waha", waha_session_name: "default", status: "WORKING", archived_at: null, metadata: {} },
+      contacts: {
+        phone_number: "+5531999998888",
+        wa_identity: null,
+        wa_lid: null,
+        is_blocked: false,
+      },
+      channel_sessions: {
+        provider: "waha",
+        waha_session_name: "default",
+        status: "WORKING",
+        archived_at: null,
+        metadata: {},
+      },
     },
     agente: () => {
       const linha = agente();
@@ -119,13 +131,16 @@ function mundo() {
     rpcData: () => fronteira(),
   });
 
-  const restDaFronteira = () => capturas.rpcs.filter((r) => r.nome === "fn_service_boundary").length;
+  const restDaFronteira = () =>
+    capturas.rpcs.filter((r) => r.nome === "fn_service_boundary").length;
   const restDoAgente = () => capturas.selects.ai_agents!.length;
   return { estado, gatilhos, db, supabase, mensagens, restDaFronteira, restDoAgente };
 }
 
 const JOB = {
   id: "job-1",
+  locked_by: "worker",
+  claim_acquired_at: "2026-10-01T00:00:00Z",
   organization_id: ORG,
   contact_id: CONTACT,
   kind: "inbound_turn",
@@ -141,7 +156,8 @@ function ctxDoAgente(serviceBoundary: ServiceBoundary | undefined, n: number): H
     agentOperation: OPERACAO,
   };
 }
-const bolha = (n: number) => ({ conversation_id: CONV, type: "text", body: `bolha ${n}` }) as SendMessageInput;
+const bolha = (n: number) =>
+  ({ conversation_id: CONV, type: "text", body: `bolha ${n}` }) as SendMessageInput;
 
 let postsAoCanal = 0;
 function canalNoAr() {
@@ -172,7 +188,10 @@ describe("envio do agente dentro do escopo do job", () => {
       await sendMessageHandler(m.supabase, ctxDoAgente(FRONTEIRA, 2), bolha(2));
     });
     expect(postsAoCanal).toBe(2);
-    expect(m.restDaFronteira(), "fn_service_boundary relida pela REST nos cortes que o pg já conferiu").toBe(2);
+    expect(
+      m.restDaFronteira(),
+      "fn_service_boundary relida pela REST nos cortes que o pg já conferiu",
+    ).toBe(2);
     expect(m.restDoAgente(), "ai_agents relido pela REST nos cortes que o pg já conferiu").toBe(2);
   });
 
@@ -219,6 +238,21 @@ describe("envio do agente dentro do escopo do job", () => {
     expect(postsAoCanal).toBe(0);
   });
 
+  it("Assumir → Devolver entre bolhas mantém a primeira e cala o turno antigo", async () => {
+    canalNoAr();
+    const m = mundo();
+    await expect(
+      withServiceJob(m.db, JOB, async () => {
+        setExecutionAgentOperation(OPERACAO);
+        await sendMessageHandler(m.supabase, ctxDoAgente(FRONTEIRA, 1), bolha(1));
+        m.estado.turnoVigente = false; // o job permanece terminal após devolver
+        await sendMessageHandler(m.supabase, ctxDoAgente(FRONTEIRA, 2), bolha(2));
+      }),
+    ).rejects.toBeInstanceOf(StaleServiceBoundaryError);
+    expect(postsAoCanal).toBe(1);
+    expect(m.mensagens.map((r) => r.body)).toEqual(["bolha 1"]);
+  });
+
   it("escopo sem a operação do agente: a REST do agente continua nos 3 pontos", async () => {
     canalNoAr();
     const m = mundo();
@@ -245,9 +279,9 @@ describe("envio sem escopo de execução (UI, MCP, automação)", () => {
     const m = mundo();
     // REST: 1ª leitura = entrada, 2ª = corte, 3ª = beforeSend.
     m.gatilhos.pausarNaLeituraRest = 2;
-    await expect(sendMessageHandler(m.supabase, ctxDoAgente(FRONTEIRA, 1), bolha(1))).rejects.toBeInstanceOf(
-      StaleServiceBoundaryError,
-    );
+    await expect(
+      sendMessageHandler(m.supabase, ctxDoAgente(FRONTEIRA, 1), bolha(1)),
+    ).rejects.toBeInstanceOf(StaleServiceBoundaryError);
     expect(postsAoCanal).toBe(0);
   });
 });

@@ -133,6 +133,7 @@ function situacao(p: Partial<Situacao> = {}): Situacao {
     emTesteNoProvedorAte: null,
     pagamentoSemAssinaturaViva: false,
     linkDePagamento: null,
+    precoCents: null,
     statusBruto: "active",
     ...p,
   };

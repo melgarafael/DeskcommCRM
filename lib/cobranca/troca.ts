@@ -10,8 +10,10 @@
  *   - depois do teste, com provedor: fica AGENDADA e vira na próxima cobrança
  *     paga (`aplicarLeitura`) — subir no dia 1 e descer no dia 28 não compensa;
  *   - em dívida, ou teste vencido sem assinatura: recusa ("regularize antes");
- *   - teste com link de pagamento em aberto e sem assinatura: recusa até o link
- *     ser pago ou expirar (`checkout_em_aberto`);
+ *   - teste com link de pagamento em aberto e sem assinatura: a sessão é
+ *     expirada NO PROVEDOR e a troca vale na hora (#2609); sem a id da sessão
+ *     guardada não há o que expirar, e a recusa continua até o link ser pago ou
+ *     expirar (`checkout_em_aberto`);
  *   - uso acima do plano novo: recusa com a lista do que remover (D-4).
  * O provedor é chamado ANTES da escrita e fora de transação; a escrita é um
  * compare-and-set no plano E no agendamento lidos. Se a escrita não acontece
@@ -49,6 +51,8 @@ interface Atual {
   proximo_vencimento: string | null;
   checkout_url: string | null;
   checkout_expira_em: string | null;
+  /** A id da sessão de pagamento no provedor (Stripe `cs_…`, Asaas `pay_…`) — #2609. */
+  checkout_sessao_id: string | null;
 }
 interface Plano {
   id: string;
@@ -65,6 +69,24 @@ const EM_DIVIDA: readonly EstadoDaAssinatura[] = ["em_atraso", "cancelada"];
 const recusa = (status: number, code: string, message: string, details?: unknown): ResultadoDaTroca => ({
   ok: false, status, code, message, ...(details === undefined ? {} : { details }),
 });
+
+/**
+ * #2609 — melhor esforço: a sessão já expirou no provedor, e esta é a ÚLTIMA
+ * chance de tirar o link morto da linha antes da recusa que se segue. O filtro na
+ * `checkout_sessao_id` é o compare-and-set: linha que já gravou OUTRA sessão (ou
+ * uma reserva em andamento, que zera a id) não é tocada.
+ */
+async function limparSessaoExpirada(admin: SupabaseClient, orgId: string, sessaoId: string, agora: Date): Promise<void> {
+  try {
+    await admin
+      .from("cobranca_assinaturas")
+      .update({ checkout_url: null, checkout_expira_em: null, checkout_sessao_id: null, updated_at: agora.toISOString() })
+      .eq("organization_id", orgId)
+      .eq("checkout_sessao_id", sessaoId);
+  } catch {
+    // A recusa seguinte já diz que nada mudou; não jogue 500 por cima dela.
+  }
+}
 
 async function lerPlanoCompleto(admin: SupabaseClient, id: string): Promise<Plano | null | "erro"> {
   const { data, error } = await admin
@@ -85,7 +107,7 @@ export async function trocarPlanoDaOrg(
   const agora = (deps.agora ?? (() => new Date()))();
   const { data: lida, error } = await admin
     .from("cobranca_assinaturas")
-    .select("plano_id, plano_agendado_id, estado, trial_ate, provedor, provedor_assinatura_id, proximo_vencimento, checkout_url, checkout_expira_em")
+    .select("plano_id, plano_agendado_id, estado, trial_ate, provedor, provedor_assinatura_id, proximo_vencimento, checkout_url, checkout_expira_em, checkout_sessao_id")
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) return recusa(500, "internal_error", "Não foi possível ler a assinatura.");
@@ -110,9 +132,18 @@ export async function trocarPlanoDaOrg(
   if (!novo || !antigo || (!desfazendo && (novo.arquivado_em !== null || novo.intervalo !== antigo.intervalo))) {
     return recusa(422, "plano_invalido", "Escolha um plano ativo com o mesmo intervalo de cobrança.");
   }
-  // Enquanto houver link de pagamento em aberto, o plano não muda.
+  // Enquanto houver link de pagamento em aberto, o plano não muda — a menos que
+  // dê para expirá-lo no provedor (#2609): aí a troca vale na hora e o link
+  // antigo deixa de valer. Sem a id da sessão guardada (linha anterior à 0641)
+  // não há o que expirar, e o link continuaria valendo FORA: vale a recusa.
   const linkEmAberto = atual.checkout_url !== null && atual.checkout_expira_em !== null && Date.parse(atual.checkout_expira_em) > agora.getTime();
-  if (!desfazendo && emTeste && atual.provedor && !atual.provedor_assinatura_id && linkEmAberto) {
+  const bloqueia = !desfazendo && emTeste && atual.provedor !== null && atual.provedor_assinatura_id === null && linkEmAberto;
+  // O `atual.provedor !== null` repete uma condição de `bloqueia` de propósito:
+  // é ele que estreita o tipo aqui embaixo (`bloqueia` sozinho não estreita nada).
+  const sessaoAExperrar = bloqueia && atual.provedor !== null && atual.checkout_sessao_id !== null
+    ? { provedor: atual.provedor, id: atual.checkout_sessao_id }
+    : null;
+  if (bloqueia && sessaoAExperrar === null) {
     return recusa(409, "checkout_em_aberto", "Há um link de pagamento em aberto com o plano atual. Conclua o pagamento ou aguarde o link expirar para trocar de plano.");
   }
   if (!desfazendo) {
@@ -148,6 +179,23 @@ export async function trocarPlanoDaOrg(
   };
   const divergiu = "O preço no provedor de pagamento pode estar diferente do plano registrado; confira com quem administra o sistema.";
 
+  // #2609 — a sessão de pagamento aberta expira NO PROVEDOR antes da escrita,
+  // como todo chamado ao provedor (fora de transação, §7). Se ele não confirmar,
+  // a troca NÃO segue: o link antigo continuaria vivo com o preço do plano velho,
+  // que é exatamente o que a recusa `checkout_em_aberto` protegia. Transitório →
+  // 503 (tente de novo); o resto → a mesma recusa de sempre (o link continua em aberto).
+  if (sessaoAExperrar !== null) {
+    try {
+      await (deps.adaptador ?? adaptadorPadrao)(sessaoAExperrar.provedor).expirarSessao(sessaoAExperrar.id);
+    } catch (e) {
+      if (!(e instanceof ErroDoProvedor)) throw e;
+      if (e.transitorio) {
+        return recusa(503, "provedor_indisponivel", "O provedor de pagamento não respondeu. A troca não foi feita; tente de novo.");
+      }
+      return recusa(409, "checkout_em_aberto", "Há um link de pagamento em aberto com o plano atual. Conclua o pagamento ou aguarde o link expirar para trocar de plano.");
+    }
+  }
+
   if (provedorDaTroca) {
     try {
       await aoProvedor(novo);
@@ -178,11 +226,11 @@ export async function trocarPlanoDaOrg(
         plano_id: novo.id,
         plano_agendado_id: null,
         updated_at: agora.toISOString(),
-        // O link em aberto sem assinatura já foi recusado acima; o que sobra sai junto, e o
-        // próximo "Assinar" parte do plano gravado. Com a assinatura já no provedor (o Asaas a
-        // cria no Assinar), o provedor acabou de pôr o preço novo na fatura aberta: o link é o
-        // mesmo e fica.
-        ...(atual.checkout_url && !provedorDaTroca ? { checkout_url: null, checkout_expira_em: null } : {}),
+        // O link em aberto sem assinatura foi EXPIRADO no provedor (#2609); o que
+        // sobra sai junto, e o próximo "Assinar" parte do plano gravado. Com a
+        // assinatura já no provedor (o Asaas a cria no Assinar), o provedor acabou de
+        // pôr o preço novo na fatura aberta: o link é o mesmo e fica.
+        ...(atual.checkout_url && !provedorDaTroca ? { checkout_url: null, checkout_expira_em: null, checkout_sessao_id: null } : {}),
       }
     : { plano_agendado_id: novo.id === atual.plano_id ? null : novo.id, updated_at: agora.toISOString() };
   let pedido = admin.from("cobranca_assinaturas").update(campos).eq("organization_id", orgId).eq("plano_id", atual.plano_id);
@@ -194,6 +242,11 @@ export async function trocarPlanoDaOrg(
   }
   const { data: gravada, error: erroDaGravacao } = await pedido.select("organization_id").maybeSingle();
   if (erroDaGravacao || !gravada) {
+    // A sessão já morreu no provedor, mas a linha mudou no meio: o link local não
+    // pode sobreviver apontando para uma sessão morta (o "Assinar" devolveria um
+    // link morto). Limpa SÓ a linha que ainda carrega ESTA sessão — quem já gravou
+    // outra não tem o que perder. Melhor esforço: a recusa abaixo vale sozinha.
+    if (sessaoAExperrar) await limparSessaoExpirada(admin, orgId, sessaoAExperrar.id, agora);
     // O provedor já aceitou o preço novo e o banco não o registrou: desfaz no provedor.
     const desfeito = !provedorDaTroca || (await reconciliar());
     const aviso = desfeito ? "" : ` ${divergiu}`;
