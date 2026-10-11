@@ -9022,5 +9022,11 @@
   "O dono precisa ser membro ativo desta empresa, com papel de atendente, gerente ou administrador. Quem só lê, e quem saiu da equipe, não é dono de carteira.": "The owner must be an active member of this company with an agent, manager, or administrator role. Read-only members, and members who left the team, cannot own a portfolio.",
   "Contato não encontrado nesta empresa.": "Contact not found in this company.",
   "A origem da carteira não é válida.": "The portfolio source is not valid.",
-  "Não foi possível salvar a carteira do cliente.": "Could not save the client's portfolio."
+  "Não foi possível salvar a carteira do cliente.": "Could not save the client's portfolio.",
+  "Buscar etiqueta": "Search tags",
+  "Nenhuma etiqueta com esse texto": "No tag matches this text",
+  "Destino da etiqueta": "Tag destination",
+  "Card (comportamento atual)": "Card (current behavior)",
+  "Contato do lead": "Lead contact",
+  "Sem contato vinculado, a etiqueta não é aplicada.": "With no linked contact, the tag is not applied."
 }
