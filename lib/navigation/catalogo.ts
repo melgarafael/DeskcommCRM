@@ -818,6 +818,46 @@ export const NAV_CATALOG = [
     minRole: "manager",
     sidebar: false, // acessa pelo hub /app/politico
   },
+  {
+    href: "/app/politico/social",
+    label: "Social",
+    description: "Perfis monitorados, snapshots de métricas e posts coletados de redes sociais.",
+    icon: "share-2",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
+  {
+    href: "/app/politico/adversarios",
+    label: "Adversários",
+    description: "Painel de oponentes políticos com nível de risco, ameaça e sinais de alerta.",
+    icon: "shield-alert",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
+  {
+    href: "/app/politico/narrativas",
+    label: "Narrativas",
+    description: "Radar de narrativas ativas com sentimento, força e status estratégico.",
+    icon: "radio",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
+  {
+    href: "/app/politico/motor-viral",
+    label: "Motor Viral",
+    description: "Geração de conteúdo por IA — scripts, captions, roteiros com scoring viral.",
+    icon: "sparkles",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
 
   // ---- Análise — olhar o sistema funcionando ----
   //

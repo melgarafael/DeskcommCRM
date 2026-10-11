@@ -107,6 +107,38 @@ export default async function PoliticoHubPage() {
           ? `${metricas.transicoesHoje} hoje`
           : null,
     },
+    {
+      href: "/app/politico/social",
+      titulo: "Social",
+      descricao:
+        "Monitore perfis sociais, acompanhe metricas e analise posts coletados das redes.",
+      icone: "\u{1F4F1}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/adversarios",
+      titulo: "Adversarios",
+      descricao:
+        "Rastreie oponentes politicos com nivel de risco, ameaca e sinais de alerta.",
+      icone: "\u{1F6E1}️",
+      badge: null,
+    },
+    {
+      href: "/app/politico/narrativas",
+      titulo: "Narrativas",
+      descricao:
+        "Radar de narrativas ativas com sentimento, forca e status estrategico por plataforma.",
+      icone: "\u{1F4E1}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/motor-viral",
+      titulo: "Motor Viral",
+      descricao:
+        "Gere conteudo por IA — scripts de video, captions, roteiros com scoring de viralidade.",
+      icone: "\u{26A1}",
+      badge: null,
+    },
   ];
 
   return (

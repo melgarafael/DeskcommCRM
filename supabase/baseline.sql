@@ -47868,3 +47868,450 @@ create policy tenant_isolation_pol_territory_flags_all
   on public.pol_territory_flags for all
   using (organization_id = any(public.fn_user_org_ids()))
   with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_social_profiles, pol_social_snapshots, pol_social_posts, pol_social_intelligence (migration 0632) ----
+
+create table if not exists public.pol_social_profiles (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  platform                text         not null
+                          check (platform in (
+                            'instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'linkedin'
+                          )),
+  username                text         not null,
+  display_name            text,
+  bio                     text,
+  followers               integer      not null default 0,
+  following               integer      not null default 0,
+  posts_count             integer      not null default 0,
+  engagement_rate         numeric(7,4) not null default 0,
+  category                text         not null default 'monitorado'
+                          check (category in (
+                            'monitorado', 'influencer', 'aliado', 'neutro', 'adversario'
+                          )),
+  active                  boolean      not null default true,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now(),
+  constraint pol_social_profiles_platform_user_org_uq unique (organization_id, platform, username)
+);
+
+create index if not exists pol_social_profiles_org_platform_idx
+  on public.pol_social_profiles (organization_id, platform);
+create index if not exists pol_social_profiles_org_category_idx
+  on public.pol_social_profiles (organization_id, category);
+create index if not exists pol_social_profiles_org_active_idx
+  on public.pol_social_profiles (organization_id, active)
+  where active = true;
+
+create or replace trigger pol_social_profiles_touch
+  before update on public.pol_social_profiles
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_social_profiles enable row level security;
+drop policy if exists tenant_isolation_pol_social_profiles_all on public.pol_social_profiles;
+create policy tenant_isolation_pol_social_profiles_all
+  on public.pol_social_profiles for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_social_snapshots (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  profile_id              uuid         not null references public.pol_social_profiles(id) on delete cascade,
+  followers               integer      not null default 0,
+  following               integer      not null default 0,
+  posts_count             integer      not null default 0,
+  engagement_rate         numeric(7,4) not null default 0,
+  growth_daily            numeric(7,4) not null default 0,
+  recorded_at             timestamptz  not null default now(),
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_social_snapshots_org_profile_idx
+  on public.pol_social_snapshots (organization_id, profile_id);
+create index if not exists pol_social_snapshots_recorded_idx
+  on public.pol_social_snapshots (recorded_at);
+create index if not exists pol_social_snapshots_profile_recorded_idx
+  on public.pol_social_snapshots (profile_id, recorded_at);
+
+alter table public.pol_social_snapshots enable row level security;
+drop policy if exists tenant_isolation_pol_social_snapshots_all on public.pol_social_snapshots;
+create policy tenant_isolation_pol_social_snapshots_all
+  on public.pol_social_snapshots for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_social_posts (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  profile_id              uuid         not null references public.pol_social_profiles(id) on delete cascade,
+  platform                text         not null
+                          check (platform in (
+                            'instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'linkedin'
+                          )),
+  post_url                text,
+  caption                 text,
+  media_type              text
+                          check (media_type is null or media_type in (
+                            'image', 'video', 'carousel', 'reel', 'story', 'text'
+                          )),
+  likes                   integer      not null default 0,
+  comments                integer      not null default 0,
+  shares                  integer      not null default 0,
+  saves                   integer      not null default 0,
+  viral_score             numeric(5,2) not null default 0,
+  sentiment               text
+                          check (sentiment is null or sentiment in (
+                            'positive', 'negative', 'neutral', 'mixed'
+                          )),
+  hashtags                text[],
+  posted_at               timestamptz,
+  collected_at            timestamptz  not null default now(),
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_social_posts_org_profile_idx
+  on public.pol_social_posts (organization_id, profile_id);
+create index if not exists pol_social_posts_org_platform_idx
+  on public.pol_social_posts (organization_id, platform);
+create index if not exists pol_social_posts_posted_idx
+  on public.pol_social_posts (posted_at)
+  where posted_at is not null;
+create index if not exists pol_social_posts_viral_idx
+  on public.pol_social_posts (organization_id, viral_score)
+  where viral_score > 0;
+create index if not exists pol_social_posts_hashtags_idx
+  on public.pol_social_posts using gin (hashtags)
+  where hashtags is not null;
+
+alter table public.pol_social_posts enable row level security;
+drop policy if exists tenant_isolation_pol_social_posts_all on public.pol_social_posts;
+create policy tenant_isolation_pol_social_posts_all
+  on public.pol_social_posts for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_social_intelligence (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  profile_id              uuid         not null references public.pol_social_profiles(id) on delete cascade,
+  analysis_type           text         not null
+                          check (analysis_type in (
+                            'profile_summary', 'trend_analysis', 'audience_insight',
+                            'content_strategy', 'risk_assessment', 'opportunity'
+                          )),
+  content                 text         not null,
+  confidence              numeric(3,2) not null default 0
+                          check (confidence >= 0 and confidence <= 1),
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_social_intelligence_org_profile_idx
+  on public.pol_social_intelligence (organization_id, profile_id);
+create index if not exists pol_social_intelligence_org_type_idx
+  on public.pol_social_intelligence (organization_id, analysis_type);
+create index if not exists pol_social_intelligence_created_idx
+  on public.pol_social_intelligence (created_at);
+
+alter table public.pol_social_intelligence enable row level security;
+drop policy if exists tenant_isolation_pol_social_intelligence_all on public.pol_social_intelligence;
+create policy tenant_isolation_pol_social_intelligence_all
+  on public.pol_social_intelligence for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_opponents, pol_opponent_snapshots, pol_opponent_posts, pol_opponent_signals (migration 0633) ----
+
+create table if not exists public.pol_opponents (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  name                    text         not null,
+  platform                text         not null
+                          check (platform in (
+                            'instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'linkedin', 'website'
+                          )),
+  username                text,
+  bio                     text,
+  followers               integer      not null default 0,
+  engagement_rate         numeric(7,4) not null default 0,
+  risk_level              text         not null default 'low'
+                          check (risk_level in ('low', 'medium', 'high', 'critical')),
+  threat_score            numeric(5,2) not null default 0,
+  active                  boolean      not null default true,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_opponents_org_risk_idx
+  on public.pol_opponents (organization_id, risk_level);
+create index if not exists pol_opponents_org_platform_idx
+  on public.pol_opponents (organization_id, platform);
+create index if not exists pol_opponents_org_active_idx
+  on public.pol_opponents (organization_id, active)
+  where active = true;
+create index if not exists pol_opponents_org_threat_idx
+  on public.pol_opponents (organization_id, threat_score)
+  where threat_score > 0;
+
+create or replace trigger pol_opponents_touch
+  before update on public.pol_opponents
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_opponents enable row level security;
+drop policy if exists tenant_isolation_pol_opponents_all on public.pol_opponents;
+create policy tenant_isolation_pol_opponents_all
+  on public.pol_opponents for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_opponent_snapshots (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  opponent_id             uuid         not null references public.pol_opponents(id) on delete cascade,
+  followers               integer      not null default 0,
+  engagement_rate         numeric(7,4) not null default 0,
+  posts_count             integer      not null default 0,
+  growth_weekly           numeric(7,4) not null default 0,
+  recorded_at             timestamptz  not null default now(),
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_opponent_snapshots_org_opponent_idx
+  on public.pol_opponent_snapshots (organization_id, opponent_id);
+create index if not exists pol_opponent_snapshots_recorded_idx
+  on public.pol_opponent_snapshots (recorded_at);
+create index if not exists pol_opponent_snapshots_opponent_recorded_idx
+  on public.pol_opponent_snapshots (opponent_id, recorded_at);
+
+alter table public.pol_opponent_snapshots enable row level security;
+drop policy if exists tenant_isolation_pol_opponent_snapshots_all on public.pol_opponent_snapshots;
+create policy tenant_isolation_pol_opponent_snapshots_all
+  on public.pol_opponent_snapshots for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_opponent_posts (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  opponent_id             uuid         not null references public.pol_opponents(id) on delete cascade,
+  post_url                text,
+  caption                 text,
+  likes                   integer      not null default 0,
+  comments                integer      not null default 0,
+  viral_score             numeric(5,2) not null default 0,
+  hashtags                text[],
+  mentions                text[],
+  collected_at            timestamptz  not null default now(),
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_opponent_posts_org_opponent_idx
+  on public.pol_opponent_posts (organization_id, opponent_id);
+create index if not exists pol_opponent_posts_collected_idx
+  on public.pol_opponent_posts (collected_at);
+create index if not exists pol_opponent_posts_viral_idx
+  on public.pol_opponent_posts (organization_id, viral_score)
+  where viral_score > 0;
+create index if not exists pol_opponent_posts_hashtags_idx
+  on public.pol_opponent_posts using gin (hashtags)
+  where hashtags is not null;
+
+alter table public.pol_opponent_posts enable row level security;
+drop policy if exists tenant_isolation_pol_opponent_posts_all on public.pol_opponent_posts;
+create policy tenant_isolation_pol_opponent_posts_all
+  on public.pol_opponent_posts for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_opponent_signals (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  opponent_id             uuid         not null references public.pol_opponents(id) on delete cascade,
+  signal_type             text         not null
+                          check (signal_type in (
+                            'growth_anomaly', 'narrative_shift', 'alliance', 'attack',
+                            'viral_content', 'media_mention', 'event', 'other'
+                          )),
+  severity                text         not null default 'medium'
+                          check (severity in ('low', 'medium', 'high', 'critical')),
+  description             text         not null,
+  metadata                jsonb,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_opponent_signals_org_opponent_idx
+  on public.pol_opponent_signals (organization_id, opponent_id);
+create index if not exists pol_opponent_signals_org_severity_idx
+  on public.pol_opponent_signals (organization_id, severity);
+create index if not exists pol_opponent_signals_org_type_idx
+  on public.pol_opponent_signals (organization_id, signal_type);
+create index if not exists pol_opponent_signals_created_idx
+  on public.pol_opponent_signals (created_at);
+
+alter table public.pol_opponent_signals enable row level security;
+drop policy if exists tenant_isolation_pol_opponent_signals_all on public.pol_opponent_signals;
+create policy tenant_isolation_pol_opponent_signals_all
+  on public.pol_opponent_signals for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_narratives, pol_narrative_signals, pol_generated_content, pol_video_analyses (migration 0634) ----
+
+create table if not exists public.pol_narratives (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  theme                   text         not null,
+  platform                text
+                          check (platform is null or platform in (
+                            'instagram', 'facebook', 'twitter', 'tiktok', 'youtube',
+                            'linkedin', 'whatsapp', 'news', 'cross_platform'
+                          )),
+  city                    text,
+  sentiment               text         not null default 'neutral'
+                          check (sentiment in ('positive', 'negative', 'neutral', 'mixed')),
+  strength                numeric(5,2) not null default 0,
+  posts_count             integer      not null default 0,
+  reach                   integer      not null default 0,
+  engagement_score        numeric(7,2) not null default 0,
+  strategic_status        text         not null default 'monitoring'
+                          check (strategic_status in (
+                            'monitoring', 'opportunity', 'threat', 'crisis', 'resolved'
+                          )),
+  recommended_action      text,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_narratives_org_sentiment_idx
+  on public.pol_narratives (organization_id, sentiment);
+create index if not exists pol_narratives_org_status_idx
+  on public.pol_narratives (organization_id, strategic_status);
+create index if not exists pol_narratives_org_platform_idx
+  on public.pol_narratives (organization_id, platform)
+  where platform is not null;
+create index if not exists pol_narratives_org_strength_idx
+  on public.pol_narratives (organization_id, strength)
+  where strength > 0;
+create index if not exists pol_narratives_created_idx
+  on public.pol_narratives (created_at);
+
+create or replace trigger pol_narratives_touch
+  before update on public.pol_narratives
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_narratives enable row level security;
+drop policy if exists tenant_isolation_pol_narratives_all on public.pol_narratives;
+create policy tenant_isolation_pol_narratives_all
+  on public.pol_narratives for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_narrative_signals (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  narrative_id            uuid         not null references public.pol_narratives(id) on delete cascade,
+  signal_type             text         not null
+                          check (signal_type in (
+                            'keyword_spike', 'sentiment_shift', 'new_source',
+                            'viral_content', 'influencer_mention', 'media_coverage',
+                            'hashtag_trend', 'counter_narrative', 'other'
+                          )),
+  source                  text,
+  content                 text         not null,
+  severity                text         not null default 'medium'
+                          check (severity in ('low', 'medium', 'high', 'critical')),
+  metadata                jsonb,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_narrative_signals_org_narrative_idx
+  on public.pol_narrative_signals (organization_id, narrative_id);
+create index if not exists pol_narrative_signals_org_type_idx
+  on public.pol_narrative_signals (organization_id, signal_type);
+create index if not exists pol_narrative_signals_org_severity_idx
+  on public.pol_narrative_signals (organization_id, severity);
+create index if not exists pol_narrative_signals_created_idx
+  on public.pol_narrative_signals (created_at);
+
+alter table public.pol_narrative_signals enable row level security;
+drop policy if exists tenant_isolation_pol_narrative_signals_all on public.pol_narrative_signals;
+create policy tenant_isolation_pol_narrative_signals_all
+  on public.pol_narrative_signals for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_generated_content (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  title                   text         not null,
+  topic                   text         not null,
+  target_audience         text,
+  content_type            text         not null
+                          check (content_type in (
+                            'video_script', 'caption', 'carousel', 'story',
+                            'reel_script', 'live_script', 'article', 'thread', 'other'
+                          )),
+  script                  text,
+  caption                 text,
+  hashtags                text[],
+  cta                     text,
+  platform                text
+                          check (platform is null or platform in (
+                            'instagram', 'facebook', 'twitter', 'tiktok', 'youtube',
+                            'linkedin', 'whatsapp', 'cross_platform'
+                          )),
+  viral_score             numeric(5,2) not null default 0,
+  quality_score           numeric(5,2) not null default 0,
+  generation_source       text         not null default 'manual'
+                          check (generation_source in ('manual', 'ai_auto', 'ai_assisted', 'template')),
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_generated_content_org_type_idx
+  on public.pol_generated_content (organization_id, content_type);
+create index if not exists pol_generated_content_org_platform_idx
+  on public.pol_generated_content (organization_id, platform)
+  where platform is not null;
+create index if not exists pol_generated_content_org_viral_idx
+  on public.pol_generated_content (organization_id, viral_score)
+  where viral_score > 0;
+create index if not exists pol_generated_content_created_idx
+  on public.pol_generated_content (created_at);
+
+create or replace trigger pol_generated_content_touch
+  before update on public.pol_generated_content
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_generated_content enable row level security;
+drop policy if exists tenant_isolation_pol_generated_content_all on public.pol_generated_content;
+create policy tenant_isolation_pol_generated_content_all
+  on public.pol_generated_content for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+create table if not exists public.pol_video_analyses (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  video_url               text         not null,
+  analysis                text         not null,
+  key_moments             jsonb,
+  sentiment               text         not null default 'neutral'
+                          check (sentiment in ('positive', 'negative', 'neutral', 'mixed')),
+  recommendations         text,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_video_analyses_org_idx
+  on public.pol_video_analyses (organization_id);
+create index if not exists pol_video_analyses_sentiment_idx
+  on public.pol_video_analyses (organization_id, sentiment);
+create index if not exists pol_video_analyses_created_idx
+  on public.pol_video_analyses (created_at);
+
+alter table public.pol_video_analyses enable row level security;
+drop policy if exists tenant_isolation_pol_video_analyses_all on public.pol_video_analyses;
+create policy tenant_isolation_pol_video_analyses_all
+  on public.pol_video_analyses for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
