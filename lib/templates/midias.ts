@@ -3,7 +3,7 @@
  * criação/edição e o compositor compartilham (issue #2526).
  *
  * O banco guarda a DESCRIÇÃO (`storage_path` + mime + tamanho) em
- * `message_templates.midias` (migration 0630); os BYTES ficam no bucket
+ * `message_templates.midias` (migration 0643); os BYTES ficam no bucket
  * privado `whatsapp-media`, no prefixo `<org>/templates/<template>/`, gerado
  * pela rota — nunca aceito do cliente, como já faz `lib/catalogo/fotos.ts` para
  * as fotos do produto.
@@ -19,7 +19,7 @@ import { extensaoDe, farejarTipo } from "@/lib/branding/logo-arquivo";
 /** Bucket privado compartilhado com o envio de mídia do atendimento. */
 export const BUCKET_DAS_MIDIAS = "whatsapp-media";
 
-/** O mesmo teto do CHECK da migration 0630 e do input do formulário. */
+/** O mesmo teto do CHECK da migration 0643 e do input do formulário. */
 export const MAXIMO_DE_MIDIAS = 5;
 
 /**

@@ -12,7 +12,7 @@ export interface MessageTemplate {
   owner_user_id: string | null;
   /**
    * As imagens que o próprio operador carregou no template (#2526).
-   * Opcional de propósito: linha anterior à migration 0629 e fixture de teste
+   * Opcional de propósito: linha anterior à migration 0643 e fixture de teste
    * vêm sem a chave, e as duas são "só texto" — nenhum dos dois casos pode
    * quebrar quem lê.
    */

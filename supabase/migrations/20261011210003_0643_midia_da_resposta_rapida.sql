@@ -1,5 +1,5 @@
 -- manifest: A Resposta rápida ganha imagem carregada pelo próprio operador: coluna `midias` (jsonb) em `message_templates`, com os arquivos no bucket privado `whatsapp-media` (issue #2526).
--- 0630: `message_templates.midias` guarda a DESCRIÇÃO das imagens do template.
+-- 0643: `message_templates.midias` guarda a DESCRIÇÃO das imagens do template.
 --
 -- ─── Por que uma coluna, e por que jsonb ───────────────────────────────────
 --
