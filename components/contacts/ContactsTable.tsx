@@ -12,7 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatRelative, isToday, isYesterday } from "date-fns";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
-import { CaretDown, CaretUp, ChatCircle, Trash } from "@/lib/ui/icons";
+import { CaretDown, CaretUp, ChatCircle, PencilSimple, Trash } from "@/lib/ui/icons";
 import {
   Table,
   TableBody,
@@ -40,6 +40,7 @@ import type { Contact } from "@/lib/types/contacts";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { useConversaNovaComEscolhaDeCanal } from "@/components/channels/SeletorDeCanalParaConversa";
+import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 
 interface Props {
   contacts: Contact[];
@@ -115,6 +116,10 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
   const clientesLigado = useActiveOrg()?.cliente_pela_agenda === true;
   const del = useDeleteContact();
   const [alvo, setAlvo] = useState<Contact | null>(null);
+  // Issue #2715 — editar pela linha, sem abrir a ficha. Sem customFieldDefs:
+  // o contrato do diálogo some a seção de campos do funil, e o caminho rápido
+  // coexiste com o completo (quem precisa dos campos abre a ficha, como hoje).
+  const [contatoEmEdicao, setContatoEmEdicao] = useState<Contact | null>(null);
   const router = useRouter();
   const qc = useQueryClient();
   // Issue #2382 — seletor de canal ao INICIAR a conversa. O diálogo é o retorno
@@ -294,6 +299,20 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
                     <ChatCircle size={16} weight="regular" aria-hidden />
                   </Button>
                 ) : null}
+                {/* Issue #2715 — atalho de edição na linha: o MESMO diálogo da ficha (EditContactDialog), sem formulário novo. A lista já é invalidada pelo useUpdateContact (["contacts"]).
+                    Anonimizado não ganha lápis, como na ficha: o servidor recusa com lgpd_anonymization_irreversible. */}
+                {!c.is_anonymized && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    title={t("Editar contato")}
+                    aria-label={`${t("Editar contato")} ${displayName(c, t)}`}
+                    onClick={() => setContatoEmEdicao(c)}
+                  >
+                    <PencilSimple size={16} weight="regular" aria-hidden />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -347,6 +366,15 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    {/* Issue #2715 — edição pela linha. Montado só com alvo escolhido, no
+        mesmo molde do AlertDialog de exclusão: fechar zera o state. */}
+    {contatoEmEdicao && (
+      <EditContactDialog
+        contact={contatoEmEdicao}
+        open
+        onOpenChange={(v) => { if (!v) setContatoEmEdicao(null); }}
+      />
+    )}
     {/* Issue #2382 — o seletor de canal, quando há mais de um elegível. */}
     {seletorDeCanal}
     </>
