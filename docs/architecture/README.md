@@ -32,6 +32,7 @@ ser fonte sem ninguém decidir isso.
 | `central-avisos.architecture.json` | projeção em lote sob RLS, contexto real e resolver/reabrir independentes |
 | `followup-dossie.architecture.json` | dossiê do follow-up e intervenção humana — 20 peças, 30 arestas; as **duas metades** da corrida contra o motor (o tick reclamado e o turno em voo) e quatro não-ligações declaradas |
 | `followup-duplicar.architecture.json` | duplicar e renomear um fluxo — cópia sempre rascunho, nome único na org, o mesmo PATCH de nome agora com superfície na lista e no construtor |
+| `designer-de-automacoes.architecture.json` | designer de automações (fase 1) — 8 peças, 9 arestas; a mesma regra da aba Automações montada em caixas ligadas, validada pelo mesmo schema e gravada pela mesma rota, e por que o desenho em si não vai para o banco |
 | `followup-retorno.architecture.json` | gatilho Cliente voltou — inbound depois do silêncio, envio inline, turno do agente cede |
 | `indice-de-atrito.architecture.json` | índice de atrito — 24 peças, 31 arestas; a régua do atrito, o rádio que a lê e as demandas que entram nela |
 | `marca-propria.architecture.json` | marca própria (white-label) — 37 peças, 54 arestas, 6 faixas; a pilha org → instalação → `.env` → padrão, as saídas SEM DOM (`marcaDaSaida`) e a **não-ligação declarada** do PDF de LGPD, que imprime o CONTROLADOR e nunca a marca de quem revende |

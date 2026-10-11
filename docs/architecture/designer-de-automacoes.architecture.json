@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Designer de automações (fase 1)",
+    "pergunta": "Como a mesma automação da aba Webhooks › Automações é montada em caixas ligadas, sem mudar o motor, a API nem o banco?",
+    "resumo": "O designer é outra forma de montar a regra de sempre. Ele converte a regra gravada em caixas (gatilho → condições → ações em fila) e as caixas de volta no corpo que o editor em lista já manda. A validação é a do createAutomationRuleSchema, só traduzida para a caixa que causou cada recusa. Nada do desenho é gravado: as ligações viram a ordem da lista actions."
+  },
+  "lanes": [
+    { "id": "humano", "label": "O que o humano vê" },
+    { "id": "regra", "label": "Regras puras" },
+    { "id": "borda", "label": "Borda HTTP" },
+    { "id": "dados", "label": "Banco e motor" }
+  ],
+  "mainPath": ["aba", "designer", "desenho", "schema", "rota", "regras"],
+  "nodes": [
+    {
+      "id": "aba",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "RulesTab",
+      "sublabel": "Montar no designer · Abrir no designer em cada cartão"
+    },
+    {
+      "id": "lista",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "RuleEditor",
+      "sublabel": "o editor em lista continua; os dois gravam o mesmo corpo"
+    },
+    {
+      "id": "designer",
+      "lane": "humano",
+      "col": 2,
+      "type": "frontend",
+      "label": "/app/webhooks/automacoes/[id]",
+      "sublabel": "canvas do construtor de follow-up · manager+ · id ou nova"
+    },
+    {
+      "id": "desenho",
+      "lane": "regra",
+      "col": 2,
+      "type": "regra",
+      "label": "desenho-da-regra.ts",
+      "sublabel": "desenhoDaRegra · corpoDoDesenho · validarDesenho · inserir/excluir/ligar"
+    },
+    {
+      "id": "schema",
+      "lane": "regra",
+      "col": 3,
+      "type": "regra",
+      "label": "createAutomationRuleSchema",
+      "sublabel": "a mesma régua da rota; o laço #1528 continua valendo"
+    },
+    {
+      "id": "rota",
+      "lane": "borda",
+      "col": 3,
+      "type": "api",
+      "label": "POST/PATCH /api/v1/automation-rules",
+      "sublabel": "sem rota nova: as mesmas mutações do editor em lista"
+    },
+    {
+      "id": "regras",
+      "lane": "dados",
+      "col": 4,
+      "type": "tabela",
+      "label": "automation_rules",
+      "sublabel": "trigger_event · trigger_config · conditions · actions (em ordem)"
+    },
+    {
+      "id": "motor",
+      "lane": "dados",
+      "col": 4,
+      "type": "worker",
+      "label": "lib/automation/engine.ts",
+      "sublabel": "não muda: lê a regra, não sabe qual tela a montou"
+    }
+  ],
+  "edges": [
+    { "id": "a1", "from": "aba", "to": "designer", "label": "link Montar no designer (nova) · atalho de cada cartão (id)" },
+    { "id": "a2", "from": "designer", "to": "desenho", "label": "regra gravada → caixas ao abrir; caixas → corpo ao salvar" },
+    { "id": "a3", "from": "desenho", "to": "schema", "label": "o corpo passa pelo mesmo schema; cada recusa volta para a caixa que a causou" },
+    { "id": "a4", "from": "designer", "to": "rota", "label": "useCreateAutomationRule / useUpdateAutomationRule — o mesmo corpo do editor em lista" },
+    { "id": "a5", "from": "lista", "to": "rota", "label": "o caminho de antes, intacto" },
+    { "id": "a6", "from": "rota", "to": "regras", "label": "INSERT/UPDATE com organization_id da sessão" },
+    { "id": "a7", "from": "regras", "to": "motor", "label": "o motor roda a regra salva e ligada, como sempre" },
+    { "id": "a8", "from": "regras", "to": "designer", "label": "a lista de automações reabre a regra no designer — e no editor em lista" },
+    { "id": "a9", "from": "designer", "to": "aba", "label": "voltar abre a aba Automações (/app/webhooks?aba=automacoes)" }
+  ],
+  "cards": [
+    {
+      "titulo": "Por que o desenho não é gravado",
+      "texto": "A automação já tem um formato só: uma fila. Guardar posição de caixa exigiria coluna nova (migration) para um dado que não muda o que roda. O designer reorganiza ao abrir, e as ligações viram a ordem da lista actions — que é a única coisa da forma que importa ao motor."
+    },
+    {
+      "titulo": "O passo a IA decide",
+      "texto": "Ele existe no motor e no schema, mas hoje só nasce pela API. Na fase 1 o designer o mostra, mantém a posição dele na fila e o devolve byte a byte; dar tela para ele é decisão de produto, fora deste recorte."
+    },
+    {
+      "titulo": "O laço de retorno (invariante 7)",
+      "texto": "Erro de montagem não chega à API: validarDesenho marca a caixa e a gravação não acontece. Erro de execução continua onde sempre esteve — a aba Atividade mostra o motivo de cada ação que não aconteceu, e o atalho do cartão reabre a regra no designer para corrigir."
+    }
+  ]
+}
