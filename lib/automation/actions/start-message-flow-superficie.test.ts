@@ -24,17 +24,20 @@ vi.mock("@/lib/followup/enroll", () => ({ enrollFollowupFlow: vi.fn() }));
 vi.mock("@/lib/followup/atendimento", () => ({ iniciarFluxoDeAtendimento: vi.fn() }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn() }));
 vi.mock("@/lib/atendimento/origem-automacao", () => ({ serviceForAutomation: vi.fn() }));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn() }));
 
 import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 import { executeStartMessageFlow } from "@/lib/automation/actions/start-message-flow";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { iniciarFluxoDeAtendimento } from "@/lib/followup/atendimento";
 import { enrollFollowupFlow } from "@/lib/followup/enroll";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 
 const enroll = vi.mocked(enrollFollowupFlow);
 const iniciar = vi.mocked(iniciarFluxoDeAtendimento);
 const doPool = vi.mocked(getRequestPool);
 const servico = vi.mocked(serviceForAutomation);
+const modulo = vi.mocked(moduloLigado);
 
 const POINTER = "11111111-1111-4111-8111-111111111111";
 
@@ -66,6 +69,8 @@ describe("start_message_flow — a superfície escolhe o caminho (#2647)", () =>
     iniciar.mockReset();
     doPool.mockReset();
     servico.mockReset();
+    modulo.mockReset();
+    modulo.mockResolvedValue(true);
   });
 
   it("sem superfície declarada continua inscrevendo no follow-up, como antes", async () => {
@@ -128,5 +133,23 @@ describe("start_message_flow — a superfície escolhe o caminho (#2647)", () =>
 
     expect(result.status).toBe("skipped");
     expect(result.detail).toEqual({ reason: "roteiro_nao_iniciado" });
+  });
+
+  it("com o módulo Fluxos de atendimento desligado, não arma roteiro que ninguém conduz", async () => {
+    modulo.mockResolvedValue(false);
+
+    const result = await executeStartMessageFlow(baseCtx(), {
+      flow_pointer_id: POINTER,
+      surface: "atendimento",
+    });
+
+    expect(result).toEqual({
+      type: "start_message_flow",
+      status: "skipped",
+      detail: { reason: "modulo_desligado" },
+    });
+    expect(modulo).toHaveBeenCalledWith(expect.anything(), "fluxos_atendimento");
+    expect(iniciar).not.toHaveBeenCalled();
+    expect(doPool).not.toHaveBeenCalled();
   });
 });

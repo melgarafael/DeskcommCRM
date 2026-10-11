@@ -28,6 +28,7 @@ import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { iniciarFluxoDeAtendimento } from "@/lib/followup/atendimento";
 import { enrollFollowupFlow } from "@/lib/followup/enroll";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 
 const TYPE = "start_message_flow";
 
@@ -109,6 +110,12 @@ async function armarRoteiroDeAtendimento(
   pointerId: string,
   contactId: string,
 ): Promise<ActionResultDetail> {
+  // O módulo é opcional e por instalação: desligado, ninguém conduz o roteiro
+  // (a tela some e o turno do agente não o lê). Armar ali seria um sucesso falso.
+  if (!(await moduloLigado(ctx.admin, "fluxos_atendimento"))) {
+    return { type: TYPE, status: "skipped", detail: { reason: "modulo_desligado" } };
+  }
+
   let pool;
   try {
     pool = getRequestPool();

@@ -6055,6 +6055,7 @@
   "Excluir contato": "Delete contact",
   "Excluir contato?": "Delete contact?",
   "Fluxo de follow-up": "Follow-up flow",
+  "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.": "The support script didn't start: the Support flows module is turned off on this installation.",
   "Tipo de fluxo": "Flow type",
   "Fluxo de atendimento": "Support flow",
   "Nenhum fluxo de atendimento ativo. Publique um em Fluxos de atendimento para usá-lo aqui.": "No active support flow. Publish one under Support flows to use it here.",

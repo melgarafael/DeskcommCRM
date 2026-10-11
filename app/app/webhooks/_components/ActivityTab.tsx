@@ -112,6 +112,8 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
      mesmos dois canais (`detail.reason` e `action.error`). */
   banco_do_roteiro_indisponivel:
     "O roteiro de atendimento não começou: esta instalação não tem a conexão direta do banco configurada, e é por ela que o roteiro é conduzido. Configure-a e execute a regra de novo.",
+  modulo_desligado:
+    "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.",
   roteiro_nao_iniciado:
     "O roteiro de atendimento não começou para este contato: o fluxo pode não estar publicado, o contato já pode ter um roteiro em andamento, ou já ter concluído este sem poder recomeçar.",
   consent_declined: "O contato não autorizou o recebimento de mensagens de marketing.",

@@ -4315,6 +4315,7 @@
   "Excluir contato": "删除联系人",
   "Excluir contato?": "删除联系人？",
   "Fluxo de follow-up": "跟进流程",
+  "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.": "接待问卷未能启动：此安装已关闭接待流程模块。",
   "Tipo de fluxo": "流程类型",
   "Fluxo de atendimento": "接待流程",
   "Nenhum fluxo de atendimento ativo. Publique um em Fluxos de atendimento para usá-lo aqui.": "没有活跃的接待流程。请在接待流程中发布一个，以便在此使用。",
