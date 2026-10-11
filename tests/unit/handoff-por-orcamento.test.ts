@@ -48,6 +48,7 @@ import { montarBriefingDaPassagem } from "@/lib/escalacao/briefing-da-passagem";
 const RAIZ = process.cwd();
 const INBOUND = join(RAIZ, "lib/agent-engine/agent/inbound-turn.ts");
 const WORKER = join(RAIZ, "workers/agent-worker/main.ts");
+const DISPOSICAO = join(RAIZ, "workers/agent-worker/dispor-job-apos-falha.ts");
 const CABECALHO = join(RAIZ, "components/inbox/ConversationHeader.tsx");
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -420,26 +421,34 @@ describe("o call site — AST separa prévia sem job do turno operacional escolt
 
 describe("a fila trata veto de negócio como veto, não como incidente", () => {
   const fonteWorker = readFileSync(WORKER, "utf8").replace(/\s+/gu, " ");
+  const fonteDisposicao = readFileSync(DISPOSICAO, "utf8").replace(/\s+/gu, " ");
+  const DELEGACAO = "await disporJobAposFalha(pool, job, workerId, err, terminal, log);";
   const ROTEAMENTO =
-    "if (terminal) { await cancelJob(pool, job.id, workerId, errMsg(err), claimOfJob(job)?.acquired_at); } " +
-    "else { await failJob(pool, job.id, workerId, err, claimOfJob(job)?.acquired_at); }";
+    'else if (terminal) { const reason = error instanceof Error ? error.message : String(error); ' +
+    'await cancelJob(pool, job.id, workerId, (reason.split("\\n", 1)[0] ?? "").slice(0, 300), claimOfJob(job)?.acquired_at); } ' +
+    "else { await failJob(pool, job.id, workerId, error, claimOfJob(job)?.acquired_at); }";
 
   it("erro terminal vai para cancelJob; o resto continua em failJob", () => {
     expect(fonteWorker.length, "guarda de vacuidade: arquivo do worker vazio").toBeGreaterThan(1000);
+    expect(fonteWorker).toContain('import { disporJobAposFalha } from "./dispor-job-apos-falha";');
+    expect(fonteWorker).toContain(DELEGACAO);
     expect(
-      fonteWorker,
+      fonteDisposicao,
       "bloqueio por orçamento em failJob = 5 tentativas por conversa + 1 job_dead crítico sem dedup por job",
     ).toContain(ROTEAMENTO);
     expect(fonteWorker).toContain("ehVetoPermanenteDeNegocio(err)");
   });
 
   it("controle negativo: o detector acusa a volta do failJob", () => {
-    const sabotado = fonteWorker.replace(
-      "await cancelJob(pool, job.id, workerId, errMsg(err), claimOfJob(job)?.acquired_at);",
-      "await failJob(pool, job.id, workerId, err, claimOfJob(job)?.acquired_at);",
-    );
-    expect(sabotado).not.toBe(fonteWorker);
+    const sabotado = fonteDisposicao.replace("await cancelJob(", "await failJob(");
+    expect(sabotado).not.toBe(fonteDisposicao);
     expect(sabotado).not.toContain(ROTEAMENTO);
+  });
+
+  it("controle negativo: o detector acusa o catch que deixa de delegar", () => {
+    const sabotado = fonteWorker.replace(DELEGACAO, "await failJob(pool, job.id, workerId, err);");
+    expect(sabotado).not.toBe(fonteWorker);
+    expect(sabotado).not.toContain(DELEGACAO);
   });
 });
 
