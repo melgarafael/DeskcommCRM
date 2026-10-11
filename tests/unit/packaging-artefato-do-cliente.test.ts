@@ -365,6 +365,41 @@ describe("packaging — o artefato que o cliente instala", () => {
   });
 });
 
+describe("packaging — o caminho Cloudflare Tunnel (docker-compose.cloudflared.yml)", () => {
+  // O gate de imagem upstream acima lê só o `docker-compose.prod.yml`; este
+  // override roda na VPS do cliente tanto quanto ele. Sem esta sonda, trocar a
+  // tag fixa do cloudflared por `:latest` (ou omitir a tag) passaria batido.
+  const overlay = fs.readFileSync(path.join(RAIZ, "docker-compose.cloudflared.yml"), "utf8");
+  const servicos = lerServicos(overlay);
+
+  it("o parser enxerga o cloudflared e o caddy desligado", () => {
+    expect([...servicos.keys()].sort()).toEqual(["caddy", "cloudflared"]);
+  });
+
+  it("a imagem do cloudflared está pinada — nunca :latest nem tag implícita", () => {
+    const bloco = servicos.get("cloudflared")!;
+    const ref = (bloco.match(/^\s{4}image:\s*(\S+)/m)?.[1] ?? "").replace(
+      /^\$\{[A-Z_]+:-(.+)\}$/,
+      "$1",
+    );
+    expect(ref, "cloudflared sem image:").not.toBe("");
+
+    // `cloudflared` é upstream: referencia-se com tag fixa, nunca se republica
+    // (docs/doctrine/packaging.md). Digest também serve como pin, mas aqui a
+    // escolha é a tag de versão — e ela não pode ser `latest`.
+    if (!ref.includes("@sha256:")) {
+      const depoisDoHost = ref.split("/").pop() ?? "";
+      const tag = depoisDoHost.includes(":") ? depoisDoHost.split(":").pop() : null;
+      expect(tag, `cloudflared sem tag: ${ref}`).toBeTruthy();
+      expect(tag, `cloudflared na tag móvel: ${ref}`).not.toBe("latest");
+    }
+
+    // Tag de versão é imutável → `missing`, para a subida do túnel não ficar
+    // amarrada à disponibilidade do Docker Hub.
+    expect(bloco.match(/^\s{4}pull_policy:\s*(\S+)/m)?.[1]).toBe("missing");
+  });
+});
+
 describe("packaging — a versão que roda é observável de fora", () => {
   it("o /api/v1/health lê APP_VERSION, e não npm_package_version", () => {
     // npm_package_version é `undefined` sob `CMD ["node","server.js"]` — só

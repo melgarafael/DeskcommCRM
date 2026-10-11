@@ -23,6 +23,7 @@ REPO_DIR="${REPO_DIR:-deskcommcrm}"
 COMPOSE="docker-compose.prod.yml"
 COMPOSE_TRAEFIK="docker-compose.traefik.yml"
 COMPOSE_NPM="docker-compose.npm.yml"
+COMPOSE_CLOUDFLARED="docker-compose.cloudflared.yml"
 NONINTERACTIVE=0
 [ "${1:-}" = "--yes" ] && NONINTERACTIVE=1
 
@@ -52,6 +53,7 @@ dc() {
   case "${REVERSE_PROXY:-caddy}" in
   traefik) docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" ${ca[@]+"${ca[@]}"} "$@" ;;
   npm)     docker compose -f "$COMPOSE" -f "$COMPOSE_NPM" ${ca[@]+"${ca[@]}"} "$@" ;;
+  cloudflared) docker compose -f "$COMPOSE" -f "$COMPOSE_CLOUDFLARED" ${ca[@]+"${ca[@]}"} "$@" ;;
   *)       docker compose -f "$COMPOSE" ${ca[@]+"${ca[@]}"} "$@" ;;
   esac
 }
@@ -73,6 +75,7 @@ dc_files() {
   case "${REVERSE_PROXY:-caddy}" in
   traefik) printf -- '-f %s -f %s%s' "$COMPOSE" "$COMPOSE_TRAEFIK" "$sufixo" ;;
   npm)     printf -- '-f %s -f %s%s' "$COMPOSE" "$COMPOSE_NPM" "$sufixo" ;;
+  cloudflared) printf -- '-f %s -f %s%s' "$COMPOSE" "$COMPOSE_CLOUDFLARED" "$sufixo" ;;
   *)       printf -- '-f %s%s' "$COMPOSE" "$sufixo" ;;
   esac
 }
@@ -1194,6 +1197,31 @@ e, se for mesmo um Traefik, ponha REVERSE_PROXY=traefik no .env e rode de novo."
   esac
 fi
 
+# ── Cloudflare Tunnel: escolha manual, atrás de NAT ─────────────────────────
+# `cloudflared` NÃO entra em `decide_proxy`: não há nada para detectar. Quem
+# está atrás de NAT (ou de CGNAT, ou numa rede que proíbe inbound) declara
+# `REVERSE_PROXY=cloudflared` no .env, do mesmo modo manual do NPM. Aqui só se
+# confere que o token veio junto e que o modo não é incompatível.
+#
+# A recusa no single-server é de DESENHO, não de preguiça: lá o Caddy publica
+# também as seis APIs do Supabase (Auth, REST, Realtime, Storage...) pelo
+# Caddyfile.single-server. Sem Caddy, o túnel não tem para onde mandar
+# /auth/v1*, /rest/v1* e o Supabase deixa de funcionar — um site que "sobe" e
+# não loga. Até existir um Caddyfile do túnel que roteie as APIs, recusar é a
+# resposta honesta.
+if [ "${REVERSE_PROXY:-}" = "cloudflared" ]; then
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    die "$(t "REVERSE_PROXY=cloudflared não é suportado no modo single-server, porque o Supabase self-hosted depende do Caddy para publicar as APIs (Auth, REST, Storage...). Use o proxy padrão (Caddy) ou o Cloudflare Tunnel apenas com o Supabase na nuvem.")"
+  fi
+  if [ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+    die "$(t "REVERSE_PROXY=cloudflared exige CLOUDFLARE_TUNNEL_TOKEN no .env.
+Crie o túnel em Zero Trust > Networks > Tunnels, copie o token para essa linha
+e rode de novo. Em Public Hostnames, aponte o seu domínio para http://app:3000.")"
+  fi
+  c_grn "$(t "✓ Cloudflare Tunnel: o Caddy fica desligado e o cloudflared publica por app:3000")"
+  c_dim "$(t "  (lembre de bloquear /api/v1/webhooks/waha no WAF da Cloudflare — ver docker-compose.cloudflared.yml)")"
+fi
+
 # Fica FORA do `case` porque quem põe REVERSE_PROXY=traefik no .env à mão — o
 # caminho que o painel de bloqueio logo acima ENSINA — pula o `case` inteiro e
 # chegava no bloco da rede com a variável vazia, para morrer em "Não consegui
@@ -1722,8 +1750,15 @@ esac
   printf '# modo). Em "npm" entra o docker-compose.npm.yml, que também desliga o Caddy\n'
   printf '# e fixa o app na rede/IP que o Proxy Host espera (PROXY_NETWORK_* só é lido\n'
   printf '# nesse modo, e é sempre configuração manual — não há como detectar o NPM\n'
-  printf '# sozinho, ao contrário do Traefik).\n'
+  printf '# sozinho, ao contrário do Traefik). Ou "cloudflared" (a instalação está\n'
+  printf '# atrás de NAT: o Caddy é desligado e o acesso sai pelo Cloudflare Tunnel —\n'
+  printf '# entra o docker-compose.cloudflared.yml, e só CLOUDFLARE_TUNNEL_TOKEN é\n'
+  printf '# lido nesse modo; a configuração do túnel vive no painel da Cloudflare).\n'
   envq REVERSE_PROXY "$REVERSE_PROXY"
+  # Só consumido pelo contêiner `cloudflared` (nunca pelo app), então não entra
+  # em lib/env.ts. Gravado SEMPRE (vazio fora do modo cloudflared) para o laço
+  # que preserva chave alheia reconhecê-lo e uma re-execução não apagá-lo.
+  envq CLOUDFLARE_TUNNEL_TOKEN "${CLOUDFLARE_TUNNEL_TOKEN:-}"
   # O default mora aqui, junto dos irmãos TRAEFIK_* logo abaixo, e não numa
   # atribuição solta lá atrás: em modo caddy ninguém DECIDE esta variável, e
   # depender de uma linha distante para ela existir é o tipo de laço que um

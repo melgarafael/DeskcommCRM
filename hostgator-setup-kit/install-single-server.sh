@@ -97,6 +97,20 @@ if [[ "${mem_kb:-0}" -lt "$RAM_MINIMA_KB" && "${SINGLE_SERVER_ALLOW_LOW_MEMORY:-
   die "O modo single-server exige pelo menos 4 GB de RAM e recomenda 8 GB. Esta VPS tem aproximadamente $((mem_kb / 1024)) MB."
 fi
 
+# Cloudflare Tunnel não combina com o Supabase self-hosted: neste modo é o Caddy
+# que publica as seis APIs do Supabase (Auth, REST, Realtime, Storage...) pelo
+# Caddyfile.single-server. Com o Caddy desligado, o túnel não tem para onde
+# mandar /auth/v1* e o CRM sobe sem conseguir logar. Recusa ANTES de gerar
+# segredo, baixar imagem ou subir contêiner — falha cedo e barata.
+_rp_cloudflared="${REVERSE_PROXY:-}"
+if [[ -z "$_rp_cloudflared" && -f "$ROOT_DIR/.env" ]]; then
+  _rp_cloudflared="$(ler_env "$ROOT_DIR/.env" REVERSE_PROXY)"
+fi
+if [[ "$_rp_cloudflared" == "cloudflared" ]]; then
+  die "O modo single-server não suporta REVERSE_PROXY=cloudflared: as APIs do Supabase dependem do Caddy. Use o proxy padrão (Caddy), ou o Cloudflare Tunnel apenas com o Supabase na nuvem."
+fi
+unset _rp_cloudflared
+
 # Invariante 8 (docs/doctrine/packaging.md), ANTES de baixar ou subir qualquer
 # coisa: uma segunda árvore do CRM na VPS não sobe um Supabase por cima do da
 # primeira, nem deixa um Supabase órfão para o install.sh recusar depois.

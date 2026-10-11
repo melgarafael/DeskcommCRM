@@ -133,3 +133,46 @@ stack em operação, não o WAHA isolado — e a folga existe justamente porque 
 parcela por sessão não é conhecida com precisão.
 
 Ao terminar, feche o ciclo — merge na `main` e volte a VPS pra imagem oficial.
+
+---
+
+## 5. Atrás de NAT — Cloudflare Tunnel
+
+Quando a VPS está atrás de NAT (ou de CGNAT, ou numa rede que proíbe entrada), **nada
+publica 80/443** e o Caddy nunca obtém certificado Let's Encrypt. A saída é o Cloudflare
+Tunnel: o contêiner `cloudflared` abre uma conexão de saída para a borda da Cloudflare, e
+é ela que atende o domínio. Nenhuma porta de entrada é necessária.
+
+O comando leva o override do túnel (o Caddy fica desligado por profile):
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml --env-file .env up -d
+```
+
+O kit faz isso sozinho quando o `.env` diz `REVERSE_PROXY=cloudflared` — inclusive no
+`update.sh`. A configuração do túnel **não mora no repo**: é administrada no painel
+(Zero Trust > Networks > Tunnels). O `.env` guarda só o token:
+
+```env
+REVERSE_PROXY=cloudflared
+CLOUDFLARE_TUNNEL_TOKEN=<token do túnel>
+```
+
+Passos no painel:
+
+1. crie o túnel e copie o token para `CLOUDFLARE_TUNNEL_TOKEN`;
+2. em **Public Hostnames**, aponte o domínio para o serviço `http://app:3000` (nome
+   `app`, **não** `https` e **não** o IP do host — o TLS termina na Cloudflare);
+3. aponte `DOMAIN`, `NEXT_PUBLIC_APP_URL` e `NEXT_PUBLIC_ADMIN_URL` para esse mesmo
+   hostname (`https://…`) e liste-o nos redirects do Supabase Auth;
+4. **bloqueie `/api/v1/webhooks/waha`** no WAF (`Security > WAF > Custom rules`), porque
+   neste modo o 403 que o Caddy dava não existe — ver `docs/threat-model.md` §1.1.
+
+Notas:
+
+- **Single-server (Supabase self-hosted) não é suportado.** O instalador recusa
+  `REVERSE_PROXY=cloudflared` nesse modo: as APIs do Supabase dependem do Caddy.
+- A borda da Cloudflare corta HTTP acima de ~100s (504/524). As rotas longas desta stack
+  (`/api/internal/agents/run*`, webhook do WAHA) são internas e não passam pelo túnel.
+- Verificação: `docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml
+  --env-file .env config --services` deve listar `cloudflared` e **não** listar `caddy`.

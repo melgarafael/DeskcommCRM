@@ -48,7 +48,8 @@ ss -ltnp | grep -E ':80 |:443 '
 
 | o que você vê | o que fazer |
 |---|---|
-| nada nas portas | siga normal — o Caddy do kit cuida do certificado |
+| nada nas portas **e a VPS tem IP público alcançável** | siga normal — o Caddy do kit cuida do certificado |
+| nada nas portas, mas a VPS está **atrás de NAT/CGNAT** (o domínio não alcança a máquina) | declare `REVERSE_PROXY=cloudflared` no `.env` e use o Cloudflare Tunnel — ver `problemas-e-armadilhas.md` |
 | contêiner `traefik` **publicando** 80/443 (Coolify, Dokploy, CapRover) | deixe o instalador detectar: ele grava `REVERSE_PROXY=traefik` e publica o CRM por etiquetas no Traefik da hospedagem |
 | Traefik em `--network host` (Hostinger) — a coluna de portas sai vazia | o instalador **pergunta** se é ele quem atende o domínio; responda `s`. Em `--yes`, escreva `REVERSE_PROXY=traefik` no `.env` antes |
 | `nginx`/`apache` do próprio sistema (CloudPanel, cPanel) | não é detectado. Prepare o `.env` seguindo `docs/runbooks/cloudpanel.md` (`REVERSE_PROXY=traefik` mais rede e entrypoints) **antes** de rodar |

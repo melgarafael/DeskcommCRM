@@ -794,7 +794,7 @@ fi
 # proxy" em TODA atualização de quem usa proxy externo: alarme falso, num
 # momento em que o dono precisa confiar no que está lendo.
 case "${REVERSE_PROXY:-caddy}" in
-traefik|npm)
+traefik|npm|cloudflared)
   c_grn "✓ proxy externo (${REVERSE_PROXY}): o Caddy não é usado aqui — nada a recarregar"
   ;;
 *)

@@ -251,6 +251,14 @@ roteamento; o Traefik da hospedagem deixa de enxergá-lo e **o domínio inteiro
 responde `404 page not found`** — com o contêiner `healthy`, porque o
 healthcheck é um probe TCP interno e não sabe nada de roteamento.
 
+**Numa VPS atrás de NAT (ou CGNAT, ou rede sem entrada), `REVERSE_PROXY=cloudflared`
+entra o `docker-compose.cloudflared.yml`:** desliga o Caddy e sobe o `cloudflared`, que
+publica por `app:3000` num túnel *remotely-managed* (só `CLOUDFLARE_TUNNEL_TOKEN` no
+`.env`; hostnames e TLS no painel da Cloudflare). Nenhuma porta é publicada. O webhook
+global do WAHA perde o 403 do Caddy e passa a depender de uma regra de WAF/Access na
+Cloudflare (o HMAC continua como segunda camada). Não é suportado no single-server — o
+instalador recusa. Ver `docs/runbooks/deploy.md` §5.
+
 Depois de qualquer deploy, confirme que `/` responde **200** (a página inicial
 pública) e `/app` responde **307** (redireciona pro login), e não 404. O 200
 sozinho não prova que é o app: qualquer coisa no domínio responderia 200; o 307
