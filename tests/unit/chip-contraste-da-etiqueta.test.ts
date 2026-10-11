@@ -37,9 +37,8 @@
  *     `estiloDoChip` só pode ser importado pelo próprio chip. Uma tela nova que
  *     use o chip é aceita automaticamente; uma que pinte cor sozinha reprova.
  *
- * Os tons saem com nome lido do `NOME_DO_TOM` do painel (texto, não import:
- * teste de lib não importa `@/app`), para que a falha diga "Âmbar" e não só
- * `#ffb224`.
+ * Os tons saem com nome lido do `NOME_DO_TOM` da lib (desde a #2718), para que
+ * a falha diga "Âmbar" e não só `#ffb224`.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -54,7 +53,7 @@ import {
   razaoDeContraste,
 } from "@/lib/branding/contraste";
 import { deltaEOklab } from "@/lib/branding/rampa";
-import { PALETA_DE_ETIQUETAS, estiloDoChip } from "@/lib/tags/cor-da-etiqueta";
+import { NOME_DO_TOM, PALETA_DE_ETIQUETAS, estiloDoChip } from "@/lib/tags/cor-da-etiqueta";
 
 const raiz = process.cwd();
 /** O piso a olho nu, o dobro do de dicromacia — a mesma proporção do design system. */
@@ -69,14 +68,9 @@ const PISO_A_OLHO_NU = 0.1;
  */
 const CORES_DA_CAPTURA_DA_ISSUE = ["#4b60d8", "#6f6f6f", "#1aa494", "#fcb540", "#e35537"];
 
-/** `NOME_DO_TOM` lido como TEXTO do painel — teste de lib não importa `@/app`. */
+/** `NOME_DO_TOM` mora na lib desde a #2718, junto da paleta que ele rotula. */
 function nomesDosTons(): Record<string, string> {
-  const painel = readFileSync(join(raiz, "app/app/settings/tags/_painel.tsx"), "utf8");
-  const bloco = painel.slice(painel.indexOf("const NOME_DO_TOM"));
-  const mapa = bloco.slice(0, bloco.indexOf("};"));
-  const saida: Record<string, string> = {};
-  for (const m of mapa.matchAll(/"(#[0-9a-f]{6})":\s*"([^"]+)"/g)) saida[m[1]!] = m[2]!;
-  return saida;
+  return NOME_DO_TOM;
 }
 
 function arquivosDe(pasta: string, extensao: string): string[] {

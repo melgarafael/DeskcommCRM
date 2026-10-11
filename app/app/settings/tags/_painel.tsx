@@ -51,7 +51,7 @@ import { Label } from "@/components/ui/label";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { invalidarCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { cn } from "@/lib/utils";
-import { PALETA_DE_ETIQUETAS, normalizarCorDeEtiqueta } from "@/lib/tags/cor-da-etiqueta";
+import { PALETA_DE_ETIQUETAS, NOME_DO_TOM, normalizarCorDeEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import type { AcaoDeVocabulario, LinhaDeVocabulario } from "@/lib/schemas/tags";
@@ -74,24 +74,11 @@ import type { AcaoDeVocabulario, LinhaDeVocabulario } from "@/lib/schemas/tags";
 const TETO_DA_LISTA = 500;
 
 /**
- * O NOME DE CADA TOM DA PALETA, e o teste que impede os dois divergirem.
- *
- * `tests/unit/tags-cor-de-etiqueta.test.ts` cobra que este mapa tenha
- * EXATAMENTE as chaves de `PALETA_DE_ETIQUETAS`. Sem ele, acrescentar um tom à
- * paleta deixaria um quarto círculo mudo na fileira (o `?? tom` abaixo cobre a
- * tela, mas o nome iria embora em silêncio) — o mesmo defeito que o `TETO_DA_LISTA`
- * previne para o `limit` do SQL.
+ * O NOME DE CADA TOM DA PALETA mora em `@/lib/tags/cor-da-etiqueta` desde a
+ * #2718 — junto da paleta, que o seletor de criação também usa. O teste
+ * `tests/unit/tags-cor-de-etiqueta.test.ts` cobra que o mapa tenha
+ * EXATAMENTE as chaves de `PALETA_DE_ETIQUETAS`.
  */
-const NOME_DO_TOM: Record<string, string> = {
-  "#ffe629": "Amarelo",
-  "#ffb224": "Âmbar",
-  "#cf3716": "Vermelho",
-  "#00655a": "Verde-água",
-  "#0091ff": "Azul",
-  "#3e63dd": "Índigo",
-  "#ab4aba": "Roxo",
-  "#6f6f6f": "Cinza",
-};
 
 /** Cada recusa do servidor vira uma frase que diz O QUE FAZER. */
 const ERRO_EM_PORTUGUES: Record<string, string> = {

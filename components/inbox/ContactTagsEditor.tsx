@@ -3,11 +3,13 @@ import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { PontoDaEtiqueta } from "@/components/tags/PontoDaEtiqueta";
+import { SeletorDeCorDaEtiqueta } from "@/components/tags/SeletorDeCorDaEtiqueta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Plus } from "@/lib/ui/icons";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
+import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { normalizarTag, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 
 interface Props {
@@ -21,7 +23,10 @@ interface Props {
 export function ContactTagsEditor({ contactId, orgId, tags }: Props) {
   const t = useT();
   const [draft, setDraft] = useState("");
+  // Issue #2718 — tom escolhido ANTES do "+": a etiqueta nasce colorida.
+  const [cor, setCor] = useState<string | null>(null);
   const mutation = useUpdateContact(contactId);
+  const { definirCor } = useDefinirCorDaEtiqueta();
   const { data: vocabulary } = useContactTagVocabulary(orgId);
 
   function apply(next: string[]) {
@@ -31,8 +36,13 @@ export function ContactTagsEditor({ contactId, orgId, tags }: Props) {
   function add(raw: string) {
     const tag = normalizarTag(raw);
     if (!tag || tags.some((v) => normalizarTag(v) === tag) || tags.length >= 20) return;
+    const escolhida = cor;
     apply([...tags, tag]);
     setDraft("");
+    setCor(null);
+    // A cor é VOCABULÁRIO, não da linha (#2718): chamada independente do
+    // attach — a SQL faz append do verbete, e falhar aqui não desfaz a tag.
+    if (escolhida) void definirCor(tag, escolhida);
   }
 
   function remove(tag: string) {
@@ -88,6 +98,12 @@ export function ContactTagsEditor({ contactId, orgId, tags }: Props) {
           disabled={mutation.isPending || tags.length >= 20}
           className="h-7 text-xs"
           aria-label={t("Adicionar tag ao contato")}
+        />
+        <SeletorDeCorDaEtiqueta
+          cor={cor}
+          onChange={setCor}
+          tag={draft.trim() || undefined}
+          disabled={mutation.isPending || tags.length >= 20}
         />
         <Button
           size="sm"

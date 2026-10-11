@@ -79,6 +79,27 @@ export const PALETA_DE_ETIQUETAS: readonly string[] = [
 ];
 
 /**
+ * O NOME DE CADA TOM DA PALETA, e o teste que impede os dois divergirem.
+ *
+ * `tests/unit/tags-cor-de-etiqueta.test.ts` cobra que este mapa tenha
+ * EXATAMENTE as chaves de `PALETA_DE_ETIQUETAS`. Sem ele, acrescentar um tom à
+ * paleta deixaria um círculo mudo na fileira (o `?? tom` de quem renderiza
+ * cobre a tela, mas o nome iria embora em silêncio). Mora aqui, junto da
+ * paleta, desde a #2718: o painel de Settings e o seletor de criação
+ * (SeletorDeCorDaEtiqueta) rotulam do mesmo mapa.
+ */
+export const NOME_DO_TOM: Record<string, string> = {
+  "#ffe629": "Amarelo",
+  "#ffb224": "Âmbar",
+  "#cf3716": "Vermelho",
+  "#00655a": "Verde-água",
+  "#0091ff": "Azul",
+  "#3e63dd": "Índigo",
+  "#ab4aba": "Roxo",
+  "#6f6f6f": "Cinza",
+};
+
+/**
  * Os tons escurecidos na #2373, de → para. A cor é gravada como hex, então a
  * etiqueta pintada antes da troca continua com o tom antigo no banco; lê-la
  * aqui como o tom novo dá texto branco a ela sem migration (chip, ponto, rota
