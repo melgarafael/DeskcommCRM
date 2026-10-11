@@ -34,6 +34,87 @@ export type Database = {
   }
   public: {
     Tables: {
+      review_capture_sessions: {
+        Row: {
+          id: string
+          organization_id: string
+          actor_user_id: string
+          job_id: string | null
+          contact_id: string | null
+          created_at: string
+          collect_until: string
+          enabled: boolean
+          reviews: number
+          bytes: number
+          last_purged_at: string | null
+          stopped_reason: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          actor_user_id: string
+          job_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          collect_until: string
+          enabled?: boolean
+          reviews?: number
+          bytes?: number
+          last_purged_at?: string | null
+          stopped_reason?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          actor_user_id?: string
+          job_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          collect_until?: string
+          enabled?: boolean
+          reviews?: number
+          bytes?: number
+          last_purged_at?: string | null
+          stopped_reason?: string | null
+        }
+        Relationships: []
+      }
+      review_capture_records: {
+        Row: {
+          id: string
+          organization_id: string
+          session_id: string
+          job_id: string
+          contact_id: string
+          caminho: string
+          captured_at: string
+          expires_at: string
+          payload: Json
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          session_id: string
+          job_id?: string
+          contact_id?: string
+          caminho: string
+          captured_at?: string
+          expires_at: string
+          payload: Json
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          session_id?: string
+          job_id?: string
+          contact_id?: string
+          caminho?: string
+          captured_at?: string
+          expires_at?: string
+          payload?: Json
+        }
+        Relationships: []
+      }
       channel_integrations: {
         Row: { organization_id: string; profile_id: string; credential_encrypted: string; created_at: string; updated_at: string }
         Insert: { organization_id: string; profile_id: string; credential_encrypted: string; created_at?: string; updated_at?: string }
@@ -9163,6 +9244,7 @@ export type Database = {
       }
       send_ledger: {
         Row: {
+          human_event_id: string | null
           body_hash: string
           contact_id: string | null
           created_at: string
@@ -9176,6 +9258,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          human_event_id?: string | null
           body_hash: string
           contact_id?: string | null
           created_at?: string
@@ -9189,6 +9272,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          human_event_id?: string | null
           body_hash?: string
           contact_id?: string | null
           created_at?: string
@@ -10296,6 +10380,12 @@ export type Database = {
       }
     }
     Functions: {
+      fn_review_capture_enabled: { Args: { p_org: string; p_job: string }; Returns: boolean }
+      fn_review_capture_append: { Args: { p_org: string; p_job: string; p_path: string; p_payload: Json }; Returns: string | null }
+      fn_review_capture_purge: { Args: { p_org?: string | null }; Returns: { deleted: number; lag_ms: number }[] }
+      fn_review_capture_stop_for_purge_error: { Args: { p_org?: string | null; p_only_late?: boolean }; Returns: number }
+      fn_review_capture_manage: { Args: { p_org: string; p_actor: string; p_action: string; p_scope?: string | null; p_kind?: string | null; p_session?: string | null; p_support?: Json | null }; Returns: Json }
+
       fn_authorize_ai_form_capture: {
         Args: { p_organization_id: string; p_source_id: string; p_lead_id: string; p_contact_id: string; p_request_id: string; p_ttl_ms: number }
         Returns: boolean

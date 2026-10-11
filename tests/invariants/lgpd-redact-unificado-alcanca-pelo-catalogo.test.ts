@@ -146,6 +146,15 @@ type Decisao =
  * existe mais também reprova (dívida morta cobre o futuro por acidente).
  */
 const DECISOES: Record<string, Decisao> = {
+  review_capture_records: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "0648: fn_review_capture_anonymized APAGA o conteúdo temporário na virada de is_anonymized, nos dois caminhos; o mesmo gatilho encerra a coleta sem renovar retenção.",
+  },
+  review_capture_sessions: {
+    decidida: "manter",
+    razao: "Metadados de auditoria da captura: IDs, instantes, contadores e motivo em vocabulário fechado, sem prompt/resposta ou texto da pessoa. O gatilho desliga a sessão por anonimização; a FK aponta para o contato já anonimizado. Corpo temporário é apagado de review_capture_records.",
+  },
   // ── redigir na função única ───────────────────────────────────────────────
   contacts: {
     decidida: "redigir",

@@ -1122,6 +1122,12 @@ export const AUDIT_ACTIONS = [
   // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
   // então o audit é a única trilha de quem mudou o dono.
   "contact.carteira_changed",
+  "ai.case_communication_retried",
+  "ai.case_decision_rectified",
+  "ai.review_capture_enabled",
+  "ai.review_capture_read",
+  "ai.review_capture_purged",
+  "ai.review_capture_stopped",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

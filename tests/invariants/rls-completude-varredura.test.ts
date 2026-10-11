@@ -75,6 +75,8 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "review_capture_records", razao: "tests/invariants/revisor-comunicacao-diagnostico.test.ts — deny-all direto medido sob anon/authenticated/service_role, dois tenants positivos semeados, JWT admin e contagem zero local/cross-org mesmo com grant temporário revertido; RPC auditada positiva somente no tenant/escopo corretos. Não conceder leitura PostgREST de prompt/resposta." },
+  { tabela: "review_capture_sessions", razao: "tests/invariants/revisor-comunicacao-diagnostico.test.ts — mesmo par deny-all/JWT de records. Metadados também passam pela rota administrativa e RPC, sem policy permissiva nem privilégio de tabela para papéis públicos/service_role." },
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
