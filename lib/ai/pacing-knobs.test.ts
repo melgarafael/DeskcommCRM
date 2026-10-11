@@ -106,6 +106,50 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
     expect(windowIsValid(8, 8)).toBe(false);
   });
 
+  it("prospeccao_dias (0642): lista 1..7 de 0..6; vazio, fora da faixa e string rejeitados", () => {
+    const dias = (prospeccao_dias: unknown) =>
+      pacingKnobsUpdateSchema.safeParse({ channel_session_id: SESSION, prospeccao_dias });
+    expect(dias([1, 2, 3, 4, 5]).success).toBe(true);
+    expect(dias([0]).success).toBe(true);
+    expect(dias([0, 1, 2, 3, 4, 5, 6]).success).toBe(true);
+    expect(dias([]).success).toBe(false);
+    expect(dias([7]).success).toBe(false);
+    expect(dias([-1]).success).toBe(false);
+    expect(dias([1.5]).success).toBe(false);
+    expect(dias("seg-sex").success).toBe(false);
+    expect(dias([0, 1, 2, 3, 4, 5, 6, 0]).success).toBe(false);
+    // Omitido = mantém o gravado (não é reset parcial).
+    expect(
+      pacingKnobsUpdateSchema.safeParse({ channel_session_id: SESSION }).success,
+    ).toBe(true);
+  });
+
+  it("effectiveKnobs: prospeccao_dias ausente cai em todos os dias; override vence", () => {
+    expect(effectiveKnobs(null).prospeccaoDias).toEqual(PACING_DEFAULTS.prospeccaoDias);
+    const eff = effectiveKnobs({
+      throttle_ms: null,
+      jitter_max_ms: null,
+      window_start_hour: null,
+      window_end_hour: null,
+      allow_sunday: null,
+      timezone: null,
+      warmup_daily_caps: null,
+      prospeccao_dias: [1, 3, 5],
+    });
+    expect(eff.prospeccaoDias).toEqual([1, 3, 5]);
+    const invalido = effectiveKnobs({
+      throttle_ms: null,
+      jitter_max_ms: null,
+      window_start_hour: null,
+      window_end_hour: null,
+      allow_sunday: null,
+      timezone: null,
+      warmup_daily_caps: null,
+      prospeccao_dias: [],
+    });
+    expect(invalido.prospeccaoDias).toEqual(PACING_DEFAULTS.prospeccaoDias);
+  });
+
   it("knobsView expõe defaults e bounds pra tela não cravar números", () => {
     const view = knobsView(null);
     expect(view.defaults).toEqual(PACING_DEFAULTS);

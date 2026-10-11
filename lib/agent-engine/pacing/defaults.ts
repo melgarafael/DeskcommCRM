@@ -68,10 +68,25 @@ export interface PacingKnobs {
    * e o domingo inteiro mudo era cortesia demais: num CRM de atendimento, quem
    * escreve no domingo espera resposta no domingo.
    *
-   * Continua sendo knob por canal (`AntiBanSheet` → `POST /api/v1/ai/pacing`):
-   * quem faz prospecção ativa e prefere não incomodar no fim de semana desliga.
+   * Vale para resposta, disparo em massa e retomada — mas NÃO para a
+   * prospecção, que tem os dias próprios (`prospeccaoDias`, 0642). Desligar o
+   * domingo aqui não cala a prospecção de domingo (e vice-versa).
    */
   allowSunday: boolean;
+  /**
+   * Dias da semana em que a PROSPECÇÃO pode abordar (0=domingo … 6=sábado,
+   * convenção `getDay`). Só a prospecção lê isto (via `PacingInput.prospeccao`):
+   * resposta, disparo em massa e retomada seguem `allowSunday`.
+   *
+   * ═══ Por que não é o `allowSunday` ═══
+   *
+   * O domingo único valia para as duas janelas: quem faz prospecção ativa e
+   * desliga o domingo para não incomodar no fim de semana calava junto a
+   * RESPOSTA de domingo — e quem escreve no domingo espera resposta no
+   * domingo. Dias próprios desamarram as duas decisões; as HORAS da prospecção
+   * continuam as de disparo (`window*`).
+   */
+  prospeccaoDias: number[];
   /** IANA timezone do tenant — a janela é avaliada NELA. */
   timezone: string;
   /** Degraus de warm-up ordenados por minAgeDays crescente (o primeiro cobre idade 0). */
@@ -116,6 +131,10 @@ export const PACING_DEFAULTS: PacingKnobs = {
   respostaStartHour: 7,
   respostaEndHour: 22,
   allowSunday: true,
+  // Todos os dias = o comportamento de antes (o default do `allowSunday` também
+  // é ligado). Quem tinha `allow_sunday = false` recebe seg–sáb no backfill da
+  // 0642, não aqui — default de fallback nunca reescreve escolha de ninguém.
+  prospeccaoDias: [0, 1, 2, 3, 4, 5, 6],
   timezone: 'America/Sao_Paulo',
   // Número sem linha em channel_knobs é tratado como idade 0 (o degrau mais
   // conservador) até alguém registrar number_activated_at.

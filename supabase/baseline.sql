@@ -53284,3 +53284,40 @@ alter table public.platform_branding
 
 comment on column public.platform_branding.accent_dark_hex is
   'Segunda semente da marca (#2482), só para o tema ESCURO: o bloco [data-theme=dark] deriva dela pela mesma derivarMarca, com os mesmos pisos de contraste. NULL = os dois temas derivam de accent_hex, como sempre. --color-brand continua sendo accent_hex (e-mail e logo nao tem tema). Lida/escrita so server-side (service_role), como o resto da tabela.';
+
+-- ---- dias da semana da prospecção por conexão (migration 0642) ----
+-- A prospecção ganha os dias próprios em channel_knobs.prospeccao_dias
+-- (smallint[], 0=domingo … 6=sábado); as horas continuam as da janela de
+-- disparo. Default todos os dias (regressão zero); o backfill congela seg–sáb
+-- para quem tinha allow_sunday = false, e roda UMA vez: só quando a coluna
+-- nasce. O update.sh reaplica este apêndice em toda atualização, e um backfill
+-- solto reescreveria a escolha do operador a cada uma (quem marcou todos os
+-- dias com o domingo da resposta desligado voltava para seg–sáb).
+-- Coluna, backfill e troca da constraint num bloco DO: o update.sh roda sem
+-- ON_ERROR_STOP, e drop/add soltos podiam deixar a tabela sem a guarda.
+do $dias$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'channel_knobs'
+      and column_name = 'prospeccao_dias'
+  ) then
+    alter table public.channel_knobs
+      add column prospeccao_dias smallint[] not null default '{0,1,2,3,4,5,6}';
+    update public.channel_knobs
+      set prospeccao_dias = '{1,2,3,4,5,6}'
+      where allow_sunday is false;
+  end if;
+  alter table public.channel_knobs
+    drop constraint if exists channel_knobs_prospeccao_dias_validos;
+  alter table public.channel_knobs
+    add constraint channel_knobs_prospeccao_dias_validos
+    check (
+      prospeccao_dias <@ '{0,1,2,3,4,5,6}'::smallint[]
+      and cardinality(prospeccao_dias) between 1 and 7
+    );
+end $dias$;
+
+comment on column public.channel_knobs.prospeccao_dias is
+  'Dias da semana em que a PROSPECÇÃO pode abordar (0=domingo … 6=sábado). Só a prospecção lê isto; resposta, disparo em massa e retomada seguem allow_sunday. Default = todos os dias (comportamento anterior).';

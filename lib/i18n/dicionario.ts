@@ -6064,6 +6064,20 @@ export const DICIONARIO: Traducoes = {
   "Ligado por padrão: quem escreve no domingo espera resposta no domingo. Desligue se você faz prospecção ativa e prefere não incomodar no fim de semana.": {
     es: "Activado por defecto: quien escribe un domingo espera respuesta el domingo. Desactívalo si haces prospección activa y prefieres no molestar el fin de semana.",
   },
+  "Disparos em massa e mensagens que retomam conversa parada só saem nesta janela. A prospecção usa estas horas nos dias próprios abaixo. Fora da janela, o envio fica agendado para a próxima abertura — você vê o motivo na conversa.": {
+    es: "Los envíos masivos y los mensajes que retoman una conversación detenida solo salen dentro de esta ventana. La prospección usa estas horas en sus propios días de abajo. Fuera de la ventana, el envío queda programado para la próxima apertura — ves el motivo en la conversación.",
+  },
+  "Dias da prospecção": { es: "Días de prospección" },
+  "Prospecção no dia {dia}": { es: "Prospección el día {dia}" },
+  "A primeira abordagem da prospecção só sai nestes dias, dentro da janela de disparo acima. Responder a quem escreveu segue a regra própria — desligar o domingo aqui não cala a resposta de domingo.": {
+    es: "El primer acercamiento de la prospección solo sale en estos días, dentro de la ventana de envíos de arriba. Responder a quien escribió sigue su propia regla — apagar el domingo aquí no silencia la respuesta del domingo.",
+  },
+  "Marque pelo menos um dia: sem dia marcado a prospecção não aborda ninguém.": {
+    es: "Marca al menos un día: sin día marcado, la prospección no contacta a nadie.",
+  },
+  "Ligado por padrão: quem escreve no domingo espera resposta no domingo. Desligar cala a resposta e os disparos em massa no domingo — a prospecção segue os dias próprios acima.": {
+    es: "Activado por defecto: quien escribe el domingo espera respuesta el domingo. Apagarlo silencia la respuesta y los envíos masivos del domingo — la prospección sigue sus propios días de arriba.",
+  },
   "Ritmo entre envios (segundos)": { es: "Ritmo entre envíos (segundos)" },
   "Intervalo mínimo entre envios em segundos": {
     es: "Intervalo mínimo entre envíos en segundos",

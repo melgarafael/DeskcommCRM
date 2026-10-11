@@ -49,6 +49,8 @@ interface FormState {
   atraso_maximo_ms: string;
   daily_message_limit: string;
   allow_sunday: boolean;
+  /** Dias da prospecção (0642, 0=dom … 6=sáb). Sempre explícito: sem "herdar". */
+  prospeccao_dias: number[];
   timezone: string;
   /** `yyyy-mm-dd` do input date; '' = não declarado (o motor trata como idade 0). */
   numero_em_uso_desde: string;
@@ -73,6 +75,10 @@ function fromItem(item: PacingKnobsItem): FormState {
         ? String(item.channel_session.daily_message_limit)
         : "",
     allow_sunday: o?.allow_sunday ?? item.defaults.allowSunday,
+    // Dias nascem do EFETIVO (banco normalizado ou default todos os dias): a
+    // ficha mostra o que o motor aplica, e salvar sem tocar aqui preserva o
+    // comportamento — nunca congela nem solta dia por acidente.
+    prospeccao_dias: [...item.effective.prospeccaoDias],
     timezone: o?.timezone ?? "",
     numero_em_uso_desde: item.warmup.number_activated_at
       ? item.warmup.number_activated_at.slice(0, 10)
@@ -84,6 +90,9 @@ function fromItem(item: PacingKnobsItem): FormState {
 const intOrNull = (s: string): number | null => (s.trim() === "" ? null : Math.round(Number(s)));
 const msOrNull = (s: string): number | null =>
   s.trim() === "" ? null : Math.round(Number(s) * 1000);
+
+/** Dias da semana da caixa de prospecção (0642, 0=dom … 6=sáb, convenção `getDay`). */
+const DIAS_DA_SEMANA = [0, 1, 2, 3, 4, 5, 6] as const;
 
 export function AntiBanSheet({ item, canWrite, onClose }: Props) {
   const t = useT();
@@ -145,6 +154,31 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
   if (!form) return null;
   const eff = item.effective;
   const set = (patch: Partial<FormState>) => setForm((f) => (f ? { ...f, ...patch } : f));
+  const alternarDiaDaProspeccao = (dia: number) =>
+    setForm((f) => {
+      if (!f) return f;
+      const marcado = f.prospeccao_dias.includes(dia);
+      return {
+        ...f,
+        prospeccao_dias: marcado
+          ? f.prospeccao_dias.filter((d) => d !== dia)
+          : [...f.prospeccao_dias, dia].sort((a, b) => a - b),
+      };
+    });
+  // Zero dia marcado = fila da prospecção parada em silêncio: o servidor
+  // recusaria com 422, mas a ficha não pode oferecer o gesto que só dá erro.
+  const prospeccaoDiasValidos = form.prospeccao_dias.length >= 1;
+  // Nomes dos dias em literais estáticos: `t(variável)` e chave montada em
+  // runtime não entram em dicionário nenhum (`i18n-espanhol-cobre-a-tela`).
+  const nomesDosDias: Record<number, string> = {
+    0: t("Dom"),
+    1: t("Seg"),
+    2: t("Ter"),
+    3: t("Qua"),
+    4: t("Qui"),
+    5: t("Sex"),
+    6: t("Sáb"),
+  };
 
   const handleSave = async () => {
     try {
@@ -165,6 +199,9 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         // escolha permanente — foi assim que uma instalação ficou muda todo
         // domingo. Ver `valorDeOverride`.
         allow_sunday: valorDeOverride(form.allow_sunday, item.defaults.allowSunday),
+        // Dias sempre explícitos (coluna NOT NULL): o que está marcado é o que
+        // grava — sem modo "herdar", sem surpresa para quem só mexeu no throttle.
+        prospeccao_dias: [...form.prospeccao_dias].sort((a, b) => a - b),
         timezone: form.timezone.trim() === "" ? null : form.timezone.trim(),
         ...(form.daily_message_limit.trim() !== ""
           ? { daily_message_limit: Math.round(Number(form.daily_message_limit)) }
@@ -310,8 +347,43 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             </div>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Disparos em massa, prospecção e mensagens que retomam conversa parada só saem nesta janela. Fora dela, o envio fica agendado para a próxima abertura — você vê o motivo na conversa.",
+                "Disparos em massa e mensagens que retomam conversa parada só saem nesta janela. A prospecção usa estas horas nos dias próprios abaixo. Fora da janela, o envio fica agendado para a próxima abertura — você vê o motivo na conversa.",
               )}
+            </p>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <Label>{t("Dias da prospecção")}</Label>
+            <div className="flex flex-wrap gap-2">
+              {DIAS_DA_SEMANA.map((dia) => {
+                const nome = nomesDosDias[dia] ?? String(dia);
+                const marcado = form.prospeccao_dias.includes(dia);
+                return (
+                  <label
+                    key={dia}
+                    className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm ${marcado ? "border-primary bg-primary/5" : "opacity-70"} ${canWrite ? "" : "pointer-events-none opacity-50"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      onChange={() => alternarDiaDaProspeccao(dia)}
+                      disabled={!canWrite}
+                      aria-label={t("Prospecção no dia {dia}").replace("{dia}", nome)}
+                      className="accent-current"
+                    />
+                    {nome}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {prospeccaoDiasValidos
+                ? t(
+                    "A primeira abordagem da prospecção só sai nestes dias, dentro da janela de disparo acima. Responder a quem escreveu segue a regra própria — desligar o domingo aqui não cala a resposta de domingo.",
+                  )
+                : t(
+                    "Marque pelo menos um dia: sem dia marcado a prospecção não aborda ninguém.",
+                  )}
             </p>
           </fieldset>
 
@@ -320,7 +392,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
               <Label htmlFor="allow-sunday">{t("Enviar aos domingos")}</Label>
               <p className="text-xs text-muted-foreground">
                 {t(
-                  "Ligado por padrão: quem escreve no domingo espera resposta no domingo. Desligue se você faz prospecção ativa e prefere não incomodar no fim de semana.",
+                  "Ligado por padrão: quem escreve no domingo espera resposta no domingo. Desligar cala a resposta e os disparos em massa no domingo — a prospecção segue os dias próprios acima.",
                 )}
               </p>
             </div>
@@ -512,7 +584,11 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             {canWrite ? t("Cancelar") : t("Fechar")}
           </Button>
           {canWrite ? (
-            <Button onClick={handleSave} disabled={update.isPending} data-testid="anti-ban-save">
+            <Button
+              onClick={handleSave}
+              disabled={update.isPending || !prospeccaoDiasValidos}
+              data-testid="anti-ban-save"
+            >
               {update.isPending ? t("Salvando…") : t("Salvar proteção")}
             </Button>
           ) : null}

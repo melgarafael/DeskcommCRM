@@ -6,8 +6,9 @@
  * I/O nenhum. Clock e RNG são injetáveis (testes com clock fake e jitter
  * determinístico); em produção o chamador passa `new Date()` e omite o rng.
  *
- * Ordem de avaliação: janela horária (tz do tenant, domingo conforme `allowSunday`) → caps
- * diários (warm-up por idade do número; limite do CRM injetado) → throttle+jitter.
+ * Ordem de avaliação: janela horária (tz do tenant, domingo conforme `allowSunday`,
+ * dias próprios na prospecção) → caps diários (warm-up por idade do número;
+ * limite do CRM injetado) → throttle+jitter.
  */
 import type { PacingKnobs, WarmupStep } from './defaults';
 
@@ -54,6 +55,18 @@ export interface PacingInput {
    * levam o número ao banimento; uma resposta para quem escreveu às 3h é o serviço.
    */
   resposta?: boolean;
+  /**
+   * Esta decisão é para a PROSPECÇÃO fria (primeira abordagem a quem nunca
+   * falou com a empresa)?
+   *
+   * `true` lê os dias próprios da prospecção (`knobs.prospeccaoDias`, 0642) em
+   * vez do `allowSunday` compartilhado — é o que desamarra "respondo domingo"
+   * de "prospecto domingo". As HORAS continuam as de disparo (`window*`):
+   * `resposta` é ignorado quando este campo é `true` (prospecção nunca é
+   * resposta). Omitir = comportamento anterior — todo chamador fora do worker
+   * de prospecção continua como está.
+   */
+  prospeccao?: boolean;
   /** [0,1) — injetável nos testes; default Math.random. */
   rng?: () => number;
 }
@@ -71,20 +84,32 @@ export function decidePacing(input: PacingInput): PacingDecision {
   const rng = input.rng ?? Math.random;
   const banRisk = input.banRisk ?? true; // default preserva o comportamento atual
   const resposta = input.resposta ?? false; // default = disparo (janela restritiva)
+  const prospeccao = input.prospeccao ?? false; // default = sem dias próprios
   const wall = wallClock(now, knobs.timezone);
   // Resposta lê `resposta*`, disparo lê `window*`. Coluna vazia já chega aqui
-  // preenchida com a de disparo (`loadChannelKnobs`, 0495).
-  const janela = janelaDoPacing(knobs, resposta);
+  // preenchida com a de disparo (`loadChannelKnobs`, 0495). Prospecção é
+  // disparo nas horas e própria nos dias — `resposta` não se aplica a ela.
+  const janela = janelaDoPacing(knobs, prospeccao ? false : resposta);
+  const diasProspeccao = prospeccao ? knobs.prospeccaoDias : null;
 
-  if (!insideWindow(wall, knobs, janela)) {
-    const nextAllowedAt = addMs(nextWindowOpen(now, knobs, janela), jitterOf(rng, knobs));
+  if (!insideWindow(wall, knobs, janela, diasProspeccao)) {
+    const nextAllowedAt = addMs(
+      nextWindowOpen(now, knobs, janela, diasProspeccao),
+      jitterOf(rng, knobs),
+    );
+    const nome = prospeccao ? 'prospecção' : resposta ? 'resposta' : 'envio';
+    const dias = prospeccao
+      ? `, dias ${diasParaTexto(knobs.prospeccaoDias)}`
+      : knobs.allowSunday
+        ? ''
+        : ', sem domingo';
     return {
       allow: false,
       code: 'outside_window',
       nextAllowedAt,
       reason:
-        `fora da janela de ${resposta ? 'resposta' : 'envio'} (${janela.start}h-${janela.end}h` +
-        `${knobs.allowSunday ? '' : ', sem domingo'}, ${knobs.timezone}); ` +
+        `fora da janela de ${nome} (${janela.start}h-${janela.end}h` +
+        `${dias}, ${knobs.timezone}); ` +
         `agende para ${formatInTz(nextAllowedAt, knobs.timezone)} (abertura da janela + jitter)`,
     };
   }
@@ -103,7 +128,7 @@ export function decidePacing(input: PacingInput): PacingDecision {
   const wCap = warmupCapFor(ageDays, knobs.warmupDailyCaps);
   const effectiveCap = Math.min(wCap ?? Infinity, crmDailyLimit ?? Infinity);
   if (state.sentToday >= effectiveCap) {
-    const nextAllowedAt = addMs(nextDayOpen(now, knobs), jitterOf(rng, knobs));
+    const nextAllowedAt = addMs(nextDayOpen(now, knobs, diasProspeccao), jitterOf(rng, knobs));
     const isWarmup = wCap !== null && wCap < (crmDailyLimit ?? Infinity);
     return {
       allow: false,
@@ -217,7 +242,8 @@ export function dayStartInTz(instant: Date, timezone: string): Date {
  *
  * `resposta` separa as janelas: o turno inbound é RESPOSTA (lê `resposta*`) e
  * o disparo/retomada é `false` (lê `window*`). Omitir = disparo, que é o
- * comportamento de todo chamador anterior a 0495.
+ * comportamento de todo chamador anterior a 0495. A prospecção NÃO passa por
+ * aqui: ela tem os dias próprios (`janelaDeProspeccaoAberta`, 0642).
  */
 export function janelaDeEnvioAberta(
   now: Date,
@@ -249,11 +275,48 @@ function janelaDoPacing(
   return { start: knobs.respostaStartHour, end: knobs.respostaEndHour };
 }
 
+/** Dia da semana na convenção JS (`getDay`): 0=domingo … 6=sábado. */
+const DIA_POR_NOME: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+const NOME_CURTO_DO_DIA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] as const;
+
+/** Lista de dias para a `reason` do veto — display apenas, nunca regra. */
+function diasParaTexto(dias: number[]): string {
+  return dias.map((d) => NOME_CURTO_DO_DIA[d] ?? String(d)).join(',');
+}
+
+/**
+ * Normaliza o filtro de dias da prospecção. Vazio ou ausente = regra antiga
+ * (`allowSunday`): um array vazio significaria "nenhum dia envia", que é fila
+ * parada em silêncio — e `nextWindowOpen` sem dia válido seria um laço sem fim.
+ * O `loadChannelKnobs` já garante não-vazio do banco; isto cobre knobs
+ * montados à mão (testes, chamadores futuros).
+ */
+function diasValidos(dias?: number[] | null): number[] | null {
+  return dias && dias.length > 0 ? dias : null;
+}
+
 function insideWindow(
   wall: Wall,
   knobs: PacingKnobs,
   janela: { start: number; end: number },
+  diasProspeccao?: number[] | null,
 ): boolean {
+  const dias = diasValidos(diasProspeccao);
+  if (dias) {
+    // Dias próprios (0642): o domingo compartilhado não entra — é o que permite
+    // responder domingo sem prospectar domingo.
+    if (!dias.includes(DIA_POR_NOME[wall.weekday] ?? -1)) return false;
+    return wall.h >= janela.start && wall.h < janela.end;
+  }
   if (!knobs.allowSunday && wall.weekday === 'Sun') return false;
   return wall.h >= janela.start && wall.h < janela.end;
 }
@@ -263,13 +326,18 @@ function nextWindowOpen(
   now: Date,
   knobs: PacingKnobs,
   janela: { start: number; end: number } = { start: knobs.windowStartHour, end: knobs.windowEndHour },
+  diasProspeccao?: number[] | null,
 ): Date {
+  const dias = diasValidos(diasProspeccao);
   const w = wallClock(now, knobs.timezone);
   for (let add = 0; ; add += 1) {
     // Date.UTC normaliza overflow de dia/mês em instantFromWall.
     const candidate = instantFromWall(w.y, w.mo, w.d + add, janela.start, knobs.timezone);
     if (candidate.getTime() <= now.getTime()) continue;
-    if (!knobs.allowSunday && wallClock(candidate, knobs.timezone).weekday === 'Sun') continue;
+    const weekday = wallClock(candidate, knobs.timezone).weekday;
+    if (dias) {
+      if (!dias.includes(DIA_POR_NOME[weekday] ?? -1)) continue;
+    } else if (!knobs.allowSunday && weekday === 'Sun') continue;
     return candidate;
   }
 }
@@ -283,13 +351,50 @@ function nextWindowOpen(
  * reaparecimento do número às 7h, e isso é a única coisa que faz sentido
  * dizer a quem pagou.
  */
-function nextDayOpen(now: Date, knobs: PacingKnobs): Date {
+function nextDayOpen(now: Date, knobs: PacingKnobs, diasProspeccao?: number[] | null): Date {
+  const dias = diasValidos(diasProspeccao);
   const w = wallClock(now, knobs.timezone);
   for (let add = 1; ; add += 1) {
     const candidate = instantFromWall(w.y, w.mo, w.d + add, knobs.windowStartHour, knobs.timezone);
-    if (!knobs.allowSunday && wallClock(candidate, knobs.timezone).weekday === 'Sun') continue;
+    const weekday = wallClock(candidate, knobs.timezone).weekday;
+    if (dias) {
+      if (!dias.includes(DIA_POR_NOME[weekday] ?? -1)) continue;
+    } else if (!knobs.allowSunday && weekday === 'Sun') continue;
     return candidate;
   }
+}
+
+/**
+ * A PROSPECÇÃO pode abordar agora? Dias próprios (`prospeccaoDias`) + horas de
+ * disparo (`window*`) — o domingo compartilhado (`allowSunday`) não entra.
+ * Atalho barato para o worker, como `janelaDeEnvioAberta` é para o turno
+ * inbound: o gate de verdade continua sendo o `decidePacing` com
+ * `prospeccao: true` logo abaixo.
+ */
+export function janelaDeProspeccaoAberta(now: Date, knobs: PacingKnobs): boolean {
+  return insideWindow(
+    wallClock(now, knobs.timezone),
+    knobs,
+    { start: knobs.windowStartHour, end: knobs.windowEndHour },
+    knobs.prospeccaoDias,
+  );
+}
+
+/** Próxima abertura da prospecção + jitter — o instante para o qual se adia. */
+export function proximaAberturaDaProspeccao(
+  now: Date,
+  knobs: PacingKnobs,
+  rng: () => number = Math.random,
+): Date {
+  return addMs(
+    nextWindowOpen(
+      now,
+      knobs,
+      { start: knobs.windowStartHour, end: knobs.windowEndHour },
+      knobs.prospeccaoDias,
+    ),
+    jitterOf(rng, knobs),
+  );
 }
 
 /** Render local legível para a mensagem de veto (pt-br vê hora do SEU fuso). */
