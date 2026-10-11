@@ -46,6 +46,7 @@ const AUTORIDADE = [
   "docs/threat-model.md",
   "docs/DEPLOY-CHECKLIST.md",
   "docs/SETUP.md",
+  "docs/apostila-contribuidor.md",
   "docs/doctrine",
   "docs/runbooks",
   "docs/adr",
