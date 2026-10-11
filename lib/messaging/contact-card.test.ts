@@ -4,7 +4,6 @@ import {
   buildVcard,
   parseDialablePhone,
   parseVcard,
-  phoneToWhatsappId,
   resolveSharedContact,
   sharedContactFromMetadata,
 } from "./contact-card";
@@ -15,6 +14,12 @@ describe("contact-card", () => {
     const parsed = parseVcard(vcard);
     expect(parsed?.name).toBe("Maria Silva");
     expect(parsed?.phone_number).toBe("+5511999887766");
+  });
+
+  it("parseVcard reconhece telefone agrupado do WhatsApp", () => {
+    const vcard = "BEGIN:VCARD\nVERSION:3.0\nFN:Maria Sant Projetista\nitem1.TEL;waid=5511968914004:+55 11 96891-4004\nEND:VCARD";
+    expect(parseVcard(vcard)).toEqual({ name: "Maria Sant Projetista", phone_number: "+55 11 96891-4004" });
+    expect(resolveSharedContact({ type: "contact", body: "BEGIN:VCARD\nEND:VCARD", metadata: {} })).toBeNull();
   });
 
   it("sharedContactFromMetadata lê objeto gravado", () => {
