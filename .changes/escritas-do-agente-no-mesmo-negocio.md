@@ -1,5 +1,5 @@
 ---
-impacto: capacidade_nova
+impacto: nada_mudou
 secao: corrigido
 titulo: Edição e movimentação do mesmo negócio não se atrapalham no turno da IA
 ---
