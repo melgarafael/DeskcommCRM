@@ -73,7 +73,10 @@ const ORIGENS_ORGANIZACIONAIS = new Set(['memoria_org', 'skill_ativa', 'referenc
 const LIMITE_ITENS_PERFIL = 32;
 const LIMITE_ITEM_PERFIL = 8000;
 const LIMITE_PERFIL_INDIVIDUAL = 8000;
-const LIMITE_PERFIL_ORGANIZACIONAL = 16000;
+// Memória + múltiplas skills completas podem ultrapassar 16k mesmo com cada
+// item dentro de 8k. O grupo recebe 24k; categorias somam no máximo 52k antes
+// das demais partes do pacote, que ainda falha fechado no teto global de 64k.
+const LIMITE_PERFIL_ORGANIZACIONAL = 24000;
 function cabeNoPerfil(perfil: readonly FonteDoAtendimento[], item: FonteDoAtendimento): boolean {
   const size = JSON.stringify(item).length;
   if (perfil.length >= LIMITE_ITENS_PERFIL || size > LIMITE_ITEM_PERFIL) return false;

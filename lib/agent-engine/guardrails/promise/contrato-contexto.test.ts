@@ -166,13 +166,55 @@ describe('orçamento do perfil na devolutiva humana', () => {
     expect(JSON.stringify(reserva)).toContain('RESSALVA B');
     expect(serviceContext.operacoes).toHaveLength(0);
   });
+  it('memória e quatro skills inteiras chegam aos três revisores, sem dispensar o teto global', async () => {
+    const registry = criarFontesConsultadasDoTurno(at);
+    const markers = ['CONDIÇÃO A', 'CONDIÇÃO B', 'CONDIÇÃO C', 'CONDIÇÃO D'];
+    [1563, 1447, 4332, 537].forEach((size, i) => {
+      const marker = markers[i]!;
+      registry.registrar('skill_ativa', `skill-${i}`, 'x'.repeat(size - marker.length) + marker);
+    });
+    const serviceContext = registry.aplicar(normalizarFontesDoAtendimento(fontes(), org));
+    expect(serviceContext.cobertura.find(c => c.categoria === 'perfil')).toMatchObject({
+      estado: 'present', encontrados: 8, selecionados: 8, omitidos: 0,
+    });
+    // A composição legítima ultrapassa a antiga quota; não depende de cortá-la ou omitir a quarta skill.
+    expect(serviceContext.perfil.filter(f => ['memoria_org', 'skill_ativa'].includes(f.origem))
+      .reduce((n, f) => n + JSON.stringify(f).length, 0)).toBeGreaterThan(16000);
+    const p = { ...packageOf(), serviceContext };
+    expect(temDecisaoElegivel(p)).toBe(true);
+    await classifyPromise({} as pg.Pool, {}, { tenantId: org }, p, {
+      log, loadHumanReturnBinding: vi.fn(async () => ({ purpose: 'human_return_confirmation', provider: 'openai', credential_id: 'id', model_id: 'modelo', base_url: null, is_enabled: true })),
+    });
+    const reserva = JSON.parse(seam.call.mock.calls[0]![2].messages[0].content);
+    const confirmador = JSON.parse(seam.call.mock.calls[1]![2].messages[0].content);
+    const perguntar = vi.fn(async (_entrada: Parameters<typeof decidirNoPonto>[0]) => ({ ok: true as const,
+      respostas: Object.fromEntries(['comercial', 'retorno', 'so_assistente', 'repasse', 'conclusao'].map(k => [k, { tipo: 'noul' as const, noul: ['repasse', 'conclusao'].includes(k) ? 0.99 : 0.01 }])),
+      modelo: 'jev-1.13.0', uso: { tokensDeEntrada: 12, tokensDeSaida: 0 }, latenciaMs: 1,
+    }));
+    const config = lerConfigDoJev({ jev: { ligado: true, aceite: { em: at, por: org },
+      contexto_revisao: { em: at, por: org, versao: 2 }, tarefas: { revisao_resposta: { estado: 'decidindo' } } } });
+    await revisarRespostaComJev({ query: vi.fn(async () => ({ rows: [] })) } as unknown as pg.Pool, {},
+      { tenantId: 'four-skills-consent' }, p, vi.fn(), { log, lerConfig: vi.fn(async () => config), perguntar, conferirOrcamento: vi.fn() });
+    expect(perguntar).toHaveBeenCalledOnce();
+    expect(perguntar.mock.calls[0]![0].estado).toEqual(reserva);
+    expect(confirmador).toEqual(reserva);
+    for (const marker of [...markers, 'CONDIÇÃO COMPLETA DA ORGANIZAÇÃO', 'Ana solicitou']) {
+      expect(JSON.stringify(reserva)).toContain(marker);
+    }
+    expect(JSON.stringify(reserva)).not.toContain('private-');
+    const excess = { ...p, conversationContext: { mensagens: [{ papel: 'cliente' as const, texto: 'x'.repeat(65000) }],
+      resumo: null, limitado: false, momento: at, fuso: 'UTC' } };
+    expect(pacoteFactualDaRevisao(excess).limite_contexto).toBe(true);
+    expect(temDecisaoElegivel(excess)).toBe(false);
+    expect(JSON.stringify(pacoteFactualDaRevisao(excess))).toContain('"elegivel":false');
+  });
   it.each(['individual', 'organizacao', 'organizacao_total', 'nota_consultada', 'skill_consultada'] as const)(
     'item/condição omitidos em %s continuam impedindo o sinal positivo', async excesso => {
       const f = fontes();
       const registry = criarFontesConsultadasDoTurno(at);
       if (excesso === 'individual') f.contato!.tags = ['x'.repeat(8100) + 'RESTRIÇÃO INDIVIDUAL'];
       if (excesso === 'organizacao') f.auxiliares![0]!.body = 'x'.repeat(8100) + 'RESTRIÇÃO ORGANIZACIONAL';
-      if (excesso === 'organizacao_total') f.auxiliares = [0, 1, 2].map(i => ({ ...row(`mem-${i}`), body: 'x'.repeat(6900) + `RESSALVA ${i}` }));
+      if (excesso === 'organizacao_total') f.auxiliares = [0, 1, 2, 3].map(i => ({ ...row(`mem-${i}`), body: 'x'.repeat(6900) + `RESSALVA ${i}` }));
       if (excesso === 'nota_consultada') registry.registrar('nota_memoria', 'nota-grande', 'x'.repeat(8100) + 'RESSALVA INDIVIDUAL');
       if (excesso === 'skill_consultada') registry.registrar('referencia_skill', 'ref-grande', 'x'.repeat(8100) + 'RESSALVA DA SKILL');
       const serviceContext = registry.aplicar(normalizarFontesDoAtendimento(f, org));

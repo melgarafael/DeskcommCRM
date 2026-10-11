@@ -26,6 +26,14 @@ beforeAll(async () => {
     values($1,1,$2) returning id)
     insert into org_memory_pointers(organization_id,version_id) select $1,id from v`,
     [org, 'x'.repeat(6650) + '\nRESSALVA ORGANIZACIONAL INTEIRA']);
+  for (const [i, size] of [1563, 1447, 4332, 537].entries()) {
+    const marker = `RESSALVA SKILL ${i}`;
+    const name = `sintetica-${i}`;
+    const version = (await pool.query(`insert into skill_versions(organization_id,name,description,body,matcher)
+      values($1,$2,'Fonte sintética',$3,$4) returning id`,
+      [org, name, 'x'.repeat(size - marker.length) + marker, { any_keywords: ['sessão'] }])).rows[0].id;
+    await pool.query('insert into skill_pointers(organization_id,name,version_id) values($1,$2,$3)', [org, name, version]);
+  }
 });
 afterAll(() => pool.end());
 
@@ -75,6 +83,7 @@ describe('devolutiva encerrada conserva decisão com Casos desarmado no agente',
     expect(packets[0]?.contexto_decisoes).toMatchObject({ decisoes: [{ acao: 'resolved', elegivel: true,
       nota: 'Pode comunicar a confirmação da sessão de Ana em 15/10 às 10h.' }] });
     expect(JSON.stringify(packets[0]?.contexto_atendimento)).toContain('RESSALVA ORGANIZACIONAL INTEIRA');
+    for (let i = 0; i < 4; i++) expect(JSON.stringify(packets[0]?.contexto_atendimento)).toContain(`RESSALVA SKILL ${i}`);
     expect(packets[0]?.contexto_atendimento).toMatchObject({ cobertura: expect.arrayContaining([
       expect.objectContaining({ categoria: 'perfil', estado: 'present', omitidos: 0 }),
     ]) });
