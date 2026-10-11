@@ -64,6 +64,25 @@ const provenienciaDaAcao = z.object({
   versao: z.literal(1), origem: z.literal('next_action_authenticated'),
   papel: z.enum(['agent', 'manager', 'admin']), proposta_seq: z.number().int().nonnegative(),
 });
+
+// Cadastro/notas do beneficiário e materiais organizacionais não disputam a
+// mesma quota. Uma memória geral válida não deve expulsar o perfil individual,
+// nem desaparecer só porque o cadastro também foi carregado. Mantém fontes
+// inteiras, teto por item e cobertura fechada se qualquer condição ficar fora.
+const ORIGENS_ORGANIZACIONAIS = new Set(['memoria_org', 'skill_ativa', 'referencia_skill']);
+const LIMITE_ITENS_PERFIL = 32;
+const LIMITE_ITEM_PERFIL = 8000;
+const LIMITE_PERFIL_INDIVIDUAL = 8000;
+const LIMITE_PERFIL_ORGANIZACIONAL = 16000;
+function cabeNoPerfil(perfil: readonly FonteDoAtendimento[], item: FonteDoAtendimento): boolean {
+  const size = JSON.stringify(item).length;
+  if (perfil.length >= LIMITE_ITENS_PERFIL || size > LIMITE_ITEM_PERFIL) return false;
+  const organizacional = ORIGENS_ORGANIZACIONAIS.has(item.origem);
+  const limite = organizacional ? LIMITE_PERFIL_ORGANIZACIONAL : LIMITE_PERFIL_INDIVIDUAL;
+  const usados = perfil.reduce((total, fonte) =>
+    ORIGENS_ORGANIZACIONAIS.has(fonte.origem) === organizacional ? total + JSON.stringify(fonte).length : total, 0);
+  return usados + size <= limite;
+}
 export function contextoDoAtendimentoIndisponivel(): ContextoDoAtendimento {
   return { versao: 1, fingerprint: 'fontes_indisponiveis', perfil: [], decisoes: [], operacoes: [], continuidade: [],
     cobertura: (['perfil', 'decisoes', 'operacoes', 'continuidade'] as const).map(categoria => ({ categoria, estado: 'unavailable', encontrados: 0, selecionados: 0, omitidos: 0 })) };
@@ -93,13 +112,14 @@ export function normalizarFontesDoAtendimento(f: FontesDoAtendimento, tenantId: 
     tipoTurno, gatilhoEm: string(f.job?.trigger_at ?? f.job?.created_at),
     mensagem: string(mensagem.id) && texto.length <= 8000 ? { id: string(mensagem.id), text: texto, at: string(mensagem.at), origem: string(mensagem.origem) } : null };
   const encontrados: Record<CategoriaDoContexto, number> = { perfil: 0, decisoes: 0, operacoes: 0, continuidade: 0 };
-  const limites = { perfil: [32, 8000], decisoes: [8, 12000], operacoes: [8, 4000], continuidade: [8, 4000] } as const;
+  const limites = { perfil: [LIMITE_ITENS_PERFIL, LIMITE_PERFIL_INDIVIDUAL + LIMITE_PERFIL_ORGANIZACIONAL], decisoes: [8, 12000], operacoes: [8, 4000], continuidade: [8, 4000] } as const;
   const chars = { perfil: 0, decisoes: 0, operacoes: 0, continuidade: 0 };
   const adicionar = (categoria: CategoriaDoContexto, r: Registro, origem: string, sujeito: string, estado: FonteDoAtendimento['estado'], dados: Registro): void => {
     encontrados[categoria]++;
     const item: FonteDoAtendimento = { id: string(r.id), origem, sujeito, em: string(r.performed_at ?? r.created_at), revisao: createHash('sha256').update(JSON.stringify(dados)).digest('hex'), estado, dados };
     const size = JSON.stringify(item).length;
-    if (out[categoria].length >= limites[categoria][0] || chars[categoria] + size > limites[categoria][1]) return;
+    if (categoria === 'perfil' ? !cabeNoPerfil(out.perfil, item) :
+      out[categoria].length >= limites[categoria][0] || chars[categoria] + size > limites[categoria][1]) return;
     chars[categoria] += size; out[categoria].push(item);
   };
   // Defesa em profundidade além do SQL: org e contato vêm do closure do turno.
@@ -244,7 +264,7 @@ export function criarFontesConsultadasDoTurno(observadoEm: string) {
         if (item.origem==='skill_ativa' && base.skillsVigentes && !base.skillsVigentes.includes(item.id)) { omitidos++; continue; }
         if (item.origem==='referencia_skill' && item.versaoSkill && base.skillsVigentes && !base.skillsVigentes.includes(item.versaoSkill)) { omitidos++; continue; }
         if(idx>=0)perfil.splice(idx,1);
-        if(perfil.length>=32 || JSON.stringify([...perfil,item]).length>8000){omitidos++;continue;}
+        if(!cabeNoPerfil(perfil,item)){omitidos++;continue;}
         perfil.push(item);
       }
       const cobertura=base.cobertura.map(c=>c.categoria!=='perfil'?c:{...c,estado:omitidos?'excluded_by_limit' as const:c.estado==='not_found' && perfil.length?'present' as const:c.estado,

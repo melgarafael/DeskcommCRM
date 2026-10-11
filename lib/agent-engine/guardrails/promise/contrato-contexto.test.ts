@@ -8,6 +8,7 @@ import { pacoteParaJev, revisarRespostaComJev } from '@/lib/ai/decisao/revisao-r
 import { lerConfigDoJev } from '@/lib/ai/decisao/config';
 import { decidirRevisao } from './decisao-do-jev';
 import type { decidirNoPonto } from '@/lib/ai/decisao/ponto';
+import { criarFontesConsultadasDoTurno, normalizarFontesDoAtendimento, type FontesDoAtendimento } from '../../agent/contexto-do-atendimento';
 const seam=vi.hoisted(()=>({ call:vi.fn() }));
 vi.mock('../../edge/llm/run-model-call',()=>({ runModelCall:seam.call }));
 const log={ info:vi.fn(),warn:vi.fn(),error:vi.fn(),debug:vi.fn() };
@@ -116,5 +117,92 @@ describe('T04 aceite e conclusão independente JEV',()=>{
   it.each([0.5,NaN,undefined])('dúvida ou ausência do sinal de fidelidade %s exige reserva',value=>{
     const r=value===undefined?{comercial:responses.comercial,retorno:responses.retorno,so_assistente:responses.so_assistente}:{...responses,repasse:{tipo:'noul' as const,noul:value}};
     expect(decidirRevisao(r,true).motivo).not.toBe('decidiu');
+  });
+});
+
+describe('orçamento do perfil na devolutiva humana', () => {
+  const org = '11111111-1111-4111-8111-111111111111';
+  const contact = '22222222-2222-4222-8222-222222222222';
+  const at = '2026-10-10T11:00:00Z';
+  const row = (id: string) => ({ id, organization_id: org, contact_id: contact, created_at: at });
+  function fontes(): FontesDoAtendimento {
+    return {
+      contato: { ...row(contact), tags: ['x'.repeat(1100)], birthdate: '2000-01-01' },
+      negocios: [], atividades: [], propostas: [], agenda: [], retornos: [], caso: [],
+      notas: [{ ...row('nota'), headline: 'Beneficiário', body: 'Ana solicitou confirmação manual.' }],
+      auxiliares: [{ ...row('documento'), body: 'x'.repeat(6650) + '\nCONDIÇÃO COMPLETA DA ORGANIZAÇÃO' }],
+      job: { ...row('job'), kind: 'case_reply_turn', canonical_message: {
+        id: contexto().currentRequest!.id, text: contexto().currentRequest!.text, at, origem: 'client_message',
+      } },
+      conversa: { ...row('conversa'), service_revision: 1, force_human: false },
+    };
+  }
+  it('conserva memória organizacional inteira junto do perfil individual, sem ignorar cobertura', () => {
+    const serviceContext = normalizarFontesDoAtendimento(fontes(), org);
+    expect(serviceContext.cobertura.find(c => c.categoria === 'perfil')).toMatchObject({ estado: 'present', omitidos: 0 });
+    expect(serviceContext.perfil).toHaveLength(4);
+    expect(JSON.stringify(pacoteFactualDaRevisao({ ...packageOf(), serviceContext }))).toContain('CONDIÇÃO COMPLETA DA ORGANIZAÇÃO');
+    expect(temDecisaoElegivel({ ...packageOf(), serviceContext })).toBe(true);
+  });
+  it('fontes consultadas e confirmador recebem a mesma fotografia completa sem Caso/agenda novos', async () => {
+    const base = normalizarFontesDoAtendimento(fontes(), org);
+    const registry = criarFontesConsultadasDoTurno(at);
+    registry.registrar('memoria_org', 'documento', String(fontes().auxiliares![0]!.body));
+    registry.registrar('skill_ativa', 'skill-a', 'a'.repeat(1800) + 'RESSALVA A');
+    registry.registrar('referencia_skill', 'ref-a', 'b'.repeat(1600) + 'RESSALVA B');
+    registry.registrar('nota_memoria', 'nota-consultada', 'Pessoa declarada: Ana, sem verificação clínica.');
+    const serviceContext = registry.aplicar(base);
+    expect(serviceContext.cobertura.find(c => c.categoria === 'perfil')).toMatchObject({ estado: 'present', omitidos: 0 });
+    const p = { ...packageOf(), serviceContext };
+    const result = await classifyPromise({} as pg.Pool, {}, { tenantId: org }, p, {
+      log, loadHumanReturnBinding: vi.fn(async () => ({ purpose: 'human_return_confirmation', provider: 'openai', credential_id: 'id', model_id: 'modelo', base_url: null, is_enabled: true })),
+    });
+    expect(result.repasseConcluidoFiel).toBe(true);
+    const reserva = JSON.parse(seam.call.mock.calls[0]![2].messages[0].content);
+    const confirmador = JSON.parse(seam.call.mock.calls[1]![2].messages[0].content);
+    expect(reserva).toEqual(pacoteParaJev(p));
+    expect(confirmador).toEqual(reserva);
+    expect(JSON.stringify(reserva)).toContain('RESSALVA A');
+    expect(JSON.stringify(reserva)).toContain('RESSALVA B');
+    expect(serviceContext.operacoes).toHaveLength(0);
+  });
+  it.each(['individual', 'organizacao', 'organizacao_total', 'nota_consultada', 'skill_consultada'] as const)(
+    'item/condição omitidos em %s continuam impedindo o sinal positivo', async excesso => {
+      const f = fontes();
+      const registry = criarFontesConsultadasDoTurno(at);
+      if (excesso === 'individual') f.contato!.tags = ['x'.repeat(8100) + 'RESTRIÇÃO INDIVIDUAL'];
+      if (excesso === 'organizacao') f.auxiliares![0]!.body = 'x'.repeat(8100) + 'RESTRIÇÃO ORGANIZACIONAL';
+      if (excesso === 'organizacao_total') f.auxiliares = [0, 1, 2].map(i => ({ ...row(`mem-${i}`), body: 'x'.repeat(6900) + `RESSALVA ${i}` }));
+      if (excesso === 'nota_consultada') registry.registrar('nota_memoria', 'nota-grande', 'x'.repeat(8100) + 'RESSALVA INDIVIDUAL');
+      if (excesso === 'skill_consultada') registry.registrar('referencia_skill', 'ref-grande', 'x'.repeat(8100) + 'RESSALVA DA SKILL');
+      const serviceContext = registry.aplicar(normalizarFontesDoAtendimento(f, org));
+      expect(serviceContext.cobertura.find(c => c.categoria === 'perfil')!.estado).toBe('excluded_by_limit');
+      const p = { ...packageOf(), serviceContext };
+      expect(temDecisaoElegivel(p)).toBe(false);
+      // Mesmo um double que diga true não substitui a cobertura íntegra relida pelo servidor.
+      const result = await classifyPromise({} as pg.Pool, {}, { tenantId: org }, p, { log, loadHumanReturnBinding: vi.fn(async () => null) });
+      expect(result.repasseConcluidoFiel).toBe(false);
+    },
+  );
+  it('fontes organizacionais não tomam o espaço do indivíduo nem emprestam sua quota', () => {
+    const f = fontes();
+    f.contato!.tags = ['x'.repeat(7000)];
+    f.notas = [{ ...row('nota'), body: 'x'.repeat(1200) + 'RESSALVA INDIVIDUAL' }];
+    f.auxiliares = [{ ...row('documento'), body: 'Política curta, sem autorizar exceção individual.' }];
+    const serviceContext = normalizarFontesDoAtendimento(f, org);
+    expect(serviceContext.perfil.some(p => p.origem === 'memoria_org')).toBe(true);
+    expect(serviceContext.perfil.some(p => p.origem === 'memoria_do_agente')).toBe(false);
+    expect(temDecisaoElegivel({ ...packageOf(), serviceContext })).toBe(false);
+  });
+  it('releitura da organização vence a cópia anterior e invalida a fotografia', () => {
+    const f = fontes();
+    const registry = criarFontesConsultadasDoTurno(at);
+    registry.registrar('memoria_org', 'documento', String(f.auxiliares![0]!.body));
+    const first = registry.aplicar(normalizarFontesDoAtendimento(f, org));
+    f.auxiliares![0]!.body = 'CONDIÇÃO RETIFICADA: conferir a nova data.';
+    const current = registry.aplicar(normalizarFontesDoAtendimento(f, org));
+    expect(current.fingerprint).not.toBe(first.fingerprint);
+    expect(JSON.stringify(current.perfil)).toContain('CONDIÇÃO RETIFICADA');
+    expect(JSON.stringify(current.perfil)).not.toContain('CONDIÇÃO COMPLETA');
   });
 });

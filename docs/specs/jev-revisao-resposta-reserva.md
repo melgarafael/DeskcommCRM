@@ -80,3 +80,9 @@ Living System Checklist: entrada=evento/job/envelope autorizado; saída=CaseComm
 ### Caso concluído e fonte conservada
 
 `resolved` não remove a fonte: o coletor verifica evento autenticado, estado do Caso, pedido e fronteira. A reentrada ligada a `humanCaseEventId` relê a decisão mesmo quando Casos deixou de estar habilitado no agente; não liga a funcionalidade nem modifica configuração empresarial. Sem esse evento, a leitura condicional anterior permanece. `revisor-conclusao-caso-encerrado.test.ts` mede o job/handler/revisão/gates com PostgreSQL real e Caso encerrado: nota presente no envelope, confirmação fiel aceita e pessoa divergente vetada. Provedores/canal são controlados; não comprova acurácia de modelo pago ou entrega externa.
+
+### Orçamento das fontes de perfil
+
+O coletor reserva separadamente até 8 mil caracteres serializados para cadastro/notas individuais e 16 mil para memória da organização, skills e referências consultadas. Não deduz beneficiário da origem organizacional. São no máximo 32 itens de perfil no conjunto e 8 mil caracteres por item; os itens saem inteiros, sem cortar uma ressalva. Os mesmos orçamentos valem para a leitura inicial e para fontes consultadas durante o turno. Fontes desconhecidas continuam na quota individual, não recebem espaço organizacional implicitamente.
+
+Isso conserva simultaneamente a condição organizacional e o perfil individual que antes disputavam uma quota única. Não altera autoridade nem tolerância de omissões: qualquer cobertura incompleta/conflitante/indisponível ainda impede o sinal positivo de repasse humano, inclusive se o modelo disser que é fiel. Os limites de decisões, operações e continuidade e o teto global de 64 mil caracteres do pacote permanecem. Datas, pessoa, objeto, condições, prova autenticada e ausência de nova promessa continuam exigidos nas três rotas. Releitura atual da memória prevalece sobre a cópia consultada anteriormente e participa da fotografia/cache.

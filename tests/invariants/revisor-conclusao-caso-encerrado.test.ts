@@ -22,6 +22,10 @@ beforeAll(async () => {
   await pool.query(`with v as (insert into playbook_versions(organization_id,layer,content)
     select null,'platform','Assistente sintético.' where not exists(select 1 from playbook_pointers where organization_id is null and layer='platform') returning id)
     insert into playbook_pointers(organization_id,layer,version_id) select null,'platform',id from v`);
+  await pool.query(`with v as (insert into org_memory_versions(organization_id,version_number,content)
+    values($1,1,$2) returning id)
+    insert into org_memory_pointers(organization_id,version_id) select $1,id from v`,
+    [org, 'x'.repeat(6650) + '\nRESSALVA ORGANIZACIONAL INTEIRA']);
 });
 afterAll(() => pool.end());
 
@@ -29,7 +33,7 @@ describe('devolutiva encerrada conserva decisão com Casos desarmado no agente',
   it.each([false, true])('fonte do Caso resolved chega ao revisor e controla envio fiel=%s', async faithful => {
     const contact = randomUUID(), conversation = randomUUID(), message = randomUUID(), caseId = randomUUID(), event = randomUUID();
     const candidate = `A equipe confirmou a sessão de ${faithful ? 'Ana' : 'Bruno'} em 15/10 às 10h.`;
-    await pool.query(`insert into contacts(id,organization_id,name,phone_number) values($1,$2,'Sintético',$3)`, [contact, org, '+5511' + (faithful ? '999911111' : '999922222')]);
+    await pool.query(`insert into contacts(id,organization_id,name,phone_number,tags) values($1,$2,'Sintético',$3,$4::text[])`, [contact, org, '+5511' + (faithful ? '999911111' : '999922222'), ['x'.repeat(1100)]]);
     await pool.query(`insert into conversations(id,organization_id,contact_id,channel_session_id,status,is_group) values($1,$2,$3,$4,'ai_handling',false)`, [conversation, org, contact, session]);
     await pool.query(`insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_at)
       values($1,$2,$3,$4,$5,'text','inbound','received','Pode confirmar a sessão de Ana em 15/10 às 10h?',now())`, [message, org, conversation, session, contact]);
@@ -70,6 +74,10 @@ describe('devolutiva encerrada conserva decisão com Casos desarmado no agente',
     expect(packets).toHaveLength(1);
     expect(packets[0]?.contexto_decisoes).toMatchObject({ decisoes: [{ acao: 'resolved', elegivel: true,
       nota: 'Pode comunicar a confirmação da sessão de Ana em 15/10 às 10h.' }] });
+    expect(JSON.stringify(packets[0]?.contexto_atendimento)).toContain('RESSALVA ORGANIZACIONAL INTEIRA');
+    expect(packets[0]?.contexto_atendimento).toMatchObject({ cobertura: expect.arrayContaining([
+      expect.objectContaining({ categoria: 'perfil', estado: 'present', omitidos: 0 }),
+    ]) });
     expect(sent).toEqual(faithful ? [candidate] : []);
     expect((await pool.query(`select status from agent_cases where id=$1`, [caseId])).rows[0].status).toBe('resolved');
     if (!faithful) expect((await pool.query(`select vetoed_code from before_send_traces where job_id=$1`, [job.id])).rows).toEqual([{ vetoed_code: 'human_decision_unfaithful' }]);
