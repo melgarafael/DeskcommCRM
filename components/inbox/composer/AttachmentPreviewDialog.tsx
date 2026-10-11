@@ -5,7 +5,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { FileText } from "@/lib/ui/icons";
+import { FileText, X } from "@/lib/ui/icons";
 import { formatBytes } from "@/components/inbox/media/media-utils";
 
 interface Props {
@@ -27,10 +27,23 @@ interface Props {
   sending: boolean;
   onCancel: () => void;
   onSend: (caption: string) => void;
+  /**
+   * Tira UM item da fila antes do envio (#2526: "o operador pode remover
+   * imagem antes de enviar"). Leva a legenda do momento para que tirar uma
+   * imagem não apague o que o operador já editou.
+   */
+  onRemove?: (indice: number, caption: string) => void;
 }
 
 /** Preview antes do envio (padrão WhatsApp): capa, demais imagens e legenda. */
-export function AttachmentPreviewDialog({ files, legendaInicial = null, sending, onCancel, onSend }: Props) {
+export function AttachmentPreviewDialog({
+  files,
+  legendaInicial = null,
+  sending,
+  onCancel,
+  onSend,
+  onRemove,
+}: Props) {
   const t = useT();
   const [caption, setCaption] = useState("");
   // As deps são ESTADOS (`files` vem do state do composer), então isto roda na
@@ -61,13 +74,27 @@ export function AttachmentPreviewDialog({ files, legendaInicial = null, sending,
   const isImage = capa.file.type.startsWith("image/");
   const isVideo = capa.file.type.startsWith("video/");
 
+  const remover = (indice: number) =>
+    onRemove && (
+      <button
+        type="button"
+        onClick={() => onRemove(indice, caption.trim())}
+        disabled={sending}
+        aria-label={t("Remover imagem")}
+        className="absolute -right-1.5 -top-1.5 rounded-full border border-border bg-background p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+      >
+        <X size={12} weight="bold" aria-hidden />
+      </button>
+    );
+
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{t("Enviar anexo")}</DialogTitle>
         </DialogHeader>
-        <div className="flex items-center justify-center rounded-lg bg-muted/40 p-3">
+        <div className="relative flex items-center justify-center rounded-lg bg-muted/40 p-3">
+          {remover(0)}
           {isImage && capa.url && (
             <img src={capa.url} alt={capa.file.name} className="max-h-64 rounded-md object-contain" />
           )}
@@ -103,6 +130,7 @@ export function AttachmentPreviewDialog({ files, legendaInicial = null, sending,
                     <FileText size={18} weight="duotone" className="text-muted-foreground" aria-hidden />
                   </div>
                 )}
+                {remover(i + 1)}
               </li>
             ))}
           </ul>

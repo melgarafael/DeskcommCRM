@@ -39,7 +39,7 @@ import {
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import type { MidiaDeTemplate } from "@/lib/templates/midias";
+import { mimeDaMidia, type MidiaDeTemplate } from "@/lib/templates/midias";
 import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
 import { cn } from "@/lib/utils";
 
@@ -372,7 +372,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     if (!res.ok) throw new ApiError(res.status, "midia_indisponivel", undefined, "", "");
     const blob = await res.blob();
     const nome = midia.storage_path.split("/").pop() ?? `imagem-${indice + 1}`;
-    return new File([blob], nome, { type: midia.media_mime });
+    // O tipo sai do CAMINHO (que a rota de upload escolheu pelos bytes), não
+    // do `media_mime` da linha, que é texto livre gravado pelo PATCH.
+    return new File([blob], nome, { type: mimeDaMidia(midia.storage_path) });
   }
 
   /**
@@ -441,7 +443,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     void upload
       .mutateAsync({ conversationId, file: arquivo, destino })
       .then((uploaded) => {
-        const proximo = () => enviarAnexos(caption, indice + 1);
+        // Cada arquivo que SAIU deixa a fila, e a legenda com ele: se o
+        // próximo falhar, o retry do diálogo recomeça do que falhou, sem
+        // reenviar o que já foi nem repetir o texto (#2526, critério "falha
+        // no envio da mídia não causa duplicação do texto"). Zerar a
+        // `legendaInicial` é o que faz o diálogo repor a legenda VAZIA quando
+        // a fila encolhe.
+        const proximo = () => {
+          setPendingFiles((fila) => fila.slice(1));
+          setLegendaInicial(null);
+          enviarAnexos(caption, indice + 1);
+        };
         if (destino === "nota") {
           createNote.mutate(
             {
@@ -772,6 +784,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           // operador acabou de decidir não enviar seria perder a única cópia do
           // texto escolhido no menu.
           if (devolver) escreverNoCampo(devolver);
+        }}
+        onRemove={(indice, caption) => {
+          const resto = pendingFiles.filter((_, i) => i !== indice);
+          // Fila vazia = nada a enviar: a legenda volta para o campo, como no
+          // cancelar, para o texto escolhido não sumir junto com a última imagem.
+          if (resto.length === 0) {
+            setPendingFiles([]);
+            setLegendaInicial(null);
+            if (caption) escreverNoCampo(caption);
+            return;
+          }
+          // A legenda editada sobrevive à troca da fila (o diálogo a repõe a
+          // partir de `legendaInicial` sempre que a fila muda).
+          setLegendaInicial(caption);
+          setPendingFiles(resto);
         }}
         onSend={(caption) => {
           // A BIFURCAÇÃO (#1863, F3) — e ela é decidida pelo modo CONGELADO NA
