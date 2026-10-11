@@ -163,7 +163,7 @@ function ler<T>(schema: z.ZodType<T>, dados: unknown): T {
 const listaQualquer = z.object({ object: z.literal("list") });
 const comId = z.object({ id: z.string().min(1) });
 const listaDeIds = z.object({ data: z.array(comId) });
-const sessaoDeCheckout = z.object({ url: z.string(), expires_at: z.number().int() });
+const sessaoDeCheckout = z.object({ id: z.string().min(1), url: z.string(), expires_at: z.number().int() });
 const UUID = z.string().uuid();
 /** A Stripe só aceita `trial_end` a 48 h ou mais no futuro. */
 const TESTE_MINIMO_MS = 48 * 3600 * 1000;
@@ -188,7 +188,11 @@ const assinaturaDaStripe = z.object({
   cancel_at: z.number().nullish(),
   ended_at: z.number().nullish(),
   trial_end: z.number().nullish(),
-  items: z.object({ data: z.array(z.object({ id: z.string(), current_period_end: z.number() })) }),
+  items: z.object({
+    data: z.array(
+      z.object({ id: z.string(), current_period_end: z.number(), price: z.object({ unit_amount: z.number().nullish() }).nullish() }),
+    ),
+  }),
 });
 type AssinaturaDaStripe = z.infer<typeof assinaturaDaStripe>;
 
@@ -461,7 +465,26 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
     const url = linkSeguro(sessao.url);
     if (url === null) throw new ErroDoProvedor(200, "resposta_invalida", false);
     // A assinatura só nasce depois do pagamento (Checkout desde a basil): sem ref aqui.
-    return { url, expiraEm: new Date(sessao.expires_at * 1000), assinaturaRef: null };
+    // A SESSÃO fica: é a id que a troca de plano expira no provedor (#2609).
+    return { url, expiraEm: new Date(sessao.expires_at * 1000), assinaturaRef: null, sessaoId: sessao.id };
+  }
+
+  /**
+   * `POST /checkout/sessions/{id}/expire` (#2609): a sessão morre na hora e o
+   * link para de aceitar pagamento — é o que deixa a troca de plano valer na
+   * hora. 404 é sessão já expirada/apagada: o efeito desejado, não falha.
+   * Id que não é de checkout da Stripe (id de OUTRO provedor na mesma linha) não
+   * expira nada aqui, então recusa em vez de deixar quem chama limpar o link
+   * achando que ele morreu.
+   */
+  async function expirarSessao(sessaoId: string): Promise<void> {
+    if (!sessaoId.startsWith("cs_")) throw new ErroDoProvedor(422, "sessao_de_outro_provedor", false);
+    try {
+      await chamar("POST", `/checkout/sessions/${encodeURIComponent(sessaoId)}/expire`);
+    } catch (e) {
+      if (e instanceof ErroDoProvedor && (e.status === 404 || e.codigo === "resource_missing")) return;
+      throw e;
+    }
   }
 
   // ponytail: 10 assinaturas e 10 faturas por cliente, sem paginar. Um cliente
@@ -510,6 +533,8 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
       emTesteNoProvedorAte: fimDoTeste === null ? null : emData(fimDoTeste),
       pagamentoSemAssinaturaViva: pagouAssinaturaEncerrada(pagas, recentes),
       linkDePagamento: link,
+      // O preço do PLANO gravado contra este (#2609): o item da principal, em centavos.
+      precoCents: principal?.items.data[0]?.price?.unit_amount ?? null,
       statusBruto: principal
         ? `${principal.status}${cancelaNoFim ? ":cancela_no_fim" : ""}`
         : referencia
@@ -627,6 +652,7 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
     verificarWebhook: verificarWebhookStripe,
     garantirCliente,
     iniciarAssinatura,
+    expirarSessao,
     lerSituacao,
     trocarPlano,
     cancelarNoFim,

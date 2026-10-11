@@ -54,11 +54,12 @@ export type ResultadoDaSincronizacao =
 const COLUNAS =
   "organization_id, plano_id, plano_agendado_id, estado, trial_ate, provedor, provedor_cliente_id, provedor_assinatura_id, " +
   "vencida_desde, proximo_vencimento, cancela_no_fim, prazo_extra_ate, ultimo_aviso, ultimo_aviso_em, relida_em, " +
-  "link_de_pagamento, assinaturas_vivas, checkout_url, checkout_expira_em, updated_at";
+  "link_de_pagamento, assinaturas_vivas, checkout_url, checkout_expira_em, checkout_sessao_id, updated_at";
 
 interface Linha {
   checkout_url: string | null;
   checkout_expira_em: string | null;
+  checkout_sessao_id: string | null;
   organization_id: string;
   plano_id: string;
   plano_agendado_id: string | null;
@@ -183,7 +184,9 @@ export async function sincronizar(
       // checkout a fecha na fase 3 por compare-and-set nela. No Asaas o cliente é gravado
       // ANTES de criar a assinatura, e o aviso dela pode chegar aqui no meio — limpar
       // agora dava "link de pagamento não gravado" (500 falso) a quem acabou de assinar.
-      ...(r.limparCheckout && !reservaEmAndamento(linha, lidoEm) ? { checkout_url: null, checkout_expira_em: null } : {}),
+      ...(r.limparCheckout && !reservaEmAndamento(linha, lidoEm)
+        ? { checkout_url: null, checkout_expira_em: null, checkout_sessao_id: null }
+        : {}),
     };
     // Duas guardas: a linha é a que foi lida (updated_at) e nenhuma leitura
     // mais NOVA já foi aplicada (relida_em) — sinal e cron correm juntos.
@@ -204,11 +207,49 @@ export async function sincronizar(
         auditar("cobranca.plano_trocado", orgId, { de: linha.plano_id, para: r.planoId, quando: "aplicado" });
       }
       if (r.zerarAviso) await fecharAvisosDaRegua(admin, orgId);
+      // #2609: a releitura também CONFERE o preço — é a única hora em que o
+      // provedor foi lido, então é aqui ou nunca.
+      await conferirPreco(admin, orgId, {
+        provedor,
+        planoId: r.planoAgendadoId ?? r.planoId,
+        precoDoProvedor: situacao.precoCents,
+        assinaturaRef: situacao.assinaturaRef,
+      });
       return { tipo: "aplicada", estado: r.estado, mudou: r.mudouEstado, acao: await aplicarRegua(admin, orgId, deps) };
     }
     if (tentativa === 2) return { tipo: "descartada" };
     linha = await lerLinha(admin, orgId);
   }
+}
+
+/**
+ * #2609 — o preço da assinatura NO PROVEDOR contra o preço do PLANO gravado.
+ * O alvo é o AGENDADO, senão o atual: é o mesmo que `troca.ts` leva ao provedor
+ * (e que `reconciliar` usa para desfazer), então depois de uma troca os dois são
+ * o mesmo número — divergir é drift, e drift é o que se quer ver.
+ *
+ * Só AUDITA: mexer no preço de quem já assinou a partir de um cron seria pior que
+ * o defeito (uma edição do preço do PLANO depois da assinatura também aparece
+ * aqui, e quem julga é quem administra). Os DOIS números vão no metadata, mais o
+ * plano e a assinatura — a conferência nunca derruba a leitura que a originou.
+ */
+async function conferirPreco(
+  admin: SupabaseClient,
+  orgId: string,
+  p: { provedor: ProvedorDeCobranca; planoId: string; precoDoProvedor: number | null; assinaturaRef: string | null },
+): Promise<void> {
+  if (p.precoDoProvedor === null) return;
+  const { data, error } = await admin.from("cobranca_planos").select("preco_cents").eq("id", p.planoId).maybeSingle();
+  if (error || !data) return;
+  const precoDoPlano = (data as { preco_cents: number }).preco_cents;
+  if (precoDoPlano === p.precoDoProvedor) return;
+  auditar("cobranca.preco_divergente", orgId, {
+    plano_id: p.planoId,
+    preco_plano_cents: precoDoPlano,
+    preco_provedor_cents: p.precoDoProvedor,
+    provedor: p.provedor,
+    assinatura_ref: p.assinaturaRef,
+  });
 }
 
 /** Pagou: os avisos da régua na Central saem de "abertos" (o problema acabou). */
