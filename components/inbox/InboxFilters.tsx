@@ -38,7 +38,23 @@ import type { Role, VisibilityMode } from "@/lib/auth/types";
 
 export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
 
+/**
+ * A faixa na ORDEM DO TRABALHO (#2498): primeiro o que o robô conduz, depois o
+ * que espera gente, depois o histórico. Antes "Automático" fechava a faixa,
+ * depois de dois passados — o valor que o operador mais olha era o último.
+ *
+ * Só a ordem mudou: mesmos `value`, mesmos rótulos, mesmas permissões
+ * (`visibleInboxTabs` filtra sem reordenar) e mesmas contagens (`countFor` lê
+ * por chave, e a chave não acompanha a posição). `moveTab` anda pelo MESMO
+ * array, então as setas continuam vizinha a vizinha.
+ */
 const INBOX_TABS: { value: InboxTab; label: string }[] = [
+  // "Automático", não "IA": a palavra deste ator já é contrato em quatro arquivos
+  // e no dicionário, e `handoff-por-orcamento.test.ts` usa literalmente "Voltar
+  // para a IA" como a sabotagem que deve reprovar. O rótulo não mudou quando o
+  // significado mudou (deixou de filtrar `ai_handling` e passou a perguntar a
+  // régua do motor) — e a posição sim: ela era a última fora do padrão.
+  { value: "ai", label: "Automático" },
   { value: "unassigned", label: "Fila" },
   { value: "mine", label: "Minhas" },
   { value: "all", label: "Todas" },
@@ -47,13 +63,6 @@ const INBOX_TABS: { value: InboxTab; label: string }[] = [
   // separada dela porque são passados diferentes (#923): fechada é atendimento
   // encerrado, arquivada é o que saiu da fila de trabalho sem ser destruído.
   { value: "archived", label: "Arquivadas" },
-  // "Automático", não "IA": a palavra deste ator já é contrato em quatro arquivos
-  // e no dicionário, e `handoff-por-orcamento.test.ts` usa literalmente "Voltar
-  // para a IA" como a sabotagem que deve reprovar. A aba era a última fora do
-  // padrão — e ela mudou de significado junto (deixou de filtrar `ai_handling` e
-  // passou a perguntar a régua do motor), então o rótulo velho descreveria outra
-  // coisa.
-  { value: "ai", label: "Automático" },
 ];
 
 /**
@@ -290,6 +299,25 @@ export function InboxFilters({ value, onChange }: Props) {
     ...vocabularioDoSeletor,
     ...etiquetasForaDoVocabulario,
   ];
+  /**
+   * A BUSCA DENTRO DO SELETOR (#2498) — e ela é de propósito SEM consulta.
+   *
+   * O vocabulário inteiro já está no navegador (as mesmas duas caixas que o
+   * filtro consulta), então filtrar aqui custa um `filter` em memória. O que a
+   * busca NÃO pode fazer é mexer em `value`: `tag`/`tagMode` são a CHAVE da
+   * query de contagens e do pedido da lista, e cada tecla que os alterasse
+   * mandaria uma ida ao servidor por caractere digitado — o oposto do que a
+   * issue pede.
+   *
+   * O estado mora aqui e é ZERADO ao fechar o menu (`onOpenChange`): um termo
+   * esquecido reabriria o seletor já filtrado, sem dizer que há filtro — a
+   * mesma tela que mente que esta entrega existe para matar.
+   */
+  const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
+  const termoDaEtiqueta = buscaDeEtiqueta.trim().toLocaleLowerCase();
+  const opcoesVisiveis = termoDaEtiqueta
+    ? opcoesDoSeletor.filter((tag) => tag.toLocaleLowerCase().includes(termoDaEtiqueta))
+    : opcoesDoSeletor;
   const alternaEtiqueta = (tag: string) => {
     const escolhida = etiquetas.includes(tag);
     const proximas = escolhida ? etiquetas.filter((t) => t !== tag) : [...etiquetas, tag];
@@ -433,7 +461,9 @@ export function InboxFilters({ value, onChange }: Props) {
             )}
 
             {mostrarSeletorDeTag && (
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={(aberto) => {
+                if (!aberto) setBuscaDeEtiqueta("");
+              }}>
                 {/*
                   ⚠️ POR QUE ISTO DEIXOU DE SER UM `Select` (#1274).
                   O `Select` do Radix é de escolha ÚNICA e — o que mata a
@@ -476,8 +506,33 @@ export function InboxFilters({ value, onChange }: Props) {
                     )}
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
+                <DropdownMenuContent align="start" className="w-64">
                   <DropdownMenuLabel>{t("Todas as tags")}</DropdownMenuLabel>
+                  {/*
+                    A BUSCA (#2498): filtra o vocabulário que já está aqui dentro,
+                    sem tocar em `value` — ver o comentário junto de
+                    `opcoesVisiveis`. Ela fica ACIMA dos itens de propósito: o
+                    "Todas as tags" (que limpa o filtro) e o E/OU continuam
+                    alcançáveis mesmo com a lista toda filtrada, que é quando mais
+                    se precisa deles.
+                  */}
+                  <div className="px-2 pb-1">
+                    <Input
+                      value={buscaDeEtiqueta}
+                      onChange={(e) => setBuscaDeEtiqueta(e.target.value)}
+                      onKeyDown={(e) => {
+                        // O typeahead do Radix lê QUALQUER tecla imprimível que
+                        // suba do conteúdo e salta o foco para o item que começa
+                        // com ela — dentro de um campo de texto isso rouba a
+                        // segunda letra. `stopPropagation` só nas caracteres:
+                        // Escape continua subindo e fecha o menu.
+                        if (e.key.length === 1) e.stopPropagation();
+                      }}
+                      placeholder={t("Buscar etiqueta")}
+                      aria-label={t("Buscar etiqueta")}
+                      className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs shadow-none focus-visible:border-border"
+                    />
+                  </div>
                   <DropdownMenuItem
                     onClick={() => onChange({ ...value, tag: undefined, tagMode: undefined })}
                   >
@@ -511,7 +566,7 @@ export function InboxFilters({ value, onChange }: Props) {
                   {/* As órfãs entram na lista: sem elas o gatilho mostraria o
                       resumo de um filtro cujas opções não estão mais lá, e o
                       operador não teria como tirá-las. */}
-                  {opcoesDoSeletor.map((tag) => (
+                  {opcoesVisiveis.map((tag) => (
                     <DropdownMenuCheckboxItem
                       key={tag}
                       checked={etiquetas.includes(tag)}
@@ -528,6 +583,16 @@ export function InboxFilters({ value, onChange }: Props) {
                       </span>
                     </DropdownMenuCheckboxItem>
                   ))}
+                  {/* Dizer que NADA casou é diferente de uma lista vazia: sem
+                      esta linha o operador lê um menu em branco e acha que o
+                      seletor quebrou. Só existe quando há busca — sem termo,
+                      lista vazia é o caso "organização sem etiqueta", que o
+                      seletor nem deveria estar desenhando. */}
+                  {termoDaEtiqueta !== "" && opcoesVisiveis.length === 0 && (
+                    <p className="px-2 py-1.5 text-xs text-text-subtle">
+                      {t("Nenhuma etiqueta com esse texto")}
+                    </p>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
