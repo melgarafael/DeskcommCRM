@@ -138,23 +138,32 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
     e.preventDefault();
     try {
       if (isEdit) {
-        // 1) Imagem nova: a ROTA gera o caminho e devolve a lista já gravada —
-        //    é dela que parte o passo seguinte, para os dois não disputarem a
-        //    ordem da lista.
-        let lista = gravadas;
-        for (const file of novas) lista = await upload.mutateAsync({ templateId: template.id, file });
-        // 2) Remoção: o PATCH recebe a lista COMPLETA do que permanece e a rota
-        //    apaga do bucket o que saiu. Só manda `midias` quando algo saiu —
-        //    um PATCH que reescreve a lista sem mudar nada só arriscaria o
-        //    `conflict` da tela atrasada.
-        const mantidasAqui = lista.filter((m) => !removidas.includes(m.storage_path));
+        // 1) Remoção PRIMEIRO: o PATCH recebe a lista COMPLETA do que
+        //    permanece e a rota apaga do bucket o que saiu. Antes das novas
+        //    porque o teto de 5 vale a cada upload — trocar uma imagem num
+        //    template cheio daria 422 se a nova subisse antes da saída da
+        //    velha. Só manda `midias` quando algo saiu: um PATCH que reescreve
+        //    a lista sem mudar nada só arriscaria o `conflict` da tela atrasada.
         await update.mutateAsync({
           id: template.id,
           title,
           body,
           shortcut: shortcut.trim() || null,
-          ...(mantidasAqui.length !== lista.length ? { midias: mantidasAqui } : {}),
+          ...(removidas.length ? { midias: mantidas } : {}),
         });
+        if (removidas.length) {
+          setGravadas(mantidas);
+          setRemovidas([]);
+        }
+        // 2) Imagem nova: a ROTA gera o caminho e devolve a lista já gravada.
+        //    Cada uma que sobe sai de `novas` e entra em `gravadas` NA HORA:
+        //    se a seguinte falhar, salvar de novo continua dela, sem subir
+        //    outra vez a que já entrou.
+        for (const file of novas) {
+          const lista = await upload.mutateAsync({ templateId: template.id, file });
+          setGravadas(lista);
+          setNovas((atual) => atual.filter((f) => f !== file));
+        }
         toast.success(t("Template atualizado."));
       } else {
         const criado = await create.mutateAsync({
