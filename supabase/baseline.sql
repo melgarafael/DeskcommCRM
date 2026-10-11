@@ -50590,9 +50590,9 @@ create trigger trg_lgpd_secoes_de_modulo
   execute function public.fn_lgpd_redigir_secoes_de_modulo();
 
 -- ============================================================================
--- 0631 — as cópias de skill editadas antes do #1960 voltam a apontar o
+-- 0644 — as cópias de skill editadas antes do #1960 voltam a apontar o
 -- catálogo (issue #1974). Bloco IDÊNTICO, linha a linha, ao da migration
--- `20261010193000_0631_copias_antigas_de_skill_reconstroem_o_vinculo_com_o_catalogo.sql`
+-- `20261011210004_0644_copias_antigas_de_skill_reconstroem_o_vinculo_com_o_catalogo.sql`
 -- (`tests/unit/copias-antigas-de-skill-reconstruem-o-vinculo.test.ts` prende os
 -- dois à mesma letra). Não cria função, então entra aqui em cima da VARREDURA
 -- anon por ordem de apêndice, não por necessidade. Instalação nova roda sobre
@@ -50634,7 +50634,7 @@ begin
      and portadores.origem is not null;
 
   get diagnostics v_alteradas = row_count;
-  raise notice '0631: % versao(oes) de copia com o vinculo com o catalogo reconstruido', v_alteradas;
+  raise notice '0644: % versao(oes) de copia com o vinculo com o catalogo reconstruido', v_alteradas;
 
   execute 'alter table public.skill_versions enable trigger trg_skill_versions_immutable';
 end $$;

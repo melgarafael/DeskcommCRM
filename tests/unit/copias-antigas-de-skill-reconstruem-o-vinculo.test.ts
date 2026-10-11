@@ -18,7 +18,7 @@
  *
  * ## O conserto, e o que este arquivo prende
  *
- * A migration `0631` e o apêndice idêntico no `baseline.sql` reconstruem o
+ * A migration `0644` e o apêndice idêntico no `baseline.sql` reconstruem o
  * vínculo a partir do próprio histórico (append-only pela regra dura 9): para
  * cada versão de ORG nula na janela do defeito, carrega o vínculo da versão
  * ANTERIOR mais recente do mesmo (org, name) que aponte versão de plataforma.
@@ -45,7 +45,7 @@ import { temVersaoNovaNoCatalogo } from "@/lib/ai/skills/versao-nova-catalogo";
 
 const RAIZ = process.cwd();
 const MIGRATION =
-  "supabase/migrations/20261010193000_0631_copias_antigas_de_skill_reconstroem_o_vinculo_com_o_catalogo.sql";
+  "supabase/migrations/20261011210004_0644_copias_antigas_de_skill_reconstroem_o_vinculo_com_o_catalogo.sql";
 
 /** As duas pontas da janela do defeito, com a razão de cada uma. */
 const INICIO_DA_JANELA = "2026-09-23T03:50:24Z"; // merge do #1484: o editor que gravava o nulo nasce aqui
@@ -62,7 +62,7 @@ function blocoDoBackfill(texto: string): { bloco: string; ocorrencias: number } 
   return { bloco: achou?.[0] ?? "", ocorrencias };
 }
 
-describe("a 0631 nos dois caminhos de aplicação", () => {
+describe("a 0644 nos dois caminhos de aplicação", () => {
   it("o baseline repete o bloco da migration letra a letra", () => {
     const daMigration = blocoDoBackfill(ler(MIGRATION));
     const doBaseline = blocoDoBackfill(ler("supabase/baseline.sql"));
@@ -100,7 +100,7 @@ interface Versao {
 }
 
 /**
- * A regra da 0631, reimplementada aqui para os fixtures da issue: uma cópia
+ * A regra da 0644, reimplementada aqui para os fixtures da issue: uma cópia
  * nula na janela herda o vínculo da versão anterior mais recente do mesmo
  * (org, name) cujo forked aponte versão de plataforma. Devolve o `forked` de
  * cada versão DEPOIS do backfill.

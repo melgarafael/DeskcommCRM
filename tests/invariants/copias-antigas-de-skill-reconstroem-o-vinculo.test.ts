@@ -1,5 +1,5 @@
 /**
- * O BACKFILL DA 0631 EXECUTADO NUM POSTGRES COM DADOS (#1974).
+ * O BACKFILL DA 0644 EXECUTADO NUM POSTGRES COM DADOS (#1974).
  *
  * `tests/unit/copias-antigas-de-skill-reconstruem-o-vinculo.test.ts` prende a
  * LETRA do bloco e reimplementa a regra em TypeScript, mas não executa o SQL:
@@ -35,14 +35,14 @@ function blocoDoBaseline(): string {
   const baseline = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
   const achou = baseline.match(/do \$\$\ndeclare\n  v_alteradas integer;[\s\S]*?end \$\$;/);
   if (!achou) {
-    throw new Error("bloco da 0631 não achado em supabase/baseline.sql (extração quebrada)");
+    throw new Error("bloco da 0644 não achado em supabase/baseline.sql (extração quebrada)");
   }
   return achou[0];
 }
 
-// Namespace pela migration (0631), como manda meta-templates-rls.test.ts.
-const ORG_B = "0631bbbb-0000-4000-8000-000000000001";
-const id = (n: number) => `0631aaaa-0000-4000-8000-${String(n).padStart(12, "0")}`;
+// Namespace pela migration (0644), como manda meta-templates-rls.test.ts.
+const ORG_B = "0644bbbb-0000-4000-8000-000000000001";
+const id = (n: number) => `0644aaaa-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const P1 = id(1);
 const P2 = id(2);
 const P_OUTRO = id(3);
@@ -57,30 +57,30 @@ function versao(vid: string, org: string | null, nome: string, quando: string, f
 /** O histórico semeado: cada versão de org nula é um caso. */
 const SEMENTE = `
   insert into public.organizations (id, slug, legal_name, display_name)
-    values ('${ORG_B}', 'org-b-0631', 'Org B 0631', 'Org B 0631') on conflict do nothing;
-  ${versao(P1, null, "pb-0631", "2026-08-01T10:00:00Z", null)}
-  ${versao(P2, null, "pb-0631", "2026-09-20T10:00:00Z", null)}
-  ${versao(P_OUTRO, null, "outro-0631", "2026-08-01T10:00:00Z", null)}
+    values ('${ORG_B}', 'org-b-0644', 'Org B 0644', 'Org B 0644') on conflict do nothing;
+  ${versao(P1, null, "pb-0644", "2026-08-01T10:00:00Z", null)}
+  ${versao(P2, null, "pb-0644", "2026-09-20T10:00:00Z", null)}
+  ${versao(P_OUTRO, null, "outro-0644", "2026-08-01T10:00:00Z", null)}
   -- edição dentro da janela: instalada do catálogo, editada em 25/09
-  ${versao(id(10), GOV_ORG, "pb-0631", "2026-08-05T10:00:00Z", P1)}
-  ${versao(id(11), GOV_ORG, "pb-0631", "2026-09-25T10:00:00Z", null)}
+  ${versao(id(10), GOV_ORG, "pb-0644", "2026-08-05T10:00:00Z", P1)}
+  ${versao(id(11), GOV_ORG, "pb-0644", "2026-09-25T10:00:00Z", null)}
   -- cópia sem linhagem de catálogo, dentro da janela
-  ${versao(id(20), GOV_ORG, "manual-0631", "2026-09-24T10:00:00Z", null)}
+  ${versao(id(20), GOV_ORG, "manual-0644", "2026-09-24T10:00:00Z", null)}
   -- outra organização, mesmo nome, sem linhagem própria
-  ${versao(id(30), ORG_B, "pb-0631", "2026-09-25T10:00:00Z", null)}
+  ${versao(id(30), ORG_B, "pb-0644", "2026-09-25T10:00:00Z", null)}
   -- .zip reimportado depois do #1960
-  ${versao(id(40), ORG_B, "outro-0631", "2026-08-06T10:00:00Z", P_OUTRO)}
-  ${versao(id(41), ORG_B, "outro-0631", "2026-10-05T10:00:00Z", null)}
+  ${versao(id(40), ORG_B, "outro-0644", "2026-08-06T10:00:00Z", P_OUTRO)}
+  ${versao(id(41), ORG_B, "outro-0644", "2026-10-05T10:00:00Z", null)}
   -- reinstalação: a origem mais recente é a P2
-  ${versao(id(50), ORG_B, "re-0631", "2026-08-07T10:00:00Z", P1)}
-  ${versao(id(51), ORG_B, "re-0631", "2026-09-24T10:00:00Z", P2)}
-  ${versao(id(52), ORG_B, "re-0631", "2026-09-28T10:00:00Z", null)}
+  ${versao(id(50), ORG_B, "re-0644", "2026-08-07T10:00:00Z", P1)}
+  ${versao(id(51), ORG_B, "re-0644", "2026-09-24T10:00:00Z", P2)}
+  ${versao(id(52), ORG_B, "re-0644", "2026-09-28T10:00:00Z", null)}
   -- .zip reimportado em 01/09, antes de o editor (#1484) existir
-  ${versao(id(70), ORG_B, "zip-0631", "2026-08-05T10:00:00Z", P1)}
-  ${versao(id(71), ORG_B, "zip-0631", "2026-09-01T10:00:00Z", null)}
+  ${versao(id(70), ORG_B, "zip-0644", "2026-08-05T10:00:00Z", P1)}
+  ${versao(id(71), ORG_B, "zip-0644", "2026-09-01T10:00:00Z", null)}
 `;
 
-const NAMESPACE = `id::text like '0631aaaa-%'`;
+const NAMESPACE = `id::text like '0644aaaa-%'`;
 const RETRATO = `(select string_agg(id::text || ':' || coalesce(forked_from_version_id::text, '-'), ',' order by id)
                     from public.skill_versions where ${NAMESPACE})`;
 const CONTEUDO = `(select md5(string_agg(description || body || matcher::text || manifest::text, '|' order by id))
@@ -130,7 +130,7 @@ function forked(n: number): string | undefined {
   return medido.get(`v${n}`);
 }
 
-describe("o backfill da 0631 executado sobre um histórico semeado", () => {
+describe("o backfill da 0644 executado sobre um histórico semeado", () => {
   it("edição de cópia dentro da janela ganha o vínculo da instalação", () => {
     expect(forked(11)).toBe(P1);
     expect(forked(10)).toBe(P1); // vínculo já gravado não é reescrito
