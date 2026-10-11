@@ -295,7 +295,7 @@ describe("reprodução com os handlers nativos", () => {
     expect(vi.mocked(auditMcpToolCall).mock.calls.map(([a]) => a.success)).toEqual([false, true]);
   });
 
-  it("tags que aguardam outra escrita revalidam o comando antes de começar; um turno novo continua", async () => {
+  it("tags que aguardam outra escrita revalidam o comando antes de começar; o movimento que ainda não escreveu é recusado e um turno novo continua", async () => {
     const sb = banco();
     dublês.banco = sb;
     sb.lead.tags = ["vip"];
@@ -309,11 +309,13 @@ describe("reprodução com os handlers nativos", () => {
     expect(sb.lead.tags).toEqual(["vip"]);
     dublês.comandoVigente = false;
     sb.liberaEtapa.liberar();
-    await movimento;
+    // O movimento só leu: a revalidação antes da escrita (#2541) o recusa inteiro.
+    expect(await movimento).toEqual({ error: "service_boundary_stale" });
+    expect(sb.lead).toMatchObject({ stage_id: "origem", updated_at: "r0" });
     expect(await tags).toEqual({ error: "service_boundary_stale" });
     expect(sb.lead.tags).toEqual(["vip"]);
-    expect(vi.mocked(audit).mock.calls.map(([a]) => a.action)).toEqual(["lead.moved"]);
-    expect(vi.mocked(auditMcpToolCall).mock.calls.map(([a]) => a.success)).toEqual([true, false]);
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
+    expect(vi.mocked(auditMcpToolCall).mock.calls.map(([a]) => a.success)).toEqual([false, false]);
     // A fila não confunde a revogação antiga com a autoridade de um turno novo.
     dublês.comandoVigente = true;
     expect(await montar(sb, undefined, true).crm_manage_tags!.execute!(args, options))
