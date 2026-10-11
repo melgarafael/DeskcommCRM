@@ -13,7 +13,7 @@ import type { Lead } from "@/lib/types/leads";
  * era renderizado DENTRO do `DropdownMenuContent`, que tem `overflow-x-hidden`
  * e a animação `ds-painel` (`app/globals.css`) — o `translate: 0 0` que sobra
  * depois de abrir (fill-mode `both`) faz do menu pai o containing block dos
- * elementos `position: fixed`, que é como o Popper do Radix posicina o
+ * elementos `position: fixed`, que é como o Popper do Radix posiciona o
  * submenu. Resultado: o submenu abria cortado/atrás do menu, invisível.
  *
  * jsdom não calcula layout, então o que este teste vigia é a INVARIANTE que

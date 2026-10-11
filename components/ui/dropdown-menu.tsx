@@ -47,13 +47,13 @@ const DropdownMenuSubContent = React.forwardRef<
     PORTAL, igual ao `DropdownMenuContent` acima — e não é cosmética (#2702).
     Sem portal o submenu nasce DENTRO do menu pai, que tem `overflow-x-hidden`
     e a animação `ds-painel` (`app/globals.css`): o `translate: 0 0` que a
-    animação deixa aplicada (fill-mode `both`) faz do pai o containing block
-    dos elementos `position: fixed`, que é como o Popper do Radix posicina o
+    animação deixa aplicado (fill-mode `both`) faz do pai o containing block
+    dos elementos `position: fixed`, que é como o Popper do Radix posiciona o
     submenu — ele abria ao lado, fora da caixa do pai, e o `overflow-hidden`
     o cortava: a lista de responsáveis não aparecia. Portado para o body, o
     submenu se posiciona contra a viewport e ninguém o corta.
     `collisionPadding` mantém a folga da borda e o `max-h` + rolagem seguram a
-    lista longa dentro da altura disponível em vez de deixa-la sair da tela.
+    lista longa dentro da altura disponível em vez de deixá-la sair da tela.
     Vigiado por `tests/unit/kanban-submenu-responsavel.test.tsx`.
   */
   <DropdownMenuPrimitive.Portal>
