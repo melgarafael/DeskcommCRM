@@ -170,6 +170,11 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // package.ts. Nada de texto digitado pelo operador entra na chave.
   { arquivo: "lib/ai/skills/package-files.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/products/[id]/fotos/route.ts", fronteira: "storage.chave-de-objeto" },
+  // #2526: a imagem que o operador carrega na Resposta rápida. O caminho é gerado
+  // aqui (`${orgId}/templates/${templateId}/uuid.jpg|png`) — a forma é a mesma do
+  // registro acima: UUID v4 de alfabeto ASCII + `.jpg`/`.png` conhecido pela
+  // ASSINATURA dos bytes, nunca pelo content-type que o cliente diz.
+  { arquivo: "app/api/v1/message-templates/[id]/midias/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/cron/contact-avatars/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/channels/partner/templates/media/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/settings/sons/route.ts", fronteira: "storage.chave-de-objeto" },
