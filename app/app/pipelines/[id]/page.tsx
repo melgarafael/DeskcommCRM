@@ -26,5 +26,21 @@ export default async function PipelinePage({
     .eq("id", id)
     .maybeSingle();
   if (!pipeline) notFound();
-  return <PipelinePageClient pipelineId={id} initialName={pipeline.name} role={activeOrg.role} />;
+  // A lista que alimenta o seletor de troca rápida: os mesmos vivos da tela de
+  // Funis (`app/app/kanban/page.tsx`), só `id` + `name`. Arquivado não entra —
+  // trocar para um funil que não recebe negócio seria destino que não existe.
+  const { data: funis } = await supabase
+    .from("crm_pipelines")
+    .select("id, name")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("is_archived", false)
+    .order("position");
+  return (
+    <PipelinePageClient
+      pipelineId={id}
+      initialName={pipeline.name}
+      role={activeOrg.role}
+      funis={funis ?? []}
+    />
+  );
 }
