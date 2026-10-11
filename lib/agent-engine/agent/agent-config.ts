@@ -271,7 +271,11 @@ export async function loadPublishedAgentConfig(
        -- (grava só paused_at): o pausado vem aqui, e o turno sai no pausedAt.
        and v.status = 'published'
        and v.channel_session_id = $2
-     order by a.priority desc, a.created_at asc
+     -- Quem está NO AR vem antes de qualquer pausado: sem isto um pausado de
+     -- prioridade maior calava o número inteiro, com outro agente publicado nele
+     -- (produção, 2026-10-05). O pausado segue vindo quando é o único: null
+     -- aqui vira o agente genérico, e pausar faria o número voltar a responder.
+     order by (a.paused_at is not null) asc, a.priority desc, a.created_at asc
      limit 1`,
     [organizationId, channelSessionId],
   );
