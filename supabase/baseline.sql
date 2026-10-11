@@ -48315,3 +48315,724 @@ create policy tenant_isolation_pol_video_analyses_all
   on public.pol_video_analyses for all
   using (organization_id = any(public.fn_user_org_ids()))
   with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_call_queue (migration 0635) ----
+
+create table if not exists public.pol_call_queue (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  assigned_to             uuid         references auth.users(id),
+  locked_by               uuid         references auth.users(id),
+  locked_at               timestamptz,
+  call_status             text         not null default 'pending'
+                          check (call_status in (
+                            'pending', 'locked', 'calling', 'completed',
+                            'no_answer', 'busy', 'callback', 'cancelled'
+                          )),
+  political_result        text
+                          check (political_result is null or political_result in (
+                            'apoio_confirmado', 'indeciso', 'recusa',
+                            'mudou_apoio', 'sem_contato', 'agendou_visita',
+                            'pediu_retorno', 'outro'
+                          )),
+  attempt_count           integer      not null default 0,
+  return_after            timestamptz,
+  notes                   text,
+  call_started_at         timestamptz,
+  call_finished_at        timestamptz,
+  priority                integer      not null default 0,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_call_queue_org_status_idx
+  on public.pol_call_queue (organization_id, call_status);
+
+create index if not exists pol_call_queue_org_assigned_idx
+  on public.pol_call_queue (organization_id, assigned_to)
+  where assigned_to is not null;
+
+create index if not exists pol_call_queue_org_priority_idx
+  on public.pol_call_queue (organization_id, priority desc, created_at);
+
+create index if not exists pol_call_queue_org_pending_idx
+  on public.pol_call_queue (organization_id, return_after)
+  where call_status in ('pending', 'callback');
+
+create index if not exists pol_call_queue_contact_idx
+  on public.pol_call_queue (contact_id);
+
+create index if not exists pol_call_queue_created_idx
+  on public.pol_call_queue (created_at);
+
+create or replace trigger pol_call_queue_touch
+  before update on public.pol_call_queue
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_call_queue enable row level security;
+
+drop policy if exists tenant_isolation_pol_call_queue_all on public.pol_call_queue;
+create policy tenant_isolation_pol_call_queue_all
+  on public.pol_call_queue for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_events (migration 0636) ----
+
+create table if not exists public.pol_events (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  title                   text         not null,
+  type                    text         not null default 'reuniao'
+                          check (type in (
+                            'reuniao', 'comicio', 'caminhada', 'carreata',
+                            'debate', 'audiencia', 'assembleia', 'workshop',
+                            'live', 'entrevista', 'visita', 'outro'
+                          )),
+  theme                   text,
+  description             text,
+  city                    text,
+  state                   char(2),
+  neighborhood            text,
+  venue                   text,
+  event_date              timestamptz  not null,
+  event_end_date          timestamptz,
+  estimated_audience      integer,
+  actual_attendance       integer,
+  organizer_contact_id    uuid         references public.contacts(id),
+  status                  text         not null default 'scheduled'
+                          check (status in (
+                            'scheduled', 'confirmed', 'in_progress',
+                            'completed', 'cancelled', 'postponed'
+                          )),
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_events_org_status_idx
+  on public.pol_events (organization_id, status);
+
+create index if not exists pol_events_org_type_idx
+  on public.pol_events (organization_id, type);
+
+create index if not exists pol_events_org_date_idx
+  on public.pol_events (organization_id, event_date);
+
+create index if not exists pol_events_org_city_idx
+  on public.pol_events (organization_id, city)
+  where city is not null;
+
+create index if not exists pol_events_created_idx
+  on public.pol_events (created_at);
+
+create or replace trigger pol_events_touch
+  before update on public.pol_events
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_events enable row level security;
+
+drop policy if exists tenant_isolation_pol_events_all on public.pol_events;
+create policy tenant_isolation_pol_events_all
+  on public.pol_events for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_event_attendance (migration 0636) ----
+
+create table if not exists public.pol_event_attendance (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  event_id                uuid         not null references public.pol_events(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  role                    text         not null default 'participante'
+                          check (role in (
+                            'organizador', 'palestrante', 'moderador',
+                            'voluntario', 'participante', 'imprensa', 'outro'
+                          )),
+  checked_in_at           timestamptz,
+  notes                   text,
+  created_at              timestamptz  not null default now(),
+  constraint pol_event_attendance_event_contact_uq unique (organization_id, event_id, contact_id)
+);
+
+create index if not exists pol_event_attendance_org_event_idx
+  on public.pol_event_attendance (organization_id, event_id);
+
+create index if not exists pol_event_attendance_contact_idx
+  on public.pol_event_attendance (contact_id);
+
+create index if not exists pol_event_attendance_checked_idx
+  on public.pol_event_attendance (checked_in_at)
+  where checked_in_at is not null;
+
+alter table public.pol_event_attendance enable row level security;
+
+drop policy if exists tenant_isolation_pol_event_attendance_all on public.pol_event_attendance;
+create policy tenant_isolation_pol_event_attendance_all
+  on public.pol_event_attendance for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_event_participants (migration 0636) ----
+
+create table if not exists public.pol_event_participants (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  institution_name        text,
+  institution_type        text
+                          check (institution_type is null or institution_type in (
+                            'partido', 'sindicato', 'associacao', 'ong',
+                            'igreja', 'empresa', 'governo', 'universidade',
+                            'midia', 'outro'
+                          )),
+  role_in_institution     text,
+  influence_score         numeric(5,2) not null default 0,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now(),
+  constraint pol_event_participants_contact_org_uq unique (organization_id, contact_id)
+);
+
+create index if not exists pol_event_participants_org_idx
+  on public.pol_event_participants (organization_id);
+
+create index if not exists pol_event_participants_contact_idx
+  on public.pol_event_participants (contact_id);
+
+create index if not exists pol_event_participants_org_type_idx
+  on public.pol_event_participants (organization_id, institution_type)
+  where institution_type is not null;
+
+create index if not exists pol_event_participants_org_influence_idx
+  on public.pol_event_participants (organization_id, influence_score)
+  where influence_score > 0;
+
+create or replace trigger pol_event_participants_touch
+  before update on public.pol_event_participants
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_event_participants enable row level security;
+
+drop policy if exists tenant_isolation_pol_event_participants_all on public.pol_event_participants;
+create policy tenant_isolation_pol_event_participants_all
+  on public.pol_event_participants for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_invisible_funnel (migration 0637) ----
+
+create table if not exists public.pol_invisible_funnel (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  funnel_stage            text         not null default 'awareness'
+                          check (funnel_stage in (
+                            'awareness', 'interest', 'consideration',
+                            'intent', 'evaluation', 'conversion'
+                          )),
+  funnel_score            numeric(5,2) not null default 0,
+  theme_affinity          text,
+  interaction_class       text         not null default 'cold'
+                          check (interaction_class in (
+                            'cold', 'warm', 'hot', 'engaged', 'advocate'
+                          )),
+  total_clicks            integer      not null default 0,
+  total_replies           integer      not null default 0,
+  contents_received       integer      not null default 0,
+  consecutive_weeks_active integer     not null default 0,
+  next_action             text,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now(),
+  constraint pol_invisible_funnel_contact_org_uq unique (organization_id, contact_id)
+);
+
+create index if not exists pol_invisible_funnel_org_stage_idx
+  on public.pol_invisible_funnel (organization_id, funnel_stage);
+
+create index if not exists pol_invisible_funnel_org_class_idx
+  on public.pol_invisible_funnel (organization_id, interaction_class);
+
+create index if not exists pol_invisible_funnel_contact_idx
+  on public.pol_invisible_funnel (contact_id);
+
+create index if not exists pol_invisible_funnel_org_score_idx
+  on public.pol_invisible_funnel (organization_id, funnel_score)
+  where funnel_score > 0;
+
+create or replace trigger pol_invisible_funnel_touch
+  before update on public.pol_invisible_funnel
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_invisible_funnel enable row level security;
+
+drop policy if exists tenant_isolation_pol_invisible_funnel_all on public.pol_invisible_funnel;
+create policy tenant_isolation_pol_invisible_funnel_all
+  on public.pol_invisible_funnel for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_invisible_funnel_content (migration 0637) ----
+
+create table if not exists public.pol_invisible_funnel_content (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  title                   text         not null,
+  theme                   text,
+  stage                   text         not null default 'awareness'
+                          check (stage in (
+                            'awareness', 'interest', 'consideration',
+                            'intent', 'evaluation', 'conversion'
+                          )),
+  format                  text         not null default 'text'
+                          check (format in (
+                            'text', 'image', 'video', 'link', 'carousel',
+                            'audio', 'document', 'other'
+                          )),
+  url                     text,
+  cta                     text,
+  body                    text,
+  sends                   integer      not null default 0,
+  clicks                  integer      not null default 0,
+  replies                 integer      not null default 0,
+  conversion_rate         numeric(5,2) not null default 0,
+  active                  boolean      not null default true,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_invisible_funnel_content_org_stage_idx
+  on public.pol_invisible_funnel_content (organization_id, stage);
+
+create index if not exists pol_invisible_funnel_content_org_format_idx
+  on public.pol_invisible_funnel_content (organization_id, format);
+
+create index if not exists pol_invisible_funnel_content_org_active_idx
+  on public.pol_invisible_funnel_content (organization_id, active)
+  where active = true;
+
+create index if not exists pol_invisible_funnel_content_org_conversion_idx
+  on public.pol_invisible_funnel_content (organization_id, conversion_rate)
+  where conversion_rate > 0;
+
+create or replace trigger pol_invisible_funnel_content_touch
+  before update on public.pol_invisible_funnel_content
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_invisible_funnel_content enable row level security;
+
+drop policy if exists tenant_isolation_pol_invisible_funnel_content_all on public.pol_invisible_funnel_content;
+create policy tenant_isolation_pol_invisible_funnel_content_all
+  on public.pol_invisible_funnel_content for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_invisible_funnel_events (migration 0637) ----
+
+create table if not exists public.pol_invisible_funnel_events (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  contact_id              uuid         not null references public.contacts(id) on delete cascade,
+  event_type              text         not null
+                          check (event_type in (
+                            'content_sent', 'content_opened', 'link_clicked',
+                            'reply_received', 'shared', 'unsubscribed',
+                            'stage_changed', 'score_updated', 'other'
+                          )),
+  content_id              uuid         references public.pol_invisible_funnel_content(id) on delete set null,
+  metadata                jsonb,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_invisible_funnel_events_org_contact_idx
+  on public.pol_invisible_funnel_events (organization_id, contact_id);
+
+create index if not exists pol_invisible_funnel_events_org_type_idx
+  on public.pol_invisible_funnel_events (organization_id, event_type);
+
+create index if not exists pol_invisible_funnel_events_content_idx
+  on public.pol_invisible_funnel_events (content_id)
+  where content_id is not null;
+
+create index if not exists pol_invisible_funnel_events_created_idx
+  on public.pol_invisible_funnel_events (created_at);
+
+alter table public.pol_invisible_funnel_events enable row level security;
+
+drop policy if exists tenant_isolation_pol_invisible_funnel_events_all on public.pol_invisible_funnel_events;
+create policy tenant_isolation_pol_invisible_funnel_events_all
+  on public.pol_invisible_funnel_events for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_surveys (migration 0638) ----
+
+create table if not exists public.pol_surveys (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  title                   text         not null,
+  description             text,
+  type                    text         not null default 'field'
+                          check (type in (
+                            'field', 'online', 'phone', 'door_to_door', 'other'
+                          )),
+  status                  text         not null default 'draft'
+                          check (status in (
+                            'draft', 'active', 'paused', 'completed', 'archived'
+                          )),
+  start_date              timestamptz,
+  end_date                timestamptz,
+  public_token            text         not null default replace(gen_random_uuid()::text, '-', ''),
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now(),
+  constraint pol_surveys_public_token_uq unique (public_token)
+);
+
+create index if not exists pol_surveys_org_status_idx
+  on public.pol_surveys (organization_id, status);
+
+create index if not exists pol_surveys_org_type_idx
+  on public.pol_surveys (organization_id, type);
+
+create index if not exists pol_surveys_token_idx
+  on public.pol_surveys (public_token);
+
+create index if not exists pol_surveys_created_idx
+  on public.pol_surveys (created_at);
+
+create or replace trigger pol_surveys_touch
+  before update on public.pol_surveys
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_surveys enable row level security;
+
+drop policy if exists tenant_isolation_pol_surveys_all on public.pol_surveys;
+create policy tenant_isolation_pol_surveys_all
+  on public.pol_surveys for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_survey_questions (migration 0638) ----
+
+create table if not exists public.pol_survey_questions (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  survey_id               uuid         not null references public.pol_surveys(id) on delete cascade,
+  "order"                 integer      not null default 0,
+  theme                   text,
+  question                text         not null,
+  response_type           text         not null default 'text'
+                          check (response_type in (
+                            'text', 'choice', 'scale', 'boolean',
+                            'number', 'date', 'multi_choice'
+                          )),
+  options                 jsonb,
+  required                boolean      not null default true,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_survey_questions_org_survey_idx
+  on public.pol_survey_questions (organization_id, survey_id);
+
+create index if not exists pol_survey_questions_survey_order_idx
+  on public.pol_survey_questions (survey_id, "order");
+
+create or replace trigger pol_survey_questions_touch
+  before update on public.pol_survey_questions
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_survey_questions enable row level security;
+
+drop policy if exists tenant_isolation_pol_survey_questions_all on public.pol_survey_questions;
+create policy tenant_isolation_pol_survey_questions_all
+  on public.pol_survey_questions for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_survey_responses (migration 0638) ----
+
+create table if not exists public.pol_survey_responses (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  survey_id               uuid         not null references public.pol_surveys(id) on delete cascade,
+  contact_id              uuid         references public.contacts(id) on delete set null,
+  token                   text         not null default replace(gen_random_uuid()::text, '-', ''),
+  answers                 jsonb        not null default '{}'::jsonb,
+  completed               boolean      not null default false,
+  duration_seconds        integer,
+  city                    text,
+  state                   char(2),
+  shared_by               uuid         references auth.users(id),
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_survey_responses_org_survey_idx
+  on public.pol_survey_responses (organization_id, survey_id);
+
+create index if not exists pol_survey_responses_survey_completed_idx
+  on public.pol_survey_responses (survey_id, completed)
+  where completed = true;
+
+create index if not exists pol_survey_responses_contact_idx
+  on public.pol_survey_responses (contact_id)
+  where contact_id is not null;
+
+create index if not exists pol_survey_responses_token_idx
+  on public.pol_survey_responses (token);
+
+create index if not exists pol_survey_responses_created_idx
+  on public.pol_survey_responses (created_at);
+
+create or replace trigger pol_survey_responses_touch
+  before update on public.pol_survey_responses
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_survey_responses enable row level security;
+
+drop policy if exists tenant_isolation_pol_survey_responses_all on public.pol_survey_responses;
+create policy tenant_isolation_pol_survey_responses_all
+  on public.pol_survey_responses for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_decision_signals (migration 0639) ----
+
+create table if not exists public.pol_decision_signals (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  signal_type             text         not null
+                          check (signal_type in (
+                            'survey_result', 'social_mention', 'sentiment_shift',
+                            'territory_change', 'opponent_action', 'media_coverage',
+                            'engagement_spike', 'crisis_indicator', 'other'
+                          )),
+  source                  text         not null,
+  entity_type             text,
+  entity_id               uuid,
+  severity                text         not null default 'info'
+                          check (severity in (
+                            'info', 'low', 'medium', 'high', 'critical'
+                          )),
+  data                    jsonb        not null default '{}'::jsonb,
+  processed_at            timestamptz,
+  action_taken            text,
+  created_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_decision_signals_org_type_idx
+  on public.pol_decision_signals (organization_id, signal_type);
+
+create index if not exists pol_decision_signals_org_severity_idx
+  on public.pol_decision_signals (organization_id, severity);
+
+create index if not exists pol_decision_signals_org_unprocessed_idx
+  on public.pol_decision_signals (organization_id, created_at)
+  where processed_at is null;
+
+create index if not exists pol_decision_signals_entity_idx
+  on public.pol_decision_signals (entity_type, entity_id)
+  where entity_id is not null;
+
+create index if not exists pol_decision_signals_created_idx
+  on public.pol_decision_signals (created_at);
+
+alter table public.pol_decision_signals enable row level security;
+
+drop policy if exists tenant_isolation_pol_decision_signals_all on public.pol_decision_signals;
+create policy tenant_isolation_pol_decision_signals_all
+  on public.pol_decision_signals for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_alerts (migration 0639) ----
+
+create table if not exists public.pol_alerts (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  alert_type              text         not null
+                          check (alert_type in (
+                            'sentiment', 'engagement', 'crisis', 'opponent',
+                            'territory', 'fake_news', 'growth', 'momentum',
+                            'media', 'survey', 'custom'
+                          )),
+  severity                text         not null default 'medium'
+                          check (severity in (
+                            'info', 'low', 'medium', 'high', 'critical'
+                          )),
+  source_type             text,
+  source_id               uuid,
+  title                   text         not null,
+  description             text,
+  status                  text         not null default 'open'
+                          check (status in (
+                            'open', 'acknowledged', 'investigating',
+                            'resolved', 'dismissed'
+                          )),
+  acknowledged_by         uuid         references auth.users(id),
+  acknowledged_at         timestamptz,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_alerts_org_status_idx
+  on public.pol_alerts (organization_id, status);
+
+create index if not exists pol_alerts_org_type_idx
+  on public.pol_alerts (organization_id, alert_type);
+
+create index if not exists pol_alerts_org_severity_idx
+  on public.pol_alerts (organization_id, severity);
+
+create index if not exists pol_alerts_org_open_idx
+  on public.pol_alerts (organization_id, created_at)
+  where status = 'open';
+
+create index if not exists pol_alerts_source_idx
+  on public.pol_alerts (source_type, source_id)
+  where source_id is not null;
+
+create index if not exists pol_alerts_created_idx
+  on public.pol_alerts (created_at);
+
+create or replace trigger pol_alerts_touch
+  before update on public.pol_alerts
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_alerts enable row level security;
+
+drop policy if exists tenant_isolation_pol_alerts_all on public.pol_alerts;
+create policy tenant_isolation_pol_alerts_all
+  on public.pol_alerts for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_crisis_predictions (migration 0639) ----
+
+create table if not exists public.pol_crisis_predictions (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  prediction_type         text         not null
+                          check (prediction_type in (
+                            'reputation', 'electoral', 'media', 'social',
+                            'legal', 'political', 'security', 'other'
+                          )),
+  probability             numeric(5,2) not null default 0
+                          check (probability >= 0 and probability <= 100),
+  impact                  text         not null default 'medium'
+                          check (impact in (
+                            'negligible', 'low', 'medium', 'high', 'catastrophic'
+                          )),
+  description             text         not null,
+  recommended_actions     jsonb,
+  metadata                jsonb,
+  expires_at              timestamptz,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_crisis_predictions_org_type_idx
+  on public.pol_crisis_predictions (organization_id, prediction_type);
+
+create index if not exists pol_crisis_predictions_org_impact_idx
+  on public.pol_crisis_predictions (organization_id, impact);
+
+create index if not exists pol_crisis_predictions_org_active_idx
+  on public.pol_crisis_predictions (organization_id, expires_at)
+  where expires_at is null or expires_at > now();
+
+create index if not exists pol_crisis_predictions_created_idx
+  on public.pol_crisis_predictions (created_at);
+
+create or replace trigger pol_crisis_predictions_touch
+  before update on public.pol_crisis_predictions
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_crisis_predictions enable row level security;
+
+drop policy if exists tenant_isolation_pol_crisis_predictions_all on public.pol_crisis_predictions;
+create policy tenant_isolation_pol_crisis_predictions_all
+  on public.pol_crisis_predictions for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_fake_news (migration 0639) ----
+
+create table if not exists public.pol_fake_news (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  title                   text         not null,
+  description             text,
+  source_url              text,
+  platform                text
+                          check (platform is null or platform in (
+                            'whatsapp', 'facebook', 'instagram', 'twitter',
+                            'tiktok', 'youtube', 'telegram', 'website',
+                            'radio', 'tv', 'print', 'other'
+                          )),
+  status                  text         not null default 'detected'
+                          check (status in (
+                            'detected', 'analyzing', 'confirmed',
+                            'responding', 'contained', 'resolved'
+                          )),
+  severity                text         not null default 'medium'
+                          check (severity in (
+                            'low', 'medium', 'high', 'critical'
+                          )),
+  counter_narrative       text,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now()
+);
+
+create index if not exists pol_fake_news_org_status_idx
+  on public.pol_fake_news (organization_id, status);
+
+create index if not exists pol_fake_news_org_severity_idx
+  on public.pol_fake_news (organization_id, severity);
+
+create index if not exists pol_fake_news_org_platform_idx
+  on public.pol_fake_news (organization_id, platform)
+  where platform is not null;
+
+create index if not exists pol_fake_news_created_idx
+  on public.pol_fake_news (created_at);
+
+create or replace trigger pol_fake_news_touch
+  before update on public.pol_fake_news
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_fake_news enable row level security;
+
+drop policy if exists tenant_isolation_pol_fake_news_all on public.pol_fake_news;
+create policy tenant_isolation_pol_fake_news_all
+  on public.pol_fake_news for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));
+
+-- ---- pol_engagement_weights (migration 0639) ----
+
+create table if not exists public.pol_engagement_weights (
+  id                      uuid         primary key default gen_random_uuid(),
+  organization_id         uuid         not null references public.organizations(id) on delete cascade,
+  event_type              text         not null,
+  weight                  numeric(5,2) not null default 1.0,
+  created_at              timestamptz  not null default now(),
+  updated_at              timestamptz  not null default now(),
+  constraint pol_engagement_weights_type_org_uq unique (organization_id, event_type)
+);
+
+create index if not exists pol_engagement_weights_org_idx
+  on public.pol_engagement_weights (organization_id);
+
+create or replace trigger pol_engagement_weights_touch
+  before update on public.pol_engagement_weights
+  for each row execute function public.fn_touch_updated_at();
+
+alter table public.pol_engagement_weights enable row level security;
+
+drop policy if exists tenant_isolation_pol_engagement_weights_all on public.pol_engagement_weights;
+create policy tenant_isolation_pol_engagement_weights_all
+  on public.pol_engagement_weights for all
+  using (organization_id = any(public.fn_user_org_ids()))
+  with check (organization_id = any(public.fn_user_org_ids()));

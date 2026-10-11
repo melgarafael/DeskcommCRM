@@ -139,6 +139,46 @@ export default async function PoliticoHubPage() {
       icone: "\u{26A1}",
       badge: null,
     },
+    {
+      href: "/app/politico/ligacoes",
+      titulo: "Ligacoes",
+      descricao:
+        "Fila de ligacoes com lock otimista, resultado politico e controle de tentativas.",
+      icone: "\u{1F4DE}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/eventos",
+      titulo: "Eventos",
+      descricao:
+        "Eventos politicos com controle de presenca, participantes e dados institucionais.",
+      icone: "\u{1F4C5}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/funil-invisivel",
+      titulo: "Funil Invisivel",
+      descricao:
+        "Nurturing automatico com scoring de afinidade e rastreamento de engajamento.",
+      icone: "\u{1F441}️",
+      badge: null,
+    },
+    {
+      href: "/app/politico/pesquisas",
+      titulo: "Pesquisas",
+      descricao:
+        "Pesquisas de campo com formularios publicos e respostas geolocalizadas.",
+      icone: "\u{1F4CB}",
+      badge: null,
+    },
+    {
+      href: "/app/politico/alertas",
+      titulo: "Alertas",
+      descricao:
+        "Sistema unificado de alertas — sentimento, crise, fake news e adversarios.",
+      icone: "\u{1F514}",
+      badge: null,
+    },
   ];
 
   return (

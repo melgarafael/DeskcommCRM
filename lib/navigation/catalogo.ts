@@ -858,6 +858,56 @@ export const NAV_CATALOG = [
     minRole: "manager",
     sidebar: false, // acessa pelo hub /app/politico
   },
+  {
+    href: "/app/politico/ligacoes",
+    label: "Ligações",
+    description: "Fila de ligações políticas com lock otimista, resultado e controle de tentativas.",
+    icon: "phone",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/politico
+  },
+  {
+    href: "/app/politico/eventos",
+    label: "Eventos",
+    description: "Eventos políticos com controle de presença, participantes e dados institucionais.",
+    icon: "calendar",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/politico/funil-invisivel",
+    label: "Funil Invisível",
+    description: "Nurturing automático com scoring de afinidade e rastreamento de engajamento.",
+    icon: "eye-off",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/politico/pesquisas",
+    label: "Pesquisas",
+    description: "Pesquisas de campo com formulários públicos via token e respostas geolocalizadas.",
+    icon: "clipboard-list",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/politico/alertas",
+    label: "Alertas",
+    description: "Sistema unificado de alertas — sentimento, crise, fake news, adversários e engajamento.",
+    icon: "bell",
+    group: "crm",
+    section: "Campanha política",
+    minRole: "manager",
+    sidebar: false,
+  },
 
   // ---- Análise — olhar o sistema funcionando ----
   //
