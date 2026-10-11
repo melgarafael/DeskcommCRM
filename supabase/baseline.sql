@@ -50589,12 +50589,12 @@ create trigger trg_lgpd_secoes_de_modulo
   when (new.is_anonymized and not old.is_anonymized)
   execute function public.fn_lgpd_redigir_secoes_de_modulo();
 
--- ---- A id da sessão de pagamento no provedor, para a troca expirá-la (migration 0632, issue #2609) ----
+-- ---- A id da sessão de pagamento no provedor, para a troca expirá-la (migration 0641, issue #2609) ----
 -- ANTES do bloco da VARREDURA anon. Conteúdo IDÊNTICO ao da migration — quem aplica a cadeia
 -- e quem aplica o baseline ficam com a mesma coluna (`apendice-do-baseline-nao-diverge`).
 
--- manifest: **A sessão de pagamento fica guardada para expirar na troca de plano (#2609).** Hoje a troca é recusada enquanto há link de pagamento em aberto (o `checkout_em_aberto` da 0583/#2368), e a empresa espera o link expirar ou ser pago; aqui a recusa vira ação: `cobranca_assinaturas.checkout_sessao_id` guarda a id da sessão criada NO PROVEDOR para o link (Stripe `cs_…` na resposta do `POST /checkout/sessions`, Asaas `pay_…` da cobrança cujo `invoiceUrl` virou o link), escrita pela rota do Assinar junto com `checkout_url`/`checkout_expira_em` e zerada com eles (reserva da fase 1, `limparCheckout` da releitura e a própria troca). Com a id na mão, `troca.ts` expira a sessão NO PROVEDOR antes da escrita — fora de transação, como todo chamado ao provedor —, limpa o link local e a troca vale na hora; se o provedor não confirmar, nada muda e vale a recusa de sempre (sem a id, linha anterior à 0632, a recusa continua intacta). Coluna opcional `text`, idempotente (`add column if not exists`), sem backfill: nula é exatamente o comportamento de hoje. Mesmo bloco entra como apêndice no `supabase/baseline.sql` (é o que o kit self-host aplica), ANTES do bloco da VARREDURA anon; nenhuma linha nova no MANIFEST.md — a descrição mora aqui.
--- 0632: a id da sessão de pagamento no provedor, guardada para a troca de plano expirá-la (#2609)
+-- manifest: **A sessão de pagamento fica guardada para expirar na troca de plano (#2609).** Hoje a troca é recusada enquanto há link de pagamento em aberto (o `checkout_em_aberto` da 0583/#2368), e a empresa espera o link expirar ou ser pago; aqui a recusa vira ação: `cobranca_assinaturas.checkout_sessao_id` guarda a id da sessão criada NO PROVEDOR para o link (Stripe `cs_…` na resposta do `POST /checkout/sessions`, Asaas `pay_…` da cobrança cujo `invoiceUrl` virou o link), escrita pela rota do Assinar junto com `checkout_url`/`checkout_expira_em` e zerada com eles (reserva da fase 1, `limparCheckout` da releitura e a própria troca). Com a id na mão, `troca.ts` expira a sessão NO PROVEDOR antes da escrita — fora de transação, como todo chamado ao provedor —, limpa o link local e a troca vale na hora; se o provedor não confirmar, nada muda e vale a recusa de sempre (sem a id, linha anterior à 0641, a recusa continua intacta). Coluna opcional `text`, idempotente (`add column if not exists`), sem backfill: nula é exatamente o comportamento de hoje. Mesmo bloco entra como apêndice no `supabase/baseline.sql` (é o que o kit self-host aplica), ANTES do bloco da VARREDURA anon; nenhuma linha nova no MANIFEST.md — a descrição mora aqui.
+-- 0641: a id da sessão de pagamento no provedor, guardada para a troca de plano expirá-la (#2609)
 --
 -- ─── O defeito ───────────────────────────────────────────────────────────────
 --
@@ -50637,7 +50637,7 @@ alter table public.cobranca_assinaturas
   add column if not exists checkout_sessao_id text;
 
 comment on column public.cobranca_assinaturas.checkout_sessao_id is
-  'A id da sessão de pagamento criada no PROVEDOR para o link em aberto (Stripe cs_…, Asaas pay_…) — issue #2609. Nasce com checkout_url/checkout_expira_em na fase 3 do Assinar e é zerada com eles: é ela que a troca de plano expira no provedor antes de mudar o plano, para a troca valer na hora sem deixar um link vivo com o preço antigo. Nula = nada em aberto, ou linha anterior à 0632 (aí a troca com link em aberto segue recusada como sempre).';
+  'A id da sessão de pagamento criada no PROVEDOR para o link em aberto (Stripe cs_…, Asaas pay_…) — issue #2609. Nasce com checkout_url/checkout_expira_em na fase 3 do Assinar e é zerada com eles: é ela que a troca de plano expira no provedor antes de mudar o plano, para a troca valer na hora sem deixar um link vivo com o preço antigo. Nula = nada em aberto, ou linha anterior à 0641 (aí a troca com link em aberto segue recusada como sempre).';
 
 notify pgrst, 'reload schema';
 
