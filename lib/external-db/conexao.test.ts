@@ -7,6 +7,7 @@ function conexao(over: Partial<ConexaoExterna> = {}): ConexaoExterna {
   return {
     id: "conn-1",
     organizationId: "org-1",
+    dbType: "postgres",
     label: "X",
     host: "localhost",
     port: 5432,
@@ -18,6 +19,8 @@ function conexao(over: Partial<ConexaoExterna> = {}): ConexaoExterna {
     maxFilters: 20,
     maxResponseBytes: 30_000,
     chaveDoCliente: null,
+    sourceMode: "all",
+    fontes: [],
     versao: "2026-09-11T00:00:00.000Z",
     ...over,
   };

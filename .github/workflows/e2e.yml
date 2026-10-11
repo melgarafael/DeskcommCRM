@@ -1241,6 +1241,7 @@ jobs:
         redes-sociais-volta-nao-desloga.spec.ts
         sons-dos-avisos.spec.ts
         suspensao-administrativa.spec.ts
+        integracao-dados-fontes-liberadas.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
