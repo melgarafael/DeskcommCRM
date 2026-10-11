@@ -1,0 +1,1 @@
+crt.sh indisponivel (2026-10-07T14:49:06Z, curl rc=28 timeout 60s)

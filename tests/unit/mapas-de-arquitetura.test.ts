@@ -215,6 +215,44 @@ describe("mapas de arquitetura — coerência interna", () => {
     expect(liga("trgCanais", "rotasCanais"), "o limite de números não volta como mensagem para a tela").toBe(true);
   });
 
+  it("a cobrança do revendedor liga o provedor: o aviso só acorda a leitura, e a leitura decide", () => {
+    const texto = fs.readFileSync(path.join(DIR, "cobranca-do-revendedor.architecture.json"), "utf8");
+    const m = JSON.parse(texto) as { nodes: Array<{ id: string; lane: string }>; edges: NonNullable<Mapa["edges"]> };
+    const liga = (de: string, para: string) => m.edges.some((e) => e.from === de && e.to === para);
+    expect(m.nodes.find((n) => n.id === "stripe")?.lane, "o provedor tem raia própria").toBe("provedor");
+    for (const [de, para, porque] of [
+      ["adaptador", "stripe", "o app não fala com o provedor"],
+      ["stripe", "rotaWebhook", "o aviso do provedor não chega"],
+      ["rotaWebhook", "eventLog", "o aviso não vira cobranca.sinal"],
+      ["eventLog", "sinalHandler", "o sinal não tem consumidor (anti-pattern 3)"],
+      ["sincronizar", "adaptador", "a decisão não vem da releitura"],
+      ["cronCobranca", "sincronizar", "sem reconciliação, aviso perdido é dinheiro perdido"],
+      ["sincronizar", "fnReativar", "quem paga não volta sozinho"],
+      ["sincronizar", "itens", "o aviso da régua não chega à Central"],
+      ["hub", "rotasCliente", "o suspenso não tem como pagar"],
+    ] as const) {
+      expect(liga(de, para), porque).toBe(true);
+    }
+    expect(texto, "o mapa ainda diz que a chave está travada").not.toContain("MODULOS_AINDA_NAO_LIGAVEIS");
+  });
+
+  it("o Asaas entra no mesmo encaixe: Pix e boleto recorrentes, aviso com token que só acorda a leitura", () => {
+    const texto = fs.readFileSync(path.join(DIR, "cobranca-do-revendedor.architecture.json"), "utf8");
+    const m = JSON.parse(texto) as { nodes: Array<{ id: string; lane: string }>; edges: NonNullable<Mapa["edges"]> };
+    const liga = (de: string, para: string) => m.edges.some((e) => e.from === de && e.to === para);
+    expect(m.nodes.find((n) => n.id === "asaas")?.lane, "o Asaas não está na raia do provedor").toBe("provedor");
+    for (const [de, para, porque] of [
+      ["adaptador", "asaas", "o app não fala com o Asaas"],
+      ["asaas", "rotaWebhook", "o aviso do Asaas não chega"],
+      ["billing", "asaas", "a empresa não tem onde pagar por Pix ou boleto"],
+      ["hub", "asaas", "o suspenso não paga a cobrança do Asaas"],
+      ["telaConexao", "asaas", "o dono não tem onde conectar o Asaas"],
+    ] as const) {
+      expect(liga(de, para), porque).toBe(true);
+    }
+    expect(texto, "o card ainda diz que o Asaas é da PR 3b").not.toContain("Asaas (PR 3b)");
+  });
+
   it("a suspensão que suspende está no mapa, e nenhuma peça dela é ilha", () => {
     // O caso concreto do DoD 13 para a PR 1 da cobrança do revendedor. O laço
     // de retorno é `fnReativar → itemCentral → central → fila`: é por ele que

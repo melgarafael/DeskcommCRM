@@ -34,7 +34,15 @@ vi.mock("@/lib/supabase/admin", () => ({
       for (const m of ["select", "eq", "not", "gt", "lte", "order", "limit", "or", "update"]) c[m] = () => c;
       c.maybeSingle = async () => ({ data: unico[tabela] ?? null, error: null });
       c.then = (r: (v: unknown) => unknown) =>
-        Promise.resolve({ data: tabela === "calendar_appointments" ? mocks.compromissos : null, error: null }).then(r);
+        Promise.resolve({
+          data:
+            tabela === "calendar_appointments"
+              ? mocks.compromissos
+              : tabela === "channel_sessions"
+                ? [unico.channel_sessions]
+                : null,
+          error: null,
+        }).then(r);
       return c;
     },
   }),

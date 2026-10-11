@@ -204,6 +204,10 @@ export const AUDIT_ACTIONS = [
   "ai_agent.duplicated",
   "ai_agent.paused",
   "ai_agent.published",
+  // A chave por ASSUNTO JURÍDICO por agente mudou de valor numa publicação
+  // (#2156). À parte de `ai_agent.published`: este só emite quando o VALOR
+  // mudou, então dá para perguntar "quando esta empresa desligou a chave?".
+  "ai_agent.legal_handoff_changed",
   "ai_agent.version_created",
   "ai_agent.version_updated",
   "ai_agent.tested",
@@ -260,6 +264,11 @@ export const AUDIT_ACTIONS = [
   // trilha dizer nos dois sentidos, como `archived`/`reactivated`.
   "channel.disabled",
   "channel.enabled",
+  // A janela de manutenção (#2388): criar e cancelar são mutações da tela e
+  // auditam como toda mutação. A pausa e a retomada que a janela aplica saem
+  // como `channel.disabled`/`channel.enabled`, com `origem: schedule`.
+  "channel.schedule_created",
+  "channel.schedule_cancelled",
   // Chamada de voz WhatsApp (WaCalls, spec 18) — pareamento do segundo
   // dispositivo vinculado, opt-in por org. Admin only.
   //
@@ -1047,6 +1056,25 @@ export const AUDIT_ACTIONS = [
   "cobranca.prazo_concedido",
   "cobranca.isencao_definida",
   "cobranca.modulo_desligado",
+  // ── Cobrança do revendedor — provedor e régua (PR 3a, spec §13) ──────────
+  // Conexão e publicação da chave (metadata só com last4, NUNCA a chave);
+  // checkout iniciado; estado traduzido da releitura (com statusBruto, só
+  // quando mudou); cancelamento no fim; suspensão e reativação por cobrança;
+  // rodada do cron com efeito; tolerância da régua salva.
+  "cobranca.provedor_conectado",
+  "cobranca.modo_publicado",
+  "cobranca.checkout_iniciado",
+  "cobranca.estado_mudou",
+  "cobranca.assinatura_cancelada",
+  "cobranca.org_suspensa",
+  "cobranca.org_reativada",
+  "cobranca.rodada",
+  "cobranca.regua_salva",
+  // #2609, a conferência da releitura: o preço da assinatura NO PROVEDOR
+  // divergiu do preço do PLANO gravado (metadata com os DOIS números, o plano e
+  // a assinatura). Detecção, não correção — o preço de quem já assinou é
+  // decisão de quem administra, e o audit é o lugar de vê-la.
+  "cobranca.preco_divergente",
   // O servidor MCP externo registrado pela instalação (#2147): gravado (ou
   // apagado, com `registrado: false` no metadata) em
   // `organizations.settings.mcp_externo`. É mutação de TENANT — o endereço que
@@ -1078,6 +1106,22 @@ export const AUDIT_ACTIONS = [
   // Planos de tarefa (#1752): a lista `settings.task_plans` mudou pela rota
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
+
+  // Gestão de tenants pelo admin da plataforma (migration 0614).
+  // A LÁPIDE, gravada pelo banco dentro de `fn_excluir_organizacao`, com
+  // `organization_id` nulo e `resource_id` = a organização excluída.
+  "organization.deleted",
+  // O fecho da exclusão (Storage, logins, canais externos), gravado pela
+  // aplicação depois do commit — `lib/tenants/exclusao.ts`.
+  "organization.deletion_completed",
+  // Leitura da lista de membros com e-mail de login (dado pessoal) de um tenant.
+  "platform_admin.tenant_members_viewed",
+  // O admin da plataforma corrigiu o e-mail de login de um membro (só hashes).
+  "member.email_changed",
+  // O gestor mudou a carteira do cliente (põe/tira o dono) pela porta
+  // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
+  // então o audit é a única trilha de quem mudou o dono.
+  "contact.carteira_changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

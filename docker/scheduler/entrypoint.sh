@@ -64,6 +64,13 @@ CRONS="
 * * * * *|45|api/v1/cron/campaign-worker
 */5 * * * *|60|api/v1/cron/webhook-log-retention
 */5 * * * *|45|api/v1/cron/channel-health
+# A JANELA DE MANUTENÇÃO (#2388). Minuto a minuto porque o que ela decide é a
+# borda de um horário ESCOLHIDO POR UMA PESSOA: perder a abertura ou a retomada
+# por causa de uma varredura a cada 5 minutos seria o defeito inteiro. Barata:
+# só lê as duas linhas vivas da agenda, e quem não tem janela não é escrito.
+# Quando escreve, escreve pela MESMA peça da pausa manual — não existe estado
+# paralelo.
+* * * * *|25|api/v1/cron/channel-pause-scheduler
 */10 * * * *|60|api/v1/cron/contact-avatars
 */10 * * * *|60|api/v1/cron/agenda-google-refresh
 */15 * * * *|90|api/v1/cron/agenda-google-sync
@@ -101,6 +108,10 @@ CRONS="
 # repetição enquanto a âncora não mudar. Minuto 37, e não o 23 da data do funil:
 # as duas varrem crm_leads e não devem disputar a mesma batida num self-host pequeno.
 37 * * * *|60|api/v1/cron/lead-time-triggers
+# A COBRANCA DOS SEUS CLIENTES. De hora em hora: a reativacao chega pelo aviso
+# do provedor, em segundos, e a hora so pesa na regua, que conta em dias. Minuto
+# 43, longe das outras varreduras horarias. Chave desligada: sai na hora.
+43 * * * *|120|api/v1/cron/cobranca
 # O canal mudo (doc 11, decisão B): varredura de banco, sem rede, com régua em
 # DIAS. Diária e de madrugada porque o estado que ela lê muda em dias — de 5 em
 # 5 minutos seriam 288 varreduras para nada, e o aviso chegaria na mesma hora.

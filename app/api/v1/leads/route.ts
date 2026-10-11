@@ -1,4 +1,7 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { carteiraDoContato } from "@/lib/carteira/dono";
+import { MOTIVO_DA_RECUSA, recusaNegocioNaCarteiraDeOutro } from "@/lib/carteira/negocio-novo";
+import { traduzir } from "@/lib/i18n/dicionario";
 /**
  * POST /api/v1/leads — create lead (handler em ./_handler.ts).
  */
@@ -8,11 +11,14 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import type { VisibilityMode } from "@/lib/auth/types";
 import {
   AVISO_NEGOCIO_ABERTO_EXISTENTE,
   negocioAbertoExistente,
 } from "@/lib/leads/negocio-aberto-duplicado";
 import { createLeadSchema, validateRequest, type CreateLeadInput } from "@/lib/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 import { createLeadHandler } from "./_handler";
@@ -41,6 +47,74 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     }
     throw err;
+  }
+
+  // ─── NO "SÓ OS SEUS", O QUE O ATENDENTE CRIA É DELE (issue #2547) ──────────
+  //
+  // Em `visibility_mode = 'own'` a policy de `crm_leads` só deixa o Atendente
+  // gravar o negócio que ele enxergaria depois — o que tem ELE de responsável.
+  // O "Novo Lead" não manda responsável, então a criação era recusada (500, e
+  // 403 explicado desde o #2556). Decisão do mantenedor (opção A): sem
+  // responsável no corpo, o responsável é o próprio Atendente. Ele passa pela
+  // mesma régua de atribuição de quem manda o campo (`ownerPatchOrThrow`:
+  // membro ativo, `owner_kind`, `assigned_at`).
+  //
+  // Só quando o corpo NÃO menciona dono: `owner_user_id: null` explícito ou um
+  // colega de responsável continuam sendo pedidos que a regra recusa (403).
+  // Gerente e admin enxergam a organização inteira e criam como sempre. O modo
+  // vem da org do cookie validado, nunca do corpo — admin client, como em
+  // `app/app/layout.tsx`.
+  if (
+    activeOrg.role === "agent" &&
+    input.owner_user_id === undefined &&
+    input.owner_agent_id === undefined
+  ) {
+    // Um client só para as duas leituras do modo/carteira (service-role: RLS
+    // não segura nada aqui, então `organization_id` junto em todo `.eq`).
+    const admin = createAdminClient();
+    const { data: orgRow, error: orgErr } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", activeOrg.orgId)
+      .maybeSingle();
+    // Leitura do modo falhou: segue SEM o padrão e registra. Seguir não amplia
+    // acesso (a RLS de `crm_leads` lê o mesmo modo e decide); derrubar a criação
+    // criaria uma falha nova nos modos em que ela daria certo — as leituras
+    // vizinhas deste fluxo (moeda, origem) também degradam em vez de falhar.
+    if (orgErr) {
+      logger.error("leads.create: leitura do modo de visibilidade falhou; segue sem responsável padrão", {
+        requestId,
+        orgId: activeOrg.orgId,
+        error: orgErr.message,
+      });
+    }
+    const modo = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)?.visibility_mode;
+    if (modo === "own") {
+      // ─── CARTEIRA DE OUTRO VENDEDOR (issue #2591, regra 4) ─────────────────
+      //
+      // O padrão do #2547 acima dá o negócio a quem o criou — mas isso só é
+      // justo enquanto ninguém é o DONO do cliente. Com o contato na carteira
+      // de outro vendedor, o que o Atendente acabou de fazer foi riscar um
+      // cliente do colega sem ninguém avisar. A issue decide: com carteira de
+      // outro vendedor o negócio recusa com o motivo (403 explicado, molde do
+      // #2556) em vez de nascer silenciosamente no nome errado.
+      //
+      // O dono que NÃO conta (viewer, revogado, de outra org) passa como
+      // `donoDaCarteira: null` — aí nada muda, que é o padrão.
+      const carteira = await carteiraDoContato(admin, activeOrg.orgId, input.contact_id);
+      if (
+        recusaNegocioNaCarteiraDeOutro({
+          modo,
+          criadorId: authUser.id,
+          donoDaCarteira: carteira.qualificado ? carteira.dono : null,
+        })
+      ) {
+        return fail("carteira_de_outro_vendedor", traduzir(MOTIVO_DA_RECUSA, authUser.idioma), 403, {
+          requestId,
+        });
+      }
+      input = { ...input, owner_user_id: authUser.id };
+    }
   }
 
   const supabase = await createClient();

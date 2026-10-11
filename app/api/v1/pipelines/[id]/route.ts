@@ -24,6 +24,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import {
+  nomeOcupadoPorAtivo,
   podeExcluirDeVez,
   posicaoEntre,
   updatesDeMarcaExclusiva,
@@ -200,7 +201,29 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // arquivado — pedir de novo em quem já está fora é pedido já atendido, e uma
   // escrita vazia viraria linha de auditoria sem fato nenhum por trás.
   const tiraDoArquivo = pedido.is_archived === false && alvo.is_archived;
-  if (tiraDoArquivo) patchDoAlvo.is_archived = false;
+  if (tiraDoArquivo) {
+    patchDoAlvo.is_archived = false;
+
+    // #2559 — TIRAR DO ARQUIVO TAMBÉM CONFERE O NOME. O pedido misto
+    // (desarquivar + renomear) é recusado lá em cima de propósito, então este é
+    // o ÚNICO ponto onde a volta do funil poderia colidir: se alguém criou outro
+    // funil ATIVO com o mesmo nome enquanto ele estava arquivado, o update
+    // simples devolveria dois funis iguais na lista, sem aviso e sem como
+    // renomear no mesmo passo. Recusa com 409 e o conselho — mesma família do
+    // 409 do pedido misto; a renomeação automática sairia de baixo de quem.
+    const ocupado = nomeOcupadoPorAtivo(funis, pipelineId);
+    if (ocupado) {
+      return fail(
+        "state_conflict",
+        t("Já existe um funil ativo chamado «{nome}». Renomeie um dos dois antes de tirar este funil do arquivo.").replace(
+          "{nome}",
+          ocupado,
+        ),
+        409,
+        { requestId },
+      );
+    }
+  }
 
   if (pedido.depois_de !== undefined) {
     // Só os ativos compõem a régua: arquivado não ocupa lugar na lista.
@@ -329,7 +352,13 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
     // A CONTAGEM VAI EM `details`, não só dentro da frase: a tela mostra "este
     // funil tem N negócios" sem precisar extrair o número da mensagem com regex —
     // segunda régua que quebraria na primeira vez que alguém melhorasse o texto.
-    return fail("unprocessable_entity", veredito.erro, 422, {
+    //
+    // `t()` + `replace("{nome}")` É O QUE DÁ IDIOMA À RECUSA NOVA DA #2559:
+    // `validarArquivamento` devolve o `{nome}` por preencher justamente para a
+    // frase casar a chave do dicionário. As outras recusas já vêm com o nome
+    // colado, não são chave de nada e caem no fallback do `traduzir` — que
+    // devolve o texto como está, sem mudar uma letra.
+    return fail("unprocessable_entity", t(veredito.erro).replace("{nome}", alvo.name), 422, {
       requestId,
       details: {
         negocios: deps.negocios,

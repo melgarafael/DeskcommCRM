@@ -111,6 +111,9 @@ export const KIND_LABEL = {
   // "há agendamentos e follow-ups para revisar"), e o rótulo não promete nenhum
   // dos dois: o que parou está no corpo; o que fazer, na orientação.
   org_reativada: "A conta foi reativada — há o que revisar",
+  // Régua de cobrança ou teto de IA do plano: quem resolve é o admin, em Plano e cobrança.
+  cobranca: "Plano e cobrança da empresa precisam de atenção",
+  email_de_login_trocado: "O e-mail de login de uma pessoa da equipe foi trocado",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

@@ -5,14 +5,18 @@ import { signOut } from "@/app/actions/auth/signOut";
 import { LgpdRequestDetail } from "@/app/app/lgpd/requests/[id]/_client";
 import { RequestsTable } from "@/app/app/lgpd/requests/RequestsTable";
 import { OutrasOrganizacoes } from "@/app/onboarding/_components/OutrasOrganizacoes";
+import { AcoesDaAssinatura } from "@/components/cobranca/AcoesDaAssinatura";
+import { PainelDaAssinatura } from "@/components/cobranca/PainelDaAssinatura";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { orgAtivaSemPortao, requireAuth } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { emailDeSuporte } from "@/lib/branding/saida";
+import { lerPainelDoHub, oQueOHubMostra } from "@/lib/cobranca/hub";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { ehOperante } from "@/lib/organizacao/operante";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { ehOperante, tipoDaSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -36,14 +40,13 @@ const PEDIDO = z.uuid();
  * (o do operador) e, quando ninguém configurou, o parágrafo do contato NÃO
  * renderiza.
  *
- * ponytail: nesta entrega ninguém produz a suspensão de kind `cobranca`, e se
- * ela aparecer recebe o mesmo texto administrativo. Por isso a página não lê
- * `suspended_kind`. O painel de pagamento entra com a régua (PR 3a).
+ * Suspensão de kind `cobranca` com a chave ligada: o painel de pagamento
+ * (`lib/cobranca/hub.ts` decide), e quem paga volta sozinho.
  */
 export default async function AccountSuspendedPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pedido?: string }>;
+  searchParams: Promise<{ pedido?: string; voltou?: string }>;
 }) {
   const user = await requireAuth();
   const ativa = await orgAtivaSemPortao(user);
@@ -53,14 +56,19 @@ export default async function AccountSuspendedPage({
   // próprio usuário), nunca da URL. Uma leitura responde as duas perguntas:
   // a ativa opera? e quais das outras operam?
   const ids = [...new Set([ativa.orgId, ...user.organizations.map((o) => o.organization_id)])];
-  const { data: orgs, error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data: orgs, error } = await admin
     .from("organizations")
-    .select("id, status")
+    .select("id, status, suspended_kind")
     .in("id", ids);
   // Leitura que não aconteceu não vira resposta: redirecionar por palpite
   // prenderia a pessoa num laço com o layout de `/app`.
   if (error) throw new Error(`account_suspended_status_indisponivel: ${error.message}`);
   const statusDe = new Map((orgs ?? []).map((o) => [o.id, o.status]));
+  const tipoDaAtiva = tipoDaSuspensao(
+    statusDe.get(ativa.orgId),
+    (orgs ?? []).find((o) => o.id === ativa.orgId)?.suspended_kind ?? null,
+  );
   // Volta para `/app` só quando AS DUAS réguas que o layout de `/app` usa dizem
   // que a org opera: a da sessão (`org_status`, a do `resolveActiveOrg`) e a do
   // banco (a leitura por service role, a do `orgRow.status` do layout). O layout
@@ -69,7 +77,7 @@ export default async function AccountSuspendedPage({
   // Com `?pedido=` (o e-mail de prazo da LGPD chega aqui por
   // `app/lgpd/pedido/[id]/route.ts`), volta ao PEDIDO: é aqui que o link decide
   // no clique se a empresa opera.
-  const { pedido } = await searchParams;
+  const { pedido, voltou } = await searchParams;
   const pedidoValido = PEDIDO.safeParse(pedido).success ? pedido : undefined;
   if (ehOperante(ativa.org_status) && ehOperante(statusDe.get(ativa.orgId))) {
     redirect(pedidoValido ? `/app/lgpd/requests/${pedidoValido}` : "/app");
@@ -80,7 +88,12 @@ export default async function AccountSuspendedPage({
   // A MESMA régua da página `/app/lgpd/requests` e das rotas `/api/v1/lgpd/**`.
   const administra =
     (user.is_platform_admin && !user.support) || ROLE_RANK[ativa.role] >= ROLE_RANK.admin;
-  const suporte = administra ? await emailDeSuporte() : "";
+  // Spec da cobrança §9: suspensa POR FALTA DE PAGAMENTO + quem administra →
+  // o painel de pagamento. Leitura do painel que falha NÃO derruba o hub: cai para "contato".
+  const cobrancaLigada = administra && tipoDaAtiva === "cobranca" && (await moduloLigado(admin, "cobranca"));
+  const painel = cobrancaLigada ? await lerPainelDoHub(admin, ativa.orgId) : null;
+  const mostra = oQueOHubMostra({ administra, tipo: tipoDaAtiva, cobrancaLigada, temAssinatura: painel?.assinatura != null });
+  const suporte = administra && mostra === "contato" ? await emailDeSuporte() : "";
   const outras = user.organizations
     .filter((o) => o.organization_id !== ativa.orgId && ehOperante(statusDe.get(o.organization_id)))
     .map((o) => ({ id: o.organization_id, nome: o.organization_name }));
@@ -93,7 +106,11 @@ export default async function AccountSuspendedPage({
           <h1 className="text-2xl font-semibold">{t("Conta suspensa")}</h1>
           {/* Quem participa de várias empresas precisa saber QUAL parou. Dado, não interface: sem t(). */}
           <p className="text-base font-medium">{ativa.name}</p>
-          {!administra ? (
+          {mostra === "pagamento" ? (
+            <p className="text-sm text-muted-foreground">
+              {t("A conta foi suspensa por falta de pagamento. Assim que o pagamento for confirmado, tudo volta a funcionar na hora.")}
+            </p>
+          ) : !administra ? (
             <p className="text-sm text-muted-foreground">
               {t("Sua conta está suspensa. Avise o administrador da sua empresa.")}
             </p>
@@ -126,6 +143,24 @@ export default async function AccountSuspendedPage({
             </form>
           </div>
         </Card>
+        {mostra === "pagamento" && painel?.assinatura && (
+          <section aria-label={t("Pagamento")} className="w-full max-w-xl space-y-4">
+            <PainelDaAssinatura dados={painel} idioma={idioma} />
+            <AcoesDaAssinatura
+              estado={painel.assinatura.estado}
+              temProvedor={painel.assinatura.provedor !== null}
+              assinaturasVivas={painel.assinatura.assinaturas_vivas}
+              linkDePagamento={painel.assinatura.link_de_pagamento}
+              cancelaNoFim={painel.assinatura.cancela_no_fim}
+              planosParaTroca={[]}
+              provedor={painel.checkout.provedor}
+              documentoDoCadastro={painel.checkout.documentoDoCadastro}
+              fuso={painel.fuso}
+              voltouDoCheckout={voltou === "1"}
+              noHub
+            />
+          </section>
+        )}
         {administra && (
           <section aria-labelledby="lgpd-no-hub" className="w-full max-w-5xl space-y-4">
             <header className="space-y-1">

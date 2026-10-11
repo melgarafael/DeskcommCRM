@@ -1,0 +1,16 @@
+crond
+entrypoint=38 crontab=38
+8
+{"data":{"scanned":0,"done":0,"retried":
+2026-10-07T14:57:43Z
+app StartedAt=2026-10-07T14:56:33.456406922Z
+FALHOU desde o app restaurado: 0
+FALHOU antes de 14:52Z (desde 14:38Z): 0
+2026-10-07T15:10:42Z
+FALHOU por minuto (UTC) desde 14:38Z:
+      1 14:53;      5 14:54;      1 14:55;      1 14:56;      8 15:00;      7 15:01;      6 15:02;      6 15:03;      6 15:04;     13 15:05;      7 15:06;      2 15:08;
+FALHOU 14:57:30-15:00:30Z: 6
+FALHOU desde 15:09:30Z: 0
+15:15:22
+FALHOU 15:09:30Z-agora (janela limpa final): 0
+2026-10-07T15:15:22Z terceiros=0 available=5826 lock=ocupado alheio=0

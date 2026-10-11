@@ -828,9 +828,9 @@ type EntradaDeHost = { categoria: CategoriaDeHost; motivo: string };
 
 const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
   "chatgpt.com": {
-    categoria: "CONSOLE",
+    categoria: "FORNECEDOR",
     motivo:
-      "destino do link que leva o operador à conta ChatGPT que será conectada por Sign in with ChatGPT; é o painel de autenticação do fornecedor, não um domínio da instalação.",
+      "é o serviço da conta ChatGPT nos DOIS papéis deste provedor: o destino do link que leva o operador a conectar a conta por Sign in with ChatGPT E o endpoint de listagem de modelos da assinatura (`lib/ai/catalogo/modelos-da-assinatura.ts` chama `chatgpt.com/backend-api/codex/models`, medido 200 na issue #2602 — a API pública devolve 403 Missing scopes para o mesmo token). O código FALA com ele; trocar pelo domínio do revendedor faria login e listagem não chegarem a lugar nenhum.",
   },
   "datamanager.googleapis.com": {
     categoria: "FORNECEDOR",
@@ -935,6 +935,21 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
   "api.tiendanube.com": {
     categoria: "FORNECEDOR",
     motivo: "endpoint da API da Nuvemshop/Tiendanube (ordens e catálogo do e-commerce do cliente).",
+  },
+  "api.stripe.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da API da Stripe (`lib/cobranca/provedores/stripe.ts`): é por onde o DONO da instalação cobra as empresas dele, com a chave da conta Stripe DELE. É o destino do request; trocar pelo domínio do revendedor faria a cobrança não chegar a lugar nenhum.",
+  },
+  "api.asaas.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de PRODUÇÃO da API do Asaas (`lib/cobranca/provedores/asaas.ts`): Pix e boleto recorrentes com que o DONO da instalação cobra as empresas dele, com a chave da conta Asaas DELE. Destino do request, não marca.",
+  },
+  "api-sandbox.asaas.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint do SANDBOX do Asaas (`lib/cobranca/provedores/asaas.ts`): a chave `$aact_hmlg_` do dono só funciona aqui, e é com ela que ele testa antes de publicar.",
   },
   "www.tiendanube.com": {
     categoria: "FORNECEDOR",
@@ -1187,8 +1202,10 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita: painel de chaves da Requesty, o mesmo caso dos outros
       // CONSOLE (o link "Onde pegar a chave" da tela de Credenciais).
       "app.requesty.ai",
-      // Decisão escrita: página de acesso à conta que autoriza SIWC, não endpoint chamado pelo CRM.
-      "chatgpt.com",
+      // `chatgpt.com` saiu daqui para FORNECEDOR (#2602): o código passou a
+      // FALAR com ele (a listagem de modelos da assinatura chama o backend do
+      // Codex), e quem fala com o host é FORNECEDOR — a categoria fechada
+      // perde o host no mesmo diff em que a lista de call sites o ganha.
       "console.anthropic.com",
       // Decisão escrita: é o painel de chaves do Jev, o mesmo caso dos outros
       // CONSOLE — o link "Onde pegar a chave" da tela de Credenciais.

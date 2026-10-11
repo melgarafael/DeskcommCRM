@@ -210,7 +210,7 @@ export function ExtensionGuide({
   const manifest = guide.manifest;
   const displayTitle = localize(manifest.display.title, locale);
   const displaySummary = localize(manifest.display.summary, locale);
-  const cards = [...manifest.contributions.crm_cards].sort((left, right) => {
+  const cards = [...(manifest.contributions.crm_cards ?? [])].sort((left, right) => {
     if (left.id === selectedCardId) return -1;
     if (right.id === selectedCardId) return 1;
     return 0;

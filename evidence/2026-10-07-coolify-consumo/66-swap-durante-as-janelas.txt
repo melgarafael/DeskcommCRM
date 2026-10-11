@@ -1,0 +1,15 @@
+== swap lido em CADA amostra (coluna swap_used do .host; free -m inteiro em *.tsv.free)
+repouso-sem-canal amostras=      10 swap_used_max=0 swap_total_max=0
+linhas Swap: no .free = 10, com total 0 = 10
+conversa amostras=      48 swap_used_max=0 swap_total_max=0
+linhas Swap: no .free = 48, com total 0 = 48
+/swapfile file   4G 1.7G   -2
+/swapfile file   4G 1.8G   -2
+ram-para-swapoff OK available=6231 swap_used=1800 limite=2824
+swapoff-inicio 2026-10-07T18:35:06Z
+swapoff-fim 2026-10-07T18:35:18Z
+swapon_show_linhas=0
+swap_used=0
+swap_used=0 swapon_show_linhas=0
+swap-religado 2026-10-07T18:50:03Z
+/swapfile file   4G   0B   -2

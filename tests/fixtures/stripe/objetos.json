@@ -1,0 +1,48 @@
+{
+  "evento": {
+    "id": "evt_1QfixtureInvoicePaid",
+    "object": "event",
+    "api_version": "2026-08-26.dahlia",
+    "created": 1790000200,
+    "livemode": false,
+    "type": "invoice.paid",
+    "data": { "object": { "id": "in_1QfixturePaga", "object": "invoice", "customer": "cus_QfixtureCliente", "status": "paid" } }
+  },
+  "assinatura": {
+    "id": "sub_1QfixtureAtiva",
+    "object": "subscription",
+    "customer": "cus_QfixtureCliente",
+    "status": "active",
+    "created": 1790000000,
+    "livemode": false,
+    "cancel_at_period_end": false,
+    "cancel_at": null,
+    "ended_at": null,
+    "trial_end": null,
+    "metadata": { "organization_id": "11111111-1111-4111-8111-111111111111", "plano_id": "22222222-2222-4222-8222-222222222222" },
+    "items": {
+      "object": "list",
+      "has_more": false,
+      "data": [
+        {
+          "id": "si_QfixtureItem",
+          "object": "subscription_item",
+          "current_period_start": 1790000000,
+          "current_period_end": 1792592000,
+          "price": { "id": "price_1QfixturePreco", "currency": "brl", "unit_amount": 4990, "recurring": { "interval": "month" }, "product": "dc_plano_22222222-2222-4222-8222-222222222222" }
+        }
+      ]
+    }
+  },
+  "fatura": {
+    "id": "in_1QfixturePaga",
+    "object": "invoice",
+    "customer": "cus_QfixtureCliente",
+    "status": "paid",
+    "created": 1790000000,
+    "amount_paid": 4990,
+    "hosted_invoice_url": "https://invoice.stripe.com/i/acct_fixture/in_1QfixturePaga",
+    "status_transitions": { "paid_at": 1790000100 },
+    "parent": { "type": "subscription_details", "subscription_details": { "subscription": "sub_1QfixtureAtiva", "metadata": {} } }
+  }
+}

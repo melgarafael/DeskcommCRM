@@ -28,6 +28,7 @@ import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
 import { ParProvedorModeloInvalidoError, validarParProvedorModelo } from '@/lib/ai/par-provedor-modelo';
 import { decidirQuedaDoProvedor } from '@/lib/ai/pontos/reserva-da-assinatura';
 import { scrubMessage } from '@/lib/sentry/scrub';
+import { identificarConteudoBloqueado } from './conteudo-bloqueado';
 
 import type { Logger } from '../../obs/logger';
 import { decidirParaOSeam, marcarEconomicoQueFalhou } from './binding-do-ponto';
@@ -278,6 +279,23 @@ export interface RunModelCallDeps {
    */
   agora?: Date;
 }
+
+/**
+ * O subconjunto do `GenerateTextResult` que o motor deste seam CONSUME — e a
+ * régua que o ramo da assinatura tem de satisfazer campo a campo.
+ *
+ * Existe por causa do defeito da #2657: o ramo da assinatura monta à mão um
+ * objeto com cara de resultado de generateText (o SIWC exige streamText), e o
+ * cast duplo do SDK escondia do compilador o campo responseMessages que
+ * faltava — o motor lê esse campo em `inbound-turn.ts` e o turno quebrava com
+ * `TypeError: e is not iterable` logo depois de a resposta já ter saído. Com o
+ * `satisfies` aqui, tirar (ou jamais adicionar) qualquer campo que o motor lê
+ * vira erro de tipo NA HORA, não um turno mudo em produção.
+ */
+export type ResultadoDoModeloDoSeam = Pick<
+  Awaited<ReturnType<typeof generateText>>,
+  'text' | 'usage' | 'response' | 'responseMessages' | 'steps' | 'toolCalls'
+>;
 
 /**
  * Texto do aviso de limiar. É PONTEIRO, não retrato: manda ver os números na
@@ -900,23 +918,36 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       let response: Awaited<typeof streamed.response>;
       let steps: Awaited<typeof streamed.steps>;
       let responseMessages: Awaited<typeof streamed.responseMessages>;
+      let toolCalls: Awaited<typeof streamed.toolCalls>;
       try {
-        [text, usage, response, steps, responseMessages] = await Promise.all([
+        [text, usage, response, steps, responseMessages, toolCalls] = await Promise.all([
           streamed.text,
           streamed.usage,
           streamed.response,
           streamed.steps,
           streamed.responseMessages,
+          // Lido por quem pede UMA ferramenta (propostas, valor da conversa).
+          streamed.toolCalls,
         ]);
       } catch (erroDoSdk) {
         throw erroOriginalDoStream ?? erroDoSdk;
       }
-      return {
+      // `responseMessages` NO NÍVEL DE CIMA, e não só dentro de `response`
+      // (#2657): o motor lê o campo em inbound-turn.ts
+      // (`turn.result.responseMessages`) e é ele que a chamada de fechamento
+      // re-serializa. Sem ele o turno quebrava com `e is not iterable` 100 ms
+      // DEPOIS de a resposta já ter saído — o modelo respondia, o cliente não
+      // recebia. O satisfies é a régua: o compilador passa a cobrir cada campo
+      // que o motor consome, que é o que o cast anterior escondia.
+      const resultadoDoStream = {
         text,
         usage,
         response: { ...response, messages: responseMessages },
+        responseMessages,
         steps,
-      } as unknown as Awaited<ReturnType<typeof generateText>>;
+        toolCalls,
+      } satisfies ResultadoDoModeloDoSeam;
+      return resultadoDoStream as unknown as Awaited<ReturnType<typeof generateText>>;
     }
 
     return generateText({
@@ -995,6 +1026,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       result = await chamarCom(reserva, fabricaDaReserva);
     }
   } catch (err) {
+    err = identificarConteudoBloqueado(err) ?? err;
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
     //
     // Provedor recusou a chave, modelo não existe, conta sem saldo? A falha
@@ -1061,6 +1093,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     try {
       result = await chamarCom(config, fabricaAtual);
     } catch (errDaReserva) {
+      errDaReserva = identificarConteudoBloqueado(errDaReserva) ?? errDaReserva;
       await registrarFalha(db, {
         input,
         purpose,
@@ -1178,6 +1211,8 @@ export function normalizarErro(err: unknown): {
   error_message: string;
   http_status: number | null;
 } {
+  const bloqueio = identificarConteudoBloqueado(err);
+  if (bloqueio) return { error_code: 'conteudo_bloqueado', error_message: bloqueio.message, http_status: bloqueio.statusCode ?? null };
   const bruto = err instanceof Error ? err.message : String(err);
   const status =
     (err as { statusCode?: number; status?: number })?.statusCode ??

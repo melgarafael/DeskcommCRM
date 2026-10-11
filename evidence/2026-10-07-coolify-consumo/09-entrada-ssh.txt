@@ -1,0 +1,6 @@
+2026-10-06T20:40:36Z
+porta22-fechada
+root@<ip>: Permission denied (publickey,password).
+3
+0
+nota: o 3 do -F com colchetes = 3 tipos de chave (ssh-ed25519, ssh-rsa, ecdsa-sha2-nistp256) da MESMA entrada [<ip>]:22022; o formato e o esperado, a contagem e por tipo. Conserto do aviso continua ssh-keygen -R "[IP]:22022".

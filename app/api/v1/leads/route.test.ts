@@ -27,6 +27,7 @@ vi.mock("@/lib/impersonate/support", () => ({
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 // A criação em si é mockada: o que se prova aqui é o AVISO da resposta, não o
 // INSERT — e sem este mock o teste precisaria de um dublê para sete tabelas.
 vi.mock("./_handler", () => ({
@@ -35,6 +36,7 @@ vi.mock("./_handler", () => ({
 
 import { createLeadHandler } from "./_handler";
 import { requireRole } from "@/lib/auth/require-role";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 import { POST } from "./route";
@@ -209,5 +211,130 @@ describe("POST /api/v1/leads — aviso de negócio aberto duplicado", () => {
 
     expect(res.status).toBe(201);
     expect(body.meta?.avisos).toBeUndefined();
+  });
+});
+
+// ─── #2547: NO "SÓ OS SEUS", O QUE O ATENDENTE CRIA É DELE ───────────────────
+//
+// Decisão do mantenedor (opção A). O INSERT em si está mockado: a régua de
+// atribuição (`ownerPatchOrThrow`) e a policy do banco são medidas em
+// `tests/invariants/atendente-cria-negocio-no-modo-own.test.ts`. Aqui se prova
+// QUEM a rota manda como responsável, e quando.
+describe("POST /api/v1/leads — responsável padrão do Atendente no modo 'own' (#2547)", () => {
+  const COLEGA = "33333333-3333-4333-8333-333333333333";
+
+  function papel(role: string) {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: USER, idioma: "pt-BR" },
+      org: { orgId: ORG, role },
+    } as never);
+  }
+
+  /** Org com o `settings` dado; registra os filtros para provar a fonte do modo. */
+  function orgCom(settings: Record<string, unknown> | null, erro: { message: string } | null = null) {
+    const filtros: Array<{ tabela: string; coluna: string; valor: unknown }> = [];
+    const admin = {
+      from(tabela: string) {
+        const q = {
+          select: () => q,
+          eq: (coluna: string, valor: unknown) => {
+            filtros.push({ tabela, coluna, valor });
+            return q;
+          },
+          maybeSingle: async () => ({ data: erro ? null : { settings }, error: erro }),
+        };
+        return q;
+      },
+    };
+    vi.mocked(createAdminClient).mockReturnValue(admin as never);
+    return filtros;
+  }
+
+  function donoEnviado(): unknown {
+    const chamada = vi.mocked(createLeadHandler).mock.calls[0];
+    return (chamada?.[2] as { owner_user_id?: unknown }).owner_user_id;
+  }
+
+  beforeEach(() => {
+    vi.mocked(createClient).mockResolvedValue(supabaseCom([]).cliente);
+  });
+
+  it("Atendente em 'own' sem responsável → o responsável é ele mesmo, lido da org do cookie", async () => {
+    papel("agent");
+    const filtros = orgCom({ visibility_mode: "own" });
+
+    const res = await POST(req(criarBody()));
+
+    expect(res.status).toBe(201);
+    expect(donoEnviado()).toBe(USER);
+    // A lista é o que o handler LEU, na ordem: o modo vem de `organizations`
+    // (é isto que este caso prova) e o #2591 acrescenta a leitura da carteira
+    // do contato — com os dois `.eq` de org junto, porque este client é
+    // service-role e não tem RLS atrás.
+    expect(filtros).toEqual([
+      { tabela: "organizations", coluna: "id", valor: ORG },
+      { tabela: "contacts", coluna: "id", valor: CONTATO },
+      { tabela: "contacts", coluna: "organization_id", valor: ORG },
+    ]);
+  });
+
+  it("Atendente em 'own' pedindo um COLEGA de responsável → o pedido segue como veio (a regra recusa)", async () => {
+    papel("agent");
+    orgCom({ visibility_mode: "own" });
+
+    await POST(req(criarBody({ owner_user_id: COLEGA })));
+
+    expect(donoEnviado()).toBe(COLEGA);
+  });
+
+  it("Atendente em 'own' mandando responsável null explícito → segue null (não é omissão)", async () => {
+    papel("agent");
+    orgCom({ visibility_mode: "own" });
+
+    await POST(req(criarBody({ owner_user_id: null })));
+
+    expect(donoEnviado()).toBeNull();
+  });
+
+  it("Atendente em 'own_and_unassigned' (o padrão) → cria sem responsável, como antes", async () => {
+    papel("agent");
+    orgCom({ visibility_mode: "own_and_unassigned" });
+
+    await POST(req(criarBody()));
+
+    expect(donoEnviado()).toBeUndefined();
+  });
+
+  it("Atendente em org sem visibility_mode gravado → padrão, sem responsável", async () => {
+    papel("agent");
+    orgCom({});
+
+    await POST(req(criarBody()));
+
+    expect(donoEnviado()).toBeUndefined();
+  });
+
+  it("Gerente em 'own' → cria como hoje, sem responsável e sem ler a org", async () => {
+    papel("manager");
+    orgCom({ visibility_mode: "own" });
+
+    await POST(req(criarBody()));
+
+    expect(donoEnviado()).toBeUndefined();
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it("leitura da org falha → segue sem o padrão (a RLS decide) e registra no log", async () => {
+    papel("agent");
+    orgCom(null, { message: "boom" });
+    const erro = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await POST(req(criarBody()));
+
+    expect(createLeadHandler).toHaveBeenCalledTimes(1);
+    expect(donoEnviado()).toBeUndefined();
+    expect(erro.mock.calls.flat().join(" ")).toContain("leitura do modo de visibilidade falhou");
+    erro.mockRestore();
   });
 });

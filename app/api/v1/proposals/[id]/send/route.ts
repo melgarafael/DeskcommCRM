@@ -265,7 +265,11 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
     // `<org>/<conversationId>/…`), e a checagem de posse dele é para arquivo
     // que UM USUÁRIO anexou de dentro da própria conversa. Por isso é uma
     // segunda escrita, direto na linha, depois que ela já existe.
-    await admin.from("messages").update({ media_storage_path: pdfPath }).eq("id", mensagem.id);
+    await admin
+      .from("messages")
+      .update({ media_storage_path: pdfPath })
+      .eq("organization_id", authz.org.orgId)
+      .eq("id", mensagem.id);
   } catch (erro) {
     const { data: revertida } = await admin
       .from("crm_proposals")

@@ -1,0 +1,20 @@
+== H2 refeita sobre esta pasta depois da correcao de 2026-10-07 (~19:1xZ), antes do commit
+== Status do GitHub (www.githubstatus.com/api/v2/components.json), lido 2026-10-07T19:07:28Z:
+Git_Operations=operational Pull_Requests=operational Actions=operational Packages=operational
+== (os status das Fases F-H citados no ledger nao foram gravados em arquivo na hora)
+== local (macOS), 2026-10-07T19:10:54Z
+ip_ou_hostname_arquivos=0
+controle_32hex=1
+linhas_32hex=0
+busca_ampla_linhas=62
+busca_ampla_so_padroes_de_valor_linhas=4 arquivos: README.md 
+senhas_locais_arquivos_com_hit=0
+== NA VPS (vazamento.sh sobre a concatenacao de todos os arquivos), 2026-10-07T19:11:12Z
+arquivos=117
+contagens=136
+contagens_de_valor_diferentes_de_zero=0
+linha_padroes=1
+fim-da-varredura
+controle_positivo (linha OWNER_PASSWORD do .env num temporario 600): contagens=136 iguais_a_1=6 fontes_com_1=admin-credentials deskcomm-guardado-2026-10-07-1353/admin-credentials deskcomm-guardado-2026-10-07-1353/env deskcomm-guardado-2026-10-07-1419/admin-credentials deskcomm-guardado-2026-10-07-1419/env .env 
+controle-triturado
+== leitura: linha_padroes=1 e a regex da propria sonda transcrita no README (secao 3); nenhum valor.

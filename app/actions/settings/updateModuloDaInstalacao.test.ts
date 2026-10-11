@@ -6,12 +6,18 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const deps = vi.hoisted(() => ({ upsert: vi.fn(), audit: vi.fn(), rpc: vi.fn(), escrita: vi.fn() }));
+const deps = vi.hoisted(() => ({
+  upsert: vi.fn(),
+  audit: vi.fn(),
+  rpc: vi.fn(),
+  escrita: vi.fn(),
+  revalidar: vi.fn(),
+}));
 
 // A action passa por escritaDeAdminOuRecusa (regra D), que chama este helper.
 vi.mock("@/lib/auth/requirePlatformAdmin", () => ({ requirePlatformAdminEscrita: () => deps.escrita() }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
-vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
+vi.mock("next/cache", () => ({ revalidatePath: deps.revalidar }));
 vi.mock("@/lib/audit", () => ({ audit: deps.audit }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
@@ -56,6 +62,30 @@ describe("updateModuloDaInstalacao", () => {
     expect(deps.upsert).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * ⚠️ ESTE CASO MEDE A CHAMADA, NÃO O EFEITO — e a distinção é honesta, não acadêmica.
+   *
+   * O menu do CRM vive no layout de `/app`, que lê `modulosLigados()` para decidir as portas com
+   * `modulo:`. A irmã que também mexe no menu (`atualizarInterfaceDaEmpresa`) já chama
+   * `revalidatePath("/app", "layout")` e escreve o motivo, então a analogia sustenta a linha.
+   *
+   * O que este caso garante é que a chamada EXISTE e não é removida sem alguém notar. Ele NÃO
+   * prova que sem ela o menu fica velho: isso exigiria navegação pelo cliente com o cache do
+   * router em jogo, e o e2e desta frente usa `page.goto`, que é carregamento completo. Ver o
+   * achado 21 do `docs/testing/user-journey-map.md`, marcado PREVENTIVO.
+   */
+  it("⭐ ligar um módulo revalida o MENU DO CRM, não só a tela de admin", async () => {
+    await updateModuloDaInstalacao({ modulo: "banco_externo", ligado: true });
+    const chamadas = deps.revalidar.mock.calls;
+    expect(chamadas).toEqual(expect.arrayContaining([["/admin/sistema"]]));
+    expect(chamadas).toEqual(expect.arrayContaining([["/app", "layout"]]));
+  });
+
+  it("DESLIGAR também revalida o menu — a porta tem de sumir na mesma hora", async () => {
+    await updateModuloDaInstalacao({ modulo: "banco_externo", ligado: false });
+    expect(deps.revalidar.mock.calls).toEqual(expect.arrayContaining([["/app", "layout"]]));
+  });
+
   it.each(["forbidden_scope", "mfa_required"] as const)(
     "recusa de escrita (%s) VOLTA como resultado — não lança ao error boundary — e nada é gravado nem liberado",
     async (codigo) => {
@@ -69,12 +99,13 @@ describe("updateModuloDaInstalacao", () => {
 });
 
 describe("a chave da cobrança", () => {
-  it("ligar ainda é recusado nesta versão: nada gravado", async () => {
-    expect(await updateModuloDaInstalacao({ modulo: "cobranca", ligado: true })).toEqual({
-      ok: false,
-      error: "modulo_ainda_nao_disponivel",
-    });
-    expect(deps.upsert).not.toHaveBeenCalled();
+  it("ligar grava a chave e não libera nada (a liberação é só do desligar)", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "cobranca", ligado: true })).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ chave: "MODULO_COBRANCA", valor: "ligado" }),
+      expect.anything(),
+    );
+    expect(deps.rpc).not.toHaveBeenCalled();
   });
 
   it("desligar libera as suspensas ANTES de gravar a chave, e audita quantas", async () => {

@@ -16,6 +16,27 @@ import {
   type ExtensionManifest,
 } from "./manifest";
 
+/**
+ * Os cards de um manifesto DECLARATIVO — que sempre os tem. `crm_cards` virou opcional quando o
+ * perfil `data` entrou (um módulo de dados não contribui card), e as fixturas daqui são todas
+ * declarativas. Um helper que FALHA ALTO é melhor que `?? []`, que transformaria fixture quebrada em
+ * lista vazia e num teste verde sobre nada; e melhor que `!`, que é escape de tipo.
+ *
+ * O retorno é TIPADO (`CardsDeclarados`). A primeira versão devolvia `unknown[]`, e aí cada card
+ * virava `{}` — o `tsc` passou a reclamar de `.action`, `.id` e `.title` em vez de reclamar do
+ * opcional. Helper com tipo frouxo troca um erro de tipo por outro.
+ */
+type CardsDeclarados = NonNullable<ExtensionManifest["contributions"]["crm_cards"]>;
+
+function cardsDeclarados(manifesto: {
+  contributions: { crm_cards?: CardsDeclarados };
+}): CardsDeclarados {
+  const cards = manifesto.contributions.crm_cards;
+  if (!cards) throw new Error("fixture declarativa sem crm_cards — o perfil mudou?");
+  return cards;
+}
+
+
 const encoder = new TextEncoder();
 
 const manifest: ExtensionManifest = {
@@ -169,7 +190,7 @@ describe("manifesto declarativo", () => {
   });
 
   it("aplica limites comuns de cards, blocos e textos", () => {
-    const card = manifest.contributions.crm_cards[0]!;
+    const card = cardsDeclarados(manifest)[0]!;
     expect(() =>
       parseManifest(
         manifestBytes({
@@ -202,7 +223,7 @@ describe("manifesto declarativo", () => {
           manifestBytes({
             ...manifest,
             contributions: {
-              crm_cards: [{ ...manifest.contributions.crm_cards[0]!, id }],
+              crm_cards: [{ ...cardsDeclarados(manifest)[0]!, id }],
             },
           }),
         ),
@@ -211,7 +232,7 @@ describe("manifesto declarativo", () => {
   });
 
   it("recusa dois cards com o mesmo id", async () => {
-    const card = manifest.contributions.crm_cards[0]!;
+    const card = cardsDeclarados(manifest)[0]!;
     await expectCode(
       () =>
         parseManifest(
@@ -272,7 +293,7 @@ describe("manifesto declarativo", () => {
     // Cobertura: usar uma porta sem declarar a permissão dela esconde de quem aceita a
     // extensão exatamente o que a tela existe para mostrar.
     const semCobertura = structuredClone(manifest);
-    semCobertura.contributions.crm_cards[0]!.action.capability = "inbox.open";
+    cardsDeclarados(semCobertura)[0]!.action.capability = "inbox.open";
     expect(checkCompatibility(semCobertura).reason).toBe("permission_unsupported");
     // E com a permissão declarada, a mesma porta passa.
     expect(
@@ -286,7 +307,7 @@ describe("manifesto declarativo", () => {
     );
     const capability = structuredClone(manifest);
     (
-      capability.contributions.crm_cards[0]!.action as {
+      cardsDeclarados(capability)[0]!.action as {
         capability: string;
       }
     ).capability = "tasks.delete";

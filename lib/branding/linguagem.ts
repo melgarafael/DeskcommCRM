@@ -104,6 +104,13 @@ export const TRADUCOES: Record<CodigoDaMarca, Traducao> = {
     tom: "problema",
     texto: "O cálculo dos tons a partir dessa cor não terminou.",
   },
+  cor_escura_acromatica: {
+    modo: "frase",
+    tom: "atencao",
+    texto:
+      "A cor do modo escuro é um tom neutro (cinza, preto ou branco), e uma cor assim não " +
+      "destaca nada na tela. No modo escuro, os botões seguem com a cor padrão do sistema.",
+  },
 
   // ── derivação: o que o sistema fez com a cor para ela caber na interface ──
   marca_acromatica: {

@@ -95,6 +95,9 @@ export async function mutateAgentSession(
   change: (current: AgentSetupSession) => AgentSetupSession,
 ): Promise<AgentSessionResponse> {
   const db = await pool.connect();
+  // #2624 — mesma marcação do #2621: o finally só libera COM erro quem falhou
+  // dentro da transação (release(err) → _remove no pg-pool, cliente descartado).
+  let erroNaTransacao: Error | undefined;
   let result: AgentSessionResponse;
   try {
     await db.query("begin");
@@ -127,10 +130,12 @@ export async function mutateAgentSession(
     await db.query("commit");
     result = { revision: Number(updated.rows[0].agent_setup_revision), session: next };
   } catch (error) {
+    // Marcado ANTES do rollback: se o próprio rollback estourar, o cliente ainda sai com erro.
+    erroNaTransacao = error instanceof Error ? error : new Error(String(error));
     await db.query("rollback").catch(() => undefined);
     throw error;
   } finally {
-    db.release();
+    db.release(erroNaTransacao);
   }
   await audit({
     action: "prospecting.changed",

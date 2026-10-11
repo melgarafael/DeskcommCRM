@@ -1,0 +1,7 @@
+== linhas de fila, gate, inicio/fim e exit copiadas de /root/install-r2.log (600) em 2026-10-07T19:0xZ, por grep -nE "^(exit|fila|fim|gate-dentro|inicio|runner_exit|vars_no_ambiente)=" (numero da linha no log a esquerda); sonda vazamento.sh sobre estas linhas: 136 contagens, todas =0 (padroes=0)
+install-r2.log:1:fila=2026-10-07T16:54:41Z
+install-r2.log:2:gate-dentro=2026-10-07T17:15:39Z terceiros=0 available=6940 lock=ocupado alheio=0
+install-r2.log:3:inicio=2026-10-07T17:15:39Z
+install-r2.log:341:exit=0
+install-r2.log:342:fim=2026-10-07T17:17:02Z
+install-r2.log:343:runner_exit=0

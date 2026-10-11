@@ -10,6 +10,7 @@ import {
   assertOrgOperante,
   ehOperante,
   idsDeOrgsParadas,
+  tipoDaSuspensao,
 } from "./operante";
 
 /** Dublê do PostgREST: registra a cadeia e resolve no resultado (thenable + maybeSingle). */
@@ -89,5 +90,18 @@ describe("assertOrgOperante", () => {
     const erro = await assertOrgOperante(db, "o1").catch((e: unknown) => e);
     expect(erro).not.toBeInstanceOf(OrgNaoOperanteError);
     expect(String(erro)).toMatch(/assertOrgOperante: boom/);
+  });
+});
+
+describe("tipoDaSuspensao — o tipo só vale com a org suspensa", () => {
+  it.each([
+    ["suspended", "cobranca", "cobranca"],
+    ["suspended", "administrativa", "administrativa"],
+    ["suspended", null, "administrativa"],
+    ["redacted", "cobranca", null],
+    ["archived", "cobranca", null],
+    ["active", "cobranca", null],
+  ] as const)("status %s com tipo %s → %s", (status, kind, esperado) => {
+    expect(tipoDaSuspensao(status, kind)).toBe(esperado);
   });
 });

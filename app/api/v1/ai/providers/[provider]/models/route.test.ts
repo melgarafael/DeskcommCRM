@@ -3,7 +3,10 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { fail } from "@/lib/api/wrappers";
-import { listarModelosDaAssinatura } from "@/lib/ai/catalogo/modelos-da-assinatura";
+import {
+  FalhaAoListarModelosDaAssinatura,
+  listarModelosDaAssinatura,
+} from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
 
@@ -26,7 +29,12 @@ import type { AuthUser } from "@/lib/auth/types";
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
-vi.mock("@/lib/ai/catalogo/modelos-da-assinatura", () => ({ listarModelosDaAssinatura: vi.fn() }));
+// O módulo real continua importável (a rota usa `FalhaAoListarModelosDaAssinatura`
+// para repassar o motivo da falha ao operador, #2602); só a listagem é dublê.
+vi.mock("@/lib/ai/catalogo/modelos-da-assinatura", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai/catalogo/modelos-da-assinatura")>()),
+  listarModelosDaAssinatura: vi.fn(),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 const ORG_ID = "33333333-3333-4333-8333-333333333333";
@@ -218,5 +226,55 @@ describe("GET /api/v1/ai/providers/:provider/models — quem pode listar", () =>
     const res = await listar("openai-assinatura");
     expect(res.status).toBe(200);
     expect(vi.mocked(listarModelosDaAssinatura)).toHaveBeenCalledWith(ORG_ID);
+  });
+});
+
+/**
+ * QUANDO A LISTAGEM DA ASSINATURA FALHA, O OPERADOR VÊ (#2602).
+ *
+ * MEDIDO na issue: com o endpoint antigo (`api.openai.com/v1/models`) o token
+ * da assinatura tomava 403 "Missing scopes: api.model.read" e a rota respondia
+ * "Conecte a assinatura do ChatGPT" — para uma conta que ESTAVA conectada —
+ * enquanto `models_available` ficava `null` e todo "Publicar" respondia
+ * `model_not_found`.
+ *
+ * A régua nova: `null` (sem conta) continua 409 "Conecte…"; QUALQUER outra
+ * falha é 502 com o MOTIVO na mensagem, e o espelho não é tocado.
+ */
+describe("GET /api/v1/ai/providers/:provider/models — a falha da listagem aparece", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    autorizado();
+    vi.mocked(createClient).mockResolvedValue(
+      stubDoBanco(CATALOGO) as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+  });
+
+  it("listagem que falha (403 do endpoint errado) é 502 com o motivo, não \"conecte a assinatura\"", async () => {
+    vi.mocked(listarModelosDaAssinatura).mockRejectedValue(
+      new FalhaAoListarModelosDaAssinatura("http_403", { status: 403 }),
+    );
+
+    const res = await listar("openai-assinatura");
+
+    expect(res.status).toBe(502);
+    const corpo = (await res.json()) as {
+      error: { code: string; message: string; details?: { motivo?: string } };
+    };
+    expect(corpo.error.code).toBe("internal_error");
+    expect(corpo.error.message).toContain("http_403");
+    // O seletor de modelo lê o motivo daqui, não da frase.
+    expect(corpo.error.details?.motivo).toBe("http_403");
+    expect(corpo.error.message).not.toContain("Conecte a assinatura");
+  });
+
+  it("sem conta conectada continua sendo 409 \"Conecte a assinatura\" — o null não mudou de significado", async () => {
+    vi.mocked(listarModelosDaAssinatura).mockResolvedValue(null);
+
+    const res = await listar("openai-assinatura");
+
+    expect(res.status).toBe(409);
+    const corpo = (await res.json()) as { error: { message: string } };
+    expect(corpo.error.message).toContain("Conecte a assinatura do ChatGPT");
   });
 });
