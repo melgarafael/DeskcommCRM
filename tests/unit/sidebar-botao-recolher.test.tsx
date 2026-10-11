@@ -119,6 +119,16 @@ describe("Sidebar — a marca não disputa a barra com o botão (#2722 / review 
     expect(botao).toHaveAttribute("title", "Recolher sidebar");
   });
 
+  it("recolhida: o tooltip diz o que o clique faz — Expandir, não Recolher", () => {
+    // O `title` e o `aria-label` nomeiam a MESMA ação. Com o title preso em
+    // "Recolher sidebar", o trilho recolhido mostrava no hover o contrário do
+    // que o botão faz.
+    comoPapel("admin");
+    render(<Sidebar collapsed={true} />);
+    const botao = screen.getByRole("button", { name: "Expandir sidebar" });
+    expect(botao).toHaveAttribute("title", "Expandir sidebar");
+  });
+
   it("aberta: o wrapper do botão é shrink-0, para não ser o primeiro espremido", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);

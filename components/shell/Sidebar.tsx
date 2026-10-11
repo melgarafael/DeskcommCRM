@@ -434,6 +434,8 @@ function BotaoDeRecolher({
   soIcone?: boolean;
 }) {
   const t = useT();
+  // Um rótulo só para `aria-label` e `title`: os dois nomeiam a MESMA ação.
+  const rotulo = collapsed ? t("Expandir sidebar") : t("Recolher sidebar");
   return (
     <button
       type="button"
@@ -443,8 +445,8 @@ function BotaoDeRecolher({
         "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
         (collapsed || soIcone) && "justify-center px-2",
       )}
-      aria-label={collapsed ? t("Expandir sidebar") : t("Recolher sidebar")}
-      title={collapsed || soIcone ? t("Recolher sidebar") : undefined}
+      aria-label={rotulo}
+      title={collapsed || soIcone ? rotulo : undefined}
     >
       {collapsed ? (
         <CaretDoubleRight size={14} aria-hidden />
