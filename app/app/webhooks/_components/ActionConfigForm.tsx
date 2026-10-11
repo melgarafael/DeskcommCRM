@@ -23,6 +23,7 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { apiClient } from "@/lib/api/client";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import {
   followupFlowsListQueryKey,
   type FollowupFlowPointerRow,
@@ -542,6 +543,10 @@ function StartMessageFlowForm({
   const superficie: "followup" | "atendimento" =
     config.surface === "atendimento" ? "atendimento" : "followup";
   const ehRoteiro = superficie === "atendimento";
+  // O módulo é opcional por instalação (mesmo padrão do QueueTab): desligado, a
+  // opção some — salvo numa regra que já a grava, para não esconder o que está salvo.
+  const { activeOrg } = useAuth();
+  const roteirosLigados = activeOrg?.modulos_ligados?.includes("fluxos_atendimento") === true;
   const { data, isLoading } = useQuery({
     // Mesma chave do hook de Follow-ups (com o recorte no fim, como ele faz):
     // a lista de follow-up continua a de sempre, e a dos roteiros fica separada.
@@ -577,7 +582,9 @@ function StartMessageFlowForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="followup">{t("Follow-up")}</SelectItem>
-            <SelectItem value="atendimento">{t("Atendimento")}</SelectItem>
+            {roteirosLigados || ehRoteiro ? (
+              <SelectItem value="atendimento">{t("Atendimento")}</SelectItem>
+            ) : null}
           </SelectContent>
         </Select>
       </div>
