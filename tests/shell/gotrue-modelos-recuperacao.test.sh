@@ -15,6 +15,10 @@
 # contêiner é tocado, e o `.env` que sai é o do instalador de verdade.
 #
 # Caso de controle: um molde que o operador já apontou não é sobrescrito.
+#
+# #2587 — o molde aponta para o app pela REDE PRIVADA (`http://app:3000`), não
+# pelo domínio público: de dentro do contêiner do auth, o domínio resolve para o
+# IP da própria VPS, e atrás de um Traefik externo esse retorno dá timeout.
 
 set -uo pipefail
 
@@ -110,10 +114,14 @@ check "o dublê do docker foi o que o instalador usou (nada subiu de verdade)" \
   test -s "$WORK/docker.log"
 
 ENV_SB="$ARVORE/.runtime/supabase/.env"
-RECOVERY="GOTRUE_MAILER_TEMPLATES_RECOVERY=https://$DOMINIO/email-templates/recovery"
-CONFIRMACAO="GOTRUE_MAILER_TEMPLATES_CONFIRMATION=https://$DOMINIO/email-templates/confirmation"
+RECOVERY="GOTRUE_MAILER_TEMPLATES_RECOVERY=http://app:3000/email-templates/recovery"
+CONFIRMACAO="GOTRUE_MAILER_TEMPLATES_CONFIRMATION=http://app:3000/email-templates/confirmation"
+# O padrão ANTIGO do kit (antes do #2587): o domínio público.
+RECOVERY_ANTIGO="GOTRUE_MAILER_TEMPLATES_RECOVERY=https://$DOMINIO/email-templates/recovery"
+CONFIRMACAO_ANTIGA="GOTRUE_MAILER_TEMPLATES_CONFIRMATION=https://$DOMINIO/email-templates/confirmation"
 
-# (1) As duas linhas, com o DOMÍNIO que o instalador pediu — não um placeholder.
+# (1) As duas linhas, com a base INTERNA do app (rede privada) — não o domínio
+#     público, que de dentro do auth só se alcança pelo IP da própria VPS.
 check "grava o molde de recuperação de senha apontando para o app" \
   grep -qxF "$RECOVERY" "$ENV_SB"
 check "grava o molde de confirmação de cadastro apontando para o app" \
@@ -161,10 +169,16 @@ check "override entrega o molde de confirmação ao serviço auth (default vazio
   grep -qxF '      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: "${GOTRUE_MAILER_TEMPLATES_CONFIRMATION:-}"' "$OVERRIDE"
 check "override entrega o molde de recuperação ao serviço auth (default vazio)" \
   grep -qxF '      GOTRUE_MAILER_TEMPLATES_RECOVERY: "${GOTRUE_MAILER_TEMPLATES_RECOVERY:-}"' "$OVERRIDE"
+# O bloco do auth é RECORTADO (de `  auth:` até o próximo serviço), não uma
+# janela de N linhas: a janela fixa vazava para o serviço seguinte e perdia o
+# fim do auth quando o `environment` crescesse.
+bloco_auth() { awk '/^  auth:$/{d=1;next} d&&/^  [^ #]/{exit} d' "$OVERRIDE"; }
 check "auth permanece na rede padrão do Supabase" \
-  bash -c 'grep -A30 "^  auth:$" "$1" | grep -qxF "      default: {}"' _ "$OVERRIDE"
+  bash -c 'grep -qxF "      default: {}" <<<"$1"' _ "$(bloco_auth)"
 check "auth alcança o app pela rede privada" \
-  bash -c 'grep -A30 "^  auth:$" "$1" | grep -qxF "      deskcomm_private: {}"' _ "$OVERRIDE"
+  bash -c 'grep -qxF "      deskcomm_private: {}" <<<"$1"' _ "$(bloco_auth)"
+check "a rede privada que o auth usa é a declarada no topo do override" \
+  bash -c 'awk "/^networks:\$/{d=1;next} d" "$1" | grep -qxF "  deskcomm_private:"' _ "$OVERRIDE"
 
 # (7) QUEM JÁ INSTALOU: o update.sh chama `atualizar_supabase_single_server`
 #     (_common.sh), e é no CORPO dela que a gravação tem de acontecer — numa
@@ -203,10 +217,34 @@ atualizar_antiga
 check "update: molde que o operador já apontou não é sobrescrito" \
   grep -qxF 'GOTRUE_MAILER_TEMPLATES_RECOVERY=https://molde.do.operador.br/recupera' "$SB_A/.env"
 check "update: e a chave que faltava é completada" grep -qxF "$CONFIRMACAO" "$SB_A/.env"
-printf 'DISABLE_SIGNUP=false\n' > "$SB_A/.env"
+# (8) #2587 — QUEM JÁ INSTALOU com o padrão antigo (o domínio público, que o
+#     próprio kit gravou) é migrado para a base interna. O que o operador
+#     apontou para outro lugar fica — inclusive outro molde no mesmo domínio.
+instalacao_antiga "$RECOVERY_ANTIGO"
+printf '%s\n' "$CONFIRMACAO_ANTIGA" >> "$SB_A/.env"
 atualizar_antiga
-check "update: sem SITE_URL https, não inventa molde" \
+check "update: o molde de recuperação no padrão antigo do kit vai para a rede privada" \
+  grep -qxF "$RECOVERY" "$SB_A/.env"
+check "update: o molde de confirmação no padrão antigo do kit vai para a rede privada" \
+  grep -qxF "$CONFIRMACAO" "$SB_A/.env"
+check "update: a migração não deixa a linha antiga para trás" \
+  bash -c '! grep -q "^GOTRUE_MAILER_TEMPLATES_.*=https://" "$1"' _ "$SB_A/.env"
+instalacao_antiga "GOTRUE_MAILER_TEMPLATES_RECOVERY=https://$DOMINIO/meu-molde/recovery"
+atualizar_antiga
+check "update: molde do operador no MESMO domínio, fora do padrão do kit, fica" \
+  grep -qxF "GOTRUE_MAILER_TEMPLATES_RECOVERY=https://$DOMINIO/meu-molde/recovery" "$SB_A/.env"
+
+# (9) A GUARDA é estreita: aceita https:// e EXATAMENTE a base interna do app.
+#     Outro http (localhost, sobretudo) não grava nada — dentro do contêiner
+#     do auth, localhost é o próprio auth.
+printf 'DISABLE_SIGNUP=false\n' > "$SB_A/.env"
+bash -c 'KIT_DIR="$1"; . "$KIT_DIR/_common.sh"; gravar_modelos_do_gotrue "$2" "http://localhost:3000"' \
+  _ "$KIT" "$SB_A/.env" > /dev/null 2>&1
+check "guarda: base http que não é a interna do app (localhost) não grava molde" \
   bash -c '! grep -q "^GOTRUE_MAILER_TEMPLATES_" "$1"' _ "$SB_A/.env"
+atualizar_antiga
+check "update: sem SITE_URL, o molde interno é gravado (não depende do domínio)" \
+  grep -qxF "$RECOVERY" "$SB_A/.env"
 
 if [[ "$FAILS" -ne 0 ]]; then
   printf '\n%d teste(s) falharam.\n' "$FAILS"
