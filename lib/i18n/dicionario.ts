@@ -12909,6 +12909,7 @@ export const DICIONARIO: Traducoes = {
   "nas listas e nos filtros:": { es: "en las listas y en los filtros:" },
   "Sem cor": { es: "Sin color" },
   "Prévia:": { es: "Vista previa:" },
+  "Confira a etiqueta e a cor.": { es: "Revise la etiqueta y el color." },
   "Cor da etiqueta atualizada.": { es: "Color de la etiqueta actualizado." },
   Amarelo: { es: "Amarillo" },
   Âmbar: { es: "Ámbar" },
