@@ -241,9 +241,16 @@ const acoesFixas = [
       include_owner: z.boolean().optional(),
     }),
   }),
+  // #2647 — a ação alcança o fluxo de ATENDIMENTO, e o caminho é o do produto
+  // (iniciarFluxoDeAtendimento, `coletando`), não o enroll de follow-up.
+  // `surface` é OPCIONAL de propósito: config sem ela é o follow-up de sempre,
+  // então toda regra já gravada continua apontando para o MESMO fluxo.
   z.object({
     type: z.literal("start_message_flow"),
-    config: z.object({ flow_pointer_id: z.string().uuid() }),
+    config: z.object({
+      flow_pointer_id: z.string().uuid(),
+      surface: z.enum(["followup", "atendimento"]).optional(),
+    }),
   }),
   // #1540 — a ação que NUNCA fala com o cliente: grava `crm_tasks` e avisa o
   // responsável. Advocacia, saúde e serviços regulados precisam do lembrete e
