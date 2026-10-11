@@ -23,7 +23,7 @@ export const metadata = { title: "Dados externos" };
 export const dynamic = "force-dynamic";
 
 const COLUNAS_SEGURAS =
-  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at";
+  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode, sources_count, db_type, last_test_aviso";
 
 export default async function IntegracaoDeDadosPage() {
   const user = await requireAuth();
@@ -48,7 +48,7 @@ export default async function IntegracaoDeDadosPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Dados externos", idioma)}</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {traduzir(
-            "Conecte um banco de dados de outro sistema — o seu segundo CRM, um ERP, uma planilha em PostgreSQL — e o agente passa a consultá-lo em tempo real. A conexão é sempre somente leitura: nada que o agente faz altera o banco de origem.",
+            "Conecte um banco de dados de outro sistema — o seu segundo CRM, um ERP, uma planilha num banco PostgreSQL ou MySQL — e o agente passa a consultá-lo em tempo real. A conexão é sempre somente leitura: nada que o agente faz altera o banco de origem.",
             idioma,
           )}
         </p>

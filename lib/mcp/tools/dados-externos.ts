@@ -24,10 +24,11 @@
 import { z } from "zod";
 
 import { abrirAcesso } from "@/lib/external-db/acesso";
-import { colunasDaTabela, listarTabelas } from "@/lib/external-db/introspeccao";
-import { LeituraInvalidaError, lerTabela } from "@/lib/external-db/leitura";
+import { FonteNaoLiberadaError } from "@/lib/external-db/dialeto";
+import { LeituraInvalidaError } from "@/lib/external-db/leitura";
 import { LIMITE_FILTROS, LIMITE_LINHAS } from "@/lib/external-db/limites";
 import type {
+  ConexaoExterna,
   FiltroDeLeitura,
   OperadorDeFiltro,
   PedidoDeLeitura,
@@ -100,12 +101,12 @@ async function resolverConexao(ctx: McpContext, connectionId?: string): Promise<
   // existir de verdade; ausente/errado = pedir escolha.
   const { data } = await ctx.supabase
     .from("external_db_connections_safe")
-    .select("id, label")
+    .select("id, label, db_type")
     .eq("organization_id", ctx.organizationId)
     .eq("enabled", true)
     .order("label", { ascending: true });
 
-  const conexoes = (data ?? []) as Array<{ id: string; label: string }>;
+  const conexoes = (data ?? []) as Array<{ id: string; label: string; db_type: string }>;
   if (conexoes.length === 0) {
     return {
       ok: false,
@@ -127,7 +128,7 @@ async function resolverConexao(ctx: McpContext, connectionId?: string): Promise<
     resposta: {
       erro: "conexao_ambigua",
       mensagem: "há mais de um banco conectado; diga qual usar pelo connection_id.",
-      conexoes,
+      conexoes: conexoes.map((c) => ({ id: c.id, label: c.label, motor: c.db_type })),
     },
   };
 }
@@ -198,6 +199,32 @@ function mensagemDeAcesso(motivo: string): string {
   }
 }
 
+/**
+ * Modo `list` sem nenhuma fonte marcada: o assistente não enxerga nada, e isso
+ * NÃO pode parecer "a tabela não existe". O texto manda procurar quem administra.
+ */
+function semFontesLiberadas(conexao: ConexaoExterna): Record<string, unknown> | null {
+  if (conexao.sourceMode !== "list" || conexao.fontes.length > 0) return null;
+  return {
+    erro: "sem_fontes_liberadas",
+    mensagem:
+      "nenhuma tabela foi liberada para o assistente nesta conexão; peça a um administrador para " +
+      "marcar o que ele pode ler em Integração de dados.",
+  };
+}
+
+/** Tabela que não apareceu: em `list` quase sempre é "não liberada"; em `all`, "não existe". */
+function tabelaNaoAchada(conexao: ConexaoExterna): Record<string, unknown> {
+  return conexao.sourceMode === "list"
+    ? {
+        erro: "fonte_nao_liberada",
+        mensagem:
+          "essa tabela não está entre as liberadas para o assistente nesta conexão. " +
+          "Veja quais estão com crm_describe_external_data.",
+      }
+    : { erro: "tabela_nao_encontrada", mensagem: "não encontrei essa tabela." };
+}
+
 // ---------------------------------------------------------------------------
 // crm_describe_external_data
 // ---------------------------------------------------------------------------
@@ -233,9 +260,12 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
     const acesso = await abrirAcesso(ctx.supabase, ctx.organizationId, resolucao.id);
     if (!acesso.ok) return { erro: "acesso_negado", mensagem: mensagemDeAcesso(acesso.motivo) };
 
+    const semFontes = semFontesLiberadas(acesso.conexao);
+    if (semFontes) return semFontes;
+
     let tabelas: TabelaExterna[];
     try {
-      tabelas = await listarTabelas(acesso.pool);
+      tabelas = await acesso.dialeto.listarTabelas();
     } catch {
       return { erro: "falha_na_leitura", mensagem: "não foi possível ler o catálogo do banco externo." };
     }
@@ -261,11 +291,11 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
       };
     }
 
-    const truncado = tabelas.length > MAX_TABELAS_DESCRITAS;
-    const descritas = tabelas.slice(0, MAX_TABELAS_DESCRITAS).map((t) => ({
+    const candidatas = tabelas.slice(0, MAX_TABELAS_DESCRITAS).map((t) => ({
       schema: t.schema,
       nome: t.nome,
       tipo: t.tipo,
+      ...(t.descricao ? { descricao: t.descricao } : {}),
       chave: t.chavePrimaria,
       linhas_estimadas: t.estimativaLinhas,
       campos: t.colunas.slice(0, MAX_COLUNAS_POR_TABELA).map((c) => ({
@@ -275,8 +305,25 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
       })),
     }));
 
+    // Teto de bytes: o mesmo da conexão que já limita `query`. A primeira tabela
+    // sempre entra (nunca devolver vazio por ela ser larga).
+    const maxBytes = acesso.conexao.maxResponseBytes;
+    const descritas: typeof candidatas = [];
+    let bytes = 0;
+    let truncadoPorBytes = false;
+    for (const d of candidatas) {
+      const tamanho = JSON.stringify(d).length;
+      if (descritas.length > 0 && bytes + tamanho > maxBytes) {
+        truncadoPorBytes = true;
+        break;
+      }
+      descritas.push(d);
+      bytes += tamanho;
+    }
+    const truncado = tabelas.length > MAX_TABELAS_DESCRITAS || truncadoPorBytes;
+
     return {
-      conexao: { id: acesso.conexao.id, label: acesso.conexao.label },
+      conexao: { id: acesso.conexao.id, label: acesso.conexao.label, motor: acesso.conexao.dbType },
       tabelas: descritas,
       ...(truncado ? { truncado: true, total_de_tabelas: tabelas.length } : {}),
       aviso: AVISO_DADOS_NAO_CONFIAVEIS,
@@ -343,6 +390,9 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
 
     const acesso = await abrirAcesso(ctx.supabase, ctx.organizationId, resolucao.id);
     if (!acesso.ok) return { erro: "acesso_negado", mensagem: mensagemDeAcesso(acesso.motivo) };
+
+    const semFontes = semFontesLiberadas(acesso.conexao);
+    if (semFontes) return semFontes;
 
     // ── NA CONVERSA, SÓ AS LINHAS DO CLIENTE (filtro do servidor) ──────────
     //
@@ -423,7 +473,7 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     //    o atendente dizia "não consigo acessar o catálogo" em vez de ofertar.
     if (schema) {
       try {
-        permitidas = await colunasDaTabela(acesso.pool, schema, tabela);
+        permitidas = await acesso.dialeto.colunasDaTabela(schema, tabela);
       } catch {
         permitidas = null;
       }
@@ -432,14 +482,14 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     if (!permitidas) {
       let catalogo: TabelaExterna[];
       try {
-        catalogo = await listarTabelas(acesso.pool);
+        catalogo = await acesso.dialeto.listarTabelas();
       } catch {
         return { erro: "falha_na_leitura", mensagem: "não foi possível ler o catálogo do banco externo." };
       }
       const alvo = input.tabela.toLowerCase();
       const candidatas = catalogo.filter((t) => t.nome.toLowerCase() === alvo);
       if (candidatas.length === 0) {
-        return { erro: "tabela_nao_encontrada", mensagem: "não encontrei essa tabela." };
+        return tabelaNaoAchada(acesso.conexao);
       }
       // prefere `public` quando o mesmo nome existir em mais de um agrupamento, e,
       // dentro do agrupamento, o nome EXATO: com `Pedido` e `pedido` lado a lado,
@@ -453,17 +503,16 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       schema = escolhida.schema;
       tabela = escolhida.nome;
       try {
-        permitidas = await colunasDaTabela(acesso.pool, schema, tabela);
+        permitidas = await acesso.dialeto.colunasDaTabela(schema, tabela);
       } catch {
         return { erro: "falha_na_leitura", mensagem: "não foi possível conferir a tabela." };
       }
     }
 
     if (!permitidas) {
-      return {
-        erro: "tabela_nao_encontrada",
-        mensagem: "essa tabela não existe. Confira o nome com crm_describe_external_data.",
-      };
+      return acesso.conexao.sourceMode === "list"
+        ? tabelaNaoAchada(acesso.conexao)
+        : { erro: "tabela_nao_encontrada", mensagem: "essa tabela não existe. Confira o nome com crm_describe_external_data." };
     }
 
     if (filtroDoCliente && !permitidas.has(filtroDoCliente.coluna)) {
@@ -495,10 +544,11 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
 
     let resultado;
     try {
-      resultado = await lerTabela(acesso.pool, pedido, permitidas, {
+      resultado = await acesso.dialeto.lerTabela(pedido, permitidas, {
         limiteMax: acesso.conexao.maxRows,
       });
     } catch (err) {
+      if (err instanceof FonteNaoLiberadaError) return tabelaNaoAchada(acesso.conexao);
       if (err instanceof LeituraInvalidaError) {
         return {
           erro: "pedido_invalido",
@@ -537,7 +587,7 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     }
 
     return {
-      conexao: { id: acesso.conexao.id, label: acesso.conexao.label },
+      conexao: { id: acesso.conexao.id, label: acesso.conexao.label, motor: acesso.conexao.dbType },
       schema,
       tabela,
       colunas: resultado.colunas,

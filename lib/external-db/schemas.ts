@@ -8,6 +8,7 @@
 import { z } from "zod";
 
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_PADRAO_DA_GRADE, LIMITE_RESPOSTA_BYTES } from "./limites";
+import { fontesSchema, MODOS_DE_FONTES } from "./fontes";
 
 /** Espelha o CHECK de `external_db_connections.ssl_mode` e `ModoTls`. */
 export const MODOS_TLS = ["disable", "prefer", "require", "verify-ca", "verify-full"] as const;
@@ -20,6 +21,16 @@ const modoTls = z.enum(MODOS_TLS);
  */
 export const TIPOS_DE_IDENTIFICADOR = ["phone", "email"] as const;
 export type TipoDeIdentificador = (typeof TIPOS_DE_IDENTIFICADOR)[number];
+
+/** Espelha o CHECK de `external_db_connections.db_type` e `TipoBanco`. */
+export const TIPOS_DE_BANCO = ["postgres", "mysql"] as const;
+/** O que a API aceita CRIAR hoje: todos os motores com driver instalado. */
+export const TIPOS_DE_BANCO_ACEITOS = ["postgres", "mysql"] as const;
+
+/** Porta padrão de cada motor. */
+export function portaPadraoDoMotor(tipo: (typeof TIPOS_DE_BANCO)[number]): number {
+  return tipo === "mysql" ? 3306 : 5432;
+}
 
 const camposDeConexao = {
   label: z.string().trim().min(1).max(80),
@@ -67,7 +78,8 @@ export const criarConexaoSchema = z
   .object({
     label: camposDeConexao.label,
     host: camposDeConexao.host,
-    port: camposDeConexao.port.default(5432),
+    port: camposDeConexao.port.optional(),
+    db_type: z.enum(TIPOS_DE_BANCO_ACEITOS).default("postgres"),
     database_name: camposDeConexao.database_name,
     username: camposDeConexao.username,
     password: camposDeConexao.password,
@@ -80,7 +92,8 @@ export const criarConexaoSchema = z
     customer_key_kind: camposDeConexao.customer_key_kind.default(null),
   })
   .strict()
-  .refine(chaveDoClienteCompleta, CHAVE_INCOMPLETA);
+  .refine(chaveDoClienteCompleta, CHAVE_INCOMPLETA)
+  .transform((v) => ({ ...v, port: v.port ?? portaPadraoDoMotor(v.db_type) }));
 
 /**
  * Atualização parcial. `password` é opcional: ausente = não mexer na senha
@@ -119,5 +132,17 @@ export const leituraQuerySchema = z
     order_desc: z.enum(["true", "false", "1", "0"]).optional(),
     /** Projeção separada por vírgula. Vazio = todas as colunas. */
     colunas: z.string().max(4000).optional(),
+  })
+  .strict();
+
+/**
+ * Troca das fontes liberadas: o modo E a lista inteira de uma vez (um UPDATE
+ * atômico, sem estado pela metade). `strict` porque uma chave desconhecida aqui
+ * é um cliente falando de um contrato que não existe.
+ */
+export const atualizarFontesSchema = z
+  .object({
+    source_mode: z.enum(MODOS_DE_FONTES),
+    sources: fontesSchema,
   })
   .strict();

@@ -28,6 +28,8 @@
     "migration0372",
     "credenciais",
     "acesso",
+    "drivers",
+    "dialeto",
     "apiLeitura",
     "telaExplorador"
   ],
@@ -36,7 +38,7 @@
       "id": "migration0372",
       "lane": "dados",
       "label": "external_db_connections",
-      "sublabel": "migration 0372 · tenant-aware, RLS, senha AES-GCM",
+      "sublabel": "migration 0372 · tenant-aware, RLS, senha AES-GCM · 0629 soma db_type e last_test_aviso",
       "type": "table",
       "dot": "sky"
     },
@@ -44,7 +46,7 @@
       "id": "safeview",
       "lane": "dados",
       "label": "external_db_connections_safe",
-      "sublabel": "view sem as colunas cifradas · a única que a tela lê",
+      "sublabel": "view sem as colunas cifradas · a única que a tela lê · 0629 soma db_type e last_test_aviso",
       "type": "table",
       "dot": "sky"
     },
@@ -105,6 +107,30 @@
       "dot": "blue"
     },
     {
+      "id": "drivers",
+      "lane": "nucleo",
+      "label": "drivers.ts",
+      "sublabel": "escolhe o motor pela conexão: abre o dialeto, testa e fecha o pool",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "dialeto",
+      "lane": "nucleo",
+      "label": "dialeto.ts",
+      "sublabel": "o ÚNICO caminho de leitura: aplica as fontes liberadas e abre o pool",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "fontes",
+      "lane": "nucleo",
+      "label": "fontes.ts",
+      "sublabel": "esquema central das fontes liberadas + o que é visível (puro)",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
       "id": "apiConnections",
       "lane": "api",
       "label": "GET/POST/PATCH/DELETE connections",
@@ -129,10 +155,18 @@
       "dot": "green"
     },
     {
+      "id": "apiFontes",
+      "lane": "api",
+      "label": "GET catalog · GET/PUT sources",
+      "sublabel": "catálogo completo e troca da lista: admin · ler a lista: autenticado",
+      "type": "api",
+      "dot": "green"
+    },
+    {
       "id": "telaLista",
       "lane": "ui",
       "label": "Lista de conexões",
-      "sublabel": "todos veem · card de cadastro/edição só para admin",
+      "sublabel": "todos veem · card de cadastro/edição só para admin · selo do motor e aviso do teste",
       "type": "route",
       "dot": "purple"
     },
@@ -141,6 +175,14 @@
       "lane": "ui",
       "label": "Explorador",
       "sublabel": "árvore por schema + grade paginada com ordem e PK",
+      "type": "route",
+      "dot": "purple"
+    },
+    {
+      "id": "telaFontes",
+      "lane": "ui",
+      "label": "Painel \"O que o assistente pode ver\"",
+      "sublabel": "admin marca tabelas e colunas, descreve e salva · os demais só leem",
       "type": "route",
       "dot": "purple"
     },
@@ -205,12 +247,6 @@
       "label": "valida no cadastro"
     },
     {
-      "id": "e10",
-      "from": "pool",
-      "to": "acesso",
-      "label": "pool da conexão"
-    },
-    {
       "id": "e11",
       "from": "pool",
       "to": "introspeccao",
@@ -225,20 +261,20 @@
     {
       "id": "e13",
       "from": "introspeccao",
-      "to": "apiLeitura",
+      "to": "dialeto",
       "label": "catálogo"
     },
     {
       "id": "e15",
       "from": "leitura",
-      "to": "apiLeitura",
+      "to": "dialeto",
       "label": "dados paginados"
     },
     {
       "id": "e17",
       "from": "acesso",
       "to": "apiLeitura",
-      "label": "pool pronto"
+      "label": "dialeto pronto"
     },
     {
       "id": "e20",
@@ -286,19 +322,7 @@
       "id": "e31",
       "from": "acesso",
       "to": "toolsAgente",
-      "label": "pool pronto"
-    },
-    {
-      "id": "e32",
-      "from": "introspeccao",
-      "to": "toolsAgente",
-      "label": "catálogo"
-    },
-    {
-      "id": "e33",
-      "from": "leitura",
-      "to": "toolsAgente",
-      "label": "linhas"
+      "label": "dialeto pronto"
     },
     {
       "id": "e34",
@@ -311,6 +335,90 @@
       "from": "ingressos",
       "to": "auditlog",
       "label": "audita sem valores de filtro"
+    },
+    {
+      "id": "e36",
+      "from": "credenciais",
+      "to": "fontes",
+      "label": "modo + lista (validados, falha fechada)"
+    },
+    {
+      "id": "e37",
+      "from": "fontes",
+      "to": "dialeto",
+      "label": "o que é visível"
+    },
+    {
+      "id": "e39",
+      "from": "dialeto",
+      "to": "apiLeitura",
+      "label": "só o liberado"
+    },
+    {
+      "id": "e40",
+      "from": "dialeto",
+      "to": "toolsAgente",
+      "label": "só o liberado"
+    },
+    {
+      "id": "e41",
+      "from": "apiFontes",
+      "to": "migration0372",
+      "label": "grava source_mode e sources"
+    },
+    {
+      "id": "e42",
+      "from": "dialeto",
+      "to": "apiFontes",
+      "label": "catálogo completo (admin)"
+    },
+    {
+      "id": "e43",
+      "from": "telaFontes",
+      "to": "apiFontes",
+      "label": "lê o catálogo completo e grava a lista"
+    },
+    {
+      "id": "e44",
+      "from": "telaLista",
+      "to": "telaFontes",
+      "label": "abre o painel (conexão nova ou sem fontes)"
+    },
+    {
+      "id": "e45",
+      "from": "telaFontes",
+      "to": "telaExplorador",
+      "label": "a grade passa a mostrar só o liberado"
+    },
+    {
+      "id": "e46",
+      "from": "acesso",
+      "to": "drivers",
+      "label": "abre o dialeto pelo motor da conexão"
+    },
+    {
+      "id": "e47",
+      "from": "drivers",
+      "to": "dialeto",
+      "label": "cria o dialeto do motor"
+    },
+    {
+      "id": "e48",
+      "from": "pool",
+      "to": "drivers",
+      "label": "pool do PostgreSQL"
+    },
+    {
+      "id": "e49",
+      "from": "apiTest",
+      "to": "drivers",
+      "label": "testa pelo driver do motor"
+    },
+    {
+      "id": "e50",
+      "from": "apiConnections",
+      "to": "drivers",
+      "label": "fecha o pool ao editar ou apagar"
     }
   ],
   "cards": [
@@ -333,10 +441,10 @@
       "body": "A leitura externa pode carregar PII. As ações `external_db_connection.*` registram a conexão, o schema e a tabela; nenhum valor de filtro e nenhuma linha lida entram em `api_audit_log`. Log é lugar de metadado, não de conteúdo."
     },
     {
-      "id": "card-nao-ligacao",
+      "id": "card-fontes-liberadas",
       "tone": "slate",
-      "title": "Não-ligação declarada: sem allowlist por tabela (D6)",
-      "body": "A IA lê QUALQUER tabela da conexão; a trava não é uma lista, é a conexão somente-leitura + teto de linhas + auditoria sem valores. Uma allowlist seria uma segunda lista para manter em sincronia com um schema que muda todo dia."
+      "title": "D6 revisada: o administrador marca o que o assistente pode ler",
+      "body": "A Spec 20 (D6) deixava a IA ler QUALQUER tabela da conexão, com o argumento de que uma lista seria uma segunda lista para manter em sincronia com um schema que muda todo dia. A Spec 23 revisa isso: a lista guarda NOMES (não cópia de schema), fonte que sumiu do banco é ignorada e sinalizada, e 'marcar todas' é uma lista explícita — não o modo `all`. Conexões que já existem ficam em `all` (a D6 original); as novas nascem em `list`. As travas anteriores continuam: somente leitura, tetos e auditoria sem valores."
     },
     {
       "id": "card-vazio-fica-vazio",

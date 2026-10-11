@@ -17,6 +17,7 @@ import { carregarConexao } from "./credenciais";
 const LINHA = {
   id: "conn-1",
   organization_id: "org-1",
+  db_type: "postgres",
   label: "Meu Postgres",
   host: "db.exemplo.com",
   port: 5432,
@@ -30,6 +31,8 @@ const LINHA = {
   max_rows: 800,
   max_filters: 40,
   max_response_bytes: 120000,
+  source_mode: "all",
+  sources: [],
   updated_at: "2026-09-11T00:00:00.000Z",
 };
 
@@ -70,6 +73,7 @@ describe("carregarConexao", () => {
       conexao: {
         id: "conn-1",
         organizationId: "org-1",
+        dbType: "postgres",
         label: "Meu Postgres",
         host: "db.exemplo.com",
         port: 5432,
@@ -81,9 +85,17 @@ describe("carregarConexao", () => {
         maxFilters: 40,
         maxResponseBytes: 120000,
         chaveDoCliente: null,
+        sourceMode: "all",
+        fontes: [],
         versao: "2026-09-11T00:00:00.000Z",
       },
     });
+  });
+
+  it("lê o motor da linha: com db_type mysql, devolve dbType mysql", async () => {
+    const { admin } = adminFalso({ data: { ...LINHA, db_type: "mysql" }, error: null });
+    const r = await carregarConexao(admin, "org-1", "conn-1");
+    expect(r.ok && r.conexao.dbType).toBe("mysql");
   });
 
   it("a coluna que identifica o cliente só vale com o tipo junto", async () => {
@@ -131,6 +143,36 @@ describe("carregarConexao", () => {
     await expect(carregarConexao(admin, "org-1", "x")).resolves.toEqual({
       ok: false,
       motivo: "cifra_indisponivel",
+    });
+  });
+
+  describe("fontes liberadas", () => {
+    const FONTE = { schema: "public", tabela: "clientes", colunas: ["id", "nome"], descricao: "Quem compra" };
+
+    it("modo list com lista válida devolve a lista", async () => {
+      const { admin } = adminFalso({ data: { ...LINHA, source_mode: "list", sources: [FONTE] }, error: null });
+      const r = await carregarConexao(admin, "org-1", "conn-1");
+      expect(r.ok && r.conexao.sourceMode).toBe("list");
+      expect(r.ok && r.conexao.fontes).toEqual([FONTE]);
+    });
+
+    it("modo all ignora a lista guardada (a lista só vale em list)", async () => {
+      const { admin } = adminFalso({ data: { ...LINHA, source_mode: "all", sources: [FONTE] }, error: null });
+      const r = await carregarConexao(admin, "org-1", "conn-1");
+      expect(r.ok && r.conexao.fontes).toEqual([]);
+    });
+
+    it("lista corrompida no banco FECHA: modo list, nada visível — nunca abre tudo", async () => {
+      const { admin } = adminFalso({ data: { ...LINHA, source_mode: "list", sources: "lixo" }, error: null });
+      const r = await carregarConexao(admin, "org-1", "conn-1");
+      expect(r.ok && r.conexao.sourceMode).toBe("list");
+      expect(r.ok && r.conexao.fontes).toEqual([]);
+    });
+
+    it("valor desconhecido em source_mode é tratado como list (direção segura)", async () => {
+      const { admin } = adminFalso({ data: { ...LINHA, source_mode: "talvez", sources: [] }, error: null });
+      const r = await carregarConexao(admin, "org-1", "conn-1");
+      expect(r.ok && r.conexao.sourceMode).toBe("list");
     });
   });
 });

@@ -14,6 +14,8 @@ dados de um **PostgreSQL externo** — o segundo CRM/ERP do dono, que outro sist
 escreve. O schema muda com frequência, então a introspecção é **ao vivo**: nada
 hard-coded, nada de espelhar schema.
 
+> **Atualização (Spec 23, Fatia 4a).** Desde a Spec 23 o conector também fala MySQL (`db_type = 'mysql'`, por exemplo o banco de um site WordPress). O parágrafo acima descreve o escopo original, só PostgreSQL.
+
 ## Decisões (CONFIRMADO por código)
 
 | # | Tema | Decisão |
@@ -24,6 +26,8 @@ hard-coded, nada de espelhar schema.
 | D4 | Pasta `/root/arquivos` | Só registro. O elo é um PostgreSQL, não a pasta. |
 | D5 | Cifra | Reusa `AI_CRED_AES_KEY` (AES-256-GCM). Sem env var nova. |
 | D6 | Escopo da IA | **Qualquer tabela da conexão, sem allowlist.** Travas: somente-leitura, timeout, teto de linhas, auditoria sem valores. |
+
+> **Revisada pela Spec 23 (Fatia 2a).** A D6 acima descreve a Spec 20 e continua valendo para toda conexão que já existia (`source_mode = 'all'`: o assistente lê qualquer tabela que o usuário do banco enxergue). Conexões novas nascem com `source_mode = 'list'`: o assistente só lê o que o administrador marcou em "O que o assistente pode ver", e sem nada marcado não enxerga nada. Contexto e decisão: `docs/specs/23-spec-banco-externo-mysql.md`.
 
 ## Superfície
 
