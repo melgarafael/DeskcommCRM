@@ -22,6 +22,9 @@ import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consu
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { assertProspectingDelivery } from "./guard";
+import { instrucaoDeAbordagemFria, montarDadosDeAbordagem } from "./estrategia-site";
+import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
+import { enriquecerSitesPendentes } from "./site-enrich";
 import { campaignConfigSchema } from "./schema";
 import { ProspectingError } from "./provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -223,19 +226,17 @@ export async function sendNextCandidate(
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: `${cfg.instruction}\nFaça uma primeira abordagem curta e transparente. Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. Critérios a confirmar durante a conversa: ${cfg.qualification}`,
+      instrucao: instrucaoDeAbordagemFria(
+        cfg.instruction,
+        cfg.qualification,
+        blocoVozVendedor(await personalizacaoDaOrganizacao(db, c.organization_id)) || undefined,
+      ),
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
       origemDaAbordagem: "prospeccao_fria",
-      dados: {
-        Empresa: p.data.name,
-        Segmento: p.data.category ?? "",
-        Endereço: p.data.address ?? "",
-        Site: p.data.website ?? "",
-        Avaliação: String(p.data.rating ?? ""),
-        Redes: p.data.socials.join(", "),
-      },
+      // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
+      dados: montarDadosDeAbordagem(p.data, p.data.site ?? null),
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.
@@ -359,7 +360,7 @@ export async function sendNextCandidate(
   }
 }
 
-export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
+export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requestId?: string) {
   // Organização parada (suspensa, redigida, arquivada) não prospecta: a busca é
   // paga e a abordagem sai para fora. O corte é no SQL, antes do `limit 20`:
   // a ordem é `min(updated_at)`, e a org pulada nunca toca `updated_at` —
@@ -370,6 +371,7 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
     "select pc.organization_id from prospecting_campaigns pc where (pc.status='running' or pc.search_status in ('starting','running')) and public.fn_org_operante(pc.organization_id) group by pc.organization_id order by min(pc.updated_at) limit 20",
   );
   const deadline = Date.now() + 180000;
+  const tickId = requestId ?? `prospecting:tick:${Date.now()}`;
   let processed = 0;
   for (const { organization_id: org } of organizations) {
     if (Date.now() >= deadline) break;
@@ -405,6 +407,9 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
             );
           }
         }
+        // Enriquecimento de sites (spec 24): depois da busca materializar e
+        // antes do envio consumir quota/LLM. Nunca lança (fail-open).
+        await enriquecerSitesPendentes(db, org, tickId, deadline);
         const c = (
           await db.query<Campaign>(
             "select * from prospecting_campaigns where organization_id=$1 and status='running'",

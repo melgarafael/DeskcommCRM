@@ -18,7 +18,13 @@ import {
   type Prospect,
 } from "@/lib/prospecting/schema";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
+import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
+import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
+import {
+  pontuarCandidato,
+  type OfertaDaCampanha,
+} from "@/lib/prospecting/estrategia-site";
 
 type Campaign = {
   id: string;
@@ -27,6 +33,7 @@ type Campaign = {
   search_status: string;
   error: string | null;
   config: CampaignConfig | null;
+  search: { niche: string; location: string } | null;
   result_count: number;
   skipped_count: number;
   cost_usd: string | null;
@@ -49,6 +56,7 @@ type State = {
   campaigns: Campaign[];
   candidates: Candidate[];
   agents: { id: string; name: string }[];
+  personalizacao: PersonalizacaoProspeccao;
   channels: {
     id: string;
     display_name: string | null;
@@ -83,6 +91,7 @@ const emptyConfig: CampaignConfig = {
   qualified_stage_id: "",
   instruction: "",
   qualification: "",
+  ofertas: ["site"],
   daily_limit: 10,
   interval_minutes: 15,
   legal_basis_ref: "",
@@ -91,9 +100,17 @@ const emptyConfig: CampaignConfig = {
 };
 export function ProspectingClient() {
   const t = useT();
+  // Ordenação da fila: recentes (padrão) ou score (spec 24). Antes da query:
+  // o `queryKey` lê o valor no render.
+  const [ordenar, setOrdenar] = useState<"" | "score">("");
   const query = useQuery({
-    queryKey: ["prospecting"],
-    queryFn: async () => (await apiClient.get<{ data: State }>("/api/v1/prospecting")).data,
+    queryKey: ["prospecting", ordenar],
+    queryFn: async () =>
+      (
+        await apiClient.get<{ data: State }>(
+          `/api/v1/prospecting${ordenar === "score" ? "?ordenar=score" : ""}`,
+        )
+      ).data,
     refetchInterval: 10000,
   });
   const data = query.data;
@@ -115,6 +132,10 @@ export function ProspectingClient() {
   // As desmarcadas ficam escondidas por padrão; este botão só decide se aparecem.
   const [mostrarDesmarcadas, setMostrarDesmarcadas] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  // Revisão do formulário de personalização: remonta com os valores gravados
+  // a cada save (sem effect e sem sobrescrever o que está digitado no refetch).
+  const [formRev, setFormRev] = useState(0);
+  const personalizacaoInicial = data?.personalizacao ?? null;
   // Edição do ritmo de uma campanha PAUSADA; vale para uma campanha por vez.
   const [ritmo, setRitmo] = useState<{
     campaignId: string;
@@ -218,6 +239,51 @@ export function ProspectingClient() {
     if (salvou) setRitmo(null);
   }
   const count = (states: string[]) => candidates.filter((c) => states.includes(c.progress)).length;
+  // Ofertas e nicho da campanha para a estratégia (spec 24). Default = site.
+  const ofertasDaCampanha: OfertaDaCampanha[] = campaign?.config?.ofertas ?? ["site"];
+  const nichoDaCampanha = campaign?.search?.niche ?? "";
+  function scoreMedio(): string {
+    const valores = candidates.flatMap((c) =>
+      c.data.site
+        ? [
+            pontuarCandidato(
+              c.data.rating,
+              c.data.reviews,
+              c.data.site.classe,
+              ofertasDaCampanha[0] ?? "site",
+              c.data.site.provisorio ?? false,
+            ).valor,
+          ]
+        : [],
+    );
+    if (valores.length === 0) return "—";
+    return String(Math.round(valores.reduce((a, b) => a + b, 0) / valores.length));
+  }
+  async function reanalisarSite(candidateId: string) {
+    if (!campaign) return;
+    await perform(
+      { action: "reanalisar_site", id: campaign.id, candidate_ids: [candidateId] },
+      t("Site reanalisado."),
+    );
+  }
+  async function preverAbordagem(candidateId: string): Promise<PreviaDaAbordagem | null> {
+    if (!campaign) return null;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiClient.post<{ data: PreviaDaAbordagem }>("/api/v1/prospecting", {
+        action: "prever_abordagem",
+        id: campaign.id,
+        candidate_id: candidateId,
+      });
+      return res.data;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("Não foi possível concluir a operação."));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
   const buscaConcluida = !!campaign && campaign.search_status === "succeeded";
   const noRascunho = buscaConcluida && campaign?.status === "draft";
   // Depois de iniciada, a fila só se mexe com a campanha PAUSADA: o envio não está no meio
@@ -308,6 +374,7 @@ export function ProspectingClient() {
       )}
       {!data && !query.error && <p role="status">{t("Carregando campanhas…")}</p>}
       {(settings || data?.configured === false) && (
+        <>
         <Card className="p-5">
           <form
             className="flex flex-col gap-3 sm:flex-row sm:items-end"
@@ -342,6 +409,98 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
+        <Card className="p-5">
+          <h2 className="text-lg font-semibold">{t("Voz e vocabulário")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("A voz assina as mensagens; o vocabulário traduz o nicho para a dor dele.")}
+          </p>
+          <form
+            key={formRev}
+            className="mt-4 space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError(null);
+              setNotice(null);
+              try {
+                const fd = new FormData(e.currentTarget);
+                const texto = (name: string) =>
+                  String(fd.get(name) ?? "").trim() || undefined;
+                const vocabulario: Record<string, string> = {};
+                for (const linha of String(fd.get("vocabulario") ?? "").split("\n")) {
+                  const corte = linha.indexOf(":");
+                  if (corte <= 0) continue;
+                  const termo = linha.slice(0, corte).trim();
+                  const valor = linha.slice(corte + 1).trim();
+                  if (termo && valor) vocabulario[termo] = valor;
+                }
+                await apiClient.patch("/api/v1/settings/prospeccao", {
+                  vendedor_nome: texto("vendedor_nome"),
+                  vendedor_apresentacao: texto("vendedor_apresentacao"),
+                  vendedor_diferencial: texto("vendedor_diferencial"),
+                  vocabulario,
+                });
+                await query.refetch();
+                setFormRev((r) => r + 1);
+                setNotice(t("Personalização salva."));
+              } catch (err) {
+                setError(err instanceof Error ? err.message : t("Não foi possível concluir a operação."));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <Label htmlFor="prospecting-vendedor-nome">{t("Seu nome")}</Label>
+                <Input
+                  id="prospecting-vendedor-nome"
+                  name="vendedor_nome"
+                  defaultValue={personalizacaoInicial?.vendedor_nome ?? ""}
+                  maxLength={80}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="prospecting-vendedor-apresentacao">{t("O que você faz")}</Label>
+                <Input
+                  id="prospecting-vendedor-apresentacao"
+                  name="vendedor_apresentacao"
+                  defaultValue={personalizacaoInicial?.vendedor_apresentacao ?? ""}
+                  maxLength={300}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="prospecting-vendedor-diferencial">{t("Diferencial")}</Label>
+                <Input
+                  id="prospecting-vendedor-diferencial"
+                  name="vendedor_diferencial"
+                  defaultValue={personalizacaoInicial?.vendedor_diferencial ?? ""}
+                  maxLength={300}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="prospecting-vocabulario">{t("Vocabulário por nicho")}</Label>
+              <Textarea
+                id="prospecting-vocabulario"
+                name="vocabulario"
+                defaultValue={Object.entries(personalizacaoInicial?.vocabulario ?? {})
+                  .map(([termo, valor]) => `${termo}: ${valor}`)
+                  .join("\n")}
+                rows={3}
+                className="mt-1"
+                placeholder={t("Um por linha — termo: valor")}
+              />
+            </div>
+            <Button disabled={busy} type="submit">
+              {t("Salvar personalização")}
+            </Button>
+          </form>
+        </Card>
+        </>
       )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <aside className="flex flex-col gap-5">
@@ -511,6 +670,7 @@ export function ProspectingClient() {
                     [t("Na fila"), count(["queued", "sending"])],
                     [t("Responderam"), count(["replied", "qualified"])],
                     [t("Qualificados"), count(["qualified"])],
+                    [t("Score médio"), scoreMedio()],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <p className="text-2xl font-semibold tabular-nums">{value}</p>
@@ -884,6 +1044,42 @@ export function ProspectingClient() {
                                   )}
                                 />
                               </div>
+                              <fieldset className="space-y-2">
+                                <legend className="text-sm font-medium">
+                                  {t("O que esta campanha vende")}
+                                </legend>
+                                <p className="text-xs text-muted-foreground">
+                                  {t(
+                                    "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.",
+                                  )}
+                                </p>
+                                {(
+                                  [
+                                    ["site", t("Site profissional")],
+                                    ["automacao_crm", t("Automação do atendimento (CRM)")],
+                                    ["automacao_n8n", t("Automações e integrações (N8N)")],
+                                  ] as const
+                                ).map(([valor, rotulo]) => (
+                                  <label key={valor} className="flex items-start gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      className="mt-1"
+                                      checked={(config.ofertas ?? ["site"]).includes(valor)}
+                                      disabled={busy}
+                                      onChange={() => {
+                                        const atuais = config.ofertas ?? ["site"];
+                                        const ligadas = atuais.includes(valor)
+                                          ? atuais.filter((o) => o !== valor)
+                                          : [...atuais, valor];
+                                        // Pelo menos uma: desmarcar a última não vale.
+                                        if (ligadas.length === 0) return;
+                                        update("ofertas", ligadas);
+                                      }}
+                                    />
+                                    <span>{rotulo}</span>
+                                  </label>
+                                ))}
+                              </fieldset>
                             </div>
                           )}
                           <div className="grid grid-cols-2 gap-4">
@@ -1007,6 +1203,19 @@ export function ProspectingClient() {
                             "Encontrado é diferente de qualificado. A qualificação depende do que for confirmado na conversa.",
                           )}
                         </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="prospecting-ordenar">{t("Ordenar")}</Label>
+                        <select
+                          id="prospecting-ordenar"
+                          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                          value={ordenar}
+                          disabled={busy}
+                          onChange={(e) => setOrdenar(e.target.value as "" | "score")}
+                        >
+                          <option value="">{t("Recentes")}</option>
+                          <option value="score">{t("Score")}</option>
+                        </select>
                       </div>
                       {canSelect && (
                         <div className="flex flex-wrap items-center gap-2">
@@ -1133,6 +1342,7 @@ export function ProspectingClient() {
                           <th className="p-4">{t("Empresa")}</th>
                           <th className="p-4">{t("Informações")}</th>
                           <th className="p-4">{t("Progresso")}</th>
+                          <th className="p-4">{t("Auditoria")}</th>
                           <th className="p-4">{t("Conversa")}</th>
                         </tr>
                       </thead>
@@ -1190,6 +1400,19 @@ export function ProspectingClient() {
                                   {t("Mensagem:")} {c.message_status}
                                 </p>
                               )}
+                            </td>
+                            <td className="max-w-80 p-4 align-top">
+                              <AuditoriaDoCandidato
+                                candidateId={c.id}
+                                data={c.data}
+                                ofertas={ofertasDaCampanha}
+                                nicho={nichoDaCampanha || c.data.category || ""}
+                                status={c.status ?? c.progress}
+                                disabled={busy}
+                                sobrescritaVocabulario={data?.personalizacao?.vocabulario ?? null}
+                                onReanalisar={reanalisarSite}
+                                onPrevia={preverAbordagem}
+                              />
                             </td>
                             <td className="p-4 align-top">
                               {c.conversation_id && (

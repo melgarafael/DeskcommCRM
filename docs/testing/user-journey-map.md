@@ -3067,6 +3067,10 @@ fontes externas HTTP(S); superfície/porta = conversa existente no Inbox; config
 Leitura pura: não emite mutação/auditoria, não agenda ação nem altera o agente.
 Retorno de erro = estado explícito e nova leitura. Mapa: prospeccao-nativa.
 Cobertura: inbox-enrichment-route.test.ts e inbox-demandas-abertas.test.tsx.
+
+### Auditoria do site na fila (spec 24) `[P1]`
+
+Candidatos com `data.site` exibem veredito, raio-X, estratégia e score na fila de Prospecção e no painel do Inbox; a fila ordena por score; reanálise e prévia por candidato. Cobertura: `tests/e2e/prospeccao-auditoria-do-site.spec.ts` (valores exatos: veredito, motivo, KPI médio, reordenação) + unit de classificação/estratégia/score com sabotagem. Reanálise (fetch real) e prévia (LLM) fora do e2e de propósito. Evidência: `evidence/prospeccao-auditoria-do-site/fila-com-auditoria.png`.
 ## J28 — Uma pessoa assume uma conversa que a IA passou `[P0]` (2026-09-18)
 
 **Por que P0:** é a jornada em que o cliente mais sente a diferença entre um CRM com IA e

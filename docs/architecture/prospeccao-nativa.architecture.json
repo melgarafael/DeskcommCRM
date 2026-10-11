@@ -25,6 +25,7 @@
     "operator",
     "discovery",
     "candidates",
+    "site-enrich",
     "crm",
     "queue",
     "inbox",
@@ -114,6 +115,13 @@
       "col": 5,
       "type": "component",
       "label": "ElevenLabs Agents privado e teste no navegador"
+    },
+    {
+      "id": "site-enrich",
+      "lane": "app",
+      "col": 3,
+      "type": "component",
+      "label": "Auditoria de site no tick (spec 24)"
     }
   ],
   "edges": [
@@ -216,6 +224,21 @@
       "from": "candidates",
       "to": "inbox",
       "label": "crm-summary autorizado: contexto comercial e fontes no painel lateral"
+    },
+    {
+      "from": "candidates",
+      "to": "site-enrich",
+      "label": "auditoria de site em data.site"
+    },
+    {
+      "from": "site-enrich",
+      "to": "queue",
+      "label": "gancho real na abordagem"
+    },
+    {
+      "from": "site-enrich",
+      "to": "inbox",
+      "label": "auditoria no painel via crm-summary"
     }
   ]
 }
