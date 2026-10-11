@@ -1098,6 +1098,11 @@ export const AUDIT_ACTIONS = [
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
 
+  // Fontes liberadas do banco externo (Spec 23): o administrador trocou o modo
+  // (`all`/`list`) e a lista do que o assistente pode ler. O metadata carrega só
+  // CONTAGENS (modo e número de fontes), nunca nomes de tabela ou de coluna.
+  "external_db_sources.updated",
+
   // Gestão de tenants pelo admin da plataforma (migration 0614).
   // A LÁPIDE, gravada pelo banco dentro de `fn_excluir_organizacao`, com
   // `organization_id` nulo e `resource_id` = a organização excluída.

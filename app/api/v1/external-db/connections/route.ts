@@ -34,7 +34,17 @@ import { seModuloDesligado } from "../_falha";
 export const dynamic = "force-dynamic";
 
 const COLUNAS_SEGURAS =
-  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at";
+  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode, sources_count, db_type, last_test_aviso";
+
+/**
+ * As escritas (insert/update) voltam da TABELA BASE, que não tem as colunas calculadas da view
+ * (`sources_count` só existe em `external_db_connections_safe`). É um texto LITERAL de propósito:
+ * o cliente do Supabase tipa o resultado lendo o texto do `select` em compilação, e uma string
+ * calculada (`split/filter/join`) vira `GenericStringError`. Mantenha igual a `COLUNAS_SEGURAS`,
+ * menos as colunas calculadas.
+ */
+const COLUNAS_DA_TABELA =
+  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode, db_type, last_test_aviso";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -110,6 +120,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     .from("external_db_connections")
     .insert({
       organization_id: activeOrg.orgId,
+      db_type: input.db_type,
       label: input.label,
       host: input.host,
       port: input.port,
@@ -118,6 +129,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       ...cifrarSenha(input.password),
       ssl_mode: input.ssl_mode,
       enabled: input.enabled,
+      source_mode: "list",
       max_rows: input.max_rows,
       max_filters: input.max_filters,
       max_response_bytes: input.max_response_bytes,
@@ -125,7 +137,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       customer_key_kind: input.customer_key_kind,
       created_by: authUser.id,
     })
-    .select(COLUNAS_SEGURAS)
+    .select(COLUNAS_DA_TABELA)
     .single();
 
   if (error || !created) {
@@ -147,7 +159,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "external_db_connection",
     resourceId: created.id,
     requestId,
-    metadata: { label: input.label, host: input.host, port: input.port, ssl_mode: input.ssl_mode },
+    metadata: { label: input.label, host: input.host, port: input.port, ssl_mode: input.ssl_mode, source_mode: "list", db_type: input.db_type },
   });
 
   return ok(created, { status: 201, requestId });

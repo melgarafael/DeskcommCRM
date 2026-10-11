@@ -1,0 +1,68 @@
+name: mysql-integracao
+
+# Integração do dialeto MySQL com um MySQL 8 de verdade, e a checagem de que o
+# standalone do app leva o mysql2. INFORMATIVO: não é status check obrigatório.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "lib/external-db/**"
+      - "tests/mysql/**"
+      - "scripts/verificar-standalone-mysql.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "next.config.ts"
+      - "vitest.mysql.config.ts"
+      - ".github/workflows/mysql-integracao.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integracao-mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: ${{ github.workflow }}-integracao-mysql-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: raiz-de-teste
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -praiz-de-teste"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/preparar-node
+        timeout-minutes: 5
+      - name: Integração com MySQL de verdade
+        run: pnpm test:mysql
+        env:
+          MYSQL_TEST_HOST: 127.0.0.1
+          MYSQL_TEST_PORT: "3306"
+          MYSQL_TEST_ROOT_PASSWORD: raiz-de-teste
+
+  standalone-leva-mysql2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: ${{ github.workflow }}-standalone-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/preparar-node
+        timeout-minutes: 5
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          SENTRY_DSN: "off"
+      - name: O standalone leva o mysql2 completo?
+        run: node scripts/verificar-standalone-mysql.mjs

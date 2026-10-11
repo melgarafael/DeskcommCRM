@@ -234,6 +234,19 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
     condicao: null,
     efeito: "Este é o check obrigatório `build-and-size` (`pnpm build` em Node 22).",
   },
+  "mysql-integracao.yml::integracao-mysql": {
+    condicao: null,
+    efeito:
+      "Este job roda o dialeto MySQL contra um MySQL 8 de verdade (somente-leitura, catálogo, TLS, " +
+      "trava de metadados). É INFORMATIVO — não é check obrigatório. Se não rodar, o suporte a MySQL " +
+      "volta a ser provado só por teste com driver simulado, sem nenhum erro visível.",
+  },
+  "mysql-integracao.yml::standalone-leva-mysql2": {
+    condicao: null,
+    efeito:
+      "Este job confere que o build `standalone` do app leva o `mysql2`. É INFORMATIVO — não é check " +
+      "obrigatório. Se não rodar, uma imagem sem o driver só aparece quando alguém conecta um MySQL na VPS.",
+  },
 
   // --- e o que legitimamente tem interruptor -----------------------------------
   "acolhida.yml::acolher": {
