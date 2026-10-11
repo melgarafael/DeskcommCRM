@@ -50906,6 +50906,56 @@ comment on column public.cobranca_assinaturas.checkout_sessao_id is
 
 notify pgrst, 'reload schema';
 
+-- ============================================================================
+-- 0644 — as cópias de skill editadas antes do #1960 voltam a apontar o
+-- catálogo (issue #1974). Bloco IDÊNTICO, linha a linha, ao da migration
+-- `20261011210004_0644_copias_antigas_de_skill_reconstroem_o_vinculo_com_o_catalogo.sql`
+-- (`tests/unit/copias-antigas-de-skill-reconstruem-o-vinculo.test.ts` prende os
+-- dois à mesma letra). Não cria função, então entra aqui em cima da VARREDURA
+-- anon por ordem de apêndice, não por necessidade. Instalação nova roda sobre
+-- `skill_versions` vazia (no-op); instalação que atualiza cura as cópias da
+-- janela do defeito. Reaplicável: a segunda passada não acha candidata nenhuma.
+-- ============================================================================
+do $$
+declare
+  v_alteradas integer;
+begin
+  execute 'alter table public.skill_versions disable trigger trg_skill_versions_immutable';
+
+  with portadores as (
+    select v.id,
+           (select anterior.forked_from_version_id
+              from public.skill_versions anterior
+             where anterior.organization_id = v.organization_id
+               and anterior.name = v.name
+               and anterior.forked_from_version_id is not null
+               and (anterior.created_at, anterior.id) < (v.created_at, v.id)
+               and exists (
+                 select 1
+                   from public.skill_versions origem
+                  where origem.id = anterior.forked_from_version_id
+                    and origem.organization_id is null -- origem tem de ser versão de PLATAFORMA
+               )
+             order by anterior.created_at desc, anterior.id desc
+             limit 1) as origem
+      from public.skill_versions v
+     where v.organization_id is not null      -- só cópia de organização; o catálogo nunca é cópia
+       and v.forked_from_version_id is null   -- vínculo já gravado nunca é reescrito
+       and v.created_at >= '2026-09-23T03:50:24Z'::timestamptz  -- #1484: o editor (PUT) que gravava o nulo nasce aqui; antes, nulo = import .zip
+       and v.created_at <  '2026-09-30T00:04:41Z'::timestamptz  -- #1960: depois o PUT herda sozinho
+  )
+  update public.skill_versions v
+     set forked_from_version_id = portadores.origem
+    from portadores
+   where v.id = portadores.id
+     and portadores.origem is not null;
+
+  get diagnostics v_alteradas = row_count;
+  raise notice '0644: % versao(oes) de copia com o vinculo com o catalogo reconstruido', v_alteradas;
+
+  execute 'alter table public.skill_versions enable trigger trg_skill_versions_immutable';
+end $$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
