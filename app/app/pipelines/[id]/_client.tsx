@@ -25,6 +25,13 @@ import { FilterBar } from "@/components/kanban/FilterBar";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
@@ -35,10 +42,17 @@ export function PipelinePageClient({
   pipelineId,
   initialName,
   role,
+  funis,
 }: {
   pipelineId: string;
   initialName: string;
   role: Role;
+  /**
+   * Os funis vivos da organização (`id` + `name`, na ordem da lista) — a MESMA
+   * partição da tela de Funis. É o que alimenta o seletor de troca rápida do
+   * cabeçalho; sem ele o quadro não sabe que existem outros funis.
+   */
+  funis: Array<{ id: string; name: string }>;
 }) {
   const t = useT();
   const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
@@ -78,6 +92,9 @@ export function PipelinePageClient({
     () => [...new Set((data?.leads ?? []).flatMap((l) => l.tags))].sort(),
     [data?.leads],
   );
+  const nomeAtual = data?.pipeline.name ?? initialName;
+  // Um funil só = nada para trocar: o seletor seria ruído permanente.
+  const podeTrocar = funis.length > 1;
 
   return (
     <div
@@ -86,24 +103,10 @@ export function PipelinePageClient({
       // no pé dele — com uma etapa cheia, era preciso descer até o fim para
       // conseguir andar para o lado, e no caminho o nome da etapa sumia do alto.
       // Com a altura da área visível (100dvh menos a barra do topo, h-14, e o
-      // padding do <main>), quem rola é o quadro: a barra horizontal fica sempre
-      // no pé da tela e o cabeçalho de cada etapa fica preso em cima. O piso de
+      // p-6 do <main>), quem rola é o quadro: a barra horizontal fica sempre no
+      // pé da tela e o cabeçalho de cada etapa fica preso em cima. O piso de
       // 28rem é para tela baixa demais, onde a página volta a rolar.
-      //
-      // ⚠️ A PARCELA DE BAIXO VEM DO CONTRATO, e era um `3rem` literal.
-      //
-      // Aquele literal era a segunda metade do `p-6` do `<main>` escrita à mão,
-      // e ela não sabia de nenhuma peça fixa no rodapé. Com a barra de abas do
-      // celular (`components/shell/BarraInferior.tsx`, 56px mais a área segura),
-      // o quadro media 48px a mais do que tinha e o fim dele — justamente onde
-      // mora a barra de rolagem horizontal, a razão desta linha existir —
-      // passava a correr POR BAIXO das abas.
-      //
-      // `max(var(--space-6), var(--rodape-ocupado, 0px))` é a mesma fórmula do
-      // `components/inbox/InboxLayout.tsx`, e é o que o gate
-      // `tests/unit/altura-fixa-le-a-reserva-do-rodape.test.ts` cobra: altura
-      // fixa não desconta número próprio, lê a reserva.
-      className="flex h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] min-h-[28rem] flex-col gap-4"
+      className="flex h-[calc(100dvh-3.5rem-3rem)] min-h-[28rem] flex-col gap-4"
       // OBSERVÁVEL de propósito, e é a razão de existir desta linha: "a
       // assinatura morreu" e "nada aconteceu" produzem o MESMO silêncio na
       // tela, e sem este valor nem o produto nem o teste conseguem separar as
@@ -128,9 +131,49 @@ export function PipelinePageClient({
           fora da viewport em telas estreitas. De `sm:` pra cima volta a ser
           uma linha só, como sempre foi. */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
-          {data?.pipeline.name ?? initialName}
+        {/*
+          O TÍTULO É O SELETOR. Com um funil só, `h1` puro (nada para trocar);
+          com vários, o gatilho do `Select` veste o título e o `h1` real vai
+          para `sr-only` — botão dentro de `h1` é HTML inválido, e sem o `h1`
+          o leitor de tela perde o título da página. Trocar zera a query
+          string: filtro de um funil aplicado no outro é resultado fantasma.
+        */}
+        <h1
+          className={
+            podeTrocar
+              ? "sr-only"
+              : "min-w-0 truncate text-2xl font-semibold tracking-tight"
+          }
+        >
+          {nomeAtual}
         </h1>
+        {podeTrocar && (
+          <Select
+            value={funis.some((f) => f.id === pipelineId) ? pipelineId : undefined}
+            onValueChange={(id) => {
+              if (id !== pipelineId) router.push(`/app/pipelines/${id}`);
+            }}
+          >
+            <SelectTrigger
+              aria-label={`${t("Trocar de funil")}: ${nomeAtual}`}
+              data-testid="trocar-funil"
+              className="h-auto w-auto min-w-0 max-w-full gap-1.5 border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight shadow-none focus:ring-1 focus:ring-ring sm:max-w-[60%] [&>span]:truncate"
+            >
+              <SelectValue placeholder={nomeAtual} />
+            </SelectTrigger>
+            <SelectContent>
+              {funis.map((f) => (
+                <SelectItem
+                  key={f.id}
+                  value={f.id}
+                  data-testid={`trocar-funil-opcao-${f.id}`}
+                >
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
           <Plus size={16} className="mr-2" /> {t("Novo Lead")}
         </Button>
