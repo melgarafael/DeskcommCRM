@@ -149,8 +149,11 @@ fetch('http://127.0.0.1:3000/email-templates/confirmation').then(r=>r.text()).th
          && [ "$apontado" = "${NEXT_PUBLIC_APP_URL%/}/email-templates/confirmation" ]; then
         c_ylw "⚠ o GoTrue ($dono) busca o molde pelo domínio público, não pela rede privada."
         c_ylw "  Atrás de um proxy externo essa busca pode dar timeout. Rode: bash hostgator-setup-kit/update.sh"
+        c_dim "  $apontado"
+        apontado=""  # já avisado: não cair no ✓ abaixo, que diria o contrário
       fi
       case "$apontado" in
+        "") ;;
         http*/email-templates/*)
           c_grn "✓ o GoTrue ($dono) busca o molde do app"
           c_dim "  $apontado" ;;
