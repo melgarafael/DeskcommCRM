@@ -48,13 +48,22 @@ import { marcaDaOrganizacaoParaPdf, type MarcaDaOrganizacaoParaPdf } from "@/lib
 
 /**
  * Quantas mensagens cabem NUM ARQUIVO. PostgREST devolve 1000 linhas quando o
- * `limit` não vem escrito — truncar em 1000 e chamar isso de histórico seria o
- * defeito silencioso que este documento existe para evitar. 5000 é folgado para
- * a conversa real (~100 páginas) e mantém o render dentro de um teto previsível
- * de memória. Batido o limite, o PDF AVISA no cabeçalho (`truncada`): prova
- * incompleta declarada ainda serve para orientar; prova incompleta achada não.
+ * `limit` não vem escrito — truncar em silêncio e chamar isso de histórico seria
+ * o defeito que este documento existe para evitar. Batido o limite, o PDF AVISA
+ * no cabeçalho (`truncada`): prova incompleta declarada ainda serve para
+ * orientar; prova incompleta achada não.
+ *
+ * O número sai da MEMÓRIA, não do tamanho da conversa: o render roda no mesmo
+ * processo que serve o CRM (`mem_limit: 768m` do `app` no
+ * `docker-compose.prod.yml`, pico próprio medido de 335 MiB). Medido na
+ * vps-teste em 11/10/2026 (Node 22, `montarPdfDaConversa` real, mensagens de
+ * 8 a 37 palavras), acréscimo de RSS durante o render:
+ *   250 → 21 MB · 500 → 131 MB · 750 → 184 MB · 1000 → 411 MB · 2000 → 859 MB · 5000 → 1,8 GB
+ * O custo não é linear (de 750 para 1000 mais que dobra) e o tempo também não
+ * (500 → 1,9 s; 5000 → 177 s). 500 fica em ~17% do teto do contêiner e deixa
+ * folga para mensagens mais longas e para duas exportações simultâneas.
  */
-export const LIMITE_DE_MENSAGENS = 5000;
+export const LIMITE_DE_MENSAGENS = 500;
 
 /** O fuso quando a organização não declarou o dele. */
 const FUSO_PADRAO = "America/Sao_Paulo";

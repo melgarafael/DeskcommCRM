@@ -39,7 +39,13 @@ import { audit } from "@/lib/audit";
 
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
-import { linhasDoHistorico, montarPdfDaConversa, type ConversaParaPdf, type MensagemParaPdf } from "./exporta-pdf";
+import {
+  LIMITE_DE_MENSAGENS,
+  linhasDoHistorico,
+  montarPdfDaConversa,
+  type ConversaParaPdf,
+  type MensagemParaPdf,
+} from "./exporta-pdf";
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const CONV_ID = "33333333-3333-4333-8333-333333333333";
@@ -471,4 +477,42 @@ describe("conversas/exporta-pdf", () => {
     expect(res.status).toBe(500);
     expect(audit).not.toHaveBeenCalled();
   });
+  it("o aviso de corte aparece só quando a conversa PASSA do limite, e as mais antigas é que saem", async () => {
+    const AVISO = "Atenção: esta conversa ultrapassa o limite de mensagens por arquivo";
+    const conversaCom = (n: number) =>
+      clienteFalso((tabelas) => {
+        tabelas.messages = Array.from({ length: n }, (_, i) => ({
+          id: `g${String(i).padStart(4, "0")}`,
+          organization_id: ORG_ID,
+          conversation_id: CONV_ID,
+          direction: "inbound",
+          type: "text",
+          body: `mensagem numero ${i}`,
+          sent_via: "external_device",
+          sent_by_user_id: null,
+          sent_at: new Date(Date.parse("2026-09-01T12:00:00.000Z") + i * 60_000).toISOString(),
+          created_at: new Date(Date.parse("2026-09-01T12:00:00.000Z") + i * 60_000).toISOString(),
+          metadata: {},
+        }));
+      });
+    const { GET } = await rota();
+    permitir();
+
+    // Exatamente no limite: a conversa inteira cabe, e o PDF não pode dizer que cortou.
+    vi.mocked(createClient).mockResolvedValue(conversaCom(LIMITE_DE_MENSAGENS) as never);
+    const cheia = await GET(requisicao(), ctx());
+    expect(cheia.status).toBe(200);
+    expect(await extractPdfText(Buffer.from(await cheia.arrayBuffer()))).not.toContain(AVISO);
+
+    // Uma a mais: avisa, leva as LIMITE mais recentes e a mais antiga fica de fora.
+    vi.mocked(audit).mockClear();
+    vi.mocked(createClient).mockResolvedValue(conversaCom(LIMITE_DE_MENSAGENS + 1) as never);
+    const cortada = await GET(requisicao(), ctx());
+    const texto = await extractPdfText(Buffer.from(await cortada.arrayBuffer()));
+    expect(texto).toContain(AVISO);
+    expect(texto).toContain(`mensagem numero ${LIMITE_DE_MENSAGENS}`);
+    expect(texto).not.toContain("mensagem numero 0");
+    expect(vi.mocked(audit).mock.calls[0]?.[0]).toMatchObject({ metadata: { mensagens: LIMITE_DE_MENSAGENS } });
+  }, 60_000);
+
 });

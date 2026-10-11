@@ -126,7 +126,8 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .eq("organization_id", authz.org.orgId)
       .eq("conversation_id", id)
       .order("created_at", { ascending: false })
-      .limit(LIMITE_DE_MENSAGENS),
+      // Uma a mais que o limite: é ela que diz se a conversa passou do teto.
+      .limit(LIMITE_DE_MENSAGENS + 1),
   ]);
   if (contato.error) {
     return fail("internal_error", t("Erro ao ler o contato."), 500, { requestId });
@@ -135,7 +136,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", t("Erro ao ler as mensagens."), 500, { requestId });
   }
 
-  const mensagens = (mensagensLidas.data ?? []) as unknown as MensagemParaPdf[];
+  const lidas = (mensagensLidas.data ?? []) as unknown as MensagemParaPdf[];
+  const truncada = lidas.length > LIMITE_DE_MENSAGENS;
+  const mensagens = truncada ? lidas.slice(0, LIMITE_DE_MENSAGENS) : lidas;
 
   // Uma leitura por user id DISTINTO (o helper deduplica) — nome de quem
   // enviou não fica na linha da mensagem, e "Atendente" no PDF de prova é a
@@ -155,7 +158,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     idioma: authz.user.idioma,
     exportadoPor: authz.user.full_name ?? authz.user.email ?? null,
     nomesDosUsuarios,
-    truncada: mensagens.length >= LIMITE_DE_MENSAGENS,
+    truncada,
   });
   if (!pdf.ok) return fail("internal_error", pdf.motivo, 500, { requestId });
 
