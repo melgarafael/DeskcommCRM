@@ -1041,6 +1041,10 @@ export const AUDIT_ACTIONS = [
   // (#2098): gravada pela tela de Conversões, em `organizations.settings.conversions`.
   "conversions.meta_identity_updated",
 
+  // O operador baixou o histórico de UMA conversa em PDF (issue #1982): o gesto
+  // auditável é a saída de dados — QUANTAS linhas saíram, não o que elas dizem
+  // (o corpo da mensagem não vai para log nem para metadata, LGPD).
+  "conversation.exported",
   // ── Cobrança do revendedor — rotas do dono (spec 2026-09-29, PR 2) ───────
   // Plano criado/editado e arquivado; plano atribuído ou trocado numa empresa
   // (`metadata.quando`: atribuido | imediato); prazo dado e isenção
