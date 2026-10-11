@@ -225,7 +225,7 @@ export const TAREFA_DO_ROTEADOR = {
   },
   rotulo: "Escolher qual agente atende",
   oQueFaz:
-    "Lê a última mensagem do cliente, sozinha, e escolhe entre as intenções do seu roteador qual agente deve atender.",
+    "Lê a mensagem atual do cliente e escolhe qual agente deve atender. Com autorização específica, usa também o contexto recente da conversa.",
 } as const satisfies TarefaDoJev;
 
 /**

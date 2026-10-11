@@ -96,16 +96,16 @@ describe("seletor de roteiro na intenção × módulo", () => {
 });
 
 describe("tamanho do contexto do roteador", () => {
-  it("roteador legado mostra quatro mensagens e salva oito quando o admin escolhe", async () => {
+  it("roteador sem limite salvo mostra oito mensagens e salva até dezesseis pelo painel", async () => {
     authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
     flowsMock.mockReturnValue({ data: undefined });
     updateMock.mockClear();
     renderizar();
     const campo = screen.getByLabelText("Mensagens anteriores para o roteamento");
-    expect(campo).toHaveValue(4);
-    fireEvent.change(campo, { target: { value: "8" } });
+    expect(campo).toHaveValue(8);
+    fireEvent.change(campo, { target: { value: "16" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ context_message_count: 8 }) }));
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ context_message_count: 16 }) }));
   });
 });
 

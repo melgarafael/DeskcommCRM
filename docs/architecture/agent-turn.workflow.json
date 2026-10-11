@@ -310,7 +310,7 @@
       "col": 2,
       "type": "external",
       "label": "Jev no roteador",
-      "sublabel": "lib/ai/decisao/roteador.ts — só a mensagem atual (R4; o histórico espera a TypeSafe, DEC-012); comparação paralela ou Jev primeiro com a IA de sempre só em reserva, e só onde a empresa a tem (R2); min_confidence e sticky preservados"
+      "sublabel": "lib/ai/decisao/roteador.ts — mensagem atual e contexto configurado no banco, mediante aceite próprio; V1 até quatro, V2 até dezesseis; comparação paralela ou Jev primeiro com a IA de sempre só em reserva, e só onde a empresa a tem (R2); min_confidence e sticky preservados"
     },
     {
       "id": "jevObservacoesRoteador",

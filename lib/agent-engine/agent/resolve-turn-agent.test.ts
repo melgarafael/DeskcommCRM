@@ -534,7 +534,7 @@ describe('o Jev no roteador (onda 2 do Jev, bloco 2.2)', () => {
     return { out, classifyIntent };
   }
 
-  it('pergunta EM PARALELO: o Jev começa antes de a IA de sempre responder, com a mensagem sozinha', async () => {
+  it('pergunta EM PARALELO: o Jev começa antes de a IA de sempre responder, com o mesmo contexto recente', async () => {
     const jev = jevFalso('observando');
     const classifyIntent = vi.fn(async () => {
       // A IA de sempre ainda não respondeu, e o Jev já foi perguntado.
@@ -549,10 +549,12 @@ describe('o Jev no roteador (onda 2 do Jev, bloco 2.2)', () => {
     }));
     expect(classifyIntent).toHaveBeenCalledOnce();
     const [, entrada] = jev.consultarJev.mock.calls[0]! as unknown as [unknown, Record<string, unknown>];
-    // R4: só a última mensagem — o contexto das 4 anteriores fica com a IA de sempre.
+    // O adaptador do Jev confere o aceite antes de enviar este contexto.
     expect(entrada).toEqual({
       organizationId: 'org-1',
       mensagem: 'meu pedido não chegou',
+      recentMessages: [{ direction: 'outbound', body: 'contexto' }],
+      contextMessageCount: 8,
       membros: members,
       contactId: 'lead-1',
       jobId: 'job-1',

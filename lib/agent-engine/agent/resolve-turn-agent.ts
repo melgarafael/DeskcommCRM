@@ -350,18 +350,17 @@ export async function resolveTurnAgent(
       return resolveFallback('no_match', null);
     }
 
-    // O Jev pergunta o mesmo (onda 2 do Jev, bloco 2.2): só a mensagem, sem o
-    // contexto (R4) — o histórico do Jev espera a TypeSafe (DEC-012, escolha 2).
-    // A janela do roteador vale só para a IA de sempre. Observando, o turno não
-    // espera por ele.
-    // A mensagem é apenas o que o cliente digitou (`signalBody`), '' para mídia:
-    // a transcrição estaria no `signal` composto e não vai ao Jev (R4).
+    // O Jev pergunta em paralelo, com contexto recente somente sob aceite específico.
+    // Observando, o turno não espera por ele.
     const recentMessages = contextoDoClassificador(input.recentMessages ?? [], router.contextMessageCount ?? CLASSIFIER_CONTEXT_MESSAGES);
+    // O sinal atual enviado ao Jev exclui transcrições e anexos; contexto segue o aceite.
     const jev = _consultarJev(
       db,
       {
         organizationId: input.tenantId,
         mensagem: input.signalBody === undefined ? input.signal : (input.signalBody ?? ''),
+        recentMessages,
+        contextMessageCount: router.contextMessageCount ?? CLASSIFIER_CONTEXT_MESSAGES,
         membros: router.members,
         contactId: input.leadId,
         jobId: input.jobId,
@@ -373,9 +372,12 @@ export async function resolveTurnAgent(
     // Sob demanda, só há esta chamada se o Jev não trouxer intenção confiável.
     const modo = await (jev.modo ?? Promise.resolve('comparacao'));
     const estadoLido = await jev.estado;
+    const limiteConsentido = await (jev.contextoMaximo ?? Promise.resolve(null));
+    const contextoTradicional = estadoLido !== 'desligada' && limiteConsentido === 4
+      ? contextoDoClassificador(recentMessages, 4) : recentMessages;
     const classificar = () => _classifyIntent(
       db, llmCfg,
-      { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages },
+      { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages: contextoTradicional },
       { log: deps.log },
     );
     // Decisão B (doc 89): o Jev só roteia sozinho onde a empresa tem a IA de
@@ -428,7 +430,7 @@ export async function resolveTurnAgent(
       organizationId: input.tenantId, routerId: router.id, conversationId: input.conversationId,
       messageId: input.signalMessageId ?? null, jobId: input.jobId,
       modo: independente ? 'jev_sob_demanda' : estadoLido === 'decidindo' ? 'jev_comparacao' : 'tradicional_comparacao',
-      contextMessageCount: recentMessages.length,
+      contextMessageCount: contextoTradicional.length,
       origem: independente ? doJev ? 'jev' : 'reserva' : doJev ? 'jev' : 'tradicional',
       motivoReserva,
       intentJev: escolhaIndependente?.veredito.intentName ?? doJev?.veredito.intentName ?? null,

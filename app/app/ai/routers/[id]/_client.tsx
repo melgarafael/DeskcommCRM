@@ -1,4 +1,6 @@
 "use client";
+
+import { CLASSIFIER_CONTEXT_MESSAGES } from "@/lib/ai/classifier-context";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter as useNextRouter } from "next/navigation";
@@ -136,7 +138,7 @@ export function RouterEditorClient({
   // manda o id para o provedor da ORG, e a classificação falha sempre.
   const [classifier, setClassifier] = React.useState(() => classifierKeyFrom(router.config));
   const [contextMessageCount, setContextMessageCount] = React.useState(() =>
-    typeof router.config?.context_message_count === "number" ? router.config.context_message_count : 4);
+    typeof router.config?.context_message_count === "number" ? router.config.context_message_count : CLASSIFIER_CONTEXT_MESSAGES);
   const [draftMembers, setDraftMembers] = React.useState<DraftMember[]>(() =>
     members.map((m) => ({ ...m, key: m.id })),
   );
@@ -185,7 +187,7 @@ export function RouterEditorClient({
       isActive: router.is_active,
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
-      contextMessageCount: typeof router.config?.context_message_count === "number" ? router.config.context_message_count : 4,
+      contextMessageCount: typeof router.config?.context_message_count === "number" ? router.config.context_message_count : CLASSIFIER_CONTEXT_MESSAGES,
       members: members.map(camposDoMembro),
     }),
     [router, members],
@@ -398,7 +400,7 @@ export function RouterEditorClient({
                 onChange={(e) => setContextMessageCount(Math.max(0, Math.min(16, Number(e.target.value) || 0)))} />
               <p className="text-xs text-muted-foreground">{t("Além da mensagem atual; inclui cliente e atendente.")}</p>
               <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Como funciona")}</summary>
-                {t("Vale para a sua IA de sempre, que classifica com estas mensagens anteriores. O Jev recebe só a mensagem atual. Mais mensagens podem aumentar custo e demora.")}
+                {t("A mesma janela vale para os modelos em comparação e para a reserva. O JEV só recebe histórico com autorização específica em Provedores de IA. Mais mensagens podem aumentar custo e demora.")}
               </details>
             </div>
           </Card>

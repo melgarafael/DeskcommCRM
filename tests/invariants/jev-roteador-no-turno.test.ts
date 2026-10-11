@@ -436,8 +436,8 @@ describe("o Jev no roteador, pelo caminho do turno", () => {
 });
 
 
-describe("a janela do roteador vale para a IA de sempre; o histórico do Jev espera a TypeSafe (DEC-012, escolha 2)", () => {
-  it("a IA de sempre recebe a janela, sem mensagens de outra conversa ou organização; o Jev, mesmo com um aceite de histórico gravado, só a mensagem", async () => {
+describe("contexto do roteador sob o aceite da organização", () => {
+  it("envia a mesma janela da IA convencional, sem mensagens de outra conversa ou organização; revogar retira o histórico", async () => {
     const config = settingsDoJev("decidindo");
     const c = await cenario({ jev: { ...config.jev, contexto_roteador: { em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 1 } } });
     const alheia = await cenario(settingsDoJev());
@@ -469,7 +469,46 @@ describe("a janela do roteador vale para a IA de sempre; o histórico do Jev esp
     expect(input.recentMessages.map((m) => m.body)).toEqual([
       "Quero comprar", "Prefere a primeira ou a segunda?", "meu e-mail é cliente@example.com", "Confirmar a primeira opção?",
     ]);
-    expect(jev.pedidos[0]!.state).toBe("a primeira");
+    const state = jev.pedidos[0]!.state as { historico: Array<{ autor: string; texto: string }>; mensagem_atual: string };
+    expect(state.mensagem_atual).toBe("a primeira");
+    expect(state.historico.map((m) => m.autor)).toEqual(["cliente", "agente", "cliente", "agente"]);
+    expect(state.historico[0]!.texto).toBe(input.recentMessages[0]!.body);
+    expect(state.historico[3]!.texto).toBe(input.recentMessages[3]!.body);
+    expect(JSON.stringify(state)).not.toMatch(/segredo|velha demais|cliente@example.com/);
+    await pool.query("update organizations set settings=$2 where id=$1", [c.org, JSON.stringify(config)]);
+    const revogado = jevDuble("vendas");
+    await turno(c, { classifyIntent: ia, jev: revogado.deps });
+    expect(revogado.pedidos[0]!.state).toBe("a primeira");
     await esperarObservacao(c.org);
+  });
+});
+
+
+describe("janela salva no banco, com aceite V2", () => {
+  it("relê a janela salva a cada turno: quatro, oito e quatro, sem trocar código", async () => {
+    const config = settingsDoJev("decidindo");
+    const c = await cenario({ jev: { ...config.jev, contexto_roteador: {
+      em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 2,
+    } } });
+    for (let i = 0; i < 10; i++) {
+      await pool.query(`insert into messages (id, organization_id, conversation_id,
+        channel_session_id, contact_id, type, direction, status, body, sent_via, sent_at)
+        values ($1,$2,$3,$4,$5,'text',$6,'delivered',$7,'external_device',now() - $8 * interval '1 second')`,
+        [randomUUID(), c.org, c.conversa, c.sessao, c.contato,
+         i % 2 ? "outbound" : "inbound", `Anterior ${i}`, 20 - i]);
+    }
+    for (const quantidade of [4, 8, 4]) {
+      await pool.query(`update ai_routers set config = jsonb_set(config,
+        '{context_message_count}', to_jsonb($2::int)) where organization_id = $1`, [c.org, quantidade]);
+      const jev = jevDuble("vendas");
+      const ia = iaDeSempre({ intentName: "vendas", confidence: 0.95 });
+      await turno(c, { classifyIntent: ia, jev: jev.deps });
+      const state = jev.pedidos[0]!.state as { historico: Array<{ texto: string }> };
+      expect(state.historico).toHaveLength(quantidade);
+      expect(state.historico.map((m) => m.texto)).toEqual(
+        Array.from({ length: quantidade }, (_, i) => `Anterior ${10 - quantidade + i}`),
+      );
+      await esperarObservacao(c.org);
+    }
   });
 });

@@ -94,7 +94,7 @@ export default async function PrivacyPage() {
           </li>
           <li>
             {t(
-              "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, que recebe cada mensagem do cliente, sozinha e já sem CPF, telefone e e-mail, para avaliar se ele está irritado, se a mensagem tenta manipular o atendimento automático, a qual área da empresa ela se destina, se ela pede para falar com uma pessoa ou para parar de receber mensagens e, quando ela responde a um follow-up, em qual das saídas do fluxo ela se encaixa;",
+              "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, recebe cada mensagem do cliente para avaliar o clima, tentativas de manipulação, qual agente deve atender, pedidos para falar com uma pessoa ou parar de receber mensagens e respostas a follow-ups. Com autorização separada, o roteador também envia até 16 mensagens anteriores da conversa, conforme o limite configurado, incluindo respostas de atendentes. Autorizações anteriores para até quatro mensagens permanecem nesse limite até renovação. CPF, telefone e e-mail reconhecidos são ocultados em cada texto;",
             )}
           </li>
           <li>

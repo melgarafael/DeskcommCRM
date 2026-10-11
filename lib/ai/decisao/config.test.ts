@@ -331,3 +331,20 @@ describe("rollback para a imagem da onda 1", () => {
     expect(c.ligado).toBe(true);
   });
 });
+
+
+describe("aceite do contexto é independente do modo das tarefas", () => {
+  it("mudar tarefa ou desligar o mestre preserva o aceite de contexto; revogar preserva o geral", () => {
+    const contexto = { ...ACEITE, versao: 1 as const };
+    const atual = lerConfigDoJev({ jev: { ligado: true, aceite: ACEITE, contexto_roteador: contexto } });
+    const carimbo = { em: "2026-09-29T12:00:00.000Z", por: ADMIN };
+    const alterada = mesclar(atual, { ligado: false, tarefas: { roteador: "decidindo" } }, carimbo);
+    expect(alterada).toMatchObject({ ligado: false, contexto_roteador: contexto, aceite: ACEITE });
+    expect(mesclar(atual, { contexto_roteador: null }, carimbo)).toMatchObject({ ligado: true, contexto_roteador: null, aceite: ACEITE });
+  });
+
+  it("aceite de contexto ilegível não desliga tarefas que ainda podem ler somente a mensagem", () => {
+    const atual = lerConfigDoJev({ jev: { ligado: true, aceite: ACEITE, contexto_roteador: { versao: 2 } } });
+    expect(atual).toMatchObject({ ligado: true, aceite: ACEITE, contexto_roteador: null });
+  });
+});

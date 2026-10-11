@@ -108,6 +108,16 @@ export const configDoJevSchema = z
      * chave — o objeto inteiro sumiria, e com ele as tarefas boas.
      */
     tarefas: tarefasSchema.optional(),
+    /** Aceite separado e revogável: só o roteador pode enviar contexto recente. */
+    contexto_roteador: z
+      .object({
+        em: z.string().datetime(),
+        por: z.string().uuid(),
+        versao: z.union([z.literal(1), z.literal(2)]),
+      })
+      .nullable()
+      .optional()
+      .catch(null),
     alterado_em: z.string().datetime().optional(),
     alterado_por: z.string().uuid().optional(),
   })
@@ -132,7 +142,7 @@ export type ResultadoDeGravarConfig =
   | { ok: true; config: ConfigDoJev }
   | { ok: false; motivo: "leitura_falhou" | "config_invalida" | "escrita_recusada" };
 
-export type MudancaDaConfig = Partial<Pick<ConfigDoJev, "ligado" | "modo" | "modo_roteador" | "aceite">> & {
+export type MudancaDaConfig = Partial<Pick<ConfigDoJev, "ligado" | "modo" | "modo_roteador" | "aceite" | "contexto_roteador">> & {
   /** Só as tarefas que mudam; as outras ficam como estão. */
   tarefas?: Partial<Record<IdDaTarefa, EstadoDaTarefa>>;
 };
