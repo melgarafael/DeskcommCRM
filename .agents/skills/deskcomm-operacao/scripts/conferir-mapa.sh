@@ -78,7 +78,7 @@ for linha in $ENTRADAS; do
       SAIDA="$SAIDA::warning file=.agents/skills/deskcomm-operacao/references/mapa-da-interface.md::tela fora do mapa da skill de operação: $tela ($href)
 "
     else
-      SAIDA="$SAIDA⚠ tela fora do mapa da skill de operação: $tela ($href)
+      SAIDA="${SAIDA}⚠ tela fora do mapa da skill de operação: $tela ($href)
 "
     fi
   else
@@ -93,7 +93,7 @@ for linha in $ENTRADAS; do
           SAIDA="$SAIDA::warning file=.agents/skills/deskcomm-operacao/references/mapa-da-interface.md::tela renomeada no menu e não no mapa da skill de operação: $tela ($href)
 "
         else
-          SAIDA="$SAIDA⚠ tela renomeada no menu e não no mapa da skill de operação: $tela ($href)
+          SAIDA="${SAIDA}⚠ tela renomeada no menu e não no mapa da skill de operação: $tela ($href)
 "
         fi
         ;;
