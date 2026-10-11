@@ -441,17 +441,25 @@ describe("conversas/exporta-pdf", () => {
     expect(texto).not.toContain("Primeira mensagem do cliente");
   });
 
-  it("o rodapé numera as páginas pela frase traduzível", async () => {
+  it("o rodapé e o 'em' do cabeçalho passam pela tradução, sem frase fixa em português", async () => {
+    // Um `t` que TRADUZ de fato: com a identidade, uma frase escrita fixa no
+    // render sairia igual e o caso passaria sem provar nada.
+    const emIngles: Record<string, string> = {
+      "página {atual} de {total}": "page {atual} of {total}",
+      "{quem} em {quando}": "{quem} on {quando}",
+    };
     const pdf = await montarPdfDaConversa(clienteFalso(), ORG_ID, conversa, mensagensDe3(), {
-      t,
+      t: (texto: string) => emIngles[texto] ?? texto,
       exportadoPor: "Carlos Supervisor",
       geradoEm: "2026-10-03T15:30:00.000Z",
     });
     expect(pdf.ok).toBe(true);
     if (!pdf.ok) return;
     const texto = await extractPdfText(pdf.buffer);
-    expect(texto).toContain("página 1 de 1");
-    expect(texto).toContain("Carlos Supervisor em 03/10/2026 12:30");
+    expect(texto).toContain("page 1 of 1");
+    expect(texto).not.toContain("página 1 de 1");
+    expect(texto).toContain("Carlos Supervisor on 03/10/2026 12:30");
+    expect(texto).not.toContain("Carlos Supervisor em");
   });
 
   it("GET além do teto de exportações devolve 429 com Retry-After e não lê o banco", async () => {
@@ -463,6 +471,24 @@ describe("conversas/exporta-pdf", () => {
 
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe("60");
+    // Pedido já barrado pela pessoa não gasta o minuto da organização.
+    expect(checkRateLimit).toHaveBeenCalledTimes(1);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("GET com a pessoa dentro do teto mas a organização fora devolve 429 pelo teto da organização", async () => {
+    permitir();
+    vi.mocked(checkRateLimit)
+      .mockResolvedValueOnce({ allowed: true, count: 1, limit: 5, window_sec: 60 })
+      .mockResolvedValueOnce({ allowed: false, count: 21, limit: 20, window_sec: 60 });
+
+    const { GET } = await rota();
+    const res = await GET(requisicao(), ctx());
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("X-RateLimit-Limit")).toBe("20");
+    expect(vi.mocked(checkRateLimit).mock.calls[1]?.[0]).toBe(`conversa-export-org:${ORG_ID}`);
     expect(createClient).not.toHaveBeenCalled();
     expect(audit).not.toHaveBeenCalled();
   });

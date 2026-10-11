@@ -77,14 +77,13 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("validation_failed", t("Formato não suportado: use ?formato=pdf."), 422, { requestId });
   }
 
+  // O da organização só conta pedido que a pessoa podia fazer: quem martela o
+  // botão esgota o próprio minuto, não o dos colegas.
   const porUsuario = await checkRateLimit(`conversa-export:${authz.user.id}`, TETO_POR_USUARIO, JANELA_SEGUNDOS);
-  const porOrganizacao = await checkRateLimit(
-    `conversa-export-org:${authz.org.orgId}`,
-    TETO_POR_ORGANIZACAO,
-    JANELA_SEGUNDOS,
-  );
-  if (!porUsuario.allowed || !porOrganizacao.allowed) {
-    const barrou = porUsuario.allowed ? porOrganizacao : porUsuario;
+  const barrou = porUsuario.allowed
+    ? await checkRateLimit(`conversa-export-org:${authz.org.orgId}`, TETO_POR_ORGANIZACAO, JANELA_SEGUNDOS)
+    : porUsuario;
+  if (!barrou.allowed) {
     return fail("rate_limited", t("Muitas exportações seguidas. Tente em um minuto."), 429, {
       requestId,
       headers: {

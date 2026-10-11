@@ -61,7 +61,8 @@ import { marcaDaOrganizacaoParaPdf, type MarcaDaOrganizacaoParaPdf } from "@/lib
  *   250 → 21 MB · 500 → 131 MB · 750 → 184 MB · 1000 → 411 MB · 2000 → 859 MB · 5000 → 1,8 GB
  * O custo não é linear (de 750 para 1000 mais que dobra) e o tempo também não
  * (500 → 1,9 s; 5000 → 177 s). 500 fica em ~17% do teto do contêiner e deixa
- * folga para mensagens mais longas e para duas exportações simultâneas.
+ * folga para mensagens mais longas. Duas exportações AO MESMO TEMPO no mesmo
+ * processo não foram medidas, e o limite por minuto da rota não as impede.
  */
 export const LIMITE_DE_MENSAGENS = 500;
 
