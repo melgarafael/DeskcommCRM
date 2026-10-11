@@ -772,6 +772,7 @@ jobs:
         agenda-painel-cabe-na-tela.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
+        aba-e-cookie-divergentes.spec.ts
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
