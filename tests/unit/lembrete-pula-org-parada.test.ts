@@ -24,14 +24,15 @@ vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: async () => {} }));
 /** PostgREST falso: toda cadeia devolve a si mesma; a lista e as linhas únicas vêm de `mocks`. */
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
+    rpc: async () => ({ data: 0, error: null }),
     from: (tabela: string) => {
       const unico: Record<string, unknown> = {
         contacts: { id: "contato-1", name: "Ana", display_name: null, phone_number: "+5531999998888", is_blocked: false },
-        channel_sessions: { id: "canal-1" },
+        channel_sessions: { id: "canal-1", provider: "waha", status: "WORKING", archived_at: null },
         organizations: { timezone: "America/Sao_Paulo", locale: "pt-BR" },
       };
       const c: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "not", "gt", "lte", "order", "limit", "or", "update"]) c[m] = () => c;
+      for (const m of ["select", "eq", "not", "gt", "lte", "order", "limit", "or", "update", "is"]) c[m] = () => c;
       c.maybeSingle = async () => ({ data: unico[tabela] ?? null, error: null });
       c.then = (r: (v: unknown) => unknown) =>
         Promise.resolve({

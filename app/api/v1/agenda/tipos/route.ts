@@ -47,14 +47,23 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listaTiposDeAtendimento } from "@/lib/agenda/consulta";
 import { TETO_DE_LEMBRETES_EXTRAS } from "@/lib/agenda/lembretes";
+import { transportaMensagem } from "@/lib/channels/capabilities";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
 /** As dez do CHECK da tabela. Fora daqui o Postgres recusa — melhor recusar antes. */
 const CATEGORIAS = [
-  "consulta", "procedimento", "retorno", "visita", "vistoria",
-  "reuniao", "call", "orcamento", "demonstracao", "outro",
+  "consulta",
+  "procedimento",
+  "retorno",
+  "visita",
+  "vistoria",
+  "reuniao",
+  "call",
+  "orcamento",
+  "demonstracao",
+  "outro",
 ] as const;
 
 const LOCAIS = ["in_person", "phone", "whatsapp", "video_link", "google_meet"] as const;
@@ -96,6 +105,7 @@ const camposDoTipo = {
    * mensagem para o telefone de um cliente é irreversível.
    */
   reminder_enabled: z.boolean().optional(),
+  reminder_channel_session_id: z.string().uuid().nullish(),
   /**
    * ⚠️ ESTA FAIXA É MAIS ESTREITA QUE O CHECK DO BANCO, E ISSO CONTRARIA O
    * PARÁGRAFO ACIMA DE PROPÓSITO.
@@ -217,13 +227,15 @@ const desativarSchema = z.object({ id: z.string().uuid() });
  * e não "mudou de nome". Por isso o PATCH nunca o toca.
  */
 function slugDe(nome: string): string {
-  return nome
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "tipo";
+  return (
+    nome
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "tipo"
+  );
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -270,6 +282,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       // ligado — só como pedir que ligue. Um PATCH cego sobre um estado que a
       // leitura não conta é o mesmo controle decorativo, do outro lado.
       reminder_enabled: t.lembreteLigado,
+      reminder_channel_session_id: t.lembreteCanalId ?? null,
       reminder_minutes_before: t.lembreteAntecedenciaMin,
       reminder_extra_offsets_minutes: t.lembreteDegrausExtras,
       reminder_body: t.lembreteMensagem,
@@ -303,10 +316,32 @@ export async function POST(req: NextRequest): Promise<Response> {
     // as recusas de `reminder_minutes_before` são escritas em português nesta
     // rota, e quem opera em espanhol as receberia cruas. Texto sem entrada
     // degrada para ele mesmo — que é o contrato de `traduzir`.
-    return fail("validation_failed", t(lido.error.issues[0]?.message ?? "corpo inválido"), 422, { requestId });
+    return fail("validation_failed", t(lido.error.issues[0]?.message ?? "corpo inválido"), 422, {
+      requestId,
+    });
   }
 
   const admin = createAdminClient();
+  if (lido.data.reminder_channel_session_id) {
+    const { data: canal, error: erroCanal } = await admin
+      .from("channel_sessions")
+      .select("id, provider, archived_at")
+      .eq("organization_id", authz.organizationId)
+      .eq("id", lido.data.reminder_channel_session_id)
+      .maybeSingle();
+    if (erroCanal)
+      return fail("internal_error", t("Não foi possível consultar o canal do lembrete."), 500, {
+        requestId,
+      });
+    if (!canal || canal.archived_at || !transportaMensagem(canal.provider)) {
+      return fail(
+        "validation_failed",
+        t("Escolha um canal de mensagem não arquivado desta organização."),
+        422,
+        { requestId },
+      );
+    }
+  }
   const { data, error } = await admin
     .from("calendar_event_types")
     .insert({ ...lido.data, organization_id: authz.organizationId, slug: slugDe(lido.data.name) })
@@ -316,7 +351,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (error) {
     // 23505 é o slug repetido — recusa esperada, não erro de sistema.
     if (error.code === "23505") {
-      return fail("conflict", `Já existe um tipo com o nome "${lido.data.name}".`, 409, { requestId });
+      return fail("conflict", `Já existe um tipo com o nome "${lido.data.name}".`, 409, {
+        requestId,
+      });
     }
     return fail("internal_error", error.message, 500, { requestId });
   }
@@ -328,7 +365,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     organizationId: authz.organizationId,
     resourceType: "calendar_event_types",
     resourceId: data.id,
-    metadata: { nome: lido.data.name, categoria: lido.data.category, duracao: lido.data.duration_minutes },
+    metadata: {
+      nome: lido.data.name,
+      categoria: lido.data.category,
+      duracao: lido.data.duration_minutes,
+    },
   });
   return ok(data, { requestId, status: 201 });
 }
@@ -354,12 +395,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (!lido.success) {
     // Idem ao POST: o dicionário na borda, para a recusa do lembrete chegar
     // legível a quem opera em espanhol.
-    return fail("validation_failed", t(lido.error.issues[0]?.message ?? "corpo inválido"), 422, { requestId });
+    return fail("validation_failed", t(lido.error.issues[0]?.message ?? "corpo inválido"), 422, {
+      requestId,
+    });
   }
   const { id, ...bruto } = lido.data;
-  const campos = Object.fromEntries(
-    Object.entries(bruto).filter(([, v]) => v !== undefined),
-  );
+  const campos = Object.fromEntries(Object.entries(bruto).filter(([, v]) => v !== undefined));
   if (Object.keys(campos).length === 0) {
     // Recusa em vez de UPDATE vazio: "alterei" sobre nada é a mesma família de
     // mentira que o "Marcado ✓" sem linha no banco.
@@ -367,6 +408,26 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
+  if (lido.data.reminder_channel_session_id) {
+    const { data: canal, error: erroCanal } = await admin
+      .from("channel_sessions")
+      .select("id, provider, archived_at")
+      .eq("organization_id", authz.organizationId)
+      .eq("id", lido.data.reminder_channel_session_id)
+      .maybeSingle();
+    if (erroCanal)
+      return fail("internal_error", t("Não foi possível consultar o canal do lembrete."), 500, {
+        requestId,
+      });
+    if (!canal || canal.archived_at || !transportaMensagem(canal.provider)) {
+      return fail(
+        "validation_failed",
+        t("Escolha um canal de mensagem não arquivado desta organização."),
+        422,
+        { requestId },
+      );
+    }
+  }
   const { data, error } = await admin
     .from("calendar_event_types")
     .update(campos)

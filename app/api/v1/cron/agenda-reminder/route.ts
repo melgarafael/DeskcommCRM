@@ -36,8 +36,9 @@
  * mesma de todo o resto do sistema — `estadoDaJanela` sobre
  * `conversations.last_inbound_at`, o insumo que `before-send` e `followup-turn`
  * já usam. O canal que não pode texto livre com a janela fechada NÃO é
- * escolhido e o degrau NÃO carimba: o próximo canal WORKING que possa recebe o
- * texto; se não houver nenhum, o pulo sai registrado (log estruturado do cron +
+ * escolhido e o degrau NÃO carimba. Um remetente explícito ou vinculado não
+ * libera outro número; no automático só um elegível permite envio. Sem
+ * remetente seguro, o pulo sai registrado (Central de avisos, log do cron +
  * `motivos` da resposta) e a próxima rodada tenta de novo — quando o cliente
  * escrever, a janela abre e o lembrete sai. Para o canal que PODE, ou para o
  * contato dentro da janela, nada muda.
@@ -138,36 +139,33 @@ import { audit } from "@/lib/audit";
 import { ensureConversation } from "@/lib/automation/start-conversation";
 import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 import { espacarEnvio } from "@/lib/automation/throttle";
-import { canalAceitaTextoLivreAgora } from "@/lib/channels/janela";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolverRemetenteDoLembrete } from "@/lib/agenda/remetente-do-lembrete";
+import { atualizarAvisoDeRemetente } from "@/lib/agenda/aviso-de-remetente";
 import { moldeDoDegrau } from "@/lib/agenda/lembretes";
 import { autorizaCron } from "@/lib/auth/cron-auth";
-import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
+import {
+  OrgNaoOperanteError,
+  STATUS_OPERANTE,
+  ehOperante,
+  statusDaOrgEmbutida,
+} from "@/lib/organizacao/operante";
 
 export const dynamic = "force-dynamic";
 
 /** Teto de compromissos examinados por rodada — a varredura roda a cada 5 min. */
 const LIMITE_DA_VARREDURA = 200;
 
-/**
- * Teto de canais WORKING examinados por compromisso (#2595).
- *
- * Uma instalação real tem poucos números; o teto existe para que "tente o
- * próximo canal" não vire varredura aberta numa org com dezenas de sessões
- * paradas — e para a consulta seguir indexada e barata como era com
- * `.limit(1)`.
- */
-const LIMITE_DE_CANAIS = 10;
-
 /** Maior antecedência aceita pela coluna (43200 min = 30 dias). */
 const MAIOR_ANTECEDENCIA_MS = 43_200 * 60_000;
 
 interface TipoDoCompromisso {
+  reminder_channel_session_id?: string | null;
   name: string;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
@@ -179,6 +177,7 @@ interface TipoDoCompromisso {
 }
 
 interface CompromissoAVencer {
+  conversation_id?: string | null;
   id: string;
   organization_id: string;
   contact_id: string;
@@ -227,10 +226,7 @@ function tipoDe(linha: CompromissoAVencer): TipoDoCompromisso | null {
  * `reminder_template_name` aponta para um modelo da organização; senão, esta
  * frase.
  */
-export function aplicarMoldeDoLembrete(
-  molde: string,
-  pecas: Record<string, string>,
-): string {
+export function aplicarMoldeDoLembrete(molde: string, pecas: Record<string, string>): string {
   return molde.replace(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g, (literal, raw: string) => {
     const v = pecas[raw.toLowerCase()];
     return v === undefined ? literal : v;
@@ -518,54 +514,6 @@ export function degrausPendentes(input: {
     .sort((a, b) => b - a);
 }
 
-/**
- * Por qual canal o lembrete sai — e, quando nenhum pode, por que não saiu.
- *
- * Pura e exportada, pelas mesmas razões de `estaNaHora` e `degrausPendentes`:
- * é a regra que decide se alguém recebe mensagem, e ela precisa ser
- * exercitável sem banco. Issue #2595: escolher o "primeiro WORKING" e carimar
- * o degrau antes de perguntar à capability transformava em "enviado" o que a
- * Meta recusa com 131047 — o 200 da API não é entrega, e o engano é medido em
- * `lib/channels/capabilities.ts`.
- *
- * A ordem é a da lista que o banco devolveu (a MESMA de antes, quando o
- * `.limit(1)` pegava a primeira linha): o primeiro candidato que
- * `canalAceitaTextoLivreAgora` aprova é o escolhido; os reprovados por
- * `freeformOutsideWindow: false` com a janela fechada são pulados — o próximo
- * canal WORKING recebe o texto no lugar. Sem candidato nenhum o motivo é
- * `sem_canal`; com candidatos e nenhum aprovado, `canal_fora_da_janela_24h` —
- * e nos DOIS casos quem chama NÃO carimba: o degrau fica pendente e a próxima
- * varredura tenta de novo.
- */
-export interface CandidatoDeCanal {
-  id: string;
-  /** `channel_sessions.provider` — a matriz de capabilities resolve; este módulo não nomeia ninguém. */
-  provider: string | null;
-  /**
-   * `conversations.last_inbound_at` desta conversa (org + contato + canal) — o
-   * insumo da janela de 24 h, o mesmo de `before-send`/`followup-turn`.
-   * `null` = o cliente nunca escreveu neste canal = janela fechada.
-   */
-  lastInboundAt: string | null;
-}
-
-export type EscolhaDeCanal =
-  | { canal: CandidatoDeCanal; motivo: null }
-  | { canal: null; motivo: "sem_canal" | "canal_fora_da_janela_24h" };
-
-export function escolherCanalDoLembrete(
-  candidatos: CandidatoDeCanal[],
-  agora: Date,
-): EscolhaDeCanal {
-  if (candidatos.length === 0) return { canal: null, motivo: "sem_canal" };
-  for (const canal of candidatos) {
-    if (canalAceitaTextoLivreAgora(canal.provider, canal.lastInboundAt, agora)) {
-      return { canal, motivo: null };
-    }
-  }
-  return { canal: null, motivo: "canal_fora_da_janela_24h" };
-}
-
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -575,6 +523,12 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
   const agora = new Date();
+  const { error: erroLimpeza } = await admin.rpc("fn_resolver_avisos_de_lembrete_expirados");
+  if (erroLimpeza)
+    logger.error("[agenda-reminder] falha ao resolver avisos vencidos", {
+      error: erroLimpeza.message,
+      requestId,
+    });
 
   // `!inner` no tipo: só interessa compromisso cujo TIPO pede lembrete. O corte
   // por `starts_at` usa a maior antecedência possível — o corte fino, que depende
@@ -582,8 +536,8 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, title, starts_at, created_at, starts_at_marked_at, location_details, reminder_sent_offsets_minutes, reminder_sent_at, " +
-        "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
+      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, reminder_sent_offsets_minutes, reminder_sent_at, " +
+        "calendar_event_types!inner(name, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed")
     // Org parada sai no banco, ANTES do `limit`: filtrar só em memória a deixaria
@@ -699,72 +653,20 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    // ─── O CANAL AGORA É ESCOLHIDO, NÃO PEGO (#2595) ──────────────────────
-    //
-    // Antes: o primeiro WORKING, `.limit(1)`. Agora: a MESMA lista, um pouco
-    // maior, e a escolha passa pela pergunta que o resto do sistema já faz —
-    // este canal consegue texto livre AGORA? (`escolherCanalDoLembrete`, com a
-    // régua `estadoDaJanela` de `lib/channels/janela.ts`.) O canal reprovado
-    // não vira envio carimbado que a Meta recusa com 131047: o próximo que
-    // puder recebe o texto; sem nenhum, o degrau fica pendente e o motivo do
-    // pulo sai registrado (log + `motivos`), nunca em silêncio.
-    const { data: canaisBrutos } = await admin
-      .from("channel_sessions")
-      .select("id, provider")
-      .eq("organization_id", org)
-      .eq("status", "WORKING")
-      .limit(LIMITE_DE_CANAIS);
-
-    const canais = (canaisBrutos ?? []) as Array<{ id: string; provider: string | null }>;
-    if (canais.length === 0) {
-      pular("sem_canal");
-      continue;
-    }
-
-    // A janela de 24 h é uma CONTA sobre `conversations.last_inbound_at` — o
-    // mesmo insumo de `before-send`/`followup-turn`, sempre recortado à
-    // conversa do contato NESTE canal (responder no número A não abre licença
-    // para o número B). A consulta só roda quando algum candidato É de
-    // hetero-restrição: em organização só de canal sem janela — a maioria — nada muda nem
-    // custa uma linha de ida ao banco.
-    const ultimoInboundPorCanal = new Map<string, string | null>(
-      canais.map((c) => [c.id, null]),
-    );
-    if (canais.some((c) => !canalAceitaTextoLivreAgora(c.provider, null, agora))) {
-      const { data: conversas } = await admin
-        .from("conversations")
-        .select("channel_session_id, last_inbound_at")
-        .eq("organization_id", org)
-        .eq("contact_id", linha.contact_id)
-        .in("channel_session_id", canais.map((c) => c.id));
-      for (const conversa of (conversas ?? []) as Array<{
-        channel_session_id: string | null;
-        last_inbound_at: string | null;
-      }>) {
-        if (!conversa.channel_session_id || !conversa.last_inbound_at) continue;
-        const atual = ultimoInboundPorCanal.get(conversa.channel_session_id) ?? null;
-        if (!atual || new Date(conversa.last_inbound_at) > new Date(atual)) {
-          ultimoInboundPorCanal.set(conversa.channel_session_id, conversa.last_inbound_at);
-        }
-      }
-    }
-
-    const escolha = escolherCanalDoLembrete(
-      canais.map((c) => ({ ...c, lastInboundAt: ultimoInboundPorCanal.get(c.id) ?? null })),
+    // Configuração explícita do tipo → conversa da reserva → único canal elegível.
+    // Um vínculo indisponível não autoriza atravessar para outro número.
+    const escolha = await resolverRemetenteDoLembrete(
+      admin,
+      linha,
+      tipo.reminder_channel_session_id ?? null,
       agora,
     );
+    await atualizarAvisoDeRemetente(admin, org, linha.id, escolha.motivo);
     if (!escolha.canal) {
-      // O motivo do pulo é REGISTRADO, não deduzido em silêncio: sai no log
-      // estruturado do cron (padrão de todo o diretório) e, por `pular`, no
-      // `motivos` da resposta. A Central de avisos (`agent_inbox_items`) não
-      // recebe item novo porque o vocabulário de `kind` é fechado por CHECK
-      // (migration 0589) — abrir kind aqui exigiria migration nova, e este fix
-      // não cria uma.
-      logger.warn("[agenda-reminder] lembrete pulado: nenhum canal WORKING aceita texto livre agora", {
+      logger.warn("[agenda-reminder] lembrete sem remetente seguro", {
         appointmentId: linha.id,
         organizationId: org,
         motivo: escolha.motivo,
-        canais: canais.map((c) => c.id),
         requestId,
       });
       pular(escolha.motivo);
@@ -872,7 +774,11 @@ async function handle(req: NextRequest): Promise<Response> {
         continue;
       }
       const mensagem = err instanceof Error ? err.message : String(err);
-      logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });
+      logger.error("[agenda-reminder] envio falhou", {
+        appointmentId: linha.id,
+        error: mensagem,
+        requestId,
+      });
       pular("erro_no_envio");
     }
   }

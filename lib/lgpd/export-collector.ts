@@ -2198,7 +2198,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
           .from("agent_inbox_items")
           .select("id,ref_id,title,body,status,created_at,resolved_at")
           .eq("organization_id", organizationId)
-          .eq("ref_kind", "appointment")
+          .in("ref_kind", ["appointment", "agenda_reminder_sender"])
           .in("kind", ["other", "appointment_outcome_required", "appointment_recovery_review"])
           .in("ref_id", ids.slice(batch, batch + refBatchSize))
           .order("id")

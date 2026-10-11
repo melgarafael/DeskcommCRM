@@ -27,16 +27,18 @@ vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: async
 vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: async () => {} }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
+    rpc: async () => ({ data: 0, error: null }),
     from: (tabela: string) => {
       const unico: Record<string, unknown> = {
         contacts: { id: "contato-1", name: "Ana", display_name: null, phone_number: "+5531999998888", is_blocked: false },
-        channel_sessions: { id: "canal-1" },
+        channel_sessions: { id: "canal-1", provider: "waha", status: "WORKING", archived_at: null },
         organizations: { timezone: "America/Sao_Paulo", locale: "pt-BR" },
       };
       let ehCarimbo = false;
       const c: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "not", "gt", "lte", "order", "limit", "or"]) c[m] = () => c;
+      for (const m of ["select", "eq", "not", "gt", "lte", "order", "limit", "is", "or"]) c[m] = () => c;
       c.update = (valores: Record<string, unknown>) => {
+        if (tabela !== "calendar_appointments") return c;
         ehCarimbo = true;
         mocks.ordem.push("carimbo");
         mocks.carimbos.push(valores);

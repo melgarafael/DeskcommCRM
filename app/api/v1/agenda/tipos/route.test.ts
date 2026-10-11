@@ -1,3 +1,4 @@
+import { DEFAULT_CHANNEL_PROVIDER, CHANNEL_PROVIDER_WACALLS } from "@/lib/channels/capabilities";
 /**
  * LIGAR O LEMBRETE — a superfície que faltava, e as três coisas que ela promete.
  *
@@ -78,7 +79,7 @@ interface Escrita {
   filtros: Record<string, unknown>;
 }
 
-function makeAdmin(linhas: Linha[]) {
+function makeAdmin(linhas: Linha[], canais: Array<Record<string, unknown>> = []) {
   const escritas: Escrita[] = [];
 
   function builder() {
@@ -134,6 +135,15 @@ function makeAdmin(linhas: Linha[]) {
 
   vi.mocked(createAdminClient).mockReturnValue({
     from: (tabela: string) => {
+      if (tabela === "channel_sessions") {
+        const filtros: Record<string, unknown> = {};
+        const c = {
+          select: () => c,
+          eq(k: string, v: unknown) { filtros[k] = v; return c; },
+          maybeSingle: async () => ({ data: canais.find((r) => Object.entries(filtros).every(([k,v]) => r[k] === v)) ?? null, error: null }),
+        };
+        return c;
+      }
       expect(tabela, "a rota mexeu em outra tabela").toBe("calendar_event_types");
       return builder();
     },
@@ -481,5 +491,38 @@ describe("GET /api/v1/agenda/tipos", () => {
     expect(corpo.data[0]?.reminder_minutes_before).toBe(180);
     expect(corpo.data[0]?.reminder_body).toBe("Oi {{nome}}, te espero {{dia}} às {{hora}}.");
     expect(corpo.data[0]?.reminder_bodies).toEqual({});
+  });
+});
+
+
+describe("canal do lembrete na API de tipos", () => {
+  const CANAL = "77777777-7777-4777-8777-777777777777";
+  it("PATCH persiste canal da organização e permite limpar para automático", async () => {
+    authOk();
+    const rows = [linha({ id: TIPO_DA_ORG, organization_id: ORG })];
+    makeAdmin(rows, [{ id: CANAL, organization_id: ORG, provider: DEFAULT_CHANNEL_PROVIDER, archived_at: null }]);
+    const { PATCH } = await import("./route");
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_channel_session_id: CANAL }))).status).toBe(200);
+    expect(rows[0]?.reminder_channel_session_id).toBe(CANAL);
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_channel_session_id: null }))).status).toBe(200);
+    expect(rows[0]?.reminder_channel_session_id).toBeNull();
+  });
+  it.each([
+    { organization_id: OUTRA_ORG }, { archived_at: "2026-10-01T00:00:00Z" }, { provider: CHANNEL_PROVIDER_WACALLS },
+  ])("recusa canal %j antes de escrever", async (patch) => {
+    authOk();
+    const { escritas } = makeAdmin([linha({ id: TIPO_DA_ORG, organization_id: ORG })], [
+      { id: CANAL, organization_id: ORG, provider: DEFAULT_CHANNEL_PROVIDER, archived_at: null, ...patch },
+    ]);
+    const { PATCH } = await import("./route");
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_channel_session_id: CANAL }))).status).toBe(422);
+    expect(escritas).toHaveLength(0);
+  });
+  it("POST valida e persiste a configuração no nascimento", async () => {
+    authOk(); const rows: Linha[] = [];
+    makeAdmin(rows, [{ id: CANAL, organization_id: ORG, provider: DEFAULT_CHANNEL_PROVIDER, archived_at: null }]);
+    const { POST } = await import("./route");
+    expect((await POST(req("POST", { name: "Design", category: "procedimento", duration_minutes: 30, location_kind: "in_person", reminder_channel_session_id: CANAL }))).status).toBe(201);
+    expect(rows[0]?.reminder_channel_session_id).toBe(CANAL);
   });
 });

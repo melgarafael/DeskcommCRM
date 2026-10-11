@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
+import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -45,6 +49,7 @@ const RAIZ = path.resolve(__dirname, "../..");
 test.describe.configure({ timeout: 120_000 });
 
 interface Creds {
+  org_id: string;
   password: string;
   users: Record<string, { email: string } | undefined>;
   agenda?: { tipo_nome: string; tipo_slug: string };
@@ -401,4 +406,58 @@ test("ligo o aviso do compromisso pela tela, e ele fica ligado", async ({ page }
   );
 
   await page.screenshot({ path: "evidence/calendario/lembrete-ligado.png", fullPage: true });
+});
+
+
+test("escolho o canal do lembrete, recarrego e volto ao automático", async ({ page }) => {
+  const creds = lerCreds();
+  const local = credenciaisSupabaseDeTeste(); // recusa credenciais do ambiente real
+  const db = createClient(local.url, local.serviceRole, { auth: { persistSession: false } });
+  const id = randomUUID();
+  const criado = await db.from("channel_sessions").insert({
+    id, organization_id: creds.org_id, waha_session_name: `remetente-${id}`,
+    display_name: "Remetente da agenda E2E", webhook_secret_encrypted: "\\x00", status: "WORKING",
+  });
+  if (criado.error) throw criado.error;
+  const nome = `Canal lembrete ${id.slice(0, 8)}`;
+  try {
+    await entrar(page, creds);
+    await page.goto("/app/settings/tenant/agenda");
+    await page.getByTestId("abrir-novo-tipo").click();
+    await page.getByTestId("novo-tipo-nome").fill(nome);
+    await page.getByTestId("salvar-novo-tipo").click();
+    const linha = page.getByTestId("lista-de-tipos").getByRole("listitem").filter({ hasText: nome });
+    await expect(linha).toBeVisible();
+    await linha.getByRole("button", { name: "Editar", exact: true }).click();
+    const canal = linha.getByTestId(/^editar-lembrete-canal-/);
+    await expect(canal).toBeDisabled();
+    await linha.getByTestId(/^editar-lembrete-[0-9a-f]/).first().check();
+    await expect(canal).toBeEnabled();
+    await canal.selectOption(id);
+    await linha.getByTestId(/^salvar-/).first().click();
+    await expect(linha.getByRole("button", { name: "Editar", exact: true })).toBeVisible();
+    await page.reload();
+    await linha.getByRole("button", { name: "Editar", exact: true }).click();
+    await expect(canal).toHaveValue(id);
+    const persistido = await db.from("calendar_event_types").select("reminder_channel_session_id")
+      .eq("organization_id", creds.org_id).eq("name", nome).single();
+    if (persistido.error) throw persistido.error;
+    expect(persistido.data.reminder_channel_session_id).toBe(id);
+    await page.screenshot({ path: "evidence/calendario/remetente-do-lembrete.png", fullPage: true });
+    await canal.selectOption("");
+    await linha.getByTestId(/^salvar-/).first().click();
+    await expect(linha.getByRole("button", { name: "Editar", exact: true })).toBeVisible();
+    await page.reload();
+    await linha.getByRole("button", { name: "Editar", exact: true }).click();
+    await expect(canal).toHaveValue("");
+    const limpo = await db.from("calendar_event_types").select("reminder_channel_session_id")
+      .eq("organization_id", creds.org_id).eq("name", nome).single();
+    if (limpo.error) throw limpo.error;
+    expect(limpo.data.reminder_channel_session_id).toBeNull();
+  } finally {
+    const tipo = await db.from("calendar_event_types").delete().eq("organization_id", creds.org_id).eq("name", nome);
+    if (tipo.error) throw tipo.error;
+    const canal = await db.from("channel_sessions").delete().eq("organization_id", creds.org_id).eq("id", id);
+    if (canal.error) throw canal.error;
+  }
 });

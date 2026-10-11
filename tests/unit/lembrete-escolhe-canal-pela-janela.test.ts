@@ -34,6 +34,7 @@ vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: async
 vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: async () => {} }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
+    rpc: async () => ({ data: 0, error: null }),
     from: (tabela: string) => {
       const unico: Record<string, unknown> = {
         contacts: { id: "contato-1", name: "Ana", display_name: null, phone_number: "+5531999998888", is_blocked: false },
@@ -41,8 +42,9 @@ vi.mock("@/lib/supabase/admin", () => ({
       };
       let ehCarimbo = false;
       const c: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "not", "gt", "lte", "order", "limit", "or", "in"]) c[m] = () => c;
+      for (const m of ["select", "eq", "not", "gt", "lte", "order", "limit", "is", "or", "in"]) c[m] = () => c;
       c.update = (valores: Record<string, unknown>) => {
+        if (tabela !== "calendar_appointments") return c;
         ehCarimbo = true;
         mocks.carimbos.push(valores);
         return c;
@@ -50,7 +52,7 @@ vi.mock("@/lib/supabase/admin", () => ({
       c.maybeSingle = async () => ({ data: unico[tabela] ?? null, error: null });
       const lista: Record<string, unknown> = {
         calendar_appointments: [compromisso],
-        channel_sessions: mocks.canais,
+        channel_sessions: mocks.canais.map((canal) => ({ ...canal, status: "WORKING", archived_at: null })),
         conversations: mocks.conversas,
       };
       c.then = (r: (v: unknown) => unknown) =>
