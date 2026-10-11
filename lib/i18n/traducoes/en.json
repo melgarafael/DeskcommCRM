@@ -9005,6 +9005,7 @@
   "A pausa começa (hora local)": "Pause starts (local time)",
   "A pausa termina (hora local)": "Pause ends (local time)",
   "Fuso da organização": "Organization timezone",
+  "Sem o fuso da organização não dá para agendar: a janela seria gravada com a hora errada.": "Without the organization's timezone there is no scheduling: the window would be saved at the wrong time.",
   "Para todas as conexões": "For all connections",
   "Janelas agendadas": "Scheduled windows",
   "Cancelar janela": "Cancel window",
