@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_PADRAO_DA_GRADE, LIMITE_RESPOSTA_BYTES } from "./limites";
-import { atualizarConexaoSchema, criarConexaoSchema, leituraQuerySchema, MODOS_TLS } from "./schemas";
+import { atualizarConexaoSchema, atualizarFontesSchema, criarConexaoSchema, leituraQuerySchema, MODOS_TLS } from "./schemas";
 
 const VALIDO = {
   label: "Postgres do outro CRM",
@@ -101,5 +101,52 @@ describe("coluna que identifica o cliente", () => {
       atualizarConexaoSchema.safeParse({ customer_key_column: null, customer_key_kind: null }).success,
     ).toBe(true);
     expect(atualizarConexaoSchema.safeParse({ label: "x" }).success).toBe(true);
+  });
+});
+
+describe("fontes liberadas não passam pelos schemas da conexão", () => {
+  it("criarConexaoSchema recusa corpo com source_mode ou sources", () => {
+    expect(criarConexaoSchema.safeParse({ ...VALIDO, source_mode: "list" }).success).toBe(false);
+    expect(criarConexaoSchema.safeParse({ ...VALIDO, sources: [] }).success).toBe(false);
+  });
+
+  it("atualizarConexaoSchema recusa corpo com source_mode ou sources", () => {
+    expect(atualizarConexaoSchema.safeParse({ source_mode: "list", sources: [] }).success).toBe(false);
+    expect(atualizarConexaoSchema.safeParse({ sources: [] }).success).toBe(false);
+  });
+});
+
+describe("atualizarFontesSchema", () => {
+  const FONTE_VALIDA = { schema: "public", tabela: "clientes", colunas: null, descricao: "" };
+
+  it("aceita modo e lista válidos", () => {
+    const r = atualizarFontesSchema.parse({ source_mode: "list", sources: [FONTE_VALIDA] });
+    expect(r).toEqual({ source_mode: "list", sources: [FONTE_VALIDA] });
+  });
+
+  it("recusa mais de 200 fontes", () => {
+    const fontes = Array.from({ length: 201 }, (_, i) => ({ ...FONTE_VALIDA, tabela: `t${i}` }));
+    expect(atualizarFontesSchema.safeParse({ source_mode: "list", sources: fontes }).success).toBe(false);
+  });
+
+  it("recusa descricao com mais de 300 caracteres", () => {
+    const fontes = [{ ...FONTE_VALIDA, descricao: "x".repeat(301) }];
+    expect(atualizarFontesSchema.safeParse({ source_mode: "list", sources: fontes }).success).toBe(false);
+  });
+
+  it("recusa colunas com mais de 200 nomes", () => {
+    const colunas = Array.from({ length: 201 }, (_, i) => `c${i}`);
+    const fontes = [{ ...FONTE_VALIDA, colunas }];
+    expect(atualizarFontesSchema.safeParse({ source_mode: "list", sources: fontes }).success).toBe(false);
+  });
+
+  it("recusa sources que não é array", () => {
+    expect(atualizarFontesSchema.safeParse({ source_mode: "list", sources: "lixo" }).success).toBe(false);
+  });
+
+  it("recusa chave desconhecida no corpo", () => {
+    expect(
+      atualizarFontesSchema.safeParse({ source_mode: "list", sources: [], outra: 1 }).success,
+    ).toBe(false);
   });
 });

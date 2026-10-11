@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -50,9 +51,34 @@ function EstadoDaConexao({ conexao }: { conexao: ConexaoExternaRow }) {
   return <Badge variant="outline">{t("Não testada")}</Badge>;
 }
 
+function ResumoDasFontes({ conexao, canWrite }: { conexao: ConexaoExternaRow; canWrite: boolean }) {
+  const t = useT();
+  if (conexao.source_mode === "all") {
+    return <p className="text-xs text-muted-foreground">{t("Tudo liberado")}</p>;
+  }
+  if (conexao.sources_count === 0) {
+    return (
+      <p className="text-xs text-amber-700 dark:text-amber-400">
+        {t("O assistente ainda não enxerga nada deste banco.")}{" "}
+        {canWrite && (
+          <Link href={`/app/integracao-dados/${conexao.id}?fontes=1`} className="underline">
+            {t("Escolher o que ele pode ler")}
+          </Link>
+        )}
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      {conexao.sources_count === 1 ? t("1 tabela liberada") : `${conexao.sources_count} ${t("tabelas liberadas")}`}
+    </p>
+  );
+}
+
 export function ListaDeConexoes({ initialData, canWrite }: Props) {
   const t = useT();
   const qc = useQueryClient();
+  const router = useRouter();
   const { data } = useConexoesExternas({ initialData });
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<ConexaoExternaRow | null>(null);
@@ -67,6 +93,10 @@ export function ListaDeConexoes({ initialData, canWrite }: Props) {
       const resultado = await testarConexao(conexao.id);
       if (resultado.ok) {
         toast.success(t("Conexão bem-sucedida."));
+        if (canWrite && conexao.source_mode === "list" && conexao.sources_count === 0) {
+          // Conexão nova que acabou de passar no teste: o passo que falta é escolher o que o assistente lê.
+          router.push(`/app/integracao-dados/${conexao.id}?fontes=1`);
+        }
       } else {
         toast.error(resultado.erro ? t(resultado.erro) : t("Não foi possível conectar."));
       }
@@ -158,6 +188,7 @@ export function ListaDeConexoes({ initialData, canWrite }: Props) {
               {conexao.last_test_ok === false && conexao.last_test_error && (
                 <p className="truncate text-xs text-destructive">{conexao.last_test_error}</p>
               )}
+              <ResumoDasFontes conexao={conexao} canWrite={canWrite} />
               {!conexao.customer_key_column && (
                 <p className="text-xs text-amber-700 dark:text-amber-400">
                   {t(
