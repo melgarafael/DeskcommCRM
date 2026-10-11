@@ -154,6 +154,7 @@ import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDo
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
+import { turnoDisparaNaPalavraChave } from './palavra-chave-do-gatilho';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
@@ -2191,6 +2192,47 @@ async function executarTurnoDoAgente(
       intent: routed.intentName,
     });
   }
+  // O FILTRO DE PALAVRA-CHAVE da versão publicada (#2679) — o mesmo lugar e o
+  // mesmo custo do gate da janela logo abaixo: depois de resolver o agente
+  // publicado, antes de qualquer chamada de modelo. A tela promete "só entra
+  // quando a mensagem contiver uma dessas palavras" (TriggerEditor) e, até
+  // este PR, a promessa era decorativa: o único leitor do campo era o
+  // dispatcher legado, NO-OP desde a Fase 0 (`palavra-chave-do-gatilho.ts`
+  // documenta o defeito e a régua de falha aberta).
+  //
+  // Diferente da JANELA, um miss NÃO adia: não há "depois" em que a mesma
+  // mensagem venha a casar. O turno é encerrado sem resposta (`return`, o
+  // mesmo consumo do job de todo outro veto do início do turno — lead em
+  // handoff, conversa não elegível) e a mensagem continua visível na linha do
+  // tempo da Central: o operador vê, responde à mão ou corrige o filtro na
+  // tela. Regex quebrada, corpo sem texto ou mensagem fixada ausente ⇒ o
+  // turno SEGUE — entrar de menos cala o cliente, e esta porta é a única que
+  // este gate existe para não criar.
+  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.filtroDePalavraChave != null) {
+    if (input.inboundMessageId !== undefined) {
+      let corpoDaMensagem: string | null = null;
+      try {
+        corpoDaMensagem = await loadInboundBodyForJob(pool, {
+          tenantId,
+          conversationId: input.conversationId,
+          inboundMessageId: input.inboundMessageId,
+        });
+      } catch (err) {
+        // Sem corpo lido não dá para casar nada — e adivinhar seria calar.
+        runLog.warn('filtro de palavra-chave: corpo da mensagem não lido — turno segue', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+        });
+      }
+      if (!turnoDisparaNaPalavraChave(agentConfig.filtroDePalavraChave, corpoDaMensagem)) {
+        runLog.info('turno pulado — mensagem fora do filtro de palavra-chave da versão publicada', {
+          agent_id: agentConfig.agentId,
+          agent_version_id: agentConfig.versionId,
+        });
+        return;
+      }
+    }
+  }
+
   // Horário de funcionamento da versão publicada (spec da tela: TriggerEditor).
   // Vale SÓ para o turno inbound: a janela do lojista é sobre QUANDO ele atende
   // quem chega, e adiar por ela um follow-up já prometido ao lead atrasaria uma
