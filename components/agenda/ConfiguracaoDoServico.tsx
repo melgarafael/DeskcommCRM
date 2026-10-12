@@ -22,13 +22,23 @@ const minute = (s: string) => { const [h = Number.NaN, m = Number.NaN] = s.split
 const NEW_ROW: HorarioDoServico = { weekday: 1, on_date: null, timing_kind: "fixed", start_minute: 840, end_minute: null, duration_minutes: null, capacity_rule: "inherit", capacity_limit: null };
 
 /** Formulário real: salva no mesmo núcleo que serve ao operador e à IA. */
-export function ConfiguracaoDoServico({ typeId, name, pessoas, onClose }: {
-  typeId: string; name: string; pessoas: Array<{ id: string; nome: string }>; onClose: () => void;
+export function ConfiguracaoDoServico({ typeId, name, pessoas, onClose, onEditType }: {
+  typeId: string; name: string; pessoas: Array<{ id: string; nome: string }>; onClose: () => void; onEditType?: () => void;
 }) {
   const t = useT(); const locale = useTagDeIdioma();
   const days = [t("Domingo"), t("Segunda-feira"), t("Terça-feira"), t("Quarta-feira"), t("Quinta-feira"), t("Sexta-feira"), t("Sábado")];
   const router = useRouter();
   const [data, setData] = React.useState<Data | null>(null);
+  const panelId = React.useId();
+  const [tab, setTab] = React.useState("service");
+  const tabs = [{ id: "service", label: t("Serviço") }, { id: "hours", label: t("Horários") }, { id: "google", label: t("Google") }, { id: "blocks", label: t("Bloqueios") }];
+  function revealField(target: HTMLElement) {
+    const panel = target.closest<HTMLElement>("[data-service-panel]");
+    if (panel) setTab(panel.dataset.servicePanel!);
+    let parent = target.parentElement;
+    while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
+    requestAnimationFrame(() => requestAnimationFrame(() => target.focus()));
+  }
   const loadGeneration = React.useRef(0);
   const [draft, setDraft] = React.useState<Config | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -69,57 +79,86 @@ export function ConfiguracaoDoServico({ typeId, name, pessoas, onClose }: {
   };
   if (!data || !draft) return <section aria-label={t("Serviço e horários")}><p role={loadError ? "alert" : "status"}>{loadError ? t("Não foi possível ler a configuração do serviço.") : t("Carregando…")}</p>{loadError && <Button onClick={() => void load().catch((e) => { setLoadError(true); showApiError(e); })}>{t("Tentar novamente")}</Button>}<Button onClick={onClose}>{t("Fechar")}</Button></section>;
   return <section className="space-y-4 rounded-lg border border-border bg-surface p-4" aria-label={t("Serviço e horários")} data-testid="service-configuration">
-    <div className="flex items-center justify-between gap-2"><h2 className="font-semibold">{name} · {t("Serviço e horários")}</h2><Button variant="ghost" onClick={onClose}>{t("Fechar")}</Button></div>
+    <div className="flex flex-wrap items-start justify-between gap-2"><h2 className="min-w-0 break-words text-lg font-semibold">{t("Configurar")} {name}</h2><div className="flex flex-wrap gap-2">{onEditType && <Button type="button" variant="outline" onClick={onEditType}>{t("Nome e duração")}</Button>}<Button type="button" variant="ghost" onClick={onClose}>{t("Fechar")}</Button></div></div>
+    <div role="tablist" aria-label={t("Configuração do serviço")} className="flex gap-1 overflow-x-auto border-b border-border pb-2">
+      {tabs.map((item, i) => <Button key={item.id} type="button" role="tab" id={`${panelId}-tab-${item.id}`} aria-controls={`${panelId}-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} variant={tab === item.id ? "default" : "ghost"} className="min-h-11 shrink-0" onClick={() => setTab(item.id)} onKeyDown={(e) => {
+        const next = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
+        if (next !== null) { e.preventDefault(); setTab(tabs[next].id); document.getElementById(`${panelId}-tab-${tabs[next].id}`)?.focus(); }
+      }}>{item.label}</Button>)}
+    </div>
     <p className="text-sm text-text-muted">{t("Alterar a programação afeta novas reservas. As reservas existentes permanecem.")}</p>
-    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void execute(async () => {
+    <form className="space-y-4" onInvalidCapture={(e) => { e.preventDefault(); const target = e.target as HTMLInputElement; setMessage(target.validationMessage); revealField(target); }} onSubmit={(e) => { e.preventDefault(); void execute(async () => {
       const parsed = configuracaoDoServicoSchema.safeParse(draft);
-      if (!parsed.success) { setMessage(t(parsed.error.issues[0]?.message ?? "Confira os campos.")); return; }
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        setMessage(t(issue?.message ?? "Confira os campos."));
+        const key = String(issue?.path[0] ?? "");
+        const destination = key === "schedule" ? "hours" : ["destination_calendar_id", "service_publication_mode", "calendar_sources"].includes(key) ? "google" : "service";
+        const panel = document.getElementById(`${panelId}-${destination}`);
+        const rowIndex = key === "schedule" && typeof issue?.path[1] === "number" ? issue.path[1] : null;
+        const area = rowIndex === null ? panel : panel?.querySelector(`[data-schedule-row="${rowIndex}"]`);
+        const fieldKey = key === "schedule" ? String(issue?.path[2] ?? "") : key;
+        const field = area?.querySelector<HTMLElement>(`[data-config-field="${fieldKey}"]`) ?? area?.querySelector<HTMLElement>("input, select, button");
+        if (field) revealField(field); else setTab(destination);
+        return;
+      }
       const result = await apiClient.post<{ data: { future_reservations: number } }>("/api/v1/agenda/servicos", { action: "configure", config: parsed.data });
       await load(); setPreview(null); router.refresh(); setMessage(`${t("Configuração salva. Reservas futuras preservadas:")} ${result.data.future_reservations}`);
     }); }}>
       <fieldset disabled={busy} className="min-w-0 space-y-4 border-0 p-0">
+      <div role="tabpanel" id={`${panelId}-service`} aria-labelledby={`${panelId}-tab-service`} data-service-panel="service" hidden={tab !== "service"} className="space-y-4">
       <label className="flex items-center gap-2"><input type="checkbox" checked={draft.service_enabled} onChange={(e) => change({ service_enabled: e.target.checked })}/>{t("Usar programação de serviço")}</label>
       {draft.service_enabled && <label className="flex items-center gap-2"><input type="checkbox" checked={draft.is_active !== false} onChange={(e) => change({ is_active: e.target.checked })}/>{t("Ativar reservas deste serviço")}</label>}
       {draft.service_enabled && draft.is_active === false && <p role="status">{t("Rascunho: novas reservas estão desativadas.")}</p>}
       <label className="flex items-center gap-2"><input type="checkbox" checked={!!draft.requires_confirmation} onChange={(e) => change({ requires_confirmation: e.target.checked })}/>{t("Exigir confirmação humana para este serviço")}</label>
       <p className="text-sm text-text-muted">{t("A reserva ocupa a vaga enquanto aguarda confirmação. Esta opção não envia mensagens.")}</p>
       <div className="grid gap-3 sm:grid-cols-3">
-        <label className="block space-y-1">{t("Como reservar")}<select aria-label={t("Como reservar")} className={field} value={draft.booking_mode} onChange={(e) => change({ booking_mode: e.target.value as Config["booking_mode"], schedule: e.target.value === "individual" ? draft.schedule.map((r) => ({ ...r, capacity_rule: "inherit", capacity_limit: null })) : draft.schedule })}>
+        <label className="block space-y-1">{t("Como reservar")}<select aria-label={t("Como reservar")} className={field} data-config-field="booking_mode" value={draft.booking_mode} onChange={(e) => change({ booking_mode: e.target.value as Config["booking_mode"], schedule: e.target.value === "individual" ? draft.schedule.map((r) => ({ ...r, capacity_rule: "inherit", capacity_limit: null })) : draft.schedule })}>
           <option value="individual">{t("Individual por profissional")}</option><option value="collective_limited">{t("Coletivo com capacidade")}</option><option value="collective_unlimited">{t("Coletivo sem limite automático")}</option>
         </select></label>
-        {draft.booking_mode === "collective_limited" && <label className="block space-y-1">{t("Capacidade padrão")}<input className={field} type="number" min={1} max={100000} value={draft.service_capacity ?? ""} onChange={(e) => change({ service_capacity: Number(e.target.value) || null })}/></label>}
-        <label className="block space-y-1">{t("Fuso do serviço")}<input className={field} value={draft.service_timezone} onChange={(e) => change({ service_timezone: e.target.value })}/></label>
+        {draft.booking_mode === "collective_limited" && <label className="block space-y-1">{t("Capacidade padrão")}<input className={field} type="number" min={1} max={100000} data-config-field="service_capacity" value={draft.service_capacity ?? ""} onChange={(e) => change({ service_capacity: Number(e.target.value) || null })}/></label>}
       </div>
-      <fieldset className="space-y-3"><legend className="font-medium">{t("Programação")}</legend>
-        {draft.schedule.map((row, i) => <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-3" key={i}>
-          <label className="block space-y-1">{t("Quando")}<select aria-label={t("Quando")} className={field} value={row.on_date ? "date" : "weekly"} onChange={(e) => rowChange(i, e.target.value === "date" ? { on_date: day, weekday: null } : { on_date: null, weekday: 1 })}><option value="weekly">{t("Toda semana")}</option><option value="date">{t("Somente nesta data")}</option></select></label>
-          {row.on_date ? <label className="block space-y-1">{t("Data")}<input className={field} type="date" value={row.on_date} onChange={(e) => rowChange(i, { on_date: e.target.value })}/></label>
-            : <label className="block space-y-1">{t("Dia da semana")}<select aria-label={t("Dia da semana")} className={field} value={row.weekday ?? 1} onChange={(e) => rowChange(i, { weekday: Number(e.target.value) })}>{days.map((label, n) => <option key={label} value={n}>{label}</option>)}</select></label>}
-          <label className="block space-y-1">{t("Horário ou faixa")}<select aria-label={t("Horário ou faixa")} className={field} value={row.timing_kind} onChange={(e) => rowChange(i, { timing_kind: e.target.value as HorarioDoServico["timing_kind"], end_minute: e.target.value === "window" ? Math.min(1440, row.start_minute + 120) : null })}><option value="fixed">{t("Horário fixo")}</option><option value="window">{t("Faixa de atendimento")}</option></select></label>
-          <label className="block space-y-1">{t("Início")}<input className={field} type="time" value={hhmm(row.start_minute)} onChange={(e) => rowChange(i, { start_minute: minute(e.target.value) })}/></label>
-          {row.timing_kind === "window" && <label className="block space-y-1">{t("Fim da faixa")}<input className={field} type="time" value={hhmm(row.end_minute ?? 1080)} onChange={(e) => rowChange(i, { end_minute: minute(e.target.value) })}/></label>}
-          <label className="block space-y-1">{t("Duração diferente neste horário (min)")}<input className={field} type="number" min={5} max={1440} value={row.duration_minutes ?? ""} placeholder={String(data.service.duration_minutes)} onChange={(e) => rowChange(i, { duration_minutes: Number(e.target.value) || null })}/></label>
-          {draft.booking_mode !== "individual" && <><label className="block space-y-1">{t("Capacidade deste horário")}<select aria-label={t("Capacidade deste horário")} className={field} value={row.capacity_rule} onChange={(e) => rowChange(i, { capacity_rule: e.target.value as HorarioDoServico["capacity_rule"], capacity_limit: e.target.value === "limited" ? 1 : null })}><option value="inherit">{t("Usar a regra do serviço")}</option><option value="limited">{t("Definir limite para este horário")}</option><option value="unlimited">{t("Sem limite automático neste horário")}</option></select></label>
-            {row.capacity_rule === "limited" && <label className="block space-y-1">{t("Limite deste horário")}<input className={field} type="number" min={1} value={row.capacity_limit ?? ""} onChange={(e) => rowChange(i, { capacity_limit: Number(e.target.value) || null })}/></label>}</>}
-          <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => change({ schedule: [...draft.schedule, { ...row, id: undefined, weekday: row.weekday == null ? null : (row.weekday + 1) % 7 }] })}>{t("Copiar horário")}</Button><Button type="button" variant="ghost" onClick={() => change({ schedule: draft.schedule.filter((_, n) => n !== i) })}>{t("Remover")}</Button></div>
-        </div>)}
-        <Button type="button" variant="outline" onClick={() => change({ schedule: [...draft.schedule, { ...NEW_ROW }] })}>{t("Adicionar horário")}</Button>
-      </fieldset>
+      <details className="rounded-md border border-border p-3"><summary className="cursor-pointer font-medium">{t("Opções adicionais")} · {draft.professionals.length} {t("profissionais")} · {draft.resources.length} {t("recursos")}</summary><div className="mt-3 space-y-4">
+        <label className="block space-y-1">{t("Fuso do serviço")}<input className={field} data-config-field="service_timezone" value={draft.service_timezone} onChange={(e) => change({ service_timezone: e.target.value })}/></label>
       <fieldset className="space-y-2"><legend className="font-medium">{t("Profissionais habilitados")}</legend><p className="text-sm text-text-muted">{t("Quando escolhidos, a reserva também respeita a jornada e os conflitos do profissional.")}</p><div className="flex flex-wrap gap-4">{pessoas.map((p) => <label className="flex gap-2" key={p.id}><input type="checkbox" checked={draft.professionals.includes(p.id)} onChange={() => change({ professionals: toggle(draft.professionals, p.id) })}/>{p.nome}</label>)}</div></fieldset>
       <fieldset className="space-y-2"><legend className="font-medium">{t("Recursos opcionais")}</legend>{data.resources.filter((r) => r.is_active || draft.resources.some((s) => s.resource_id === r.id)).map((r) => {
         const selected = draft.resources.find((s) => s.resource_id === r.id);
         return <div className="flex items-center gap-3" key={r.id}><label className="flex gap-2"><input type="checkbox" checked={!!selected} onChange={() => change({ resources: selected ? draft.resources.filter((s) => s.resource_id !== r.id) : [...draft.resources, { resource_id: r.id, units: 1 }] })}/>{r.name}</label>{selected && <label className="block space-y-1">{t("Unidades necessárias")}<input className={field} type="number" min={1} max={r.capacity} value={selected.units} onChange={(e) => change({ resources: draft.resources.map((s) => s.resource_id === r.id ? { ...s, units: Number(e.target.value) } : s) })}/></label>}</div>;
       })}</fieldset>
-      <fieldset className="space-y-2"><legend className="font-medium">{t("Publicação Google")}</legend><select aria-label={t("Destino de publicação")} className={field} value={draft.service_publication_mode} onChange={(e) => change({ service_publication_mode: e.target.value as Config["service_publication_mode"], destination_calendar_id: null })}><option value="none">{t("Somente no CRM")}</option><option value="service">{t("Calendário compartilhado do serviço")}</option><option value="professional">{t("Calendário do profissional escolhido")}</option></select>
-        {draft.service_publication_mode === "service" && <label className="block space-y-1">{t("Calendário de destino")}<select aria-label={t("Calendário de destino")} className={field} value={draft.destination_calendar_id ?? ""} onChange={(e) => change({ destination_calendar_id: e.target.value || null })}><option value="">{t("Escolha uma agenda")}</option>{data.calendars.filter((c) => c.can_write && c.available).map((c) => <option key={c.id} value={c.id}>{c.account_email} · {c.name}</option>)}</select></label>}
-        <p className="text-sm text-text-muted">{t("As reservas já publicadas mantêm seu destino. Reserva CRM não comprova publicação Google.")}</p>
-        <p>{t("Agendas que bloqueiam este serviço")}</p>{data.calendars.filter((c) => c.can_read && c.available).map((c) => <label className="flex gap-2" key={c.id}><input type="checkbox" checked={draft.calendar_sources.includes(c.id)} onChange={() => change({ calendar_sources: toggle(draft.calendar_sources, c.id) })}/>{c.account_email} · {c.name}</label>)}
+      </div></details>
+      </div>
+      <div role="tabpanel" id={`${panelId}-hours`} aria-labelledby={`${panelId}-tab-hours`} data-service-panel="hours" hidden={tab !== "hours"} className="space-y-4">
+      <fieldset className="space-y-3"><legend className="font-medium">{t("Programação")}</legend>
+        {draft.schedule.map((row, i) => <details className="rounded-md border border-border p-3" key={row.id ?? `new-${i}`} data-schedule-row={i} open={row.id ? undefined : true}>
+          <summary className="cursor-pointer break-words font-medium">{row.on_date ?? days[row.weekday ?? 1]} · {hhmm(row.start_minute)}{row.timing_kind === "window" && `–${hhmm(row.end_minute ?? 1080)}`} · {row.duration_minutes ?? data.service.duration_minutes} {t("min")} · {draft.booking_mode === "individual" ? t("Individual por profissional") : row.capacity_rule === "unlimited" || (row.capacity_rule === "inherit" && draft.booking_mode === "collective_unlimited") ? t("Sem limite automático") : row.capacity_rule === "limited" ? row.capacity_limit : draft.service_capacity}</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <label className="block space-y-1">{t("Quando")}<select aria-label={t("Quando")} className={field} data-config-field="on_date" value={row.on_date ? "date" : "weekly"} onChange={(e) => rowChange(i, e.target.value === "date" ? { on_date: day, weekday: null } : { on_date: null, weekday: 1 })}><option value="weekly">{t("Toda semana")}</option><option value="date">{t("Somente nesta data")}</option></select></label>
+          {row.on_date ? <label className="block space-y-1">{t("Data")}<input className={field} type="date" data-config-field="on_date" value={row.on_date} onChange={(e) => rowChange(i, { on_date: e.target.value })}/></label>
+            : <label className="block space-y-1">{t("Dia da semana")}<select aria-label={t("Dia da semana")} className={field} value={row.weekday ?? 1} onChange={(e) => rowChange(i, { weekday: Number(e.target.value) })}>{days.map((label, n) => <option key={label} value={n}>{label}</option>)}</select></label>}
+          <label className="block space-y-1">{t("Horário ou faixa")}<select aria-label={t("Horário ou faixa")} className={field} value={row.timing_kind} onChange={(e) => rowChange(i, { timing_kind: e.target.value as HorarioDoServico["timing_kind"], end_minute: e.target.value === "window" ? Math.min(1440, row.start_minute + 120) : null })}><option value="fixed">{t("Horário fixo")}</option><option value="window">{t("Faixa de atendimento")}</option></select></label>
+          <label className="block space-y-1">{t("Início")}<input className={field} type="time" value={hhmm(row.start_minute)} onChange={(e) => rowChange(i, { start_minute: minute(e.target.value) })}/></label>
+          {row.timing_kind === "window" && <label className="block space-y-1">{t("Fim da faixa")}<input className={field} type="time" value={hhmm(row.end_minute ?? 1080)} onChange={(e) => rowChange(i, { end_minute: minute(e.target.value) })}/></label>}
+          <label className="block space-y-1">{t("Duração diferente neste horário (min)")}<input className={field} type="number" min={5} max={1440} data-config-field="duration_minutes" value={row.duration_minutes ?? ""} placeholder={String(data.service.duration_minutes)} onChange={(e) => rowChange(i, { duration_minutes: Number(e.target.value) || null })}/></label>
+          {draft.booking_mode !== "individual" && <><label className="block space-y-1">{t("Capacidade deste horário")}<select aria-label={t("Capacidade deste horário")} className={field} data-config-field="capacity_rule" value={row.capacity_rule} onChange={(e) => rowChange(i, { capacity_rule: e.target.value as HorarioDoServico["capacity_rule"], capacity_limit: e.target.value === "limited" ? 1 : null })}><option value="inherit">{t("Usar a regra do serviço")}</option><option value="limited">{t("Definir limite para este horário")}</option><option value="unlimited">{t("Sem limite automático neste horário")}</option></select></label>
+            {row.capacity_rule === "limited" && <label className="block space-y-1">{t("Limite deste horário")}<input className={field} type="number" min={1} data-config-field="capacity_limit" value={row.capacity_limit ?? ""} onChange={(e) => rowChange(i, { capacity_limit: Number(e.target.value) || null })}/></label>}</>}
+          <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => change({ schedule: [...draft.schedule, { ...row, id: undefined, weekday: row.weekday == null ? null : (row.weekday + 1) % 7 }] })}>{t("Copiar horário")}</Button><Button type="button" variant="ghost" onClick={() => change({ schedule: draft.schedule.filter((_, n) => n !== i) })}>{t("Remover")}</Button></div>
+        </div></details>)}
+        <Button type="button" variant="outline" onClick={() => change({ schedule: [...draft.schedule, { ...NEW_ROW }] })}>{t("Adicionar horário")}</Button>
       </fieldset>
-      <Button type="submit" disabled={busy}>{busy ? t("Salvando…") : t("Salvar programação")}</Button>
+      </div>
+      <div role="tabpanel" id={`${panelId}-google`} aria-labelledby={`${panelId}-tab-google`} data-service-panel="google" hidden={tab !== "google"} className="space-y-4">
+      <fieldset className="space-y-2"><legend className="font-medium">{t("Publicação Google")}</legend><select aria-label={t("Destino de publicação")} className={field} data-config-field="service_publication_mode" value={draft.service_publication_mode} onChange={(e) => change({ service_publication_mode: e.target.value as Config["service_publication_mode"], destination_calendar_id: null })}><option value="none">{t("Somente no CRM")}</option><option value="service">{t("Calendário compartilhado do serviço")}</option><option value="professional">{t("Calendário do profissional escolhido")}</option></select>
+        {draft.service_publication_mode === "service" && <label className="block space-y-1">{t("Calendário de destino")}<select aria-label={t("Calendário de destino")} className={field} data-config-field="destination_calendar_id" value={draft.destination_calendar_id ?? ""} onChange={(e) => change({ destination_calendar_id: e.target.value || null })}><option value="">{t("Escolha uma agenda")}</option>{draft.destination_calendar_id && !data.calendars.some((c) => c.id === draft.destination_calendar_id && c.can_write && c.available) && <option data-config-field="destination_calendar_id" value={draft.destination_calendar_id}>{data.calendars.find((c) => c.id === draft.destination_calendar_id)?.name ?? t("Calendário de destino")} · {t("Não disponível")}</option>}{data.calendars.filter((c) => c.can_write && c.available).map((c) => <option key={c.id} value={c.id}>{c.name} · {c.account_email}</option>)}</select></label>}
+        <p className="text-sm text-text-muted">{t("As reservas já publicadas mantêm seu destino. Reserva CRM não comprova publicação Google.")}</p>
+        <p>{t("Agendas que bloqueiam este serviço")}</p><p className="text-sm text-text-muted">{t("A capacidade é por serviço. Compartilhar um calendário não cria um limite global.")}</p>{data.calendars.filter((c) => draft.calendar_sources.includes(c.id)).map((c) => <label className="flex items-start gap-2" key={c.id}><input type="checkbox" checked onChange={() => change({ calendar_sources: toggle(draft.calendar_sources, c.id) })}/><span className="min-w-0 break-words">{c.name}<small className="block text-text-muted">{c.account_email}{(!c.can_read || !c.available) && ` · ${t("Não disponível")}`}</small></span></label>)}
+        <details><summary className="cursor-pointer py-2">{t("Outras agendas disponíveis")}</summary><div className="space-y-3 py-2">{data.calendars.filter((c) => c.can_read && c.available && !draft.calendar_sources.includes(c.id)).map((c) => <label className="flex items-start gap-2" key={c.id}><input type="checkbox" checked={false} onChange={() => change({ calendar_sources: toggle(draft.calendar_sources, c.id) })}/><span className="min-w-0 break-words">{c.name}<small className="block text-text-muted">{c.account_email}</small></span></label>)}</div></details>
+      </fieldset>
+      </div>
+      <Button type="submit" hidden={tab === "blocks"} disabled={busy}>{busy ? t("Salvando…") : t("Salvar programação")}</Button>
       </fieldset>
     </form>
-    {message && <p role="status">{message}</p>}
-    <div className="space-y-2 border-t pt-3"><h3 className="font-medium">{t("Conferir horários salvos")}</h3><label className="block space-y-1">{t("Data")}<input className={field} type="date" value={day} onChange={(e) => setDay(e.target.value)}/></label><Button disabled={busy} variant="outline" onClick={() => void execute(async () => {
+    {message && <p role="status" className="break-words rounded-md bg-surface-elevated p-3">{message}</p>}
+    <div data-service-panel="hours" hidden={tab !== "hours"} className="space-y-2 border-t pt-3"><h3 className="font-medium">{t("Conferir horários salvos")}</h3><label className="block space-y-1">{t("Data")}<input className={field} type="date" value={day} onChange={(e) => setDay(e.target.value)}/></label><Button disabled={busy} variant="outline" onClick={() => void execute(async () => {
       await apiClient.post("/api/v1/agenda/servicos", { action: "refresh", event_type_id: typeId });
       const start = new Date(`${day}T00:00:00Z`), de = new Date(start.getTime() - 14 * 3600000), ate = new Date(start.getTime() + 38 * 3600000);
       const result = (await apiClient.get<{ data: Data }>(`/api/v1/agenda/servicos?event_type_id=${typeId}&de=${encodeURIComponent(de.toISOString())}&ate=${encodeURIComponent(ate.toISOString())}`)).data;
@@ -127,12 +166,7 @@ export function ConfiguracaoDoServico({ typeId, name, pessoas, onClose }: {
     })}>{t("Atualizar fontes e conferir")}</Button>
       {preview && <ul aria-label={t("Prévia dos horários")}>{preview.map((s) => <li key={s.starts_at} className="border-b py-2">{new Date(s.starts_at).toLocaleString(locale, { timeZone: draft.service_timezone })} · {s.available ? t("Disponível") : t(MOTIVOS_DO_SERVICO[s.reason ?? ""] ?? "Não disponível")}{s.available && ` · ${s.duration_minutes} ${t("min")} · ${s.booking_mode === "individual" ? t("Individual por profissional") : s.capacity_limit == null ? t("Sem limite automático") : `${s.remaining_capacity} ${t("vagas restantes")}`}`}</li>)}{preview.length === 0 && <li>{t("Nenhum horário programado neste período.")}</li>}</ul>}
     </div>
-    <form className="space-y-2 border-t pt-3" onSubmit={(e) => { e.preventDefault(); const values = new FormData(e.currentTarget); void execute(async () => {
-      await apiClient.post("/api/v1/agenda/servicos", { action: "resource", input: { name: values.get("resource_name"), capacity: Number(values.get("resource_capacity")) } }); await load(true);
-    }); }}><h3 className="font-medium">{t("Cadastrar recurso")}</h3><div className="grid gap-2 sm:grid-cols-3"><label className="block space-y-1">{t("Nome do recurso")}<input className={field} name="resource_name" required minLength={2}/></label><label className="block space-y-1">{t("Unidades disponíveis")}<input className={field} type="number" name="resource_capacity" required min={1} defaultValue={1}/></label><Button type="submit" disabled={busy}>{t("Adicionar recurso")}</Button></div></form>
-    {data.resources.map((r) => <form key={`${r.id}:${r.revision}`} className="grid gap-2 rounded-md border p-3 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); const values = new FormData(e.currentTarget); void execute(async () => {
-      await apiClient.post("/api/v1/agenda/servicos", { action: "resource", input: { id: r.id, expected_revision: r.revision, name: values.get("name"), capacity: Number(values.get("capacity")), is_active: values.get("active") === "on" } }); await load(true);
-    }); }}><label className="block space-y-1">{t("Nome do recurso")}<input className={field} name="name" defaultValue={r.name} minLength={2} required/></label><label className="block space-y-1">{t("Unidades disponíveis")}<input className={field} type="number" min={1} name="capacity" defaultValue={r.capacity} required/></label><div className="flex items-center gap-2"><label className="flex gap-2"><input type="checkbox" name="active" defaultChecked={r.is_active}/>{t("Ativo")}</label><Button type="submit" variant="outline" disabled={busy}>{t("Salvar recurso")}</Button></div></form>)}
+    <div role="tabpanel" id={`${panelId}-blocks`} aria-labelledby={`${panelId}-tab-blocks`} data-service-panel="blocks" hidden={tab !== "blocks"} className="space-y-4">
     <form className="space-y-2 border-t pt-3" onChange={() => setBlockImpact(null)} onSubmit={(e) => { e.preventDefault(); const values = new FormData(e.currentTarget); void execute(async () => {
       const input = { operation_key: blockKey, scope_kind: blockScope,
         ...(blockScope === "service" ? { event_type_id: typeId } : blockScope === "professional" ? { owner_user_id: blockTarget } : { resource_id: blockTarget }),
@@ -155,5 +189,14 @@ export function ConfiguracaoDoServico({ typeId, name, pessoas, onClose }: {
       <Button type="submit" disabled={busy}>{t(blockImpact ? "Aplicar bloqueio no alcance acima" : "Conferir alcance do bloqueio")}</Button>
     </form>
     <ul aria-label={t("Bloqueios ativos")}>{data.blocks.filter((b) => b.scope_kind !== "service" || b.event_type_id === typeId).map((b) => <li className="flex flex-wrap items-center justify-between gap-2 border-b py-2" key={b.id}><span>{t(b.scope_kind === "service" ? "Somente este serviço" : b.scope_kind === "professional" ? "Profissional em todos os serviços" : "Recurso em todos os serviços")} · {b.scope_kind === "professional" ? pessoas.find((p) => p.id === b.owner_user_id)?.nome : b.scope_kind === "resource" ? data.resources.find((r) => r.id === b.resource_id)?.name : name} · {new Date(b.starts_at).toLocaleString(locale, { timeZone: draft.service_timezone })} · {b.reason}</span><Button variant="outline" disabled={busy} onClick={() => void execute(async () => { await apiClient.post("/api/v1/agenda/servicos", { action: "unblock", input: { archive_id: b.id, expected_revision: b.revision } }); await load(true); })}>{t("Retirar bloqueio")}</Button></li>)}</ul>
+    <details className="rounded-md border border-border p-3"><summary className="cursor-pointer font-medium">{t("Gerenciar recursos")}</summary><div className="mt-3 space-y-3">
+    <form className="space-y-2 border-t pt-3" onSubmit={(e) => { e.preventDefault(); const values = new FormData(e.currentTarget); void execute(async () => {
+      await apiClient.post("/api/v1/agenda/servicos", { action: "resource", input: { name: values.get("resource_name"), capacity: Number(values.get("resource_capacity")) } }); await load(true);
+    }); }}><h3 className="font-medium">{t("Cadastrar recurso")}</h3><div className="grid gap-2 sm:grid-cols-3"><label className="block space-y-1">{t("Nome do recurso")}<input className={field} name="resource_name" required minLength={2}/></label><label className="block space-y-1">{t("Unidades disponíveis")}<input className={field} type="number" name="resource_capacity" required min={1} defaultValue={1}/></label><Button type="submit" disabled={busy}>{t("Adicionar recurso")}</Button></div></form>
+    {data.resources.map((r) => <form key={`${r.id}:${r.revision}`} className="grid gap-2 rounded-md border p-3 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); const values = new FormData(e.currentTarget); void execute(async () => {
+      await apiClient.post("/api/v1/agenda/servicos", { action: "resource", input: { id: r.id, expected_revision: r.revision, name: values.get("name"), capacity: Number(values.get("capacity")), is_active: values.get("active") === "on" } }); await load(true);
+    }); }}><label className="block space-y-1">{t("Nome do recurso")}<input className={field} name="name" defaultValue={r.name} minLength={2} required/></label><label className="block space-y-1">{t("Unidades disponíveis")}<input className={field} type="number" min={1} name="capacity" defaultValue={r.capacity} required/></label><div className="flex items-center gap-2"><label className="flex gap-2"><input type="checkbox" name="active" defaultChecked={r.is_active}/>{t("Ativo")}</label><Button type="submit" variant="outline" disabled={busy}>{t("Salvar recurso")}</Button></div></form>)}
+    </div></details>
+    </div>
   </section>;
 }

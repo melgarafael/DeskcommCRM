@@ -533,6 +533,7 @@ test("gestão configura prazos e gatilho; falta inicia uma vez e resposta interr
   await inbound(f, p, "Quero uma consulta");
   await login(page, f.email);
   await page.goto("/app/settings/tenant/agenda");
+  await page.getByText("Regras gerais da agenda", { exact: true }).click();
   await page.getByLabel("Pedir confirmação após o fim (minutos)").fill("15");
   await page.getByLabel("Proteger de cobranças por silêncio após o fim (minutos)").fill("120");
   await page.getByRole("button", { name: "Salvar prazos" }).click();

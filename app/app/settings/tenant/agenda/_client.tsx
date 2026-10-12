@@ -1,4 +1,5 @@
 "use client";
+import { TituloDaAgenda } from "@/components/agenda/TituloDaAgenda";
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
@@ -30,6 +31,8 @@ import { apiClient } from "@/lib/api/client";
 
 export interface TipoRow {
   service_enabled?: boolean;
+  booking_mode?: string;
+  service_capacity?: number | null;
   id: string;
   name: string;
   slug: string;
@@ -354,6 +357,7 @@ export function TiposDeAgendamentoClient({
   tiposIniciais,
   canais = [],
   erroCanais = null,
+  tituloDaAgenda = null,
   pessoas,
   podeEditar,
   usuarioAtualId,
@@ -367,6 +371,7 @@ export function TiposDeAgendamentoClient({
   tiposIniciais: TipoRow[];
   canais?: CanalParaLembrete[];
   erroCanais?: string | null;
+  tituloDaAgenda?: string | null;
   pessoas: Array<{ id: string; papel: string; nome: string }>;
   podeEditar: boolean;
   usuarioAtualId: string;
@@ -428,22 +433,7 @@ export function TiposDeAgendamentoClient({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4" data-testid="tipos-de-agendamento-config">
-      {podeEditar && servicoId && <ConfiguracaoDoServico key={servicoId} typeId={servicoId} name={tiposIniciais.find((x) => x.id === servicoId)?.name ?? ""} pessoas={pessoas} onClose={() => setServicoId(null)}/>}
-      {podeConfigurarGoogle && <AgendasConectadas />}
-      <PrazosDePresenca podeEditar={podeEditar} />
-      <ClientePelaAgenda
-        ligadoInicial={clientePelaAgendaLigado}
-        podeLigar={podeLigarClientePelaAgenda}
-      />
-      {/* A opção da issue #978 fica ao lado das outras regras de comportamento
-          da agenda: é a mesma pergunta ("como a agenda se comporta nesta
-          empresa?"), e separá-la noutra tela esconderia de quem configura que
-          ela existe. */}
-      <AgendaDosColegas
-        ligadoInicial={colegasPodemMexerNaAgendaLigado}
-        podeMudar={podeMudarAgendaDosColegas}
-      />
-      <DiasBloqueados podeEditar={podeEditar} />
+      {podeEditar && servicoId && <ConfiguracaoDoServico key={servicoId} typeId={servicoId} name={tiposIniciais.find((x) => x.id === servicoId)?.name ?? ""} pessoas={pessoas} onClose={() => setServicoId(null)} onEditType={() => { setEditandoId(servicoId); setServicoId(null); }}/>}
       {podeEditar ? (
         <div>
           {criando ? (
@@ -617,12 +607,9 @@ export function TiposDeAgendamentoClient({
               <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-text-muted">
                 {t(rotuloDe(CATEGORIAS, tipo.category))}
               </span>
-              <span className="text-xs text-text-muted tabular-nums">
-                {tipo.duration_minutes} min
-              </span>
-              <span className="text-xs text-text-muted">
-                {t(rotuloDe(LOCAIS, tipo.location_kind))}
-              </span>
+              <span className="text-xs tabular-nums text-text-muted">{tipo.duration_minutes} min</span>
+              <span className="text-xs text-text-muted">{t(rotuloDe(LOCAIS, tipo.location_kind))}</span>
+              {tipo.service_enabled && <span className="text-xs text-text-muted">{tipo.booking_mode === "collective_limited" ? `${t("Coletivo com capacidade")} · ${tipo.service_capacity}` : tipo.booking_mode === "collective_unlimited" ? t("Coletivo sem limite automático") : t("Individual por profissional")}</span>}
               {!tipo.default_owner_user_id && !tipo.service_enabled ? (
                 // O aviso existe porque o sintoma é MUDO: sem dono, a tela de
                 // marcar simplesmente não mostra horário, sem dizer por quê.
@@ -669,12 +656,10 @@ export function TiposDeAgendamentoClient({
                     : ""}
                 </span>
               ) : null}
-              {!tipo.is_active ? (
-                <span className="text-xs text-text-subtle">{t("desativado")}</span>
-              ) : null}
+              {!tipo.is_active ? <span className="text-xs text-text-subtle">{tipo.service_enabled ? t("Rascunho: novas reservas estão desativadas.") : t("desativado")}</span> : null}
               {podeEditar ? (
-                <span className="ml-auto flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => setServicoId(servicoId === tipo.id ? null : tipo.id)}>{t("Serviço e horários")}</Button>
+                <span className="ml-auto flex flex-wrap gap-1">
+                  {(tipo.is_active || !tipo.service_enabled) && <Button variant="outline" size="sm" className="h-auto min-h-11 whitespace-normal text-left" onClick={() => { setServicoId(servicoId === tipo.id ? null : tipo.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("Configurar")} {tipo.name}</Button>}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -699,7 +684,7 @@ export function TiposDeAgendamentoClient({
                       Desativar
                     </Button>
                   ) : tipo.service_enabled ? (
-                    <Button variant="ghost" size="sm" onClick={() => setServicoId(tipo.id)}>{t("Configurar e ativar serviço")}</Button>
+                    <Button variant="outline" size="sm" className="h-auto min-h-11 whitespace-normal text-left" onClick={() => { setServicoId(tipo.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("Configurar")} {tipo.name}</Button>
                   ) : (
                     <Button
                       variant="ghost"
@@ -874,6 +859,24 @@ export function TiposDeAgendamentoClient({
           </li>
         ))}
       </ul>
+      {podeConfigurarGoogle && <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Contas e calendários Google")}</summary><div className="mt-4"><AgendasConectadas /></div></details>}
+      <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Regras gerais da agenda")}</summary><div className="mt-4 space-y-4">
+        <TituloDaAgenda tituloInicial={tituloDaAgenda} podeEditar={podeEditar}/>
+      <PrazosDePresenca podeEditar={podeEditar}/>
+      <ClientePelaAgenda
+        ligadoInicial={clientePelaAgendaLigado}
+        podeLigar={podeLigarClientePelaAgenda}
+      />
+      {/* A opção da issue #978 fica ao lado das outras regras de comportamento
+          da agenda: é a mesma pergunta ("como a agenda se comporta nesta
+          empresa?"), e separá-la noutra tela esconderia de quem configura que
+          ela existe. */}
+      <AgendaDosColegas
+        ligadoInicial={colegasPodemMexerNaAgendaLigado}
+        podeMudar={podeMudarAgendaDosColegas}
+      />
+      <DiasBloqueados podeEditar={podeEditar}/>
+      </div></details>
     </div>
   );
 }

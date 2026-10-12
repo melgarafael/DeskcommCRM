@@ -1,3 +1,4 @@
+import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -68,7 +69,7 @@ export default async function TiposDeAgendamentoPage() {
     supabase
       .from("calendar_event_types")
       .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled",
+        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity",
       )
       .eq("organization_id", activeOrg.orgId)
       .order("is_active", { ascending: false })
@@ -108,7 +109,7 @@ export default async function TiposDeAgendamentoPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Tipos de agendamento")}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{tituloDaAgenda(org?.settings) ?? t("Agendamentos")}</h1>
         <p className="mt-1 text-sm text-text-muted">
           {t(
             "O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.",
@@ -116,6 +117,7 @@ export default async function TiposDeAgendamentoPage() {
         </p>
       </header>
       <TiposDeAgendamentoClient
+        tituloDaAgenda={tituloDaAgenda(org?.settings)}
         tiposIniciais={(tipos ?? []) as TipoRow[]}
         erroCanais={erroCanais ? erroCanais.message : null}
         canais={canais.map((c) => ({

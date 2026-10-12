@@ -76,6 +76,7 @@ const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
  * imports sem querer.
  */
 export function AgendaClient({
+  tituloDaAgenda,
   fusoDaAgenda,
   fusoDeApresentacao,
   hojeNaOrganizacao,
@@ -89,6 +90,7 @@ export function AgendaClient({
   agendamentosIniciais,
   podeMarcar,
 }: {
+  tituloDaAgenda?: string | null;
   /**
    * O fuso RESOLVIDO da organização (`fusoUtilizavel(activeOrg.timezone)`,
    * calculado em `page.tsx`). É a régua da grade: sem ele a agenda desenha
@@ -488,7 +490,7 @@ export function AgendaClient({
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("Agenda")}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{tituloDaAgenda ?? t("Agendamentos")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("O que está marcado, com quem, e quem atende — seu e da equipe.")}
           </p>

@@ -32,6 +32,7 @@
  * do que estava.
  */
 import type { Idioma } from "./idiomas";
+import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
@@ -47,6 +48,7 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível consultar o canal do lembrete.": { es: "No se pudo consultar el canal del recordatorio." },
   "Escolha um canal de mensagem não arquivado desta organização.": { es: "Elige un canal de mensajes no archivado de esta organización." },
   ...TEXTOS_AGENDA_SERVICOS,
+  ...TEXTOS_AGENDA_CONFIGURACAO,
   "Comunicação pendente": { es: "Comunicación pendiente" },
   "Tentativa adiada": { es: "Intento aplazado" },
   "Envio recusado": { es: "Envío rechazado" },

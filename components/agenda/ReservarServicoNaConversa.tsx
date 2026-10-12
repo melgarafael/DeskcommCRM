@@ -47,7 +47,7 @@ export function ReservarServicoNaConversa({ contactId, conversationId, contactNa
     const rows = (await apiClient.get<{ data: Service[] }>("/api/v1/agenda/tipos")).data;
     const valid = rows.filter((r) => r.service_enabled); setServices(valid); if (!typeId && valid[0]) setTypeId(valid[0].id);
   }); }}>{t("Reservar serviço")}</Button>
-    <Sheet open={open} onOpenChange={setOpen}><SheetContent className="overflow-y-auto sm:max-w-lg"><SheetHeader><SheetTitle>{t("Reservar serviço")}</SheetTitle></SheetHeader>
+    <Sheet open={open} onOpenChange={setOpen}><SheetContent className="overflow-y-auto sm:max-w-lg"><SheetHeader><SheetTitle className="break-words">{services.find((s) => s.id === typeId)?.name ? <>{t("Agendar")} {services.find((s) => s.id === typeId)?.name}</> : t("Reservar serviço")}</SheetTitle></SheetHeader>
       <div className="space-y-4 py-4"><p>{t("Contato responsável:")} {contactName}</p><p className="text-sm text-text-muted">{t("Consultar não reserva. Reservar não envia mensagem nem comprova publicação Google.")}</p>
         {services.length === 0 ? <p>{t("Nenhum serviço com programação ativa. Configure em Configurações da Agenda.")}</p> : <>
           <label className="block space-y-1">{t("Serviço")}<select aria-label={t("Serviço")} className={field} value={typeId} onChange={(e) => { setTypeId(e.target.value); setAvailability(null); setSelected(null); setReceipts(null); }}>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>

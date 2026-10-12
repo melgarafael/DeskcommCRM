@@ -1,3 +1,4 @@
+import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
@@ -126,7 +127,7 @@ export default async function AgendaPage() {
   // organizações via seis tipos onde há três — e clicar no da outra org dava
   // "Tipo de agendamento não encontrado", porque a rota que marca ESCAPA a org
   // certa e não achava o tipo que esta tela ofereceu.
-  const [{ data: tipos }, { data: linhas }] = await Promise.all([
+  const [{ data: tipos }, { data: linhas }, { data: apresentacao }] = await Promise.all([
     supabase
       .from("calendar_event_types")
       .select(
@@ -144,6 +145,7 @@ export default async function AgendaPage() {
       .gte("starts_at", inicio.toISOString())
       .lt("starts_at", fim.toISOString())
       .order("starts_at"),
+    supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
   ]);
 
   /**
@@ -248,6 +250,7 @@ export default async function AgendaPage() {
 
   return (
     <AgendaClient
+      tituloDaAgenda={tituloDaAgenda(apresentacao?.settings)}
       // O fuso RESOLVIDO da organização: a régua da grade inteira. `page.tsx`
       // é a única que tem `activeOrg.timezone`, e até aqui ele parava em
       // `hojeNaOrganizacao` — a âncora era da organização, mas os blocos e a
