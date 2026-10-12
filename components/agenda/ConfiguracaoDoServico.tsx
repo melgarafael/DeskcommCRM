@@ -83,7 +83,8 @@ export function ConfiguracaoDoServico({ typeId, name, pessoas, onClose, onEditTy
     <div role="tablist" aria-label={t("Configuração do serviço")} className="flex gap-1 overflow-x-auto border-b border-border pb-2">
       {tabs.map((item, i) => <Button key={item.id} type="button" role="tab" id={`${panelId}-tab-${item.id}`} aria-controls={`${panelId}-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} variant={tab === item.id ? "default" : "ghost"} className="min-h-11 shrink-0" onClick={() => setTab(item.id)} onKeyDown={(e) => {
         const next = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
-        if (next !== null) { e.preventDefault(); setTab(tabs[next].id); document.getElementById(`${panelId}-tab-${tabs[next].id}`)?.focus(); }
+        const nextTab = next === null ? undefined : tabs[next];
+        if (nextTab) { e.preventDefault(); setTab(nextTab.id); document.getElementById(`${panelId}-tab-${nextTab.id}`)?.focus(); }
       }}>{item.label}</Button>)}
     </div>
     <p className="text-sm text-text-muted">{t("Alterar a programação afeta novas reservas. As reservas existentes permanecem.")}</p>
