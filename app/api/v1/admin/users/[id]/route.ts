@@ -44,7 +44,7 @@ export async function GET(
       role,
       accepted_at,
       revoked_at,
-      organizations(display_name, slug)
+      organizations!user_organizations_organization_id_fkey(display_name, slug)
     `,
     )
     .eq("user_id", id)

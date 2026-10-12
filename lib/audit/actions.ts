@@ -603,6 +603,11 @@ export const AUDIT_ACTIONS = [
   // Tipos de agendamento: mudar duração, categoria ou responsável muda o que a
   // IA oferece ao cliente, então é mutação de configuração e audita.
   "agenda.tipo_criado",
+  "agenda.service_configure",
+  "agenda.service_resource",
+  "agenda.service_block",
+  "agenda.service_unblock",
+  "agenda.service_refresh",
   "agenda.tipo_alterado",
   "agenda.tipo_desativado",
   // Ligar de volta um tipo que alguém desligou é ato de gestão e tem verbo

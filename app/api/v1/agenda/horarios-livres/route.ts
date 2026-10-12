@@ -140,6 +140,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       // por inteiro. Sai da mesma função que serve às ferramentas MCP, para a
       // tela e a IA nunca discordarem sobre o mesmo horário.
       agenda_externa_nunca_lida: consulta.agendaExternaNuncaLida,
+      ...(consulta.servico ? { servico: consulta.servico } : {}),
     },
     { requestId },
   );

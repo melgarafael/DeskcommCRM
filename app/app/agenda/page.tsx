@@ -130,7 +130,7 @@ export default async function AgendaPage() {
     supabase
       .from("calendar_event_types")
       .select(
-        "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id",
+        "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id, service_enabled, booking_mode",
       )
       .eq("organization_id", activeOrg.orgId)
       .eq("is_active", true)
@@ -286,6 +286,7 @@ export default async function AgendaPage() {
         // lista de pessoas como responsável e marcava na agenda dele — enquanto
         // os horários oferecidos vinham da jornada de outra pessoa.
         donoId: t.default_owner_user_id ?? null,
+        servicoColetivo: t.service_enabled && t.booking_mode !== "individual",
         // O LOCAL DE VERDADE. O `select` acima já trazia `location_kind` e
         // `location_details`, e o mapeamento os descartava — então o painel caía
         // no default de parâmetro e toda clínica de toda instalação lia
