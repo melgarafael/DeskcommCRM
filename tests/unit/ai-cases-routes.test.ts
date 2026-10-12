@@ -43,7 +43,7 @@ vi.mock("@/lib/agent-engine/agent/human-handoff", () => ({
   performHumanHandoff: vi.fn(async () => undefined),
 }));
 vi.mock("@/lib/agent-engine/queue/queue", () => ({
-  enqueueJob: vi.fn(async () => ({ job: { id: "job-1" }, deduped: false })),
+  enqueueJob: vi.fn(async () => ({ job: { id: "77777777-7777-4777-8777-777777777777" }, deduped: false })),
 }));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -422,6 +422,7 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
   function makePoolStub(caseRow: Record<string, unknown> | undefined) {
     const client = {
       query: vi.fn(async (sql: string) => ({
+        rowCount: sql.includes("update agent_case_events") ? 1 : 0,
         rows:
           sql.includes("select conversation_id from agent_cases") && caseRow
             ? [{ conversation_id: caseRow.conversation_id }]
@@ -444,7 +445,7 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
   }
 
   function txCommands(client: { query: ReturnType<typeof vi.fn> }): string[] {
-    return client.query.mock.calls.map(([sql]) => String(sql));
+    return client.query.mock.calls.map(([sql]) => String(sql)).filter(sql=>["begin","commit","rollback"].includes(sql));
   }
 
   function caseRowFixture(overrides: Partial<Record<string, unknown>> = {}) {
@@ -491,6 +492,7 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
       CASE_ID,
       USER_ID,
       "Qual o CPF do cliente?",
+      expect.any(String),
     );
     expect(vi.mocked(enqueueJob)).toHaveBeenCalledWith(
       pool.__client,
@@ -501,6 +503,10 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
         payload: expect.objectContaining({ case_id: CASE_ID, action: "need_lead_info" }),
       }),
     );
+    const eventId = vi.mocked(markAwaitingLead).mock.calls[0]?.[5];
+    expect(eventId).toMatch(/^[0-9a-f-]{36}$/);
+    const link=pool.__client.query.mock.calls.find(([sql])=>String(sql).includes("update agent_case_events"));
+    expect(link).toBeDefined();
     expect(txCommands(pool.__client)).toEqual(["begin", "commit"]);
     expect(
       vi

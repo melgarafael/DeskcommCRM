@@ -126,7 +126,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     sourceId: row.id,
     actor: { type: "user", id: user.id },
     reason: decision === "approve" ? `Aprovou: ${atual}` : `Descartou: ${atual}`,
-    payload: { next_action: atual, decision },
+    payload: { next_action: atual, decision,
+      // Sessão autenticada e identidade da proposta, nunca papel/autor vindo do body.
+      review_context_v1: { versao:1,origem:'next_action_authenticated',papel:authz.org.role,proposta_seq:approved_seq },
+    },
   });
   if (!atividade.ok) {
     return fail("internal_error", atividade.error ?? "activity insert failed", 500, {

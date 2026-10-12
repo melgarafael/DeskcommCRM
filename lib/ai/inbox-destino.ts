@@ -168,6 +168,8 @@ export const POLITICAS_DE_AVISO = {
     orientacao: "Confirme com a pessoa que ela reconhece a troca. Se não reconhece, fale com quem administra o servidor.",
     geral: { papel: "admin", href: "/app/team", rotulo: "Abrir a equipe" },
   },
+  review_capture_stopped: {refs:[],orientacao:"Confira o motivo da interrupção e o último expurgo antes de autorizar uma nova coleta.",
+    geral:{papel:"admin",href:"/app/ai/runs",rotulo:"Revisar diagnóstico privado"}},
   other: { refs: ["agenda_reminder_sender", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 

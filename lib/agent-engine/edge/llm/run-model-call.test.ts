@@ -203,3 +203,20 @@ describe("o ramo da assinatura (#2657): o modelo responde E o turno fecha", () =
     expect(chamada?.input).toEqual({ campo: "valor" });
   });
 });
+
+
+describe('diagnóstico no seam real da revisão nativa',()=>{
+  it.each([['promise_semantic','reserva'],['human_return_confirmation','confirmador']])('%s captura exatamente system/messages invocados, com sanitização',async(purpose,path)=>{
+    vi.mocked(streamText).mockClear();streamDuble();const base=poolDaAssinatura().pool as unknown as {query:(s:string,p?:unknown[])=>Promise<unknown>};
+    const captures:unknown[][]=[];const query=vi.fn(async(sql:string,params:unknown[]=[])=>{
+      if(sql.includes('fn_review_capture_enabled'))return{rows:[{enabled:true}]};
+      if(sql.includes('fn_review_capture_append')){captures.push(params);return{rows:[]};}
+      return base.query(sql,params);
+    });
+    await runModelCall({query} as never,{anthropicApiKey:'fixture-key',openaiApiKey:'fixture-key',cacheTtl:'1h'},
+      {tenantId:ORG,jobId:'00000000-0000-4000-8000-000000000009',purpose,system:'Regra sintética',messages:[{role:'user',content:'Candidata sintética'}]},{registry});
+    const input=vi.mocked(streamText).mock.calls[0]![0];expect(captures).toHaveLength(1);expect(captures[0]![2]).toBe(path);
+    expect(JSON.parse(captures[0]![3] as string).packet).toEqual({system:input.system,messages:input.messages});
+    expect(JSON.stringify(captures)).not.toContain('token-de-assinatura-de-teste');
+  });
+});

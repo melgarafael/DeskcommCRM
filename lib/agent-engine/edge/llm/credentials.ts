@@ -290,12 +290,7 @@ export interface LlmResolveOverride {
   credentialId?: string | null;
 }
 
-export async function resolveOrgLlmConfig(
-  db: pg.Pool,
-  cfg: LlmEdgeConfig,
-  organizationId: string,
-  override?: LlmResolveOverride,
-): Promise<OrgLlmConfig> {
+async function lerConfiguracaoEOrcamento(db: pg.Pool, organizationId: string) {
   // ⚠️ O RESOLVEDOR NUNCA LANÇA POR SCHEMA DESATUALIZADO.
   //
   // `hostgator-setup-kit/update.sh` aplica o baseline com `|| true` e SEM
@@ -323,7 +318,6 @@ export async function resolveOrgLlmConfig(
   }
   const linha = rows[0];
   const settings = llmSettingsSchema.parse(linha?.llm ?? {});
-  const provider = override?.provider ?? settings.provider;
 
   // Organização sem linha em `ai_budgets` cai aqui com tudo nulo, e o
   // normalizador resolve `modo` para 'off'. NULO É SEMPRE A RESPOSTA MAIS
@@ -337,6 +331,24 @@ export async function resolveOrgLlmConfig(
           efetivoEm: linha?.efetivo_em ?? null,
           limiarPct: Number(linha?.limiar_pct ?? LIMIAR_PADRAO_PCT),
         };
+
+  return { settings, orcamento, orcamentoIndisponivelPorque };
+}
+
+/** Mesmo leitor e fallback de schema do seam LLM; não carrega chave de fornecedor. */
+export async function resolveOrgLlmBudget(db: pg.Pool, organizationId: string) {
+  const { orcamento, orcamentoIndisponivelPorque } = await lerConfiguracaoEOrcamento(db, organizationId);
+  return { orcamento, orcamentoIndisponivelPorque };
+}
+
+export async function resolveOrgLlmConfig(
+  db: pg.Pool,
+  cfg: LlmEdgeConfig,
+  organizationId: string,
+  override?: LlmResolveOverride,
+): Promise<OrgLlmConfig> {
+  const { settings, orcamento, orcamentoIndisponivelPorque } = await lerConfiguracaoEOrcamento(db, organizationId);
+  const provider = override?.provider ?? settings.provider;
 
   // ═══ A ASSINATURA NÃO TEM CHAVE — E CAI SOZINHA NA QUE TEM (#1639) ═══
   //

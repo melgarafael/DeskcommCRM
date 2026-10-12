@@ -4,6 +4,7 @@ import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
 import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
 import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
+import { ConfiguracaoDoServico } from "@/components/agenda/ConfiguracaoDoServico";
 
 import { useT } from "@/hooks/i18n/useT";
 import { parseReaisToCents } from "@/lib/money";
@@ -28,6 +29,7 @@ import {
 import { apiClient } from "@/lib/api/client";
 
 export interface TipoRow {
+  service_enabled?: boolean;
   id: string;
   name: string;
   slug: string;
@@ -381,6 +383,7 @@ export function TiposDeAgendamentoClient({
   const t = useT();
   const router = useRouter();
   const [criando, setCriando] = React.useState(false);
+  const [serviceDraft, setServiceDraft] = React.useState(false);
   /**
    * O RASCUNHO NASCE COM QUEM ESTÁ CRIANDO.
    *
@@ -405,6 +408,7 @@ export function TiposDeAgendamentoClient({
   }));
   const [salvando, setSalvando] = React.useState(false);
   const [editandoId, setEditandoId] = React.useState<string | null>(null);
+  const [servicoId, setServicoId] = React.useState<string | null>(null);
 
   async function comErro(acao: () => Promise<unknown>, mensagem: string) {
     setSalvando(true);
@@ -424,6 +428,7 @@ export function TiposDeAgendamentoClient({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4" data-testid="tipos-de-agendamento-config">
+      {podeEditar && servicoId && <ConfiguracaoDoServico key={servicoId} typeId={servicoId} name={tiposIniciais.find((x) => x.id === servicoId)?.name ?? ""} pessoas={pessoas} onClose={() => setServicoId(null)}/>}
       {podeConfigurarGoogle && <AgendasConectadas />}
       <PrazosDePresenca podeEditar={podeEditar} />
       <ClientePelaAgenda
@@ -454,6 +459,7 @@ export function TiposDeAgendamentoClient({
                       category: rascunho.category,
                       duration_minutes: Number(rascunho.duration_minutes),
                       location_kind: rascunho.location_kind,
+                      ...(serviceDraft ? { service_draft: true } : {}),
                       ...(rascunho.default_owner_user_id
                         ? { default_owner_user_id: rascunho.default_owner_user_id }
                         : {}),
@@ -544,6 +550,8 @@ export function TiposDeAgendamentoClient({
                   ))}
                 </select>
               </label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={serviceDraft} onChange={(e) => setServiceDraft(e.target.checked)}/>{t("Criar como serviço em rascunho")}</label>
+              {serviceDraft && <p className="text-sm text-text-muted">{t("Depois de criar, abra Serviço e horários para configurar e ativar. Nenhuma reserva é oferecida antes da ativação.")}</p>}
               <div className="flex justify-end gap-2 sm:col-span-2">
                 <Button type="button" variant="ghost" size="sm" onClick={() => setCriando(false)}>
                   {t("Cancelar")}
@@ -615,7 +623,7 @@ export function TiposDeAgendamentoClient({
               <span className="text-xs text-text-muted">
                 {t(rotuloDe(LOCAIS, tipo.location_kind))}
               </span>
-              {!tipo.default_owner_user_id ? (
+              {!tipo.default_owner_user_id && !tipo.service_enabled ? (
                 // O aviso existe porque o sintoma é MUDO: sem dono, a tela de
                 // marcar simplesmente não mostra horário, sem dizer por quê.
                 //
@@ -666,6 +674,7 @@ export function TiposDeAgendamentoClient({
               ) : null}
               {podeEditar ? (
                 <span className="ml-auto flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => setServicoId(servicoId === tipo.id ? null : tipo.id)}>{t("Serviço e horários")}</Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -689,6 +698,8 @@ export function TiposDeAgendamentoClient({
                     >
                       Desativar
                     </Button>
+                  ) : tipo.service_enabled ? (
+                    <Button variant="ghost" size="sm" onClick={() => setServicoId(tipo.id)}>{t("Configurar e ativar serviço")}</Button>
                   ) : (
                     <Button
                       variant="ghost"

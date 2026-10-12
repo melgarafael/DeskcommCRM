@@ -173,6 +173,9 @@ const camposDoTipo = {
 };
 
 const criarSchema = z.object(camposDoTipo);
+// Somente a criação pode nascer como serviço em rascunho. O PATCH legado não
+// ganha uma porta de ativação: a programação é validada pelo núcleo de serviços.
+const criarComRascunhoSchema = criarSchema.extend({ service_draft: z.boolean().optional() });
 // `.partial()` em vez de repetir os doze campos como opcionais: repetir criaria
 // duas listas para manter em sincronia, e a segunda envelhece calada.
 const alterarSchema = criarSchema.partial().extend({
@@ -288,6 +291,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       reminder_body: t.lembreteMensagem,
       reminder_bodies: t.lembreteMensagens,
       default_price_cents: t.precoPadraoCents,
+      ...(t.servico ? { service_enabled: true, booking_mode: t.servico.booking_mode, service_capacity: t.servico.capacity,
+        service_revision: t.servico.revision, service_publication_mode: t.servico.publication_mode } : {}),
     })),
     { requestId },
   );
@@ -310,7 +315,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const teto = await tetoDeEscritaDoToken(authz, "agenda_tipos", requestId ?? "");
   if (teto) return teto;
 
-  const lido = criarSchema.safeParse(await req.json().catch(() => ({})));
+  const lido = criarComRascunhoSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
     // A mensagem do Zod passa pelo dicionário, e não direto ao corpo da resposta:
     // as recusas de `reminder_minutes_before` são escritas em português nesta
@@ -342,9 +347,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
   }
+  const { service_draft, ...fields } = lido.data;
   const { data, error } = await admin
     .from("calendar_event_types")
-    .insert({ ...lido.data, organization_id: authz.organizationId, slug: slugDe(lido.data.name) })
+    .insert({ ...fields, ...(service_draft ? { service_enabled: true, is_active: false, default_owner_user_id: null } : {}), organization_id: authz.organizationId, slug: slugDe(lido.data.name) })
     .select("id, slug")
     .single();
 

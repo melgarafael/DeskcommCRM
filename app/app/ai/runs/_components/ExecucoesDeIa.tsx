@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
+import {ReviewDiagnostics} from './ReviewDiagnostics';
 import { RoteamentoResultados } from "./RoteamentoResultados";
 
 /**
@@ -148,6 +149,8 @@ export function ExecucoesDeIa() {
           )}
         </p>
       </header>
+
+      <ReviewDiagnostics />
 
       {/* O resumo responde "está tudo bem?" antes da lista. */}
       <Card className="mb-6 p-4" data-testid="resumo">

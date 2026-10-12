@@ -36,7 +36,7 @@ step "Dump do banco → $BACKUP_DIR/db-$ts.sql.gz"
 #   2. o pipe sai com zero mas o arquivo não se lê: `gzip -t` percorre o arquivo
 #      inteiro e confere o CRC. BACKUP QUE NINGUÉM CONSEGUE LER NÃO É BACKUP.
 parcial_db="$BACKUP_DIR/.db-$ts.sql.gz.parcial"
-if ! pg_container postgres:17-alpine pg_dump "$(url_do_schema)" --no-owner --no-privileges \
+if ! pg_container postgres:17-alpine pg_dump "$(url_do_schema)" --no-owner --no-privileges --exclude-table-data=public.review_capture_records \
      | gzip > "$parcial_db"; then
   rm -f "$parcial_db"
   die "o dump do banco falhou no meio (disco cheio? pg_dump interrompido?) — removi o arquivo incompleto. Sem backup válido, não siga com atualização."

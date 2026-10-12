@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
       onboarded_at,
       suspended_at,
       created_at,
-      user_count:user_organizations(count),
+      user_count:user_organizations!user_organizations_organization_id_fkey(count),
       conversations_count:conversations(count)
     `,
     )
