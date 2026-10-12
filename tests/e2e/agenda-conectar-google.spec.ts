@@ -117,7 +117,7 @@ test.describe("conectar a agenda do Google", () => {
     // "Sua agenda está livre esta semana" é um segundo heading, e os dois
     // coexistem desde que o vazio deixou de esconder a grade. Sem `exact`, dois
     // elementos → strict mode → vermelho. A spec irmã já tinha pago isto.
-    await expect(page.getByRole("heading", { name: "Agenda", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Agendamentos", exact: true })).toBeVisible();
 
     // 2. O BOTÃO NÃO APARECE — e não é "aparece desabilitado". Desabilitado
     //    diria "você não pode"; o certo é "esta instalação ainda não tem".
