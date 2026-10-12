@@ -144,6 +144,9 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions$/i,
   /^\/api\/v1\/prospecting$/,
   /^\/api\/v1\/agenda\/tipos$/,
+  // A configuração de serviços valida sessão/Bearer e papel na própria rota.
+  // Só este endpoint: nenhum sub-path futuro herda a passagem pela borda.
+  /^\/api\/v1\/agenda\/servicos$/,
   // VERSÃO, PUBLICAÇÃO E TESTE DO AGENTE SERVER-TO-SERVER (issue #2052).
   // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
@@ -183,7 +186,7 @@ export const PUBLIC_PATHS: RegExp[] = [
   //
   // Âncorado nos dois nomes: `/^\/email-templates\//` deixaria qualquer
   // sub-path futuro nascer público de carona.
-  /^\/email-templates\/(confirmation|recovery)$/,
+  /^\/email-templates\/(confirmation|recovery|config)$/,
   // Documentos legais. O checkbox obrigatório de `/onboarding/welcome` linka os
   // dois, e o aceite acontece antes de a pessoa ter qualquer coisa no sistema —
   // exigir sessão para LER o que se está aceitando inverte a ordem. Âncorado nos

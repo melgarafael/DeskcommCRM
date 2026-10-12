@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
@@ -40,6 +40,35 @@ async function clickAndAssert(page: Page, path: string, name: string, expected =
 test.afterAll(async () => {
   for (const org of orgs) { const result = await db.from("organizations").delete().eq("id", org); if (result.error) throw result.error; }
   for (const user of users) { const result = await db.auth.admin.deleteUser(user); if (result.error) throw result.error; }
+});
+test("configuração por Bearer chega ao handler, exige gerente e conserva o isolamento da organização", async ({ request }) => {
+  const f = await fixture(), other = await fixture();
+  const type = await insert("calendar_event_types", { organization_id: f.org, name: "Serviço fictício por integração", slug: "integration", duration_minutes: 40, service_enabled: true, is_active: false });
+  const foreign = await insert("calendar_event_types", { organization_id: other.org, name: "Serviço da outra organização", slug: "other-integration", duration_minutes: 40, service_enabled: true, is_active: false });
+  async function token(role: "viewer" | "manager") {
+    const prefix = `dsk_synthetic_${randomUUID()}`, plaintext = `${prefix}_${randomUUID()}`;
+    const id = await insert("api_tokens", { organization_id: f.org, created_by: f.user, name: "Integração fictícia", prefix, token_hash: `\\x${createHash("sha256").update(plaintext).digest("hex")}`, scopes: ["mcp:write", `role:${role}`], expires_at: new Date(Date.now() + 300000).toISOString() });
+    return { id, headers: { Authorization: `Bearer ${plaintext}` } };
+  }
+  const config = { event_type_id: type, expected_revision: 1, service_enabled: true, is_active: true, requires_confirmation: false, booking_mode: "collective_unlimited", service_timezone: "America/Sao_Paulo", service_publication_mode: "none", professionals: [], resources: [], calendar_sources: [], schedule: [{ weekday: 2, timing_kind: "fixed", start_minute: 840, duration_minutes: 40, capacity_rule: "inherit" }] };
+  const url = "/api/v1/agenda/servicos", data = { action: "configure", config };
+  expect((await request.post(url, { data })).status()).toBe(401);
+  const viewer = await token("viewer"), manager = await token("manager");
+  expect((await request.post(url, { data, headers: viewer.headers })).status()).toBe(403);
+  // O body não pode redirecionar a organização resolvida da linha do token.
+  const crossOrg = await request.post(url, { data: { action: "configure", config: { ...config, event_type_id: foreign, organization_id: other.org } }, headers: manager.headers });
+  expect(crossOrg.status(), await crossOrg.text()).toBe(404);
+  const unchanged = await db.from("calendar_event_types").select("service_revision,is_active").eq("organization_id", other.org).eq("id", foreign).single();
+  expect(unchanged.error).toBeNull(); expect(Number(unchanged.data?.service_revision)).toBe(1); expect(unchanged.data?.is_active).toBe(false);
+  const configured = await request.post(url, { data, headers: manager.headers });
+  expect(configured.status(), await configured.text()).toBe(200);
+  const saved = await db.from("calendar_event_types").select("service_revision,is_active").eq("organization_id", f.org).eq("id", type).single();
+  expect(saved.error).toBeNull(); expect(Number(saved.data?.service_revision)).toBe(2); expect(saved.data?.is_active).toBe(true);
+  const revoked = await db.from("api_tokens").update({ revoked_at: new Date().toISOString() }).eq("organization_id", f.org).eq("id", manager.id);
+  expect(revoked.error).toBeNull();
+  expect((await request.post(url, { data: { action: "configure", config: { ...config, expected_revision: 2 } }, headers: manager.headers })).status()).toBe(401);
+  // A entrada exata não torna irmãos ou caminhos novos acessíveis por carona.
+  expect((await request.post(`${url}/novo-caminho`, { data, headers: viewer.headers })).status()).toBe(401);
 });
 test("painel configura, bloqueia e reserva três pessoas pela conversa; publicação e comunicação permanecem distintas", async ({ page }, info) => {
   const f = await fixture(); const day = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
