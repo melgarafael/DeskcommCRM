@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRecoveryCode as submitRecoveryCode } from "@/app/actions/auth/useRecoveryCode";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 interface RecoveryFormProps {
   next?: string;
@@ -28,12 +32,20 @@ export function RecoveryForm({ next }: RecoveryFormProps) {
       return;
     }
     startTransition(async () => {
-      const res = await submitRecoveryCode({ email, code: normalizedCode }, next);
-      if (!res) return; // server-side redirect on success
-      if (res.error === "service_unavailable") {
-        setError(t("Serviço de recuperação indisponível. Contate o administrador."));
-      } else {
-        setError(t("Código inválido ou já utilizado."));
+      try {
+        const res = await comTetoDeEspera(submitRecoveryCode({ email, code: normalizedCode }, next));
+        if (!res) return; // server-side redirect on success
+        if (res.error === "service_unavailable") {
+          setError(t("Serviço de recuperação indisponível. Contate o administrador."));
+        } else {
+          setError(t("Código inválido ou já utilizado."));
+        }
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setError(t("Não consegui concluir agora. Tente novamente."));
       }
     });
   };

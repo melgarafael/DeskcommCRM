@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { requestPasswordReset } from "@/app/actions/auth/requestPasswordReset";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 export function ForgotPasswordForm() {
   const t = useT();
@@ -29,17 +33,25 @@ export function ForgotPasswordForm() {
   const onSubmit = (values: ForgotPasswordInput) => {
     setServerError(null);
     startTransition(async () => {
-      const res = await requestPasswordReset(values);
-      if (res.ok) {
-        setSent(true);
-        return;
-      }
-      if (res.error === "rate_limited") {
-        setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
-      } else if (res.error === "validation_error") {
-        setServerError(t("Email inválido. Confira o campo."));
-      } else {
-        setServerError(t("Não foi possível enviar o e-mail. Tente novamente."));
+      try {
+        const res = await comTetoDeEspera(requestPasswordReset(values));
+        if (res.ok) {
+          setSent(true);
+          return;
+        }
+        if (res.error === "rate_limited") {
+          setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
+        } else if (res.error === "validation_error") {
+          setServerError(t("Email inválido. Confira o campo."));
+        } else {
+          setServerError(t("Não foi possível enviar o e-mail. Tente novamente."));
+        }
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setServerError(t("Não consegui concluir agora. Tente novamente."));
       }
     });
   };

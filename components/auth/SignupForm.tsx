@@ -19,6 +19,10 @@ import { Label } from "@/components/ui/label";
 import { signUp } from "@/app/actions/auth/signUp";
 import { Eye, EyeSlash } from "@/lib/ui/icons";
 import { PasswordStrength } from "@/components/auth/PasswordStrength";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 /**
  * Convite em curso: a conta está sendo criada para ACEITAR um convite, não para
@@ -70,64 +74,72 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
   const onSubmit = (values: SignupInput & { full_name: string }) => {
     setServerError(null);
     startTransition(async () => {
-      // No modo convite o e-mail do formulário é readonly, e readonly no
-      // cliente não vale nada: quem confere de novo é o servidor.
-      const entrada: SignupInput | SignupComConviteInput = convite
-        ? {
-            full_name: values.full_name,
-            email: convite.email,
-            password: values.password,
-            password_confirm: values.password_confirm,
+      try {
+        // No modo convite o e-mail do formulário é readonly, e readonly no
+        // cliente não vale nada: quem confere de novo é o servidor.
+        const entrada: SignupInput | SignupComConviteInput = convite
+          ? {
+              full_name: values.full_name,
+              email: convite.email,
+              password: values.password,
+              password_confirm: values.password_confirm,
+            }
+          : values;
+        const res = await comTetoDeEspera(signUp(entrada, convite?.token));
+        if (res.ok) {
+          /**
+           * ⚠️ O PROVEDOR JÁ DEIXOU A PESSOA ENTRAR — não existe e-mail para ela
+           * esperar. Acontece quando "Confirm email" está desligado no provedor
+           * de auth, que é uma escolha do operador da instalação e não um defeito
+           * dele; o defeito é a tela abaixo, que manda "abra o e-mail e clique no
+           * link" para quem já está autenticado. Sem este desvio a pessoa fica
+           * parada nessa instrução para sempre: logada, sem organização, e sem
+           * motivo nenhum para descobrir sozinha que a saída existe em
+           * `/get-started`. Medido com um cliente real travado — achado de
+           * @KIRAzinx566.
+           *
+           * O destino separa as duas naturezas de cadastro, com o dado que esta
+           * tela já tem em mãos: quem veio de um convite vai ACEITAR o convite
+           * (dar organização própria a essa pessoa é o erro que
+           * `decidirConviteDoSignup` existe para evitar); quem se cadastrou por
+           * conta própria vai à recuperação, que é o caminho auditado e com teto
+           * de tentativas — e não uma segunda porta de provisionamento.
+           */
+          if (res.sessao_ativa) {
+            router.replace(convite ? `/team/accept-invite/${convite.token}` : "/get-started");
+            return;
           }
-        : values;
-      const res = await signUp(entrada, convite?.token);
-      if (res.ok) {
-        /**
-         * ⚠️ O PROVEDOR JÁ DEIXOU A PESSOA ENTRAR — não existe e-mail para ela
-         * esperar. Acontece quando "Confirm email" está desligado no provedor
-         * de auth, que é uma escolha do operador da instalação e não um defeito
-         * dele; o defeito é a tela abaixo, que manda "abra o e-mail e clique no
-         * link" para quem já está autenticado. Sem este desvio a pessoa fica
-         * parada nessa instrução para sempre: logada, sem organização, e sem
-         * motivo nenhum para descobrir sozinha que a saída existe em
-         * `/get-started`. Medido com um cliente real travado — achado de
-         * @KIRAzinx566.
-         *
-         * O destino separa as duas naturezas de cadastro, com o dado que esta
-         * tela já tem em mãos: quem veio de um convite vai ACEITAR o convite
-         * (dar organização própria a essa pessoa é o erro que
-         * `decidirConviteDoSignup` existe para evitar); quem se cadastrou por
-         * conta própria vai à recuperação, que é o caminho auditado e com teto
-         * de tentativas — e não uma segunda porta de provisionamento.
-         */
-        if (res.sessao_ativa) {
-          router.replace(convite ? `/team/accept-invite/${convite.token}` : "/get-started");
+          setSentTo(values.email);
           return;
         }
-        setSentTo(values.email);
-        return;
-      }
-      if (res.error === "rate_limited") {
-        setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
-      } else if (res.error === "validation_error") {
-        setServerError(t("Dados inválidos. Confira os campos."));
-      } else if (res.error === "conta_ja_existe" && convite) {
-        // Ramo próprio porque o `else` mandava "Tente novamente" — e tentar de
-        // novo nunca funciona quando a conta já existe. Em vez da mensagem,
-        // a SAÍDA: entrar levando o convite pendurado, para cair no aceite e
-        // não na tela inicial (que, para quem foi revogado, é a tela de acesso
-        // revogado, com um botão Sair e mais nada).
-        setContaExistente(true);
-      } else if (res.error === "somente_convite") {
-        // Ramo próprio porque o `else` diria "Tente novamente", e aqui tentar
-        // de novo nunca vai funcionar — é política, não falha transitória.
-        setServerError(
-          t(
-            "Esta instalação aceita cadastro apenas por convite. Se você foi convidado, use o link que chegou no seu e-mail.",
-          ),
-        );
-      } else {
-        setServerError(t("Não foi possível criar a conta. Tente novamente."));
+        if (res.error === "rate_limited") {
+          setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
+        } else if (res.error === "validation_error") {
+          setServerError(t("Dados inválidos. Confira os campos."));
+        } else if (res.error === "conta_ja_existe" && convite) {
+          // Ramo próprio porque o `else` mandava "Tente novamente" — e tentar de
+          // novo nunca funciona quando a conta já existe. Em vez da mensagem,
+          // a SAÍDA: entrar levando o convite pendurado, para cair no aceite e
+          // não na tela inicial (que, para quem foi revogado, é a tela de acesso
+          // revogado, com um botão Sair e mais nada).
+          setContaExistente(true);
+        } else if (res.error === "somente_convite") {
+          // Ramo próprio porque o `else` diria "Tente novamente", e aqui tentar
+          // de novo nunca vai funcionar — é política, não falha transitória.
+          setServerError(
+            t(
+              "Esta instalação aceita cadastro apenas por convite. Se você foi convidado, use o link que chegou no seu e-mail.",
+            ),
+          );
+        } else {
+          setServerError(t("Não foi possível criar a conta. Tente novamente."));
+        }
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setServerError(t("Não consegui concluir agora. Tente novamente."));
       }
     });
   };

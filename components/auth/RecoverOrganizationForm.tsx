@@ -7,6 +7,10 @@ import { recoverOrganization } from "@/app/actions/auth/recoverOrganization";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 /**
  * As frases em português são as CHAVES do dicionário — a mesma convenção do
@@ -57,10 +61,18 @@ export function RecoverOrganizationForm({
     event.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await recoverOrganization(name);
-      // O caminho de sucesso não volta: a action redireciona (onboarding, ou a
-      // própria tela mostrando o pedido enviado).
-      if (!result.ok) setError(t(MENSAGENS[result.error] ?? MENSAGENS.provision_failed!));
+      try {
+        const result = await comTetoDeEspera(recoverOrganization(name));
+        // O caminho de sucesso não volta: a action redireciona (onboarding, ou a
+        // própria tela mostrando o pedido enviado).
+        if (!result.ok) setError(t(MENSAGENS[result.error] ?? MENSAGENS.provision_failed!));
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setError(t("Não consegui concluir agora. Tente novamente."));
+      }
     });
   }
 

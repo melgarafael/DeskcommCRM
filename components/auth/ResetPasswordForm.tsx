@@ -12,6 +12,10 @@ import { Label } from "@/components/ui/label";
 import { updatePassword } from "@/app/actions/auth/updatePassword";
 import { Eye, EyeSlash } from "@/lib/ui/icons";
 import { PasswordStrength } from "@/components/auth/PasswordStrength";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 export function ResetPasswordForm() {
   const t = useT();
@@ -35,27 +39,35 @@ export function ResetPasswordForm() {
   const onSubmit = (values: ResetPasswordInput) => {
     setServerError(null);
     startTransition(async () => {
-      // Sucesso redireciona server-side para /login?reset=success.
-      const res = await updatePassword(values);
-      if (!res) return;
-      if (res.error === "mfa_required") {
-        setNeedsMfa(true);
-        setServerError(
-          t(
-            "Sua conta tem verificação em duas etapas. Digite o código de 6 dígitos do seu app autenticador para concluir.",
-          ),
-        );
-      } else if (res.error === "mfa_invalid") {
-        setNeedsMfa(true);
-        setServerError(t("Código de verificação inválido. Tente de novo."));
-      } else if (res.error === "session_expired") {
-        setServerError(t("Sessão de redefinição expirada. Peça um novo link em Recuperar senha."));
-      } else if (res.error === "same_password") {
-        setServerError(t("A nova senha precisa ser diferente da atual."));
-      } else if (res.error === "validation_error") {
-        setServerError(t("Dados inválidos. Confira os campos."));
-      } else {
-        setServerError(t("Não foi possível redefinir a senha. Tente novamente."));
+      try {
+        // Sucesso redireciona server-side para /login?reset=success.
+        const res = await comTetoDeEspera(updatePassword(values));
+        if (!res) return;
+        if (res.error === "mfa_required") {
+          setNeedsMfa(true);
+          setServerError(
+            t(
+              "Sua conta tem verificação em duas etapas. Digite o código de 6 dígitos do seu app autenticador para concluir.",
+            ),
+          );
+        } else if (res.error === "mfa_invalid") {
+          setNeedsMfa(true);
+          setServerError(t("Código de verificação inválido. Tente de novo."));
+        } else if (res.error === "session_expired") {
+          setServerError(t("Sessão de redefinição expirada. Peça um novo link em Recuperar senha."));
+        } else if (res.error === "same_password") {
+          setServerError(t("A nova senha precisa ser diferente da atual."));
+        } else if (res.error === "validation_error") {
+          setServerError(t("Dados inválidos. Confira os campos."));
+        } else {
+          setServerError(t("Não foi possível redefinir a senha. Tente novamente."));
+        }
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setServerError(t("Não consegui concluir agora. Tente novamente."));
       }
     });
   };

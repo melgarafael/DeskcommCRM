@@ -7,6 +7,10 @@ import { useT } from "@/hooks/i18n/useT";
 import { TOTPInput } from "@/components/auth/TOTPInput";
 import { Button } from "@/components/ui/button";
 import { verifyMfa } from "@/app/actions/auth/verifyMfa";
+import {
+  comTetoDeEspera,
+  ehRedirecionamentoDoServidor,
+} from "@/components/auth/teto-da-espera";
 
 interface MfaFormProps {
   next?: string;
@@ -40,18 +44,26 @@ export function MfaForm({ next }: MfaFormProps) {
     if (finalCode.length !== 6 || locked) return;
     setError(null);
     startTransition(async () => {
-      const res = await verifyMfa(finalCode, next);
-      if (!res) return; // server-side redirect on success
-      if (res.error === "mfa_locked") {
-        setLocked(true);
-        setSecondsLeft(res.retry_in_seconds ?? 60);
-        setError(
-          `${t("Muitas tentativas. Aguarde")} ${res.retry_in_seconds ?? 60}s ${t("e tente novamente.")}`,
-        );
-        setCode("");
-      } else {
-        setError(t("Código inválido. Tente novamente."));
-        setCode("");
+      try {
+        const res = await comTetoDeEspera(verifyMfa(finalCode, next));
+        if (!res) return; // server-side redirect on success
+        if (res.error === "mfa_locked") {
+          setLocked(true);
+          setSecondsLeft(res.retry_in_seconds ?? 60);
+          setError(
+            `${t("Muitas tentativas. Aguarde")} ${res.retry_in_seconds ?? 60}s ${t("e tente novamente.")}`,
+          );
+          setCode("");
+        } else {
+          setError(t("Código inválido. Tente novamente."));
+          setCode("");
+        }
+    
+      } catch (erro) {
+        // Teto e catch: sem eles, uma ação que demora ou lança deixa o botão
+        // em carregando para sempre, sem dizer nada. Ver teto-da-espera.ts.
+        if (ehRedirecionamentoDoServidor(erro)) throw erro;
+        setError(t("Não consegui verificar o código agora. Tente novamente."));
       }
     });
   };
