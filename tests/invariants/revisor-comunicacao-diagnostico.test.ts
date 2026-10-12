@@ -163,7 +163,7 @@ describe('laços persistidos e falhas adversas',()=>{
   });
   it('migration idempotente preserva captura e vocabulário já gravados',async()=>{
     const f=await seed();await enable(f);await capture(f);await pool.query(`insert into agent_inbox_items(organization_id,kind,severity,title,body) values($1,'review_capture_stopped','warn','Fixture','Fixture')`,[f.org]);
-    await pool.query(readFileSync('supabase/migrations/20261011141248_0648_comunicacao_e_diagnostico_da_revisao.sql','utf8'));
+    await pool.query(readFileSync('supabase/migrations/20261012221709_0653_comunicacao_e_diagnostico_da_revisao.sql','utf8'));
     expect((await pool.query('select count(*)::int as n from review_capture_records where organization_id=$1',[f.org])).rows[0].n).toBe(1);expect((await pool.query('select kind from agent_inbox_items where organization_id=$1',[f.org])).rows[0].kind).toBe('review_capture_stopped');
   });
 });
