@@ -15,7 +15,7 @@ export async function setActiveOrg(orgId: string): Promise<{ ok: boolean; error?
   // Consulta fresca: não usa status de membership serializado no browser.
   const db = await createClient();
   const { data: membership, error } = await db.from("user_organizations")
-    .select("organization_id, organizations!inner(status)")
+    .select("organization_id, organizations!user_organizations_organization_id_fkey!inner(status)")
     .eq("organization_id", orgId).eq("user_id", user.id)
     .is("revoked_at", null).not("accepted_at", "is", null)
     .eq("organizations.status", "active").maybeSingle();

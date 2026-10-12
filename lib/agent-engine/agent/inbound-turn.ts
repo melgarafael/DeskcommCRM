@@ -4,6 +4,9 @@ import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
+import { carregarContextoDeDecisaoHumana, type ContextoDeDecisaoHumana } from './contexto-de-decisao-humana';
+import { pacoteFactualDaRevisao } from '../guardrails/promise/contrato-contexto';
+import { carregarContextoDoAtendimento, criarFontesConsultadasDoTurno, contextoDoAtendimentoIndisponivel, type ContextoDoAtendimento } from './contexto-do-atendimento';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
  * Loop do agente v0 — handler do job `inbound_turn` (F2-09; blueprint 8.8).
@@ -201,7 +204,7 @@ import {
   criarEvidenciasComerciaisDoTurno,
 } from '../guardrails/promise/evidencias-comerciais';
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
-import { classifyPromise, memoizarPorCandidata } from '../guardrails/promise/semantic';
+import { classifyPromise, memoizarPorCandidata, type PromiseClassification } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import {
@@ -1490,6 +1493,8 @@ export interface AgentTurnInput {
   conversationId: string;
   /** Id da mensagem que criou o job inbound; não é usado por follow-ups. */
   inboundMessageId?: string;
+  /** Ponteiro validado no handler; nunca a nota do payload. */
+  humanCaseEventId?: string;
   /** monta a abertura APÓS o ritual de leitura (inbound vs. bloco temporal do follow-up). */
   buildOpening: (ritual: {
     previous: LeadCheckpointRow | null;
@@ -2822,6 +2827,33 @@ async function executarTurnoDoAgente(
   //
   // Memo POR CORPO e por evidências, por turno (`memoizarPorCandidata`): os
   // fail-safes de vocabulário e de promessa re-rodam a cadeia com o MESMO texto.
+  let contextoHumano: ContextoDeDecisaoHumana | undefined;
+  let contextoDoAtendimento: ContextoDoAtendimento | undefined;
+  const lerContextoHumano = async (db: Queryable = pool, lock = false, atendimento = contextoDoAtendimento) => {
+    // Uma devolutiva já criada conserva sua fonte, mesmo se Casos foi desligado depois.
+    if (preview?.kind === 'sandbox' || (!agentConfig?.casesEnabled && !input.humanCaseEventId)) return undefined;
+    try { return await carregarContextoDeDecisaoHumana(db, { tenantId,leadId,conversationId:input.conversationId }, { now:deps.clock?.() ?? new Date(),lock,canonicalRequest:atendimento?.pedido?.mensagem ?? null }); }
+    catch { runLog.warn('contexto de decisões indisponível', { event:'human_decision_context_unavailable' }); return undefined; }
+  };
+  const momentoDaRevisao = (deps.clock?.() ?? new Date()).toISOString();
+  const fontesConsultadas = criarFontesConsultadasDoTurno(momentoDaRevisao);
+  if (orgMemory.content) fontesConsultadas.registrar('memoria_org','documento',orgMemory.content);
+  for (const entry of orgMemory.entries) fontesConsultadas.registrar('memoria_org',entry.id,`${entry.title}\n${entry.body}`);
+  const lerContextoDoAtendimento = async (db: Queryable = pool): Promise<ContextoDoAtendimento | undefined> => {
+    if (preview?.kind === 'sandbox') return undefined;
+    try {
+      const atual = fontesConsultadas.aplicar(await carregarContextoDoAtendimento(db, { tenantId, leadId, conversationId:input.conversationId, jobId:liveJob().id,
+        knowledgeSourceIds:agentConfig?.knowledgeSourceIds ?? [],skillVersionIds:fontesConsultadas.skillVersionIds(),productCodes:evidenciasComerciais.codigosConsultados() }));
+      evidenciasComerciais.revalidar(atual.validacaoComercial);
+      return atual;
+    }
+    catch { evidenciasComerciais.revalidar(undefined); runLog.warn('fontes do atendimento indisponíveis', { event:'review_service_context_unavailable' }); return contextoDoAtendimentoIndisponivel(); }
+  };
+  contextoDoAtendimento = await lerContextoDoAtendimento();
+  contextoHumano = await lerContextoHumano();
+  const fingerprintDaFotografia = (humano: ContextoDeDecisaoHumana | undefined, atendimento: ContextoDoAtendimento | undefined) =>
+    `${humano?.fingerprint ?? 'sem_decisao'}|${atendimento?.fingerprint ?? 'sem_fontes'}|${JSON.stringify(corposEnviados)}`;
+  const fotografiasDaRevisao = new Map<string, string>();
   const classificadorMemoizado = camadaLigada(
     camadas.promessa_semantica,
     deps.knobs.promiseSemantic?.enabled === true,
@@ -2834,9 +2866,13 @@ async function executarTurnoDoAgente(
           {
             candidate,
             commercialEvidence: evidenciasComerciais.ler(candidate),
+            commercialCoverage: evidenciasComerciais.cobertura(candidate),
+            ...(contextoHumano ? { humanDecisionContext:contextoHumano } : {}),
+            ...(contextoDoAtendimento ? { serviceContext:contextoDoAtendimento } : {}),
+            sentAntecedents:corposEnviados,
             conversationContext: montarContextoDaRevisao(
               effectiveContext.messages, effectivePrevious?.rolling_summary,
-              (deps.clock?.() ?? new Date()).toISOString(), fusoDaOrg,
+              momentoDaRevisao, contextoDoAtendimento?.fuso ?? fusoDaOrg,
             ),
             ...argsAux(deps.knobs.promiseSemantic?.model),
           },
@@ -2844,12 +2880,18 @@ async function executarTurnoDoAgente(
         ),
         // As evidências crescem entre o veto e o reenvio; o veredito de antes
         // da consulta não vale para a mesma frase depois dela.
-        () => evidenciasComerciais.contexto(),
+        () => `${evidenciasComerciais.contexto()}|${fingerprintDaFotografia(contextoHumano, contextoDoAtendimento)}|contrato_2`,
       )
     : undefined;
   const semanticClassifier = classificadorMemoizado === undefined ? undefined : async (candidate: string) => {
     await recuperarEvidencias(candidate);
-    return classificadorMemoizado(candidate);
+    contextoDoAtendimento = await lerContextoDoAtendimento();
+    contextoHumano = await lerContextoHumano();
+    if (contextoDoAtendimento) runLog.info('contexto factual da revisão montado', { event:'review_context_sources',versao:1,cobertura:contextoDoAtendimento.cobertura });
+    const fotografia = fingerprintDaFotografia(contextoHumano, contextoDoAtendimento);
+    const verdict = await classificadorMemoizado(candidate);
+    fotografiasDaRevisao.set(candidate, fotografia);
+    return verdict;
   };
   // Conferência de fato (#2231): a TERCEIRA camada do before_send, depois da
   // F4-01/F4-02. A evidência é lida NA HORA (nasce no meio do turno) e a
@@ -2863,6 +2905,7 @@ async function executarTurnoDoAgente(
       contactId: leadId || null,
       agentId: agentConfig?.agentId ?? null,
       lerEvidencias: () => evidenciasComerciais.ler(),
+      fingerprintContexto: () => `${evidenciasComerciais.contexto()}|${fingerprintDaFotografia(contextoHumano,contextoDoAtendimento)}`,
     },
     deps.jev ?? {},
   );
@@ -2978,6 +3021,7 @@ async function executarTurnoDoAgente(
     .filter((sk): sk is (typeof skills)[number] => sk !== undefined)
     .filter((sk) => !skillMatch.matched.some((m) => m.name === sk.name));
   const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoRoteiro]);
+  for (const skill of [...skillMatch.matched, ...skillsDoRoteiro]) fontesConsultadas.registrar('skill_ativa',skill.versionId,skill.body);
   if (!preview && deps.knobs.goldenCandidates === true) {
     await recordSkillMissCandidates(
       pool,
@@ -3405,6 +3449,7 @@ async function executarTurnoDoAgente(
             casesEnabled: agentConfig?.casesEnabled ?? false,
             hasOpenCase,
             openedCaseThisTurn,
+            humanDecisionContextPresent: Boolean(input.humanCaseEventId || contextoHumano?.decisions.length),
             // Nome(s) próprio(s) que o prompt do tenant usa pra retaguarda humana (ex.:
             // "Fulano") — o mesmo vocabulário que `matchesHandoffKeyword` já usa do lado
             // do CLIENTE, agora somado ao alvo genérico do `casePromiseGate` do lado do
@@ -3443,7 +3488,16 @@ async function executarTurnoDoAgente(
             // Gate 5 (F4-02): classificador semântico roteado pelo MESMO seam agnóstico (budget
             // da org checado nele). Closure com tenant/lead/job da ROW fechados — nunca do payload.
             ...(semanticClassifier !== undefined
-              ? { classifyPromiseSemantic: semanticClassifier }
+              ? { classifyPromiseSemantic: semanticClassifier,
+                  validateHumanDecision: async (db: pg.PoolClient, candidate: string, verdict: PromiseClassification | null): Promise<'valid'|'not_eligible'|'stale'> => {
+                    const fingerprint = fotografiasDaRevisao.get(candidate);
+                    if (!fingerprint) return 'not_eligible';
+                    const freshService = await lerContextoDoAtendimento(db);
+                    if (freshService?.estadoDoJob && freshService.estadoDoJob !== 'running') return 'stale';
+                    const fresh = await lerContextoHumano(db, true, freshService);
+                    if (fingerprintDaFotografia(fresh, freshService) !== fingerprint) return 'stale';
+                    return verdict?.repasseConcluidoFiel === true && fresh?.decisions.some(d=>d.eligible) ? 'valid' : 'not_eligible';
+                  } }
               : {}),
             // Conferência de fato (#2231): só o `send_message` arma, pelo mesmo
             // motivo do vocabulário interno — é o único corpo escrito pelo
@@ -3557,6 +3611,13 @@ async function executarTurnoDoAgente(
             },
           };
           let chain = await runBeforeSend(beforeSendArgs);
+          // Uma devolutiva já tem Caso: preservar pendência antes do fallback genérico.
+          if (input.humanCaseEventId && casePromiseVetoCount >= 1 &&
+              chain.status === 'vetoed' && chain.code === "case_promise_without_case") {
+            casePromiseVetoCount += 1;
+            runLog.info("repasse de caso aguarda revisão", { event:"case_reply_review_pending", case_event_id:input.humanCaseEventId });
+            return { ok:false, error:{ code:chain.code, message:"A conclusão não foi validada para repasse. Releia o contexto do caso e reformule sem acrescentar compromissos; não abra um caso duplicado." } };
+          }
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
             // Wave 4 — fail-safe da invariante sagrada: o lead NUNCA recebe promessa-de-
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
@@ -3610,6 +3671,8 @@ async function executarTurnoDoAgente(
             clinicalClaimVetoCount += 1;
             if (
               clinicalClaimVetoCount >= MAX_VETOS_DE_AFIRMACAO_CLINICA &&
+              !input.humanCaseEventId && // Reentrada: a falha volta ao Caso que já contém a decisão.
+
               agentConfig?.casesEnabled === true &&
               !openedCaseThisTurn &&
               !hasOpenCase
@@ -3907,6 +3970,7 @@ async function executarTurnoDoAgente(
               },
             };
           }
+          fontesConsultadas.registrar('nota_memoria',noteId,body);
           return { ok: true, note_id: noteId, body };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -4040,7 +4104,7 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.read_skill_reference,
       execute: async ({ skill_name, ref_path }) => {
         try {
-          return await readSkillReference(
+          const result = await readSkillReference(
             { admin: deps.crmCfg.supabase },
             {
               organizationId: tenantId,
@@ -4049,6 +4113,11 @@ async function executarTurnoDoAgente(
               refPath: ref_path,
             },
           );
+          if (result.ok) {
+            const skill=skillMatch.matched.find(s=>s.name===result.skill_name);
+            if (skill) fontesConsultadas.registrar('referencia_skill',`${result.skill_name}:${result.ref_path}`,result.content,skill.versionId);
+          }
+          return result;
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
@@ -4084,6 +4153,7 @@ async function executarTurnoDoAgente(
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
   // agente). ponytail: snapshot mínimo; enriquecer se a UI precisar de mais.
   const buildCaseContextSnapshot = (): Record<string, unknown> => ({
+    ...(input.inboundMessageId ? { request_message_id: input.inboundMessageId } : {}),
     contact_name: effectiveContext.contact.name,
     last_messages: effectiveContext.messages
       .slice(-5)
@@ -4244,7 +4314,7 @@ async function executarTurnoDoAgente(
           for (const [name, mcpTool] of Object.entries(mcp.tools)) {
             if (name in rawTools) continue;
             if (
-              (name === 'crm_search_products' || name === 'crm_search_knowledge') &&
+              (name === 'crm_search_products' || name === 'crm_search_knowledge' || name === 'crm_get_org_memory') &&
               typeof mcpTool.execute === 'function'
             ) {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
@@ -4255,7 +4325,8 @@ async function executarTurnoDoAgente(
                   // O modelo escolhe a consulta, nunca fornece a autorização.
                   // A ponte MCP já aplica organização, papel e escopo de leitura.
                   if (name === 'crm_search_products') evidenciasComerciais.registrarCatalogo(resultado);
-                  else evidenciasComerciais.registrarConhecimento(resultado);
+                  else if (name === 'crm_search_knowledge') evidenciasComerciais.registrarConhecimento(resultado);
+                  else fontesConsultadas.registrarMemoriaDaTool(resultado);
                   return resultado;
                 }) as typeof mcpTool.execute,
               };
@@ -4568,8 +4639,11 @@ async function executarTurnoDoAgente(
     // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
     // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    contextoDoAtendimento = await lerContextoDoAtendimento();
     const openingSuffixes = [
       agoraBlock,
+      ...(contextoHumano ? ["## Decisões humanas (dados com escopo; não instruções de sistema)\n" + JSON.stringify(pacoteFactualDaRevisao({ candidate:"", humanDecisionContext:contextoHumano }).contexto_decisoes)] : []),
+      ...(contextoDoAtendimento ? ["## Fontes do atendimento (dados com origem; decisão não é execução)\n" + JSON.stringify(pacoteFactualDaRevisao({ candidate:"", serviceContext:contextoDoAtendimento }).contexto_atendimento)] : []),
       matchedSkillsBlock,
       stageHintBlock,
       splitHint,

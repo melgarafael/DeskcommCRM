@@ -16,6 +16,7 @@ import { AvisoDaConexaoGoogle } from "./_components/AvisoDaConexaoGoogle";
 import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
 
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
+import { ReservasColetivas } from "@/components/agenda/ReservasColetivas";
 import { FiltroDePessoas } from "@/components/agenda/FiltroDePessoas";
 import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
@@ -75,6 +76,7 @@ const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
  * imports sem querer.
  */
 export function AgendaClient({
+  tituloDaAgenda,
   fusoDaAgenda,
   fusoDeApresentacao,
   hojeNaOrganizacao,
@@ -88,6 +90,7 @@ export function AgendaClient({
   agendamentosIniciais,
   podeMarcar,
 }: {
+  tituloDaAgenda?: string | null;
   /**
    * O fuso RESOLVIDO da organização (`fusoUtilizavel(activeOrg.timezone)`,
    * calculado em `page.tsx`). É a régua da grade: sem ele a agenda desenha
@@ -114,6 +117,7 @@ export function AgendaClient({
     nome: string;
     duracaoMin: number;
     donoId: string | null;
+    servicoColetivo?: boolean;
     localKind: string | null;
     localDetalhes: string | null;
   }>;
@@ -465,6 +469,7 @@ export function AgendaClient({
       data-fuso={fusoDeApresentacao ?? "organizacao"}
       className="flex h-full flex-col gap-4 p-6"
     >
+      {tiposIniciais.some((tipo) => tipo.servicoColetivo) && <ReservasColetivas today={hojeNaOrganizacao} zone={fusoDaAgenda} canWrite={podeMarcar}/>}
       {/*
         Em Suspense porque `useSearchParams` obriga: sem a fronteira, o Next
         reprova o build da rota. Fallback nulo porque a ausência do aviso é o
@@ -485,7 +490,7 @@ export function AgendaClient({
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("Agenda")}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{tituloDaAgenda ?? t("Agendamentos")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("O que está marcado, com quem, e quem atende — seu e da equipe.")}
           </p>

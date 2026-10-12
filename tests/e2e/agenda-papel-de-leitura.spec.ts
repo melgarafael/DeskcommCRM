@@ -94,7 +94,7 @@ test("quem só lê abre a Agenda e não encontra nenhuma porta de escrita", asyn
   // Sem esta asserção, um 403 na página inteira faria as contagens abaixo darem
   // zero e a spec passaria medindo a tela errada.
   await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: ESPERA });
-  await expect(page.getByRole("heading", { name: "Agenda", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agendamentos", exact: true })).toBeVisible();
 
   // PRIMEIRA PORTA — o botão do cabeçalho.
   await expect(
@@ -143,7 +143,7 @@ test("o atendente abre a MESMA tela e as portas estão lá — o controle do cas
   await page.goto("/app/agenda");
 
   await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: ESPERA });
-  await expect(page.getByRole("heading", { name: "Agenda", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agendamentos", exact: true })).toBeVisible();
 
   await expect(
     page.getByTestId("novo-agendamento"),

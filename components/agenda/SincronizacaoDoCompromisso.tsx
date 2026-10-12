@@ -8,6 +8,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import type { GoogleConflict } from "@/lib/agenda/google/sync-model";
 export interface SyncDetail {
+  configured?: boolean;
   revision: string;
   local_revision: string;
   etag: string | null;
@@ -65,7 +66,7 @@ export function SincronizacaoDoCompromisso({
       <h3 className="text-sm font-medium">{t("Sincronização Google")}</h3>
       <p className="text-sm">
         {t(
-          c
+          sync.configured === false ? "Somente no CRM" : c
             ? "Este compromisso precisa de uma decisão de sincronização."
             : sync.pending
               ? "Há alterações aguardando sincronização."

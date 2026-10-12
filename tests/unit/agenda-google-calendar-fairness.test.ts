@@ -21,6 +21,7 @@ const connection = {
   calendar_selection_revision: "1",
 };
 let healthyLinked = false;
+let serviceConsumer: "source" | "destination" | null = null;
 let calendars: Array<{
   id: string;
   external_calendar_id: string;
@@ -31,6 +32,7 @@ let calendars: Array<{
 beforeEach(() => {
   vi.clearAllMocks();
   healthyLinked = false;
+  serviceConsumer = null;
   calendars = Array.from({ length: 26 }, (_, i) => ({
     id: `calendar-${i}`,
     external_calendar_id: `calendar-${i}`,
@@ -53,6 +55,10 @@ beforeEach(() => {
         // A tabela bruta ainda contém identidades redigidas; só a view canônica
         // pode afirmar que existe consumidor reconciliável.
         if (table === "calendar_appointments") return { data: [{ id: "redacted" }], error: null };
+        if (table === "calendar_service_calendar_sources")
+          return { data: serviceConsumer === "source" && filters.calendar_id === "calendar-0" ? [{ event_type_id: "service" }] : [], error: null };
+        if (table === "calendar_event_types")
+          return { data: serviceConsumer === "destination" && filters.destination_calendar_id === "calendar-0" ? [{ id: "service" }] : [], error: null };
         if (table === "calendar_google_reconcilable_appointments")
           return {
             data:
@@ -120,5 +126,15 @@ it("calendários só com identidades redigidas não escondem vínculo saudável 
   await GET(req());
   expect(syncCalendar).toHaveBeenCalledTimes(1);
   expect(syncCalendar).toHaveBeenCalledWith(expect.anything(), "org", "calendar-25");
+  expect(audit).toHaveBeenCalledTimes(1);
+});
+
+it.each(["source", "destination"] as const)("um calendário com consumidor de serviço %s é sincronizado sem mudar a seleção pessoal", async (consumer) => {
+  serviceConsumer = consumer;
+  const req = new NextRequest("http://local/cron", { headers: { authorization: "Bearer cron" } });
+  expect((await GET(req)).status).toBe(200);
+  expect(syncCalendar).toHaveBeenCalledWith(expect.anything(), "org", "calendar-0");
+  expect(syncCalendar).toHaveBeenCalledTimes(1);
+  expect(calendars[0]).toMatchObject({ counts_for_conflicts: false, is_destination: false });
   expect(audit).toHaveBeenCalledTimes(1);
 });

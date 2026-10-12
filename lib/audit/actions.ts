@@ -603,6 +603,11 @@ export const AUDIT_ACTIONS = [
   // Tipos de agendamento: mudar duração, categoria ou responsável muda o que a
   // IA oferece ao cliente, então é mutação de configuração e audita.
   "agenda.tipo_criado",
+  "agenda.service_configure",
+  "agenda.service_resource",
+  "agenda.service_block",
+  "agenda.service_unblock",
+  "agenda.service_refresh",
   "agenda.tipo_alterado",
   "agenda.tipo_desativado",
   // Ligar de volta um tipo que alguém desligou é ato de gestão e tem verbo
@@ -1040,6 +1045,7 @@ export const AUDIT_ACTIONS = [
   // A assinatura do emissor (#2066, PR #2079): quem ligou ou desligou o nome de
   // quem fala nas mensagens ao cliente, e com que nome a IA passou a assinar.
   "settings.message_signature_updated",
+  "settings.agenda_presentation_updated",
 
   // A identidade da Página/WABA que a Meta exige no Purchase de clique-para-WhatsApp
   // (#2098): gravada pela tela de Conversões, em `organizations.settings.conversions`.
@@ -1126,6 +1132,12 @@ export const AUDIT_ACTIONS = [
   // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
   // então o audit é a única trilha de quem mudou o dono.
   "contact.carteira_changed",
+  "ai.case_communication_retried",
+  "ai.case_decision_rectified",
+  "ai.review_capture_enabled",
+  "ai.review_capture_read",
+  "ai.review_capture_purged",
+  "ai.review_capture_stopped",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

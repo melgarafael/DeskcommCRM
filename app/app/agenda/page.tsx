@@ -1,3 +1,4 @@
+import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
@@ -126,11 +127,11 @@ export default async function AgendaPage() {
   // organizações via seis tipos onde há três — e clicar no da outra org dava
   // "Tipo de agendamento não encontrado", porque a rota que marca ESCAPA a org
   // certa e não achava o tipo que esta tela ofereceu.
-  const [{ data: tipos }, { data: linhas }] = await Promise.all([
+  const [{ data: tipos }, { data: linhas }, { data: apresentacao }] = await Promise.all([
     supabase
       .from("calendar_event_types")
       .select(
-        "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id",
+        "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id, service_enabled, booking_mode",
       )
       .eq("organization_id", activeOrg.orgId)
       .eq("is_active", true)
@@ -144,6 +145,7 @@ export default async function AgendaPage() {
       .gte("starts_at", inicio.toISOString())
       .lt("starts_at", fim.toISOString())
       .order("starts_at"),
+    supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
   ]);
 
   /**
@@ -248,6 +250,7 @@ export default async function AgendaPage() {
 
   return (
     <AgendaClient
+      tituloDaAgenda={tituloDaAgenda(apresentacao?.settings)}
       // O fuso RESOLVIDO da organização: a régua da grade inteira. `page.tsx`
       // é a única que tem `activeOrg.timezone`, e até aqui ele parava em
       // `hojeNaOrganizacao` — a âncora era da organização, mas os blocos e a
@@ -286,6 +289,7 @@ export default async function AgendaPage() {
         // lista de pessoas como responsável e marcava na agenda dele — enquanto
         // os horários oferecidos vinham da jornada de outra pessoa.
         donoId: t.default_owner_user_id ?? null,
+        servicoColetivo: t.service_enabled && t.booking_mode !== "individual",
         // O LOCAL DE VERDADE. O `select` acima já trazia `location_kind` e
         // `location_details`, e o mapeamento os descartava — então o painel caía
         // no default de parâmetro e toda clínica de toda instalação lia

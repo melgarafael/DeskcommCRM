@@ -9,6 +9,7 @@ import { useCase } from "@/hooks/ai/useCases";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL, caseEventLabel } from "@/lib/ai/case-copy";
 import { useT } from "@/hooks/i18n/useT";
 import { CaseChatPanel } from "./CaseChatPanel";
+import {CaseCommunication} from './CaseCommunication';
 import { CaseReplyPanel } from "./CaseReplyPanel";
 
 export function CaseDetail({ caseId }: { caseId: string | null }) {
@@ -69,6 +70,7 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
       </div>
 
       <CaseReplyPanel caseId={data.id} status={data.status} />
+      {data.communication?.length?<CaseCommunication caseId={data.id} events={data.communication} />:null}
 
       {/*
         DEPOIS da decisão, e a ordem é CONTRATO.

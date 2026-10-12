@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { googleRpc } from "@/lib/agenda/google/sync-store";
 
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
@@ -22,7 +23,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   const { data, error } = await db
     .from("calendar_appointments")
     .select(
-      "id,title,description,notes,location_kind,location_details,meeting_state,meeting_url,meeting_request_id,meeting_last_error,meeting_delivery,meeting_delivery_job_id,contact_id,conversation_id,starts_at,ends_at,time_zone,status,revision,revision_started_at,outcome_user_id,outcome_source_kind,outcome_message_id,outcome_recorded_at,confirmation_next_at,cancellation_reason,owner_user_id,google_domain_revision:revision::text,google_local_revision::text,google_synced_local_revision::text,google_etag,google_synced_at,google_sync_error,google_conflict",
+      "id,title,description,notes,location_kind,location_details,meeting_state,meeting_url,meeting_request_id,meeting_last_error,meeting_delivery,meeting_delivery_job_id,contact_id,conversation_id,starts_at,ends_at,time_zone,status,revision,revision_started_at,outcome_user_id,outcome_source_kind,outcome_message_id,outcome_recorded_at,confirmation_next_at,cancellation_reason,owner_user_id,service_occurrence_id,service_block,service_publication_mode,google_domain_revision:revision::text,google_local_revision::text,google_synced_local_revision::text,google_etag,google_synced_at,google_sync_error,google_conflict",
     )
     .eq("organization_id", org)
     .eq("id", id)
@@ -80,8 +81,10 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   // CRM. A condição passa a ser ter CONTATO — sem contato não há a quem
   // mandar —, e `location_kind` viaja para a tela decidir o que prometer.
   const meeting = data.contact_id ? {location_kind:data.location_kind,state:data.meeting_state,url:data.meeting_state === "ready" ? data.meeting_url : null,request_id:data.meeting_request_id,error:data.meeting_last_error,delivery_state:deliveryState,delivery_error:delivery.success ? delivery.data.error ?? null : null,delivery_authorization_current:authorizationCurrent,delivery_conversation_id:delivery.success ? delivery.data.service_boundary?.conversation_id ?? null : null,can_manage:data.owner_user_id === auth.user.id,destinations:(destinations.data ?? []).map(d=>{const contact=Array.isArray(d.contacts)?d.contacts[0]:d.contacts;return {id:d.id,label:`${contact?.name ?? traduzir("Contato", auth.user.idioma)}${contact?.phone_number ? ` — ${contact.phone_number}` : ""} — ${new Date(d.created_at).toLocaleDateString(tagDeIdioma(auth.user.idioma))}`};})} : null;
-  const { meeting_delivery_job_id: _deliveryJob, meeting_delivery: _privateDelivery, meeting_request_id: _request, meeting_last_error: _error, meeting_state: _state, meeting_url: _url, google_domain_revision, google_conflict, google_local_revision, google_synced_local_revision, google_etag, google_synced_at, google_sync_error, owner_user_id, ...detail } = data;
+  const { meeting_delivery_job_id: _deliveryJob, meeting_delivery: _privateDelivery, meeting_request_id: _request, meeting_last_error: _error, meeting_state: _state, meeting_url: _url, google_domain_revision, google_conflict, google_local_revision, google_synced_local_revision, google_etag, google_synced_at, google_sync_error, owner_user_id: _ownerUserId, ...detail } = data;
   const conflict = conflictSchema.safeParse(google_conflict);
+  const canResolve = await googleRpc(db, "fn_calendar_service_can_resolve", { p_org: org, p_id: id }).catch(() => false);
+  const configured = !(data.service_occurrence_id || data.service_block) || data.service_publication_mode !== "none";
   return ok({ ...detail, meeting, google_sync: { revision: google_domain_revision, local_revision: String(google_local_revision), etag: google_etag, synced_at: google_synced_at, error: google_sync_error,
-    pending: BigInt(google_local_revision) > BigInt(google_synced_local_revision), conflict: conflict.success ? conflict.data : null, can_resolve: owner_user_id === auth.user.id }, recovery: recovery.data ? {...recovery.data,enrollment_status:enrollment.data?.status??null,cancel_reason:enrollment.data?.cancel_reason??null} : null, evidence_messages: messages.data }, { requestId });
+    configured, pending: configured && BigInt(google_local_revision) > BigInt(google_synced_local_revision), conflict: conflict.success ? conflict.data : null, can_resolve: canResolve === true }, recovery: recovery.data ? {...recovery.data,enrollment_status:enrollment.data?.status??null,cancel_reason:enrollment.data?.cancel_reason??null} : null, evidence_messages: messages.data }, { requestId });
 }

@@ -54,6 +54,8 @@ export interface EntradaBaseDaConferencia {
   agentId: string | null;
   /** Lido NA HORA: as evidências nascem no meio do turno, quando as ferramentas rodam. */
   lerEvidencias: () => readonly EvidenciaComercial[];
+  /** Fotografias diferentes não herdam veredito. A catraca de custo continua uma por turno. */
+  fingerprintContexto?: () => string;
 }
 
 export interface EntradaDaConferenciaDeFato extends EntradaBaseDaConferencia {
@@ -242,20 +244,21 @@ export function criarConferidorDeAfirmacoes(
   let pediuEsteTurno = false;
   const cache = new Map<string, ConferenciaDeFato>();
   return async (candidata: string): Promise<ConferenciaDeFato> => {
-    const emCache = cache.get(candidata);
+    const chave = `${base.fingerprintContexto?.() ?? JSON.stringify(base.lerEvidencias())}\u0000${candidata}`;
+    const emCache = cache.get(chave);
     if (emCache !== undefined) return emCache;
     // A catraca vale por CANDIDATA: a reescrita do modelo paga no máximo uma
     // nova conferência, e as seguintes do mesmo turno são "não conferido".
     if (pediuEsteTurno) return naoConferida("outra_por_turno");
     if (base.lerEvidencias().length === 0) {
       const semEvidencia = naoConferida("sem_evidencia");
-      cache.set(candidata, semEvidencia);
+      cache.set(chave, semEvidencia);
       return semEvidencia;
     }
     if (estado === null) estado = await estadoDaAfirmacao(admin, base.organizationId);
     const r = await conferirAfirmacoes(admin, { ...base, estado, candidata }, deps);
     if (r.pediu) pediuEsteTurno = true;
-    cache.set(candidata, r);
+    cache.set(chave, r);
     return r;
   };
 }
