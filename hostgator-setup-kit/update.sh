@@ -72,7 +72,11 @@ if [ "${SINGLE_SERVER:-0}" = "1" ]; then
   if sincronizar_smtp_do_gotrue; then
     dc_supabase up -d --no-deps auth >/dev/null 2>&1 || c_ylw "⚠ Não consegui reiniciar o auth do Supabase com o SMTP do CRM."
   else
-    c_ylw "⚠ Sem SMTP no CRM: 'esqueci a senha' e a confirmação de cadastro não enviam e-mail. Configure em /admin/email e rode o update.sh de novo."
+    # #2755 — o aviso diz POR QUE rodar de novo: o app não leva o SMTP de
+    # /admin/email ao GoTrue, quem leva é a chamada logo acima. Sem o porquê,
+    # "rode de novo" parecia ordem sem motivo. Não citamos o painel de
+    # Atualização: o botão dele só aparece quando há versão nova.
+    c_ylw "⚠ Sem SMTP no CRM: 'esqueci a senha' e a confirmação de cadastro não enviam e-mail. Configure em /admin/email e rode bash hostgator-setup-kit/update.sh de novo (ele roda mesmo sem versão nova) — é ele que leva o SMTP ao serviço de login."
   fi
 fi
 

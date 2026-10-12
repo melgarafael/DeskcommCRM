@@ -120,6 +120,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     provider: patch.provider,
     credential_id: patch.credential_id,
     channel_session_id: patch.channel_session_id,
+    pipeline_ids: patch.pipeline_ids,
+    knowledge_source_ids: patch.knowledge_source_ids,
   });
   if (!escopo.ok) {
     return fail(codigoDoEscopo(escopo), mensagemDoEscopo(escopo), 422, { requestId });
@@ -151,6 +153,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (patch.split_messages !== undefined) update.split_messages = patch.split_messages;
   if (patch.split_max_chars !== undefined) update.split_max_chars = patch.split_max_chars;
   if (patch.inbound_debounce_ms !== undefined) update.inbound_debounce_ms = patch.inbound_debounce_ms;
+  // Os dois escopos da versão entravam só no schema, não neste objeto: o PATCH
+  // respondia 200 com a lista antiga e o agente seguia sem o funil ou sem o
+  // material. Integrações por token chegam aqui; a tela usa
+  // `saveAgentDraftAction`, que já gravava.
+  // Criar uma versão nova gravava (`lib/ai/agents/create-draft.ts`); editar,
+  // não.
+  if (patch.pipeline_ids !== undefined) update.pipeline_ids = patch.pipeline_ids;
+  if (patch.knowledge_source_ids !== undefined)
+    update.knowledge_source_ids = patch.knowledge_source_ids;
   if (patch.followup !== undefined) {
     const existingFollowup =
       existing.followup !== null &&

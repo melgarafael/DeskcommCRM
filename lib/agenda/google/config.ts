@@ -163,6 +163,11 @@ async function linhaDoBanco(): Promise<LinhaDoApp | null> {
       .from("platform_google_oauth")
       .select("client_id, client_secret_encrypted")
       .eq("id", 1)
+      // Fora da deduplicação de `fetch` do Next dentro de um render: sem o `signal`,
+      // uma 2ª leitura do MESMO render, feita depois de uma escrita ter invalidado o
+      // memo, recebe a resposta de ANTES dela e a memoiza. O porquê inteiro está em
+      // `lerLinha` de `lib/branding/instalacao.ts` (#1218). Nunca é abortado.
+      .abortSignal(new AbortController().signal)
       .maybeSingle();
     // Clone que ainda não aplicou a 0201 devolve 42P01 aqui. Isso NÃO é erro
     // desta instalação — é o piso de rollback funcionando, e o `.env` assume.

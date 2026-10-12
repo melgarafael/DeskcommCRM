@@ -95,8 +95,21 @@ describe("o catálogo e a tabela de preço do motor", () => {
       expect.soft(t, `${id} sem linha em ai_pricing`).toBeDefined();
       if (!t) continue;
       const vazio = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-      expect.soft(costCents(id, { ...vazio, inputTokens: 1_000_000 }), `${id}: entrada`).toBeCloseTo(t.prompt, 6);
-      expect.soft(costCents(id, { ...vazio, outputTokens: 1_000_000 }), `${id}: saída`).toBeCloseTo(t.completion, 6);
+      // 3.6/3.7/3.8 Flash: a tabela só cabe um preço (PK em `model`) e guarda a
+      // tarifa de 2027. O motor só a aplica a partir de 2027-01-01T00:00:00Z;
+      // comparar com `new Date()` ficaria vermelho até lá e verde depois, sem mudança.
+      const em =
+        id === "gemini-3.6-flash" || id === "gemini-3.7-flash" || id === "gemini-3.8-flash"
+          ? new Date("2027-01-01T00:00:00.000Z")
+          : undefined;
+      expect.soft(costCents(id, { ...vazio, inputTokens: 1_000_000 }, "1h", em), `${id}: entrada`).toBeCloseTo(
+        t.prompt,
+        6,
+      );
+      expect.soft(costCents(id, { ...vazio, outputTokens: 1_000_000 }, "1h", em), `${id}: saída`).toBeCloseTo(
+        t.completion,
+        6,
+      );
     }
   });
 });

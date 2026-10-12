@@ -110,13 +110,16 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // fica sem efeito. O 2.0 Flash não tem cache implícito nem aparece mais na
   // página: leitura = entrada, que nunca é aplicada porque nunca vem leitura.
   // Fora da tabela: a faixa acima de 200K tokens de entrada do 2.5 Pro e do 3.1 Pro.
-  // Gemini 3.x da migration 0600 (#2533), preço Standard de
-  // ai.google.dev/gemini-api/docs/pricing conferido em 08/10/2026. 3.6/3.7/3.8
-  // Flash estão em promoção até 31/12/2026 e passam a 1.5 / 7.5 (cache 0.15)
-  // em 01/01/2027 — esta tabela e o ai_pricing precisam mudar juntos nessa data.
-  'gemini-3.8-flash': { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite5m: 0.75, cacheWrite1h: 0.75 },
-  'gemini-3.7-flash': { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite5m: 0.75, cacheWrite1h: 0.75 },
-  'gemini-3.6-flash': { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite5m: 0.75, cacheWrite1h: 0.75 },
+  // Gemini 3.x da migration 0600 (#2533). 3.6/3.7/3.8 Flash: tarifa Standard
+  // DEPOIS da promo, conferida em 12/10/2026 em
+  // ai.google.dev/gemini-api/docs/pricing (entrada 1.50, saída 7.50, leitura de
+  // cache 0.15 a partir de January 1, 2027). A promo (0.75 / 3.75 / 0.075) vale
+  // até o instante anterior a VIRADA_GEMINI_FLASH_36_38_MS — precoDoModelo troca.
+  // Gravação = entrada, como o resto do Google: o implícito não cobra gravação.
+  // O 3.7 saiu da página de preços (depreciado, roteado ao 3.8); a tarifa é a do 3.8.
+  'gemini-3.8-flash': { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
+  'gemini-3.7-flash': { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
+  'gemini-3.6-flash': { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
   'gemini-3.1-flash-lite': { input: 0.25, output: 1.5, cacheRead: 0.025, cacheWrite5m: 0.25, cacheWrite1h: 0.25 },
   'gemini-3.5-flash': { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
   // 3.5 Flash-Lite: tarifa Standard de ai.google.dev/gemini-api/docs/pricing
@@ -149,22 +152,54 @@ export interface TokenUsage {
  *
  * Exportada para o teste poder provar o que a tabela recusa — é o caso que o
  * `startsWith` antigo deixava passar silenciosamente.
+ *
+ * `em` escolhe a tarifa quando o id tem preço com data. A promo Standard do
+ * Gemini 3.6/3.7/3.8 Flash vale inclusive no último ms de 2026. UTC: a página
+ * do Google diz "January 1, 2027" sem fuso; o repo grava instante em ISO-8601
+ * UTC (CLAUDE.md). Neste instante a tarifa da tabela passa a valer.
  */
-export function precoDoModelo(model: string): Preco | undefined {
+const VIRADA_GEMINI_FLASH_36_38_MS = Date.parse('2027-01-01T00:00:00.000Z');
+
+/** Leitura = 0.1× a entrada; gravação = entrada (sem efeito no cache implícito). */
+const PROMO_GEMINI_FLASH_36_38: Preco = {
+  input: 0.75,
+  output: 3.75,
+  cacheRead: 0.075,
+  cacheWrite5m: 0.75,
+  cacheWrite1h: 0.75,
+};
+
+const IDS_GEMINI_FLASH_36_38 = new Set([
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+]);
+
+function chaveDoModelo(model: string): string | undefined {
   // O OpenRouter devolve o id com o prefixo `provider/` (`anthropic/claude-…`);
   // a tabela é indexada sem ele. Recorta até a primeira barra e tenta de novo,
   // na MESMA ordem da tolerância do sufixo de data, para um id com prefixo+sufixo
   // (`anthropic/claude-sonnet-5-20250929`) casar também. O id completo segue
   // tentado PRIMEIRO: um id que a tabela conheça com barra vence o recorte.
   const semPrefixo = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
-  return (
-    USD_PER_MTOK[model] ??
-    USD_PER_MTOK[model.replace(/-\d{8}$/, "")] ??
-    USD_PER_MTOK[model.replace(/-\d{4}-\d{2}-\d{2}$/, "")] ??
-    USD_PER_MTOK[semPrefixo] ??
-    USD_PER_MTOK[semPrefixo.replace(/-\d{8}$/, "")] ??
-    USD_PER_MTOK[semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, "")]
-  );
+  const candidatos = [
+    model,
+    model.replace(/-\d{8}$/, ""),
+    model.replace(/-\d{4}-\d{2}-\d{2}$/, ""),
+    semPrefixo,
+    semPrefixo.replace(/-\d{8}$/, ""),
+    semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, ""),
+  ];
+  return candidatos.find((id) => USD_PER_MTOK[id] !== undefined);
+}
+
+export function precoDoModelo(model: string, em: Date = new Date()): Preco | undefined {
+  const id = chaveDoModelo(model);
+  if (id === undefined) return undefined;
+  if (IDS_GEMINI_FLASH_36_38.has(id) && em.getTime() < VIRADA_GEMINI_FLASH_36_38_MS) {
+    return PROMO_GEMINI_FLASH_36_38;
+  }
+  return USD_PER_MTOK[id];
 }
 
 /** O motor sabe cobrar este modelo — sem isso o custo sai null e o teto não o vê. */
@@ -179,9 +214,18 @@ export function temPrecoNoMotor(model: string): boolean {
  *
  * `cacheTtl` é o TTL com que o prefixo estável foi gravado (knob `LLM_CACHE_TTL`);
  * o default repete a doutrina ('1h') para quem chama sem ele.
+ *
+ * `em` é o instante da chamada. Sem ele, vale agora — é o que grava
+ * `llm_calls.cost_cents`. Os Gemini 3.6/3.7/3.8 Flash trocam de tarifa em
+ * 2027-01-01T00:00:00Z; os outros ids ignoram o instante.
  */
-export function costCents(model: string, usage: TokenUsage, cacheTtl: CacheTtl = '1h'): number | null {
-  const p = precoDoModelo(model);
+export function costCents(
+  model: string,
+  usage: TokenUsage,
+  cacheTtl: CacheTtl = '1h',
+  em: Date = new Date(),
+): number | null {
+  const p = precoDoModelo(model, em);
   if (p === undefined) {
     return null;
   }
@@ -194,4 +238,36 @@ export function costCents(model: string, usage: TokenUsage, cacheTtl: CacheTtl =
       usage.outputTokens * p.output) /
     1_000_000;
   return usd * 100;
+}
+
+/**
+ * Custo dos Gemini 3.6/3.7/3.8 Flash pelo mesmo corte de `costCents`, ou null
+ * se o id não é um deles. Prefixo `provider/` e sufixo de data do vendor entram
+ * na chave de `chaveDoModelo` — não há um segundo instante de virada aqui.
+ *
+ * `computeCost` (`lib/ai/cost.ts`) desvia por aqui. A linha de `ai_pricing`
+ * desses três ids já está na tarifa de 2027 (150/750). Sem o desvio, o
+ * sentimento e o respondedor legado gravariam essa Standard em
+ * `llm_calls.cost_cents` durante a promo, e Uso e orçamento somaria o dobro.
+ * Só entrada e saída: este caminho não recebe token de cache. Quem tem cache
+ * chama `costCents` direto (o seam do agente).
+ */
+export function costCentsDoGeminiFlashComVirada(
+  model: string,
+  usage: { inputTokens: number; outputTokens: number },
+  em: Date = new Date(),
+): number | null {
+  const id = chaveDoModelo(model);
+  if (id === undefined || !IDS_GEMINI_FLASH_36_38.has(id)) return null;
+  return costCents(
+    model,
+    {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    },
+    '1h',
+    em,
+  );
 }

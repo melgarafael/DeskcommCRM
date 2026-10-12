@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, it, expect } from "vitest";
 
 import { costCents, precoDoModelo, type TokenUsage } from "./pricing";
@@ -27,24 +30,32 @@ const NADA: TokenUsage = {
   cacheWriteTokens: 0,
 };
 
+/**
+ * Virada do preço promocional do Gemini 3.6/3.7/3.8 Flash.
+ * UTC: a página do Google diz "January 1, 2027" sem fuso, e o repo grava
+ * instante em ISO-8601 UTC. O instante é inclusivo do lado novo.
+ */
+const ANTES_DA_VIRADA = new Date("2026-12-31T23:59:59.999Z");
+const VIRADA_2027 = new Date("2027-01-01T00:00:00.000Z");
+
 /** 1 MTok só de entrada (sem cache) → cents. Isola a tarifa de entrada. */
-function entrada(model: string): number | null {
-  return costCents(model, { ...NADA, inputTokens: 1_000_000 });
+function entrada(model: string, em?: Date): number | null {
+  return costCents(model, { ...NADA, inputTokens: 1_000_000 }, "1h", em);
 }
 
 /** 1 MTok só de saída → cents. Isola a tarifa de saída. */
-function saida(model: string): number | null {
-  return costCents(model, { ...NADA, outputTokens: 1_000_000 });
+function saida(model: string, em?: Date): number | null {
+  return costCents(model, { ...NADA, outputTokens: 1_000_000 }, "1h", em);
 }
 
 /** 1 MTok inteiro lido do cache → cents. */
-function leituraDeCache(model: string): number | null {
-  return costCents(model, { ...NADA, inputTokens: 1_000_000, cacheReadTokens: 1_000_000 });
+function leituraDeCache(model: string, em?: Date): number | null {
+  return costCents(model, { ...NADA, inputTokens: 1_000_000, cacheReadTokens: 1_000_000 }, "1h", em);
 }
 
 /** 1 MTok gravado no cache, no TTL pedido → cents. */
-function gravacaoDeCache(model: string, ttl: "5m" | "1h"): number | null {
-  return costCents(model, { ...NADA, inputTokens: 1_000_000, cacheWriteTokens: 1_000_000 }, ttl);
+function gravacaoDeCache(model: string, ttl: "5m" | "1h", em?: Date): number | null {
+  return costCents(model, { ...NADA, inputTokens: 1_000_000, cacheWriteTokens: 1_000_000 }, ttl, em);
 }
 
 describe("costCents — cada tarifa isolada, por modelo", () => {
@@ -80,10 +91,8 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     ["gpt-5.4-mini", 75, 450, 7.5, 75, 75],
     ["gpt-5.4-nano", 20, 125, 2, 20, 20],
     ["gpt-5.4-pro", 3000, 18000, 3000, 3000, 3000],
-    // Google — leitura de cache a 0.1× a entrada (2.0 Flash não tem cache implícito, ver pricing.ts)
-    ["gemini-3.8-flash", 75, 375, 7.5, 75, 75],
-    ["gemini-3.7-flash", 75, 375, 7.5, 75, 75],
-    ["gemini-3.6-flash", 75, 375, 7.5, 75, 75],
+    // Google — leitura de cache a 0.1× a entrada (2.0 Flash não tem cache implícito, ver pricing.ts).
+    // 3.6/3.7/3.8 Flash têm virada em 2027-01-01T00:00:00Z; os casos datados ficam no describe abaixo.
     ["gemini-3.1-flash-lite", 25, 150, 2.5, 25, 25],
     ["gemini-3.5-flash", 150, 900, 15, 150, 150],
     ["gemini-3.5-flash-lite", 30, 250, 3, 30, 30],
@@ -98,6 +107,45 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     expect(leituraDeCache(model)).toBeCloseTo(cLeitura, 6);
     expect(gravacaoDeCache(model, "5m")).toBeCloseTo(cGrav5m, 6);
     expect(gravacaoDeCache(model, "1h")).toBeCloseTo(cGrav1h, 6);
+  });
+});
+
+describe("Gemini 3.6/3.7/3.8 Flash — a promo acaba em 2027-01-01T00:00:00Z", () => {
+  // Página ai.google.dev/gemini-api/docs/pricing, lida em 2026-10-12 (Standard):
+  // até 31/12/2026 entrada 0,75 / saída 3,75 / leitura de cache 0,075;
+  // a partir de 01/01/2027, 1,50 / 7,50 / 0,15. Gravação segue a entrada
+  // (o motor não usa cache explícito; a linha existe para não ficar stale).
+  const MODELOS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"] as const;
+
+  it.each(MODELOS)("%s cobra a promo no instante anterior à virada", (model) => {
+    expect(entrada(model, ANTES_DA_VIRADA)).toBeCloseTo(75, 6);
+    expect(saida(model, ANTES_DA_VIRADA)).toBeCloseTo(375, 6);
+    expect(leituraDeCache(model, ANTES_DA_VIRADA)).toBeCloseTo(7.5, 6);
+    expect(gravacaoDeCache(model, "5m", ANTES_DA_VIRADA)).toBeCloseTo(75, 6);
+    expect(gravacaoDeCache(model, "1h", ANTES_DA_VIRADA)).toBeCloseTo(75, 6);
+  });
+
+  it.each(MODELOS)("%s cobra 1,50/7,50/0,15 a partir de 2027-01-01T00:00:00Z", (model) => {
+    expect(entrada(model, VIRADA_2027)).toBeCloseTo(150, 6);
+    expect(saida(model, VIRADA_2027)).toBeCloseTo(750, 6);
+    expect(leituraDeCache(model, VIRADA_2027)).toBeCloseTo(15, 6);
+    expect(gravacaoDeCache(model, "5m", VIRADA_2027)).toBeCloseTo(150, 6);
+    expect(gravacaoDeCache(model, "1h", VIRADA_2027)).toBeCloseTo(150, 6);
+  });
+
+  it("o prefixo google/ do OpenRouter acompanha a virada", () => {
+    expect(entrada("google/gemini-3.8-flash", ANTES_DA_VIRADA)).toBeCloseTo(75, 6);
+    expect(entrada("google/gemini-3.8-flash", VIRADA_2027)).toBeCloseTo(150, 6);
+    expect(saida("google/gemini-3.6-flash", VIRADA_2027)).toBeCloseTo(750, 6);
+    expect(leituraDeCache("google/gemini-3.7-flash", VIRADA_2027)).toBeCloseTo(15, 6);
+    expect(entrada("google/gemini-3.8-flash-20270101", VIRADA_2027)).toBeCloseTo(150, 6);
+    expect(entrada("gemini-3.6-flash-20261231", ANTES_DA_VIRADA)).toBeCloseTo(75, 6);
+  });
+
+  it("um Gemini sem promoção não muda de preço na virada", () => {
+    expect(entrada("gemini-3.5-flash", ANTES_DA_VIRADA)).toBeCloseTo(150, 6);
+    expect(entrada("gemini-3.5-flash", VIRADA_2027)).toBeCloseTo(150, 6);
+    expect(entrada("gemini-3.1-flash-lite", VIRADA_2027)).toBeCloseTo(25, 6);
   });
 });
 
@@ -259,4 +307,42 @@ describe("costCents — o Jev cobra só a entrada, em fração de centavo", () =
   it("o apelido móvel NÃO herda o preço da versão fixada", () => {
     expect(costCents("jev-latest", { ...NADA, inputTokens: 1_000 })).toBeNull();
   });
+});
+
+describe("catálogo — Gemini 3.6/3.7/3.8 Flash fica em 150/750 nas duas tabelas", () => {
+  // O apêndice mais tarde vence: o baseline é reaplicado inteiro e o último
+  // insert com on conflict é o preço que o self-hoster recebe.
+  const baseline = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
+
+  function ultimoPrecoDaConta(id: string): { prompt: number; completion: number; notes: string } | undefined {
+    const re = new RegExp(`\\('${id}',\\s*(\\d+),\\s*(\\d+),\\s*'([^']*)'`, "g");
+    let ultimo: { prompt: number; completion: number; notes: string } | undefined;
+    for (const m of baseline.matchAll(re)) {
+      ultimo = { prompt: Number(m[1]), completion: Number(m[2]), notes: m[3]! };
+    }
+    return ultimo;
+  }
+
+  function ultimoPrecoDaTela(id: string): { entrada: number; saida: number } | undefined {
+    const re = new RegExp(`'${id}'[\\s\\S]{0,500}?(\\d+),\\s*(\\d+),\\s*true\\)`, "g");
+    let ultimo: { entrada: number; saida: number } | undefined;
+    for (const m of baseline.matchAll(re)) {
+      ultimo = { entrada: Number(m[1]), saida: Number(m[2]) };
+    }
+    return ultimo;
+  }
+
+  it.each(["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"])(
+    "%s está a 150/750 no catálogo e na conta, com notes de catálogo",
+    (id) => {
+      const tela = ultimoPrecoDaTela(id);
+      const conta = ultimoPrecoDaConta(id);
+      expect(tela, `${id} sem preço em ai_models`).toEqual({ entrada: 150, saida: 750 });
+      expect(conta?.prompt, `${id} entrada em ai_pricing`).toBe(150);
+      expect(conta?.completion, `${id} saída em ai_pricing`).toBe(750);
+      expect(conta?.notes.startsWith("catálogo"), `${id} notes=${conta?.notes}`).toBe(true);
+      expect(tela?.entrada).toBe(conta?.prompt);
+      expect(tela?.saida).toBe(conta?.completion);
+    },
+  );
 });

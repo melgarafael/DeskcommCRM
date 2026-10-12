@@ -781,6 +781,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               janelaFechada={motivoDaJanela}
               disabled={selectedConversation.status === "closed"}
               contactName={selectedConversation.contacts?.name ?? null}
+              contactDisplayName={selectedConversation.contacts?.display_name}
               respondendo={respondendo}
               onCancelarResposta={() => setRespondendo(null)}
               currentContactId={selectedConversation.contact_id}

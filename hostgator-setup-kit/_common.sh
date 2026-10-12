@@ -1052,6 +1052,40 @@ veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão>
   fi
 }
 
+# Qual nome de pacote ESTA máquina usa para o plugin buildx (#2754)?
+#
+# Medido numa VPS Ubuntu com Docker do repositório do próprio Ubuntu: mandar
+# instalar `docker-buildx-plugin` devolve "E: Não é possível encontrar o
+# pacote", porque o Ubuntu publica o plugin como `docker-buildx` — o nome
+# `docker-buildx-plugin` é do repositório oficial do Docker
+# (download.docker.com), que nem precisa estar habilitado aqui. Um preflight
+# que só AVISA virava remediação inútil: o dono rodava o comando errado,
+# levava o erro do apt e voltava pra tela sem saber o que fazer.
+#
+# O nome sai do cache LOCAL do apt (`apt-cache show` não usa rede, só o índice
+# já em disco): é exatamente o que o `apt-get install` desta VPS encontra.
+# Sem apt, ou com os dois nomes fora do cache, devolve os DOIS nomes com a
+# origem de cada um — nunca uma ordem que não se possa executar.
+#
+# A ORDEM importa: `docker-buildx-plugin` é testado PRIMEIRO. Se o repositório
+# do Docker está no índice, o engine quase sempre é `docker-ce` — e, com o
+# universe ligado, o `docker-buildx` do Ubuntu também aparece, mas ele depende
+# de `docker.io`, que conflita com `docker-ce`: o apt recusa a instalação.
+# Medido numa VPS Ubuntu 22.04 com docker-ce 29.8.2 (os dois nomes no índice).
+pacote_do_buildx() {  # → nome do pacote (ou os dois nomes, com a origem)
+  if command -v apt-cache >/dev/null 2>&1; then
+    if apt-cache show docker-buildx-plugin >/dev/null 2>&1; then
+      printf 'docker-buildx-plugin'
+      return 0
+    fi
+    if apt-cache show docker-buildx >/dev/null 2>&1; then
+      printf 'docker-buildx'
+      return 0
+    fi
+  fi
+  printf 'docker-buildx (Ubuntu/Debian) ou docker-buildx-plugin (repositório oficial do Docker)'
+}
+
 # O preflight: dá para atualizar sem derrubar o que está no ar?
 # → 0 = pode seguir; 1 = NÃO pode, com o motivo na stdout.
 #
@@ -1060,7 +1094,7 @@ veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão>
 # qualquer `docker stop` — o `refuse` devolve RC 3, que o agent.sh lê como
 # "esta atualização nunca começou" e não tenta desfazer nada.
 preflight_atualizacao() {  # preflight_atualizacao <versão alvo>
-  local versao="${1:-}" veredito
+  local versao="${1:-}" veredito pacote_buildx
   versao="${versao#v}"
   if ! com_prazo 30 docker info >/dev/null 2>&1; then
     printf '%s' "o Docker não respondeu em 30s (daemon parado ou travado — veja 'systemctl status docker' e 'journalctl -u docker -n 100')."
@@ -1074,7 +1108,8 @@ preflight_atualizacao() {  # preflight_atualizacao <versão alvo>
   # sairia como "registro fora (DNS/rede)" — diagnóstico errado, e o dono iria
   # mexer na rede de uma VPS cuja rede está boa.
   if ! com_prazo 20 docker buildx version >/dev/null 2>&1; then
-    printf '%s' "o plugin buildx do Docker não está instalado nesta VPS, e é com ele que confiro se a versão $versao está publicada. Instale o pacote docker-buildx-plugin. Nada foi parado nem baixado."
+    pacote_buildx="$(pacote_do_buildx)"
+    printf '%s' "o plugin buildx do Docker não está instalado nesta VPS, e é com ele que confiro se a versão $versao está publicada. Instale o pacote $pacote_buildx. Nada foi parado nem baixado."
     return 1
   fi
   veredito="$(veredito_das_imagens_da_release "$versao")"

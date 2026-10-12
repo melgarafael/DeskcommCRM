@@ -508,6 +508,88 @@ else
   nao "motivo do buildx ausente" "rc≠0 citando buildx e não DNS" "rc $rc7: $motivo7"
 fi
 
+# ════════════════════════════════════════════════════════════════════════════
+echo "── caso 7b — a remediação manda instalar o pacote que ESTA VPS tem (#2754)"
+# Defeito medido: o motivo mandava instalar `docker-buildx-plugin`, que é o
+# nome do repositório oficial do Docker — numa VPS Ubuntu com Docker do
+# repositório do Ubuntu o `apt-get install` devolve "E: Não é possível
+# encontrar o pacote". O nome certo sai do cache LOCAL do apt, então os dois
+# dublês do `apt-cache` decidem qual nome a "VPS" tem, sem rede nenhuma.
+mkdir -p "$WORK/bin-apt-ubuntu" "$WORK/bin-apt-repo-docker" "$WORK/bin-apt-vazio" \
+         "$WORK/bin-apt-ambos"
+cat > "$WORK/bin-apt-ubuntu/apt-cache" <<'STUB'
+#!/usr/bin/env bash
+# Ubuntu: o plugin existe como `docker-buildx` (#2754)
+[ "${1:-}" = show ] || exit 2
+case "${2:-}" in docker-buildx) exit 0 ;; *) exit 100 ;; esac
+STUB
+cat > "$WORK/bin-apt-repo-docker/apt-cache" <<'STUB'
+#!/usr/bin/env bash
+# Repo oficial do Docker habilitado: lá o nome é `docker-buildx-plugin`
+[ "${1:-}" = show ] || exit 2
+case "${2:-}" in docker-buildx-plugin) exit 0 ;; *) exit 100 ;; esac
+STUB
+cat > "$WORK/bin-apt-vazio/apt-cache" <<'STUB'
+#!/usr/bin/env bash
+# Sem nenhum dos dois nomes no índice: o motivo tem de citar os DOIS
+[ "${1:-}" = show ] || exit 2
+exit 100
+STUB
+cat > "$WORK/bin-apt-ambos/apt-cache" <<'STUB'
+#!/usr/bin/env bash
+# docker-ce (repo do Docker) + universe do Ubuntu: os DOIS nomes no índice.
+# O `docker-buildx` do Ubuntu depende de docker.io, que conflita com docker-ce.
+[ "${1:-}" = show ] || exit 2
+case "${2:-}" in docker-buildx|docker-buildx-plugin) exit 0 ;; *) exit 100 ;; esac
+STUB
+chmod +x "$WORK/bin-apt-ubuntu/apt-cache" "$WORK/bin-apt-repo-docker/apt-cache" \
+         "$WORK/bin-apt-vazio/apt-cache" "$WORK/bin-apt-ambos/apt-cache"
+PATH_ANTES7="$PATH"
+
+PATH="$WORK/bin-apt-ubuntu:$PATH"
+motivo7b="$(preflight_atualizacao 0.9.0)"; rc7b=$?
+PATH="$PATH_ANTES7"
+if [ "$rc7b" -ne 0 ] && printf '%s' "$motivo7b" | grep -q 'Instale o pacote docker-buildx\. '; then
+  ok "com o pacote do Ubuntu no cache, manda instalar docker-buildx"
+else
+  nao "pacote do Ubuntu" "rc≠0 com 'Instale o pacote docker-buildx. '" "rc $rc7b: $motivo7b"
+fi
+if ! printf '%s' "$motivo7b" | grep -q 'docker-buildx-plugin'; then
+  ok "e NÃO manda instalar docker-buildx-plugin, que o apt desta VPS não tem"
+else
+  nao "sem o nome do repo Docker" "sem 'docker-buildx-plugin' na remediação" "$motivo7b"
+fi
+
+PATH="$WORK/bin-apt-repo-docker:$PATH"
+motivo7c="$(preflight_atualizacao 0.9.0)"; rc7c=$?
+PATH="$PATH_ANTES7"
+if [ "$rc7c" -ne 0 ] && printf '%s' "$motivo7c" | grep -q 'Instale o pacote docker-buildx-plugin\. '; then
+  ok "com o repo do Docker habilitado, manda instalar docker-buildx-plugin"
+else
+  nao "pacote do repo Docker" "rc≠0 com 'Instale o pacote docker-buildx-plugin. '" "rc $rc7c: $motivo7c"
+fi
+
+PATH="$WORK/bin-apt-ambos:$PATH"
+motivo7e="$(preflight_atualizacao 0.9.0)"; rc7e=$?
+PATH="$PATH_ANTES7"
+if [ "$rc7e" -ne 0 ] && printf '%s' "$motivo7e" | grep -q 'Instale o pacote docker-buildx-plugin\. '; then
+  ok "com os dois nomes no índice (docker-ce + universe), manda instalar docker-buildx-plugin"
+else
+  nao "dois nomes no índice" "rc≠0 com 'Instale o pacote docker-buildx-plugin. '" "rc $rc7e: $motivo7e"
+fi
+
+PATH="$WORK/bin-apt-vazio:$PATH"
+motivo7d="$(preflight_atualizacao 0.9.0)"; rc7d=$?
+PATH="$PATH_ANTES7"
+# O 'docker-buildx' tem de aparecer SOZINHO (o 'docker-buildx-plugin' já
+# o contém como prefixo — um grep solto passaria com um nome só).
+if [ "$rc7d" -ne 0 ] && printf '%s' "$motivo7d" | grep -qE 'docker-buildx[^-]' \
+   && printf '%s' "$motivo7d" | grep -q 'docker-buildx-plugin'; then
+  ok "sem os nomes no índice, cita os DOIS nomes em vez de adivinhar"
+else
+  nao "sem índice do apt" "rc≠0 citando os dois nomes" "rc $rc7d: $motivo7d"
+fi
+
 printf '\n'
 if [ "$falhas" -eq 0 ]; then echo "TUDO VERDE"; exit 0; fi
 echo "$falhas caso(s) vermelho(s)"

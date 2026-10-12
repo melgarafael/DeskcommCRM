@@ -64,7 +64,13 @@ vi.mock("@/lib/supabase/admin", () => {
     createAdminClient: () => ({
       from: (tabela: string) =>
         tabela === "platform_meta_app"
-          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: linhaDaMeta, error: null }) }) }) }
+          ? {
+              select: () => ({
+                eq: () => ({
+                  abortSignal: () => ({ maybeSingle: async () => ({ data: linhaDaMeta, error: null }) }),
+                }),
+              }),
+            }
           : cadeiaDoCanal,
     }),
   };

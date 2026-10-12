@@ -59,10 +59,12 @@ vi.mock("@/lib/supabase/admin", () => ({
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: async () => {
-                leiturasDaInstalacao.n += 1;
-                return { data: linhaDaInstalacao.atual, error: null };
-              },
+              abortSignal: () => ({
+                maybeSingle: async () => {
+                  leiturasDaInstalacao.n += 1;
+                  return { data: linhaDaInstalacao.atual, error: null };
+                },
+              }),
             }),
           }),
         };

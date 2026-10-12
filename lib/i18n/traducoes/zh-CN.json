@@ -5563,5 +5563,13 @@
   "Destino da etiqueta": "标签目标",
   "Card (comportamento atual)": "卡片（当前行为）",
   "Contato do lead": "销售线索的联系人",
-  "Sem contato vinculado, a etiqueta não é aplicada.": "没有关联联系人时不会应用该标签。"
+  "Sem contato vinculado, a etiqueta não é aplicada.": "没有关联联系人时不会应用该标签。",
+  "Quadro": "看板",
+  "Semana anterior": "上一周",
+  "Próxima semana": "下一周",
+  "Campo de data final": "结束日期字段",
+  "Sem intervalo": "不显示区间",
+  "Este funil não tem campo de data para montar o calendário.": "该漏斗没有可用于日历的日期字段。",
+  "Nenhum negócio com este campo de data.": "此日期字段下没有商机。",
+  "Nenhum negócio com este campo de data neste período.": "此日期字段在此期间没有商机。"
 }

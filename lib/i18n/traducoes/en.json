@@ -4010,6 +4010,12 @@
   "Desligar a verificação em duas etapas?": "Turn off two-step verification?",
   "Sua conta fica sem essa camada de proteção até você ativar de novo.": "Your account will be without this layer of protection until you turn it on again.",
   "Verificação desligada.": "Verification turned off.",
+  "Google Meet com acesso aberto": "Open-access Google Meet",
+  "O Meet da reunião nasce com o acesso aberto": "The meeting's Meet is created with open access",
+  "Com isto ligado, quando um compromisso ganha Meet o espaço já nasce aberto — qualquer pessoa com o link entra sem pedir para participar. Desligado, o Meet continua pedindo: é o comportamento de sempre.": "With this on, when a booking gets a Meet the space is born open: anyone with the link gets in without asking to join. Off, Meet keeps asking for permission — the usual behavior.",
+  "⚠ Com o Meet aberto, quem tiver o link da reunião entra sozinho, sem que ninguém o admita. O link é a porta: não o publique onde circula livremente.": "⚠ With an open Meet, whoever has the meeting link gets in alone, with nobody admitting them. The link is the door: do not publish it where it circulates freely.",
+  "No self-host, quem conecta o Google usa o próprio app OAuth: ligue a Meet API do Google Cloud e adicione o escopo meetings.space.created na tela de consentimento do seu projeto — sem isso, o Google recusa a criação do espaço aberto e o link sai comum.": "On self-host, whoever connects Google uses their own OAuth app: turn on the Meet API in Google Cloud and add the meetings.space.created scope to the consent screen of your project — without it, Google rejects the open space and the link comes out plain.",
+  "Se a agenda do Google já estava conectada, a opção só passa a valer depois de reconectá-la: é na reconexão que o Google concede a permissão de criar o Meet aberto.": "If Google Calendar was already connected, the option only takes effect after you reconnect it: reconnecting is when Google grants permission to create the open Meet.",
   "Sua sessão expirou. Entre de novo.": "Your session expired. Sign in again.",
   "Nenhuma empresa ativa.": "No active company.",
   "Só um administrador pode mudar essa regra.": "Only an administrator can change this rule.",
@@ -9030,5 +9036,14 @@
   "Destino da etiqueta": "Tag destination",
   "Card (comportamento atual)": "Card (current behavior)",
   "Contato do lead": "Lead contact",
-  "Sem contato vinculado, a etiqueta não é aplicada.": "With no linked contact, the tag is not applied."
+  "Sem contato vinculado, a etiqueta não é aplicada.": "With no linked contact, the tag is not applied.",
+  "Quadro": "Board",
+  "Semana": "Week",
+  "Semana anterior": "Previous week",
+  "Próxima semana": "Next week",
+  "Campo de data final": "End date field",
+  "Sem intervalo": "No range",
+  "Este funil não tem campo de data para montar o calendário.": "This pipeline has no date field to build the calendar.",
+  "Nenhum negócio com este campo de data.": "No deals with this date field.",
+  "Nenhum negócio com este campo de data neste período.": "No deals with this date field in this period."
 }

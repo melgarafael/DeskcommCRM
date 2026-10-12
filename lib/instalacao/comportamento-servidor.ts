@@ -62,6 +62,11 @@ export async function carregarComportamentoDaInstalacao(): Promise<Comportamento
       .from("platform_settings")
       .select(COLUNAS)
       .eq("id", 1)
+      // Fora da deduplicação de `fetch` do Next dentro de um render: sem o `signal`,
+      // uma 2ª leitura do MESMO render, feita depois de uma escrita ter invalidado o
+      // memo, recebe a resposta de ANTES dela e a memoiza. O porquê inteiro está em
+      // `lerLinha` de `lib/branding/instalacao.ts` (#1218). Nunca é abortado.
+      .abortSignal(new AbortController().signal)
       .maybeSingle();
 
     // Erro = o banco NÃO falou; a degradação (último valor conhecido) é decisão

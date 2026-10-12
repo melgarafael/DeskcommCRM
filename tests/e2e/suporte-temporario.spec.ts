@@ -246,8 +246,25 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
     const request=route.request();
     if(mutatesFixture(request)){
      blockedBeforeSend.add(request);pendingMutations.delete(request);await route.abort("aborted");
-    }else await route.continue();
+    }else if(request.isNavigationRequest())await route.abort("aborted");
+    else await route.continue();
    })));
+   // Documento vivo segue emitindo: toda montagem dispara a batida de presença, e a
+   // sameTab recarrega sozinha ao sair do acompanhamento. Uma aba fechada com um pedido
+   // desses ainda sem desfecho reprovava a limpeza (1 em ~518). Por isso cada aba vai a
+   // about:blank, onde nada mais é emitido. A rota acima aborta navegação de documento
+   // para a recarga não disputar com esse goto, e ainda assim a disputa foi medida: o
+   // goto interrompido, resolvido com a aba de volta ao app, ou parado até o timeout.
+   // Daí o goto com prazo curto, repetido até a aba ESTAR em about:blank.
+   // O que o documento anterior tinha em voo passa a "abandonada" pelo watcher de
+   // domcontentloaded e cumpre o prazo de 10 s abaixo — a política que já valia para recarga.
+   await Promise.all(contexts.flatMap(context=>context.pages()).map(async ownedPage=>{
+    let lastError:unknown;
+    for(let attempt=0;ownedPage.url()!=="about:blank";attempt++){
+     if(attempt===5)throw new Error(`A aba não chegou a about:blank em 5 tentativas (${ownedPage.url()})`,{cause:lastError});
+     await ownedPage.goto("about:blank",{timeout:5000}).catch(error=>{lastError=error;});
+    }
+   }));
    await expect.poll(()=>pendingMutations.size,{timeout:20000,
     message:"Mutações enviadas devem concluir antes de fechar contextos ou apagar fixtures"}).toBe(0);
    // Abandonada não tem evento que prove o fim no servidor; a prova é o prazo.

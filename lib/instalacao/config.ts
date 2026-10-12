@@ -131,6 +131,11 @@ async function lerLinha(chave: string): Promise<LinhaCrua | null | "erro"> {
       .from("platform_config")
       .select("chave, valor, ciphertext, iv, tag, last4, eh_segredo, semeado_do_env")
       .eq("chave", chave)
+      // Fora da deduplicação de `fetch` do Next dentro de um render: sem o `signal`,
+      // uma 2ª leitura do MESMO render, feita depois de uma escrita ter invalidado o
+      // memo, recebe a resposta de ANTES dela e a memoiza. O porquê inteiro está em
+      // `lerLinha` de `lib/branding/instalacao.ts` (#1218). Nunca é abortado.
+      .abortSignal(new AbortController().signal)
       .maybeSingle();
     if (error) {
       // `42P01` é o rollback pela outra ponta: imagem nova sobre schema velho,

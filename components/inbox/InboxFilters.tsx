@@ -601,7 +601,30 @@ export function InboxFilters({ value, onChange }: Props) {
       </div>
 
       {/* As setas aparecem só quando há abas fora da área visível; a faixa e o
-          sublinhado continuam com a altura compacta do Inbox. */}
+          sublinhado continuam com a altura compacta do Inbox.
+
+          `flex-wrap` + `gap-x-1` (#2745) — A FAIXA QUEBRA EM VEZ DE ESCONDER.
+          Medido em browser real, com o CSS do produto compilado e a fonte
+          verdadeira (`tests/sonda-abas-inbox-1280.test.tsx`), as seis abas
+          somam 358px de rótulo+contagem e 378px com o gap de 4px; a coluna da
+          lista vale de 240 (mínimo do arraste, `LIMITES_LISTA`) a 520px, e o
+          padrão da faixa `xl` — a janela de 1280px da issue — é 272px. Sem
+          quebra, o `overflow-x-auto` rolava 191px na coluna de 272 e 13px na
+          de 450: "Fechadas" cortada e "Arquivadas" escondida atrás da seta,
+          que era exatamente o corte medido. Agora, na mesma medição: 2 linhas
+          (68px) em 272, 1 linha (30px) em 450, e as seis dentro da coluna em
+          toda a faixa — rolagem zero.
+
+          `shrink-0` + `whitespace-nowrap` seguem valendo: rótulo não encolhe
+          nem parte no meio. O `gap-x-1` só aperta onde não há folga (com
+          `justify-between` a sobra continua distribuída, então a faixa larga
+          não muda de figura) — e é o que leva 272px de 3 linhas para 2. A
+          seta de rolagem fica sendo o que sempre foi: reserva para o caso em
+          que UMA aba sozinha não cabe (zoom alto, coluna arrastada no mínimo).
+
+          Só o LAYOUT mudou: `value.tab`, `onChange`, `visibleInboxTabs` e
+          `countFor` estão byte a byte como estavam — a aba continua o mesmo
+          filtro com o mesmo rótulo, e "Automático" continua "Automático". */}
       <Tabs
         value={value.tab}
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
@@ -623,7 +646,7 @@ export function InboxFilters({ value, onChange }: Props) {
           <TabsList
             ref={tabsListRef}
             onScroll={updateMoreTabs}
-            className="h-auto min-w-0 flex-1 justify-between gap-2 rounded-none bg-transparent p-0 [scrollbar-width:none]"
+            className="h-auto min-w-0 flex-1 flex-wrap justify-between gap-x-1 gap-y-2 rounded-none bg-transparent p-0 [scrollbar-width:none]"
           >
             {tabs.map((tab) => {
               const meta = INBOX_TABS.find((t) => t.value === tab)!;

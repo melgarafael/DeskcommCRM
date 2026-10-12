@@ -402,6 +402,16 @@ async function lerLinha(): Promise<LinhaDaMarca | null | "erro"> {
       .from("platform_branding")
       .select(COLUNAS)
       .eq("id", 1)
+      // Fora da deduplicação de `fetch` do Next. Dentro de um render, o `fetch`
+      // do servidor (`createDedupeFetch`, aplicado por `patchFetch`) devolve a
+      // QUALQUER GET repetido a resposta guardada da primeira ida — e um render
+      // chama `marcaDaInstalacao()` várias vezes. Quando uma escrita invalida o
+      // memo entre duas dessas chamadas, a segunda captura a geração NOVA,
+      // recebe a linha de ANTES da escrita, passa pela guarda de geração e a
+      // memoiza por um TTL inteiro: a barra lateral sem o logo recém-subido,
+      // atrás do toast "Logo atualizado." (#1218). Levar um `signal` é o opt-out
+      // que o próprio `dedupe-fetch.js` documenta; este nunca é abortado.
+      .abortSignal(new AbortController().signal)
       .maybeSingle();
     if (error) {
       avisarUmaVez(

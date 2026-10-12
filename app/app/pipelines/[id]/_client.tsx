@@ -21,6 +21,7 @@ function formatError(err: unknown, t: (texto: string) => string): string {
   return String(err);
 }
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
+import { CalendarioDoFunil } from "@/components/kanban/CalendarioDoFunil";
 import { FilterBar } from "@/components/kanban/FilterBar";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
@@ -37,6 +38,7 @@ import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
+import { cn } from "@/lib/utils";
 
 export function PipelinePageClient({
   pipelineId,
@@ -69,6 +71,14 @@ export function PipelinePageClient({
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
+  /**
+   * A visão do funil (#2770). Quadro é o padrão — é o que todo mundo já
+   * conhece, e a aba nova não pode sequestrar a tela de quem só quer mover
+   * card. O estado é LOCAL e não vai na URL: diferente do filtro (que é
+   * compartilhável e sobrevive a um refresh), a vista é um olhar momentâneo —
+   * e o quadro de volta no mesmo lugar onde ficou é o que se espera ao voltar.
+   */
+  const [visao, setVisao] = useState<"quadro" | "calendario">("quadro");
 
   /**
    * Motivo e categoria da perda (#1537): a categoria NÃO vem no lead — ela é
@@ -188,9 +198,47 @@ export function PipelinePageClient({
             </SelectContent>
           </Select>
         )}
-        <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
-          <Plus size={16} className="mr-2" /> {t("Novo Lead")}
-        </Button>
+        {/*
+          A TERCEIRA ABA DO FUNIL (#2770), ao lado do quadro. O seletor fica no
+          cabeçalho e não dentro do conteúdo: quem troca de visão está mudando
+          COMO olha o funil, e a pergunta é anterior a qualquer filtro ou card —
+          é a mesma lógica do interruptor Lista/Calendário da tela de Tarefas.
+        */}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
+            <button
+              type="button"
+              data-testid="visao-quadro"
+              aria-pressed={visao === "quadro"}
+              onClick={() => setVisao("quadro")}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                visao === "quadro"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t("Quadro")}
+            </button>
+            <button
+              type="button"
+              data-testid="visao-calendario"
+              aria-pressed={visao === "calendario"}
+              onClick={() => setVisao("calendario")}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                visao === "calendario"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t("Calendário")}
+            </button>
+          </div>
+          <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
+            <Plus size={16} className="mr-2" /> {t("Novo Lead")}
+          </Button>
+        </div>
       </header>
       {data && (
         <NewLeadDialog
@@ -217,6 +265,15 @@ export function PipelinePageClient({
         <div className="flex flex-1 animate-pulse items-center justify-center text-muted-foreground">
           {t("Carregando…")}
         </div>
+      ) : visao === "calendario" ? (
+        // A MESMA lista filtrada do quadro: as duas abas olham o mesmo funil,
+        // e discordar sobre quem está nele seria pior do que não ter filtro.
+        <CalendarioDoFunil
+          pipelineId={pipelineId}
+          pipeline={data.pipeline}
+          stages={data.stages}
+          leads={filteredLeads}
+        />
       ) : (
         <KanbanBoard
           pipelineId={pipelineId}
