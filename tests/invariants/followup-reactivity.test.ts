@@ -29,7 +29,7 @@ import type { EnrollmentEventRef, EnrollmentRow } from "@/lib/followup/node-hand
  * fino que pluga no dispatcher não tem lógica própria pra testar.
  *
  * Congela: (1) STOP cancela TUDO que está vivo (opted_out), idempotente sob
- * re-drain; (2) inbound em waiting_reply sem cancel_on_reply acorda (marker +
+ * re-drain — inclusive a pausa manual, que a mensagem comum não toca; (2) inbound em waiting_reply sem cancel_on_reply acorda (marker +
  * next_eval_at=now) e o PRÓPRIO tick do engine classifica em vez de rotear
  * no_reply (a corrida classify-lento documentada no HANDOFF); (3) inbound com
  * cancel_on_reply=true cancela (replied), inclusive quando a inscrição está em
@@ -60,6 +60,14 @@ afterAll(async () => {
 // conserto em `reactivity.ts` e a catraca abaixo NÃO disparou, porque o adapter
 // deste teste consultava a réplica. Réplica que erra igual à original concorda
 // com ela, e concordância entre cópias parece confirmação.
+//
+// E a lista de QUAIS estados carregar vem de quem chama, como na produção. A
+// interface ganhou o terceiro parâmetro na espera longa (d83e66900: o opt-out
+// carrega também `dormente` e `coletando`), e este dublê seguiu consultando
+// `LIVE_STATUSES` fixo. Foi por isso que a catraca do `paused_manual` dizia que
+// o conserto seria "acrescentar a LIVE_STATUSES": aqui, a lista do opt-out nem
+// chegava ao banco. Medido no conserto: com o estado na lista certa, o caso do
+// STOP seguia reprovando, até este dublê respeitar o parâmetro.
 
 function reactivityDb(): ReactivityAdminClient {
   return {
@@ -77,14 +85,14 @@ function reactivityDb(): ReactivityAdminClient {
       );
       return rows[0]?.is_blocked ?? false;
     },
-    async loadLiveEnrollmentsForContact(orgId, contactId): Promise<LiveEnrollmentRef[]> {
+    async loadLiveEnrollmentsForContact(orgId, contactId, statuses = LIVE_STATUSES): Promise<LiveEnrollmentRef[]> {
       const { rows } = await pool.query(
         `select e.id, e.status, e.current_node_id, e.steps_taken, e.pointer_id,
                 p.handoff_policy, p.trigger_config
          from followup_enrollments e
          join followup_flow_pointers p on p.id = e.pointer_id
          where e.organization_id = $1 and e.contact_id = $2 and e.status = any($3)`,
-        [orgId, contactId, LIVE_STATUSES],
+        [orgId, contactId, statuses],
       );
       return rows;
     },
@@ -411,12 +419,20 @@ describe("applyReactivityEvent — STOP/opt-out (message.received + is_blocked)"
   });
 
   /**
-   * O caso gêmeo de `paused_manual` (migration 0145). `LIVE_STATUSES` é escrita à
+   * O caso gêmeo de `paused_manual` (migration 0145). A lista de estados é escrita à
    * mão, e estado novo não entra nela sozinho: dos SEIS consumidores que listam
    * estados vivos, cinco acompanharam a 0145 e este — o único que fala em nome do
    * opt-out do lead — não. O comentário do STOP promete "cancela TUDO que está
    * vivo, sem exceção de política", e TUDO deixou de ser verdade quando o estado
    * novo entrou: comentário que descreve alcance envelhece junto com a lista.
+   *
+   * CONSERTADO: o caso abaixo nasceu catraca (`it.fails`, 3f812035b) e virou
+   * teste normal quando `paused_manual` entrou em `STATUS_ALCANCADOS_PELO_OPT_OUT`
+   * — a lista do opt-out, a mesma que já alcançava o dormente. NÃO em
+   * `LIVE_STATUSES`: aquela é a lista de quem REAGE ao inbound, e a pausa que uma
+   * pessoa pôs não acorda nem cancela com mensagem comum, e não é tomada pelo
+   * handoff. Os dois casos depois do STOP prendem essa metade; o do handoff é o
+   * que reprova o conserto feito pelo lado errado.
    *
    * O QUE CUSTA, medido em consequência e não em susto: a mensagem NÃO vaza —
    * `stopGate` (before-send) relê `is_blocked` direto da fonte no turno e o sink
@@ -428,7 +444,9 @@ describe("applyReactivityEvent — STOP/opt-out (message.received + is_blocked)"
    * vetados, e a métrica de outcome sem contar este opt-out.
    */
   /**
-   * CONTROLE POSITIVO da catraca abaixo, e ele é um `it` NORMAL de propósito.
+   * CONTROLE POSITIVO do caso abaixo, e ele é um `it` NORMAL de propósito.
+   * (Nasceu para a catraca, quando o caso era `it.fails`; segue valendo como
+   * guarda da fixture — o raciocínio abaixo é o de quando nasceu.)
    *
    * `it.fails` é satisfeito por QUALQUER falha — typo, import quebrado, fixture
    * impossível. Numa árvore sem a 0145 o CHECK de `followup_enrollments` recusa
@@ -460,7 +478,8 @@ describe("applyReactivityEvent — STOP/opt-out (message.received + is_blocked)"
   });
 
   /**
-   * SEGUNDO controle positivo, e fecha o resíduo que o @MaestroConexoes apontou:
+   * SEGUNDO controle positivo (também nascido para a catraca, e também mantido),
+   * e fecha o resíduo que o @MaestroConexoes apontou:
    * `it.fails` também é satisfeito por EXCEÇÃO. Se `applyReactivityEvent` passar
    * a estourar por regressão alheia, a catraca abaixo fica verde satisfeita pelo
    * throw — pelo motivo errado, de novo, um nível acima da fixture.
@@ -486,28 +505,25 @@ describe("applyReactivityEvent — STOP/opt-out (message.received + is_blocked)"
 
     const row = eventRow({ organization_id: org, event_type: "message.received", payload: { contact_id: contactId } });
     const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row);
-    expect(summary.matched).toBe(true); // completou; o QUANTO é a catraca abaixo
+    expect(summary.matched).toBe(true); // completou; o QUANTO é o caso abaixo
   });
 
   // ACOPLADO À MIGRATION 0145: o `seedEnrollment` abaixo grava
-  // `status: "paused_manual"`, e na `main` o CHECK de `followup_enrollments`
-  // ainda RECUSA esse valor (0054: active, waiting_reply, paused_handoff,
-  // completed, cancelled, dead). Este caso só roda em árvore que carrega a 0145 —
-  // medido: 1 arquivo de migration 0145 e 7 ocorrências no baseline desta base.
-  // Cherry-pick isolado para uma árvore sem ela vira 23514 no seed, e o vermelho
-  // vai parecer defeito de reactivity em vez de migration ausente.
+  // `status: "paused_manual"`, que o CHECK de `followup_enrollments` só aceita
+  // depois da 0145. Cherry-pick isolado para uma árvore sem ela vira 23514 no
+  // seed, e o vermelho vai parecer defeito de reactivity em vez de migration
+  // ausente — o primeiro controle positivo acima diz qual dos dois é.
   //
-  // `it.fails` = CATRACA, não teste desligado. Ele EXECUTA e exige que o defeito
-  // ainda esteja lá; no dia em que `LIVE_STATUSES` ganhar `paused_manual` este
-  // caso REPROVA por ter passado, e quem consertar é obrigado a vir tirar o
-  // `.fails`. O conserto é acrescentar o estado à lista em
-  // `lib/followup/reactivity.ts` — decisão de comportamento, do dono do arquivo.
-  it.fails("STOP alcança também o enrollment PAUSADO MANUALMENTE — opt-out não abre exceção de estado", async () => {
+  // Era CATRACA (`it.fails`): exigia que o defeito ainda estivesse lá. Virou teste
+  // normal no conserto, e por isso agora afirma o estado final INTEIRO — a catraca
+  // só podia ter uma asserção (o `.fails` se satisfaz com a primeira que falha) e
+  // dependia do caso irmão para o resto; um teste normal não precisa emprestar.
+  it("STOP alcança também o enrollment PAUSADO MANUALMENTE — opt-out não abre exceção de estado", async () => {
     const org = nextOrgId();
     await seedOrg(org);
     const contactId = await seedContact(org, { isBlocked: true });
     const flow = await seedFlow(org, SIMPLE_GRAPH);
-    await seedEnrollment({
+    const id = await seedEnrollment({
       org,
       pointerId: flow.pointerId,
       versionId: flow.versionId,
@@ -519,23 +535,78 @@ describe("applyReactivityEvent — STOP/opt-out (message.received + is_blocked)"
 
     const row = eventRow({ organization_id: org, event_type: "message.received", payload: { contact_id: contactId } });
     const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row);
+    expect(summary).toEqual({ matched: true, reacted: 1 });
 
-    // UMA asserção só, e é deliberado — `it.fails` é satisfeito pela PRIMEIRA
-    // que falha, então toda asserção extra aqui seria letra morta enquanto o
-    // defeito existir, e estrearia junto no dia do conserto. Se uma delas
-    // quebrasse por outro motivo, o caso seguiria falhando, o `.fails` seguiria
-    // satisfeito, e a catraca não reprovaria: sobreviveria ao próprio conserto.
-    //
-    // O estado final do enrollment cancelado é congelado pelo caso irmão
-    // "cancela o enrollment VIVO do contato (outcome='opted_out') e ignora os já
-    // terminais" — citado pelo TÍTULO, e não por "logo acima", porque a garantia
-    // desta catraca depende dele e um `git grep` precisa achá-lo se ele se mudar.
-    // Os dois passam pelo mesmo `cancelAll`, que não tem ramo por status.
-    //
-    // DÍVIDA DECLARADA: se aquele caso for removido, movido ou pulado, as três
-    // propriedades ficam órfãs e ESTA catraca continua com cara de saudável.
-    // Prosa não reprova — quem mexer no irmão está mexendo em dois lugares.
-    expect(summary.reacted).toBe(1);
+    const after = await getEnrollment(id);
+    expect(after.status).toBe("cancelled");
+    expect(after.outcome).toBe("opted_out");
+    expect(after.next_eval_at).toBeNull();
+
+    const events = await getEvents(id);
+    expect(events.filter((e) => e.event_type === "reactivity_opted_out")).toHaveLength(1);
+  });
+
+  // A outra metade do conserto: o STOP alcança a pausa manual, e o resto não.
+  // Mensagem comum de quem não pediu para parar — mesmo com `cancel_on_reply`
+  // ligado no fluxo — não acorda nem cancela a pausa que uma pessoa pôs: quem a
+  // retoma é quem pausou. (Este caso prende o comportamento, mas NÃO separa o
+  // conserto certo do errado: o caminho do inbound filtra por `waiting_reply` e
+  // `active`. Quem separa é o caso seguinte, do handoff — medido por sabotagem.)
+  it("mensagem comum NÃO toca a pausa manual — só o opt-out a alcança", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const flow = await seedFlow(org, SIMPLE_GRAPH, { triggerConfig: { kind: "manual", cancel_on_reply: true } });
+    const id = await seedEnrollment({
+      org,
+      pointerId: flow.pointerId,
+      versionId: flow.versionId,
+      contactId,
+      currentNodeId: "w1",
+      status: "paused_manual",
+      nextEvalAt: null,
+    });
+
+    const row = eventRow({ organization_id: org, event_type: "message.received", payload: { contact_id: contactId } });
+    const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row);
+    expect(summary).toEqual({ matched: true, reacted: 0 });
+
+    const after = await getEnrollment(id);
+    expect(after.status).toBe("paused_manual");
+    expect(after.outcome).toBeNull();
+    expect((await getEvents(id)).filter((e) => e.event_type.startsWith("reactivity_"))).toEqual([]);
+  });
+
+  // O caso que SEPARA o conserto certo do errado. `paused_manual` entra na lista do
+  // opt-out, e não em `LIVE_STATUSES`, porque a lista de vivos também é a do
+  // HANDOFF: lá, a pausa manual viraria `paused_handoff` ao abrir um atendimento
+  // humano, e o fechamento dele (`reactToHandoffClose`) a retomaria para `active` —
+  // a régua voltaria a falar sem que quem pausou tivesse retomado. Pôr o estado em
+  // `LIVE_STATUSES` passa no caso do STOP e reprova aqui.
+  it("handoff aberto NÃO toma a pausa manual — ela não vira paused_handoff", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const conversationId = await seedConversation(org, contactId);
+    const flow = await seedFlow(org, SIMPLE_GRAPH, { handoffPolicy: "pause" });
+    const id = await seedEnrollment({
+      org,
+      pointerId: flow.pointerId,
+      versionId: flow.versionId,
+      contactId,
+      currentNodeId: "w1",
+      status: "paused_manual",
+      nextEvalAt: null,
+    });
+
+    const row = eventRow({
+      organization_id: org,
+      event_type: "ai.handoff_triggered",
+      payload: { conversation_id: conversationId, reason: "low_confidence" },
+    });
+    const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row);
+    expect(summary).toEqual({ matched: true, reacted: 0 });
+    expect((await getEnrollment(id)).status).toBe("paused_manual");
   });
 
   it("re-drenar o MESMO event_log row é idempotente — sem efeito duplicado", async () => {

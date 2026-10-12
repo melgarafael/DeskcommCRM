@@ -24,6 +24,14 @@ export type EnrollmentStatus =
   | "dormente"
   | "paused_handoff"
   /**
+   * Pausa pedida por uma pessoa (0145, `STATUS_PAUSA_MANUAL` em `intervencao.ts`).
+   * Sem relógio e fora de `LIVE_STATUSES`: a mensagem comum não a acorda — quem a
+   * retoma é quem pausou. O opt-out a alcança (`reactivity.ts`). Faltava neste
+   * tipo desde a 0145, e foi por isso que a lista do opt-out pôde esquecê-la sem
+   * o compilador ter como apontar.
+   */
+  | "paused_manual"
+  /**
    * Roteiro de atendimento em andamento (0394). Conduzido pelo TURNO, não pelo
    * relógio: o motor de follow-up nunca o reclama (o claim filtra
    * `active|waiting_reply`). Está aqui porque o opt-out o alcança

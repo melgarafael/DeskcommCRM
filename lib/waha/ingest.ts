@@ -35,6 +35,7 @@ import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/g
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
 import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
+import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { semAssinatura } from "@/lib/messaging/assinatura";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
@@ -312,10 +313,19 @@ export function verifyHmacSha512(
   }
 }
 
-function previewFromMessage(p: WahaPayload): string {
-  if (p.body) return p.body.slice(0, 280);
-  const t = resolveMessageType(p);
-  return t !== "text" ? `[${t}]` : "";
+/**
+ * Prévia da conversa (`conversations.last_message_preview`), gravada pelos dois
+ * ramos da ingestão.
+ *
+ * ⚠️ O corpo NÃO é só `p.body`: o payload NOWEB de um cartão de contato vem sem
+ * `body` e o vCard mora em `_data.message.contactMessage.vcard` (#2742). Antes,
+ * essa função caía em `[contact]` e a lista da Inbox mostrava o literal no lugar
+ * do nome do contato compartilhado. `bodyOf` é o MESMO caminho que grava o
+ * `body` da mensagem; `previaDaMensagem` lê o `FN:` do cartão (`parseVcard`,
+ * #2712) e devolve `Contato: <nome>`.
+ */
+export function previewFromMessage(p: WahaPayload): string {
+  return previaDaMensagem(bodyOf(p), resolveMessageType(p));
 }
 
 /** URL da mídia: WAHA novo (payload.media.url) com fallback legado (payload.mediaUrl). */

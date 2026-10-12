@@ -14,6 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { logger } from "@/lib/logger";
 import { remetenteDeGrupoSchema, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
+import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 
 export interface EntradaDeGrupo {
   organizationId: string;
@@ -109,8 +110,10 @@ export async function gravarMensagemDeGrupo(
   });
   if (resultado === "duplicada") return "duplicada";
   if (e.direction === "inbound") await db.reabrirSeFechada(e.organizationId, conversationId);
-  // Mesma prévia da conversa individual (`previewFromMessage`): texto até 280, ou `[tipo]`.
-  const preview = e.body ? e.body.slice(0, 280) : e.type !== "text" ? `[${e.type}]` : "";
+  // Mesma prévia da conversa individual (`previewFromMessage`): a RÉGUA mora em
+  // `lib/messaging/previa-da-mensagem.ts` — texto até 280, `[tipo]` sem texto, e
+  // o vCard vira `Contato: <nome>` em vez do literal ou do cartão cru (#2742).
+  const preview = previaDaMensagem(e.body, e.type);
   await db.marcarConversa(e.organizationId, conversationId, preview, e.sentAt, e.direction);
   return "gravada";
 }

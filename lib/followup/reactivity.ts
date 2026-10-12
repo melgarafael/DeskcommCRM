@@ -76,13 +76,28 @@ export const RESUME_GRACE_MS = 30 * 60_000;
 export const LIVE_STATUSES: readonly EnrollmentStatus[] = ["active", "waiting_reply", "paused_handoff"];
 
 /**
- * O opt-out alcança o dormente também.
+ * O opt-out alcança o dormente também — e a pausa manual.
  *
  * STOP e LGPD são hard stop: não admitem exceção de status, e uma espera de 28
  * dias que sobrevivesse ao "pare de me mandar mensagem" voltaria a falar com
  * quem pediu silêncio — um mês depois, quando ninguém mais lembra por quê.
+ *
+ * `paused_manual` (0145) fica FORA de `LIVE_STATUSES` pelo mesmo motivo do
+ * dormente: a pausa que uma pessoa pôs não reage à mensagem comum — quem a
+ * retoma é quem pausou. Mas o STOP a alcança. Sem isso, a inscrição pausada
+ * sobrevivia ao opt-out: a mensagem não vazava (o `stopGate` relê `is_blocked`
+ * no turno), mas a régua não virava `opted_out`, a métrica não contava o
+ * opt-out, e a inscrição seguia ocupando a vaga única do contato
+ * (`idx_followup_enrollments_one_live`) — todo follow-up legítimo futuro dele
+ * morreria em 23505 sem explicação. A cascata de LGPD já a alcançava
+ * (`lib/lgpd/cascata.ts`); o STOP era o único que não.
  */
-const STATUS_ALCANCADOS_PELO_OPT_OUT: readonly EnrollmentStatus[] = [...LIVE_STATUSES, "dormente", "coletando"];
+const STATUS_ALCANCADOS_PELO_OPT_OUT: readonly EnrollmentStatus[] = [
+  ...LIVE_STATUSES,
+  "dormente",
+  "coletando",
+  "paused_manual",
+];
 
 export interface LiveEnrollmentRef {
   id: string;

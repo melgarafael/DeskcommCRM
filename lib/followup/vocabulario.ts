@@ -565,6 +565,9 @@ export const SITUACOES_DO_ACOMPANHAMENTO: Record<EnrollmentStatus, string> = {
   // precisa saber que este acompanhamento está vivo e só não fala agora.
   dormente: "Aguardando a data do retorno",
   paused_handoff: "Pausado — um humano assumiu",
+  // O mesmo rótulo da linha do tempo (`eventos-legiveis.ts`): os dois pararam o
+  // envio, mas por razões diferentes, e a diferença é o que quem lê precisa ver.
+  paused_manual: "Pausado por uma pessoa",
   coletando: "Coletando respostas do roteiro",
   completed: "Concluído",
   cancelled: "Cancelado",
