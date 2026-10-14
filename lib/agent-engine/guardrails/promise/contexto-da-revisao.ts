@@ -1,6 +1,6 @@
 /** Conversa informa pedido/perfil, nunca autoriza política da empresa. */
 export interface ContextoDaRevisao {
-  mensagens: ReadonlyArray<{ papel: "cliente" | "atendente"; texto: string }>;
+  mensagens: ReadonlyArray<{ papel: "cliente" | "atendente"; texto: string; autoria?: string; em?: string; estado_envio?: string; recortada?: boolean }>;
   resumo: string | null;
   limitado: boolean;
   momento: string;
@@ -9,7 +9,7 @@ export interface ContextoDaRevisao {
 
 /** Recebe só conversa curada pelo servidor, sem consultar dados/identificadores. */
 export function montarContextoDaRevisao(
-  mensagens: readonly { direction: string; body: string }[],
+  mensagens: readonly { direction: string; body: string; author?: string; sent_at?: string; status?: string }[],
   resumo: string | null | undefined,
   momento: string,
   fuso: string,
@@ -18,9 +18,11 @@ export function montarContextoDaRevisao(
   // no padrão). O teto adicional só protege transporte extraordinariamente grande.
   let limitado = mensagens.length > 100;
   let restante = 48000;
-  const selecionadas: Array<{ papel: "cliente" | "atendente"; texto: string }> = [];
+  const selecionadas: Array<{ papel: "cliente" | "atendente"; texto: string; autoria?: string; em?: string; estado_envio?: string; recortada?: boolean }> = [];
   for (const m of mensagens.slice(-100).reverse()) {
     if (m.direction !== "inbound" && m.direction !== "outbound") continue;
+    // Aceita/fila/sending não comprova que o cliente recebeu o antecedente.
+    if (m.direction==='outbound' && m.status && !['sent','delivered','read'].includes(m.status)) continue;
     if (!m.body.trim()) continue;
     const limite = restante;
     if (limite < 200) { limitado = true; break; }
@@ -31,7 +33,10 @@ export function montarContextoDaRevisao(
       limitado = true;
     }
     restante -= texto.length;
-    selecionadas.push({ papel: m.direction === "inbound" ? "cliente" : "atendente", texto });
+    selecionadas.push({ papel: m.direction === "inbound" ? "cliente" : "atendente", texto,
+      ...(m.author || m.sent_at || m.status ? { autoria:m.author ?? (m.direction==='inbound'?'client':'unknown_outbound'),em:m.sent_at ?? '',estado_envio:m.status ?? 'unknown' } : {}),
+      ...(texto!==m.body ? { recortada:true } : {}),
+    });
   }
   const sum = resumo?.trim() || null;
   if (sum && sum.length > 4000) limitado = true;

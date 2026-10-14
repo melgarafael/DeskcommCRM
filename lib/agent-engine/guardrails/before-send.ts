@@ -1,3 +1,4 @@
+import { detectHumanCompletion } from "./promise/conclusao-humana";
 import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
@@ -193,6 +194,10 @@ export interface GateContext {
    */
   casesEnabled: boolean;
   hasOpenCase: boolean;
+  humanDecisionValidated?: boolean;
+  humanDecisionStale?: boolean;
+  /** Fonte humana/devolutiva presente; arma degradação local se o revisor não respondeu à conclusão. */
+  humanDecisionContextPresent?: boolean;
   openedCaseThisTurn: boolean;
   /**
    * Nome(s) próprio(s) que o PROMPT do tenant usa para a retaguarda humana (ex.:
@@ -441,7 +446,8 @@ export const semanticPromiseGate: Gate = {
  * Gate anti-alucinação de casos humanos (spec 15 §10.2, Wave 4) — a garantia DURA da
  * invariante "o lead nunca recebe promessa-de-humano sem caso aberto". Off (`casesEnabled`
  * false) ou já há caso (`hasOpenCase`/`openedCaseThisTurn` — a IA abriu um NESTE turno) =
- * no-op. Só veta quando ALGUMA das duas camadas — o detector léxico (`detectHumanPromise`) ou o sinal semântico (`ctx.semanticPromise?.prometeuRetornoHumano`) — acha uma promessa
+ * no-op para promessa futura. Conclusão humana exige fidelidade/prova, mesmo com Caso aberto.
+ * Para promessa futura, só veta quando ALGUMA das duas camadas — o detector léxico (`detectHumanPromise`) ou o sinal semântico (`ctx.semanticPromise?.prometeuRetornoHumano`) — acha uma promessa
  * clara na candidata E nenhum caso existe. O fail-safe de 2ª camada (auto-abre caso e
  * re-roda a cadeia) vive na orquestração do `send_message` (inbound-turn.ts), não aqui — o
  * gate em si é síncrono/puro como os demais. Posição 6.5 de `BEFORE_SEND_GATES` (logo após
@@ -452,7 +458,16 @@ export const semanticPromiseGate: Gate = {
 export const casePromiseGate: Gate = {
   name: 'case_promise',
   evaluate: (ctx) => {
+    const completion = ctx.semanticPromise?.afirmouConclusaoHumana === true ||
+      (ctx.humanDecisionContextPresent === true && ctx.semanticPromise?.afirmouConclusaoHumana === undefined && detectHumanCompletion(ctx.body));
+    if (ctx.humanDecisionStale) return { pass:false, code:'human_decision_context_changed', reason:'As fontes ou a decisão mudaram. Releia o contexto antes de comunicar a conclusão.' };
+    if (completion && !(ctx.humanDecisionValidated === true && ctx.semanticPromise?.repasseConcluidoFiel === true &&
+        ctx.semanticPromise.prometeuRetornoHumano !== true)) {
+      return { pass: false, code: 'human_decision_unfaithful',
+        reason: 'A conclusão afirmada não está sustentada pela decisão humana deste pedido. Confira beneficiário, objeto, data e condições; autorização para tentar não prova conclusão. Releia a fonte ou reformule sem afirmar o que não foi concluído nem acrescentar promessa.' };
+    }
     if (!ctx.casesEnabled) return { pass: true };
+    if (ctx.humanDecisionValidated === true && ctx.semanticPromise?.repasseConcluidoFiel === true) return { pass:true };
     if (ctx.hasOpenCase || ctx.openedCaseThisTurn) return { pass: true };
     // Lê os DOIS sinais, em OU — e o OU é o ponto. Exigir os dois faria o conserto
     // não consertar nada: o léxico é o filtro BARATO e continua valendo sozinho
@@ -908,7 +923,7 @@ const spinningGate: Gate = {
  * do agente de uma organização que ligou a camada `afirmacao_clinica`, então a v8 não
  * muda o destino de nenhum envio de quem não ligou.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 9;
+export const BEFORE_SEND_CHAIN_VERSION = 10;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1082,6 +1097,9 @@ export interface RunBeforeSendArgs {
    */
   casesEnabled?: boolean;
   hasOpenCase?: boolean;
+  /** Só o servidor fornece a prova; chamada fora do classificador, sob a transação do envio. */
+  validateHumanDecision?: (db: pg.PoolClient, candidate: string, verdict: PromiseClassification | null) => Promise<'valid' | 'not_eligible' | 'stale'>;
+  humanDecisionContextPresent?: boolean;
   openedCaseThisTurn?: boolean;
   /** Ver `GateContext.humanPromiseExtraTargets`. Ausente = só cargos genéricos. */
   humanPromiseExtraTargets?: readonly string[];
@@ -1244,6 +1262,16 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
  * rodam antes de tomar conexão — ver o porquê no ponto da chamada.
  */
 export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSendResult> {
+  const result = await runBeforeSendAttempt(args);
+  if (result.status === 'vetoed' && result.code === 'human_decision_context_changed') {
+    // A primeira transação/conexão já foi liberada. Nova inferência nunca segura o lock do número.
+    args.log.info('revisão refeita por mudança de contexto', { event:'human_decision_review_retry', attempts:1 });
+    return runBeforeSendAttempt(args);
+  }
+  return result;
+}
+
+async function runBeforeSendAttempt(args: RunBeforeSendArgs): Promise<BeforeSendResult> {
   const gates = args.gates ?? BEFORE_SEND_GATES;
   // ANTES de tomar conexão, de propósito: preferência de estilo não precisa do
   // lock, e uma consulta que falha DENTRO da transação a deixa abortada — a
@@ -1308,6 +1336,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
 
     // Estado confiável carregado SOB o lock (os contadores de cap/janela de copies
     // são racy — precisam ver o que o worker anterior já efetivou).
+    const humanDecision = await args.validateHumanDecision?.(client, bodyDoModelo, semanticPromise);
     const provider = await loadChannelProvider(client, args.tenantId, args.channelSessionId);
     if (
       args.meetingDelivery &&
@@ -1418,6 +1447,9 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       lgpd: args.lgpd !== undefined ? { ...args.lgpd, isFirstOutbound } : null,
       casesEnabled: args.casesEnabled ?? false,
       hasOpenCase: args.hasOpenCase ?? false,
+      humanDecisionValidated: humanDecision === "valid",
+      humanDecisionStale: humanDecision === "stale",
+      humanDecisionContextPresent: args.humanDecisionContextPresent ?? false,
       openedCaseThisTurn: args.openedCaseThisTurn ?? false,
       ...(args.humanPromiseExtraTargets !== undefined
         ? { humanPromiseExtraTargets: args.humanPromiseExtraTargets }
@@ -1493,6 +1525,16 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // ctx.body é o corpo FINAL (emendado pelo disclosureGate F4-05 quando aplicável).
     if (args.approvedReply && ctx.body !== args.body)
       throw new Error('reply_body_changed_reapproval_required');
+    // A revisão de fontes também vale sem uma exceção de Caso elegível.
+    if (args.validateHumanDecision &&
+      await args.validateHumanDecision(client, bodyDoModelo, semanticPromise) === 'stale') {
+      await client.query('rollback');
+      const lateVeto = { gate:'case_promise',code:'human_decision_context_changed',message:'As fontes ou a decisão mudaram durante a preparação do envio; releia o contexto.' };
+      trace.push({ gate:lateVeto.gate,verdict:'veto',code:lateVeto.code });
+      emitTrace(args.log,args.channelSessionId,trace.slice(-1));
+      await persistTrace(args,trace,lateVeto);
+      return { status:'vetoed', trace, gate:'case_promise', code:'human_decision_context_changed', message:lateVeto.message };
+    }
     const outcome = await args.send(ctx.body);
 
     // Registra pacing + copy SÓ no envio físico fresco ('sent'). 'already_sent'/'queued'

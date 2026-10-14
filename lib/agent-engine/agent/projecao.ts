@@ -59,6 +59,8 @@ export interface MensagemProjetada {
   quando: string;
   /** marcador legível quando houve mídia ("[imagem]"); nunca o caminho dela. */
   anexo?: string;
+  autoria?: string;
+  estado_envio?: string;
 }
 
 /** O contexto como o Conversador o lê. Tudo o que não está aqui, ele não vê. */
@@ -142,6 +144,8 @@ export function projetarContexto(ctx: LeadContext): ContextoProjetado {
         // pelo gate de saída quando foi enviada.
         texto: m.body,
         quando: m.sent_at,
+        ...(m.author ? { autoria: m.author } : {}),
+        ...(m.status ? { estado_envio: m.status } : {}),
       };
       // O caminho de storage é endereço interno; o TIPO é informação útil ("ela
       // mandou uma imagem"). Fica o segundo, sai o primeiro.

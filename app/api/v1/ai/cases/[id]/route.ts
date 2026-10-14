@@ -1,3 +1,5 @@
+import {lerComunicacaoDoCaso} from '@/lib/escalacao/comunicacao-do-caso';
+import {getRequestPool} from '@/lib/agent-engine/db/request-pool';
 /**
  * GET /api/v1/ai/cases/:id — detalhe do caso + timeline (spec 15 §7, Wave 5).
  * Read-only via PostgREST, org-scoped, 404 honesto.
@@ -59,5 +61,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   }
   if (!chamado) return fail("not_found", t("Caso não encontrado."), 404, { requestId });
 
-  return ok(chamado, { requestId });
+  try { return ok({...chamado,communication:chamado.events.some(e=>e.kind==='human_replied')
+    ?await lerComunicacaoDoCaso(getRequestPool(),org.orgId,id):[]}, {requestId}); }
+  catch { return fail('unavailable','Não foi possível conferir a comunicação do Caso.',503,{requestId}); }
 }

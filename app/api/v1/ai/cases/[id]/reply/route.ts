@@ -25,6 +25,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * meio pode deixar um caso fora de `awaiting_human` sem o efeito prometido,
  * porque esse estado não tem caminho de volta pela API (viraria 409 eterno).
  */
+import { ligarEventoAoJob } from "@/lib/agent-engine/agent/contexto-de-decisao-humana";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
@@ -217,18 +218,20 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     // transação antiga aberta e é reemprestado nela. O finally lê desta marcação.
     let erroNaTransacao: Error | undefined;
     let transitioned: boolean;
+    const humanEventId = randomUUID();
     try {
       await client.query("begin");
       transitioned =
         action === "resolved"
-          ? await resolveCaseFromHuman(client, org.orgId, caseId, user.id, body)
-          : await markAwaitingLead(client, org.orgId, caseId, user.id, body);
+          ? await resolveCaseFromHuman(client, org.orgId, caseId, user.id, body, humanEventId)
+          : await markAwaitingLead(client, org.orgId, caseId, user.id, body, humanEventId);
       if (transitioned) {
-        await enqueueJob(client, org.orgId, {
+        const { job } = await enqueueJob(client, org.orgId, {
           kind: "case_reply_turn",
           leadId: contactId,
-          payload: { case_id: caseId, action, body },
+          payload: { case_id: caseId, action, body, human_event_id: humanEventId },
         });
+        await ligarEventoAoJob(client, { tenantId: org.orgId, caseId, eventId: humanEventId, jobId: job.id, role: org.role });
         await client.query("commit");
       } else {
         await client.query("rollback");

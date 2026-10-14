@@ -46,6 +46,8 @@ interface ComumDaTarefa {
    * não roda qualquer que seja o estado dela (`tarefaSemCamada`).
    */
   camada?: CamadaSemantica;
+  /** Nome do gate quando difere do ponto de IA. */
+  nomeDaConferencia?: string;
   /**
    * Para quem não é engenheiro: vão à tela por `t()`. O `rotulo` é o nome do que
    * o JEV faz, e pode diferir do nome do ponto; com ponto, o `oQueFaz` é o
@@ -413,6 +415,21 @@ export const TAREFA_DA_AFIRMACAO_DE_FATO = {
     "Lê a resposta que o assistente vai enviar e confere, nas evidências consultadas neste turno, se o que ele afirma sobre o negócio está escrito ali — ou se o material diz o contrário.",
 } as const satisfies TarefaDoJev;
 
+/** Só ativa por escolha explícita e aceite específico do pacote de revisão. */
+export const TAREFA_DA_REVISAO_DE_RESPOSTA = {
+  id: "revisao_resposta", ponto: "promise_semantic", primitiva: "noul",
+  alcance: "conversa", familia: "substitui", camada: "promessa_semantica", nomeDaConferencia: "semantic_promise",
+  rotulo: "Revisar ofertas e compromissos de retorno",
+  oQueFaz: "Confere a resposta, as evidências consultadas e o contexto da conversa: oferta comercial, compromisso de retorno e retorno só da IA.",
+  aoDecidir: "O Jev revisa primeiro. A IA configurada assume quando ele falha ou fica em dúvida; casos e follow-ups continuam sendo conferidos pelo CRM.",
+  aoDecidirNoPonto: "O Jev revisa primeiro; o modelo abaixo é a reserva em caso de falha ou dúvida.",
+  aoConfirmarDecidir: "O Jev passará a revisar ofertas e retornos. A IA configurada cobre falhas e dúvidas, sem alterar as exigências de caso ou follow-up.",
+  concordancia: {
+    antes: "dias, o Jev e a IA de reserva chegaram à mesma conclusão em",
+    depois: "verificações de oferta, retorno ou autoria do retorno. Só entram as verificações em que ambos responderam.",
+  },
+} as const satisfies TarefaDoJev;
+
 export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
   TAREFA_DO_CLIMA,
   TAREFA_DA_MANIPULACAO,
@@ -423,6 +440,7 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
   TAREFA_DA_CONFERENCIA_DE_CAMPO,
   TAREFA_DA_URGENCIA,
   TAREFA_DA_AFIRMACAO_DE_FATO,
+  TAREFA_DA_REVISAO_DE_RESPOSTA,
 ];
 
 /**
@@ -518,6 +536,10 @@ type TarefaNaRegra = Pick<TarefaDoJev, "alcance"> & { id: string; soObserva?: st
 
 /** Itens 2 a 5 do cabeçalho, com o Jev ligado sob o aceite `aceito`. */
 function estadoSobOAceite(config: ConfigDoJev, tarefa: TarefaNaRegra, aceito: Alcance): EstadoDaTarefa {
+  if (tarefa.id === TAREFA_DA_REVISAO_DE_RESPOSTA.id) {
+    if (config.contexto_revisao == null) return "desligada";
+    return estadoGravadoDaTarefa(config, tarefa.id) ?? "desligada";
+  }
   if (ALCANCES.indexOf(tarefa.alcance) > ALCANCES.indexOf(aceito)) return "desligada";
   const gravado = estadoGravadoDaTarefa(config, tarefa.id);
   // Um `decidindo` que outra versão gravou (uma que deixe decidir, revertida)

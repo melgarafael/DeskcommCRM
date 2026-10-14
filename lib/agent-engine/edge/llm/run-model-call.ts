@@ -1,3 +1,4 @@
+import {capturarRevisao} from '@/lib/ai/diagnostico-revisao/captura';
 import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
 /**
  * SEAM ÚNICO de chamada de modelo: TODA chamada de LLM do harness passa por
@@ -895,6 +896,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
             : [stepCountIs(input.maxSteps), input.pararQuando],
       ...cacheDaCauda(cfgUsada.provider, input.maxSteps),
     };
+
+    if(input.purpose==='promise_semantic'||input.purpose==='human_return_confirmation')
+      await capturarRevisao(db,{tenantId:input.tenantId,jobId:input.jobId},
+        input.purpose==='promise_semantic'?'reserva':'confirmador',
+        {system:opcoesBase.system,messages:opcoesBase.messages});
 
     if (cfgUsada.provider === PROVEDOR_POR_ASSINATURA) {
       // SIWC exige Responses API em streaming e store:false. A assinatura

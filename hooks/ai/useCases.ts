@@ -1,4 +1,5 @@
 "use client";
+import type {ComunicacaoDoEvento} from "@/lib/escalacao/comunicacao-do-caso";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import type { ChamadoDaLista } from "@/lib/escalacao/chamados";
@@ -85,6 +86,7 @@ export interface CaseDetailData {
   contact_name: string | null;
   contact_phone: string | null;
   events: CaseEvent[];
+  communication?: ComunicacaoDoEvento[];
 }
 
 /** Lista de casos humanos (spec 15 §9). Polling 60s — casos nascem no worker. */
@@ -101,7 +103,7 @@ export function useCase(id: string | null) {
   return useQuery({
     queryKey: ["ai-case", id],
     enabled: id !== null,
-    refetchInterval: 60_000,
+    refetchInterval: 15_000,
     queryFn: () => apiClient.get<{ data: CaseDetailData }>(`/api/v1/ai/cases/${id}`).then((r) => r.data),
   });
 }

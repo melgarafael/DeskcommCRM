@@ -3,8 +3,10 @@
  * O filtro tem de chegar à rota (antes da onda do Jev, a rota o descartava e a
  * lista vinha inteira) e a linha tem de dizer "Jev", não o id da coluna.
  */
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render as renderComponent, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ExecucoesDeIa } from "./ExecucoesDeIa";
 
@@ -40,12 +42,23 @@ const LINHA_DO_JEV = {
 
 let pedidas: string[] = [];
 
+// A superfície real compartilha o QueryClient do layout com o diagnóstico.
+function render(ui: React.ReactNode) {
+  const client = new QueryClient({defaultOptions:{queries:{retry:false}}});
+  return renderComponent(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
+
 beforeEach(() => {
   pedidas = [];
   substituir.mockClear();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
+      // Este roteiro mede pedidos da lista. Diagnóstico tem sua própria prova de RBAC.
+      if (url === "/api/v1/ai/review-diagnostics") {
+        return new Response(JSON.stringify({error:{code:"FORBIDDEN"}}), {status:403});
+      }
       pedidas.push(url);
       return new Response(
         JSON.stringify({
