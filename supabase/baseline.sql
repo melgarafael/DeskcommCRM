@@ -54414,7 +54414,7 @@ on conflict (model) do update set
   notes = excluded.notes,
   superseded_at = null;
 
--- ---- botão "Forçar atualização" nos estados de falha (migration 0647) ----
+-- ---- botão "Forçar atualização" nos estados de falha (migration 0664) ----
 -- A intenção e o alvo viajam NO RUN: o agente do host só lê o pedido no
 -- heartbeat seguinte. Sem `force_requested` ele rodaria `update.sh` sem
 -- `--force` — que, com o código já na versão alvo, responde "você já está na
