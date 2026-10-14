@@ -172,6 +172,7 @@ export const customFieldSchema = z.object({
     "email",
     "phone",
     "url",
+    "file",
   ]),
   required: z.boolean().optional(),
   /**
