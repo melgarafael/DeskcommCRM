@@ -37,6 +37,9 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Valores e negociação": { es: "Precios y negociación" },
+  "Encaminhar preços e negociação diretamente para uma pessoa": { es: "Derivar precios y negociación directamente a una persona" },
+  "A IA não informa valores, descontos ou condições de pagamento. Pedidos identificados vão para a equipe antes do modelo; respostas comerciais da IA também são barradas.": { es: "La IA no informa precios, descuentos ni condiciones de pago. Las solicitudes detectadas pasan al equipo antes del modelo; las respuestas comerciales de la IA también se bloquean." },
   "Canal para enviar os lembretes": { es: "Canal para enviar los recordatorios" },
   "Automático — conversa da reserva ou único canal disponível": { es: "Automático — conversación de la reserva o único canal disponible" },
   "Canal configurado indisponível — escolha outro": { es: "Canal configurado no disponible — elige otro" },

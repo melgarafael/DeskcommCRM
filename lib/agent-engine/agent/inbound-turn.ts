@@ -1,3 +1,4 @@
+import { contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
@@ -1914,6 +1915,39 @@ function turnoVaiFalarComOLead(job: JobRow): boolean {
   return purpose === undefined || purpose === 'send_message';
 }
 
+async function escalarComercialAntesDoModelo(
+  pool: pg.Pool, tenantId: string, leadId: string, conversationId: string,
+  log: Logger, preview?: TurnPreview,
+): Promise<boolean> {
+  if (!await comercialExigeHumano(pool, tenantId)) return false;
+  const textos = preview
+    ? inboundsNaoRespondidos(preview.context.context.messages)
+    : (await pool.query<{ body: string | null }>(
+        `select m.body from messages m
+         where m.organization_id = $1 and m.conversation_id = $2 and m.direction = 'inbound'
+           and m.created_at > coalesce((select max(o.created_at) from messages o
+             where o.organization_id = $1 and o.conversation_id = $2 and o.direction = 'outbound'), '-infinity')
+         order by m.created_at desc limit 100`, [tenantId, conversationId],
+      )).rows.map(m => m.body ?? '');
+  if (!textos.some(contemAssuntoComercialRestrito)) return false;
+  if (preview) {
+    preview.result.proposals.push({ tool: 'crm_request_human_handoff', arguments: {
+      reason: 'Valores e negociação: atendimento exclusivamente humano.',
+    } });
+    preview.result.impediments.push({ code: 'commercial_requires_human',
+      message: 'Valores e negociação: a IA não pode responder. Atendimento humano necessário.' });
+  } else {
+    const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: textos,
+      motivo: { codigo: 'low_confidence', texto: 'Valores e negociação: fora do escopo da IA.' } });
+    await performHumanHandoff(pool, { tenantId, leadId, conversationId },
+      { reason: 'low_confidence', conversationSummary: briefing.body,
+        inboxTitle: 'Valores e negociação — atendimento humano necessário',
+        passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing }, log });
+  }
+  log.info('assunto comercial restrito encaminhado sem chamada ao redator', { preview: Boolean(preview) });
+  return true;
+}
+
 async function executarTurnoDoAgente(
   deps: InboundTurnDeps,
   job: JobRow | null,
@@ -2109,6 +2143,10 @@ async function executarTurnoDoAgente(
       });
     }
   }
+
+  if ((preview || job?.kind === 'inbound_turn') && await escalarComercialAntesDoModelo(
+    pool, tenantId, leadId, input.conversationId, runLog, preview,
+  )) return;
 
   const routed = preview
     ? { config: preview.agent, routerId: null, intentName: null, confidence: null, outcome: 'preview' }
@@ -3423,6 +3461,7 @@ async function executarTurnoDoAgente(
             // `GateContext.clinicalClaimEnforced`. Sem linha, desligada: não há padrão de
             // ambiente para uma proteção que só faz sentido em saúde.
             enforceClinicalClaim: camadaLigada(camadas.afirmacao_clinica, false),
+            enforceCommercialRestriction: await comercialExigeHumano(pool, tenantId),
             // Mesmo padrão do vocabulário interno: só o `send_message` arma — é o único
             // corpo escrito pelo modelo. `active` é ter QUALQUER ferramenta de agenda:
             // um agente que só CONSULTA promete "vou verificar" igual, e enquanto a
@@ -3599,6 +3638,16 @@ async function executarTurnoDoAgente(
               hasOpenCase: true,
               openedCaseThisTurn: true,
             });
+          }
+          if (chain.status === 'vetoed' && chain.code === 'commercial_requires_human') {
+            const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: [],
+              motivo: { codigo: 'low_confidence', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
+            await performHumanHandoff(pool, { tenantId, leadId, conversationId: input.conversationId },
+              { reason: 'low_confidence', conversationSummary: briefing.body,
+                inboxTitle: 'Valores e negociação — atendimento humano necessário',
+                passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing }, log: runLog });
+            return { ok: false, error: { code: chain.code,
+              message: 'Resposta barrada e necessidade de atendimento humano registrada. Não envie valores nem negocie.' } };
           }
           if (chain.status === 'vetoed' && chain.code === 'clinical_claim') {
             // Fail-safe do gate de afirmação clínica. Ao contrário do vocabulário interno,
@@ -5346,6 +5395,9 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
       });
     }
+    if (await escalarComercialAntesDoModelo(pool, job.organization_id, job.contact_id,
+      payload.conversation_id, deps.log)) return;
+
     const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
       tenantId: job.organization_id,
       leadId: job.contact_id,

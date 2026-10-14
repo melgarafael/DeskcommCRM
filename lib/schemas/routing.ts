@@ -30,6 +30,8 @@ export type RoutingMode = (typeof ROUTING_MODES)[number];
  */
 export const routingConfigSchema = z.object({
   mode: z.enum(ROUTING_MODES).default("manual"),
+  /** Valores e negociação são atendimento humano exclusivo quando ligado. */
+  commercial_requires_human: z.boolean().optional(),
   max_retries: z.number().int().min(0).max(20).default(5),
   backoff_seconds: z.number().int().min(1).max(3600).default(60),
   /**
@@ -162,6 +164,7 @@ export function mesclarSettingsDeAtendimento(
 ): { settings: Record<string, unknown>; routing: RoutingConfig } {
   const {
     visibility_mode,
+    commercial_requires_human,
     handoff_return_after_minutes,
     conversation_stays_with_attendant,
     manual_reply_silence_minutes,
@@ -172,6 +175,7 @@ export function mesclarSettingsDeAtendimento(
     .parse(atual.routing ?? {});
   const routing: RoutingConfig = {
     ...routingInput,
+    commercial_requires_human: commercial_requires_human ?? routingAtual.commercial_requires_human,
     handoff_return_after_minutes:
       handoff_return_after_minutes !== undefined
         ? handoff_return_after_minutes

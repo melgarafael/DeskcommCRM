@@ -23,6 +23,7 @@ import { useT } from "@/hooks/i18n/useT";
 
 export interface AtendimentoConfig {
   mode: RoutingMode;
+  commercial_requires_human?: boolean;
   max_retries: number;
   backoff_seconds: number;
   visibility_mode: VisibilityMode;
@@ -153,6 +154,18 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
 
   return (
     <form onSubmit={salvar} className="flex max-w-3xl flex-col gap-6" data-testid="form-atendimento">
+      <Card className="space-y-3 p-5">
+        <h2 className="font-semibold">{t("Valores e negociação")}</h2>
+        <label className="flex items-start gap-3">
+          <input type="checkbox" checked={form.commercial_requires_human === true}
+            onChange={(e) => setForm((f) => ({ ...f, commercial_requires_human: e.target.checked }))}
+            className="mt-1 h-4 w-4 accent-primary" />
+          <span>{t("Encaminhar preços e negociação diretamente para uma pessoa")}</span>
+        </label>
+        <p className="text-sm text-muted-foreground">
+          {t("A IA não informa valores, descontos ou condições de pagamento. Pedidos identificados vão para a equipe antes do modelo; respostas comerciais da IA também são barradas.")}
+        </p>
+      </Card>
       <Card className="space-y-4 p-4">
         <div>
           <h2 className="text-sm font-semibold">{t("Quem recebe o cliente novo")}</h2>

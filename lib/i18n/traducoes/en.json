@@ -9056,5 +9056,8 @@
   "Sem intervalo": "No range",
   "Este funil não tem campo de data para montar o calendário.": "This pipeline has no date field to build the calendar.",
   "Nenhum negócio com este campo de data.": "No deals with this date field.",
-  "Nenhum negócio com este campo de data neste período.": "No deals with this date field in this period."
+  "Nenhum negócio com este campo de data neste período.": "No deals with this date field in this period.",
+  "Valores e negociação": "Prices and negotiation",
+  "Encaminhar preços e negociação diretamente para uma pessoa": "Route prices and negotiation directly to a person",
+  "A IA não informa valores, descontos ou condições de pagamento. Pedidos identificados vão para a equipe antes do modelo; respostas comerciais da IA também são barradas.": "AI does not provide prices, discounts or payment terms. Detected requests go to the team before the model; commercial AI responses are also blocked."
 }

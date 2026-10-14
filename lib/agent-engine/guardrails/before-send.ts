@@ -1,3 +1,4 @@
+import { contemAssuntoComercialRestrito } from '@/lib/escalacao/assunto-comercial';
 import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
@@ -241,6 +242,8 @@ export interface GateContext {
    *    quando a organização ligou a camada.
    */
   clinicalClaimEnforced?: boolean;
+  /** Restrição explícita da organização; não altera envios humanos. */
+  commercialRestrictionEnforced?: boolean;
   /**
    * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
    * oposta do `internalVocabularyEnforced` logo acima, e a assimetria é
@@ -544,6 +547,18 @@ export const clinicalClaimGate: Gate = {
       // nunca o trecho — a frase barrada pode conter o nome da doença do paciente.
       detail: { clinical_kinds: achado.categorias.join(',') },
     };
+  },
+};
+
+/** Valores e negociação são exclusivos da equipe quando a organização assim determina. */
+export const commercialRestrictionGate: Gate = {
+  name: 'commercial_restriction',
+  evaluate: (ctx) => {
+    if (ctx.commercialRestrictionEnforced !== true || !contemAssuntoComercialRestrito(ctx.body))
+      return { pass: true };
+    return { pass: false, code: 'commercial_requires_human',
+      reason: 'Valores e negociação exigem atendimento humano; não envie esta resposta.',
+      detail: { restricted_kind: 'commercial' } };
   },
 };
 
@@ -908,7 +923,8 @@ const spinningGate: Gate = {
  * do agente de uma organização que ligou a camada `afirmacao_clinica`, então a v8 não
  * muda o destino de nenhum envio de quem não ligou.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 9;
+// v10: restrição comercial explícita da organização, antes de qualquer emenda do corpo.
+export const BEFORE_SEND_CHAIN_VERSION = 10;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -975,6 +991,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   casePromiseGate,
   internalVocabularyGate,
   clinicalClaimGate,
+  commercialRestrictionGate,
   agendaStallGate,
   disclosureGate,
 ];
@@ -1100,6 +1117,7 @@ export interface RunBeforeSendArgs {
    * (`camadaLigada(camadas.afirmacao_clinica, false)`).
    */
   enforceClinicalClaim?: boolean;
+  enforceCommercialRestriction?: boolean;
   /**
    * Desarma o `spinningGate` para ESTA tentativa. Ausente = armado (ver
    * `GateContext.spinningEnforced` para a razão da assimetria e para a conta que
@@ -1424,6 +1442,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
+      commercialRestrictionEnforced: args.enforceCommercialRestriction ?? false,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
     };

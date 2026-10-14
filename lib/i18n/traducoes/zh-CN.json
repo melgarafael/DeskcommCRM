@@ -5582,5 +5582,8 @@
   "Sem intervalo": "不显示区间",
   "Este funil não tem campo de data para montar o calendário.": "该漏斗没有可用于日历的日期字段。",
   "Nenhum negócio com este campo de data.": "此日期字段下没有商机。",
-  "Nenhum negócio com este campo de data neste período.": "此日期字段在此期间没有商机。"
+  "Nenhum negócio com este campo de data neste período.": "此日期字段在此期间没有商机。",
+  "Valores e negociação": "价格与议价",
+  "Encaminhar preços e negociação diretamente para uma pessoa": "将价格与议价问题直接转交人工",
+  "A IA não informa valores, descontos ou condições de pagamento. Pedidos identificados vão para a equipe antes do modelo; respostas comerciais da IA também são barradas.": "AI 不提供价格、折扣或付款条件。识别到的请求会在调用模型之前交由团队处理；AI 的商业条件回复也会被拦截。"
 }
