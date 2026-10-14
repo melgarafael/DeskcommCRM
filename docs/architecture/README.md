@@ -15,6 +15,7 @@ ser fonte sem ninguém decidir isso.
 ## Mapas
 
 | arquivo | escopo |
+| `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 |---|---|
 | `conversoes-de-anuncios.architecture.json` | venda, entrega, protocolo assíncrono, pendências e reprocessamento |
 | `prospeccao-nativa.architecture.json` | busca comercial, fila gradual, configuração conversacional persistente, sandbox e assistente de voz opcional |

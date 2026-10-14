@@ -89,7 +89,7 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
   forbidden_tenant: "Você não está em nenhuma organização ativa.",
 };
 
-export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idioma: Idioma }) {
+export function PainelDeTags({ tags, idioma, paginado = false }: { tags: LinhaDeVocabulario[]; idioma: Idioma; paginado?: boolean }) {
   const t = (texto: string) => traduzir(texto, idioma);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -251,7 +251,7 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
             ))}
           </tbody>
         </table>
-        {tags.length >= TETO_DA_LISTA && (
+        {!paginado && tags.length >= TETO_DA_LISTA && (
           <p className="border-t border-border/60 p-3 text-sm text-muted-foreground">
             {t(
               "Mostrando as 500 primeiras etiquetas em ordem alfabética. Se a que você procura não está aqui, arrume primeiro as que aparecem.",
@@ -302,6 +302,12 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
           ) : acao === "juntar" ? (
             <div className="flex flex-col gap-2">
               <Label htmlFor="destino-da-juncao">{t("Etiqueta de destino")}</Label>
+              {paginado ? <>
+                <Input id="destino-da-juncao" list="destinos-da-juncao" value={destino}
+                  onChange={e=>setDestino(e.target.value)} maxLength={60}
+                  placeholder={t("Digite o nome exato da etiqueta de destino")}/>
+                <datalist id="destinos-da-juncao">{destinos.map(linha=><option key={linha.tag} value={linha.tag}/>)}</datalist>
+              </> :
               <select
                 id="destino-da-juncao"
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -314,7 +320,7 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
                     {linha.tag}
                   </option>
                 ))}
-              </select>
+              </select>}
             </div>
           ) : acao === "definir_cor" ? (
             <div className="flex flex-col gap-3">

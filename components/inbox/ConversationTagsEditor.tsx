@@ -27,7 +27,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   const [cor, setCor] = useState<string | null>(null);
   const mutation = useUpdateConversationTags();
   const { definirCor } = useDefinirCorDaEtiqueta();
-  const { data: vocabulary } = useConversationTagVocabulary(orgId);
+  const { data: vocabulary, isError: vocabularyError } = useConversationTagVocabulary(orgId, draft.trim());
 
   // Normalização espelha o Zod do PATCH (trim+lowercase); dedup no set.
   function apply(next: string[]) {
@@ -112,6 +112,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
         </Button>
       </div>
 
+      {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
       {suggestions.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {suggestions.map((tag) => (

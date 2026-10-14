@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Etiquetas pesquisáveis e paginadas",
+    "subtitle": "Além das primeiras 500; sem gatilhos de mensagem na importação",
+    "output": "etiquetas-paginadas.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Operação"
+    },
+    {
+      "id": "core",
+      "label": "Núcleo"
+    },
+    {
+      "id": "data",
+      "label": "Persistência"
+    }
+  ],
+  "mainPath": [
+    "fonte",
+    "funcao",
+    "api",
+    "editores"
+  ],
+  "nodes": [
+    {
+      "id": "fonte",
+      "lane": "data",
+      "col": 1,
+      "type": "service",
+      "label": "Vocabulário curado + tags em uso, por organização"
+    },
+    {
+      "id": "funcao",
+      "lane": "core",
+      "col": 2,
+      "type": "service",
+      "label": "fn_vocabulario_de_tags_pagina — RLS invoker, busca literal, total e página"
+    },
+    {
+      "id": "gerencia",
+      "lane": "ui",
+      "col": 3,
+      "type": "service",
+      "label": "Configurações → Tags: busca, 100/página e operação transacional"
+    },
+    {
+      "id": "api",
+      "lane": "core",
+      "col": 3,
+      "type": "service",
+      "label": "GET vocabulario?page e sugestões ?busca — papel, sessão, validação"
+    },
+    {
+      "id": "editores",
+      "lane": "ui",
+      "col": 4,
+      "type": "service",
+      "label": "Inbox: contato e conversa, sugestões pesquisadas e erro visível"
+    },
+    {
+      "id": "operar",
+      "lane": "core",
+      "col": 4,
+      "type": "service",
+      "label": "POST vocabulario — renomear/juntar/cor, mesma transação"
+    },
+    {
+      "id": "audit",
+      "lane": "data",
+      "col": 5,
+      "type": "service",
+      "label": "Audit + regras add_tag e registros corrigidos"
+    }
+  ],
+  "edges": [
+    {
+      "id": "0",
+      "from": "fonte",
+      "to": "funcao",
+      "label": "dados filtrados por tenant/RLS"
+    },
+    {
+      "id": "1",
+      "from": "funcao",
+      "to": "gerencia",
+      "label": "página e total reais"
+    },
+    {
+      "id": "2",
+      "from": "funcao",
+      "to": "api",
+      "label": "resultados"
+    },
+    {
+      "id": "3",
+      "from": "api",
+      "to": "editores",
+      "label": "nomes normalizados"
+    },
+    {
+      "id": "4",
+      "from": "editores",
+      "to": "api",
+      "label": "busca digitada com cancelamento"
+    },
+    {
+      "id": "5",
+      "from": "gerencia",
+      "to": "operar",
+      "label": "decisão gerencial"
+    },
+    {
+      "id": "6",
+      "from": "operar",
+      "to": "fonte",
+      "label": "vocabulário atualizado"
+    },
+    {
+      "id": "7",
+      "from": "operar",
+      "to": "audit",
+      "label": "efeitos/auditoria"
+    },
+    {
+      "id": "8",
+      "from": "audit",
+      "to": "gerencia",
+      "label": "retorno de uso/regras"
+    },
+    {
+      "id": "9",
+      "from": "api",
+      "to": "gerencia",
+      "label": "paginação/erros"
+    }
+  ]
+}

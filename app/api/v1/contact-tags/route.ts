@@ -1,29 +1,8 @@
-/**
- * GET /api/v1/contact-tags — tags em uso nos contatos da org ativa. Sugestões
- * para o editor de tags do contato no Inbox (#852, item 1).
- *
- * Irmã de `GET /api/v1/conversation-tags`: server route porque o cookie de
- * sessão é HttpOnly. A organização vem de `requireRole`, nunca do pedido, e o
- * client é o da SESSÃO — a RLS de `contacts` isola sozinha.
- *
- * Sem função no banco de propósito — e a S4 da #852, que traz essa função,
- * ENTROU NA MESMA RELEASE que esta rota: `GET /api/v1/tags/vocabulario`, sobre
- * `fn_vocabulario_de_tags`. A frase que estava aqui ("quando ele entrar, esta
- * rota passa a ler de lá") venceu no dia em que foi escrita; fica no lugar dela
- * o que ainda é verdade, que é a instrução.
- *
- * A troca NÃO é apagar esta rota. A da S4 exige `requireRole("manager")` mais
- * `mfaEmDivida()`, porque ela também ESCREVE o vocabulário de toda a
- * organização — e o editor do Inbox é usado por `agent` e por `viewer`, que a
- * S4 responde com 403. Consolidar é trocar o corpo da consulta abaixo por
- * `supabase.rpc("fn_vocabulario_de_tags", { p_org: authz.org.orgId })`, lendo o
- * campo `tag` de cada linha, MANTENDO o `requireRole("viewer")` daqui e
- * apagando `CONTATOS_LIDOS`, `TETO_DE_TAGS` e o `ponytail:` logo abaixo — a
- * função no banco não tem teto de leitura, que é exatamente a dívida que essas
- * duas constantes registram. Fora do escopo deste conserto porque mexe no
- * contrato de uma rota que a tela de Etiquetas acabou de estrear.
- */
+/** Sugestões do contato: sem busca mantém compatibilidade; com busca lê a página do
+ * vocabulário curado e em uso, com a sessão e a RLS. Não depende de clientes fictícios
+ * portando a etiqueta para que os atendentes possam escolher uma etiqueta importada. */
 import { randomUUID } from "node:crypto";
+import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
@@ -46,6 +25,18 @@ export async function GET(_req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
 
   const supabase = await createClient();
+  if (_req.nextUrl.searchParams.has("busca")) {
+    const query = tagsPageQuerySchema.safeParse({ busca: _req.nextUrl.searchParams.get("busca") });
+    if (!query.success) return fail("validation_failed", "Confira a busca e a página.", 422, { requestId });
+    const { data: result, error: readError } = await supabase.rpc("fn_vocabulario_de_tags_pagina", {
+      p_org: authz.org.orgId, p_busca: query.data.busca, p_offset: 0, p_limit: 200,
+    });
+    const parsed = tagsPageResultSchema.safeParse(result);
+    if (readError || !parsed.success) return fail("internal_error", "Não foi possível carregar as tags.", 500, { requestId });
+    const tags = [...new Set(parsed.data.items.map(row => row.tag.trim().toLowerCase().slice(0,40)))];
+    return ok(tags, { requestId, meta: { total: parsed.data.total, has_more: parsed.data.total > tags.length } });
+  }
+
   const { data, error } = await supabase
     .from("contacts")
     .select("tags")

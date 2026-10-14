@@ -27,7 +27,7 @@ export function ContactTagsEditor({ contactId, orgId, tags }: Props) {
   const [cor, setCor] = useState<string | null>(null);
   const mutation = useUpdateContact(contactId);
   const { definirCor } = useDefinirCorDaEtiqueta();
-  const { data: vocabulary } = useContactTagVocabulary(orgId);
+  const { data: vocabulary, isError: vocabularyError } = useContactTagVocabulary(orgId, draft.trim());
 
   function apply(next: string[]) {
     mutation.mutate({ tags: next });
@@ -117,6 +117,7 @@ export function ContactTagsEditor({ contactId, orgId, tags }: Props) {
         </Button>
       </div>
 
+      {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
       {suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {suggestions.map((tag) => (

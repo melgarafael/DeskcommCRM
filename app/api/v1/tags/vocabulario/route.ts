@@ -32,6 +32,7 @@
  * uso" já usa, para a troca de fonte custar uma linha por campo.
  */
 import { randomUUID } from "node:crypto";
+import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
@@ -44,12 +45,28 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const auth = await requireRole("manager", { requestId, resource: "settings_tags" });
   if (!auth.ok) return auth.response;
   if (await mfaEmDivida())
     return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
+
+  if (req.nextUrl.searchParams.has("page") || req.nextUrl.searchParams.has("busca")) {
+    const parsed = tagsPageQuerySchema.safeParse({
+      page: req.nextUrl.searchParams.get("page") ?? undefined,
+      busca: req.nextUrl.searchParams.get("busca") ?? undefined,
+    });
+    if (!parsed.success) return fail("validation_failed", "Confira a busca e a página.", 422, { requestId });
+    const db = await createClient();
+    const { data, error } = await db.rpc("fn_vocabulario_de_tags_pagina", {
+      p_org: auth.org.orgId, p_busca: parsed.data.busca,
+      p_offset: (parsed.data.page - 1) * 100, p_limit: 100,
+    });
+    const page = tagsPageResultSchema.safeParse(data);
+    if (error || !page.success) return fail("internal_error", "Não foi possível carregar as etiquetas.", 500, { requestId });
+    return ok(page.data.items, { requestId, meta: { total: page.data.total, page: parsed.data.page, per_page: 100 } });
+  }
 
   const db = await createClient();
   // Client da SESSÃO: a função é `security invoker`, então quem recorta a
