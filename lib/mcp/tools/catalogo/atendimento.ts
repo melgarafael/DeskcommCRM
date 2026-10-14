@@ -133,7 +133,10 @@ export const TOOLS_ATENDIMENTO = declararTools([
     category: "write",
     rotulo: "Enviar mensagem no WhatsApp",
     explicacao:
-      "Envia uma mensagem de WhatsApp para o cliente. Ele recebe de verdade, no celular dele, e não dá para desfazer.",
+      "Envia uma mensagem de WhatsApp para o cliente. Ele recebe de verdade, no celular dele, e não dá para desfazer. " +
+      "Serve para responder numa conversa que já existe e também para abrir (ou reaproveitar) a conversa no número de " +
+      "WhatsApp da organização a partir do telefone do cliente — o caminho para continuar no WhatsApp quem falou por " +
+      "Instagram/Messenger.",
     oQueToca: "Atendimento",
     risco: "critico",
     pacotes: ["atender"],
