@@ -11,6 +11,7 @@ import {
   invalidarCssPersonalizadoDaInstalacao,
   validarCssPersonalizado,
 } from "@/lib/branding/css-personalizado";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { gravarPelaTela } from "@/lib/instalacao/config";
 
 export type UpdateCustomBrandingCssResult = { ok: true } | { ok: false; error: string };
@@ -59,7 +60,7 @@ export async function updateCustomBrandingCss(
     resourceType: "platform_branding",
     resourceId: null,
     requestId: hdrs.get("x-request-id"),
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent"),
     actingAsPlatformAdmin: true,
     metadata: {

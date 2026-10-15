@@ -33,6 +33,14 @@ export default async function PrivacyPage() {
   );
   const t = (texto: string) => traduzir(texto, idioma);
 
+  // O vocabulário legal desta política é o do PAÍS da organização ativa
+  // (issue #2344): no Brasil "controlador", "CNPJ" e "LGPD"; em Portugal
+  // "responsável pelo tratamento" (RGPD art. 4.º, n.º 7), "NIPC" e "RGPD".
+  // Sem sessão ou com a coluna vazia vale o Brasil — o mesmo "vazio" da
+  // coluna `organizations.country`. Cada ramo é um literal em `t()`: chave de
+  // dicionário nas duas direções, nunca frase montada em runtime.
+  const ePortugal = (op.pais ?? "").trim().toUpperCase() === "PT";
+
   return (
     <>
       <header className="space-y-1">
@@ -43,13 +51,22 @@ export default async function PrivacyPage() {
       </header>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("1. Quem é o controlador")}</h2>
+        <h2 className="text-base font-semibold">
+          {ePortugal ? t("1. Quem é o responsável pelo tratamento") : t("1. Quem é o controlador")}
+        </h2>
         <p>
-          {t("O controlador dos dados tratados aqui é")} <strong>{operador}</strong>
-          {op.cnpj ? ` (CNPJ ${op.cnpj})` : ""} —{" "}
-          {t(
-            "quem instalou e opera este sistema. Os autores do software não têm acesso a este servidor nem aos dados guardados nele, e não são controladores nem operadores desses dados.",
-          )}
+          {ePortugal
+            ? t("O responsável pelo tratamento dos dados tratados aqui é")
+            : t("O controlador dos dados tratados aqui é")}{" "}
+          <strong>{operador}</strong>
+          {op.cnpj ? ` (${ePortugal ? "NIPC" : "CNPJ"} ${op.cnpj})` : ""} —{" "}
+          {ePortugal
+            ? t(
+                "quem instalou e opera este sistema. Os autores do software não têm acesso a este servidor nem aos dados guardados nele, e não são responsáveis pelo tratamento nem operadores desses dados.",
+              )
+            : t(
+                "quem instalou e opera este sistema. Os autores do software não têm acesso a este servidor nem aos dados guardados nele, e não são controladores nem operadores desses dados.",
+              )}
         </p>
       </section>
 
@@ -119,9 +136,13 @@ export default async function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-base font-semibold">{t("6. Seus direitos")}</h2>
         <p>
-          {t(
-            "A LGPD garante a você confirmar se há tratamento, acessar seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram compartilhados e revogar consentimento.",
-          )}
+          {ePortugal
+            ? t(
+                "O RGPD garante-lhe confirmar se há tratamento, aceder aos seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram partilhados e retirar o consentimento.",
+              )
+            : t(
+                "A LGPD garante a você confirmar se há tratamento, acessar seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram compartilhados e revogar consentimento.",
+              )}
         </p>
         <p>
           {t(
@@ -141,11 +162,17 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("8. Encarregado e contato")}</h2>
+        <h2 className="text-base font-semibold">
+          {ePortugal ? t("8. Encarregado da proteção de dados e contato") : t("8. Encarregado e contato")}
+        </h2>
         <p>
           {op.dpoEmail ? (
             <>
-              {t("Para exercer seus direitos ou tirar dúvidas sobre privacidade, fale com o encarregado de dados:")}{" "}
+              {ePortugal
+                ? t(
+                    "Para exercer seus direitos ou tirar dúvidas sobre privacidade, fale com o encarregado da proteção de dados:",
+                  )
+                : t("Para exercer seus direitos ou tirar dúvidas sobre privacidade, fale com o encarregado de dados:")}{" "}
               <a className="underline underline-offset-2" href={`mailto:${op.dpoEmail}`}>
                 {op.dpoEmail}
               </a>
@@ -153,9 +180,13 @@ export default async function PrivacyPage() {
             </>
           ) : (
             <>
-              {t(
-                "O operador ainda não publicou um endereço de contato do encarregado de dados nesta instalação. Os pedidos devem ser feitos pelos canais de atendimento da própria organização.",
-              )}
+              {ePortugal
+                ? t(
+                    "O operador ainda não publicou um endereço de contato do encarregado da proteção de dados nesta instalação. Os pedidos devem ser feitos pelos canais de atendimento da própria organização.",
+                  )
+                : t(
+                    "O operador ainda não publicou um endereço de contato do encarregado de dados nesta instalação. Os pedidos devem ser feitos pelos canais de atendimento da própria organização.",
+                  )}
             </>
           )}
         </p>

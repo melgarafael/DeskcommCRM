@@ -98,6 +98,22 @@ export interface McpToolDefinition<TInput extends z.ZodRawShape = z.ZodRawShape>
    * transformaria comportamento normal em alarme.
    */
   motivoDoVazio?: (resultado: unknown) => string | null;
+  /**
+   * O que a tool DECLARA como o "termo" desta chamada — o que a pessoa escreveu
+   * na busca, para o painel poder contar "não achei" POR TERMO e não só
+   * "falhou".
+   *
+   * Sem isto o termo só existe dentro de `metadata.args`, cujo nome do campo é
+   * de cada tool (`args.termo` numa, `args.query` ou um filtro redigido noutra):
+   * a contagem no banco teria de gravar o nome do argumento de UMA tool dentro
+   * do SQL. Declarar aqui deixa a auditoria subir o termo para um campo próprio
+   * — `metadata.termo` — que a leitura por termo lê sem conhecer tool nenhuma.
+   *
+   * Devolver `null` (ou não declarar) = a chamada não tem termo a contar. O
+   * termo é do cliente e o audit já grava os args; isto não abre dado novo, só
+   * dá ao leitor uma chave estável.
+   */
+  termoBuscado?: (input: z.infer<z.ZodObject<TInput>>) => string | null;
   handler: (
     input: z.infer<z.ZodObject<TInput>>,
     ctx: McpContext,

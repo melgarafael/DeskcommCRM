@@ -3,9 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ATRASO_MAXIMO_MS,
   ATRASO_MINIMO_MS,
+  DIGITANDO_RENOVAR_MS,
+  DIGITANDO_TETO_MS,
   acenderDigitando,
   calcularAtrasoHumano,
   esperarComoHumano,
+  manterDigitando,
 } from "@/lib/agent-engine/agent/atraso-humano";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
 
@@ -176,6 +179,102 @@ describe("acenderDigitando — presença no início do turno", () => {
     const log = logDeTeste();
     acenderDigitando(() => Promise.reject(new Error("waha_500")), log);
     await new Promise((r) => setTimeout(r, 0));
+    expect(log.linhas).toEqual([
+      { nivel: "warn", msg: 'não consegui sinalizar "digitando" (segue o turno)' },
+    ]);
+  });
+});
+
+/**
+ * Timers de mentira: o teste avança o relógio na mão e dispara o tick, sem
+ * esperar 10s de verdade e sem depender do agendador do Node.
+ */
+function relogioDeTeste() {
+  let agora = 0;
+  let tick: (() => void) | null = null;
+  let intervalo = 0;
+  let cancelado = false;
+  return {
+    opts: {
+      agora: () => agora,
+      setInterval: (fn: () => void, ms: number) => {
+        tick = fn;
+        intervalo = ms;
+        return "handle";
+      },
+      clearInterval: () => {
+        cancelado = true;
+      },
+    },
+    /** Avança `ms` e dispara o tick do intervalo, como o agendador faria. */
+    avancar(ms: number) {
+      agora += ms;
+      if (!cancelado) tick?.();
+    },
+    get intervalo() {
+      return intervalo;
+    },
+    get cancelado() {
+      return cancelado;
+    },
+  };
+}
+
+describe("manterDigitando — o indicador não apaga no meio de um turno longo", () => {
+  it("acende na hora e renova a cada intervalo enquanto o turno trabalha", () => {
+    const relogio = relogioDeTeste();
+    const sinalizar = vi.fn(() => Promise.resolve());
+    manterDigitando(sinalizar, logDeTeste(), relogio.opts);
+
+    // Na hora: o cliente vê o indicador sem esperar o primeiro intervalo.
+    expect(sinalizar).toHaveBeenCalledTimes(1);
+    expect(relogio.intervalo).toBe(DIGITANDO_RENOVAR_MS);
+
+    // Medido numa VPS: ~67s até a resposta. O WhatsApp apaga em ~25s sem sinal.
+    for (let i = 0; i < 6; i++) relogio.avancar(DIGITANDO_RENOVAR_MS);
+    expect(sinalizar).toHaveBeenCalledTimes(7);
+  });
+
+  it("o renovar fica dentro da janela em que o WhatsApp mantém o indicador", () => {
+    // ~25s é quanto o WhatsApp segura o "digitando…" sem novo sinal.
+    expect(DIGITANDO_RENOVAR_MS).toBeLessThan(25_000);
+  });
+
+  it("depois de `parar`, não sinaliza mais — a mensagem já saiu", () => {
+    const relogio = relogioDeTeste();
+    const sinalizar = vi.fn(() => Promise.resolve());
+    const parar = manterDigitando(sinalizar, logDeTeste(), relogio.opts);
+
+    relogio.avancar(DIGITANDO_RENOVAR_MS);
+    parar();
+    parar(); // idempotente: o envio e o `finally` do turno param os dois
+    relogio.avancar(DIGITANDO_RENOVAR_MS);
+
+    expect(sinalizar).toHaveBeenCalledTimes(2);
+    expect(relogio.cancelado).toBe(true);
+  });
+
+  it("para sozinho no teto: turno travado não finge que alguém está escrevendo", () => {
+    const relogio = relogioDeTeste();
+    const sinalizar = vi.fn(() => Promise.resolve());
+    manterDigitando(sinalizar, logDeTeste(), relogio.opts);
+
+    const ticks = Math.ceil(DIGITANDO_TETO_MS / DIGITANDO_RENOVAR_MS) + 5;
+    for (let i = 0; i < ticks; i++) relogio.avancar(DIGITANDO_RENOVAR_MS);
+
+    expect(relogio.cancelado).toBe(true);
+    // 1 na hora + os ticks antes de alcançar o teto.
+    expect(sinalizar).toHaveBeenCalledTimes(DIGITANDO_TETO_MS / DIGITANDO_RENOVAR_MS);
+  });
+
+  it("canal recusando a cada renovação vira UM warn, nunca rejeição solta", async () => {
+    const relogio = relogioDeTeste();
+    const log = logDeTeste();
+    manterDigitando(() => Promise.reject(new Error("waha_500")), log, relogio.opts);
+    relogio.avancar(DIGITANDO_RENOVAR_MS);
+    relogio.avancar(DIGITANDO_RENOVAR_MS);
+    await new Promise((r) => setTimeout(r, 0));
+
     expect(log.linhas).toEqual([
       { nivel: "warn", msg: 'não consegui sinalizar "digitando" (segue o turno)' },
     ]);

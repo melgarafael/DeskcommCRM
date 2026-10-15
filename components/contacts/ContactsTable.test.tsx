@@ -48,6 +48,7 @@ const contato: Contact = {
   is_blocked: false,
   blocked_reason: null,
   is_personal: false,
+  ai_opt_out: false,
   is_anonymized: false,
   anonymized_at: null,
   is_merged_into: null,

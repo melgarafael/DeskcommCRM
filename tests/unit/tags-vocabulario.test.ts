@@ -152,8 +152,20 @@ describe("fatia S4 — vocabulário de tags (contrato do que foi escrito)", () =
     expect(baseline).toMatch(/create or replace function public\.fn_vocabulario_de_tags_operar\(/);
     // A assinatura vigente é a de CINCO argumentos (p_cor da 0336); a de quatro
     // não pode sobrar em lugar nenhum, nem aqui nem na migration nova.
-    const linha = baseline.match(/revoke execute on function public\.fn_vocabulario_de_tags_operar\(uuid, text, text, text, text\) from public, anon;/);
-    expect(linha).not.toBeNull();
+    //
+    // A âncora é a ÚLTIMA ocorrência, pela regra de
+    // `sonda-do-baseline-ancora-na-ultima-definicao.test.ts`: a 0677 (issue
+    // #2801) reafirma o MESMO revoke/grant no apêndice dela, como a convenção
+    // do repo faz em toda redefinição de função — e o baseline aplica tudo em
+    // ordem, então quem vale é a última definição. Antes era `.match(...)` sem
+    // `g`, que casa a PRIMEIRA: com a segunda ocorrência o guarda de sondas
+    // reprovava esta linha por medir definição morta.
+    const assinaturas = [
+      ...baseline.matchAll(
+        /revoke execute on function public\.fn_vocabulario_de_tags_operar\(uuid, text, text, text, text\) from public, anon;/g,
+      ),
+    ];
+    expect(assinaturas.at(-1)).not.toBeUndefined();
     expect(baseline).not.toMatch(/fn_vocabulario_de_tags_operar\(uuid, text, text, text\)/);
   });
 

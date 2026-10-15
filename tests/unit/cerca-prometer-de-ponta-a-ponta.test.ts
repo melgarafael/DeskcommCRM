@@ -304,3 +304,107 @@ describe("cerca prometer — follow-up agendado como destino (opção a)", () =>
     expect(fonte).toMatch(/agendadoNesteTurno:\s*followupAgendadoNesteTurno/);
   });
 });
+
+/**
+ * issue #2916 — a promessa de retorno do PRÓPRIO assistente que o classificador semântico
+ * NÃO marca de forma confiável. O caso medido: o cliente pede "pode ser daqui a duas horas"
+ * e o agente responde "Combinado, retomamos daqui a duas horas." SEM chamar nenhuma
+ * ferramenta — 3 de 11 execuções do mesmo cenário (autor da issue, 14/10/2026). O cliente
+ * fica esperando uma mensagem que não vem.
+ *
+ * O conserto é um TERCEIRO sinal, LÉXICO e determinístico
+ * (`guardrails/retorno-do-assistente.ts`): a frase em que o assistente se compromete a
+ * RETOMAR A CONVERSA. Ele entra em OU com os outros dois, e o `schedule_followup` é o
+ * destino — sem ele agendado no turno, é veto com ensino (mesmo desenho do #1873).
+ */
+describe("cerca prometer — retorno do PRÓPRIO assistente pelo léxico (issue #2916)", () => {
+  const AGENDADO = { followup: { disponivel: true, agendadoNesteTurno: true } };
+  const SEM_AGENDAR = { followup: { disponivel: true, agendadoNesteTurno: false } };
+  const ctx = (body: string, extra: Partial<GateContext> = {}) =>
+    ({ body, casesEnabled: true, hasOpenCase: false, openedCaseThisTurn: false, ...extra }) as never;
+
+  /** O caso MEDIDO da issue — o cliente pediu "pode ser daqui a duas horas". */
+  const CASO_MEDIDO = "Combinado, retomamos daqui a duas horas.";
+
+  const FAMILIA = [
+    CASO_MEDIDO,
+    "Combinado! Te chamo mais tarde.",
+    "Perfeito, volto a falar com você depois.",
+    "A gente se fala mais tarde, então.",
+  ];
+
+  it("veta o CASO MEDIDO da issue sem follow-up agendado (o defeito)", () => {
+    const v = casePromiseGate.evaluate(ctx(CASO_MEDIDO, SEM_AGENDAR));
+    expect(v.pass).toBe(false);
+    if (!v.pass) {
+      expect(v.code).toBe("case_promise_without_case");
+      expect(v.reason).toContain("schedule_followup");
+    }
+  });
+
+  it.each(FAMILIA)("veta a família do léxico sem follow-up agendado: %s", (frase) => {
+    const v = casePromiseGate.evaluate(ctx(frase, SEM_AGENDAR));
+    expect(v.pass).toBe(false);
+    if (!v.pass) {
+      expect(v.code).toBe("case_promise_without_case");
+      expect(v.reason).toContain("schedule_followup");
+    }
+  });
+
+  it.each(FAMILIA)("PASSA quando o follow-up foi agendado no turno: %s", (frase) => {
+    expect(casePromiseGate.evaluate(ctx(frase, AGENDADO)).pass).toBe(true);
+  });
+
+  it("agente SEM a tool de follow-up: o veto não ensina uma tool que ele não tem", () => {
+    const v = casePromiseGate.evaluate(
+      ctx(CASO_MEDIDO, { followup: { disponivel: false, agendadoNesteTurno: false } }),
+    );
+    expect(v.pass).toBe(false);
+    if (!v.pass) expect(v.reason).not.toContain("schedule_followup");
+  });
+
+  it.each([
+    "Consigo te oferecer quinta às 14h ou sexta às 10h.",
+    "Bom dia! Como posso ajudar?",
+    "Qual prazo você julga ideal?",
+    "Quer retomar de onde paramos?",
+    "Vamos retomar o agendamento: prefere segunda ou terça?",
+  ])("CONTROLE — fala inocente segue passando: %s", (frase) => {
+    expect(casePromiseGate.evaluate(ctx(frase, SEM_AGENDAR)).pass).toBe(true);
+  });
+
+  it.each([
+    // A promessa de retorno de CONTEÚDO é do classificador SEMÂNTICO — o léxico novo NÃO
+    // a cobre. Sem o semântico, ela segue passando (é a fronteira congelada no caso 1B).
+    "Te retorno com a proposta em breve.",
+    "Vou encaminhar as informações do site imobiliário para análise e te retorno com a proposta.",
+  ])("CONTROLE — promessa de CONTEÚDO não é do léxico novo (segue com o semântico): %s", (frase) => {
+    expect(casePromiseGate.evaluate(ctx(frase, SEM_AGENDAR)).pass).toBe(true);
+  });
+
+  it("fronteira: alvo humano E retorno do assistente na MESMA frase → o veto pede CASO", () => {
+    // O léxico de humano vence: se a frase nomeia quem da empresa vai agir, um lembrete
+    // para o próprio assistente voltar a falar não põe ninguém para trabalhar — então o
+    // destino não pode ser `schedule_followup`, mesmo com o léxico novo casando também.
+    const frase = "Vou encaminhar para a equipe e retomamos daqui a duas horas.";
+    const v = casePromiseGate.evaluate(ctx(frase, SEM_AGENDAR));
+    expect(v.pass).toBe(false);
+    if (!v.pass) {
+      expect(v.code).toBe("case_promise_without_case");
+      expect(v.reason).toContain("open_human_case");
+      expect(v.reason).not.toContain("schedule_followup");
+    }
+  });
+
+  it("curto-circuitos seguem valendo para o léxico novo: casesEnabled=false PASSA", () => {
+    const v = casePromiseGate.evaluate(ctx(CASO_MEDIDO, { ...SEM_AGENDAR, casesEnabled: false }));
+    expect(v.pass).toBe(true);
+  });
+
+  it("curto-circuitos seguem valendo para o léxico novo: caso JÁ aberto PASSA", () => {
+    const v = casePromiseGate.evaluate(ctx(CASO_MEDIDO, { ...SEM_AGENDAR, hasOpenCase: true }));
+    expect(v.pass).toBe(true);
+    const v2 = casePromiseGate.evaluate(ctx(CASO_MEDIDO, { ...SEM_AGENDAR, openedCaseThisTurn: true }));
+    expect(v2.pass).toBe(true);
+  });
+});

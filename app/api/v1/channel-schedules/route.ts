@@ -38,7 +38,31 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 /** Uma janela de manutenção não vira plano: acima de 24h é outra coisa. */
-const DURACAO_MAXIMA_MS = 24 * 60 * 60 * 1000;
+export const DURACAO_MAXIMA_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A régua de horários da janela, compartilhada por criar e EDITAR.
+ *
+ * Devolve a frase que diz o que fazer (critério 4), ou `null` quando a janela
+ * é válida. Fica fora dos handlers porque as duas rotas recusam o MESMO — uma
+ * janela no passado, fim antes do início, duração acima de 24h — e duplicar a
+ * régua seria deixar as duas divergirem no dia em que uma mudasse.
+ */
+export function validarJanela(inicio: Date, fim: Date): string | null {
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+    return "Horário inválido: use o formato ISO com fuso.";
+  }
+  if (fim.getTime() <= inicio.getTime()) {
+    return "A janela termina antes de começar: escolha um fim depois do início.";
+  }
+  if (fim.getTime() - inicio.getTime() > DURACAO_MAXIMA_MS) {
+    return "A janela de manutenção não pode durar mais de 24h: para uma pausa longa, faça a pausa manual em Conexões e desfaça quando voltar.";
+  }
+  if (inicio.getTime() <= Date.now()) {
+    return "A janela precisa começar no futuro. Para pausar agora, use a pausa manual em Conexões — esta janela é para quando você puder ir dormir.";
+  }
+  return null;
+}
 
 const criarSchema = z
   .object({
@@ -88,33 +112,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const inicio = new Date(parsed.data.starts_at);
   const fim = new Date(parsed.data.ends_at);
-  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
-    return fail("validation_failed", "Horário inválido: use o formato ISO com fuso.", 422, { requestId });
-  }
-  if (fim.getTime() <= inicio.getTime()) {
-    return fail(
-      "validation_failed",
-      "A janela termina antes de começar: escolha um fim depois do início.",
-      422,
-      { requestId },
-    );
-  }
-  if (fim.getTime() - inicio.getTime() > DURACAO_MAXIMA_MS) {
-    return fail(
-      "validation_failed",
-      "A janela de manutenção não pode durar mais de 24h: para uma pausa longa, faça a pausa manual em Conexões e desfaça quando voltar.",
-      422,
-      { requestId },
-    );
-  }
-  if (inicio.getTime() <= Date.now()) {
-    return fail(
-      "validation_failed",
-      "A janela precisa começar no futuro. Para pausar agora, use a pausa manual em Conexões — esta janela é para quando você puder ir dormir.",
-      422,
-      { requestId },
-    );
-  }
+  const recusa = validarJanela(inicio, fim);
+  if (recusa) return fail("validation_failed", recusa, 422, { requestId });
 
   const db = createAdminClient();
   const canal = parsed.data.channel_session_id ?? null;

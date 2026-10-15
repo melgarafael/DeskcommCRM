@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { invalidarAppDaMeta } from "@/lib/channels/meta/app";
 import { audit } from "@/lib/audit";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { logger } from "@/lib/logger";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -130,7 +131,7 @@ async function gravar(
     // trilha ficaria sem a linha — sem sintoma em tela nenhuma.
     resourceId: null,
     requestId: cabecalhos.get("x-request-id") ?? undefined,
-    ip: cabecalhos.get("x-forwarded-for") ?? undefined,
+    ip: ipDoCliente(cabecalhos) ?? undefined,
     userAgent: cabecalhos.get("user-agent") ?? undefined,
     actingAsPlatformAdmin: true,
     // O QUE mudou, jamais o valor — nem o verify token recém-gerado.

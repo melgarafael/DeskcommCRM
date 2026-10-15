@@ -140,6 +140,8 @@ export interface DbOpts {
   contacts?: Array<Record<string, unknown>>;
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
+  /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
+  readError?: (table: string, filtros: Array<[string, unknown]>) => { code: string; message: string } | null;
   /**
    * O `max_rows` do PostgREST (1000 em `supabase/config.toml`): corta TODA
    * leitura nesse tamanho, sem erro, por maior que seja o `.limit`/`.range`.
@@ -262,9 +264,12 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let teto: number | null = null;
     let desde = 0;
 
+    // `a->b->>c` é caminho jsonb do PostgREST: desce o objeto como o banco desceria.
+    const valorDaColuna = (r: Linha, c: string): unknown =>
+      c.split(/->>?/).reduce<unknown>((v, k) => (v && typeof v === "object" ? (v as Linha)[k] : undefined), r);
     const casam = () =>
       (tables[table] ?? [])
-        .filter((r) => filtros.every(([c, v]) => r[c] === v))
+        .filter((r) => filtros.every(([c, v]) => valorDaColuna(r, c) === v))
         .filter((r) => pertinencias.every(([c, vs]) => vs.includes(r[c])))
         // `neq` em SQL exclui NULL (`NULL <> v` nao e verdadeiro) — o duble
         // segue o banco, nao o JavaScript.
@@ -362,6 +367,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
       // é assim que o PostgREST responde, e a diferença não é acadêmica: o dublê
       // devolvendo `data: null` para `select(..., { count })` fez a emissão de
       // atividades do arquivamento sumir com a suíte verde.
+      const erroDeLeitura = opts.readError?.(table, filtros) ?? null;
+      if (erroDeLeitura) return { data: null, error: erroDeLeitura, count: null };
       if (head) return { data: null, error: null, count: casam().length };
       if (contar) return { data: lidos(), error: null, count: casam().length };
       return { data: lidos(), error: null, count: null };

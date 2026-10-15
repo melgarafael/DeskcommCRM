@@ -16,9 +16,9 @@
  *    o vocabulário já construído pela operação.
  * 2. sem contato resolvível, a ação é IGNORADA (`skipped`/`no_contact`) — nunca
  *    troca de destino em silêncio para o card, que é o defeito espelhado.
- * 3. sem `destino` (regra antiga) o comportamento de HOJE continua byte a
- *    byte: lead manda, evento é `lead.tag_added`, e nenhuma leitura nasce na
- *    conta — é o controle que impede a feature de ser uma regressão.
+ * 3. sem `destino` (regra antiga) o comportamento mantém o
+ *    alvo: lead manda e evento é `lead.tag_added`. A leitura atual evita
+ *    apagar etiquetas com uma foto antiga do contexto.
  * 4. o schema da regra GUARDA o destino (sem a chave, o editor gravaria e o
  *    zod descartaria o campo no save, e a tela mentiria sobre o que está salvo).
  *
@@ -51,7 +51,7 @@ type Registro = {
 };
 
 /** O suficiente do client admin para ler, atualizar e emitir — e para GRAVAR o que aconteceu. */
-function adminFalso(contatoNoBanco: { id: string; tags?: string[] } | null) {
+function adminFalso(contatoNoBanco: { id: string; tags?: string[] } | null, leadNoBanco: { id: string; tags?: string[] } | null) {
   const leituras: Registro[] = [];
   const atualizacoes: Registro[] = [];
   const eventos: Record<string, unknown>[] = [];
@@ -59,7 +59,6 @@ function adminFalso(contatoNoBanco: { id: string; tags?: string[] } | null) {
     from(tabela: string) {
       let atual: Registro | null = null;
       const api: Record<string, unknown> = {};
-      const mesmo = () => api;
       api.select = () => {
         atual = { tabela, filtros: {} };
         leituras.push(atual);
@@ -75,7 +74,7 @@ function adminFalso(contatoNoBanco: { id: string; tags?: string[] } | null) {
         return api;
       };
       api.maybeSingle = async () => ({
-        data: tabela === "contacts" ? contatoNoBanco : null,
+        data: tabela === "contacts" ? contatoNoBanco : tabela === "crm_leads" ? leadNoBanco : null,
         error: null,
       });
       // O `await` do UPDATE cai aqui: o builder do supabase é thenável.
@@ -94,9 +93,11 @@ function contexto(opcoes: {
   lead?: { id: string; contact_id?: string; tags?: string[] } | undefined;
   contact?: { id: string; tags?: string[] } | undefined;
   contatoNoBanco?: { id: string; tags?: string[] } | null;
+  leadNoBanco?: { id: string; tags?: string[] } | null;
 }) {
   const { admin, leituras, atualizacoes, eventos } = adminFalso(
     opcoes.contatoNoBanco ?? null,
+    opcoes.leadNoBanco ?? null,
   );
   const context: Record<string, unknown> = {};
   if (opcoes.lead !== undefined) context.lead = opcoes.lead;
@@ -192,10 +193,11 @@ describe("destino 'contato' — grava no contato, preservando as etiquetas atuai
   });
 });
 
-describe("sem destino — o comportamento de HOJE, byte a byte", () => {
+describe("sem destino — mantém o alvo card e preserva as etiquetas gravadas", () => {
   it("regra antiga (só `tags`) continua marcando o CARD", async () => {
     const { ctx, leituras, atualizacoes, eventos } = contexto({
-      lead: { id: LEAD, contact_id: CONTATO, tags: ["do-card"] },
+      lead: { id: LEAD, contact_id: CONTATO, tags: ["contexto-antigo"] },
+      leadNoBanco: { id: LEAD, tags: ["do-card"] },
       contact: { id: CONTATO, tags: ["antiga"] },
       contatoNoBanco: { id: CONTATO, tags: ["antiga"] },
     });
@@ -212,14 +214,14 @@ describe("sem destino — o comportamento de HOJE, byte a byte", () => {
       p_entity_kind: "crm_lead",
       p_entity_id: LEAD,
     });
-    // O default NÃO nasce com leitura nenhuma: é o caminho de sempre, sem
-    // consulta nova por conta da feature.
-    expect(leituras).toHaveLength(0);
+    expect(leituras).toHaveLength(1);
+    expect(leituras[0]).toMatchObject({ tabela: "crm_leads", filtros: { id: LEAD, organization_id: ORG } });
   });
 
   it("`destino: \"card\"` explícito é o mesmo caminho do default", async () => {
     const { ctx, atualizacoes, eventos } = contexto({
-      lead: { id: LEAD, contact_id: CONTATO, tags: ["do-card"] },
+      lead: { id: LEAD, contact_id: CONTATO, tags: ["contexto-antigo"] },
+      leadNoBanco: { id: LEAD, tags: ["do-card"] },
       contatoNoBanco: { id: CONTATO, tags: ["antiga"] },
     });
 

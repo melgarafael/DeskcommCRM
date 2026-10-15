@@ -12,6 +12,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { ParaIntegrar } from "./ParaIntegrar";
+import { RenomearConexao } from "./RenomearConexao";
 
 /**
  * Conectar um número por um PROVEDOR PARCEIRO.
@@ -158,6 +159,15 @@ export function CanalParceiroClient() {
         )}
 
         {estado?.channel_session_id && <ChannelAiAccess channelId={estado.channel_session_id} />}
+        {estado?.channel_session_id && (
+          <div>
+            <RenomearConexao
+              channelId={estado.channel_session_id}
+              currentName={estado.display_name}
+              onSaved={carregar}
+            />
+          </div>
+        )}
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="parceiro-conta">{t("Conta")}</Label>

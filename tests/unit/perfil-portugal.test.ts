@@ -93,12 +93,16 @@ describe("perfil de Portugal (issue #1946)", () => {
       .filter((p) => p.lei?.revisadaPorIa)
       .map((p) => p.codigo);
     expect(porIa).toEqual(["PT"]);
-    // O Brasil não ganha campo novo: é o que mantém o seu data.json igual.
+    // O Brasil não ganha chave no data.json (o `foraDoBrasil` continua
+    // devolvendo `{}`); o campo novo do PERFIL brasileiro existe desde a
+    // issue #2344 e muda só o RÓTULO que o renderizador imprime: o art. 18 da
+    // LGPD é um direito, não uma base legal.
     expect(perfilDoPais("BR").lei).toEqual({
       nome: "LGPD",
       numero: "Lei nº 13.709/2018",
       artigo: "Art. 18, II",
       revisada: true,
+      rotuloNoDocumento: "Direito exercido",
     });
   });
 

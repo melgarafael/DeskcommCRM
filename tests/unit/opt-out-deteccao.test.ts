@@ -356,6 +356,98 @@ const ESPANHOL_NAO_PEDE = [
   "no me interesa pagar mas, hay algo mas barato?",
 ];
 
+/**
+ * ─── PORTUGUÊS DE PORTUGAL, no MESMO detector ───────────────────────────────
+ *
+ * O seletor de país já aceita Portugal (doc 88 / PR #2339), mas o marketing
+ * português segue as regras do Brasil: a Lei n.º 41/2004, art. 13.º-A, exige
+ * consentimento prévio e um meio simples e gratuito de recusa em CADA mensagem.
+ * A fatia deste PR é o primeiro pedaço disso — o opt-out reconhecer o
+ * vocabulário de Portugal (issue #2343). O resto (exigir consentimento por
+ * contato) exige schema novo e NÃO entra aqui.
+ *
+ * Duas palavras do corpo da issue:
+ *   - "cancelar a subscrição" — `subscricao` faltava na lista de objetos;
+ *   - "remover" — já é palavra-chave sozinha, mas a FRASE em pt-PT não casava
+ *     nada, porque o pronome vem PRESO ao verbo ("remova-me"), e não solto
+ *     antes dele como no Brasil ("me remova").
+ *
+ * Os controles negativos são metade do valor: sem eles, alguém "consertaria" o
+ * positivo com um `includes("remover")` e a suíte ficaria verde bloqueando quem
+ * só avisou que vai remover o produto do carrinho.
+ */
+const PT_PT_PEDE_PARA_SAIR = [
+  // "remover" na gramática de Portugal — pronome PRESO ao verbo, depois dele.
+  "remova-me da lista",
+  "removam-me da lista",
+  "podem remover-me da lista",
+  "retirem-me da lista de contactos",
+  "eliminem-me da lista",
+  "apaguem-me da lista de contactos",
+  "excluam-me da lista de envios",
+];
+
+const PT_PT_NAO_PEDE = [
+  // "subscrição" noutro sentido: fala da fatura, não pede saída.
+  "o valor da subscrição aumentou este mês",
+  "quanto custa a subscrição anual?",
+  // "remover" em Portugal, mas o objeto NÃO é a comunicação com quem escreve —
+  // mesmo continente do controle do #1607.
+  "vou remover o produto do carrinho",
+  "remova-me a dúvida sobre o prazo de entrega",
+  "podem remover a fatura duplicada do sistema",
+  // Outra lista — quem escreve isto QUER continuar a ser contactado.
+  "removam-me da lista de espera",
+  "remova-me da lista de desejos",
+  // "contactos" sem "lista": a forma brasileira ("me remova dos contatos do
+  // fornecedor") também não bloqueia.
+  "remova-me dos contatos do fornecedor",
+];
+
+/**
+ * "cancelar a subscrição" — a frase do corpo da issue — ESCALA e não bloqueia:
+ * em Portugal a palavra também é o plano do ginásio ou da revista, e quem
+ * pergunta "posso cancelar a subscrição e voltar depois?" quer resposta.
+ */
+const PT_PT_ESCALA_SEM_BLOQUEAR = [
+  "cancelar a subscrição",
+  "quero cancelar a subscrição",
+  "podem cancelar a subscrição, por favor",
+  "cancela a subscrição",
+  "posso cancelar a subscrição e voltar depois?",
+];
+
+describe("português de Portugal — o vocabulário da issue #2343", () => {
+  for (const texto of PT_PT_PEDE_PARA_SAIR) {
+    it(`bloqueia: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(true);
+    });
+  }
+
+  for (const texto of PT_PT_NAO_PEDE) {
+    it(`NÃO bloqueia: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(false);
+    });
+  }
+
+  for (const texto of PT_PT_ESCALA_SEM_BLOQUEAR) {
+    it(`escala sem bloquear: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(false);
+      expect(ehOptOutProvavel(texto)).toBe(true);
+    });
+  }
+
+  it("o Brasil continua a valer byte a byte — a regra daqui não muda", () => {
+    // A fatia ACRESCENTA formas; nenhuma brasileira pode sair.
+    for (const texto of PEDE_PARA_SAIR) {
+      expect(ehPedidoDeOptOut(texto), texto).toBe(true);
+    }
+    for (const texto of NAO_PEDE_PARA_SAIR) {
+      expect(ehPedidoDeOptOut(texto), texto).toBe(false);
+    }
+  });
+});
+
 describe("espanhol — a palavra que a plantilla pede", () => {
   for (const texto of ESPANHOL_PEDE_PARA_SAIR) {
     it(`bloqueia: ${texto}`, () => {
@@ -389,7 +481,7 @@ describe("espanhol — a palavra que a plantilla pede", () => {
  * negativos escalam. O gate nasce verde e trava a volta.
  */
 describe("o lado negativo também não pode ESCALAR, não só não bloquear", () => {
-  for (const texto of [...ESPANHOL_NAO_PEDE, ...NAO_PEDE_PARA_SAIR]) {
+  for (const texto of [...ESPANHOL_NAO_PEDE, ...NAO_PEDE_PARA_SAIR, ...PT_PT_NAO_PEDE]) {
     it(`não escala para humano: ${texto}`, () => {
       expect(ehOptOutProvavel(texto), texto).toBe(false);
     });
@@ -546,7 +638,9 @@ describe("comecaComPalavraDeSaida — qual frase o cliente lê quando a IA sai d
     // Sem isto, "pare de mandar o pedido nesse endereco" (cliente irritado com a
     // entrega, candidato natural a `low_sentiment`) lia "Encerro os envios
     // automáticos deste canal agora mesmo".
-    const casam = [...NAO_PEDE_PARA_SAIR, ...ESPANHOL_NAO_PEDE].filter((t) => comecaComPalavraDeSaida(t));
+    const casam = [...NAO_PEDE_PARA_SAIR, ...ESPANHOL_NAO_PEDE, ...PT_PT_NAO_PEDE].filter(
+      (t) => comecaComPalavraDeSaida(t),
+    );
     expect(casam).toEqual([]);
     for (const t of [
       "Parar de tomar o remédio faz mal?",

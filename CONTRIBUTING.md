@@ -129,6 +129,12 @@ abaixo são para que isso não se repita.
    pegar — essa é a garantia que damos em troca do passo 1.
 4. **Sem resposta em 48h depois do "pego esta"?** Comece assim mesmo e diga no PR. A
    demora é nossa, o custo não pode ser seu.
+5. **Fatia só de backend, sem tela, não entra.** Toda rota ou server action nova precisa de
+   ao menos um chamador fora do próprio arquivo e dos testes — a tela, um hook, um worker.
+   Sem isso, quem opera a instalação não alcança a capacidade, e o fragmento em `.changes/`
+   que a anuncia fica falso. Se a issue foi fatiada, o PR que traz a rota traz também quem
+   a chama. A sonda é `git grep -nF '/<sua-rota>' -- app components hooks lib`. (Regra
+   escrita no item 65 de [`triagem/TRIAGEM.md`](triagem/TRIAGEM.md).)
 
 ### Se você está contribuindo de fora (fork) — leia isto
 

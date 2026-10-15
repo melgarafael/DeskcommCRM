@@ -10,6 +10,9 @@ import type { TipoDeIdentificador } from "./schemas";
 /** Modos de TLS aceitos, alinhados ao CHECK de `external_db_connections.ssl_mode`. */
 export type ModoTls = "disable" | "prefer" | "require" | "verify-ca" | "verify-full";
 
+/** Modos das fontes liberadas, alinhados ao CHECK de `external_db_connections.source_mode`. */
+export type ModoDeFontes = "all" | "list";
+
 /**
  * Conexão já decifrada, pronta para abrir o pool.
  *
@@ -40,6 +43,10 @@ export interface ConexaoExterna {
    * contato do turno; `null` = não configurada, e a consulta segue sem esse filtro.
    */
   chaveDoCliente: ChaveDoCliente | null;
+  /** `all` = vê tudo que o usuário do banco vê; `list` = só `fontes`. */
+  sourceMode: ModoDeFontes;
+  /** Fontes liberadas (só valem com `sourceMode = "list"`; em `all` vem vazio). */
+  fontes: Array<{ schema: string; tabela: string; colunas: string[] | null; descricao: string }>;
   versao: string;
 }
 
@@ -66,6 +73,8 @@ export interface TabelaExterna {
   chavePrimaria: string[];
   /** Estimativa do planner (`pg_class.reltuples`), não uma contagem exata. */
   estimativaLinhas: number;
+  /** Descrição escrita pelo administrador da conexão (só em modo `list`). */
+  descricao?: string;
 }
 
 /** Operadores aceitos no filtro da consulta — vocabulário FECHADO, de propósito. */

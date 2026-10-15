@@ -115,7 +115,9 @@ export default async function MarcaDaOrganizacaoPage() {
         // atravessam a fronteira para o navegador): a dica da tela cita o campo
         // e a lei como o formulário de Configurações → Organização os mostra.
         vocabulario={{
-          lei: perfil.lei?.nome ?? "LGPD",
+          // `null` = país sem citação revisada: a dica sai sem citar lei
+          // (issue #2344) — afirmar LGPD aí seria a citação errada.
+          lei: perfil.lei?.nome ?? null,
           rotuloNomeLegal: perfil.empresa.rotuloNomeLegal,
         }}
       />

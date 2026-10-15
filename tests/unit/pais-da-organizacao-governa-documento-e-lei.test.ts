@@ -30,6 +30,8 @@ const XISTAO: PerfilDoPais = {
   nome: "Xistão",
   // País sintético declara os SEUS rótulos de organização (#1946, item 4).
   empresa: { rotuloNomeLegal: "Razão do Xistão", rotuloNumero: "Registro do Xistão" },
+  // País sintético declara os SEUS papéis legais (#2344).
+  papel: { controlador: "Controlador do Xistão", encarregado: "Encarregado do Xistão" },
   documento: {
     rotulo: "Bilhete",
     exemplo: "123456789XI000",
@@ -58,6 +60,8 @@ const REVISADOLANDIA: PerfilDoPais = {
   nome: "Revisadolândia",
   // País sintético declara os SEUS rótulos de organização (#1946, item 4).
   empresa: { rotuloNomeLegal: "Razão de Revisadolândia", rotuloNumero: "Registro de Revisadolândia" },
+  // País sintético declara os SEUS papéis legais (#2344).
+  papel: { controlador: "Controlador de Revisadolândia", encarregado: "Encarregado de Revisadolândia" },
   documento: {
     rotulo: "Documento",
     exemplo: "000000000",

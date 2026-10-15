@@ -1,5 +1,6 @@
 "use server";
 
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -131,7 +132,7 @@ export async function updateGoogleAdsConnection(
     resourceType: "ad_platform_connections",
     resourceId: null,
     requestId: hdrs.get("x-request-id") ?? undefined,
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
+    ip: ipDoCliente(hdrs) ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
     metadata: {
       platform: "google_ads",

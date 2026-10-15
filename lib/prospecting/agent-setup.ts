@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { createMcpAgentDraft } from "@/lib/ai/agents/create-draft";
 import { publishAgentVersion } from "@/lib/ai/agents/publish";
 import { escolherModeloDoProvedor } from "@/lib/ai/agents/escolher-modelo";
+import { listarModelosDaAssinaturaOuVazio } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { capacidadesPadraoDoOnboarding } from "@/lib/ai/agents/capacidades-padrao";
 import { versionCreateSchema } from "@/lib/ai/agents/validation";
 import { lockRouter, writeRouterMembers } from "@/lib/ai/agents/router-members";
@@ -71,10 +72,17 @@ export async function resolveSetupModel(
   channelId: string | null,
   oferece: (provider: string) => boolean,
 ): Promise<ModelChoice> {
+  let modelosDaAssinatura:
+    | Awaited<ReturnType<typeof listarModelosDaAssinaturaOuVazio>>
+    | null = null;
+  const catalogoDaAssinatura = async () => {
+    modelosDaAssinatura ??= await listarModelosDaAssinaturaOuVazio(orgId);
+    return modelosDaAssinatura;
+  };
   const published = await db.query(
-    `select v.provider,v.model,v.credential_id,m.display_name from ai_agents a
+    `select v.provider,v.model,v.credential_id,m.display_name,m.supports_tools from ai_agents a
      join ai_agent_versions v on v.organization_id=a.organization_id and v.id=a.published_version_id
-     join ai_models m on m.provider=v.provider and m.model_id=v.model and m.supports_tools and m.deprecated_at is null
+     left join ai_models m on m.provider=v.provider and m.model_id=v.model and m.deprecated_at is null
      left join ai_provider_credentials c on c.organization_id=a.organization_id and c.id=v.credential_id and c.provider=v.provider
      where a.organization_id=$1 and a.archived_at is null and a.paused_at is null and v.status='published'
      and (v.credential_id is null or (c.is_active and c.validated_at is not null))
@@ -83,16 +91,28 @@ export async function resolveSetupModel(
   );
   for (const row of published.rows) {
     if (
-      PROVIDERS.includes(row.provider) &&
-      oferece(row.provider) &&
-      (row.credential_id || chaveDePlataforma(row.provider))
-    )
+      !PROVIDERS.includes(row.provider) ||
+      !oferece(row.provider) ||
+      (!row.credential_id && !chaveDePlataforma(row.provider))
+    ) {
+      continue;
+    }
+    const modeloDaAssinatura =
+      row.provider === "openai-assinatura"
+        ? (await catalogoDaAssinatura()).find((m) => m.model_id === row.model)
+        : null;
+    const temFerramentas =
+      row.provider === "openai-assinatura"
+        ? modeloDaAssinatura?.supports_tools === true
+        : row.supports_tools === true;
+    if (temFerramentas) {
       return {
         provider: row.provider,
         model: row.model,
         credential_id: row.credential_id,
         label: `${row.provider} · ${row.display_name ?? row.model}`,
       };
+    }
   }
   const org = await db.query("select settings from organizations where id=$1", [orgId]);
   const credentials = await db.query(
@@ -107,6 +127,20 @@ export async function resolveSetupModel(
     if (!PROVIDERS.includes(provider) || !oferece(provider)) continue;
     const credential = credentials.rows.find((c) => c.provider === provider);
     if (!credential && !chaveDePlataforma(provider)) continue;
+    if (provider === "openai-assinatura") {
+      const models = await catalogoDaAssinatura();
+      const selected = escolherModeloDoProvedor(models);
+      if (selected.escolhido) {
+        const model = models.find((m) => m.model_id === selected.modelId);
+        return {
+          provider,
+          model: selected.modelId,
+          credential_id: credential?.id ?? null,
+          label: `${provider} · ${model?.display_name ?? selected.modelId}`,
+        };
+      }
+      continue;
+    }
     const models = await db.query(
       "select model_id,display_name,is_default_for_provider,supports_tools,input_price_per_million_cents,output_price_per_million_cents from ai_models where provider=$1 and deprecated_at is null",
       [provider],

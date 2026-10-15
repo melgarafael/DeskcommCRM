@@ -42,6 +42,7 @@ import { ackToStatus } from "@/lib/types/messaging";
 import type { WahaEnvelope, WahaPayload } from "@/lib/waha/envelope";
 import { bareWaMessageId, chatIdFromWaMessageId, wahaEchoExternalIds } from "@/lib/waha/message-id";
 import { logger } from "@/lib/logger";
+import { numeroJaAquecido } from "@/lib/ai/pacing-knobs";
 import { nomeDeArquivoLimpo } from "@/lib/messaging/media/nome-de-arquivo";
 import {
   ehNumeroInternoDeAviso,
@@ -1625,6 +1626,27 @@ async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promis
     .in("external_id", candidates);
 }
 
+/**
+ * O controle de ritmo já não põe teto de aquecimento neste número? Lê os knobs
+ * da conexão e aplica `numeroJaAquecido`. Falha de leitura conta como "ainda
+ * aquecendo": a marca errada para o lado seguro é a que diz "não".
+ */
+async function aquecimentoTerminou(admin: Admin, session: Session): Promise<boolean> {
+  const { data, error } = await admin
+    .from("channel_knobs")
+    .select("number_activated_at, warmup_daily_caps")
+    .eq("organization_id", session.organization_id)
+    .eq("channel_session_id", session.id)
+    .maybeSingle();
+  if (error) {
+    logger.warn("waha.ingest: não li os knobs para concluir o aquecimento", {
+      detail: error.message,
+    });
+    return false;
+  }
+  return numeroJaAquecido(data);
+}
+
 interface SessionStatusRow extends Session {
   is_warmup_complete: boolean | null;
   warmup_started_at: string | null;
@@ -1642,13 +1664,30 @@ async function handleSessionStatus(
   const now = new Date().toISOString();
 
   const update: Record<string, unknown> = { status, last_status_change_at: now };
-  if (status === "WORKING" && session.warmup_started_at && !session.is_warmup_complete) {
+  if (status === "WORKING" && !session.is_warmup_complete) {
+    if (!session.warmup_started_at) {
+      // O escritor que a spec 03 descreveu e nunca foi implementado (#2432): a
+      // PRIMEIRA transição para `WORKING` marca o início do aquecimento
+      // (`docs/specs/03-spec-whatsapp-waha.md`, §5.3). Só enquanto o aquecimento
+      // não terminou: gravar isto depois do fim deixaria o início posterior a ele.
+      update.warmup_started_at = now;
+    }
+    // O FIM não é "a próxima WORKING": essa chega na primeira reconexão ou no
+    // primeiro restart do WAHA, às vezes no mesmo minuto, e marcaria aquecido um
+    // número de um dia (#2432). A régua é a do controle de ritmo
+    // (`numeroJaAquecido`): idade declarada do número ou "pular o aquecimento".
+    //
     // Só `warmup_completed_at`: `is_warmup_complete` é `GENERATED ALWAYS AS
     // (warmup_completed_at IS NOT NULL)`, e atribuir a ela abortava o UPDATE
-    // INTEIRO — inclusive o `status`, que nada tem a ver com warm-up. Ou seja: a
-    // sessão que terminava o aquecimento parava de atualizar o próprio estado, e
-    // o espelho do canal congelava sem erro visível.
-    update.warmup_completed_at = now;
+    // INTEIRO — inclusive o `status`, e o espelho do canal congelava sem erro.
+    //
+    // Limites conhecidos: a marca só anda num `session.status` WORKING; um número
+    // que fica conectado sem reconectar a recebe atrasada (erra para o lado
+    // seguro). E, gravada, ela não volta (o ramo só roda com `!is_warmup_complete`):
+    // desligar "pular o aquecimento" depois deixa a marca "sim" com o ritmo de
+    // volta a limitar — erro para o lado INSEGURO. Por isso nada no envio a lê; quem
+    // decide envio calcula na leitura com a mesma função.
+    if (await aquecimentoTerminou(admin, session)) update.warmup_completed_at = now;
   }
   await admin.from("channel_sessions").update(update).eq("id", session.id);
 

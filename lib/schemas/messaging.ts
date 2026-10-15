@@ -182,6 +182,54 @@ export const patchConversationSchema = z
 
 export type PatchConversationInput = z.infer<typeof patchConversationSchema>;
 
+/**
+ * POST /api/v1/conversations/bulk (#2484, fatia F1) — ações em lote na Inbox.
+ *
+ * UMA rota para todas as ações, discriminada por `action` (o mesmo desenho do
+ * `bulkLeadActionSchema`). O lote NÃO tem permissão própria, org própria nem
+ * auditoria própria: cada id é encaminhado ao MESMO handler da conversa
+ * individual (`POST [id]/close`, `PATCH [id]`, `POST [id]/transfer`,
+ * `POST [id]/mark-read`, `POST [id]/pause-ai`, `POST [id]/reactivate-bot`), e
+ * é ele que resolve role, organização da SESSÃO e auditoria — por item. A
+ * organização portanto NUNCA vem do corpo: o schema não tem campo para ela.
+ *
+ * O teto de ids é política da ROTA (`TETO_DO_LOTE`), não do schema: quem
+ * estoura recebe 422 `bulk_too_large` com o número na mensagem, e não um
+ * `validation_error` genérico.
+ */
+export const bulkConversationActionSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("close"),
+    ids: z.array(z.string().uuid()).min(1),
+  }),
+  z.object({
+    action: z.literal("archive"),
+    ids: z.array(z.string().uuid()).min(1),
+  }),
+  z.object({
+    action: z.literal("mark-read"),
+    ids: z.array(z.string().uuid()).min(1),
+  }),
+  z.object({
+    action: z.literal("pause-ai"),
+    ids: z.array(z.string().uuid()).min(1),
+  }),
+  z.object({
+    action: z.literal("reactivate-bot"),
+    ids: z.array(z.string().uuid()).min(1),
+  }),
+  z.object({
+    action: z.literal("transfer"),
+    ids: z.array(z.string().uuid()).min(1),
+    // Mesmo contrato do `transferConversationSchema` — o destino é membro
+    // agent+ da org da sessão, validado pelo handler da conversa.
+    to_user_id: z.string().uuid(),
+    reason: z.string().trim().min(1).max(500).optional(),
+  }),
+]);
+
+export type BulkConversationActionInput = z.infer<typeof bulkConversationActionSchema>;
+
 /** POST /conversations/open-with-contact — abrir inbox a partir de cartão de contato. */
 export const openConversationWithContactSchema = z
   .object({

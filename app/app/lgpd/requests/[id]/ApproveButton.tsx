@@ -25,6 +25,8 @@ interface ApproveButtonProps {
   requestId: string;
   requestType: LgpdRequestType;
   status: string;
+  /** Nome e destino do envio: quem aprova confere a pessoa ANTES de o dado sair (doc 134). */
+  titular?: { nome: string | null; email_destino: string | null };
 }
 
 const VARIANT_LABELS: Record<LgpdRequestType, { button: string; title: string; description: string }> = {
@@ -32,7 +34,7 @@ const VARIANT_LABELS: Record<LgpdRequestType, { button: string; title: string; d
     button: "Aprovar export",
     title: "Aprovar exportação de dados",
     description:
-      "Ao confirmar, esta solicitação será colocada em fila para exportação dos dados do titular. A ação não pode ser desfeita.",
+      "Ao confirmar, os dados do titular são exportados e enviados para o e-mail abaixo. Confira se é a pessoa certa: o envio não pode ser desfeito.",
   },
   redact: {
     button: "Aprovar anonimização",
@@ -48,7 +50,7 @@ const VARIANT_LABELS: Record<LgpdRequestType, { button: string; title: string; d
   },
 };
 
-export function ApproveButton({ requestId, requestType, status }: ApproveButtonProps) {
+export function ApproveButton({ requestId, requestType, status, titular }: ApproveButtonProps) {
   const t = useT();
   const [reason, setReason] = useState("");
   const [open, setOpen] = useState(false);
@@ -91,6 +93,19 @@ export function ApproveButton({ requestId, requestType, status }: ApproveButtonP
           <AlertDialogTitle>{t(labels.title)}</AlertDialogTitle>
           <AlertDialogDescription>{t(labels.description)}</AlertDialogDescription>
         </AlertDialogHeader>
+
+        {requestType === "data_request" && (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+            <dt className="text-muted-foreground">{t("Titular")}</dt>
+            <dd className="font-medium break-words">
+              {titular?.nome ?? t("Sem nome no cadastro")}
+            </dd>
+            <dt className="text-muted-foreground">{t("Envio para")}</dt>
+            <dd className="font-medium break-all">
+              {titular?.email_destino ?? t("Sem e-mail: o arquivo fica para entrega manual")}
+            </dd>
+          </dl>
+        )}
 
         <div className="space-y-2 py-2">
           <Label htmlFor="approved_reason">

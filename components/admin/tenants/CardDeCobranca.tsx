@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { CopiarLinkDePagamento } from "@/components/admin/cobranca/CopiarLinkDePagamento";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { documentoDoPagador } from "@/lib/cobranca/documento";
 import { ROTULO_DO_ESTADO } from "@/lib/cobranca/rotulos";
 import type { EstadoDaAssinatura } from "@/lib/cobranca/vocabulario";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
@@ -73,12 +75,18 @@ export function CardDeCobranca({
   assinatura,
   suspensaPorCobranca,
   rotuloAntigo,
+  pedeDocumento = false,
+  documentoDoCadastro = null,
 }: {
   orgId: string;
   planos: readonly PlanoDoCard[];
   assinatura: AssinaturaDoCard | null;
   suspensaPorCobranca: boolean;
   rotuloAntigo: string | null;
+  /** O link vai criar o cliente no Asaas: o documento de quem paga é obrigatório. */
+  pedeDocumento?: boolean;
+  /** CNPJ do cadastro, já conferido e sem máscara: pré-preenche o documento. */
+  documentoDoCadastro?: string | null;
 }) {
   const t = useT();
   const idioma = useIdioma();
@@ -89,6 +97,10 @@ export function CardDeCobranca({
   const [prazo, setPrazo] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [remover, setRemover] = useState<ReturnType<typeof oQueRemover>>([]);
+  const [documento, setDocumento] = useState(documentoDoCadastro ?? "");
+  const [link, setLink] = useState<string | null>(null);
+  const documentoNormalizado = documentoDoPagador(documento);
+  const documentoErrado = documento.trim() !== "" && documentoNormalizado === null;
   const base = `/api/v1/admin/tenants/${orgId}/assinatura`;
   const data = new Intl.DateTimeFormat(idioma, { dateStyle: "short" });
   const nomeDoPlano = (id: string) => planos.find((p) => p.id === id)?.nome ?? "—";
@@ -98,6 +110,8 @@ export function CardDeCobranca({
     setRemover([]);
     try {
       const resultado = await acao();
+      // Toda ação do card pode matar o link aberto (a troca no teste o expira no provedor).
+      setLink(null);
       toast.success(typeof sucesso === "string" ? sucesso : sucesso(resultado));
       router.refresh();
       // O refresh só renova o servidor; ações e banner leem o cache do react-query.
@@ -106,6 +120,24 @@ export function CardDeCobranca({
       const lista = oQueRemover(err);
       if (lista.length > 0) setRemover(lista);
       else showApiError(err);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  // Fora do `agir`: o toast não entrega o link, e o dono precisa dele na tela para mandar à empresa.
+  async function gerarLink() {
+    setOcupado(true);
+    try {
+      const r = await apiClient.post<{ data: { url: string } }>(
+        `${base}/checkout`,
+        pedeDocumento && documentoNormalizado !== null ? { documento: documentoNormalizado } : {},
+      );
+      setLink(r.data.url);
+      router.refresh();
+      await queryClient.invalidateQueries({ queryKey: ["admin", "tenant", orgId] });
+    } catch (err) {
+      showApiError(err);
     } finally {
       setOcupado(false);
     }
@@ -154,6 +186,47 @@ export function CardDeCobranca({
         <p className="text-xs text-muted-foreground">
           {t("Rótulo antigo:")} {rotuloAntigo}
         </p>
+      )}
+
+      {assinatura && assinatura.estado !== "ativa" && (
+        <div className="space-y-2">
+          {pedeDocumento && (
+            <div className="space-y-1">
+              <Label htmlFor="documento-do-pagador">{t("CPF ou CNPJ de quem paga")}</Label>
+              <Input
+                id="documento-do-pagador"
+                className="max-w-xs"
+                autoComplete="off"
+                value={documento}
+                onChange={(e) => setDocumento(e.target.value)}
+                aria-invalid={documentoErrado}
+                aria-describedby="documento-do-pagador-ajuda"
+              />
+              <p id="documento-do-pagador-ajuda" className="text-xs text-muted-foreground">
+                {documentoErrado
+                  ? t("Confira o CPF ou CNPJ: os dígitos não batem.")
+                  : t("Vai direto para o Asaas, que emite a cobrança neste documento; não fica guardado neste sistema.")}
+              </p>
+            </div>
+          )}
+          <Button
+            variant="outline"
+            disabled={ocupado || (pedeDocumento && documentoNormalizado === null)}
+            onClick={() => void gerarLink()}
+          >
+            {t("Gerar link de pagamento")}
+          </Button>
+          {link && (
+            <div className="space-y-1">
+              <Label htmlFor="link-de-pagamento">{t("Link de pagamento")}</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input id="link-de-pagamento" className="max-w-md" readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
+                <CopiarLinkDePagamento link={link} />
+              </div>
+              <p className="text-xs text-muted-foreground">{t("Mande para a empresa. Se o link expirar, gere de novo.")}</p>
+            </div>
+          )}
+        </div>
       )}
 
       {remover.length > 0 && (

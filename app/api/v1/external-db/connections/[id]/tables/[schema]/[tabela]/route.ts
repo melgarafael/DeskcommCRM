@@ -16,8 +16,8 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { abrirAcesso } from "@/lib/external-db/acesso";
-import { colunasDaTabela } from "@/lib/external-db/introspeccao";
-import { LeituraInvalidaError, lerTabela } from "@/lib/external-db/leitura";
+import { FonteNaoLiberadaError } from "@/lib/external-db/dialeto";
+import { LeituraInvalidaError } from "@/lib/external-db/leitura";
 import { leituraQuerySchema } from "@/lib/external-db/schemas";
 import type { PedidoDeLeitura } from "@/lib/external-db/types";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const acesso = await abrirAcesso(createAdminClient(), activeOrg.orgId, id);
   if (!acesso.ok) return respostaDeAcesso(acesso.motivo, { requestId, idioma: authUser.idioma });
 
-  const permitidas = await colunasDaTabela(acesso.pool, schema, tabela);
+  const permitidas = await acesso.dialeto.colunasDaTabela(schema, tabela);
   if (!permitidas) {
     return fail("not_found", t("Tabela ou view não encontrada."), 404, { requestId });
   }
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   };
 
   try {
-    const resultado = await lerTabela(acesso.pool, pedido, permitidas, {
+    const resultado = await acesso.dialeto.lerTabela(pedido, permitidas, {
       limiteMax: acesso.conexao.maxRows,
     });
 
@@ -111,6 +111,9 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
 
     return ok(resultado, { requestId });
   } catch (err) {
+    if (err instanceof FonteNaoLiberadaError) {
+      return fail("not_found", t("Tabela ou view não encontrada."), 404, { requestId });
+    }
     if (err instanceof LeituraInvalidaError) {
       return fail("validation_failed", t("Pedido de leitura inválido."), 422, {
         requestId,

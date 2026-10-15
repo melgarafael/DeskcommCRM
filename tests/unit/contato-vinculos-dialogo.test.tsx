@@ -80,6 +80,7 @@ const CONTATO_LINHA = {
   updated_at: "2026-01-01T10:00:00.000Z",
   last_activity_at: null,
   first_service_at: null,
+  ai_opt_out: false,
 } satisfies Contact;
 
 /** Onde a contagem enxerga: ficha existente e agenda desta organização. */

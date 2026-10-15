@@ -30,8 +30,24 @@ import { ipEhEspecial } from "@/lib/automation/outbound-ip";
  * O primeiro salto do `x-forwarded-for`, ou o `x-real-ip`. Sem proxy à frente o
  * Next já preenche o `x-forwarded-for` com o endereço do socket (ver
  * `chegouPelaBorda`), então `null` aqui é raro — não é sinal de "sem proxy".
+ *
+ * ═══ Quando a borda declara o cabeçalho (`IP_DO_CLIENTE_HEADER`) ═══
+ *
+ * O primeiro salto só é o cliente quando o proxy da frente SUBSTITUI o
+ * `x-forwarded-for` recebido — é o que o Caddy do kit faz. A borda da
+ * Cloudflare (`docker-compose.cloudflared.yml`) ACRESCENTA ao que o cliente
+ * mandou, e o endereço real vai no `cf-connecting-ip`, que ela sobrescreve.
+ * Por isso o override do túnel declara `IP_DO_CLIENTE_HEADER=cf-connecting-ip`
+ * no app. Sem a variável, esse cabeçalho é ignorado: no modo Caddy quem o
+ * escreveria é o próprio cliente. Valor ausente ou que não é IP cai na régua
+ * de sempre.
  */
 export function ipDoCliente(headers: Headers): string | null {
+  const declarado = process.env.IP_DO_CLIENTE_HEADER?.trim();
+  if (declarado) {
+    const daBorda = headers.get(declarado)?.trim();
+    if (daBorda && isIP(daBorda) !== 0) return daBorda;
+  }
   const encaminhado = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (encaminhado) return encaminhado;
   const real = headers.get("x-real-ip")?.trim();

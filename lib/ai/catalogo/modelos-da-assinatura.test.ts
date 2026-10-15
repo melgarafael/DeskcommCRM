@@ -1,28 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * A LISTAGEM DE MODELOS DA ASSINATURA FALA COM O BACKEND DO CODEX (#2602).
+ * A listagem de modelos segue o contrato oficial Sign in with ChatGPT.
  *
- * MEDIDO na issue com o token do Sign in with ChatGPT: `GET
- * https://api.openai.com/v1/models` → 403 "Missing scopes: api.model.read";
- * `GET https://chatgpt.com/backend-api/codex/models` → 200 com 10 modelos no
- * formato `{ models: [{ slug, visibility: "list" }] }`. Com o destino antigo a
- * listagem caía no 403, `models_available` ficava `null` para sempre e todo
- * "Publicar" respondia `model_not_found` (a `fn_publish_ai_agent_version`
- * 0592 confere o modelo nessa lista).
+ * A documentação da OpenAI orienta consultar `https://api.openai.com/v1/models`
+ * com o mesmo token OAuth usado na inferência e filtrar `models` por
+ * `visibility: "list"`:
+ * https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
  *
- * O QUE ESTE ARQUIVO PROVA (sem token real — a ponta com conta ChatGPT não foi
- * medida, ver o "O que NÃO medi" do PR):
- *   (a) a chamada SAI para o endpoint do Codex e a resposta 200 no formato da
- *       issue grava a lista no espelho `models_available`;
- *   (b) o 403 medido da API pública NÃO silencia: vira
- *       `FalhaAoListarModelosDaAssinatura` (motivo `http_403`) e o espelho
- *       não é tocado;
+ * O QUE ESTE ARQUIVO PROVA (com fetch mockado):
+ *   (a) a chamada usa o endpoint oficial e a resposta documentada grava a lista
+ *       no espelho `models_available`;
+ *   (b) falha HTTP continua visível e não toca o espelho;
  *   (c) um 200 em formato que não conhecemos não grava lixo — e também não
  *       engole o problema em `[]`.
- *
- * Sabotagem que confirma: apontar `OPENAI_CODEX_MODELS_ENDPOINT` de volta para
- * `https://api.openai.com/v1/models` deixa o caso (a) vermelho.
  */
 
 const update = vi.hoisted(() => vi.fn());
@@ -54,8 +45,7 @@ import {
   listarModelosDaAssinaturaOuVazio,
 } from "./modelos-da-assinatura";
 
-/** O destino medido na issue: o backend do Codex, não a API pública. */
-const ENDPOINT_DO_CODEX = "https://chatgpt.com/backend-api/codex/models";
+const ENDPOINT_OFICIAL = "https://api.openai.com/v1/models";
 
 function stubDeFetch(resposta: () => Promise<Response>) {
   const chamada = vi.fn(resposta);
@@ -78,7 +68,7 @@ afterEach(() => {
 });
 
 describe("listarModelosDaAssinatura", () => {
-  it("(a) fala com o backend do Codex e regrava o espelho com a lista", async () => {
+  it("(a) consulta o catálogo oficial SIWC e regrava o espelho com a lista", async () => {
     const chamada = respondeCom({
       models: [
         { slug: "gpt-a", visibility: "list" },
@@ -90,23 +80,18 @@ describe("listarModelosDaAssinatura", () => {
 
     expect(chamada).toHaveBeenCalledTimes(1);
     const [url, init] = chamada.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url, "a listagem foi para o endpoint errado (#2602)").toBe(ENDPOINT_DO_CODEX);
+    expect(url, "a listagem foi para o endpoint oficial SIWC").toBe(ENDPOINT_OFICIAL);
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer at");
     expect(modelos?.map((m) => m.model_id)).toEqual(["gpt-a"]);
     expect(update).toHaveBeenCalledWith({ models_available: ["gpt-a"] });
   });
 
-  it("(b) o 403 medido da API pública não silencia: erro visível, espelho intacto", async () => {
-    // O corpo EXATO medido na issue, vindo do endpoint ERRADO: é o estado que
-    // o operador vivia em silêncio enquanto `models_available` ficava null.
+  it("(b) erro HTTP não silencia e mantém o espelho intacto", async () => {
     respondeCom(
       {
-        message:
-          "You have insufficient permissions for this operation. Missing scopes: api.model.read.",
-        type: "invalid_request_error",
-        code: "insufficient_permissions",
+        error: { message: "Unauthorized" },
       },
-      403,
+      401,
     );
 
     const falha = await listarModelosDaAssinatura("org-1").then(
@@ -115,8 +100,8 @@ describe("listarModelosDaAssinatura", () => {
     );
 
     expect(falha).toBeInstanceOf(FalhaAoListarModelosDaAssinatura);
-    expect((falha as FalhaAoListarModelosDaAssinatura).motivo).toBe("http_403");
-    expect((falha as FalhaAoListarModelosDaAssinatura).status).toBe(403);
+    expect((falha as FalhaAoListarModelosDaAssinatura).motivo).toBe("http_401");
+    expect((falha as FalhaAoListarModelosDaAssinatura).status).toBe(401);
     expect(update, "uma falha não pode tocar no espelho").not.toHaveBeenCalled();
   });
 
@@ -144,7 +129,7 @@ describe("listarModelosDaAssinatura", () => {
     );
 
     expect(falha).toBeInstanceOf(FalhaAoListarModelosDaAssinatura);
-    expect((falha as FalhaAoListarModelosDaAssinatura).motivo).toBe("sem_resposta_do_backend_do_codex");
+    expect((falha as FalhaAoListarModelosDaAssinatura).motivo).toBe("sem_resposta_da_api_de_modelos");
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -157,15 +142,6 @@ describe("listarModelosDaAssinatura", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("CODEX_CLIENT_VERSION declarado viaja como client_version (o parâmetro do Codex CLI)", async () => {
-    vi.stubEnv("CODEX_CLIENT_VERSION", "0.160.1");
-    const chamada = respondeCom({ models: [{ slug: "gpt-a", visibility: "list" }] });
-
-    await listarModelosDaAssinatura("org-1");
-
-    const [url] = chamada.mock.calls[0] as unknown as [string];
-    expect(url).toBe(`${ENDPOINT_DO_CODEX}?client_version=0.160.1`);
-  });
 });
 
 describe("listarModelosDaAssinaturaOuVazio", () => {

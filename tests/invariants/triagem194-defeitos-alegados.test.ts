@@ -262,6 +262,13 @@ describe("defeito 4 — fim do warm-up", () => {
       [ORG],
     );
     const sessionId = s[0]!.id;
+    // O fim do aquecimento segue a régua do controle de ritmo (#2432):
+    // número usado há 40 dias já passou do último degrau, e a conclusão grava.
+    await pool.query(
+      `insert into channel_knobs (organization_id, channel_session_id, number_activated_at)
+       values ($1, $2, now() - interval '40 days')`,
+      [ORG, sessionId],
+    );
 
     await dispatchWahaEvent(
       db,

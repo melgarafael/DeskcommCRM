@@ -257,13 +257,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .eq("provider", CHANNEL_PROVIDER_META)
       .maybeSingle();
   const { data: existenteRaw } = await queryTolerantToMissingArchived(
-    () => buscarExistente(`id, ${ARCHIVED_AT}, webhook_path_token`),
-    () => buscarExistente("id, webhook_path_token"),
+    () => buscarExistente(`id, ${ARCHIVED_AT}, webhook_path_token, display_name`),
+    () => buscarExistente("id, webhook_path_token, display_name"),
   );
   const existente = existenteRaw as {
     id: string;
     archived_at?: string | null;
     webhook_path_token?: string | null;
+    display_name?: string | null;
   } | null;
 
   const linha = {
@@ -273,7 +274,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     meta_waba_id: waba_id,
     meta_token_encrypted: cifrado,
     phone_number: validacao.displayPhoneNumber ? `+${validacao.displayPhoneNumber.replace(/\D/g, "")}` : null,
-    display_name: validacao.verifiedName ?? "Canal oficial",
+    // O nome do provedor só batiza a conexão; depois dela o nome é do operador
+    // (Renomear), e salvar a credencial de novo não o apaga. Mesma regra do
+    // `coalesce(display_name, ...)` do pareamento por QR.
+    display_name: existente?.display_name || (validacao.verifiedName ?? "Canal oficial"),
     status: "WORKING",
   };
 

@@ -18,10 +18,10 @@
   "mainPath": ["telaConexao", "rotaConexao", "adaptador", "stripe", "rotaWebhook", "eventLog", "sinalHandler", "sincronizar", "assinaturas", "fnReativar", "orgs"],
   "nodes": [
     { "id": "telaCobranca", "lane": "dono", "col": 1, "type": "ui", "label": "/admin/cobranca › Planos · Clientes", "sublabel": "app/admin/(protected)/cobranca/page.tsx; porta no AdminSidebar com modulo:'cobranca'" },
-    { "id": "telaTenant", "lane": "dono", "col": 1, "type": "ui", "label": "/admin/tenants/[id] card Cobrança · /admin/tenants/new", "sublabel": "CardDeCobranca: atribuir, trocar em teste, dar prazo, isentar; plano no novo tenant" },
+    { "id": "telaTenant", "lane": "dono", "col": 1, "type": "ui", "label": "/admin/tenants/[id] card Cobrança · /admin/tenants/new", "sublabel": "CardDeCobranca: atribuir, trocar em teste, dar prazo, isentar, gerar link de pagamento (CPF/CNPJ no Asaas); plano no novo tenant" },
     { "id": "acaoModulo", "lane": "app", "col": 1, "type": "service", "label": "updateModuloDaInstalacao", "sublabel": "requirePlatformAdminEscrita; liga pela tela desde a PR 3a; desligar libera as suspensas por cobrança" },
     { "id": "modulos", "lane": "app", "col": 2, "type": "lib", "label": "lib/instalacao/modulos.ts · MODULO_COBRANCA", "sublabel": "falha fechada; MODULOS_SO_DA_INSTALACAO esconde da empresa", "espelho": "recursos-opcionais.architecture.json#modulos" },
-    { "id": "rotasDono", "lane": "app", "col": 2, "type": "api", "label": "admin/cobranca/planos · admin/tenants/[id]/assinatura (+ /prazo, DELETE)", "sublabel": "requirePlatformAdminEscrita; 404 com a chave desligada; audit cobranca.*" },
+    { "id": "rotasDono", "lane": "app", "col": 2, "type": "api", "label": "admin/cobranca/planos · admin/tenants/[id]/assinatura (+ /prazo, /checkout, DELETE)", "sublabel": "requirePlatformAdminEscrita; 404 com a chave desligada; audit cobranca.*" },
     { "id": "criar", "lane": "app", "col": 2, "type": "service", "label": "POST admin/tenants", "sublabel": "plan (chave desligada) ou plano_id (ligada)", "espelho": "organizacoes-e-acesso.architecture.json#criar" },
     { "id": "cadastro", "lane": "app", "col": 2, "type": "service", "label": "lib/auth/provision.ts (cadastro e provisionamento)", "sublabel": "org criada por caminho de servidor, com created_by do cliente" },
     { "id": "convite", "lane": "app", "col": 3, "type": "service", "label": "POST team/invite", "sublabel": "plano cheio: recusa antes do e-mail (decisão do dono); a trava do aceite é o gatilho", "espelho": "organizacoes-e-acesso.architecture.json#convite" },
@@ -78,7 +78,7 @@
     { "id": "e9", "from": "telaTenant", "to": "rotasDono", "label": "card Cobrança" },
     { "id": "e10", "from": "telaTenant", "to": "criar", "label": "novo tenant com plano" },
     { "id": "e11", "from": "rotasDono", "to": "planos", "label": "criar, editar, arquivar; preço trava com assinante (409)" },
-    { "id": "e12", "from": "rotasDono", "to": "assinaturas", "label": "atribuir, trocar em teste, prazo_extra_ate, apagar = isentar" },
+    { "id": "e12", "from": "rotasDono", "to": "assinaturas", "label": "atribuir, trocar em teste, prazo_extra_ate, apagar = isentar; checkout_url do link gerado pelo dono (org do path)" },
     { "id": "e13", "from": "rotasDono", "to": "fnReativar", "label": "prazo ou isenção de suspensa por cobrança" },
     { "id": "e14", "from": "criar", "to": "vinculo", "label": "p_request com plan ou plano_id" },
     { "id": "e15", "from": "vinculo", "to": "orgs", "label": "INSERT (created_by = platform admin: sem trial automático)" },
@@ -159,7 +159,8 @@
     { "id": "e90", "from": "asaas", "to": "rotaWebhook", "label": "aviso com asaas-access-token (token estático: só acorda a leitura, nunca gravado)" },
     { "id": "e91", "from": "billing", "to": "asaas", "label": "Assinar com CPF/CNPJ (vai ao Asaas, não ao banco); Pagar agora abre a fatura (invoiceUrl)" },
     { "id": "e92", "from": "hub", "to": "asaas", "label": "Pagar agora abre a fatura do Asaas" },
-    { "id": "e93", "from": "telaConexao", "to": "asaas", "label": "webhook manual: passo a passo copiável, token mostrado uma vez" }
+    { "id": "e93", "from": "telaConexao", "to": "asaas", "label": "webhook manual: passo a passo copiável, token mostrado uma vez" },
+    { "id": "e94", "from": "rotasDono", "to": "adaptador", "label": "garantirCliente, iniciarAssinatura, lerSituacao via lib/cobranca/checkout.ts (e-mail do admin da empresa, D-15)" }
   ],
   "cards": [
     {

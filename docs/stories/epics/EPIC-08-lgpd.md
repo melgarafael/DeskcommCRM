@@ -37,7 +37,7 @@ Entregar pipeline LGPD completo e auditável: receber 3 webhooks Nuvemshop (`cus
 
 ## 2. Resultado esperado (Definition of Done do Epic)
 
-- [ ] 3 webhook receivers Nuvemshop (`customer/redact`, `customer/data_request`, `store/redact`) recebem POST, validam HMAC, gravam em `lgpd_requests` com `due_at` correto (D+7 ou D+15 úteis), emitem `lgpd.data_request_received` ou `lgpd.redact_received`, retornam 200 dentro de 5s.
+- [ ] 3 webhook receivers Nuvemshop (`customer/redact`, `customer/data_request`, `store/redact`) recebem POST, validam HMAC, gravam em `lgpd_requests` com `due_at` correto (D+7 ou D+15 úteis), retornam 200 dentro de 5s. Os de anonimização emitem `lgpd.redact_received`; o de dados **não** emite — o pedido espera a aprovação (S-08.07, doc 134).
 - [ ] Worker `lgpd-export-worker` consome `lgpd.data_request_received`, coleta JSON estruturado conforme Spec 01 §8.3, gera PDF assinado PAdES, faz upload em `lgpd-exports/{request_id}.pdf`, envia email com signed URL ao titular, marca `status=completed`.
 - [ ] Worker `lgpd-redact-worker` consome `lgpd.redact_received`, executa cascade SQL transacional (Spec 01 §8.2), preserva orders por valor histórico, grava audit dense com `cascaded_to` counts, callback Nuvemshop confirmation.
 - [ ] `store/redact` cobre TODOS os contacts do tenant com flag `emergency=true` (operação massiva, SLA acelerado).
@@ -228,7 +228,7 @@ exposes:
 **Points**: 3 | **Priority**: P0 | **Deps**: S-08.01 | **FR refs**: Spec 06 §5.7, Spec 01 §8.1, BR L-02
 
 #### Contexto
-Mesmo padrão do S-08.01, mas SLA D+7 úteis e emite `lgpd.data_request_received`. Reaproveita 100% da infra (sla.ts, repository, holidays). Decisão: o receiver **não** dispara o worker direto — apenas emite o event. O worker `lgpd-export-worker` (S-08.04) escuta o event.
+Mesmo padrão do S-08.01, mas SLA D+7 úteis. Reaproveita 100% da infra (sla.ts, repository, holidays). Decisão (doc 134, opção A, revisa a decisão original): o receiver **não** dispara a exportação — só cria o pedido em `received`. Quem emite `lgpd.data_request_received` é a aprovação do admin (S-08.07), e o worker `lgpd-export-worker` (S-08.04) só exporta evento com a marca dela.
 
 #### Files to create
 - `app/api/v1/webhooks/nuvemshop/customer-data-request/route.ts`
@@ -238,7 +238,7 @@ Mesmo padrão do S-08.01, mas SLA D+7 úteis e emite `lgpd.data_request_received
 - `lib/events/registry.ts` — `lgpd.data_request_received`
 
 #### Implementation steps
-1. Receiver basicamente clone do S-08.01: HMAC → idempotency → INSERT lgpd_requests (`type='customer_data_request'`, `due_at = now + 7d úteis`, `delivery` extraído do payload Nuvemshop) → emit `lgpd.data_request_received` → audit.
+1. Receiver basicamente clone do S-08.01: HMAC → idempotency → INSERT lgpd_requests (`type='customer_data_request'`, `due_at = now + 7d úteis`, `delivery` extraído do payload Nuvemshop) → audit. (Sem evento: a exportação espera a aprovação, S-08.07.)
 2. Delivery: Nuvemshop manda `customer.email` — usar como default `delivery.address`, `delivery.method='email'`.
 
 #### Acceptance Criteria
@@ -246,8 +246,8 @@ Mesmo padrão do S-08.01, mas SLA D+7 úteis e emite `lgpd.data_request_received
 ```gherkin
 Given Nuvemshop envia customer/data_request com customer.email="cliente@x.com"
 When receiver processa
-Then lgpd_requests row criada com type='customer_data_request', due_at = now + 7d úteis, delivery={method:'email', address:'cliente@x.com'}
-And event lgpd.data_request_received emitido
+Then lgpd_requests row criada com type='customer_data_request', status='received', due_at = now + 7d úteis, delivery={method:'email', address:'cliente@x.com'}
+And NENHUM event lgpd.data_request_received emitido (nada é montado nem enviado antes da aprovação)
 And response 200 em <5s
 ```
 
@@ -269,7 +269,7 @@ Then idempotent (1 row apenas)
 |---|---|---|---|
 | t1 | api | POST customer/data_request → 200 + row criada | curl + SQL check |
 | t2 | db | due_at = now + 7d úteis | SQL diff |
-| t3 | event | lgpd.data_request_received em event_log | SQL |
+| t3 | event | NENHUM lgpd.data_request_received em event_log até a aprovação | SQL |
 | t4 | audit | Audit registra | SQL |
 | t5 | rls | Cross-tenant isolado | session swap |
 
@@ -279,12 +279,10 @@ Then idempotent (1 row apenas)
 exposes:
   - type: webhook
     id: "POST /api/v1/webhooks/nuvemshop/customer-data-request"
-  - type: domain_event
-    id: "lgpd.data_request_received"
-    payload: "{ request_id, organization_id, customer_external_id, contact_id?, delivery: { method, address }, due_at }"
 ```
 
 #### Decisões a registrar
+- O receiver não emite `lgpd.data_request_received`: o evento é da aprovação (S-08.07), e só nasce pelo servidor (migration 0672).
 - Delivery default é email do customer no payload Nuvemshop. Se ausente, request entra com `delivery=null` e operador resolve via UI.
 
 #### Definition of Done
@@ -700,7 +698,7 @@ exposes:
 #### Contexto
 Detalhe da request com timeline visual SLA (D+0/D+5/D+7 pra data_request; D+0/D+10/D+15 pra redact), preview dos dados que serão exportados/anonimizados (dry-run via API), e botões "Aprovar export" / "Aprovar redact" (idempotency-key obrigatório). Aprovar dispara o worker S-08.04 ou S-08.05 mesmo que a request tenha vindo de webhook (operador pode escolher quando — útil pra requests manuais via API ou pra atrasar até validação humana).
 
-Decisão: para requests vindas de webhook Nuvemshop, o worker já dispara automaticamente (S-08.01 emite event imediato). O botão "Aprovar" é redundante mas existe pra requests **manuais** (criadas via API direta ou pela própria UI futura). Aprovação manual também é audit gate L-06.
+Decisão (doc 134, opção A — substitui a decisão original de disparo automático): todo pedido de dados, inclusive o da Nuvemshop, **espera a aprovação**. O dado só sai depois que o admin confirma vendo o nome do titular e o e-mail de destino; o botão "Aprovar export" é o único gatilho da exportação, e o worker ignora evento sem a marca da aprovação (`manually_approved` + `approved_by`). O prazo D+7 segue cobrado pelo SLA watcher. Aprovação manual também é audit gate L-06.
 
 #### Files to create
 - `app/(app)/lgpd/requests/[id]/page.tsx`

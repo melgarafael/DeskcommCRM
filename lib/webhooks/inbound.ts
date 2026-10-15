@@ -4,7 +4,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
+import { normalizePhoneBR } from "@/lib/channels/phone-variants";
 
 export interface FieldMap {
   name?: string[];
@@ -51,20 +51,9 @@ export interface MappedLead {
   source_metadata: Record<string, string>;
 }
 
-/** Normaliza telefone BR para E.164 com o nono dígito no celular. */
-export function normalizePhoneBR(raw: unknown): string | null {
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const digits = raw.replace(/\D/g, "");
-  let e164: string | null = null;
-  if (raw.trim().startsWith("+")) {
-    e164 = /^\d{8,15}$/.test(digits) ? `+${digits}` : null;
-  } else if (digits.length === 12 || digits.length === 13) {
-    e164 = digits.startsWith("55") ? `+${digits}` : null;
-  } else if (digits.length === 10 || digits.length === 11) {
-    e164 = `+55${digits}`;
-  }
-  return e164 ? canonicalPhoneBR(e164) : null;
-}
+// A regra mora em `lib/channels/phone-variants.ts`, que o componente de cliente
+// também importa (este módulo carrega `node:crypto`).
+export { normalizePhoneBR };
 
 function firstMatch(payload: Record<string, unknown>, aliases: string[]): { key: string; value: string } | null {
   const lowered = new Map(Object.keys(payload).map((k) => [k.toLowerCase(), k]));

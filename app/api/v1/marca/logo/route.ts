@@ -1,3 +1,4 @@
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * O logo da marca — subir do computador, sem colar URL.
@@ -367,7 +368,7 @@ async function registrarAuditoria(
   acao: "definido" | "removido",
   alvo: Alvo,
 ): Promise<void> {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const ip = ipDoCliente(req.headers);
   const userAgent = req.headers.get("user-agent") ?? null;
   // FORMA, nunca IDENTIDADE — mesma disciplina de `resolve.ts`. O caminho do
   // arquivo não entra: a trilha é lida por quem opera a plataforma inteira.

@@ -205,9 +205,13 @@ describe("o lote para uma etapa COMUM", () => {
     );
     expect(rows.map((l) => l.lost_reason)).toEqual(["achou_mais_perto", "achou_mais_perto"]);
 
-    // CONTROLE: o mesmo lote MANDANDO o motivo aposentado é recusado. Sem este
-    // caso, o anterior ficaria verde mesmo se o trigger nunca validasse nada.
-    await expect(moverEmLote(ids, etapaDePerda, "achou_mais_perto")).rejects.toMatchObject({
+    // CONTROLE: um lote MANDANDO o motivo aposentado é recusado. Sem este caso,
+    // o anterior ficaria verde mesmo se o trigger nunca validasse nada. Os
+    // negócios são ABERTOS de propósito: desde a 0674 (#2887) quem JÁ estava
+    // perdido não recebe o motivo do lote, então mandá-lo aos `ids` acima não
+    // passa mais pelo trigger.
+    const abertos = await doisNegociosAbertos();
+    await expect(moverEmLote(abertos, etapaDePerda, "achou_mais_perto")).rejects.toMatchObject({
       code: "22023",
     });
   });

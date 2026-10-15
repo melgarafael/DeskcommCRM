@@ -315,6 +315,18 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
       detalhe: "deadlock detected",
     });
   });
+
+  // #2379: o contato "sempre atendimento humano" recusa a devolução a cada tick,
+  // de propósito. Contá-lo como falha faria o cron reclamar para sempre de um
+  // estado que a operação pediu.
+  it("contato 'sempre atendimento humano' é recusa esperada: não é falha, não loga erro, não audita", async () => {
+    devolver.mockResolvedValue({ ok: false, erro: "contato_sempre_humano" });
+    const corpo = (await (await chamar()).json()) as { data: Record<string, number> };
+    expect(devolver).toHaveBeenCalledTimes(1);
+    expect(corpo.data).toMatchObject({ devolvidas: 0, falhas: 0 });
+    expect(auditar).not.toHaveBeenCalled();
+    expect(erroDeLog).not.toHaveBeenCalled();
+  });
 });
 
 /**

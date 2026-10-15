@@ -188,8 +188,11 @@ export function FormularioDaMarca({
       {
         rotulo: t("Botões no modo escuro"),
         // #2482: o escuro deriva da SEGUNDA semente quando ela existe.
+        // #2687: e o `indice` abaixo é o degrau DELA — sem dizer a escala, a
+        // tira marcava o degrau do escuro sobre a escada da cor principal.
         hex: derivadaEscura.escuro.accent,
         indice: degraus.escuro,
+        escala: derivadaEscura.rampa,
       },
     ];
   }, [derivada, derivadaEscura, degraus, t]);

@@ -74,39 +74,13 @@ export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
  * o CATRACA de host do `branding.test.ts` é régua à parte: ele exige a linha
  * declarada em `HOSTS_DECLARADOS`, que está lá, com categoria e motivo.
  *
- * A LISTAGEM de modelos da assinatura é o pedaço que NÃO cabe neste endpoint
- * (#2602): o mesmo `access_token` SIWC medido em 2026-10-08 respondeu 403
- * `Missing scopes: api.model.read` em `/v1/models` e 200 no backend do Codex.
- * Por isso ela fala por `OPENAI_CODEX_MODELS_ENDPOINT`, logo abaixo; a chamada
- * de chat continua aqui, na API pública de Responses.
+ * A listagem de modelos da assinatura também usa a API pública oficial `/v1/models`,
+ * documentada para Sign in with ChatGPT. Não chamamos endpoints internos do ChatGPT.
  */
 export const OPENAI_CODEX_ENDPOINT = 'https://api.openai.com/v1';
 
-/**
- * O endpoint de LISTAGEM de modelos da assinatura — o MESMO backend com que o
- * Codex CLI fala (`/backend-api/codex`).
- *
- * MEDIDO na issue #2602 com o token do Sign in with ChatGPT (Codex CLI
- * 0.160.1, plano plus), o MESMO token nos DOIS endereços:
- *
- *   GET https://api.openai.com/v1/models            → 403 "You have
- *      insufficient permissions … Missing scopes: api.model.read" (o token
- *      SIWC não tem escopo da API pública de plataforma);
- *   GET https://chatgpt.com/backend-api/codex/models?client_version=0.160.1
- *      → 200, 10 modelos no formato `{ models: [{ slug, visibility: "list" }] }`.
- *
- * A coluna `ai_provider_credentials.models_available` é o que a
- * `fn_publish_ai_agent_version` (0592) confere no "Publicar"; apontar a
- * listagem para a API pública gravava `null` para sempre e todo publish
- * respondia `model_not_found` (#2602). Com este endereço a lista passa a ser
- * gravada a partir de uma resposta que SABEMOS interpretar.
- *
- * O `client_version` é o parâmetro que o próprio Codex CLI envia; a medição
- * acima foi com `0.160.1` e sem um token real não dá para medir se o backend
- * exige o parâmetro — por isso ele só viaja quando `CODEX_CLIENT_VERSION`
- * está declarado no ambiente (knob de fuga, não default).
- */
-export const OPENAI_CODEX_MODELS_ENDPOINT = 'https://chatgpt.com/backend-api/codex/models';
+/** Endpoint oficial de catálogo para tokens de Sign in with ChatGPT. */
+export const OPENAI_MODELS_ENDPOINT = 'https://api.openai.com/v1/models';
 
 /**
  * Cabeçalhos OPCIONAIS de atribuição da OpenRouter.
@@ -263,7 +237,15 @@ function esforcoAceitoPeloModelo(
   return aceitaNone ? 'none' : 'low';
 }
 
-/** Injeta `reasoning.effort` no corpo, preservando o resto de `reasoning` e da chamada. */
+/**
+ * Injeta `reasoning.effort` no corpo, preservando o resto de `reasoning` e da chamada.
+ *
+ * O knob é o padrão da INSTALAÇÃO, não uma ordem por cima de quem pediu: a
+ * chamada que já traz `reasoning.effort` (a opção `reasoning` de `runModelCall`,
+ * que o SDK só escreve quando alguém pede) fica com o seu. Sem isso, um
+ * `OPENAI_REASONING_EFFORT=high` faria as classificações, que pedem `none`,
+ * voltarem a pensar antes de devolver uma palavra.
+ */
 function comEsforcoDeRaciocinio(inner: typeof fetch, esforco: EsforcoDeRaciocinioOpenAI): typeof fetch {
   return (input, init) => {
     const corpo = init?.body;
@@ -272,6 +254,7 @@ function comEsforcoDeRaciocinio(inner: typeof fetch, esforco: EsforcoDeRaciocini
         const json = JSON.parse(corpo) as Record<string, unknown>;
         const bruto = json['reasoning'];
         const reasoning = bruto !== null && typeof bruto === 'object' ? (bruto as Record<string, unknown>) : {};
+        if (typeof reasoning['effort'] === 'string') return inner(input, init);
         return inner(input, { ...init, body: JSON.stringify({ ...json, reasoning: { ...reasoning, effort: esforco } }) });
       } catch {
         // Corpo não-JSON: repassa intacto — um ajuste de tuning nunca derruba a chamada.
@@ -336,10 +319,8 @@ export function createDefaultRegistry(opts?: {
      * e o campo existe onde a OpenAI o documenta — aqui ele só correria o risco
      * de o backend recusar um parâmetro que não pediu.
      *
-     * A LISTAGEM de modelos desta credencial (#2602) não passa por aqui: ela
-     * fala com o backend do Codex (`OPENAI_CODEX_MODELS_ENDPOINT`), porque o
-     * token SIWC medido devolve 403 `Missing scopes: api.model.read` na API
-     * pública — enquanto a chamada de chat continua na API pública de Responses.
+     * A listagem da conta usa GET /v1/models com o mesmo token SIWC, conforme o
+     * contrato oficial Sign in with ChatGPT; este runtime continua em /v1/responses.
      */
     [PROVEDOR_POR_ASSINATURA]: (apiKey, modelId) =>
       createOpenAI({

@@ -6,7 +6,7 @@
  * Sem ele, o #2354 é meia porta: o PDF de acesso de Portugal já SABE ler as
  * alíneas a), c) e d), mas ninguém consegue escrevê-las pelo produto — hoje só
  * um `UPDATE` em SQL preenche, e toda organização PT recebe "não informado
- * pelo controlador". A gravação é `PATCH /api/v1/settings/art15` (admin), com o
+ * pelo responsável pelo tratamento". A gravação é `PATCH /api/v1/settings/art15` (admin), com o
  * MESMO `art15SettingsSchema` da leitura: os limites 2000/2000/500 moram num
  * lugar só, e a `maxLength` daqui é só o aviso antes do 422 do servidor.
  *
@@ -24,7 +24,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
-import { art15SettingsSchema, type Art15Settings } from "@/lib/legal/art15";
+import { art15SettingsSchema, naoInformadoPelo, type Art15Settings } from "@/lib/legal/art15";
+import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 
 /** O que a tela pede: string sempre, `null` virando "" na entrada. */
 export type AlineasPreenchidas = {
@@ -33,8 +34,16 @@ export type AlineasPreenchidas = {
   prazo_conservacao: string;
 };
 
-export function Art15Form({ initial }: { initial: AlineasPreenchidas }) {
+export function Art15Form({
+  initial,
+  pais,
+}: {
+  initial: AlineasPreenchidas;
+  /** `organizations.country`: o aviso cita a frase que o PDF DESTE país imprime. */
+  pais: string | null;
+}) {
   const t = useT();
+  const naoInformado = naoInformadoPelo(perfilDoPais(pais).papel.controlador);
   const [form, setForm] = useState<AlineasPreenchidas>(initial);
   const [salvo, setSalvo] = useState<AlineasPreenchidas>(initial);
   const [isPending, startTransition] = useTransition();
@@ -95,8 +104,8 @@ export function Art15Form({ initial }: { initial: AlineasPreenchidas }) {
           <h2 className="text-sm font-semibold">{t("Alíneas do art. 15.º do RGPD")}</h2>
           <p className="text-xs text-muted-foreground">
             {t(
-              "O relatório de acesso imprime estes três textos em nome da organização. Deixar em branco faz o documento mostrar «não informado pelo controlador» — nada é inventado no lugar do que falta.",
-            )}
+              "O relatório de acesso imprime estes três textos em nome da organização. Deixar em branco faz o documento mostrar «{naoInformado}» — nada é inventado no lugar do que falta.",
+            ).replace("{naoInformado}", naoInformado)}
           </p>
         </div>
         {campos.map((campo) => (

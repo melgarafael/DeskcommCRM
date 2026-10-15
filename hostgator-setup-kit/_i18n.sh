@@ -68,6 +68,14 @@ la línea TRAEFIK_NETWORK del .env: el kit crea y usa la red '{3}'.
 Si no, ejecuta 'docker network ls' y pon la bridge correcta en TRAEFIK_NETWORK en el .env.
 Si es una overlay de Swarm, tiene que haberse creado con --attachable —
 sin eso un contenedor de compose común no puede entrar en ella."
+  ["REVERSE_PROXY=cloudflared não é suportado no modo single-server, porque o Supabase self-hosted depende do Caddy para publicar as APIs (Auth, REST, Storage...). Use o proxy padrão (Caddy) ou o Cloudflare Tunnel apenas com o Supabase na nuvem."]="REVERSE_PROXY=cloudflared no es compatible con el modo single-server, porque el Supabase self-hosted depende de Caddy para publicar las APIs (Auth, REST, Storage...). Usa el proxy por defecto (Caddy), o el Cloudflare Tunnel solo con el Supabase en la nube."
+  ["REVERSE_PROXY=cloudflared exige CLOUDFLARE_TUNNEL_TOKEN no .env.
+Crie o túnel em Zero Trust > Networks > Tunnels, copie o token para essa linha
+e rode de novo. Em Public Hostnames, aponte o seu domínio para http://app:3000."]="REVERSE_PROXY=cloudflared exige CLOUDFLARE_TUNNEL_TOKEN en el .env.
+Crea el túnel en Zero Trust > Networks > Tunnels, copia el token a esa línea
+y vuelve a ejecutar. En Public Hostnames, apunta tu dominio a http://app:3000."
+  ["✓ Cloudflare Tunnel: o Caddy fica desligado e o cloudflared publica por app:3000"]="✓ Cloudflare Tunnel: Caddy queda apagado y cloudflared publica por app:3000"
+  ["  (lembre de bloquear /api/v1/webhooks/waha no WAF da Cloudflare — ver docker-compose.cloudflared.yml)"]="  (recuerda bloquear /api/v1/webhooks/waha en el WAF de Cloudflare — ver docker-compose.cloudflared.yml)"
   ["Pausando o sistema para mexer no banco com segurança."]="Pausando el sistema para modificar la base de datos con seguridad."
   ["⛔ PEÇAS DO BANCO NÃO VOLTARAM depois da atualização:"]="⛔ PARTES DE LA BASE DE DATOS NO VOLVIERON después de la actualización:"
   ["   Enquanto elas estiverem paradas, o CRM não consegue ler nem gravar."]="   Mientras estén detenidas, el CRM no puede leer ni escribir."
@@ -280,6 +288,8 @@ y, si de verdad es un Traefik, pon REVERSE_PROXY=traefik en el .env y vuelve a e
   ["  Rode 'bash hostgator-setup-kit/update.sh' quando a próxima versão sair."]="  Ejecuta 'bash hostgator-setup-kit/update.sh' cuando salga la próxima versión."
   ["⚠ Não consegui descobrir a última versão publicada (rede?)."]="⚠ No pude averiguar la última versión publicada (¿red?)."
   ["  Instalando pelo canal 'latest'. Depois rode: bash hostgator-setup-kit/update.sh"]="  Instalando por el canal 'latest'. Después ejecuta: bash hostgator-setup-kit/update.sh"
+  ["✖ Não há release numérica completa para ARM64, ou a WAHA escolhida não oferece ARM64."]="✖ No hay una release numérica completa para ARM64, o la WAHA elegida no ofrece ARM64."
+  ["  Confira registry, visibilidade das quatro imagens e WAHA_IMAGE; depois repita."]="  Revisa el registry, la visibilidad de las cuatro imágenes y WAHA_IMAGE; después repite."
 
   # ── install.sh: FIELDS[] — los prompts de la entrevista, vía field_at() ──
   ["Domínio do CRM (ex: crm.suaempresa.com.br)"]="Dominio del CRM (ej: crm.tuempresa.com.mx)"
@@ -437,6 +447,10 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
   ["Puxando a imagem e subindo os serviços"]="Descargando la imagen y levantando los servicios"
   ["⚠ Não consegui puxar todas as imagens do registro."]="⚠ No pude descargar todas las imágenes del registro."
   ["  Sigo assim mesmo: o que faltar é construído aqui (mais lento, mesmo resultado)."]="  Continúo de todas formas: lo que falte se construye aquí (más lento, mismo resultado)."
+  ["Não coloquei o CRM no ar: {1} A construção local segue fechada por padrão, e numa instalação não há versão anterior para onde voltar. Para construir as imagens aqui DE PROPÓSITO (mais lento, exige memória): {2}"]="No pude poner el CRM en línea: {1} La construcción local sigue cerrada por defecto, y en una instalación no hay versión anterior a la que volver. Para construir las imágenes AQUÍ A PROPÓSITO (más lento, requiere memoria): {2}"
+  ["a construção local foi desligada por você mesmo nesta execução (DESKCOMM_BUILD_LOCAL={1}), e o portão obedece — tire a variável ou troque o valor por 1 para construir de propósito."]="la construcción local la desactivaste tú mismo en esta ejecución (DESKCOMM_BUILD_LOCAL={1}), y el portón obedece — quita la variable o cambia el valor a 1 para construir a propósito."
+  ["o plugin buildx do Docker não está instalado nesta VPS, e é com ele que confiro se a versão {1} está publicada — sem ele a sonda falha nas quatro imagens e o veredito sai como 'registro fora', o diagnóstico errado para uma VPS cuja rede está boa. Instale o pacote {2} e rode este install.sh de novo."]="el plugin buildx de Docker no está instalado en esta VPS, y con él verifico si la versión {1} está publicada — sin él la sonda falla en las cuatro imágenes y el veredicto sale como 'registro fuera', el diagnóstico equivocado para una VPS cuya red funciona bien. Instala el paquete {2} y ejecuta este install.sh de nuevo."
+  ["o registro de imagens não respondeu para a versão {1} (DNS/rede, ou a tag ainda sem nenhuma imagem publicada — de fora os dois se parecem, e o kit não adivinha pelo texto do erro). Sem resposta do registro a construção aqui gastaria a memória desta VPS à toa, que é o defeito da #1955. Rode este install.sh de novo em alguns minutos."]="el registro de imágenes no respondió para la versión {1} (DNS/red, o la tag todavía sin ninguna imagen publicada — desde afuera los dos se parecen, y el kit no adivina por el texto del error). Sin respuesta del registro la construcción aquí gastaría la memoria de esta VPS sin motivo, que es el defecto de la #1955. Ejecuta este install.sh de nuevo en unos minutos."
   ["Não coloquei o CRM no ar: nem as imagens prontas desta versão nem a construção aqui funcionaram. O erro está logo acima; para reproduzir só a construção: {1}"]="No pude poner el CRM en línea: ni las imágenes listas de esta versión ni la construcción local funcionaron. El error está justo arriba; para reproducir solo la construcción: {1}"
   ["✓ containers no ar"]="✓ contenedores en línea"
   ["  (as três imagens desta versão foram construídas aqui nesta VPS: as prontas"]="  (las tres imágenes de esta versión se construyeron aquí en esta VPS: las ya"
@@ -460,6 +474,13 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
   ["Diagnóstico completo dos serviços:"]="Diagnóstico completo de los servicios:"
   ["Depois de corrigir o .env, é só subir de novo (nada é perdido):"]="Después de corregir el .env, solo levántalo de nuevo (no se pierde nada):"
   ["Travou? Leve o log para a comunidade — tem gente que já passou por isso:"]="¿Se atascó? Lleva el log a la comunidad — hay gente que ya pasó por esto:"
+  # variante "quase lá" sem certificado: o app no confió en el HTTPS de su propio dominio
+  ["Quase lá — falta o cadeado (HTTPS) do seu domínio"]="Ya casi — falta el candado (HTTPS) de tu dominio"
+  ["refazer nada — o certificado de {1} ainda não saiu."]="rehacer nada — el certificado de {1} todavía no salió."
+  ["Isso leva alguns minutos depois que o domínio aponta para esta VPS."]="Eso tarda algunos minutos después de que el dominio apunta a esta VPS."
+  ["Espere alguns minutos e confira (o certo é responder 307):"]="Espera algunos minutos y verifica (lo correcto es que responda 307):"
+  ["Quando der 307, rode de novo o mesmo comando de instalação: ele confere"]="Cuando dé 307, vuelve a ejecutar el mismo comando de instalación: revisa"
+  ["o que falta e termina, sem apagar nada."]="lo que falta y termina, sin borrar nada."
 
   # ── install.sh: telemetria_no_banner() ───────────────────────────────────
   ["  Telemetria: DESLIGADA — nenhum relatório de erro sai desta instalação."]="  Telemetría: DESACTIVADA — ningún reporte de error sale de esta instalación."

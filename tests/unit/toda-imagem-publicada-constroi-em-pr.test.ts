@@ -138,6 +138,23 @@ describe("toda imagem publicada é construída em PR", () => {
     ).toEqual([]);
   });
 
+  it("o agente de voz é iniciado nos dois runners nativos, não somente construído", () => {
+    const fundo = recorteDoJob(yml, "imagens-de-fundo-sobem").job;
+    expect(fundo).toContain("arch: amd64");
+    expect(fundo).toContain("arch: arm64");
+    expect(fundo).toContain("bash scripts/sonda-voice-agent-na-imagem.sh deskcomm-voice-agent:pr");
+  });
+
+  it("cada índice montado é verificado antes de promover stable", () => {
+    const juntar = recorteDoJob(yml, "juntar-manifestos").job;
+    const promover = recorteDoJob(yml, "promover-stable").job;
+    expect(juntar).toContain("source hostgator-setup-kit/_manifestos.sh");
+    expect(juntar).toContain('manifesto_tem_plataforma "$tag" linux/amd64');
+    expect(juntar).toContain('manifesto_tem_plataforma "$tag" linux/arm64');
+    expect(promover).toContain("juntar-manifestos");
+    expect(promover).toContain('manifesto_tem_plataforma "${REGISTRY}/${dono}/${img}:${numero}" linux/arm64');
+  });
+
   it("a matriz gera um job por receita E por arquitetura — nenhum item do include engole o anterior", () => {
     const jobs = jobsDaMatriz();
     const pares = new Set(jobs.map((j) => `${j.dockerfile ?? "?"} ${j.arch ?? "?"}`));

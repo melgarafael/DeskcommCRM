@@ -22,6 +22,20 @@
  * diferença é só essa: um parágrafo com o link no HTML e, no texto, o link e
  * "Os dois links expiram" no lugar de "O link expira". O resto segue byte a byte.
  *
+ * Quarta exceção, esta também regravando fixture, e por decisão escrita na
+ * issue #2344: o rótulo da citação brasileiro deixa de ser "Base legal" — o
+ * art. 18 da LGPD é um DIREITO do titular, e a base legal fica nos arts. 7 e
+ * 11 (Portugal já rotulava "Direito exercido"). Só a PALAVRA do rótulo muda;
+ * a citação, o prazo, os links e a estrutura continuam os mesmos, e as
+ * comparações seguem byte a byte contra o fixture regravado.
+ *
+ * Quinta exceção: o rodapé do PDF virou UMA string no JSX (o rótulo vem do
+ * perfil, e não mais de texto estático ao lado da interpolação). O `join` por
+ * filho de texto perdeu separadores (`\u0001`) que eram detalhe do parser — o
+ * TEXTO visível do rodapé não muda, e `lgpd-pdf-meet.test.ts` continua casando
+ * a extração do PDF real.
+ *
+ *
  * Terceira exceção, e esta NÃO regrava fixture: o doc 110 (resposta 2A) dá ao
  * `data.json` brasileiro TODAS as mensagens (`messages_completas`) e a lista
  * das seções no limite (`secoes_no_limite`), como Portugal. `data-*.json`
@@ -328,7 +342,9 @@ describe("data.json e PDF de acesso", () => {
     }
   });
 
-  it("Brasil: o texto do PDF é o de antes, com \"Base legal\"", async () => {
+  it("Brasil: o texto do PDF é o de antes, com o rótulo \"Direito exercido\" (#2344)", async () => {
+    // O rótulo vem do PERFIL do Brasil (`lei.rotuloNoDocumento`), e não mais
+    // de um literal no renderizador: o art. 18 é um direito, não uma base.
     const { cheio } = await dataJson(null, "America/Sao_Paulo");
     expect(pdfDe(cheio).join("\u0001")).toBe(fixture("pdf-textos.txt"));
   });

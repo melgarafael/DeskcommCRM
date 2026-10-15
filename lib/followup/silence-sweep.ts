@@ -117,7 +117,7 @@ import {
   type NoDeGatilho,
 } from "./agent-followup-gate";
 import { emPausaDeReentrada, type BaseDaPausa, type FatosDaReentrada } from "./pausa-de-reentrada";
-import { contatosComRetornoVivo } from "./retorno-segura-o-fluxo";
+import { contatosQueORetornoSegura } from "./retorno-segura-o-fluxo";
 
 /**
  * Status que ocupam a vaga do índice único `idx_followup_enrollments_one_live`
@@ -153,8 +153,10 @@ export interface SilenceSweepDb {
    */
   loadSilentContactIds(orgId: string, cutoffIso: string, segments: string[], desdeIso?: string): Promise<string[]>;
   /**
-   * Contatos com RETORNO agendado vivo — quem tem um "te escrevo no dia 30" a
-   * caminho não entra no fluxo de silêncio. Ver `retorno-segura-o-fluxo.ts`.
+   * Contatos que o retorno SEGURA — o agendado vivo e o recém-executado (issue
+   * #2907): quem tem um "te escrevo no dia 30" a caminho, ou acabou de receber a
+   * mensagem dele, não entra no fluxo de silêncio por cima. Ver
+   * `retorno-segura-o-fluxo.ts`.
    */
   loadContatosComRetornoVivo(orgId: string): Promise<Set<string>>;
   /**
@@ -218,7 +220,7 @@ export interface SilenceSweepSummary {
   skipped_existing: number;
   /** Elegível por silêncio, mas com tentativa deste pointer iniciada há menos de `threshold_minutes` — ver o cooldown no cabeçalho do arquivo. */
   skipped_cooldown: number;
-  /** Silenciosos que ficaram de fora porque já têm um retorno agendado. */
+  /** Silenciosos que ficaram de fora porque o retorno ainda os segura (agendado ou recém-executado — #2907). */
   skipped_pending_return: number;
   /** Silenciosos que já passaram pelo fluxo e ainda estão na pausa de reentrada. */
   skipped_reentry_pause: number;
@@ -370,6 +372,8 @@ type ContactEmbed =
       ai_authorized_at: string | null;
       phone_number: string | null;
       force_human: boolean | null;
+      /** A marca permanente "sempre atendimento humano" (issue 2379). */
+      ai_opt_out: boolean | null;
     }
   | null;
 
@@ -439,7 +443,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       const { data, error } = await admin
         .from("conversations")
         .select(
-          "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human), sessao:channel_session_id(metadata), organizations:organization_id(status)",
+          "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata), organizations:organization_id(status)",
         )
         .eq("organization_id", orgId).eq("demandas.organization_id", orgId)
         .eq("contacts.organization_id", orgId).eq("sessao.organization_id", orgId)
@@ -498,6 +502,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
               aiTestPhoneNumbers: metadata.ai_test_phone_numbers,
               contactPhoneNumber: row.contacts?.phone_number ?? null,
               forceHuman: false,
+              // A marca PERMANENTE (issue 2379) entra na MESMA decisão: este sweep
+              // retoma follow-up de contato em silêncio, e retomar um contato que
+              // pediu para ficar com humano é reabrir o atendimento da IA por relógio.
+              aiOptOut: row.contacts?.ai_opt_out ?? false,
               assigneeKind: null,
               botSilencedUntil: null,
               aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
@@ -515,6 +523,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
             pessoaNoComando:
               row.assignee_kind === "user" ||
               row.contacts?.force_human === true ||
+              row.contacts?.ai_opt_out === true ||
               (row.bot_silenced_until != null && Date.parse(row.bot_silenced_until) > agora.getTime()),
           });
         }
@@ -583,7 +592,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
     },
 
     loadContatosComRetornoVivo(orgId) {
-      return contatosComRetornoVivo(admin, orgId);
+      return contatosQueORetornoSegura(admin, orgId);
     },
 
     async loadTriggerNode(orgId, versionId) {

@@ -10,8 +10,11 @@ recebe as visitas do seu domínio e as entrega ao CRM.
 
 Sem Coolify, use o guia [Deploy na HostGator](../deploy-hostgator/README.md): é mais curto.
 
-Tudo o que este guia afirma foi medido numa VPS de teste da HostGator em 06 e 07/10/2026.
-As provas estão em [`evidence/2026-10-07-coolify-consumo/`](../../evidence/2026-10-07-coolify-consumo/README.md).
+Tudo o que este guia afirma foi medido numa VPS de teste da HostGator em 06 e 07/10/2026,
+com o Coolify 4.3.23. Em 14/10/2026 os Passos 2 a 5, a entrada no CRM (Passo 6) e a atualização pelo botão da
+tela foram medidos de novo, com o Coolify 4.4.6 e o CRM 1.79.0 → 1.80.0; onde a 4.4.6 mudou algo, o
+texto diz. As provas estão em [`evidence/2026-10-07-coolify-consumo/`](../../evidence/2026-10-07-coolify-consumo/README.md)
+e [`evidence/2026-10-14-coolify-446-e-botao/`](../../evidence/2026-10-14-coolify-446-e-botao/README.md).
 O que não foi medido está escrito como "não medido nesta versão".
 
 ## Quando usar o Coolify
@@ -42,13 +45,13 @@ Confira esta lista. Cada item diz onde conseguir.
   teste, todas as imagens do Docker somavam 19,84 GB, mas essa conta inclui o Coolify e
   outros testes que rodavam na mesma máquina. O banco, com os anexos, depois de criar a
   conta e uma conversa de teste, ocupava 105 MiB. Deixe espaço também para os backups (o kit guarda os 14 mais recentes).
-- **Tempo:** a instalação do Coolify levou menos de 1 minuto na VPS medida; a do CRM com o banco, 2 min 44 s na
+- **Tempo:** a instalação do Coolify levou menos de 1 minuto na VPS medida (41 s na 4.4.6); a do CRM com o banco, 2 min 44 s na
   primeira vez (baixando tudo). Some uns 15 minutos de cliques e esperas (estimativa, não
   cronometrada) e o tempo que o DNS leva para propagar.
 - **Não precisa de conta no Supabase.** O banco é instalado na própria VPS.
 
 **Sua VPS já veio com Coolify?** Rode `docker inspect -f '{{.Config.Image}}' coolify` na
-VPS. Se a resposta não terminar em `:4.3.23`, as telas podem estar diferentes das deste
+VPS. Se a resposta não terminar em `:4.4.6`, as telas podem estar diferentes das deste
 guia. Desligue a atualização automática do Coolify nas configurações dele (o caminho na
 tela não foi conferido nesta versão) e pule para o [Passo 3](#passo-3--criar-o-admin-e-fechar-o-painel).
 
@@ -111,17 +114,25 @@ nslookup crm.SEUDOMINIO.com.br
 ## Passo 2 — Instalar o Coolify
 
 ```bash
-curl -fsSL https://cdn.coollabs.io/coolify/install.sh -o coolify-install.sh && AUTOUPDATE=false bash coolify-install.sh 4.3.23
+curl -fsSL https://cdn.coollabs.io/coolify/install.sh -o coolify-install.sh && AUTOUPDATE=false bash coolify-install.sh
 ```
 
-O `4.3.23` é a versão medida neste guia. O `AUTOUPDATE=false` impede o Coolify de se
-atualizar sozinho (se ele mudar de versão, as telas deste guia mudam junto). Ele fixa só o
-Coolify, não os auxiliares dele: o Sentinel, um agente de métricas que vem ligado de
-fábrica, apareceu em duas versões no disco da VPS medida (como ele trocou de versão não
-foi medido).
+O comando instala a versão atual do Coolify; a última medida neste guia é a **4.4.6**. O
+`AUTOUPDATE=false` impede o Coolify de se atualizar sozinho depois (se ele mudar de versão,
+as telas deste guia podem mudar junto). Ele fixa só o Coolify, não os auxiliares dele: o
+Sentinel, um agente de métricas que vem ligado de fábrica, apareceu em duas versões no disco
+da VPS medida (como ele trocou de versão não foi medido).
 
-**Você vai ver:** no fim, "Your instance is ready to use!" e o endereço
-`http://SEU-IP:8000`. Na VPS medida, a instalação levou menos de 1 minuto.
+**Não ponha um número de versão no fim do comando.** O instalador que o site do Coolify
+entrega é sempre o mais novo, e ele baixa os arquivos de configuração da versão mais nova.
+Medido em 14/10/2026: `bash coolify-install.sh 4.3.23` (o comando que este guia ensinava)
+terminou com `ERROR: Coolify container is not healthy after 60s`, porque juntou a imagem
+4.3.23 com a configuração da 4.4. O painel ficou sem a peça de tempo real e o servidor não
+se conectava.
+
+**Você vai ver:** no fim, `Coolify is ready!  Installed in …` e o endereço
+`http://SEU-IP:8000` (na 4.3.23 a frase era "Your instance is ready to use!"). Na VPS
+medida, a instalação levou 41 s.
 
 **Crie o admin AGORA, no Passo 3, antes de qualquer outra coisa.** Na VPS medida, o
 endereço `http://SEU-IP:8000` abria **para a internet inteira**, e quem abre essa tela
@@ -144,8 +155,9 @@ ssh -p 22022 -N -L 8000:localhost:8000 -L 6001:localhost:6001 -L 6002:localhost:
 Depois abra `http://localhost:8000` no navegador. O túnel leva o painel do Coolify até o
 seu computador sem expô-lo para a internet.
 
-**2. Crie o admin.** Na tela de registro, preencha nome, e-mail e senha e clique em
-**Create Account**. Guarde a senha num gerenciador de senhas.
+**2. Crie o admin.** Na tela de registro, preencha nome, e-mail e senha (duas vezes) e
+clique em **Create Account**. Na 4.4.6 a senha precisa de pelo menos 8 caracteres, com
+maiúscula, minúscula, número e símbolo. Guarde a senha num gerenciador de senhas.
 
 ![Tela de registro do Coolify: Create the root account for this instance](coolify-01-registro.png)
 
@@ -230,15 +242,15 @@ Na própria caixa, troque **Port** para `22022` e clique em **Check Again**.
 
 ![A mesma caixa com a porta 22022 antes do Check Again](coolify-04-porta-22022-check-again.png)
 
-O assistente marca **Server** e **Connection** como concluídos e chega a **Complete**.
-Clique em **Skip setup**, embaixo. Ele encerra o assistente sem criar projeto: este guia
-não usa projetos do Coolify. O clique medido foi na tela "Welcome to Coolify"; se ele
-aparecer na tela "Complete", funciona igual (não medido).
+O assistente marca **Server** e **Connection** como concluídos e chega a **Complete**, na
+tela "Project Setup". Clique em **Skip setup**, embaixo, e **não** em Create "My First
+Project": este guia não usa projetos do Coolify. Medido na 4.4.6: o Skip setup nessa tela
+leva ao painel. No canto aparece um aviso "No notifications enabled"; pode fechá-lo no X.
 
-![Assistente concluído: Server e Connection marcados, botão Skip setup embaixo](coolify-05-servidor-validado.png)
+![Assistente concluído: Server e Connection marcados, tela Project Setup com o botão Skip setup embaixo](coolify-05-servidor-validado.png)
 
-Não é preciso clicar em nada para ligar o proxy: na VPS medida ele **subiu sozinho** cerca
-de 3 a 4 minutos depois do Check Again. Para conferir, na VPS:
+Não é preciso clicar em nada para ligar o proxy: na VPS medida ele **subiu sozinho**, cerca
+de 1 min 30 s depois do Check Again na 4.4.6 (de 3 a 4 minutos na 4.3.23). Para conferir, na VPS:
 
 ```bash
 docker ps --filter name=coolify-proxy --format '{{.Names}} {{.Status}}'
@@ -338,6 +350,17 @@ Não tire print nem grave a tela.** Eles também ficam guardados em
   ligado. Volte ao Passo 4.
 - `O modo single-server exige pelo menos 4 GB de RAM e recomenda 8 GB.` → a VPS é pequena
   demais (ver [Antes de começar](#antes-de-começar)).
+- O instalador termina com `⚠ os contêineres subiram, mas o app não respondeu que está
+  saudável.`, e a última resposta tem `tls_recusado` → o cadeado (certificado) do domínio
+  ainda não tinha saído. Medido em 14/10/2026: o primeiro pedido ao Let's Encrypt falhou e
+  o certificado saiu cerca de 3 minutos depois (houve um restart do proxy no meio, e não se
+  sabe se ele foi necessário). Com o kit atual, o fim mostra "Quase lá — falta o cadeado
+  (HTTPS) do seu domínio" (provado por teste); o kit da 1.80.0 mostra "Quase lá — falta o
+  app responder" e manda olhar o `.env`, mas nesse caso o `.env` está certo. Nos dois casos,
+  espere alguns minutos, confira com `curl -sSI https://crm.SEUDOMINIO.com.br/app | head -1`
+  (tem de dar `HTTP/2 307`) e rode o bloco do Passo 5 de novo, na mesma pasta: medido, ele
+  terminou em 21 s com "✓ app no ar e saudável" e mostrou as "Credenciais iniciais", sem
+  duplicar o dono.
 - O instalador termina, mas o login do CRM fica girando e as páginas não carregam → o proxy
   não alcança o banco. Na medição, quando o banco saiu da rede do proxy, as páginas
   travaram (sem mensagem de erro) e o CRM inteiro parou junto. Para conferir, na VPS:
@@ -353,8 +376,10 @@ Não tire print nem grave a tela.** Eles também ficam guardados em
 
 ## Passo 6 — Conferir que está no ar
 
-Abra `https://crm.SEUDOMINIO.com.br` no navegador. Aparece a tela de login do CRM: entre
-com o usuário e a senha do Passo 5.
+Abra `https://crm.SEUDOMINIO.com.br/login` no navegador e entre com o usuário e a senha do
+Passo 5. Na primeira entrada aparece o assistente "Boas-vindas ao DeskcommCRM", com seis
+passos; dá para pular os que você não quiser fazer agora (medido em 14/10/2026). O endereço
+sem `/login` abre a página inicial pública do sistema.
 
 ![Tela de login do CRM no ar](coolify-08-login-no-ar.png)
 
@@ -367,11 +392,12 @@ versão**.
 **Conferência técnica (opcional), na VPS.** Cada comando mostra o que deve responder.
 
 ```bash
-curl -sI https://crm.SEUDOMINIO.com.br | head -1
+curl -sSI https://crm.SEUDOMINIO.com.br/app | head -1
 ```
 
-Responde `HTTP/2 307`: o site está no ar e manda para o login (no navegador, você termina
-na tela de login).
+Responde `HTTP/2 307`: o CRM está no ar e manda para o login. Use o `/app`: desde 07/10/2026
+a raiz do domínio é uma página pública e responde `HTTP/2 200`, que também apareceria se
+outra coisa respondesse no seu domínio.
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://crm.SEUDOMINIO.com.br/api/v1/webhooks/waha
@@ -476,6 +502,12 @@ medidor; contra a 2ª, 1496 MiB, a diferença é +1319). Totais em repouso de 20
 629 (banco) e 364 (CRM) MiB. A diferença também mistura outras mudanças entre as duas
 medições (outra instalação, o WhatsApp em outro estado). O número que vale é o sem swap.
 
+**Coolify 4.4.6 (nota de 14/10/2026).** Numa única leitura em repouso, os contêineres do
+Coolify somaram cerca de 216 MiB (coolify 134, coolify-proxy 46, coolify-db 20,
+coolify-sentinel 12, coolify-redis 5). A 4.4.6 não tem mais o `coolify-realtime`: o tempo
+real roda dentro do contêiner `coolify`. É uma foto, não o maior valor de uma fase como na
+tabela acima; a conta dos 8 GB continua a de 07/10.
+
 **Não medido nesta versão:** o repouso com o WhatsApp conectado (sem swap), uma VPS de
 4 GB, WhatsApp com número real e o agente de IA respondendo.
 
@@ -502,8 +534,9 @@ cd ~/deskcommcrm && bash hostgator-setup-kit/update.sh
 ```
 
 Ele atualiza o CRM **e** o banco. A porta do banco (8001) e a rede do proxy ficam como
-estavam (medido numa troca de versão forçada; atualizar para uma versão mais nova não foi
-medido nesta versão).
+estavam. Medido em 14/10/2026, de 1.79.0 para 1.80.0 pelo botão da tela (que roda este
+mesmo `update.sh`, abaixo): as três imagens foram para 1.80.0, a porta continuou 8001, o
+banco continuou na rede `coolify` e o domínio continuou respondendo.
 
 **Você vai ver**, enquanto não sair uma versão mais nova que a que você instalou:
 
@@ -517,7 +550,26 @@ medido nesta versão).
 a próxima versão. Antes dessa mensagem pode aparecer o aviso de SMTP ("⚠ Sem SMTP no
 CRM…"), que não impede nada.
 
-Atualizar pelo botão na tela do CRM: não medido nesta versão.
+### Pelo botão da tela
+
+Quando sai versão nova, o rodapé do menu do CRM mostra **Nova versão · X.Y.Z**. Ele leva à
+tela de atualização, com "Versão X.Y.Z disponível" e o botão **Atualizar agora**. Só o
+administrador da instalação vê essa tela.
+
+O que aconteceu na medição (14/10/2026, Coolify 4.4.6, 1.79.0 → 1.80.0):
+
+1. Depois do clique, a tela mostrou "Pedido enviado — esperando o servidor pegar". Quem
+   executa a atualização é o agente do kit, que roda a cada 5 minutos: o pedido foi pego
+   3 min 26 s depois do clique.
+2. A tela passou a mostrar os passos ("Guardando uma cópia de segurança dos seus dados",
+   "Baixando a versão nova", "Atualizando o banco de dados", "Reiniciando o sistema").
+3. O site ficou fora do ar (respondendo `503`) por cerca de **30 segundos** e voltou
+   sozinho, já na versão nova. Do clique ao sistema de volta: cerca de 4 min 30 s.
+4. A tela disse "A atualização para a versão 1.80.0 terminou" e, na rodada seguinte do
+   agente (4 minutos depois), "Você está na versão 1.80.0".
+
+O backup é feito antes (na medição, apareceu uma cópia nova em `backups/`). Os dados ficaram
+como estavam. Pode fechar a página no meio: o pedido fica registrado.
 
 **Nunca atualize pelo painel do Coolify** (o recurso "Docker Compose" dele): ele não roda
 o `update.sh` e não atualiza o banco.
@@ -589,7 +641,7 @@ Cada item: o que você vê → como conferir → o que fazer. Os comandos rodam 
 
      ```bash
      cd ~/deskcommcrm && docker compose -f docker-compose.prod.yml -f docker-compose.single-server.yml -f docker-compose.traefik.yml --env-file .env up -d app
-     curl -sI https://crm.SEUDOMINIO.com.br | head -1
+     curl -sSI https://crm.SEUDOMINIO.com.br/app | head -1
      ```
 
      Deve voltar a responder `HTTP/2 307`. Para conferir se o CRM está marcado para o proxy
@@ -615,7 +667,7 @@ Cada item: o que você vê → como conferir → o que fazer. Os comandos rodam 
   continuou fechado para fora (medido uma vez, numa VPS recém-montada: a VPS respondeu em
   cerca de 1 minuto, com todos os serviços `Up` e os dados do banco intactos). Para conferir:
   `docker ps --format '{{.Names}} {{.Status}}'` (tudo `Up`) e
-  `curl -sI https://crm.SEUDOMINIO.com.br | head -1` (`HTTP/2 307`).
+  `curl -sSI https://crm.SEUDOMINIO.com.br/app | head -1` (`HTTP/2 307`).
 - **Você clicou em "Restart Proxy" no painel do Coolify, ou ele recriou o proxy** → nada a
   fazer. Durante o restart o painel mostra "Waiting for the process to start…" e um aviso
   vermelho, "Cannot connect to real-time service": são esperados, porque o painel perde a
@@ -623,7 +675,7 @@ Cada item: o que você vê → como conferir → o que fazer. Os comandos rodam 
   nenhum comando.
 - **O painel mostra "Attention required" no servidor e "Update available"** → apareceram na
   VPS medida e o CRM funcionou normalmente; não foram investigados nesta versão. Não
-  atualize o Coolify por esse botão: este guia foi medido na 4.3.23.
+  atualize o Coolify por esse botão: este guia foi medido na 4.4.6.
 
 ## O que NÃO fazer
 

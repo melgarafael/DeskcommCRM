@@ -8,7 +8,11 @@ import { ActivityTab } from "./ActivityTab";
 import { CapturasTab } from "./CapturasTab";
 import { useT } from "@/hooks/i18n/useT";
 
-export function WebhooksClient() {
+/** As abas que um link pode abrir direto (`/app/webhooks?aba=automacoes`, a volta do designer). */
+const ABAS = { receber: "sources", leads: "capturas", automacoes: "rules", atividade: "activity" } as const;
+export type AbaDosWebhooks = keyof typeof ABAS;
+
+export function WebhooksClient({ abaInicial }: { abaInicial?: AbaDosWebhooks }) {
   const t = useT();
   // Radix Tabs gera ids via useId; com SSR streamado (Next 15) os ids divergem
   // entre server e client e o React acusa hydration mismatch. Nenhuma outra
@@ -35,7 +39,7 @@ export function WebhooksClient() {
   }
 
   return (
-    <Tabs defaultValue="sources" className="flex-1">
+    <Tabs defaultValue={abaInicial ? ABAS[abaInicial] : "sources"} className="flex-1">
       <TabsList>
         <TabsTrigger value="sources">{t("Receber dados")}</TabsTrigger>
         <TabsTrigger value="capturas">{t("Leads recebidos")}</TabsTrigger>

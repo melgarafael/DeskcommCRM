@@ -5,6 +5,7 @@ import { AcervoSearch } from "./AcervoSearch";
 import { LeadEnrichment } from "./LeadEnrichment";
 import type { ProspectEnrichment } from "@/lib/prospecting/schema";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { roleAtLeast } from "@/lib/auth/types";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
@@ -26,6 +27,7 @@ import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-voca
 import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
+import { TarefasDaDemanda } from "./TarefasDaDemanda";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -521,8 +523,12 @@ function CamposDoFunil({
 }
 
 export function CRMSidePanel({ conversation }: Props) {
-  const { user } = useAuth();
+  const { user, activeOrg } = useAuth();
   const readonly = user.support?.access_mode === "support_readonly";
+  // Criar tarefa é `agent`+ (a rota cobra `requireRole("agent")`): a MESMA régua
+  // da tela de Tarefas (`app/app/tasks/page.tsx`). `readonly` sozinho deixava o
+  // `viewer` ver "Nova tarefa", preencher e levar 403 ao salvar (#2842).
+  const podeCriarTarefa = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -661,6 +667,14 @@ export function CRMSidePanel({ conversation }: Props) {
       (summaryContactId !== contactId || (leads === null && orders === null && activities === null && demandas === null)),
     [erro, summaryContactId, contactId, leads, orders, activities, demandas],
   );
+
+  /**
+   * O negócio ATIVO do contato, se houver: a tarefa criada no inbox também o
+   * aponta (#2818). `leadAtivoId` é o que o editor de leads marcou (o contato
+   * pode ter vários negócios); sem escolha, o primeiro da lista, que é o que
+   * `InboxLeadEditor` mostra como ativo.
+   */
+  const negocioAtivoId = leadAtivoId ?? leads?.[0]?.id ?? null;
 
   if (!conversation) {
     return (
@@ -817,6 +831,25 @@ export function CRMSidePanel({ conversation }: Props) {
           />
         )}
       </section>
+
+      {/* A TAREFA DO ATENDIMENTO (#2818): o combinado que o atendente faz no
+          meio da conversa deixa de morrer em nota de texto e ganha prazo,
+          responsável e situação — sem sair da tela. Fica logo DEPOIS da
+          demanda porque é dela que a tarefa pende: a seção só se desenha com
+          demanda vigente no canal — e traz o PRÓPRIO divisor, que por isso não
+          é escrito aqui (sem demanda, o divisor ficaria órfão e dois traços
+          ficariam em pé seguidos). */}
+      {/* Só a demanda vigente AINDA ABERTA: `current_demanda_id` continua
+          apontando a demanda depois de "Encerrar demanda", e a seção ficaria
+          oferecendo "Nova tarefa" ao lado de "Nenhuma demanda aberta" (#2842).
+          A régua de aberta é a da lista acima (`fechada_em is null`, na rota).
+          ponytail: a lista traz até 5 abertas; vigente fora delas não mostra a seção. */}
+      <TarefasDaDemanda
+        demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
+        contactId={contactId}
+        leadId={negocioAtivoId}
+        podeEditar={podeCriarTarefa}
+      />
 
       <Separator />
 

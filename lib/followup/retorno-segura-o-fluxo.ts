@@ -20,6 +20,23 @@
  *     Se o cliente responder ao retorno, o `cancel_on_reply` do fluxo o encerra
  *     como sempre; se não responder, o fluxo retoma de onde estava.
  *
+ * ─── O retorno que JÁ SAIU também segura (issue #2907) ─────────────────────
+ *
+ * A folga acima valia só enquanto o retorno estava VIVO. Quando o one-shot
+ * DISPARA, a linha de `cron_jobs` sai de "agendado" (`enabled=false` —
+ * `situacaoDoRetorno`, em `retorno.ts`) e a varredura no minuto seguinte voltava
+ * a ver o contato como simplesmente silencioso. Medido em produção, com gatilho
+ * de 40 min: 18:05 o lead pede retorno em 50 min; 18:55 agendado; 18:45 não
+ * inscreve (certo); 18:56:04 sai a mensagem do retorno; 18:56:00 nasce a
+ * inscrição; 18:58:05 sai o "Follow-up 1" — duas mensagens seguidas, sem o lead
+ * responder. O que o retorno tinha a dizer já foi dito.
+ *
+ * O que muda é só a inscrição NOVA: `contatosQueORetornoSegura` une o retorno
+ * vivo ao RECÉM-EXECUTADO — a mesma linha de `cron_jobs`, uma janela depois —
+ * para o corte de silêncio valer também para quem ainda não estava inscrito.
+ * A folga é a mesma (`FOLGA_DEPOIS_DO_RETORNO_MS`), ancorada no mesmo instante
+ * (`next_run_at`, que o disparo não move).
+ *
  * Só o gatilho de SILÊNCIO: é ele que insiste com quem parou de falar, e é ele
  * que contradiz "te escrevo no dia 30". Fluxo por etapa ou por caso responde a um
  * FATO novo (o pedido foi confirmado, o caso foi aberto) e não deve esperar.
@@ -66,6 +83,72 @@ export async function contatosComRetornoVivo(admin: SupabaseClient, orgId: strin
     if (row.contact_id) ids.add(row.contact_id);
   }
   return ids;
+}
+
+/**
+ * Retornos one-shot JÁ EXECUTADOS dentro da folga — a mesma linha de `cron_jobs`,
+ * uma janela depois. "Disparado" é `enabled=false` SEM `cancelled_at` (cancelar
+ * marca — `cancelaRetorno`) e SEM `last_error`: o disparo bem-sucedido grava
+ * `enabled=false, last_error=null`; a empresa parada grava
+ * `last_error='org_nao_operante'` e a falha definitiva de disparo grava a razão
+ * — nesses dois o retorno NÃO saiu (é o que o disparo grava em
+ * `lib/agent-engine/cron/scheduler.ts`). `situacaoDoRetorno` (`retorno.ts`) é mais
+ * largo: conta a falha definitiva como "disparado"; aqui ela não segura.
+ * Também não entram os turnos de passo de fluxo (mesma tabela, mesmo `job_kind`,
+ * com `followup_enrollment_id` no payload).
+ *
+ * `next_run_at` é a âncora do "quando o retorno saiu": o disparo one-shot só
+ * desabilita a linha, não move a data — é o MESMO instante que
+ * `reavaliarDepoisDoRetorno` usa para soltar a inscrição que já estava andando.
+ * A consulta exige a data no PASSADO (`<= agora`): desabilitar antes da hora é o
+ * que o cancelamento de emergência faz (opt-out irrevogável e handoff humano
+ * desabilitam os pendentes do lead sem marcar `cancelled_at`), e isso não é um
+ * retorno que falou.
+ */
+function retornosJaDisparados(admin: SupabaseClient, orgId: string, agora: Date) {
+  return admin
+    .from("cron_jobs")
+    .select("contact_id, next_run_at")
+    .eq("organization_id", orgId)
+    .eq("kind", "at")
+    .eq("job_kind", "followup_turn")
+    .eq("enabled", false)
+    .is("cancelled_at", null)
+    .is("last_error", null)
+    .is("payload->>followup_enrollment_id", null)
+    .lte("next_run_at", agora.toISOString())
+    .gt("next_run_at", new Date(agora.getTime() - FOLGA_DEPOIS_DO_RETORNO_MS).toISOString());
+}
+
+/**
+ * Contatos que o retorno AINDA segura: o vivo e o recém-executado. É este o
+ * corte que a varredura de silêncio respeita — sem o segundo, a inscrição nova
+ * nascia no minuto seguinte ao disparo e o fluxo falava por cima do retorno que
+ * acabara de sair (issue #2907).
+ *
+ * `agora` é injetável só para o teste provar a janela; a regra é a mesma dos
+ * dois lados — um dia depois do retorno (`FOLGA_DEPOIS_DO_RETORNO_MS`).
+ */
+export async function contatosQueORetornoSegura(
+  admin: SupabaseClient,
+  orgId: string,
+  agora: Date = new Date(),
+): Promise<Set<string>> {
+  const segura = await contatosComRetornoVivo(admin, orgId);
+  const { data, error } = await retornosJaDisparados(admin, orgId, agora);
+  if (error) throw new Error(`retorno_disparado_query_failed: ${error.message}`);
+  const fim = agora.getTime();
+  const corte = fim - FOLGA_DEPOIS_DO_RETORNO_MS;
+  for (const row of (data ?? []) as Array<{ contact_id: string | null; next_run_at: string }>) {
+    if (!row.contact_id) continue;
+    const quando = Date.parse(row.next_run_at);
+    if (Number.isNaN(quando)) continue;
+    // A mesma janela da consulta, refeita aqui: o PostgREST já corta, e uma data
+    // torta que escapasse dele não pode segurar o fluxo deste contato para sempre.
+    if (quando > fim || quando <= corte) continue;
+    segura.add(row.contact_id);
+  }
+  return segura;
 }
 
 /**

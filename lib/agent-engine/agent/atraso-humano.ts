@@ -172,3 +172,88 @@ export function acenderDigitando(sinalizarDigitando: () => Promise<void>, log: L
     });
   });
 }
+
+/**
+ * De quanto em quanto tempo o "digitando…" é renovado enquanto o turno trabalha.
+ *
+ * O WhatsApp apaga o indicador sozinho depois de uns 25 segundos sem novo sinal.
+ * Medido numa VPS real: o turno levou 67s entre a mensagem do lead e a resposta
+ * (classificadores auxiliares + modelo + conferência de promessa), e o único
+ * sinal saía no meio dele — o cliente via o "digitando…" sumir e ficava olhando
+ * uma conversa parada, que é exatamente o "ninguém respondeu" que ele existe para
+ * evitar. 10s fica com folga dentro dos ~25s, e custa uma chamada leve ao canal.
+ */
+export const DIGITANDO_RENOVAR_MS = 10_000;
+
+/**
+ * Teto da renovação. Um turno que passou disto travou em algum lugar; manter o
+ * "digitando…" aceso para sempre mentiria ao cliente que alguém está escrevendo.
+ * Depois do teto o indicador apaga sozinho, como fazia antes desta renovação.
+ */
+export const DIGITANDO_TETO_MS = 120_000;
+
+export interface ManterDigitandoOpts {
+  renovarMs?: number;
+  tetoMs?: number;
+  /** Relógio e timers injetáveis — o que torna a função testável sem esperar de verdade. */
+  agora?: () => number;
+  setInterval?: (fn: () => void, ms: number) => unknown;
+  clearInterval?: (handle: unknown) => void;
+}
+
+/**
+ * Acende o "digitando…" AGORA e o renova até alguém chamar o `parar` devolvido
+ * (ou até o teto). É o `acenderDigitando` para o turno inteiro, e não só para o
+ * instante em que o modelo começa.
+ *
+ * Mesma disciplina de falha de `acenderDigitando`: nunca espera o canal, nunca
+ * rejeita. Só a PRIMEIRA recusa vira warn — o canal fora do ar recusaria a cada
+ * renovação, e uma linha a cada 10s sobre o mesmo enfeite seria ruído.
+ *
+ * O `parar` é idempotente: quem envia a 1ª bolha para a renovação (depois da
+ * mensagem, um "digitando…" novo leria como uma segunda resposta a caminho), e o
+ * `finally` do turno para de novo para cobrir o turno que termina sem enviar.
+ */
+export function manterDigitando(
+  sinalizarDigitando: () => Promise<void>,
+  log: Logger,
+  opts: ManterDigitandoOpts = {},
+): () => void {
+  const renovarMs = opts.renovarMs ?? DIGITANDO_RENOVAR_MS;
+  const tetoMs = opts.tetoMs ?? DIGITANDO_TETO_MS;
+  const agora = opts.agora ?? ((): number => Date.now());
+  const agendar = opts.setInterval ?? ((fn: () => void, ms: number): unknown => setInterval(fn, ms));
+  const cancelar = opts.clearInterval ?? ((h: unknown): void => clearInterval(h as NodeJS.Timeout));
+
+  let avisou = false;
+  const sinalizar = (): void => {
+    void sinalizarDigitando().catch((err: unknown) => {
+      if (avisou) return;
+      avisou = true;
+      log.warn('não consegui sinalizar "digitando" (segue o turno)', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    });
+  };
+
+  const inicio = agora();
+  let parado = false;
+  sinalizar();
+  const handle = agendar(() => {
+    if (parado) return;
+    if (agora() - inicio >= tetoMs) {
+      parar();
+      return;
+    }
+    sinalizar();
+  }, renovarMs);
+  // O timer não segura o processo do worker vivo num desligamento.
+  (handle as { unref?: () => void } | null)?.unref?.();
+
+  function parar(): void {
+    if (parado) return;
+    parado = true;
+    cancelar(handle);
+  }
+  return parar;
+}

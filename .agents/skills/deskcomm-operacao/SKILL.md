@@ -19,7 +19,7 @@ para uma skill especializada quando a pergunta deixar de ser operação cotidian
 3. Diga o caminho como `Grupo → Tela → Ação`.
 4. Explique o efeito da ação e os pré-requisitos.
 5. Para comportamento que possa ter mudado, confirme em `README.md`, `docs/current-state.md`,
-   `docs/index.md` e no código atual.
+   `docs/index.md`, no `CHANGELOG.md` e no código atual.
 6. Não invente campos, botões, estados ou permissões.
 7. Não peça segredo em chat e nunca repita chaves/tokens na resposta.
 
@@ -52,6 +52,32 @@ Use `references/mapa-da-interface.md` para orientar perguntas como:
 - "onde vejo métricas?"
 - "onde gerencio equipe e organização?"
 
+## Como consultar na hora
+
+O mapa acima envelhece; o comando abaixo pergunta ao menu e ao CHANGELOG na hora.
+Caminhos relativos à pasta desta skill. Use `bash scripts/buscar.sh --menu` para
+listar as telas atuais, e `bash scripts/buscar.sh <palavra>` para achar onde algo
+mora (ex.: `buscar.sh pausar`, `buscar.sh videochamada`, `buscar.sh "planos de tarefa"`).
+Pode digitar com ou sem acento: `prospecao` acha `Prospecção`.
+O resultado do comando vale mais que o texto dos arquivos; se discordarem, siga o
+comando e avise que o arquivo está desatualizado.
+
+## Mapa de funcionalidades
+
+Detalhe por área em `references/funcionalidades/` (uma linha do que há em cada um):
+- `atendimento.md`: tela de conversa, agenda, radar e avisos que chegam a quem atende.
+- `crm.md`: funil, contatos, empresas, tarefas, campanhas, produtos, propostas e chamadas.
+- `ia.md`: agentes, follow-ups, fluxos, roteadores, conhecimento e supervisão.
+- `canais.md`: conexões, Webhooks, integrações e proteções de envio.
+- `analise.md`: desempenho, relatórios, faturamento e trilhas.
+- `organizacao.md`: conta, empresa, equipe, acesso, LGPD e conversões.
+- `admin-e-plataforma.md`: telas de `/admin` e o que só o dono da VPS vê ou configura.
+- `so-api-ou-sem-tela.md`: o que só existe por rota, token, variável ou rotina, sem tela.
+- `citado-e-nao-encontrado.md`: o que o CHANGELOG cita e não foi achado no menu nem no
+  código; pode ter sido renomeado, movido ou removido — não afirme que existe.
+
+Cada funcionalidade traz "desde <versão>" (a versão em que apareceu; a base 1.0.0 está incluída).
+
 ## Resposta padrão para "onde fica X?"
 
 Responda nesta ordem:
@@ -74,9 +100,11 @@ Responda nesta ordem:
 
 Precedência quando houver divergência:
 
-1. código e estado atual do repositório;
-2. documentação atual (`docs/current-state.md`, specs e runbooks);
-3. skill especializada da área;
-4. README e textos de ajuda.
+1. o comando de busca (`bash scripts/buscar.sh`, relativo à pasta da skill);
+2. `lib/navigation/catalogo.ts` (telas) e `CHANGELOG.md` (lançamentos);
+3. código e estado atual do repositório;
+4. documentação atual (`docs/current-state.md`, specs e runbooks);
+5. skill especializada da área;
+6. README e textos de ajuda.
 
 Se dois lugares discordarem, explique a diferença e siga a fonte mais alta.

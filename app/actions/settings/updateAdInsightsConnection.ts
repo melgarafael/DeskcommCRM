@@ -1,5 +1,6 @@
 "use server";
 
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -168,7 +169,7 @@ export async function updateAdInsightsConnection(
     resourceType: "ad_insights_connections",
     resourceId: null,
     requestId: hdrs.get("x-request-id") ?? undefined,
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
+    ip: ipDoCliente(hdrs) ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
     metadata: {
       platform: parsed.data.platform,
@@ -222,7 +223,7 @@ export async function disconnectAdInsights(): Promise<UpdateAdInsightsConnection
     resourceType: "ad_insights_connections",
     resourceId: null,
     requestId: hdrs.get("x-request-id") ?? undefined,
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
+    ip: ipDoCliente(hdrs) ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
     metadata: { platform: "meta_ads" },
   });

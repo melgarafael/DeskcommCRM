@@ -1,0 +1,6 @@
+interface:
+  display_name: "Revender o DeskcommCRM como SaaS"
+  short_description: "Painel do dono, planos, cobrança pela Stripe ou pelo Asaas, régua de atraso e contrato com o cliente final"
+  default_prompt: "Use a skill deskcomm-saas e me ajude a transformar o DeskcommCRM no meu SaaS e cobrar meus clientes."
+policy:
+  allow_implicit_invocation: true

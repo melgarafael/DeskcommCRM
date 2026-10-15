@@ -152,6 +152,9 @@ export function toolPartsAsText(messages: ModelMessage[], maxResultTokens?: numb
         const result = raw === undefined ? 'sem resultado' : capChars === undefined ? raw : truncateOneLine(raw, capChars);
         return [{ type: 'text' as const, text: `[ferramenta ${part.toolName} chamada com ${args} → ${result}]` }];
       }
+      // Raciocínio sai: o bloco é assinado contra a conversa em que nasceu (system + tools + prefixo), e
+      // reenviá-lo numa chamada sem `tools` faz a API recusar o pedido.
+      if (part.type === 'reasoning' || part.type === 'reasoning-file') return [];
       if (part.type === 'tool-result' || part.type === 'tool-approval-request') return [];
       return [part];
     });

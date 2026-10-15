@@ -229,6 +229,95 @@ describe("validaCamposExigidos — o que o funil exige", () => {
       }).faltando,
     ).toEqual([]);
   });
+
+  it("campo OCULTO pela condição não é cobrado — esconder não vira bloqueio (#2728)", () => {
+    const settings = {
+      fields: [
+        { key: "tipo_servico", label: "Tipo de serviço", type: "select" },
+        {
+          key: "outro_servico",
+          label: "Outro serviço (qual?)",
+          type: "text",
+          obrigatorio_em: { etapas: [ETAPA_PROPOSTA] },
+          mostrar_quando: { campo: "tipo_servico", contem: "Outro" },
+        },
+      ],
+    };
+    const destino = { stageId: ETAPA_PROPOSTA };
+
+    // Condição fora: o campo não está na ficha, então não pode barrar a
+    // escrita — a promessa da issue é "o campo oculto não é validado como
+    // obrigatório".
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_servico: "Limpeza" } },
+        settingsDoFunil: settings,
+        destino,
+      }).faltando,
+    ).toEqual([]);
+
+    // Condição DENTRO e campo vazio: cobra, como sempre.
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_servico: "Outro" } },
+        settingsDoFunil: settings,
+        destino,
+      }).faltando.map((c) => c.chave),
+    ).toEqual(["outro_servico"]);
+  });
+
+  it("condição que aponta para campo APAGADO é ilegível: o campo aparece e é cobrado (#2728)", () => {
+    const settings = {
+      fields: [
+        {
+          key: "outro_servico",
+          label: "Outro serviço (qual?)",
+          type: "text",
+          obrigatorio_em: { ao_ganhar: true },
+          mostrar_quando: { campo: "campo_que_foi_apagado", igual: "Outro" },
+        },
+      ],
+    };
+
+    // Sem quem mande, esconder seria esconder para sempre — e um exigido
+    // escondido para sempre é uma exigência que ninguém vê nem cumpre.
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: {} },
+        settingsDoFunil: settings,
+        destino: { stageId: ETAPA_PROPOSTA, desfecho: "won" },
+      }).faltando.map((c) => c.chave),
+    ).toEqual(["outro_servico"]);
+  });
+
+  it("laço A↔B é condição ilegível: os dois aparecem e os dois são cobrados (#2728)", () => {
+    const settings = {
+      fields: [
+        {
+          key: "a",
+          label: "A",
+          type: "text",
+          obrigatorio_em: { etapas: [ETAPA_PROPOSTA] },
+          mostrar_quando: { campo: "b", igual: "sim" },
+        },
+        {
+          key: "b",
+          label: "B",
+          type: "text",
+          obrigatorio_em: { etapas: [ETAPA_PROPOSTA] },
+          mostrar_quando: { campo: "a", igual: "sim" },
+        },
+      ],
+    };
+
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: {} },
+        settingsDoFunil: settings,
+        destino: { stageId: ETAPA_PROPOSTA },
+      }).faltando.map((c) => c.chave),
+    ).toEqual(["a", "b"]);
+  });
 });
 
 describe("recusaDeCamposObrigatorios — a frase da recusa", () => {

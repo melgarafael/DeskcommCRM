@@ -34,6 +34,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
+import { conferirDemanda } from "@/lib/tarefas/demanda";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
 
@@ -41,7 +42,7 @@ export const dynamic = "force-dynamic";
 
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
 
 const criacaoSchema = z.object({
   title: z.string().trim().min(1).max(255),
@@ -51,6 +52,10 @@ const criacaoSchema = z.object({
   status: z.enum(SITUACOES_DA_TAREFA).default("pending"),
   lead_id: z.string().uuid().nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),
+  // O vínculo com o ASSUNTO do atendimento (#2818): é o que faz a tarefa
+  // criada de dentro da conversa voltar para a tela de quem precisa cumpri-la.
+  // Opcional como os outros dois — a tarefa avulsa é caso real.
+  demanda_id: z.string().uuid().nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
 });
 
@@ -59,6 +64,8 @@ const listaSchema = z.object({
   priority: z.enum(PRIORIDADES_DA_TAREFA).optional(),
   lead_id: z.string().uuid().optional(),
   contact_id: z.string().uuid().optional(),
+  /** As tarefas de UMA demanda — a seção "Tarefas desta demanda" do inbox. */
+  demanda_id: z.string().uuid().optional(),
   due_from: z.string().datetime({ offset: true }).optional(),
   due_to: z.string().datetime({ offset: true }).optional(),
   /** "abertas" = o que ainda pede ação. É o default da tela. */
@@ -97,6 +104,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.priority) query = query.eq("priority", filtros.priority);
   if (filtros.lead_id) query = query.eq("lead_id", filtros.lead_id);
   if (filtros.contact_id) query = query.eq("contact_id", filtros.contact_id);
+  if (filtros.demanda_id) query = query.eq("demanda_id", filtros.demanda_id);
   if (filtros.due_from) query = query.gte("due_date", filtros.due_from);
   if (filtros.due_to) query = query.lte("due_date", filtros.due_to);
   if (filtros.aberto === "true") query = query.in("status", ["pending", "in_progress"]);
@@ -145,6 +153,26 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+
+  if (parsed.data.demanda_id) {
+    // A chave estrangeira não passa pela RLS: sem esta conferência, a demanda
+    // de outra organização gravaria sem erro. A régua está em `lib/tarefas/demanda.ts`.
+    const veredito = await conferirDemanda(supabase, authz.org.orgId, parsed.data.demanda_id);
+    if (veredito === "falha_na_consulta") {
+      return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+    }
+    if (veredito === "fora_da_organizacao") {
+      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
+        requestId,
+      });
+    }
+    if (veredito === "encerrada") {
+      return fail("state_conflict", t("Esta demanda já foi encerrada. Crie a tarefa numa demanda em andamento."), 409, {
+        requestId,
+      });
+    }
+  }
+
   const { data, error } = await supabase
     .from("crm_tasks")
     .insert({
@@ -156,10 +184,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     .single();
 
   if (error) {
-    // 23503 = lead ou contato de outra organização (ou apagado no meio). A
-    // recusa nomeia o campo porque quem lê é quem escolheu na tela.
+    // 23503 = negócio, contato ou demanda apagado no meio, entre a escolha e a
+    // gravação. A recusa nomeia os campos porque quem lê é quem escolheu na tela.
     if (error.code === "23503") {
-      return fail("validation_failed", t("O negócio ou contato vinculado não existe."), 422, {
+      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
         requestId,
       });
     }

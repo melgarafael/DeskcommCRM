@@ -95,10 +95,25 @@ const TTL_MS = 30_000;
 declare global {
   // eslint-disable-next-line no-var
   var __memoDoAppDaMeta: { readonly valor: AppDaMetaEmVigor; readonly expiraEm: number } | null | undefined;
+  /**
+   * Contador de escritas. Mora no `globalThis` pelo mesmo motivo que o memo — a
+   * rota que grava e quem entrega o webhook são duas instâncias do módulo, e um
+   * `let` de arquivo falharia calado.
+   *
+   * Ele existe porque zerar o memo não basta: uma leitura que já estava em voo
+   * quando a escrita aconteceu volta com o par PRÉ-ESCRITA e o reinstala por um
+   * TTL inteiro, desfazendo a invalidação. É a guarda que
+   * `lib/branding/instalacao.ts` estreou, e este memo é cópia declarada dela.
+   */
+  // eslint-disable-next-line no-var
+  var __geracaoDoAppDaMeta: number | undefined;
 }
 
 /** Chamada por quem ESCREVE a credencial — a server action do /admin. */
 export function invalidarAppDaMeta(): void {
+  // A geração sobe ANTES de zerar: quem estiver lendo agora fica marcado como
+  // anterior a esta escrita e não poderá reinstalar o que leu.
+  globalThis.__geracaoDoAppDaMeta = (globalThis.__geracaoDoAppDaMeta ?? 0) + 1;
   globalThis.__memoDoAppDaMeta = null;
 }
 
@@ -171,8 +186,19 @@ export async function appDaMeta(): Promise<AppDaMetaEmVigor> {
   const memo = globalThis.__memoDoAppDaMeta;
   if (memo && memo.expiraEm > Date.now()) return memo.valor;
 
+  // A geração é lida ANTES da ida ao banco, e conferida depois. Sem isso o memo
+  // sofre lost-update: uma leitura que entrou em voo antes de
+  // `invalidarAppDaMeta()` volta com o par PRÉ-ESCRITA e o grava com TTL novo,
+  // desfazendo a invalidação — a entrega seguinte assinando com o segredo velho
+  // e morrendo em 401, por até TTL_MS inteiros, atrás de um toast verde. Mesma
+  // guarda, e mesmo comentário alongado, de `marcaDaInstalacao` (#2795).
+  const geracao = globalThis.__geracaoDoAppDaMeta ?? 0;
   const valor = (await parDoBanco(await linhaDoBanco())) ?? appDaMetaDoAmbiente();
-  globalThis.__memoDoAppDaMeta = { valor, expiraEm: Date.now() + TTL_MS };
+  // Só memoiza quem não perdeu uma escrita no meio do caminho — a leitura em
+  // voo devolve o valor velho a quem a chamou, mas não o reinstala no memo.
+  if ((globalThis.__geracaoDoAppDaMeta ?? 0) === geracao) {
+    globalThis.__memoDoAppDaMeta = { valor, expiraEm: Date.now() + TTL_MS };
+  }
   return valor;
 }
 

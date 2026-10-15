@@ -16,6 +16,12 @@ export interface Contact {
   blocked_reason: string | null;
   /** Spec 21: vida pessoal — escondido da operação e inutilizado para envio. */
   is_personal: boolean;
+  /**
+   * Issue 2379: marca PERMANENTE "sempre atendimento humano". A IA nunca
+   * responde este contato e a devolução (manual ou automática) não a desfaz.
+   * Separada de `force_human`, que é a trava de handoff e continua temporária.
+   */
+  ai_opt_out: boolean;
   is_anonymized: boolean;
   anonymized_at: string | null;
   is_merged_into: string | null;

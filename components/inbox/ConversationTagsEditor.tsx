@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { PontoDaEtiqueta } from "@/components/tags/PontoDaEtiqueta";
 import { SeletorDeCorDaEtiqueta } from "@/components/tags/SeletorDeCorDaEtiqueta";
+import { useCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
+import { chaveDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Plus } from "@/lib/ui/icons";
@@ -28,6 +30,9 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   const mutation = useUpdateConversationTags();
   const { definirCor } = useDefinirCorDaEtiqueta();
   const { data: vocabulary } = useConversationTagVocabulary(orgId);
+  // A cor de quem JÁ está na conversa vem do MESMO mapa que o chip usa (#2771):
+  // uma leitura só, e o gatilho abre já com o tom atual marcado.
+  const cores = useCoresDasEtiquetas();
 
   // Normalização espelha o Zod do PATCH (trim+lowercase); dedup no set.
   function apply(next: string[]) {
@@ -61,17 +66,27 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
       <div className="mt-2 flex flex-wrap gap-1">
         {tags.length > 0 ? (
           tags.map((tag) => (
-            <ChipDeEtiqueta key={tag} tag={tag} className="h-5 gap-1 px-1.5 text-[10px]">
-              <button
-                type="button"
-                onClick={() => remove(tag)}
+            <Fragment key={tag}>
+              <ChipDeEtiqueta tag={tag} className="h-5 gap-1 px-1.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => remove(tag)}
+                  disabled={mutation.isPending}
+                  aria-label={`${t("Remover tag")} ${tag}`}
+                  className="rounded-sm hover:text-destructive"
+                >
+                  <X size={10} weight="bold" aria-hidden />
+                </button>
+              </ChipDeEtiqueta>
+              {/* #2771 — mesma paleta, mesmo caminho do editor do contato. */}
+              <SeletorDeCorDaEtiqueta
+                cor={cores[chaveDaEtiqueta(tag)] ?? null}
+                onChange={(tom) => void definirCor(tag, tom)}
+                tag={tag}
+                rotulo={`${t("Cor da etiqueta")} ${tag}`}
                 disabled={mutation.isPending}
-                aria-label={`${t("Remover tag")} ${tag}`}
-                className="rounded-sm hover:text-destructive"
-              >
-                <X size={10} weight="bold" aria-hidden />
-              </button>
-            </ChipDeEtiqueta>
+              />
+            </Fragment>
           ))
         ) : (
           <span className="text-xs text-muted-foreground">{t("Sem tags.")}</span>

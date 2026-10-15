@@ -61,6 +61,10 @@ preserve o trabalho do contribuidor e registre a dependência.
    credencial, cobrança, webhook e administração ficam fora. O pacote não recebe
    cliente Supabase, variável de ambiente, shell, JavaScript, SQL nem dados do CRM. Uma capacidade
    só abre uma porta que o núcleo já tem, com a autorização habitual dela.
+   **Emenda da [ADR-0005](../adr/0005-plataforma-de-modulos-de-terceiro.md) (aceita em 14/10/2026),
+   só para dados declarados:** o pacote de perfil `data` pode **declarar** objetos e campos de um
+   vocabulário fechado, e o **host** compila as tabelas. Continua sem SQL, sem nome de tabela cru e
+   sem acesso ao banco; o que o módulo guarda é lido e escrito só pelas rotas do host.
 
 3. **Instalar não é autorizar.** Instalar uma extensão não concede autoridade para enviar mensagem,
    movimentar dinheiro, mudar permissão ou alcançar outra organização. Toda escrita do framework
@@ -115,6 +119,12 @@ preserve o trabalho do contribuidor e registre a dependência.
    organização. A função aplica na mesma transação as proteções que toda tabela de
    organização precisa ter; reaplicar nas atualizações é explícito e falha alto; anonimização, export e varreduras
    alcançam as tabelas do módulo. Pacote de terceiro continua sem trazer SQL.
+   **Perfil `data` de terceiro** ([ADR-0005](../adr/0005-plataforma-de-modulos-de-terceiro.md) D3):
+   as tabelas não nascem de provisionadora do módulo, e sim de **uma** função fixa do host,
+   `fn_modulo_dados_compilar(p_artifact_id uuid)` (migration 0611), que lê o artefato admitido. Ela
+   entrou pela tripla de sempre; as tabelas que ela cria **não** entram no baseline. O que ainda não a
+   alcança — LGPD, reaplicação nas atualizações, varreduras — está na seção *Estado da construção* da
+   ADR, e é dívida aberta, não exceção.
 
 10. **Publicar espera o sistema; tirar não espera.** Preparar, concluir e desfazer recusam enquanto
     há atualização do core `dispatched` há menos de 15 minutos (`RUN_STALE_AFTER_MS`). Remover não
@@ -156,7 +166,7 @@ preserve o trabalho do contribuidor e registre a dependência.
 | Pacote JSON estrito com cards de orientação e as portas de navegação da lista fechada (ADR-0003) | Execução de código de terceiros em executor isolado | Prova: a escolha do executor é por evidência (PROG-017 §7 e §14) |
 | Instalar, atualizar, trocar, desfazer a última troca, remover e reinstalar | Histórico de mais de um passo | Recusado por escrito na spec; volta pelo catálogo |
 | Uma versão por instalação, ativação por organização | Versão por organização | Recusada sem necessidade comprovada (PROG-017 §5) |
-| Nenhum dado de domínio de extensão | Schema próprio de extensão | Módulo nativo oficial: migration (com `-- manifest:`) + baseline; tabelas de módulo opcional num banco só, criadas ao instalar o módulo: [ADR-0002](../adr/0002-tabelas-de-modulo-num-banco-so.md), **aceita em 17/09/2026 e construída** — a instalação e a reaplicação vieram na migration 0340 e o primeiro módulo a usá-las foi `honorarios` (migration 0480); as provisionadoras em vigor: `grep -n 'create or replace function public.fn_[a-z_]*_provisionar' supabase/baseline.sql`; dados de extensão de terceiro: marco 4 (PROG-017 §8) |
+| Dado de domínio de extensão de terceiro só pelo perfil `data` (onda 1a da [ADR-0005](../adr/0005-plataforma-de-modulos-de-terceiro.md), migration 0611): objetos declarados, tabelas compiladas pelo host, leitura pela rota do host e painel na ficha do contato. Escrita, telas próprias, atualização e LGPD ainda não — `grep -n 'export type ObjetoDeclarado' -A10 lib/extensions/manifest.ts` | Schema próprio de extensão escrito pelo terceiro (SQL do pacote: recusado na ADR-0005) | Módulo nativo oficial: migration (com `-- manifest:`) + baseline; tabelas de módulo opcional num banco só, criadas ao instalar o módulo: [ADR-0002](../adr/0002-tabelas-de-modulo-num-banco-so.md), **aceita em 17/09/2026 e construída** — a instalação e a reaplicação vieram na migration 0340 e o primeiro módulo a usá-las foi `honorarios` (migration 0480); as provisionadoras em vigor: `grep -n 'create or replace function public.fn_[a-z_]*_provisionar' supabase/baseline.sql`; dados de extensão de terceiro: o marco 4 (PROG-017 §8) virou a ADR-0005, aceita em 14/10/2026 |
 | Recibos, auditoria por organização na remoção (menos quando a resposta se perde e a repetição não reaplica), Atividade recente | Dependências entre extensões; downloads e avaliações | Prova (PROG-017 §5 e §12; DEC-004 §3) |
 | Nenhuma telemetria de extensões | Relato de uso enviado pela VPS | Decisão própria antes (DEC-004 §3; PROG-017 §12) |
 

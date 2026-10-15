@@ -8,6 +8,7 @@
 import { z } from "zod";
 
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_PADRAO_DA_GRADE, LIMITE_RESPOSTA_BYTES } from "./limites";
+import { fontesSchema, MODOS_DE_FONTES } from "./fontes";
 
 /** Espelha o CHECK de `external_db_connections.ssl_mode` e `ModoTls`. */
 export const MODOS_TLS = ["disable", "prefer", "require", "verify-ca", "verify-full"] as const;
@@ -119,5 +120,17 @@ export const leituraQuerySchema = z
     order_desc: z.enum(["true", "false", "1", "0"]).optional(),
     /** Projeção separada por vírgula. Vazio = todas as colunas. */
     colunas: z.string().max(4000).optional(),
+  })
+  .strict();
+
+/**
+ * Troca das fontes liberadas: o modo E a lista inteira de uma vez (um UPDATE
+ * atômico, sem estado pela metade). `strict` porque uma chave desconhecida aqui
+ * é um cliente falando de um contrato que não existe.
+ */
+export const atualizarFontesSchema = z
+  .object({
+    source_mode: z.enum(MODOS_DE_FONTES),
+    sources: fontesSchema,
   })
   .strict();

@@ -126,11 +126,20 @@ export function useRefetchDeSeguranca<T>({
 
   useEffect(() => {
     if (!enabled) return;
-    const timer = setInterval(() => void verificar(), intervaloMs);
+    const timer = setInterval(() => {
+      // ABA OCULTA NÃO CONFERE (issue #2235): ninguém está vendo a tela, e a
+      // conferência custa payload de página — o inbox esquecido refazia
+      // conversas e mensagens a cada 45 s. É a convenção da casa: presença,
+      // voz, alertas e `InterfaceRefresh` já pulam o trabalho de rede com a aba
+      // escondida, e o refetch de segurança era o único sem a guarda.
+      if (document.visibilityState !== "visible") return;
+      void verificar();
+    }, intervaloMs);
 
     // AO VOLTAR PARA A ABA, imediatamente: é o momento em que o usuário mais
     // acredita no que vê, e é justamente quando a tela pode estar mais velha —
-    // o socket cai em aba de fundo e ninguém avisa.
+    // o socket cai em aba de fundo e ninguém avisa. É também o que faz a pausa
+    // acima não custar nada: o que ficou para trás é conferido na volta.
     const aoVoltar = () => {
       if (document.visibilityState === "visible") void verificar();
     };

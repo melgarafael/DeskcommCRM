@@ -249,11 +249,35 @@ export function warmupEstaPulado(row: ChannelKnobsRow | null): boolean {
 }
 
 /** Dias completos desde a ativação do número. Sem data = 0 (o motor é conservador). */
-export function idadeEmDias(row: ChannelKnobsRow | null, agora: Date = new Date()): number {
+export function idadeEmDias(
+  row: Pick<ChannelKnobsRow, "number_activated_at"> | null,
+  agora: Date = new Date(),
+): number {
   const iso = row?.number_activated_at;
   if (!iso) return 0;
   const ms = agora.getTime() - new Date(iso).getTime();
   return Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 86_400_000)) : 0;
+}
+
+/**
+ * O número já passou do aquecimento? A régua é a do controle de ritmo (#2432):
+ * o aquecimento terminou quando ele não põe mais teto por idade — a data em
+ * "Este número é usado desde" chegou ao último degrau, ou o dono ligou "pular o
+ * aquecimento" (`WARMUP_PULADO`), ou degraus próprios já chegaram ao "sem
+ * limite". Sem linha de knobs = idade 0 = ainda aquecendo (erra para o seguro).
+ *
+ * É a mesma conta do `cap_today` de `knobsView`, e é ela que decide QUANDO
+ * `channel_sessions.warmup_completed_at` é gravado (a ingestão do status da sessão).
+ * A marca gravada não volta: se o dono depois desligar "pular o aquecimento" ou
+ * declarar uma data mais recente, ela segue "sim" enquanto o controle de ritmo volta
+ * a limitar. Por isso nada no envio lê a marca — quem decide envio chama esta função.
+ */
+export function numeroJaAquecido(
+  row: Pick<ChannelKnobsRow, "number_activated_at" | "warmup_daily_caps"> | null,
+  agora: Date = new Date(),
+): boolean {
+  const degraus = parseWarmupCaps(row?.warmup_daily_caps) ?? PACING_DEFAULTS.warmupDailyCaps;
+  return warmupCapFor(idadeEmDias(row, agora), degraus) === null;
 }
 
 /**

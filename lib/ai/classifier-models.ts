@@ -92,7 +92,7 @@ export async function listClassifierModels(
   );
 
   if (!origemPorProvider.has(PROVEDOR_POR_ASSINATURA)) return fromCatalog;
-  // Falha do backend do Codex aqui vira lista vazia + log (#2602): o
+  // Falha na consulta do catálogo SIWC aqui vira lista vazia + log: o
   // classificador sugere o catálogo global, não derruba a sessão de chat.
   const accountModels = await listarModelosDaAssinaturaOuVazio(organizationId);
   return [

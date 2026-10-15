@@ -14,6 +14,20 @@
  * o motor (regra que chegou por fora do schema). A tela usa a mesma função para
  * não oferecer as ações.
  *
+ * ─── A EXCEÇÃO da #2769 ────────────────────────────────────────────────────
+ *
+ * "Ganhou → mover para etapa aberta" foi o laço medido; "Ganhou → CRIAR a
+ * continuação no funil de pós-venda" é outra coisa e é o que a #2769 pede. Em
+ * `lead.won`, `create_or_move_lead` declarada na PRÓPRIA regra não regrava o
+ * negócio ganho — nasce um card novo noutro funil, e o que garante isso é a
+ * ação: ela recusa `lead.won` no MESMO funil com
+ * `continuacao_exige_outro_funil`, então o caminho que a #1528 mediu continua
+ * fechado. A porta aberta é mínima e está fechada por um caso aqui, à prova de
+ * afrouxamento: fora `lead.won`, mover segue recusado em tudo — e o laço
+ * ESCONDIDO dentro de `ai_decide` também segue
+ * (`lib/automation/actions/ai-decide.test.ts` tem o caso, não é este arquivo
+ * que o cobre).
+ *
  * O que este arquivo NÃO prova: o laço em Postgres de verdade. Ele foi lido no
  * caminho (trigger → event_log → motor → UPDATE), não executado.
  */
@@ -81,12 +95,39 @@ function regra(trigger_event: string, actions: unknown[]) {
 describe("schema: os gatilhos do trigger recusam as ações que regravam o lead", () => {
   for (const gatilho of GATILHOS_DO_TRIGGER_DE_LEAD) {
     for (const acao of [ATRIBUIR, MOVER]) {
+      // A EXCEÇÃO da #2769: `lead.won` + a ação que CRIA a continuação é o
+      // único caso que passa, e ele tem o `it` próprio logo abaixo — fora daqui,
+      // nenhuma combinação escapa.
+      if (gatilho === "lead.won" && acao === MOVER) continue;
       it(`${gatilho} + ${acao.type} é recusado`, () => {
         const r = createAutomationRuleSchema.safeParse(regra(gatilho, [AVISAR, acao]));
         expect(r.success).toBe(false);
       });
     }
   }
+
+  it("#2769 — lead.won + create_or_move_lead passa, e passa SÓ ele", () => {
+    expect(
+      createAutomationRuleSchema.safeParse(regra("lead.won", [AVISAR, MOVER])).success,
+      "sem abrir a porta, a regra 'ganhou → pós-venda' é impossível de configurar e a #2769 não acontece",
+    ).toBe(true);
+
+    // O alvo da exceção é ESTREITO. A mesma ação em qualquer OUTRO gatilho de
+    // lead continua fora (#1528), e `assign_owner` continua fora em TODOS,
+    // incluindo `lead.won` — onde "responsável mudou → atribuir" era o laço medido.
+    for (const gatilho of GATILHOS_DO_TRIGGER_DE_LEAD) {
+      if (gatilho !== "lead.won") {
+        expect(
+          createAutomationRuleSchema.safeParse(regra(gatilho, [MOVER])).success,
+          `create_or_move_lead tem de seguir fora de ${gatilho}`,
+        ).toBe(false);
+      }
+      expect(
+        createAutomationRuleSchema.safeParse(regra(gatilho, [ATRIBUIR])).success,
+        `assign_owner tem de seguir fora de ${gatilho}`,
+      ).toBe(false);
+    }
+  });
 
   it("o PATCH que traz gatilho e ações juntos é recusado", () => {
     expect(updateAutomationRuleSchema.safeParse({ trigger_event: "lead.assigned", actions: [ATRIBUIR] }).success).toBe(false);
@@ -123,8 +164,10 @@ describe("rota PATCH: o PATCH parcial é conferido contra a regra gravada", () =
     expect(deps.atualizou).toBe(false);
   });
 
-  it("trocar só as ações de uma regra de lead.won para mover é recusado", async () => {
-    deps.gravada = { id: REGRA, trigger_event: "lead.won", actions: [AVISAR] };
+  it("trocar só as ações de uma regra de lead.lost para mover é recusado", async () => {
+    // `lead.lost` fica: a exceção da #2769 é SÓ em `lead.won`, então mover a
+    // partir de um fechamento segue vetado na porta que só o banco completa.
+    deps.gravada = { id: REGRA, trigger_event: "lead.lost", actions: [AVISAR] };
     const res = await patch({ actions: [MOVER] });
     expect(res.status).toBe(400);
     expect(deps.atualizou).toBe(false);
@@ -196,9 +239,14 @@ describe("motor: regra que chegou por fora do schema não regrava o lead", () =>
     expect(resultado[0]).toMatchObject({ type: "assign_owner", status: "skipped", error: "acao_fecharia_laco" });
   });
 
-  it("lead.won → create_or_move_lead é pulado", async () => {
+  it("#2769 — lead.won → create_or_move_lead RODA: é a continuação para o pós-venda", async () => {
     const { admin } = bancoComRegra("lead.won", [MOVER]);
     await runAutomationForEvent(admin as never, evento("lead.won"));
-    expect(deps.executar).not.toHaveBeenCalled();
+    // A porta aberta pela #2769. Quem segura o laço deixou de ser o motor: é a
+    // PRÓPRIA ação, que recusa `lead.won` no MESMO funil
+    // (`continuacao_exige_outro_funil`, em lib/automation/actions/create-or-move-lead.ts)
+    // e só sabe criar a continuação noutro funil.
+    expect(deps.executar, "a regra 'ganhou → pós-venda' tem de chegar à ação").toHaveBeenCalledTimes(1);
+    expect(deps.executar.mock.calls[0]?.[1]).toEqual(MOVER.config);
   });
 });

@@ -21,6 +21,8 @@ import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { bulkLeadActionSchema, validateRequest } from "@/lib/schemas";
 import {
   decideMotivoDaPerda,
+  etapaDePerda,
+  razaoDaPerdaNaTimeline,
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import {
@@ -348,20 +350,63 @@ export async function POST(req: NextRequest): Promise<Response> {
         nomesEstagio.set(s.id, s.name);
       }
 
+      // ── A PERDA DO LOTE É A PERDA DO CARD, POR CARD (#2887) ─────────────────
+      //
+      // A `/lose` grava `demand_closed` "Perdido — <motivo>" e um `lead.lost`
+      // por lead. O lote manda UM motivo para N cards, e o banco o grava só em
+      // quem NÃO estava perdido (`fn_mover_leads_em_lote`: `status is distinct
+      // from 'lost'`, migration 0674) — quem já estava perdido é movido com o
+      // motivo dele intacto.
+      //
+      // Sem separar os dois grupos, a linha da timeline afirmaria uma troca que
+      // o banco não fez ("Perdido — <motivo do lote>" sobre um card cujo motivo
+      // continua o anterior) e o `lead.lost` contaria uma perda que não houve.
+      // O discriminador é o MESMO do banco e da `/lose`: o `status` lido ANTES
+      // da escrita — `visible`, a leitura que `decideMotivoDaPerda` já usa.
+      const statusDoCard = new Map(visible.map((l) => [l.id, l.status]));
+      const motivoDoCard = new Map(visible.map((l) => [l.id, l.lost_reason ?? null]));
+      // Perda NOVA é a que a etapa de destino fecha AGORA: etapa de perda e card
+      // que não estava perdido. Quem já estava perdido só troca de etapa.
+      const ehPerdaNova = (row: LeadMovidoEmLote) =>
+        etapaDePerda(etapaDeDestino) && statusDoCard.get(row.lead_id) !== "lost";
+      // O motivo que a linha cita é o que FICOU na coluna: o do lote quando ele
+      // veio, senão o que o card já tinha (card reaberto que se perde de novo
+      // sem motivo novo — a coluna não muda).
+      const motivoQueFicou = (row: LeadMovidoEmLote) =>
+        (motivoDoLote ?? "").trim() || (motivoDoCard.get(row.lead_id) ?? "").trim();
+
       await Promise.all(
         movidos.map(async (row) => {
+          const perdaNova = ehPerdaNova(row);
+          const motivo = perdaNova ? motivoQueFicou(row) : "";
           const r = await emitLeadActivity(supabase, {
             organizationId,
             leadId: row.lead_id,
+            // ⚠️ O TIPO SEGUE `stage_changed`, e isso é decisão declarada, não
+            // esquecimento: `crm_lead_activities.type = 'stage_changed'` é a
+            // fonte de `lib/metrics/taxa-da-etapa.ts` e da rota `win-rates`
+            // (#1753) — "aterrissar numa etapa de ganho ou de PERDA" é o que
+            // conta o negócio como encerrado, e o lote é um dos caminhos
+            // listados lá. Trocar por `demand_closed` (o tipo da `/lose`)
+            // tiraria do funil a passagem de todo negócio perdido em lote. O
+            // que a #2887 cobra da timeline é o MOTIVO — e ele vai no `reason`,
+            // por card.
             type: "stage_changed",
             sourceModule: "crm",
             sourceId: row.lead_id,
             actor: { type: "user", id: user.id },
-            reason: stageChangeReason(
-              nomesEstagio.get(row.from_stage_id) ?? null,
-              nomesEstagio.get(input.params.stage_id) ?? null,
-            ),
+            reason:
+              perdaNova && motivo.length > 0
+                ? razaoDaPerdaNaTimeline(motivo)
+                : stageChangeReason(
+                    nomesEstagio.get(row.from_stage_id) ?? null,
+                    nomesEstagio.get(input.params.stage_id) ?? null,
+                  ),
             payload: {
+              // O desfecho só viaja quando ESTE card fechou agora — é o mesmo
+              // `desfecho` que a `/lose` põe no payload da linha dela, e é o
+              // que separa, para quem lê depois, "movido" de "perdido".
+              ...(perdaNova ? { desfecho: "lost" } : {}),
               from_stage_id: row.from_stage_id,
               to_stage_id: input.params.stage_id,
               pipeline_id: row.pipeline_id,
@@ -379,6 +424,27 @@ export async function POST(req: NextRequest): Promise<Response> {
               origem: "leads/bulk",
               erro: r.error,
               requestId,
+            });
+          }
+          if (perdaNova) {
+            // A auditoria da PERDA, por lead (#2887), como a `/lose` faz
+            // (`encerraDemanda`): o negócio perdido entra no audit log com o
+            // motivo COM QUE foi perdido. O `lead.bulk_action` agregado — no
+            // fim da rota — continua, porque ele é o registro da OPERAÇÃO, não
+            // o da perda de cada negócio.
+            await audit({
+              action: "lead.lost",
+              actorUserId: user.id,
+              organizationId,
+              resourceType: "crm_lead",
+              resourceId: row.lead_id,
+              requestId,
+              metadata: {
+                actor_type: "user",
+                from_stage_id: row.from_stage_id,
+                to_stage_id: input.params.stage_id,
+                lost_reason: motivo,
+              },
             });
           }
         }),

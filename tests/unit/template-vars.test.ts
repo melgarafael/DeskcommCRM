@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { faltouNomeDeContato, interpolateTemplate } from "@/lib/inbox/template-vars";
+import { faltouNomeDeContato, interpolateTemplate, MOTIVO_CURINGA_LITERAL, motivoDoCuringaLiteral } from "@/lib/inbox/template-vars";
 
 describe("interpolateTemplate", () => {
   it("substitui nome e primeiro_nome", () => {
@@ -94,5 +94,36 @@ describe("faltouNomeDeContato", () => {
   });
   it("tolera espaços e case na chave", () => {
     expect(faltouNomeDeContato("Oi {{ Primeiro_Nome }}!", { name: null })).toBe(true);
+  });
+});
+
+describe("motivoDoCuringaLiteral (#2744)", () => {
+  // A decisão de barra/libera mora na FUNÇÃO PURA, e não só no componente: o
+  // repositório não tem `Composer.test.tsx`, e a lógica que barra o envio não
+  // pode depender de render para ser provada.
+  it("curinga de nome literal sobrevivente → o motivo fixo (barra a resposta)", () => {
+    expect(motivoDoCuringaLiteral("Oi {{nome}}, tudo bem?", { name: null })).toBe(
+      MOTIVO_CURINGA_LITERAL,
+    );
+    expect(
+      motivoDoCuringaLiteral("Oi {{primeiro_nome}}!", { name: "", displayName: null }),
+    ).toBe(MOTIVO_CURINGA_LITERAL);
+  });
+  it("contato COM nome → null: nada barrado, o curinga resolve", () => {
+    expect(motivoDoCuringaLiteral("Oi {{nome}}", { name: "Rafael" })).toBeNull();
+    expect(
+      motivoDoCuringaLiteral("Oi {{nome}}", { name: null, displayName: "Rafael Melgaço" }),
+    ).toBeNull();
+  });
+  it("nome técnico (Contato …@lid) não cobre a variável → motivo (barra)", () => {
+    expect(
+      motivoDoCuringaLiteral("Oi {{primeiro_nome}}!", {
+        name: null,
+        displayName: "Contato 543134@lid",
+      }),
+    ).toBe(MOTIVO_CURINGA_LITERAL);
+  });
+  it("chave desconhecida → null: `{{codigo}}` cru não é problema de nome", () => {
+    expect(motivoDoCuringaLiteral("Cupom {{codigo}}", { name: null })).toBeNull();
   });
 });

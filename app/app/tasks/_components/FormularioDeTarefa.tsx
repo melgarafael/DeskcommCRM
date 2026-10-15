@@ -41,6 +41,12 @@ interface Props {
   leadId?: string | null;
   contactId?: string | null;
   /**
+   * A demanda do atendimento a que a tarefa nova fica presa (#2818). Quem cria
+   * de dentro do inbox passa a demanda vigente da conversa: a tarefa nasce no
+   * assunto que a originou, e volta para a lista de quem precisa cumpri-la.
+   */
+  demandaId?: string | null;
+  /**
    * Quem nasce como responsável numa tarefa NOVA. O dossiê do negócio passa o
    * próprio usuário: quem anota "ligar sexta" no card quase sempre é quem vai
    * ligar. Ausente = ninguém, como antes.
@@ -76,6 +82,7 @@ export function FormularioDeTarefa({
   aoSalvar,
   leadId,
   contactId,
+  demandaId,
   responsavelPadrao,
 }: Props) {
   const t = useT();
@@ -125,6 +132,11 @@ export function FormularioDeTarefa({
         status: situacao,
         lead_id: tarefa?.lead_id ?? leadId ?? null,
         contact_id: tarefa?.contact_id ?? contactId ?? null,
+        // A demanda só viaja em CRIAÇÃO. Ao editar uma tarefa existente,
+        // reenviar o vínculo o sobrescreveria com o do formulário — e o
+        // formulário de edição não é onde se re-vincula (a tela de Tarefas não
+        // ganhou esse campo). Criar de dentro do inbox, sim: nasce presa.
+        ...(editando ? {} : { demanda_id: demandaId ?? null }),
         // Só vai quando MUDOU. Uma tarefa antiga pode ter como responsável
         // alguém que saiu da equipe: reenviar o mesmo id faria a rota recusar a
         // edição do título por causa de um campo em que ninguém mexeu.

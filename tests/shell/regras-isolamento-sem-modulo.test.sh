@@ -90,7 +90,8 @@ case " $* " in
   # Imagem em execução, que o agent.sh guarda para poder voltar.
   *" images "*) printf 'sha256:deadbeef\n' ;;
   *" image inspect "*) printf 'x@sha256:aaa\n' ;;
-  *" imagetools inspect "*) printf 'Digest: sha256:aaa\n' ;;
+  *" imagetools inspect --raw "*) printf '%s' '{"schemaVersion":2,"manifests":[{"platform":{"os":"linux","architecture":"amd64"}}]}' ;;
+  *" imagetools inspect --format "*) printf 'linux/amd64\n' ;;
   # Aplicação do baseline: sai limpa, como sai um psql que não achou erro nenhum.
   *" -f /b.sql "*) ;;
 esac
@@ -114,7 +115,11 @@ STUB
 # está sob prova aqui).
 cat > "$WORK/bin/curl" <<'STUB'
 #!/usr/bin/env bash
-printf '{"data":{}}\n200'
+case "$*" in
+  *ghcr.io/token*) printf '%s' '{"token":"teste"}' ;;
+  *ghcr.io/v2/*) printf 200 ;;
+  *) printf '{"data":{}}\n200' ;;
+esac
 STUB
 # `uname -m` responde x86_64: o `_common.sh` recusa, antes de qualquer trabalho,
 # todo update.sh que não roda em amd64 — e aqui quem está sob prova é a

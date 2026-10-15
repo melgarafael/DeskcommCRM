@@ -68,6 +68,7 @@ import type { DisclosureMode } from './disclosure/template';
 import { escalateLgpdVeto, isLegalBasisValid } from './lgpd/legal-basis';
 import type { LgpdInput } from './lgpd/legal-basis';
 import { detectHumanPromise } from './human-promise';
+import { detectarPromessaDeRetornoDoAssistente } from './retorno-do-assistente';
 import { detectarVazamentoInterno, renderVetoDeVazamento } from './vazamento-interno';
 import { detectarAfirmacaoClinica, renderVetoDeAfirmacaoClinica } from './afirmacao-clinica';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
@@ -441,35 +442,46 @@ export const semanticPromiseGate: Gate = {
  * Gate anti-alucinação de casos humanos (spec 15 §10.2, Wave 4) — a garantia DURA da
  * invariante "o lead nunca recebe promessa-de-humano sem caso aberto". Off (`casesEnabled`
  * false) ou já há caso (`hasOpenCase`/`openedCaseThisTurn` — a IA abriu um NESTE turno) =
- * no-op. Só veta quando ALGUMA das duas camadas — o detector léxico (`detectHumanPromise`) ou o sinal semântico (`ctx.semanticPromise?.prometeuRetornoHumano`) — acha uma promessa
- * clara na candidata E nenhum caso existe. O fail-safe de 2ª camada (auto-abre caso e
- * re-roda a cadeia) vive na orquestração do `send_message` (inbound-turn.ts), não aqui — o
- * gate em si é síncrono/puro como os demais. Posição 6.5 de `BEFORE_SEND_GATES` (logo após
- * `semanticPromiseGate`, antes do `disclosureGate`): roda depois das duas camadas de
- * promessa comercial (preço/desconto) porque é uma categoria distinta de promessa
- * (envolvimento humano, não oferta).
+ * no-op. Só veta quando ALGUMA das camadas — o detector léxico de humano
+ * (`detectHumanPromise`), o sinal semântico (`ctx.semanticPromise?.prometeuRetornoHumano`)
+ * ou o detector léxico de retorno do assistente (`detectarPromessaDeRetornoDoAssistente`,
+ * issue #2916) — acha uma promessa clara na candidata E nenhum caso existe. O fail-safe de
+ * 2ª camada (auto-abre caso e re-roda a cadeia) vive na orquestração do `send_message`
+ * (inbound-turn.ts), não aqui — o gate em si é síncrono/puro como os demais. Posição 6.5 de
+ * `BEFORE_SEND_GATES` (logo após `semanticPromiseGate`, antes do `disclosureGate`): roda
+ * depois das duas camadas de promessa comercial (preço/desconto) porque é uma categoria
+ * distinta de promessa (envolvimento humano, não oferta).
  */
 export const casePromiseGate: Gate = {
   name: 'case_promise',
   evaluate: (ctx) => {
     if (!ctx.casesEnabled) return { pass: true };
     if (ctx.hasOpenCase || ctx.openedCaseThisTurn) return { pass: true };
-    // Lê os DOIS sinais, em OU — e o OU é o ponto. Exigir os dois faria o conserto
-    // não consertar nada: o léxico é o filtro BARATO e continua valendo sozinho
-    // (roda sem chamada de modelo, e pega as duas frases que nomeiam o alvo colado
-    // ao verbo); o semântico pega as outras cinco — as 5 de 7 que a medição de
-    // 2026-09-16 flagrou vazando. O `?.` é obrigatório: o fixture de
-    // `tests/invariants/case-guardrail.test.ts` passa `semanticPromise: null`.
+    // Lê TRÊS sinais, em OU — e o OU é o ponto. Exigir todos faria o conserto
+    // não consertar nada: o léxico de humano (`detectHumanPromise`) é o filtro
+    // BARATO e continua valendo sozinho (roda sem chamada de modelo, e pega as
+    // duas frases que nomeiam o alvo colado ao verbo); o semântico pega as outras
+    // cinco — as 5 de 7 que a medição de 2026-09-16 flagrou vazando; e o léxico de
+    // retorno do assistente (`detectarPromessaDeRetornoDoAssistente`, issue #2916)
+    // pega a promessa de RETOMAR A CONVERSA ("retomamos daqui a duas horas") que o
+    // semântico não marca de forma confiável (é modelo — varia entre execuções). O
+    // `?.` é obrigatório: o fixture de `tests/invariants/case-guardrail.test.ts`
+    // passa `semanticPromise: null`.
     const lexico = detectHumanPromise(ctx.body, ctx.humanPromiseExtraTargets);
     const semantico = ctx.semanticPromise?.prometeuRetornoHumano === true;
-    if (!lexico && !semantico) return { pass: true };
+    const retornoLexico = detectarPromessaDeRetornoDoAssistente(ctx.body);
+    if (!lexico && !semantico && !retornoLexico) return { pass: true };
     // #1873, opção (a): o follow-up agendado é destino SÓ para a promessa do próprio
-    // assistente ("te retorno amanhã de manhã"). O léxico só casa alvo humano explícito
-    // (equipe, setor, responsável…), então o que ele acusa exige caso sempre. E o
-    // `=== true` é fechado de propósito: o parser degrada `retornoSoDoAssistente` para
-    // `false` em qualquer falha, e falha nunca libera.
+    // assistente ("te retorno amanhã de manhã", "retomamos daqui a duas horas"). O
+    // léxico de humano só casa alvo humano explícito (equipe, setor, responsável…),
+    // então o que ele acusa exige caso sempre — um lembrete para o assistente voltar
+    // a falar não põe ninguém da empresa para trabalhar. E o `=== true` é fechado de
+    // propósito: o parser degrada `retornoSoDoAssistente` para `false` em qualquer
+    // falha, e falha nunca libera. `retornoLexico` (issue #2916) entra como destino de
+    // follow-up pelo mesmo motivo do sinal semântico: quem volta a falar é o próprio
+    // assistente, e o `schedule_followup` é o compromisso que o cliente espera.
     const promessaDoAssistente =
-      !lexico && ctx.semanticPromise?.retornoSoDoAssistente === true;
+      !lexico && (ctx.semanticPromise?.retornoSoDoAssistente === true || retornoLexico);
     if (promessaDoAssistente && ctx.followup?.agendadoNesteTurno === true) return { pass: true };
     return {
       pass: false,
@@ -1301,6 +1313,15 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
   // antiga aberta, e o pool o reempresta nela — o envio seguinte rodaria dentro
   // da transação de quem falhou. O finally lê desta marcação.
   let erroNaTransacao: Error | undefined;
+  // #2426: marca que a transação já foi commitada/rollbackada à mão. Nada pode ser
+  // rollbackado de novo depois disso (um `rollback` tardio só geraria WARNING no pg e
+  // esconderia o erro real). O finally continua lendo `erroNaTransacao`.
+  let transacaoFechada = false;
+  // #2426: trace capturado assim que a cadeia evalua, para a auditoria DURÁVEL ser gravada
+  // FORA da janela da transação (commit no caminho enviado, rollback no veto/erro) — nunca
+  // enquanto a tx aberta segura o `contacts` (readStopFlags). `undefined` = a cadeia ainda
+  // não avaliou (falha numa leitura sob o lock) → nada a persistir.
+  let traceDaAuditoria: GateTraceEntry[] | undefined;
   try {
     await client.query('begin');
     // Serialização por número: dois workers no MESMO channel_session esperam a vez.
@@ -1433,57 +1454,71 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // sem ninguém poder auditar depois. A linha entra ANTES da cadeia porque a
     // reescrita acontece antes dela, e leva só rótulos — nunca o corpo (sem PII).
     const trace: GateTraceEntry[] = [...rastroDoEstilo(estilo, args.body, bodyDoModelo), ...traceDaCadeia];
+    traceDaAuditoria = trace;
     ctx.body = evaluatedBody;
     emitTrace(args.log, args.channelSessionId, trace);
-    // Auditoria DURÁVEL por run (F4-08 acceptance 3): escrita autônoma (pool, fora da tx
-    // serializada) — o trace do VETO tem de sobreviver ao rollback abaixo. Nunca bloqueia
-    // o message-plane: falha aqui vira log.error (o trace do logger já é o backup), não
-    // exceção. ponytail: 1 insert por tentativa; se virar gargalo, batelar por run.
-    const traceId = await persistTrace(args, trace, veto);
 
-    // Wave 3 (CORE 2), cenário 11: o agente decidir NÃO falar é evento. Silêncio
-    // com motivo é informação; silêncio sem registro é abandono. Só o VETO entra
-    // — gate que passou é telemetria e fica na tabela de origem.
-    if (veto && traceId) {
-      try {
-        const r = await emitVetoActivity({
-          pool: args.pool,
-          organizationId: args.tenantId,
-          contactId: args.leadId,
-          traceId,
-          gate: veto.gate,
-          code: veto.code,
-          agentId: args.agentId ?? null,
-        });
-        if (!r.routed) {
-          args.log.info('veto sem negócio para pendurar: registrado no event_log', {
-            channel_session_id: args.channelSessionId,
-            reason: r.reason,
-          });
-        }
-      } catch (err) {
-        // A timeline do veto não pode derrubar o veto.
-        args.log.error('falha ao registrar atividade de veto (segue)', {
-          channel_session_id: args.channelSessionId,
-          error: err instanceof Error ? err.name : 'unknown',
-        });
-      }
-    }
-
-    // Veto de LGPD (F4-09): escala à inbox do runtime (regra dura nº 13) para o DPO/comercial
-    // regularizar. Escrita autônoma no pool (fora da tx serializada), como o trace — sobrevive
-    // ao rollback do veto e nunca derruba o message-plane (o gate já barrou o envio).
-    if (veto !== null && veto.code.startsWith('lgpd_')) {
-      await escalateLgpdVeto(
-        args.pool,
-        { tenantId: args.tenantId, leadId: args.leadId, code: veto.code },
-        args.log,
-      );
-    }
+    // #2426 — as escritas DURÁVEIS (trace de auditoria, timeline do veto, escalação LGPD)
+    // saem da JANELA da transação. `before_send_traces` (e a timeline do veto) têm FK para
+    // `contacts`: feitas pelo `args.pool` ENQUANTO esta tx aberta segura o `contacts`
+    // (readStopFlags), enfileiravam atrás de um DDL pendente de `ALTER TABLE contacts` — o
+    // insert esperava o DDL, o DDL esperava a tx (ACCESS SHARE) e a tx esperava o insert.
+    // Mesmo ciclo medido no #2363 (8m47s idle in transaction); a aresta que o #2121 não
+    // encerrou, porque uma das bordas mora no Node e o Postgres não a detecta. Autônomas no
+    // pool, sobrevivem ao rollback por natureza — gravá-las DEPOIS do commit/rollback as tira
+    // da janela sem mudar o desfecho.
+    //
+    // O envio (`args.send`) continua DENTRO da tx, sob o advisory lock do número: tirá-lo
+    // derrubaria a serialização anti-ban (a vez por número e a gravação do pacing no mesmo
+    // commit). Fechar essa outra aresta (o `send_ledger` e a `messages`, gravados noutra
+    // conexão/Supabase dentro do handler) exige o advisory lock de SESSÃO proposto no #2426 —
+    // redesign que precisa de prova com 2 conexões (job `invariants`), fora desta fatia.
 
     if (veto !== null) {
-      // Nada foi escrito: rollback fecha a tx e solta o lock. O envio NÃO acontece.
+      // Nada foi escrito na tx: rollback fecha a transação e solta o lock. O envio NÃO acontece.
       await client.query('rollback');
+      transacaoFechada = true;
+      // Auditoria DURÁVEL por run (F4-08 acc 3): escrita autônoma no pool — o trace do VETO
+      // tem de sobreviver ao rollback ACIMA. Nunca bloqueia o message-plane: falha aqui vira
+      // log.error (o trace do logger já é o backup), não exceção.
+      const traceId = await persistTrace(args, trace, veto);
+      // Wave 3 (CORE 2), cenário 11: o agente decidir NÃO falar é evento. Silêncio com motivo
+      // é informação; silêncio sem registro é abandono. Só o VETO entra na timeline.
+      if (traceId) {
+        try {
+          const r = await emitVetoActivity({
+            pool: args.pool,
+            organizationId: args.tenantId,
+            contactId: args.leadId,
+            traceId,
+            gate: veto.gate,
+            code: veto.code,
+            agentId: args.agentId ?? null,
+          });
+          if (!r.routed) {
+            args.log.info('veto sem negócio para pendurar: registrado no event_log', {
+              channel_session_id: args.channelSessionId,
+              reason: r.reason,
+            });
+          }
+        } catch (err) {
+          // A timeline do veto não pode derrubar o veto.
+          args.log.error('falha ao registrar atividade de veto (segue)', {
+            channel_session_id: args.channelSessionId,
+            error: err instanceof Error ? err.name : 'unknown',
+          });
+        }
+      }
+      // Veto de LGPD (F4-09): escala à inbox do runtime (regra dura nº 13) para o DPO/comercial
+      // regularizar. Escrita autônoma no pool, como o trace — sobrevive ao rollback e nunca
+      // derruba o message-plane (o gate já barrou o envio).
+      if (veto.code.startsWith('lgpd_')) {
+        await escalateLgpdVeto(
+          args.pool,
+          { tenantId: args.tenantId, leadId: args.leadId, code: veto.code },
+          args.log,
+        );
+      }
       return { status: 'vetoed', trace, ...veto };
     }
 
@@ -1507,10 +1542,23 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       }
     }
     await client.query('commit');
+    transacaoFechada = true;
+    // Auditoria DURÁVEL por run (F4-08 acc 3): gravada DEPOIS do commit — antes, o insert em
+    // `before_send_traces` (FK `contacts`) saía pelo pool enquanto a tx aberta segurava o
+    // `contacts` e podia enfileirar atrás de um DDL (#2426). Autônoma no pool; falha vira
+    // log.error (o logger é o backup).
+    await persistTrace(args, trace, null);
     return { status: 'sent', outcome, trace };
   } catch (err) {
     erroNaTransacao = err instanceof Error ? err : new Error(String(err));
-    await rollback(client, err);
+    // Uma tx já fechada (commit/rollback explícito acima) não pode ser rollback de novo.
+    if (!transacaoFechada) {
+      await rollback(client, err);
+      // Auditoria da tentativa que ERROU (ex.: envio com o transporte fora): o rollback desfaz
+      // a tx, mas a linha de auditoria é autônoma no pool e sobrevive — gravada AQUI, fora da
+      // janela, para não reabrir o ciclo do #2426. O veto já gravou o seu no ramo dele.
+      if (traceDaAuditoria !== undefined) await persistTrace(args, traceDaAuditoria, null);
+    }
     throw err;
   } finally {
     client.release(erroNaTransacao);
@@ -1519,7 +1567,12 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
 
 /**
  * STOP direto da fonte (pós-fusão, mesmo banco): `contacts.is_blocked` OR
- * `contacts.force_human`, lidos sob o lock — não existe mais cache no harness.
+ * `contacts.force_human` OR `contacts.is_personal` OR `contacts.ai_opt_out`,
+ * lidos sob o lock — não existe mais cache no harness.
+ *
+ * `ai_opt_out` é a marca PERMANENTE "sempre atendimento humano" (issue 2379):
+ * `force_human` é a trava de handoff, que a devolução limpa; esta é a que ela
+ * não alcança, e por isso as duas estão no mesmo predicado.
  */
 /**
  * O canal desta sessão, do banco (migration 0087) — nunca suposto.
@@ -1559,7 +1612,11 @@ async function readStopFlags(
   const { rows } = await db.query<{ stopped: boolean }>(
     humanMeetingCommand
       ? 'select (is_blocked or is_personal) as stopped from contacts where organization_id = $1 and id = $2'
-      : 'select (is_blocked or force_human or is_personal) as stopped from contacts where organization_id = $1 and id = $2',
+      // `ai_opt_out` (issue 2379): a marca permanente "sempre atendimento
+      // humano" entra no MESMO stop, e não numa nova consulta — o custo é
+      // nulo e a garantia é que nenhum escritor futuro de `force_human` consegue
+      // devolver a IA para um contato que a operação trancou.
+      : 'select (is_blocked or force_human or is_personal or ai_opt_out) as stopped from contacts where organization_id = $1 and id = $2',
     [organizationId, contactId],
   );
   return rows[0]?.stopped === true;

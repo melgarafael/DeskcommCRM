@@ -120,6 +120,8 @@ stateDiagram-v2
 
 Sub-PRD 06 §3.9 + Sub-PRD 01 §3.6. SLA D+7 (data_request) / D+15 (redact).
 
+O pedido de dados (`data_request`) — inclusive o que chega pela Nuvemshop — fica em `received` até a aprovação do admin; nada é montado nem enviado antes dela (doc 134, opção A). No banco, `approved` não é um valor de `status`: a aprovação grava `processing` e emite o evento que o worker consome.
+
 ```mermaid
 stateDiagram-v2
     [*] --> received: webhook validado + log raw

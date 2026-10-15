@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const RAIZ = process.cwd();
 const publish = readFileSync(join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
 const common = readFileSync(join(RAIZ, "hostgator-setup-kit/_common.sh"), "utf8");
+const manifestos = readFileSync(join(RAIZ, "hostgator-setup-kit/_manifestos.sh"), "utf8");
 const tagSoNasceDaMain = readFileSync(join(RAIZ, "tests/unit/tag-so-nasce-da-main.test.ts"), "utf8");
 const packaging = readFileSync(join(RAIZ, "tests/unit/packaging-artefato-do-cliente.test.ts"), "utf8");
 
@@ -47,6 +48,13 @@ function imagensDoKit(): string[] {
   return palavrasDaLista(lista);
 }
 
+// O pré-voo ARM64 tem a sua própria lista (sonda o índice OCI, não só o HTTP 200).
+function imagensDoPreflightArm(): string[] {
+  const corpo = /preflight_imagens_crm\(\)\s*\{([\s\S]*?)\n\}/.exec(manifestos)?.[1] ?? "";
+  const lista = /for\s+img\s+in\s+([^;]+);\s*do/.exec(corpo)?.[1] ?? "";
+  return palavrasDaLista(lista);
+}
+
 function imagensDoTesteDaTag(): string[] {
   const lista = /for\s*\(const\s+img\s+of\s+\[([^\]]+)\]\)/.exec(tagSoNasceDaMain)?.[1] ?? "";
   return stringsDoArray(lista);
@@ -70,6 +78,10 @@ describe("listas de imagens Docker seguem a matriz de publicação", () => {
     expect(
       imagensDoKit(),
       "trio_publicado() divergiu da matriz: uma imagem pode ficar invisível para install/update",
+    ).toEqual(IMAGENS);
+    expect(
+      imagensDoPreflightArm(),
+      "preflight_imagens_crm() divergiu da matriz: o pré-voo ARM64 deixaria uma imagem sem sonda",
     ).toEqual(IMAGENS);
   });
 

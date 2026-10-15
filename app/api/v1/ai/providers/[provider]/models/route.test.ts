@@ -232,12 +232,6 @@ describe("GET /api/v1/ai/providers/:provider/models — quem pode listar", () =>
 /**
  * QUANDO A LISTAGEM DA ASSINATURA FALHA, O OPERADOR VÊ (#2602).
  *
- * MEDIDO na issue: com o endpoint antigo (`api.openai.com/v1/models`) o token
- * da assinatura tomava 403 "Missing scopes: api.model.read" e a rota respondia
- * "Conecte a assinatura do ChatGPT" — para uma conta que ESTAVA conectada —
- * enquanto `models_available` ficava `null` e todo "Publicar" respondia
- * `model_not_found`.
- *
  * A régua nova: `null` (sem conta) continua 409 "Conecte…"; QUALQUER outra
  * falha é 502 com o MOTIVO na mensagem, e o espelho não é tocado.
  */
@@ -250,7 +244,7 @@ describe("GET /api/v1/ai/providers/:provider/models — a falha da listagem apar
     );
   });
 
-  it("listagem que falha (403 do endpoint errado) é 502 com o motivo, não \"conecte a assinatura\"", async () => {
+  it("listagem que falha é 502 com o motivo, não \"conecte a assinatura\"", async () => {
     vi.mocked(listarModelosDaAssinatura).mockRejectedValue(
       new FalhaAoListarModelosDaAssinatura("http_403", { status: 403 }),
     );

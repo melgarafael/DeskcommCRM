@@ -3,8 +3,12 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * POST /api/v1/lgpd/requests/[id]/approve
  *
  * Manually approves an LGPD request that is in 'received' status.
- * Emits the canonical event to event_log (same as the webhook handler),
- * writes audit lgpd.manually_approved, and transitions status → 'processing'.
+ * Emits the canonical event to event_log, writes audit lgpd.manually_approved,
+ * and transitions status → 'processing'.
+ *
+ * Para o pedido de dados, esta rota é o ÚNICO gatilho da exportação (doc 134):
+ * o webhook da Nuvemshop só cria o pedido, e o worker ignora evento sem
+ * `manually_approved` + `approved_by` — a marca que só este emissor grava.
  *
  * Auth: cookie session, role >= admin.
  * Idempotency-Key header is REQUIRED. Returns 202 on success.

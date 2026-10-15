@@ -828,9 +828,9 @@ type EntradaDeHost = { categoria: CategoriaDeHost; motivo: string };
 
 const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
   "chatgpt.com": {
-    categoria: "FORNECEDOR",
+    categoria: "CONSOLE",
     motivo:
-      "é o serviço da conta ChatGPT nos DOIS papéis deste provedor: o destino do link que leva o operador a conectar a conta por Sign in with ChatGPT E o endpoint de listagem de modelos da assinatura (`lib/ai/catalogo/modelos-da-assinatura.ts` chama `chatgpt.com/backend-api/codex/models`, medido 200 na issue #2602 — a API pública devolve 403 Missing scopes para o mesmo token). O código FALA com ele; trocar pelo domínio do revendedor faria login e listagem não chegarem a lugar nenhum.",
+      "é o serviço da conta ChatGPT que o operador abre para conectar a assinatura. O produto não faz requests para este host; a consulta do catálogo e a inferência SIWC usam a API pública oficial em api.openai.com.",
   },
   "datamanager.googleapis.com": {
     categoria: "FORNECEDOR",
@@ -875,7 +875,7 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
   "api.openai.com": {
     categoria: "FORNECEDOR",
     motivo:
-      "endpoint da API da OpenAI (embeddings da busca e transcrição de áudio). É o destino do request: trocar pelo domínio do revendedor faria a chamada não chegar a lugar nenhum.",
+      "endpoint da API pública da OpenAI para embeddings, transcrição e os fluxos Sign in with ChatGPT (catálogo de modelos e inferência). É o destino dos requests: trocar pelo domínio do revendedor faria as chamadas não chegarem a lugar nenhum.",
   },
   "auth.openai.com": {
     categoria: "FORNECEDOR",
@@ -1207,10 +1207,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita: painel de chaves da Requesty, o mesmo caso dos outros
       // CONSOLE (o link "Onde pegar a chave" da tela de Credenciais).
       "app.requesty.ai",
-      // `chatgpt.com` saiu daqui para FORNECEDOR (#2602): o código passou a
-      // FALAR com ele (a listagem de modelos da assinatura chama o backend do
-      // Codex), e quem fala com o host é FORNECEDOR — a categoria fechada
-      // perde o host no mesmo diff em que a lista de call sites o ganha.
+      // A pessoa abre o produto ChatGPT para autenticar a conta; o CRM chama
+      // apenas `api.openai.com` no fluxo SIWC.
+      "chatgpt.com",
       "console.anthropic.com",
       // Decisão escrita: é o painel de chaves do Jev, o mesmo caso dos outros
       // CONSOLE — o link "Onde pegar a chave" da tela de Credenciais.

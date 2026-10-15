@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lerLoginCodexRenovandoSeProxima } from "@/lib/ai/credenciais/login-codex";
-import { OPENAI_CODEX_MODELS_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import { OPENAI_MODELS_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 import { PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
 
 export interface ModeloDaAssinatura {
@@ -26,8 +26,8 @@ export interface ModeloDaAssinatura {
  * sempre — todo "Publicar" respondia `model_not_found` sem que ninguém visse
  * o 403 que causava tudo.
  *
- * O erro carrega o MOTIVO (`http_403`, `formato_de_resposta_desconhecido`,
- * `sem_resposta_do_backend_do_codex`) e o status HTTP quando houver; a rota do
+ * O erro carrega o MOTIVO (`http_401`, `http_403`, `formato_de_resposta_desconhecido`,
+ * `sem_resposta_da_api_de_modelos`) e o status HTTP quando houver; a rota do
  * editor do agente o repassa ao operador. Em NENHUM caminho de falha o espelho
  * `models_available` é tocado: apagar uma lista válida a partir de uma resposta
  * que não entendemos é como o publish quebra de verdade (#2456).
@@ -45,26 +45,11 @@ export class FalhaAoListarModelosDaAssinatura extends Error {
 }
 
 /**
- * A URL da listagem. O `client_version` é o parâmetro que o próprio Codex CLI
- * envia ao backend (`?client_version=0.160.1` na medição da #2602); sem um
- * token real não dá para medir se o backend o exige, então ele só viaja quando
- * `CODEX_CLIENT_VERSION` está declarado — knob de fuga, não default.
- */
-function urlDaListagem(): string {
-  const cliente = process.env.CODEX_CLIENT_VERSION?.trim();
-  return cliente
-    ? `${OPENAI_CODEX_MODELS_ENDPOINT}?client_version=${encodeURIComponent(cliente)}`
-    : OPENAI_CODEX_MODELS_ENDPOINT;
-}
-
-/**
  * Busca os modelos que a conta ChatGPT autorizou a listar, sempre no tenant atual.
  *
- * O destino é o BACKEND DO CODEX (`OPENAI_CODEX_MODELS_ENDPOINT`), não a API
- * pública: medido na #2602 com o mesmo token da assinatura, `/v1/models` na
- * `api.openai.com` devolve 403 `Missing scopes: api.model.read` e o backend do
- * Codex devolve 200 com `{ models: [{ slug, visibility: "list" }] }` — o
- * formato que a interpretação de baixo já conhece.
+ * O destino é a API pública oficial `/v1/models`, conforme o fluxo Sign in with
+ * ChatGPT: https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
+ * A resposta contém `models`; só os itens com `visibility: "list"` são exibidos.
  *
  * `null` continua significando UMA coisa só: não há conta conectada nesta
  * organização. Tudo mais (rede, HTTP fora de 200, formato desconhecido) é
@@ -77,7 +62,7 @@ export async function listarModelosDaAssinatura(orgId: string): Promise<ModeloDa
 
   let response: Response;
   try {
-    response = await fetch(urlDaListagem(), {
+    response = await fetch(OPENAI_MODELS_ENDPOINT, {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
       signal: AbortSignal.timeout(10_000),
       redirect: "error",
@@ -86,11 +71,11 @@ export async function listarModelosDaAssinatura(orgId: string): Promise<ModeloDa
   } catch (cause) {
     // Sem resposta não há o que interpretar — e voltar `null` daqui fazia a
     // rota acusar a conta conectada. Erro visível, espelho intocado.
-    throw new FalhaAoListarModelosDaAssinatura("sem_resposta_do_backend_do_codex", { cause });
+    throw new FalhaAoListarModelosDaAssinatura("sem_resposta_da_api_de_modelos", { cause });
   }
   if (!response.ok) {
-    // O 403 MEDIDO da #2602 (endpoint errado) caía exatamente aqui. Ele tinha
-    // de aparecer, não virar "Conecte a assinatura" em silêncio.
+    // Erros HTTP precisam continuar visíveis; não podem virar "Conecte a
+    // assinatura" em silêncio.
     throw new FalhaAoListarModelosDaAssinatura(`http_${response.status}`, { status: response.status });
   }
 
@@ -146,7 +131,7 @@ export async function listarModelosDaAssinatura(orgId: string): Promise<ModeloDa
 /**
  * A MESMA listagem para os call sites onde ela ALIMENTA uma tela, não decide
  * uma ação: a tela de Credenciais desenha a lista e o classificador de modelo
- * acrescenta o que a conta tem. Uma falha do backend do Codex ali não pode
+ * acrescenta o que a conta tem. Uma falha na consulta SIWC ali não pode
  * derrubar a rota inteira — vira `[]` e log com o MESMO motivo que a rota do
  * editor do agente mostra como erro (#2602: visível, ainda que cada chamada
  * decida o que fazer com a visibilidade).

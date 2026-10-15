@@ -309,7 +309,9 @@ conta própria — num caminho HTTP seu, nunca como caminho de arquivo.
   testada, e **numa VPS com proxy reverso próprio o `up -d` precisa dos dois
   arquivos de compose** — omitir `-f docker-compose.traefik.yml` recria o
   contêiner sem as labels de roteamento e o domínio inteiro passa a responder
-  404, com o contêiner `healthy`.
+  404, com o contêiner `healthy`. Atrás de NAT (ou CGNAT, ou rede sem entrada),
+  declare `REVERSE_PROXY=cloudflared` no `.env` e use o Cloudflare Tunnel — ver
+  `docs/runbooks/deploy.md` §5.
 
 ## Solução de problemas
 

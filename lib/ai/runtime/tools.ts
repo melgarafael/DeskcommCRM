@@ -453,6 +453,16 @@ function wrapMcpTool(
         // Só quem declara é afetado: sem `motivoDoVazio` nada muda.
         const motivoDoVazio = def.motivoDoVazio?.(result) ?? null;
 
+        // O TERMO desta chamada, quando a tool declara um (#484, caminho 2).
+        //
+        // É o que deixa a leitura no painel contar "não achei POR TERMO" — a
+        // lista de compras do dono da loja — em vez de só "falhou por tool". O
+        // termo sobe mesmo quando a busca ACHOU: total × falhas por termo é o
+        // sinal que separa "termo difícil" de "termo que não existe", e só as
+        // falhas mostrariam o termo sem a régua dele. Sem `termoBuscado` nada
+        // muda — a chave nem aparece no `metadata` (mesma disciplina do motivo).
+        const termoBuscado = def.termoBuscado?.(argsRecord as never) ?? null;
+
         // Recusa devolvida PELO HANDLER também não é sucesso (#2158): a ficha de
         // outro cliente recusada em `crm_get_contact` volta no mesmo formato da
         // recusa de escrita acima, e entra no audit como ela — `success: false`
@@ -480,6 +490,7 @@ function wrapMcpTool(
           ...(motivoDoVazio === null
             ? {}
             : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
+          ...(termoBuscado === null ? {} : { termo: termoBuscado }),
         });
         return result;
       } catch (err) {

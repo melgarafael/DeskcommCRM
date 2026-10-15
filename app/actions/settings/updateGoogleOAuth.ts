@@ -7,6 +7,7 @@ import { invalidarCredencialDoGoogle } from "@/lib/agenda/google/config";
 import { FORMATO_DO_CLIENT_SECRET } from "@/lib/agenda/google/oauth";
 import { audit } from "@/lib/audit";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 
@@ -155,7 +156,7 @@ export async function updateGoogleOAuth(input: GoogleOAuthInput): Promise<Update
     // e a trilha ficaria sem a linha — sem sintoma em tela nenhuma.
     resourceId: null,
     requestId: cabecalhos.get("x-request-id") ?? undefined,
-    ip: cabecalhos.get("x-forwarded-for") ?? undefined,
+    ip: ipDoCliente(cabecalhos) ?? undefined,
     userAgent: cabecalhos.get("user-agent") ?? undefined,
     actingAsPlatformAdmin: true,
     metadata: {

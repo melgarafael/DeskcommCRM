@@ -116,6 +116,10 @@ export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: str
   const { rows } = await db.query<{ handoff: boolean }>(
     `select (
        c.force_human
+       -- A marca PERMANENTE "sempre atendimento humano" (issue 2379): mesma
+       -- leitura, mesmo efeito — o turno nem começa. force_human é a trava de
+       -- handoff, que a devolução limpa; esta é a que ela não alcança.
+       or c.ai_opt_out
        or exists (
          select 1 from conversations v
          where v.organization_id = $1 and v.contact_id = c.id

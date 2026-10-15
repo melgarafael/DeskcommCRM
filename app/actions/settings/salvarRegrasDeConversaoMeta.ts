@@ -8,6 +8,7 @@
  * DESLIGADA, nunca apagada — a linha guarda o `event_name` que o livro-razão já
  * usa para aquela etapa.
  */
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -138,7 +139,7 @@ export async function salvarRegrasDeConversaoMeta(
     resourceType: "meta_ads_conversion_rules",
     resourceId: null,
     requestId: hdrs.get("x-request-id") ?? undefined,
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
+    ip: ipDoCliente(hdrs) ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
     metadata: {
       ligadas: ligadas.length,

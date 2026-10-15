@@ -347,6 +347,18 @@ jobs:
         if: matrix.parte != 4
         run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/3
 
+      # O MAPA DA SKILL COBRE O MENU? — aviso, nunca reprova.
+      #
+      # A skill deskcomm-operacao ensinava só parte das telas do menu
+      # porque nada comparava o menu (lib/navigation/catalogo.ts) com o
+      # mapa dela.
+      # Este passo confere e AVISA (::warning); continue-on-error garante
+      # o verde. Transformar em bloqueio é decisão do dono do produto.
+      - name: Mapa da skill de operação cobre as telas do menu? (aviso)
+        if: matrix.parte == 1 && github.event_name == 'pull_request'
+        continue-on-error: true
+        run: bash .agents/skills/deskcomm-operacao/scripts/conferir-mapa.sh --ci
+
       # O ACERVO DE `.changes/` CABE NA TELA DA VPS? — e por que fora de PR.
       #
       # A seção que os fragmentos acumulados vão produzir tem o mesmo teto em

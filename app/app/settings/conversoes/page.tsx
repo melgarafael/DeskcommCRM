@@ -345,7 +345,12 @@ export default async function ConversoesPage({
             />
           )}
           {(estado.conectada || vendaPeloCanal) && !etapas.error && regrasMeta && (
-            <RegrasDeConversaoMeta etapas={etapasAbertas} regras={regrasMeta} idioma={idioma} />
+            <RegrasDeConversaoMeta
+              etapas={etapasAbertas}
+              regras={regrasMeta}
+              idioma={idioma}
+              conexaoDireta={estado.conectada}
+            />
           )}
           <FormularioDeConversoesGoogle
             estado={estadoGoogle}

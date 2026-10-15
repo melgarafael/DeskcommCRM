@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import type { RecusaDeEscritaDeAdmin } from "@/lib/auth/recusa-de-escrita-de-admin";
 import { ensureTenantForUser } from "@/lib/auth/provision";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const entradaSchema = z.object({
@@ -100,7 +101,7 @@ export async function decideRegistrationRequest(
     resourceId: pedido.id,
     actingAsPlatformAdmin: true,
     requestId: hdrs.get("x-request-id"),
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent"),
   });
 

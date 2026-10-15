@@ -83,6 +83,8 @@ printf '%s\n' "$*" >> "$DOCKER_LOG"
 # O WAHA que o compose vai puxar: o ambiente vence o .env no compose.
 case " $* " in *" pull"*) printf 'ambiente WAHA_IMAGE=%s\n' "${WAHA_IMAGE:-}" >> "$DOCKER_LOG" ;; esac
 case " $* " in
+  *" imagetools inspect --raw "*) printf '%s' '{"schemaVersion":2,"manifests":[{"platform":{"os":"linux","architecture":"amd64"}},{"platform":{"os":"linux","architecture":"arm64"}}]}'; exit 0 ;;
+  *" imagetools inspect --format "*) printf 'linux/amd64\nlinux/arm64\n'; exit 0 ;;
   # O overlay de build local: build e up são sucesso por definição aqui, e é a
   # diferença entre as DUAS chamadas de `up -d` que o update.sh faz.
   *" -f docker-compose.build.yml "*) exit 0 ;;
@@ -119,7 +121,11 @@ STUB
 # `ultima_release_estavel` não encontra nada e o script morre por outro motivo.
 cat > "$WORK/bin/curl" <<'STUB'
 #!/usr/bin/env bash
-printf '{"tag_name":"v0.9.0"}'
+case "$*" in
+  *ghcr.io/token*) printf '%s' '{"token":"teste"}' ;;
+  *ghcr.io/v2/*) printf 200 ;;
+  *) printf '{"tag_name":"v0.9.0"}' ;;
+esac
 STUB
 # `uname -m` é a ARQUITETURA que o teste escolhe, e é o único uso dublado: o
 # resto de `uname` vai para o binário real. A guarda do #1042 e o veredito

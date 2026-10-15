@@ -252,7 +252,15 @@ export type EventoDoRoteiro = (typeof EVENTOS_DO_ROTEIRO)[number];
  */
 export interface PayloadDoEvento {
   campo?: string;
-  origem?: "validador" | "captura" | "modelo" | "motor" | "gatilho" | "roteador" | "encadeamento";
+  origem?:
+    | "validador"
+    | "captura"
+    | "modelo"
+    | "motor"
+    | "gatilho"
+    | "roteador"
+    | "encadeamento"
+    | "automacao";
   correcao?: boolean;
   esgotadas?: string[];
   proximo_fluxo?: string;
@@ -995,7 +1003,9 @@ export async function iniciarFluxoDeAtendimento(
     contactId: string;
     flowPointerId: string;
     conversationId?: string | null;
-    origem: "gatilho" | "roteador" | "encadeamento";
+    // `automacao` (#2647): a regra de webhooks que arma o roteiro pelo MESMO
+    // caminho do gatilho e do roteador — o evento da trilha diz quem começou.
+    origem: "gatilho" | "roteador" | "encadeamento" | "automacao";
   },
 ): Promise<string | null> {
   const { rows } = await db.query<{

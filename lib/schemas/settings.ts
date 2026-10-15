@@ -13,6 +13,7 @@ import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
+import { mostrarQuandoSchema } from "./mostrar-quando";
 
 /**
  * Os idiomas que a interface REALMENTE serve.
@@ -198,6 +199,19 @@ export const customFieldSchema = z.object({
   options: z
     .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
     .optional(),
+  /**
+   * QUANDO este campo aparece (issue #2728) — "mostrar só quando outro tem
+   * determinado valor".
+   *
+   * A condição é montada no editor de campos do funil (campo + operador +
+   * valor) e lida por `lib/schemas/mostrar-quando.ts`, que os quatro pontos de
+   * renderização consultam. Esconder NÃO apaga valor: quem filtra é a lista
+   * que a tela renderiza, e o `custom_fields` gravado segue intacto.
+   *
+   * Ausente é o caminho de todo funil instalado hoje — a régua continua
+   * opt-in, igual a `obrigatorio_em`.
+   */
+  mostrar_quando: mostrarQuandoSchema.optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 

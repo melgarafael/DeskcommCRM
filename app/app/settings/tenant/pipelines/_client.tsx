@@ -21,6 +21,11 @@ import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
+import {
+  mostrarQuandoSchema,
+  OPERADORES_DE_MOSTRA,
+  type OperadorDeMostra,
+} from "@/lib/schemas/mostrar-quando";
 import { Plus, Trash } from "@/lib/ui/icons";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
@@ -114,6 +119,81 @@ export function comGatilho(
   marcado: boolean,
 ): CustomFieldDef["obrigatorio_em"] {
   return normalizaObrigatorioEm({ ...regra, [gatilho]: marcado });
+}
+
+/**
+ * Valor do `<Select>` que significa "sem condição" (issue #2728).
+ *
+ * Radix recusa `value=""` em `<SelectItem>`, e "mostrar sempre" precisa ser um
+ * item da lista — não um placeholder que some assim que a pessoa escolhe.
+ */
+export const SEM_CONDICAO = "__sem_condicao__";
+
+/** O `<Select>` de valor também precisa de item para "ainda não escolhi". */
+export const SEM_VALOR_DA_CONDICAO = "__sem_valor_da_condicao__";
+
+/**
+ * O operador da condição, resolvendo as DUAS formas que ela pode estar gravada:
+ * a da issue (`{campo, contem: "Outro"}`) e a par que o editor escreve
+ * (`{campo, operador, valor}`). Sem condição, o padrão é `igual` — é o que o
+ * seletor mostra antes de a pessoa montar a regra.
+ */
+export function operadorDaCondicao(condicao: CustomFieldDef["mostrar_quando"]): OperadorDeMostra {
+  if (condicao?.operador) return condicao.operador;
+  return OPERADORES_DE_MOSTRA.find((op) => condicao?.[op] !== undefined) ?? "igual";
+}
+
+/**
+ * O valor da condição como TEXTO: é o que o input devolve, é o que a pessoa
+ * digita, e é o que `campoVisivel` compara (`"2"` e `2` casam na régua de
+ * número lá).
+ */
+export function valorDaCondicao(condicao: CustomFieldDef["mostrar_quando"]): string {
+  const valor =
+    condicao?.operador !== undefined ? condicao?.valor : condicao?.[operadorDaCondicao(condicao)];
+  return valor === undefined || valor === null ? "" : String(valor);
+}
+
+/**
+ * Monta a condição de volta na forma GRAVÁVEL — a que `mostrarQuandoSchema`
+ * valida.
+ *
+ * Sem campo não há condição (a pessoa limpou o seletor, ou escolheu "Sempre
+ * mostrar"). Com campo mas sem valor, a condição fica MEIO montada na tela —
+ * é o estado de quem está digitando — e `normalizaMostrarQuando` a descarta
+ * no save, do mesmo jeito que `obrigatorio_em` sem nenhuma marca é ausência.
+ */
+export function escreveMostrarQuando(
+  condicao: CustomFieldDef["mostrar_quando"],
+  mudanca: { campo?: string; operador?: OperadorDeMostra; valor?: string },
+): CustomFieldDef["mostrar_quando"] {
+  const proximo = {
+    campo: mudanca.campo ?? condicao?.campo ?? "",
+    operador: mudanca.operador ?? operadorDaCondicao(condicao),
+    valor: mudanca.valor ?? valorDaCondicao(condicao),
+  };
+  const campo = proximo.campo.trim();
+  if (campo.length === 0) return undefined;
+  // O item "ainda não escolhi" do seletor de valor não é valor: gravá-lo
+  // deixava a condição completa casando com nada, e o campo sumia para sempre.
+  const valor = proximo.valor === SEM_VALOR_DA_CONDICAO ? "" : proximo.valor.trim();
+  return {
+    campo,
+    operador: proximo.operador,
+    ...(valor.length > 0 ? { valor } : {}),
+  };
+}
+
+/**
+ * A condição só grava quando está COMPLETA — o espelho exato de
+ * `normalizaObrigatorioEm`: meio montada é ausência, e não um save que
+ * recusa a tela inteira com a mensagem de um campo que a pessoa nem terminou
+ * de configurar.
+ */
+export function normalizaMostrarQuando(
+  condicao: CustomFieldDef["mostrar_quando"],
+): CustomFieldDef["mostrar_quando"] {
+  return mostrarQuandoSchema.safeParse(condicao).success ? condicao : undefined;
 }
 
 /**
@@ -277,7 +357,13 @@ function PipelineEditor({
       const { obrigatorio_em: regraBruta, ...semRegra } = limpo;
       const regra = normalizaObrigatorioEm(regraBruta);
       const base = regra ? { ...semRegra, obrigatorio_em: regra } : semRegra;
-      const parsed = customFieldSchema.safeParse(base);
+      // A condição de exibição passa pela MESMA régua (#2728): meio montada é
+      // ausência, e não um save recusado com a mensagem de um campo que a
+      // pessoa nem terminou de configurar.
+      const { mostrar_quando: condicaoBruta, ...semCondicao } = base;
+      const condicao = normalizaMostrarQuando(condicaoBruta);
+      const comCondicao = condicao ? { ...semCondicao, mostrar_quando: condicao } : semCondicao;
+      const parsed = customFieldSchema.safeParse(comCondicao);
       if (!parsed.success) {
         toast.error(parsed.error.issues[0]?.message ?? t("Campo inválido."));
         return;
@@ -601,6 +687,130 @@ function PipelineEditor({
               <p className="text-xs text-muted-foreground">
                 {t(
                   "Sem marca nenhuma este campo nunca é exigido — é o comportamento de sempre. Marcado, ele precisa estar preenchido para o negócio entrar na etapa escolhida ou ser fechado como ganho/perdido.",
+                )}
+              </p>
+            </div>
+            {/* ── QUANDO ESTE CAMPO APARECE (issue #2728) ──────────────────
+                A condição que a ficha do contato, o dossiê e o painel do inbox
+                leem para ESCONDER o campo. Campo + operador + valor, e os
+                operadores são exatamente os três que `campoVisivel` aplica —
+                a tela não promete nenhum outro. Meio montada, a condição não
+                grava (ver `normalizaMostrarQuando`), como `obrigatorio_em`. */}
+            <div className="space-y-1 md:col-span-4">
+              <p className="text-xs font-medium">{t("Mostrar só quando:")}</p>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <Select
+                  value={f.mostrar_quando?.campo || SEM_CONDICAO}
+                  onValueChange={(campo) => {
+                    const next = [...fields];
+                    next[i] = {
+                      ...f,
+                      mostrar_quando:
+                        campo === SEM_CONDICAO
+                          ? undefined
+                          : escreveMostrarQuando(f.mostrar_quando, { campo }),
+                    };
+                    setFields(next);
+                  }}
+                >
+                  <SelectTrigger aria-label={`${t("Campo da condição")} ${f.label || i + 1}`}>
+                    <SelectValue placeholder={t("Sempre mostrar")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={SEM_CONDICAO}>{t("Sempre mostrar")}</SelectItem>
+                    {fields
+                      .filter((outra, j) => j !== i && outra.key.trim().length > 0)
+                      .map((outra) => (
+                        <SelectItem key={outra.key} value={outra.key}>
+                          {outra.label || outra.key}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {f.mostrar_quando?.campo && (
+                  <>
+                    <Select
+                      value={operadorDaCondicao(f.mostrar_quando)}
+                      onValueChange={(op) => {
+                        const next = [...fields];
+                        next[i] = {
+                          ...f,
+                          mostrar_quando: escreveMostrarQuando(f.mostrar_quando, {
+                            operador: op as OperadorDeMostra,
+                          }),
+                        };
+                        setFields(next);
+                      }}
+                    >
+                      <SelectTrigger
+                        aria-label={`${t("Operador da condição")} ${f.label || i + 1}`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="igual">{t("é igual a")}</SelectItem>
+                        <SelectItem value="contem">{t("contém")}</SelectItem>
+                        <SelectItem value="maior_que">{t("é maior que")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {/* O valor vem de lista quando o campo que MANDA na condição
+                        é de lista fechada: digitar "Outro" errado deixaria a
+                        condição montada e quieta, casando com nada. */}
+                    {tipoTemOpcoes(
+                      fields.find((o) => o.key === f.mostrar_quando?.campo)?.type ?? "text",
+                    ) ? (
+                      <Select
+                        value={valorDaCondicao(f.mostrar_quando) || SEM_VALOR_DA_CONDICAO}
+                        onValueChange={(valor) => {
+                          const next = [...fields];
+                          next[i] = {
+                            ...f,
+                            mostrar_quando: escreveMostrarQuando(f.mostrar_quando, { valor }),
+                          };
+                          setFields(next);
+                        }}
+                      >
+                        <SelectTrigger
+                          aria-label={`${t("Valor da condição")} ${f.label || i + 1}`}
+                        >
+                          <SelectValue placeholder={t("Valor da condição")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SEM_VALOR_DA_CONDICAO}>
+                            {t("Valor da condição")}
+                          </SelectItem>
+                          {fields
+                            .find((o) => o.key === f.mostrar_quando?.campo)
+                            ?.options?.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        className="w-40"
+                        aria-label={`${t("Valor da condição")} ${f.label || i + 1}`}
+                        value={valorDaCondicao(f.mostrar_quando)}
+                        onChange={(ev) => {
+                          const next = [...fields];
+                          next[i] = {
+                            ...f,
+                            mostrar_quando: escreveMostrarQuando(f.mostrar_quando, {
+                              valor: ev.target.value,
+                            }),
+                          };
+                          setFields(next);
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Escondido, o campo não aparece no formulário nem é validado como obrigatório, e o valor já gravado continua no registro.",
                 )}
               </p>
             </div>

@@ -90,6 +90,7 @@ export default async function TenantSettingsPage() {
       )}
       {row && alineas && alineasDoArt15Visiveis(row.country) && (
         <Art15Form
+          pais={row.country}
           initial={{
             finalidades: alineas.finalidades ?? "",
             destinatarios: alineas.destinatarios ?? "",

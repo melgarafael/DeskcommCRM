@@ -129,6 +129,11 @@ function makeAdmin(
           // Contrato de `pausarIaDuravelmente`: linha de volta = gravou.
           return Promise.resolve({ data: { id: "conv-1" }, error: null });
         }
+        if (name === "contacts" && mode === "update") {
+          // A devolução limpa `force_human` com a marca permanente no filtro:
+          // linha de volta = contato sem a marca, devolução segue.
+          return Promise.resolve({ data: { id: "contact-1" }, error: null });
+        }
         if (name === "conversations" && mode === "select" && opts.devolucaoFalha && colunas.includes("assigned_to_user_id")) {
           return Promise.resolve({ data: null, error: { message: "conexão caiu" } });
         }

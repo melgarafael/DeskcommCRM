@@ -10650,6 +10650,16 @@ export type Database = {
           ultima_vez: string
         }[]
       }
+      fn_agent_tool_usage_por_termo: {
+        Args: { p_agent_id: string; p_organization_id: string; p_since: string }
+        Returns: {
+          falhas: number
+          termo: string
+          tool_name: string
+          total: number
+          ultima_vez: string
+        }[]
+      }
       fn_agora: { Args: never; Returns: string }
       fn_aplicar_quadro_do_onboarding: {
         Args: {

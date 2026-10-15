@@ -178,7 +178,7 @@ const DETERMINANTES_DE_OBJETO =
  * chamado; "lista de presentes" é compra; "lista de desejos" é vitrine.
  */
 const LISTAS_DE_ENVIO =
-  "contatos?|transmissao|envios?|mensagens|disparos?|divulgacao|promocoes|" +
+  "contatos?|contactos?|transmissao|envios?|mensagens|disparos?|divulgacao|promocoes|" +
   "ofertas|whatsapp|zap|voces|vcs";
 
 /**
@@ -383,6 +383,32 @@ const FRASES_DE_OPT_OUT: readonly RegExp[] = [
   // impossível uma voltar a divergir da outra.
   new RegExp(`\\bsair\\s+d(?:a|essa|esta)\\s+lista\\b${FREIO_DE_LISTA_QUALIFICADA}`, "u"),
   /\bcancelar?\s+(?:a\s+)?(?:inscricao|assinatura)\b/u,
+  // ── PORTUGUÊS DE PORTUGAL: o pronome vem PRESO ao verbo, DEPOIS dele ──────
+  //
+  // Em pt-PT o pronome átono é ENCLÍTICO ("remova-me da lista"), enquanto o
+  // pt-BR o põe ANTES do verbo ("me remova da lista"). O padrão de cima já
+  // cobria a forma brasileira; a forma de cá não casava padrão NENHUM, embora
+  // seja a construção normal de quem escreve de Portugal — a mesma assimetria
+  // que o espanhol tinha com o pronome preso ao infinitivo ("escribirme").
+  //
+  // O verbo sozinho não basta (a lição do cabeçalho): o pedido só existe com o
+  // objeto de ENVIO depois do pronome — "remova-me da lista de contactos",
+  // "excluam-me da lista de envios". "remova-me a dúvida sobre o prazo" e
+  // "removam-me da lista de espera" continuam fora, pelo mesmo freio de lista
+  // qualificada e pela mesma régua do #1607 — ver os controles negativos em
+  // `tests/unit/opt-out-deteccao.test.ts`. `contacto(s)` é a grafia de Portugal
+  // de contato(s): sem ela, "retirem-me da lista de contactos" não passaria o
+  // freio (a lista só tinha a palavra brasileira). E "contactos" sozinho, sem
+  // "lista", NÃO entra: a forma brasileira também exige "lista", e "remova-me
+  // dos contatos do fornecedor" bloqueava aqui o que "me remova dos contatos do
+  // fornecedor" não bloqueia lá.
+  new RegExp(
+    "\\b(?:tira|tire|tirem|tirar|remove|remova|removam|remover|retira|retire|retirem|retiram|retirar|" +
+      "exclui|exclua|excluam|excluir|apaga|apague|apaguem|apagar|elimina|elimine|eliminem|eliminar)" +
+      "-(?:me|nos)\\s+(?:d[ao]s?|dessa|desta|de\\s+sua|da\\s+sua)\\s+" +
+      `lista\\b${FREIO_DE_LISTA_QUALIFICADA}`,
+    "u",
+  ),
   /\b(?:me\s+)?descadastr\w*\b/u,
   /\bdescadastro\b/u,
   // ── espanhol ──────────────────────────────────────────────────────────────
@@ -463,6 +489,12 @@ const FRASES_AMBIGUAS_DE_OPT_OUT: readonly RegExp[] = [
   /\bja\s+(?:disse|falei)\s+que\s+nao\s+(?:quero|tenho\s+interesse)\b/u,
   /\bnao\s+(?:me\s+)?interessa\s+mais\b/u,
   /\bpara\s+com\s+isso\b/u,
+  // "cancelar a subscrição" (pt-PT, #2343) escala e NÃO bloqueia. Em Portugal
+  // a palavra serve às duas coisas: sair das mensagens E cancelar o plano do
+  // ginásio ou da revista — "posso cancelar a subscrição e voltar depois?" é
+  // cliente a perguntar sobre o produto, e `is_blocked` o deixaria sem
+  // resposta. Sem o objeto de comunicação, o humano decide.
+  /\bcancelar?\s+(?:a\s+)?(?:minha\s+)?subscric(?:ao|oes)\b/u,
   // ── espanhol ──────────────────────────────────────────────────────────────
   //
   // Esta lista tinha ZERO entradas em espanhol. Não por decisão: o ambíguo é

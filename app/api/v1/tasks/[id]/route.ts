@@ -23,13 +23,14 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
+import { conferirDemanda } from "@/lib/tarefas/demanda";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
 
 const edicaoSchema = z
   .object({
@@ -40,6 +41,8 @@ const edicaoSchema = z
     status: z.enum(SITUACOES_DA_TAREFA).optional(),
     lead_id: z.string().uuid().nullable().optional(),
     contact_id: z.string().uuid().nullable().optional(),
+    /** Vincular (`<uuid>`) e desvincular (`null`) a demanda do atendimento (#2818). */
+    demanda_id: z.string().uuid().nullable().optional(),
     assigned_to: z.string().uuid().nullable().optional(),
   })
   // PATCH vazio gravaria só o `updated_at` e devolveria 200: a tela diria
@@ -87,6 +90,25 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
 
   const supabase = await createClient();
 
+  if (parsed.data.demanda_id) {
+    // A chave estrangeira não passa pela RLS: sem esta conferência, a demanda
+    // de outra organização gravaria sem erro. A régua está em `lib/tarefas/demanda.ts`.
+    const veredito = await conferirDemanda(supabase, authz.org.orgId, parsed.data.demanda_id);
+    if (veredito === "falha_na_consulta") {
+      return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+    }
+    if (veredito === "fora_da_organizacao") {
+      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
+        requestId,
+      });
+    }
+    if (veredito === "encerrada") {
+      return fail("state_conflict", t("Esta demanda já foi encerrada. Crie a tarefa numa demanda em andamento."), 409, {
+        requestId,
+      });
+    }
+  }
+
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
@@ -110,7 +132,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
       return fail("not_found", t("Tarefa não encontrada."), 404, { requestId });
     }
     if (error.code === "23503") {
-      return fail("validation_failed", t("O negócio ou contato vinculado não existe."), 422, {
+      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
         requestId,
       });
     }

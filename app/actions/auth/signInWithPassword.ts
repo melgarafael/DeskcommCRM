@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { safeNext } from "@/lib/auth/safe-next";
 
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
 import { loginSchema, type LoginInput } from "@/lib/auth/schemas";
 import { audit, hashEmail } from "@/lib/audit";
@@ -45,7 +46,7 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
   const supabase = await createClient();
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const ip = ipDoCliente(hdrs);
   const userAgent = hdrs.get("user-agent") ?? null;
 
   // Antes de falar com o GoTrue: sem isto, tentar senha era de graça e

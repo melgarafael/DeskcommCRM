@@ -74,7 +74,7 @@ export function LgpdRequestDetail({ id, hrefDaLista = "/app/lgpd/requests" }: Pr
     );
   }
 
-  const { request, audit_trail, signed_pdf_url } = data.data;
+  const { request, audit_trail, signed_pdf_url, titular } = data.data;
 
   const shortId = request.id.slice(0, 8);
   const typeLabel = t(TYPE_LABELS[request.request_type] ?? request.request_type);
@@ -118,7 +118,7 @@ export function LgpdRequestDetail({ id, hrefDaLista = "/app/lgpd/requests" }: Pr
         </p>
       </div>
 
-      {/* PDF download if completed */}
+      {/* PDF download: delivered (completed) or for the operator to deliver by hand (pending_review) */}
       {signed_pdf_url && (
         <div className="rounded-md border bg-muted/30 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-4">
           <span>{t("Relatório de exportação disponível (expira em 72h).")}</span>
@@ -137,6 +137,7 @@ export function LgpdRequestDetail({ id, hrefDaLista = "/app/lgpd/requests" }: Pr
           requestId={request.id}
           requestType={request.request_type}
           status={request.status}
+          titular={titular}
         />
       </div>
 

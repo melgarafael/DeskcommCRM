@@ -42,6 +42,14 @@ interface Captura {
 interface CenarioBanco {
   /** null = conversa não encontrada / de outra org. */
   conversa: Record<string, unknown> | null;
+  /**
+   * A linha de `contacts` que a retomada lê antes de escrever — é ali que mora
+   * `ai_opt_out`, a marca permanente "sempre atendimento humano" (issue 2379).
+   * Ausente = contato sem a marca (o caso que já funcionava).
+   */
+  contato?: Record<string, unknown> | null;
+  /** Falha na LEITURA do contato — a retomada tem de recusar sem escrever nada. */
+  erroAoLerContato?: { message: string } | null;
   /** 0 linhas no UPDATE da conversa = alguém assumiu na corrida. */
   updateDaConversaCasa?: boolean;
   chamados?: Array<Record<string, unknown>>;
@@ -50,8 +58,15 @@ interface CenarioBanco {
   checkpointAnterior?: Record<string, unknown> | null;
   negocios?: Array<Record<string, unknown>>;
   erroDoEmitEvent?: { message: string } | null;
-  /** Falha no UPDATE de `contacts.force_human` — o passo (3) de `retomada.ts`. */
+  /** Falha no UPDATE de `contacts.force_human` — a primeira escrita de `retomada.ts`. */
   erroAoLimparForceHuman?: { message: string } | null;
+  /**
+   * A marca "sempre atendimento humano" como está NA HORA DA ESCRITA — pode
+   * divergir de `contato.ai_opt_out` (a leitura): é a marca ligada entre as duas.
+   * O dublê só recusa a linha se o UPDATE trouxer o filtro `ai_opt_out = false`,
+   * como o Postgres faria.
+   */
+  marcaNaEscrita?: boolean;
 }
 
 /**
@@ -62,10 +77,14 @@ interface CenarioBanco {
 function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
   const from = (tabela: string) => {
     let ehUpdate = false;
+    const filtros: Array<[string, unknown]> = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       select: () => chain,
-      eq: () => chain,
+      eq: (coluna: string, valor: unknown) => {
+        filtros.push([coluna, valor]);
+        return chain;
+      },
       is: () => chain,
       in: () => chain,
       order: () => chain,
@@ -80,12 +99,26 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         return Promise.resolve({ data: null, error: null });
       },
       maybeSingle: () => {
+        if (ehUpdate && tabela === "contacts") {
+          if (cenario.erroAoLimparForceHuman) {
+            return Promise.resolve({ data: null, error: cenario.erroAoLimparForceHuman });
+          }
+          const condicionado = filtros.some(([c, v]) => c === "ai_opt_out" && v === false);
+          const casa = !(condicionado && cenario.marcaNaEscrita === true);
+          return Promise.resolve({ data: casa ? { id: CONTATO } : null, error: null });
+        }
         if (ehUpdate) {
           const casa = cenario.updateDaConversaCasa ?? true;
           return Promise.resolve({ data: casa ? { id: CONV } : null, error: null });
         }
         if (tabela === "conversations") {
           return Promise.resolve({ data: cenario.conversa, error: null });
+        }
+        if (tabela === "contacts") {
+          return Promise.resolve({
+            data: cenario.contato ?? null,
+            error: cenario.erroAoLerContato ?? null,
+          });
         }
         if (tabela === "lead_checkpoints") {
           return Promise.resolve({ data: cenario.checkpointAnterior ?? null, error: null });
@@ -96,12 +129,6 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         return Promise.resolve({ data: null, error: null });
       },
       then: (res: (v: unknown) => unknown) => {
-        if (ehUpdate && tabela === "contacts" && cenario.erroAoLimparForceHuman) {
-          return Promise.resolve({
-            data: null,
-            error: cenario.erroAoLimparForceHuman,
-          }).then(res);
-        }
         const listas: Record<string, unknown[]> = {
           agent_cases: cenario.chamados ?? [],
           agent_case_events: cenario.eventosDeChamado ?? [],
@@ -400,7 +427,10 @@ describe("devolver o atendimento ao agente", () => {
   it("alguém assumiu na corrida: reporta conflito SEM detalhe — é esse o discriminador", async () => {
     const cap = novaCaptura();
     const res = await retomar(
-      cenarioComAtendimentoHumano({ updateDaConversaCasa: false }),
+      cenarioComAtendimentoHumano({
+        updateDaConversaCasa: false,
+        contato: { id: CONTATO, ai_opt_out: false, force_human: true },
+      }),
       cap,
     );
     expect(res).toMatchObject({ ok: false, erro: "assignment_conflict" });
@@ -411,8 +441,13 @@ describe("devolver o atendimento ao agente", () => {
     // calado lá — ver o caso irmão logo abaixo.
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.detalhe).toBeUndefined();
-    // E não chega a mexer no contato: devolver metade seria pior que não devolver.
-    expect(cap.updates.filter((u) => u.tabela === "contacts")).toEqual([]);
+    // A trava é limpa primeiro (é a escrita que confere a marca) e, com a
+    // devolução falhando depois, VOLTA ao que era: devolver metade seria pior
+    // que não devolver.
+    expect(cap.updates.filter((u) => u.tabela === "contacts")).toEqual([
+      { tabela: "contacts", valores: { force_human: false } },
+      { tabela: "contacts", valores: { force_human: true } },
+    ]);
   });
 
   it("erro ao limpar force_human volta como conflito COM detalhe — não é corrida, é defeito", async () => {
@@ -422,12 +457,14 @@ describe("devolver o atendimento ao agente", () => {
       cap,
     );
     // Mesmo código de erro da corrida — o tipo `RetomadaFalha` não os separa —,
-    // mas este chega DEPOIS de a conversa já ter virado `assignee_kind='ai'`:
-    // ela saiu da fila humana e a trava que cala os três guards ficou de pé.
-    // Quem classifica só pelo `erro` trata os dois igual e perde este.
+    // mas é defeito de banco, não disputa: quem classifica só pelo `erro` trata
+    // os dois igual e perde este.
     expect(res).toMatchObject({ ok: false, erro: "assignment_conflict" });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.detalhe).toBe("deadlock detected");
+    // É a PRIMEIRA escrita: falhando, a conversa não sai da fila humana.
+    expect(cap.updates.filter((u) => u.tabela === "conversations")).toEqual([]);
+    expect(cap.rpc).toEqual([]);
     // Controle positivo do dublê: a escrita SAIU (foi o banco que a recusou).
     // Sem isto, um dublê que simplesmente não chamasse o UPDATE daria o mesmo
     // vermelho por outro motivo.
@@ -464,5 +501,97 @@ describe("devolver o atendimento ao agente", () => {
     );
     const naConversa = cap.updates.find((u) => u.tabela === "conversations");
     expect(naConversa?.valores.status).toBe("closed");
+  });
+
+  // ─── A TRAVA PERMANENTE "SEMPRE ATENDIMENTO HUMANO" (issue 2379) ──────────
+  //
+  // O defeito que estes casos prendem: a devolução — CLICADA ou AUTOMÁTICA —
+  // limpava `contacts.force_human` e trazia a conversa de volta para a IA de um
+  // contato que a operação marcou para ficar com humano para sempre. A marca é
+  // `contacts.ai_opt_out` (migration 0624), separada da trava de handoff, e é
+  // lida ANTES de qualquer escrita: com ela ligada, a função recusa e o estado
+  // volta intacto.
+  //
+  // Escritos por EFEITO OBSERVÁVEL, pelo mesmo motivo do resto do arquivo: um
+  // caso que só pedisse "recusou" continuaria verde se alguém recusasse DEPOIS
+  // de já ter limpado a trava — que é exatamente o formato do defeito original.
+
+  it("contato com a trava permanente NÃO é devolvido à IA: recusa sem tocar em nada", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ contato: { id: CONTATO, ai_opt_out: true } }),
+      cap,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
+    // NADA escrito: nem a conversa (que voltaria para a IA), nem o contato (que
+    // perderia force_human), nem a autorização do allowlist.
+    expect(cap.updates, "escreveu estado com a trava ligada").toEqual([]);
+    expect(cap.inserts).toEqual([]);
+    expect(cap.rpc.map((c) => c.fn), "emitiu sinal de retomada").toEqual([]);
+  });
+
+  it("devolução AUTOMÁTICA (cron) respeita a MESMA trava — é o caminho que a issue mediu", async () => {
+    const cap = novaCaptura();
+    const cron: Actor = { type: "webhook_source", id: "cron:handoff-devolucao" };
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ contato: { id: CONTATO, ai_opt_out: true } }),
+      cap,
+      cron,
+      { automatica: { minutos: 60 } },
+    );
+
+    // O cron chama a MESMA função — o conserto é um só para os dois caminhos.
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
+    expect(cap.updates).toEqual([]);
+    expect(cap.rpc).toEqual([]);
+  });
+
+  it("contato SEM a trava permanente continua sendo devolvido — o controle do mesmo cenário", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ contato: { id: CONTATO, ai_opt_out: false } }),
+      cap,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(cap.updates.filter((u) => u.tabela === "contacts")).toContainEqual({
+      tabela: "contacts",
+      valores: { force_human: false },
+    });
+  });
+
+  it("marca ligada ENTRE a leitura e a escrita: a escrita confere a marca e nada é devolvido", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({
+        // A leitura viu o contato sem a marca; quando a escrita chega, ela está ligada.
+        contato: { id: CONTATO, ai_opt_out: false, force_human: true },
+        marcaNaEscrita: true,
+      }),
+      cap,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
+    // A única escrita tentada é a condicionada (casou 0 linhas no banco). Dono,
+    // silêncio, autorização, sinal e linha do tempo ficam intocados.
+    expect(cap.updates).toEqual([{ tabela: "contacts", valores: { force_human: false } }]);
+    expect(cap.inserts).toEqual([]);
+    expect(cap.rpc).toEqual([]);
+  });
+
+  it("leitura do contato falhando: fail-closed — recusa sem escrever nada", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ erroAoLerContato: { message: "conexao caiu" } }),
+      cap,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contact_state_unreadable");
+    expect(cap.updates).toEqual([]);
   });
 });

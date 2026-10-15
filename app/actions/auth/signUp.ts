@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
 import {
   signupSchema,
@@ -94,7 +95,7 @@ export async function signUp(
   const hdrs = await headers();
   const origin = hdrs.get("origin") ?? env.NEXT_PUBLIC_APP_URL;
   const requestId = hdrs.get("x-request-id");
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const ip = ipDoCliente(hdrs);
   const userAgent = hdrs.get("user-agent") ?? null;
 
   // Criar conta é fluxo raro por pessoa: teto baixo por IP evita fábrica de

@@ -46,6 +46,36 @@ export function faltouNomeDeContato(body: string, contact: TemplateContact): boo
   return VARIAVEIS_DE_NOME.some((key) => regexDaVariavel(key).test(body));
 }
 
+/**
+ * Motivo FIXO que acompanha o botão quando a RESPOSTA é barrada pelo curinga
+ * literal (#2744). Um literal, não dois: o gate (a trava de envio) e a faixa
+ * visível leem daqui, e quem vê o motivo vê exatamente a razão pela qual o
+ * código barrou. A faixa é persistente (não o toast que some) porque o operador
+ * precisa editar o texto antes de mandar — e o motivo tem de continuar na tela
+ * enquanto ele edita.
+ */
+export const MOTIVO_CURINGA_LITERAL =
+  "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.";
+
+/**
+ * O motivo pelo qual a RESPOSTA ao cliente não pode sair — `null` quando pode.
+ *
+ * Só a RESPOSTA: a nota interna nunca chega ao cliente e continua sendo o lugar
+ * onde o atendente registra por que a conversa esfriou. É a mesma fronteira do
+ * `janelaFechada` no compositor (#2744, opção A).
+ *
+ * O gate é sobre o literal SOBREVIVENTE, não sobre a string `{{`: contato com
+ * nome (ou `display_name` de gente) não sofre bloqueio nenhum — `{{nome}}`
+ * resolve e some do texto. Chave desconhecida (`{{codigo}}`) também não conta.
+ * Por isso delega para `faltouNomeDeContato`, que já carrega essa regra.
+ */
+export function motivoDoCuringaLiteral(
+  body: string,
+  contact: TemplateContact,
+): string | null {
+  return faltouNomeDeContato(body, contact) ? MOTIVO_CURINGA_LITERAL : null;
+}
+
 export function interpolateTemplate(body: string, contact: TemplateContact): string {
   const full = nomeResolvido(contact);
   const first = full.split(/\s+/)[0] ?? "";

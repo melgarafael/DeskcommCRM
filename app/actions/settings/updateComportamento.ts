@@ -10,6 +10,7 @@ import {
   carregarComportamentoDaInstalacao,
   gravarComportamentoDaInstalacao,
 } from "@/lib/instalacao/comportamento-servidor";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 
 export type UpdateComportamentoResult = { ok: true } | { ok: false; error: string };
 
@@ -66,7 +67,7 @@ export async function updateComportamento(
     resourceType: "platform_settings",
     metadata: { de: anterior, para: parsed.data },
     requestId: hdrs.get("x-request-id"),
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent"),
   });
 

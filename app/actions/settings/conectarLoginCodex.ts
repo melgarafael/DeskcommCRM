@@ -18,6 +18,7 @@ import { audit } from "@/lib/audit";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { env } from "@/lib/env";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -182,7 +183,7 @@ export async function conectarLoginCodex(
     resourceId: gravado.id,
     metadata: { provedor: "openai-assinatura" },
     requestId: hdrs.get("x-request-id"),
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent"),
   });
 
@@ -224,7 +225,7 @@ export async function desconectarLoginCodexAgora(): Promise<DesconectarLoginCode
       resourceId: linha.id,
       metadata: { provedor: "openai-assinatura" },
       requestId: hdrs.get("x-request-id"),
-      ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ip: ipDoCliente(hdrs),
       userAgent: hdrs.get("user-agent"),
     });
   }

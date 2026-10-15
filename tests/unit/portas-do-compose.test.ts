@@ -34,10 +34,10 @@ import { describe, expect, it } from "vitest";
  *
  * ─── ESCOPO ──────────────────────────────────────────────────────────────────
  *
- * `docker-compose.prod.yml` e `docker-compose.traefik.yml` — os que rodam na
- * VPS do cliente. O `docker-compose.yml` (dev) está FORA de propósito: publicar
- * portas na máquina de quem desenvolve é justamente o que ele existe para
- * fazer.
+ * `docker-compose.prod.yml`, `docker-compose.traefik.yml` e
+ * `docker-compose.cloudflared.yml` — os que rodam na VPS do cliente. O
+ * `docker-compose.yml` (dev) está FORA de propósito: publicar portas na máquina
+ * de quem desenvolve é justamente o que ele existe para fazer.
  */
 
 const RAIZ = process.cwd();
@@ -129,7 +129,11 @@ function semComentarios(bloco: string): string {
     .join("\n");
 }
 
-const ARQUIVOS = ["docker-compose.prod.yml", "docker-compose.traefik.yml"] as const;
+const ARQUIVOS = [
+  "docker-compose.prod.yml",
+  "docker-compose.traefik.yml",
+  "docker-compose.cloudflared.yml",
+] as const;
 
 const SERVICOS = new Map<string, Map<string, string>>(
   ARQUIVOS.map((f) => [f, lerServicos(fs.readFileSync(path.join(RAIZ, f), "utf8"))]),
@@ -158,6 +162,15 @@ describe("a fronteira de rede do que o cliente instala", () => {
     const traefik = [...SERVICOS.get("docker-compose.traefik.yml")!.keys()];
     expect(traefik, "o override do Traefik parou de declarar serviços").toContain("app");
     expect(traefik).toContain("caddy");
+
+    // O override do Cloudflare Tunnel sobe o `cloudflared` e desliga o `caddy`.
+    // Sem esta guarda, um parser que parasse de enxergar o arquivo deixaria os
+    // casos de porta/host/label verdes por não terem medido nada.
+    const cloudflared = [...SERVICOS.get("docker-compose.cloudflared.yml")!.keys()];
+    expect(cloudflared, "o override do Cloudflare Tunnel parou de declarar serviços").toContain(
+      "cloudflared",
+    );
+    expect(cloudflared).toContain("caddy");
   });
 
   it("só o proxy reverso publica porta no host", () => {
@@ -255,6 +268,19 @@ describe("a fronteira de rede do que o cliente instala", () => {
         `publica por LABEL, sem porta nenhuma — é exposição à internet que o teste de\n` +
         `\`ports:\` não enxerga. Só o \`app\` tem superfície feita para o público.`,
     ).toEqual([]);
+  });
+
+  it("o override do Cloudflare Tunnel desliga o Caddy por profile", () => {
+    // Atrás de NAT nada publica porta: sem o profile, o Caddy tentaria subir e
+    // pegar 80/443 (e o `up -d` do compose o criaria em `Created`, falhando o
+    // bind). O mesmo truque do docker-compose.traefik.yml/npm.yml.
+    const bloco = SERVICOS.get("docker-compose.cloudflared.yml")!.get("caddy");
+    expect(bloco, "o serviço 'caddy' sumiu do override do Cloudflare Tunnel").toBeDefined();
+    expect(
+      semComentarios(bloco!),
+      `'caddy' perdeu o \`profiles:\` no override do Cloudflare Tunnel. Sem ele o Caddy\n` +
+        `tenta publicar 80/443 e briga com o próprio túnel (que não precisa de porta).`,
+    ).toMatch(/^\s{4}profiles:/m);
   });
 
   it("o serviço de chamada de voz nasce num profile desligado", () => {

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Nomes internos das conexões",
+    "subtitle": "Rótulos reconhecíveis no CRM sem alterar o perfil público no provedor",
+    "output": "nomes-internos-das-conexoes.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Operação" },
+    { "id": "servidor", "label": "Servidor" },
+    { "id": "banco", "label": "Persistência" },
+    { "id": "consumidores", "label": "Consumo" }
+  ],
+  "mainPath": ["cartoes", "dialogo", "rota", "sessao", "listas"],
+  "nodes": [
+    { "id": "cartoes", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões: WhatsApp, parceiro e redes sociais" },
+    { "id": "dialogo", "lane": "operador", "col": 2, "type": "frontend", "label": "RenomearConexao — nome interno, até 80 caracteres" },
+    { "id": "rota", "lane": "servidor", "col": 3, "type": "route", "label": "PATCH /api/v1/channel-sessions/[id]/name — admin e tenant ativo" },
+    { "id": "sessao", "lane": "banco", "col": 4, "type": "database", "label": "channel_sessions.display_name" },
+    { "id": "audit", "lane": "banco", "col": 4, "type": "database", "label": "api_audit_log / channel.renamed" },
+    { "id": "listas", "lane": "consumidores", "col": 5, "type": "frontend", "label": "Cartões e seletores que usam channelLabel" },
+    { "id": "provedores", "lane": "consumidores", "col": 5, "type": "external", "label": "Meta, WhatsApp e provedor social — nomes públicos preservados" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "cartoes", "to": "dialogo", "label": "abre Renomear" },
+    { "id": "e2", "from": "dialogo", "to": "rota", "label": "envia nome validado" },
+    { "id": "e3", "from": "rota", "to": "sessao", "label": "atualiza somente a sessão da organização" },
+    { "id": "e4", "from": "rota", "to": "audit", "label": "registra nome anterior e novo" },
+    { "id": "e5", "from": "sessao", "to": "listas", "label": "refetch mostra o novo rótulo" },
+    { "id": "e6", "from": "listas", "to": "cartoes", "label": "operador confirma a mudança na mesma tela" },
+    { "id": "e7", "from": "rota", "to": "provedores", "label": "não envia alteração externa" }
+  ]
+}

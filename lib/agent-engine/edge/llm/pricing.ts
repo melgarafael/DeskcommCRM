@@ -6,9 +6,10 @@
  * https://developers.openai.com/api/docs/pricing (OpenAI, tabela Standard, conferida em
  * 23/09/2026). Google: entrada/saída do `ai_pricing` do catálogo curado; leitura de cache de
  * https://ai.google.dev/gemini-api/docs/pricing, conferida em 02/10/2026 (ver o bloco Gemini).
- * Cache da Anthropic: leitura = 0.1× a entrada; gravação = 1.25× no TTL de 5 minutos e 2× no de
- * 1 hora — os dois TTLs que o knob `LLM_CACHE_TTL` aceita (`lib/agent-engine/env.ts`),
- * e é por isso que `costCents` recebe o TTL em vigor em vez de supor a doutrina.
+ * Cache da Anthropic: leitura = 0.1× a entrada (0.05× no Sonnet 5.5 e no Opus 5.5); gravação =
+ * 1.25× no TTL de 5 minutos e 2× no de 1 hora — os dois TTLs que o knob `LLM_CACHE_TTL` aceita
+ * (`lib/agent-engine/env.ts`), e é por isso que `costCents` recebe o TTL em vigor em vez de
+ * supor a doutrina.
  *
  * Modelo fora da tabela → custo NULL (desconhecido): mais honesto que inventar 0 —
  * o budget soma coalesce(cost_cents, 0), então modelo sem preço não consome teto;
@@ -51,6 +52,13 @@ interface Preco {
 
 /** USD por MILHÃO de tokens, por id EXATO de modelo (o sufixo de data é tolerado). */
 const USD_PER_MTOK: Record<string, Preco> = {
+  // Família 5.5, conferida em platform.claude.com/docs/en/about-claude/pricing em 11/10/2026.
+  // Fora da tabela: o Haiku 5.5 cobra 5× (0.5 / 2.5, cache 0.05 / 0.625 / 1) quando o prompt
+  // de UMA requisição passa de 100 mil tokens. O `usage` que chega aqui soma os passos do laço
+  // de ferramentas, então não diz o tamanho de cada requisição — a faixa não é calculável aqui.
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.2 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4 },
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8 },
   'claude-sonnet-5': { input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4 },
   'claude-sonnet-4-6': { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6 },
   'claude-sonnet-4-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6 },

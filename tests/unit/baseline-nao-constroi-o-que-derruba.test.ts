@@ -455,6 +455,12 @@ const CONCESSOES_ACEITAS = new Map<string, string>([
       "contrato.",
   ],
   [
+    "lgpd_requests :: anon",
+    "O snapshot concede ALL e a 0672 revoga I/U/D/T de anon e authenticated: a escrita do pedido de dados é " +
+      "do servidor (webhook, workers e aprovação, todos com a chave de serviço). A revogação mora colada no " +
+      "grant desde a mesma migration; estreitar o grant mudaria o ACL FINAL (SELECT/REFERENCES/TRIGGER ficam).",
+  ],
+  [
     "idempotency_keys :: anon",
     "O snapshot concede ALL e o hardening revoga TRUNCATE (que a RLS não alcança). Estreitar a concessão " +
       "mudaria o ACL FINAL " +
