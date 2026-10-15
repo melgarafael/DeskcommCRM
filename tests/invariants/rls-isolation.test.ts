@@ -325,6 +325,16 @@ beforeAll(() => {
             values (v_org, 'RLS-' || v_org::text, 'Produto de invariante', 100);
         end if;
 
+        if not exists (select 1 from public.catalog_product_presentations where organization_id = v_org) then
+          insert into public.catalog_product_presentations
+            (organization_id, catalog_product_id, text_content)
+          select organization_id, id, 'Apresentação de invariante'
+            from public.catalog_products
+           where organization_id = v_org
+           order by id
+           limit 1;
+        end if;
+
         -- crm_tasks (migration 0210): o que o time combinou fazer, com prazo.
         -- Entra COM o vínculo de lead porque a tarefa presa a um negócio é o
         -- caso que cruza duas tabelas tenant-aware — se a policy vazasse, o
@@ -619,6 +629,10 @@ export const TABLES = [
   // exige `manager` — esse segundo eixo é medido em
   // `tests/invariants/catalogo-so-gestor-muda-preco.test.ts`, não aqui.
   "catalog_products",
+  // migration 0647 — a apresentação é um agregado 1:1 do item e precisa
+  // permanecer visível somente para membros da organização dona do catálogo.
+  // O gate de escrita (manager+) é um eixo separado desta prova de leitura.
+  "catalog_product_presentations",
   // migration 0210 — as tarefas do CRM. A leitura é org-scoped sem gate de papel
   // (o `viewer` precisa ver o que o time combinou); a ESCRITA exige `agent`, e
   // esse segundo eixo NÃO é medido aqui — o usuário semeado é `agent`, então o
