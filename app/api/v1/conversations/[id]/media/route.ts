@@ -13,6 +13,7 @@ import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
+import { normalizarVideoParaWhatsApp } from "@/lib/messaging/media/video-transcode";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // autoritativo continua o file.size pós-parse (Content-Length pode mentir).
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (declared > MAX_MEDIA_BYTES + 1_048_576) {
-    return fail("payload_too_large", t("Arquivo acima de 50MB."), 413, { requestId });
+    return fail("payload_too_large", t("Arquivo acima de 1GB."), 413, { requestId });
   }
 
   const form = await req.formData().catch(() => null);
@@ -94,13 +95,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // Nota de voz gravada no browser sai em `webm` (o Chrome não grava ogg), e o
   // canal oficial recusa depois de aceitar — `131053 Media upload error`, que
-  // culpa a URL quando o problema é o container. Converter AQUI faz todo canal
-  // receber um arquivo válido, e o mesmo áudio poder ser reenviado depois sem
-  // repetir o trabalho. Falha devolve o original: o canal que converte sozinho
-  // continua funcionando como sempre.
-  const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime });
-  const mimeFinal = audio.mime;
-  const buffer = audio.buffer;
+  // culpa a URL quando o problema é o container. Converter AQUI (apenas quando for áudio)
+  // faz todo canal receber um arquivo válido, sem corromper vídeos ou documentos.
+  let mimeFinal = mime;
+  let buffer = bruto;
+  if (verdict.kind === "audio") {
+    const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime });
+    mimeFinal = audio.mime;
+    buffer = Buffer.from(audio.buffer);
+  } else if (verdict.kind === "video") {
+    const video = await normalizarVideoParaWhatsApp({ buffer: bruto, mime });
+    mimeFinal = video.mime;
+    buffer = Buffer.from(video.buffer);
+  }
 
   const storagePath = `${activeOrg.orgId}/${conversationId}/out-${randomUUID()}.${extFromMime(mimeFinal)}`;
   const admin = createAdminClient();

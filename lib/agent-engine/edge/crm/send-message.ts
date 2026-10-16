@@ -64,12 +64,14 @@ export interface SendMessageInput {
   template?: { name: string; language: string; values: Record<string, string> };
   /** Presente = imagem da pasta da conversa em `whatsapp-media`; `body` é a legenda. */
   media?: { storagePath: string; mime: string };
+  /** Presente = produto do catálogo Meta/WhatsApp; `body` é a mensagem de apoio opcional. */
+  product?: { productRetailerId: string; catalogId?: string };
 }
 
 /**
- * O corpo que o handler de mensagens recebe: texto, template ou imagem da
+ * O corpo que o handler de mensagens recebe: texto, template, imagem ou produto da
  * conversa. Exportado para o teste — o tipo decide o caminho no handler, e um
- * `type` errado manda a foto como texto sem ninguém ver.
+ * `type` errado manda a foto ou produto como texto sem ninguém ver.
  */
 export function corpoDoEnvio(
   input: SendMessageInput,
@@ -77,23 +79,37 @@ export function corpoDoEnvio(
 ): Parameters<typeof sendMessageHandler>[2] {
   return {
     conversation_id: input.conversationId,
-    ...(input.template
+    ...(input.product
       ? {
-          type: 'template' as const,
-          template_name: input.template.name,
-          template_language: input.template.language,
-          template_values: input.template.values,
+          type: 'product' as const,
+          product_retailer_id: input.product.productRetailerId,
+          ...(input.product.catalogId ? { catalog_id: input.product.catalogId } : {}),
         }
-      : input.media
+      : input.template
         ? {
-            type: 'image' as const,
-            media_storage_path: input.media.storagePath,
-            media_mime: input.media.mime,
+            type: 'template' as const,
+            template_name: input.template.name,
+            template_language: input.template.language,
+            template_values: input.template.values,
           }
-        : { type: 'text' as const }),
-    // Foto sem legenda vai sem `body`: o schema do envio pede corpo não vazio.
-    ...(input.body !== '' || !input.media ? { body: input.body } : {}),
-    metadata: { idempotency_key: idempotencyKey },
+        : input.media
+          ? {
+              type: 'image' as const,
+              media_storage_path: input.media.storagePath,
+              media_mime: input.media.mime,
+            }
+          : { type: 'text' as const }),
+    // Foto ou produto sem legenda vai sem `body` se estiver vazio
+    ...(input.body !== '' || (!input.media && !input.product) ? { body: input.body } : {}),
+    metadata: {
+      idempotency_key: idempotencyKey,
+      ...(input.product
+        ? {
+            product_retailer_id: input.product.productRetailerId,
+            ...(input.product.catalogId ? { catalog_id: input.product.catalogId } : {}),
+          }
+        : {}),
+    },
   };
 }
 

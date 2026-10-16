@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
+import { ProductPickerDialog } from "@/components/inbox/composer/ProductPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
@@ -31,6 +32,7 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia, type DestinoDoUpload } from "@/hooks/inbox/useUploadMedia";
+import { optimizeFilesForUpload } from "@/lib/inbox/media-compressor";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
 import {
   faltouNomeDeContato,
@@ -144,7 +146,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // O aviso some no primeiro ENVIO: depois do clique o rascunho foi usado, e
   // deixar a faixa prometendo texto que já saiu seria mentira de tela.
   const [rascunhoUsado, setRascunhoUsado] = useState(false);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
   /**
    * O modo em que o arquivo foi ESCOLHIDO, congelado na escolha — e não o modo
    * em que o diálogo está aberto agora.
@@ -157,6 +160,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    */
   const [pendingEm, setPendingEm] = useState<"reply" | "note">("reply");
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">(initialMode);
   /**
@@ -209,10 +213,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
   const respostaBarrada = isDisabled || (mode === "reply" && !!janelaFechada);
 
-  /** Escolhe o arquivo e MARCA o modo da escolha (ver `pendingEm`). */
-  function escolherArquivo(file: File) {
-    setPendingFile(file);
+  /** Escolhe o(s) arquivo(s) e MARCA o modo da escolha (ver `pendingEm`). */
+  function escolherArquivos(files: File[]) {
+    if (files.length === 0) return;
+    setPendingFiles((prev) => [...prev, ...files]);
     setPendingEm(mode);
+  }
+
+  function escolherArquivo(file: File) {
+    escolherArquivos([file]);
   }
 
   function autoresize() {
@@ -383,7 +392,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * a conversa esfriou).
    */
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    if (respostaBarrada || pendingFile) return;
+    if (respostaBarrada || pendingFiles.length > 0) return;
+    const files = Array.from(e.clipboardData.files ?? []).filter((f) => f.size > 0 && f.type.startsWith("image/"));
+    if (files.length > 0) {
+      e.preventDefault();
+      escolherArquivos(files);
+      return;
+    }
     const imagem = imagemDoClipboard(e.clipboardData, new Date());
     if (!imagem) return; // colagem de texto segue o caminho normal do browser
     e.preventDefault();
@@ -558,7 +573,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           <AttachMenu
             disabled={respostaBarrada}
             onPick={escolherArquivo}
+            onPickFiles={escolherArquivos}
             onPickContact={mode === "reply" ? () => setContactPickerOpen(true) : undefined}
+            onPickProduct={mode === "reply" ? () => setProductPickerOpen(true) : undefined}
           />
           <EmojiButton
             disabled={isDisabled}
@@ -639,7 +656,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             <Button
               type="button"
               size="icon"
-              className="h-9 w-9 shrink-0"
+              className="h-10 w-10 shrink-0 sm:h-9 sm:w-9"
               onClick={handleSubmit}
               disabled={(mode === "note" ? isDisabled : respostaBarrada) || !text.trim()}
               aria-label={t("Enviar")}
@@ -652,55 +669,62 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         </div>
       </div>
       <AttachmentPreviewDialog
-        file={pendingFile}
-        sending={upload.isPending || send.isPending || createNote.isPending}
-        onCancel={() => setPendingFile(null)}
+        files={pendingFiles}
+        uploadProgress={uploadProgress}
+        sending={upload.isPending || send.isPending || createNote.isPending || uploadProgress !== null}
+        onCancel={() => {
+          setPendingFiles([]);
+          setUploadProgress(null);
+        }}
+        onRemoveFile={(index) => {
+          setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+        }}
+        onAddFiles={(novos) => {
+          setPendingFiles((prev) => [...prev, ...novos]);
+        }}
         onSend={async (caption) => {
-          if (!pendingFile) return;
-          // A BIFURCAÇÃO (#1863, F3) — e ela é decidida pelo modo CONGELADO NA
-          // ESCOLHA (`pendingEm`), não pelo modo de agora.
-          //
-          //   reply  → upload em `whatsapp-media` + `useSendMessage`: exatamente
-          //            o que era antes, byte por byte. Nada aqui mudou para o
-          //            cliente.
-          //   note   → upload em `internal-media` + `useCreateNote`, com o trio
-          //            como `anexo`. Não existe passo de envio: a nota não é
-          //            mensagem, não tem `type`, não tem destino no WhatsApp.
-          //
-          // O `try/catch` continua cobrindo SÓ o upload (falha de gravação da
-          // nota é tratada pelo onError do próprio hook, e o diálogo fica aberto
-          // nos dois casos).
+          if (pendingFiles.length === 0) return;
           const destino: DestinoDoUpload = pendingEm === "note" ? "nota" : "mensagem";
+          const total = pendingFiles.length;
+
+          setUploadProgress({ current: 1, total, status: "Otimizando mídia..." });
+          const readyFiles = await optimizeFilesForUpload(pendingFiles);
+
           try {
-            const uploaded = await upload.mutateAsync({ conversationId, file: pendingFile, destino });
-            if (destino === "nota") {
-              createNote.mutate(
-                {
+            for (let i = 0; i < readyFiles.length; i++) {
+              const file = readyFiles[i];
+              if (!file) continue;
+              setUploadProgress({ current: i + 1, total: readyFiles.length, status: `Enviando ${i + 1} de ${readyFiles.length}…` });
+
+              // Se tiver legenda, aplica na primeira (ou se for só 1 arquivo)
+              const leg = i === 0 ? caption : undefined;
+
+              const uploaded = await upload.mutateAsync({ conversationId, file, destino });
+              if (destino === "nota") {
+                await createNote.mutateAsync({
                   conversation_id: conversationId,
-                  body: caption,
+                  body: leg || "",
                   anexo: {
                     storage_path: uploaded.storage_path,
                     media_mime: uploaded.media_mime,
                     media_size_bytes: uploaded.media_size_bytes,
                   },
-                },
-                { onSuccess: () => setPendingFile(null) },
-              );
-              return;
+                });
+              } else {
+                await send.mutateAsync({
+                  conversation_id: conversationId,
+                  type: uploaded.kind,
+                  body: leg || undefined,
+                  media_storage_path: uploaded.storage_path,
+                  media_mime: uploaded.media_mime,
+                  media_size_bytes: uploaded.media_size_bytes,
+                });
+              }
             }
-            send.mutate(
-              {
-                conversation_id: conversationId,
-                type: uploaded.kind,
-                body: caption || undefined,
-                media_storage_path: uploaded.storage_path,
-                media_mime: uploaded.media_mime,
-                media_size_bytes: uploaded.media_size_bytes,
-              },
-              { onSuccess: () => setPendingFile(null) },
-            );
+            setPendingFiles([]);
+            setUploadProgress(null);
           } catch {
-            // toast já disparado pelo onError de useUploadMedia; dialog fica aberto p/ retry
+            setUploadProgress(null);
             return;
           }
         }}
@@ -725,6 +749,27 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                   },
             },
             { onSuccess: () => setContactPickerOpen(false) },
+          );
+        }}
+      />
+      <ProductPickerDialog
+        open={productPickerOpen}
+        onOpenChange={setProductPickerOpen}
+        sending={send.isPending}
+        onPick={(payload) => {
+          send.mutate(
+            {
+              conversation_id: conversationId,
+              type: "product",
+              body: payload.body,
+              metadata: {
+                product_retailer_id: payload.codigo,
+                product_name: payload.nome,
+                product_price_cents: payload.preco_cents,
+                product_image_url: payload.imagem_url,
+              },
+            },
+            { onSuccess: () => setProductPickerOpen(false) },
           );
         }}
       />

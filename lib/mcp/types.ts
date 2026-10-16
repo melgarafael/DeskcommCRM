@@ -39,6 +39,7 @@ export interface McpContext {
    * saem do turno.
    */
   contatoDoTurno?: string;
+  readOnly?: boolean;
   organizationId: string;
   role: Role;
   actor: Actor;

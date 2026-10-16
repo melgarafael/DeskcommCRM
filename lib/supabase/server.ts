@@ -31,6 +31,7 @@ function opcoesDeCookie(sameSite: "strict" | "lax") {
     httpOnly: true,
     secure: cookieSecure(),
     path: "/",
+    maxAge: 60 * 60 * 24 * 7, // 7 dias de persistência para evitar logout ao atualizar no celular
   };
 }
 

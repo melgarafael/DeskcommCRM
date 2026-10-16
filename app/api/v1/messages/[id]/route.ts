@@ -45,13 +45,25 @@ async function alterar(req: NextRequest, ctx: Ctx, acao: "edit" | "revoke"): Pro
   if (messageError) return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   if (!message) return fail("not_found", t("Mensagem não encontrada."), 404, { requestId });
 
-  // O WhatsApp só deixa o autor alterar uma mensagem própria. A UI esconde o
-  // gesto dos demais, mas esta guarda no servidor impede chamar a rota à mão.
-  if (message.direction !== "outbound" || !["user", "crm"].includes(message.sent_via)
-    || message.sent_by_user_id !== authz.user.id || !message.external_id
-    || message.revoked_at || !["sent", "delivered", "read"].includes(message.status)
-    || (acao === "edit" && message.type !== "text")) {
-    return fail("forbidden", t("Esta mensagem não pode ser alterada."), 403, { requestId });
+  const isAuthor = message.sent_by_user_id === authz.user.id;
+  const canManage = authz.org.role === "admin" || authz.org.role === "manager";
+  const podeRevogar = message.direction === "outbound"
+    && Boolean(message.external_id)
+    && !message.revoked_at
+    && ["sent", "delivered", "read"].includes(message.status)
+    && (isAuthor || canManage || ["ai", "system", "automation", "external_device"].includes(message.sent_via));
+
+  if (acao === "edit") {
+    if (message.direction !== "outbound" || !["user", "crm"].includes(message.sent_via)
+      || !isAuthor || !message.external_id
+      || message.revoked_at || !["sent", "delivered", "read"].includes(message.status)
+      || message.type !== "text") {
+      return fail("forbidden", t("Esta mensagem não pode ser alterada."), 403, { requestId });
+    }
+  } else {
+    if (!podeRevogar) {
+      return fail("forbidden", t("Esta mensagem não pode ser alterada."), 403, { requestId });
+    }
   }
   if (acao === "edit" && Date.now() - new Date(message.sent_at).getTime() > JANELA_EDICAO_MS) {
     return fail("edit_window_closed", t("O prazo para editar esta mensagem terminou."), 409, { requestId });

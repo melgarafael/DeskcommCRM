@@ -60,6 +60,8 @@ export const messageTypeSchema = z.enum([
   // "texto com outro nome": o tipo é o que carrega custo, conformidade de janela e
   // o que o contato de fato viu (cabeçalho, rodapé, botões).
   "template",
+  // Envio de produto interativo do catálogo Meta (Commerce Manager / Cloud API).
+  "product",
 ]);
 
 export const messageStatusSchema = z.enum([
@@ -124,11 +126,17 @@ export const sendMessageSchema = z
         }
         return false;
       }
+      if (d.type === "product") {
+        const retailerId =
+          (d.metadata?.product_retailer_id as string | undefined) ??
+          (d.metadata?.retailer_id as string | undefined);
+        return typeof retailerId === "string" && retailerId.trim().length > 0;
+      }
       return !!d.body || !!d.media_url || !!d.media_storage_path;
     },
     {
       message:
-        "body, media_url, media_storage_path, metadata.shared_contact_id or metadata.shared_contact.phone_number required",
+        "body, media_url, media_storage_path, metadata.shared_contact_id, metadata.shared_contact.phone_number or metadata.product_retailer_id required",
       path: ["body"],
     },
   );

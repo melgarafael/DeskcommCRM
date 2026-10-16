@@ -28,6 +28,16 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["vender", "atender"],
   },
   {
+    name: "crm_send_catalog_product",
+    category: "write",
+    rotulo: "Enviar produto do catálogo",
+    explicacao:
+      "Envia o card oficial do produto do catálogo (com foto, preço e botão interativo) direto na conversa do cliente no WhatsApp.",
+    oQueToca: "Mensagens e catálogo da loja",
+    risco: "seguro",
+    pacotes: ["vender", "atender"],
+  },
+  {
     name: "crm_draft_proposal",
     category: "write",
     rotulo: "Rascunhar proposta comercial",
@@ -58,5 +68,15 @@ export const TOOLS_COMERCIO = declararTools([
     oQueToca: "Privacidade e dados do cliente",
     risco: "seguro",
     pacotes: ["organizar", "atender"],
+  },
+  {
+    name: "crm_consultar_estoque_bling",
+    category: "read",
+    rotulo: "Consultar estoque no Bling ERP",
+    explicacao:
+      "Consulta o saldo físico e disponível de produtos diretamente no Bling ERP pelo nome ou código SKU, para o assistente responder com precisão o que está disponível sem prometer itens esgotados.",
+    oQueToca: "Estoque no Bling ERP",
+    risco: "seguro",
+    pacotes: ["vender", "atender"],
   },
 ]);

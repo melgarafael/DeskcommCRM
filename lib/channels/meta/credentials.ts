@@ -48,6 +48,7 @@ export interface MetaCredentials {
   phoneNumberId: string;
   token: string;
   graphVersion: string;
+  catalogId?: string | null;
   /** De onde veio — aparece no log de diagnóstico, nunca no payload. */
   source: "session" | "env";
 }
@@ -83,7 +84,13 @@ export function metaCredsFromEnv(): MetaCredentials | null {
   const phoneNumberId = process.env.META_PHONE_NUMBER_ID;
   const token = process.env.META_SYSTEM_USER_TOKEN;
   if (!phoneNumberId || !token) return null;
-  return { phoneNumberId, token, graphVersion: graphVersion(), source: "env" };
+  return {
+    phoneNumberId,
+    token,
+    graphVersion: graphVersion(),
+    catalogId: process.env.META_CATALOG_ID ?? null,
+    source: "env",
+  };
 }
 
 /**
@@ -114,7 +121,7 @@ export async function metaCredsForPhoneNumberId(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("meta_phone_number_id, meta_token_encrypted")
+      .select("meta_phone_number_id, meta_token_encrypted, meta_catalog_id, metadata")
       .eq("organization_id", organizationId)
       .eq("meta_phone_number_id", phoneNumberId);
   const { data, error } = await queryTolerantToMissingArchived(
@@ -136,10 +143,18 @@ export async function metaCredsForPhoneNumberId(
   // deixa a diferença visível para quem depura.
   if (!token) return null;
 
+  const row = data as { meta_phone_number_id?: string; meta_catalog_id?: string | null; metadata?: Record<string, unknown> };
+  const catalogId =
+    row.meta_catalog_id ??
+    (row.metadata?.meta_catalog_id as string | undefined) ??
+    (row.metadata?.catalog_id as string | undefined) ??
+    null;
+
   return {
-    phoneNumberId: data.meta_phone_number_id as string,
+    phoneNumberId: (row.meta_phone_number_id ?? phoneNumberId) as string,
     token,
     graphVersion: graphVersion(),
+    catalogId,
     source: "session",
   };
 }

@@ -84,10 +84,11 @@ export async function proxy(request: NextRequest) {
       },
       cookieOptions: {
         name: COOKIE_NAME,
-        sameSite: "strict",
+        sameSite: "lax",
         httpOnly: true,
         secure: cookieSecure(),
         path: "/",
+        maxAge: 60 * 60 * 24 * 7,
       },
     },
   );

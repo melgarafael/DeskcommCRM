@@ -64,7 +64,7 @@ const MAX_BYTES = 16 * 1024 * 1024;
  */
 export function precisaTranscodificar(mime: string): boolean {
   const base = mime.split(";")[0]?.trim().toLowerCase() ?? "";
-  return base === "audio/webm" || base === "video/webm";
+  return base === "audio/webm";
 }
 
 export interface Transcodificacao {

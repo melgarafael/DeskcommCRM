@@ -18,6 +18,8 @@ export {
   Users,
   UsersThree,
   Storefront,
+  ShoppingBag,
+  Package,
   Robot,
   Sparkle,
   ShieldCheck,
@@ -95,6 +97,7 @@ export {
   ChatCircle,
   WhatsappLogo,
   InstagramLogo,
+  FacebookLogo,
   MessengerLogo,
   Phone,
   PhoneIncoming,
@@ -153,4 +156,6 @@ export {
   ArrowsOutSimple,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
+  Heart,
 } from "@phosphor-icons/react/dist/ssr";
+

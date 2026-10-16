@@ -13,6 +13,8 @@ describe("extFromMime", () => {
     expect(extFromMime("image/webp")).toBe("webp"); // figurinhas
     expect(extFromMime("video/mp4")).toBe("mp4");
     expect(extFromMime("application/mp4")).toBe("mp4"); // mime real observado no WAHA 2026.7.1
+    expect(extFromMime("video/quicktime")).toBe("mov");
+    expect(extFromMime("video/webm")).toBe("webm");
     expect(extFromMime("audio/ogg; codecs=opus")).toBe("ogg"); // PTT
     expect(extFromMime("audio/mpeg")).toBe("mp3");
     expect(extFromMime("application/pdf")).toBe("pdf");
@@ -34,7 +36,7 @@ describe("storagePathFor", () => {
 });
 
 describe("MAX_MEDIA_BYTES", () => {
-  it("é 50MB", () => {
-    expect(MAX_MEDIA_BYTES).toBe(52_428_800);
+  it("é 1GB", () => {
+    expect(MAX_MEDIA_BYTES).toBe(1_073_741_824);
   });
 });

@@ -135,6 +135,7 @@ export function CampoDeLogo({
   const t = useT();
   const router = useRouter();
   const entrada = useRef<HTMLInputElement>(null);
+  const entradaEscura = useRef<HTMLInputElement>(null);
   const [enviando, setEnviando] = useState(false);
   /**
    * Marcador de HIDRATAÇÃO, lido pelo e2e antes de `setInputFiles`.
@@ -299,6 +300,7 @@ export function CampoDeLogo({
       // Sem isto, escolher o MESMO arquivo de novo (depois de uma falha) não
       // dispara `change` e a tela parece travada.
       if (entrada.current) entrada.current.value = "";
+      if (entradaEscura.current) entradaEscura.current.value = "";
     }
   }
 
@@ -323,6 +325,8 @@ export function CampoDeLogo({
       startTransition(() => router.refresh());
     } finally {
       setEnviando(false);
+      if (entrada.current) entrada.current.value = "";
+      if (entradaEscura.current) entradaEscura.current.value = "";
     }
   }
 
@@ -373,6 +377,7 @@ export function CampoDeLogo({
         <Label htmlFor={`logo-escuro-${escopo}`}>{t("Logo para o tema escuro (opcional)")}</Label>
         <div className="flex flex-wrap items-center gap-3">
           <input
+            ref={entradaEscura}
             id={`logo-escuro-${escopo}`}
             type="file"
             accept="image/png,image/jpeg"
@@ -380,7 +385,6 @@ export function CampoDeLogo({
             onChange={(e) => {
               const arquivo = e.target.files?.[0];
               if (arquivo) void enviar(arquivo, "escuro");
-              e.target.value = "";
             }}
             className="max-w-xs text-sm file:mr-3 file:cursor-pointer file:rounded-sm file:border file:border-border file:bg-surface-elevated file:px-3 file:py-1.5 file:text-sm"
           />

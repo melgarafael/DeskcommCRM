@@ -52,8 +52,10 @@ describe("quando precisa converter", () => {
     }
   });
 
-  it("imagem e documento não são assunto daqui", () => {
+  it("imagem, vídeo e documento não são assunto daqui", () => {
     expect(precisaTranscodificar("image/jpeg")).toBe(false);
+    expect(precisaTranscodificar("video/webm")).toBe(false);
+    expect(precisaTranscodificar("video/mp4")).toBe(false);
     expect(precisaTranscodificar("application/pdf")).toBe(false);
   });
 });

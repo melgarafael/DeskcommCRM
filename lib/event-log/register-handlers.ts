@@ -1,5 +1,6 @@
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
+import { blingPedidoDoGanhoHandler } from "@/lib/integrations/bling/pedido-do-ganho.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
  *
@@ -99,5 +100,6 @@ export function ensureHandlersRegistered(): void {
   registerHandler(conversaoDeVendaHandler);
   registerHandler(conversaoDeQualificacaoHandler);
   registerHandler(conversaoDeEtapaMetaHandler);
+  registerHandler(blingPedidoDoGanhoHandler);
   _registered = true;
 }

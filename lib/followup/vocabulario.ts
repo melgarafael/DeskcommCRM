@@ -513,6 +513,7 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+  product: "Produto do catálogo",
 };
 
 // ─── prioridade da tarefa (ação create_task, #1540) ────────────────────────

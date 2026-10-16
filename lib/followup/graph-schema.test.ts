@@ -362,6 +362,22 @@ describe('graph-schema', () => {
         });
         expect(result.success).toBe(false);
       });
+
+      it('accepts valid product mode with product_retailer_id and optional body', () => {
+        const result = actionConfigSchema.safeParse({
+          mode: 'product',
+          product_retailer_id: 'SKU-IPHONE-15',
+          body: 'Confira a oferta especial deste produto:',
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it('rejects product mode without product_retailer_id', () => {
+        const result = actionConfigSchema.safeParse({
+          mode: 'product',
+        });
+        expect(result.success).toBe(false);
+      });
     });
   });
 

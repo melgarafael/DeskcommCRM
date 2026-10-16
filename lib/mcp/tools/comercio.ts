@@ -356,6 +356,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
         ...(produto.marca ? { marca: produto.marca } : {}),
         ...(produto.descricao ? { descricao: produto.descricao } : {}),
         disponivel: !produto.controla_estoque || produto.quantidade > 0,
+        ...(produto.controla_estoque ? { estoque: produto.quantidade } : { estoque_ilimitado: true }),
         // Quantas fotos, e não quais: o caminho é vocabulário interno e a URL
         // assinada expira. Quem manda a foto é o `send_message` do agente, com
         // `produto_codigo` — ele acha as fotos pelo código (migration 0390).
@@ -371,3 +372,208 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     };
   },
 };
+
+// ---------------------------------------------------------------------------
+// enviar produto interativo do catálogo Meta
+// ---------------------------------------------------------------------------
+
+const enviarProdutoInputShape = {
+  codigo: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("código ou SKU do produto no catálogo (o mesmo retornado por crm_search_products)"),
+  texto: z
+    .string()
+    .trim()
+    .optional()
+    .describe("mensagem de apoio opcional para acompanhar o card do produto"),
+};
+
+export const crmSendCatalogProduct: McpToolDefinition<typeof enviarProdutoInputShape> = {
+  name: "crm_send_catalog_product",
+  description:
+    "Envia o card interativo oficial do WhatsApp de um produto do catálogo (com foto em alta resolução, título, preço e botão nativo 'Ver produto') para o cliente desta conversa.",
+  inputSchema: enviarProdutoInputShape,
+  category: "write",
+  requiresRole: "agent",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const { data: prod, error: erroProd } = await ctx.supabase
+      .from("catalog_products")
+      .select("id, codigo, nome, preco_cents, moeda, controla_estoque, quantidade, ativo, imagem_url")
+      .eq("organization_id", ctx.organizationId)
+      .eq("codigo", input.codigo)
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (erroProd || !prod) {
+      return {
+        enviado: false,
+        motivo: "produto_nao_encontrado",
+        mensagem: "Produto não encontrado ou inativo no catálogo da organização.",
+      };
+    }
+
+    if (prod.controla_estoque && prod.quantidade <= 0) {
+      return {
+        enviado: false,
+        motivo: "sem_estoque",
+        mensagem: "Este produto está esgotado no momento. Não é possível enviar card de produto sem estoque.",
+      };
+    }
+
+    // Se for preview/sandbox ou sem contato ativo de WhatsApp, simula com sucesso informativo
+    if (ctx.readOnly || !ctx.contatoDoTurno) {
+      const precoFormatado = formatCents(prod.preco_cents, prod.moeda);
+      return {
+        enviado: true,
+        preview: true,
+        produto: prod.nome,
+        codigo: prod.codigo,
+        preco: precoFormatado,
+        mensagem: `[SIMULAÇÃO] Card interativo do produto '${prod.nome}' validado e pronto para envio.`,
+      };
+    }
+
+    const { data: conv, error: erroConv } = await ctx.supabase
+      .from("conversations")
+      .select("id, channel_session_id")
+      .eq("organization_id", ctx.organizationId)
+      .eq("contact_id", ctx.contatoDoTurno)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (erroConv || !conv) {
+      return {
+        enviado: false,
+        motivo: "conversa_nao_encontrada",
+        mensagem: "Não foi possível identificar a conversa deste contato para despacho do produto.",
+      };
+    }
+
+    const precoFormatado = formatCents(prod.preco_cents, prod.moeda);
+    const { error: erroMsg } = await ctx.supabase
+      .from("messages")
+      .insert({
+        organization_id: ctx.organizationId,
+        conversation_id: conv.id,
+        channel_session_id: conv.channel_session_id,
+        contact_id: ctx.contatoDoTurno,
+        type: "product",
+        direction: "outbound",
+        status: "queued",
+        body: input.texto ?? prod.nome,
+        sent_via: "ai",
+        metadata: {
+          product_retailer_id: prod.codigo,
+          product_name: prod.nome,
+          product_price_cents: prod.preco_cents,
+          product_image_url: prod.imagem_url,
+          sent_by_ai_tool: "crm_send_catalog_product",
+        },
+      });
+
+    if (erroMsg) {
+      throw new Error(`enviar_produto_falhou: ${erroMsg.message}`);
+    }
+
+    return {
+      enviado: true,
+      produto: prod.nome,
+      codigo: prod.codigo,
+      preco: precoFormatado,
+      mensagem: `Card interativo do produto '${prod.nome}' enviado com sucesso para o cliente no WhatsApp.`,
+    };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Consulta de estoque em tempo real no Bling ERP
+// ---------------------------------------------------------------------------
+
+const consultarEstoqueBlingInputShape = {
+  termo: z
+    .string()
+    .min(1)
+    .describe("Nome, descrição ou código SKU do produto para consulta de estoque no Bling ERP."),
+};
+
+export const crmConsultarEstoqueBling: McpToolDefinition<typeof consultarEstoqueBlingInputShape> = {
+  name: "crm_consultar_estoque_bling",
+  description:
+    "Consulta o estoque atual de um produto no Bling ERP pelo nome ou código SKU. Retorna o saldo físico e disponível. " +
+    "Use sempre que o cliente perguntar se determinado item está disponível ou quantas unidades restam. " +
+    "Ao confirmar a disponibilidade, utilize imediatamente a tool 'crm_send_catalog_product' informando o 'codigo' do item para enviar o card interativo com foto e botão de compra no WhatsApp.",
+  inputSchema: consultarEstoqueBlingInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) => {
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const {
+      obterClienteBlingAutenticado,
+      obterConfiguracaoBling,
+      registrarLogBling,
+    } = await import("@/lib/integrations/bling/store");
+
+    const admin = createAdminClient();
+    const config = await obterConfiguracaoBling(admin, ctx.organizationId);
+
+    // Se o recurso estiver desativado para a organização, falha graciosa e silenciosa
+    if (!config || !config.is_enabled || !config.features?.ai_stock_consult) {
+      return {
+        disponivel: false,
+        motivo: "integracao_desativada",
+        mensagem:
+          "A consulta de estoque no Bling ERP não está habilitada para esta empresa no momento. " +
+          "Responda ao cliente com base apenas nas informações já fornecidas no catálogo ou no contexto do atendimento.",
+      };
+    }
+
+    const { client, error } = await obterClienteBlingAutenticado(admin, ctx.organizationId);
+    if (error || !client) {
+      return {
+        disponivel: false,
+        motivo: "erro_conexao_bling",
+        mensagem: "Não foi possível conectar ao Bling ERP no momento para checar o estoque.",
+      };
+    }
+
+    const resultado = await client.consultarEstoque(input.termo);
+
+    await registrarLogBling(admin, ctx.organizationId, {
+      operation: "query_stock",
+      direction: "outbound",
+      status: resultado.ok ? "success" : "failed",
+      details: { termo: input.termo, totalItens: resultado.estoque?.length ?? 0 },
+      error_message: resultado.ok ? null : (resultado.error ?? null),
+    });
+
+    if (!resultado.ok || !resultado.estoque || resultado.estoque.length === 0) {
+      return {
+        disponivel: false,
+        termo: input.termo,
+        mensagem: `Nenhum produto correspondente a '${input.termo}' foi localizado no estoque do Bling ERP.`,
+      };
+    }
+
+    return {
+      disponivel: true,
+      termo: input.termo,
+      produtos: resultado.estoque.map((item) => ({
+        id: item.id,
+        codigo: item.codigo ?? "N/A",
+        nome: item.nome ?? "Produto sem nome",
+        saldoFisico: item.saldoFisicoTotal ?? 0,
+        saldoVirtual: item.saldoVirtualTotal ?? 0,
+      })),
+      mensagem:
+        `Estoque confirmado no Bling ERP (${resultado.estoque.length} item(ns)). ` +
+        `Para enviar o card interativo com foto e botão no WhatsApp do cliente, utilize 'crm_send_catalog_product' passando o 'codigo' do produto.`,
+    };
+  },
+};
+
+

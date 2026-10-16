@@ -1503,3 +1503,14 @@
     animation-iteration-count: infinite !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Mobile & Tablet Chat Rendering Acceleration
+   content-visibility: auto pula o cálculo de layout e paint para nós de
+   mensagem fora da tela, economizando memória RAM e GPU móvel.
+   ───────────────────────────────────────────────────────────────────────── */
+.chat-bubble-virtualized {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 48px;
+}
+

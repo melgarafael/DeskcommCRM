@@ -12,9 +12,11 @@ import {
   useConnectOfficialChannel,
   useOfficialChannel,
   useRegistrarWebhookOficial,
+  useUpdateOfficialCatalog,
 } from "@/hooks/channels/useOfficialChannel";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
+import { ShoppingBag } from "@/lib/ui/icons";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { ParaIntegrar } from "./ParaIntegrar";
 
@@ -67,7 +69,14 @@ export function CanalOficialClient() {
   const { data, isPending } = useOfficialChannel();
   const conectar = useConnectOfficialChannel();
   const registrarWebhook = useRegistrarWebhookOficial();
-  const [form, setForm] = useState({ phone_number_id: "", waba_id: "", token: "" });
+  const atualizarCatalogo = useUpdateOfficialCatalog();
+  const [catalogInput, setCatalogInput] = useState("");
+  const [form, setForm] = useState({
+    phone_number_id: "",
+    waba_id: "",
+    token: "",
+    catalog_id: "",
+  });
 
   const estado = data?.data;
 
@@ -98,13 +107,95 @@ export function CanalOficialClient() {
             <Badge variant={estado.hasToken ? "outline" : "destructive"}>
               {estado.hasToken ? t("credencial guardada") : t("sem credencial")}
             </Badge>
+            {estado.catalogId ? (
+              <Badge variant="secondary" className="font-mono text-xs">
+                {t("Catálogo Meta:")} {estado.catalogId}
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             WABA <span className="font-mono">{estado.wabaId}</span> · {t("número")}{" "}
             <span className="font-mono">{estado.phoneNumberId}</span>
+            {estado.catalogId ? (
+              <>
+                {" "}· {t("catálogo")}{" "}
+                <span className="font-mono">{estado.catalogId}</span>
+              </>
+            ) : null}
           </p>
         </Card>
       ) : null}
+
+      {estado?.connected ? (
+        <Card className="flex flex-col gap-3 p-4 border-primary/20 shadow-sm" data-testid="card-catalogo-meta">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="size-5 text-primary" />
+              <div>
+                <h2 className="font-medium text-base leading-none">
+                  {t("Catálogo de Produtos Meta (Commerce Manager)")}
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("Vincule o catálogo para envio de produtos pelo Inbox e recomendação pelos Agentes de IA.")}
+                </p>
+              </div>
+            </div>
+            {estado.catalogId ? (
+              <Badge variant="secondary" className="font-mono text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40">
+                {t("Catálogo Ativo:")} {estado.catalogId}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400">
+                {t("Nenhum catálogo vinculado")}
+              </Badge>
+            )}
+          </div>
+
+          <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="relative flex-1 max-w-md">
+              <Input
+                id="input-catalogo-id"
+                value={catalogInput}
+                onChange={(e) => setCatalogInput(e.target.value)}
+                placeholder={estado.catalogId ?? t("Cole aqui o ID do Catálogo (ex: 28651441394507856)")}
+                className="font-mono text-sm"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="default"
+              onClick={async () => {
+                const val = catalogInput.trim();
+                if (!val) {
+                  toast.error(t("Informe o ID do Catálogo"));
+                  return;
+                }
+                await atualizarCatalogo.mutateAsync(val);
+                toast.success(t("Catálogo Meta salvo com sucesso!"));
+                setCatalogInput("");
+              }}
+              disabled={atualizarCatalogo.isPending}
+            >
+              {atualizarCatalogo.isPending ? t("Salvando…") : t("Salvar Catálogo")}
+            </Button>
+            {estado.catalogId ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={async () => {
+                  await atualizarCatalogo.mutateAsync(null);
+                  toast.success(t("Catálogo Meta desvinculado!"));
+                  setCatalogInput("");
+                }}
+                disabled={atualizarCatalogo.isPending}
+              >
+                {t("Desvincular")}
+              </Button>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+
       {estado?.channel_session_id && <ChannelAiAccess channelId={estado.channel_session_id} />}
 
       {estado?.webhook ? (
@@ -212,6 +303,7 @@ export function CanalOficialClient() {
             { rotulo: t("Endpoint da API"), valor: estado.endpoint ?? null },
             { rotulo: t("ID do número de telefone"), valor: estado.phoneNumberId ?? null },
             { rotulo: t("ID da conta do WhatsApp Business"), valor: estado.wabaId ?? null },
+            { rotulo: t("ID do Catálogo Meta"), valor: estado.catalogId ?? null },
           ]}
           ajuda={
             <div className="space-y-1.5">
@@ -241,7 +333,7 @@ export function CanalOficialClient() {
           {estado?.connected ? t("Trocar credencial") : t("Conectar canal oficial")}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t("Os três valores vêm do seu app na Meta (")}
+          {t("Os valores vêm do seu app na Meta (")}
           <strong>WhatsApp → {t("Configuração da API")}</strong>
           {t("). A credencial é")} <strong>{t("validada com a Meta antes de ser gravada")}</strong>
           {t(" — se o número não responder, nada é salvo.")}
@@ -267,6 +359,18 @@ export function CanalOficialClient() {
               placeholder="2434045433735175"
               required
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="catid">{t("ID do Catálogo Meta (Commerce Manager)")}</Label>
+            <Input
+              id="catid"
+              value={form.catalog_id}
+              onChange={(e) => setForm((f) => ({ ...f, catalog_id: e.target.value }))}
+              placeholder={estado?.catalogId ?? t("Opcional — ex: 1234567890")}
+            />
+            <span className="text-xs text-muted-foreground">
+              {t("ID do catálogo para envio e recebimento de produtos interativos no WhatsApp.")}
+            </span>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="tok">{t("Token de acesso")}</Label>

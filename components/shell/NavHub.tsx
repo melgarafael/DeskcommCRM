@@ -88,10 +88,10 @@ export function NavHub({
   const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings, modulosLigados, capacidadesLigadas);
 
   return (
-    <div className="flex h-full flex-col gap-8 p-6">
+    <div className="flex h-full flex-col gap-5 p-3 sm:gap-8 sm:p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir(title, locale)}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground">{traduzir(subtitle, locale)}</p>}
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{traduzir(title, locale)}</h1>
+        {subtitle && <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{traduzir(subtitle, locale)}</p>}
       </header>
 
       {secoes.map(({ section, items }) => (

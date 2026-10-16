@@ -98,6 +98,8 @@ export const followupTurnPayloadSchema = z
     fixed_body: z.string().min(1).max(4000).optional(),
     /** action mode `template` — `message_templates` (texto) ou `meta_templates` (modelo aprovado do canal). */
     template_id: z.string().uuid().optional(),
+    /** action mode `product` — retailer_id do produto do catálogo Meta/WhatsApp. */
+    product_retailer_id: z.string().min(1).optional(),
     /** action mode `ai_message` — modelo aprovado que sai no lugar da IA com a janela de 24 h fechada. */
     fallback_template_id: z.string().uuid().optional(),
     volta_index: z.number().int().optional(),
@@ -577,6 +579,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
           purpose: payload.purpose,
           promptHint: payload.prompt_hint,
           fixedBody: payload.fixed_body,
+          productRetailerId: payload.product_retailer_id,
           templateId: payload.template_id,
           fallbackTemplateId: payload.fallback_template_id,
           voltaIndex: payload.volta_index,
@@ -666,6 +669,7 @@ async function runFlowDrivenTurn(
     purpose: 'send_message' | 'classify' | 'plan_timing' | undefined;
     promptHint: string | undefined;
     fixedBody: string | undefined;
+    productRetailerId?: string | undefined;
     templateId: string | undefined;
     fallbackTemplateId: string | undefined;
     voltaIndex: number | undefined;
@@ -708,10 +712,11 @@ async function runFlowDrivenTurn(
       return;
     }
     if (passo !== null) {
-      // Texto do operador: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
+      // Texto do operador ou produto: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
       const desfecho = await sendFixedOutbound(
         deps, job, pool, ctx, clock, target, passo.body, false,
         passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
+        passo.tipo === 'produto' ? { retailerId: passo.productRetailerId } : undefined,
       );
       // TODO OS TRÊS DESFECHOS VOLTAM PARA O ENROLLMENT. O adiado era o que não
       // voltava, e o silêncio dele custava o enrollment inteiro: o motor ficava
@@ -928,6 +933,11 @@ type PassoSemIa =
       body: string;
       modelo: { name: string; language: string; values: Record<string, string> };
     }
+  | {
+      tipo: 'produto';
+      productRetailerId: string;
+      body: string;
+    }
   | { tipo: 'recusado'; motivo: string };
 
 async function resolveFlowSendBody(
@@ -938,11 +948,21 @@ async function resolveFlowSendBody(
   contactId: string,
   input: {
     fixedBody: string | undefined;
+    productRetailerId?: string | undefined;
     templateId: string | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
   },
 ): Promise<PassoSemIa | null> {
+  if (input.productRetailerId !== undefined) {
+    const rawBody = input.fixedBody ?? '';
+    const body = rawBody ? interpolarVoltaDoPayload(rawBody, input.voltaIndex, input.voltaTotal) : '';
+    return {
+      tipo: 'produto',
+      productRetailerId: input.productRetailerId,
+      body,
+    };
+  }
   // O `fixed_body` já chega renderizado do enfileiramento (`lib/followup/engine.ts`),
   // ou é a confirmação, que é dado do contato. Renderizar de novo leria o que veio
   // do cadastro como modelo — por isso aqui ele só ganha a volta, nunca o contexto.
@@ -1095,6 +1115,10 @@ async function sendFixedOutbound(
    * passar, que é o que um modelo aprovado é — como no `send_template` do agente.
    */
   modelo?: { name: string; language: string; values: Record<string, string> },
+  /**
+   * Presente = envio de produto do catálogo Meta/WhatsApp.
+   */
+  produto?: { retailerId: string },
 ): Promise<EnvioFixoDesfecho> {
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
@@ -1157,6 +1181,7 @@ async function sendFixedOutbound(
       channel.send({
         tenantId, leadId, jobId: job.id, jobClaim: claimOfJob(job), seq: 1, conversationId, body: finalBody,
         ...(modelo !== undefined ? { template: modelo } : {}),
+        ...(produto !== undefined ? { product: { productRetailerId: produto.retailerId } } : {}),
       }),
   });
 

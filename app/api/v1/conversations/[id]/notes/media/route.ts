@@ -81,7 +81,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Guard de DoS: rejeita pelo Content-Length ANTES de bufferizar o corpo.
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (declared > MAX_MEDIA_BYTES + 1_048_576) {
-    return fail("payload_too_large", t("Arquivo acima de 50MB."), 413, { requestId });
+    return fail("payload_too_large", t("Arquivo acima de 1GB."), 413, { requestId });
   }
 
   const form = await req.formData().catch(() => null);

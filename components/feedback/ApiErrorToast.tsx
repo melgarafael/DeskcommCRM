@@ -159,7 +159,8 @@ function toastFor(err: unknown, t: (texto: string) => string): void {
     toast.error(t(err.message) || err.code, { description });
     return;
   }
-  toast.error(t("Erro inesperado. Tente novamente."));
+  const msg = err instanceof Error ? err.message : "";
+  toast.error(msg ? t(msg) : t("Erro inesperado. Tente novamente."));
 }
 
 /**

@@ -131,6 +131,12 @@ export interface OutboundEnvelope extends ChannelTenantScope {
   media?: OutboundMedia;
   /** Cartão de contato — preenchido quando `kind === "contact"`. */
   contact?: OutboundContact;
+  /** Produto interativo do catálogo Meta — preenchido quando `kind === "product"`. */
+  product?: {
+    catalogId?: string;
+    productRetailerId: string;
+  };
+  metadata?: Record<string, unknown>;
   /**
    * Id que o PROVIDER dá a esta thread, quando ele endereça por thread própria
    * em vez de por telefone (`conversations.provider_conversation_id`).

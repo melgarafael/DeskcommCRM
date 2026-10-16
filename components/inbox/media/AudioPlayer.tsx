@@ -24,6 +24,8 @@ interface Props {
   src?: string;
 }
 
+const AUDIO_PLAY_EVENT = "deskcomm:audio-play";
+
 /** Player de voz estilo WhatsApp: play/pause, progresso seekável, tempo, 1x/1.5x/2x. */
 export function AudioPlayer({ messageId, isOutbound, src }: Props) {
   const t = useT();
@@ -41,19 +43,36 @@ export function AudioPlayer({ messageId, isOutbound, src }: Props) {
     const onMeta = () => setDuration(el.duration);
     const onEnded = () => setPlaying(false);
     const onError = () => setFailed(true);
+
+    // Singleton de áudio: pausa este áudio se outro áudio começar a tocar
+    const onAnotherPlay = (e: Event) => {
+      const customEvent = e as CustomEvent<{ messageId: string }>;
+      if (customEvent.detail?.messageId !== messageId) {
+        if (!el.paused) {
+          el.pause();
+          setPlaying(false);
+        }
+      }
+    };
+
+    window.addEventListener(AUDIO_PLAY_EVENT, onAnotherPlay);
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("loadedmetadata", onMeta);
     el.addEventListener("durationchange", onMeta);
     el.addEventListener("ended", onEnded);
     el.addEventListener("error", onError);
     return () => {
+      window.removeEventListener(AUDIO_PLAY_EVENT, onAnotherPlay);
       el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("loadedmetadata", onMeta);
       el.removeEventListener("durationchange", onMeta);
       el.removeEventListener("ended", onEnded);
       el.removeEventListener("error", onError);
+      if (!el.paused) {
+        el.pause();
+      }
     };
-  }, []);
+  }, [messageId]);
 
   if (failed) return <MediaUnavailable kind="Áudio" className="h-12 w-60" />;
 
@@ -67,6 +86,12 @@ export function AudioPlayer({ messageId, isOutbound, src }: Props) {
       el.pause();
       setPlaying(false);
     } else {
+      // Notifica os demais áudios para pausarem imediatamente (singleton)
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(AUDIO_PLAY_EVENT, { detail: { messageId } }),
+        );
+      }
       void el.play();
       setPlaying(true);
     }
@@ -85,7 +110,7 @@ export function AudioPlayer({ messageId, isOutbound, src }: Props) {
 
   return (
     <div className="flex w-60 items-center gap-2 py-1">
-      <audio ref={audioRef} src={src ?? mediaSrc(messageId)} preload="metadata" />
+      <audio ref={audioRef} src={src ?? mediaSrc(messageId)} preload="none" />
       <button
         type="button"
         aria-label={playing ? t("Pausar áudio") : t("Reproduzir áudio")}

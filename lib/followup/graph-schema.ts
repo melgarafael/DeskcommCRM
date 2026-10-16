@@ -257,6 +257,11 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
     mode: z.literal('template'),
     template_id: z.string().uuid(),
   }),
+  z.strictObject({
+    mode: z.literal('product'),
+    product_retailer_id: z.string().min(1).max(100),
+    body: z.string().max(1000).optional(),
+  }),
 ]);
 
 /**

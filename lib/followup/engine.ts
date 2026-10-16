@@ -109,6 +109,8 @@ export interface FollowupJobRequest {
      * fechada). O turno resolve qual dos dois é e envia sem modelo de IA.
      */
     template_id?: string;
+    /** action (mode 'product') — retailer_id do produto do catálogo Meta/WhatsApp. */
+    product_retailer_id?: string;
     volta_index?: number;
     volta_total?: number;
     /** ai_classify — Task 5.1: classes possíveis + dica opcional pro classificador. */
@@ -349,6 +351,12 @@ function turnPayloadExtras(
     return {
       template_id: node.config.template_id,
       ...(volta ? { volta_index: volta.index, volta_total: volta.total } : {}),
+    };
+  }
+  if (node.type === "action" && node.config.mode === "product") {
+    return {
+      product_retailer_id: node.config.product_retailer_id,
+      ...(node.config.body ? { fixed_body: interpolarVolta(node.config.body, events, contexto) } : {}),
     };
   }
   if (node.type === "ai_classify") {

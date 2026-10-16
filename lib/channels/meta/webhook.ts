@@ -254,6 +254,32 @@ function textoDoClique(raw: Record<string, unknown>, tipo: string): string | nul
   return str(r?.title) ?? str(r?.id);
 }
 
+/** Formata pedido de catálogo enviado pelo cliente no WhatsApp para texto legível. */
+function textoDoPedido(raw: Record<string, unknown>): string {
+  const o = raw.order as Record<string, unknown> | undefined;
+  if (!o) return "🛒 Pedido do catálogo";
+  const items = Array.isArray(o.product_items) ? (o.product_items as Record<string, unknown>[]) : [];
+  const lines: string[] = ["🛒 *Pedido enviado do catálogo:*"];
+  let total = 0;
+  let currency = "BRL";
+  for (const item of items) {
+    const sku = str(item.product_retailer_id) ?? "produto";
+    const qtd = typeof item.quantity === "number" ? item.quantity : 1;
+    const preco = typeof item.item_price === "number" ? item.item_price : 0;
+    if (typeof item.currency === "string") currency = item.currency;
+    total += preco * qtd;
+    lines.push(`• ${qtd}x ${sku} (${currency} ${preco.toFixed(2)})`);
+  }
+  if (total > 0) {
+    lines.push(`*Total:* ${currency} ${total.toFixed(2)}`);
+  }
+  const clienteTexto = str(o.text);
+  if (clienteTexto) {
+    lines.push(`\n*Mensagem do cliente:*\n${clienteTexto}`);
+  }
+  return lines.join("\n");
+}
+
 /**
  * Extrai os eventos que nos interessam. **Evento desconhecido é IGNORADO, não erro** —
  * a Meta re-entrega tudo que não recebe 2xx, então devolver falha para um evento que
@@ -296,15 +322,17 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
 
           const perfil = contatos.find((c) => str(c.wa_id) === from);
           const tipo = str(raw.type) ?? "unknown";
-          // Toque num botão de modelo chega como `button`, e numa resposta interativa como
-          // `interactive`: nenhum dos dois cabe no CHECK de `messages.type`, e gravá-los crus
-          // fazia o insert falhar — a resposta do contato sumia do CRM. Entram como texto,
-          // com o rótulo que a pessoa tocou.
+          // Toque num botão de modelo chega como `button`, resposta interativa como
+          // `interactive`, e pedidos de catálogo como `order`. Entram como texto
+          // para preservar compatibilidade com o schema e exibição clara no Inbox.
+          const isOrder = tipo === "order";
           const cliqueDeBotao = tipo === "button" || tipo === "interactive";
           const corpoMidia =
-            tipo !== "contacts" && !cliqueDeBotao ? (raw[tipo] as Record<string, unknown> | undefined) : undefined;
+            tipo !== "contacts" && !cliqueDeBotao && !isOrder
+              ? (raw[tipo] as Record<string, unknown> | undefined)
+              : undefined;
           const sharedContact = tipo === "contacts" ? parseMetaInboundContact(raw) : null;
-          const tipoCrm = tipo === "contacts" ? "contact" : cliqueDeBotao ? "text" : tipo;
+          const tipoCrm = tipo === "contacts" ? "contact" : (cliqueDeBotao || isOrder) ? "text" : tipo;
 
           out.push({
             kind: "inbound_message",
@@ -316,11 +344,13 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
             // A Meta manda epoch em SEGUNDOS, string. Passar direto ao Date daria 1970.
             sentAt: new Date(Number(str(raw.timestamp) ?? "0") * 1000),
             type: tipoCrm,
-            text: cliqueDeBotao
-              ? textoDoClique(raw, tipo)
-              : tipoCrm === "text"
-                ? str((raw.text as Record<string, unknown>)?.body)
-                : sharedContact?.name ?? null,
+            text: isOrder
+              ? textoDoPedido(raw)
+              : cliqueDeBotao
+                ? textoDoClique(raw, tipo)
+                : tipoCrm === "text"
+                  ? str((raw.text as Record<string, unknown>)?.body)
+                  : sharedContact?.name ?? null,
             ...(sharedContact ? { sharedContact } : {}),
             media:
               corpoMidia && str(corpoMidia.id)

@@ -38,9 +38,22 @@ export function useUploadMedia() {
         method: "POST",
         body: form,
       });
-      const json = (await res.json()) as Partial<ApiErrorBody> & { data?: UploadedMedia };
-      if (!res.ok || !json.data) {
-        const e = json.error;
+      let json: (Partial<ApiErrorBody> & { data?: UploadedMedia }) | null = null;
+      try {
+        json = (await res.json()) as Partial<ApiErrorBody> & { data?: UploadedMedia };
+      } catch {
+        throw new ApiError(
+          res.status,
+          res.status === 413 ? "payload_too_large" : "upload_failed",
+          undefined,
+          res.headers.get("x-request-id") ?? "",
+          res.status === 413
+            ? "Arquivo muito grande para o servidor. Tente um arquivo menor."
+            : `Falha no upload (HTTP ${res.status}).`,
+        );
+      }
+      if (!res.ok || !json?.data) {
+        const e = json?.error;
         throw new ApiError(res.status, e?.code ?? "upload_failed", e?.details, e?.request_id ?? "", e?.message);
       }
       return json.data;

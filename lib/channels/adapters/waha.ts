@@ -8,7 +8,7 @@
 import { wahaContactPayload } from "@/lib/waha/contact-card";
 import { fetchWahaMedia } from "@/lib/messaging/media/waha-source";
 import { getWahaClient } from "@/lib/waha/client";
-import { wahaSendPlanFor } from "@/lib/waha/media-send";
+import { wahaSendPlanFor, type WahaSendPlan } from "@/lib/waha/media-send";
 import {
   resolveCanonicalCusChatId,
   resolvePhoneJidDigitsForCall,
@@ -292,11 +292,34 @@ export const wahaAdapter: ChannelAdapter = {
       res = await client.sendContactVcard(envelope.sessionRef, to, [contact]);
     } else if (envelope.media) {
       await envelope.beforeSend?.();
-      res = await client.sendMedia(
-        envelope.sessionRef,
-        to,
-        wahaSendPlanFor(envelope.kind, envelope.media),
-      );
+      const plan = wahaSendPlanFor(envelope.kind, envelope.media);
+      try {
+        res = await client.sendMedia(
+          envelope.sessionRef,
+          to,
+          plan,
+        );
+      } catch (mediaErr) {
+        // Fallback resiliente: se sendVideo falhar (codec não suportado nativamente pelo player
+        // do WhatsApp, vídeo com parâmetros rejeitados, etc.), tenta enviar como arquivo/documento.
+        // O WhatsApp aceita qualquer codec e formato via sendFile.
+        if (envelope.kind === "video" && plan.endpoint === "sendVideo") {
+          const fallbackPlan: WahaSendPlan = {
+            endpoint: "sendFile",
+            payload: {
+              file: {
+                url: envelope.media.url,
+                mimetype: envelope.media.mime,
+                ...(envelope.media.filename ? { filename: envelope.media.filename } : {}),
+              },
+              ...(envelope.media.caption ? { caption: envelope.media.caption } : {}),
+            },
+          };
+          res = await client.sendMedia(envelope.sessionRef, to, fallbackPlan);
+        } else {
+          throw mediaErr;
+        }
+      }
     } else {
       await envelope.beforeSend?.();
       res = await client.sendMessage(

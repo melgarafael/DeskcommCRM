@@ -88,6 +88,38 @@ export function mediaPayload(env: OutboundEnvelope): Record<string, unknown> | n
   }
 }
 
+/**
+ * `kind: "product"` → objeto `interactive: { type: "product", ... }` da Cloud API.
+ * Dispara o card oficial do produto com foto, título, preço e botão "Ver produto".
+ */
+export function productPayload(
+  env: OutboundEnvelope,
+  defaultCatalogId?: string | null,
+): Record<string, unknown> | null {
+  if (env.kind !== "product") return null;
+
+  const meta = env.metadata as
+    | { catalog_id?: string; product_retailer_id?: string; retailer_id?: string }
+    | undefined;
+  const productRetailerId =
+    env.product?.productRetailerId || meta?.product_retailer_id || meta?.retailer_id;
+  const catalogId = env.product?.catalogId || meta?.catalog_id || defaultCatalogId;
+
+  if (!productRetailerId || !catalogId) return null;
+
+  return {
+    type: "interactive",
+    interactive: {
+      type: "product",
+      ...(env.body ? { body: { text: env.body } } : {}),
+      action: {
+        catalog_id: catalogId,
+        product_retailer_id: productRetailerId,
+      },
+    },
+  };
+}
+
 export const metaCloudAdapter: ChannelAdapter = {
   provider: "meta_cloud",
 
@@ -335,9 +367,16 @@ export const metaCloudAdapter: ChannelAdapter = {
       );
     }
 
+    if (envelope.kind === "product" && !productPayload(envelope, creds.catalogId)) {
+      throw new Error(
+        "meta_catalog_not_configured: mensagem de produto exige catalog_id na sessão/env e product_retailer_id no payload.",
+      );
+    }
+
     const corpo =
       contactPayload(envelope) ??
       mediaPayload(envelope) ??
+      productPayload(envelope, creds.catalogId) ??
       { type: "text", text: { body: envelope.body ?? "" } };
 
     await envelope.beforeSend?.();

@@ -831,6 +831,16 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/analise/insights",
+    label: "Insights",
+    description: "Desempenho, alcance e novos seguidores do Instagram e Facebook.",
+    icon: "ChartLineUp",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "viewer",
+    sidebar: true,
+  },
+  {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
     // ganho/perdido por atendente); aqui é o TRABALHO que aconteceu no
     // período, com quem fez cada coisa. Um mês inteiro atendido pela IA e um
@@ -1027,6 +1037,15 @@ export const NAV_CATALOG = [
     label: "Plano e cobrança",
     description: "Pagamento, troca de plano e faturas da sua empresa.",
     icon: "Receipt",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+  },
+  {
+    href: "/app/settings/bling",
+    label: "Bling ERP",
+    description: "Sincronização de pedidos, estoque, clientes e emissão de NF-e.",
+    icon: "Storefront",
     group: "organizacao",
     section: "Sua empresa",
     minRole: "admin",

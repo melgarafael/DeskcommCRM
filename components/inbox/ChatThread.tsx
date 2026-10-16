@@ -364,67 +364,67 @@ export function ChatThread({
                 {dayLabel(g.date, t, localeDaData)}
               </span>
             </div>
-            {g.items.map((item) =>
-              item.kind === "passagem" ? (
-                <PassagemCard
-                  key={`passagem-${item.data.id}`}
-                  cartao={item.data}
-                  contatoId={contatoId ?? null}
-                  assumindo={claim.isPending}
-                  // O MESMO gesto do cabeçalho — uma rota, um efeito. Uma
-                  // segunda maneira de assumir seria uma segunda chance de os
-                  // dois caminhos divergirem sobre o que "assumir" faz.
-                  onAssumir={() =>
-                    conversationId &&
-                    claim.mutate({
-                      conversation_id: conversationId,
-                      expected_assignee: dono?.userId ?? null,
-                    })
-                  }
-                />
-              ) : item.kind === "note" ? (
-                <NoteCard
-                  key={`note-${item.data.id}`}
-                  note={item.data}
-                  // Só o autor ou manager+ vê o excluir — o backend barra o resto (403),
-                  // então não mostramos um botão que daria erro.
-                  onDelete={
-                    item.data.created_by_user_id === currentUser.id || canManage
-                      ? () => deleteNote.mutate(item.data.id)
-                      : undefined
-                  }
-                />
-              ) : (
-                <MessageBubble
-                  key={`msg-${item.data.id}`}
-                  message={item.data}
-                  searchMatch={resultados.has(item.data.id)}
-                  debugCitations={debugCitations}
-                  onResponder={onResponder}
-                  // A citada sai da MESMA lista já carregada: buscar no servidor
-                  // por cada citação faria uma consulta por bolha. Quando a
-                  // citada é antiga demais e ficou fora da página, o fio some —
-                  // que é melhor que segurar a conversa esperando.
-                  citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
-                  // Sem isto o balão diz "Você" em toda mensagem digitada no
-                  // CRM — inclusive nas do colega, porque `sent_via='user'` só
-                  // registra que um humano digitou, nunca qual.
-                  viewerUserId={currentUser.id}
-                  onEditar={canalAlteraEnviada && item.data.sent_by_user_id === currentUser.id
-                    ? (text) => editar.mutateAsync({ id: item.data.id, text }).then(() => undefined)
-                    : undefined}
-                  onApagar={canalAlteraEnviada && item.data.sent_by_user_id === currentUser.id
-                    ? () => apagar.mutateAsync(item.data.id).then(() => undefined)
-                    : undefined}
-                  onOcultar={canManage && item.data.direction === "inbound"
-                    ? () => ocultar.mutateAsync(item.data.id).then(() => undefined)
-                    : undefined}
-                  onRestaurar={canManage && item.data.direction === "inbound"
-                    ? () => restaurar.mutateAsync(item.data.id).then(() => undefined)
-                    : undefined}
-                />
-              ),
-            )}
+            {g.items.map((item) => (
+              <div key={`item-${item.kind}-${item.data.id}`} className="chat-bubble-virtualized">
+                {item.kind === "passagem" ? (
+                  <PassagemCard
+                    cartao={item.data}
+                    contatoId={contatoId ?? null}
+                    assumindo={claim.isPending}
+                    // O MESMO gesto do cabeçalho — uma rota, um efeito. Uma
+                    // segunda maneira de assumir seria uma segunda chance de os
+                    // dois caminhos divergirem sobre o que "assumir" faz.
+                    onAssumir={() =>
+                      conversationId &&
+                      claim.mutate({
+                        conversation_id: conversationId,
+                        expected_assignee: dono?.userId ?? null,
+                      })
+                    }
+                  />
+                ) : item.kind === "note" ? (
+                  <NoteCard
+                    note={item.data}
+                    // Só o autor ou manager+ vê o excluir — o backend barra o resto (403),
+                    // então não mostramos um botão que daria erro.
+                    onDelete={
+                      item.data.created_by_user_id === currentUser.id || canManage
+                        ? () => deleteNote.mutate(item.data.id)
+                        : undefined
+                    }
+                  />
+                ) : (
+                  <MessageBubble
+                    message={item.data}
+                    searchMatch={resultados.has(item.data.id)}
+                    debugCitations={debugCitations}
+                    onResponder={onResponder}
+                    // A citada sai da MESMA lista já carregada: buscar no servidor
+                    // por cada citação faria uma consulta por bolha. Quando a
+                    // citada é antiga demais e ficou fora da página, o fio some —
+                    // que é melhor que segurar a conversa esperando.
+                    citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
+                    // Sem isto o balão diz "Você" em toda mensagem digitada no
+                    // CRM — inclusive nas do colega, porque `sent_via='user'` só
+                    // registra que um humano digitou, nunca qual.
+                    viewerUserId={currentUser.id}
+                    onEditar={canalAlteraEnviada && item.data.sent_by_user_id === currentUser.id
+                      ? (text) => editar.mutateAsync({ id: item.data.id, text }).then(() => undefined)
+                      : undefined}
+                    onApagar={canalAlteraEnviada && item.data.direction === "outbound" && Boolean(item.data.external_id) && !item.data.revoked_at
+                      && (item.data.sent_by_user_id === currentUser.id || canManage || ["ai", "system", "automation", "external_device"].includes(item.data.sent_via))
+                      ? () => apagar.mutateAsync(item.data.id).then(() => undefined)
+                      : undefined}
+                    onOcultar={canManage && item.data.direction === "inbound"
+                      ? () => ocultar.mutateAsync(item.data.id).then(() => undefined)
+                      : undefined}
+                    onRestaurar={canManage && item.data.direction === "inbound"
+                      ? () => restaurar.mutateAsync(item.data.id).then(() => undefined)
+                      : undefined}
+                  />
+                )}
+              </div>
+            ))}
           </div>
         ))}
 

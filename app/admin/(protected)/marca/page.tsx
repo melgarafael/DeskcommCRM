@@ -81,7 +81,12 @@ export default async function Page() {
   // precedência: quem herda pode ser a URL colada no banco ou a do arquivo de
   // instalação, e só o resolvedor sabe qual das duas.
   const semOArquivo = resolverMarca(
-    [camadaDaInstalacao(linha ? { ...linha, logo_path: null } : null), camadaDoAmbiente(env)],
+    [
+      camadaDaInstalacao(
+        linha ? { ...linha, logo_path: null, logo_dark_path: null } : null,
+      ),
+      camadaDoAmbiente(env),
+    ],
     REGUA_DO_PRODUTO,
   );
 
@@ -102,6 +107,7 @@ export default async function Page() {
           app_name: linha?.app_name ?? null,
           logo_url: linha?.logo_url ?? null,
           logo_path: linha?.logo_path ?? null,
+          logo_dark_path: linha?.logo_dark_path ?? null,
           accent_hex: linha?.accent_hex ?? null,
           accent_dark_hex: linha?.accent_dark_hex ?? null,
           // `true` é o default da coluna: sem linha ainda, é o valor que o
@@ -114,6 +120,7 @@ export default async function Page() {
         // Mesma conversão caminho → URL do logo; `null` sem arquivo subido.
         iconeDaAba={logoDaCamada(linha?.favicon_path, null)}
         logoDoAmbiente={semOArquivo.logoUrl}
+        logoEscuroDoAmbiente={semOArquivo.logoDarkUrl}
         origens={marca.origens}
         // `seeded_from_env` ligado significa que a linha é cópia do arquivo de
         // instalação, não escolha de alguém nesta tela. Sem linha, também não é.

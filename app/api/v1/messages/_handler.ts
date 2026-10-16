@@ -770,6 +770,42 @@ export async function sendMessageHandler(
     }
   }
 
+  if (input.type === "product") {
+    const retailerId =
+      (outboundMetadata.product_retailer_id as string | undefined) ??
+      (outboundMetadata.retailer_id as string | undefined);
+    if (!retailerId) {
+      throw new ApiError(
+        422,
+        "invalid_payload",
+        undefined,
+        ctx.requestId,
+        traduzir("Informe metadata.product_retailer_id com o código do produto.", ctx.idioma ?? "pt-BR"),
+      );
+    }
+    // Enriquecimento automático a partir do catálogo da organização:
+    // garante que o balão da inbox desenha foto, nome e preço sem join posterior.
+    if (!outboundMetadata.product_name) {
+      const { data: prod } = await supabase
+        .from("catalog_products")
+        .select("nome, preco_cents, imagem_url")
+        .eq("organization_id", ctx.organization_id)
+        .eq("codigo", retailerId)
+        .maybeSingle();
+      if (prod) {
+        outboundMetadata = {
+          ...outboundMetadata,
+          product_name: prod.nome,
+          product_price_cents: prod.preco_cents,
+          product_image_url: prod.imagem_url,
+        };
+        if (!outboundBody) {
+          outboundBody = prod.nome;
+        }
+      }
+    }
+  }
+
   const now = new Date().toISOString();
   // ─── A CITAÇÃO, e a checagem que ela obriga ────────────────────────────────
   //
@@ -1117,6 +1153,7 @@ export async function sendMessageHandler(
             mime: input.media_mime ?? "application/octet-stream",
             filename,
             caption: corpoDoCanal(input.body ?? null),
+            sizeBytes: input.media_size_bytes ?? null,
           },
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
@@ -1143,6 +1180,7 @@ export async function sendMessageHandler(
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
             caption: corpoDoCanal(input.body ?? null),
+            sizeBytes: input.media_size_bytes ?? null,
           },
           replyToExternalId: citada?.external_id ?? null,
         }));
@@ -1174,6 +1212,30 @@ export async function sendMessageHandler(
             whatsappId: phoneToWhatsappId(telefone),
             vcard: buildVcard(nome, telefone),
           },
+        }));
+      } else if (input.type === "product") {
+        const retailerId =
+          (outboundMetadata.product_retailer_id as string | undefined) ??
+          (outboundMetadata.retailer_id as string | undefined);
+        if (!retailerId) {
+          throw new Error("product_retailer_id_missing");
+        }
+        const catalogId = (outboundMetadata.catalog_id as string | undefined) ?? undefined;
+        await checkBoundary();
+        ({ externalId } = await adapter.send({
+          beforeSend: checkBoundary,
+          organizationId: ctx.organization_id,
+          sessionRef: resolveSessionRef(c.channel_sessions),
+          to: chatId,
+          providerConversationId: c.provider_conversation_id,
+          kind: "product",
+          body: corpoDoCanal(input.body ?? null) ?? undefined,
+          product: {
+            catalogId,
+            productRetailerId: retailerId,
+          },
+          metadata: outboundMetadata,
+          replyToExternalId: citada?.external_id ?? null,
         }));
       } else {
         await checkBoundary();

@@ -16,7 +16,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, ArrowRight, MagnifyingGlass } from "@/lib/ui/icons";
+import { Phone, ArrowRight, MagnifyingGlass, CaretDown, CaretUp, IdentificationCard } from "@/lib/ui/icons";
+import { EtapaDoFunilHeader } from "./EtapaDoFunilHeader";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -57,6 +59,8 @@ interface Props {
   botaoBuscaRef?: RefObject<HTMLButtonElement | null>;
   /** Seleciona outra conversa no Inbox — a aba Número do Transferir abre a do outro número. */
   onAbrirConversa?: (id: string) => void;
+  fichaRecolhida?: boolean;
+  onToggleFicha?: () => void;
 }
 
 /**
@@ -91,6 +95,8 @@ export function ConversationHeader({
   onBuscar,
   buscaAberta,
   botaoBuscaRef,
+  fichaRecolhida,
+  onToggleFicha,
 }: Props) {
   const t = useT();
   const { user, activeOrg } = useAuth();
@@ -108,6 +114,26 @@ export function ConversationHeader({
   const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
   const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
+  const [recolhido, setRecolhido] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const salvo = localStorage.getItem("deskcomm:inbox-header-collapsed");
+      if (salvo !== null) return salvo === "true";
+      return window.innerWidth < 768; // Celular comeca recolhido para liberar o chat
+    } catch {
+      return false;
+    }
+  });
+
+  const alternarRecolhido = () => {
+    setRecolhido((ant) => {
+      const prox = !ant;
+      try {
+        localStorage.setItem("deskcomm:inbox-header-collapsed", String(prox));
+      } catch {}
+      return prox;
+    });
+  };
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
@@ -209,7 +235,10 @@ export function ConversationHeader({
     // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
     // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
+    <div className={cn(
+      "flex items-center justify-between gap-2 border-b border-border bg-background transition-all",
+      recolhido ? "px-3 py-1.5 sm:px-4 sm:py-2" : "flex-wrap px-3 py-2 sm:gap-3 sm:px-4 sm:py-3"
+    )}>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
           <ChannelLogo channel={conversation.channel_sessions} size={20} />
@@ -281,8 +310,12 @@ export function ConversationHeader({
           (#1625): na linha do nome ele alargava a identidade e empurrava a
           barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
           motivo da barra. */}
-      <div className="flex min-w-0 flex-col items-end gap-1">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="flex items-center gap-1 shrink-0">
+        {!recolhido && (
+          <div className="flex min-w-0 flex-col items-end gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {/* Etapa do Funil direta no cabeçalho */}
+        <EtapaDoFunilHeader contactId={c?.id} />
         {/* Primeira da barra e sem rótulo escrito: é ferramenta de LEITURA, não
             ação de atendimento, e não muda de lugar com o estado da conversa.
             Só o ícone porque a barra já quebrou a caixa útil em 1280px uma vez
@@ -505,6 +538,44 @@ export function ConversationHeader({
             {t(ROTULO_DO_MOTIVO[motivo])}
           </Badge>
         )}
+      </div>
+    )}
+
+        {onToggleFicha && (
+          <Button
+            size="sm"
+            variant={fichaRecolhida ? "default" : "ghost"}
+            className={cn(
+              "h-8 gap-1.5 px-2 text-xs font-medium shrink-0 hidden xl:flex transition-colors",
+              fichaRecolhida
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            )}
+            onClick={onToggleFicha}
+            title={fichaRecolhida ? t("Mostrar ficha do contato") : t("Ocultar ficha do contato")}
+            aria-label={fichaRecolhida ? t("Mostrar ficha do contato") : t("Ocultar ficha do contato")}
+          >
+            <IdentificationCard size={16} />
+            <span className="hidden 2xl:inline">{fichaRecolhida ? t("Ver ficha") : t("Ocultar ficha")}</span>
+          </Button>
+        )}
+
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 p-0 text-muted-foreground hover:bg-accent hover:text-foreground shrink-0 rounded-md transition-colors"
+          onClick={alternarRecolhido}
+          title={recolhido ? t("Expandir ações do atendimento") : t("Recolher ações do atendimento")}
+          aria-label={recolhido ? t("Expandir ações do atendimento") : t("Recolher ações do atendimento")}
+          aria-expanded={!recolhido}
+          data-testid="botao-recolher-cabecalho"
+        >
+          {recolhido ? (
+            <CaretDown size={18} weight="bold" aria-hidden />
+          ) : (
+            <CaretUp size={18} weight="bold" aria-hidden />
+          )}
+        </Button>
       </div>
       <ReassignDialog
         conversationId={conversation.id}

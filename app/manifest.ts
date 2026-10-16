@@ -16,10 +16,27 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     short_name: marca.nome,
     display: "standalone",
     start_url: "/app",
-    scope: "/",
+    background_color: "#faf9f6",
+    theme_color: "#ffffff",
+    orientation: "any",
+    categories: ["business", "productivity"],
     icons: [
-      { src: `/app-icon/192${versao}`, sizes: "192x192", type: "image/png" },
-      { src: `/app-icon/512${versao}`, sizes: "512x512", type: "image/png" },
+      { src: `/app-icon/192${versao}`, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+      { src: `/app-icon/512${versao}`, sizes: "512x512", type: "image/png", purpose: "any maskable" },
+    ],
+    shortcuts: [
+      {
+        name: "Inbox",
+        short_name: "Inbox",
+        url: "/app/inbox",
+        icons: [{ src: `/app-icon/192${versao}`, sizes: "192x192" }],
+      },
+      {
+        name: "Funis",
+        short_name: "Funis",
+        url: "/app/kanban",
+        icons: [{ src: `/app-icon/192${versao}`, sizes: "192x192" }],
+      },
     ],
   };
 }

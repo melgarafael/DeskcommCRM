@@ -12,10 +12,16 @@ describe("wahaSendPlanFor", () => {
     expect(plan.payload.caption).toBe("oi");
     expect((plan.payload.file as { url: string }).url).toBe(media.url);
   });
-  it("video → sendVideo com caption e convert", () => {
-    const plan = wahaSendPlanFor("video", { ...media, mime: "video/mp4" });
+  it("video (<= 64MB) → sendVideo com caption e sem convert (compatível com WAHA Core)", () => {
+    const plan = wahaSendPlanFor("video", { ...media, mime: "video/mp4", sizeBytes: 10 * 1024 * 1024 });
     expect(plan.endpoint).toBe("sendVideo");
-    expect(plan.payload.convert).toBe(true);
+    expect(plan.payload.caption).toBe("oi");
+    expect(plan.payload.convert).toBeUndefined();
+  });
+  it("video (> 64MB) → sendFile com caption (limite WhatsApp de stream de vídeo)", () => {
+    const plan = wahaSendPlanFor("video", { ...media, mime: "video/mp4", sizeBytes: 70 * 1024 * 1024 });
+    expect(plan.endpoint).toBe("sendFile");
+    expect(plan.payload.caption).toBe("oi");
   });
   it("audio → sendVoice com convert (WhatsApp exige OGG/OPUS)", () => {
     const plan = wahaSendPlanFor("audio", { ...media, mime: "audio/webm;codecs=opus" });

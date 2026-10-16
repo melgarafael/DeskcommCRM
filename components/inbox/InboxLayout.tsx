@@ -210,6 +210,24 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
   const [helpOpen, setHelpOpen] = useState(false);
   /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
   const [fichaAberta, setFichaAberta] = useState(false);
+  const [fichaRecolhida, setFichaRecolhida] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem("deskcomm:inbox-ficha-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const alternarFicha = useCallback(() => {
+    setFichaRecolhida((ant) => {
+      const prox = !ant;
+      try {
+        localStorage.setItem("deskcomm:inbox-ficha-collapsed", String(prox));
+      } catch {}
+      return prox;
+    });
+  }, []);
   /**
    * A busca dentro da conversa (#1793) pertence à CONVERSA em que foi aberta.
    * Guardar o id junto fecha a busca em qualquer troca — clique, atalho j/k,
@@ -474,7 +492,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
   const estiloDaGrade: CSSProperties | undefined =
     faixa && larguras
       ? {
-          gridTemplateColumns: faixa.temFicha
+          gridTemplateColumns: faixa.temFicha && !fichaRecolhida
             ? `${larguras.lista}px minmax(0,1fr) ${larguras.ficha}px`
             : `${larguras.lista}px minmax(0,1fr)`,
         }
@@ -584,7 +602,12 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     <OpenConversationProvider conversationId={selectedId}>
     <div
       ref={gradeRef}
-      className="grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]"
+      className={cn(
+        "grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[260px_1fr] lg:grid-cols-[280px_1fr]",
+        fichaRecolhida
+          ? "xl:grid-cols-[272px_1fr] 2xl:grid-cols-[300px_1fr]"
+          : "xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]",
+      )}
       style={estiloDaGrade}
       /*
        * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
@@ -666,26 +689,28 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
           conversa, e só aparece quando há uma.
         */}
         {selectedId && (
-          <div className="flex items-center gap-1 border-b border-border px-1 py-1 md:hidden">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 gap-1 px-2"
-              onClick={() => handleSelect(null)}
-            >
-              <CaretLeft size={16} />
-              {t("Conversas")}
-            </Button>
+          <div className="flex items-center gap-1 border-b border-border bg-background/95 px-2 py-1 backdrop-blur-xs xl:hidden">
+            <div className="md:hidden">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 gap-1 px-2 font-medium"
+                onClick={() => handleSelect(null)}
+              >
+                <CaretLeft size={16} />
+                {t("Conversas")}
+              </Button>
+            </div>
             <div className="flex-1" />
             {selectedConversation && (
               <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-9 gap-1 px-2 xl:hidden">
-                    <IdentificationCard size={16} />
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs font-medium">
+                    <IdentificationCard size={15} className="text-primary" />
                     {t("Ficha")}
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
+                <SheetContent side="right" className="w-[min(26rem,92vw)] overflow-y-auto p-0 pb-area-segura">
                   <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
                   <CRMSidePanel conversation={selectedConversation} />
                 </SheetContent>
@@ -708,6 +733,8 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               }
               buscaAberta={buscaAberta}
               botaoBuscaRef={botaoBuscaRef}
+              fichaRecolhida={fichaRecolhida}
+              onToggleFicha={alternarFicha}
             />
             {buscaAberta && (
               <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
@@ -806,9 +833,11 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
         )}
       </div>
 
-      <div className="hidden h-full min-h-0 min-w-0 xl:block">
-        <CRMSidePanel conversation={selectedConversation} />
-      </div>
+      {!fichaRecolhida && (
+        <div className="hidden h-full min-h-0 min-w-0 xl:block">
+          <CRMSidePanel conversation={selectedConversation} />
+        </div>
+      )}
 
       {/*
         AS DUAS DIVISÓRIAS (#2579) — só a partir do `md`, quando as colunas
@@ -844,7 +873,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               className="w-px bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary"
             />
           </span>
-          {faixa?.temFicha && (
+          {faixa?.temFicha && !fichaRecolhida && (
             <span
               role="separator"
               aria-orientation="vertical"

@@ -7507,7 +7507,7 @@ create index if not exists idx_followup_enrollments_agent
   on followup_enrollments (agent_id);
 -- ---- bucket whatsapp-media (migration 0055) ----
 insert into storage.buckets (id, name, public, file_size_limit)
-values ('whatsapp-media', 'whatsapp-media', false, 52428800)
+values ('whatsapp-media', 'whatsapp-media', false, 1073741824)
 on conflict (id) do update set file_size_limit = excluded.file_size_limit;
 
 -- ---- media multimodal: derivado + flags (migration 0058) ----
@@ -51154,6 +51154,25 @@ alter table public.lgpd_requests
 comment on column public.lgpd_requests.export_claimed_at is
   'Instante da reivindicação do worker de exportação (issue #2751): só quem grava este marcador exporta o pedido. Reivindicação mais velha que 10 min é considerada órfã (processo derrubado) e pode ser retomada; a falha que devolve o pedido a received zera o marcador para o retry imediato.';
 
+-- ---- catálogo Meta e mensagem de produto (migration 0653, issue #2801) ----
+alter table public.channel_sessions
+  add column if not exists meta_catalog_id text;
+
+comment on column public.channel_sessions.meta_catalog_id is
+  'ID do Catálogo no Meta Commerce Manager vinculado a este número/WABA para envio de mensagens interativas de produto.';
+
+do $$ begin
+  alter table public.messages drop constraint if exists messages_type_check;
+  alter table public.messages add constraint messages_type_check
+    check (type = any (array[
+      'text', 'image', 'video', 'audio', 'document', 'sticker',
+      'location', 'contact', 'reaction', 'system',
+      'template',
+      -- novo: envio de produto do catálogo interativo do WhatsApp (Cloud API)
+      'product'
+    ]));
+end $$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -53654,3 +53673,147 @@ on conflict (model) do update set
   completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
   notes = excluded.notes,
   superseded_at = null;
+
+-- ---- social insights: Instagram e Facebook (migration 0654) ----
+create table if not exists public.social_insights_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  facebook_page_id text,
+  facebook_page_name text,
+  instagram_business_id text,
+  instagram_username text,
+  access_token_encrypted text,
+  status text not null default 'connected',
+  last_synced_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_social_insights_connections_org unique (organization_id)
+);
+
+create table if not exists public.social_insights_daily (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  platform text not null check (platform in ('facebook', 'instagram')),
+  date date not null,
+  impressions integer not null default 0,
+  reach integer not null default 0,
+  followers_count integer not null default 0,
+  new_followers integer not null default 0,
+  profile_views integer not null default 0,
+  interactions integer not null default 0,
+  raw_data jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_social_insights_daily_org_plat_date unique (organization_id, platform, date)
+);
+
+create index if not exists idx_social_insights_daily_org_date 
+  on public.social_insights_daily (organization_id, date desc);
+
+create index if not exists idx_social_insights_daily_org_plat_date 
+  on public.social_insights_daily (organization_id, platform, date desc);
+
+alter table public.social_insights_connections enable row level security;
+alter table public.social_insights_daily enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies 
+    where tablename = 'social_insights_connections' and policyname = 'social_insights_connections_org_select'
+  ) then
+    create policy social_insights_connections_org_select
+      on public.social_insights_connections
+      for select
+      to authenticated
+      using (organization_id in (select public.fn_user_org_ids()));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies 
+    where tablename = 'social_insights_daily' and policyname = 'social_insights_daily_org_select'
+  ) then
+    create policy social_insights_daily_org_select
+      on public.social_insights_daily
+      for select
+      to authenticated
+      using (organization_id in (select public.fn_user_org_ids()));
+  end if;
+end $$;
+
+alter table public.social_insights_connections 
+  add column if not exists recent_posts jsonb default '[]'::jsonb;
+
+-- 0655: Integracao opcional com Bling ERP v3
+create table if not exists public.bling_integrations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  is_enabled boolean not null default false,
+  client_id text,
+  client_secret_encrypted text,
+  access_token_encrypted text,
+  refresh_token_encrypted text,
+  token_expires_at timestamptz,
+  features jsonb not null default '{
+    "sync_contacts": false,
+    "sync_products": false,
+    "ai_stock_consult": false,
+    "auto_create_order": false,
+    "invoice_emission": false,
+    "tracking_notifications": false,
+    "financial_bills": false,
+    "ai_fiscal_agent": false
+  }'::jsonb,
+  status text not null default 'disconnected',
+  last_synced_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_bling_integrations_org unique (organization_id)
+);
+
+create index if not exists idx_bling_integrations_org
+  on public.bling_integrations (organization_id);
+
+alter table public.bling_integrations enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies 
+    where tablename = 'bling_integrations' and policyname = 'tenant_isolation_bling_integrations_all'
+  ) then
+    create policy tenant_isolation_bling_integrations_all on public.bling_integrations
+      for all using (organization_id in (select fn_user_org_ids()));
+  end if;
+end $$;
+
+create table if not exists public.bling_sync_logs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  operation text not null,
+  direction text not null default 'outbound',
+  status text not null,
+  details jsonb default '{}'::jsonb,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_bling_sync_logs_org_created
+  on public.bling_sync_logs (organization_id, created_at desc);
+
+alter table public.bling_sync_logs enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies 
+    where tablename = 'bling_sync_logs' and policyname = 'tenant_isolation_bling_sync_logs_all'
+  ) then
+    create policy tenant_isolation_bling_sync_logs_all on public.bling_sync_logs
+      for all using (organization_id in (select fn_user_org_ids()));
+  end if;
+end $$;
+-- ---- bucket whatsapp-media: 1GB (migration 0656) ----
+update storage.buckets
+   set file_size_limit = 1073741824
+ where id = 'whatsapp-media';

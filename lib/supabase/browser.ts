@@ -142,8 +142,9 @@ export function createClient() {
     // D-01.01: cookie name canônico alinhado ao middleware/server.
     cookieOptions: {
       name: "sb-deskcomm-auth",
-      sameSite: "strict",
+      sameSite: "lax",
       path: "/",
+      maxAge: 60 * 60 * 24 * 7,
     },
     realtime: { accessToken: async () => {
       const token = await tokenDoRealtime();

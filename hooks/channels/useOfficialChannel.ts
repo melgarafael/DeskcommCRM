@@ -11,6 +11,7 @@ export interface OfficialChannelState {
   hasToken: boolean;
   phoneNumberId: string | null;
   wabaId: string | null;
+  catalogId?: string | null;
   /** Base pública da API — usada no painel "Para integrar". */
   endpoint: string | null;
   displayName: string | null;
@@ -49,6 +50,7 @@ export interface ConnectInput {
   phone_number_id: string;
   waba_id: string;
   token: string;
+  catalog_id?: string | null;
 }
 
 export interface RegistroDoWebhook {
@@ -101,3 +103,19 @@ export function useRegistrarWebhookOficial() {
     },
   });
 }
+
+export function useUpdateOfficialCatalog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (catalog_id: string | null) =>
+      apiClient.patch<{ data: { catalogId: string | null } }>(
+        "/api/v1/channels/official",
+        { catalog_id },
+      ),
+    onError: showApiError,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["official-channel"] });
+    },
+  });
+}
+

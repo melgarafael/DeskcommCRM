@@ -77,6 +77,7 @@ const nextConfig: NextConfig = {
   // typedRoutes moved out of experimental in Next 15.5+
   typedRoutes: true,
   experimental: {
+    proxyClientMaxBodySize: "500mb",
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
   },
   images: {

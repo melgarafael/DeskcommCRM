@@ -33,6 +33,7 @@ export interface MarcaGravada {
    * ponteiro é gravado por escritor próprio.
    */
   readonly logo_path: string | null;
+  readonly logo_dark_path?: string | null;
   readonly accent_hex: string | null;
   /** A cor do TEMA ESCURO (#2482) — o par; `null` = só a cor acima pinta. */
   readonly accent_dark_hex: string | null;
@@ -55,6 +56,7 @@ interface Props {
   readonly iconeDaAba?: string | null;
   /** O que apareceria SEM o arquivo subido — a URL colada no `.env`, se houver. */
   readonly logoDoAmbiente: string | null;
+  readonly logoEscuroDoAmbiente?: string | null;
   readonly origens: { readonly nome: string; readonly logoUrl: string; readonly cor: string };
   readonly definidoNestaTela: boolean;
   readonly fallbackEm: string | null;
@@ -79,6 +81,7 @@ export function FormularioDaMarca({
   logoEscuroEmVigor,
   iconeDaAba,
   logoDoAmbiente,
+  logoEscuroDoAmbiente,
   origens,
   definidoNestaTela,
   fallbackEm,
@@ -427,9 +430,10 @@ export function FormularioDaMarca({
           // campo que houve render NOVO do servidor. Ver os Props de CampoDeLogo.
           logoDaCamada={{
             url: gravada.logo_path ? logoEmVigor : null,
-            escuraUrl: logoEscuroEmVigor,
+            escuraUrl: gravada.logo_dark_path ? logoEscuroEmVigor : null,
           }}
           logoHerdado={logoDoAmbiente}
+          logoEscuroHerdado={logoEscuroDoAmbiente}
           origemDoHerdado="do arquivo de instalação do servidor"
           nomeEmVigor={nomeEmVigor}
         />

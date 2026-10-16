@@ -70,8 +70,8 @@ export function TenantForm({ initial, onSave, onSaved }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl">
-      <Card className="space-y-4 p-6">
-        <div className="grid grid-cols-2 gap-4">
+      <Card className="space-y-4 p-4 sm:p-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="display_name">{t("Nome de exibição")}</Label>
             <Input

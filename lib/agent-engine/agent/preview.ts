@@ -170,6 +170,7 @@ export const SCENARIO_READS = new Set([
   // Testar (que roda sem contato) não responde preço nem agenda e o agente cai
   // em "vou confirmar e te retorno". Dado de contato/lead continua fora daqui.
   'crm_search_products',
+  'crm_send_catalog_product',
   'crm_search_knowledge',
 ]);
 /**

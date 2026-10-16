@@ -18,6 +18,9 @@ import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabular
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
 import { useT } from "@/hooks/i18n/useT";
+import { useQuery } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api/client";
+import type { Produto } from "@/lib/schemas/produtos";
 
 import type { ConfigOf } from "./shared";
 
@@ -117,6 +120,49 @@ function SeletorDeModelo({
   );
 }
 
+function SeletorDeProduto({
+  valor,
+  onChange,
+}: {
+  valor: string;
+  onChange: (codigo: string) => void;
+}) {
+  const t = useT();
+  const { data: produtos = [], isLoading } = useQuery<Produto[]>({
+    queryKey: ["products", "action-form"],
+    queryFn: async () => {
+      const res = await apiClient.get<{ data: Produto[] }>("/api/v1/products");
+      return res.data ?? [];
+    },
+  });
+
+  if (isLoading) {
+    return <p className="text-xs text-text-muted">{t("Carregando catálogo de produtos…")}</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <Select value={valor} onValueChange={onChange}>
+        <SelectTrigger id="action-product-retailer-id">
+          <SelectValue placeholder={t("Escolha um produto do catálogo")} />
+        </SelectTrigger>
+        <SelectContent>
+          {produtos.map((p) => (
+            <SelectItem key={p.id} value={p.codigo}>
+              {p.nome} ({p.codigo})
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {produtos.length === 0 && (
+        <p className="text-xs text-text-muted">
+          {t("Nenhum produto cadastrado no catálogo. Cadastre em Produtos e ele aparecerá aqui.")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ActionForm({
   config,
   onChange,
@@ -132,6 +178,12 @@ export function ActionForm({
     config.mode === "ai_message" ? (config.fallback_template_id ?? "") : "",
   );
   const [templateId, setTemplateId] = useState(config.mode === "template" ? config.template_id : "");
+  const [productRetailerId, setProductRetailerId] = useState(
+    config.mode === "product" ? config.product_retailer_id : "",
+  );
+  const [productBody, setProductBody] = useState(
+    config.mode === "product" ? (config.body ?? "") : "",
+  );
   const [error, setError] = useState<string | null>(null);
 
   const commit = (next: {
@@ -140,6 +192,8 @@ export function ActionForm({
     promptHint: string;
     fallbackTemplateId: string;
     templateId: string;
+    productRetailerId: string;
+    productBody: string;
   }) => {
     const candidate =
       next.mode === "text"
@@ -150,7 +204,13 @@ export function ActionForm({
               prompt_hint: next.promptHint,
               ...(next.fallbackTemplateId.trim() ? { fallback_template_id: next.fallbackTemplateId } : {}),
             }
-          : { mode: "template" as const, template_id: next.templateId };
+          : next.mode === "template"
+            ? { mode: "template" as const, template_id: next.templateId }
+            : {
+                mode: "product" as const,
+                product_retailer_id: next.productRetailerId,
+                ...(next.productBody.trim() ? { body: next.productBody } : {}),
+              };
     const parsed = actionConfigSchema.safeParse(candidate);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? t("Configuração inválida."));
@@ -160,7 +220,7 @@ export function ActionForm({
     onChange(parsed.data);
   };
 
-  const fields = { body, promptHint, fallbackTemplateId, templateId };
+  const fields = { body, promptHint, fallbackTemplateId, templateId, productRetailerId, productBody };
 
   return (
     <div className="space-y-3">
@@ -233,6 +293,32 @@ export function ActionForm({
             />
           </div>
         </>
+      ) : mode === "product" ? (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="action-product-retailer-id">{t("Produto a enviar")}</Label>
+            <SeletorDeProduto
+              valor={productRetailerId}
+              onChange={(v) => {
+                setProductRetailerId(v);
+                commit({ mode, ...fields, productRetailerId: v });
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="action-product-body">{t("Mensagem de apoio (opcional)")}</Label>
+            <Textarea
+              id="action-product-body"
+              maxLength={1000}
+              value={productBody}
+              placeholder={t("Ex.: Olá! Segue a oferta especial do produto que você viu:")}
+              onChange={(e) => {
+                setProductBody(e.target.value);
+                commit({ mode, ...fields, productBody: e.target.value });
+              }}
+            />
+          </div>
+        </div>
       ) : (
         <div className="space-y-2">
           <Label htmlFor="action-template-id">{t("Modelo de mensagem")}</Label>

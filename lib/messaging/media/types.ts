@@ -4,7 +4,7 @@
  * interface de fetch e o resto do sistema não muda (spec Onda 0).
  */
 
-export const MAX_MEDIA_BYTES = 52_428_800; // 50MB — espelha file_size_limit do bucket
+export const MAX_MEDIA_BYTES = 1_073_741_824; // 1GB — espelha file_size_limit do bucket
 
 export interface FetchedMedia {
   buffer: Buffer;
@@ -26,6 +26,11 @@ const MIME_EXT: Record<string, string> = {
   "video/mp4": "mp4",
   "application/mp4": "mp4", // WAHA/NOWEB anuncia vídeo do WhatsApp com esse mime
   "video/3gpp": "3gp",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+  "video/x-msvideo": "avi",
+  "video/x-matroska": "mkv",
+  "video/mpeg": "mpeg",
   "audio/ogg": "ogg",
   "audio/mpeg": "mp3",
   "audio/mp4": "m4a",

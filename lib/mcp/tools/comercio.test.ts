@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { crmSearchProducts } from "./comercio";
+import { crmSearchProducts, crmSendCatalogProduct } from "./comercio";
 import type { McpContext } from "../types";
 
 /** Só o formato do campo que este arquivo mede — não o contrato inteiro. */
@@ -78,5 +78,86 @@ describe("crm_search_products — preço na convenção da moeda", () => {
     )) as RespostaBusca;
 
     expect(semNbsp(resultado.produtos[0]!.preco)).toBe("R$ 249,90");
+  });
+});
+
+describe("crm_send_catalog_product — envio de card interativo de produto", () => {
+  it("em modo preview/readOnly simula com sucesso e não falha", async () => {
+    const query = {
+      select: () => query,
+      eq: () => query,
+      maybeSingle: async () => ({
+        data: {
+          id: "prod-1",
+          codigo: "IP15",
+          nome: "iPhone 15",
+          preco_cents: 24990,
+          moeda: "BRL",
+          controla_estoque: false,
+          quantidade: 10,
+          ativo: true,
+          imagem_url: "https://example.com/foto.jpg",
+        },
+        error: null,
+      }),
+    };
+    const ctx = {
+      organizationId: "22222222-2222-4222-8222-222222222222",
+      role: "agent",
+      actor: { type: "ai_agent", id: "run-1", agent_id: "agent-1" },
+      readOnly: true,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: { from: () => query } as any,
+    } as unknown as McpContext;
+
+    const res = await crmSendCatalogProduct.handler(
+      { codigo: "IP15", texto: "Confira o iPhone 15!" },
+      ctx,
+    );
+
+    expect(res).toEqual({
+      enviado: true,
+      preview: true,
+      produto: "iPhone 15",
+      codigo: "IP15",
+      preco: "R$ 249,90",
+      mensagem: "[SIMULAÇÃO] Card interativo do produto 'iPhone 15' validado e pronto para envio.",
+    });
+  });
+
+  it("recusa o envio quando o produto controla estoque e está esgotado", async () => {
+    const query = {
+      select: () => query,
+      eq: () => query,
+      maybeSingle: async () => ({
+        data: {
+          id: "prod-1",
+          codigo: "IP15",
+          nome: "iPhone 15",
+          preco_cents: 24990,
+          moeda: "BRL",
+          controla_estoque: true,
+          quantidade: 0,
+          ativo: true,
+          imagem_url: null,
+        },
+        error: null,
+      }),
+    };
+    const ctx = {
+      organizationId: "22222222-2222-4222-8222-222222222222",
+      role: "agent",
+      actor: { type: "ai_agent", id: "run-1", agent_id: "agent-1" },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: { from: () => query } as any,
+    } as unknown as McpContext;
+
+    const res = await crmSendCatalogProduct.handler({ codigo: "IP15" }, ctx);
+
+    expect(res).toEqual({
+      enviado: false,
+      motivo: "sem_estoque",
+      mensagem: "Este produto está esgotado no momento. Não é possível enviar card de produto sem estoque.",
+    });
   });
 });

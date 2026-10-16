@@ -224,8 +224,29 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
 
     montar();
 
+    // No celular, ao desbloquear a tela ou voltar para a aba em primeiro plano,
+    // reconecta imediatamente caso o canal tenha entrado em erro durante o repouso.
+    const onVisibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible" && !cancelado) {
+        if (!active || tentativas > 0) {
+          if (retomada) clearTimeout(retomada);
+          const velho = active;
+          active = null;
+          if (velho) supabase.removeChannel(velho);
+          montar();
+        }
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibility);
+    }
+
     return () => {
       cancelado = true;
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibility);
+      }
       if (retomada) clearTimeout(retomada);
       if (active) {
         supabase.removeChannel(active);

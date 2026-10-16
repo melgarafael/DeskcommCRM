@@ -276,6 +276,7 @@ export function describeNodeConfig(
       const c = config as ConfigOf<"action">;
       if (c.mode === "ai_message") return c.prompt_hint;
       if (c.mode === "text") return c.body;
+      if (c.mode === "product") return `${t("Produto")}: ${c.product_retailer_id}`;
       return t("Template fixo");
     }
     case "internal_task": {

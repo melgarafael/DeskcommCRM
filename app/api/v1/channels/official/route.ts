@@ -51,6 +51,7 @@ const conectarSchema = z.object({
   phone_number_id: z.string().min(5),
   waba_id: z.string().min(5),
   token: z.string().min(20),
+  catalog_id: z.string().optional().nullable(),
 });
 
 interface DesfechoGravado {
@@ -134,7 +135,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const consultar = () =>
     admin
       .from("channel_sessions")
-      .select("id, meta_phone_number_id, meta_waba_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status")
+      .select("id, meta_phone_number_id, meta_waba_id, meta_catalog_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status")
       .eq("organization_id", orgId)
       .eq("provider", CHANNEL_PROVIDER_META);
   const { data } = await queryTolerantToMissingArchived(
@@ -152,6 +153,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     hasToken: Boolean(data?.meta_token_encrypted),
     phoneNumberId: data?.meta_phone_number_id ?? null,
     wabaId: data?.meta_waba_id ?? null,
+    catalogId: data?.meta_catalog_id ?? null,
     /** Base pública da Graph API — para o operador reaproveitar em outro sistema. */
     endpoint: data ? metaGraphBase() : null,
     displayName: data?.display_name ?? null,
@@ -271,6 +273,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     provider: CHANNEL_PROVIDER_META,
     meta_phone_number_id: phone_number_id,
     meta_waba_id: waba_id,
+    ...(parsed.data.catalog_id !== undefined
+      ? { meta_catalog_id: parsed.data.catalog_id?.trim() || null }
+      : {}),
     meta_token_encrypted: cifrado,
     phone_number: validacao.displayPhoneNumber ? `+${validacao.displayPhoneNumber.replace(/\D/g, "")}` : null,
     display_name: validacao.verifiedName ?? "Canal oficial",
@@ -370,3 +375,43 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       : null,
   });
 }
+
+const patchCatalogSchema = z.object({
+  catalog_id: z.string().trim().nullable().optional(),
+});
+
+export async function PATCH(req: NextRequest) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
+  const requestId = req.headers.get("x-request-id") ?? randomUUID();
+  const authz = await requireRole("admin", { requestId, resource: "channels_official" });
+  if (!authz.ok) return authz.response;
+
+  const body = await req.json().catch(() => null);
+  const parsed = patchCatalogSchema.safeParse(body);
+  if (!parsed.success) {
+    return fail("invalid_input", "Dados inválidos", 400, {
+      requestId,
+      details: parsed.error.flatten(),
+    });
+  }
+
+  const admin = createAdminClient();
+  const orgId = authz.org.orgId;
+  const catalogId = parsed.data.catalog_id ? parsed.data.catalog_id.trim() : null;
+
+  const { error } = await admin
+    .from("channel_sessions")
+    .update({ meta_catalog_id: catalogId })
+    .eq("organization_id", orgId)
+    .eq("provider", CHANNEL_PROVIDER_META)
+    .is("archived_at", null);
+
+  if (error) {
+    return fail("internal_error", error.message, 500, { requestId });
+  }
+
+  return ok({ catalogId });
+}
+

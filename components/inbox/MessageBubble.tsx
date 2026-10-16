@@ -19,6 +19,7 @@ import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
+import { ProductCard } from "@/components/inbox/media/ProductCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
@@ -120,6 +121,7 @@ export function MessageBubble({
       ? t("Mídia apagada pela política de retenção ({n} dias)").replace("{n}", String(diasDaRetencao))
       : t("Mídia apagada pela política de retenção.");
   const isContact = message.type === "contact";
+  const isProduct = message.type === "product";
   // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
   const localizacao = localizacaoDaMensagem(message);
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
@@ -136,7 +138,7 @@ export function MessageBubble({
     && ["sent", "delivered", "read"].includes(message.status);
   const podeEditar = enviadaPeloAtendente && message.type === "text" && Boolean(message.body)
     && agora - new Date(message.sent_at).getTime() <= 15 * 60 * 1000;
-  const podeApagar = enviadaPeloAtendente && Boolean(onApagar);
+  const podeApagar = isOutbound && Boolean(message.external_id) && !apagada && Boolean(onApagar);
   const podeOcultar = !isOutbound && !apagada && Boolean(ocultaNoCrm ? onRestaurar : onOcultar);
   const temMenu = Boolean(onResponder || (podeEditar && onEditar) || podeApagar || podeOcultar);
   const aiGenerated = isAiGeneratedMessage(message.metadata);
@@ -411,9 +413,15 @@ export function MessageBubble({
               </div>
             )}
 
+            {isProduct && !hasMedia && !mediaExpirada && (
+              <div className={cn(message.body && isProduct && "mb-1")}>
+                <ProductCard message={message} />
+              </div>
+            )}
+
             {localizacao && <LocationCard localizacao={localizacao} />}
 
-            {message.body && !isContact && !localizacao && (
+            {message.body && !isContact && !localizacao && (!isProduct || message.body !== (message.metadata as Record<string, unknown> | null)?.product_name) && (
               <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
             )}
           </>

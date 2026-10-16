@@ -50,7 +50,12 @@ import {
   crmGetOrgMemory,
   crmSaveOrgMemory,
 } from "./evolucao";
-import { crmListContactOrders, crmSearchProducts } from "./comercio";
+import {
+  crmConsultarEstoqueBling,
+  crmListContactOrders,
+  crmSearchProducts,
+  crmSendCatalogProduct,
+} from "./comercio";
 import { crmGetHonorariosContrato, crmListHonorariosParcelas } from "./honorarios";
 import { crmDescribeExternalData, crmQueryExternalData } from "./dados-externos";
 import { crmListPrivacyRequests } from "./privacidade";
@@ -121,6 +126,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmSaveOrgMemory,
   crmListContactOrders,
   crmSearchProducts,
+  crmConsultarEstoqueBling,
   crmGetHonorariosContrato,
   crmListHonorariosParcelas,
   crmPrepararProposta,
@@ -156,6 +162,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmMoveLeadStage,
   crmRetomarLead,
   crmSendWhatsappMessage,
+  crmSendCatalogProduct,
   crmStartConversationAndSend,
   crmCreateConversationDraft,
   crmAssignConversation,

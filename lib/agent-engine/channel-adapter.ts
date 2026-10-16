@@ -46,6 +46,11 @@ export interface ChannelSendInput {
    * URL curta para o canal é o handler de mensagens, como em toda mídia.
    */
   media?: { storagePath: string; mime: string };
+  /**
+   * Presente = este envio é um PRODUTO interativo do catálogo Meta (Cloud API).
+   * O `body` é a mensagem opcional de apoio que acompanha o card.
+   */
+  product?: { productRetailerId: string; catalogId?: string };
 }
 
 /**
