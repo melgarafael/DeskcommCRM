@@ -37,6 +37,23 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // Encaminhar mensagem (#2835) — botão na bolha do chat e o diálogo de destino.
+  "Encaminhar": { es: "Reenviar" },
+  "Encaminhar mensagem": { es: "Reenviar mensaje" },
+  "Escolha a conversa que vai receber esta mensagem.": { es: "Elige la conversación que recibirá este mensaje." },
+  "Buscar conversa": { es: "Buscar conversación" },
+  "Mensagem encaminhada.": { es: "Mensaje reenviado." },
+  // Recusas do encaminhamento (`lib/inbox/encaminhar-mensagem.ts`).
+  "Escolha uma conversa de destino desta organização.": { es: "Elige una conversación de destino de esta organización." },
+  "A conversa de destino não tem canal de envio.": { es: "La conversación de destino no tiene canal de envío." },
+  "O canal da conversa de destino está desativado. Reative-o para encaminhar.": {
+    es: "El canal de la conversación de destino está desactivado. Reactívalo para reenviar.",
+  },
+  "Esta mensagem foi apagada e não pode ser encaminhada.": { es: "Este mensaje fue eliminado y no se puede reenviar." },
+  "Esta mensagem só tem mídia guardada no CRM, que ainda não pode ser encaminhada.": {
+    es: "Este mensaje solo tiene contenido multimedia guardado en el CRM, que aún no se puede reenviar.",
+  },
+  "Só é possível encaminhar mensagens de texto ou mídia.": { es: "Solo se pueden reenviar mensajes de texto o multimedia." },
   "Canal para enviar os lembretes": { es: "Canal para enviar los recordatorios" },
   "Automático — conversa da reserva ou único canal disponível": { es: "Automático — conversación de la reserva o único canal disponible" },
   "Canal configurado indisponível — escolha outro": { es: "Canal configurado no disponible — elige otro" },
