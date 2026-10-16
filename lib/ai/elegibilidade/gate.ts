@@ -40,7 +40,9 @@ import {
   lerNumerosDeTeste,
   numeroPodeTestar,
 } from "./pre-go-live";
+import { ehContatoInterno } from "@/lib/contacts/tags-internas";
 import { ehOperante } from "@/lib/organizacao/operante";
+import { tagsInternasDaOrg } from "@/lib/schemas/settings";
 
 /** Valores aceitos em `channel_sessions.metadata.ai_gate`. */
 export const AI_GATE_MODES = ["open", "allowlist"] as const;
@@ -73,6 +75,13 @@ export interface EstadoDeElegibilidade {
   /** `contacts.force_human` — a trava irrevogável pelo agente (regra dura 2). */
   forceHuman: boolean;
   /**
+   * `contacts.tags` cruza com `organizations.settings.crm.internal_contact_tags`
+   * (#2353): contato marcado como interno (equipe, sócio, família, fornecedor)
+   * não recebe atendimento da IA — o mesmo veto de uma conversa em "Assumir",
+   * sem pausar uma por uma. A lista mora em `crmSettingsSchema`.
+   */
+  contatoInterno: boolean;
+  /**
    * `contacts.ai_opt_out` — a marca PERMANENTE "sempre atendimento humano"
    * (migration 0624 / issue 2379). Convive com `force_human` de propósito: a
    * devolução limpa `force_human`, e esta coluna é o que ela não alcança. Vetado
@@ -103,6 +112,7 @@ export type MotivoDeElegibilidade =
   | "ai_opt_out"
   | "conversa_silenciada"
   | "conversa_de_humano"
+  | "contato_interno"
   | "fora_da_lista_de_teste"
   | "numero_de_teste"
   | "sem_autorizacao"
@@ -154,6 +164,13 @@ export function decidirElegibilidade(e: EstadoDeElegibilidade): DecisaoDeElegibi
   }
   if (e.assigneeKind === "user") {
     return { permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false };
+  }
+  // #2353: contato marcado como interno não é atendido pela IA em canal nenhum —
+  // é veto de CONTATO, no mesmo lugar dos outros vetos que valem sempre, e não
+  // uma exigência positiva de gate. Vale igual com o gate aberto: quem ligou o
+  // robô no número não quer que ele responda a equipe, sócio ou família.
+  if (e.contatoInterno) {
+    return { permite: false, motivo: "contato_interno", bloqueioPorAllowlist: false };
   }
 
   if (e.modo === "open") {
@@ -223,6 +240,10 @@ export function montarEstadoDeElegibilidade(raw: {
   aiTestPhoneNumbers?: unknown;
   contactPhoneNumber?: string | null;
   forceHuman: unknown;
+  /** `contacts.tags` cru (array de `text[]`), para a régua de contato interno (#2353). */
+  contactTags?: readonly string[] | null | undefined;
+  /** `organizations.settings` cru; a lista interna mora em `.crm.internal_contact_tags`. */
+  orgSettings?: unknown;
   /**
    * `contacts.ai_opt_out` (cru). Obrigatório de propósito, igual a `forceHuman`:
    * quem monta tem de dizer de onde leu, e um transporte novo que esqueça a
@@ -244,6 +265,7 @@ export function montarEstadoDeElegibilidade(raw: {
     canalDesativado: raw.canalDesativado === true,
     modo,
     forceHuman: raw.forceHuman === true,
+    contatoInterno: ehContatoInterno(raw.contactTags, tagsInternasDaOrg(raw.orgSettings)),
     aiOptOut: raw.aiOptOut === true,
     botSilencedUntil: normalizarInstante(raw.botSilencedUntil),
     assigneeKind: raw.assigneeKind,

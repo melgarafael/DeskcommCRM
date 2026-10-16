@@ -26,6 +26,7 @@ const ORG = "00000000-0000-4000-8000-0000000000e5";
 
 const estado = vi.hoisted(() => ({ papelNoBanco: "viewer", papelDaMembresia: "viewer" }));
 const rpc = vi.hoisted(() => vi.fn());
+const from = vi.hoisted(() => vi.fn());
 const redirecionar = vi.hoisted(() =>
   vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
@@ -48,7 +49,7 @@ vi.mock("@/lib/auth/server", () => ({
   orgAtivaSemPortao: async () => ({ orgId: ORG, name: "Org", role: estado.papelDaMembresia, org_status: "active" }),
   mfaEmDivida: async () => false,
 }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc }) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc, from }) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("next/navigation", () => ({ redirect: redirecionar, useRouter: () => ({ refresh: vi.fn() }) }));
@@ -73,6 +74,17 @@ beforeEach(() => {
   estado.papelNoBanco = "viewer";
   estado.papelDaMembresia = "viewer";
   redirecionar.mockClear();
+  // #2353: a página de Tags agora também lê `organizations.settings` (a lista de
+  // contato interno) pelo client da SESSÃO. O dublê responde o suficiente para
+  // essa leitura — a catraca deste arquivo mede o PORTÃO, não a leitura.
+  from.mockReset();
+  from.mockImplementation(() => {
+    const chain: Record<string, unknown> = {};
+    chain.select = () => chain;
+    chain.eq = () => chain;
+    chain.maybeSingle = () => Promise.resolve({ data: { settings: {} }, error: null });
+    return chain;
+  });
   rpc.mockReset();
   rpc.mockImplementation(async (fn: string) => {
     if (fn === "fn_user_role_in_org") return { data: estado.papelNoBanco, error: null };
