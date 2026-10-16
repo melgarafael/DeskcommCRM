@@ -276,6 +276,44 @@ export const wahaAdapter: ChannelAdapter = {
     // caminho de TEXTO — os outros dois não citam: o WAHA aceita `reply_to` só
     // no `sendText`, e mandá-lo nos outros seria pedir para a API ignorar em
     // silêncio, que é como se perde uma feature sem ninguém notar.
+function formatarPrecoCents(cents: number): string {
+  return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function legendaDoProduto(envelope: OutboundEnvelope): string {
+  const meta = (envelope.metadata ?? {}) as Record<string, unknown>;
+  const nome = (meta.product_name as string) || (envelope.body ?? "Produto");
+  const sku = (meta.product_retailer_id as string) || (meta.retailer_id as string) || "";
+  const precoCents = typeof meta.product_price_cents === "number" ? meta.product_price_cents : null;
+  const precoDeCents = typeof meta.product_price_de_cents === "number" ? meta.product_price_de_cents : null;
+  const videoUrl = (meta.product_video_url as string) || null;
+
+  const partes: string[] = [`🛍️ *${nome}*`];
+
+  if (precoCents !== null) {
+    if (precoDeCents !== null && precoDeCents > precoCents) {
+      const desconto = Math.round(((precoDeCents - precoCents) / precoDeCents) * 100);
+      partes.push(`💰 ~De ${formatarPrecoCents(precoDeCents)}~ por *${formatarPrecoCents(precoCents)}* (-${desconto}% OFF)`);
+    } else {
+      partes.push(`💰 Preço: *${formatarPrecoCents(precoCents)}*`);
+    }
+  }
+
+  if (sku) {
+    partes.push(`📦 Código (SKU): ${sku}`);
+  }
+
+  if (videoUrl) {
+    partes.push(`🎬 Vídeo demonstrativo: ${videoUrl}`);
+  }
+
+  if (envelope.body?.trim()) {
+    partes.push(`\n${envelope.body.trim()}`);
+  }
+
+  return partes.join("\n");
+}
+
     let res: unknown;
     if (envelope.kind === "contact" && envelope.contact) {
       const resolvedId = await resolveWhatsappIdForContactCard(
@@ -290,6 +328,41 @@ export const wahaAdapter: ChannelAdapter = {
       );
       await envelope.beforeSend?.();
       res = await client.sendContactVcard(envelope.sessionRef, to, [contact]);
+    } else if (envelope.kind === "product") {
+      await envelope.beforeSend?.();
+      const meta = (envelope.metadata ?? {}) as Record<string, unknown>;
+      const imagemUrl = (meta.product_image_url as string) || null;
+      const texto = legendaDoProduto(envelope);
+
+      if (imagemUrl) {
+        const plan: WahaSendPlan = {
+          endpoint: "sendImage",
+          payload: {
+            file: {
+              url: imagemUrl,
+              mimetype: "image/jpeg",
+            },
+            caption: texto,
+          },
+        };
+        try {
+          res = await client.sendMedia(envelope.sessionRef, to, plan);
+        } catch {
+          res = await client.sendMessage(
+            envelope.sessionRef,
+            to,
+            texto,
+            envelope.replyToExternalId ? idCompletoDaMensagem(envelope.replyToExternalId, to) : null,
+          );
+        }
+      } else {
+        res = await client.sendMessage(
+          envelope.sessionRef,
+          to,
+          texto,
+          envelope.replyToExternalId ? idCompletoDaMensagem(envelope.replyToExternalId, to) : null,
+        );
+      }
     } else if (envelope.media) {
       await envelope.beforeSend?.();
       const plan = wahaSendPlanFor(envelope.kind, envelope.media);

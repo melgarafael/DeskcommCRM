@@ -128,7 +128,7 @@ export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFec
           />
         </label>
         <label className="text-sm">
-          {t("Preço de venda")}
+          {t("Preço de venda (Por)")}
           <input
             value={rascunho.preco}
             onChange={(e) => setRascunho({ ...rascunho, preco: e.target.value })}
@@ -139,6 +139,20 @@ export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFec
           />
         </label>
         <label className="text-sm">
+          {t("Preço original (De)")} <span className="text-muted-foreground">{t("(opcional)")}</span>
+          <input
+            value={rascunho.preco_de}
+            onChange={(e) => setRascunho({ ...rascunho, preco_de: e.target.value })}
+            placeholder="6.999,00"
+            className="mt-1 h-9 w-full rounded-md border px-3"
+            disabled={desabilitado}
+            data-testid="edicao-preco-de"
+          />
+          <span className="mt-1 block text-xs text-muted-foreground">
+            {t("Se preenchido, o preço aparece com desconto riscado ('De R$ X por R$ Y').")}
+          </span>
+        </label>
+        <label className="text-sm">
           {t("Custo")} <span className="text-muted-foreground">{t("(opcional)")}</span>
           <input
             value={rascunho.custo}
@@ -147,6 +161,17 @@ export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFec
             className="mt-1 h-9 w-full rounded-md border px-3"
             disabled={desabilitado}
             data-testid="edicao-custo"
+          />
+        </label>
+        <label className="text-sm">
+          {t("Vídeo demonstrativo")} <span className="text-muted-foreground">{t("(URL)")}</span>
+          <input
+            value={rascunho.video_url}
+            onChange={(e) => setRascunho({ ...rascunho, video_url: e.target.value })}
+            placeholder="https://..."
+            className="mt-1 h-9 w-full rounded-md border px-3"
+            disabled={desabilitado}
+            data-testid="edicao-video-url"
           />
         </label>
       </div>

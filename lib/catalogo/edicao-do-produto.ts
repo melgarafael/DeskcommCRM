@@ -35,9 +35,11 @@ export interface RascunhoDaEdicao {
   marca: string;
   categoria: string;
   preco: string;
+  preco_de: string;
   custo: string;
   quantidade: string;
   controla_estoque: boolean;
+  video_url: string;
 }
 
 /** Origens que ESTE CRM escreve. Todo o resto veio de fora. */
@@ -77,9 +79,11 @@ export function rascunhoDaEdicao(produto: Produto): RascunhoDaEdicao {
     marca: produto.marca ?? "",
     categoria: produto.categoria ?? "",
     preco: centavosParaTexto(produto.preco_cents),
+    preco_de: centavosParaTexto(produto.preco_de_cents ?? null),
     custo: centavosParaTexto(produto.custo_cents),
     quantidade: String(produto.quantidade),
     controla_estoque: produto.controla_estoque,
+    video_url: produto.video_url ?? "",
   };
 }
 
@@ -106,6 +110,12 @@ export function corpoDaEdicao(
   // erro com motivo, não um número chutado.
   const preco = precoParaCentavos(rascunho.preco);
   if (preco === null) return { corpo: {}, erro: t("Preço inválido. Escreva assim: 5.499,00") };
+  
+  const preco_de = rascunho.preco_de.trim() === "" ? null : precoParaCentavos(rascunho.preco_de);
+  if (rascunho.preco_de.trim() !== "" && preco_de === null) {
+    return { corpo: {}, erro: t("Preço original (De) inválido.") };
+  }
+
   const custo = rascunho.custo.trim() === "" ? null : precoParaCentavos(rascunho.custo);
   if (rascunho.custo.trim() !== "" && custo === null) {
     return { corpo: {}, erro: t("Custo inválido.") };
@@ -118,6 +128,7 @@ export function corpoDaEdicao(
   const descricao = rascunho.descricao.trim();
   const marca = rascunho.marca.trim();
   const categoria = rascunho.categoria.trim();
+  const video_url = rascunho.video_url.trim();
   const quantidade = Math.max(0, Math.trunc(Number(rascunho.quantidade.replace(",", ".")) || 0));
 
   const corpo: Record<string, unknown> = {};
@@ -127,6 +138,8 @@ export function corpoDaEdicao(
   if (marca !== (produto.marca ?? "")) corpo.marca = marca;
   if (categoria !== (produto.categoria ?? "")) corpo.categoria = categoria;
   if (preco !== produto.preco_cents) corpo.preco_cents = preco;
+  if (preco_de !== (produto.preco_de_cents ?? null)) corpo.preco_de_cents = preco_de;
+  if (video_url !== (produto.video_url ?? "")) corpo.video_url = video_url || null;
   if (custo !== produto.custo_cents) corpo.custo_cents = custo;
   if (rascunho.controla_estoque !== produto.controla_estoque) {
     corpo.controla_estoque = rascunho.controla_estoque;

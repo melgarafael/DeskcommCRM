@@ -98,6 +98,7 @@ export const produtoCreateSchema = z.object({
   marca: z.string().trim().max(80).optional(),
   categoria: z.string().trim().max(80).optional(),
   preco_cents: z.number().int().min(0, "preço não pode ser negativo"),
+  preco_de_cents: z.number().int().min(0).nullable().optional(),
   // ⚠️ `moeda` NÃO entra aqui de propósito, e a ausência é a regra.
   //
   // Ela esteve neste schema e era controle decorativo ao contrário: a rota
@@ -116,6 +117,7 @@ export const produtoCreateSchema = z.object({
   quantidade: z.number().int().min(0).default(0),
   ativo: z.boolean().default(true),
   imagem_url: z.string().trim().url().max(2000).optional(),
+  video_url: z.string().trim().url().max(2000).nullable().optional(),
 });
 
 /** Tudo opcional: o PATCH muda o que veio e não encosta no resto. */
@@ -132,6 +134,7 @@ export interface Produto {
   marca: string | null;
   categoria: string | null;
   preco_cents: number;
+  preco_de_cents: number | null;
   moeda: string;
   custo_cents: number | null;
   controla_estoque: boolean;
@@ -139,6 +142,7 @@ export interface Produto {
   ativo: boolean;
   origem: string;
   imagem_url: string | null;
+  video_url: string | null;
   /** Caminhos em `catalog-photos`, na ordem da tela (migration 0390). */
   fotos: string[];
   updated_at: string;
@@ -146,5 +150,6 @@ export interface Produto {
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
-  "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, custo_cents, " +
-  "controla_estoque, quantidade, ativo, origem, imagem_url, fotos, updated_at";
+  "id, codigo, nome, descricao, marca, categoria, preco_cents, preco_de_cents, moeda, custo_cents, " +
+  "controla_estoque, quantidade, ativo, origem, imagem_url, video_url, fotos, updated_at";
+

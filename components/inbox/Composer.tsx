@@ -965,6 +965,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 product_retailer_id: payload.codigo,
                 product_name: payload.nome,
                 product_price_cents: payload.preco_cents,
+                product_price_de_cents: payload.preco_de_cents,
+                product_video_url: payload.video_url,
                 product_image_url: payload.imagem_url,
               },
             },

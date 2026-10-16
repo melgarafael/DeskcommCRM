@@ -22,7 +22,9 @@ import {
   PRODUTOS_POR_PAGINA,
 } from "@/lib/catalogo/busca-da-tela";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
-import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
+import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
+import { COLUNAS_DO_PRODUTO, produtoCreateSchema, type Produto } from "@/lib/schemas/produtos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -82,9 +84,33 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
   if (error) return fail("internal_error", "Erro ao listar os produtos.", 500, { requestId });
-  if (!paginado) return ok(data ?? [], { requestId });
+
+  const lista = (data ?? []) as unknown as Produto[];
+  const capasPrecisamAssinar: string[] = [];
+  for (const p of lista) {
+    if (!p.imagem_url && p.fotos?.[0] && fotoPertenceAoProduto(p.fotos[0], authz.org.orgId, p.id)) {
+      capasPrecisamAssinar.push(p.fotos[0]);
+    }
+  }
+
+  if (capasPrecisamAssinar.length > 0) {
+    const { data: assinadas } = await createAdminClient()
+      .storage.from(BUCKET_DAS_FOTOS)
+      .createSignedUrls(capasPrecisamAssinar, 86400 * 7);
+    const mapaUrl: Record<string, string> = {};
+    for (const a of assinadas ?? []) {
+      if (a.path && a.signedUrl) mapaUrl[a.path] = a.signedUrl;
+    }
+    for (const p of lista) {
+      if (!p.imagem_url && p.fotos?.[0] && mapaUrl[p.fotos[0]]) {
+        p.imagem_url = mapaUrl[p.fotos[0]]!;
+      }
+    }
+  }
+
+  if (!paginado) return ok(lista, { requestId });
   const total = count ?? null;
-  return ok(data ?? [], {
+  return ok(lista, {
     requestId,
     meta: {
       total,

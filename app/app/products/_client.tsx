@@ -13,6 +13,17 @@ import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
 import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Trash, VideoCamera } from "@/lib/ui/icons";
 import { EdicaoDoProduto } from "./_edicao";
 
 interface Textos {
@@ -36,9 +47,11 @@ interface Rascunho {
   marca: string;
   categoria: string;
   preco: string;
+  preco_de: string;
   custo: string;
   quantidade: string;
   controla_estoque: boolean;
+  video_url: string;
 }
 
 const VAZIO: Rascunho = {
@@ -47,9 +60,11 @@ const VAZIO: Rascunho = {
   marca: "",
   categoria: "",
   preco: "",
+  preco_de: "",
   custo: "",
   quantidade: "0",
   controla_estoque: true,
+  video_url: "",
 };
 
 function doRascunho(
@@ -58,6 +73,12 @@ function doRascunho(
 ): Record<string, unknown> | { erro: string } {
   const preco_cents = precoParaCentavos(r.preco);
   if (preco_cents === null) return { erro: t("Preço inválido. Escreva assim: 5.499,00") };
+  
+  const preco_de_cents = r.preco_de.trim() === "" ? null : precoParaCentavos(r.preco_de);
+  if (r.preco_de.trim() !== "" && preco_de_cents === null) {
+    return { erro: t("Preço original (De) inválido.") };
+  }
+
   const custo_cents = r.custo.trim() === "" ? null : precoParaCentavos(r.custo);
   if (r.custo.trim() !== "" && custo_cents === null) return { erro: t("Custo inválido.") };
 
@@ -67,9 +88,11 @@ function doRascunho(
     ...(r.marca.trim() ? { marca: r.marca.trim() } : {}),
     ...(r.categoria.trim() ? { categoria: r.categoria.trim() } : {}),
     preco_cents,
+    ...(preco_de_cents !== null ? { preco_de_cents } : {}),
     custo_cents,
     controla_estoque: r.controla_estoque,
     quantidade: Number(r.quantidade) || 0,
+    ...(r.video_url.trim() ? { video_url: r.video_url.trim() } : {}),
   };
 }
 
@@ -255,6 +278,8 @@ export function ProdutosClient({
   const arquivoRef = React.useRef<HTMLInputElement>(null);
   const [fotosAbertas, setFotosAbertas] = React.useState<string | null>(null);
   const [editando, setEditando] = React.useState<string | null>(null);
+  const [produtoParaExcluir, setProdutoParaExcluir] = React.useState<Produto | null>(null);
+  const [excluindo, setExcluindo] = React.useState(false);
 
   // A busca vai à URL — e a URL, ao servidor, que procura no catálogo INTEIRO.
   // Antes ela filtrava no navegador só os 500 que a página tinha trazido.
@@ -330,6 +355,21 @@ export function ProdutosClient({
       router.refresh();
     } catch (e) {
       showApiError(e);
+    }
+  }
+
+  async function confirmarExclusao() {
+    if (!produtoParaExcluir) return;
+    setExcluindo(true);
+    try {
+      await apiClient.delete(`/api/v1/products/${produtoParaExcluir.id}`);
+      toast.success(t("Produto excluído"));
+      setProdutoParaExcluir(null);
+      router.refresh();
+    } catch (e) {
+      showApiError(e);
+    } finally {
+      setExcluindo(false);
     }
   }
 
@@ -462,7 +502,17 @@ export function ProdutosClient({
               />
             </label>
             <label className="text-sm">
-              {t("Preço de venda")}
+              {t("Preço original (De)")} <span className="text-muted-foreground">{t("(opcional - promoção)")}</span>
+              <input
+                value={rascunho.preco_de}
+                onChange={(e) => setRascunho({ ...rascunho, preco_de: e.target.value })}
+                placeholder="6.999,00"
+                className="mt-1 h-9 w-full rounded-md border px-3"
+                data-testid="produto-preco-de"
+              />
+            </label>
+            <label className="text-sm">
+              {t("Preço de venda (Por)")}
               <input
                 value={rascunho.preco}
                 onChange={(e) => setRascunho({ ...rascunho, preco: e.target.value })}
@@ -481,6 +531,19 @@ export function ProdutosClient({
               />
               <span className="mt-1 block text-xs text-muted-foreground">
                 {t("Serve para o atendente saber até onde pode negociar. Não aparece para o cliente.")}
+              </span>
+            </label>
+            <label className="text-sm">
+              {t("Vídeo demonstrativo (URL)")} <span className="text-muted-foreground">{t("(opcional)")}</span>
+              <input
+                value={rascunho.video_url}
+                onChange={(e) => setRascunho({ ...rascunho, video_url: e.target.value })}
+                placeholder="https://..."
+                className="mt-1 h-9 w-full rounded-md border px-3"
+                data-testid="produto-video-url"
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {t("Link do YouTube, Vimeo ou vídeo demonstrativo do produto.")}
               </span>
             </label>
           </div>
@@ -544,9 +607,23 @@ export function ProdutosClient({
                 <img src={capa} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
               ) : null}
               <div className="min-w-0 flex-1">
-                <p className={`truncate font-medium ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
-                  {p.nome}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className={`truncate font-medium ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
+                    {p.nome}
+                  </p>
+                  {p.video_url ? (
+                    <a
+                      href={p.video_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-[11px] font-medium text-sky-600 hover:bg-sky-500/20 dark:text-sky-400"
+                      title={t("Ver vídeo demonstrativo")}
+                    >
+                      <VideoCamera className="h-3 w-3" />
+                      {t("Vídeo")}
+                    </a>
+                  ) : null}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   {p.codigo}
                   {p.marca ? ` · ${p.marca}` : ""}
@@ -555,9 +632,27 @@ export function ProdutosClient({
                     : ` · ${t("sem controle de estoque")}`}
                 </p>
               </div>
-              <span className="shrink-0 tabular-nums font-medium">
-                {formatCents(p.preco_cents, p.moeda)}
-              </span>
+              <div className="shrink-0 text-right">
+                {p.preco_de_cents && p.preco_de_cents > p.preco_cents ? (
+                  <div className="flex flex-col items-end">
+                    <span className="text-xs text-muted-foreground line-through tabular-nums">
+                      {t("De")} {formatCents(p.preco_de_cents, p.moeda)}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded bg-emerald-500/15 px-1.5 py-0.2 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                        -{Math.round(((p.preco_de_cents - p.preco_cents) / p.preco_de_cents) * 100)}%
+                      </span>
+                      <span className="tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+                        {formatCents(p.preco_cents, p.moeda)}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="tabular-nums font-medium">
+                    {formatCents(p.preco_cents, p.moeda)}
+                  </span>
+                )}
+              </div>
               {podeEditar ? (
                 <>
                   <Button
@@ -586,6 +681,16 @@ export function ProdutosClient({
                   >
                     {t(p.ativo ? "Desativar" : "Reativar")}
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setProdutoParaExcluir(p)}
+                    data-testid={`excluir-${p.codigo}`}
+                    title={t("Excluir produto")}
+                  >
+                    <Trash className="h-4 w-4" />
+                  </Button>
                 </>
               ) : null}
             </div>
@@ -603,6 +708,30 @@ export function ProdutosClient({
           })}
         </ul>
       )}
+
+      <AlertDialog open={!!produtoParaExcluir} onOpenChange={(aberto) => !aberto && setProdutoParaExcluir(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Excluir produto?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Tem certeza que deseja excluir o produto")} <strong>{produtoParaExcluir?.nome}</strong> ({produtoParaExcluir?.codigo})? {t("Esta ação não pode ser desfeita e todas as fotos serão apagadas permanentemente.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={excluindo}>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={excluindo}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmarExclusao();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t(excluindo ? "Excluindo…" : "Excluir")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {total > 0 ? (
         <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground" data-testid="paginacao-produtos">

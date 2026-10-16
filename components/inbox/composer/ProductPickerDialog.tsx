@@ -27,6 +27,8 @@ export interface ProductPickPayload {
   nome: string;
   body?: string;
   preco_cents?: number;
+  preco_de_cents?: number | null;
+  video_url?: string | null;
   imagem_url?: string | null;
 }
 
@@ -74,6 +76,8 @@ export function ProductPickerDialog({ open, onOpenChange, sending, onPick }: Pro
       nome: selectedProduct.nome,
       body: customText.trim() || undefined,
       preco_cents: Number(selectedProduct.preco_cents),
+      preco_de_cents: selectedProduct.preco_de_cents ? Number(selectedProduct.preco_de_cents) : null,
+      video_url: selectedProduct.video_url,
       imagem_url: selectedProduct.imagem_url,
     });
   };
@@ -149,8 +153,33 @@ export function ProductPickerDialog({ open, onOpenChange, sending, onPick }: Pro
                   {/* Informações */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <h4 className="text-sm font-medium truncate text-foreground">{prod.nome}</h4>
-                      <span className="text-sm font-semibold text-primary shrink-0">{preco}</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <h4 className="text-sm font-medium truncate text-foreground">{prod.nome}</h4>
+                        {prod.video_url ? (
+                          <span className="shrink-0 rounded bg-sky-500/10 px-1 py-0.2 text-[9px] font-semibold text-sky-600 dark:text-sky-400">
+                            Vídeo
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {prod.preco_de_cents && prod.preco_de_cents > prod.preco_cents ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-muted-foreground line-through">
+                              {formatarMoeda(Number(prod.preco_de_cents), prod.moeda || "BRL")}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="rounded bg-emerald-500/15 px-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                                -{Math.round(((prod.preco_de_cents - prod.preco_cents) / prod.preco_de_cents) * 100)}%
+                              </span>
+                              <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                                {preco}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-sm font-semibold text-primary">{preco}</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                       <span className="font-mono">SKU: {prod.codigo}</span>

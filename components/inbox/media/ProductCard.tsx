@@ -2,7 +2,7 @@
 
 import { useT } from "@/hooks/i18n/useT";
 import { formatarMoeda } from "@/lib/propostas/moeda";
-import { Package, ShoppingBag } from "@/lib/ui/icons";
+import { Package, ShoppingBag, VideoCamera } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/lib/types/messaging";
 
@@ -19,6 +19,9 @@ export function ProductCard({ message }: Props) {
   const sku = (meta.product_retailer_id as string) || (meta.retailer_id as string) || "";
   const precoCents = typeof meta.product_price_cents === "number" ? meta.product_price_cents : null;
   const preco = precoCents !== null ? formatarMoeda(precoCents, "BRL") : null;
+  const precoDeCents = typeof meta.product_price_de_cents === "number" ? meta.product_price_de_cents : null;
+  const precoDe = precoDeCents !== null ? formatarMoeda(precoDeCents, "BRL") : null;
+  const videoUrl = (meta.product_video_url as string) || null;
   const imagemUrl = (meta.product_image_url as string) || null;
 
   const isOutbound = message.direction === "outbound";
@@ -60,7 +63,21 @@ export function ProductCard({ message }: Props) {
         </h4>
 
         <div className="flex items-center justify-between gap-2 pt-0.5">
-          {preco ? (
+          {precoDeCents && precoCents && precoDeCents > precoCents ? (
+            <div className="flex flex-col items-start">
+              <span className="text-[10px] opacity-75 line-through tabular-nums">
+                {t("De")} {precoDe}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="rounded bg-emerald-500/20 px-1 py-0.2 text-[9px] font-bold text-emerald-400">
+                  -{Math.round(((precoDeCents - precoCents) / precoDeCents) * 100)}%
+                </span>
+                <span className="font-bold text-sm tracking-tight tabular-nums">
+                  {preco}
+                </span>
+              </div>
+            </div>
+          ) : preco ? (
             <span className="font-bold text-sm tracking-tight">
               {preco}
             </span>
@@ -74,6 +91,18 @@ export function ProductCard({ message }: Props) {
             </span>
           )}
         </div>
+
+        {videoUrl && (
+          <a
+            href={videoUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 flex items-center justify-center gap-1.5 rounded-md border border-current/20 bg-current/5 py-1 text-xs font-medium transition hover:bg-current/10"
+          >
+            <VideoCamera size={14} />
+            <span>{t("Ver vídeo demonstrativo")}</span>
+          </a>
+        )}
       </div>
     </div>
   );

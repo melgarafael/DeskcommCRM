@@ -367,17 +367,53 @@ export const metaCloudAdapter: ChannelAdapter = {
       );
     }
 
-    if (envelope.kind === "product" && !productPayload(envelope, creds.catalogId)) {
-      throw new Error(
-        "meta_catalog_not_configured: mensagem de produto exige catalog_id na sessão/env e product_retailer_id no payload.",
-      );
-    }
+    let corpo: Record<string, unknown>;
+    const pPayload = productPayload(envelope, creds.catalogId);
+    if (envelope.kind === "product" && pPayload) {
+      corpo = pPayload;
+    } else if (envelope.kind === "product") {
+      const meta = (envelope.metadata ?? {}) as Record<string, unknown>;
+      const imagemUrl = (meta.product_image_url as string) || null;
+      const nome = (meta.product_name as string) || (envelope.body ?? "Produto");
+      const sku = (meta.product_retailer_id as string) || (meta.retailer_id as string) || "";
+      const precoCents = typeof meta.product_price_cents === "number" ? meta.product_price_cents : null;
+      const precoDeCents = typeof meta.product_price_de_cents === "number" ? meta.product_price_de_cents : null;
+      const videoUrl = (meta.product_video_url as string) || null;
 
-    const corpo =
-      contactPayload(envelope) ??
-      mediaPayload(envelope) ??
-      productPayload(envelope, creds.catalogId) ??
-      { type: "text", text: { body: envelope.body ?? "" } };
+      const formatar = (cents: number) =>
+        (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+      const partes: string[] = [`🛍️ *${nome}*`];
+      if (precoCents !== null) {
+        if (precoDeCents !== null && precoDeCents > precoCents) {
+          const desconto = Math.round(((precoDeCents - precoCents) / precoDeCents) * 100);
+          partes.push(`💰 ~De ${formatar(precoDeCents)}~ por *${formatar(precoCents)}* (-${desconto}% OFF)`);
+        } else {
+          partes.push(`💰 Preço: *${formatar(precoCents)}*`);
+        }
+      }
+      if (sku) partes.push(`📦 Código (SKU): ${sku}`);
+      if (videoUrl) partes.push(`🎬 Vídeo demonstrativo: ${videoUrl}`);
+      if (envelope.body?.trim()) partes.push(`\n${envelope.body.trim()}`);
+      const texto = partes.join("\n");
+
+      if (imagemUrl) {
+        corpo = {
+          type: "image",
+          image: { link: imagemUrl, caption: texto },
+        };
+      } else {
+        corpo = {
+          type: "text",
+          text: { body: texto },
+        };
+      }
+    } else {
+      corpo =
+        contactPayload(envelope) ??
+        mediaPayload(envelope) ??
+        { type: "text", text: { body: envelope.body ?? "" } };
+    }
 
     await envelope.beforeSend?.();
     const res = await fetch(
