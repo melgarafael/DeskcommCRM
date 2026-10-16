@@ -54,6 +54,7 @@ import {
   excluirLigacao,
   inserirDepois,
   ligar,
+  linhasDeCondicoes,
   organizar,
   percorrer,
   proximoId,
@@ -103,7 +104,7 @@ function regraGravadaDe(regra: AutomationRuleRow | null): RegraGravada | null {
   return {
     trigger_event: regra.trigger_event,
     trigger_config: regra.trigger_config,
-    conditions: regra.conditions,
+    conditions: linhasDeCondicoes(regra.conditions),
     actions: regra.actions,
   };
 }

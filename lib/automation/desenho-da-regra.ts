@@ -37,8 +37,16 @@ import {
   createAutomationRuleSchema,
   type CreateAutomationRuleInput,
 } from "@/lib/schemas/webhooks";
+import type { ConditionNode, ConditionOp, Conditions } from "@/lib/automation/conditions";
 
-export type OperadorDaCondicao = "eq" | "neq" | "contains";
+/**
+ * O vocabulário de operadores é o MESMO do avaliador e da porta da API
+ * (`ConditionOp`, #2727). Antes do arremate o desenho mantinha uma cópia
+ * paralela (`"eq" | "neq" | "contains"`) que, com os operadores novos do #2727,
+ * divergiria em silêncio do que o schema aceita — e é o schema que valida o
+ * corpo salvo (`validarDesenho`).
+ */
+export type OperadorDaCondicao = ConditionOp;
 
 /**
  * Uma linha do SE. `avancado` é só da tela (mostrar o caminho digitado em vez
@@ -50,6 +58,23 @@ export type LinhaDeCondicao = {
   value: string;
   avancado?: boolean;
 };
+
+/**
+ * As condições no formato que o DESENHO entende: uma fila de linhas. O motor
+ * guarda `Conditions` (#2727) — a lista antiga (≡ `all`) ou um grupo `{all|any}`
+ * aninhável —, mas o designer desenha UMA caixa de condições, então achata os
+ * grupos recursivamente e preserva a ordem. Para a lista antiga é a identidade;
+ * para um grupo, mostra as condições-folha (o desenho não representa o "ou").
+ */
+export function linhasDeCondicoes(conditions: Conditions): LinhaDeCondicao[] {
+  const achata = (nos: readonly ConditionNode[]): LinhaDeCondicao[] =>
+    nos.flatMap((no) =>
+      "field" in no
+        ? [{ field: no.field, op: no.op, value: no.value }]
+        : achata(no.all ?? no.any ?? []),
+    );
+  return achata(Array.isArray(conditions) ? conditions : (conditions.all ?? conditions.any ?? []));
+}
 
 /**
  * O que a tela do gatilho edita além do evento. São três grupos porque o editor

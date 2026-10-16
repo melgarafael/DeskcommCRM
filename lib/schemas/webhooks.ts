@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
+import { conditionsSchema } from "@/lib/automation/conditions";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
@@ -216,11 +217,13 @@ export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
   ...GatilhoDeAutomacao[],
 ];
 
-export const conditionSchema = z.object({
-  field: z.string().min(1).max(200),
-  op: z.enum(["eq", "neq", "contains"]),
-  value: z.string().max(500),
-});
+/**
+ * As condições de uma regra (#2727): o schema e o avaliador vivem juntos em
+ * `lib/automation/conditions.ts`, para a tela, a porta da API e o motor lerem a
+ * MESMA definição. Aqui só se reexporta — `conditionsSchema` aceita a lista
+ * antiga (≡ `all`) e os grupos `{all|any}` aninháveis.
+ */
+export { conditionSchema } from "@/lib/automation/conditions";
 
 /**
  * As ações FIXAS do motor — a fonte única de "que ações existem, e com que
@@ -463,7 +466,7 @@ export const createAutomationRuleSchema = z
   .object({
     name: z.string().min(1).max(120),
     trigger_event: z.enum(TRIGGER_EVENTS),
-    conditions: z.array(conditionSchema).max(10).default([]),
+    conditions: conditionsSchema.default([]),
     actions: z.array(actionSchema).min(1).max(10),
     /**
      * O que o gatilho precisa saber além do nome dele (#989).
@@ -549,7 +552,7 @@ export const updateAutomationRuleSchema = z
   .object({
     name: z.string().min(1).max(120).optional(),
     trigger_event: z.enum(TRIGGER_EVENTS).optional(),
-    conditions: z.array(conditionSchema).max(10).optional(),
+    conditions: conditionsSchema.optional(),
     actions: z.array(actionSchema).min(1).max(10).optional(),
     trigger_config: z.record(z.string(), z.unknown()).optional(),
     is_active: z.boolean().optional(),
