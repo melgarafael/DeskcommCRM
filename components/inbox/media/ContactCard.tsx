@@ -93,7 +93,7 @@ export function ContactCard({ message }: Props) {
 
       const json = (await res.json()) as {
 
-        data?: { conversation_id: string };
+        data?: { conversation_id: string; bloqueada_por?: string | null };
 
         error?: { message?: string };
 
@@ -102,6 +102,16 @@ export function ContactCard({ message }: Props) {
       if (!res.ok || !json.data?.conversation_id) {
 
         throw new Error(json.error?.message ?? t("Não foi possível abrir a conversa."));
+
+      }
+
+      // A conversa já é de OUTRA atendente e esta não a enxerga: abrir levaria a uma página
+      // em branco. Avisa de quem é, em vez de navegar.
+      if (json.data.bloqueada_por) {
+
+        toast.info(`${t("Esta conversa já está com")} ${json.data.bloqueada_por}.`);
+
+        return;
 
       }
 

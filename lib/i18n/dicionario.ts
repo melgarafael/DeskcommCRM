@@ -7806,6 +7806,7 @@ export const DICIONARIO: Traducoes = {
   "Localização compartilhada": { es: "Ubicación compartida" },
   "Abrir no mapa": { es: "Abrir en el mapa" },
   "Não foi possível abrir a conversa.": { es: "No se pudo abrir la conversación." },
+  "Esta conversa já está com": { es: "Esta conversación ya está con" },
   "Enter salva a nota · Shift+Enter quebra linha": { es: "Enter guarda la nota · Shift+Enter agrega un salto de línea" },
   "Enter envia · Shift+Enter quebra linha": { es: "Enter envía · Shift+Enter agrega un salto de línea" },
 
