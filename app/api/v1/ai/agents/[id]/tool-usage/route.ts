@@ -24,11 +24,14 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { logger } from "@/lib/logger";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   montarUsoDeCapacidades,
   resumirUso,
+  termosSemResultado,
+  type LinhaDeTermo,
   type LinhaDeUso,
 } from "@/lib/ai/agents/uso-de-capacidades";
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
@@ -110,6 +113,37 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("internal_error", "Erro ao ler o uso das capacidades.", 500, { requestId });
   }
 
+  // A leitura POR TERMO (#484, caminho 2): "crm_search_products falhou 12×" não
+  // diz QUAL termo não foi encontrado. A irmã de `fn_agent_tool_usage` agrupa por
+  // (`tool_name`, `metadata.termo`), que a tool passa a declarar (`termoBuscado`);
+  // aqui vira a lista do que NÃO acharam, para o dono saber se falta cadastro ou
+  // se a busca erra sempre no mesmo termo. Erro nesta leitura NÃO derruba a tela:
+  // o uso por capacidade continua vindo, e a lista volta vazia.
+  const { data: linhasPorTermo, error: erroTermo } = await admin.rpc(
+    "fn_agent_tool_usage_por_termo",
+    {
+      p_organization_id: activeOrg.orgId,
+      p_agent_id: id,
+      p_since: desde,
+    },
+  );
+  if (erroTermo) {
+    logger.warn("leitura por termo do uso das capacidades falhou", {
+      organization_id: activeOrg.orgId,
+      agent_id: id,
+      erro: erroTermo.message,
+    });
+  }
+  const termos_sem_resultado = termosSemResultado(
+    ((linhasPorTermo ?? []) as LinhaDeTermo[]).map((l) => ({
+      tool_name: l.tool_name,
+      termo: l.termo,
+      total: Number(l.total),
+      falhas: Number(l.falhas),
+      ultima_vez: l.ultima_vez,
+    })),
+  );
+
   const capacidades = montarUsoDeCapacidades({
     ligadas,
     catalogo: TOOL_CATALOG.map((t) => ({
@@ -140,6 +174,9 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
         : null,
       resumo: resumirUso(capacidades),
       capacidades,
+      // (#484, caminho 2) O que NÃO acharam, por termo, do mais problemático ao
+      // menos. Vazio = ninguém buscou nada que não exista na janela.
+      termos_sem_resultado,
     },
     { requestId },
   );

@@ -11,6 +11,12 @@
  * `StaleServiceBoundaryError`, que o `catch` rotula de fronteira vencida.
  * O conserto: o despertar do dormente pula a guarda de agenda (não é efeito);
  * os efeitos a repetem com o status já `active`.
+ *
+ * Resto declarado no #2709, fechado aqui: as DUAS guardas lançam o MESMO
+ * `StaleServiceBoundaryError`, e o `catch` gravava um motivo só — "Atendimento
+ * encerrado ou substituído" — para as duas causas. Um veto da agenda não é
+ * atendimento encerrado, e o dossiê mostra este texto como `Motivo:`. O segundo
+ * bloco mede a distinção, causa por causa.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -64,6 +70,11 @@ function inscricaoDormente(): EnrollmentRow {
   };
 }
 
+/** A inscrição que a guarda de agenda VETA por não ser mais a vigente do nó. */
+function inscricaoAtiva(): EnrollmentRow {
+  return { ...inscricaoDormente(), id: "enr-ativa-1", status: "active" };
+}
+
 const EVENTOS: EnrollmentEventRef[] = [
   {
     node_id: "wait-3",
@@ -73,17 +84,18 @@ const EVENTOS: EnrollmentEventRef[] = [
   },
 ];
 
-function montarDb(opcoes: { fronteiraVencida: boolean }) {
+function montarDb(opcoes: { fronteiraVencida: boolean; agendaVencida?: boolean }) {
   const patches: Array<Record<string, unknown>> = [];
   const avisos: Array<Record<string, unknown>> = [];
   const agendaChamada: string[] = [];
 
   const db = {
     // Imita a regra real do SQL (`fn_appointment_enrollment_current` só aceita
-    // `active`/`waiting_reply`): sem esta imitação o teste mediria o mock, não
-    // o defeito.
+    // `active`/`waiting_reply` no nó vigente): sem esta imitação o teste mediria
+    // o mock, não o defeito.
     assertAgenda: vi.fn(async (enrollment: EnrollmentRow) => {
       agendaChamada.push(enrollment.id);
+      if (opcoes.agendaVencida) throw new StaleServiceBoundaryError();
       if (enrollment.status !== "active" && enrollment.status !== "waiting_reply") {
         throw new StaleServiceBoundaryError();
       }
@@ -133,5 +145,34 @@ describe("dormente no disparo — a guarda de agenda não cancela", () => {
       ),
     ).toBe(true);
     expect(avisos.some((a) => a.title === "Um retorno programado não pôde ser enviado")).toBe(true);
+  });
+});
+
+describe("o motivo do cancelamento nomeia a guarda que recusou", () => {
+  it("fronteira vencida: o motivo fala do atendimento, e o aviso da espera longa sai", async () => {
+    const { db, patches, avisos } = montarDb({ fronteiraVencida: true });
+
+    const deps: TickDeps = { db, clock: () => NOW, enqueueJob: async () => {} };
+    await avancarEnrollmentAtivo(deps, inscricaoDormente());
+
+    const cancelamento = patches.find((p) => p.status === "cancelled");
+    expect(cancelamento?.cancel_reason).toBe("Atendimento encerrado ou substituído");
+    expect(avisos.some((a) => a.title === "Um retorno programado não pôde ser enviado")).toBe(true);
+  });
+
+  it("⭐ agenda vencida: o motivo fala da agenda, nunca do atendimento", async () => {
+    const { db, patches, avisos } = montarDb({ fronteiraVencida: false, agendaVencida: true });
+
+    const deps: TickDeps = { db, clock: () => NOW, enqueueJob: async () => {} };
+    await avancarEnrollmentAtivo(deps, inscricaoAtiva());
+
+    const cancelamento = patches.find((p) => p.status === "cancelled");
+    expect(cancelamento?.cancel_reason).toBe("Agenda do acompanhamento vencida");
+    // O defeito de volta (um motivo só para as duas causas) deixa ESTA linha
+    // vermelha — é o que prova que o texto passou a distinguir.
+    expect(cancelamento?.cancel_reason).not.toBe("Atendimento encerrado ou substituído");
+    // A inscrição estava `active`: a perda da espera longa (aviso na Central) é
+    // do `dormente`, e este caminho não é ela.
+    expect(avisos).toEqual([]);
   });
 });

@@ -20,6 +20,14 @@ import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
  * - texto solto → a 2ª chamada leva a correção, o envio sai pela cadeia;
  * - controle: quem já enviou não recebe correção (nenhuma chamada a mais);
  * - quem insiste no silêncio recebe UMA correção, nunca um laço.
+ *
+ * #2938 — CASO HUMANO SÓ COM SINAL DE FALHA (decisão (b) do mantenedor): o
+ * CORRECAO_DO_TURNO_MUDO autoriza o modelo a escolher o silêncio ("nada a
+ * dizer"), então silêncio deliberado NÃO abre caso humano; abre quando a
+ * SAÍDA veio truncada (length) ou quando a PRÓPRIA correção também truncou.
+ * Esses três cenários rodam numa sessão com agente publicado e
+ * `cases_enabled=true` (a coluna vem false por padrão e a régua
+ * `casesEnabled` gateia o `openCase`), contando casos por conversa.
  */
 
 const container = process.env.TEST_DB_CONTAINER;
@@ -41,6 +49,11 @@ const ORG = "ee0d0601-0000-4000-8000-000000000001";
 const CONTACT = "ee0d0601-0000-4000-8000-000000000002";
 const SESSION = "ee0d0601-0000-4000-8000-000000000003";
 const CONV = "ee0d0601-0000-4000-8000-000000000004";
+// Sessão COM casos humanos ligados (agente publicado `cases_enabled=true`) — os
+// cenários de falha medem se o caso abre; a sessão base fica sem agente nenhum.
+const SESSION_CASOS = "ee0d0601-0000-4000-8000-000000000005";
+const AGENT_CASOS = "ee0d0601-0000-4000-8000-000000000006";
+const VERSION_CASOS = "ee0d0601-0000-4000-8000-000000000007";
 const MARCA_DA_CORRECAO = "Este turno terminou SEM nenhuma mensagem ao cliente";
 
 type Modules = {
@@ -71,9 +84,16 @@ const enviar = (body: string) => ({
   usage: USO,
   warnings: [],
 });
+/** Resposta cortada no teto de tokens — o seam devolve `finishReason: 'length'`. */
+const cortado = (t: string) => ({
+  content: [{ type: "text" as const, text: t }],
+  finishReason: { unified: "length" as const, raw: undefined },
+  usage: USO,
+  warnings: [],
+});
 const FECHAMENTO = JSON.stringify({ commitments: [], objections: [], next_action: null, rolling_summary: "t" });
 
-type Resposta = ReturnType<typeof texto> | ReturnType<typeof enviar>;
+type Resposta = ReturnType<typeof texto> | ReturnType<typeof enviar> | ReturnType<typeof cortado>;
 
 /** Roteiro por chamada; guarda o prompt de cada uma para conferir a correção. */
 function modelo(roteiro: Resposta[]) {
@@ -85,21 +105,34 @@ function modelo(roteiro: Resposta[]) {
   return { fake, prompts };
 }
 
-async function turno(fake: ReturnType<typeof modelo>["fake"]): Promise<void> {
+async function turno(
+  fake: ReturnType<typeof modelo>["fake"],
+  opts: { sessao?: string; conversa?: string } = {},
+): Promise<void> {
+  const sessao = opts.sessao ?? SESSION;
+  const conversa = opts.conversa ?? CONV;
+  if (conversa !== CONV) {
+    // Conversa própria de cenário: mesma org/contato, sessão com casos ligados.
+    await pool.query(
+      `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
+       values ($1,$2,$3,$4,'ai_handling',false) on conflict (id) do nothing`,
+      [conversa, ORG, CONTACT, sessao],
+    );
+  }
   const msg = crypto.randomUUID();
   await pool.query(
     `insert into messages (id, organization_id, conversation_id, channel_session_id, contact_id,
        type, direction, status, body, sent_via, sent_at, created_at)
      values ($1,$2,$3,$4,$5,'text','inbound','delivered',$6,'external_device',now(),now())`,
-    [msg, ORG, CONV, SESSION, CONTACT, "Juan Pérez, barrio Centro, portón verde, a las 12"],
+    [msg, ORG, conversa, sessao, CONTACT, "Juan Pérez, barrio Centro, portón verde, a las 12"],
   );
   const { job } = await m.queue.enqueueJob(pool, ORG, {
     kind: "inbound_turn",
     leadId: CONTACT,
     payload: {
-      conversation_id: CONV,
+      conversation_id: conversa,
       contact_id: CONTACT,
-      channel_session_id: SESSION,
+      channel_session_id: sessao,
       inbound_message_id: msg,
       crm_event_id: crypto.randomUUID(),
     },
@@ -145,6 +178,15 @@ async function turno(fake: ReturnType<typeof modelo>["fake"]): Promise<void> {
   await m.queue.completeJob(pool, claimed!.id, "mudo");
 }
 
+/** Casos humanos abertos na conversa — o que os cenários de falha medem. */
+async function contarCasos(conversa: string): Promise<number> {
+  const { rows } = await pool.query<{ n: number }>(
+    `select count(*)::int as n from agent_cases where organization_id = $1 and conversation_id = $2`,
+    [ORG, conversa],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 beforeAll(async () => {
   m = {
     createInboundTurnHandler: (await import("@/lib/agent-engine/agent/inbound-turn")).createInboundTurnHandler,
@@ -162,6 +204,31 @@ beforeAll(async () => {
      values ($1,$2,'turno-mudo-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,
     [SESSION, ORG],
   );
+  // Sessão COM casos humanos ligados: `cases_enabled` vem false por padrão e a
+  // régua `casesEnabled` gateia o openCase do desfecho terminal — sem este
+  // agente publicado nenhum cenário de falha abre caso (mesmo fixture do
+  // agent-config-cases.test.ts).
+  await pool.query(
+    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
+     values ($1,$2,'turno-mudo-casos-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,
+    [SESSION_CASOS, ORG],
+  );
+  await pool.query(
+    `insert into ai_agents (id, organization_id, name, system_prompt)
+     values ($1, $2, 'Agente com casos', 'system') on conflict (id) do nothing`,
+    [AGENT_CASOS, ORG],
+  );
+  await pool.query(
+    `insert into ai_agent_versions
+       (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status, cases_enabled)
+     values ($1, $2, $3, 1, 'system', 'anthropic', 'claude-sonnet-4-6', $4, 'published', true)
+     on conflict (id) do nothing`,
+    [VERSION_CASOS, ORG, AGENT_CASOS, SESSION_CASOS],
+  );
+  await pool.query(`update ai_agents set published_version_id = $1 where id = $2`, [
+    VERSION_CASOS,
+    AGENT_CASOS,
+  ]);
   await pool.query(
     `with v as (
        insert into playbook_versions (organization_id, layer, content)
@@ -232,5 +299,51 @@ describe("o turno de resposta que terminou sem mensagem ao cliente", () => {
     // turno + UMA correção + fechamento.
     expect(prompts).toHaveLength(3);
     expect(prompts[1]).toContain(MARCA_DA_CORRECAO);
+  });
+
+  it("⭐ silêncio deliberado NÃO abre caso humano (#2938)", async () => {
+    // Mantenedor: o modelo escolheu não responder (autorizado pela correção) —
+    // isso é resposta, não defeito. Antes disto o caso abria à toa.
+    const { fake } = modelo([texto("(nada a dizer)"), texto("(decidi não responder)")]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_CASOS, conversa });
+
+    expect(enviados).toEqual([]);
+    expect(
+      await contarCasos(conversa),
+      "silêncio autorizado pela correção virou caso humano à toa",
+    ).toBe(0);
+  });
+
+  it("⭐ saída truncada (length) sem envio abre caso para o time", async () => {
+    // Mantenedor: a 1ª chamada cortou no teto de tokens, a correção tentou e
+    // nada saiu → sinal de falha → UM caso humano.
+    const { fake } = modelo([cortado("Claro, o seu pedido fica"), texto("(nada)")]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_CASOS, conversa });
+
+    expect(enviados).toEqual([]);
+    expect(await contarCasos(conversa), "truncamento sem envio não virou caso").toBe(1);
+  });
+
+  it("saída truncada numa sessão SEM casos ligados não abre caso (régua casesEnabled)", async () => {
+    // Controle do gate: a sessão base não tem agente com `cases_enabled=true`
+    // (e a conversa é a 1:1 do contato nela, a CONV).
+    const { fake } = modelo([cortado("Claro, o seu pedido fica"), texto("(nada)")]);
+    await turno(fake);
+
+    expect(enviados).toEqual([]);
+    expect(await contarCasos(CONV), "caso abriu com casos desligados").toBe(0);
+  });
+
+  it("a correção que TAMBÉM trunca é sinal de falha — abre caso", async () => {
+    // Decisão (b): a 1ª chamada parou em silêncio normal, mas a correção
+    // limitada bateu no mesmo teto (length) → a recuperação falhou → caso.
+    const { fake } = modelo([texto("(nada a dizer)"), cortado("(tentei corrigir mas a resposta cortou")]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_CASOS, conversa });
+
+    expect(enviados).toEqual([]);
+    expect(await contarCasos(conversa), "correção truncada não virou caso").toBe(1);
   });
 });

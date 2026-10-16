@@ -1,18 +1,24 @@
 import type * as SocialClient from "@/lib/channels/social/client";
 import { beforeEach, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({
-  role: vi.fn(),
-  mfa: vi.fn(),
-  support: vi.fn(),
-  audit: vi.fn(),
-  configure: vi.fn(),
-  read: vi.fn(),
-  channels: vi.fn(),
-  accounts: vi.fn(),
-  limit: vi.fn(),
-  disconnect: vi.fn(),
-  unlink: vi.fn(),
-}));
+const h = vi.hoisted(() => {
+  // publicBase() exige uma origem https válida; sem `.env` no CI o default é
+  // http://localhost:3000 e a ação `resync` recusaria antes de chamar a store.
+  process.env.NEXT_PUBLIC_APP_URL = "https://crm.test";
+  return {
+    role: vi.fn(),
+    mfa: vi.fn(),
+    support: vi.fn(),
+    audit: vi.fn(),
+    configure: vi.fn(),
+    read: vi.fn(),
+    channels: vi.fn(),
+    accounts: vi.fn(),
+    limit: vi.fn(),
+    disconnect: vi.fn(),
+    unlink: vi.fn(),
+    resync: vi.fn(),
+  };
+});
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
 vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: h.mfa }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: h.support }));
@@ -26,6 +32,7 @@ vi.mock("@/lib/channels/social/store", () => ({
   socialChannels: h.channels,
   connectSocialInbox: vi.fn(),
   disconnectSocialAccount: h.disconnect,
+  ressincronizarAssinaturaSocial: h.resync,
 }));
 vi.mock("@/lib/channels/social/client", async (original) => ({
   ...(await original<typeof SocialClient>()),
@@ -166,4 +173,19 @@ it("unlinks the profile under the trusted tenant and audits without secrets", as
     }),
   );
   expect(JSON.stringify(h.audit.mock.calls)).not.toContain("secret-input");
+});
+it("ressincroniza o webhook sob o tenant confiável, com a origem atual, e audita o desfecho", async () => {
+  h.resync.mockResolvedValue({ channel_id: "ch", resynced: true });
+  const response = await call({ action: "resync", account_id: "a".repeat(24) });
+  expect(response.status).toBe(200);
+  // publicBase() do env de teste: a ação grava a assinatura pela origem ATUAL.
+  expect(h.resync).toHaveBeenCalledWith({}, "trusted", "a".repeat(24), "https://crm.test");
+  expect(h.audit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: "channel.social_webhook_ressincronizado",
+      organizationId: "trusted",
+      metadata: expect.objectContaining({ operation: "resync", resynced: true }),
+    }),
+  );
+  expect((await call({ action: "resync" })).status).toBe(400);
 });

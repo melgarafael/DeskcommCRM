@@ -1,6 +1,7 @@
 "use server";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
 
@@ -22,7 +23,7 @@ export async function signOut(): Promise<void> {
       action: "auth.logout",
       actorUserId: user.id,
       requestId: hdrs.get("x-request-id"),
-      ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ip: ipDoCliente(hdrs),
       userAgent: hdrs.get("user-agent") ?? null,
     });
   }

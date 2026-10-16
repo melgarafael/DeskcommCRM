@@ -80,6 +80,7 @@ import {
   janelaQueHerdaAPausa,
   type AgendaDePausa,
 } from "@/lib/channels/agenda-de-pausa";
+import { sincronizarAvisoDoAgendador } from "@/lib/channels/aviso-do-agendador";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -399,6 +400,39 @@ export async function aplicarAgendas(
   return resumo;
 }
 
+/**
+ * A batida COM o aviso da Central (critério 6 da #2388).
+ *
+ * Envolve `aplicarAgendas` e sincroniza o aviso do agendador: falha vira aviso
+ * (o motivo vai para o log); batida inteira fecha o aviso de uma falha anterior (o laço de
+ * retorno, DoD 13). O erro da batida CONTINUA subindo — a rota responde 500 e o
+ * cron tenta de novo; o aviso é acessório e nunca engole o incidente.
+ */
+export async function aplicarAgendasEavisar(
+  db: SupabaseClient,
+  agora: Date,
+  requestId: string = randomUUID(),
+): Promise<ResumoDaRodada> {
+  try {
+    const resumo = await aplicarAgendas(db, agora, requestId);
+    await sincronizarAvisoDoAgendador(
+      db,
+      resumo.falhas > 0
+        ? {
+            estado: "falhou",
+            motivo: `${resumo.falhas} escrita(s) recusada(s) nesta batida`,
+          }
+        : { estado: "saudavel" },
+      logger,
+    );
+    return resumo;
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    await sincronizarAvisoDoAgendador(db, { estado: "falhou", motivo: detail }, logger);
+    throw e;
+  }
+}
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -406,8 +440,9 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
+  const db = createAdminClient();
   try {
-    const resumo = await aplicarAgendas(createAdminClient(), new Date(), requestId);
+    const resumo = await aplicarAgendasEavisar(db, new Date(), requestId);
     if (resumo.falhas > 0) {
       // Falha de cron é erro à vista, não silêncio: sai no log com o número.
       logger.error("[channel-pause-scheduler] batida com falhas de escrita", {

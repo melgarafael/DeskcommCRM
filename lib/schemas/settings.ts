@@ -13,6 +13,7 @@ import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
+import { mostrarQuandoSchema } from "./mostrar-quando";
 
 /**
  * Os idiomas que a interface REALMENTE serve.
@@ -198,6 +199,19 @@ export const customFieldSchema = z.object({
   options: z
     .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
     .optional(),
+  /**
+   * QUANDO este campo aparece (issue #2728) — "mostrar só quando outro tem
+   * determinado valor".
+   *
+   * A condição é montada no editor de campos do funil (campo + operador +
+   * valor) e lida por `lib/schemas/mostrar-quando.ts`, que os quatro pontos de
+   * renderização consultam. Esconder NÃO apaga valor: quem filtra é a lista
+   * que a tela renderiza, e o `custom_fields` gravado segue intacto.
+   *
+   * Ausente é o caminho de todo funil instalado hoje — a régua continua
+   * opt-in, igual a `obrigatorio_em`.
+   */
+  mostrar_quando: mostrarQuandoSchema.optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
@@ -427,4 +441,33 @@ export function colegasPodemMexerNaAgendaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>)
       : undefined;
   return raiz?.colegas_podem_mexer_na_agenda !== false;
+}
+
+/**
+ * A opção "MEET ABERTO" (#2063) — reunião criada pelo CRM com o link que
+ * qualquer um com o link entra, sem "pedir para participar".
+ *
+ * RÉGUA "SÓ O `true` EXPLÍCITO LIGA", como `settings.crm.cliente_pela_agenda`:
+ * a opção NASCE DESLIGADA em toda organização que já instalou, e o risco é
+ * parte do desenho — quem tiver o link entra sem pedir. Ausente, `false`, a
+ * string `"true"` ou qualquer lixo é desligado.
+ *
+ * Mora em chave PRÓPRIA de topo (`settings.google_meet_acesso_aberto`), no
+ * mesmo espírito de `colegas_podem_mexer_na_agenda`: NÃO fica em
+ * `settings.agenda`, porque `fn_agenda_settings` SUBSTITUI o objeto `agenda`
+ * inteiro e recusa chave que não as duas que conhece — a chave seria apagada na
+ * primeira vez que um Gerente salvasse os prazos.
+ *
+ * Nunca lança: um jsonb torto não pode derrubar Configurações.
+ */
+/** O AVISO DE RISCO da opção — a frase que a tela mostra ao lado do interruptor. */
+export const AVISO_MEET_ABERTO =
+  "⚠ Com o Meet aberto, quem tiver o link da reunião entra sozinho, sem que ninguém o admita. O link é a porta: não o publique onde circula livremente.";
+
+export function meetAbertoLigado(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return raiz?.google_meet_acesso_aberto === true;
 }

@@ -24,6 +24,8 @@ export interface LgpdRequestDetailResponse {
     };
     audit_trail: AuditTrailEntry[];
     signed_pdf_url: string | null;
+    /** Quem recebe o envio — mostrado na confirmação da aprovação (doc 134). */
+    titular: { nome: string | null; email_destino: string | null };
   };
 }
 

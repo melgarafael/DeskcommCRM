@@ -11,7 +11,9 @@
  *
  * ## O que este arquivo prende
  *
- * - a varredura de silêncio não inscreve quem tem retorno vivo (e inscreve os demais);
+ * - a varredura de silêncio não inscreve quem tem retorno VIVO nem quem tem um
+ *   retorno que ACABOU DE SAIR (issue #2907 — a régua real, não um Set de mão),
+ *   e inscreve os demais;
  * - a inscrição que já andava fica SEGURADA até a data que a regra devolve, com
  *   um evento legível no dossiê — sem enfileirar o envio;
  * - controle: sem retorno, o mesmo passo enfileira o envio.
@@ -22,16 +24,39 @@
  * consulta foi conferida contra um banco de produção ao escrever o conserto, e o
  * espelho em SQL puro mora no invariante da varredura (`test:db`).
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
 import { runFollowupTick, type AdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { FOLGA_DEPOIS_DO_RETORNO_MS, reavaliarDepoisDoRetorno } from "@/lib/followup/retorno-segura-o-fluxo";
-import { runSilenceSweep, type SilenceSweepDb } from "@/lib/followup/silence-sweep";
+import { createSupabaseSilenceSweepDb, runSilenceSweep, type SilenceSweepDb } from "@/lib/followup/silence-sweep";
 
 const AGORA = new Date("2026-09-25T15:00:00.000Z");
 const RETORNO = "2026-09-30T12:00:00.000Z";
+
+/**
+ * Fake do PostgREST que responde `cron_jobs` por consulta — a régua real do
+ * `createSupabaseSilenceSweepDb` roda em cima dele (o fake grava a cadeia e
+ * devolve as linhas dadas; filtrar é trabalho do Postgres).
+ */
+function adminDeCronJobs(respostas: Array<Array<Record<string, unknown>>>) {
+  let consultas = 0;
+  const chain: Record<string, unknown> = new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        if (prop === "then") {
+          const rows = respostas[consultas++] ?? [];
+          return (resolve: (value: unknown) => unknown) => resolve({ data: rows, error: null });
+        }
+        return () => chain;
+      },
+    },
+  );
+  return { admin: { from: () => chain } as unknown as SupabaseClient };
+}
 
 describe("varredura de silêncio", () => {
   function sweepDb(comRetorno: Set<string>) {
@@ -67,6 +92,29 @@ describe("varredura de silêncio", () => {
     const { db, insert } = sweepDb(new Set());
     await runSilenceSweep({ db, gateDb, clock: () => AGORA });
     expect(insert).toHaveBeenCalledTimes(2);
+  });
+
+  it("⭐ #2907: retorno JÁ EXECUTADO há 2 h também segura — a varredura não inscreve por cima", async () => {
+    // A régua REAL (o adapter de produção sobre o PostgREST), e não um Set de mão:
+    // o disparo one-shot deixa `enabled=false`, sem `cancelled_at`, sem
+    // `last_error` e com `next_run_at` onde o retorno saiu. Antes do conserto a
+    // varredura via este contato como simplesmente silencioso e o inscrevia no
+    // minuto seguinte — medido em produção: retorno às 18:56:04, inscrição às
+    // 18:56:00, "Follow-up 1" às 18:58:05.
+    const { admin } = adminDeCronJobs([
+      [], // nenhum retorno agendado (vivo)
+      [{ contact_id: "contato-com-retorno", next_run_at: new Date(Date.now() - 2 * 3_600_000).toISOString() }],
+    ]);
+    const comRetorno = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org");
+    expect(comRetorno.has("contato-com-retorno")).toBe(true);
+
+    const { db, insert } = sweepDb(comRetorno);
+    const resumo = await runSilenceSweep({ db, gateDb, clock: () => AGORA });
+
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ contact_id: "outro" }));
+    expect(resumo.skipped_pending_return).toBe(1);
+    expect(resumo.enrolled).toBe(1);
   });
 });
 

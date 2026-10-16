@@ -21,7 +21,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, created_by_user_id, created_at, updated_at";
+  "id, organization_id, owner_user_id, title, body, shortcut, midias, created_by_user_id, created_at, updated_at";
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
@@ -91,6 +91,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         title,
         body,
         shortcut: shortcut ?? null,
+        // `midias` nasce vazia: a imagem nova é gravada pela rota de upload,
+        // que gera o caminho sabendo o id do template (#2526). Aceitar caminho
+        // aqui seria aceitar um arquivo que ninguém conferiu.
+        midias: [],
         created_by_user_id: user.id,
       })
       .select(COLS)

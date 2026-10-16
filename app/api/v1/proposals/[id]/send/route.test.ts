@@ -136,7 +136,11 @@ function montarMundoDeEnvio(opts: MundoOpts = {}) {
     status: "rascunho",
     titulo: "Proposta de Teste",
     condicoes: "Condições",
-    valid_until: "2026-12-31",
+    // Relativa ao relógio, nunca fixa. O envio só agenda o retorno se "agora + followupDias"
+    // cair dentro da validade (route.ts, `dentroDaValidade`). Com "2026-12-31" fixo, os três
+    // casos do retorno ficariam vermelhos sozinhos a partir de 2026-12-29 (medido com o relógio
+    // adiantado: verde em +74 dias, vermelho em +76). A mesma classe da etapa da Meta (c3dd33ff1).
+    valid_until: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     total_cents: 500000,
     moeda: "BRL",
     created_at: "2026-09-26T00:00:00.000Z",

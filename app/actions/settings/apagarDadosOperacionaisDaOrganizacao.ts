@@ -1,5 +1,6 @@
 "use server";
 
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -96,7 +97,7 @@ export async function apagarDadosOperacionaisDaOrganizacao(input: {
     resourceType: "organization",
     resourceId: activeOrg.orgId,
     requestId: hdrs.get("x-request-id"),
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent") ?? null,
     bypassedRls: true,
     actingAsPlatformAdmin: authUser.is_platform_admin,

@@ -83,6 +83,7 @@ function decisaoDoMotor(
       aiGate: metadata.ai_gate,
       aiGateMode: metadata.ai_gate_mode,
       forceHuman: false,
+      aiOptOut: false,
       assigneeKind: "ai",
       botSilencedUntil: null,
       aiAuthorizedAt: contato.aiAuthorizedAt,

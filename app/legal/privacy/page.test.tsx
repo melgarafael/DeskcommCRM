@@ -21,6 +21,9 @@ vi.mock("@/lib/legal/operador", () => ({
     dpoEmail: null,
     politicaPropria: null,
     resolvido: false,
+    // Coluna vazia = Brasil (lib/legal/perfil-do-pais.ts). O vocabulário da
+    // política em PT é coberto por `lgpd-rotulos-por-pais.test.tsx` (#2344).
+    pais: null as string | null,
   }),
   nomeDoOperador: () => "o operador desta instalação",
 }));
@@ -36,9 +39,11 @@ describe("/legal/privacy — seção dos dados do Google", () => {
     const texto = container.textContent ?? "";
 
     expect(container.querySelector("#dados-do-google")).not.toBeNull();
-    expect(texto).toContain("9. Dados do Google (Agenda e Google Ads)");
+    expect(texto).toContain("9. Dados do Google (Agenda, Meet e Google Ads)");
     expect(texto).toContain("Google Agenda:");
     expect(texto).toContain("O sistema não lê e-mails");
+    expect(texto).toContain("Google Meet:");
+    expect(texto).toContain("espaços de reunião do Google Meet");
     expect(texto).toContain("Google Ads:");
     expect(texto).toContain("não são vendidos");
     expect(texto).toContain("não são usados para publicidade");

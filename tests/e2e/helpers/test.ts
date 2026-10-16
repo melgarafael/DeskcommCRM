@@ -31,7 +31,13 @@
  */
 import { test as base, type Page } from "@playwright/test";
 
-import { embrulharANavegacao, METODOS_DE_NAVEGACAO_REVELADOS } from "./revelacao-nas-cargas";
+import {
+  EVIDENCIA_DE_ERRO_VAZIA,
+  embrulharANavegacao,
+  METODOS_DE_NAVEGACAO_REVELADOS,
+  mensagemDaCaixaNaoRevelada,
+  type EvidenciaDoErroDeServidor,
+} from "./revelacao-nas-cargas";
 
 export * from "@playwright/test";
 export { METODOS_DE_NAVEGACAO_REVELADOS };
@@ -45,6 +51,30 @@ export const CAIXA_PENDENTE = 'div[hidden][id^="S:"]';
  */
 const TETO_DA_REVELACAO_MS = 15_000;
 
+/**
+ * Lê da página o que o `$RX` do erro de servidor deixou: o `data-dgst` do
+ * marcador do boundary (é ali que o próprio `$RX` escreve o digest) e os textos
+ * dos scripts — o `$RX("B:N","<digest>")` cru. Só é chamada DEPOIS de a espera
+ * desistir, e só para montar o diagnóstico; quem decide a mensagem é
+ * `mensagemDaCaixaNaoRevelada`, em função pura, no teste unit.
+ */
+function evidenciaDoErroDeServidor(page: Page): Promise<EvidenciaDoErroDeServidor> {
+  return page.evaluate(() => {
+    const digestsDoMarcador: string[] = [];
+    const mensagensDoMarcador: string[] = [];
+    for (const marcador of Array.from(document.querySelectorAll("[data-dgst]"))) {
+      const dados = (marcador as HTMLElement).dataset;
+      if (dados.dgst) digestsDoMarcador.push(dados.dgst);
+      if (dados.msg) mensagensDoMarcador.push(dados.msg);
+    }
+    return {
+      digestsDoMarcador,
+      mensagensDoMarcador,
+      scripts: Array.from(document.scripts).map((script) => script.textContent ?? ""),
+    };
+  });
+}
+
 export async function esperarARevelacao(page: Page): Promise<void> {
   try {
     await page.waitForFunction((seletor) => document.querySelector(seletor) === null, CAIXA_PENDENTE, {
@@ -52,9 +82,22 @@ export async function esperarARevelacao(page: Page): Promise<void> {
       timeout: TETO_DA_REVELACAO_MS,
     });
   } catch (erro) {
+    // Ler a página é DIAGNÓSTICO, não critério: se ela não puder mais ser lida
+    // (contexto morto, navegação em curso), fica a evidência vazia e a mensagem
+    // de sempre. A espera continua reprovando exatamente como antes.
+    let evidencia = EVIDENCIA_DE_ERRO_VAZIA;
+    try {
+      evidencia = await evidenciaDoErroDeServidor(page);
+    } catch {
+      evidencia = EVIDENCIA_DE_ERRO_VAZIA;
+    }
     throw new Error(
-      `a caixa do streaming SSR (${CAIXA_PENDENTE}) não foi revelada em ${TETO_DA_REVELACAO_MS} ms ` +
-        `depois da carga de ${page.url()} — caixa órfã de verdade (issue #1374).`,
+      mensagemDaCaixaNaoRevelada({
+        caixaPendente: CAIXA_PENDENTE,
+        tetoMs: TETO_DA_REVELACAO_MS,
+        url: page.url(),
+        evidencia,
+      }),
       { cause: erro },
     );
   }

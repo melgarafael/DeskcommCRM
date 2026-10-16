@@ -18,6 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   EVENTOS_DA_META,
+  EVENTOS_DE_ETAPA_NO_CANAL,
+  eventoDaEtapaTemSaida,
   eventoRecomendadoParaMeta,
   rotuloDoEventoDaMeta,
   type EventoDaMeta,
@@ -47,10 +49,17 @@ export function RegrasDeConversaoMeta({
   etapas,
   regras,
   idioma,
+  conexaoDireta,
 }: {
   etapas: EtapaAberta[];
   regras: RegraDeConversaoMeta[];
   idioma: Idioma;
+  /**
+   * A organização tem linha de conexão direta com a Meta. Sem ela, o único
+   * caminho do evento é o canal da conversa — e é isso que decide o aviso de
+   * `eventoDaEtapaTemSaida`.
+   */
+  conexaoDireta: boolean;
 }) {
   const t = (texto: string) => traduzir(texto, idioma);
   const router = useRouter();
@@ -63,7 +72,10 @@ export function RegrasDeConversaoMeta({
         const r = porEtapa.get(e.id);
         const rascunho: Rascunho = r
           ? { enabled: r.enabled, metaEvent: r.metaEvent }
-          : { enabled: false, metaEvent: eventoRecomendadoParaMeta(e.nome) ?? "LeadSubmitted" };
+          : {
+              enabled: false,
+              metaEvent: eventoRecomendadoParaMeta(e.nome, conexaoDireta) ?? "LeadSubmitted",
+            };
         return [e.id, rascunho];
       }),
     ) as Record<string, Rascunho>;
@@ -80,7 +92,7 @@ export function RegrasDeConversaoMeta({
     setRascunhos((atual) => {
       const novo = { ...atual };
       for (const e of etapas) {
-        const sugestao = eventoRecomendadoParaMeta(e.nome);
+        const sugestao = eventoRecomendadoParaMeta(e.nome, conexaoDireta);
         if (!sugestao) continue;
         novo[e.id] = { enabled: true, metaEvent: sugestao };
       }
@@ -172,6 +184,31 @@ export function RegrasDeConversaoMeta({
                     ))}
                   </select>
                 </div>
+              )}
+
+              {/*
+                #2457: o aviso sai NO ATO da escolha, e não dias depois, no
+                Histórico. A lista é `EVENTOS_DE_ETAPA_NO_CANAL` — a mesma que o
+                envio e o texto da pendência usam —, então a tela nunca oferece
+                um evento que o envio recusa nem se cala sobre um que ele aceita.
+                A compra não entra: não é opção de etapa.
+              */}
+              {r.enabled && !eventoDaEtapaTemSaida(r.metaEvent, conexaoDireta) && (
+                <p
+                  role="alert"
+                  data-testid={`aviso-evento-fora-do-canal-${e.id}`}
+                  className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+                >
+                  {t(
+                    "Este evento não sai pelo canal da conversa. Para esta etapa, escolha um destes",
+                  )}
+                  {" — "}
+                  {EVENTOS_DE_ETAPA_NO_CANAL.map((evento) => t(rotuloDoEventoDaMeta(evento))).join(
+                    ", ",
+                  )}
+                  {" — "}
+                  {t("ou configure a conexão direta da Meta no formulário acima.")}
+                </p>
               )}
             </li>
           );

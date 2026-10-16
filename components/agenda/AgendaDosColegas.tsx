@@ -27,11 +27,15 @@ import { useT } from "@/hooks/i18n/useT";
  * apertar de novo. Um diálogo de confirmação para o que se desfaz com o mesmo
  * clique seria cerimônia.
  *
- * ⚠️ ESTA OPÇÃO NÃO MUDA O QUE A PESSOA VÊ NA AGENDA. Quem é Atendente continua
- * vendo a grade da organização inteira — o que muda é o que ele consegue
- * ALTERAR. A frase está na tela de propósito: sem ela, é natural supor que
- * desligar esconde a agenda dos colegas, e a leitura é decisão em aberto do
- * mantenedor (declarada no PR da issue #978).
+ * ⚠️ DESLIGADA, ESTA OPÇÃO TAMBÉM MUDA O QUE O ATENDENTE VÊ — na agenda E nas
+ * tarefas. Até a migration 0680 (issue #2902) ela só governava a escrita, e esta
+ * tela afirmava que a leitura não mudava. Hoje, desligada, a agenda e as
+ * tarefas seguem `visibility_mode` (Configurações › "O que cada atendente
+ * enxerga"), como conversas e negócios: `fn_can_view_appointment` e
+ * `fn_can_view_task`. Ligada, a RLS abre a organização inteira para o
+ * atendente. Usar ESTA opção para a leitura foi escolha do PR #2954, não da
+ * #978 (que decidiu só marcar/remarcar/cancelar) — se um dia virar opção
+ * própria, a frase da tela muda junto.
  *
  * ⚠️ O interruptor NÃO é a autorização: quem decide é
  * `fn_definir_colegas_podem_mexer_na_agenda`, no banco. `podeMudar` é cortesia —
@@ -99,21 +103,21 @@ export function AgendaDosColegas({
 
       <p className="text-sm text-text-muted">
         {t(
-          "Com isto ligado, qualquer atendente cancela e remarca o compromisso de qualquer colega — é o comportamento de sempre. Desligado, cada atendente mexe só no compromisso de que é o responsável; gerentes e administradores seguem mexendo em tudo.",
+          "Com isto ligado, qualquer atendente vê, cancela e remarca o compromisso de qualquer colega, e vê e mexe nas tarefas da equipe — é o comportamento de sempre. Desligado, cada atendente mexe só no compromisso de que é o responsável; gerentes e administradores seguem mexendo em tudo.",
         )}
       </p>
 
       <p className="text-sm" data-testid="agenda-dos-colegas-estado">
         {ligado
-          ? t("Ligado: qualquer atendente mexe na agenda de qualquer colega.")
+          ? t("Ligado: qualquer atendente mexe na agenda e nas tarefas de qualquer colega.")
           : t(
-              "Desligado: cada atendente mexe só na própria agenda. Gerentes e administradores continuam mexendo em tudo.",
+              "Desligado: cada atendente mexe só na própria agenda, e a agenda e as tarefas seguem o que ele enxerga. Gerentes e administradores continuam mexendo em tudo.",
             )}
       </p>
 
       <p className="text-sm text-text-muted">
         {t(
-          "Isto não muda o que cada pessoa vê na agenda, só quem pode alterar o compromisso de quem.",
+          "Desligado, a agenda e as tarefas também seguem “O que cada atendente enxerga”: em “Só os seus” ou “Os seus, mais os que ainda não têm dono”, o atendente vê e mexe só nos próprios compromissos e nas próprias tarefas, mais as que ele criou (e, no segundo modo, o que ainda não tem dono). Em “Todos veem tudo”, ele continua vendo tudo.",
         )}
       </p>
 

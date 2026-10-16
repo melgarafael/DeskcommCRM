@@ -12,6 +12,7 @@ import {
   estadoDosDestinosInternos,
   gravarDestinosInternos,
 } from "@/lib/automation/destinos-internos-autorizados";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 
 export type UpdateDestinosInternosResult =
   | { ok: true }
@@ -91,7 +92,7 @@ export async function updateDestinosInternos(
       vinha_do_env: anterior.vemDoPiso,
     },
     requestId: hdrs.get("x-request-id"),
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent"),
   });
 

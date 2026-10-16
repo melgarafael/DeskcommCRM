@@ -46,6 +46,28 @@ export const EVENTOS_DE_ETAPA_NO_CANAL = [
   "AddToCart",
 ] as const satisfies readonly (ChannelConversionInput["event"] & EventoDaMeta)[];
 
+/**
+ * O evento escolhido para a etapa tem para onde sair?
+ *
+ * `false` = não está em `EVENTOS_DE_ETAPA_NO_CANAL` (o canal não o repassa) E
+ * não há conexão direta configurada. Gravada assim, a regra vira a pendência
+ * `evento_fora_do_canal` e quem opera só descobre no Histórico, dias depois —
+ * por isso a tela avisa no ato (#2457).
+ *
+ * Mora aqui, e não no componente, porque a lista é a MESMA que o envio usa: com
+ * uma segunda cópia, a tela avisaria de um evento que o envio aceita, ou ficaria
+ * calada sobre um que ele recusa. Pura, para o teste julgar a regra sem DOM.
+ */
+export function eventoDaEtapaTemSaida(
+  metaEvent: string,
+  conexaoDiretaConfigurada: boolean,
+): boolean {
+  return (
+    conexaoDiretaConfigurada ||
+    (EVENTOS_DE_ETAPA_NO_CANAL as readonly string[]).includes(metaEvent)
+  );
+}
+
 export function ehEventoDaMeta(valor: unknown): valor is EventoDaMeta {
   return (
     typeof valor === "string" && (VALORES_DE_EVENTO_DA_META as readonly string[]).includes(valor)
@@ -60,12 +82,25 @@ export function rotuloDoEventoDaMeta(valor: string): string {
  * A sugestão para uma etapa, pelo nome — o "Usar o recomendado" da tela. Só
  * sugere; quem liga e salva é a pessoa. Etapa sem nome reconhecível fica sem
  * sugestão, e nunca se sugere evento para etapa de ganho (a compra já vai).
+ *
+ * Leva o CANAL em conta (#2890): sem conexão direta da Meta, o único caminho
+ * de saída do evento é o canal da conversa, e o canal não repassa
+ * `QualifiedLead`. Sugeri-lo ali era a tela recomendar e, no mesmo instante, o
+ * aviso do #2839 dizer que a recomendação não tem saída. Sem conexão direta,
+ * etapa de qualificação fica sem sugestão — o estado inicial cai no fallback
+ * do componente, que é um evento do canal. Os demais nomes já são eventos que
+ * o canal repassa, então valem nos dois casos.
  */
-export function eventoRecomendadoParaMeta(nomeDaEtapa: string): EventoDaMeta | null {
+export function eventoRecomendadoParaMeta(
+  nomeDaEtapa: string,
+  conexaoDiretaConfigurada: boolean,
+): EventoDaMeta | null {
   const nome = nomeDaEtapa.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
   if (/orcament|proposta|cotac/.test(nome)) return "InitiateCheckout";
   if (/agend|consulta|visita|reuniao/.test(nome)) return "LeadSubmitted";
-  if (/qualific|interess|diagnost/.test(nome)) return "QualifiedLead";
+  if (/qualific|interess|diagnost/.test(nome)) {
+    return conexaoDiretaConfigurada ? "QualifiedLead" : null;
+  }
   return null;
 }
 

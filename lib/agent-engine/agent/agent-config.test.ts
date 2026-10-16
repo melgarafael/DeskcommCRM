@@ -70,6 +70,20 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
   });
 });
 
+describe('mcpExternoNoAtendimento (#2147) — desligado de fábrica', () => {
+  it.each([
+    ['ligado', { mcp_externo_no_atendimento: true }, true],
+    ['ausente', { rag_top_k: 7 }, false],
+    ['config nulo', null, false],
+    ['false', { mcp_externo_no_atendimento: false }, false],
+    ["'true' em texto", { mcp_externo_no_atendimento: 'true' }, false],
+    ['1', { mcp_externo_no_atendimento: 1 }, false],
+  ])('%s', async (_c, config, esperado) => {
+    const cfg = await loadPublishedAgentConfig(poolWith({ ...baseRow, config }), 'org1', 'cs1');
+    expect(cfg?.mcpExternoNoAtendimento).toBe(esperado);
+  });
+});
+
 describe('loadPublishedAgentConfigById', () => {
   it('filtra por organization_id e agent_id, nessa ordem — risco de vazamento cross-tenant se removido', async () => {
     const pool = poolWith(baseRow);

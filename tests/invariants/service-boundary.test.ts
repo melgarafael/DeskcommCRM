@@ -122,7 +122,7 @@ describe("transição real de atendimento", () => {
         c.current_demanda_id,
         GOV_AGENT_A,
       ]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "PT409" });
   });
   it("antigo/igual/outbound não reabre; nova entrada concorrente reabre uma vez e invalida trabalho antigo", async () => {
     const closed = await state();
@@ -298,7 +298,7 @@ describe("transição real de atendimento", () => {
     await inbound();
     await expect(
       pool.query("select fn_service_begin($1,$2,null,$3)", [GOV_ORG, contact, rows[0].snapshot]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "PT409" });
     const fresh = await pool.query("select fn_service_observe($1,$2) snapshot", [GOV_ORG, contact]);
     const started = await pool.query("select fn_service_begin($1,$2,null,$3) boundary", [
       GOV_ORG,
@@ -324,7 +324,7 @@ describe("transição real de atendimento", () => {
     expect(first.service_started_at).toBeTruthy();
     await expect(
       pool.query("select fn_service_begin($1,$2,null,$3)", [GOV_ORG, ct, observed]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "PT409" });
     await pool.query("update conversations set service_started_at=null where id=$1", [
       first.conversation_id,
     ]);

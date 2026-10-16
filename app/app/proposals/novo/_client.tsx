@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
+import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
 import { apiClient } from "@/lib/api/client";
 import type { ApiSuccess } from "@/lib/api/wrappers";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -47,6 +48,18 @@ interface NewProposalClientProps {
   preselectedLeadId?: string;
 }
 
+/**
+ * A validade padrão de uma proposta: HOJE + 15 dias, contando no calendário de
+ * quem usa a tela (#2935). A soma acontece em data LOCAL e só então é
+ * formatada; `toISOString()` convertia para UTC e, depois das 21h em Brasília,
+ * o "hoje + 15" saía com 16 dias.
+ */
+export function validadePadrao(agora: Date = new Date()): string {
+  const d = new Date(agora);
+  d.setDate(d.getDate() + 15);
+  return diaDeHojeLocal(d);
+}
+
 export function NewProposalClient({
   initialLeads,
   preselectedLeadId,
@@ -54,12 +67,8 @@ export function NewProposalClient({
   const t = useT();
   const router = useRouter();
 
-  // Data default: 15 dias no futuro
-  const dataValidadePadrao = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 15);
-    return d.toISOString().slice(0, 10);
-  }, []);
+  // Data default: 15 dias no futuro, no calendário de quem usa a tela (#2935).
+  const dataValidadePadrao = useMemo(() => validadePadrao(), []);
 
   const [leadId, setLeadId] = useState<string>(() => {
     if (preselectedLeadId && initialLeads.some((l) => l.id === preselectedLeadId)) {

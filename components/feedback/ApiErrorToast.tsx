@@ -127,6 +127,12 @@ const COPY: Record<string, { variant: Variant; msg?: string }> = {
   // TOM. Sem `msg` de propósito: a lista de agentes é contexto que nenhuma
   // frase genérica alcança.
   credential_in_use: { variant: "warning" },
+
+  // ---- Link de pagamento pelo dono (D-15) ----
+  //
+  // Recusa ROTINEIRA: a empresa ainda não tem administrador com e-mail para o
+  // cliente do provedor. O caminho é convidar um, e a rota já diz isso.
+  empresa_sem_email: { variant: "warning" },
 };
 
 /**

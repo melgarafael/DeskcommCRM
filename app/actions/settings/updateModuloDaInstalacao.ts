@@ -12,6 +12,7 @@ import {
   gravarModulo,
   moduloLigado,
 } from "@/lib/instalacao/modulos";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -111,7 +112,7 @@ export async function updateModuloDaInstalacao(
     actorUserId: user.id,
     resourceType: "platform_config",
     requestId: hdrs.get("x-request-id"),
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent"),
   };
   await audit({ ...quem, action: "platform.modulo_updated", metadata: { modulo, de: antes, para: ligado } });

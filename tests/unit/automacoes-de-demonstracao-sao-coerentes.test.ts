@@ -125,7 +125,18 @@ function mundoNoBanco(mundo: MundoDaExecucao): SupabaseClient {
     cadeia.then = (resolve: (v: unknown) => unknown) => resolve(escrevendo ? escrita : { error: null });
     return cadeia;
   };
-  return { from: tabela, rpc: async () => ({ error: null }) } as unknown as SupabaseClient;
+  // `add_tag` grava pela função de junção (#2888, migration 0682): a escrita que
+  // falha neste mundo falha AQUI, e o que volta é o que o `RETURNING` devolveria.
+  const rpc = async (fn: string, args: Record<string, unknown>) => {
+    if (fn !== "fn_lead_adicionar_etiquetas" && fn !== "fn_contato_adicionar_etiquetas") return { error: null };
+    if (mundo.escritaFalhou) return { data: null, error: { message: mundo.escritaFalhou } };
+    const linha = linhas[fn === "fn_lead_adicionar_etiquetas" ? "crm_leads" : "contacts"];
+    if (!linha) return { data: null, error: null };
+    const antes = (linha.tags as string[] | undefined) ?? [];
+    const adicionadas = [...new Set(args.p_etiquetas as string[])].filter((t) => !antes.includes(t));
+    return { data: { tags: [...antes, ...adicionadas], adicionadas }, error: null };
+  };
+  return { from: tabela, rpc } as unknown as SupabaseClient;
 }
 
 describe("regras de demonstração", () => {

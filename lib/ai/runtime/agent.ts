@@ -131,6 +131,7 @@ interface AgentRow {
   id: string;
   organization_id: string;
   created_by: string | null;
+  config?: { mcp_externo_no_atendimento?: unknown } | null;
 }
 
 function buildSentinelRegex(keywords: string[]): RegExp | null {
@@ -201,10 +202,8 @@ export function buildModel(
     // o monta é o leitor próprio (`lerLoginCodexRenovandoSeProxima`), nunca a
     // tela de chave. Sem este caso o ensaio responderia `unsupported_provider`
     // enquanto o worker atenderia a mensagem real.
-    // A LISTAGEM de modelos desta assinatura não vem daqui (#2602): o mesmo
-    // token medido responde 403 `Missing scopes: api.model.read` na API
-    // pública, e ela fala com o backend do Codex
-    // (`OPENAI_CODEX_MODELS_ENDPOINT`, em `providers.ts`).
+    // A lista da conta vem de GET /v1/models, conforme o contrato oficial
+    // Sign in with ChatGPT; a inferência usa a API pública de Responses abaixo.
     case PROVEDOR_POR_ASSINATURA:
       return createOpenAI({ apiKey, baseURL: OPENAI_CODEX_ENDPOINT })(modelId);
     case "google":
@@ -343,7 +342,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
 
     const { data: agentRaw } = await admin
       .from("ai_agents")
-      .select("id, organization_id, created_by")
+      .select("id, organization_id, created_by, config")
       .eq("id", run.agent_id)
       .eq("organization_id", run.organization_id)
       .maybeSingle();
@@ -619,14 +618,27 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     const handoffSignal: RuntimeHandoffSignal = { triggered: false };
     // #2147 — servidor MCP externo que o dono da instalação registrou. `null`
     // SEM REDE quando a versão não escolheu nenhuma remota (item 7) ou o TURNO
-    // TEM CONTATO (item 8, escolha (b)): sem o identificador do contato na
-    // chamada ao servidor remoto, a leitura de lá poderia devolver dado de
-    // outro cliente. `null` também sem registro ou com o servidor calado.
+    // TEM CONTATO sem a opção `mcp_externo_no_atendimento` do agente (item 8,
+    // escolha (b)). Ligada, o servidor recebe a identidade do contato em
+    // cabeçalho (ver `carregar.ts`). `null` também sem registro ou com o
+    // servidor calado.
     const servidorExterno = await carregarServidorMcpExternoDoTurno(
       admin,
       run.organization_id,
       version.tool_ids ?? [],
-      { ...(contatoDoTurno ? { contatoDoTurno } : {}) },
+      {
+        ...(contatoDoTurno
+          ? {
+              contatoDoTurno,
+              ...(agent?.config?.mcp_externo_no_atendimento === true
+                ? {
+                    noAtendimento: true,
+                    ...(run.conversation_id ? { conversaDoTurno: run.conversation_id } : {}),
+                  }
+                : {}),
+            }
+          : {}),
+      },
     );
     const tools = pickToolsFromMcp({
       supabase: admin,

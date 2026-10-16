@@ -18,7 +18,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     void audit({ action: "agenda.google_resolution_requested", organizationId: auth.org.orgId, actorUserId: auth.user.id, resourceType: "calendar_appointment", resourceId: id, requestId, metadata: { choice: parsed.data.choice } });
     return ok({ pending: true }, { requestId });
   } catch (e) {
-    const stale = e instanceof Error && "code" in e && e.code === "40001";
+    const stale = e instanceof Error && "code" in e && (e.code === "PT409" || e.code === "40001");
     return fail(stale ? "conflict" : "forbidden", stale ? "O compromisso mudou. Atualize a comparação antes de decidir." : "Esta decisão pertence ao responsável pelo compromisso.", stale ? 409 : 403, { requestId });
   }
 }

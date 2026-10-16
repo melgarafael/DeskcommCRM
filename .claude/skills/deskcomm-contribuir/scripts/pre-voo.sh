@@ -219,6 +219,25 @@ elif [ "$toca_produto" -gt 0 ]; then
 else
   nao "sem fragmento, e o diff não toca o produto"
 fi
+# A skill de operação ensina onde fica cada tela; fragmento novo (ou menu
+# mexido) pode trazer tela que o mapa ainda não cita. Só AVISA: quem decide
+# se o mapa acompanha é quem escreve, não este script.
+mapa_tocado="$(echo "$diff_nomes" | grep -c '^lib/navigation/catalogo\.ts$' || true)"
+if [ -n "$frag" ] || [ "$mapa_tocado" -gt 0 ]; then
+  conferir="$raiz/.agents/skills/deskcomm-operacao/scripts/conferir-mapa.sh"
+  if [ -x "$conferir" ] || [ -f "$conferir" ]; then
+    mapa_faltas="$(bash "$conferir" 2>/dev/null | grep '^⚠' || true)"
+    if [ -n "$mapa_faltas" ]; then
+      echo "$mapa_faltas" | while IFS= read -r linha; do olhe "${linha#⚠ }"; done
+    else
+      ok "mapa da skill de operação cobre as telas do menu (comando: bash .agents/skills/deskcomm-operacao/scripts/conferir-mapa.sh)"
+    fi
+  else
+    nao "mapa da skill de operação: script ausente neste clone"
+  fi
+else
+  nao "sem fragmento nem mudança no menu: mapa da skill não conferido"
+fi
 
 # ── 5. Env var nova ──────────────────────────────────────────────────────────
 env_novas="$(git diff "$B" HEAD -- lib/env.ts | grep -oE '^\+\s+([A-Z][A-Z0-9_]+):' | sed -E 's/^\+\s+//; s/:$//' || true)"

@@ -183,9 +183,60 @@ UP="$ROOT_DIR/hostgator-setup-kit/update.sh"
 check "update.sh chama aviso_do_site_url" grep -qE '^ *aviso_do_site_url ' "$UP"
 check "update.sh não receita o token sbp_ fora da função" bash -c '! grep -qF "SUPABASE_ACCESS_TOKEN=sbp_" "$1"' _ "$UP"
 
+# ── A ORIENTAÇÃO MANUAL de `instrua_e_saia`, por topologia ──────────────────
+# `instrua_e_saia` é o desfecho de toda pendência do script: ele ensina o passo
+# manual. O texto "no painel do Supabase: Authentication → URL Configuration"
+# só existe na NUVEM — num Supabase self-host (o do kit ou um próprio) o projeto
+# não está em painel nenhum da nuvem, e mandar o operador para lá é mandá-lo a
+# um lugar onde o projeto dele não aparece. A régua é a MESMA de
+# `aviso_do_site_url` (_common.sh:585): `SINGLE_SERVER=1` → o Supabase do kit;
+# `NEXT_PUBLIC_SUPABASE_URL` em `*.supabase.co` (ou vazia, topologia
+# desconhecida) → nuvem; outra URL → Supabase próprio.
+#
+# O gatilho é um só para as três topologias — os modelos ausentes no repo fazem
+# o script cair em `instrua_e_saia` no mesmo ponto (:232). Assim a diferença
+# medida é só o TEXTO, não o caminho até ele.
+echo
+echo "marca-emails.sh: a orientação manual de instrua_e_saia, por topologia"
+
+montar_sem_modelos() {  # montar_sem_modelos <nome> <linhas do .env do CRM>
+  montar "$1" "$2"
+  rm -rf "$WORK/$1/supabase/templates"
+}
+
+montar_sem_modelos sem-modelos-single "$CRM_SINGLE"
+rodar sem-modelos-single
+check "single-server: o passo manual existe e a instalação sai 0" saiu_zero sem-modelos-single
+check "single-server: anota a pendência para a tela final" com_pend sem-modelos-single
+check "single-server: NÃO manda ao painel da nuvem" nao_diz sem-modelos-single 'painel do Supabase'
+check "single-server: NÃO mostra o caminho de painel da nuvem" \
+  nao_diz sem-modelos-single 'Authentication → URL Configuration'
+check "single-server: aponta o update.sh do kit" diz sem-modelos-single 'update.sh'
+check "single-server: e o .env do Supabase dele (SITE_URL)" diz sem-modelos-single 'SITE_URL'
+check "single-server: diz onde fica o .env do Supabase do kit" diz sem-modelos-single '.runtime/supabase'
+
+montar_sem_modelos sem-modelos-proprio 'NEXT_PUBLIC_SUPABASE_URL=https://supabase.meucliente.com.br
+NEXT_PUBLIC_APP_URL=https://crm.meucliente.com.br'
+rodar sem-modelos-proprio
+check "Supabase próprio: sai 0" saiu_zero sem-modelos-proprio
+check "Supabase próprio: NÃO manda ao painel da nuvem" nao_diz sem-modelos-proprio 'painel do Supabase'
+check "Supabase próprio: NÃO mostra o caminho de painel da nuvem" \
+  nao_diz sem-modelos-proprio 'Authentication → URL Configuration'
+check "Supabase próprio: confere o SITE_URL no .env do Supabase dele" \
+  diz sem-modelos-proprio 'SITE_URL'
+
+# CONTROLE POSITIVO: na nuvem o caminho de painel é o certo, e continua igual.
+montar_sem_modelos sem-modelos-nuvem 'NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijklmnop.supabase.co
+NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br'
+rodar sem-modelos-nuvem
+check "nuvem (controle): imprime o passo manual" saiu_zero sem-modelos-nuvem
+check "nuvem (controle): aponta o painel do Supabase" diz sem-modelos-nuvem 'painel do Supabase'
+check "nuvem (controle): e o caminho Authentication → URL Configuration" \
+  diz sem-modelos-nuvem 'Authentication → URL Configuration'
+
 if [[ "$FAILS" -ne 0 ]]; then
   printf '\n%d teste(s) falharam.\n' "$FAILS"
-  for n in single single-sem-moldes proprio up-single up-proprio; do
+  for n in single single-sem-moldes proprio sem-modelos-single sem-modelos-proprio sem-modelos-nuvem up-single up-proprio; do
     printf -- '--- saída: %s ---\n' "$n"; cat "$WORK/$n.out"
   done
   exit 1

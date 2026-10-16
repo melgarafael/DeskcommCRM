@@ -65,7 +65,7 @@ describe("gravarMensagemDeGrupo", () => {
   it("carimba a conversa com o sentido da mensagem e prévia de mídia quando não há texto", async () => {
     const d = db({ id: "g1", subject: "A", contactId: "c", conversationId: "v" });
     await gravarMensagemDeGrupo(d, entrada({ body: null, type: "image", mediaUrl: "https://x/y.jpg" }));
-    expect(d.marcarConversa).toHaveBeenCalledWith(ORG, "v", "[image]", "2026-09-23T12:00:00.000Z", "inbound");
+    expect(d.marcarConversa).toHaveBeenCalledWith(ORG, "v", "Imagem", "2026-09-23T12:00:00.000Z", "inbound");
   });
 
   it("vCard no grupo: a prévia é o nome do cartão, igual à conversa individual (#2742)", async () => {

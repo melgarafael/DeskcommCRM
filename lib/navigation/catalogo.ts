@@ -1078,6 +1078,32 @@ export const NAV_CATALOG = [
     minRole: "admin",
   },
   {
+    // A porta do cadastro do servidor MCP externo (#2948). Em "Dados e acesso"
+    // pela MESMA razão de API Tokens e Dados externos: é o eixo "por onde dado
+    // entra e sai do CRM" — o endereço e a chave são de um sistema de fora que
+    // a IA da empresa consulta. Antes desta linha, a action que grava
+    // (`definirServidorMcpExterno`) existia e não era chamada de lugar nenhum:
+    // registrar o servidor só era possível por fora da interface.
+    //
+    // SEM `sidebar`, como as duas vizinhas: trocar a credencial de um ERP é
+    // tarefa de uma vez, e o hub + o ⌘K já são porta suficiente.
+    //
+    // ⚠️ `minRole: "admin"` é o mais perto que este registro chega do que a
+    // tela cobra: quem ESCREVE é o dono da INSTALAÇÃO (`is_platform_admin`, a
+    // `regraPlatformAdmin` da action), e o catálogo não modela esse papel — a
+    // mesma limitação que a allowlist de `/app/settings/atualizacao` já
+    // registra em `tests/unit/navegacao-completude.test.ts`. Quem clicar sem a
+    // permissão recebe `/403` da própria tela; a porta existe porque a tela
+    // nova precisa de por onde ser encontrada (item 14 da Definition of Done).
+    href: "/app/settings/servidor-mcp-externo",
+    label: "Servidor MCP externo",
+    description: "O endereço e a chave do sistema de fora que a IA da empresa pode consultar.",
+    icon: "Plugs",
+    group: "organizacao",
+    section: "Dados e acesso",
+    minRole: "admin",
+  },
+  {
     href: "/app/extensions",
     label: "Extensões",
     description:

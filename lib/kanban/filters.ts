@@ -1,4 +1,5 @@
 import type { Lead } from "@/lib/types/leads";
+import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
 import { cardTemMarcador, cardTemTodasNaMesmaCaixa } from "@/lib/kanban/marcadores-do-card";
 import {
   type ModoDeEtiqueta,
@@ -158,7 +159,11 @@ export function applyFilters(
   f: LeadFilters,
   contexto?: ContextoDosFiltros,
 ): Lead[] {
-  const today = new Date().toISOString().slice(0, 10);
+  // O "hoje" de quem olha o funil — NÃO o dia UTC (#2935). `toISOString()`
+  // adianta o dia a oeste, e depois das 21h em Brasília "Apenas atrasados"
+  // marcava como vencido o negócio que fecha HOJE (`expected_close_date >= today`
+  // deixava de excluí-lo). A mesma conta que o resto do produto usa.
+  const today = diaDeHojeLocal();
   const search = f.search?.trim().toLowerCase() ?? "";
   // Fora do `filter`: a escolha de E/OU é do filtro, não do card, e calculá-la a
   // cada linha pagaria uma normalização por card — a lista do funil é pequena

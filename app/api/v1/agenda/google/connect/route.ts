@@ -38,10 +38,43 @@ import { CAMINHO_DO_CALLBACK, configuracaoDoGoogle, origemLocalDosCabecalhos } f
 import { emitirEstado } from "@/lib/agenda/google/estado";
 import { assinarVinculo, NOME_DO_VINCULO, VALIDADE_DO_VINCULO_S } from "@/lib/agenda/google/vinculo";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
-import { montarUrlDeConsentimento } from "@/lib/agenda/google/oauth";
+import { createClient } from "@/lib/supabase/server";
+import { meetAbertoLigado } from "@/lib/schemas/settings";
+import {
+  ESCOPO_MEET_ESPACO_ABERTO,
+  montarUrlDeConsentimento,
+} from "@/lib/agenda/google/oauth";
 import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Os escopos OPCIONAIS que a reconexão desta organização tem de pedir (#2063).
+ *
+ * A opção "Meet com acesso aberto" só vale quando a conexão tem o escopo
+ * `meetings.space.created` — e ele SÓ pode ser pedido aqui, no consentimento.
+ * Sem esta chamada nenhuma conexão nova recebe o escopo, o gate do executor
+ * (`deveCriarEspacoAberto`) nunca abre e a opção da tela não faz efeito nenhum.
+ *
+ * `ESCOPOS_OPCIONAIS` continua fora de `ESCOPOS_OBRIGATORIOS` de propósito:
+ * exigir o escopo novo derrubaria toda conexão existente em `scope_missing`
+ * (doutrina de packaging). Quem tem a opção DESLIGADA pede exatamente os
+ * mesmos escopos de sempre, byte a byte.
+ *
+ * Caminho frio (um clique, uma consulta) e falha FECHADA: erro de leitura vale
+ * como "opção desligada", a mesma disciplina de `decidirEspacoAberto`.
+ */
+async function escoposOpcionaisDaOrganizacao(orgId: string): Promise<string[]> {
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.from("organizations").select("settings").eq("id", orgId).maybeSingle();
+    return meetAbertoLigado((data as { settings?: unknown } | null)?.settings)
+      ? [ESCOPO_MEET_ESPACO_ABERTO]
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Volta para a Agenda com um código que a tela sabe traduzir. */
 function voltarComErro(codigo: string): NextResponse {
@@ -93,7 +126,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // `contaSugerida` evita o erro mais comum do fluxo: autorizar com a conta
   // pessoal que já estava logada no navegador e ver a agenda errada aparecer.
-  const url = montarUrlDeConsentimento(app, { state, contaSugerida: user.email });
+  //
+  // `escoposOpcionais` (#2063): só quando a organização ligou "Meet com acesso
+  // aberto" é que o consentimento pede o escopo de criação de espaços — é aqui,
+  // e não depois, que ele pode entrar.
+  const url = montarUrlDeConsentimento(app, {
+    state,
+    contaSugerida: user.email,
+    escoposOpcionais: await escoposOpcionaisDaOrganizacao(org.orgId),
+  });
 
   await audit({
     action: "agenda.google.conexao_iniciada",

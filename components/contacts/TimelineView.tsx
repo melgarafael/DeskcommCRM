@@ -36,6 +36,22 @@ function dayHeader(d: Date, t: (texto: string) => string = (texto) => texto, loc
 }
 
 /**
+ * A data do cabeçalho a partir da chave do grupo, que JÁ é o dia local do item
+ * (`format(…, "yyyy-MM-dd")` no agrupamento acima).
+ *
+ * Lida com `new Date(chave)` — o que este arquivo fazia —, uma string
+ * `aaaa-mm-dd` sem hora vira **meia-noite UTC**: em Brasília isso é 21h do dia
+ * ANTERIOR, e `dayHeader` passava a rotular o que aconteceu hoje como "Ontem"
+ * (issue #2934 — todo fuso a oeste de UTC). Montar a data pelos pedaços do
+ * próprio texto devolve meia-noite LOCAL, o mesmo dia que a chave nomeia em
+ * qualquer fuso.
+ */
+function diaLocalDaChave(chave: string): Date {
+  const [ano = 0, mes = 1, dia = 1] = chave.split("-").map(Number);
+  return new Date(ano, mes - 1, dia);
+}
+
+/**
  * Fallback de corpo quando a linha não tem `reason` (histórico anterior ao
  * barramento). Só devolve texto que uma PESSOA escreveu ou leria — nunca
  * `JSON.stringify` do payload: era isso que colocava três uuids na tela onde
@@ -101,7 +117,7 @@ export function TimelineView({ contactId, types }: Props) {
   return (
     <div className="space-y-6">
       {grouped.map(([key, items]) => {
-        const date = new Date(key);
+        const date = diaLocalDaChave(key);
         return (
           <section key={key} className="space-y-2">
             <h3 className="sticky top-0 z-10 bg-background py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

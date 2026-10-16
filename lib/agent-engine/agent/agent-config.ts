@@ -109,6 +109,12 @@ export interface PublishedAgentConfig {
    * Opcional porque nasce depois das fixtures que montam esta interface à mão.
    */
   avisoForaDoHorario?: string | null;
+  /**
+   * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
+   * externo também carrega em turno com contato, com a identidade dele em
+   * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
+   */
+  mcpExternoNoAtendimento?: boolean;
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
@@ -186,7 +192,11 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
-  const cfg = (r.config ?? {}) as { rag_top_k?: unknown; rag_similarity_threshold?: unknown };
+  const cfg = (r.config ?? {}) as {
+    rag_top_k?: unknown;
+    rag_similarity_threshold?: unknown;
+    mcp_externo_no_atendimento?: unknown;
+  };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
     Number.isInteger(cfg.rag_top_k) &&
@@ -250,6 +260,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
+    mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };

@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import { headers } from "next/headers";
 
 import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 
 export interface AuthRateLimits {
   /** Tentativas por IP na janela. */
@@ -32,24 +33,6 @@ export interface AuthRateLimits {
   windowSec: number;
 }
 
-/**
- * IP do cliente, ou `null` quando não dá para saber.
- *
- * `x-forwarded-for` é o header do proxy; `x-real-ip` é o que Nginx costuma setar
- * sozinho em configurações simples. Nenhum dos dois é confiável contra spoofing —
- * mas o uso aqui é rate limit, onde forjar o header só isola o atacante em outro
- * balde, nunca dá acesso.
- *
- * `null` em vez de uma string sentinela: "não sei de onde veio" precisa ser
- * inexprimível como se fosse uma origem, senão vira balde compartilhado.
- */
-async function clientIp(): Promise<string | null> {
-  const hdrs = await headers();
-  const encaminhado = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (encaminhado) return encaminhado;
-  const real = hdrs.get("x-real-ip")?.trim();
-  return real || null;
-}
 
 function opaque(value: string): string {
   return createHash("sha256").update(value.trim().toLowerCase()).digest("hex").slice(0, 32);
@@ -66,7 +49,7 @@ export async function authRateLimited(
   identifier: string | null,
   limits: AuthRateLimits,
 ): Promise<boolean> {
-  const ip = await clientIp();
+  const ip = ipDoCliente(await headers());
 
   // SEM IP identificável, o limite por IP não entra — e isto é decisão de
   // segurança, não relaxamento.
@@ -235,7 +218,7 @@ export async function tokenFailureLimited(
   limits: TokenFailureLimits = TOKEN_FAILURE_LIMITS,
 ): Promise<boolean> {
   try {
-    const ip = await clientIp();
+    const ip = ipDoCliente(await headers());
     if (ip !== null && (await peekRateLimit(tokenFailureIpKey(ip), limits.windowSec)) >= limits.ip) {
       return true;
     }
@@ -269,7 +252,7 @@ export async function registrarFalhaDeToken(
   const contaNoIp = opcoes.contaNoIp ?? true;
   try {
     if (contaNoIp) {
-      const ip = await clientIp();
+      const ip = ipDoCliente(await headers());
       if (ip !== null) {
         await checkRateLimit(tokenFailureIpKey(ip), limits.ip, limits.windowSec);
       }

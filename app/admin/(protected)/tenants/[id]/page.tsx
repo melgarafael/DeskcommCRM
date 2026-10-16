@@ -5,6 +5,9 @@ import {
   type AssinaturaDoCard,
   type PlanoDoCard,
 } from "@/components/admin/tenants/CardDeCobranca";
+import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
+import { exigeDocumento, sugestaoDoCadastro } from "@/lib/cobranca/documento";
+import type { ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -37,22 +40,30 @@ async function lerCobrancaDoTenant(orgId: string) {
   if (!z.string().uuid().safeParse(orgId).success) return null;
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "cobranca"))) return null;
-  const [planos, assinatura, org] = await Promise.all([
+  const [planos, assinatura, org, daInstalacao] = await Promise.all([
     admin.from("cobranca_planos").select("id, nome, arquivado_em").order("nome"),
     admin
       .from("cobranca_assinaturas")
-      .select("plano_id, estado, trial_ate, prazo_extra_ate, provedor, plano_agendado_id, proximo_vencimento")
+      .select("plano_id, estado, trial_ate, prazo_extra_ate, provedor, plano_agendado_id, proximo_vencimento, provedor_cliente_id")
       .eq("organization_id", orgId)
       .maybeSingle(),
-    admin.from("organizations").select("status, suspended_kind, settings").eq("id", orgId).maybeSingle(),
+    admin.from("organizations").select("status, suspended_kind, settings, cnpj").eq("id", orgId).maybeSingle(),
+    provedorDaInstalacao(),
   ]);
   if (planos.error || assinatura.error || org.error) {
     throw new Error(`cobrança do tenant: leitura falhou (${planos.error?.code ?? assinatura.error?.code ?? org.error?.code})`);
   }
   const rotulo = (org.data?.settings as { plan?: unknown } | null)?.plan;
+  // O id do cliente no provedor decide só se o documento é pedido; não vai ao componente de cliente.
+  const { provedor_cliente_id: clienteNoProvedor, ...semIdDoProvedor } = assinatura.data ?? { provedor_cliente_id: null };
   return {
     planos: (planos.data ?? []) as PlanoDoCard[],
-    assinatura: (assinatura.data ?? null) as AssinaturaDoCard | null,
+    assinatura: (assinatura.data ? semIdDoProvedor : null) as AssinaturaDoCard | null,
+    pedeDocumento: exigeDocumento(
+      ((assinatura.data?.provedor ?? daInstalacao) as ProvedorDeCobranca | null),
+      clienteNoProvedor !== null,
+    ),
+    documentoDoCadastro: sugestaoDoCadastro(org.data?.cnpj ?? null),
     suspensaPorCobranca: org.data?.status === "suspended" && org.data?.suspended_kind === "cobranca",
     rotuloAntigo: typeof rotulo === "string" && rotulo !== "" ? rotulo : null,
   };

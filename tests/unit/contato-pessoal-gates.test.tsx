@@ -52,6 +52,17 @@ vi.mock("@/hooks/contacts/usePersonalContact", () => ({
   useMarkPersonalContact: () => ({ mutate: marcarMutate, isPending: false }),
   useUnmarkPersonalContact: () => ({ mutate: desmarcarMutate, isPending: false }),
 }));
+// A FAIXA DA CARTEIRA (#2591) passou a ser desenhada pelo cabeçalho — e ela lê a
+// carteira com react-query. Aqui estes dois hooks entram mockados como todos os
+// outros: este arquivo mede o gate do botão pessoal, não a carteira (essa tem
+// arquivo próprio), e sem o Provider o `useQuery` dos dois derrubava a suíte.
+vi.mock("@/hooks/contacts/useCarteiraDoContato", () => ({
+  useCarteiraDoContato: () => ({ data: { dono_user_id: null }, isLoading: false }),
+  useDefinirCarteira: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
+  useAssignableMembers: () => ({ data: [], isLoading: false }),
+}));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));

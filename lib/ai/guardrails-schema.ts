@@ -154,6 +154,14 @@ export const agentConfigSchema = z.object({
    * então não se liga por migration — se liga na tela do agente.
    */
   aceita_comandos_celular: z.boolean().default(false),
+  /**
+   * Carrega o servidor MCP externo da organização (#2147) também em turno de
+   * ATENDIMENTO, com a identidade do contato em cabeçalho que o modelo não
+   * controla (`lib/mcp/servidor-externo/carregar.ts`). `false` (default) = o
+   * turno com contato segue sem servidor externo, como antes da opção existir.
+   * Só quem é admin grava `config` (rota PATCH e RLS de `ai_agents`).
+   */
+  mcp_externo_no_atendimento: z.boolean().default(false),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -167,6 +175,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   voice_speed: 0.85,
   voice_model: "gpt-realtime",
   aceita_comandos_celular: false,
+  mcp_externo_no_atendimento: false,
   sentiment_threshold: DEFAULT_SENTIMENT_THRESHOLD,
 };
 
@@ -192,6 +201,7 @@ export const agentConfigPatchSchema = agentConfigSchema
     voice_speed: cfg.voice_speed.removeDefault(),
     voice_model: cfg.voice_model.removeDefault(),
     aceita_comandos_celular: cfg.aceita_comandos_celular.removeDefault(),
+    mcp_externo_no_atendimento: cfg.mcp_externo_no_atendimento.removeDefault(),
     // Sem `.default()`, senão um PATCH de outra chave reescrevia o limiar de
     // todo agente que nunca o configurou — o mesmo defeito de #1631.
     sentiment_threshold: cfg.sentiment_threshold.removeDefault(),

@@ -171,6 +171,13 @@ function adminFake(opcoes: { rules?: unknown[]; lead?: Record<string, unknown> |
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
       registro.rpcs.push({ fn, args });
+      // `add_tag` grava pela função de junção (#2888, migration 0682): sem lead,
+      // nulo; com lead, o que o `RETURNING` devolveria.
+      if (fn === "fn_lead_adicionar_etiquetas" && opcoes.lead) {
+        const antes = (opcoes.lead.tags as string[] | undefined) ?? [];
+        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter((t) => !antes.includes(t));
+        return { data: { tags: [...antes, ...adicionadas], adicionadas }, error: null };
+      }
       return { data: null, error: null };
     },
   } as unknown as ActionCtx["admin"];
@@ -257,8 +264,10 @@ describe("execução: a escolha vira a ação-alvo", () => {
     expect(resultado.type).toBe("ai_decide");
     expect(resultado.status).toBe("success");
     expect(resultado.detail).toMatchObject({ escolha: "quente", acao_alvo: "add_tag", added: ["quente"] });
-    // A prova de que a ação-alvo RODOU: o update no lead e o evento emitido.
-    expect(fake.updates.some((u) => u.table === "crm_leads" && (u.data.tags as string[]).includes("quente"))).toBe(true);
+    // A prova de que a ação-alvo RODOU: a junção no lead e o evento emitido.
+    expect(
+      fake.rpcs.some((r) => r.fn === "fn_lead_adicionar_etiquetas" && (r.args.p_etiquetas as string[]).includes("quente")),
+    ).toBe(true);
     expect(fake.rpcs.some((r) => r.fn === "emit_event")).toBe(true);
   });
 

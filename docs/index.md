@@ -100,6 +100,7 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 | [`adr/0002-tabelas-de-modulo-num-banco-so.md`](adr/0002-tabelas-de-modulo-num-banco-so.md) | **Aceita em 17/09/2026.** Tabelas de módulo opcional: um banco só, `public`, criadas por função provisionadora fixa quando o módulo é instalado |
 | [`adr/0003-perfil-declarativo-v2-portas-nomeadas-e-vitrine.md`](adr/0003-perfil-declarativo-v2-portas-nomeadas-e-vitrine.md) | **Aceita em 17/09/2026.** Perfil declarativo v2 das extensões: portas nomeadas e o metadado de loja no catálogo |
 | [`adr/0004-cobranca-do-revendedor.md`](adr/0004-cobranca-do-revendedor.md) | **Aceita em 29/09/2026.** Cobrança do revendedor: o terceiro eixo de dinheiro — o dono da instalação cobra as empresas que atende; capacidade do núcleo com chave, desligada por padrão; revisa a condição 2 da ADR-0002 só para este caso |
+| [`adr/0005-plataforma-de-modulos-de-terceiro.md`](adr/0005-plataforma-de-modulos-de-terceiro.md) | **Aceita em 14/10/2026** (escolhas 1–4 pela recomendação, delegadas pelo dono; a 5 segue aberta). Plataforma de módulos de terceiro: o host compila o schema declarado, código de terceiro nunca entra no processo. Onda 1a construída no #2334 (migration 0611); o que falta, na seção *Estado da construção*. Spec: [`specs/modulos-dados-declarados-v1.md`](specs/modulos-dados-declarados-v1.md); caso de prova: [`research/modulos/pagamentos-e-fiscal.md`](research/modulos/pagamentos-e-fiscal.md) |
 | [`architecture/agent-turn.html`](architecture/agent-turn.html) | Diagrama do turno do agente (inbound → guardrails → outbound) |
 | [`architecture/agenda-no-turno.md`](architecture/agenda-no-turno.md) | Fonte de horários locais de reservas, releitura após ações e registros do próximo turno |
 | [`architecture/remetente-do-lembrete.md`](architecture/remetente-do-lembrete.md) | Canal dos lembretes por serviço, origem da reserva, ambiguidade e ciclo dos avisos |
@@ -135,11 +136,16 @@ acessibilidade).
 | [`DEPLOY-CHECKLIST.md`](DEPLOY-CHECKLIST.md) | Checklist de deploy |
 | [`ATUALIZANDO.md`](ATUALIZANDO.md) | `update.sh`, `restore.sh`, `healthcheck.sh` |
 | [`runbooks/deploy.md`](runbooks/deploy.md) | **Deploy em produção — os dois `-f` do compose, verificação pós-deploy** |
+| [`runbooks/oracle-arm64.md`](runbooks/oracle-arm64.md) | **Oracle Ampere A1/Ubuntu** — VM ARM64, rede, instalação, atualização, backup e aceite real |
 | [`runbooks/remediar-worker-congelado.md`](runbooks/remediar-worker-congelado.md) | **Incidente: o worker congelado** — diagnóstico (`diagnostico.sh`), impacto medido e as duas rotas de remediação. **Ainda não ensaiado** |
 | [`runbooks/ativar-packaging.md`](runbooks/ativar-packaging.md) | **Ativação da doutrina de packaging** — os 3 passos que não cabem num PR (pacote público, check obrigatório, primeira release) |
 | [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — como medir a origem do consumo, os dois intervalos da fila e as duas tabelas que só crescem |
 | [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA em produção |
 | [`runbooks/cloudpanel.md`](runbooks/cloudpanel.md) | **VPS que já tem CloudPanel/Nginx nas portas 80/443** — o modo proxy externo do kit, o endereço fixo para o Nginx do host e o 403 do webhook global |
+| [`saas/README.md`](saas/README.md) | **Revender como SaaS** — a jornada do dono da instalação, do servidor ao primeiro cliente pagando; modelo, painel do dono, primeiro cliente, custo por cliente |
+| [`saas/cobranca.md`](saas/cobranca.md) | **Cobrar os clientes** — Stripe × Asaas, planos, teste e publicação, régua de atraso, troca de plano, nota fiscal, caminho manual |
+| [`saas/contrato-e-lgpd.md`](saas/contrato-e-lgpd.md) | **Contrato e LGPD com o cliente final** — controlador × operador, cláusulas para o advogado revisar, transferência internacional pela IA |
+| [`saas/aulas/README.md`](saas/aulas/README.md) | **Roteiros de aula** do caminho SaaS — cinco aulas que apontam para os guias acima |
 | [`saas/coolify.md`](saas/coolify.md) | **VPS com Coolify** — CRM e banco (Supabase self-hosted) na mesma VPS, atrás do proxy do Coolify; painel fechado e acessado por túnel; consumo medido |
 | [`runbooks/ai-credentials-rotation.md`](runbooks/ai-credentials-rotation.md) | Rotação de credenciais de IA |
 | [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) | **CSS personalizado que trancou a tela** — `?sem_css=1` e o `delete` em `platform_config` |

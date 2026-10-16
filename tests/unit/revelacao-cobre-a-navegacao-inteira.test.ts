@@ -47,7 +47,14 @@ import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { describe, expect, it } from "vitest";
 
-import { embrulharANavegacao, METODOS_DE_NAVEGACAO_REVELADOS } from "../e2e/helpers/revelacao-nas-cargas";
+import {
+  EVIDENCIA_DE_ERRO_VAZIA,
+  embrulharANavegacao,
+  METODOS_DE_NAVEGACAO_REVELADOS,
+  digestDoErroDeServidor,
+  mensagemDaCaixaNaoRevelada,
+  type EvidenciaDoErroDeServidor,
+} from "../e2e/helpers/revelacao-nas-cargas";
 
 /** O que o dublê registra: a ordem das navegações e das esperas. */
 class PaginaFalsa {
@@ -182,5 +189,101 @@ describe("o test da suíte usa o embrulho provado (issue #884)", () => {
       fonte.match(aMao)?.[0] ?? null,
       "embrulhe só por `embrulharANavegacao` (revelacao-nas-cargas.ts) — é ele que este teste prova",
     ).toBeNull();
+  });
+});
+
+/**
+ * O DIAGNÓSTICO DO BOUNDARY QUE TERMINOU EM ERRO DE SERVIDOR (resto declarado no
+ * #2351).
+ *
+ * A espera não podia continuar dizendo "caixa órfã" para um boundary que o
+ * servidor não revelou porque FALHOU. O defeito está descrito no PR #2351: a
+ * consulta do catálogo estourava o `statement_timeout`, `app/app/products/page.tsx:95`
+ * lançava, e o diagnóstico mandava procurar caixa órfã onde havia erro de
+ * servidor.
+ *
+ * ⚠️ AS EVIDÊNCIAS ABAIXO SÃO MEDIDAS, E O DIGEST É SINTÉTICO. O formato
+ * `$RX("B:N","<digest>")` e o `data-dgst` que o `$RX` escreve saíram da execução
+ * de `renderToPipeableStream` do react-dom 19.3 desta árvore (produção), com um
+ * boundary que suspende e depois lança — e do fonte instalado
+ * (`react-dom/cjs/react-dom-server.node.production.js`): o digest do stream é o
+ * valor que o `onError` do servidor DEVOLVE (`logRecoverableError`), e o `$RX`
+ * copia esse mesmo valor para o dataset do marcador (`a.dataset.dgst = c`). O
+ * valor `DIGEST-SINTETICO-2351` é inventado; o formato, não.
+ */
+describe("a caixa que não revelou porque o boundary terminou em erro de servidor (#2351)", () => {
+  const CAIXA = 'div[hidden][id^="S:"]';
+  const TETO = 15_000;
+  const URL = "http://localhost:3000/app/produtos";
+  // Medido: o script de instrução do erro, como o react-dom 19.3 o escreve.
+  const SCRIPT_COM_DIGEST = '$RX=function(b,c,d,e,f){…};;$RX("B:0","DIGEST-SINTETICO-2351")';
+  // Medido: o mesmo script quando o `onError` do servidor não devolve digest —
+  // é o caminho que NÃO pode virar "erro de servidor" na mensagem.
+  const SCRIPT_SEM_DIGEST = '$RX=function(b,c,d,e,f){…};;$RX("B:0")';
+
+  const evidencia = (parcial: Partial<EvidenciaDoErroDeServidor> = {}): EvidenciaDoErroDeServidor => ({
+    ...EVIDENCIA_DE_ERRO_VAZIA,
+    ...parcial,
+  });
+
+  const mensagem = (e: EvidenciaDoErroDeServidor): string =>
+    mensagemDaCaixaNaoRevelada({ caixaPendente: CAIXA, tetoMs: TETO, url: URL, evidencia: e });
+
+  it("o data-dgst do marcador faz a mensagem dizer ERRO DE SERVIDOR e citar o digest", () => {
+    const texto = mensagem(evidencia({ digestsDoMarcador: ["DIGEST-SINTETICO-2351"] }));
+    expect(texto).toContain("terminou em ERRO DE SERVIDOR");
+    expect(texto).toContain("DIGEST-SINTETICO-2351");
+    expect(texto).not.toContain("caixa órfã de verdade");
+  });
+
+  it("o digest também é lido do script $RX quando o marcador já saiu da página", () => {
+    const texto = mensagem(evidencia({ scripts: ["requestAnimationFrame(…)", SCRIPT_COM_DIGEST] }));
+    expect(texto).toContain("terminou em ERRO DE SERVIDOR");
+    expect(texto).toContain("DIGEST-SINTETICO-2351");
+  });
+
+  it("a mensagem do servidor entra na mensagem quando o data-msg está à mão", () => {
+    const texto = mensagem(
+      evidencia({
+        digestsDoMarcador: ["DIGEST-SINTETICO-2351"],
+        mensagensDoMarcador: ["Nao consegui ler o catalogo: canceling statement due to statement timeout"],
+      }),
+    );
+    expect(texto).toContain("canceling statement due to statement timeout");
+  });
+
+  it("a mensagem continua sendo a de SEMPRE quando o boundary apenas não revelou", () => {
+    expect(mensagem(evidencia({ scripts: [SCRIPT_SEM_DIGEST] }))).toBe(
+      `a caixa do streaming SSR (${CAIXA}) não foi revelada em ${TETO} ms depois da carga de ${URL} — ` +
+        `caixa órfã de verdade (issue #1374).`,
+    );
+    expect(mensagem(evidencia())).toContain("caixa órfã de verdade (issue #1374).");
+  });
+
+  it("$RX sem digest não vira erro de servidor — o React não devolveu digest nenhum", () => {
+    expect(digestDoErroDeServidor(evidencia({ scripts: [SCRIPT_SEM_DIGEST] }))).toBeNull();
+  });
+
+  it("o digest sai do marcador antes do script — é o que o navegador já resolveu", () => {
+    expect(
+      digestDoErroDeServidor(
+        evidencia({ digestsDoMarcador: ["DO-MARCADOR"], scripts: [SCRIPT_COM_DIGEST] }),
+      ),
+    ).toBe("DO-MARCADOR");
+  });
+
+  /**
+   * A metade que nenhum caso acima vê: a mensagem não pode voltar a ser escrita
+   * à mão dentro de `test.ts` — quem a monta é a função pura provada aqui, e é
+   * ela que recebe a evidência lida da página.
+   */
+  it("test.ts monta a mensagem pela função pura, com a evidência lida da página", () => {
+    const fonte = readFileSync(join(__dirname, "../e2e/helpers/test.ts"), "utf8");
+    expect(fonte).toMatch(/mensagemDaCaixaNaoRevelada\(\{/);
+    expect(fonte).toMatch(/evidenciaDoErroDeServidor\(page\)/);
+    expect(
+      fonte.includes("caixa órfã de verdade"),
+      "o texto do diagnóstico mora em revelacao-nas-cargas.ts, provado pelo teste unit",
+    ).toBe(false);
   });
 });

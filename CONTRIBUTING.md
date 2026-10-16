@@ -129,6 +129,15 @@ abaixo são para que isso não se repita.
    pegar — essa é a garantia que damos em troca do passo 1.
 4. **Sem resposta em 48h depois do "pego esta"?** Comece assim mesmo e diga no PR. A
    demora é nossa, o custo não pode ser seu.
+5. **Fatia só de backend, sem chamador, não entra.** Toda rota ou server action nova precisa
+   de ao menos um chamador fora do próprio arquivo e dos testes — a tela, um hook, um worker,
+   o agendador de crons. Sem isso, quem opera a instalação não alcança a capacidade, e o
+   fragmento em `.changes/` que a anuncia fica falso. Se a issue foi fatiada, o PR que traz a
+   rota traz também quem a chama. A sonda é
+   `git grep -nF '<rota ou nome da action>' -- app components hooks lib workers docker/scheduler`:
+   para rota, busque o caminho (`/api/v1/...`); para server action, que não tem caminho, busque
+   o nome exportado. Descarte os resultados do próprio arquivo — o chamador é o que sobra.
+   (Regra escrita no item 65 de [`triagem/TRIAGEM.md`](triagem/TRIAGEM.md).)
 
 ### Se você está contribuindo de fora (fork) — leia isto
 

@@ -32,10 +32,60 @@ import { mcpAgentDraftRecords } from "@/lib/ai/agents/create-draft";
 import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
 import { corpoLegadoComoCorpoDeCriacao } from "@/lib/ai/agents/legado-para-versao";
+import { escolherModeloNoCatalogo } from "@/lib/ai/agents/escolher-modelo";
 import { agentMcpCreateSchema } from "@/lib/ai/agents/validation";
+import {
+  logarResolucaoDeModelo,
+  resolverParEfetivo,
+  type LlmDaOrganizacao,
+} from "@/lib/ai/par-provedor-modelo";
+import { logger } from "@/lib/logger";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * O `settings.llm` da organização — o provedor e o modelo que o produto usa
+ * quando ninguém escolheu outro.
+ *
+ * Nunca lança: leitura que falha devolve `null` com o motivo no log, e a
+ * resolução segue para a compatibilidade explícita do produto. Mesma doutrina
+ * de `llmDaOrganizacao` em `lib/ai/gateway-binding.ts` — um clone sem o baseline
+ * aplicado não pode deixar de criar agente por causa de uma consulta a mais.
+ *
+ * O client é o ADMIN (service role) com filtro programático por organização:
+ * `organizations` só aceita escrita de platform admin, e a leitura por client de
+ * sessão casaria zero linhas devolvendo SUCESSO (a armadilha medida em
+ * `lib/ai/pontos/padrao-da-organizacao.ts`).
+ */
+async function lerLlmDaOrganizacao(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+): Promise<LlmDaOrganizacao | null> {
+  try {
+    const { data, error } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (error) {
+      logger.warn("[ai/agents] não consegui ler o provedor da organização", {
+        organization_id: organizationId,
+        motivo: error.message,
+      });
+      return null;
+    }
+    return ((data?.settings as { llm?: LlmDaOrganizacao } | null)?.llm ?? null) as
+      | LlmDaOrganizacao
+      | null;
+  } catch (erro) {
+    logger.warn("[ai/agents] falha ao ler o provedor da organização", {
+      organization_id: organizationId,
+      motivo: erro instanceof Error ? erro.name : typeof erro,
+    });
+    return null;
+  }
+}
 
 const AGENT_COLUMNS =
   "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
@@ -152,11 +202,58 @@ export async function POST(req: NextRequest): Promise<Response> {
         details: parseLegado.error.flatten(),
       });
     }
-    // `model` omitido mantém o default que o Modo A sempre gravou — não o
-    // DEFAULT da coluna, que é outro (`claude-sonnet-4-6`).
+    // ═══ O PAR (PROVEDOR, MODELO) DESTE AGENTE — issue #2377 ═══
+    //
+    // O corpo legado pode OMITIR `model`, e até aqui omitir injetava
+    // `anthropic/claude-sonnet-5` fixo. Numa instalação cujo provedor efetivo é
+    // OpenAI (ou OpenRouter, ou Google), o agente nascia com um id que aquele
+    // endereço não executa — o par cruzado nascia na ESCRITA, ficava gravado em
+    // `ai_agent_versions` e só aparecia no turno, longe da tela que mostra o
+    // provedor geral. Agora o par sai do MESMO ponto único que confere a
+    // execução (`lib/ai/par-provedor-modelo.ts`): o padrão da organização
+    // quando ele se sustenta, a compatibilidade EXPLÍCITA do provedor depois
+    // (a Anthropic do legado, e só ela), o catálogo do provedor efetivo em
+    // seguida — e, sem par sustentável, a criação é RECUSADA aqui, antes de
+    // qualquer insert.
+    const par = await resolverParEfetivo({
+      modeloInformado: parseLegado.data.model,
+      llmDaOrganizacao: await lerLlmDaOrganizacao(admin, organizationId),
+      lerModeloDoCatalogo: async (provider) => {
+        const escolha = await escolherModeloNoCatalogo(admin, provider);
+        return escolha !== null && escolha.escolhido ? escolha.modelId : null;
+      },
+    });
+    // O log estruturado da resolução: provedor, modelo, propósito e origem da
+    // configuração — nunca chave, prompt, telefone ou conteúdo de conversa. O
+    // propósito é `agent_turn` porque é ele que o modelo da versão executa
+    // (`lib/agent-engine/agent/agent-config.ts` lê o da versão publicada): um
+    // rótulo novo seria ponto oculto para o registro de IA.
+    logarResolucaoDeModelo(logger, {
+      organization_id: organizationId,
+      purpose: "agent_turn",
+      provider: par.provider,
+      model: par.model,
+      origem: par.ok ? par.origem : "sem_par_sustentavel",
+      ...(par.ok ? {} : { motivo: par.motivo }),
+    });
+    if (!par.ok) {
+      // A frase da recusa é LITERAL — chave montada em runtime não entra em
+      // dicionário nenhum e o `t()` com template é reprovado por
+      // `tests/unit/i18n-espanhol-cobre-a-tela.test.ts`. O motivo, que é
+      // diagnóstico e varia com a instalação, vai concatenado.
+      return fail(
+        "validation_failed",
+        `${t("Não foi possível definir o provedor e o modelo deste agente.")} ${par.motivo}. Nada foi criado.`,
+        422,
+        { requestId },
+      );
+    }
     corpo = corpoLegadoComoCorpoDeCriacao({
       ...parseLegado.data,
-      model: parseLegado.data.model ?? "anthropic/claude-sonnet-5",
+      // O par vai INTEIRO (`provedor/modelo`): a ponte do legado reparte na
+      // primeira barra, então um modelo de outro provedor deixa de cair no
+      // provedor padrão dela por omissão.
+      model: `${par.provider}/${par.model}`,
     });
     veioDoCorpoLegado = true;
   }

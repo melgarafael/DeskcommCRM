@@ -1,15 +1,17 @@
 "use client";
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { PontoDaEtiqueta } from "@/components/tags/PontoDaEtiqueta";
 import { SeletorDeCorDaEtiqueta } from "@/components/tags/SeletorDeCorDaEtiqueta";
+import { useCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Plus } from "@/lib/ui/icons";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
+import { chaveDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 import { normalizarTag, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 
 interface Props {
@@ -28,6 +30,11 @@ export function ContactTagsEditor({ contactId, orgId, tags }: Props) {
   const mutation = useUpdateContact(contactId);
   const { definirCor } = useDefinirCorDaEtiqueta();
   const { data: vocabulary } = useContactTagVocabulary(orgId);
+  // A cor de quem JÁ está no contato vem do MESMO mapa que o chip usa (#2771):
+  // uma leitura só, sem pergunta por tag, e o gatilho abre já com o tom atual
+  // marcado — abrir a paleta de uma etiqueta colorida como se ela não tivesse
+  // cor faria "Confirmar" apagar o que estava lá.
+  const cores = useCoresDasEtiquetas();
 
   function apply(next: string[]) {
     mutation.mutate({ tags: next });
@@ -66,17 +73,31 @@ export function ContactTagsEditor({ contactId, orgId, tags }: Props) {
       <div className="flex flex-wrap gap-1">
         {tags.length > 0 ? (
           tags.map((tag) => (
-            <ChipDeEtiqueta key={tag} tag={tag} className="h-5 gap-1 px-1.5 text-[10px]">
-              <button
-                type="button"
-                onClick={() => remove(tag)}
+            <Fragment key={tag}>
+              <ChipDeEtiqueta tag={tag} className="h-5 gap-1 px-1.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => remove(tag)}
+                  disabled={mutation.isPending}
+                  aria-label={`${t("Remover tag")} ${tag}`}
+                  className="rounded-sm hover:text-destructive"
+                >
+                  <X size={10} weight="bold" aria-hidden />
+                </button>
+              </ChipDeEtiqueta>
+              {/* #2771 — a MESMA paleta da criação, ao lado de quem já está no
+                  contato. Sem rota nova e sem reimplementation: o gatilho chama
+                  o `definir_cor` que a rota já aceita, e o hook já invalida o
+                  mapa — o chip repinta na hora, sem F5. Para `agent` o seletor
+                  devolve `null`, como na #2718: a rota exigiria manager + MFA. */}
+              <SeletorDeCorDaEtiqueta
+                cor={cores[chaveDaEtiqueta(tag)] ?? null}
+                onChange={(tom) => void definirCor(tag, tom)}
+                tag={tag}
+                rotulo={`${t("Cor da etiqueta")} ${tag}`}
                 disabled={mutation.isPending}
-                aria-label={`${t("Remover tag")} ${tag}`}
-                className="rounded-sm hover:text-destructive"
-              >
-                <X size={10} weight="bold" aria-hidden />
-              </button>
-            </ChipDeEtiqueta>
+              />
+            </Fragment>
           ))
         ) : (
           <span className="text-xs text-muted-foreground">{t("Sem tags no contato.")}</span>

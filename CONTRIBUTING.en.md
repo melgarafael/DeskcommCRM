@@ -129,6 +129,15 @@ below exist so that this does not repeat.
    take — that is the guarantee we give in exchange for step 1.
 4. **No answer within 48h after "pego esta"?** Start anyway and say so in the PR. The
    delay is ours, the cost cannot be yours.
+5. **A backend-only slice, without a caller, does not get in.** Every new route or server
+   action needs at least one caller outside its own file and the tests — the screen, a hook, a
+   worker, the cron scheduler. Without one, whoever runs the installation cannot reach the
+   capability, and the `.changes/` fragment that announces it becomes false. If the issue was
+   sliced, the PR that brings the route also brings what calls it. The probe is
+   `git grep -nF '<route or action name>' -- app components hooks lib workers docker/scheduler`:
+   for a route, search the path (`/api/v1/...`); for a server action, which has no path, search
+   the exported name. Discard the hits in the file itself — the caller is what remains.
+   (Rule written in item 65 of [`triagem/TRIAGEM.md`](triagem/TRIAGEM.md).)
 
 ### If you are contributing from outside (fork) — read this
 

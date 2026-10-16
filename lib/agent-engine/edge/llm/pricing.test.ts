@@ -63,6 +63,10 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
   // acidental de 5/25 por 25/5 daria os mesmos US$ 30 e passaria verde.
   it.each([
     // modelo,              entrada, saída, leitura de cache, gravação 5m, gravação 1h
+    // Família 5.5 (conferida em 11/10/2026): leitura de cache a 0.05× no Sonnet e no Opus.
+    ["claude-haiku-5-5", 10, 50, 1, 12.5, 20],
+    ["claude-sonnet-5-5", 200, 1000, 10, 250, 400],
+    ["claude-opus-5-5", 400, 2000, 20, 500, 800],
     ["claude-sonnet-5", 200, 1000, 20, 250, 400],
     ["claude-sonnet-4-6", 300, 1500, 30, 375, 600],
     ["claude-haiku-4-5", 100, 500, 10, 125, 200],
@@ -174,6 +178,12 @@ describe("costCents — id que a tabela não conhece volta NULL", () => {
     ["claude-sonnet-50"],
     ["claude-opus-4-9"],
     ["claude-opus-48"],
+    // Vizinhos da família 5.5: nenhum herda o preço do Haiku 5.5 (20× mais barato
+    // que o Opus 5), nem o Haiku 5.5 o de outro.
+    ["claude-haiku-5"],
+    ["claude-haiku-5-50"],
+    ["claude-haiku-5-5-1"],
+    ["claude-haiku-55"],
     // Vizinhos da linha 6: o gpt-6-sol ficou fora do catálogo (o 6.1 o sucede) e
     // não herda o preço de ninguém; nem o gpt-6-luna empresta o seu a um id parecido.
     ["gpt-6-sol"],
@@ -204,6 +214,7 @@ describe("costCents — id com prefixo provider/ (formato OpenRouter)", () => {
     ["anthropic/claude-sonnet-4-6", 300, 1500, 30, 375, 600],
     ["anthropic/claude-haiku-4-5", 100, 500, 10, 125, 200],
     ["anthropic/claude-opus-5", 500, 2500, 50, 625, 1000],
+    ["anthropic/claude-haiku-5-5", 10, 50, 1, 12.5, 20],
     ["openai/gpt-6-luna", 10, 50, 1, 12.5, 12.5],
     ["google/gemini-3.5-flash-lite", 30, 250, 3, 30, 30],
   ])("%s custa como o id sem prefixo", (model, cIn, cOut, cLeitura, cGrav5m, cGrav1h) => {

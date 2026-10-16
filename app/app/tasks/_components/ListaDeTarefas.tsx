@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
+import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import {
   agrupaPorPrazo,
   estaAtrasada,
@@ -13,7 +16,7 @@ import {
   type PrioridadeDaTarefa,
   type Tarefa,
 } from "@/lib/tarefas/tipos";
-import { Check, PencilSimple, Trash } from "@/lib/ui/icons";
+import { Check, Kanban, PencilSimple, Trash, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -22,6 +25,12 @@ interface Props {
   aoAlternarConcluida: (tarefa: Tarefa) => Promise<unknown>;
   aoEditar: (tarefa: Tarefa) => void;
   aoApagar: (tarefa: Tarefa) => Promise<unknown>;
+  /**
+   * Mostrar de qual negócio é cada tarefa, com o atalho para ele. A tela de
+   * Tarefas mostra; o dossiê não — lá dentro todas são do mesmo negócio, e
+   * repetir o nome dele em cada linha só tomaria espaço.
+   */
+  mostrarNegocio?: boolean;
 }
 
 /** A cor é do TEMA, nunca um hex: ela tem de sobreviver ao claro e ao escuro. */
@@ -38,12 +47,17 @@ function Linha({
   aoAlternarConcluida,
   aoEditar,
   aoApagar,
+  mostrarNegocio,
+  nomeDoResponsavel,
 }: {
   tarefa: Tarefa;
   podeEditar: boolean;
   aoAlternarConcluida: (t: Tarefa) => Promise<unknown>;
   aoEditar: (t: Tarefa) => void;
   aoApagar: (t: Tarefa) => Promise<unknown>;
+  mostrarNegocio: boolean;
+  /** Já resolvido por quem monta a lista; `null` = sem responsável conhecido. */
+  nomeDoResponsavel: string | null;
 }) {
   const t = useT();
   const tag = useTagDeIdioma();
@@ -125,6 +139,22 @@ function Linha({
                 })
               : t("Sem prazo")}
           </span>
+          {nomeDoResponsavel ? (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <UserCircle size={12} aria-hidden />
+              {nomeDoResponsavel}
+            </span>
+          ) : null}
+          {mostrarNegocio && tarefa.lead ? (
+            <Link
+              href={`/app/leads/${tarefa.lead.id}`}
+              className="flex min-w-0 max-w-[16rem] items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+              title={tarefa.lead.title}
+            >
+              <Kanban size={12} aria-hidden className="shrink-0" />
+              <span className="truncate">{tarefa.lead.title}</span>
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -179,9 +209,21 @@ export function ListaDeTarefas({
   aoAlternarConcluida,
   aoEditar,
   aoApagar,
+  mostrarNegocio = true,
 }: Props) {
   const t = useT();
+  const usuario = useUser();
   const grupos = agrupaPorPrazo(tarefas);
+  // Os nomes vêm da lista de responsáveis, que é `agent`+ na rota: para quem só
+  // lê, a consulta nem sai e a linha fica sem o nome — nunca com um id cru.
+  const membros = useAssignableMembers(podeEditar);
+  const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
+
+  function nomeDoResponsavel(tarefa: Tarefa): string | null {
+    if (!tarefa.assigned_to) return null;
+    if (tarefa.assigned_to === usuario.id) return t("Eu");
+    return nomes.get(tarefa.assigned_to) ?? null;
+  }
 
   const rotuloDaFaixa: Record<FaixaDePrazo, string> = {
     atrasada: t("Atrasadas"),
@@ -224,6 +266,8 @@ export function ListaDeTarefas({
                 aoAlternarConcluida={aoAlternarConcluida}
                 aoEditar={aoEditar}
                 aoApagar={aoApagar}
+                mostrarNegocio={mostrarNegocio}
+                nomeDoResponsavel={nomeDoResponsavel(tarefa)}
               />
             ))}
           </div>

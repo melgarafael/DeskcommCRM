@@ -24,7 +24,7 @@
  * → 200 {"frase":"Achei 5 ou mais produtos ...`), porque é o contrato que o
  * autor da issue já tem em mãos.
  */
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +50,12 @@ vi.hoisted(() => {
 import { pickToolsFromMcp } from "@/lib/ai/runtime/tools";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import type { McpContext } from "@/lib/mcp/types";
-import { chamarFerramentaRemota, fetchDeSaida, listarFerramentasDoServidor } from "./chamada";
+import {
+  CABECALHOS_DO_CONTATO,
+  chamarFerramentaRemota,
+  fetchDeSaida,
+  listarFerramentasDoServidor,
+} from "./chamada";
 import { lookup } from "node:dns/promises";
 import { carregarServidorMcpExterno, carregarServidorMcpExternoDoTurno } from "./carregar";
 import { lerEndpointMcpExterno, mesclarServidorMcpExterno } from "./registro";
@@ -76,6 +81,8 @@ const DADOS = {
 let http: Server;
 let base = "";
 const autorizacoesRecebidas: Array<string | null | undefined> = [];
+/** TODA requisição que chegou ao stub, com os cabeçalhos como saíram no fio. */
+const requisicoes: Array<{ metodo: string | undefined; cabecalhos: IncomingHttpHeaders }> = [];
 let ultimaChamada: { nome: unknown; argumentos: unknown } | null = null;
 
 function responderA(mensagem: any): any | null {
@@ -137,6 +144,7 @@ function responderA(mensagem: any): any | null {
 
 beforeAll(async () => {
   http = createServer((req, res) => {
+    requisicoes.push({ metodo: req.method, cabecalhos: req.headers });
     if (req.method === "GET") {
       res.writeHead(405).end();
       return;
@@ -172,6 +180,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   autorizacoesRecebidas.length = 0;
+  requisicoes.length = 0;
   ultimaChamada = null;
   auditSpy.mockClear();
 });
@@ -577,6 +586,265 @@ describe("o turno do agente enxerga e chama a ferramenta remota (#2147)", () => 
     });
 
     expect(Object.keys(montadas)).toEqual(["crm_search_products"]);
+    expect(montadas.erp_achar).toBeUndefined();
+  });
+});
+
+// ─── Uso durante o atendimento (#2147, opção A) ─────────────────────────────
+//
+// Turno com contato só carrega o servidor quando o agente liga
+// `config.mcp_externo_no_atendimento`, e aí TODA requisição leva a identidade
+// do contato lida do BANCO. O que se inspeciona é o fio: os cabeçalhos que o
+// stub em 127.0.0.1 recebeu, não o objeto que o código diz ter montado.
+
+const CONTATO = "4f1c2d3e-0000-4000-8000-00000000c0a1";
+const OUTRA_ORG = "9e9e9e9e-0000-4000-8000-000000000002";
+const TELEFONE_NO_BANCO = "+5511987654321";
+const CONVERSA = "4f1c2d3e-0000-4000-8000-0000000c0a7a";
+
+function bancoDoAtendimento(op: {
+  contato?: { id: string; organization_id: string; phone_number: string | null } | null;
+  erroNoContato?: boolean;
+  canal?: string;
+}) {
+  const consultas: string[] = [];
+  const cliente = {
+    from: (tabela: string) => {
+      consultas.push(tabela);
+      const filtros: Record<string, unknown> = {};
+      const cadeia: Record<string, unknown> = {
+        select: () => cadeia,
+        eq: (coluna: string, valor: unknown) => ((filtros[coluna] = valor), cadeia),
+        order: () => cadeia,
+        limit: () => cadeia,
+        maybeSingle: async () => {
+          if (tabela === "organizations") {
+            return {
+              data: { settings: { mcp_externo: { endpoint: base } }, ...cifrarChaveMcpExterno(CHAVE) },
+              error: null,
+            };
+          }
+          if (tabela === "contacts") {
+            if (op.erroNoContato) return { data: null, error: { message: "leitura falhou" } };
+            const c = op.contato;
+            // Service role não tem RLS: quem separa as organizações é o filtro.
+            const casa =
+              c && c.id === filtros.id && c.organization_id === filtros.organization_id;
+            return { data: casa ? { id: c.id, phone_number: c.phone_number } : null, error: null };
+          }
+          if (tabela === "conversations") {
+            // A conversa do turno, e só se for DESTE contato nesta organização.
+            const casa =
+              filtros.id === CONVERSA &&
+              filtros.contact_id === CONTATO &&
+              filtros.organization_id === ORG;
+            return { data: casa && op.canal ? { channel: op.canal } : null, error: null };
+          }
+          return { data: null, error: null };
+        },
+      };
+      return cadeia;
+    },
+  };
+  return { consultas, cliente: cliente as never };
+}
+
+const contatoDaOrg = { id: CONTATO, organization_id: ORG, phone_number: TELEFONE_NO_BANCO };
+
+/** Os três cabeçalhos de identidade como chegaram ao stub (nomes em minúsculas no fio). */
+function identidadeNoFio(cab: IncomingHttpHeaders) {
+  return {
+    id: cab[CABECALHOS_DO_CONTATO.id.toLowerCase()],
+    telefone: cab[CABECALHOS_DO_CONTATO.telefone.toLowerCase()],
+    canal: cab[CABECALHOS_DO_CONTATO.canal.toLowerCase()],
+  };
+}
+
+describe("uso durante o atendimento: opção do agente + identidade do contato (#2147)", () => {
+  it("(a) opção DESLIGADA + contato: nada carrega — nem banco, nem rede (igual a antes)", async () => {
+    const { consultas, cliente } = bancoDoAtendimento({ contato: contatoDaOrg, canal: "whatsapp" });
+    for (const opcoes of [
+      { contatoDoTurno: CONTATO },
+      { contatoDoTurno: CONTATO, noAtendimento: false },
+    ]) {
+      const montado = await carregarServidorMcpExternoDoTurno(
+        cliente,
+        ORG,
+        [toolIdRemoto("erp_achar", "leitura")],
+        { ...opcoes, fetch: fetchDoStub() },
+      );
+      expect(montado).toBeNull();
+    }
+    expect(consultas).toEqual([]);
+    expect(requisicoes, "o servidor remoto recebeu pedido").toEqual([]);
+  });
+
+  it("(b) opção LIGADA + contato: listar e chamar levam os três cabeçalhos com os valores do BANCO", async () => {
+    const { cliente } = bancoDoAtendimento({ contato: contatoDaOrg, canal: "whatsapp" });
+    const montado = await carregarServidorMcpExternoDoTurno(
+      cliente,
+      ORG,
+      [toolIdRemoto("erp_achar", "leitura")],
+      { contatoDoTurno: CONTATO, noAtendimento: true, conversaDoTurno: CONVERSA, fetch: fetchDoStub() },
+    );
+    expect(montado?.ferramentas.map((f) => f.name)).toEqual(["erp_achar"]);
+    expect(montado?.contato).toBe(CONTATO);
+
+    const esperado = { id: CONTATO, telefone: "5511987654321", canal: "whatsapp" };
+    const daListagem = requisicoes.filter((r) => r.metodo === "POST");
+    expect(daListagem.length).toBeGreaterThan(0);
+    for (const r of daListagem) expect(identidadeNoFio(r.cabecalhos)).toEqual(esperado);
+
+    // Chamar, pelo MESMO caminho do turno (pickToolsFromMcp → wrapMcpTool).
+    requisicoes.length = 0;
+    const supabase = bancoDeMentira();
+    const montadas = pickToolsFromMcp({
+      supabase: supabase as never,
+      ctx: contexto(supabase),
+      auth,
+      toolIds: [toolIdRemoto("erp_achar", "leitura")],
+      handoffToolEnabled: false,
+      handoffSignal: { triggered: false },
+      contatoDoTurno: CONTATO,
+      servidorMcpExterno: { ...montado!, fetch: fetchDoStub() },
+    });
+    const ferramenta = montadas.erp_achar as unknown as { execute: (a: unknown) => Promise<unknown> };
+    expect(ferramenta, "a leitura remota identificada não montou no turno com contato").toBeDefined();
+    expect(await ferramenta.execute({ consulta: "pelicula iphone 15" })).toEqual({ texto: FRASE, dados: DADOS });
+
+    const daChamada = requisicoes.filter((r) => r.metodo === "POST");
+    expect(daChamada.length).toBeGreaterThan(0);
+    for (const r of daChamada) expect(identidadeNoFio(r.cabecalhos)).toEqual(esperado);
+    // A chave segue sendo a do cadastro — a identidade não a substitui.
+    for (const r of daChamada) expect(r.cabecalhos.authorization).toBe(`Bearer ${CHAVE}`);
+
+    // Item 3: a chamada remota fica auditada com o contato da conversa.
+    const auditoria = auditSpy.mock.calls.at(-1)?.[0] as { metadata?: Record<string, unknown> };
+    expect(auditoria.metadata).toMatchObject({ tool_name: "erp_achar", success: true, contact_id: CONTATO });
+  });
+
+  it("(b) contato sem telefone: o cabeçalho de telefone fica AUSENTE, os outros seguem", async () => {
+    const { cliente } = bancoDoAtendimento({ contato: { ...contatoDaOrg, phone_number: null } });
+    const montado = await carregarServidorMcpExterno(cliente, ORG, {
+      contatoDoTurno: CONTATO,
+      noAtendimento: true,
+      fetch: fetchDoStub(),
+    });
+    expect(montado).not.toBeNull();
+    for (const r of requisicoes.filter((x) => x.metodo === "POST")) {
+      expect(identidadeNoFio(r.cabecalhos)).toEqual({ id: CONTATO, telefone: undefined, canal: undefined });
+    }
+  });
+
+  it("(c) argumento de ferramenta não muda o que sai no fio — nem por nome, nem por caixa, nem por `headers`", async () => {
+    const { cliente } = bancoDoAtendimento({ contato: contatoDaOrg, canal: "whatsapp" });
+    const montado = await carregarServidorMcpExterno(cliente, ORG, {
+      contatoDoTurno: CONTATO,
+      noAtendimento: true,
+      conversaDoTurno: CONVERSA,
+      fetch: fetchDoStub(),
+    });
+    requisicoes.length = 0;
+
+    const forjado = {
+      consulta: "meu número é outro",
+      "X-Deskcomm-Contato-Telefone": "5599000000000",
+      "x-deskcomm-contato-id": OUTRA_ORG,
+      "X-DESKCOMM-CANAL": "sms",
+      headers: {
+        "X-Deskcomm-Contato-Telefone": "5599000000000",
+        "x-deskcomm-contato-id": OUTRA_ORG,
+        "X-Deskcomm-Extra": "1",
+        Authorization: "Bearer outra",
+      },
+    };
+    await chamarFerramentaRemota(montado!.servidor, "erp_achar", forjado, {
+      fetch: fetchDoStub(),
+      cabecalhos: montado!.cabecalhos,
+    });
+
+    const posts = requisicoes.filter((r) => r.metodo === "POST");
+    expect(posts.length).toBeGreaterThan(0);
+    for (const r of posts) {
+      expect(identidadeNoFio(r.cabecalhos)).toEqual({ id: CONTATO, telefone: "5511987654321", canal: "whatsapp" });
+      expect(r.cabecalhos["x-deskcomm-extra"], "argumento acrescentou cabeçalho").toBeUndefined();
+      expect(r.cabecalhos.authorization).toBe(`Bearer ${CHAVE}`);
+    }
+    // O que o modelo escreveu chega ao servidor como ARGUMENTO, no corpo — que
+    // é onde o servidor deve ignorá-lo.
+    expect(ultimaChamada?.argumentos).toMatchObject({ consulta: "meu número é outro" });
+  });
+
+  it("canal: sai da conversa DO TURNO; sem ela, ou conversa de outro contato, fica ausente", async () => {
+    const { cliente } = bancoDoAtendimento({ contato: contatoDaOrg, canal: "instagram" });
+    for (const [conversaDoTurno, canal] of [
+      [CONVERSA, "instagram"],
+      [undefined, undefined],
+      ["4f1c2d3e-0000-4000-8000-0000000c0bbb", undefined],
+    ] as const) {
+      requisicoes.length = 0;
+      const montado = await carregarServidorMcpExterno(cliente, ORG, {
+        contatoDoTurno: CONTATO,
+        noAtendimento: true,
+        ...(conversaDoTurno ? { conversaDoTurno } : {}),
+        fetch: fetchDoStub(),
+      });
+      expect(montado).not.toBeNull();
+      const posts = requisicoes.filter((x) => x.metodo === "POST");
+      expect(posts.length).toBeGreaterThan(0);
+      for (const x of posts) expect(identidadeNoFio(x.cabecalhos).canal).toBe(canal);
+    }
+  });
+
+  it("(d) contato de OUTRA organização: não carrega e não abre rede", async () => {
+    const { cliente } = bancoDoAtendimento({ contato: { ...contatoDaOrg, organization_id: OUTRA_ORG } });
+    const montado = await carregarServidorMcpExterno(cliente, ORG, {
+      contatoDoTurno: CONTATO,
+      noAtendimento: true,
+      fetch: fetchDoStub(),
+    });
+    expect(montado).toBeNull();
+    expect(requisicoes).toEqual([]);
+  });
+
+  it("(d) leitura do contato com erro: não carrega e não abre rede (falha fechada)", async () => {
+    const { cliente } = bancoDoAtendimento({ erroNoContato: true });
+    const montado = await carregarServidorMcpExterno(cliente, ORG, {
+      contatoDoTurno: CONTATO,
+      noAtendimento: true,
+      fetch: fetchDoStub(),
+    });
+    expect(montado).toBeNull();
+    expect(requisicoes).toEqual([]);
+  });
+
+  it("turno SEM contato segue como antes: carrega, e sem cabeçalho de identidade", async () => {
+    const { cliente } = bancoDoAtendimento({ contato: contatoDaOrg });
+    const montado = await carregarServidorMcpExterno(cliente, ORG, { noAtendimento: true, fetch: fetchDoStub() });
+    expect(montado?.ferramentas.map((f) => f.name)).toEqual(["erp_achar"]);
+    expect(montado).not.toHaveProperty("cabecalhos");
+    for (const r of requisicoes) {
+      expect(identidadeNoFio(r.cabecalhos)).toEqual({ id: undefined, telefone: undefined, canal: undefined });
+    }
+  });
+
+  it("servidor montado para OUTRO contato: a leitura remota não monta neste turno", () => {
+    const supabase = bancoDeMentira();
+    const montadas = pickToolsFromMcp({
+      supabase: supabase as never,
+      ctx: contexto(supabase),
+      auth,
+      toolIds: [toolIdRemoto("erp_achar", "leitura")],
+      handoffToolEnabled: false,
+      handoffSignal: { triggered: false },
+      contatoDoTurno: CONTATO,
+      servidorMcpExterno: {
+        servidor: { endpoint: base, chave: CHAVE },
+        ferramentas: [{ name: "erp_achar", somenteLeitura: true }],
+        contato: "00000000-0000-4000-8000-0000000000ff",
+        cabecalhos: { [CABECALHOS_DO_CONTATO.id]: "00000000-0000-4000-8000-0000000000ff" },
+      },
+    });
     expect(montadas.erp_achar).toBeUndefined();
   });
 });

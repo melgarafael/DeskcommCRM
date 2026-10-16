@@ -111,7 +111,7 @@ export async function serviceForEvent(
     ...(session ? { p_session: session } : {}),
   });
   if (error) {
-    if (error.code === "40001") return null;
+    if (error.code === "PT409" || error.code === "40001") return null;
     throw error;
   }
   const boundary = parseServiceBoundary(data);

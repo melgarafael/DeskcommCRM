@@ -126,7 +126,11 @@ describe("busca de produtos do agente: 'não achei' não é sucesso (#484)", () 
     expect(auditoria?.metadata.success).toBe(false);
     expect(auditoria?.metadata.desfecho).toBe("sem_resultado");
     expect(auditoria?.metadata.motivo).toBe("nao_encontrado");
-    // 3) O vazio declarado também é resposta que volta ao modelo: o tamanho é gravado.
+    // 3) O TERMO vai junto (#484, caminho 2): sem ele o painel conta "não achei"
+    //    por tool e não sabe QUAL termo. A chave própria (`metadata.termo`) é o
+    //    que a leitura por termo do banco lê, sem conhecer o nome do argumento.
+    expect(auditoria?.metadata.termo).toBe("iphone");
+    // 3b) O vazio declarado também é resposta que volta ao modelo: o tamanho é gravado.
     expect(auditoria?.metadata.result_bytes).toBe(Buffer.byteLength(JSON.stringify(resposta), "utf8"));
   });
 
@@ -154,6 +158,10 @@ describe("busca de produtos do agente: 'não achei' não é sucesso (#484)", () 
     expect((resposta as { produtos: unknown[] }).produtos).toHaveLength(1);
     expect(auditoria?.metadata.success).toBe(true);
     expect(auditoria?.metadata).not.toHaveProperty("desfecho");
+    // O termo sobe MESMO quando achou: "total × falhas por termo" é o que separa
+    // "termo difícil" de "termo que não existe" (#484, caminho 2). Só nas falhas,
+    // o painel mostraria o termo sem a régua dele.
+    expect(auditoria?.metadata.termo).toBe("iphone");
     // O tamanho, em bytes UTF-8, do que voltou ao modelo — e só o número.
     expect(auditoria?.metadata.result_bytes).toBe(Buffer.byteLength(JSON.stringify(resposta), "utf8"));
   });
@@ -209,6 +217,26 @@ describe("o que o painel passa a poder contar", () => {
     expect(evento.metadata.success).toBe(true);
     expect(evento.metadata).not.toHaveProperty("desfecho");
     expect(evento.metadata).not.toHaveProperty("motivo");
+    // Sem termo declarado, a chave nem aparece — mesma disciplina do motivo.
+    expect(evento.metadata).not.toHaveProperty("termo");
+  });
+
+  it("o TERMO buscado sobe para metadata.termo (#484, caminho 2)", async () => {
+    await auditMcpToolCall({
+      ctx: contexto(bancoDeMentira([])),
+      toolName: "crm_search_products",
+      args: { termo: "iphone" },
+      durationMs: 7,
+      success: false,
+      desfecho: "sem_resultado",
+      motivo: "nao_encontrado",
+      termo: "iphone",
+    });
+
+    const evento = auditSpy.mock.calls[0]![0] as Evento;
+    // É esta chave que `fn_agent_tool_usage_por_termo` lê para contar "não
+    // achei" POR TERMO — sem ela o painel só sabe que a tool falhou.
+    expect(evento.metadata.termo).toBe("iphone");
   });
 });
 

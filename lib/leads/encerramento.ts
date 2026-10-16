@@ -32,7 +32,10 @@ import {
   settingsDoFunil,
   validaCamposExigidos,
 } from "@/lib/leads/campos-exigidos";
-import { recusaDeMotivoDaPerdaPeloBanco } from "@/lib/leads/motivo-da-perda";
+import {
+  razaoDaPerdaNaTimeline,
+  recusaDeMotivoDaPerdaPeloBanco,
+} from "@/lib/leads/motivo-da-perda";
 
 /** Como a demanda terminou. Não há terceira: encerrar é ganhar ou perder. */
 export type DesfechoDaDemanda = "won" | "lost";
@@ -300,7 +303,7 @@ export async function encerraDemanda(
     // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
     reason:
       input.razaoNaTimeline ??
-      (input.desfecho === "won" ? "Ganho" : `Perdido — ${input.motivo}`),
+      (input.desfecho === "won" ? "Ganho" : razaoDaPerdaNaTimeline(input.motivo ?? "")),
     payload: {
       ...(input.payloadNaTimeline ?? {}),
       desfecho: input.desfecho,

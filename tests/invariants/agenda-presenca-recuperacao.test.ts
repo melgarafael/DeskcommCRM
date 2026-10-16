@@ -147,7 +147,7 @@ describe("presença e recuperação transacionais", () => {
       outcome_user_id: GOV_AGENT_A,
       outcome_source_kind: "user",
     });
-    await expect(change(a.id, 1, { status: "completed" })).rejects.toMatchObject({ code: "40001" });
+    await expect(change(a.id, 1, { status: "completed" })).rejects.toMatchObject({ code: "PT409" });
     expect(
       (
         await pool.query(
@@ -646,7 +646,7 @@ describe("presença e recuperação transacionais", () => {
         { status: "completed" },
         { job_id: old, node_id: "t", event_type: "action_sent", idempotency_key: "t:5" },
       ]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "PT409" });
     expect(
       (
         await pool.query(

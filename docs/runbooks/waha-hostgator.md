@@ -41,7 +41,7 @@ owner: Rafael Melgaço
 ### 3.1 Acessar e endurecer SSH
 
 ```bash
-ssh root@<IP_DO_VPS>
+ssh -p 22022 root@<IP_DO_VPS>
 
 # usuário não-root
 adduser deskcomm
@@ -57,7 +57,7 @@ sed -i 's/#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 systemctl reload sshd
 ```
 
-A partir daqui: `ssh deskcomm@<IP>` + `sudo` para tudo.
+A partir daqui: `ssh -p 22022 deskcomm@<IP>` + `sudo` para tudo.
 
 ### 3.2 Instalar dependências
 
@@ -77,7 +77,7 @@ sudo usermod -aG docker deskcomm
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow 22/tcp
+sudo ufw allow 22022/tcp  # SSH da HostGator escuta na 22022
 sudo ufw allow 80/tcp     # certbot challenge
 sudo ufw allow 443/tcp
 sudo ufw enable

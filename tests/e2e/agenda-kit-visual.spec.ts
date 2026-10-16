@@ -119,6 +119,11 @@ async function medirTrilhas(page: Page) {
   }>;
 }
 
+/** Impressão digital do estilo MEDIDO — o dado que a asserção usa. */
+function estiloMedido(m: Awaited<ReturnType<typeof medirTrilhas>>): string {
+  return `${m.cores.join("|")}//${m.fundo}`;
+}
+
 test.describe("kit visual da Agenda", () => {
   let page: Page;
 
@@ -459,12 +464,17 @@ test.describe("kit visual da Agenda", () => {
     // Não fecha prosa em geral — fecha a prosa que se compromete com medida, que
     // é justamente a que envelhece com mais confiança.
     await page.goto(VITRINE);
+    // A prontidão ANTES da leitura — a mesma que o `beforeEach` espera. O goto
+    // extra deste caso pode ler a seção com a tela ainda montando, e aí a
+    // contagem de números afirmados sai vazia por um motivo que não é do texto.
+    await expect(page.getByTestId("grade-da-agenda")).toBeVisible({ timeout: ESPERA });
     const texto = await page.getByTestId("secao-paleta").innerText();
 
     const afirmados = [...texto.matchAll(/0,(\d{3})/g)].map((m) => Number(`0.${m[1]}`));
     expect(afirmados.length, `a seção deveria afirmar números; texto: ${texto}`).toBeGreaterThanOrEqual(2);
 
     const medido = { claro: 0, escuro: 0 };
+    let estiloDoClaro = "";
     for (const tema of ["claro", "escuro"] as const) {
       if (tema === "escuro") {
         await page.getByTestId("alternar-tema").click();
@@ -473,8 +483,19 @@ test.describe("kit visual da Agenda", () => {
             timeout: ESPERA,
           })
           .toBe("dark");
+        // ⚠️ O ATRIBUTO TROCA ANTES DO ESTILO. Medido no CI: numa rodada o
+        // `data-theme` já dizia `dark` e o swatch ainda computava a cor do tema
+        // claro — a medição saiu 0.0032 fora, contra a tolerância de 0.002
+        // (uma vez em 258). A espera abaixo observa o dado que a asserção usa
+        // (as cores medidas + o fundo), não o atributo: só mede quando o
+        // estilo chegou de verdade.
+        await expect
+          .poll(async () => estiloMedido(await medirTrilhas(page)), { timeout: ESPERA })
+          .not.toBe(estiloDoClaro);
       }
-      medido[tema] = (await medirTrilhas(page)).menorDistancia;
+      const medida = await medirTrilhas(page);
+      if (tema === "claro") estiloDoClaro = estiloMedido(medida);
+      medido[tema] = medida.menorDistancia;
     }
 
     // Os dois primeiros números do texto são o par mais próximo em cada tema.

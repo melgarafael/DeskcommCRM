@@ -221,6 +221,26 @@ function fakeAdminClient(): SupabaseClient {
     from: (table: string) => new FakeQuery(table),
     rpc: (name: string, params: Record<string, unknown>): Promise<QResult> => {
       return (async () => {
+        // A JUNÇÃO (#2888, migration 0682): quem soma as etiquetas é a função,
+        // DENTRO do UPDATE. O dublê só a chama — é a mesma instrução que roda em
+        // produção, e o que volta é o que o RETURNING devolveu.
+        if (name === "fn_lead_adicionar_etiquetas" || name === "fn_contato_adicionar_etiquetas") {
+          const p = params as unknown as { p_org: string; p_lead?: string; p_contato?: string; p_etiquetas: string[] };
+          const id = String(name === "fn_lead_adicionar_etiquetas" ? p.p_lead : p.p_contato);
+          try {
+            const saida = sql(
+              `select public.${name}(${sqlString(p.p_org)}::uuid, ${sqlString(id)}::uuid, ${sqlLiteral(
+                p.p_etiquetas,
+              )});`,
+            );
+            // Linha ausente ou de outra organização: a função devolve nulo e o
+            // psql imprime linha vazia.
+            if (!saida) return { data: null, error: null };
+            return { data: JSON.parse(saida), error: null };
+          } catch (err) {
+            return { data: null, error: { message: (err as Error).message } };
+          }
+        }
         if (name !== "emit_event") {
           throw new Error(`fakeAdminClient: unsupported rpc ${name}`);
         }

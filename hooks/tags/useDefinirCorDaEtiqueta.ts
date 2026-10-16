@@ -35,8 +35,14 @@ export function useDefinirCorDaEtiqueta() {
   const t = useT();
   const queryClient = useQueryClient();
 
-  /** Grava a cor no vocabulário. `false` quando o servidor recusou (com toast). */
-  async function definirCor(tag: string, cor: string): Promise<boolean> {
+  /**
+   * Grava a cor no vocabulário. `false` quando o servidor recusou (com toast).
+   *
+   * `cor: null` é "SEM cor" — o mesmo pedido que o painel de Settings manda —
+   * e não um campo esquecido: quem tira a pintura de uma tag que já existe
+   * (#2771) não precisa sair da tela para fazer o que esta tela já faz.
+   */
+  async function definirCor(tag: string, cor: string | null): Promise<boolean> {
     try {
       await apiClient.post("/api/v1/tags/vocabulario", {
         acao: "definir_cor",

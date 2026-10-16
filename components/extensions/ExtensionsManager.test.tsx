@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,17 @@ const { router, toast } = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("sonner", () => ({ toast }));
+
+// A convenção da casa, espelhada de hooks/realtime/useRefetchDeSeguranca.test.tsx
+// (PR #2821): quem pula o trabalho de rede com a aba oculta precisa de um teste
+// que consiga ESCONDER a aba. O getter do documento passa a devolver a variável,
+// e o evento de visibilitychange é disparado à mão.
+let visibilidade: DocumentVisibilityState = "visible";
+
+function definirVisibilidade(valor: DocumentVisibilityState) {
+  visibilidade = valor;
+  document.dispatchEvent(new Event("visibilitychange"));
+}
 
 const ACTOR = "00000000-0000-4000-8000-000000000010";
 const ORG_A = "00000000-0000-4000-8000-000000000001";
@@ -142,6 +153,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -1813,5 +1825,62 @@ describe("ExtensionsManager", () => {
     await userEvent.click(await screen.findByText("Verificar recibo"));
 
     await waitFor(() => expect(readPendingReceipts(window.localStorage, ACTOR, ORG_A)).toEqual([]));
+  });
+
+  it("com a aba OCULTA, a preparação em curso não recarrega a cada 3 s — e volta a recarregar com a aba visível", async () => {
+    // A operação em preparo é o que mantém o refetch de 3 s montado: enquanto
+    // ele existe, a tela relia as extensões a cada tick. Com a aba escondida
+    // ninguém está olhando o cartão, e cada releitura custa a lista inteira
+    // (refs #2821 — a mesma guarda do refetch de segurança do inbox).
+    const preparando = operation({
+      kind: "update",
+      status: "preparing",
+      extra: { catalog_id: CATALOG, version: "1.1.0", from_revision: 1, from_version: "1.0.0" },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(json({ data: list(ORG_A, { operations: [preparando] }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.useFakeTimers();
+    visibilidade = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibilidade,
+    });
+    renderManager();
+
+    // A carga inicial mora num setTimeout(0): o tick zero a dispara.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByTestId(`extension-operation-verify-${preparando.id}`)).toBeInTheDocument();
+
+    const leituras = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/extensions").length;
+    const antes = leituras();
+
+    // Aba visível: o refetch de 3 s continua correndo.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(leituras()).toBeGreaterThan(antes);
+
+    // Aba oculta: o refetch para — nada é recarregado às escondidas.
+    await act(async () => definirVisibilidade("hidden"));
+    const comAbaOculta = leituras();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+    expect(leituras(), "a aba oculta voltou a refazer a página").toBe(comAbaOculta);
+
+    // De volta à aba: o refetch volta a correr.
+    await act(async () => definirVisibilidade("visible"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(leituras()).toBeGreaterThan(comAbaOculta);
   });
 });

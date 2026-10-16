@@ -169,6 +169,14 @@ export async function classifyStage(
         leadId: ids.leadId,
         ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
         purpose: 'stage_classifier',
+        // Uma palavra não precisa de raciocínio, e o cliente espera por ele: este
+        // classificador roda ANTES da resposta. Medido em 60 turnos reais
+        // (14/10/2026), espera p50/p90 no modelo econômico de cada provedor:
+        // gpt-6-luna 1,7 s/3,5 s → 0,9 s/1,3 s; claude-haiku-5-5 2,0 s/3,7 s →
+        // 0,9 s/1,0 s (pensava ~240 tokens antes da palavra). Acerto contra o
+        // estágio que o agente confirmou depois: luna 15 → 20 de 60, haiku 5.5
+        // 24 → 18 — os dois acima do claude-haiku-4-5, que não pensa (13).
+        reasoning: 'none',
         ...(args.model !== undefined ? { model: args.model } : {}),
         ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
         messages: [

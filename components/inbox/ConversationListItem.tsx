@@ -5,7 +5,7 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import type { Locale } from "date-fns";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { Robot } from "@/lib/ui/icons";
+import { Check, Robot } from "@/lib/ui/icons";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +62,18 @@ interface Props {
    * afirme nada".
    */
   automaticoDaOrg?: boolean;
+  /**
+   * Marca esta linha no lote (#2484, F1). Presente só quando a seleção
+   * múltipla está ligada — sem ela a caixa não aparece, e a lista continua
+   * sendo o que era.
+   */
+  selecionado?: boolean;
+  /**
+   * Liga o modo de seleção: com esta prop a linha ganha a caixa de marcação.
+   * A ação da caixa é SEPARADA do clique na linha — quem marca não abre a
+   * conversa, e quem abre não marca.
+   */
+  onAlternarSelecao?: (id: string) => void;
 }
 
 /**
@@ -135,6 +147,8 @@ export function ConversationListItem({
   mostrarAtendente,
   mostrarAutomatico = true,
   automaticoDaOrg,
+  selecionado = false,
+  onAlternarSelecao,
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -229,17 +243,48 @@ export function ConversationListItem({
     Boolean(c?.is_anonymized);
 
   return (
-    <button
-      type="button"
-      data-conversation-id={conversation.id}
-      onClick={() => onSelect(conversation.id)}
+    <div
       className={cn(
-        "group relative flex w-full items-start gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
-        "focus-visible:outline-hidden focus-visible:bg-surface-elevated",
-        isSelected && "bg-accent-50 hover:bg-accent-50",
+        "relative flex w-full items-start border-b border-border/70",
+        selecionado && "bg-accent-soft",
       )}
-      aria-current={isSelected ? "true" : undefined}
     >
+      {/*
+        A CAIXA DE SELEÇÃO (#2484, F1) — fora do botão da linha, de propósito:
+        controle interativo dentro de `<button>` é HTML inválido, e o clique na
+        caixa NÃO pode abrir a conversa. Marcar e abrir são gestos diferentes.
+      */}
+      {onAlternarSelecao && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selecionado}
+          aria-label={t("Selecionar conversa")}
+          title={t("Selecionar conversa")}
+          data-testid={`selecao-em-lote-${conversation.id}`}
+          onClick={() => onAlternarSelecao(conversation.id)}
+          className={cn(
+            "mt-3 ml-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors",
+            "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent",
+            selecionado
+              ? "border-accent bg-accent text-accent-foreground"
+              : "border-input bg-background hover:bg-surface-elevated",
+          )}
+        >
+          {selecionado && <Check size={12} weight="bold" aria-hidden />}
+        </button>
+      )}
+      <button
+        type="button"
+        data-conversation-id={conversation.id}
+        onClick={() => onSelect(conversation.id)}
+        className={cn(
+          "group relative flex min-w-0 flex-1 items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
+          "focus-visible:outline-hidden focus-visible:bg-surface-elevated",
+          isSelected && "bg-accent-50 hover:bg-accent-50",
+        )}
+        aria-current={isSelected ? "true" : undefined}
+      >
       {isSelected && (
         <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" aria-hidden />
       )}
@@ -380,6 +425,7 @@ export function ConversationListItem({
           </div>
         )}
       </div>
-    </button>
+      </button>
+    </div>
   );
 }

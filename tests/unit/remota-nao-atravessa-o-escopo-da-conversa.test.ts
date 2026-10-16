@@ -10,9 +10,10 @@
  *     passa POR `escritaCabeNoTurno` e é recusada com
  *     `escrita_sem_escopo_do_turno` — a regra da main (382f3c790), não uma
  *     variante dela. Classificá-la como `read` seria atravessá-la.
- *  3. ESCOLHA (b): até existir identificação forçada do contato na chamada ao
- *     servidor remoto, `carregarServidorMcpExterno` não carrega servidor para
- *     turno com contato — nenhum turno de conversa, Conversador ou Operador.
+ *  3. ESCOLHA (b): sem a opção `mcp_externo_no_atendimento` do agente,
+ *     `carregarServidorMcpExterno` não carrega servidor para turno com contato
+ *     — nenhum turno de conversa, Conversador ou Operador. Com a opção, a
+ *     identidade do contato vai forçada em cabeçalho (ver `externo.test.ts`).
  *
  * As três têm de estar de pé ao mesmo tempo: a 3 fecha o risco sem protocolo
  * novo no servidor alheio, a 2 garante que uma remota malclassificada não passa
@@ -189,7 +190,7 @@ describe("remota classificada como escrita cai na conferência de escopo do turn
 
 // ─── 3. Escolha (b) na origem ────────────────────────────────────────────────
 
-describe("turno com contato não carrega servidor remoto nenhum (item 8, escolha (b))", () => {
+describe("turno com contato, sem a opção do agente, não carrega servidor remoto nenhum (item 8, escolha (b))", () => {
   it("devolve `null` sem tocar em banco e sem abrir rede", async () => {
     const supabase = supabaseDeMentira();
     const montado = await carregarServidorMcpExterno(supabase.cliente, ORG, {

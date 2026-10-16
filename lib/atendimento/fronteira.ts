@@ -19,7 +19,7 @@ export class StaleServiceBoundaryError extends Error {
 }
 /** `followup_stale` deixou de ser 40001 (serialization_failure): o cliente retentava para sempre. */
 export function isFollowupCasRecusado(error: { code?: string; message?: string } | null | undefined): boolean {
-  return error?.code === "40001" || error?.message === "followup_stale";
+  return error?.code === "PT409" || error?.code === "40001" || error?.message === "followup_stale";
 }
 /**
  * ABRIR A PRIMEIRA DEMANDA NÃO É ATENDIMENTO NOVO — e quem diz isso é o schema.

@@ -95,6 +95,16 @@ export function alineasDoArt15Visiveis(pais: string | null): boolean {
 export const NAO_INFORMADO_PELO_CONTROLADOR = "não informado pelo controlador";
 
 /**
+ * A mesma frase no vocabulário do PAÍS: recebe `perfil.papel.controlador`
+ * ("Controlador" → o texto brasileiro byte a byte; "Responsável pelo
+ * tratamento" em Portugal). O PDF e o cartão de Configurações chamam esta
+ * função, para a tela não prometer um texto que o documento não imprime.
+ */
+export function naoInformadoPelo(papelDoControlador: string): string {
+  return `não informado pelo ${papelDoControlador.toLocaleLowerCase("pt-BR")}`;
+}
+
+/**
  * Alínea e) — o texto da lei, o mesmo para todo país que cita o art. 15.º.
  * Art. 15.º, n.º 1, al. e) do RGPD: direito de retificação (art. 16.º), de
  * apagamento (art. 17.º), de limitação do tratamento (art. 18.º) e de oposição

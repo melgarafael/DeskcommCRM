@@ -112,6 +112,7 @@ export const meetingDeliveryErrors: Record<string, string> = {
   conversa_de_humano: "Este atendimento está atribuído a uma pessoa. O responsável pode autorizar somente este link pelo botão de envio.",
   sem_autorizacao: "O contato não está autorizado para atendimento automático. O responsável pode autorizar somente este link pelo botão de envio.",
   autorizacao_expirada: "A autorização de atendimento automático expirou. O responsável pode autorizar somente este link pelo botão de envio.",
+  ai_opt_out: "O contato está marcado como sempre atendimento humano. O responsável pode enviar este link pelo botão de envio, sem ativar a IA.",
   limits: "O envio atingiu uma janela ou limite do canal. Aguarde a liberação antes de tentar novamente.",
   guardrail: "Uma regra de envio impediu a mensagem. Confira o aviso na Central antes de tentar novamente.",
 };

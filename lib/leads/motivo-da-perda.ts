@@ -117,6 +117,16 @@ export type VereditoDoMotivoDaPerda =
       mensagem: string;
     };
 
+/**
+ * A linha da timeline de uma perda: "Perdido — <motivo>". Uma só frase para os
+ * dois caminhos que perdem um negócio — o card (`/lose`, via `encerraDemanda`) e o
+ * lote (`leads/bulk`). Enquanto o lote escrevia só "Movido de X para Perdido",
+ * o dossiê de quem foi perdido em lote não dizia por quê (#2868).
+ */
+export function razaoDaPerdaNaTimeline(motivo: string): string {
+  return `Perdido — ${motivo}`;
+}
+
 /** Esta etapa fecha o negócio como PERDA? (Coluna do banco, nunca o nome da etapa.) */
 export function etapaDePerda(etapa: EtapaDeDestino | null | undefined): boolean {
   return etapa?.is_lost === true;

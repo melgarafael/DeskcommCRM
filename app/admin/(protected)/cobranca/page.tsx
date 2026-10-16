@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CopiarLinkDePagamento } from "@/components/admin/cobranca/CopiarLinkDePagamento";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { toleranciaDias } from "@/lib/cobranca/configuracao";
 import { ROTULO_DO_ERRO, ROTULO_DO_ESTADO } from "@/lib/cobranca/rotulos";
@@ -15,7 +16,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { AbasDaCobranca } from "./_abas";
 import { ABAS_DA_COBRANCA, type AbaDaCobranca } from "./_abas-lista";
 import { ConexaoDaCobranca } from "./_conexao";
-import { CopiarLinkDePagamento } from "./_copiar-link";
 import { PlanosDaInstalacao, type PlanoDaTela } from "./_planos";
 import { ReguaDaCobranca } from "./_regua";
 import { FaixaDoModoDeTeste, VisaoGeral } from "./_visao-geral";

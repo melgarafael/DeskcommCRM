@@ -320,6 +320,8 @@ describe("o transporte", () => {
 });
 
 describe("o recomendado da tela", () => {
+  // Com conexão direta, o comportamento é o de sempre — o caso sem conexão
+  // (#2890) vive em conversoes-recomendado-respeita-o-canal.test.tsx.
   it.each([
     ["ORÇAMENTO ENVIADO", "InitiateCheckout"],
     ["Proposta", "InitiateCheckout"],
@@ -328,6 +330,6 @@ describe("o recomendado da tela", () => {
     ["COMPROU", null],
     ["Novo contato", null],
   ])("%s → %s", (nome, esperado) => {
-    expect(eventoRecomendadoParaMeta(nome)).toBe(esperado);
+    expect(eventoRecomendadoParaMeta(nome, true)).toBe(esperado);
   });
 });

@@ -194,6 +194,59 @@ export function montarUsoDeCapacidades(input: MontarUsoInput): CapacidadeComUso[
   });
 }
 
+/** Uma linha como `fn_agent_tool_usage_por_termo` devolve. */
+export interface LinhaDeTermo {
+  tool_name: string;
+  termo: string;
+  total: number;
+  falhas: number;
+  ultima_vez: string | null;
+}
+
+/** Um termo que não achou, já pronto para a tela. */
+export interface TermoSemResultado {
+  tool_name: string;
+  termo: string;
+  total: number;
+  falhas: number;
+  /** `falhas / total`, entre 0 e 1 — separa "termo difícil" de "não existe". */
+  taxa_de_falha: number;
+  ultima_vez: string | null;
+}
+
+/**
+ * Os termos que NÃO acharam — a lista de compras do dono da loja (#484, caminho 2).
+ *
+ * `fn_agent_tool_usage` diz "quantas falhas"; isto diz QUAL termo falha, e com
+ * que frequência. Só entra termo que falhou alguma vez: um termo que sempre acha
+ * é sucesso e não pede ação nenhuma. A ordem é por número de falhas (o que mais
+ * dói primeiro); empate desempata pela taxa (o que falha SEMPRE é mais grave que
+ * o que falha às vezes) e, por fim, pelo termo, para a lista ser estável.
+ *
+ * Puro de propósito: a precedência é a parte que erra sozinha, e é o que o teste
+ * prende. Não é a tela nem o aviso (caminho 3, fora do recorte) — é o dado.
+ */
+export function termosSemResultado(
+  linhas: ReadonlyArray<LinhaDeTermo>,
+): TermoSemResultado[] {
+  return linhas
+    .filter((l) => l.falhas > 0)
+    .map((l) => ({
+      tool_name: l.tool_name,
+      termo: l.termo,
+      total: l.total,
+      falhas: l.falhas,
+      taxa_de_falha: l.total > 0 ? l.falhas / l.total : 0,
+      ultima_vez: l.ultima_vez,
+    }))
+    .sort(
+      (a, b) =>
+        b.falhas - a.falhas ||
+        b.taxa_de_falha - a.taxa_de_falha ||
+        a.termo.localeCompare(b.termo, "pt-BR"),
+    );
+}
+
 /** O resumo de uma linha só, para o topo do painel. */
 export function resumirUso(capacidades: ReadonlyArray<CapacidadeComUso>): {
   usos: number;

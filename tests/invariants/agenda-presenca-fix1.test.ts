@@ -158,7 +158,7 @@ it("reaper e reclaim do mesmo worker não reautorizam transporte/callback/settle
         idempotency_key: "send:1",
       },
     ]),
-  ).rejects.toMatchObject({ code: "40001" });
+  ).rejects.toMatchObject({ code: "PT409" });
   expect(
     (
       await pool.query(

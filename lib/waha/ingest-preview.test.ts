@@ -59,7 +59,7 @@ describe("previewFromMessage — prévia de vCard na lista da Inbox (#2742)", ()
       id: "false_5511968914004_3EB0EEE",
       _data: { message: { contactMessage: { vcard: ilegivel } } },
     });
-    expect(previewFromMessage(p)).toBe("[contact]");
+    expect(previewFromMessage(p)).toBe("Contato");
   });
 
   it("contact sem cartão usa o displayName com o mesmo rótulo", () => {
@@ -84,8 +84,37 @@ describe("previewFromMessage — prévia de vCard na lista da Inbox (#2742)", ()
     expect(previewFromMessage(p)).toBe("olha essa foto");
   });
 
-  it("mídia sem corpo continua com o rótulo de tipo (comportamento anterior)", () => {
+  it("mídia sem corpo mostra o rótulo do tipo em português, não o literal em inglês (#2742)", () => {
     const p = payload({ id: "m3", _data: { message: { imageMessage: {} } } });
-    expect(previewFromMessage(p)).toBe("[image]");
+    expect(previewFromMessage(p)).toBe("Imagem");
+  });
+
+  it("cada tipo sem corpo ganha o rótulo em português que o balão já usa (#2742)", () => {
+    // O tipo pode chegar pelo `type` cru do canal OU pela chave de `_data.message`
+    // do NOWEB — os dois caminhos resolvem no mesmo tipo do CRM, e a prévia é a
+    // MESMA palavra que o balão da conversa mostra para ele.
+    const casos: [Partial<WahaPayload>, string][] = [
+      [{ type: "audio" }, "Áudio"],
+      [{ type: "ptt" }, "Áudio"],
+      [{ _data: { message: { videoMessage: {} } } }, "Vídeo"],
+      [{ type: "document" }, "Documento"],
+      [{ _data: { message: { stickerMessage: {} } } }, "Figurinha"],
+      [{ type: "location" }, "Localização compartilhada"],
+      [{ type: "reaction" }, "Reação"],
+    ];
+    for (const [parcial, esperado] of casos) {
+      const p = payload({ id: `t-${esperado}`, ...parcial });
+      expect(previewFromMessage(p), `prévia de ${JSON.stringify(parcial)}`).toBe(esperado);
+    }
+  });
+
+  it("tipo cru desconhecido degrada para texto: a lista mostra 'Sem mensagens', não quebra (#2742)", () => {
+    // O mapa do wire trata tipo cru desconhecido como texto (de propósito: não
+    // perder a mensagem), então a prévia sai vazia e a lista cai no "Sem
+    // mensagens". O que NÃO pode — e a régua do módulo garante — é a prévia
+    // virar `null` ou estourar. O caso do tipo DESCONHECIDO que não degrada (tipo
+    // de CRM sem rótulo) tem teste próprio em `lib/messaging/previa-da-mensagem`.
+    const p = payload({ id: "m4", type: "zapzap_misterioso" });
+    expect(previewFromMessage(p)).toBe("");
   });
 });

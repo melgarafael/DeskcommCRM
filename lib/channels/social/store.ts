@@ -276,6 +276,103 @@ export async function connectSocialInbox(
     throw error;
   }
 }
+/**
+ * Ressincroniza a URL da assinatura de webhook de um canal social pela ORIGEM
+ * ATUAL, mantendo caminho (token), segredo e eventos (issue #2863).
+ *
+ * ─── O defeito ──────────────────────────────────────────────────────────────
+ *
+ * Trocar o domínio da instalação (`install.sh --yes` com `DOMAIN` novo) subia o
+ * CRM no endereço novo, mas a assinatura do Zernio continuava apontando para o
+ * antigo — e os canais seguiam `WORKING`, sem aviso. Não havia como reconciliar
+ * pela tela: `connectSocialInbox` devolve `already_connected` para quem já tem
+ * `social_webhook_id`, e "Desconectar" ARQUIVA a linha (canal novo, agentes
+ * publicados desligados). O operador só resolvia editando a URL no painel do
+ * provedor na mão.
+ *
+ * ─── Por que casa pelo SUFIXO e grava por id ─────────────────────────────────
+ *
+ * A assinatura certa é a que aponta para o `webhook_path_token` DESTA linha —
+ * o mesmo casamento que `connectSocialInbox` faz contra duplicação e que
+ * `apagarAssinaturaSemId` faz para apagar. Casa-se pelo SUFIXO do caminho, e
+ * não pela origem completa, justamente porque a origem pode ter mudado desde a
+ * conexão. A gravação é `PUT webhooks/settings` com `webhookId`, `url` e
+ * `isActive: true`. A documentação do provedor
+ * (docs.zernio.com/webhooks/update-webhook-settings) diz que o PUT é parcial:
+ * "only provided fields will be updated" — segredo, eventos e nome ficam como
+ * estão. Isso é o que a documentação afirma, não o que esta suíte mede: o
+ * provedor aqui é dublado.
+ *
+ * ─── Por que religa a assinatura ─────────────────────────────────────────────
+ *
+ * O provedor desliga a assinatura quando o endereço passa dias sem receber
+ * nenhuma entrega (pela documentação dele: 3 dias sem sucesso e 20 falhas
+ * seguidas), e um domínio antigo fora do ar pode chegar a isso. Trocar a URL
+ * sem religar deixaria a tela dizendo "ressincronizado" com nada chegando. Aqui
+ * a causa da falha (o endereço) é o que está sendo corrigido, então a troca
+ * religa. Já a assinatura desligada que JÁ aponta para a origem atual pode ter
+ * falhado por outro motivo (ou alguém já corrigiu a URL à mão no painel): essa
+ * não é religada às cegas — recusa com a mesma frase de `connectSocialInbox`.
+ *
+ * ─── O que NÃO faz ──────────────────────────────────────────────────────────
+ *
+ * Não arquiva `channel_sessions` e não cria canal: a linha e os agentes
+ * publicados continuam os mesmos. Idempotente — se a assinatura já está na
+ * origem atual, é no-op e nada é gravado no provedor.
+ */
+export async function ressincronizarAssinaturaSocial(
+  db: SupabaseClient,
+  org: string,
+  accountId: string,
+  publicBase: string,
+): Promise<{ channel_id: string; resynced: boolean }> {
+  const integration = await readSocialIntegration(db, org);
+  if (!integration) throw new SocialError("Configure a integração primeiro.", 422);
+  const canal = (await socialChannels(db, org)).find((c) => c.accountId === accountId);
+  if (!canal) throw new SocialError("Nenhum canal social para ressincronizar.", 404);
+  const { data, error } = await db
+    .from("channel_sessions")
+    .select("webhook_path_token")
+    .eq("organization_id", org)
+    .eq("id", canal.id)
+    .maybeSingle();
+  if (error)
+    throw new SocialError("Não foi possível ler o canal para ressincronizar o webhook.", 500);
+  const token = data?.webhook_path_token;
+  if (typeof token !== "string" || token.length === 0)
+    throw new SocialError("Não foi possível recuperar a assinatura da conexão.", 422);
+  const caminho = `/api/v1/webhooks/channel/${token}`;
+  const assinaturas = async () =>
+    z
+      .object({
+        webhooks: z.array(z.object({ _id: z.string(), url: z.string(), isActive: z.boolean() })),
+      })
+      .parse(await socialRequest(integration.key, "webhooks/settings")).webhooks;
+  const achada = (await assinaturas()).find((w) => w.url.endsWith(caminho));
+  if (!achada) throw new SocialError("Não há assinatura de webhook para ressincronizar.", 422);
+  const url = `${publicBase}${caminho}`;
+  if (achada.url === url) {
+    if (!achada.isActive)
+      throw new SocialError(
+        "O webhook foi desativado pelo provedor. Reative-o após corrigir a falha.",
+        409,
+      );
+    return { channel_id: canal.id, resynced: false };
+  }
+  await socialRequest(
+    integration.key,
+    "webhooks/settings",
+    { webhookId: achada._id, url, isActive: true },
+    "PUT",
+  );
+  // Um 200 não prova a troca: um provedor que ignora o corpo responde ok e a
+  // tela diria "ressincronizado" com a assinatura ainda no domínio antigo, ou
+  // ainda desligada. A prova é reler a assinatura pelo id e ver as duas coisas.
+  const relida = (await assinaturas()).find((w) => w._id === achada._id);
+  if (relida?.url !== url || !relida.isActive)
+    throw new SocialError("O provedor não confirmou o novo endereço do webhook.", 502);
+  return { channel_id: canal.id, resynced: true };
+}
 /** 404 on a provider DELETE means a previous attempt already removed it; retries must converge. */
 async function deleteAtProvider(key: string, path: string) {
   try {

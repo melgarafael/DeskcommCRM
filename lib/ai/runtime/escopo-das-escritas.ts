@@ -205,7 +205,11 @@ export async function escritaCabeNoTurno(
   ferramenta: string,
   args: Record<string, unknown>,
 ): Promise<VereditoDaEscrita> {
-  const campos = ESCOPO_DAS_ESCRITAS[ferramenta];
+  // `hasOwn`: o nome vem também de servidor remoto, e `valueOf`/`constructor`
+  // achariam a propriedade HERDADA — truthy, sem campos, e a escrita passaria.
+  const campos = Object.hasOwn(ESCOPO_DAS_ESCRITAS, ferramenta)
+    ? ESCOPO_DAS_ESCRITAS[ferramenta]
+    : undefined;
   if (!campos) {
     return {
       permitido: false,

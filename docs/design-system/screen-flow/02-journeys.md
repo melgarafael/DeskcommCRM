@@ -169,18 +169,20 @@ date: 2026-04-28
 | # | Tela | Ação | Estado UI | Componentes |
 |---|---|---|---|---|
 | 1 | (background) | webhook chega; HMAC válido; log raw | invisível | handler `/api/v1/webhooks/nuvemshop/customer-data-request` |
-| 2 | (background) | sistema cria `lgpd_request` row + emite `event_log` | invisível | worker |
+| 2 | (background) | sistema cria `lgpd_request` em `received` — nada é montado nem enviado ao titular antes do passo 9 | invisível | handler (o worker só roda com a aprovação) |
 | 3 | `/app/inbox` (admin) | toast persistente roxo "Pedido LGPD recebido — D+7" | toast clicável | `<LGPDToast>` |
 | 4 | `/app/lgpd/requests` | clica toast OU acessa via menu | tabela com status `received` | `<LGPDRequestList>` |
 | 5 | `/app/lgpd/requests/[id]` | clica row | detalhe: dados do titular + preview do que será exportado | `<LGPDRequestDetail>` |
 | 6 | idem | seção "O que será incluído": checklist (`contacts`, `conversations`, `messages`, `activities`, `orders`) | preview accordion | `<ExportPreview>` |
 | 7 | idem | seção "SLA": "Recebido D+0 • alarme em D+5 • prazo D+7" | timeline horizontal | `<SLATimeline>` |
-| 8 | idem | clica "Aprovar e gerar export" | confirm dialog "Confirma geração de export pra Maria Silva (CPF ***.123)?" | `<ApproveExportDialog>` |
+| 8 | idem | clica "Aprovar export" | confirm dialog com o nome do titular e o e-mail de destino ("Titular: Maria Silva · Envio para: maria@…") | `ApproveButton` |
 | 9 | idem | confirma | row vira `processing`; spinner | worker async gera JSON + PDF |
 | 10 | idem | quando worker termina (≤30min): row vira `completed`; campo "Link assinado válido por 7 dias" | success banner | `<ExportReadyPanel>` |
 | 11 | (background) | email automático ao titular com link assinado (TTL 7d) | invisível | — |
 | 12 | (audit) | `audit_log:lgpd.export_generated` registra `who, which_contact, items_count, delivered_at` | invisível | Sub-PRD 01 §3.5 |
 | 13 | idem | admin clica "Reenviar email ao titular" se cliente não recebeu | toast | `<ResendButton>` |
+
+**Regra (doc 134, opção A).** O pedido que chega pela Nuvemshop **espera a aprovação**: o dado pessoal só sai da empresa depois que um admin confere, na confirmação, o nome do titular e o e-mail de destino. O webhook só cria o pedido; quem dispara a exportação é a aprovação (`app/api/v1/lgpd/requests/[id]/approve/route.ts`), e o worker ignora evento sem essa marca. O prazo D+7 continua cobrado pelo `cron/lgpd-sla-watcher` enquanto o pedido espera.
 
 **Pontos de fricção.**
 - Admin não vê toast (estava offline) → email + bell badge persistente até clicar

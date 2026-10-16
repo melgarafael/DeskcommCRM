@@ -69,6 +69,7 @@ function contato(pessoal: boolean, tags: string[]): Contact {
     updated_at: "2026-10-01T00:00:00.000Z",
     last_activity_at: null,
     first_service_at: null,
+    ai_opt_out: false,
   };
 }
 

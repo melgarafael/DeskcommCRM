@@ -179,6 +179,22 @@ beforeAll(() => {
               'pending', 'RLS invariant private reply');
         end if;
 
+        -- 0665 (#2796): o vínculo versão↔número. O agente passa a declarar em
+        -- quais números atende; o número PRINCIPAL segue em
+        -- ai_agent_versions.channel_session_id. A linha abaixo vincula a versão
+        -- publicada acima ao número da organização, para o caso de isolamento
+        -- desta lista (o agent semeado é controle positivo legítimo: a leitura
+        -- é org-scoped sem gate de papel).
+        if not exists (select 1 from public.ai_agent_version_channels where organization_id = v_org) then
+          insert into public.ai_agent_version_channels
+            (organization_id, agent_version_id, channel_session_id)
+          select v_org, v.id, v_sess
+            from public.ai_agent_versions v
+           where v.organization_id = v_org
+           order by v.version_number desc
+           limit 1;
+        end if;
+
         -- 0281: a conversa INTERNA da equipe com a IA sobre um caso. Guarda o
         -- texto que a pessoa perguntou e a resposta que a IA deu sobre um
         -- contato identificável — vazar entre organizações entregaria ao
@@ -747,6 +763,13 @@ export const TABLES = [
   // RPC. Vazar a linha entrega ao vizinho quando o outro vai mexer nas
   // conexões dele — e a retomada programada passaria a ser do vizinho.
   "channel_schedules",
+  // migration 0665 (#2796, fatia 1) — o vínculo versão↔número: em quais números
+  // uma versão de agente atende. A LEITURA é org-scoped pela policy `select`
+  // (fn_user_org_ids) sem gate de papel, então o `agent` semeado é controle
+  // positivo legítimo; a ESCRITA é `for all` com fn_role_at_least(admin),
+  // medida em vinculo-do-agente-ao-numero.test.ts. O número PRINCIPAL segue em
+  // ai_agent_versions.channel_session_id — esta tabela só acrescenta vínculos.
+  "ai_agent_version_channels",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

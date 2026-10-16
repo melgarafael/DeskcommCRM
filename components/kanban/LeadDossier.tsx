@@ -15,6 +15,7 @@ import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
 import { LeadTimeline } from "./LeadTimeline";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
+import { TarefasDoNegocio } from "./TarefasDoNegocio";
 import { OwnerBadge } from "./OwnerBadge";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
@@ -71,6 +72,11 @@ export function LeadDossier({
   const activeOrg = useActiveOrg();
   const podeCriarProposta =
     user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager) || false;
+  // Tarefas são `agent`+, a mesma régua da tela de Tarefas e da rota — e o
+  // suporte temporário só lê, como lá (`requireSupportWrite`).
+  const podeEditarTarefas =
+    (user.is_platform_admin && !user.support) ||
+    (activeOrg ? ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent : false);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -153,6 +159,16 @@ export function LeadDossier({
             leadId={lead.id}
           />
         </section>
+
+        {/* As tarefas ANTES da linha do tempo: a timeline conta o que já
+            aconteceu, a tarefa é o que ainda falta fazer — e quem abre o card
+            para agir procura o próximo passo primeiro. */}
+        <TarefasDoNegocio
+          leadId={lead.id}
+          contactId={lead.contact_id}
+          podeEditar={podeEditarTarefas}
+          aberto={open}
+        />
 
         {/* ② timeline */}
         <section className="flex-1 py-3">

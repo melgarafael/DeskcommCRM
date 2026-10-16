@@ -83,6 +83,14 @@ export async function rodarLoopDaFila<J>(deps: DepsDoLoopDaFila<J>): Promise<voi
     }
 
     let claimados: J[] = [];
+    // (c) A checagem de parada DEPOIS do await do relógio (#2823): o
+    // desligamento pode ter chegado enquanto a consulta estava em voo, e claimar
+    // assim abriria uma transação NOVA que o drain já não vai esperar — o lease
+    // ficaria preso até o reaper (QUEUE_VISIBILITY_TIMEOUT_MS), invisível, a cada
+    // `docker stop`. Um claim JÁ iniciado NÃO é interrompido por esta linha (o
+    // await do `claimar` abaixo é quem começa, e ele roda até o fim): ele precisa
+    // terminar para não largar o lease no meio.
+    if (deps.deveParar()) break;
     if (faltaMs !== null && faltaMs <= 0) {
       try {
         claimados = await deps.claimar();

@@ -7,6 +7,7 @@
  * `admin` da organização, MFA quando houver fator, e auditoria. Listar só lê,
  * mas lê pela credencial da organização, então o gate é o mesmo.
  */
+import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -87,7 +88,7 @@ export async function criarAcaoDeConversaoGoogle(
     resourceType: "ad_platform_connections",
     resourceId: null,
     requestId: hdrs.get("x-request-id") ?? undefined,
-    ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
+    ip: ipDoCliente(hdrs) ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
     metadata: {
       conversion_action_id: criada.dados.id,

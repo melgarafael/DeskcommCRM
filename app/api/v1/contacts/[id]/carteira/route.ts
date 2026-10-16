@@ -26,6 +26,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { donoQualificado } from "@/lib/carteira/dono";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -148,4 +149,66 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   });
 
   return ok({ contact_id: contactId, carteira_user_id: dono ?? null }, { requestId });
+}
+
+/**
+ * GET /api/v1/contacts/[id]/carteira — quem é o dono HOJE, para a TELA (#2591).
+ *
+ * ─── Por que isto vive na mesma porta do PATCH, e não numa rota nova ────────
+ *
+ * A tela da carteira é uma feature, um recurso, um caminho: quem grava e quem lê
+ * o mesmo dado moram no mesmo arquivo. Uma rota `.../carteira/leitura` só
+ * duplicaria o `requireRole` e o filtro de organização para dizer a mesma coisa.
+ *
+ * ─── O que ela devolve, e o que ela NÃO devolve ─────────────────────────────
+ *
+ * Devolve `dono_user_id` e `qualificado` — a MESMA régua do motor
+ * (`lib/carteira/dono.ts`), aplicada aqui sobre o vínculo de hoje: dono que saiu
+ * da equipe ou que só lê NÃO conta (regra 5), e a tela precisa saber disso para
+ * não prometer o que o motor não honra.
+ *
+ * NÃO devolve o NOME do dono: quem tem os nomes é a lista de membros
+ * (`/team/assignable`), que a tela já carrega para trocar o dono. Resolver o nome
+ * aqui criaria uma segunda fonte de nomes para o mesmo id.
+ *
+ * `agent`+ lê (a regra 2 é para quem atende). O recorte de `viewer` — "vê só se
+ * for da própria carteira, sem o nome dos outros" — fica FORA deste PR, como o
+ * #2667 já declarou: exigiria visão por coluna, que o Postgres/RLS não faz.
+ */
+export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+  const requestId = randomUUID();
+
+  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  if (!authz.ok) return authz.response;
+  const orgId = authz.org.orgId;
+  const { id: contactId } = await ctx.params;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  const supabase = await createClient();
+  // Os dois `.eq` (id + organization_id da sessão) são obrigatórios: a RLS de
+  // contacts deixa passar as orgs do usuário, e um membro de duas leria a
+  // carteira do contato da org que não está selecionada.
+  const { data: contato, error } = await supabase
+    .from("contacts")
+    .select("carteira_user_id")
+    .eq("id", contactId)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (error || !contato) {
+    return fail("contact_not_found", t("Contato não encontrado nesta empresa."), 404, { requestId });
+  }
+
+  const dono = (contato as { carteira_user_id?: string | null }).carteira_user_id ?? null;
+  // Falha de leitura do vínculo degrada para "não conta" (a faixa/cartão trata
+  // como dono inativo): nunca é a leitura de tela que estoura a ficha inteira.
+  let qualificado = false;
+  if (dono) {
+    try {
+      qualificado = await donoQualificado(createAdminClient(), orgId, dono);
+    } catch {
+      qualificado = false;
+    }
+  }
+
+  return ok({ contact_id: contactId, dono_user_id: dono, qualificado }, { requestId });
 }

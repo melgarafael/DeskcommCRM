@@ -18,20 +18,30 @@
  * por causa de um terceiro fora do ar, e é o registro que o operador pode
  * desligar, não o agente.
  *
- * ── Por que o TURNO COM CONTATO não ganha servidor nenhum (item 8, escolha b) ─
+ * ── TURNO COM CONTATO: só com a opção do agente, e com a identidade forçada ─
  *
- * O servidor remoto não recebe o `ctx.contatoDoTurno`, então uma leitura
- * remota durante a conversa poderia devolver dado de OUTRO cliente ao modelo —
- * e do modelo ao contato. Até existir identificação forçada do contato na
- * chamada, quem decide é aqui: turno com contato não carrega servidor, e o
- * turno é o de sempre. Cobre o Conversador e o Operador, que os dois montam
- * ferramentas passando o contato do turno.
+ * Sem identificação, uma leitura remota durante a conversa poderia devolver
+ * dado de OUTRO cliente ao modelo — e do modelo ao contato. Por isso o turno
+ * com contato só carrega o servidor quando o agente tem
+ * `config.mcp_externo_no_atendimento` ligado (desligado de fábrica; desligado,
+ * o turno é exatamente o de antes da opção: `null`, sem banco e sem rede).
+ *
+ * Ligada, a carga resolve o contato NO BANCO (id + organização do turno) e
+ * amarra ao servidor montado os cabeçalhos `X-Deskcomm-*`
+ * (`CABECALHOS_DO_CONTATO`), que vão em toda requisição — listar e chamar. O
+ * valor nunca vem de argumento de ferramenta. Contato que não resolve (erro,
+ * outra organização) = `null`: falha fechada na ação. Cobre o Conversador e o
+ * Operador, que os dois montam ferramentas passando o contato do turno.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 import { logger } from "@/lib/logger";
-import { listarFerramentasDoServidor, type FerramentaRemota } from "./chamada";
+import {
+  CABECALHOS_DO_CONTATO,
+  listarFerramentasDoServidor,
+  type FerramentaRemota,
+} from "./chamada";
 import { escolhasRemotas } from "./ids";
 import { hostDoEndpoint, lerEndpointMcpExterno, type ServidorMcpExterno } from "./registro";
 import { abrirChaveMcpExterno } from "./segredo";
@@ -51,33 +61,101 @@ export interface ServidorMcpExternoMontado {
    * isto — quem monta este objeto em produção sai com o guard default.
    */
   fetch?: FetchLike;
+  /**
+   * O contato a que `cabecalhos` está amarrado. Presente só em turno com
+   * contato e opção ligada — é por ele que `pickToolsFromMcp` deixa a leitura
+   * remota montar num turno de conversa.
+   */
+  contato?: string;
+  /** A identidade do contato (`CABECALHOS_DO_CONTATO`), lida do banco. */
+  cabecalhos?: Readonly<Record<string, string>>;
 }
 
 export interface OpcoesDeCarga {
   /**
-   * O CONTATO deste turno, quando há conversa. Presente = nenhuma ferramenta
-   * remota é carregada (item 8, escolha (b)).
+   * O CONTATO deste turno, quando há conversa. Presente sem `noAtendimento` =
+   * nenhuma ferramenta remota é carregada (item 8, escolha (b)).
    */
   contatoDoTurno?: string;
+  /** `ai_agents.config.mcp_externo_no_atendimento` do agente do turno. */
+  noAtendimento?: boolean;
+  /** A CONVERSA deste turno — de onde sai `X-Deskcomm-Canal`. */
+  conversaDoTurno?: string;
   /** `fetch` de saída para a descoberta — teste stuba o ERP em `127.0.0.1`. */
   fetch?: FetchLike;
 }
 
+/** Canal como texto curto de banco — nada que quebre a linha do cabeçalho. */
+const CANAL_VALIDO = /^[a-z_]{1,32}$/;
+
 /**
- * `null` = não há servidor registrado, o turno tem contato, ou não deu para
- * falar com ele. É o contrato do chamador: `...(montado ?
- * { servidorMcpExterno: montado } : {})`, e sem essa chave o turno é o de
- * sempre — catálogo compilado, rede nenhuma.
+ * Os cabeçalhos de identidade do contato, lidos do banco pelo id E pela
+ * organização do turno. `null` quando o contato não resolve (erro de leitura,
+ * contato de outra organização ou inexistente) — e aí o servidor não carrega.
+ *
+ * Telefone em dígitos E.164, sem o `+` (a coluna guarda `+5511...`); ausente
+ * quando o contato não tem telefone. Canal da conversa DO TURNO (lida pelo id,
+ * pela organização e pelo contato); ausente quando o turno não a informa ou
+ * ela não resolve — ele é contexto, não identidade, e por isso a falha dele
+ * não fecha a carga.
+ */
+async function cabecalhosDoContato(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contatoId: string,
+  conversaId: string | undefined,
+): Promise<Record<string, string> | null> {
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("id, phone_number")
+    .eq("organization_id", organizationId)
+    .eq("id", contatoId)
+    .maybeSingle();
+  const contato = data as { id?: unknown; phone_number?: unknown } | null;
+  if (error || typeof contato?.id !== "string" || contato.id !== contatoId) {
+    logger.warn("contato do turno nao resolvido — servidor MCP externo fica fora deste turno", {
+      organization_id: organizationId,
+      ...(error ? { error: error.message } : {}),
+    });
+    return null;
+  }
+
+  const cabecalhos: Record<string, string> = { [CABECALHOS_DO_CONTATO.id]: contato.id };
+  const digitos =
+    typeof contato.phone_number === "string" ? contato.phone_number.replace(/\D/g, "") : "";
+  if (digitos !== "") cabecalhos[CABECALHOS_DO_CONTATO.telefone] = digitos;
+
+  if (!conversaId) return cabecalhos;
+  const { data: conversa } = await supabase
+    .from("conversations")
+    .select("channel")
+    .eq("organization_id", organizationId)
+    .eq("id", conversaId)
+    .eq("contact_id", contatoId)
+    .maybeSingle();
+  const canal = (conversa as { channel?: unknown } | null)?.channel;
+  if (typeof canal === "string" && CANAL_VALIDO.test(canal)) {
+    cabecalhos[CABECALHOS_DO_CONTATO.canal] = canal;
+  }
+  return cabecalhos;
+}
+
+/**
+ * `null` = não há servidor registrado, o turno tem contato sem a opção do
+ * agente, o contato não resolveu, ou não deu para falar com o servidor. É o
+ * contrato do chamador: `...(montado ? { servidorMcpExterno: montado } : {})`,
+ * e sem essa chave o turno é o de sempre — catálogo compilado, rede nenhuma.
  */
 export async function carregarServidorMcpExterno(
   supabase: SupabaseClient,
   organizationId: string,
   opcoes?: OpcoesDeCarga,
 ): Promise<ServidorMcpExternoMontado | null> {
-  // ESCOLHA (b), item 8 — antes de ler banco nem de pensar em rede. Um turno
-  // com conversa não monta ferramenta remota: sem o identificador do contato
-  // na chamada, a leitura remota não tem como saber de QUAL cliente é o dado.
-  if (opcoes?.contatoDoTurno) return null;
+  // ESCOLHA (b), item 8 — antes de ler banco nem de pensar em rede. Sem a
+  // opção do agente, um turno com conversa não monta ferramenta remota: sem o
+  // identificador do contato na chamada, a leitura remota não tem como saber
+  // de QUAL cliente é o dado.
+  if (opcoes?.contatoDoTurno && opcoes.noAtendimento !== true) return null;
 
   const { data, error } = await supabase
     .from("organizations")
@@ -110,9 +188,16 @@ export async function carregarServidorMcpExterno(
   if (!endpoint || !chave) return null;
   const servidor: ServidorMcpExterno = { endpoint, chave };
 
+  const contato = opcoes?.contatoDoTurno;
+  const cabecalhos = contato
+    ? await cabecalhosDoContato(supabase, organizationId, contato, opcoes?.conversaDoTurno)
+    : undefined;
+  if (cabecalhos === null) return null;
+
   try {
     const ferramentas = await listarFerramentasDoServidor(servidor, {
       ...(opcoes?.fetch ? { fetch: opcoes.fetch } : {}),
+      ...(cabecalhos ? { cabecalhos } : {}),
     });
     if (ferramentas.length === 0) {
       logger.warn("servidor MCP externo registrado nao anunciou nenhuma ferramenta", {
@@ -123,7 +208,9 @@ export async function carregarServidorMcpExterno(
       });
       return null;
     }
-    return { servidor, ferramentas };
+    return contato && cabecalhos
+      ? { servidor, ferramentas, contato, cabecalhos }
+      : { servidor, ferramentas };
   } catch (err) {
     logger.warn("servidor MCP externo registrado nao respondeu — turno segue sem as ferramentas dele", {
       organization_id: organizationId,

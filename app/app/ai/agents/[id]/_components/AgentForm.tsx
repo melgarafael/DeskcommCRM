@@ -58,6 +58,7 @@ import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
+import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -1438,6 +1439,16 @@ export function AgentForm(props: Props) {
             <ComandosDoCelular
               agentId={props.agent.id}
               inicial={(props.agent.config ?? {}).aceita_comandos_celular}
+              disabled={disabled}
+            />
+          )}
+
+          {/* Servidor MCP externo no atendimento (#2147). Só admin vê e
+              grava; salva em `ai_agents.config.mcp_externo_no_atendimento`. */}
+          {isEdit && !readOnly && (
+            <ServidorExternoNoAtendimento
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).mcp_externo_no_atendimento}
               disabled={disabled}
             />
           )}

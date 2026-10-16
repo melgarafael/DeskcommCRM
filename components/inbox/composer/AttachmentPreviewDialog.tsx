@@ -5,29 +5,35 @@ import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { FileText, Plus, Trash, CaretLeft, CaretRight, VideoCamera } from "@/lib/ui/icons";
+import { FileText, Plus, Trash, CaretLeft, CaretRight, VideoCamera, X } from "@/lib/ui/icons";
 import { formatBytes } from "@/components/inbox/media/media-utils";
 import { cn } from "@/lib/utils";
 
 interface Props {
   file?: File | null;
+  /** Uma fila de arquivos para envio */
   files?: File[];
+  /** Legenda inicial vinda de resposta rápida ou template (#2526) */
+  legendaInicial?: string | null;
   sending: boolean;
   uploadProgress?: { current: number; total: number } | null;
   onCancel: () => void;
   onRemoveFile?: (index: number) => void;
+  onRemove?: (index: number, caption: string) => void;
   onAddFiles?: (files: File[]) => void;
   onSend: (caption: string) => void;
 }
 
-/** Preview antes do envio (padrão WhatsApp): suporta 1 ou múltiplos arquivos com carrossel/miniaturas. */
+/** Preview antes do envio (padrão WhatsApp): suporta múltiplos arquivos com carrossel, miniaturas e legenda. */
 export function AttachmentPreviewDialog({
   file,
   files,
+  legendaInicial = null,
   sending,
   uploadProgress,
   onCancel,
   onRemoveFile,
+  onRemove,
   onAddFiles,
   onSend,
 }: Props) {
@@ -39,13 +45,14 @@ export function AttachmentPreviewDialog({
   }, [file, files]);
 
   const [activeIndex, setActiveIndex] = useState(0);
-  const [caption, setCaption] = useState("");
+  const [caption, setCaption] = useState(legendaInicial ?? "");
+  const [base, setBase] = useState({ files: fileList, legendaInicial });
   const addMoreRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    setCaption("");
-    setActiveIndex(0);
-  }, [fileList.length === 0]);
+  if (base.files !== fileList || base.legendaInicial !== legendaInicial) {
+    setBase({ files: fileList, legendaInicial });
+    setCaption(legendaInicial ?? "");
+  }
 
   // Garante que o activeIndex não aponte para um índice removido
   useEffect(() => {
@@ -83,6 +90,14 @@ export function AttachmentPreviewDialog({
     e.target.value = "";
   };
 
+  const handleRemove = (index: number) => {
+    if (onRemoveFile) {
+      onRemoveFile(index);
+    } else if (onRemove) {
+      onRemove(index, caption.trim());
+    }
+  };
+
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-w-lg">
@@ -116,6 +131,7 @@ export function AttachmentPreviewDialog({
           {isVideo && objectUrl && (
             <video src={objectUrl} controls className="max-h-72 rounded-md" />
           )}
+
           {!isImage && !isVideo && (
             <div className="flex items-center gap-3 py-6">
               <FileText size={36} weight="duotone" className="text-primary" aria-hidden />
@@ -166,12 +182,12 @@ export function AttachmentPreviewDialog({
                       <span className="w-full truncate text-center">{f.name.split(".").pop()}</span>
                     </div>
                   )}
-                  {onRemoveFile && !sending && (
+                  {(onRemoveFile || onRemove) && !sending && (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onRemoveFile(idx);
+                        handleRemove(idx);
                       }}
                       className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive"
                       aria-label={t("Remover")}

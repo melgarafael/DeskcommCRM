@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -18,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Robot, Plus, Trash, PencilSimple } from "@/lib/ui/icons";
+import { Robot, Plus, Trash, PencilSimple, FlowArrow } from "@/lib/ui/icons";
 import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
 import {
   useAutomationRules,
@@ -31,6 +32,7 @@ import { RuleEditor } from "./RuleEditor";
 import { useT } from "@/hooks/i18n/useT";
 
 const RULES_QUERY_KEY = ["automation-rules"];
+const DESIGNER_NOVA = "/app/webhooks/automacoes/nova";
 
 function triggerLabel(trigger: string, t: (texto: string) => string): string {
   return t(TRIGGER_LABELS[trigger as TriggerEvent] ?? trigger);
@@ -96,6 +98,13 @@ export function RulesTab() {
             <Button onClick={openCreate}>
               <Plus /> {t("Nova automação")}
             </Button>
+            {/* Fase 1 do designer: a mesma automação, montada no canvas. É link
+                (não botão) para não colidir com quem procura "Nova automação". */}
+            <Button asChild variant="secondary">
+              <Link href={DESIGNER_NOVA}>
+                <FlowArrow /> {t("Montar no designer")}
+              </Link>
+            </Button>
           </CardContent>
         </Card>
         <RuleEditor open={editorOpen} onOpenChange={setEditorOpen} rule={editing} />
@@ -105,7 +114,12 @@ export function RulesTab() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex sm:justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <Button asChild variant="secondary" className="w-full sm:w-auto">
+          <Link href={DESIGNER_NOVA}>
+            <FlowArrow /> {t("Montar no designer")}
+          </Link>
+        </Button>
         <Button onClick={openCreate} className="w-full sm:w-auto">
           <Plus /> {t("Nova automação")}
         </Button>
@@ -136,6 +150,11 @@ export function RulesTab() {
                 aria-label={`${r.is_active ? t("Pausar") : t("Ligar")} ${r.name}`}
               />
               <div className="flex items-center gap-1">
+                <Button asChild variant="ghost" size="icon">
+                  <Link href={`/app/webhooks/automacoes/${r.id}`} aria-label={t("Abrir no designer")}>
+                    <FlowArrow />
+                  </Link>
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"

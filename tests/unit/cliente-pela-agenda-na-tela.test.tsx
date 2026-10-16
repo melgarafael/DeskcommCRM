@@ -84,6 +84,7 @@ const CONTATO = {
   updated_at: "2026-01-01T10:00:00.000Z",
   last_activity_at: null,
   first_service_at: "2025-03-12T14:00:00.000Z",
+  ai_opt_out: false,
 } satisfies Contact;
 
 function comQuery(ui: ReactNode) {

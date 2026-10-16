@@ -74,6 +74,10 @@ export const O_QUE_FICA = {
   dpo_email: "o encarregado a quem ele se dirige",
   lei_citada: "a lei que fundamenta a resposta",
   lei_rotulo: "o rótulo dessa lei no país dele",
+  papel_controlador:
+    "como o documento chama quem responde pelos dados no país dele (issue #2344)",
+  papel_encarregado:
+    "como o documento chama o contato dele para pedidos de dados no país dele (issue #2344)",
   fuso: "o fuso das datas do documento",
   art15: "as informações do art. 15.º do RGPD devidas a ele",
   messages_completas: "todas as mensagens dele, sem o recorte de 100 (doc 110, 2A: também no Brasil)",

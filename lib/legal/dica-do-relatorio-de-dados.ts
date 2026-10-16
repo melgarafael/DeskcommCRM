@@ -25,10 +25,25 @@
 export const DICA_DO_RELATORIO =
   'O relatório de {lei} entregue ao cliente traz a {campo_alto} da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo "{campo}" em Configurações → Organização.';
 
+/**
+ * A mesma frase SEM citar lei, para o país cuja citação ainda não foi revisada.
+ *
+ * Era `perfil.lei?.nome ?? "LGPD"` no call site (issue #2344): o `??` cobria o
+ * tipo em TypeScript e afirmava a lei BRASILEIRA para um país cujo perfil não
+ * tem lei nenhuma — exatamente a citação errada que o cabeçalho de
+ * `lib/legal/perfil-do-pais.ts` proíbe. Sem lei revisada, o relatório não cita
+ * lei, e a dica também não.
+ */
+export const DICA_DO_RELATORIO_SEM_LEI =
+  'O relatório entregue ao cliente traz a {campo_alto} da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo "{campo}" em Configurações → Organização.';
+
 /** O vocabulário do país que a frase cita — vem do perfil, nunca do componente. */
 export interface VocabularioDaEmpresa {
-  /** Nome da lei no país: "LGPD", "RGPD". */
-  lei: string;
+  /**
+   * Nome da lei no país: "LGPD", "RGPD". `null` = país sem citação revisada,
+   * e aí a frase sai sem lei nenhuma (`DICA_DO_RELATORIO_SEM_LEI`).
+   */
+  lei: string | null;
   /** Rótulo do nome legal no país: "Razão social", "Denominação social". */
   rotuloNomeLegal: string;
 }
@@ -48,8 +63,8 @@ export function dicaDoRelatorio(
   vocabulario: VocabularioDaEmpresa,
 ): string {
   const campo = t(vocabulario.rotuloNomeLegal);
-  return t(DICA_DO_RELATORIO)
-    .replace("{lei}", vocabulario.lei)
+  return (vocabulario.lei ? t(DICA_DO_RELATORIO) : t(DICA_DO_RELATORIO_SEM_LEI))
+    .replace("{lei}", vocabulario.lei ?? "")
     .replace("{campo_alto}", campo.toUpperCase())
     .replace("{campo}", campo);
 }

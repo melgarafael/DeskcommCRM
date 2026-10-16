@@ -15,10 +15,13 @@
  * PIOR que nada: o domínio não está verificado na conta Resend do revendedor,
  * então TODO envio falha lá na Resend e volta como `send_failed` com mensagem
  * opaca — o operador vai caçar rede, contêiner e chave, quando o problema é uma
- * variável em branco. Tratar como não-configurado joga o fluxo no caminho que
- * JÁ existe e JÁ é bom: `EmailNotConfigured` → `pending_review` no worker de
- * LGPD (`workers/lgpd-export-worker.ts:254-289`) e o convite mostrando o
- * `accept_url` na tela (`app/api/v1/team/invite/route.ts`).
+ * variável em branco. Tratar como não-configurado joga o fluxo no caminho
+ * próprio dele: `EmailNotConfigured` → `pending_review` no worker de LGPD
+ * (`workers/lgpd-export-worker.ts`), com o PDF para o operador entregar à mão,
+ * e o convite mostrando o `accept_url` na tela (`app/api/v1/team/invite/route.ts`).
+ * Esse caminho da LGPD só passou a funcionar com a migration 0651: até ela o
+ * CHECK de `lgpd_requests.status` recusava `pending_review`, e o pedido ficava
+ * em "Processando" para sempre.
  *
  * As duas chaves saíram do `process.env` cru e entraram no Zod (`lib/env.ts`).
  * Fora dele elas ficavam fora do `.env.example` e fora do `install.sh`, e o

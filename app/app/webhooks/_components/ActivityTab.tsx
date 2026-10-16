@@ -102,11 +102,30 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
+  /*
+   * #2769 — o caso específico do ganho, com frase própria: a porta está aberta
+   * (a ação é permitida em `lead.won`), então "mover para outro funil está
+   * desligado" seria mentira. O diagnóstico é outro e o conserto é uma linha:
+   * apontar a ação para o funil de pós-venda. Emitido por
+   * lib/automation/actions/create-or-move-lead.ts como `error`, o mesmo canal
+   * de `cross_pipeline_move_not_allowed` (canal cobrado pela guarda da #1090).
+   */
+  continuacao_exige_outro_funil:
+    "A continuação de um negócio ganho só nasce em OUTRO funil. Aponte esta ação para o funil de pós-venda — nada foi movido.",
   lead_already_transferred_in_event:
     "Outra regra deste mesmo evento já levou o lead para outro funil. Vale a primeira regra; esta não transfere de novo.",
   flow_not_active:
     "O funil escolhido não está ativo, então a inscrição não foi feita. Ative o funil ou escolha outro na automação.",
   live_enrollment_exists: "O contato já está em um funil ativo — esta ação não inscreve duas vezes.",
+  /* #2647 — o roteiro de ATENDIMENTO alcançado pela MESMA ação. Os dois motivos
+     nascem em lib/automation/actions/start-message-flow.ts e chegam pelos
+     mesmos dois canais (`detail.reason` e `action.error`). */
+  banco_do_roteiro_indisponivel:
+    "O roteiro de atendimento não começou: esta instalação não tem a conexão direta do banco configurada, e é por ela que o roteiro é conduzido. Configure-a e execute a regra de novo.",
+  modulo_desligado:
+    "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.",
+  roteiro_nao_iniciado:
+    "O roteiro de atendimento não começou para este contato: o fluxo pode não estar publicado, o contato já pode ter um roteiro em andamento, ou já ter concluído este sem poder recomeçar.",
   consent_declined: "O contato não autorizou o recebimento de mensagens de marketing.",
   fora_do_pre_go_live:
     "O número deste canal ainda não entrou no pré-go-live, então a mensagem escrita pela IA não sai por ele.",
@@ -168,6 +187,29 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   resposta_vazia: "A IA não devolveu nenhuma escolha entre as opções desta ação. Tente de novo ou corrija a instrução.",
   sem_json: "A IA respondeu fora do formato esperado e nada foi executado. Tente de novo em alguns minutos.",
   escolha_ausente: "A IA respondeu sem dizer qual opção escolher, então nada foi executado. Tente de novo ou corrija a instrução.",
+  /* #2726 — a ação `send_email`. Os sete nascem em
+     lib/automation/actions/send-email.ts e chegam aos DOIS canais da tela:
+     `detail.reason` nas recusas (pelo `para.motivo`, origem declarada em
+     ORIGENS no teste da guarda — `no_contact`, `contact_blocked` e
+     `consent_declined` já moravam aqui, `no_email` e `dono_sem_email` são
+     novos) e `action.error` nos cinco códigos do provedor (pelo
+     `codigoDaFalha`, literal no resultado). Sem frase aqui quem operava a
+     automação lia o código cru. */
+  no_email: "O contato não tem e-mail cadastrado, então não havia endereço para onde enviar.",
+  dono_sem_email:
+    "O negócio não tem responsável com e-mail cadastrado, então não havia endereço para onde enviar. Escolha outro destinatário na automação.",
+  dono_fora_da_equipe:
+    "O responsável do negócio não faz mais parte da equipe, então o e-mail não foi enviado. Troque o responsável do negócio ou escolha outro destinatário na automação.",
+  email_nao_configurado:
+    "Nenhum e-mail está configurado nesta instalação: ligue o servidor em Admin › E-mail ou conecte o serviço externo de envio.",
+  email_recusado:
+    "O servidor de e-mail recusou a mensagem. O detalhe técnico abaixo traz o motivo que o provedor devolveu.",
+  email_limite_atingido:
+    "O provedor de e-mail limitou os envios por causa do volume. Tente de novo mais tarde.",
+  remetente_recusado:
+    "O servidor recusou o endereço de quem envia. Confira o remetente em Admin › E-mail.",
+  dominio_nao_verificado:
+    "O domínio do remetente não está verificado na Resend. Verifique o domínio na conta Resend e tente de novo.",
 };
 
 function explicacaoDe(

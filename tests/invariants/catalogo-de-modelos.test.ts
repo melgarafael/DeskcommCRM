@@ -124,6 +124,7 @@ describe("catálogo de modelos", () => {
          left join public.ai_pricing p on p.model = m.model_id
         where m.deprecated_at is null
           and m.model_id in ('claude-opus-5','claude-sonnet-5','claude-opus-4-8',
+                             'claude-haiku-5-5','claude-sonnet-5-5','claude-opus-5-5',
                              'gpt-6-luna','gpt-6.1-sol','gpt-6-astra',
                              'gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5',
                              'gpt-5.5-pro','gpt-5.4','gpt-5.4-mini','gpt-5.4-nano',
@@ -142,13 +143,17 @@ describe("catálogo de modelos", () => {
 
   it("a geração corrente dos três provedores está no catálogo", () => {
     // Ids VERIFICADOS no provedor (GET /v1/models) para Anthropic e OpenAI — os
-    // GPT-6 só na documentação oficial (ver o cabeçalho da 0646). Este
+    // Claude 5.5 e os GPT-6 só na documentação oficial (ver os cabeçalhos da
+    // 0675 e da 0646). Este
     // caso é o que reprova quando o catálogo envelhece: sem ele, "o padrão é o
     // melhor disponível" vira uma frase que ninguém mede.
     const ids = new Set(modelosDoCatalogo().map((m) => m.model_id));
     for (const esperado of [
       "claude-opus-5",
       "claude-sonnet-5",
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",

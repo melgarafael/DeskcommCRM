@@ -41,6 +41,11 @@ export async function autorizarContatoParaIA(
   },
 ): Promise<{ ok: boolean; autorizou: boolean }> {
   try {
+    // A marca PERMANENTE "sempre atendimento humano" (issue 2379) vale AQUI
+    // também: re-autorizar é meio do caminho de assumir a conversa, e nenhuma
+    // origem (respondi, campanha, automação, retomada) pode reabrir o que um
+    // humano trancou. O `.eq` no filtro — e não uma leitura antes — é o que
+    // torna a recusa atômica: 0 linhas casadas, e `autorizou` volta false.
     let q = supabase
       .from("contacts")
       .update({
@@ -48,13 +53,24 @@ export async function autorizarContatoParaIA(
         ai_authorized_reason: input.reason,
       })
       .eq("organization_id", input.organizationId)
-      .eq("id", input.contactId);
+      .eq("id", input.contactId)
+      .eq("ai_opt_out", false);
 
     if (input.apenasSeNaoAutorizado) {
       q = q.is("ai_authorized_at", null);
     }
 
     const { data, error } = await q.select("id").maybeSingle();
+    if (data == null && !error) {
+      // Nenhuma linha casou: ou o contato não existe nesta org, ou a marca
+      // permanente barrou. Os dois são "não autorizado" — o lado seguro — e o
+      // log distingue para quem investiga por que a IA continuou muda.
+      logger.info("[elegibilidade] autorização de IA não concedida", {
+        organization_id: input.organizationId,
+        contact_id: input.contactId,
+        reason: input.reason,
+      });
+    }
     if (error) {
       logger.warn("[elegibilidade] autorização de IA não gravada", {
         organization_id: input.organizationId,

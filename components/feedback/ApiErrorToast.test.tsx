@@ -94,6 +94,13 @@ describe("ApiErrorToast", () => {
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 
+  it("empresa sem administrador com e-mail no link do dono é AVISO, com a frase da rota", () => {
+    const frase = "A empresa ainda não tem administrador com e-mail. Gere o link depois que um convite de administrador for aceito.";
+    showApiError(new ApiError(409, "empresa_sem_email", undefined, "req-d15", frase));
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(frase, expect.objectContaining({ description: "ID: req-d15" }));
+  });
+
   it("falls back to toast.error for unknown ApiError code", () => {
     const err = new ApiError(418, "unknown_teapot_code", undefined, "req-2", "I'm a teapot");
     showApiError(err);

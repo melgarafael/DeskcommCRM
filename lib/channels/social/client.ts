@@ -14,7 +14,7 @@ export async function socialRequest(
   key: string,
   path: string,
   body?: unknown,
-  method: "GET" | "POST" | "DELETE" = body === undefined ? "GET" : "POST",
+  method: "GET" | "POST" | "PUT" | "DELETE" = body === undefined ? "GET" : "POST",
 ): Promise<unknown> {
   const response = await fetch(`${zernioBaseUrl()}/v1/${path}`, {
     method,

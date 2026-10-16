@@ -8,6 +8,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { createClient } from "@/lib/supabase/server";
 
 interface Ctx { params: Promise<{ id: string }> }
@@ -52,7 +53,7 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
     .eq("organization_id", authz.org.orgId).eq("conversation_id", message.conversation_id)
     .order("sent_at", { ascending: false }).limit(1).maybeSingle();
   if (latest?.id === id) {
-    const antigoPreview = message.body?.slice(0, 280) || `[${message.type}]`;
+    const antigoPreview = previaDaMensagem(message.body, message.type);
     await supabase.from("conversations").update({
       last_message_preview: ocultar ? "Mensagem ocultada no CRM" : antigoPreview,
     }).eq("id", message.conversation_id).eq("organization_id", authz.org.orgId)

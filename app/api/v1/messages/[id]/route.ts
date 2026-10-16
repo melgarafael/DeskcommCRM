@@ -16,6 +16,7 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -133,7 +134,7 @@ async function alterar(req: NextRequest, ctx: Ctx, acao: "edit" | "revoke"): Pro
     .eq("organization_id", authz.org.orgId).eq("conversation_id", message.conversation_id)
     .order("sent_at", { ascending: false }).limit(1).maybeSingle();
   if (latest?.id === id) {
-    const antigoPreview = message.body?.slice(0, 280) || `[${message.type}]`;
+    const antigoPreview = previaDaMensagem(message.body, message.type);
     const novoPreview = acao === "edit" && parsed?.success
       ? parsed.data.text.slice(0, 280) : "Esta mensagem foi apagada";
     await supabase.from("conversations").update({ last_message_preview: novoPreview })

@@ -91,3 +91,18 @@ export function samePhone(a: string, b: string): boolean {
   const va = new Set(phoneLookupVariants(a));
   return phoneLookupVariants(b).some((v) => va.has(v));
 }
+
+/** Normaliza telefone BR para E.164 com o nono dígito no celular. */
+export function normalizePhoneBR(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const digits = raw.replace(/\D/g, "");
+  let e164: string | null = null;
+  if (raw.trim().startsWith("+")) {
+    e164 = /^\d{8,15}$/.test(digits) ? `+${digits}` : null;
+  } else if (digits.length === 12 || digits.length === 13) {
+    e164 = digits.startsWith("55") ? `+${digits}` : null;
+  } else if (digits.length === 10 || digits.length === 11) {
+    e164 = `+55${digits}`;
+  }
+  return e164 ? canonicalPhoneBR(e164) : null;
+}

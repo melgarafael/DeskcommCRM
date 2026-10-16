@@ -65,6 +65,7 @@ const CONTATO = {
   // agendamento, com a regra "Clientes pela agenda" ligada (migration 0262), e
   // este caso é o do cadastro manual.
   first_service_at: null,
+  ai_opt_out: false,
 } satisfies Contact;
 
 /** O corpo que a rota devolve, tipado pelo retorno dela. */

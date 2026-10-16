@@ -147,10 +147,31 @@ describe("o canal `stable` move em bloco", () => {
     expect(corpo(publish, "promover-stable")).not.toMatch(/always\(\)/);
   });
 
-  it("a promoção cobre exatamente as imagens da matriz", () => {
+  it("a promoção cobre exatamente as imagens da matriz, ao conferir e ao mover", () => {
     const lacos = imagensDosLacos(corpo(publish, "promover-stable"));
-    expect(lacos, "o job promover-stable deve ter exatamente um `for img in ...`").toHaveLength(1);
-    expect(lacos[0], "o laço de promoção divergiu da matriz build-and-push").toEqual(IMAGENS);
+    expect(
+      lacos,
+      "o job promover-stable deve ter dois `for img in ...`: conferir o conjunto, depois mover",
+    ).toHaveLength(2);
+    for (const [i, imagens] of lacos.entries()) {
+      expect(imagens, `o laço #${i + 1} de promover-stable divergiu da matriz build-and-push`).toEqual(
+        IMAGENS,
+      );
+    }
+  });
+
+  it("toda conferência de plataforma vem ANTES do primeiro ponteiro movido", () => {
+    // Conferir dentro do laço que move faz uma falha na 3ª imagem deixar a 1ª e
+    // a 2ª já em `stable` — o canal dividido da #488, agora por erro de rede.
+    const t = corpo(publish, "promover-stable");
+    const primeiroMove = t.indexOf("imagetools create");
+    const ultimaConferencia = t.lastIndexOf("manifesto_tem_plataforma");
+    expect(primeiroMove, "o job não move o canal").toBeGreaterThan(-1);
+    expect(ultimaConferencia, "o job não confere plataforma nenhuma").toBeGreaterThan(-1);
+    expect(
+      ultimaConferencia,
+      "há `manifesto_tem_plataforma` depois do primeiro `imagetools create`: o canal pode mover pela metade",
+    ).toBeLessThan(primeiroMove);
   });
 
   it("a promoção REAPONTA o manifesto publicado, nunca reconstrói", () => {

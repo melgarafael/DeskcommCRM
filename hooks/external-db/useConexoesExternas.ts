@@ -25,6 +25,10 @@ export interface ConexaoExternaRow {
   last_tested_at: string | null;
   last_test_ok: boolean | null;
   last_test_error: string | null;
+  /** `all` = o assistente enxerga tudo que o usuário do banco enxerga; `list` = só o marcado. */
+  source_mode: "all" | "list";
+  /** Quantas fontes estão marcadas (a lista inteira NÃO vem na `_safe`). */
+  sources_count: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;

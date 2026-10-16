@@ -90,9 +90,11 @@ export async function PATCH(
       p_org: activeOrg.orgId, p_demanda: id, p_expected: parsed.data.expected_revision,
       p_desfecho: parsed.data.desfecho, p_actor: user.id,
     });
-    if (error) return fail(error.code === "40001" ? "conflict" : error.code === "P0002" ? "not_found" : "internal_error",
-      error.code === "40001" ? "Esta demanda mudou. Atualize antes de encerrar." : error.message,
-      error.code === "40001" ? 409 : error.code === "P0002" ? 404 : 500, { requestId });
+    // PT409: revisão obsoleta (migration 0654). 40001: banco anterior à 0654.
+    const conflito = error?.code === "PT409" || error?.code === "40001";
+    if (error) return fail(conflito ? "conflict" : error.code === "P0002" ? "not_found" : "internal_error",
+      conflito ? "Esta demanda mudou. Atualize antes de encerrar." : error.message,
+      conflito ? 409 : error.code === "P0002" ? 404 : 500, { requestId });
     void audit({ action: "demanda.encerrada", actorUserId: user.id, organizationId: activeOrg.orgId,
       resourceType: "demanda", resourceId: id, requestId, metadata: { desfecho: parsed.data.desfecho } });
     return ok(data, { requestId });

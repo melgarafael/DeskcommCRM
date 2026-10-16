@@ -94,13 +94,56 @@ instrua_e_saia() {
   printf '\n' >&2
   c_ylw "⚠ $1"
   printf '\n' >&2
-  c_dim "  Para fazer à mão, no painel do Supabase:"
-  c_dim "    1. Authentication → URL Configuration"
-  c_dim "         Site URL:      ${APP_URL:-https://SEU_DOMINIO}"
-  c_dim "         Redirect URLs: ${APP_URL:-https://SEU_DOMINIO}/auth/confirm"
-  c_dim "    2. Authentication → Email Templates → Confirm signup / Reset password"
-  c_dim "         <a href=\"{{ .RedirectTo }}&token_hash={{ .TokenHash }}\">Confirmar</a>"
-  c_dim "         ⚠ o separador é & — um ? aqui quebra o link (vira ?type=x?token_hash=y)"
+  # O passo manual DEPENDE DA TOPOLOGIA — "no painel do Supabase" só existe na
+  # nuvem. A régua é a MESMA de `aviso_do_site_url` (_common.sh:585): o
+  # `SINGLE_SERVER=1` é o Supabase do próprio kit, `NEXT_PUBLIC_SUPABASE_URL` em
+  # `*.supabase.co` (ou vazia, topologia desconhecida) é a nuvem, e outra URL é
+  # um Supabase próprio. Sem este corte, quem tem o Supabase na VPS era mandado
+  # a um painel da nuvem onde o projeto dele não existe — e o caminho que vale
+  # ali (o `.env` do Supabase, ou o `update.sh` do kit) nunca aparecia.
+  local topologia
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    topologia="kit"
+  else
+    case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
+      https://*.supabase.co*|"") topologia="nuvem";;
+      *) topologia="proprio";;
+    esac
+  fi
+  case "$topologia" in
+  kit)
+    # O Supabase é o do kit: os moldes moram no GoTrue desta VPS (gravados por
+    # `gravar_modelos_do_gotrue`, _common.sh — #2109) e o Site URL sai do `.env`
+    # do Supabase. Não há painel da nuvem a abrir.
+    local dir_sb
+    dir_sb="$(PROJECT_DIR="$PROJ_DIR" dir_do_supabase)"
+    c_dim "  Este Supabase é o do kit (na VPS) — o caminho é o do kit, não um painel:"
+    c_dim "    bash hostgator-setup-kit/update.sh   # grava os moldes no GoTrue e reinicia o auth"
+    c_dim "    Site URL / Redirect URLs, no .env do Supabase desta VPS (${dir_sb}/.env):"
+    c_dim "         SITE_URL:                 ${APP_URL:-https://SEU_DOMINIO}"
+    c_dim "         ADDITIONAL_REDIRECT_URLS: ${APP_URL:-https://SEU_DOMINIO}/auth/confirm"
+    c_dim "    (ao mudar o .env, recrie o auth; um restart não relê o .env: cd ${dir_sb} && docker compose up -d --no-deps auth)"
+    ;;
+  proprio)
+    # Supabase próprio FORA do kit: também não há painel da nuvem — a
+    # conferência é no `.env` DELE (mesmo texto de aviso_do_site_url).
+    c_dim "  Seu Supabase é próprio (não é da nuvem) — o caminho é o .env DELE:"
+    c_dim "    Site URL / Redirect URLs:"
+    c_dim "         SITE_URL:                 ${APP_URL:-https://SEU_DOMINIO}"
+    c_dim "         ADDITIONAL_REDIRECT_URLS: ${APP_URL:-https://SEU_DOMINIO}/auth/confirm"
+    c_dim "    ao mudar, recrie o auth dele: docker compose up -d auth (na pasta do Supabase)"
+    c_dim "    Modelos: aponte GOTRUE_MAILER_TEMPLATES_* para a rota do app, que resolve a marca pelo banco."
+    ;;
+  *)
+    c_dim "  Para fazer à mão, no painel do Supabase:"
+    c_dim "    1. Authentication → URL Configuration"
+    c_dim "         Site URL:      ${APP_URL:-https://SEU_DOMINIO}"
+    c_dim "         Redirect URLs: ${APP_URL:-https://SEU_DOMINIO}/auth/confirm"
+    c_dim "    2. Authentication → Email Templates → Confirm signup / Reset password"
+    c_dim "         <a href=\"{{ .RedirectTo }}&token_hash={{ .TokenHash }}\">Confirmar</a>"
+    c_dim "         ⚠ o separador é & — um ? aqui quebra o link (vira ?type=x?token_hash=y)"
+    ;;
+  esac
   printf '\n' >&2
   exit 0
 }

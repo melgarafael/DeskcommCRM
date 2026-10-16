@@ -200,7 +200,7 @@ describe("o cartão de Configurações › Empresa", () => {
 
   it("renderiza exatamente as três alíneas da issue, com os limites do schema", () => {
     render(
-      <Art15Form initial={{ finalidades: "", destinatarios: "", prazo_conservacao: "" }} />,
+      <Art15Form pais="PT" initial={{ finalidades: "", destinatarios: "", prazo_conservacao: "" }} />,
     );
     const campos = screen.getAllByRole("textbox") as HTMLTextAreaElement[];
     expect(campos, "a tela precisa ter exatamente os três campos pedidos").toHaveLength(3);
@@ -214,13 +214,17 @@ describe("o cartão de Configurações › Empresa", () => {
     for (const letra of ["alínea a)", "alínea c)", "alínea d)"]) {
       expect(rotulos.join(" ")).toContain(letra);
     }
-    // O que a tela avisa é o que o PDF faz com o vazio.
-    expect(screen.getByText(/não informado pelo controlador/)).toBeTruthy();
+    // O que a tela avisa é o que o PDF DESTE país faz com o vazio: em Portugal
+    // o papel é "responsável pelo tratamento", não "controlador" (#2344). O elo
+    // com o PDF renderizado é medido em `lgpd-rotulos-por-pais.test.tsx`.
+    expect(screen.getByText(/«não informado pelo responsável pelo tratamento»/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/controlador/i);
   });
 
   it("salvar manda os três textos para /api/v1/settings/art15", async () => {
     render(
       <Art15Form
+        pais="PT"
         initial={{ finalidades: "A", destinatarios: "C", prazo_conservacao: "D" }}
       />,
     );

@@ -1,6 +1,7 @@
 "use client";
 /**
- * Gatilho + paleta para a etiqueta NASCER colorida (#2718).
+ * Gatilho + paleta para a etiqueta NASCER colorida (#2718) e para REPINTAR
+ * uma que já existe, de onde ela aparece (#2771).
  *
  * É o MESMO vocabulário do painel de Settings — os oito tons medidos de
  * `PALETA_DE_ETIQUETAS`, cada um com nome em `NOME_DO_TOM` (escolher por
@@ -33,9 +34,17 @@ interface Props {
   /** Nome digitado, só para a prévia do chip dentro do popover. */
   tag?: string;
   disabled?: boolean;
+  /**
+   * Rótulo do gatilho, quando ele abre a paleta de UMA etiqueta concreta (os
+   * chips dos editores do Inbox, #2771). Sem isto todo gatilho se chama "Cor da
+   * etiqueta" e o leitor de tela ouve o mesmo nome para as N tags da tela, sem
+   * dizer qual está sendo editada. Quem cria etiqueta (a outra metade da #2718)
+   * não passa rótulo e continua com o texto genérico.
+   */
+  rotulo?: string;
 }
 
-export function SeletorDeCorDaEtiqueta({ cor, onChange, tag, disabled }: Props) {
+export function SeletorDeCorDaEtiqueta({ cor, onChange, tag, disabled, rotulo }: Props) {
   const t = useT();
   const { activeOrg } = useAuth();
   const [aberto, setAberto] = useState(false);
@@ -43,6 +52,7 @@ export function SeletorDeCorDaEtiqueta({ cor, onChange, tag, disabled }: Props) 
   const podeDefinir =
     !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   if (!podeDefinir) return null;
+  const rotuloDoGatilho = rotulo ?? t("Cor da etiqueta");
 
   return (
     <Popover open={aberto} onOpenChange={setAberto}>
@@ -51,10 +61,11 @@ export function SeletorDeCorDaEtiqueta({ cor, onChange, tag, disabled }: Props) 
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 w-7 shrink-0 p-0"
+          // `size="sm"` traz `lg:h-8`, que um `h-7` sem prefixo não vence no desktop.
+          className="h-7 w-7 shrink-0 p-0 lg:h-7"
           disabled={disabled}
-          title={t("Cor da etiqueta")}
-          aria-label={t("Cor da etiqueta")}
+          title={rotuloDoGatilho}
+          aria-label={rotuloDoGatilho}
           aria-expanded={aberto}
         >
           {cor ? (
@@ -69,9 +80,7 @@ export function SeletorDeCorDaEtiqueta({ cor, onChange, tag, disabled }: Props) 
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-auto p-3">
-        <p className="mb-2 text-xs font-semibold text-text">
-          {t("Cor da etiqueta")}
-        </p>
+        <p className="mb-2 text-xs font-semibold text-text">{rotuloDoGatilho}</p>
         <div className="flex flex-wrap items-center gap-2">
           {PALETA_DE_ETIQUETAS.map((tom) => (
             <button

@@ -54,6 +54,22 @@ export interface EntradaBaseDaConferencia {
   agentId: string | null;
   /** Lido NA HORA: as evidências nascem no meio do turno, quando as ferramentas rodam. */
   lerEvidencias: () => readonly EvidenciaComercial[];
+  /**
+   * O RUN que mediu (#2923): `job_queue.id` no turno automático, o id do
+   * RASCUNHO na prévia do modo assistido. É o ponteiro que deixa a resposta
+   * aprovada FECHAR o par que a prévia deixou em aberto — sem ele o modo
+   * assistido nunca entra na concordância do cartão do Jev.
+   */
+  runId?: string | null;
+  /**
+   * O que o mecanismo de hoje fez com a candidata. `"enviado"` no turno
+   * automático, onde o texto sai no mesmo instante da conferência. `null` na
+   * prévia: o rascunho ainda NÃO saiu, e a linha nasce SEM PAR de propósito —
+   * é a resposta aprovada que a fecha (`registrarEnvioDaRespostaAprovada`).
+   * "Sem par" não é discordância (0421): o cartão conta o que chegou ao cliente,
+   * e o rascunho que ninguém aprovou não chegou.
+   */
+  rotuloAtual?: string | null;
 }
 
 export interface EntradaDaConferenciaDeFato extends EntradaBaseDaConferencia {
@@ -260,6 +276,41 @@ export function criarConferidorDeAfirmacoes(
   };
 }
 
+/**
+ * A RESPOSTA APROVADA FECHA O PAR QUE A PRÉVIA DEIXOU (#2923).
+ *
+ * NÃO confere de novo: o texto já foi revisado por uma pessoa — vetá-lo
+ * devolveria ao modelo um texto que não é dele (o mesmo raciocínio que deixa o
+ * `send_template` desarmado em `inbound-turn.ts`) —, e a evidência consultada
+ * no turno da prévia não existe mais. Aqui só se REGISTRA o desfecho: a
+ * observação que a conferência da prévia gravou (com o rótulo do Jev) recebe o
+ * `rotulo_atual` de quem saiu de verdade. É este fechamento que faz a
+ * concordância do cartão do Jev contar o modo assistido — o rascunho que
+ * ninguém aprovou fica "sem par" e não conta (o sandbox nunca fecha: nada dele
+ * vira concordância, R5).
+ *
+ * Idempotente: o retry do job que já saiu não reescreve nada (`rotulo_atual`
+ * já não é nulo). Nunca lança — falha de escrita deixa rastro e o envio segue.
+ */
+export async function registrarEnvioDaRespostaAprovada(
+  admin: Admin,
+  e: { organizationId: string; runId: string },
+): Promise<void> {
+  const { error } = await admin
+    .from("jev_observacoes")
+    .update({ rotulo_atual: "enviado" })
+    .eq("organization_id", e.organizationId)
+    .eq("tarefa", TAREFA_DA_AFIRMACAO_DE_FATO.id)
+    .eq("job_id", e.runId)
+    .is("rotulo_atual", null);
+  if (error) {
+    logger.warn("a observação da resposta aprovada não foi registrada", {
+      organization_id: e.organizationId,
+      erro: error.message.slice(0, 200),
+    });
+  }
+}
+
 /** A maior `claim_i` da candidata — o que a observação guarda de probabilidade. */
 function maiorClaim(respostas: Readonly<Record<string, Resposta>>, quantidadeDeFrases: number): number {
   let maior = 0;
@@ -298,9 +349,17 @@ async function gravarObservacao(
     // O par que o cartão lê: o que o Jev disse e o que o mecanismo de HOJE fez
     // (mandou — nada na cadeia de hoje barra fato). "Teria sido vetado" é a
     // diferença dos dois, contada sem guardar frase nenhuma.
+    //
+    // O `runId` é o ponteiro do RUN que mediu (#2923): no turno automático ele é
+    // o job, e a linha nasce com o par FECHADO; na prévia é o rascunho, e o par
+    // nasce aberto (`rotulo_atual` nulo) até a resposta ser aprovada e sair.
+    job_id: e.runId ?? null,
     rotulo_jev: rotulo,
     probabilidade_jev: maiorClaim(respostas, frases.length),
-    rotulo_atual: "enviado",
+    // `undefined` (quem não conhece o campo) = o envio de hoje: o par fecha.
+    // `null` é ESCOLHA da prévia — o rascunho ainda não saiu —, e `??` trataria
+    // os dois igual; por isso o teste é de `undefined`.
+    rotulo_atual: e.rotuloAtual === undefined ? "enviado" : e.rotuloAtual,
     modelo: r.modelo,
     latencia_ms: r.latenciaMs,
   });

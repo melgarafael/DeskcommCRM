@@ -30,6 +30,10 @@ import {
   useMarkPersonalContact,
   useUnmarkPersonalContact,
 } from "@/hooks/contacts/usePersonalContact";
+import {
+  useMarkAlwaysHumanContact,
+  useUnmarkAlwaysHumanContact,
+} from "@/hooks/contacts/useAlwaysHumanContact";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
@@ -37,6 +41,7 @@ import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
+import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
@@ -89,6 +94,11 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   // mesmo motivo do `desbloquear` acima.
   const marcarPessoal = useMarkPersonalContact(contactId);
   const desmarcarPessoal = useUnmarkPersonalContact(contactId);
+  // A marca PERMANENTE "sempre atendimento humano" (issue 2379). Os hooks
+  // ficam aqui pelos MESMOS motivos dos de pessoal: ordem de hooks estável e
+  // efeito que o Inbox enxerga.
+  const marcarSempreHumano = useMarkAlwaysHumanContact(contactId);
+  const desmarcarSempreHumano = useUnmarkAlwaysHumanContact(contactId);
 
   /*
     Pede o nome da campanha SÓ quando há um anúncio e ainda não há nome.
@@ -190,6 +200,10 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
             {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
                 etiquetas não apaga o selo — mesma regra do "Bloqueado" acima. */}
             {contact.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
+            {/* A marca PERMANENTE (issue 2379): lida da COLUNA, mesma régua do
+                "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
+                continua a verdade mesmo quando a conversa já voltou ao automático. */}
+            {contact.ai_opt_out && <Badge variant="secondary">{t("Sempre atendimento humano")}</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
@@ -275,6 +289,56 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
               >
                 <span>
                   {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
+                </span>
+              </Button>
+            )}
+            {/* SEMPRE ATENDIMENTO HUMANO (issue 2379): a marca que a devolução
+                NÃO desfaz — nem a manual, nem a automática do cron. Marcar
+                confirma (a IA para de vez); remover é direto e NÃO devolve o
+                atendimento, que continua sendo gesto do botão "Devolver ao
+                automático". Mesmo gate de pessoal: decisão operacional. */}
+            {!contact.ai_opt_out && podeMarcarPessoal && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={marcarSempreHumano.isPending}
+                    className="shrink-0"
+                    data-testid="marcar-sempre-humano"
+                  >
+                    <span>{t("Marcar como sempre humano")}</span>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {t("Marcar este contato como sempre humano?")}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("A IA deixa de responder este contato para sempre: a devolução automática e o botão de devolver ao automático passam a recusar, e a marca só sai por aqui. A conversa atual continua com a equipe.")}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => marcarSempreHumano.mutate()}>
+                      {t("Marcar como sempre humano")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {contact.ai_opt_out && podeMarcarPessoal && (
+              <Button
+                variant="outline"
+                disabled={desmarcarSempreHumano.isPending}
+                className="shrink-0"
+                data-testid="desmarcar-sempre-humano"
+                onClick={() => desmarcarSempreHumano.mutate()}
+              >
+                <span>
+                  {desmarcarSempreHumano.isPending
+                    ? t("Removendo...")
+                    : t("Remover marca de humano")}
                 </span>
               </Button>
             )}
@@ -416,6 +480,17 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
               </div>
             </dl>
           </Card>
+          {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
+              geral, junto dos dados que dizem "quem é esta pessoa" — quem atende
+              responde a pergunta antes de prometer o negócio, e o gerente muda o
+              dono aqui (o seletor só aparece para `manager`+; o gate real é o da
+              rota `PATCH /contacts/[id]/carteira`). Só de `agent` para cima: é
+              o piso do GET da carteira, e o `viewer` receberia 403. */}
+          {activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
+            <div className="mt-4">
+              <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg.role} />
+            </div>
+          )}
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>

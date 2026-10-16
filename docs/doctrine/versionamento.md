@@ -177,6 +177,14 @@ Para conferir o que os fragmentos de agora produziriam, sem escrever nada:
 pnpm release:conferir
 ```
 
+**O fragmento e o mapa da skill de operação.** A skill `deskcomm-operacao`
+ensina ao operador onde fica cada tela, e um fragmento de `capacidade_nova`
+costuma trazer tela ou botão novo. Por isso, quando um PR traz fragmento (ou
+mexe no menu), o pré-voo e o CI conferem se toda tela do `catalogo.ts` está no
+mapa da skill e AVISAM (nunca reprovam). O conserto é acrescentar a tela em
+`references/mapa-da-interface.md` e rodar `pnpm skills:sync`. Comando:
+`bash .agents/skills/deskcomm-operacao/scripts/conferir-mapa.sh`.
+
 Três propriedades, e cada uma resolve um defeito medido:
 
 - **Um arquivo por PR, nome único.** Dois PRs paralelos criam dois arquivos diferentes, e o

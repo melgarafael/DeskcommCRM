@@ -159,6 +159,6 @@ describe("fronteira: progressão de evento não é conflito", () => {
     await pool.query("select fn_service_begin($1,$2,null,$3)", [GOV_ORG, contact, observed]);
     await expect(
       pool.query("select fn_service_begin($1,$2,null,$3)", [GOV_ORG, contact, observed]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "PT409" });
   });
 });

@@ -76,7 +76,26 @@ export interface OpcoesDeChamada {
    * opção nenhuma sai protegido.
    */
   fetch?: FetchLike;
+  /**
+   * Cabeçalhos do EXECUTOR — a identidade do contato do turno
+   * (`CABECALHOS_DO_CONTATO`), montada por `carregar.ts` a partir do banco.
+   * Vão em TODA requisição do transporte (listar e chamar). Nenhum caminho
+   * leva argumento de ferramenta até aqui: o argumento vai só no corpo do
+   * `tools/call`, e por isso não sobrescreve, remove nem acrescenta cabeçalho.
+   */
+  cabecalhos?: Readonly<Record<string, string>>;
 }
+
+/**
+ * A identidade do contato do turno de atendimento, como o servidor externo a
+ * recebe (#2147). Nomes reservados ao executor: o servidor DEVE filtrar por
+ * eles e ignorar qualquer identificador vindo da conversa.
+ */
+export const CABECALHOS_DO_CONTATO = {
+  id: "X-Deskcomm-Contato-Id",
+  telefone: "X-Deskcomm-Contato-Telefone",
+  canal: "X-Deskcomm-Canal",
+} as const;
 
 const TIMEOUT_PADRAO_MS = 15_000;
 
@@ -146,6 +165,7 @@ async function comOCliente<T>(
   timeoutMs: number,
   oQueFazer: (cliente: Client) => Promise<T>,
   fetch?: FetchLike,
+  cabecalhos?: Readonly<Record<string, string>>,
 ): Promise<T> {
   // Concatenação em vez de interpolação: o cabeçalho é montado num lugar só,
   // e a chave não aparece literal em nenhuma template string deste arquivo.
@@ -154,7 +174,9 @@ async function comOCliente<T>(
   // dos dois aparece colado numa string literal de cabeçalho.
   const nomeDoCabecalho = "Authorization";
   const transporte = new StreamableHTTPClientTransport(new URL(servidor.endpoint), {
-    requestInit: { headers: { [nomeDoCabecalho]: cabecalho } },
+    // Identidade do contato antes, autenticação por último: nada do executor troca a chave.
+    // ponytail: sem HMAC extra — a chave Bearer do cadastro já autentica o Deskcomm perante o servidor.
+    requestInit: { headers: { ...cabecalhos, [nomeDoCabecalho]: cabecalho } },
     // O guard anti-SSRF entra POR AQUI (item 4): o SDK aceita `fetch` próprio e
     // é por ele que toda requisição deste transporte passa. Sem opção nenhuma o
     // default é `fetchDeSaida` — protegido, e não o fetch global.
@@ -185,6 +207,7 @@ export async function listarFerramentasDoServidor(
     timeoutMs,
     (cliente) => cliente.listTools(undefined, { timeout: timeoutMs }),
     opcoes?.fetch,
+    opcoes?.cabecalhos,
   );
   const ferramentas = Array.isArray(resposta?.tools) ? resposta.tools : [];
   return ferramentas
@@ -222,6 +245,7 @@ export async function chamarFerramentaRemota(
     timeoutMs,
     (cliente) => cliente.callTool({ name: nome, arguments: argumentos }, undefined, { timeout: timeoutMs }),
     opcoes?.fetch,
+    opcoes?.cabecalhos,
   )) as {
     content?: Array<{ type?: string; text?: unknown }>;
     isError?: boolean;

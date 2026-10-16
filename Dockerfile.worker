@@ -29,4 +29,13 @@ ENV APP_VERSION=$APP_VERSION
 # Healthz do worker (bind 0.0.0.0 dentro do container).
 EXPOSE 8787
 
-CMD ["pnpm", "exec", "tsx", "workers/agent-worker/main.ts"]
+# O PID 1 é o NODE, não o pnpm (#2823). `pnpm exec` (execa 5) põe DUAS camadas
+# de processo entre o supervisor e o worker, e o execa tem forceKillAfterTimeout
+# de 5000 ms: num `docker stop` com envio em voo, o SIGTERM chega ao wrapper e o
+# tsx é morto à força ~5 s depois — ANTES de gravar o recibo. O job sai de lá
+# `running`/draft sending com o POST já feito. `node --import tsx` registra o
+# loader no PRÓPRIO processo: o sinal cai direto no handler do shutdown, que
+# drena os jobs em curso e sai 0. Não é conserto de prazo: nenhum timeout de
+# supervisor, healthcheck ou stop_grace_period mudou (a issue #2823 proíbe o
+# aumento de timeout como único remédio).
+CMD ["node", "--import", "tsx", "workers/agent-worker/main.ts"]

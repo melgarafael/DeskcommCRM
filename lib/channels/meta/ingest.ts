@@ -40,6 +40,7 @@ import { marcarConversaComMensagem } from "../marcar-conversa";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
 import { nomeDeArquivoLimpo } from "@/lib/messaging/media/nome-de-arquivo";
+import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import type {
   AppContactSyncEvent,
   InboundMessageEvent,
@@ -144,15 +145,31 @@ async function findContactByVariants(
   return encontrarContatoPorTelefone(admin as never, orgId, waId);
 }
 
-/** Prévia curta para a lista de conversas. Mídia vira rótulo, nunca URL. */
+/**
+ * O corpo que a MESMA mensagem grava — é o que o INSERT destas duas funções
+ * escreve em `messages.body`. A prévia lê o mesmo valor, para a igualdade de
+ * prévia das rotas de ocultar/apagar (`app/api/v1/messages/[id]/hide/route.ts` e
+ * `app/api/v1/messages/[id]/route.ts`, que remontam a prévia com
+ * `previaDaMensagem(message.body, message.type)` e comparam com a coluna) fechar.
+ */
+function corpoDaPrevia(e: InboundMessageEvent | OutboundEchoEvent): string | null {
+  return e.type === "contact" ? (e.sharedContact?.name ?? e.text) : e.text;
+}
+
+/**
+ * Prévia curta para a lista de conversas, pela MESMA régua dos outros canais —
+ * `previaDaMensagem` (`lib/messaging/previa-da-mensagem.ts`): texto e legenda até
+ * 280, o nome do tipo em português (`ROTULO_DO_TIPO`) para mídia SEM legenda, e
+ * o cartão vira `Contato: <nome>`.
+ *
+ * A régua local que vivia aqui ("📷 Imagem", "🎵 Áudio") fazia a lista misturar
+ * vocabulários entre canais e — pior — gravava uma prévia que as rotas de
+ * ocultar/apagar não reconheciam: elas reconstroem a prévia com
+ * `previaDaMensagem`, então a igualdade nunca fechava — para mídia com ou sem
+ * legenda, texto acima de 120 caracteres e cartão de contato.
+ */
 function previewOf(e: InboundMessageEvent): string {
-  if (e.type === "text") return (e.text ?? "").slice(0, 120);
-  if (e.type === "contact") return e.sharedContact?.name ? `👤 ${e.sharedContact.name}` : "[contato]";
-  if (e.type === "audio") return e.media?.voice ? "🎤 Mensagem de voz" : "🎵 Áudio";
-  if (e.type === "image") return "📷 Imagem";
-  if (e.type === "video") return "🎬 Vídeo";
-  if (e.type === "document") return "📎 Documento";
-  return `[${e.type}]`;
+  return previaDaMensagem(corpoDaPrevia(e), e.type);
 }
 
 export async function ingestMetaInbound(
@@ -337,15 +354,9 @@ export async function ingestMetaInbound(
   };
 }
 
-/** Prévia do eco: mesma régua da recebida, com a legenda no lugar do texto. */
+/** Prévia do eco: a MESMA régua da recebida (`previaDaMensagem`), com a legenda no lugar do texto. */
 function previewOfEcho(e: OutboundEchoEvent): string {
-  if (e.type === "text") return (e.text ?? "").slice(0, 120);
-  if (e.type === "image") return "📷 Imagem";
-  if (e.type === "video") return "🎬 Vídeo";
-  if (e.type === "document") return "📎 Documento";
-  if (e.type === "audio") return e.media?.voice ? "🎤 Mensagem de voz" : "🎵 Áudio";
-  if (e.type === "contact") return e.sharedContact?.name ? `👤 ${e.sharedContact.name}` : "[contato]";
-  return `[${e.type}]`;
+  return previaDaMensagem(corpoDaPrevia(e), e.type);
 }
 
 /**

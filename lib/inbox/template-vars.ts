@@ -1,4 +1,5 @@
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import type { MidiaDeTemplate } from "@/lib/templates/midias";
 
 /**
  * Interpola variáveis de template com dados do contato da conversa (Onda 5).
@@ -44,6 +45,71 @@ function nomeResolvido(contact: TemplateContact): string {
 export function faltouNomeDeContato(body: string, contact: TemplateContact): boolean {
   if (nomeResolvido(contact) !== "") return false;
   return VARIAVEIS_DE_NOME.some((key) => regexDaVariavel(key).test(body));
+}
+
+/**
+ * Motivo FIXO que acompanha o botão quando a RESPOSTA é barrada pelo curinga
+ * literal (#2744). Um literal, não dois: o gate (a trava de envio) e a faixa
+ * visível leem daqui, e quem vê o motivo vê exatamente a razão pela qual o
+ * código barrou. A faixa é persistente (não o toast que some) porque o operador
+ * precisa editar o texto antes de mandar — e o motivo tem de continuar na tela
+ * enquanto ele edita.
+ */
+export const MOTIVO_CURINGA_LITERAL =
+  "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.";
+
+/**
+ * O motivo pelo qual a RESPOSTA ao cliente não pode sair — `null` quando pode.
+ *
+ * Só a RESPOSTA: a nota interna nunca chega ao cliente e continua sendo o lugar
+ * onde o atendente registra por que a conversa esfriou. É a mesma fronteira do
+ * `janelaFechada` no compositor (#2744, opção A).
+ *
+ * O gate é sobre o literal SOBREVIVENTE, não sobre a string `{{`: contato com
+ * nome (ou `display_name` de gente) não sofre bloqueio nenhum — `{{nome}}`
+ * resolve e some do texto. Chave desconhecida (`{{codigo}}`) também não conta.
+ * Por isso delega para `faltouNomeDeContato`, que já carrega essa regra.
+ */
+export function motivoDoCuringaLiteral(
+  body: string,
+  contact: TemplateContact,
+): string | null {
+  return faltouNomeDeContato(body, contact) ? MOTIVO_CURINGA_LITERAL : null;
+}
+
+/** O que uma resposta rápida guarda além do texto (#2526). */
+export interface RespostaRapida {
+  /**
+   * O `id` do template (linhas de `message_templates`). O payload só lê `body`
+   * e `midias`, mas recebe a linha COMPLETA vind do hook — escondê-lo no
+   * chamador obrigaria a todo mundo a remapear para dentro.
+   */
+  id?: string;
+  body: string;
+  /** `undefined`/`null` em linha antiga e em teste — os dois são "só texto". */
+  midias?: readonly MidiaDeTemplate[] | null;
+}
+
+/**
+ * O PAYLOAD DE USO (#2526): o que a escolha da resposta rápida entrega ao
+ * compositor, pronto para virar uma mensagem editável.
+ *
+ * `texto` é o corpo interpolado — a legenda da PRIMEIRA imagem quando há mídia,
+ * o mesmo contrato do envio de mídia que já existe —, e `midias` são as
+ * imagens que o próprio operador carregou no template, na ordem gravada.
+ *
+ * O `slice` devolve uma lista NOVA de propósito: o compositor embaralha a fila
+ * de envio, e embaralhar a lista do cache do React Query mudaria o que a tela
+ * de templates mostra sem ninguém ter mexido nela.
+ */
+export function payloadDeUso(
+  template: RespostaRapida,
+  contact: TemplateContact,
+): { texto: string; midias: MidiaDeTemplate[] } {
+  return {
+    texto: interpolateTemplate(template.body, contact),
+    midias: [...(template.midias ?? [])],
+  };
 }
 
 export function interpolateTemplate(body: string, contact: TemplateContact): string {

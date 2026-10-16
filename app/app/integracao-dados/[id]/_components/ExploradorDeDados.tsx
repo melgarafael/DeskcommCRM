@@ -43,6 +43,8 @@ type Medidas = Record<string, number>;
 
 interface Props {
   connectionId: string;
+  /** A conexão está em "só o que eu marcar": catálogo vazio quer dizer nada liberado, não banco vazio. */
+  soLiberadas?: boolean;
 }
 
 function celula(valor: unknown): string {
@@ -78,7 +80,7 @@ function lerMedidas(chave: string | null): Medidas {
   }
 }
 
-export function ExploradorDeDados({ connectionId }: Props) {
+export function ExploradorDeDados({ connectionId, soLiberadas = false }: Props) {
   const t = useT();
   const catalogo = useCatalogoExterno(connectionId);
 
@@ -295,7 +297,11 @@ export function ExploradorDeDados({ connectionId }: Props) {
             <p className="p-3 text-sm text-destructive">{t("Não foi possível ler o catálogo.")}</p>
           )}
           {catalogo.isSuccess && porSchema.length === 0 && (
-            <p className="p-3 text-sm text-muted-foreground">{t("Este banco não tem tabelas visíveis.")}</p>
+            <p className="p-3 text-sm text-muted-foreground">
+              {soLiberadas
+                ? t("Nenhuma tabela liberada ainda. Marque acima, em “O que o assistente pode ver”, as que podem ser lidas.")
+                : t("Este banco não tem tabelas visíveis.")}
+            </p>
           )}
           {porSchema.map(([schema, tabelas]) => (
             <div key={schema} className="mb-3">

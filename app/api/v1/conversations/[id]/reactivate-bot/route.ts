@@ -69,6 +69,25 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
         { requestId },
       );
     }
+    // #2379: a marca permanente recusou ANTES de qualquer escrita — nada foi
+    // devolvido, então a mensagem genérica abaixo ("Atendimento devolvido…")
+    // mentiria e convidaria a repetir um gesto que vai recusar de novo.
+    if (resultado.erro === "contato_sempre_humano") {
+      return fail(
+        "state_conflict",
+        t("Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato."),
+        409,
+        { requestId },
+      );
+    }
+    if (resultado.erro === "contact_state_unreadable") {
+      return fail(
+        "internal_error",
+        t("Não foi possível conferir o contato desta conversa — nada foi alterado. Tente de novo."),
+        500,
+        { requestId },
+      );
+    }
     // A devolução em si já aconteceu; o que falhou foi o sinal que retoma um
     // acompanhamento pausado. Repetir a chamada é seguro (tudo é idempotente).
     return fail(

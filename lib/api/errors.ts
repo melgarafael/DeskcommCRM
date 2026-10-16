@@ -163,6 +163,8 @@ export const ApiErrorCodes = {
   documento_invalido: "documento_invalido",
   documento_obrigatorio: "documento_obrigatorio",
   documento_recusado: "documento_recusado",
+  // O cliente no provedor ainda não existe e nenhum admin da empresa tem e-mail (link gerado pelo dono, D-15).
+  empresa_sem_email: "empresa_sem_email",
   // O Asaas recusa trocar o plano com a cobrança do período em uso ainda pendente (spec §6.2, §7e).
   pagamento_do_periodo_pendente: "pagamento_do_periodo_pendente",
   channel_without_session: "channel_without_session", // operação de sessão (reiniciar, parear) pedida a canal que não tem sessão no transporte — o oficial

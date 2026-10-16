@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -96,6 +97,7 @@ interface Props {
 export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
   const t = useT();
   const qc = useQueryClient();
+  const router = useRouter();
   const editando = Boolean(conexao);
 
   const [label, setLabel] = useState(conexao?.label ?? "");
@@ -170,6 +172,7 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
     }
 
     setSalvando(true);
+    let destino: string | null = null;
     try {
       if (editando && conexao) {
         await atualizarConexao(conexao.id, {
@@ -188,7 +191,7 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
         });
         toast.success(t("Conexão atualizada."));
       } else {
-        await criarConexao({
+        const criada = await criarConexao({
           label: parsed.data.label,
           host: parsed.data.host,
           port: parsed.data.port,
@@ -202,10 +205,12 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
           max_response_bytes: parsed.data.max_response_kb * KB,
           ...chaveDoCliente,
         });
-        toast.success(t("Conexão criada. Use Testar para conferir o acesso."));
+        toast.success(t("Conexão criada. Agora escolha o que o assistente pode ler."));
+        destino = `/app/integracao-dados/${criada.id}?fontes=1`;
       }
       await qc.invalidateQueries({ queryKey: conexoesExternasQueryKey });
       onOpenChange(false);
+      if (destino) router.push(destino);
     } catch (err) {
       showApiError(err);
     } finally {

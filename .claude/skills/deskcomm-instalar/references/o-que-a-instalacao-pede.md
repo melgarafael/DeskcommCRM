@@ -48,6 +48,23 @@ Nuvemshop), `IMPERSONATE_COOKIE_SECRET`, `LGPD_SIGNING_KEY`, segredo e chave do 
 SHA-512 que o contêiner exige), token do Redis. Vazios mas preservados: Google Calendar, VAPID (push),
 `APP_LOGO_URL`, gateway de IA.
 
+## Google Calendar e o "Meet com acesso aberto" (issue #2063)
+
+No self-host quem conecta a agenda é o próprio operador, com o app OAuth **dele**. A agenda
+funciona sem mais nada; o que precisa de passo extra é a opção **"Google Meet com acesso
+aberto"** (Configurações › Tipos de agendamento), e ela pede duas coisas no projeto Google Cloud
+da organização:
+
+1. **Meet API habilitada** — `spaces.create` é da API do Meet, não do Calendar.
+2. **Escopo `meetings.space.created` na tela de consentimento** — só ele faz o Google conceder a
+   permissão de criar espaços. Com a opção já ligada, um **reconectar** da agenda (Agenda ›
+   Conectar Google) já pede o escopo sozinho: a tela de consentimento só concede o que estiver
+   escrito nela.
+
+Sem as duas, o Google recusa a criação do espaço aberto e a reunião nasce com o Meet "confiável"
+do Calendar — o link que pede para participar. Nunca sem link: é a escolha declarada do produto
+(#2089). A mesma frase aparece ao lado do interruptor, de quem está configurando.
+
 ## As quatro fases que ele imprime
 
 1. **Preparar o servidor** — ferramentas, Docker (instala se faltar), portas 80/443 livres (teste

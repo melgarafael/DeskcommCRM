@@ -132,7 +132,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const phoneNumber = validacao.displayPhoneNumber
     ? `+${validacao.displayPhoneNumber.replace(/\D/g, "")}`
     : null;
-  const displayName = validacao.verifiedName ?? GRAPH_PARTNER_LABEL;
+  // O nome do provedor só batiza a conexão; depois dela o nome é do operador
+  // (Renomear), e salvar o token de novo não o apaga.
+  const displayName = existente?.displayName || (validacao.verifiedName ?? GRAPH_PARTNER_LABEL);
 
   const { error, channelSessionId } = await saveGraphPartnerSession(admin, {
     organizationId: orgId,

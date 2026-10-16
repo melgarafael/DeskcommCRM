@@ -76,6 +76,8 @@ function montar(props: Partial<React.ComponentProps<typeof TiposDeAgendamentoCli
       podeLigarClientePelaAgenda={false}
       colegasPodemMexerNaAgendaLigado={false}
       podeMudarAgendaDosColegas={false}
+      meetAbertoLigado={false}
+      podeMudarMeetAberto={false}
       {...props}
     />
     </QueryClientProvider>,

@@ -207,6 +207,11 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
   // enquanto ninguém acha nada (#484). Tool sem este campo segue tratando vazio
   // como sucesso — agenda vazia numa janela é resposta, não falha.
   motivoDoVazio: motivoDoVazioDaBusca,
+  // O que a pessoa escreveu vai junto do registro: é o que deixa o painel
+  // contar "não achei POR TERMO" — a lista de compras do dono da loja (issue
+  // #484, caminho 2). O termo já viaja em `args`, mas declarado aqui sobe para
+  // `metadata.termo`, chave única que a leitura no banco lê sem conhecer tool.
+  termoBuscado: (input) => (input.termo.trim().length > 0 ? input.termo.trim() : null),
   handler: async (input, ctx) => {
     // Traz os ativos da org e pontua em memória. A busca por token (palavra
     // difusa, número exato) não é exprimível num `ilike` — e é ela que impede o

@@ -11,9 +11,15 @@
  *  5. Idempotency: insert webhook_events_log; skip if duplicate (already ack'd).
  *  6. Resolve internal contact by Nuvemshop customer id (may be null — L-03).
  *  7. Insert lgpd_requests (due_at = now + 7 BR business days, per L-02).
- *  8. Emit lgpd.data_request_received on event_log for the async export-worker (S-08.04).
- *  9. Audit log (no raw PII — ids only).
- * 10. Return 200 within <5s.
+ *  8. Audit log (no raw PII — ids only).
+ *  9. Return 200 within <5s.
+ *
+ * O pedido NÃO dispara a exportação (doc 134, opção A): ele fica `received` até
+ * um admin clicar "Aprovar export" na tela do pedido, vendo o nome do titular —
+ * é a rota de aprovação que emite `lgpd.data_request_received` para o worker.
+ * O dado vai para o e-mail que veio no payload, e o CRM não confere esse e-mail
+ * nem o casamento do cliente da loja com o contato; quem confere é uma pessoa.
+ * O prazo de D+7 segue cobrado pelo `cron/lgpd-sla-watcher`.
  */
 
 import type { NextRequest, NextResponse } from "next/server";
@@ -255,31 +261,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return fail("internal_error", "lgpd_request_create_failed", 500);
   }
 
-  // 9. Emit lgpd.data_request_received on event_log for async export-worker (S-08.04)
-  const { error: emitErr } = await admin.rpc("emit_event", {
-    p_event_type: "lgpd.data_request_received",
-    p_entity_kind: "lgpd_request",
-    p_entity_id: requestId,
-    p_payload: {
-      request_id: requestId,
-      organization_id: orgId,
-      customer_external_id: customerId,
-      contact_id: contactId,
-      delivery,
-      due_at: dueAt,
-    } as unknown as Record<string, unknown>,
-    p_metadata: { store_id: storeId, due_at: dueAt },
-    p_organization_id: orgId,
-  });
-
-  if (emitErr) {
-    console.error(
-      `[lgpd-customer-data-request] emit_event failed: ${emitErr.message}`,
-    );
-    // Non-blocking — worker can be re-triggered via cron recovery
-  }
-
-  // 10. Audit log — ids only, no raw PII
+  // 9. Audit log — ids only, no raw PII
   await audit({
     action: "lgpd.data_request_received",
     organizationId: orgId,
@@ -296,6 +278,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     },
   });
 
-  // 11. Return 200 (Nuvemshop requires 200 within 5s or retries)
+  // 10. Return 200 (Nuvemshop requires 200 within 5s or retries)
   return ok({ received: true, request_id: requestId });
 }

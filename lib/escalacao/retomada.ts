@@ -28,6 +28,28 @@
  * `force_human` continua **irrevogável pelo agente** (a regra dura do harness):
  * quem chama isto decide devolver, e a tool que expõe esta função ao modelo é
  * marcada como capacidade de risco crítico — não entra ligada por pacote.
+ *
+ * ─── A trava PERMANENTE (issue 2379) ────────────────────────────────────────
+ *
+ * Existe uma segunda marca no contato, `contacts.ai_opt_out` (migration 0624):
+ * "sempre atendimento humano". Ela é separada de `force_human` de propósito —
+ * `force_human` nasce da escalação e morre aqui, e misturar os dois faria toda
+ * escalação automática virar permanente.
+ *
+ * `ai_opt_out` é o pred que este arquivo consulta PRIMEIRO, antes de qualquer
+ * escrita. Com ela ligada, devolver o comando é exatamente o gesto que a
+ * operação pediu para não acontecer: a conversa ficaria com a IA de novo sem
+ * ninguém decidir. Então a função recusa (`erro: "contato_sempre_humano"`) e o
+ * estado volta intacto — silêncio, dono, `force_human` e autorização.
+ *
+ * A leitura sozinha não basta: a marca pode ser ligada entre ela e a escrita.
+ * Por isso a PRIMEIRA escrita é a que limpa `force_human`, e ela carrega a
+ * condição `ai_opt_out = false` no próprio UPDATE. Zero linhas = a marca está
+ * ligada agora, e a função recusa antes de tocar em dono, silêncio ou
+ * autorização. Se um passo seguinte falhar, a trava é restaurada.
+ *
+ * Os dois caminhos passam por aqui: o botão da tela/tool e o cron
+ * `handoff-devolucao` (chama esta MESMA função com `origem.automatica`).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -54,7 +76,21 @@ export type RetomadaFalha =
   /** Alguém assumiu a conversa entre a leitura e a escrita. */
   | "assignment_conflict"
   /** O sinal de retomada do follow-up não foi emitido — ver comentário abaixo. */
-  | "resume_signal_failed";
+  | "resume_signal_failed"
+  /**
+   * Contato marcado "sempre atendimento humano" (`contacts.ai_opt_out`,
+   * migration 0624 / issue 2379). NÃO é falha técnica e NÃO é corrida: é o
+   * estado que a operação pediu, então o chamador loga como recusa esperada
+   * (cron `handoff-devolucao`) em vez de como erro.
+   */
+  | "contato_sempre_humano"
+  /**
+   * A leitura da marca permanente falhou. Fail-closed: sem ler `ai_opt_out` não
+   * dá para provar que a devolução é segura, então nada é escrito — mesmo
+   * custo de um defeito de banco, e nunca o de devolver um contato que pediu
+   * para ficar com humano.
+   */
+  | "contact_state_unreadable";
 
 /**
  * De onde veio a devolução. Ausente = alguém clicou (tela ou tool do agente).
@@ -103,6 +139,51 @@ export async function devolverAtendimentoAoAgente(
   if (!convData) return { ok: false, erro: "conversation_not_found" };
   const conv = convData as unknown as ConversaRow;
 
+  // (0) A TRAVA PERMANENTE (issue 2379) — ANTES de ler continuidade e, sobretudo,
+  // antes de escrever qualquer coisa. `contacts.ai_opt_out` diz que este contato
+  // é de atendimento humano para sempre, e a devolução é justamente o caminho
+  // que antigamente desfazia a marca sem ninguém decidir (o cron automático
+  // chama esta MESMA função). Nada aqui mexe em silêncio, dono, `force_human` nem
+  // autorização: o estado volta intacto e quem chamou decide o que fazer com a
+  // recusa. Fail-closed na leitura: erro de banco não pode virar devolução.
+  let travaEstavaLigada = false;
+  if (conv.contact_id !== null) {
+    const { data: contatoData, error: contatoLeituraErr } = await supabase
+      .from("contacts")
+      .select("ai_opt_out, force_human")
+      .eq("id", conv.contact_id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (contatoLeituraErr) {
+      return { ok: false, erro: "contact_state_unreadable", detalhe: contatoLeituraErr.message };
+    }
+    const contato = contatoData as { ai_opt_out?: boolean; force_human?: boolean } | null;
+    if (contato?.ai_opt_out === true) return recusarSempreHumano(input, conv.contact_id);
+    travaEstavaLigada = contato?.force_human === true;
+
+    // (0b) A trava que ninguém soltava, AGORA a primeira escrita — e condicionada
+    // à marca no MESMO comando. Sem esta linha as outras não servem de nada: os
+    // três guards (worker nativo, harness, before-send) leem `force_human`.
+    // `ai_opt_out` é NOT NULL, então `= false` é o mesmo que `is not true`.
+    const { data: liberado, error: contatoErr } = await supabase
+      .from("contacts")
+      .update({ force_human: false })
+      .eq("id", conv.contact_id)
+      .eq("organization_id", organizationId)
+      .eq("ai_opt_out", false)
+      .select("id")
+      .maybeSingle();
+    if (contatoErr) {
+      logger.error("[escalacao.retomada] force_human não foi limpo", {
+        conversation_id: input.conversationId,
+        error: contatoErr.message,
+      });
+      return { ok: false, erro: "assignment_conflict", detalhe: contatoErr.message };
+    }
+    // Zero linhas: a marca foi ligada depois da leitura acima. Nada mais é escrito.
+    if (!liberado) return recusarSempreHumano(input, conv.contact_id);
+  }
+
   const jaEstavaComOAgente =
     conv.assigned_to_user_id === null &&
     conv.bot_silenced_until === null &&
@@ -131,6 +212,7 @@ export async function devolverAtendimentoAoAgente(
       p_enforce_expected: false,
     });
     if (releaseErr) {
+      await restaurarTrava(deps, conv.contact_id, travaEstavaLigada);
       return { ok: false, erro: "assignment_conflict", detalhe: releaseErr.message };
     }
   }
@@ -157,24 +239,11 @@ export async function devolverAtendimentoAoAgente(
     .is("assigned_to_user_id", null)
     .select("id")
     .maybeSingle();
-  if (updErr) return { ok: false, erro: "assignment_conflict", detalhe: updErr.message };
-  if (!atualizada) return { ok: false, erro: "assignment_conflict" };
-
-  // (3) A trava que ninguém soltava. Sem esta linha as outras duas não servem de
-  // nada: os três guards (worker nativo, harness, before-send) leem daqui.
-  if (conv.contact_id !== null) {
-    const { error: contatoErr } = await supabase
-      .from("contacts")
-      .update({ force_human: false })
-      .eq("id", conv.contact_id)
-      .eq("organization_id", organizationId);
-    if (contatoErr) {
-      logger.error("[escalacao.retomada] force_human não foi limpo", {
-        conversation_id: input.conversationId,
-        error: contatoErr.message,
-      });
-      return { ok: false, erro: "assignment_conflict", detalhe: contatoErr.message };
-    }
+  if (updErr || !atualizada) {
+    await restaurarTrava(deps, conv.contact_id, travaEstavaLigada);
+    return updErr
+      ? { ok: false, erro: "assignment_conflict", detalhe: updErr.message }
+      : { ok: false, erro: "assignment_conflict" };
   }
 
   // (3b) ELEGIBILIDADE: devolver o atendimento à IA é uma decisão humana
@@ -270,6 +339,42 @@ export async function devolverAtendimentoAoAgente(
   });
 
   return { ok: true, conversationId: input.conversationId, jaEstavaComOAgente, continuidade };
+}
+
+function recusarSempreHumano(
+  input: { conversationId: string; origem?: OrigemDaRetomada },
+  contactId: string,
+): RetomadaResultado {
+  logger.info("[escalacao.retomada] devolução recusada: contato é sempre atendimento humano", {
+    conversation_id: input.conversationId,
+    contact_id: contactId,
+    origem: input.origem ? "automatica" : "manual",
+  });
+  return { ok: false, erro: "contato_sempre_humano" };
+}
+
+/**
+ * A devolução falhou depois de limpar `force_human`: a trava volta ao que era.
+ * Devolver metade (conversa com humano e contato destravado) é pior que não
+ * devolver. Falha aqui só loga — o erro original é o que o chamador precisa ver.
+ */
+async function restaurarTrava(
+  deps: RetomadaDeps,
+  contactId: string | null,
+  estavaLigada: boolean,
+): Promise<void> {
+  if (contactId === null || !estavaLigada) return;
+  const { error } = await deps.supabase
+    .from("contacts")
+    .update({ force_human: true })
+    .eq("id", contactId)
+    .eq("organization_id", deps.organizationId);
+  if (error) {
+    logger.error("[escalacao.retomada] force_human não foi restaurado após falha", {
+      contact_id: contactId,
+      error: error.message,
+    });
+  }
 }
 
 /**

@@ -9,12 +9,14 @@ import { ferramentasDeAgendaDoAgente, temFerramentaDeAgenda } from './inbound-tu
 import {
   BEFORE_SEND_GATES,
   evaluateBeforeSend,
+  factualClaimGate,
   type Gate,
   type GateContext,
   type GateTraceEntry,
   loadChannelProvider,
   pacingGate,
 } from '../guardrails/before-send';
+import type { ConferenciaDeFato } from '../guardrails/factual-claim';
 import { loadChannelKnobs, loadPacingState } from '../pacing/store';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
@@ -174,21 +176,33 @@ export const SCENARIO_READS = new Set([
   'crm_search_knowledge',
 ]);
 /**
- * A cadeia do Testar (sandbox): a de produção, com o veto de pacing rebaixado a aviso.
+ * A cadeia do Testar (sandbox): a de produção, com DOIS vetos rebaixados a aviso.
  *
  * Fora da janela de envio, o `pacingGate` impede que a resposta do modelo
  * apareça como candidato de teste. Janela, aquecimento e limite diário protegem
  * o envio real; o sandbox não envia mensagens. Rebaixar somente esse veto a aviso
  * permite inspecionar o candidato e executar os demais gates de conteúdo.
  *
- * Só o pacing muda, e só aqui. Opt-out, LGPD e os gates de conteúdo continuam vetando;
- * o rascunho assistido (`assisted`, contato real) e a produção seguem com
- * `BEFORE_SEND_GATES` intacta. O veto vira linha `skipped: 'sandbox_send_embargo'` no
- * trace e um aviso explícito no resultado — nunca um `pass` silencioso.
+ * #2923: a conferência de fato (`factual_claim`) segue o mesmo raciocínio AQUI.
+ * Ela agora roda também na prévia — é na prévia do modo assistido que o veredito
+ * vira impedimento visível para quem revisa —, e no Teste não há cliente nem
+ * rascunho a caminho: `contradiz`/`nao_esta_na_base` viram AVISO, como o veto de
+ * pacing, em vez de esconder a resposta que o operador está testando.
+ *
+ * Só o pacing e a conferência de fato mudam, e só aqui. Opt-out, LGPD e os gates
+ * de conteúdo continuam vetando; o rascunho assistido (`assisted`, contato real)
+ * e a produção seguem com `BEFORE_SEND_GATES` intacta. O veto vira linha
+ * `skipped: 'sandbox_send_embargo'` no trace e um aviso explícito no resultado —
+ * nunca um `pass` silencioso.
+ *
+ * A comparação é INLINE, e não um `Set` de módulo: há testes que substituem este
+ * módulo inteiro por um dublê (`vi.mock(..., () => ({ runBeforeSend }))`), e ler
+ * `pacingGate.name` no topo do arquivo derrubaria todos eles no import. Aqui a
+ * leitura acontece só quando o Teste de fato avalia a cadeia.
  */
 function gatesDoSandbox(avisos: Array<{ code: string; message: string }>): readonly Gate[] {
   return BEFORE_SEND_GATES.map((gate) =>
-    gate.name !== pacingGate.name
+    gate.name !== pacingGate.name && gate.name !== factualClaimGate.name
       ? gate
       : {
           name: gate.name,
@@ -272,6 +286,15 @@ export function applyPreviewPolicy(
    * teste falha a mídia em vez de aprovar texto com foto pendente.
    */
   prepararMidia?: (codigo: string) => Promise<FotosPreparadas>,
+  /**
+   * #2923 — a MESMA conferência de fato do turno automático
+   * (`criarConferidorDeAfirmacoes`), com as evidências consultadas NESTE turno
+   * da prévia. Sem ela o `evaluateBeforeSend` da prévia recebia o contexto sem
+   * `factualClaim`, e a camada 6.3 nem era avaliada: o rascunho do modo
+   * assistido — justamente o que alguém revisa antes de o cliente receber — saía
+   * com a afirmação de fato sem conferência e sem observação para calibrar.
+   */
+  conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -333,12 +356,24 @@ export function applyPreviewPolicy(
                   });
               }
               const avisos: Array<{ code: string; message: string }> = [];
+              // #2923 — as duas perguntas ao Jev da cadeia (promessa semântica,
+              // F4-02, e conferência de fato, 6.3) saem juntas, como em
+              // `runBeforeSend`: em série a prévia pagaria as duas idas-e-voltas
+              // uma atrás da outra. A conferência é a MESMA do turno automático,
+              // com as evidências consultadas NESTE turno — e é ela que grava a
+              // observação com o rótulo do Jev (na prévia, com o par em aberto:
+              // quem fecha é a resposta aprovada).
+              const [semanticPromise, factualClaim] = await Promise.all([
+                semanticClassifier ? semanticClassifier(body) : Promise.resolve(null),
+                conferirAfirmacoes ? conferirAfirmacoes(body) : Promise.resolve(null),
+              ]);
               const result = evaluateBeforeSend(
                 {
                   ...ctx,
                   ...liveContext?.(),
                   body,
-                  semanticPromise: semanticClassifier ? await semanticClassifier(body) : null,
+                  semanticPromise,
+                  factualClaim,
                 },
                 p.kind === 'sandbox' ? gatesDoSandbox(avisos) : BEFORE_SEND_GATES,
               );

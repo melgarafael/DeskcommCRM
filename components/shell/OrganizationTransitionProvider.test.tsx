@@ -6,7 +6,7 @@
  * ~400 ms antes de a aba principal gravar o aviso do `end()` e só rodou os efeitos
  * ~230 ms depois dele: perdeu o aviso e ficou na organização do suporte (#2471).
  */
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AVISO, OrganizationTransitionProvider } from "./OrganizationTransitionProvider";
 import { notifySupportTransition } from "@/components/app/ImpersonateBanner";
@@ -77,5 +77,60 @@ describe("aviso de troca de acompanhamento dado antes da hidratação", () => {
     montar();
     expect(screen.getByText("Tela")).toBeTruthy();
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+// ─── A aba vizinha: a recarga do evento `storage` abre um documento só ───────
+//
+// No trace do run 38125887558 (#2800), a aba vizinha carregou DUAS vezes
+// depois de sair do acompanhamento (19.565 e 20.186): a recarga disparada
+// pelo evento `storage` abria um documento que, sem carimbo próprio, caía na
+// comparação de relógio e recarregava de novo. `Date.now()` em ms inteiro não
+// separa o início do documento do carimbo — a margem medida foi de −0,2 a
+// 0,00 ms —, o mesmo limite que o #1879 contornou para a aba que grava o
+// aviso via sessionStorage. A vizinha não tinha esse carimbo.
+describe("aba vizinha: a recarga do evento storage abre um documento só", () => {
+  // A produtora do aviso é OUTRA aba. Em jsdom há uma única sessionStorage
+  // compartilhada, então o carimbo que a produtora grava para si (#1879) não
+  // é reproduzível aqui: a visão da vizinha é modelada gravando só o
+  // localStorage, que é o que atravessa abas. A sessionStorage dela fica sem
+  // o carimbo, como no trace.
+  it("o documento aberto pela recarga do evento não recarrega uma segunda vez", () => {
+    const documentoA = montar();
+    const agora = Date.now();
+    const carimbo = String(agora); // a outra aba encerra o acompanhamento
+    localStorage.setItem(AVISO, carimbo);
+    act(() => { window.dispatchEvent(new StorageEvent("storage", { key: AVISO, newValue: carimbo })); });
+    // A recarga legítima acontece uma vez — e a aba marca o carimbo que tratou.
+    expect(reload).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem(AVISO)).toBe(carimbo);
+    documentoA.unmount(); // a recarga troca o documento; a sessionStorage fica
+
+    reload.mockClear();
+    // Documento B, na MESMA aba: começou 0,2 ms ANTES do carimbo — a margem
+    // negativa do trace. Relógio congelado para a conta não derivar.
+    vi.spyOn(performance, "now").mockReturnValue(0.2);
+    vi.spyOn(Date, "now").mockReturnValue(agora);
+    expect(Date.now() - performance.now() - Number(carimbo)).toBeLessThanOrEqual(0);
+    montar();
+    // Sem o carimbo, a comparação de relógio diria "aviso posterior" e B
+    // recarregaria: dois documentos. Com ele, um só.
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("um aviso mais novo, dado depois do tratado, ainda recarrega a aba", () => {
+    const documentoA = montar();
+    const carimbo = String(Date.now());
+    localStorage.setItem(AVISO, carimbo);
+    act(() => { window.dispatchEvent(new StorageEvent("storage", { key: AVISO, newValue: carimbo })); });
+    documentoA.unmount();
+    montar(); // documento B nasce sem recarregar de novo
+
+    reload.mockClear();
+    const carimboNovo = String(Date.now() + 1); // outro encerramento, minutos depois
+    localStorage.setItem(AVISO, carimboNovo);
+    act(() => { window.dispatchEvent(new StorageEvent("storage", { key: AVISO, newValue: carimboNovo })); });
+    // O aviso legítimo continua valendo: tratar um carimbo não cala os próximos.
+    expect(reload).toHaveBeenCalledOnce();
   });
 });

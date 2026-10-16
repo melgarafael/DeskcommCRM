@@ -2,7 +2,7 @@
 /**
  * DOIS EMISSORES, UMA EXPORTAÇÃO (issue #2751).
  *
- * O webhook da Nuvemshop e a aprovação emitem `lgpd.data_request_received` cada
+ * O webhook da Nuvemshop e a aprovação emitiam `lgpd.data_request_received` cada
  * um; com dois drenos (o laço do worker e o cron) os dois eventos podem rodar em
  * PARALELO — e, antes da reivindicação, os dois exportavam: `attempts=2` e dois
  * `lgpd.export_generated` na trilha, com o PDF montado em dobro.
@@ -171,6 +171,9 @@ function pedidoNove(extra: Partial<Pedido> = {}): Pedido {
   };
 }
 
+const ADMIN = "33333333-3333-4333-8333-333333333333";
+
+/** Evento da APROVAÇÃO (o payload que `approve/route.ts` grava) — o único que exporta. */
 function evento(id: string): EventRow {
   return {
     id,
@@ -178,10 +181,24 @@ function evento(id: string): EventRow {
     event_type: "lgpd.data_request_received",
     entity_kind: "lgpd_request",
     entity_id: PEDIDO,
-    payload: { request_id: PEDIDO },
-    metadata: {},
+    payload: {
+      request_id: PEDIDO,
+      manually_approved: true,
+      approved_by: ADMIN,
+      approved_reason: "conferido com o titular",
+    },
+    metadata: { manually_approved: true },
     consumed_by: [],
     attempts: 0,
+  };
+}
+
+/** Evento SEM aprovação — o que o webhook da Nuvemshop emitia até o doc 134. */
+function eventoSemAprovacao(id: string): EventRow {
+  return {
+    ...evento(id),
+    payload: { request_id: PEDIDO, organization_id: ORG, delivery: { method: "email", address: "titular@exemplo.invalid" } },
+    metadata: { store_id: "123" },
   };
 }
 
@@ -209,7 +226,7 @@ beforeEach(() => {
 });
 
 describe("a exportação do titular é reivindicada por pedido (issue #2751)", () => {
-  it("⭐ dois eventos do mesmo pedido (webhook + aprovação) geram UMA exportação", async () => {
+  it("⭐ dois eventos do mesmo pedido (dois cliques, ou retry + clique) geram UMA exportação", async () => {
     const banco = criarBancoFalso([pedidoNove()]);
     d.adminAtual.valor = banco.admin;
 
@@ -340,5 +357,44 @@ describe("a exportação do titular é reivindicada por pedido (issue #2751)", (
     expect(resultado.detail).toBe("already_completed");
     expect(d.renderLgpdPdf).not.toHaveBeenCalled();
     expect(d.sendExportEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("o pedido da Nuvemshop espera a aprovação (doc 134, opção A)", () => {
+  it("⭐ antes da aprovação nada é montado nem enviado; depois do clique, é enviado", async () => {
+    const banco = criarBancoFalso([pedidoNove()]);
+    d.adminAtual.valor = banco.admin;
+
+    // O evento sem a marca da aprovação (o do webhook, ainda na fila de quem
+    // atualiza) é consumido sem efeito: o pedido continua esperando o clique.
+    const antes = await processLgpdExport(eventoSemAprovacao("n1"));
+    expect(antes.status).toBe("skipped");
+    expect(antes.detail).toBe("awaiting_approval");
+    expect(d.collectExportData, "montou o arquivo antes da aprovação").not.toHaveBeenCalled();
+    expect(d.renderLgpdPdf).not.toHaveBeenCalled();
+    expect(d.sendExportEmail, "enviou ao titular antes da aprovação").not.toHaveBeenCalled();
+    expect(banco.efeitos.uploads).toHaveLength(0);
+    expect(banco.pedido().status, "o pedido deixou de esperar o clique").toBe("received");
+    expect(banco.pedido().attempts).toBe(0);
+    expect(banco.pedido().export_claimed_at).toBeNull();
+
+    // O admin aprova: a rota emite o evento com a marca, e o envio acontece.
+    const depois = await processLgpdExport(evento("n2"));
+    expect(depois.status).toBe("ok");
+    expect(d.sendExportEmail).toHaveBeenCalledTimes(1);
+    expect(d.sendExportEmail.mock.calls[0]?.[0]).toMatchObject({ to: "titular@exemplo.invalid" });
+    expect(banco.pedido().status).toBe("completed");
+  });
+
+  it("a marca precisa do autor: manually_approved sem approved_by não exporta", async () => {
+    const banco = criarBancoFalso([pedidoNove()]);
+    d.adminAtual.valor = banco.admin;
+
+    const semAutor = evento("n3");
+    semAutor.payload = { request_id: PEDIDO, manually_approved: true };
+    const resultado = await processLgpdExport(semAutor);
+    expect(resultado.detail).toBe("awaiting_approval");
+    expect(d.sendExportEmail).not.toHaveBeenCalled();
+    expect(banco.pedido().status).toBe("received");
   });
 });

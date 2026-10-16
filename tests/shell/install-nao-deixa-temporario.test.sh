@@ -12,7 +12,8 @@
 # pasta termina VAZIA nas três saídas que existem depois do passo 7:
 #   1. a instalação concluída (a pendência ainda aparece na tela final — o
 #      arquivo não pode sumir ANTES de ser lido);
-#   2. "quase lá — falta o app responder" (o ramo que desliga o trap de saída);
+#   2. "quase lá — falta o app responder" (o ramo que desliga o trap de saída),
+#      e a variante "falta o cadeado", quando o app recusa o certificado do domínio;
 #   3. a morte no meio, depois do passo 7 (o bootstrap do dono falha → `die`).
 # E o inverso: o trap só apaga o que o próprio install.sh criou — um
 # `PENDENCIA_EMAIL` herdado do ambiente sobrevive a uma morte ANTES do passo 7.
@@ -61,6 +62,11 @@ case "$1" in
   compose)
     case "$*" in
       *" exec "*) [ "${APP_DOENTE:-0}" = 1 ] && exit 1
+                  # o corpo que a v1.79.0 devolveu atrás do Coolify antes do certificado sair
+                  if [ "${APP_SEM_CADEADO:-0}" = 1 ]; then
+                    printf 'unhealthy\n{"data":{"status":"unhealthy","checks":{"supabase":{"status":"down","reason":"tls_recusado"}}}}\n'
+                    exit 0
+                  fi
                   printf 'healthy\n{"data":{"status":"healthy"}}\n' ;;
     esac ;;
 esac
@@ -170,6 +176,16 @@ check "saiu com 1 (contrato: automação sabe que não terminou)" [ "$RC" -eq 1 
 check "passou do passo 7 (controle)" passou_do_passo_7
 check "terminou na tela de 'falta o app responder' (controle)" \
   grep -q 'falta o app responder' "$OUT"
+check "nenhum arquivo temporário ficou para trás" vazio
+
+echo
+echo '── 2b. "quase lá" — o cadeado do domínio ainda não saiu (tls_recusado)'
+rodar sem_cadeado APP_SEM_CADEADO=1
+check "saiu com 1 (contrato: automação sabe que não terminou)" [ "$RC" -eq 1 ]
+check "passou do passo 7 (controle)" passou_do_passo_7
+check "a tela fala do cadeado do domínio" grep -q 'falta o cadeado (HTTPS) do seu domínio' "$OUT"
+check "ensina a conferir o 307 no domínio desta instalação" grep -q 'curl -sSI https://crm.exemplo.com.br/app' "$OUT"
+check "não manda procurar chave no .env (a causa não é o .env)" eval '! grep -q "chave faltando ou errada no .env" "$OUT"'
 check "nenhum arquivo temporário ficou para trás" vazio
 
 echo

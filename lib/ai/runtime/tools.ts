@@ -453,6 +453,16 @@ function wrapMcpTool(
         // Só quem declara é afetado: sem `motivoDoVazio` nada muda.
         const motivoDoVazio = def.motivoDoVazio?.(result) ?? null;
 
+        // O TERMO desta chamada, quando a tool declara um (#484, caminho 2).
+        //
+        // É o que deixa a leitura no painel contar "não achei POR TERMO" — a
+        // lista de compras do dono da loja — em vez de só "falhou por tool". O
+        // termo sobe mesmo quando a busca ACHOU: total × falhas por termo é o
+        // sinal que separa "termo difícil" de "termo que não existe", e só as
+        // falhas mostrariam o termo sem a régua dele. Sem `termoBuscado` nada
+        // muda — a chave nem aparece no `metadata` (mesma disciplina do motivo).
+        const termoBuscado = def.termoBuscado?.(argsRecord as never) ?? null;
+
         // Recusa devolvida PELO HANDLER também não é sucesso (#2158): a ficha de
         // outro cliente recusada em `crm_get_contact` volta no mesmo formato da
         // recusa de escrita acima, e entra no audit como ela — `success: false`
@@ -480,6 +490,7 @@ function wrapMcpTool(
           ...(motivoDoVazio === null
             ? {}
             : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
+          ...(termoBuscado === null ? {} : { termo: termoBuscado }),
         });
         return result;
       } catch (err) {
@@ -638,20 +649,36 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         input.servidorMcpExterno.ferramentas,
         ocupados,
         escolhas,
-        // Junta de teste (ver `ServidorMcpExternoMontado.fetch`): em produção
-        // isto vem vazio e a saída usa o guard anti-SSRF.
-        input.servidorMcpExterno.fetch ? { fetch: input.servidorMcpExterno.fetch } : undefined,
+        {
+          // Junta de teste (ver `ServidorMcpExternoMontado.fetch`): em produção
+          // vem vazia e a saída usa o guard anti-SSRF.
+          ...(input.servidorMcpExterno.fetch ? { fetch: input.servidorMcpExterno.fetch } : {}),
+          // A identidade do contato, resolvida no banco por `carregar.ts`.
+          ...(input.servidorMcpExterno.cabecalhos
+            ? { cabecalhos: input.servidorMcpExterno.cabecalhos }
+            : {}),
+        },
       );
+      // O servidor carrega a identidade DESTE contato? Só então a leitura
+      // remota serve a uma conversa.
+      const identificado =
+        input.contatoDoTurno !== undefined &&
+        input.servidorMcpExterno.contato === input.contatoDoTurno;
+      // Com contato, a auditoria da remota leva o `contact_id` da conversa
+      // (`metadata.contact_id`, em `auditMcpToolCall`).
+      const entradaDaRemota = input.contatoDoTurno
+        ? { ...input, ctx: { ...input.ctx, contatoDoTurno: input.contatoDoTurno } }
+        : input;
       for (const def of remotas) {
         // ESCOLHA (b), item 8, em dois níveis. O primeiro é
-        // `carregarServidorMcpExterno`, que não carrega servidor nenhum para
-        // turno com contato — este é o de defesa: se um chamador futuro
-        // passar as duas coisas, a LEITURA remota não monta (o servidor não
-        // recebe o contato do turno e poderia devolver dado de outro cliente)
-        // e a ESCRITA monta para ser RECUSADA logo acima por
-        // `escrita_sem_escopo_do_turno`, nunca executada.
-        if (input.contatoDoTurno && def.category === "read") continue;
-        result[def.name] = wrapMcpTool(def, input, executarEscrita);
+        // `carregarServidorMcpExterno`, que só carrega servidor para turno com
+        // contato quando o agente ligou a opção — este é o de defesa: sem a
+        // identidade do contato amarrada ao servidor, a LEITURA remota não
+        // monta (poderia devolver dado de outro cliente), e a ESCRITA monta
+        // para ser RECUSADA logo acima por `escrita_sem_escopo_do_turno`,
+        // nunca executada — com ou sem identidade.
+        if (input.contatoDoTurno && def.category === "read" && !identificado) continue;
+        result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
       }
     }
   }

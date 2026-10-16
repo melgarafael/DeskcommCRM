@@ -23,12 +23,29 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { apiClient } from "@/lib/api/client";
-import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
+import { useAuth } from "@/hooks/auth/AuthProvider";
+import {
+  followupFlowsListQueryKey,
+  type FollowupFlowPointerRow,
+} from "@/hooks/followup/useFollowupFlows";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
 
 export type ActionItem =
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
   | { type: "send_whatsapp_message"; config: { channel_session_id: string; template: string } }
+  // #2726 — o e-mail de saída: mesmo campo que a irmã de WhatsApp (`assunto`/
+  // `corpo` no lugar do `template`), e `email_fixo` só preenche quando o
+  // destinatário é o endereço gravado na regra.
+  | {
+      type: "send_email";
+      config: {
+        destinatario: "contato" | "dono_do_lead" | "fixo";
+        email_fixo: string;
+        assunto: string;
+        corpo: string;
+        formato: string;
+      };
+    }
   | {
       type: "send_ai_message";
       config: { agent_id: string; channel_session_id: string; instruction: string };
@@ -39,7 +56,10 @@ export type ActionItem =
     }
   | { type: "assign_owner"; config: { user_id: string } }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
-  | { type: "start_message_flow"; config: { flow_pointer_id: string } }
+  | {
+      type: "start_message_flow";
+      config: { flow_pointer_id: string; surface?: "followup" | "atendimento" };
+    }
   // #1540 — o lembrete interno: mesmos campos do schema da API e do nó de fluxo.
   | {
       type: "create_task";
@@ -61,6 +81,13 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
       return { type, config: { pipeline_id: "", stage_id: "" } };
     case "send_whatsapp_message":
       return { type, config: { channel_session_id: "", template: "" } };
+    // #2726 — o e-mail de saída: a MESMA forma que o schema da API exige
+    // (`formato` sempre presente, porque a tela desenha a escolha).
+    case "send_email":
+      return {
+        type,
+        config: { destinatario: "contato", email_fixo: "", assunto: "", corpo: "", formato: "texto" },
+      };
     case "send_ai_message":
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
     case "add_tag":
@@ -70,7 +97,9 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "call_webhook":
       return { type, config: { url: "" } };
     case "start_message_flow":
-      return { type, config: { flow_pointer_id: "" } };
+      // #2647 — o padrão é follow-up, o comportamento de sempre; `atendimento`
+      // é a opção que quem monta a regra escolhe, e só ela muda o caminho.
+      return { type, config: { flow_pointer_id: "", surface: "followup" } };
     // #1540 — o lembrete interno: mesma forma que o schema da API exige.
     case "create_task":
       return {
@@ -233,6 +262,138 @@ function SendWhatsappForm({
           {t("Respeitamos a janela de envio e o limite diário configurados para esse número em Conexões — fora da janela, a mensagem espera a próxima.")}
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Enviar e-mail" (#2726) — quem recebe, o assunto e o corpo.
+ *
+ * O corpo usa o MESMO jogo de variáveis da irmã de WhatsApp (`TEMPLATE_VARS`
+ * + os campos do funil), porque quem montou a regra já escreveu aquela
+ * mensagem e não deve recomeçar: `{{destino}}` resolve igual nos dois canais.
+ *
+ * O que NÃO está aqui de propósito: transporte, credencial e remetente. O
+ * envio sai pelo que já foi configurado em Admin › E-mail (SMTP ou Resend) —
+ * e o aviso embaixo do corpo diz isso, porque sem ele a pessoa procura uma
+ * chave nova que não existe e conclui que a ação não funciona.
+ */
+function SendEmailForm({
+  config,
+  onChange,
+}: FormProps<{
+  destinatario: "contato" | "dono_do_lead" | "fixo";
+  email_fixo: string;
+  assunto: string;
+  corpo: string;
+  formato: string;
+}>) {
+  const t = useT();
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const pipeline = useDefaultPipeline(true);
+  const camposDoFormulario = camposDoFunil(pipeline.data?.pipeline.settings ?? null)
+    .filter((f) => !TEMPLATE_VARS.some((v) => v.token === `{{${f.key}}}`))
+    .map((f) => ({ token: `{{${f.key}}}`, label: f.label }));
+
+  const insertVar = (token: string) => {
+    const el = textareaRef.current;
+    const current = config.corpo;
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    onChange({ ...config, corpo: next });
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label>{t("Destinatário")}</Label>
+          <Select
+            value={config.destinatario}
+            onValueChange={(v) =>
+              onChange({ ...config, destinatario: v as "contato" | "dono_do_lead" | "fixo" })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t("Escolha quem recebe")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="contato">{t("E-mail do contato")}</SelectItem>
+              <SelectItem value="dono_do_lead">{t("E-mail do responsável do negócio")}</SelectItem>
+              <SelectItem value="fixo">{t("Endereço fixo")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>{t("Assunto")}</Label>
+          <Input
+            value={config.assunto}
+            onChange={(e) => onChange({ ...config, assunto: e.target.value })}
+            placeholder={t("Sua viagem para {{destino}}")}
+          />
+        </div>
+      </div>
+      {config.destinatario === "fixo" ? (
+        <div className="space-y-1">
+          <Label>{t("Endereço de e-mail")}</Label>
+          <Input
+            value={config.email_fixo}
+            onChange={(e) => onChange({ ...config, email_fixo: e.target.value })}
+            placeholder="nome@empresa.com"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Um endereço fixo recebe todos os envios desta regra.")}
+          </p>
+        </div>
+      ) : null}
+      <div className="space-y-1">
+        <Label>{t("Corpo do e-mail")}</Label>
+        <div className="flex flex-wrap gap-1">
+          {[...TEMPLATE_VARS, ...camposDoFormulario].map((v) => (
+            <Button
+              key={v.token}
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => insertVar(v.token)}
+            >
+              {v.label}
+            </Button>
+          ))}
+        </div>
+        <Textarea
+          ref={textareaRef}
+          rows={5}
+          value={config.corpo}
+          onChange={(e) => onChange({ ...config, corpo: e.target.value })}
+          placeholder="Oi {{nome}}, tudo bem?"
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>{t("Formato do corpo")}</Label>
+        <Select value={config.formato || "texto"} onValueChange={(v) => onChange({ ...config, formato: v })}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="texto">{t("Texto simples")}</SelectItem>
+            <SelectItem value="html">{t("HTML simples")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          "As variáveis do WhatsApp valem aqui: {{nome}}, {{primeiro_nome}}, {{lead.title}} e os campos do formulário como {{destino}}.",
+        )}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t("O envio usa o e-mail configurado em Admin › E-mail (SMTP ou Resend).")}
+      </p>
     </div>
   );
 }
@@ -553,13 +714,41 @@ function CallWebhookForm({
   );
 }
 
-function StartMessageFlowForm({ config, onChange }: FormProps<{ flow_pointer_id: string }>) {
+/**
+ * `start_message_flow` (#2647) — o seletor ganhou a SUPERFÍCIE do fluxo.
+ *
+ * O padrão é follow-up, que é o que toda regra já gravada aponta: mesma lista,
+ * mesma rota e MESMO caminho de inscrição de antes. Escolher atendimento troca
+ * a lista pela dos roteiros publicados (`?surface=atendimento`) e, na hora de
+ * executar, a ação passa por `iniciarFluxoDeAtendimento` — a entrada da
+ * palavra-gatilho e do roteador.
+ *
+ * Trocar de superfície LIMPA o fluxo escolhido: um id de follow-up não é um
+ * roteiro, e a regra não pode ficar gravada apontando para o outro lado.
+ */
+function StartMessageFlowForm({
+  config,
+  onChange,
+}: FormProps<{ flow_pointer_id: string; surface?: "followup" | "atendimento" }>) {
   const t = useT();
+  const superficie: "followup" | "atendimento" =
+    config.surface === "atendimento" ? "atendimento" : "followup";
+  const ehRoteiro = superficie === "atendimento";
+  // O módulo é opcional por instalação (mesmo padrão do QueueTab): desligado, a
+  // opção some — salvo numa regra que já a grava, para não esconder o que está salvo.
+  const { activeOrg } = useAuth();
+  const roteirosLigados = activeOrg?.modulos_ligados?.includes("fluxos_atendimento") === true;
   const { data, isLoading } = useQuery({
-    queryKey: ["followup", "flows", "list"],
+    // Mesma chave do hook de Follow-ups (com o recorte no fim, como ele faz):
+    // a lista de follow-up continua a de sempre, e a dos roteiros fica separada.
+    queryKey: ehRoteiro
+      ? [...followupFlowsListQueryKey, "atendimento"]
+      : followupFlowsListQueryKey,
     queryFn: async () => {
       const res = await apiClient.get<{ data: FollowupFlowPointerRow[] }>(
-        "/api/v1/ai/followup-flows",
+        ehRoteiro
+          ? "/api/v1/ai/followup-flows?surface=atendimento"
+          : "/api/v1/ai/followup-flows",
       );
       return res.data;
     },
@@ -567,33 +756,71 @@ function StartMessageFlowForm({ config, onChange }: FormProps<{ flow_pointer_id:
   const active = (data ?? []).filter((f) => f.status === "active");
 
   return (
-    <div className="space-y-1">
-      <Label>{t("Fluxo de follow-up")}</Label>
-      <Select
-        value={config.flow_pointer_id}
-        onValueChange={(v) => onChange({ flow_pointer_id: v })}
-        disabled={isLoading}
-      >
-        <SelectTrigger>
-          <SelectValue placeholder={t("Escolha um fluxo publicado")} />
-        </SelectTrigger>
-        <SelectContent>
-          {active.map((f) => (
-            <SelectItem key={f.id} value={f.id}>
-              {f.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {!isLoading && active.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {t("Nenhum fluxo ativo. Publique um follow-up em Follow-ups para usá-lo aqui.")}
-        </p>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {t("Só entram fluxos publicados e ativos.")}
-        </p>
-      )}
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <Label>{t("Tipo de fluxo")}</Label>
+        <Select
+          value={superficie}
+          onValueChange={(v) =>
+            onChange({
+              flow_pointer_id: "",
+              surface: v === "atendimento" ? "atendimento" : "followup",
+            })
+          }
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="followup">{t("Follow-up")}</SelectItem>
+            {roteirosLigados || ehRoteiro ? (
+              <SelectItem value="atendimento">{t("Atendimento")}</SelectItem>
+            ) : null}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label>{ehRoteiro ? t("Fluxo de atendimento") : t("Fluxo de follow-up")}</Label>
+        <Select
+          value={config.flow_pointer_id}
+          onValueChange={(v) => onChange({ ...config, flow_pointer_id: v })}
+          disabled={isLoading}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t("Escolha um fluxo publicado")} />
+          </SelectTrigger>
+          <SelectContent>
+            {active.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {!isLoading && active.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {ehRoteiro
+              ? t(
+                  "Nenhum fluxo de atendimento ativo. Publique um em Fluxos de atendimento para usá-lo aqui.",
+                )
+              : t("Nenhum fluxo ativo. Publique um follow-up em Follow-ups para usá-lo aqui.")}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {t("Só entram fluxos publicados e ativos.")}
+          </p>
+        )}
+        {/* O roteiro não EMPURRA mensagem ao ser aberto: ele vale no próximo
+            turno da conversa. Dizer isso aqui é o que evita quem liga a regra
+            e espera sair uma mensagem na hora. */}
+        {ehRoteiro ? (
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "O roteiro de atendimento acontece na conversa: a automação abre o atendimento e a primeira pergunta sai quando o cliente responder.",
+            )}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -676,6 +903,13 @@ export function ActionConfigForm({
     case "send_whatsapp_message":
       return (
         <SendWhatsappForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "send_email":
+      return (
+        <SendEmailForm
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />

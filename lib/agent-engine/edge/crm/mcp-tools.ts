@@ -62,7 +62,13 @@ export async function buildMcpTurnTools(
    * Obrigatório de propósito: `null` só onde não há cliente (o ensaio do agente);
    * omiti-lo num turno de conversa abriria as leituras escopadas por ele.
    */
-  ids: { organizationId: string; jobId: string; contactId: string | null },
+  ids: {
+    organizationId: string;
+    jobId: string;
+    contactId: string | null;
+    /** A conversa do turno — o canal que o servidor MCP externo recebe (#2147). */
+    conversationId?: string | null;
+  },
   agentConfig: PublishedAgentConfig,
   log: Logger,
   options?: { readOnly: boolean },
@@ -133,14 +139,26 @@ export async function buildMcpTurnTools(
 
   // #2147 — servidor MCP externo registrado pela instalação. `null` SEM REDE
   // quando o agente não escolheu nenhuma remota (item 7) ou quando
-  // `ids.contactId` está presente, turno de conversa (item 8, escolha (b)): o
-  // servidor remoto não recebe o contato do turno, então uma leitura dele
-  // poderia devolver dado de OUTRO cliente ao modelo e do modelo ao contato.
+  // `ids.contactId` está presente, turno de conversa, sem a opção
+  // `mcp_externo_no_atendimento` do agente (item 8, escolha (b)). Ligada, o
+  // servidor recebe a identidade do contato em cabeçalho (ver `carregar.ts`).
   const servidorExterno = await carregarServidorMcpExternoDoTurno(
     cfg.supabase,
     ids.organizationId,
     allowed,
-    { ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}) },
+    {
+      ...(ids.contactId
+        ? {
+            contatoDoTurno: ids.contactId,
+            ...(agentConfig.mcpExternoNoAtendimento === true
+              ? {
+                  noAtendimento: true,
+                  ...(ids.conversationId ? { conversaDoTurno: ids.conversationId } : {}),
+                }
+              : {}),
+          }
+        : {}),
+    },
   );
 
   const tools = pickToolsFromMcp({

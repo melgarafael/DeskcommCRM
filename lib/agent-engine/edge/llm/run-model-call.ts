@@ -216,6 +216,9 @@ export function tetoDeSaida(daOrganizacao: number | undefined, daChamada: number
   return daChamada === undefined ? base : Math.min(base, daChamada);
 }
 
+/** Provedores em que `reasoning: 'none'` foi conferido contra a API real (#2904). */
+const PROVEDORES_COM_RACIOCINIO_NENHUM_MEDIDO: ReadonlySet<string> = new Set(['anthropic', 'openai']);
+
 export interface RunModelCallInput {
   tenantId: string;
   leadId?: string | null;
@@ -260,6 +263,17 @@ export interface RunModelCallInput {
   pararQuando?: () => boolean;
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
+  /**
+   * Raciocínio pedido NESTA chamada, na opção portátil do AI SDK (`reasoning`).
+   * Cada provedor traduz para o seu campo — a Anthropic desliga o `thinking` (ou
+   * baixa o esforço no modelo que não deixa desligar), a OpenAI manda
+   * `reasoning.effort` — então quem chama não nomeia provedor.
+   *
+   * `'none'` é de quem devolve uma palavra (as classificações): o modelo que
+   * pensa antes dela cobra a espera do cliente e os tokens sem ganho. Ausente =
+   * o padrão do modelo, como sempre foi.
+   */
+  reasoning?: 'none';
   /** Cancelamento propagado pelo chamador; a falha continua registrada em llm_calls. */
   abortSignal?: AbortSignal;
   /**
@@ -294,7 +308,7 @@ export interface RunModelCallDeps {
  */
 export type ResultadoDoModeloDoSeam = Pick<
   Awaited<ReturnType<typeof generateText>>,
-  'text' | 'usage' | 'response' | 'responseMessages' | 'steps' | 'toolCalls'
+  'text' | 'usage' | 'response' | 'responseMessages' | 'steps' | 'toolCalls' | 'finishReason'
 >;
 
 /**
@@ -919,8 +933,13 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       let steps: Awaited<typeof streamed.steps>;
       let responseMessages: Awaited<typeof streamed.responseMessages>;
       let toolCalls: Awaited<typeof streamed.toolCalls>;
+      // `finishReason` ('stop' | 'length' | 'tool-calls' | ...). O
+      // ramo da assinatura monta o resultado à mão, então sem ele aqui o campo
+      // FALTARIA no runtime (generateText devolve sozinho) e a detecção de
+      // saída truncada ('length') cegaria exatamente no provedor de assinatura.
+      let finishReason: Awaited<typeof streamed.finishReason>;
       try {
-        [text, usage, response, steps, responseMessages, toolCalls] = await Promise.all([
+        [text, usage, response, steps, responseMessages, toolCalls, finishReason] = await Promise.all([
           streamed.text,
           streamed.usage,
           streamed.response,
@@ -928,6 +947,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
           streamed.responseMessages,
           // Lido por quem pede UMA ferramenta (propostas, valor da conversa).
           streamed.toolCalls,
+          streamed.finishReason,
         ]);
       } catch (erroDoSdk) {
         throw erroOriginalDoStream ?? erroDoSdk;
@@ -946,6 +966,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         responseMessages,
         steps,
         toolCalls,
+        finishReason,
       } satisfies ResultadoDoModeloDoSeam;
       return resultadoDoStream as unknown as Awaited<ReturnType<typeof generateText>>;
     }
@@ -956,6 +977,14 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topP,
       topK,
       maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
+      // Só onde o `'none'` foi aceito pela API real (#2904). Nos de Chat Completions
+      // (OpenRouter, Requesty, personalizado) o SDK manda `reasoning_effort` para
+      // qualquer modelo; no Gemini 2.5 Pro vira `thinkingBudget: 0`, que o Google
+      // documenta como recusado, e no 3.x Pro, `thinkingLevel: "minimal"`. Uma recusa
+      // derrubaria a classificação em todo turno. Entram com a medição deles.
+      ...(input.reasoning !== undefined && PROVEDORES_COM_RACIOCINIO_NENHUM_MEDIDO.has(cfgUsada.provider)
+        ? { reasoning: input.reasoning }
+        : {}),
     });
   };
 

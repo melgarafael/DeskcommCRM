@@ -78,7 +78,7 @@ describe("recibo imutável da origem do evento", () => {
         a.service_revision,
       ]);
       await pool.query("select fn_service_begin($1,$2,$3)", [GOV_ORG, contact, GOV_SESSION]);
-      await expect(resolve(event, contact)).rejects.toMatchObject({ code: "40001" });
+      await expect(resolve(event, contact)).rejects.toMatchObject({ code: "PT409" });
       expect(
         (
           await pool.query("select service_boundary from event_service_origins where event_id=$1", [
@@ -171,7 +171,7 @@ describe("recibo imutável da origem do evento", () => {
       b.service_revision,
     ]);
     await expect(resolve(event, contact, GOV_ORG, channelB)).rejects.toMatchObject({
-      code: "40001",
+      code: "PT409",
     });
     expect(await resolve(event, contact)).toEqual(first);
     const continuation = (
@@ -188,7 +188,7 @@ describe("recibo imutável da origem do evento", () => {
     const childContinuation = (await pool.query("select emit_event('contact.tag_added','contact',$1,$2::jsonb,'{}',$3) id", [contact,JSON.stringify({service_origin:{kind:"event",event_id:continuation,organization_id:GOV_ORG,contact_id:contact}}),GOV_ORG])).rows[0].id;
     await expect(resolve(childContinuation,contact,GOV_ORG,channelB)).rejects.toMatchObject({code:"23503"});
     expect(await resolve(childContinuation,contact)).toEqual(first);
-    await expect(resolve(derivative,contact,GOV_ORG,channelB)).rejects.toMatchObject({code:"40001"});
+    await expect(resolve(derivative,contact,GOV_ORG,channelB)).rejects.toMatchObject({code:"PT409"});
     expect(await resolve(derivative,contact)).toEqual(first);
 
   });
@@ -368,13 +368,13 @@ describe("recibo imutável da origem do evento", () => {
       "update event_log set payload=jsonb_set(payload,'{service_origin,event_id}',to_jsonb($1::text)) where id=$1::uuid",
       [cycle],
     );
-    await expect(resolve(cycle, contact)).rejects.toMatchObject({ code: "40001" });
+    await expect(resolve(cycle, contact)).rejects.toMatchObject({ code: "PT409" });
     await pool.query("select fn_service_status($1,$2,'closed',$3)", [
       GOV_ORG,
       original.conversation_id,
       original.service_revision,
     ]);
     await pool.query("select fn_service_begin($1,$2,$3)", [GOV_ORG, contact, GOV_SESSION]);
-    await expect(resolve(second, contact)).rejects.toMatchObject({ code: "40001" });
+    await expect(resolve(second, contact)).rejects.toMatchObject({ code: "PT409" });
   });
 });

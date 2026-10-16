@@ -190,6 +190,16 @@ describe("toda escrita montável no turno tem o dono de cada identificador decla
       (ESCOPO_DAS_ESCRITAS as Record<string, unknown>).crm_save_org_memory = original;
     }
   });
+
+  // Nome de ferramenta remota (#2147) é escolhido pelo servidor alheio: um que
+  // coincida com propriedade herdada do objeto não pode valer como entrada.
+  it.each(["constructor", "valueOf", "toString", "hasOwnProperty", "__proto__"])(
+    "nome herdado de Object.prototype (%s) é recusado como escrita sem entrada",
+    async (nome) => {
+      const r = await escritaCabeNoTurno({} as never, ORG, DO_TURNO, nome, {});
+      expect(r).toMatchObject({ permitido: false, motivo: "escrita_sem_escopo_do_turno" });
+    },
+  );
 });
 
 describe("forma do valor num campo declarado", () => {
