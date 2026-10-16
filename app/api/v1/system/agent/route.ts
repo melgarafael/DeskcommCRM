@@ -161,15 +161,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     // passos por 15 minutos e o agente nunca ver o pedido. Um estado só, o que
     // o agente executa, não pode divergir do que a tela mostra.
     //
+    // O `to_version` sai junto (#2757): a ordem não é sempre "instale a
+    // última release" — o botão de voltar cria um run cujo alvo é a versão
+    // ANTERIOR, e o agente que instalasse a última publicada estaria
+    // reinstalando justamente a release que quebrou. O agente aplica o `--force`
+    // sozinho, quando o git mostrar que o alvo pedido é mais antigo que o que
+    // já roda aqui; daqui só viaja o alvo.
+    //
     // O índice único parcial `uniq_system_update_runs_dispatched` (migration
     // 0090) garante no máximo 1 linha "dispatched" — mas o `postgrest-js` NÃO
     // lança se, apesar disso, o SELECT achar mais de uma linha: devolve
     // `{ data: null, error: PGRST116 }`. Ler isso como "ninguém pediu" faria o
-    // pedido sumir em silêncio — por isso o erro é checado e vira 500, nunca
-    // um `update_requested: false` otimista.
+    // pedido sumir em silêncio — por isso o erro é checado e vira 500, nunca um
+    // `update_requested: false` otimista.
     const { data: run, error: runLookupError } = await db
       .from("system_update_runs")
-      .select("id, status")
+      .select("id, status, to_version")
       .eq("status", "dispatched")
       .order("dispatched_at", { ascending: false })
       .limit(1)
@@ -182,7 +189,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       return fail("internal_error", "Não consegui checar o pedido de atualização.", 500);
     }
 
-    return ok({ update_requested: Boolean(run), run_id: run?.id ?? null });
+    return ok({
+      update_requested: Boolean(run),
+      run_id: run?.id ?? null,
+      // Vazio = sem alvo nomeado no run (rota anterior a #2757, ou run sem
+      // `to_version`): o agente cai no de sempre, a última release publicada.
+      to_version: run?.to_version ?? "",
+    });
   }
 
   // Erro de leitura ≠ "não existe": sem checar, uma falha de banco viraria 404

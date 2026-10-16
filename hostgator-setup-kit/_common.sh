@@ -1403,6 +1403,134 @@ restaurar_versao_anterior() {  # → 0 sempre (rollback que falha não mata a vo
   return 0
 }
 
+# ── A vigília do app DEPOIS de uma atualização (#2757) ─────────────────────
+#
+# O buraco que isto fecha: o `update.sh` devolve os SERVIÇOS em qualquer
+# saída (o `trap restaurar_servicos`) e o `agent.sh` devolve a IMAGEM quando o
+# run termina com erro — mas os dois dependem de alguém CONSTATAR a falha
+# enquanto ela acontece. Quando o app cai DEPOIS disso, quem mais precisa de
+# saída é justamente o dono com o painel em 502: o botão de voltar não responde
+# porque está dentro do app que parou.
+#
+# O agente é a única peça que roda fora do app (cron de 5 min), então é ele
+# que fica de vigília. Duas marcas em disco, estado da VPS, ao lado do
+# `.update.log` de sempre:
+#
+#   .update-vigia            duas linhas: epoch UTC + a versão de onde se saiu;
+#   .update-vigia-falhas     quantos healthchecks seguidos falharam.
+#
+# O que a vigília NÃO faz: decidir sozinha. Ela só existe enquanto a última
+# transição foi uma atualização (a marca nasce lá) e dentro da janela daqui
+# embaixo — uma queda dias depois não é mais "logo após a atualização", e
+# voltar a versão por conta própria nesse caso deixaria o dono sem saber por
+# que o sistema voltou atrás sozinho.
+VIGIA_ARQUIVO=".update-vigia"
+VIGIA_FALHAS_ARQUIVO=".update-vigia-falhas"
+# Janela de 2 horas = 24 ciclos de cron. Folgada de propósito: uma atualização
+# que derruba o app costuma derrubar na largada (primeiros requests, cron que
+# roda pela primeira vez na versão nova), e o rollback só devolve versão — o
+# banco continua no schema novo, que a versão anterior atende.
+VIGIA_JANELA_SEGUNDOS=$((2 * 60 * 60))
+# N — quantos healthchecks SEGUIDOS precisam falhar antes da volta.
+#
+# Escolhido com os números do próprio kit, não no chute:
+#
+#   * 1 não basta: o cron roda de 5 em 5 minutos e o app REINICIA durante
+#     qualquer atualização (~30–90 s). Uma sonda perdida no reinício é o caso
+#     normal, não defeito — e rollback sobre atualização que deu certo é um
+#     estorno sem motivo.
+#   * 2 é a primeira falha que sobrevive a um intervalo inteiro de cron: ~10
+#     minutos de app fora do ar, medidos de ponta a ponta, e ainda dentro do
+#     que a própria issue chamou de "em até um ciclo do agente".
+#   * 3+ custaria +5 min de apagão real a cada degrau, e nada compra: a
+#     atualização acabou de provar o app saudável (o `wait_app_healthy` do
+#     update.sh), então falha que atravessa duas sondas 5 min separadas é a
+#     release, não um solavanco do Docker.
+VIGIA_FALHAS_SEGUIDAS=2
+
+# A marca que autoriza a volta automática. Chamada pelo `update.sh` no único
+# ponto em que a atualização já se comprometeu (preflight passou) — antes
+# disso nada foi tocado e não há o que desfazer.
+#
+# Só arma com nome de VERSÃO PUBLICADA: instalação fora de release não tem tag
+# para onde voltar, e `update.sh --to <sha>` tentaria puxar uma imagem com o
+# SHA no lugar da versão — o caminho que termina em "não consegui puxar".
+vigia_armar() {  # vigia_armar <versão que estava no ar antes desta atualização>
+  local de="${1:-}" arq tmp
+  [[ "$de" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]] || return 0
+  arq="${PROJECT_DIR:?}/${VIGIA_ARQUIVO}"
+  tmp="${arq}.tmp.$$"
+  printf '%s\n%s\n' "$(date -u +%s)" "$de" > "$tmp" 2>/dev/null || return 0
+  mv "$tmp" "$arq" 2>/dev/null || return 0
+  # Marca nova zera a contagem: as falhas da atualização ANTERIOR não podem
+  # entrar na conta desta.
+  vigia_zerar
+  return 0
+}
+
+# A marca lida. Ecoa a versão para a qual ainda dá para voltar, ou VAZIO.
+#
+# Marca velha (fora da janela) é APAGADA aqui, e não só ignorada: uma marca
+# que sobrevivesse viraria rollback de madrugada sobre uma queda que ninguém
+# relaciona com a atualização de semanas atrás. Quem define a validade é esta
+# função, para todo chamador valer a MESMA janela.
+vigia_ler() {  # ecoa <versão> | vazio
+  local arq="${PROJECT_DIR:?}/${VIGIA_ARQUIVO}" epoch de agora
+  [ -f "$arq" ] || return 0
+  epoch="$(sed -n '1p' "$arq" 2>/dev/null || true)"
+  de="$(sed -n '2p' "$arq" 2>/dev/null || true)"
+  case "$epoch" in ''|*[!0-9]*) vigia_encerrar; return 0 ;; esac
+  [ -n "$de" ] || { vigia_encerrar; return 0; }
+  agora="$(date -u +%s)"
+  if [ $((agora - epoch)) -gt "$VIGIA_JANELA_SEGUNDOS" ]; then
+    vigia_encerrar
+    return 0
+  fi
+  printf '%s' "$de"
+}
+
+# Uma falha a mais. Ecoa o total de falhas SEGUIDAS registrado até agora.
+# `|| true` em tudo: isto roda no caminho de um app fora do ar, em que o disco
+# cheio é justamente uma das causas — a vigência não pode morrer por não
+# conseguir anotar que o app morreu.
+vigia_falhou() {  # ecoa <contador>
+  local arq="${PROJECT_DIR:?}/${VIGIA_FALHAS_ARQUIVO}" n
+  n="$(cat "$arq" 2>/dev/null || true)"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$arq" 2>/dev/null || true
+  printf '%s' "$n"
+}
+
+# O app respondeu: a contagem recomeça. A marca continua de pé — a janela de
+# validade é quem encerra a vigília, não um healthcheck bom isolado.
+vigia_zerar() {
+  rm -f "${PROJECT_DIR:?}/${VIGIA_FALHAS_ARQUIVO}" 2>/dev/null || true
+  return 0
+}
+
+# Fim da vigília (marca + contador), por qualquer motivo.
+vigia_encerrar() {
+  rm -f "${PROJECT_DIR:?}/${VIGIA_ARQUIVO}" "${PROJECT_DIR:?}/${VIGIA_FALHAS_ARQUIVO}" 2>/dev/null || true
+  return 0
+}
+
+# O app está no ar no caminho que o DONO usa?
+#
+# É a mesma rota que o `healthcheck.sh` mostra ( `/api/v1/health`), batida
+# pelo endereço público — e o caminho público entra de propósito: o defeito
+# que a volta automática existe para encerrar é o 502 que o dono vê no
+# navegador, e ele é do app OU do proxy na frente dele; os dois são "o sistema
+# está fora". `--max-time` fecha o outro buraco medido (#1955): um `docker`
+# travado no resolver segurava o diagnóstico para sempre, e um agente preso
+# não vigia nada. 200 = saudável ou degradado (a rota responde 503 quando
+# algum check está down, e a distinção entre as duas não muda a decisão).
+app_esta_no_ar() {
+  local url="${NEXT_PUBLIC_APP_URL:-}"
+  [ -n "$url" ] || return 1
+  curl -sS -f -o /dev/null --max-time 20 "${url%/}/api/v1/health" >/dev/null 2>&1
+}
+
 # ── O diagnóstico que TODO run deixa para trás (#1955, critério 5) ──────────
 #
 # Escrito por um gatilho no TOPO do update.sh (cobre os caminhos que morrem

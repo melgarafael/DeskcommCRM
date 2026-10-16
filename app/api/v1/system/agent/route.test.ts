@@ -129,11 +129,42 @@ describe("POST /api/v1/system/agent", () => {
   });
 
   it("heartbeat responde a ordem pendente e devolve o run", async () => {
-    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    runRow = {
+      id: RUN_ID,
+      status: "dispatched",
+      dispatched_at: new Date().toISOString(),
+      to_version: "v1.1.0",
+    };
     const { POST } = await import("./route");
     const body = await (await POST(req(HEARTBEAT))).json();
     expect(body.data.update_requested).toBe(true);
     expect(body.data.run_id).toBe(RUN_ID);
+  });
+
+  it("o heartbeat entrega o ALVO do run — um 'voltar' não é a última release (#2757)", async () => {
+    // O agente instala o `to_version` do run, e não a última publicada: num
+    // pedido de volta (#2757) o alvo é a versão ANTERIOR, e quem seguisse a
+    // última release estaria reinstalando a release que acabou de quebrar.
+    // Sem este campo na resposta, o agente não tem como saber qual é o alvo.
+    runRow = {
+      id: RUN_ID,
+      status: "dispatched",
+      dispatched_at: new Date().toISOString(),
+      to_version: "v1.0.0",
+    };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.to_version).toBe("v1.0.0");
+  });
+
+  it("run sem to_version (rota anterior a #2757) devolve alvo vazio, nunca a última release", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.update_requested).toBe(true);
+    // Vazio é o sinal para o agente cair no de sempre (`--to <última release>`),
+    // e não uma tentativa de adivinhar o alvo a partir do ambiente.
+    expect(body.data.to_version).toBe("");
   });
 
   it("o run em 'dispatched' basta como pedido — nenhum flag em system_version porteia", async () => {
