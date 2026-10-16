@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { filtrarCandidatosExcluidos } from "@/lib/escalacao/devolucao-ao-rodizio";
 import { logger } from "@/lib/logger";
 import { decideRouting } from "@/lib/routing/decide";
 import { loadEligibleAttendants, InvalidRoutingChannel } from "@/lib/routing/eligibles";
@@ -145,7 +146,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
 
   const { data: conv, error: convError } = await admin
     .from("conversations")
-    .select("id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status")
+    .select("id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata")
     .eq("id", conversationId)
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -195,10 +196,19 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     }
   }
 
+  // A EXCLUSÃO DE 24 H DA DEVOLUÇÃO AO RODÍZIO (issue #2985). Quem recebeu esta
+  // conversa do rodízio e não respondeu no prazo fica fora dela por um dia
+  // (`conversations.metadata.devolucao_ao_rodizio`, escrito pelo cron
+  // `rodizio-devolucao`). Sem este corte, o cron devolveria a conversa e o
+  // próximo tick deste worker a entregaria à MESMA pessoa — numa instalação com
+  // um atendente só, sempre ela. A regra da marca é pura e mora em
+  // `lib/escalacao/devolucao-ao-rodizio.ts`.
+  const elegiveis = filtrarCandidatosExcluidos(eligibles, conv.metadata, now.getTime());
+
   const action = decideRouting({
     mode: config.mode,
     alreadyAssigned,
-    eligibles,
+    eligibles: elegiveis,
     config,
     attempts: event.attempts,
     now,
@@ -209,7 +219,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       const { data: result, error } = await admin.rpc("fn_channel_routing_claim", {
         p_org: orgId, p_conversation: conversationId, p_channel: conv.channel_session_id,
         p_user: action.userId, p_reason: "routing",
-        p_schedule: eligibles.find((candidate) => candidate.userId === action.userId)?.scheduleSnapshot ?? {},
+        p_schedule: elegiveis.find((candidate) => candidate.userId === action.userId)?.scheduleSnapshot ?? {},
       });
       if (error) throw new Error(`fn_channel_routing_claim: ${error.message}`);
       if (result === "already_assigned" || result === "conversation_changed") {
