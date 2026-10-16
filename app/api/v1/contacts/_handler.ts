@@ -31,6 +31,7 @@ import { contactListQuerySchema } from "@/lib/schemas";
 import { arrayDeUmValorParaOr } from "@/lib/inbox/marcador-da-conversa";
 import { buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
 import { padraoRegexDeBusca } from "@/lib/contacts/busca-regex";
+import { defsDoPadraoDaOrg, erroDePadrao, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
 
 type SB = SupabaseClient;
 
@@ -470,6 +471,23 @@ export async function createContactHandler(
   ctx: HandlerCtx,
   input: ContactCreate,
 ): Promise<CreateContactResult> {
+  // ── O PADRÃO (#2730) — a MESMA régua do formulário, aqui no SERVIDOR ──────
+  //
+  // O form é a primeira porta, não a garantia: dá para POSTar direto na API.
+  // As definições vêm de TODOS os funis da organização, porque o CONTATO não
+  // tem funil próprio — a tela lê o padrão (`useDefaultPipeline`) e o servidor,
+  // que não sabe qual é, pergunta a todos.
+  //
+  // Falha de leitura devolve lista vazia e a escrita segue: fail-open da casa
+  // (`settingsDoFunil` faz igual). Cair a rota por um `settings` torto seria
+  // trocar "grava torto" por "não grava nada" — e a régua só tem poder sobre
+  // o que ela consegue LER.
+  if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
+    const defs = await defsDoPadraoDaOrg(supabase, ctx.organization_id);
+    const recusas = recusasDePadrao(defs, input.custom_fields);
+    if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
+  }
+
   const a = actorAuditPayload(ctx.actor);
   const insertRow: Record<string, unknown> = {
     organization_id: ctx.organization_id,
@@ -580,6 +598,17 @@ export async function patchContactHandler(
   contactId: string,
   input: ContactPatch,
 ): Promise<Contact> {
+  // ── O PADRÃO (#2730) ─────────────────────────────────────────────────────
+  // A MESMA régua da criação, com a MESMA leitura (todos os funis: o contato
+  // não tem funil próprio). Roda ANTES de tudo para não pagar o select do
+  // contato nem o audit de uma escrita que já se sabe recusada. PATCH manda só
+  // o que mudou, então só o que chegou é julgado.
+  if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
+    const defs = await defsDoPadraoDaOrg(supabase, ctx.organization_id);
+    const recusas = recusasDePadrao(defs, input.custom_fields);
+    if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
+  }
+
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
     // ⚠️ Os campos sensíveis entram aqui para existir o **`from`** da regra L-06

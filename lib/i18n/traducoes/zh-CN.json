@@ -5645,6 +5645,8 @@
   "é igual a": "等于",
   "é maior que": "大于",
   "Escondido, o campo não aparece no formulário nem é validado como obrigatório, e o valor já gravado continua no registro.": "隐藏时该字段不出现在表单中，也不作为必填校验，已保存的值仍保留在记录里。",
+  "Valor fora do formato esperado para este campo.": "此字段的值不符合预期格式。",
+  "Padrão inválido configurado neste campo: a gravação está bloqueada até a correção.": "此字段配置的格式无效：修正前无法保存。",
   "Etiqueta juntada em": "标签已合并到",
   "as duas etiquetas viraram uma só.": "两个标签已合并为一个。",
   "Este nome já existe no vocabulário — confirmar vai juntar as duas etiquetas numa só.": "该名称已存在于标签词表中 —— 确认后会把两个标签合并为一个。",

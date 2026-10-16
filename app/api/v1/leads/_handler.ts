@@ -20,6 +20,7 @@ import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { valoresAntesDepois } from "@/lib/leads/valores-audit";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import { defsDoPadraoDoFunil, erroDePadrao, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
 import {
   RECUSA_RETOMADA_ETAPA_INDISPONIVEL,
   RECUSA_RETOMADA_LEAD_ABERTO,
@@ -576,6 +577,32 @@ export async function createLeadHandler(
     );
   }
 
+  // As DUAS réguas desta criação leem o MESMO `settings` de funil — os campos
+  // exigidos (#2295, logo abaixo) e o PADRÃO do valor (#2730) — então a linha é
+  // perguntada UMA vez só. E nenhuma quando não há o que perguntar: o webhook de
+  // captação (`exigirCamposDaEtapa: false`) sem `custom_fields` continua sem
+  // tocar em `crm_pipelines`, byte a byte como antes.
+  const settingsDaCriacao =
+    opcoes.exigirCamposDaEtapa !== false ||
+    (input.custom_fields !== undefined && Object.keys(input.custom_fields).length > 0)
+      ? await settingsDoFunil(supabase, input.pipeline_id)
+      : null;
+
+  // ── O PADRÃO (#2730) — o valor do campo tem de CASAR antes de nascer ─────
+  //
+  // A MESMA régua do formulário e da API (`lib/leads/padrao-do-campo`): regex
+  // do `settings.fields[].padrao` com a frase do DONO na recusa. Aqui ela roda
+  // ANTES da régua de campos exigidos, porque é sobre o que já veio escrito —
+  // um "dois" em "Idades das crianças" não é campo faltando, é valor torto.
+  //
+  // Fail-open igual ao resto da casa: `settingsDoFunil` devolve `null` quando a
+  // leitura falha, `defsDoPadraoDoFunil` devolve lista vazia e a criação segue
+  // como hoje — a régua só tem poder sobre o que ela consegue ler.
+  if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
+    const recusas = recusasDePadrao(defsDoPadraoDoFunil(settingsDaCriacao), input.custom_fields);
+    if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
+  }
+
   // ── A ETAPA EM QUE O NEGÓCIO NASCE TAMBÉM É UMA ENTRADA (issue #1710) ──────
   //
   // Criar direto numa etapa exigente é o MESMO gatilho do arrasto: o funil que
@@ -601,7 +628,6 @@ export async function createLeadHandler(
   // leitura falha): um funil sem `obrigatorio_em` valida `faltando: []` e a
   // criação acontece byte a byte como antes — a regra continua opt-in.
   if (opcoes.exigirCamposDaEtapa !== false) {
-    const settingsDaCriacao = await settingsDoFunil(supabase, input.pipeline_id);
     const vereditoDeCampos = validaCamposExigidos({
       lead: { custom_fields: input.custom_fields ?? {} },
       settingsDoFunil: settingsDaCriacao,
@@ -836,6 +862,17 @@ export async function updateLeadHandler(
       ctx.requestId,
       traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // ── O PADRÃO (#2730) — a MESMA régua da criação, na EDIÇÃO ───────────────
+  //
+  // O funil é o do PRÓPRIO negócio (a linha já está em mãos), e o PATCH manda
+  // só o que mudou — então só o que chegou é julgado. `settingsDoFunil` é
+  // fail-open: funil ilegível = lista vazia = grava como hoje.
+  if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
+    const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+    const recusas = recusasDePadrao(defsDoPadraoDoFunil(settingsDoEdicao), input.custom_fields);
+    if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
   }
 
   // Reenviar o contato que o lead já tem não é ligar a um contato novo.

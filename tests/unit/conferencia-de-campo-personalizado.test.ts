@@ -295,7 +295,14 @@ describe("fail-open — tarefa desligada, sem credencial ou provedor fora grava 
     // Sem conferência não há campo removido: a escrita recebe o pedido intacto.
     expect(resultado.custom_fields).toBeUndefined();
     expect(resultado.estado).toBe("desligada");
-    expect(f.lidas).toEqual(["organizations"]);
+    // O DEGRAU 0 (o `padrao` do campo, #2730) lê o funil ANTES de saber que a
+    // tarefa está desligada — é de propósito: o padrão é determinístico e vale
+    // no estado PADRÃO do produto, onde a conferência está desligada. O que este
+    // teste quer provar continua provado: a conversa não é lida e o Jev não é
+    // chamado.
+    expect(f.lidas).toEqual(["organizations", "crm_leads", "crm_pipelines"]);
+    expect(f.lidas).not.toContain("conversations");
+    expect(f.lidas).not.toContain("messages");
     expect(r.chamadas).toHaveLength(0);
   });
 

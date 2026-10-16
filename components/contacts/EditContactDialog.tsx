@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
+import { mensagemDaRecusa, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
 import { contactPatchSchemaDoPais, type ContactPatch } from "@/lib/schemas/contacts";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -75,6 +76,20 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
 
   async function onSubmit(values: FormShape) {
     setServerError(null);
+
+    // ── O PADRÃO (#2730) ──────────────────────────────────────────────────
+    //
+    // A MESMA régua do servidor, mais um portão aqui: o `CustomFieldsEditor`
+    // já avisa conforme se digita, mas o submit é o último degrau antes do 422
+    // da API — e a frase que aparece é a DO CAMPO (`mensagem_padrao`), não
+    // "dados inválidos". Sem `padrao` a lista vem vazia: o campo livre segue
+    // livre, byte a byte, e nada disto acontece.
+    const recusas = recusasDePadrao(customFieldDefs, values.custom_fields);
+    if (recusas.length > 0) {
+      setServerError(mensagemDaRecusa(recusas[0]!, t));
+      return;
+    }
+
     // A MESMA normalização da API (lib/contacts/tag-normalizada): o que a ficha
     // grava é o que o filtro `?tag=` casa (issue #1224).
     const tags = normalizarTags((values.tagsRaw ?? "").split(","));
@@ -153,7 +168,11 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
               />
             </div>
           )}
-          {serverError && <p className="text-sm text-error-fg">{serverError}</p>}
+          {serverError && (
+            <p role="alert" className="text-sm text-error-fg">
+              {serverError}
+            </p>
+          )}
           <DialogFooter>
             <Button
               type="button"

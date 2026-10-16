@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import { camposVisiveis, type MostrarQuando } from "@/lib/schemas/mostrar-quando";
+import { mensagemDoCampo } from "@/lib/leads/padrao-do-campo";
 
 export type CustomFieldType =
   | "text"
@@ -57,6 +58,10 @@ export interface CustomFieldDef {
    * e viaja no save — esconder não é limpar.
    */
   mostrar_quando?: MostrarQuando;
+  /** O FORMATO do valor (#2730) — ver `lib/leads/padrao-do-campo`. */
+  padrao?: string;
+  /** A frase do dono para quem digitar fora do formato (#2730). */
+  mensagem_padrao?: string;
 }
 
 interface Props {
@@ -93,11 +98,36 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
         const v = value[f.key];
         const id = `cf-${f.key}`;
 
+        // ── O PADRÃO DO CAMPO (#2730) ──────────────────────────────────────
+        //
+        // A MESMA régua da API (`422`) e da gravação pela IA (erro de ensino),
+        // decidida em `lib/leads/padrao-do-campo`. Sem `padrao` o veredito é
+        // sempre `ok`: o campo livre continua livre e nada abaixo aparece —
+        // a régua nova só enxerga quem a configurou.
+        //
+        // A frase é a DO CAMPO (`mensagem_padrao`), não uma genérica: quem
+        // digita "dois" em "Idades das crianças" vê a instrução do dono do
+        // funil. Só quando não há instrução é que a genérica (ou a de
+        // CONFIGURAÇÃO quebrada, quando o regex nem compila) entra no lugar.
+        //
+        // Ela fica entre o rótulo e o input — o mesmo lugar do padrão GOV.UK,
+        // onde a mensagem de erro pertence ao rótulo e não ao fim do bloco: em
+        // `md:grid-cols-2` um elemento irmão DEPOIS do input cairia na célula
+        // do campo vizinho.
+        const textoDoErro = mensagemDoCampo(f, v, t);
+
         const labelEl = (
-          <Label htmlFor={id}>
-            {f.label}
-            {f.required && <span className="ml-1 text-error-fg">*</span>}
-          </Label>
+          <>
+            <Label htmlFor={id}>
+              {f.label}
+              {f.required && <span className="ml-1 text-error-fg">*</span>}
+            </Label>
+            {textoDoErro && (
+              <p id={`${id}-erro`} role="alert" className="text-sm text-error-fg">
+                {textoDoErro}
+              </p>
+            )}
+          </>
         );
 
         switch (f.type) {
