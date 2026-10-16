@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { Plus, MagnifyingGlass, UploadSimple, UsersThree } from "@/lib/ui/icons";
+import { Plus, MagnifyingGlass, UploadSimple, UsersThree, ArrowsClockwise } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,7 +25,9 @@ import { BarraDeContatosEmLote } from "@/components/contacts/BarraDeContatosEmLo
 import { PontoDaEtiqueta } from "@/components/tags/PontoDaEtiqueta";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
+import { SyncPhoneContactsDialog } from "@/components/contacts/SyncPhoneContactsDialog";
 import { TAG_DE_CLIENTE } from "@/lib/contacts/cliente";
+import { ORIGEM_AGENDA_DO_CELULAR } from "@/lib/leads/origem-do-contato";
 import { type ModoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
 import { useActiveOrg, usePermission } from "@/hooks/auth/AuthProvider";
 import { MergeDialog } from "@/components/contacts/MergeDialog";
@@ -39,6 +41,7 @@ const SOURCE_OPTIONS = [
   { value: "site", label: "Site (landing page)" },
   { value: "nuvemshop", label: "Nuvemshop" },
   { value: "import_csv", label: "Importado (CSV)" },
+  { value: ORIGEM_AGENDA_DO_CELULAR, label: "Agenda do celular" },
   // Os dois valores que a atribuição de anúncio grava em `contacts.source`
   // (`PlataformaDeAnuncio` em lib/leads/atribuicao-de-anuncio.ts). Sem eles, o
   // contato que veio de um clique em anúncio existe no banco e não é
@@ -70,6 +73,7 @@ export function ContactsListClient() {
   const [limit, setLimit] = useState<number>(25);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [duplicadosOpen, setDuplicadosOpen] = useState(false);
 
   useEffect(() => {
@@ -160,10 +164,13 @@ export function ContactsListClient() {
         </div>
         {/*
           A estrutura é a da main (o "Importar CSV" do PR #313); o `shrink-0`
-          vem do PR #267, e vale para os DOIS botões agora: numa tela de 390px
-          uma linha de dois botões sem isso comprime os rótulos.
+          vem do PR #267, e vale para os botões agora: numa tela de 390px uma
+          linha de botões sem isso comprime os rótulos. Com o quarto botão
+          (#2736), o `flex-wrap` é o que impede a fileira de estourar o
+          cabeçalho — as etiquetas ficam inteiras e a segunda linha alinha à
+          direita.
         */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {/*
             A porta do recurso de duplicados fica AQUI, na tela que já existe, e
             não num item de menu novo: quem descobre que tem contato repetido
@@ -177,6 +184,17 @@ export function ContactsListClient() {
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <UploadSimple size={16} weight="bold" aria-hidden />
             <span>{t("Importar CSV")}</span>
+          </Button>
+          {/*
+            O lado de cá do mesmo gesto (#2736): a base que a equipe já tem
+            mora na agenda do celular pareado, e ela não passa por CSV nenhum.
+            Colado ao "Importar CSV" de propósito — os dois são "trazer base de
+            fora", e separá-los em cantos diferentes da tela faria cada um
+            parecer um recurso que o outro não é.
+          */}
+          <Button variant="outline" onClick={() => setSyncOpen(true)}>
+            <ArrowsClockwise size={16} weight="bold" aria-hidden />
+            <span>{t("Sincronizar agenda")}</span>
           </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus size={16} weight="bold" aria-hidden />
@@ -412,6 +430,7 @@ export function ContactsListClient() {
 
       <NewContactDialog open={createOpen} onOpenChange={setCreateOpen} />
       <ImportContactsDialog open={importOpen} onOpenChange={setImportOpen} />
+      <SyncPhoneContactsDialog open={syncOpen} onOpenChange={setSyncOpen} />
       <MergeDialog open={duplicadosOpen} onOpenChange={setDuplicadosOpen} />
     </div>
   );

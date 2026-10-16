@@ -8760,6 +8760,30 @@ export const DICIONARIO: Traducoes = {
     es: "Customer 360 — busca, filtra y gestiona contactos.",
   },
   "Importar CSV": { es: "Importar CSV" },
+  // ── Sincronizar agenda do celular (#2736) ─────────────────────────────────
+  "Sincronizar agenda": { es: "Sincronizar agenda" },
+  "Sincronizar agenda do celular": { es: "Sincronizar la agenda del celular" },
+  "Sincronizar de novo": { es: "Sincronizar de nuevo" },
+  "contato(s) sincronizado(s)": { es: "contacto(s) sincronizado(s)" },
+  "contato(s) já existente(s) — nada duplicado": { es: "contacto(s) ya existente(s) — nada duplicado" },
+  "contato(s) com erro na gravação": { es: "contacto(s) con error al guardar" },
+  "lido(s) no aparelho": { es: "leído(s) en el aparato" },
+  "ignorado(s)": { es: "ignorado(s)" },
+  "Não foi possível ler a agenda do celular.": { es: "No fue posible leer la agenda del celular." },
+  "Não foi possível carregar seus números conectados.": { es: "No fue posible cargar tus números conectados." },
+  "Nenhum número conectado. Conecte um número em Conexões para sincronizar a agenda.": {
+    es: "Ningún número conectado. Conecta un número en Conexiones para sincronizar la agenda.",
+  },
+  "Importa para o CRM os contatos salvos na agenda do aparelho conectado. Números que já estão no CRM não viram duplicata. Se o aparelho tiver mais contatos que o teto de uma sincronização, clique de novo para continuar de onde parou.": {
+    es: "Importa al CRM los contactos guardados en la agenda del aparato conectado. Los números que ya están en el CRM no se duplican. Si el aparato tiene más contactos que el tope de una sincronización, haz clic de nuevo para continuar donde ibas.",
+  },
+  "A sincronização bateu no teto de uma passada. Clique em Sincronizar de novo para continuar — o que já entrou não duplica.": {
+    es: "La sincronización llegó al tope de una pasada. Haz clic en Sincronizar de nuevo para continuar — lo que ya entró no se duplica.",
+  },
+  "Isto traz todos os contatos salvos no celular, inclusive os pessoais. Só mande campanha a quem autorizou receber.": {
+    es: "Esto trae todos los contactos guardados en el celular, incluidos los personales. Solo envía campañas a quien autorizó recibirlas.",
+  },
+  "Agenda do celular": { es: "Agenda del celular" },
   // ── Juntar contatos duplicados ──────────────────────────────────────────
   "Duplicados": { es: "Duplicados" },
   "Contatos duplicados": { es: "Contactos duplicados" },

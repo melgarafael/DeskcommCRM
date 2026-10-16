@@ -30,6 +30,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "full",
     costPerMessage: false,
     alteraMensagemEnviada: true,
+    // É a linha que conversa com um APARELHO pareado: a agenda salva no
+    // celular está lá dentro, e o `contacts/all` a devolve paginada (#2736).
+    phonebook: true,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -44,6 +47,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -78,6 +84,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "none",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -89,6 +98,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -109,6 +121,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
 };
 

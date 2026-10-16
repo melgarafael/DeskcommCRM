@@ -30,6 +30,13 @@
  * vai procurar um defeito que não há.
  */
 
+/**
+ * `contacts.source` de quem entrou pelo "Sincronizar agenda do celular" (#2736).
+ * Mora aqui, e não no serviço da agenda, porque a ficha e o filtro de origem
+ * (telas de cliente) também a leem, e aquele módulo é de servidor.
+ */
+export const ORIGEM_AGENDA_DO_CELULAR = "whatsapp_agenda";
+
 /** As chaves que respondem "de onde veio", antes de cair na coluna `source`. */
 const CHAVES_DA_ORIGEM = ["utm_source", "ad_platform"] as const;
 

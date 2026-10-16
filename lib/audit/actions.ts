@@ -1160,6 +1160,10 @@ export const AUDIT_ACTIONS = [
   // `removidas` no metadata) ou dentro do `template.deleted`, que são os atos
   // em que a imagem sai de fato.
   "template.media_added",
+  // "Sincronizar agenda do celular" (#2736): o gesto de IMPORTAR em bloco a
+  // agenda do aparelho pareado — mesmo porquê do `contacts.imported` de planilha
+  // ("quem trouxe esta base, e quando"), agora com o número de qual conexão veio.
+  "contacts.synced_from_phone",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
