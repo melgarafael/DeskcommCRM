@@ -21,8 +21,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     orientation: "any",
     categories: ["business", "productivity"],
     icons: [
-      { src: `/app-icon/192${versao}`, sizes: "192x192", type: "image/png", purpose: "any maskable" },
-      { src: `/app-icon/512${versao}`, sizes: "512x512", type: "image/png", purpose: "any maskable" },
+      { src: `/app-icon/192${versao}`, sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: `/app-icon/512${versao}`, sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
       {
