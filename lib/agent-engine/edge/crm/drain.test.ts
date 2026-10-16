@@ -459,3 +459,45 @@ it("anti-backlog: ordena a última inbound por coalesce(sent_at, created_at), n�
   expect(consultaUltima).toContain('coalesce(sent_at, created_at) desc');
   expect(consultaUltima).not.toContain('nulls last');
 });
+
+/**
+ * #2729 — a segunda camada da regra nº 12: o skip do grupo continua sendo a
+ * primeira coisa depois do run-lock, e ele só abre para a chave POR GRUPO
+ * `ia_responde = true`. `false`, `null` (linha gravada por uma versão anterior,
+ * coluna ainda nula) ou coluna que nem veio no SELECT continuam pulando — falha
+ * fechada. A primeira camada é o evento à parte `message.group_received`, que
+ * este arquivo não toca.
+ */
+it('#2729: grupo só passa pela guarda do engine quando a chave por grupo libera a IA', async () => {
+  const chamadas = async (grupo: { is_group: boolean; ia_responde: boolean | null }) => {
+    const calls: string[] = [];
+    const query = (sql: string) => {
+      calls.push(sql);
+      if (sql.includes('returning e.id')) return { rows: [event] };
+      if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
+      if (sql.includes('is_group')) return { rows: [grupo] };
+      if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+      return { rows: [] };
+    };
+    await drainTick({ query } as unknown as pg.Pool, knobs, log);
+    return calls;
+  };
+
+  const desligada = await chamadas({ is_group: true, ia_responde: false });
+  expect(
+    desligada.some((s) => s.includes('tem_agente')),
+    'chave desligada: o grupo tem de ser pulado antes da capacidade da sessão',
+  ).toBe(false);
+
+  const nula = await chamadas({ is_group: true, ia_responde: null });
+  expect(nula.some((s) => s.includes('tem_agente'))).toBe(false);
+
+  const ligada = await chamadas({ is_group: true, ia_responde: true });
+  expect(
+    ligada.some((s) => s.includes('tem_agente')),
+    'chave ligada: a guarda abre e o turno segue o caminho normal',
+  ).toBe(true);
+
+  const individual = await chamadas({ is_group: false, ia_responde: null });
+  expect(individual.some((s) => s.includes('tem_agente'))).toBe(true);
+});

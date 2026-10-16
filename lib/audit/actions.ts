@@ -1138,6 +1138,15 @@ export const AUDIT_ACTIONS = [
   // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
   // então o audit é a única trilha de quem mudou o dono.
   "contact.carteira_changed",
+  // A chave POR GRUPO "Permitir que a IA responda neste grupo" (#2729,
+  // migration 0653). Duas ações, e não `channel.group_enabled` com um campo no
+  // metadata: ligar o grupo (entrar na inbox, mexer no filtro do WhatsApp) e
+  // ligar a IA (passar a responder) são decisões opostas de custos opostos, e
+  // o painel de auditoria filtra por `action`, nunca por metadata — "quem
+  // deixou a IA falar neste grupo, e quando" precisa de filtro próprio para
+  // ser respondida sem vasculhar metadados.
+  "channel.group_ai_enabled",
+  "channel.group_ai_disabled",
   // Marca permanente "sempre atendimento humano" (issue 2379): `ai_opt_out`
   // ligado na ficha do contato — a devolução (manual ou automática) não a desfaz.
   "contacts.always_human_marked",

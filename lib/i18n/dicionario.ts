@@ -6495,8 +6495,11 @@ export const DICIONARIO: Traducoes = {
   "O WhatsApp não confirmou a mudança. Nada foi alterado; tente de novo.": {
     es: "WhatsApp no confirmó el cambio. No se alteró nada; inténtalo de nuevo.",
   },
-  "Grupos ligados aparecem no chat para os atendentes responderem. A IA nunca responde em grupo.": {
-    es: "Los grupos activados aparecen en el chat para que los agentes respondan. La IA nunca responde en un grupo.",
+  "Grupos ligados aparecem no chat para os atendentes responderem. A IA só responde em grupo quando você liberar a chave de cada grupo.": {
+    es: "Los grupos activados aparecen en el chat para que los agentes respondan. La IA solo responde en un grupo cuando habilitas la llave de cada grupo.",
+  },
+  "Permitir que a IA responda neste grupo": {
+    es: "Permitir que la IA responda en este grupo",
   },
   "Atualizar lista": { es: "Actualizar lista" },
   "Ligar mesmo assim": { es: "Activar de todos modos" },
