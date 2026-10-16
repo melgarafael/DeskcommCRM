@@ -60,7 +60,12 @@ async function clienteDeServidor(sameSite: "strict" | "lax") {
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
+              cookieStore.set(name, value, {
+                ...options,
+                sameSite: "lax",
+                path: "/",
+                maxAge: options?.maxAge ?? 60 * 60 * 24 * 7,
+              });
             });
           } catch {
             // setAll pode ser chamado de Server Component; nesse caso, ignoramos.
@@ -74,7 +79,7 @@ async function clienteDeServidor(sameSite: "strict" | "lax") {
 }
 
 export async function createClient() {
-  return clienteDeServidor("strict");
+  return clienteDeServidor("lax");
 }
 
 /**

@@ -237,8 +237,8 @@ export function ConversationHeader({
     // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
     <div className={cn(
-      "flex items-center justify-between gap-2 border-b border-border bg-background transition-all",
-      recolhido ? "px-3 py-1.5 sm:px-4 sm:py-2" : "flex-wrap px-3 py-2 sm:gap-3 sm:px-4 sm:py-3"
+      "flex flex-col border-b border-border bg-background transition-all max-w-full overflow-hidden",
+      recolhido ? "px-3 py-1.5 sm:px-4 sm:py-2" : "px-3 py-2 sm:px-4 sm:py-2.5"
     )}>
       {/* FAIXA DA CARTEIRA (#2591, regra 2): "este cliente pertence à carteira de
           A". `w-full` a põe numa linha própria acima da identidade, sem disputar
@@ -247,83 +247,99 @@ export function ConversationHeader({
       {c?.id && (
         <FaixaDaCarteira contactId={c.id} quemAtendeId={conversation.assigned_to_user_id} />
       )}
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <ChannelLogo channel={conversation.channel_sessions} size={20} />
-          <h2 className="min-w-0 truncate text-sm font-semibold" title={displayName}>{displayName}</h2>
-          <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px]">
-            {t(STATUS_LABEL[status] ?? status)}
-          </Badge>
-          {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
-              escrever agora?" se faz ANTES de digitar, não depois de receber um
-              `failed` com um código de cinco dígitos. */}
-          <JanelaSelo
-            provider={conversation.channel_sessions?.provider ?? null}
-            lastInboundAt={conversation.last_inbound_at}
-          />
-          {/* #2383: O CANAL DESTA CONVERSA, NO CABEÇALHO — a acepção que faltava
-              da issue: a lista já dizia por onde a conversa entrou, a conversa
-              ABERTA não dizia. O logo ao lado nomeia o provedor, não o número:
-              com "Peças" e "Vendas" conectados, ele é idêntico nos dois casos.
 
-              O TEXTO é o mesmo da lista e da tela `/app/connections`
-              (`rotuloDoCanalDaConversa` → `nomeDoCanal`): uma segunda cadeia de
-              regras aqui seria como as leituras de "quem manda" divergiram —
-              três telas, um fato, uma fonte.
-
-              `max-w` + `truncate` respondem ao critério de aceite "layout
-              utilizável com nomes de canal maiores": o badge encolhe e o `title`
-              devolve o texto inteiro. Sem canal (grupo, conversa sem sessão,
-              não-WA) não há rótulo nenhum e esta barra fica exatamente como
-              estava — o badge é acréscimo, não substituição. */}
-          {rotuloCanal && (
-            <Badge
-              variant="outline"
-              className="h-4 min-w-0 max-w-[9rem] truncate px-1.5 text-[10px]"
-              title={`${t("Entrou por")} ${rotuloCanal}`}
-              data-testid="canal-da-conversa"
-            >
-              <span className="truncate">{rotuloCanal}</span>
+      {/* LINHA SUPERIOR: Identidade do contato à esquerda e Botões Fixos de Controle à direita */}
+      <div className="flex items-center justify-between gap-2 min-w-0 w-full">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <ChannelLogo channel={conversation.channel_sessions} size={20} />
+            <h2 className="min-w-0 truncate text-sm font-semibold" title={displayName}>{displayName}</h2>
+            <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px]">
+              {t(STATUS_LABEL[status] ?? status)}
             </Badge>
-          )}
+            <JanelaSelo
+              provider={conversation.channel_sessions?.provider ?? null}
+              lastInboundAt={conversation.last_inbound_at}
+            />
+            {rotuloCanal && (
+              <Badge
+                variant="outline"
+                className="h-4 min-w-0 max-w-[9rem] truncate px-1.5 text-[10px]"
+                title={`${t("Entrou por")} ${rotuloCanal}`}
+                data-testid="canal-da-conversa"
+              >
+                <span className="truncate">{rotuloCanal}</span>
+              </Badge>
+            )}
+          </div>
+
+          <div className="mt-1 flex items-center gap-2" data-testid="comando-da-conversa">
+            {comando.quem === "humano" ? (
+              <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} />
+            ) : comando.quem === "automatico" ? (
+              <OwnerBadge ownerKind="ai" ownerName={t("Automático")} />
+            ) : (
+              <OwnerBadge ownerKind={null} ownerName={null} />
+            )}
+            {phone && (
+              <p className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
+                <Phone size={11} weight="regular" aria-hidden /> {phone}
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
-            pessoa, anel vazado para o automático. É o mesmo componente do card do
-            funil e do dossiê: um terceiro jeito de dizer "quem manda", por cor ou
-            por texto, faria a mesma pergunta ter três respostas diferentes na
-            mesma tela. Cor não sobrevive ao daltonismo nem ao teste do metro. */}
-        <div className="mt-1 flex items-center gap-2" data-testid="comando-da-conversa">
-          {comando.quem === "humano" ? (
-            <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} />
-          ) : comando.quem === "automatico" ? (
-            <OwnerBadge ownerKind="ai" ownerName={t("Automático")} />
-          ) : (
-            // `ninguem`, `aguardando` e `encerrada` sem dono caem aqui: o disco
-            // TRACEJADO do OwnerBadge, que é como o funil já desenha "ninguém".
-            <OwnerBadge ownerKind={null} ownerName={null} />
+        {/* CONTROLES FIXOS (Ocultar Ficha e Seta de Recolher) — SEMPRE visíveis e nunca empurrados para trás da ficha */}
+        <div className="flex items-center gap-1 shrink-0 ml-2 z-10">
+          {onToggleFicha && (
+            <Button
+              size="sm"
+              variant={fichaRecolhida ? "default" : "outline"}
+              className={cn(
+                "h-8 gap-1.5 px-2 text-xs font-medium shrink-0 hidden xl:flex transition-colors",
+                fichaRecolhida
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-border/80"
+              )}
+              onClick={onToggleFicha}
+              title={fichaRecolhida ? t("Mostrar ficha do contato") : t("Ocultar ficha do contato")}
+              aria-label={fichaRecolhida ? t("Mostrar ficha do contato") : t("Ocultar ficha do contato")}
+            >
+              <IdentificationCard size={16} />
+              <span className="hidden 2xl:inline">{fichaRecolhida ? t("Ver ficha") : t("Ocultar ficha")}</span>
+            </Button>
           )}
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0 text-muted-foreground hover:bg-accent hover:text-foreground shrink-0 rounded-md transition-colors"
+            onClick={alternarRecolhido}
+            title={recolhido ? t("Expandir ações do atendimento") : t("Recolher ações do atendimento")}
+            aria-label={recolhido ? t("Expandir ações do atendimento") : t("Recolher ações do atendimento")}
+            aria-expanded={!recolhido}
+            data-testid="botao-recolher-cabecalho"
+          >
+            {recolhido ? (
+              <CaretDown size={18} weight="bold" aria-hidden />
+            ) : (
+              <CaretUp size={18} weight="bold" aria-hidden />
+            )}
+          </Button>
         </div>
-        {phone && (
-          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
-            <Phone size={11} weight="regular" aria-hidden /> {phone}
-          </p>
-        )}
       </div>
 
-      {/* `shrink-0` saiu daqui: era ele que impunha o piso de largura. Agora a
-          barra pode encolher e quebrar internamente, e os botões continuam
-          todos visíveis e clicáveis — só que em duas linhas quando preciso.
-          Esta coluna existe para o selo do automático morar ABAIXO da barra
-          (#1625): na linha do nome ele alargava a identidade e empurrava a
-          barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
-          motivo da barra. */}
-      <div className="flex items-center gap-1 shrink-0">
-        {!recolhido && (
-          <div className="flex min-w-0 flex-col items-end gap-1 max-md:w-full max-md:items-stretch">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:[&>*]:shrink-0">
-              {/* Etapa do Funil direta no cabeçalho */}
+      {/* BARRA DE AÇÕES DO ATENDIMENTO (expansível/recolhível) */}
+      {!recolhido && (
+        <div className="mt-2 pt-1.5 border-t border-border/40 flex flex-col gap-1 w-full min-w-0">
+          <div className="flex min-w-0 flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+            {/* Etapa do Funil direta no cabeçalho */}
+            <div className="shrink-0">
               <EtapaDoFunilHeader contactId={c?.id} />
+            </div>
+
+            {/* Ações operacionais */}
+            <div className="flex items-center gap-1.5 shrink-0 flex-nowrap overflow-x-auto">
         {/* Primeira da barra e sem rótulo escrito: é ferramenta de LEITURA, não
             ação de atendimento, e não muda de lugar com o estado da conversa.
             Só o ícone porque a barra já quebrou a caixa útil em 1280px uma vez
@@ -534,57 +550,16 @@ export function ConversationHeader({
             </Link>
           </Button>
         )}
-      </div>
-        {/* O aviso pertence à operação automática. Abaixo da barra ele não
-            alarga a ficha do contato nem muda a posição dos botões.
-            Sem esta marca, a conversa em que o robô está calado tem exatamente
-            a mesma cara de uma conversa normal. O testid é contrato:
-            `escalacao-ciclo.spec.ts` o clica. */}
-        {motivo !== null && (
-          <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
-            title={t(ROTULO_DO_MOTIVO[motivo])} data-testid="badge-atendimento-humano">
-            {t(ROTULO_DO_MOTIVO[motivo])}
-          </Badge>
-        )}
-      </div>
-    )}
-
-        {onToggleFicha && (
-          <Button
-            size="sm"
-            variant={fichaRecolhida ? "default" : "ghost"}
-            className={cn(
-              "h-8 gap-1.5 px-2 text-xs font-medium shrink-0 hidden xl:flex transition-colors",
-              fichaRecolhida
-                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
-            )}
-            onClick={onToggleFicha}
-            title={fichaRecolhida ? t("Mostrar ficha do contato") : t("Ocultar ficha do contato")}
-            aria-label={fichaRecolhida ? t("Mostrar ficha do contato") : t("Ocultar ficha do contato")}
-          >
-            <IdentificationCard size={16} />
-            <span className="hidden 2xl:inline">{fichaRecolhida ? t("Ver ficha") : t("Ocultar ficha")}</span>
-          </Button>
-        )}
-
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 p-0 text-muted-foreground hover:bg-accent hover:text-foreground shrink-0 rounded-md transition-colors"
-          onClick={alternarRecolhido}
-          title={recolhido ? t("Expandir ações do atendimento") : t("Recolher ações do atendimento")}
-          aria-label={recolhido ? t("Expandir ações do atendimento") : t("Recolher ações do atendimento")}
-          aria-expanded={!recolhido}
-          data-testid="botao-recolher-cabecalho"
-        >
-          {recolhido ? (
-            <CaretDown size={18} weight="bold" aria-hidden />
-          ) : (
-            <CaretUp size={18} weight="bold" aria-hidden />
+            </div>
+          </div>
+          {motivo !== null && (
+            <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
+              title={t(ROTULO_DO_MOTIVO[motivo])} data-testid="badge-atendimento-humano">
+              {t(ROTULO_DO_MOTIVO[motivo])}
+            </Badge>
           )}
-        </Button>
-      </div>
+        </div>
+      )}
       <ReassignDialog
         conversationId={conversation.id}
         open={reassignOpen}
