@@ -26,7 +26,7 @@ import { toast } from "sonner";
 import { archiveAgentAction } from "../_actions";
 import { AgentRowMenu } from "./AgentRowMenu";
 
-const FRASE = "O agent padrão da organização não pode ser arquivado.";
+const FRASE = "O agente padrão da organização não pode ser arquivado.";
 
 function agente(isDefault: boolean): AgentRow {
   return {

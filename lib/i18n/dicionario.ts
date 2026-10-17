@@ -1904,7 +1904,7 @@ export const DICIONARIO: Traducoes = {
     es: "Ningún agente coincide con los filtros actuales.",
   },
   "Buscar por nome…": { es: "Buscar por nombre…" },
-  "Buscar agents": { es: "Buscar agentes" },
+  "Buscar agentes": { es: "Buscar agentes" },
   "Filtrar por status": { es: "Filtrar por estado" },
   Status: { es: "Estado" },
   status: { es: "estado" },
@@ -1922,13 +1922,13 @@ export const DICIONARIO: Traducoes = {
   Despausar: { es: "Reanudar" },
   Pausar: { es: "Pausar" },
   Arquivar: { es: "Archivar" },
-  "Agent duplicado.": { es: "Agente duplicado." },
+  "Agente duplicado.": { es: "Agente duplicado." },
   "Agent reativado.": { es: "Agente reanudado." },
-  "Agent pausado.": { es: "Agente pausado." },
+  "Agente pausado.": { es: "Agente pausado." },
   "Agent arquivado.": { es: "Agente archivado." },
   Falha: { es: "Error" },
   "Erro ao executar ação.": { es: "Error al ejecutar la acción." },
-  "O agent padrão da organização não pode ser arquivado.": {
+  "O agente padrão da organização não pode ser arquivado.": {
     es: "El agente predeterminado de la organización no se puede archivar.",
   },
   "O agent deixa de responder gatilhos e some das listas ativas. Versões publicadas são preservadas para auditoria. Não é possível desarquivar pela UI nesta versão.": {
@@ -16190,6 +16190,12 @@ export const DICIONARIO: Traducoes = {
   "atualizado": { es: "actualizado" },
   "recusado": { es: "rechazado" },
   "Recusado.": { es: "Rechazado." },
+  // PR #3018 - tradução agent -> agente
+  "Salve o agente antes de publicar.": { es: "Guarde el agente antes de publicar." },
+  "Agente reativado.": { es: "Agente reactivado." },
+  "O agente deixa de responder gatilhos e some das listas ativas. Versões publicadas são preservadas para auditoria. Não é possível desarquivar pela UI nesta versão.": { es: "El agente deja de responder disparadores y desaparece de las listas activas. Las versiones publicadas se preservan para auditoría. No es posible desarchivar desde la UI en esta versión." },
+  "Agente arquivado.": { es: "Agente archivado." },
+  "Renomear agente": { es: "Renombrar agente" },
 };
 
 /**
