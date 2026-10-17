@@ -4,11 +4,27 @@ import { headers } from "next/headers";
 import { audit } from "@/lib/audit";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import { checkSmtpConfiguration } from "@/lib/email/smtp";
-import { saveSmtpConfig } from "@/lib/email/config";
+import {
+  FORMATO_DO_ENDERECO_DE_SERVIDOR,
+  MENSAGEM_DO_ENDERECO_DE_SERVIDOR,
+  saveSmtpConfig,
+} from "@/lib/email/config";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 
 const schema = z.object({
-  host: z.string().trim().max(253),
+  host: z
+    .string()
+    .trim()
+    .max(253)
+    // Espelha a CHECK `platform_smtp_settings_host` — agora com `_`, decisão do
+    // item 2 da issue #2804 (o vazio é o "apagar", que a constraint aceita como
+    // NULL). O que não é nome de máquina — espaço, barra, `http://` — é
+    // recusado ANTES de qualquer escrita: era por aqui que o `_` chegava ao
+    // banco e voltava como texto cru do Postgres na tela.
+    .refine(
+      (valor) => valor === "" || FORMATO_DO_ENDERECO_DE_SERVIDOR.test(valor),
+      MENSAGEM_DO_ENDERECO_DE_SERVIDOR,
+    ),
   port: z.coerce.number().int().min(1).max(65535),
   security: z.enum(["starttls", "tls", "none"]),
   username: z.string().trim().max(320),
@@ -25,13 +41,15 @@ export async function updateSmtp(input: z.input<typeof schema>) {
   if (!parsed.success) {
     const field = parsed.error.issues[0]?.path[0];
     const error =
-      field === "port"
-        ? "Informe uma porta entre 1 e 65535."
-        : field === "from_email"
-          ? "Informe somente o e-mail do remetente, por exemplo suporte@empresa.com."
-          : field === "security"
-            ? "Selecione STARTTLS, TLS ou Sem criptografia."
-            : "Revise os dados SMTP informados.";
+      field === "host"
+        ? MENSAGEM_DO_ENDERECO_DE_SERVIDOR
+        : field === "port"
+          ? "Informe uma porta entre 1 e 65535."
+          : field === "from_email"
+            ? "Informe somente o e-mail do remetente, por exemplo suporte@empresa.com."
+            : field === "security"
+              ? "Selecione STARTTLS, TLS ou Sem criptografia."
+              : "Revise os dados SMTP informados.";
     return { ok: false as const, error };
   }
 

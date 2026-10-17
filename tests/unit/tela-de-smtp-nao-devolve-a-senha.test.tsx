@@ -29,7 +29,13 @@ let usuario: { is_platform_admin: boolean; idioma: "pt-BR" } | null = null;
 let config: Record<string, unknown>;
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: async () => usuario }));
-vi.mock("@/lib/email/config", () => ({ getSmtpConfig: async () => config }));
+// `importOriginal` de propósito: a action de salvar importa constantes do MESMO
+// módulo, e um mock que só devolve `getSmtpConfig` apaga os outros exports
+// (issue #2804 quebrou esta tela exatamente assim, no CI).
+vi.mock("@/lib/email/config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/email/config")>()),
+  getSmtpConfig: async () => config,
+}));
 // O roteador é real; o que se mocka é a única fonte que ele consulta (acima) e
 // a Resend, para o caso de "nenhum dos dois" não depender do `.env` da máquina.
 let resendLigada = false;
