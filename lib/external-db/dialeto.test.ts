@@ -28,6 +28,19 @@ const CLIENTES: TabelaExterna = {
   estimativaLinhas: 10,
 };
 const WP_USERS: TabelaExterna = { ...CLIENTES, nome: "wp_users", colunas: [{ nome: "user_pass", tipo: "text", nulavel: true, posicao: 1 }] };
+const WP_POSTS: TabelaExterna = {
+  ...CLIENTES,
+  nome: "wp_posts",
+  colunas: [
+    { nome: "ID", tipo: "bigint", nulavel: false, posicao: 1 },
+    { nome: "post_title", tipo: "text", nulavel: false, posicao: 2 },
+    { nome: "post_type", tipo: "varchar", nulavel: false, posicao: 3 },
+    { nome: "post_status", tipo: "varchar", nulavel: false, posicao: 4 },
+    { nome: "guid", tipo: "varchar", nulavel: false, posicao: 5 },
+  ],
+  chavePrimaria: ["ID"],
+  estimativaLinhas: 100,
+};
 
 const fonte = (tabela: string, colunas: string[] | null = null): Fonte => ({ schema: "public", tabela, colunas, descricao: "" });
 const lista = (...fontes: Fonte[]): RegraDeFontes => ({ modo: "list", fontes });
@@ -116,9 +129,17 @@ describe("Dialeto PostgreSQL com fontes liberadas", () => {
 describe("criarDialetoDeLeitura (qualquer motor)", () => {
   function operacoes() {
     return {
-      listarTabelas: vi.fn(async () => [CLIENTES, WP_USERS]),
+      listarTabelas: vi.fn(async () => [CLIENTES, WP_USERS, WP_POSTS]),
       descreverTabela: vi.fn(async (_schema: string, tabela: string) =>
-        tabela === "clientes" ? CLIENTES : tabela === "wp_users" ? WP_USERS : null,
+        tabela === "clientes"
+          ? CLIENTES
+          : tabela === "wp_users"
+          ? WP_USERS
+          : tabela === "wp_posts"
+          ? WP_POSTS
+          : tabela === "tabela_inexistente"
+          ? { ...CLIENTES, nome: "tabela_inexistente" }
+          : null,
       ),
       lerTabela: vi.fn(async (_pedido: PedidoDeLeitura, ..._resto: unknown[]) => ({ colunas: ["id"], linhas: [], limite: 20, offset: 0 })),
       schemaDasReceitas: vi.fn(() => "public"),
@@ -206,8 +227,16 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
 
     it("J2 modo list com coluna da receita não liberada: sem_colunas_liberadas", async () => {
       // Fonte de clientes libera só ID e post_title; a receita usa post_status.
+      // descreverTabela retorna CLIENTES com post_status adicionado (existe, mas não liberada).
       const op = operacoes();
-      vi.mocked(op.descreverTabela).mockResolvedValueOnce(CLIENTES);
+      vi.mocked(op.descreverTabela).mockResolvedValueOnce({
+        ...CLIENTES,
+        colunas: [
+          ...CLIENTES.colunas,
+          { nome: "post_title", tipo: "text", nulavel: true, posicao: 4 },
+          { nome: "post_status", tipo: "text", nulavel: true, posicao: 5 },
+        ],
+      });
       const d = criarDialetoDeLeitura(
         op,
         lista(fonte("clientes", ["ID", "post_title"])),
@@ -237,7 +266,7 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
       expect(op.executarReceita).not.toHaveBeenCalled();
     });
 
-    it("J3 consulta com tabela fora da lista da receita: validador recusa, motor não tocado", async () => {
+    it("J3 consulta com tabela fora da lista da receita: validador recusa, motor NUNCA é chamado", async () => {
       const op = operacoes();
       const d = criarDialetoDeLeitura(op, TUDO);
       await expect(
@@ -252,6 +281,38 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
         ),
       ).rejects.toBeInstanceOf(LeituraInvalidaError);
       expect(op.executarReceita).not.toHaveBeenCalled();
+    });
+
+    it("J4 modo all com coluna inexistente: coluna_inexistente, motor não tocado", async () => {
+      const op = operacoes();
+      const d = criarDialetoDeLeitura(op, TUDO);
+      await expect(
+        d.executarReceita(
+          {
+            sql: "select * from wp_posts where id = ?",
+            valores: [1],
+            tabelas: ["wp_posts"],
+            colunasPorTabela: { wp_posts: ["coluna_que_nao_existe"] },
+          },
+          { limiteMax: 5 },
+        ),
+      ).rejects.toMatchObject({ name: "LeituraInvalidaError", message: "coluna_inexistente:wp_posts.coluna_que_nao_existe" });
+      expect(op.executarReceita).not.toHaveBeenCalled();
+    });
+
+    it("J4 modo all com coluna existente: chama o motor", async () => {
+      const op = operacoes();
+      const d = criarDialetoDeLeitura(op, TUDO);
+      await d.executarReceita(
+        {
+          sql: "select ID, post_title from `wp_posts` where post_type = ?",
+          valores: ["product"],
+          tabelas: ["wp_posts"],
+          colunasPorTabela: { wp_posts: ["ID", "post_title"] },
+        },
+        { limiteMax: 5 },
+      );
+      expect(op.executarReceita).toHaveBeenCalledTimes(1);
     });
   });
 });

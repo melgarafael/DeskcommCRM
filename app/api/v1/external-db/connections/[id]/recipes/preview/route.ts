@@ -127,8 +127,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const { sql, valores } = receita.montar(instancia.fixos, buscaValidada, limiteItens);
 
-  const prefixo = (instancia.fixos as { prefixo?: string }).prefixo ?? "wp_";
-  const tabelasPermitidas = receita.tabelas(prefixo);
+  const tabelasPermitidas = receita.tabelas(instancia.fixos);
 
   const acesso = await abrirAcesso(admin, activeOrg.orgId, id);
   if (!acesso.ok) {
@@ -138,12 +137,16 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   let resultado;
   try {
     resultado = await acesso.dialeto.executarReceita(
-      { sql, valores, tabelas: tabelasPermitidas, colunasPorTabela: receita.colunas(prefixo) },
+      { sql, valores, tabelas: tabelasPermitidas, colunasPorTabela: receita.colunas(instancia.fixos) },
       { limiteMax: Math.min(conexao.max_rows ?? 200, limiteItens) },
     );
   } catch (err) {
     if (err instanceof Error && err.name === "FonteNaoLiberadaError") {
       return fail("fonte_nao_liberada", t("Uma tabela da receita não foi liberada pelo administrador desta conexão."), 422, { requestId });
+    }
+    if (err instanceof Error && err.message.startsWith("coluna_inexistente:")) {
+      const coluna = err.message.split(".").pop()!;
+      return fail("coluna_inexistente", t('A coluna "{coluna}" não existe na tabela. Confira o mapeamento.').replace("{coluna}", coluna), 422, { requestId });
     }
     return fail("falha_na_leitura", t("Não foi possível consultar o banco de origem agora."), 500, { requestId });
   }

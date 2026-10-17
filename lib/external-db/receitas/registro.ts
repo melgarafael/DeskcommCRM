@@ -3,13 +3,17 @@
  * desta pasta — quem quer uma receita chama `receitaDe(id)`.
  */
 import { RECEITA_ACF_IMOVEIS } from "./acf-imoveis";
+import { RECEITA_JETENGINE_IMOVEIS } from "./jetengine-imoveis";
+import { RECEITA_TABELA_DIRETA } from "./tabela-direta";
 import { RECEITA_WOOCOMMERCE_PRODUTOS } from "./woocommerce";
 import type { DefinicaoDeReceita } from "./tipos";
 
-/** Todas as receitas prontas, pelo id. Começa com woocommerce (fatia R1) e acf-imoveis (fatia R2). */
+/** Todas as receitas prontas, pelo id. Começa com woocommerce (R1), acf-imoveis (R2) e tabela-direta + jetengine-imoveis (R3). */
 export const RECEITAS: ReadonlyMap<string, DefinicaoDeReceita> = new Map([
   [RECEITA_WOOCOMMERCE_PRODUTOS.id, RECEITA_WOOCOMMERCE_PRODUTOS],
   [RECEITA_ACF_IMOVEIS.id, RECEITA_ACF_IMOVEIS],
+  [RECEITA_TABELA_DIRETA.id, RECEITA_TABELA_DIRETA],
+  [RECEITA_JETENGINE_IMOVEIS.id, RECEITA_JETENGINE_IMOVEIS],
 ]);
 
 /** Os ids de todas as receitas (para o enum do Zod nas instâncias). */

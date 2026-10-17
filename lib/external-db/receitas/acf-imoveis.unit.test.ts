@@ -26,7 +26,7 @@ describe("receita acf-imoveis (unit, sem MySQL)", () => {
     expect(valores).toContain("imovel");
     expect(sql).toContain("post_status = ?");
     expect(valores).toContain("publish");
-    const tabelas = RECEITA_ACF_IMOVEIS.tabelas("wp_");
+    const tabelas = RECEITA_ACF_IMOVEIS.tabelas({ prefixo: "wp_" });
     expect(() => validarConsultaDeReceita(sql, tabelas)).not.toThrow();
   });
 

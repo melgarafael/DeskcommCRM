@@ -24,6 +24,8 @@ import { z } from "zod";
 import { abrirAcesso } from "@/lib/external-db/acesso";
 import { lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
 import { receitaDe } from "@/lib/external-db/receitas/registro";
+import { validarConsultaDeReceita } from "@/lib/external-db/receitas/validador";
+import { traduzir } from "@/lib/i18n/dicionario";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 
 const AVISO_DADOS_NAO_CONFIAVEIS =
@@ -93,6 +95,8 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
   handler: async (input, ctx) => {
     const { acao, connection_id, instancia_id, busca } = input;
 
+    const t = (texto: string) => traduzir(texto, "pt-BR");
+
     const resolvida = resolverConexaoReceita(ctx, connection_id);
     if (!resolvida.ok) return resolvida.resposta;
 
@@ -157,7 +161,7 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
     }
 
     // acao === "executar"
-    const instancia = lida.instancias.find((i) => i.id === instancia_id);
+    const instancia = lida.instancias.find((i) => i.id === instancia_id && i.ativa);
     if (!instancia) {
       return { erro: "nao_encontrada", mensagem: "essa receita não existe nesta conexão." };
     }
@@ -189,8 +193,19 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
       };
     }
 
-    const prefixo = (instancia.fixos as { prefixo?: string }).prefixo ?? "wp_";
-    const { sql, valores } = receita.montar(instancia.fixos, buscaValidada, receita.tetoDeItens);
+    let montada: { sql: string; valores: unknown[] };
+    try {
+      montada = receita.montar(instancia.fixos, buscaValidada, receita.tetoDeItens);
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("filtro_sem_coluna:")) {
+        return {
+          erro: "filtro_sem_coluna",
+          mensagem: "esta receita não tem a cidade mapeada; busque sem cidade.",
+        };
+      }
+      return { erro: "falha_na_leitura", mensagem: "não foi possível montar a consulta desta receita." };
+    }
+    const { sql, valores } = montada;
 
     let resultado;
     try {
@@ -198,8 +213,8 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
         {
           sql,
           valores,
-          tabelas: receita.tabelas(prefixo),
-          colunasPorTabela: receita.colunas(prefixo),
+          tabelas: receita.tabelas(instancia.fixos),
+          colunasPorTabela: receita.colunas(instancia.fixos),
         },
         { limiteMax: receita.tetoDeItens },
       );
@@ -208,6 +223,13 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
         return {
           erro: "fonte_nao_liberada",
           mensagem: "uma tabela da receita não foi liberada pelo administrador desta conexão.",
+        };
+      }
+      if (err instanceof Error && err.message.startsWith("coluna_inexistente:")) {
+        const coluna = err.message.split(".").pop()!;
+        return {
+          erro: "coluna_inexistente",
+          mensagem: t('A coluna "{coluna}" não existe na tabela. Confira o mapeamento.').replace("{coluna}", coluna),
         };
       }
       return { erro: "falha_na_leitura", mensagem: "não foi possível consultar o banco de origem agora." };

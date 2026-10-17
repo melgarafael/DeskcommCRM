@@ -14,6 +14,7 @@ import type pg from "pg";
 import { aplicarAoCatalogo, colunasLiberadas, tabelaLiberada, type RegraDeFontes } from "./fontes";
 import { descreverTabela, listarTabelas } from "./introspeccao";
 import { LeituraInvalidaError, lerTabela, type ResultadoDeLeitura } from "./leitura";
+
 import { validarConsultaDeReceita } from "./receitas/validador";
 import type { PedidoDeLeitura, TabelaExterna } from "./types";
 
@@ -104,6 +105,29 @@ export function criarDialetoDeLeitura(op: OperacoesDoMotor, regra: RegraDeFontes
       for (const tabela of consulta.tabelas) {
         if (!tabelaLiberada(regra, schema, tabela)) {
           throw new FonteNaoLiberadaError("fonte_nao_liberada");
+        }
+      }
+
+      // Confere a EXISTÊNCIA de cada coluna usada pela receita, em TODO modo.
+      // Tabela sem descrição → fonte não liberada; coluna que não existe na
+      // descrição → LeituraInvalidaError("coluna_inexistente:<tabela>.<coluna>") (erro legível, nunca erro cru do MySQL).
+      // Nomes de coluna são comparados em minúsculas (MySQL é case-insensitive
+      // para nomes de coluna).
+      for (const tabela of consulta.tabelas) {
+        const tabelaExterna = await op.descreverTabela(schema, tabela);
+        if (!tabelaExterna) {
+          throw new FonteNaoLiberadaError("fonte_nao_liberada");
+        }
+        const colunasExistentes = new Set(
+          tabelaExterna.colunas.map((c) => c.nome.toLowerCase()),
+        );
+        const colunasDaReceita = consulta.colunasPorTabela[tabela] ?? [];
+        for (const coluna of colunasDaReceita) {
+          if (!colunasExistentes.has(coluna.toLowerCase())) {
+            throw new LeituraInvalidaError(
+              `coluna_inexistente:${tabela}.${coluna}`,
+            );
+          }
         }
       }
 

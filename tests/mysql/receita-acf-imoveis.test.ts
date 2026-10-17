@@ -229,7 +229,7 @@ describe("receita acf-imoveis contra MySQL 8 de verdade", () => {
       {},
       5,
     );
-    const tabelas = RECEITA_ACF_IMOVEIS.tabelas(WP_PREFIXO);
+    const tabelas = RECEITA_ACF_IMOVEIS.tabelas({ prefixo: WP_PREFIXO });
     expect(() => validarConsultaDeReceita(sql, tabelas)).not.toThrow();
     expect(valores).toContain("imovel");
     expect(valores).toContain("publish");
@@ -699,8 +699,8 @@ describe("receita acf-imoveis contra MySQL 8 de verdade", () => {
         {
           sql,
           valores,
-          tabelas: RECEITA_ACF_IMOVEIS.tabelas(WP_PREFIXO),
-          colunasPorTabela: RECEITA_ACF_IMOVEIS.colunas(WP_PREFIXO),
+          tabelas: RECEITA_ACF_IMOVEIS.tabelas({ prefixo: WP_PREFIXO }),
+          colunasPorTabela: RECEITA_ACF_IMOVEIS.colunas({ prefixo: WP_PREFIXO }),
         },
         { limiteMax: 5 },
       ),

@@ -1,15 +1,15 @@
 /**
  * POST /api/v1/external-db/connections/:id/recipes/suggest (admin)
  *
- * Sugere os `meta_key` mais frequentes de um `post_type` do WordPress/ACF,
- * para o admin preencher o mapeamento da receita `acf-imoveis`. Só-leitura:
- * consulta fixa com `count(*)`, sem `meta_key` que comece por `_`,
- * limitada a 50, passando pelas fontes liberadas e pelo validador.
+ * Sugere colunas/campos para preencher o mapeamento de uma receita. Só-leitura:
+ * consulta fixa passando pelas fontes liberadas e pelo validador.
  *
- * Se o banco tiver tabelas do JetEngine (`<prefixo>jet_*`), diz isso na resposta
- * ("parece JetEngine; a receita dele vem depois").
+ * O corpo usa uma união discriminada por `receita`:
+ *  - acf-imoveis: { receita, prefixo, post_type } → meta_key mais frequentes do post_type
+ *  - tabela-direta: { receita, tabela } → colunas da tabela com sugestão por nome
+ *  - jetengine-imoveis: { receita, prefixo } → tabelas <prefixo>jet_cct_% existentes
  *
- * Auditoria só com contagens (never valores de meta_key).
+ * Auditoria só com contagens (never valores de meta_key/coluna).
  */
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
@@ -36,18 +36,31 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const suggestBodySchema = z
-  .object({
-    receita: z
-      .literal("acf-imoveis")
-      .describe("A receita a ser sugerida (só acf-imoveis nesta fatia)."),
-    prefixo: prefixoSchema.describe("Prefixo das tabelas do WordPress (ex.: wp_)."),
-    post_type: postTypeSchema.describe("Tipo de post do WordPress (ex.: imovel)."),
-  })
-  .strict();
+const tabelaSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9_]{1,64}$/, "Use apenas letras, números e underline no nome da tabela.");
+
+/** Esquema do corpo: união discriminada por `receita`. */
+const suggestBodySchema = z.discriminatedUnion("receita", [
+    z.object({
+      receita: z.literal("acf-imoveis"),
+      prefixo: prefixoSchema.describe("Prefixo das tabelas do WordPress (ex.: wp_)."),
+      post_type: postTypeSchema.describe("Tipo de post do WordPress (ex.: imovel)."),
+    }),
+    z.object({
+      receita: z.literal("tabela-direta"),
+      tabela: tabelaSchema.describe("Nome da tabela plana do banco externo."),
+    }),
+    z.object({
+      receita: z.literal("jetengine-imoveis"),
+      prefixo: prefixoSchema.describe("Prefixo das tabelas do WordPress (ex.: wp_)."),
+    }),
+  ]);
 
 /** Consulta fixa: meta_key mais frequentes de um post_type, excluindo as internas do ACF (_*). */
-function consultaSugestao(prefixo: string): string {
+function consultaSugestaoACF(prefixo: string): string {
   const posts = quotarIdentificadorMysql(`${prefixo}posts`);
   const postmeta = quotarIdentificadorMysql(`${prefixo}postmeta`);
   return `
@@ -62,8 +75,8 @@ function consultaSugestao(prefixo: string): string {
   `;
 }
 
-/** Heurística simples: mapeia nomes de meta_key comuns para os campos da receita. */
-function sugerirMapeamento(metaKeys: string[]): Record<string, string | null> {
+/** Heurística simples: mapeia nomes de meta_key comuns para os campos da receita ACF. */
+function sugerirMapeamentoACF(metaKeys: string[]): Record<string, string | null> {
   const mapa: Record<string, string | null> = {
     preco: null,
     quartos: null,
@@ -81,6 +94,46 @@ function sugerirMapeamento(metaKeys: string[]): Record<string, string | null> {
     else if (!mapa.area && /area|metragem|m2|sqm/.test(lower)) mapa.area = mk;
     else if (!mapa.finalidade && /finalidade|tipo|purpose|sale|rent/.test(lower))
       mapa.finalidade = mk;
+  }
+  return mapa;
+}
+
+/** Heurística simples: mapeia nomes de coluna para campos da tabela-direta. */
+function sugerirMapeamentoTabelaDireta(colunas: string[]): Record<string, string | null> {
+  const mapa: Record<string, string | null> = {
+    id: null,
+    titulo: null,
+    preco: null,
+    filtro_numero: null,
+  };
+  for (const c of colunas) {
+    const lower = c.toLowerCase();
+    if (!mapa.id && /^(id|codigo|codigo_externo)$/.test(lower)) mapa.id = c;
+    else if (!mapa.titulo && /^(nome|titulo|modelo|descricao)$/.test(lower)) mapa.titulo = c;
+    else if (!mapa.preco && /^(preco|valor|price)$/.test(lower)) mapa.preco = c;
+    else if (!mapa.filtro_numero && /^(ano|year)$/.test(lower)) mapa.filtro_numero = c;
+  }
+  return mapa;
+}
+
+/** Heurística simples: mapeia nomes de coluna para campos do JetEngine. */
+function sugerirMapeamentoJetEngine(colunas: string[]): Record<string, string | null> {
+  const mapa: Record<string, string | null> = {
+    preco: null,
+    quartos: null,
+    bairro: null,
+    cidade: null,
+    area: null,
+    titulo: null,
+  };
+  for (const c of colunas) {
+    const lower = c.toLowerCase();
+    if (!mapa.preco && /preco|valor|price/.test(lower)) mapa.preco = c;
+    else if (!mapa.quartos && /quarto|dormit|bedroom/.test(lower)) mapa.quartos = c;
+    else if (!mapa.bairro && /bairro|neighborhood/.test(lower)) mapa.bairro = c;
+    else if (!mapa.cidade && /cidade|city/.test(lower)) mapa.cidade = c;
+    else if (!mapa.area && /area|metragem|m2|sqm/.test(lower)) mapa.area = c;
+    else if (!mapa.titulo && /^(nome|titulo|titulo_imovel|imovel)$/.test(lower)) mapa.titulo = c;
   }
   return mapa;
 }
@@ -105,9 +158,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       "rate_limited",
       t("Muitas alterações em pouco tempo. Tente de novo em instantes."),
       429,
-      {
-        requestId,
-      },
+      { requestId },
     );
   }
 
@@ -125,19 +176,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
-  const { receita, prefixo, post_type } = parsed.data;
 
-  // Só a receita acf-imoveis tem sugestão nesta fatia.
-  if (receita !== "acf-imoveis") {
-    return fail(
-      "validation_failed",
-      t("Esta receita não tem sugestão de campos nesta fatia."),
-      422,
-      {
-        requestId,
-      },
-    );
-  }
+  const { receita } = parsed.data;
 
   // Carrega a conexão para verificar o motor.
   const admin = createAdminClient();
@@ -165,91 +205,161 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("acesso_negado", t("Não foi possível abrir a conexão."), 500, { requestId });
   }
 
-  const sql = consultaSugestao(prefixo);
-  const tabelas = [`${prefixo}posts`, `${prefixo}postmeta`];
+  const schema = acesso.dialeto.schemaDasReceitas();
 
-  // Passa pelo validador (segunda trava) antes de rodar.
-  try {
-    validarConsultaDeReceita(sql, tabelas);
-  } catch {
-    return fail("validation_failed", t("Consulta de sugestão não é válida."), 422, { requestId });
+  if (receita === "acf-imoveis") {
+    const { prefixo, post_type } = parsed.data;
+
+    const sql = consultaSugestaoACF(prefixo);
+    const tabelas = [`${prefixo}posts`, `${prefixo}postmeta`];
+
+    try {
+      validarConsultaDeReceita(sql, tabelas);
+    } catch {
+      return fail("validation_failed", t("Consulta de sugestão não é válida."), 422, { requestId });
+    }
+
+    let linhas: { meta_key: string; frequencia: number }[];
+    try {
+      const resultado = await acesso.dialeto.executarReceita(
+        {
+          sql,
+          valores: [post_type],
+          tabelas,
+          colunasPorTabela: {
+            [`${prefixo}posts`]: ["ID", "post_type"],
+            [`${prefixo}postmeta`]: ["post_id", "meta_key"],
+          },
+        },
+        { limiteMax: 50 },
+      );
+      linhas = (resultado.linhas ?? []) as { meta_key: string; frequencia: number }[];
+    } catch (err) {
+      if (err instanceof Error && err.name === "FonteNaoLiberadaError") {
+        return fail(
+          "fonte_nao_liberada",
+          t("Uma tabela da receita não foi liberada pelo administrador desta conexão."),
+          422,
+          { requestId },
+        );
+      }
+      return fail("falha_na_leitura", t("Não foi possível consultar o banco de origem agora."), 500, {
+        requestId,
+      });
+    }
+
+    const metaKeys = linhas.map((l) => l.meta_key);
+    const mapeamento = sugerirMapeamentoACF(metaKeys);
+
+    // Deteta JetEngine: se houver tabelas jet_cct_*, o admin deve usar jetengine-imoveis.
+    let avisoJetEngine: string | null = null;
+    try {
+      // Catálogo já filtrado pelas fontes liberadas: sem SQL de catálogo.
+      const tabelas = await acesso.dialeto.listarTabelas();
+      if (tabelas.some((x) => x.nome.startsWith(`${prefixo}jet_cct_`))) {
+        avisoJetEngine =
+          "parece JetEngine; use a receita jetengine-imoveis para este tipo de conteúdo";
+      }
+    } catch {
+      // Se não conseguir listar tabelas, ignora o aviso — não é crítico.
+    }
+
+    await audit({
+      action: "external_db_recipes.suggested",
+      actorUserId: authUser.id,
+      organizationId: activeOrg.orgId,
+      resourceType: "external_db_connection",
+      resourceId: id,
+      requestId,
+      metadata: { receita, prefixo, post_type, sugestoes: metaKeys.length },
+    });
+
+    return ok(
+      {
+        receita,
+        prefixo,
+        post_type,
+        meta_keys: metaKeys,
+        mapeamento_sugerido: mapeamento,
+        ...(avisoJetEngine ? { aviso: avisoJetEngine } : {}),
+      },
+      { requestId },
+    );
   }
 
-  let linhas: { meta_key: string; frequencia: number }[];
-  try {
-    const resultado = await acesso.dialeto.executarReceita(
-      {
-        sql,
-        valores: [post_type],
-        tabelas,
-        colunasPorTabela: {
-          [`${prefixo}posts`]: ["ID", "post_type"],
-          [`${prefixo}postmeta`]: ["post_id", "meta_key"],
-        },
-      },
-      { limiteMax: 50 },
-    );
-    linhas = (resultado.linhas ?? []) as { meta_key: string; frequencia: number }[];
-  } catch (err) {
-    if (err instanceof Error && err.name === "FonteNaoLiberadaError") {
+  if (receita === "tabela-direta") {
+    const { tabela } = parsed.data;
+
+    // Colunas pelo dialeto, que respeita as fontes liberadas: `null` = a tabela
+    // não existe OU não foi liberada.
+    const colunasLiberadas = await acesso.dialeto.colunasDaTabela(schema, tabela);
+    if (colunasLiberadas === null) {
       return fail(
         "fonte_nao_liberada",
-        t("Uma tabela da receita não foi liberada pelo administrador desta conexão."),
+        t("Libere a tabela {tabela} nas fontes da conexão primeiro.").replace("{tabela}", tabela),
         422,
-        {
-          requestId,
-        },
+        { requestId },
       );
     }
-    return fail("falha_na_leitura", t("Não foi possível consultar o banco de origem agora."), 500, {
+    const colunasDoBanco = [...colunasLiberadas];
+    const mapeamento = sugerirMapeamentoTabelaDireta(colunasDoBanco);
+
+    await audit({
+      action: "external_db_recipes.suggested",
+      actorUserId: authUser.id,
+      organizationId: activeOrg.orgId,
+      resourceType: "external_db_connection",
+      resourceId: id,
       requestId,
+      metadata: { receita, tabela, sugestoes: colunasDoBanco.length },
     });
-  }
 
-  const metaKeys = linhas.map((l) => l.meta_key);
-  const mapeamento = sugerirMapeamento(metaKeys);
-
-  // Deteta JetEngine pelo nome das tabelas (consulta fixa, sem meta_key crua).
-  let avisoJetEngine: string | null = null;
-  try {
-    const schema = acesso.dialeto.schemaDasReceitas();
-    const resultadoJet = await acesso.dialeto.executarReceita(
+    return ok(
       {
-        sql: `select table_name as table_name from information_schema.tables where table_schema = ? and table_name like ? limit 5`,
-        valores: [schema, `${prefixo}jet_%`],
-        tabelas: [],
-        colunasPorTabela: {},
+        receita,
+        tabela,
+        colunas: colunasDoBanco,
+        mapeamento_sugerido: mapeamento,
       },
-      { limiteMax: 5 },
+      { requestId },
     );
-    const jetRows = (resultadoJet.linhas ?? []) as { table_name: string }[];
-    const temJet = jetRows.length > 0;
-    if (temJet) {
-      avisoJetEngine = "parece JetEngine; a receita dele vem depois";
-    }
-  } catch {
-    // Se não conseguir listar tabelas, ignora o aviso — não é crítico.
   }
 
-  await audit({
-    action: "external_db_recipes.suggested",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
-    resourceType: "external_db_connection",
-    resourceId: id,
-    requestId,
-    metadata: { receita, prefixo, post_type, sugestoes: metaKeys.length },
-  });
+  if (receita === "jetengine-imoveis") {
+    const { prefixo } = parsed.data;
 
-  return ok(
-    {
-      receita,
-      prefixo,
-      post_type,
-      meta_keys: metaKeys,
-      mapeamento_sugerido: mapeamento,
-      ...(avisoJetEngine ? { aviso: avisoJetEngine } : {}),
-    },
-    { requestId },
-  );
+    // Catálogo já filtrado pelas fontes liberadas; fica só o que é CCT do prefixo.
+    const todas = await acesso.dialeto.listarTabelas();
+    const ccts = todas
+      .filter((x) => x.nome.startsWith(`${prefixo}jet_cct_`))
+      .slice(0, 50)
+      .map((x) => {
+        const colunas = x.colunas.map((c) => c.nome);
+        return { tabela: x.nome, colunas, mapeamento: sugerirMapeamentoJetEngine(colunas) };
+      });
+
+    await audit({
+      action: "external_db_recipes.suggested",
+      actorUserId: authUser.id,
+      organizationId: activeOrg.orgId,
+      resourceType: "external_db_connection",
+      resourceId: id,
+      requestId,
+      metadata: { receita, prefixo, ccts: ccts.length },
+    });
+
+    return ok(
+      {
+        receita,
+        prefixo,
+        ccts,
+      },
+      { requestId },
+    );
+  }
+
+  // Não chega aqui: a união discriminada cobre todos os casos.
+  return fail("validation_failed", t("Receita não suportada para sugestão."), 422, {
+    requestId,
+  });
 }

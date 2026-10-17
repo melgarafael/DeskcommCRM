@@ -16420,6 +16420,20 @@ export const DICIONARIO: Traducoes = {
   "A resposta ia mostrar um produto que não foi encontrado no cadastro. Confira o produto e gere de novo.": { es: "La respuesta iba a mostrar un producto que no se encontró en el registro. Revisa el producto y genera de nuevo." },
   "A sugestão tentou usar uma ação que a prévia não reconhece. Gere de novo; se repetir, revise as ferramentas ligadas no agente.": { es: "La sugerencia intentó usar una acción que la previsualización no reconoce. Genera de nuevo; si se repite, revisa las herramientas activadas en el agente." },
   "A geração da sugestão falhou, ou o contexto da conversa não pôde ser montado. Tente de novo; se repetir, o motivo ficou registrado no servidor.": { es: "La generación de la sugerencia falló, o no se pudo armar el contexto de la conversación. Inténtalo de nuevo; si se repite, el motivo quedó registrado en el servidor." },
+  // ─── Banco externo: receitas tabela-direta e jetengine-imoveis (Spec 25 R3) ───
+  "Tabela": { es: "Tabla" },
+  "Coluna ID": { es: "Columna ID" },
+  "Coluna Título": { es: "Columna Título" },
+  "Coluna Preço": { es: "Columna Precio" },
+  "Coluna Filtro Numérico": { es: "Columna filtro numérico" },
+  "Slug do CCT": { es: "Slug del CCT" },
+  "Mapeamento de campos (coluna do CCT)": { es: "Mapeo de campos (columna del CCT)" },
+  "Nenhum CCT JetEngine encontrado para este prefixo.": { es: "No se encontró ningún CCT de JetEngine para este prefijo." },
+  "Preencha a tabela antes de sugerir.": { es: "Complete la tabla antes de sugerir." },
+  "Preencha o prefixo antes de sugerir.": { es: "Complete el prefijo antes de sugerir." },
+  "Tabela e colunas": { es: "Tabla y columnas" },
+  "Libere a tabela {tabela} nas fontes da conexão primeiro.": { es: "Libera la tabla {tabela} en las fuentes de la conexión primero." },
+  "A coluna \"{coluna}\" não existe na tabela. Confira o mapeamento.": { es: "La columna \"{coluna}\" no existe en la tabla. Revisa el mapeo." },
 };
 
 /**

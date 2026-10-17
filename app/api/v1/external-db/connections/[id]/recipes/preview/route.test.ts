@@ -35,6 +35,7 @@ vi.mock("@/lib/external-db/receitas/registro", () => ({ receitaDe: deps.receitaD
 import type { receitaDe } from "@/lib/external-db/receitas/registro";
 vi.mock("@/lib/external-db/acesso", () => ({ abrirAcesso: deps.acessar }));
 
+import { LeituraInvalidaError } from "@/lib/external-db/leitura";
 import { POST } from "./route";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -172,6 +173,25 @@ describe("POST /connections/:id/recipes/preview", () => {
     expect(res.status).toBe(422);
     const texto = JSON.stringify(await res.json());
     expect(texto).toContain("fonte_nao_liberada");
+  });
+
+  it("coluna inexistente → 422 coluna_inexistente citando a coluna (nunca erro cru)", async () => {
+    deps.acessar.mockResolvedValue({
+      ok: true,
+      conexao: { id: ID, organizationId: ORG },
+      dialeto: {
+        executarReceita: vi.fn(async () => {
+          throw new LeituraInvalidaError("coluna_inexistente:carros.ano");
+        }),
+      },
+    });
+
+    const res = await POST(post({ instancia_id: INSTANCIA_ID }), ctx);
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as { error: { code: string; message: string } };
+    expect(corpo.error.code).toBe("coluna_inexistente");
+    expect(corpo.error.message).toContain("ano");
   });
 
   it("sucesso: auditoria só com contagens, nenhum valor de linha", async () => {

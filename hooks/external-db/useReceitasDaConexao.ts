@@ -92,3 +92,49 @@ export async function sugerirCamposACF(
   );
   return res.data;
 }
+
+interface SugerirCamposTabelaDiretaResponse {
+  data: {
+    receita: string;
+    tabela: string;
+    colunas: string[];
+    mapeamento_sugerido: Record<string, string | null>;
+    aviso?: string;
+  };
+}
+
+/** Pede ao servidor as colunas de uma tabela (só tabela-direta). */
+export async function sugerirCamposTabelaDireta(
+  connectionId: string,
+  tabela: string,
+): Promise<SugerirCamposTabelaDiretaResponse["data"]> {
+  const res = await apiClient.post<SugerirCamposTabelaDiretaResponse>(
+    `/api/v1/external-db/connections/${connectionId}/recipes/suggest`,
+    { receita: "tabela-direta", tabela },
+  );
+  return res.data;
+}
+
+interface SugerirCamposJetEngineResponse {
+  data: {
+    receita: string;
+    prefixo: string;
+    ccts: Array<{
+      tabela: string;
+      colunas: string[];
+      mapeamento: Record<string, string | null>;
+    }>;
+  };
+}
+
+/** Pede ao servidor as tabelas jet_cct_* de um prefixo (só jetengine-imoveis). */
+export async function sugerirCamposJetEngine(
+  connectionId: string,
+  prefixo: string,
+): Promise<SugerirCamposJetEngineResponse["data"]> {
+  const res = await apiClient.post<SugerirCamposJetEngineResponse>(
+    `/api/v1/external-db/connections/${connectionId}/recipes/suggest`,
+    { receita: "jetengine-imoveis", prefixo },
+  );
+  return res.data;
+}

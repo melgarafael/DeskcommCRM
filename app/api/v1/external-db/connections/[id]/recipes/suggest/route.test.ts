@@ -95,6 +95,8 @@ beforeEach(() => {
         truncado: false,
       })),
       schemaDasReceitas: () => "banco_teste",
+      listarTabelas: vi.fn(async () => []),
+      colunasDaTabela: vi.fn(async () => null),
     },
   });
 });
@@ -186,5 +188,99 @@ describe("POST /connections/:id/recipes/suggest", () => {
         expect(deps.abrirAcesso).not.toHaveBeenCalled();
       });
     }
+  });
+
+  describe("nova receita tabela-direta", () => {
+    function dialetoCom(parcial: Record<string, unknown>) {
+      const executarReceita = vi.fn();
+      deps.abrirAcesso.mockResolvedValue({
+        ok: true,
+        dialeto: { executarReceita, schemaDasReceitas: () => "banco_teste", ...parcial },
+      });
+      return executarReceita;
+    }
+
+    it("sugere o mapeamento a partir das colunas liberadas, pelo dialeto (sem SQL de catálogo)", async () => {
+      const colunasDaTabela = vi.fn(async () => new Set(["id", "modelo", "preco", "ano", "cor"]));
+      const executarReceita = dialetoCom({ colunasDaTabela });
+      const res = await POST(post({ receita: "tabela-direta", tabela: "carros" }), ctx);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(colunasDaTabela).toHaveBeenCalledWith("banco_teste", "carros");
+      expect(executarReceita).not.toHaveBeenCalled();
+      expect(body.data.colunas).toEqual(["id", "modelo", "preco", "ano", "cor"]);
+      expect(body.data.mapeamento_sugerido).toEqual({
+        id: "id",
+        titulo: "modelo",
+        preco: "preco",
+        filtro_numero: "ano",
+      });
+    });
+
+    it("tabela não liberada ou inexistente → 422 fonte_nao_liberada com mensagem legível", async () => {
+      dialetoCom({ colunasDaTabela: vi.fn(async () => null) });
+      const res = await POST(post({ receita: "tabela-direta", tabela: "carros" }), ctx);
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: { code: string; message: string } };
+      expect(body.error.code).toBe("fonte_nao_liberada");
+      expect(body.error.message).toContain("carros");
+    });
+
+    it("rejeita tabela inválida com 422 sem chamar o banco", async () => {
+      const res = await POST(
+        post({ receita: "tabela-direta", tabela: "carros`; drop table" }),
+        ctx,
+      );
+      expect(res.status).toBe(422);
+      expect(deps.abrirAcesso).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("nova receita jetengine-imoveis", () => {
+    it("acha os CCTs pelo prefixo no catálogo liberado e sugere o mapeamento", async () => {
+      const executarReceita = vi.fn();
+      const col = (nome: string) => ({ nome });
+      deps.abrirAcesso.mockResolvedValue({
+        ok: true,
+        dialeto: {
+          executarReceita,
+          schemaDasReceitas: () => "banco_teste",
+          listarTabelas: vi.fn(async () => [
+            { nome: "wp_jet_cct_imoveis", colunas: ["_ID", "titulo", "preco", "quartos", "bairro", "cidade", "area"].map(col) },
+            { nome: "wp_posts", colunas: [col("ID")] },
+            { nome: "outro_jet_cct_x", colunas: [col("a")] },
+          ]),
+        },
+      });
+      const res = await POST(post({ receita: "jetengine-imoveis", prefixo: "wp_" }), ctx);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(executarReceita).not.toHaveBeenCalled();
+      expect(body.data.ccts).toHaveLength(1);
+      expect(body.data.ccts[0].tabela).toBe("wp_jet_cct_imoveis");
+      expect(body.data.ccts[0].mapeamento).toMatchObject({
+        preco: "preco",
+        quartos: "quartos",
+        bairro: "bairro",
+        cidade: "cidade",
+        area: "area",
+        titulo: "titulo",
+      });
+    });
+
+    it("nenhuma tabela do prefixo liberada → ccts vazio", async () => {
+      const res = await POST(post({ receita: "jetengine-imoveis", prefixo: "wp_" }), ctx);
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.ccts).toEqual([]);
+    });
+
+    it("rejeita prefixo inválido com 422 sem chamar o banco", async () => {
+      const res = await POST(
+        post({ receita: "jetengine-imoveis", prefixo: "wp`x" }),
+        ctx,
+      );
+      expect(res.status).toBe(422);
+      expect(deps.abrirAcesso).not.toHaveBeenCalled();
+    });
   });
 });

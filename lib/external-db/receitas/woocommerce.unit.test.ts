@@ -24,7 +24,7 @@ describe("receita woocommerce-produtos (unit, sem MySQL)", () => {
     expect(valores).toContain("publish");
     expect(sql).toContain("post_type = ?");
     expect(valores).toContain("product");
-    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas("wp_");
+    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas({ prefixo: "wp_" });
     expect(() => validarConsultaDeReceita(sql, tabelas)).not.toThrow();
   });
 

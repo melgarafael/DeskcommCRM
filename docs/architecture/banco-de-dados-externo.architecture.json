@@ -251,6 +251,30 @@
       "sublabel": "grava instâncias e pré-visualiza (admin) · auditoria só contagens",
       "type": "api",
       "dot": "green"
+    },
+    {
+      "id": "tabelaDireta",
+      "lane": "nucleo",
+      "label": "tabela-direta.ts",
+      "sublabel": "receita de qualquer tabela plana · coluna = dado · só colunas mapeadas, valores por ?",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "jetengineImoveis",
+      "lane": "nucleo",
+      "label": "jetengine-imoveis.ts",
+      "sublabel": "CCT do JetEngine = tabela-direta com predefinição · DDL INFERIDO da doc 3.x, medição C1 pendente",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "precoReceita",
+      "lane": "nucleo",
+      "label": "preco.ts",
+      "sublabel": "converte preço de texto (650.000,00 / 480000) em número no SQL da receita",
+      "type": "lib",
+      "dot": "blue"
     }
   ],
   "edges": [
@@ -547,6 +571,42 @@
       "from": "apiReceitas",
       "to": "receitasCount",
       "label": "contagem exposta pela API"
+    },
+    {
+      "id": "e61",
+      "from": "instanciaReceita",
+      "to": "tabelaDireta",
+      "label": "registra a receita"
+    },
+    {
+      "id": "e62",
+      "from": "tabelaDireta",
+      "to": "dialeto",
+      "label": "SQL montado vai ao dialeto"
+    },
+    {
+      "id": "e63",
+      "from": "instanciaReceita",
+      "to": "jetengineImoveis",
+      "label": "registra a receita"
+    },
+    {
+      "id": "e64",
+      "from": "jetengineImoveis",
+      "to": "tabelaDireta",
+      "label": "delega a montagem do SQL"
+    },
+    {
+      "id": "e65",
+      "from": "tabelaDireta",
+      "to": "precoReceita",
+      "label": "converte o preço"
+    },
+    {
+      "id": "e66",
+      "from": "precoReceita",
+      "to": "instanciaReceita",
+      "label": "usada também pelo acf-imoveis"
     }
   ],
   "cards": [

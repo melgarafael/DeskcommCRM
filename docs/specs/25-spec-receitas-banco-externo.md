@@ -195,3 +195,15 @@ Limitação declarada (D2/C1): bairro vem de campo ACF (`meta_key`); sem junçã
 Resultado esperado do C1: o CI roda `tests/mysql/receita-acf-imoveis.test.ts` no job `mysql-integracao` e o veredito do CI é a fonte da verdade.
 
 Destino: núcleo, dentro do módulo de banco externo, que nasce desligado (mesmo destino da R1).
+
+A fatia R3 (receitas `tabela-direta` e `jetengine-imoveis`) está FEITA no código:
+
+- `lib/external-db/receitas/tabela-direta.ts` — qualquer tabela plana: o admin mapeia id, título, preço, filtros de texto, filtro numérico, colunas exibidas e (opcional) coluna de status; só as colunas mapeadas entram no SELECT e todo valor vai por `?`
+- `lib/external-db/receitas/jetengine-imoveis.ts` — CCT do JetEngine (`<prefixo>jet_cct_<slug>`) como tabela-direta com predefinição (`_ID`, `cct_status = 'publish'`); filtro de cidade sem coluna mapeada é RECUSADO (`filtro_sem_coluna:cidade`), nunca ignorado em silêncio
+- `lib/external-db/receitas/preco.ts` — conversão de preço compartilhada com o `acf-imoveis`
+- `lib/external-db/dialeto.ts` — coluna que a receita usa e a tabela não tem vira `LeituraInvalidaError("coluna_inexistente:<tabela>.<coluna>")`, mostrado como erro legível (422 na prévia, `coluna_inexistente` na ferramenta do agente)
+- `lib/mcp/tools/receitas-externas.ts` — instância desligada (`ativa: false`) não executa (`nao_encontrada`)
+- tela: `ReceitasProntas.tsx` com os dois caminhos, rótulos ligados (`useId` + `htmlFor`) e "Sugerir campos" que só preenche vazios; PT+ES no dicionário
+- testes: unitários das duas receitas, de componente (`ReceitasProntas.tabela-direta.test.tsx`, `ReceitasProntas.jetengine.test.tsx`), da rota de prévia e da ferramenta; integração MySQL em `tests/mysql/receita-tabela-direta.test.ts` e `receita-jetengine-imoveis.test.ts` (job `mysql-integracao`)
+
+**NÃO MEDIDO (C1 JetEngine):** o DDL das colunas do JetEngine é INFERIDO da documentação 3.x. A medição numa instalação real (cópia de WP + JetEngine, versão fixada) segue pendente e é pré-requisito para liberar a `jetengine-imoveis` a cliente.
