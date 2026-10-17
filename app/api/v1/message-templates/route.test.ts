@@ -183,4 +183,39 @@ describe("POST /api/v1/message-templates — idempotência", () => {
     expect(db.templates).toHaveLength(0);
     expect(db.recibos).toHaveLength(0);
   });
+
+  it("(5) recurso de ÁUDIO persiste tipo e mídia; texto nunca carrega mídia", async () => {
+    const db = banco();
+
+    const resposta = await POST(
+      req({
+        title: "Áudio preço",
+        tipo: "audio",
+        media_path: "org/recursos/preco.ogg",
+        media_mime: "audio/ogg",
+        media_size_bytes: 10,
+      }),
+    );
+
+    expect(resposta.status).toBe(201);
+    expect(db.templates[0]).toMatchObject({
+      tipo: "audio",
+      media_path: "org/recursos/preco.ogg",
+      media_mime: "audio/ogg",
+    });
+
+    // O mesmo recurso como TEXTO não carrega mídia nenhuma.
+    const texto = await POST(req({ ...CORPO, tipo: "texto", media_path: "org/recursos/preco.ogg" }));
+    expect(texto.status).toBe(201);
+    expect(db.templates[1]).toMatchObject({ tipo: "texto", media_path: null, media_mime: null });
+  });
+
+  it("(6) áudio sem arquivo é recusado (422) antes de qualquer efeito", async () => {
+    const db = banco();
+
+    const resposta = await POST(req({ title: "Áudio órfão", tipo: "audio" }));
+
+    expect(resposta.status).toBe(422);
+    expect(db.templates).toHaveLength(0);
+  });
 });

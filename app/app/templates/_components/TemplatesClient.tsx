@@ -116,6 +116,7 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                     <Badge variant={template.owner_user_id ? "neutral" : "default"}>
                       {t(template.owner_user_id ? "Pessoal" : "Compartilhado")}
                     </Badge>
+                    {template.tipo === "audio" && <Badge variant="neutral">🎧 {t("Áudio")}</Badge>}
                     {/* A resposta rápida que leva imagem do próprio operador
                         (#2526) se anuncia na lista: sem isto, quem usa o menu
                         "/" do composer não tem como saber qual script não é
@@ -126,7 +127,9 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                       </Badge>
                     )}
                   </div>
-                  <p className="line-clamp-2 text-sm text-muted-foreground">{template.body}</p>
+                  <p className="line-clamp-2 text-sm text-muted-foreground">
+                    {template.tipo === "audio" ? t("Recurso de áudio") : template.body}
+                  </p>
                 </div>
                 {canModify(template) && (
                   <div className="flex shrink-0 gap-1">

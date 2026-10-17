@@ -21,7 +21,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, midias, created_by_user_id, created_at, updated_at";
+  "id, organization_id, owner_user_id, title, body, shortcut, tipo, media_path, media_mime, media_size_bytes, midias, created_by_user_id, created_at, updated_at";
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
@@ -60,7 +60,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
   }
-  const { title, body, shortcut, shared } = parsed.data;
+  const { title, body, shortcut, tipo, media_path, media_mime, media_size_bytes, shared } =
+    parsed.data;
   // Compartilhado exige manager+. requireRole já resolveu o role efetivo do
   // banco em org.role — reusar em vez de uma 2ª chamada/RPC. A RLS with_check
   // barra de qualquer forma; isto só dá um erro claro antes do insert.
@@ -91,6 +92,13 @@ export async function POST(req: NextRequest): Promise<Response> {
         title,
         body,
         shortcut: shortcut ?? null,
+        // Áudio guarda o caminho do arquivo; texto nunca carrega mídia — limpar
+        // aqui impede um corpo que troca de tipo de deixar mídia órfã apontando
+        // para um áudio de outro recurso.
+        tipo,
+        media_path: tipo === "audio" ? (media_path ?? null) : null,
+        media_mime: tipo === "audio" ? (media_mime ?? null) : null,
+        media_size_bytes: tipo === "audio" ? (media_size_bytes ?? null) : null,
         // `midias` nasce vazia: a imagem nova é gravada pela rota de upload,
         // que gera o caminho sabendo o id do template (#2526). Aceitar caminho
         // aqui seria aceitar um arquivo que ninguém conferiu.

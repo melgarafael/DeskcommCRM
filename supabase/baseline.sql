@@ -7573,6 +7573,22 @@ create policy "message_templates_write" on message_templates
     )
   );
 
+-- ---- recursos pré-prontos: tipo + mídia (migration 0662) ----
+alter table message_templates
+  add column if not exists tipo text not null default 'texto',
+  add column if not exists media_path text,
+  add column if not exists media_mime text,
+  add column if not exists media_size_bytes bigint;
+alter table message_templates drop constraint if exists message_templates_tipo_check;
+alter table message_templates add constraint message_templates_tipo_check
+  check (tipo = any (array['texto'::text, 'audio'::text]));
+alter table message_templates drop constraint if exists message_templates_audio_precisa_de_midia;
+alter table message_templates add constraint message_templates_audio_precisa_de_midia
+  check (tipo <> 'audio' or media_path is not null);
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('recursos-media', 'recursos-media', false, 52428800)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;
+
 -- ---- snooze por conversa (migration 0062) ----
 alter table conversations
   add column if not exists snooze_until timestamptz,

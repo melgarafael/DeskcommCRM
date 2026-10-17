@@ -10519,6 +10519,32 @@ export const DICIONARIO: Traducoes = {
   "Template criado.": { es: "Plantilla creada." },
   "Oi {{primeiro_nome}}, tudo bem?": { es: "Hola {{primeiro_nome}}, ¿todo bien?" },
   "Criar template": { es: "Crear plantilla" },
+  "Novo recurso": { es: "Nuevo recurso" },
+  "Editar recurso": { es: "Editar recurso" },
+  "Criar recurso": { es: "Crear recurso" },
+  "Recurso criado.": { es: "Recurso creado." },
+  "Recurso atualizado.": { es: "Recurso actualizado." },
+  "Recurso de áudio": { es: "Recurso de audio" },
+  "Arquivo de áudio": { es: "Archivo de audio" },
+  "Escolha um arquivo de áudio para o recurso.": { es: "Elija un archivo de audio para el recurso." },
+  "Áudio atual mantido. Escolha outro arquivo para substituir.": {
+    es: "Audio actual conservado. Elija otro archivo para reemplazarlo.",
+  },
+  "O áudio fica na biblioteca e entra no Inbox como anexo pendente.": {
+    es: "El audio queda en la biblioteca y entra en el Inbox como adjunto pendiente.",
+  },
+  "Recursos pré-prontos: o texto cai no campo editável do Inbox; o áudio vira anexo pendente.": {
+    es: "Recursos predefinidos: el texto cae en el campo editable del Inbox; el audio se convierte en adjunto pendiente.",
+  },
+  "Recursos": { es: "Recursos" },
+  "Insere no campo — você edita e envia": { es: "Inserta en el campo — tú editas y envías" },
+  "áudio pendente; você decide quando enviar": {
+    es: "audio pendiente; tú decides cuándo enviar",
+  },
+  "Remover áudio pendente": { es: "Quitar audio pendiente" },
+  "Não foi possível preparar o áudio do recurso.": {
+    es: "No se pudo preparar el audio del recurso.",
+  },
   "Nova execução iniciada.": { es: "Nueva ejecución iniciada." },
   "Execução concluída.": { es: "Ejecución concluida." },
   "Orçamento atualizado": { es: "Presupuesto actualizado" },

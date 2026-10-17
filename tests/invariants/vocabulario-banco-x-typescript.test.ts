@@ -503,6 +503,17 @@ const PARES: Array<{
     simbolo: "STATUS_DO_DESTINATARIO",
   },
   {
+    tabela: "message_templates",
+    coluna: "tipo",
+    // lib/inbox/recursos.ts → TIPOS_DE_RECURSO (tupla `as const`). Nasce no
+    // MESMO commit da migration 0662 (#2833): o recurso de TEXTO cai no campo
+    // editável do Inbox e o de ÁUDIO vira anexo pendente; um tipo só no CHECK
+    // viraria recurso que o compositor não sabe inserir, e só no TypeScript
+    // viraria `23514` num INSERT da tela de recursos.
+    arquivo: "lib/inbox/recursos.ts",
+    simbolo: "TIPOS_DE_RECURSO",
+  },
+  {
     tabela: "external_db_connections",
     coluna: "source_mode",
     arquivo: "lib/external-db/types.ts",
