@@ -42,21 +42,21 @@ export const MODELOS_DE_ACESSO: readonly ModeloDeAcesso[] = ["confirmation", "re
 /** O texto de cada modelo. Assunto entra no `GOTRUE_MAILER_SUBJECTS_*`. */
 const COPIA: Record<ModeloDeAcesso, { assunto: (marca: string) => string; titulo: string; corpo: (marca: string) => string; botao: string; rodape: string }> = {
   confirmation: {
-    assunto: (marca) => `Confirme seu e-mail · ${marca}`,
-    titulo: "Confirme seu e-mail",
+    assunto: (marca) => `Confirma tu correo · ${marca}`,
+    titulo: "Confirma tu correo",
     corpo: (marca) =>
-      `Sua conta no ${marca} está quase pronta. Clique no botão abaixo para confirmar seu e-mail e ativar sua conta.`,
-    botao: "Confirmar e-mail",
-    rodape: "Se você não criou esta conta, ignore este e-mail.",
+      `Tu cuenta en ${marca} está casi lista. Haz clic en el botón de abajo para confirmar tu correo y activar tu cuenta.`,
+    botao: "Confirmar correo",
+    rodape: "Si no creaste esta cuenta, ignora este correo.",
   },
   recovery: {
-    assunto: (marca) => `Redefinir sua senha · ${marca}`,
-    titulo: "Redefinir sua senha",
+    assunto: (marca) => `Restablece tu contraseña · ${marca}`,
+    titulo: "Restablece tu contraseña",
     corpo: (marca) =>
-      `Recebemos um pedido para redefinir a senha da sua conta no ${marca}. Clique no botão abaixo para escolher uma nova.`,
-    botao: "Definir nova senha",
+      `Recibimos un pedido para restablecer la contraseña de tu cuenta en ${marca}. Haz clic en el botón de abajo para elegir una nueva.`,
+    botao: "Definir nueva contraseña",
     rodape:
-      "Se não foi você quem pediu, ignore este e-mail — sua senha continua a mesma.",
+      "Si no fuiste tú quien lo pidió, ignora este correo — tu contraseña sigue siendo la misma.",
   },
 };
 
@@ -89,12 +89,12 @@ export function montarTemplateDeAcesso(modelo: ModeloDeAcesso, marca: MarcaDeSai
       </a>
     </p>
     <p style="margin:0 0 8px;font-size:13px;color:${NEUTROS_DE_SAIDA.suave}">
-      Ou copie e cole este link no navegador:<br>
+      O copia y pega este enlace en el navegador:<br>
       <span style="word-break:break-all;color:${marca.accent}">${destino}</span>
     </p>
     <p style="margin:24px 0 0;font-size:13px;color:${NEUTROS_DE_SAIDA.suave}">
       ${escapeHtml(t.rodape)}
-    </p>`);
+    </p>`, "es");
 }
 
 function escapeHtml(s: string): string {
