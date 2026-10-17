@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 
-const DEFAULTS = ["falar com humano", "atendente", "pessoa real"];
+const DEFAULTS = ["hablar con una persona", "agente humano", "persona real"];
 
 interface Props {
   value: string[];

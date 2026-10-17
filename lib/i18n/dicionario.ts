@@ -6897,6 +6897,12 @@ export const DICIONARIO: Traducoes = {
   "Card atualizado": { es: "Tarjeta actualizada" },
   "Criar/mover lead no funil": { es: "Crear/mover lead en el embudo" },
   "Enviar mensagem no WhatsApp": { es: "Enviar mensaje por WhatsApp" },
+  "Iniciar conversa com cliente novo e enviar mensagem": {
+    es: "Iniciar conversación con cliente nuevo y enviar mensaje",
+  },
+  "Cria o cadastro do cliente se ele ainda não existir, abre uma conversa nova no número de WhatsApp escolhido e manda a primeira mensagem para ele — de verdade, no celular dele.": {
+    es: "Crea la ficha del cliente si todavía no existe, abre una conversación nueva en el número de WhatsApp elegido y le manda el primer mensaje — de verdad, en su celular.",
+  },
   "Adicionar tag": { es: "Agregar etiqueta" },
   "Atribuir a um atendente": { es: "Asignar a un asesor" },
   "Avisar outro sistema (webhook)": { es: "Avisar a otro sistema (webhook)" },

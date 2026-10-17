@@ -206,7 +206,7 @@ const versionShapeSchema = z
     handoff_keywords: z
       .array(z.string().trim().min(1).max(60))
       .max(20)
-      .default(["falar com humano", "atendente", "pessoa real"]),
+      .default(["hablar con una persona", "agente humano", "persona real"]),
     handoff_tool_enabled: z.boolean().default(true),
     // Passar para uma pessoa por ASSUNTO JURÍDICO — irmão da linha acima, com
     // o MESMO molde: booleano com default LIGADO (#2097, #2156). O default é

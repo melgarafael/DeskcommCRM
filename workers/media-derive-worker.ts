@@ -205,7 +205,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
 
   /** O que o operador chama de "isto" — o aviso não pode falar em `msg.type`. */
   const rotuloDoTipo =
-    ({ image: "imagem", audio: "áudio", document: "documento", video: "vídeo" } as Record<
+    ({ image: "imagen", audio: "audio", document: "documento", video: "video" } as Record<
       string,
       string
     >)[msg.type] ?? "mídia";
@@ -465,7 +465,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // status de sucesso é pior que o nulo — era o mesmo defeito de olhar.
     if (msg.type === "audio" && !text.trim()) {
       const motivo =
-        `o modelo devolveu a transcrição do áudio vazia (${decisao.origem}: ${decisao.motivo})`;
+        `el modelo devolvió la transcripción del audio vacía (${decisao.origem}: ${decisao.motivo})`;
       await markFailed(motivo);
       await avisarMidiaNaoLida(
         msg.organization_id,
@@ -561,7 +561,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     if (row.attempts >= DRAIN_MAX_ATTEMPTS - 1) {
       logger.error("[media-derive] failed permanently", { message_id: msg.id, detail });
       await markFailed(
-        `a derivação da ${rotuloDoTipo} falhou em todas as tentativas: ${detail.slice(0, 200)}`,
+        `el procesamiento de ${rotuloDoTipo} falló en todos los intentos: ${detail.slice(0, 200)}`,
       );
       // ─── E AVISA. Desistir calado era o desfecho mais comum ────────────────
       //
@@ -599,7 +599,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       await avisarMidiaNaoLida(
         msg.organization_id,
         rotuloDoTipo,
-        "a leitura deu erro em todas as tentativas, ao abrir o arquivo ou ao chamar o provedor de IA",
+        "la lectura dio error en todos los intentos, al abrir el archivo o al llamar al proveedor de IA",
         "O conteúdo do arquivo não chegou ao agente. Da próxima mensagem em diante ele sabe que houve um arquivo que não deu para ler, e responde avisando em vez de supor o que estava nele.",
         detail.slice(0, 200),
       );
@@ -692,7 +692,7 @@ function buildDeriveDeps(
   // anterior, sem este gate de LLM. O custo informado pela OpenRouter pode
   // entrar na soma de gastos; sua ausência continua null, sem estimativa.
   const barradoPeloTeto = async (d: {
-    tipo: "imagem" | "áudio";
+    tipo: "imagen" | "audio";
     oQueNaoSaiu: string;
     purpose: string;
     provider: string;
@@ -722,7 +722,7 @@ function buildDeriveDeps(
       await avisarMidiaNaoLida(
         orgId,
         d.tipo,
-        `o limite de gasto com IA deste mês foi atingido e a IA está configurada para parar nele, então ${d.oQueNaoSaiu} ao provedor`,
+        `se llegó al límite de gasto en IA de este mes y la IA está configurada para frenar en ese punto, así que ${d.oQueNaoSaiu} al proveedor`,
         "Enquanto o limite valer, a IA também não responde: as conversas vão para a fila de atendimento humano.",
         undefined,
         "Para resolver, suba o limite ou desligue a parada em Uso de IA › Orçamento.",
@@ -763,7 +763,7 @@ function buildDeriveDeps(
         ? `o modelo ${llm.defaultModel ?? "configurado"} não enxerga imagens`
         : `não sei se o modelo ${llm.defaultModel ?? "configurado"} enxerga imagens, ` +
           `então não arrisquei enviar a foto — escolha um modelo do catálogo em Agente de IA → Provedores`;
-      await avisarMidiaNaoLida(orgId, "imagem", motivo);
+      await avisarMidiaNaoLida(orgId, "imagen", motivo);
       return MARCADOR_NAO_LIDA;
     }
     // O endereço é escolhido por quem administra a instalação (o campo de
@@ -778,8 +778,8 @@ function buildDeriveDeps(
     if (baseUrlDaVisao && chaveEhDaInstalacao) {
       await avisarMidiaNaoLida(
         orgId,
-        "imagem",
-        "o endereço de IA configurado para esta empresa só é usado com a credencial dela: cadastre a chave da empresa em Agente de IA e Provedores, ou tire o endereço próprio para voltar ao provedor padrão da instalação",
+        "imagen",
+        "la dirección de IA configurada para esta empresa solo se usa con su propia credencial: carga la clave de la empresa en Agente de IA y Proveedores, o quita la dirección propia para volver al proveedor predeterminado de la instalación",
       );
       return MARCADOR_NAO_LIDA;
     }
@@ -788,8 +788,8 @@ function buildDeriveDeps(
       if (recusa) {
         await avisarMidiaNaoLida(
           orgId,
-          "imagem",
-          "o endereço configurado para a visão não foi aceito como destino, então não enviei a imagem nem a chave para lá — confira o endereço do provedor em Agente de IA e Provedores; endereço escolhido pela empresa não pode apontar para a rede interna do servidor",
+          "imagen",
+          "la dirección configurada para la visión no fue aceptada como destino, así que no mandé ni la imagen ni la clave para allá — revisá la dirección del proveedor en Agente de IA y Proveedores; la dirección elegida por la empresa no puede apuntar a la red interna del servidor",
           undefined,
           recusa,
         );
@@ -798,7 +798,7 @@ function buildDeriveDeps(
     }
     const factory = registry[llm.provider];
     if (!factory) {
-      await avisarMidiaNaoLida(orgId, "imagem", `o provedor ${llm.provider} não está disponível nesta instalação`);
+      await avisarMidiaNaoLida(orgId, "imagen", `el proveedor ${llm.provider} no está disponible en esta instalación`);
       return MARCADOR_NAO_LIDA;
     }
     // ─── O PAR ANTES DE ENVIAR A FOTO ──────────────────────────────────────
@@ -819,7 +819,7 @@ function buildDeriveDeps(
         origem_da_configuracao: origemDoModelo,
         motivo: parDaVisao.motivo,
       });
-      await avisarMidiaNaoLida(orgId, "imagem", parDaVisao.motivo);
+      await avisarMidiaNaoLida(orgId, "imagen", parDaVisao.motivo);
       return MARCADOR_NAO_LIDA;
     }
     const modelo = llm.defaultModel ?? "";
@@ -835,8 +835,8 @@ function buildDeriveDeps(
     // gasto de uma chamada que a configuração já impediu.
     if (
       await barradoPeloTeto({
-        tipo: "imagem",
-        oQueNaoSaiu: "a foto não foi enviada",
+        tipo: "imagen",
+        oQueNaoSaiu: "la foto no se envió",
         purpose: PONTO_VISAO_DE_IMAGEM,
         provider: llm.provider,
         model: modelo,
@@ -897,7 +897,7 @@ function buildDeriveDeps(
       // como se ele não existisse. O aviso é o que dá ao operador a chance
       // de cadastrar a chave — sem ele, o sintoma é indistinguível de "o
       // agente é ruim".
-      await avisarMidiaNaoLida(orgId, "áudio", "falta uma chave da OpenAI para transcrever");
+      await avisarMidiaNaoLida(orgId, "audio", "falta una clave de OpenAI para transcribir");
       return MARCADOR_NAO_LIDA;
     },
   };
@@ -915,8 +915,8 @@ function buildDeriveDeps(
       if (recusa) {
         await avisarMidiaNaoLida(
           orgId,
-          "áudio",
-          "o endereço configurado para a transcrição não foi aceito como destino, então não enviei o áudio nem a chave para lá — confira TRANSCRIPTION_BASE_URL; se o serviço roda na rede interna, quem administra a instalação libera o endereço em Administração › Destinos internos",
+          "audio",
+          "la dirección configurada para la transcripción no fue aceptada como destino, así que no mandé ni el audio ni la clave para allá — revisá TRANSCRIPTION_BASE_URL; si el servicio corre en la red interna, quien administra la instalación libera la dirección en Administración › Destinos internos",
           undefined,
           recusa,
         );
@@ -961,8 +961,8 @@ function buildDeriveDeps(
     transcribe: async (audio, mime) => {
       if (
         await barradoPeloTeto({
-          tipo: "áudio",
-          oQueNaoSaiu: "o áudio não foi enviado",
+          tipo: "audio",
+          oQueNaoSaiu: "el audio no se envió",
           purpose: PONTO_TRANSCRICAO_DE_AUDIO,
           provider: decisao.anuncio.provider,
           model: decisao.anuncio.modelId ?? "",
@@ -1198,11 +1198,11 @@ export function textoDoAvisoDeMidiaNaoLida(aviso: {
   paraResolver?: string;
 }): { title: string; body: string } {
   return {
-    title: `O agente não conseguiu ler ${aviso.tipo} que o cliente enviou`,
+    title: `El agente no pudo leer el ${aviso.tipo} que mandó el cliente`,
     body:
       `Motivo: ${aviso.motivo}. ${aviso.consequencia} ` +
       (aviso.paraResolver ??
-        `Para resolver, ajuste o modelo desse ponto em Agente de IA → Provedores, ou cadastre a chave necessária em Credenciais.`) +
+        `Para resolver, ajustá el modelo de ese punto en Agente de IA → Proveedores, o cargá la clave necesaria en Credenciales.`) +
       (aviso.detalheTecnico ? ` ${DETALHE_TECNICO} ${aviso.detalheTecnico}` : ""),
   };
 }
@@ -1215,7 +1215,7 @@ async function avisarMidiaNaoLida(
    * O que aconteceu com o atendimento. O padrão vale para as recusas, que
    * entregam o marcador ao agente; a falha permanente não entrega nada.
    */
-  consequencia = "Enquanto isso, o agente responde avisando que não conseguiu abrir o arquivo.",
+  consequencia = "Mientras tanto, el agente responde avisando que no pudo abrir el archivo.",
   /** A frase crua do provedor ou do armazenamento, quando houver — vai no fim, rotulada. */
   detalheTecnico?: string,
   paraResolver?: string,

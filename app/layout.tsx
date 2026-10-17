@@ -99,14 +99,14 @@ export async function generateMetadata(): Promise<Metadata> {
   const { name } = marca;
   return {
     title: {
-      default: `${name} — atendimento e vendas por WhatsApp com agentes de IA`,
+      default: `${name} — atención y ventas por WhatsApp con agentes de IA`,
       template: `%s · ${name}`,
     },
     description:
-      "Centralize o atendimento por WhatsApp num funil só. Agentes de IA resolvem o que dá pra resolver e passam para o time humano o que importa — com tudo registrado. Multi-tenant, LGPD-nativo, feito para operações brasileiras.",
+      "Centraliza la atención por WhatsApp en un solo embudo. Los agentes de IA resuelven lo que se puede resolver y pasan al equipo humano lo que importa — con todo registrado. Multi-tenant, nativo en protección de datos.",
     applicationName: name,
     authors: [{ name }],
-    keywords: ["CRM", "atendimento", "WhatsApp", "IA conversacional", "LGPD", "multi-tenant"],
+    keywords: ["CRM", "atención al cliente", "WhatsApp", "IA conversacional", "multi-tenant"],
     robots: { index: false, follow: false },
     // Sem esta linha o navegador pede `/favicon.ico`, que não existe: medido em
     // produção, o 404 é a `app/not-found.tsx` INTEIRA (19.435 bytes de HTML)
@@ -334,7 +334,7 @@ async function MarcaDosClientComponents({ children }: { children: React.ReactNod
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
-      lang="pt-BR"
+      lang="es"
       data-theme="light"
       suppressHydrationWarning
       className={`${atkinson.variable} ${plexMono.variable}`}
