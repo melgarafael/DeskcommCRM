@@ -135,7 +135,11 @@ beforeAll(() => {
   retorno = valor(
     `select public.fn_lgpd_cascade_redact_contact('${ORG}', '${ALVO}', gen_random_uuid());`,
   );
-  rotulo = `Cliente Anonimizado #${ALVO.slice(0, 8)}`;
+  // O rótulo NÃO é mais `substring(id, 1, 8)` (#2342): a cascata gera um sufixo
+  // OPACO e grava no contato no passo 1 — só se sabe o valor lendo a linha. O
+  // teste captura o que o banco guardou; a prova de que o defeito foi embora
+  // está no teste de `body`, logo abaixo.
+  rotulo = valor(`select name from public.contacts where id = '${ALVO}';`);
 });
 
 describe("0291 — a cascata de LGPD alcança a passagem para humano", () => {
@@ -168,6 +172,14 @@ describe("0291 — a cascata de LGPD alcança a passagem para humano", () => {
     // abortado não anonimiza NADA: o modo de falha é a rota devolver erro e o
     // dado continuar legível em todas as tabelas, não só nesta.
     expect(campo(PASSAGEM_ALVO, "body")).toBe(rotulo);
+    // O rótulo tem o MESMO formato de antes (é ele que `lib/escalacao/texto-do-aviso.ts`
+    // reconhece), mas NÃO leva mais nenhum pedaço do id — com o sufixo no id,
+    // quem tem o banco casava o rótulo com a linha `contacts` e reidentificava
+    // o titular olhando (issue #2342; RGPD considerando 26, LGPD art. 12).
+    expect(rotulo).toMatch(/^Cliente Anonimizado #[0-9a-f]{8}$/);
+    expect(rotulo, "o rótulo ainda deriva do id do contato").not.toBe(
+      `Cliente Anonimizado #${ALVO.slice(0, 8)}`,
+    );
   });
 
   it("`title`, `notes` e `content` viram null, e `tentativas` esvazia", () => {

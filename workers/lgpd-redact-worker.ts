@@ -28,6 +28,7 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { findContactByExternalId, findLgpdRequest } from "@/lib/lgpd/repository";
+import { avisarTitularAposApagamento } from "@/lib/lgpd/aviso-apos-apagar";
 import { cascadeRedactContact } from "@/lib/lgpd/redact-cascade";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -210,6 +211,33 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
         };
       }
 
+      // ─── O AVISO DO ART. 12.º LÊ O ENDEREÇO ANTES, E MANDA DEPOIS ────────
+      //
+      // O passo 1 da cascata zera `contacts.email` — é o dado que está sendo
+      // apagado. A norma, porém, manda informar o titular DEPOIS do
+      // apagamento (art. 12.º, n.º 3 do RGPD; art. 18 da LGPD), então a ordem
+      // é esta: lê aqui, apaga, avisa (#2342). O payload do pedido serve de
+      // fallback para o pedido que veio de plataforma, onde o contato pode nem
+      // ter e-mail.
+      const { data: contatoAntes } = await admin
+        .from("contacts")
+        .select("email")
+        .eq("organization_id", orgId)
+        .eq("id", contactId)
+        .maybeSingle();
+      const emailNoPayload = req.request_payload?.["email"];
+      // Duas checagens `typeof` em vez de uma pilha de `??`: o endereço vem do
+      // contato (lido antes do apagamento) ou do payload, e o tipo de cada um
+      // é tratado de forma explícita — mesma ordem de preferência de antes.
+      const contato = contatoAntes as { email?: string | null } | null;
+      const emailDoContato = contato?.email;
+      let emailTitular: string | null = null;
+      if (typeof emailDoContato === "string") {
+        emailTitular = emailDoContato;
+      } else if (typeof emailNoPayload === "string") {
+        emailTitular = emailNoPayload;
+      }
+
       const cascade = await cascadeRedactContact({
         organizationId: orgId,
         contactId,
@@ -248,6 +276,17 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
       // Best-effort callback to upstream platform.
       const callback = await tryNuvemshopCallback(orgId, req.request_payload ?? {});
 
+      // O art. 12.º, n.º 3 (RGPD) e o art. 18 (LGPD): avisar o titular DEPOIS
+      // de apagar. Best-effort de propósito — o pedido já está cumprido quando
+      // aqui, e derrubar `completed` por causa de um e-mail trocaria um direito
+      // exercido por uma falha que o SLA registraria como atraso (#2342).
+      const aviso = await avisarTitularAposApagamento(admin, {
+        organizationId: orgId,
+        requestId,
+        emailTitular,
+        recebidoEm: new Date(req.received_at),
+      });
+
       await admin
         .from("lgpd_requests")
         .update({
@@ -258,6 +297,9 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
             cascaded_to: cascade.counts,
             media_queued: cascade.mediaPaths.length,
             callback_status: callback.status,
+            // O aviso do art. 12.º é prova do cumprimento, não enfeite: a razão
+            // fica no resultado para a tela de detalhe mostrar POR QUE não saiu.
+            art12_notice: aviso.enviado ? "sent" : aviso.motivo,
           },
           cascaded_to: cascade.counts,
           error_message: null,
@@ -292,6 +334,7 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
           media_queued: cascade.mediaPaths.length,
           callback_status: callback.status,
           attempts: nextAttempts,
+          art12_notice: aviso.enviado ? "sent" : aviso.motivo,
         },
         bypassedRls: true,
       });

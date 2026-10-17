@@ -115,8 +115,28 @@ describe("o rótulo da seção de LGPD preserva o nulo (issue #2656)", () => {
   it("o rótulo continua sendo o único valor possível para a coluna PREENCHIDA", () => {
     // Preservar o nulo não pode virar apagar o efeito: a coluna preenchida recebe o rótulo,
     // e é o invariante de efeito que mede isto no banco.
+    //
+    // Desde a 0657 (#2342) o valor vem de `fn_lgpd_rotulo_anonimizado` — rótulo OPACO, sem
+    // pedaço do id — e reusa o que já está no contato quando o gatilho veio da cascata, para
+    // a seção casar com o contato. A expressão antiga (`substring(new.id::text from 1 for 8)`)
+    // é o defeito que a 0657 consertou; ela só pode aparecer nas migrations JÁ APLICADAS.
+    const NOVO_ROTOR = "public.fn_lgpd_rotulo_anonimizado(new.id)";
     for (const origem of [ultimaNaCadeia, ultimaNoBaseline]) {
-      expect(origem).toContain("v_rotulo text := 'Cliente Anonimizado #' || substring(new.id::text from 1 for 8)");
+      expect(origem).toContain(NOVO_ROTOR);
+      // O gatilho só REUSA o rótulo que já está no contato se ele casar com o
+      // formato-padrão; fora dele, o valor vem da função nova. O formato é o
+      // contrato de tela de sempre (`Cliente Anonimizado #` + 8 hex), e é ele
+      // que continua sendo o ÚNICO valor aceito para a coluna preenchida.
+      expect(origem).toContain("'^Cliente Anonimizado #[0-9a-f]{8}$'");
+      expect(
+        origem,
+        "a última definição voltou a derivar o rótulo do id — o defeito do #2342",
+      ).not.toContain("substring(new.id::text from 1 for 8)");
     }
+    // A 0485 e a 0619 seguem com a fórmula antiga: a história não foi reescrita.
+    const antiga = queRedefinem.find((f) => f.includes("_0619_"));
+    expect(ler(antiga!), "a 0619 deixou de ter a fórmula de antes").toContain(
+      "substring(new.id::text from 1 for 8)",
+    );
   });
 });

@@ -860,19 +860,30 @@ const REPASSA_O_VALOR: readonly string[] = [
  * milissegundos, e por quê. Cada entrada carrega o motivo escrito; entrada que
  * deixa de casar é vermelho pedindo remoção.
  *
- * ═══ ESTÁ VAZIA — sete recortes depois ═══
+ * ═══ HOJE: UMA ENTRADA — volta a ser medida (#2342) ═══
  *
- * Ela nasceu com uma entrada só (#2101). Chegou a sete. Está vazia desde o
- * recorte do `admin/dashboard/kpis`, e vazia é o estado que a lista quer: cada
+ * Ela nasceu com uma entrada só (#2101). Chegou a sete, e foi a zero no recorte
+ * do `admin/dashboard/kpis`. Voltou a uma com a rota do art. 12.º, que compara
+ * dois prazos em milissegundos (nunca empurrar vencimento para trás) — motivo
+ * escrito na entrada. Vazia é o estado que a lista quer: cada
  * linha que sai é uma superfície que passou a ler o dia pelo helper.
  *
- * **Vazia não é "o gate sumiu".** Os dois casos que a usam continuam valendo:
+ * **Lista não vazia não é "o gate sumiu".** Os dois casos que a usam continuam valendo:
  * arquivo que lê `due_at` sem estar em nenhuma das três listas é vermelho, e um
- * arquivo em duas listas também. O que está vazio é só a TERCEIRA lista; a
- * varredura e a partição seguem de pé, e é por isso que este bloco fica aqui em
- * vez de ser apagado.
+ * arquivo em duas listas também. A varredura e a partição seguem de pé — lista
+ * que enche de volta volta a ser medida — e é por isso que este bloco fica aqui
+ * em vez de ser apagado.
  */
-const DIVIDA_CONGELADA: ReadonlyArray<{ arquivo: string; motivo: string }> = [];
+const DIVIDA_CONGELADA: ReadonlyArray<{ arquivo: string; motivo: string }> = [
+  {
+    arquivo: "app/api/v1/lgpd/requests/[id]/art12/route.ts",
+    motivo:
+      "a rota compara dois INSTANTES de prazo em milissegundos — o vencimento novo " +
+      "(prazoDeUmMes(agora)) contra o due_at que a linha já prometia — para nunca " +
+      "empurrar o prazo para trás (art. 12.º, n.º 5); não é leitura de dia, é ordem " +
+      "entre dois prazos (#2342)",
+  },
+];
 
 /**
  * Os módulos que DETÊM a leitura do dia. Estar na lista só vale se o arquivo
