@@ -25,6 +25,7 @@ const lerTabela = dialeto.lerTabela;
 const CONEXAO: ConexaoExterna = {
   id: "conn-1",
   organizationId: "org-1",
+  dbType: "postgres",
   label: "Outro CRM",
   host: "db.exemplo.com",
   port: 5432,

@@ -17,7 +17,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { carregarConexao } from "@/lib/external-db/credenciais";
-import { testarConexao } from "@/lib/external-db/conexao";
+import { testarConexao } from "@/lib/external-db/drivers";
 import { validarHostDeBanco } from "@/lib/external-db/guardas";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { traduzir } from "@/lib/i18n/dicionario";
