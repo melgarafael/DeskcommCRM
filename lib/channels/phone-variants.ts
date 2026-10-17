@@ -100,7 +100,9 @@ export function normalizePhoneBR(raw: unknown): string | null {
   if (raw.trim().startsWith("+")) {
     e164 = /^\d{8,15}$/.test(digits) ? `+${digits}` : null;
   } else if (digits.length === 12 || digits.length === 13) {
-    e164 = digits.startsWith("55") ? `+${digits}` : null;
+    // 54 = Argentina (ex: webhook_lead_captures perdia o telefone de qualquer
+    // lead argentino sem "+" na frente — medido 2026-10-17 com um teste real).
+    e164 = digits.startsWith("55") || digits.startsWith("54") ? `+${digits}` : null;
   } else if (digits.length === 10 || digits.length === 11) {
     e164 = `+55${digits}`;
   }
