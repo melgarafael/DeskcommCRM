@@ -203,16 +203,16 @@ function diagnosisBody(reason: Exclude<HoldReason, 'go_live'>, rates: SessionRat
   if (reason === 'block_rate') {
     const rate = rates.totalSends > 0 ? rates.blockedSends / rates.totalSends : 0;
     return (
-      `Bloqueios em ${pct(rate)} dos ${rates.totalSends} últimos envios do número ` +
-      `(limiar ${pct(k.blockRateThreshold)}). Outbound em espera automática — a fila retém, nada é perdido. ` +
-      'Verifique o número (possível queima do WhatsApp) e resolva este item para retomar.'
+      `Bloqueos en ${pct(rate)} de los últimos ${rates.totalSends} envíos del número ` +
+      `(umbral ${pct(k.blockRateThreshold)}). Envíos en espera automática — la cola los retiene, no se pierde nada. ` +
+      'Revisá el número (posible quema de WhatsApp) y resolvé este ítem para retomar.'
     );
   }
   const rate = rates.sentLeads > 0 ? rates.respondedLeads / rates.sentLeads : 0;
   return (
-    `Taxa de resposta em ${pct(rate)} (${rates.respondedLeads} de ${rates.sentLeads} leads contatados ` +
-    `responderam; piso ${pct(k.responseRateFloor)}). Outbound em espera automática — a fila retém. ` +
-    'Verifique a abordagem/o número e resolva este item para retomar.'
+    `Tasa de respuesta en ${pct(rate)} (${rates.respondedLeads} de ${rates.sentLeads} leads contactados ` +
+    `respondieron; piso ${pct(k.responseRateFloor)}). Envíos en espera automática — la cola los retiene. ` +
+    'Revisá el enfoque/el número y resolvé este ítem para retomar.'
   );
 }
 
@@ -311,7 +311,7 @@ async function evaluateSession(
         reason === 'go_live'
           ? textoDoGoLive(await idiomaDaOrg())
           : {
-              title: 'Saúde do número degradada — outbound em espera automática',
+              title: 'Salud del número degradada — envíos en espera automática',
               body: diagnosisBody(reason, rates, k),
             };
       // inbox item 1× por episódio: só cria se não há item aberto do número (dedup).

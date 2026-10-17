@@ -112,9 +112,9 @@ export function avisoDaConexao(saude: SaudeObservada, apelido: string): AvisoDeC
       return {
         kind: "channel_number_alert",
         severity: "critical",
-        title: `Conexão "${apelido}": o servidor de WhatsApp recusou a chave de acesso`,
+        title: `Conexión "${apelido}": el servidor de WhatsApp rechazó la clave de acceso`,
         body:
-          "Escanear o QR não resolve: a chave que o CRM usa para falar com o servidor de WhatsApp não confere com a que o servidor espera. Enquanto isso durar, nenhuma mensagem entra nem sai por NENHUMA conexão. Quem cuida do servidor precisa conferir a WAHA_API_KEY do .env e recriar o contêiner do WhatsApp.",
+          "Escanear el QR no resuelve esto: la clave que usa el CRM para hablar con el servidor de WhatsApp no coincide con la que el servidor espera. Mientras dure, ningún mensaje entra ni sale por NINGUNA conexión. Quien administra el servidor tiene que revisar la WAHA_API_KEY del .env y recrear el contenedor de WhatsApp.",
         episodio: "CREDENCIAL_RECUSADA",
       };
     }
@@ -126,7 +126,7 @@ export function avisoDaConexao(saude: SaudeObservada, apelido: string): AvisoDeC
     return {
       kind: "channel_number_alert",
       severity: "warn",
-      title: `Não foi possível verificar a conexão "${apelido}"`,
+      title: `No se pudo verificar la conexión "${apelido}"`,
       body: saude.detail,
       episodio: "UNREACHABLE",
     };
@@ -140,8 +140,8 @@ export function avisoDaConexao(saude: SaudeObservada, apelido: string): AvisoDeC
     return {
       kind: "qr_rescan",
       severity: "critical",
-      title: `WhatsApp "${apelido}" desconectado — precisa escanear o QR de novo`,
-      body: "Enquanto isso não acontecer, nenhuma mensagem entra nem sai por esta conexão.",
+      title: `WhatsApp "${apelido}" desconectado — hay que escanear el QR de nuevo`,
+      body: "Mientras eso no pase, ningún mensaje entra ni sale por esta conexión.",
       episodio: status,
     };
   }
@@ -149,8 +149,8 @@ export function avisoDaConexao(saude: SaudeObservada, apelido: string): AvisoDeC
   return {
     kind: "channel_number_alert",
     severity: "critical",
-    title: `WhatsApp "${apelido}" fora do ar (${status})`,
-    body: "Nenhuma mensagem entra nem sai por esta conexão até ela voltar.",
+    title: `WhatsApp "${apelido}" caído (${status})`,
+    body: "Ningún mensaje entra ni sale por esta conexión hasta que vuelva.",
     episodio: status,
   };
 }
