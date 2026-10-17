@@ -126,6 +126,12 @@ export const AUDIT_ACTIONS = [
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
   "conversation.tags_changed",
+  // Atendimento conjunto (issue #2542): convidar alguém para a MESMA conversa
+  // e tirar o participante são decisões auditáveis, com o `user_id` alvo no
+  // metadata. O convidado entra sem herdar o dono — por isso a trilha precisa
+  // distinguir "quem participa" de "de quem é a conversa".
+  "conversation.invited",
+  "conversation.participant_removed",
   "contact.tags_changed",
   // Fila de confirmação (spec 17 §4b): a IA PROPÕE, uma pessoa decide. As três
   // entram porque a proposta é intenção auditável mesmo quando nunca vira
