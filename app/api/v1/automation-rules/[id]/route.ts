@@ -8,6 +8,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { papelMinimoDaLista } from "@/lib/automation/exige-admin";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
@@ -120,6 +121,21 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     updated_at: new Date().toISOString(),
     ...autoriaDaMudanca({ type: "user", id: user.id, role: activeOrg.role }),
   };
+  // #2642 — o portão do `notify_team` na edição. O que configura quem recebe é
+  // a ESCRITA das ações: um `actions` novo que guarda a ação de equipe exige
+  // admin, pelo mesmo `requireRole` da criação. PATCH sem `actions` não passa
+  // por aqui — ele mexe em nome, gatilho ou is_active, e a lista gravada
+  // continua sendo a que o administrador deixou. Um manager não consegue nem
+  // ADICIONAR a ação nem REESCREVER a lista mantendo-a — a lista que ele grava
+  // tem de sair sem ela.
+  if (parsed.data.actions !== undefined && papelMinimoDaLista(parsed.data.actions) !== "manager") {
+    const equipe = await requireRole("admin", {
+      requestId,
+      resource: "automation_rules",
+      organizationId: activeOrg.orgId,
+    });
+    if (!equipe.ok) return equipe.response;
+  }
   if (parsed.data.actions !== undefined) {
     const safeActions = await encryptRuleActionSecrets(createAdminClient(), parsed.data.actions);
     if (safeActions === null) {

@@ -160,6 +160,13 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   "ai.credentials.view": "manager",
   "ai.credentials.write": "admin",
   "webhooks.manage": "manager",
+  // #2642 — avisar a EQUIPE é administrar quem recebe. `admin` porque o
+  // destinatário é uma PESSOA DA CASA e o canal sai da configuração de
+  // avisos (que é server-side, `requireRole("admin")`); deixar um manager
+  // apontar o membro abriria uma rota de mensagem para gente que a tela de
+  // Avisos já esconde dele. A MESMA régua está na rota de regras — este gate
+  // só esconde a opção do editor.
+  "webhooks.notify_team": "admin",
   // Mesmo mínimo de lib/navigation/catalogo.ts (destino /app/calls) e de
   // requireRole("manager") em app/api/v1/calls/route.ts — a RLS de crm_calls
   // é só por organização, então sem este gate o aviso ao vivo de ligação

@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { papelMinimoDaLista } from "@/lib/automation/exige-admin";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
@@ -60,6 +61,21 @@ export async function POST(req: NextRequest): Promise<Response> {
       requestId,
       details: parsed.error.flatten(),
     });
+  }
+
+  // #2642 — o portão do `notify_team` entra DEPOIS do schema e ANTES de
+  // qualquer escrita. O schema garante a FORMA; este garante quem pode. O
+  // `requireRole` é o gate único da rota, então a segunda chamada é ele de
+  // novo, com o nível que a lista pede — a matriz de papéis mora lá, não aqui.
+  // Só custa uma chamada quando a regra guarda a ação de equipe.
+  const papelMinimo = papelMinimoDaLista(parsed.data.actions);
+  if (papelMinimo !== "manager") {
+    const equipe = await requireRole(papelMinimo, {
+      requestId,
+      resource: "automation_rules",
+      organizationId: activeOrg.orgId,
+    });
+    if (!equipe.ok) return equipe.response;
   }
 
   // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041).

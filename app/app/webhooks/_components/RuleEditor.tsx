@@ -46,6 +46,7 @@ import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webh
 import { TRIGGER_LABELS, ACTION_LABELS, type TriggerEvent, type ActionType } from "./labels";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
 import { useT } from "@/hooks/i18n/useT";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 
 interface Props {
   open: boolean;

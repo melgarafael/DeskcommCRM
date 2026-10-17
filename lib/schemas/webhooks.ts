@@ -450,6 +450,26 @@ const acoesFixas = [
       plano_id: z.string().trim().min(1).max(64),
     }),
   }),
+  // #2642 — a ação que avisa a EQUIPE na virada para ganho. O destinatário é
+  // uma PESSOA (`user_organizations.user_id`) e o canal é o que o ADMIN já
+  // registrou: WhatsApp do aviso de caso ou o e-mail do próprio membro. Por
+  // isso a configuração é só isto — não tem número, endereço nem texto:
+  // colar destino aqui seria a mesma porta de spam que a disciplina da #1347
+  // fechou. `membro_id` é uuid e `canal` é enum fechado porque o executor
+  // trata os dois caminhos como rotas distintas, e um valor torto faria o
+  // resumo sair por um canal que ninguém configurou.
+  z.object({
+    type: z.literal("notify_team"),
+    // `strictObject` SÓ aqui, entre as ações: é o único destino que a regra não
+    // pode carregar. As irmãs aceitam campos extras por tolerância a round-trip
+    // do editor; esta ação não tem o que tolerar — qualquer `telefone`/`email`
+    // colado na regra é a porta de spam que a disciplina da #1347 fechou, e o
+    // destinatário é sempre o que o ADMIN registrou (ver notify-team.ts).
+    config: z.strictObject({
+      membro_id: z.string().uuid(),
+      canal: z.enum(["whatsapp", "email"]),
+    }),
+  }),
 ] as const;
 
 /**

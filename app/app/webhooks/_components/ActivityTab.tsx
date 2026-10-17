@@ -195,6 +195,23 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   resposta_vazia: "A IA não devolveu nenhuma escolha entre as opções desta ação. Tente de novo ou corrija a instrução.",
   sem_json: "A IA respondeu fora do formato esperado e nada foi executado. Tente de novo em alguns minutos.",
   escolha_ausente: "A IA respondeu sem dizer qual opção escolher, então nada foi executado. Tente de novo ou corrija a instrução.",
+  /*
+   * Os motivos da ação 'Mensagem para a equipe' (notify_team, #2642): o aviso à
+   * equipe sai pelo WhatsApp do número cadastrado ou pelo e-mail da pessoa — e
+   * cada desfecho, inclusive o 'enviado', tem frase própria para quem opera.
+   */
+  sem_numero_de_aviso_cadastrado: "O aviso à equipe não tem número cadastrado. Cadastre-o em Configurações › Avisos.",
+  canal_da_equipe_nao_encontrado: "O número cadastrado para avisar a equipe não está mais entre as conexões desta organização.",
+  canal_sem_chave: "A conexão do número da equipe está sem credencial. Reconecte o número em Conexões.",
+  telefone_da_equipe_invalido: "O telefone cadastrado para avisar a equipe não é válido para este canal. Corrija-o em Configurações › Avisos.",
+  whatsapp_falhou: "O canal do número da equipe recusou a mensagem agora. A automação tenta de novo no próximo disparo.",
+  whatsapp_enviado: "A equipe foi avisada pelo WhatsApp.",
+  email_falhou: "O servidor de e-mail recusou o envio. Revise o SMTP em Configurações › E-mail.",
+  email_enviado: "A equipe foi avisada por e-mail.",
+  membro_sem_email: "A pessoa escolhida não tem e-mail cadastrado no acesso dela.",
+  smtp_nao_configurado: "Esta instalação ainda não tem SMTP configurado — cadastre-o em Configurações › E-mail.",
+  sem_membro: "A regra não tem responsável escolhido. Abra a automação e escolha quem deve ser avisado.",
+  membro_invalido: "A pessoa escolhida não está ativa nesta organização. Escolha outra na automação.",
   /* #2726 — a ação `send_email`. Os sete nascem em
      lib/automation/actions/send-email.ts e chegam aos DOIS canais da tela:
      `detail.reason` nas recusas (pelo `para.motivo`, origem declarada em

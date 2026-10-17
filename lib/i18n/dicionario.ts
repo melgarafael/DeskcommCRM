@@ -473,6 +473,31 @@ export const DICIONARIO: Traducoes = {
     es: "Desactivado, ganar no toca el financiero: la tienda con checkout, el infoproducto y la inmobiliaria no viven de cuentas por cobrar. Activado, arrastrar a la etapa de ganado y el botón Ganar abren una orden de servicio con el valor y el contacto del negocio.",
   },
   "Motivo do ganho": { es: "Motivo del negocio ganado" },
+  // #2642 — o aviso da EQUIPE na virada para ganho. Rótulos do corpo do
+  // resumo (WhatsApp/e-mail) e do formulário da ação notify_team.
+  "Resumo do lead para a equipe": { es: "Resumen del lead para el equipo" },
+  "Mensagem para a equipe (resumo do negócio ganho)": {
+    es: "Mensaje al equipo (resumen del negocio ganado)",
+  },
+  "Regra": { es: "Regla" },
+  "Telefone": { es: "Teléfono" },
+  "O que o lead pediu": { es: "Lo que pidió el lead" },
+  "Pontuação": { es: "Puntuación" },
+  "Compromissos": { es: "Compromisos" },
+  "Objeções": { es: "Objeciones" },
+  "Próxima ação": { es: "Próxima acción" },
+  "Membro da equipe": { es: "Miembro del equipo" },
+  "Canal de entrega": { es: "Canal de entrega" },
+  "WhatsApp (número cadastrado em Avisos)": {
+    es: "WhatsApp (número registrado en Avisos)",
+  },
+  "E-mail do membro": { es: "Correo del miembro" },
+  "O número vem da configuração de avisos da empresa, cadastrada por um administrador. O resumo é montado na hora do disparo, com a pontuação e o motivo do negócio.": {
+    es: "El número viene de la configuración de avisos de la empresa, registrada por un administrador. El resumen se arma en el momento del envío, con la puntuación y el motivo del negocio.",
+  },
+  "O endereço é o que já está cadastrado da pessoa. Sem SMTP configurado, o aviso não sai e a regra avisa por quê.": {
+    es: "La dirección es la que ya está registrada de la persona. Sin SMTP configurado, el aviso no sale y la regla avisa por qué.",
+  },
   "Preencha os campos obrigatórios antes de continuar: {campos}.": {
     es: "Completa los campos obligatorios antes de continuar: {campos}.",
   },
@@ -1646,10 +1671,23 @@ export const DICIONARIO: Traducoes = {
   vazio: { es: "vacío" },
   "Abrir conversa no Inbox": { es: "Abrir conversación en el Inbox" },
 
+  // ─── Aviso à equipe (mensagem para a equipe na virada para ganho) ───
+  "O aviso à equipe não tem número cadastrado. Cadastre-o em Configurações › Avisos.": { es: "El aviso al equipo no tiene número registrado. Regístrelo en Configuración › Avisos." },
+  "O número cadastrado para avisar a equipe não está mais entre as conexões desta organização.": { es: "El número registrado para avisar al equipo ya no está entre las conexiones de esta organización." },
+  "A conexão do número da equipe está sem credencial. Reconecte o número em Conexões.": { es: "La conexión del número del equipo está sin credencial. Reconecte el número en Conexiones." },
+  "O telefone cadastrado para avisar a equipe não é válido para este canal. Corrija-o em Configurações › Avisos.": { es: "El teléfono registrado para avisar al equipo no es válido para este canal. Corríjalo en Configuración › Avisos." },
+  "O canal do número da equipe recusou a mensagem agora. A automação tenta de novo no próximo disparo.": { es: "El canal del número del equipo rechazó el mensaje ahora. La automatización lo reintenta en el próximo disparo." },
+  "A equipe foi avisada pelo WhatsApp.": { es: "El equipo fue avisado por WhatsApp." },
+  "O servidor de e-mail recusou o envio. Revise o SMTP em Configurações › E-mail.": { es: "El servidor de correo rechazó el envío. Revise el SMTP en Configuración › Correo." },
+  "A equipe foi avisada por e-mail.": { es: "El equipo fue avisado por correo." },
+  "A pessoa escolhida não tem e-mail cadastrado no acesso dela.": { es: "La persona elegida no tiene correo registrado en su acceso." },
+  "Esta instalação ainda não tem SMTP configurado — cadastre-o em Configurações › E-mail.": { es: "Esta instalación aún no tiene SMTP configurado — regístrelo en Configuración › Correo." },
+  "A regra não tem responsável escolhido. Abra a automação e escolha quem deve ser avisado.": { es: "La regla no tiene responsable elegido. Abra la automatización y elija a quién avisar." },
+  "A pessoa escolhida não está ativa nesta organização. Escolha outra na automação.": { es: "La persona elegida no está activa en esta organización. Elija otra en la automatización." },
+
   // ─── Contatos ───
   "Buscar contatos…": { es: "Buscar contactos…" },
   Nome: { es: "Nombre" },
-  Telefone: { es: "Teléfono" },
   "Nenhum contato": { es: "Sin contactos" },
   Bloqueado: { es: "Bloqueado" },
 

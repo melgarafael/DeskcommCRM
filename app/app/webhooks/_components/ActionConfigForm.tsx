@@ -86,7 +86,12 @@ export type ActionItem =
   // #1752 — a SEQUÊNCIA: o plano mora em `organizations.settings.task_plans`,
   // e o editor só escolhe QUAL deles aplicar. `plano_id` é o id do JSON (não
   // uuid) — mesmos campos do schema da API e da ação `apply_task_plan`.
-  | { type: "apply_task_plan"; config: { plano_id: string } };
+  | { type: "apply_task_plan"; config: { plano_id: string } }
+  // #2642 — o destino é uma PESSOA DA EQUIPE, e o canal é o que o ADMIN já
+  // registrou. Por isso não existe campo de número nem de endereço aqui: a
+  // configuração guarda quem recebe e por onde, e é o executor que lê o
+  // destino cadastrado. Mesmos campos do schema da API.
+  | { type: "notify_team"; config: { membro_id: string; canal: "whatsapp" | "email" } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -121,6 +126,11 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
       };
     case "apply_task_plan":
       return { type, config: { plano_id: "" } };
+    // #2642 — o canal por DEFAULT é o WhatsApp do aviso: é o caminho que o
+    // closer já usa, e o que a pergunta da issue descreve ("o WhatsApp do
+    // closer quando o lead vira ganho"). Quem prefere e-mail troca na tela.
+    case "notify_team":
+      return { type, config: { membro_id: "", canal: "whatsapp" } };
   }
 }
 
@@ -1064,6 +1074,71 @@ function ApplyTaskPlanForm({ config, onChange }: FormProps<{ plano_id: string }>
   );
 }
 
+/**
+ * `notify_team` (#2642) — o formulário do aviso que NUNCA vai para o lead.
+ *
+ * Duas escolhas, e só duas: QUEM recebe (uma pessoa da equipe, da mesma lista
+ * do `assign_owner`) e POR ONDE (o WhatsApp que o ADMIN já cadastrou em
+ * Avisos, ou o e-mail da própria pessoa). O que o formulário NÃO oferece é
+ * destino colado e texto escrito: número e endereço vêm da configuração
+ * cadastrada (mesma disciplina da #1347), e o corpo é montado no disparo com
+ * a pontuação e o motivo do negócio. Um campo de texto aqui seria um template
+ * — que é exatamente o defeito do aviso de caso que esta ação fecha.
+ */
+function NotifyTeamForm({
+  config,
+  onChange,
+}: FormProps<{ membro_id: string; canal: "whatsapp" | "email" }>) {
+  const t = useT();
+  const { data: members } = useAssignableMembers(true);
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <div className="space-y-1">
+        <Label>{t("Membro da equipe")}</Label>
+        <Select
+          value={config.membro_id}
+          onValueChange={(v) => onChange({ ...config, membro_id: v })}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t("Escolha quem recebe")} />
+          </SelectTrigger>
+          <SelectContent>
+            {(members ?? []).map((m) => (
+              <SelectItem key={m.user_id} value={m.user_id}>
+                {m.full_name ?? m.user_id.slice(0, 8)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label>{t("Canal de entrega")}</Label>
+        <Select
+          value={config.canal}
+          onValueChange={(v) => onChange({ ...config, canal: v as "whatsapp" | "email" })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="whatsapp">{t("WhatsApp (número cadastrado em Avisos)")}</SelectItem>
+            <SelectItem value="email">{t("E-mail do membro")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {config.canal === "whatsapp"
+            ? t(
+                "O número vem da configuração de avisos da empresa, cadastrada por um administrador. O resumo é montado na hora do disparo, com a pontuação e o motivo do negócio.",
+              )
+            : t(
+                "O endereço é o que já está cadastrado da pessoa. Sem SMTP configurado, o aviso não sai e a regra avisa por quê.",
+              )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function ActionConfigForm({
   action,
   onChange,
@@ -1138,6 +1213,13 @@ export function ActionConfigForm({
     case "apply_task_plan":
       return (
         <ApplyTaskPlanForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "notify_team":
+      return (
+        <NotifyTeamForm
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />
