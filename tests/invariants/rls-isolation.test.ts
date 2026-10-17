@@ -808,6 +808,23 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
     )).toBe(0);
   });
 
+  it("external_db_connections: org B lê 0 linhas de org A (cross-tenant, RLS)", () => {
+    // A pergunta certa: USER_B (agent da org B) tentando ler a linha de org A
+    // na tabela-base. Sem RLS isso vazaria; com RLS é 0. Ler a própria org B
+    // com `[]` dá 0 sem RLS — não prova nada.
+    const crossTenant = countAs(USER_B,
+      `select count(*) from public.external_db_connections
+       where organization_id = '${ORG_A}';`);
+    expect(crossTenant).toBe(0);
+
+    // Controle positivo: USER_A lê a própria linha na tabela-base (≥ 1, pois
+    // a semente a gravou com receitas não vazias).
+    const own = countAs(USER_A,
+      `select count(*) from public.external_db_connections
+       where organization_id = '${ORG_A}';`);
+    expect(own).toBeGreaterThanOrEqual(1);
+  });
+
   it("external_db_connections_safe: receitas não sai pela view, receitas_count sim", () => {
     // A coluna `receitas` NÃO existe na view _safe (D3 da Spec 23 / D3 da Spec 25).
     const colunas = sql(`
@@ -815,31 +832,23 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
       where table_schema = 'public' and table_name = 'external_db_connections_safe'
       order by ordinal_position;
     `);
-    expect(colunas.split("\n").map((l) => l.trim()).filter(Boolean)).not.toContain("receitas");
-    expect(colunas.split("\n").map((l) => l.trim()).filter(Boolean)).toContain("receitas_count");
-
-    // org A tem receitas na tabela-base; org B lê 0 linhas com receitas não vazias (RLS).
-    const receitasA = countAs(USER_A,
-      `select count(*) from public.external_db_connections
-       where organization_id = '${ORG_A}' and jsonb_array_length(receitas) > 0;`);
-    expect(receitasA).toBeGreaterThanOrEqual(1);
-
-    const receitasB = countAs(USER_B,
-      `select count(*) from public.external_db_connections
-       where organization_id = '${ORG_B}' and jsonb_array_length(receitas) > 0;`);
-    expect(receitasB).toBe(0);
+    const nomes = colunas.split("\n").map((l) => l.trim()).filter(Boolean);
+    expect(nomes).not.toContain("receitas");
+    expect(nomes).toContain("receitas_count");
   });
 
-  it("external_db_connections_safe: org A lê receitas_count da própria linha; org B lê 0", () => {
+  it("external_db_connections_safe: org B lê 0 de org A; org A lê receitas_count ≥ 1", () => {
+    // Cross-tenant na view: USER_B não vê a linha de org A.
+    const crossTenant = countAs(USER_B,
+      `select count(*) from public.external_db_connections_safe
+       where organization_id = '${ORG_A}';`);
+    expect(crossTenant).toBe(0);
+
+    // Controle positivo: USER_A vê `receitas_count` da própria linha na view.
     const countA = countAs(USER_A,
       `select receitas_count from public.external_db_connections_safe
        where organization_id = '${ORG_A}';`);
     expect(Number(countA)).toBeGreaterThanOrEqual(1);
-
-    const countB = countAs(USER_B,
-      `select receitas_count from public.external_db_connections_safe
-       where organization_id = '${ORG_B}';`);
-    expect(Number(countB)).toBe(0);
   });
 
   it("ai_reply_drafts: os dois tenants têm linhas antes de testar as cercas", () => {
