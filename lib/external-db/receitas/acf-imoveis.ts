@@ -111,7 +111,7 @@ export const RECEITA_ACF_IMOVEIS: DefinicaoDeReceita = {
   descricao:
     "Lê os imóveis publicados de um WordPress com ACF: título, preço, quartos, bairro " +
     "e (opcional) cidade, área e finalidade. O admin informa o tipo de post e qual meta_key " +
-    "é cada campo. Sem taxonomia nesta fatia (bairro por campo ACF; taxonomia fica para depois).",
+    "é cada campo. Devolve também imagem_url (imagem destacada), quando existir. Sem taxonomia nesta fatia (bairro por campo ACF; taxonomia fica para depois).",
   parametrosFixos: PARAMETROS_FIXOS_ACF_IMOVEIS,
   parametrosDaBusca: PARAMETROS_DA_BUSCA_ACF_IMOVEIS,
   tabelas: (fixos) => {
@@ -175,6 +175,15 @@ export const RECEITA_ACF_IMOVEIS: DefinicaoDeReceita = {
     if (campos.area) adicionarJuncao("area", campos.area, "left join");
     if (campos.finalidade) adicionarJuncao("finalidade", campos.finalidade, "left join");
 
+    // Imagem destacada (R4): postmeta._thumbnail_id -> posts.guid do anexo.
+    // LEFT JOIN: imóvel sem foto continua aparecendo, com imagem_url nulo.
+    const thumb = quotarIdentificadorMysql("mthumb");
+    const anexo = quotarIdentificadorMysql("matt");
+    juncoes.push(
+      `left join ${postmeta} ${thumb} on ${thumb}.post_id = ${posts}.ID and ${thumb}.meta_key = ${marcador("_thumbnail_id")}`,
+      `left join ${posts} ${anexo} on ${anexo}.ID = CAST(${thumb}.meta_value AS UNSIGNED) and ${anexo}.post_type = ${marcador("attachment")}`,
+    );
+
     const clausulas: string[] = [
       `${posts}.post_type = ${marcador(postType)}`,
       `${posts}.post_status = ${marcador("publish")}`,
@@ -222,6 +231,7 @@ export const RECEITA_ACF_IMOVEIS: DefinicaoDeReceita = {
     if (aliases.area) camposSelect.push(`${aliases.area}.meta_value as area`);
     if (aliases.finalidade) camposSelect.push(`${aliases.finalidade}.meta_value as finalidade`);
     camposSelect.push(`${posts}.guid as link`);
+    camposSelect.push(`${anexo}.guid as imagem_url`);
 
     const sql =
       `select ${camposSelect.join(", ")} ` +

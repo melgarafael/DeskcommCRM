@@ -144,3 +144,59 @@ it('uses only supplied in-memory sample contact in sandbox', () => {
   expect(context.context.contact.name).toBe('Maria Cenário');
   expect(context.context.contact.phone).toBe('+5511999999999');
 });
+
+describe('foto de item de receita na prévia (Spec 25 R4)', () => {
+  const URL_DA_RECEITA = 'https://loja.exemplo.com/casa.jpg';
+  const montar = (veio: (u: string) => boolean) => {
+    const p = preview();
+    const send = vi.fn();
+    const tools = applyPreviewPolicy(
+      { send_message: definition(send) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      veio,
+    );
+    return { p, send, tools };
+  };
+
+  it('imagem_url que a receita não devolveu neste turno → recusada, nenhum candidato', async () => {
+    const { p, send, tools } = montar(() => false);
+    const r = (await execute(tools, 'send_message', { body: 'Olá, posso ajudar?', imagem_url: URL_DA_RECEITA })) as {
+      ok: boolean;
+      error: { code: string };
+    };
+    expect(r.ok).toBe(false);
+    expect(r.error.code).toBe('imagem_fora_da_receita');
+    expect(p.result.impediments.map((i) => i.code)).toContain('imagem_fora_da_receita');
+    expect(p.result.candidates).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('produto_codigo junto com imagem_url → erro de ensino', async () => {
+    const { p, tools } = montar(() => true);
+    const r = (await execute(tools, 'send_message', {
+      body: 'Olá, posso ajudar?',
+      imagem_url: URL_DA_RECEITA,
+      produto_codigo: 'IP15',
+    })) as { ok: boolean; error: { code: string } };
+    expect(r.error.code).toBe('foto_ou_produto');
+    expect(p.result.candidates).toHaveLength(0);
+  });
+
+  it('imagem válida → candidato normal + aviso de que a foto sairia; nada é baixado', async () => {
+    const { p, send, tools } = montar((u) => u === URL_DA_RECEITA);
+    const r = (await execute(tools, 'send_message', { body: 'Olá, posso ajudar?', imagem_url: URL_DA_RECEITA })) as {
+      ok: boolean;
+    };
+    expect(r.ok).toBe(true);
+    expect(p.result.candidates).toHaveLength(1);
+    expect(p.result.warnings.map((w) => w.code)).toContain('foto_da_receita');
+    expect(JSON.stringify(p.result.warnings)).toContain('loja.exemplo.com');
+    expect(send).not.toHaveBeenCalled();
+  });
+});

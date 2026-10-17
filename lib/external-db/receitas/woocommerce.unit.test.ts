@@ -60,6 +60,8 @@ describe("receita woocommerce-produtos (unit, sem MySQL)", () => {
       "_regular_price",
       "_sku",
       "_stock_status",
+      "_thumbnail_id",
+      "attachment",
       "product",
       "publish",
       "%camisa%",

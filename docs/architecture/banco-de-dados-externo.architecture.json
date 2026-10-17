@@ -275,6 +275,14 @@
       "sublabel": "converte preço de texto (650.000,00 / 480000) em número no SQL da receita",
       "type": "lib",
       "dot": "blue"
+    },
+    {
+      "id": "fotoReceita",
+      "lane": "agente",
+      "label": "foto-da-receita.ts",
+      "sublabel": "send_message.imagem_url · só a URL que a receita devolveu no turno · guarda anti-SSRF antes do fetch · 8 s / 5 MB / jpeg-png-webp (C3 proposto, não medido no WAHA)",
+      "type": "lib",
+      "dot": "amber"
     }
   ],
   "edges": [
@@ -607,6 +615,18 @@
       "from": "precoReceita",
       "to": "instanciaReceita",
       "label": "usada também pelo acf-imoveis"
+    },
+    {
+      "id": "e67",
+      "from": "toolReceita",
+      "to": "fotoReceita",
+      "label": "imagem_url devolvida vira a lista do turno"
+    },
+    {
+      "id": "e68",
+      "from": "fotoReceita",
+      "to": "toolsAgente",
+      "label": "foto sai pelo envio do agente (enviarComFotos), texto = legenda"
     }
   ],
   "cards": [

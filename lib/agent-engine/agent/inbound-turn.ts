@@ -79,6 +79,11 @@ import {
   PASTA_DE_TESTE_DE_MIDIA,
   type FotoParaEnvio,
 } from './fotos-do-produto';
+import {
+  ImagensDaReceitaNoTurno,
+  prepararFotoDaReceita,
+  subirImagemNoStorage,
+} from './foto-da-receita';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
   applyLeadStateUpdate,
@@ -336,6 +341,15 @@ export const AGENT_TOOL_DEFS = {
         .describe(
           'código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: ' +
             'as fotos dele vão junto, e o texto vira a legenda da primeira',
+        ),
+      imagem_url: z
+        .string()
+        .optional()
+        .describe(
+          'a `imagem_url` de um item que crm_consultar_receita devolveu NESTE turno (imóvel, produto do ' +
+            'banco conectado): a foto vai junto e o texto vira a legenda. Use quando apresentar esse item ' +
+            'ao cliente e a linha trouxe imagem_url; copie a URL exatamente. Nunca invente nem use URL de ' +
+            'outra origem (é recusada). Não combine com produto_codigo. Se a foto falhar, o texto sai sozinho.',
         ),
     }),
   },
@@ -1322,6 +1336,8 @@ export interface InboundTurnDeps {
    * anti-ban observável no artefato de trace de forma determinística.
    */
   sleep?: (ms: number) => Promise<void>;
+  /** `fetch` do download da foto de item de receita — injetável só para teste. */
+  fetchDeImagem?: typeof fetch;
   /**
    * O Jev no turno — na camada anti-manipulação e no roteador de intenção.
    * Injetável só para teste (chave e `fetch` dublês). Default = a chave da
@@ -2973,6 +2989,9 @@ async function executarTurnoDoAgente(
   // as tools do modelo rodam em passos anteriores do mesmo loop, o valor já está certo
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
+  // Spec 25 R4: as `imagem_url` que `crm_consultar_receita` devolveu NESTE turno — a única
+  // fonte de URL que o `send_message` aceita para a foto de um item de receita.
+  const imagensDaReceita = new ImagensDaReceitaNoTurno();
   // Lido pelo `casePromiseGate` (#1873): true só depois de `schedule_followup` AGENDAR com
   // sucesso neste turno. Libera apenas a promessa de retorno do próprio assistente.
   let followupAgendadoNesteTurno = false;
@@ -3286,7 +3305,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: corpoDoModelo, produto_codigo }) => {
+      execute: async ({ body: corpoDoModelo, produto_codigo, imagem_url }) => {
         tentativasDeEnvio += 1;
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
@@ -3436,6 +3455,9 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // Foto de item de RECEITA (Spec 25 R4): o motivo, quando a foto não saiu.
+        let avisoDaFotoDaReceita: string | null = null;
+        const quiserFotoDaReceita = imagem_url !== undefined && imagem_url.trim() !== '';
         try {
           dupTrava.reservar(body);
           // RESPOSTA OBSOLETA: o cliente escreveu de novo enquanto este turno pensava.
@@ -3476,6 +3498,36 @@ async function executarTurnoDoAgente(
           // fora do lock do número — a cópia no Storage é rede. Código errado volta
           // ao modelo sem enviar nada; foto que não copiou sai do envio e o texto
           // segue (degradar para só texto). Ver `agent/fotos-do-produto.ts`.
+          if (quiserFotoDaReceita && produto_codigo !== undefined && produto_codigo.trim() !== '') {
+            dupTrava.liberar(body);
+            return {
+              ok: false,
+              error: {
+                code: 'foto_ou_produto',
+                message:
+                  'passe produto_codigo (foto do catálogo) OU imagem_url (foto de item de receita), nunca os dois. ' +
+                  'Escolha um e chame send_message de novo.',
+              },
+            };
+          }
+          if (quiserFotoDaReceita && !preview) {
+            // A URL só vale se a receita a devolveu neste turno; a guarda anti-SSRF, o teto de
+            // tempo e de bytes e o tipo moram em `foto-da-receita.ts`. Falha de mídia não
+            // lança: o texto sai e o motivo volta ao modelo.
+            const daReceita = await prepararFotoDaReceita(
+              { url: imagem_url!, tenantId, conversationId: input.conversationId },
+              imagensDaReceita,
+              { fetch: deps.fetchDeImagem ?? fetch, subir: subirImagemNoStorage(), log: runLog },
+            );
+            if (daReceita.ok) {
+              fotosDoProduto = [daReceita.foto];
+            } else if (daReceita.code === 'imagem_fora_da_receita') {
+              dupTrava.liberar(body);
+              return { ok: false, error: { code: daReceita.code, message: daReceita.message } };
+            } else {
+              avisoDaFotoDaReceita = daReceita.message;
+            }
+          }
           if (produto_codigo !== undefined && produto_codigo.trim() !== '' && !preview) {
             const preparadas = await prepararFotosDoProduto(pool, copiarFotoNoStorage(runLog), {
               tenantId,
@@ -3878,12 +3930,16 @@ async function executarTurnoDoAgente(
                 ok: true,
                 status: 'enviada',
                 message_id: outcome.messageId,
-                ...(produto_codigo !== undefined ? { fotos_enviadas: fotosDoProduto.length } : {}),
+                ...(produto_codigo !== undefined || quiserFotoDaReceita
+                  ? { fotos_enviadas: fotosDoProduto.length }
+                  : {}),
                 ...(fotosQueFaltaram > 0
                   ? {
                       aviso: `${fotosQueFaltaram} foto(s) do produto não puderam ser enviadas; o texto foi. Não diga ao cliente que mandou essas fotos.`,
                     }
-                  : {}),
+                  : avisoDaFotoDaReceita !== null
+                    ? { aviso: avisoDaFotoDaReceita }
+                    : {}),
               };
             case 'queued':
               return {
@@ -4443,6 +4499,19 @@ async function executarTurnoDoAgente(
             }
             // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
             // precisa saber para não vetar um turno que já checou a agenda de verdade.
+            // Foto de item de receita (R4): a URL só vale se veio daqui neste turno.
+            if (name === 'crm_consultar_receita' && typeof mcpTool.execute === 'function') {
+              const executeOriginal = mcpTool.execute.bind(mcpTool);
+              rawTools[name] = {
+                ...mcpTool,
+                execute: (async (...args: Parameters<typeof executeOriginal>) => {
+                  const resultado = await executeOriginal(...args);
+                  imagensDaReceita.registrar(resultado);
+                  return resultado;
+                }) as typeof mcpTool.execute,
+              };
+              continue;
+            }
             if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
               rawTools[name] = {
@@ -4552,6 +4621,7 @@ async function executarTurnoDoAgente(
             // `contradiz`/`nao_esta_na_base` aparecer para quem revisa o rascunho
             // (impedimento no assistido, aviso no Teste) em vez de sair calado.
             conferirAfirmacoes,
+            (url: string) => imagensDaReceita.tem(url),
           )
         : rawTools;
     const tools = wrapToolsWithBreaker(previewTools, {

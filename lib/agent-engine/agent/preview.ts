@@ -29,6 +29,7 @@ import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
+import { hostDaUrl, MENSAGEM_IMAGEM_FORA_DA_RECEITA } from './foto-da-receita';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -294,6 +295,12 @@ export function applyPreviewPolicy(
    * com a afirmação de fato sem conferência e sem observação para calibrar.
    */
   conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
+  /**
+   * Spec 25 R4 — a `imagem_url` veio de `crm_consultar_receita` NESTE turno? Sem ela
+   * (nenhuma consulta no turno) a imagem é recusada, como no envio real. Nada é
+   * baixado nem enviado na prévia.
+   */
+  imagemVeioDaReceita?: (url: string) => boolean,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -332,6 +339,35 @@ export function applyPreviewPolicy(
                     ? args.produto_codigo
                     : undefined
                   : undefined;
+              // Spec 25 R4 — foto de item de receita. A prévia não baixa nem envia nada: confere
+              // as mesmas recusas de ENSINO do envio real e registra que a foto sairia.
+              const imagemUrl =
+                args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
+                  ? args.imagem_url.trim()
+                  : '';
+              if (imagemUrl !== '') {
+                const recusa =
+                  produtoCodigo !== undefined && produtoCodigo.trim() !== ''
+                    ? {
+                        code: 'foto_ou_produto',
+                        message:
+                          'passe produto_codigo (foto do catálogo) OU imagem_url (foto de item de receita), nunca os dois.',
+                      }
+                    : !imagemVeioDaReceita?.(imagemUrl)
+                      ? { code: 'imagem_fora_da_receita', message: MENSAGEM_IMAGEM_FORA_DA_RECEITA }
+                      : null;
+                if (recusa) {
+                  p.result.impediments.push(recusa);
+                  return { ok: false, error: recusa };
+                }
+                if (!p.result.warnings.some((w) => w.code === 'foto_da_receita'))
+                  p.result.warnings.push({
+                    code: 'foto_da_receita',
+                    message:
+                      `A foto do item (${hostDaUrl(imagemUrl)}) seria baixada e enviada com o texto como legenda. ` +
+                      'Na prévia nada é baixado nem enviado.',
+                  });
+              }
               if (produtoCodigo !== undefined && produtoCodigo.trim() !== '') {
                 const midia = await prepararMidiaNoDryRun(prepararMidia, produtoCodigo);
                 p.result.midia.push(midia);

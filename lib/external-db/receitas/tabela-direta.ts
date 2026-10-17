@@ -51,6 +51,8 @@ const colunasSchema = z
     filtros_texto: z.array(colunaSchema).min(0).max(3),
     /** Coluna numérica para filtros numero_min/numero_max (ex.: ano). */
     filtro_numero: colunaSchema.optional(),
+    /** Coluna com a URL da foto do item (R4); sai como `imagem_url`. */
+    imagem: colunaSchema.optional(),
     /** Até 6 colunas adicionais para exibir (apelido = nome real da coluna). */
     exibir: z.array(colunaSchema).min(0).max(6),
     /** Filtro de status fixo: coluna = valor. */
@@ -67,6 +69,7 @@ const colunasSchema = z
       colunas.id,
       colunas.titulo,
       colunas.preco,
+      colunas.imagem,
       ...colunas.filtros_texto,
       colunas.filtro_numero,
       ...colunas.exibir,
@@ -82,7 +85,12 @@ const colunasSchema = z
     }
     // Coluna de exibir não pode colidir com os apelidos fixos id/titulo/preco.
     for (const exibirColuna of colunas.exibir) {
-      if (exibirColuna === "id" || exibirColuna === "titulo" || exibirColuna === "preco") {
+      if (
+        exibirColuna === "id" ||
+        exibirColuna === "titulo" ||
+        exibirColuna === "preco" ||
+        exibirColuna === "imagem_url"
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `a coluna de exibir "${exibirColuna}" colide com o apelido fixo "${exibirColuna}"`,
@@ -137,12 +145,23 @@ type TabelaDiretaFixos = {
     id: string;
     titulo: string;
     preco?: string;
+    imagem?: string;
     filtros_texto: string[];
     filtro_numero?: string;
     exibir: string[];
     status?: { coluna: string; valor: string };
   };
 };
+
+/**
+ * Opções internas de montagem (JetEngine). `anexos` = tabela `<prefixo>posts`:
+ * quando a coluna de imagem guarda só dígitos, é o ID de um anexo do WordPress
+ * e a URL sai do `guid` dele. INFERIDO da documentação do JetEngine (campo de
+ * mídia pode guardar URL ou ID); não medido contra instalação real.
+ */
+export interface OpcoesDeMontagem {
+  anexos?: string;
+}
 
 type TabelaDiretaBusca = {
   texto?: string;
@@ -161,6 +180,7 @@ export function montarTabelaDireta(
   busca: TabelaDiretaBusca,
   limite: number,
   extras?: FiltroTextoPorColuna,
+  opcoes?: OpcoesDeMontagem,
 ): { sql: string; valores: unknown[] } {
   const f = fixos;
   const tabela = f.tabela;
@@ -177,6 +197,25 @@ export function montarTabelaDireta(
     valores.push(v === undefined ? null : v);
     return `?`;
   };
+
+  // Imagem (R4). Com `anexos`, o valor só-dígitos é ID de anexo (JOIN no posts,
+  // antes do WHERE, então o valor 'attachment' é o primeiro placeholder).
+  let juncaoDeAnexo = "";
+  let selecaoDeImagem: string | null = null;
+  if (c.imagem) {
+    const colImagem = `${t}.${quotarIdentificadorMysql(c.imagem)}`;
+    if (opcoes?.anexos) {
+      const posts = quotarIdentificadorMysql(opcoes.anexos);
+      const matt = quotarIdentificadorMysql("matt");
+      const soDigitos = `${colImagem} regexp '^[0-9]+$'`;
+      juncaoDeAnexo =
+        `left join ${posts} ${matt} on ${matt}.ID = case when ${soDigitos} then cast(${colImagem} as unsigned) else null end ` +
+        `and ${matt}.post_type = ${marcador("attachment")} `;
+      selecaoDeImagem = `case when ${soDigitos} then ${matt}.guid else ${colImagem} end as imagem_url`;
+    } else {
+      selecaoDeImagem = `${colImagem} as imagem_url`;
+    }
+  }
 
   const clausulas: string[] = [];
 
@@ -238,6 +277,7 @@ export function montarTabelaDireta(
   if (colPreco) {
     camposSelect.push(`${precoNumero(`${t}.${colPreco}`)} as preco`);
   }
+  if (selecaoDeImagem) camposSelect.push(selecaoDeImagem);
   c.exibir.forEach((col) => {
     camposSelect.push(`${t}.${quotarIdentificadorMysql(col)} as ${quotarIdentificadorMysql(col)}`);
   });
@@ -246,6 +286,7 @@ export function montarTabelaDireta(
   const sql =
     `select ${camposSelect.join(", ")} ` +
     `from ${t} ` +
+    juncaoDeAnexo +
     (clausulas.length > 0 ? `where ${clausulas.join(" and ")} ` : "") +
     `order by ${t}.${colId} ` +
     `limit ${marcador(limite ?? TABELA_DIRETA_TETO)}`;
@@ -260,7 +301,7 @@ export const RECEITA_TABELA_DIRETA: DefinicaoDeReceita = {
   rotulo: "Tabela direta (qualquer tabela plana)",
   descricao:
     "Lê qualquer tabela plana do banco externo: o admin escolhe a tabela e diz " +
-    "qual coluna é cada dado (id, título, preço, filtros, exibir, status). " +
+    "qual coluna é cada dado (id, título, preço, imagem, filtros, exibir, status). " +
     "Sem JOIN: uma coluna por dado. Requer que a tabela e as colunas estejam " +
     "liberadas nas fontes da conexão.",
   parametrosFixos: PARAMETROS_FIXOS_TABELA_DIRETA,
@@ -276,6 +317,7 @@ export const RECEITA_TABELA_DIRETA: DefinicaoDeReceita = {
         id: string;
         titulo: string;
         preco?: string;
+        imagem?: string;
         filtros_texto: string[];
         filtro_numero?: string;
         exibir: string[];
@@ -283,7 +325,7 @@ export const RECEITA_TABELA_DIRETA: DefinicaoDeReceita = {
       };
     };
     const c = f.colunas;
-    const usadas: string[] = [c.id, c.titulo, c.preco, ...c.filtros_texto, c.filtro_numero, ...c.exibir, c.status?.coluna].filter((x): x is string => Boolean(x));
+    const usadas: string[] = [c.id, c.titulo, c.preco, c.imagem, ...c.filtros_texto, c.filtro_numero, ...c.exibir, c.status?.coluna].filter((x): x is string => Boolean(x));
     return { [f.tabela]: usadas };
   },
   montar: (fixos, busca, limite) => {

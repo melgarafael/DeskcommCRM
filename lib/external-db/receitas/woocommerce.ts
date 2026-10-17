@@ -50,6 +50,9 @@ export const PARAMETROS_DA_BUSCA_WOOCOMMERCE = z
   })
   .strict();
 
+/** Id do anexo a partir do meta_value (texto) do _thumbnail_id. */
+const ANEXO_ID = (alias: string): string => `CAST(${alias}.meta_value AS UNSIGNED)`;
+
 function quotarIdentificadorMysql(nome: string): string {
   return `\`${nome.replace(/`/g, "``")}\``;
 }
@@ -70,7 +73,7 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
   descricao:
     "Lê os produtos publicados do WordPress/WooCommerce: título, preço, SKU e estoque. " +
     "O prefixo é o que aparece antes de _posts no banco do WordPress (padrão wp_). " +
-    "Sem foto e sem funil nesta fatia (R4/R5 ficam para depois).",
+    "Devolve também imagem_url (imagem destacada do produto), quando existir. Sem funil nesta fatia.",
   parametrosFixos: PARAMETROS_FIXOS_WOOCOMMERCE,
   parametrosDaBusca: PARAMETROS_DA_BUSCA_WOOCOMMERCE,
   tabelas: (fixos) => {
@@ -80,6 +83,7 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
   colunas: (fixos) => {
     const p = (fixos as { prefixo: string }).prefixo ?? PREFIXO_PADRAO;
     return {
+      // guid/post_type/ID também servem ao anexo da imagem destacada (R4).
       [`${p}posts`]: ["ID", "post_title", "post_status", "post_type", "guid"],
       [`${p}postmeta`]: ["post_id", "meta_key", "meta_value"],
     };
@@ -92,6 +96,8 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
     const mrp = quotarIdentificadorMysql("mrp");
     const msku = quotarIdentificadorMysql("msku");
     const mstock = quotarIdentificadorMysql("mstock");
+    const mthumb = quotarIdentificadorMysql("mthumb");
+    const matt = quotarIdentificadorMysql("matt");
 
     const valores: unknown[] = [];
     const marcador = (v: unknown): string => {
@@ -112,6 +118,10 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
       `left join ${postmeta} ${msku} on ${msku}.post_id = ${posts}.ID and ${msku}.meta_key = ${marcador("_sku")}`,
       // estoque
       `left join ${postmeta} ${mstock} on ${mstock}.post_id = ${posts}.ID and ${mstock}.meta_key = ${marcador("_stock_status")}`,
+      // imagem destacada (R4): postmeta._thumbnail_id -> posts.guid do anexo.
+      // LEFT JOIN: produto sem foto continua aparecendo, com imagem_url nulo.
+      `left join ${postmeta} ${mthumb} on ${mthumb}.post_id = ${posts}.ID and ${mthumb}.meta_key = ${marcador("_thumbnail_id")}`,
+      `left join ${posts} ${matt} on ${matt}.ID = ${ANEXO_ID(mthumb)} and ${matt}.post_type = ${marcador("attachment")}`,
     ];
 
     const clausulas: string[] = [
@@ -147,7 +157,8 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
       `${PRECO_COLUNA} as preco, ` +
       `${msku}.meta_value as sku, ` +
       `${mstock}.meta_value as estoque, ` +
-      `${posts}.guid as link ` +
+      `${posts}.guid as link, ` +
+      `${matt}.guid as imagem_url ` +
       `from ${posts} ` +
       `${joins.join(" ")} ` +
       `where ${clausulas.join(" and ")} ` +

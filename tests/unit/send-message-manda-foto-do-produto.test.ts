@@ -47,3 +47,35 @@ describe("send_message leva a foto do produto", () => {
     expect(send).toContain("enviarComFotos(finalBody, fotosDoProduto,");
   });
 });
+
+describe("send_message leva a foto de item de RECEITA (Spec 25 R4)", () => {
+  it("imagem_url é opcional no schema", () => {
+    const schema = AGENT_TOOL_DEFS.send_message.inputSchema;
+    expect(schema.safeParse({ body: "oi", imagem_url: "https://x.com/a.jpg" }).success).toBe(true);
+    expect(schema.safeParse({ body: "oi" }).success).toBe(true);
+  });
+
+  it("a foto é preparada ANTES da cadeia, e produto_codigo + imagem_url é recusado antes de baixar", () => {
+    const exclusivo = corpoDoSend.indexOf("'foto_ou_produto'");
+    const prepara = corpoDoSend.indexOf("prepararFotoDaReceita(");
+    const cadeia = corpoDoSend.indexOf("runBeforeSend(beforeSendArgs)");
+    expect(exclusivo).toBeGreaterThan(-1);
+    expect(prepara).toBeGreaterThan(exclusivo);
+    expect(cadeia).toBeGreaterThan(prepara);
+  });
+
+  it("a imagem sai pelo MESMO caminho das fotos do produto (enviarComFotos)", () => {
+    expect(corpoDoSend).toContain("fotosDoProduto = [daReceita.foto]");
+    expect(corpoDoSend).toContain("enviarComFotos(finalBody, fotosDoProduto,");
+  });
+
+  it("falha de mídia não retorna erro: o texto sai e o aviso volta ao modelo", () => {
+    expect(corpoDoSend).toContain("avisoDaFotoDaReceita = daReceita.message");
+  });
+
+  it("o conjunto de URLs permitidas é alimentado pela consulta da receita, e a prévia o recebe", () => {
+    expect(FONTE).toContain("name === 'crm_consultar_receita'");
+    expect(FONTE).toContain("imagensDaReceita.registrar(resultado)");
+    expect(FONTE).toContain("(url: string) => imagensDaReceita.tem(url)");
+  });
+});

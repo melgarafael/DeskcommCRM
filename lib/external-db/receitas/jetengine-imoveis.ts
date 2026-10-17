@@ -56,6 +56,8 @@ const camposJetSchema = z
     titulo: campoJetSchema,
     cidade: campoJetSchema.optional(),
     area: campoJetSchema.optional(),
+    /** Campo de mídia (R4): guarda URL ou ID de anexo (INFERIDO, não medido). */
+    imagem: campoJetSchema.optional(),
   })
   .strict();
 
@@ -90,7 +92,7 @@ function tabelaJetEngine(prefixo: string, slug: string): string {
 function fixosJetParaTabelaDireta(fixos: {
   prefixo: string;
   slug: string;
-  campos: { preco: string; quartos: string; bairro: string; titulo: string; cidade?: string; area?: string };
+  campos: { preco: string; quartos: string; bairro: string; titulo: string; cidade?: string; area?: string; imagem?: string };
 }) {
   const tabela = tabelaJetEngine(fixos.prefixo, fixos.slug);
   const c = fixos.campos;
@@ -105,6 +107,7 @@ function fixosJetParaTabelaDireta(fixos: {
       id: "_ID",
       titulo: c.titulo,
       preco: c.preco,
+      imagem: c.imagem,
       filtros_texto,
       filtro_numero: c.quartos,
       exibir,
@@ -123,26 +126,34 @@ export const RECEITA_JETENGINE_IMOVEIS: DefinicaoDeReceita = {
     "quartos, bairro e (opcional) cidade e área. O admin informa o prefixo e o " +
     "slug do CCT (a tabela é <prefixo>jet_cct_<slug>). Só imóveis publicados " +
     "(cct_status = 'publish'). " +
+    "Com o campo de imagem mapeado, devolve imagem_url (URL direta, ou o guid do anexo quando o campo guarda o ID). " +
     "INFERIDO: o DDL das colunas vem da documentação do JetEngine 3.x; a medição " +
     "contra uma instalação real (C1 JetEngine) está pendente.",
   parametrosFixos: PARAMETROS_FIXOS_JETENGINE_IMOVEIS,
   parametrosDaBusca: PARAMETROS_DA_BUSCA_JETENGINE_IMOVEIS,
   tabelas: (fixos) => {
     const f = fixos as { prefixo: string; slug: string };
-    return [tabelaJetEngine(f.prefixo, f.slug)];
+    const g = fixos as { prefixo: string; slug: string; campos?: { imagem?: string } };
+    const tabelas = [tabelaJetEngine(f.prefixo, f.slug)];
+    // O campo de imagem pode guardar o ID de um anexo: a receita lê o posts.
+    if (g.campos?.imagem) tabelas.push(`${f.prefixo}posts`);
+    return tabelas;
   },
   colunas: (fixos) => {
-    const f = fixos as { prefixo: string; slug: string; campos: { preco: string; quartos: string; bairro: string; titulo: string; cidade?: string; area?: string } };
+    const f = fixos as { prefixo: string; slug: string; campos: { preco: string; quartos: string; bairro: string; titulo: string; cidade?: string; area?: string; imagem?: string } };
     const tabela = tabelaJetEngine(f.prefixo, f.slug);
     const c = f.campos;
     const usadas: string[] = ["_ID", c.titulo, c.preco, c.bairro, c.quartos];
     if (c.cidade) usadas.push(c.cidade);
     if (c.area) usadas.push(c.area);
+    if (c.imagem) usadas.push(c.imagem);
     usadas.push("cct_status");
-    return { [tabela]: usadas };
+    return c.imagem
+      ? { [tabela]: usadas, [`${f.prefixo}posts`]: ["ID", "guid", "post_type"] }
+      : { [tabela]: usadas };
   },
   montar: (fixos, busca, limite) => {
-    const f = fixos as { prefixo: string; slug: string; campos: { preco: string; quartos: string; bairro: string; titulo: string; cidade?: string; area?: string } };
+    const f = fixos as { prefixo: string; slug: string; campos: { preco: string; quartos: string; bairro: string; titulo: string; cidade?: string; area?: string; imagem?: string } };
     const b = busca as { bairro?: string; quartos_min?: number; preco_max?: number; cidade?: string; limite?: number };
     const fixosTD = fixosJetParaTabelaDireta(f);
 
@@ -163,7 +174,13 @@ export const RECEITA_JETENGINE_IMOVEIS: DefinicaoDeReceita = {
       limite: b.limite,
     };
 
-    return montarTabelaDireta(fixosTD, buscaTD, limite, extras);
+    return montarTabelaDireta(
+      fixosTD,
+      buscaTD,
+      limite,
+      extras,
+      f.campos.imagem ? { anexos: `${f.prefixo}posts` } : undefined,
+    );
   },
   tetoDeItens: JETENGINE_TETO,
 };
