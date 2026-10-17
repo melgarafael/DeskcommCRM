@@ -77,6 +77,8 @@ describe("Régua", () => {
     const u = userEvent.setup();
     render(<ReguaDaCobranca tolerancia={7} />);
     expect(screen.getByText(/Dia 5:/)).toBeTruthy();
+    // #2753: a tolerância é de pagamento atrasado; o trial não a espera.
+    expect(screen.getByText(/O teste grátis que acaba sem pagamento não espera por ela/)).toBeTruthy();
     const campo = screen.getByLabelText("Dias de tolerância");
     await u.clear(campo);
     await u.type(campo, "10");

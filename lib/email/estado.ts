@@ -1,5 +1,15 @@
 import { lerSmtp } from "@/lib/email/config";
+import { isEmailConfigured } from "@/lib/email/resend";
 import { isSmtpConfigured } from "@/lib/email/smtp";
+
+/**
+ * O CRM está SEM SMTP, com o banco tendo RESPONDIDO? A base das duas perguntas
+ * abaixo. Régua: host E remetente. Um soluço do banco não vira "sem SMTP".
+ */
+async function semSmtpRespondido(): Promise<boolean> {
+  const { config, bancoRespondeu } = await lerSmtp();
+  return bancoRespondeu && !isSmtpConfigured(config);
+}
 
 /**
  * A INSTALAÇÃO NÃO TEM SMTP — a mesma resposta para quem DECIDE e para quem AVISA.
@@ -29,6 +39,21 @@ import { isSmtpConfigured } from "@/lib/email/smtp";
  */
 export async function semSmtpNaInstalacao(): Promise<boolean> {
   if (process.env.SINGLE_SERVER !== "1") return false;
-  const { config, bancoRespondeu } = await lerSmtp();
-  return bancoRespondeu && !isSmtpConfigured(config);
+  return semSmtpRespondido();
+}
+
+/**
+ * A tarja "Sem SMTP configurado" do painel do admin (#2755, item 3) deve
+ * aparecer? É uma pergunta mais larga que a de cima, sobre a mesma base:
+ *
+ *   - servidor único: é `semSmtpNaInstalacao` — o login só recebe o SMTP do
+ *     CRM, e nem a Resend salva a recuperação de senha;
+ *   - fora dele, só quando também NÃO há Resend: convites, LGPD, cobrança e
+ *     automações saem pelo roteador do app (`lib/email/roteador.ts`: SMTP,
+ *     senão Resend), e sem nenhum dos dois nada sai. Com a Resend entregando,
+ *     a tarja seria alarme falso — o login tem e-mail próprio.
+ */
+export async function instalacaoSemSmtp(): Promise<boolean> {
+  if (!(await semSmtpRespondido())) return false;
+  return process.env.SINGLE_SERVER === "1" || !(await isEmailConfigured());
 }

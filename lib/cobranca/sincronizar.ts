@@ -382,6 +382,7 @@ export async function aplicarRegua(
       ultimoAviso: linha.ultimo_aviso,
       ultimoAvisoEm: emData(linha.ultimo_aviso_em),
       relidaEm: emData(linha.relida_em),
+      entradaPendente: linha.pagamento_inicial_pendente === true,
     },
     { status: org.status, suspendedKind: org.suspended_kind },
     agora,
@@ -437,7 +438,9 @@ export async function aplicarRegua(
       if (error) throw new Error(`cobranca: suspensão falhou (${error.code ?? "sem_codigo"})`);
       if (!mudou(data)) return "nada";
       auditar("cobranca.org_suspensa", orgId, { debito_desde: acao.debitoDesde.toISOString() });
-      const texto = textoDoAviso("suspensa", { ...contexto, data: null, origem: "atraso" });
+      // A origem importa aqui: quem foi suspenso no fim do teste grátis não tem
+      // pagamento esperando, e a frase diz "assine", não "aguarde a confirmação".
+      const texto = textoDoAviso("suspensa", { ...contexto, data: null, origem: acao.origem });
       if (await registrarAviso(admin, orgId, "suspensa", acao.debitoDesde, texto)) {
         await enviar(admin, { id: orgId, idioma }, texto, linha.link_de_pagamento);
       }

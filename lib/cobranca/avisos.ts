@@ -61,19 +61,27 @@ export function textoDoAviso(
             severidade: "warn",
           };
     case "suspende_em_breve":
+      // Três destinos, três frases (#2753): quem nunca pagou nada recebe a
+      // suspensão do teste, sem a tolerância de 5–30 dias do pagamento atrasado.
       return {
         titulo: comData("Sua conta será suspensa em {data}"),
         corpo: t(
           o.origem === "cancelamento"
             ? "Você cancelou a assinatura. Assine de novo em Plano e cobrança para continuar usando."
-            : "A suspensão acontece se o pagamento não for confirmado até lá. Pague pelo link para evitar.",
+            : o.origem === "teste"
+              ? "Seu teste grátis terminou e não identificamos pagamento. Assine em Plano e cobrança até a data da suspensão para manter a conta ativa."
+              : "A suspensão acontece se o pagamento não for confirmado até lá. Pague pelo link para evitar.",
         ),
         severidade: "critical",
       };
     case "suspensa":
       return {
-        titulo: t("Conta suspensa por falta de pagamento"),
-        corpo: t("A empresa volta a funcionar sozinha, na hora, assim que o pagamento for confirmado."),
+        titulo: o.origem === "teste" ? t("Conta suspensa: o teste grátis terminou") : t("Conta suspensa por falta de pagamento"),
+        corpo: t(
+          o.origem === "teste"
+            ? "Seu teste grátis acabou sem pagamento, então a conta foi suspensa. Assine em Plano e cobrança para reativar na hora."
+            : "A empresa volta a funcionar sozinha, na hora, assim que o pagamento for confirmado.",
+        ),
         severidade: "critical",
       };
     case "liberada":

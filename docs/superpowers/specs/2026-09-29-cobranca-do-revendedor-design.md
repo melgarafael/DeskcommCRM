@@ -296,7 +296,7 @@ cancelada ──nova assinatura com 1º pagamento confirmado──▶ ativa
 - `plano_agendado_id`: aplicado (vira `plano_id`) quando `proximo_vencimento` avança e o estado é `ativa` (o período novo foi pago). Durante o teste grátis (`trial_ate > now()`, com ou sem provedor), a troca é imediata (decisão D-13, §7e).
 - `assinaturas_vivas`, `relida_em = lido_em`, `ultimo_erro = null` (ou `pagamento_de_assinatura_cancelada` se `situacao.pagamentoSemAssinaturaViva`).
 
-**Régua pura** (`lib/cobranca/regua.ts`, sem banco). Entradas: assinatura, org, plano, `agora` injetável, `toleranciaDias = max(5, configurada)` (piso no código: boleto Stripe ~1 dia útil, `CONFIRMED→RECEIVED` e compensação Asaas, mais um fim de semana).
+**Régua pura** (`lib/cobranca/regua.ts`, sem banco). Entradas: assinatura, org, plano, `agora` injetável, `toleranciaDias = max(5, configurada)` (piso no código: boleto Stripe ~1 dia útil, `CONFIRMED→RECEIVED` e compensação Asaas, mais um fim de semana — razão de D-5, que só existe para **quem tem pagamento no jogo**). Trial vencido sem cobrança em jogo (assinatura sem provedor nenhum, ou `vencida_desde` igual a `trial_ate` **e** nenhuma assinatura viva no provedor) fica **fora da tolerância**: o aviso final sai no próprio fim do teste e a suspensão 48 h depois (#2753), com a frase dizendo que é o teste que acabou.
 
 **Filtro por org** (antes de tudo):
 - org `active` ou `suspended{cobranca}` → avalia.
@@ -305,7 +305,7 @@ cancelada ──nova assinatura com 1º pagamento confirmado──▶ ativa
 
 **Dívida corrente:** `debito_desde = vencida_desde` (`em_atraso`) ou `proximo_vencimento` já passado (`cancelada`; se `proximo_vencimento` é nulo, a primeira avaliação grava `vencida_desde = agora` e daí em diante `debito_desde = vencida_desde` — sem valor persistido, `agora` muda a cada rodada e nenhum aviso chega a "pertencer" à dívida). Um aviso "pertence à dívida" só se `ultimo_aviso_em >= debito_desde`.
 
-`limite = max(debito_desde + (em_atraso ? tolerância : 0), prazo_extra_ate)`
+`limite = max(debito_desde + (em_atraso e dívida ≠ teste ? tolerância : 0), prazo_extra_ate)` — a tolerância é zero para a dívida nascida no fim do teste sem cobrança em jogo (#2753); com assinatura viva no provedor (no Asaas, o 1º boleto vence no fim do teste) ela vale, porque há pagamento em compensação; `prazo_extra_ate` vale para as duas.
 
 | Situação | Ação |
 |---|---|
@@ -318,7 +318,7 @@ cancelada ──nova assinatura com 1º pagamento confirmado──▶ ativa
 **Garantias** (cada uma tem caso em `regua.test.ts`):
 - Ninguém é suspenso sem aviso final **desta dívida** gravado há ≥ 48h junto com o item `kind='cobranca'` na Central, na mesma transação do `ultimo_aviso` (é o que D-5 chama de "enviado"; o e-mail é melhor esforço, §7d) — inclusive quem pagou depois do aviso no mês anterior e a régua acordou tarde (VPS fora do ar, webhook perdido).
 - Nunca se suspende com estado velho (releitura de < 1h com provedor). Leitura falha nunca suspende.
-- Trial sem checkout é suspenso pela régua; não vira acesso eterno.
+- Trial sem checkout é suspenso pela régua; não vira acesso eterno. E **não espera a tolerância de 5–30 dias** (#2753): o aviso final sai no fim do teste e a suspensão acontece 48 h depois, com a mensagem dizendo que o teste acabou (a tolerância é de pagamento atrasado, que sim tem boleto/Pix para compensar).
 - Clicar em "Assinar" e não pagar não reativa (Asaas e Stripe: sem 1º pagamento confirmado, `existe=false`).
 - Boleto emitido e ainda válido nunca conta como atraso (Stripe: só `past_due`/`unpaid`; Asaas: só `OVERDUE`).
 
@@ -574,8 +574,8 @@ export interface AdaptadorDeCobranca {
 2. **Avisos** (só org `active` ou `suspended{cobranca}`):
    - `venceu`: "Não identificamos o pagamento de DD/MM. Se pagou boleto, aguarde a compensação."
    - Canais: e-mail aos admins da org por `sendEmail` (`lib/email/roteador.ts:110`) com `marcaDaSaida(org)` (`lib/branding/saida.ts:184`), no idioma de `organizations.locale` e datas no `organizations.timezone`; item `kind='cobranca'` na Central; faixa vermelha em `/app`. E-mail que falha não é reenviado (Central e faixa seguem).
-3. `suspende_em_breve` (critical): "Sua conta será suspensa em DD/MM se o pagamento não for confirmado."
-4. No limite (§3.2), no cron: releitura → `fn_suspender_organizacao(org,'cobranca',…)` → e-mail "Conta suspensa por falta de pagamento" → audit `cobranca.org_suspensa`.
+3. `suspende_em_breve` (critical): "Sua conta será suspensa em DD/MM se o pagamento não for confirmado." Com origem `teste` (trial vencido sem pagamento, sem tolerância, #2753), o corpo muda para "Seu teste grátis terminou e não identificamos pagamento. Assine em Plano e cobrança até a data da suspensão…".
+4. No limite (§3.2), no cron: releitura → `fn_suspender_organizacao(org,'cobranca',…)` → e-mail "Conta suspensa por falta de pagamento" (trial vencido: "Conta suspensa: o teste grátis terminou", mandando assinar, não esperar confirmação) → audit `cobranca.org_suspensa`.
 5. `/account-suspended`: admin vê "Pagar agora" (`linkDePagamento` ou portal) e "Já paguei" (`sincronizar`); sem link (principal terminal) vê "Assinar de novo"; não admin lê "Avise o administrador da sua empresa".
 6. `invoice.paid`/`PAYMENT_CONFIRMED` → (c) → `ativa` → reativa → item `org_reativada` + e-mail "conta liberada" + audit `cobranca.org_reativada`. Nada sai em rajada.
 
@@ -647,7 +647,7 @@ Sem "pulso" gravado: a saúde do cron aparece derivada (§9).
 - **Visão geral:** checklist de publicação (§7a); selo TESTE/PRODUÇÃO; "último aviso do provedor há X" (`max(received_at)`; "nenhum nos últimos 90 dias" além da poda); **"última leitura bem-sucedida há X"** = `max(relida_em)` das linhas com provedor que a reconciliação seleciona (§8; fica fora a `cancelada` antiga de org ativa), vermelho > 7h (é a saúde do cron: a reconciliação relê essas linhas a cada 6h); **problemas do dono**, derivados do estado: "N clientes com leitura falhando: chave inválida" (`ultimo_erro='credencial_invalida'`), "N clientes com duas assinaturas ativas — cancele uma no painel do provedor" (`assinaturas_vivas > 1`), "N pagamentos de assinatura cancelada — dê prazo ou estorne" (`ultimo_erro='pagamento_de_assinatura_cancelada'`); eventos `error`/`dead`.
 - **Conexão:** provedor; chave (`last4`); "Testar e conectar"; URL do webhook; modo manual do Asaas.
 - **Planos:** criar, editar, marcar padrão, arquivar; recusa preço < R$ 5; avisa que preço e intervalo travam com assinante.
-- **Régua:** tolerância (piso 5, teto 30, padrão 7).
+- **Régua:** tolerância (piso 5, teto 30, padrão 7) — a tela diz que ela é de pagamento atrasado, e que o teste grátis que acaba sem pagamento não a espera (#2753).
 - **Clientes:** empresa, plano (e agendado), estado, vencida desde, próximo vencimento, última leitura (vermelho > 26h, só nas linhas que a reconciliação seleciona, §8), último erro. Ações: dar prazo, isentar, trocar plano, copiar link, abrir no tenant.
 - **Porta:** `components/admin/AdminSidebar.tsx:34-110`; `NavItem` ganha `modulo?`; o layout admin passa `modulosLigados`; entrada `{href:'/admin/cobranca', label:'Cobrança', modulo:'cobranca'}`. Vigiado por `tests/unit/admin-navegacao-completude.test.ts`.
 
@@ -688,7 +688,7 @@ Todo texto novo de tela, menu e e-mail entra no dicionário com `es` (e `zh-CN` 
 | Item | Onde mora | Cifrado? | Catálogo (`lib/instalacao/catalogo.ts`) | Padrão |
 |---|---|---|---|---|
 | Liga/desliga | `platform_config.MODULO_COBRANCA`, tela `/admin/sistema` | não | (mecanismo de módulos, não catálogo) | ausente = desligado |
-| `COBRANCA_PROVEDOR`, `COBRANCA_TOLERANCIA_DIAS` | `platform_config` | não | `controle:'edita'`, `telaDona:'cobranca'` | tolerância 7 (piso 5 no código) |
+| `COBRANCA_PROVEDOR`, `COBRANCA_TOLERANCIA_DIAS` | `platform_config` | não | `controle:'edita'`, `telaDona:'cobranca'` | tolerância 7 (piso 5 no código); só para pagamento atrasado — trial vencido sem pagamento não a espera (#2753) |
 | `STRIPE_SECRET_KEY` (`rk_` recomendada), `STRIPE_WEBHOOK_SECRET`, `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` | `platform_config` `eh_segredo=true`, AES-256-GCM, chave `AI_CRED_AES_KEY` fora do banco (`baseline.sql:43400-43450`; `config.ts:193-245`) | sim; tela vê `last4`; nunca em query string | `controle:'edita'`, `telaDona:'cobranca'` | sem chave de cifra, nada é gravado |
 | `STRIPE_PORTAL_CONFIG_ID` | `platform_config`, escrito só pela máquina | não | `controle:'diagnostico'` com motivo; nunca lido por `valorDaInstalacao` | — |
 | `COBRANCA_API_BASE_URL_TESTE` | `lib/env.ts`, `z.string().optional().default("")`; só loopback (senão ignorada, com log); em `.env.example` (`env-example-sync`), **não** em `.env.hostgator.example` | — | — | vazio = URLs oficiais |
@@ -728,7 +728,7 @@ Todo texto novo de tela, menu e e-mail entra no dicionário com `es` (e `zh-CN` 
 ### Unit (`pnpm test:unit`, a suíte inteira, sem caminho)
 
 **Cobrança:**
-- `lib/cobranca/regua.test.ts`: trial vencendo; trial vencido sem provedor suspende; boleto aberto não vencido não suspende; piso de 5 dias com configuração 0; `prazo_extra_ate`; aviso final ≥ 48h; releitura > 1h bloqueia; `cancelada` com e sem `proximo_vencimento`; reativação; guarda do kind; **pagou depois do aviso final, no mês seguinte a régua acorda depois do limite → primeiro avisa, só suspende 48h depois**; org `suspended{administrativa}` não recebe aviso; org `redacted` → `cancelarNoFim`, sem aviso.
+- `lib/cobranca/regua.test.ts`: trial vencendo; trial vencido sem provedor suspende; boleto aberto não vencido não suspende; piso de 5 dias com configuração 0; `prazo_extra_ate`; aviso final ≥ 48h; releitura > 1h bloqueia; `cancelada` com e sem `proximo_vencimento`; reativação; guarda do kind; **pagou depois do aviso final, no mês seguinte a régua acorda depois do limite → primeiro avisa, só suspende 48h depois**; org `suspended{administrativa}` não recebe aviso; org `redacted` → `cancelarNoFim`, sem aviso; **os dois caminhos da tolerância separados (#2753)**: trial vencido sem pagamento (aviso final no fim do teste e suspensão 48h depois, idêntico com tolerância 7 ou 30) × assinatura atrasada (tolerância configurada manda: 7 → suspende, 30 → espera).
 - `lib/cobranca/estado.test.ts`: tradução; `vencida_desde` monotônico; **cancelar e reassinar não zera `vencida_desde`**; `proximo_vencimento` não é apagado por leitura nula; `ultimo_aviso` zera na volta a `ativa`/`trial`; `plano_agendado_id` aplicado só na virada paga.
 - `stripe.test.ts`: segundo `v1` aceito, `v0` recusado, `t` fora de 300 s, corpo alterado; `testarChave` por `livemode`; **um caso por status**: `unpaid` sem fatura aberta → em atraso; `paused` → em atraso; `past_due` → em atraso; `active` com fatura aberta de boleto dentro da validade → em dia; `incomplete` → `existe=false` e `assinaturasVivas=1`; fatura de trial R$0 não conta em `jaPagou`; **auto-cancelada + reassinatura paga + fatura antiga aberta → `ativa`** (faturas pela assinatura); `linkDePagamento` nulo com principal terminal.
 - `asaas.test.ts`: token em tempo constante; `includeDeleted=true` na URL; **cancelar (DELETE) no dia 2 de mês pago → `cancelada` com acesso até o fim do período**; **assinatura ACTIVE só com `PENDING` → `existe=false` ("suspenso clica Assinar e não paga → continua suspenso")**; `CONFIRMED` conta como pago; `REFUNDED`/chargeback reabrem; `'2026-10-05'` → `2026-10-06T02:59:59Z` e texto "05/10"; `trocarPlano` recusa com período corrente pendente e manda `updatePendingPayments:true` quando pago; CPF/CNPJ.

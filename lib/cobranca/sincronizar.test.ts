@@ -113,12 +113,31 @@ describe("sincronizar", () => {
     expect(escritas()).toEqual([]);
   });
 
-  it("sem provedor: não chama o provedor, e a régua transforma o teste vencido em dívida com aviso", async () => {
+  it("sem provedor: não chama o provedor, e a régua transforma o teste vencido em dívida com o aviso final (sem tolerância)", async () => {
     m.linha = { ...LINHA, provedor: null, provedor_cliente_id: null, provedor_assinatura_id: null, estado: "trial", trial_ate: ha(24), assinaturas_vivas: 0, relida_em: null };
     expect(await rodar()).toEqual({ tipo: "sem_provedor", acao: "avisar" });
     expect(ler).not.toHaveBeenCalled();
     expect(argumentos(escritas()[0]!, "update")?.[0]).toMatchObject({ estado: "em_atraso", vencida_desde: ha(24) });
-    expect(rpcs("fn_cobranca_registrar_aviso")[0]?.args).toMatchObject({ p_org: ORG, p_aviso: "venceu", p_severidade: "warn" });
+    // O fim do teste sem pagamento NÃO espera a tolerância: o aviso final sai
+    // no próprio fim do teste (não no "dia 28"), e fala de teste grátis.
+    const aviso = rpcs("fn_cobranca_registrar_aviso")[0]?.args;
+    expect(aviso).toMatchObject({ p_org: ORG, p_aviso: "suspende_em_breve", p_severidade: "critical" });
+    expect(aviso?.p_corpo).toContain("teste grátis");
+    expect(enviarAviso).toHaveBeenCalledOnce();
+  });
+
+  it("⭐ trial vencido: aviso final há 49 h passa direto pela tolerância de 7 — suspensa, com mensagem de ASSINAR", async () => {
+    m.linha = {
+      ...LINHA, provedor: null, provedor_cliente_id: null, provedor_assinatura_id: null,
+      estado: "em_atraso", trial_ate: ha(24 * 6), vencida_desde: ha(24 * 6), assinaturas_vivas: 0,
+      ultimo_aviso: "suspende_em_breve", ultimo_aviso_em: ha(49), relida_em: null,
+    };
+    expect(await rodar()).toEqual({ tipo: "sem_provedor", acao: "suspender" });
+    expect(ler).not.toHaveBeenCalled();
+    expect(rpcs("fn_cobranca_suspender_se_devendo")[0]?.args).toEqual({ p_org: ORG, p_motivo: "Falta de pagamento" });
+    const aviso = rpcs("fn_cobranca_registrar_aviso")[0]?.args;
+    expect(aviso).toMatchObject({ p_aviso: "suspensa", p_severidade: "critical" });
+    expect(aviso?.p_corpo).toContain("Assine em Plano e cobrança para reativar");
     expect(enviarAviso).toHaveBeenCalledOnce();
   });
 
@@ -394,6 +413,14 @@ describe("sincronizar — entrada paga (plano sem dias de teste)", () => {
     expect(rpcs("fn_reativar_organizacao")).toEqual([]);
     for (const c of escritas()) expect(argumentos(c, "update")?.[0]).not.toHaveProperty("pagamento_inicial_pendente");
     expect(m.linha).toMatchObject({ pagamento_inicial_pendente: true });
+  });
+
+  it("o lembrete de quem aguarda a entrada não fala em teste grátis: nunca houve teste", async () => {
+    ler.mockResolvedValue(situacao({ existe: false, jaPagou: false, assinaturasVivas: 1, proximoVencimento: null, statusBruto: "ACTIVE:sem_pagamento" }));
+    await rodar();
+    const aviso = rpcs("fn_cobranca_registrar_aviso")[0]?.args;
+    expect(aviso).toMatchObject({ p_aviso: "suspensa" });
+    expect(`${aviso?.p_titulo} ${aviso?.p_corpo}`).not.toContain("teste grátis");
   });
 
   it("pagamento confirmado: a entrada deixa de estar pendente e o acesso volta", async () => {

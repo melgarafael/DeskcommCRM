@@ -51,6 +51,9 @@ export function ReguaDaCobranca({ tolerancia }: { tolerancia: number }) {
         <li>{t("Dia {n} (e pelo menos 48 horas depois do aviso final): a empresa é suspensa.").replace("{n}", String(efetivo))}</li>
         <li>{t("Pagou: volta a funcionar sozinha, na hora, sem disparar o que ficou parado.")}</li>
       </ol>
+      <p className="text-xs text-muted-foreground">
+        {t("Essa tolerância é para pagamento em atraso. O teste grátis que acaba sem pagamento não espera por ela: o aviso final sai no fim do teste e a suspensão acontece 48 horas depois.")}
+      </p>
       <Button disabled={ocupado || !valido} onClick={() => void salvar()}>
         {t("Salvar régua")}
       </Button>

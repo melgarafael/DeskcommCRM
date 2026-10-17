@@ -29,7 +29,9 @@ describe("textoDoAviso", () => {
     ["venceu", "atraso", "warn", "Não identificamos o pagamento de 05/10"],
     ["venceu", "teste", "warn", "Seu teste grátis acabou em 05/10"],
     ["suspende_em_breve", "atraso", "critical", "Sua conta será suspensa em 05/10"],
+    ["suspende_em_breve", "teste", "critical", "Sua conta será suspensa em 05/10"],
     ["suspensa", "atraso", "critical", "Conta suspensa por falta de pagamento"],
+    ["suspensa", "teste", "critical", "Conta suspensa: o teste grátis terminou"],
     ["liberada", "atraso", "info", "Sua conta foi liberada"],
   ] as const)("%s (%s) → %s: %s", (assunto, origem, severidade, titulo) => {
     const texto = textoDoAviso(assunto, { ...base, origem });
@@ -42,6 +44,21 @@ describe("textoDoAviso", () => {
     expect(textoDoAviso("suspende_em_breve", { ...base, origem: "cancelamento" }).corpo).toBe(
       "Você cancelou a assinatura. Assine de novo em Plano e cobrança para continuar usando.",
     );
+  });
+
+  it("⭐ trial vencido sem pagamento lê 'teste grátis' + 'assine'; pagamento atrasado lê 'pagamento' + 'pague' (#2753)", () => {
+    const doTrial = textoDoAviso("suspende_em_breve", { ...base, origem: "teste" }).corpo;
+    const doAtraso = textoDoAviso("suspende_em_breve", { ...base, origem: "atraso" }).corpo;
+    expect(doTrial).toContain("teste grátis");
+    expect(doTrial).toContain("Assine em Plano e cobrança");
+    expect(doTrial).not.toContain("Pague pelo link");
+    expect(doAtraso).toContain("Pague pelo link");
+    expect(doAtraso).not.toContain("teste grátis");
+
+    // Na suspensão a diferença é ainda maior: não há pagamento pendente para
+    // esperar, então a conta volta a funcionar quando ele ASSINA.
+    expect(textoDoAviso("suspensa", { ...base, origem: "teste" }).corpo).toContain("Assine em Plano e cobrança para reativar");
+    expect(textoDoAviso("suspensa", { ...base, origem: "atraso" }).corpo).toContain("assim que o pagamento for confirmado");
   });
 
   it("fala espanhol", () => {
