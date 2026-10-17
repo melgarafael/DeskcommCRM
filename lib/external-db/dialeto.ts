@@ -6,8 +6,8 @@
  * de visibilidade é aplicada AQUI, uma vez — nenhuma tool nem rota decide o que
  * é visível, e uma rota nova que use o dialeto herda a regra sem lembrar dela.
  *
- * Esta fatia só tem o dialeto PostgreSQL. A interface existe para que o MySQL
- * (Fatia 4) entre atrás dela sem mudar nenhum chamador.
+ * A regra mora em `criarDialetoDeLeitura` e cada motor entrega as suas
+ * `OperacoesDoMotor` (PostgreSQL aqui, MySQL em `dialetos/mysql/dialeto.ts`).
  */
 import type pg from "pg";
 
@@ -38,16 +38,27 @@ export interface Dialeto {
   catalogoCompleto(): Promise<TabelaExterna[]>;
 }
 
-export function criarDialetoPostgres(pool: pg.Pool, regra: RegraDeFontes): Dialeto {
-  return {
-    catalogoCompleto: () => listarTabelas(pool),
+/** O que cada motor sabe fazer; a regra das fontes liberadas é aplicada POR CIMA, uma vez só. */
+export interface OperacoesDoMotor {
+  listarTabelas(): Promise<TabelaExterna[]>;
+  descreverTabela(schema: string, tabela: string): Promise<TabelaExterna | null>;
+  lerTabela(
+    pedido: PedidoDeLeitura,
+    permitidas: ReadonlySet<string>,
+    opcoes?: { limiteMax?: number },
+  ): Promise<ResultadoDeLeitura>;
+}
 
-    listarTabelas: async () => aplicarAoCatalogo(regra, await listarTabelas(pool)),
+export function criarDialetoDeLeitura(op: OperacoesDoMotor, regra: RegraDeFontes): Dialeto {
+  return {
+    catalogoCompleto: () => op.listarTabelas(),
+
+    listarTabelas: async () => aplicarAoCatalogo(regra, await op.listarTabelas()),
 
     colunasDaTabela: async (schema, tabela) => {
       // Fora da lista nem chega a consultar o banco de origem.
       if (!tabelaLiberada(regra, schema, tabela)) return null;
-      return colunasLiberadas(regra, await descreverTabela(pool, schema, tabela));
+      return colunasLiberadas(regra, await op.descreverTabela(schema, tabela));
     },
 
     lerTabela: async (pedido, permitidas, opcoes) => {
@@ -59,9 +70,20 @@ export function criarDialetoPostgres(pool: pg.Pool, regra: RegraDeFontes): Diale
         if (permitidas.size === 0) throw new FonteNaoLiberadaError("sem_colunas_liberadas");
         // Em `list` a projeção é SEMPRE explícita: nunca `select *` numa fonte com colunas restritas.
         const colunas = pedido.colunas.length === 0 ? [...permitidas] : pedido.colunas;
-        return lerTabela(pool, { ...pedido, colunas }, permitidas, opcoes);
+        return op.lerTabela({ ...pedido, colunas }, permitidas, opcoes);
       }
-      return lerTabela(pool, pedido, permitidas, opcoes);
+      return op.lerTabela(pedido, permitidas, opcoes);
     },
   };
+}
+
+export function criarDialetoPostgres(pool: pg.Pool, regra: RegraDeFontes): Dialeto {
+  return criarDialetoDeLeitura(
+    {
+      listarTabelas: () => listarTabelas(pool),
+      descreverTabela: (schema, tabela) => descreverTabela(pool, schema, tabela),
+      lerTabela: (pedido, permitidas, opcoes) => lerTabela(pool, pedido, permitidas, opcoes),
+    },
+    regra,
+  );
 }

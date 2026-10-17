@@ -9,6 +9,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * O erro gravado é truncado e passa pelo mesmo `mensagemSegura` do núcleo: a
  * mensagem do driver pode citar host/porta, nunca a senha.
+ *
+ * O aviso (`last_test_aviso`) é gravado junto: sucesso sem aviso limpa o antigo;
+ * falha grava `null` (sem conexão não há o que avisar).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -17,7 +20,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { carregarConexao } from "@/lib/external-db/credenciais";
-import { testarConexao } from "@/lib/external-db/conexao";
+import { testarConexao } from "@/lib/external-db/drivers";
 import { validarHostDeBanco } from "@/lib/external-db/guardas";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -64,6 +67,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       last_tested_at: agora,
       last_test_ok: resultado.ok,
       last_test_error: resultado.ok ? null : resultado.erro,
+      last_test_aviso: resultado.ok ? (resultado.aviso ?? null) : null,
     })
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id);
@@ -79,7 +83,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   });
 
   return ok(
-    resultado.ok ? { ok: true, testado_em: agora } : { ok: false, erro: resultado.erro, testado_em: agora },
+    resultado.ok ? { ok: true, testado_em: agora, ...(resultado.aviso ? { aviso: resultado.aviso } : {}) } : { ok: false, erro: resultado.erro, testado_em: agora },
     { requestId },
   );
 }

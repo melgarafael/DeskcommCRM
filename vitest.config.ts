@@ -37,6 +37,7 @@ export default defineConfig({
       ".claude/**",
       "tests/e2e/**",
       "tests/invariants/**",
+      "tests/mysql/**",
       "tests/journeys/**",
       // Bancada opcional: usa node:test, PostgreSQL próprio e Playwright com
       // configuração dedicada. Não depende do ambiente da suíte do produto.

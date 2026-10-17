@@ -1,7 +1,7 @@
 /**
  * Abre o acesso ao banco externo para uma leitura: carrega a conexão (com a
  * organização no filtro), revalida o destino contra a guarda de rede e devolve o
- * dialeto de leitura da conexão (que embrulha o pool e aplica a lista de fontes liberadas).
+ * dialeto de leitura da conexão (que embrulha o pool e aplica a lista de fontes liberadas), escolhido pelo motor da conexão (registro de drivers).
  *
  * ─── Por que a guarda roda AQUI, e não só no cadastro ───────────────────────
  *
@@ -16,8 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 
 import { carregarConexao, type MotivoSemConexao } from "./credenciais";
-import { obterPool } from "./conexao";
-import { criarDialetoPostgres, type Dialeto } from "./dialeto";
+import type { Dialeto } from "./dialeto";
+import { abrirDialeto } from "./drivers";
 import { validarHostDeBanco } from "./guardas";
 import type { ConexaoExterna } from "./types";
 
@@ -55,9 +55,6 @@ export async function abrirAcesso(
   return {
     ok: true,
     conexao: leitura.conexao,
-    dialeto: criarDialetoPostgres(obterPool(leitura.conexao), {
-      modo: leitura.conexao.sourceMode,
-      fontes: leitura.conexao.fontes,
-    }),
+    dialeto: abrirDialeto(leitura.conexao),
   };
 }
