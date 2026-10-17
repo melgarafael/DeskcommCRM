@@ -69,6 +69,8 @@ export interface CaseEvent {
   actor_user_id: string | null;
   human_action: CaseHumanAction | null;
   body: string | null;
+  /** `metadata.source` do evento: "whatsapp" quando a equipe respondeu pelo número de avisos. */
+  source: string | null;
   created_at: string;
 }
 

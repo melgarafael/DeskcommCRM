@@ -90,6 +90,17 @@ describe("ehOChatDoAviso — a regra pura", () => {
     ).toBe(false);
   });
 
+  it("@lid com o telefone alternativo do payload casa pelo telefone, mesmo sem JID", () => {
+    // O transporte resolve o destino por telefone (`<tel>@c.us`): `destino_jid`
+    // nunca vira `@lid`, e o reconhecimento vem do `remoteJidAlt`.
+    expect(
+      ehOChatDoAviso({ kind: "lid", phone: "+5531998966398", lid: "224466" }, { destino: "+5531998966398", jid: "5531998966398@c.us" }),
+    ).toBe(true);
+    expect(
+      ehOChatDoAviso({ kind: "lid", phone: "+5511988887777", lid: "777" }, { destino: "+5531998966398", jid: "5531998966398@c.us" }),
+    ).toBe(false);
+  });
+
   it("sem configuração nenhuma, nada casa", () => {
     expect(ehOChatDoAviso({ kind: "phone", phone: "+5531998966398", lid: null }, { destino: null, jid: null })).toBe(
       false,
@@ -117,7 +128,9 @@ describe("lerNumeroInternoDeAviso — a leitura quente", () => {
 
   it("organização sem configuração devolve vazio e não casa nada", async () => {
     const { db } = fakeDb(null);
-    expect(await lerNumeroInternoDeAviso(db, ORG)).toEqual({ destino: null, jid: null });
+    expect(await lerNumeroInternoDeAviso(db, ORG)).toEqual({
+      destino: null, jid: null, respostaWhatsappHabilitada: false, sessaoId: null,
+    });
     expect(await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null })).toBe(
       false,
     );

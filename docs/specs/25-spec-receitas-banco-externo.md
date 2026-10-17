@@ -149,8 +149,8 @@ A fatia R1 (receita `woocommerce` + instância + tool) entrega:
 - `lib/external-db/receitas/instancias.ts` — `instanciaDeReceitaSchema`, `lerReceitasDoBanco`, `validarFixosDaReceita`
 - `lib/external-db/dialeto.ts` — `Dialeto.executarReceita` + checagem `tabelaLiberada` no `criarDialetoDeLeitura`
 - `lib/external-db/dialetos/mysql/dialeto.ts` + `leitura.ts` — `executarReceitaMysql` (armadura `consultarMysql`, serialização `0x`, corte por itens e bytes)
-- `supabase/migrations/20261020140000_0693_banco_externo_receitas.sql` — coluna `receitas jsonb`, CHECK de forma, view `_safe` com `receitas_count`
-- `supabase/baseline.sql` — apêndice idempotente da 0693 antes do fim
+- `supabase/migrations/20261017215111_0697_banco_externo_receitas.sql` — coluna `receitas jsonb`, CHECK de forma, view `_safe` com `receitas_count`
+- `supabase/baseline.sql` — apêndice idempotente da 0697 antes do fim
 - `lib/external-db/receitas/instancias.ts` + rotas `PUT /recipes` e `POST /recipes/preview` (admin, audit só contagens)
 - `lib/audit/actions.ts` — `external_db_recipes.updated` e `external_db_recipes.previewed`
 - `lib/mcp/tools/receitas-externas.ts` — tool `crm_consultar_receita` (listar/executar, organização do `ctx`)
@@ -164,7 +164,7 @@ A fatia R1 (receita `woocommerce` + instância + tool) entrega:
 - `docs/architecture/banco-de-dados-externo.architecture.json` — peças novas com ≥2 arestas
 - `docs/threat-model.md` — entrada da superfície nova (preview + tool)
 - `.changes/banco-externo-receitas-woocommerce.md` — `impacto: capacidade_nova`, `secao: adicionado`
-- Testes: `validador.test.ts`, `woocommerce.test.ts`, `serialize.test.ts`, `receitas-externas.test.ts`, `dialeto.test.ts` (executarReceita não liberada), `apendice-0693-banco-externo-receitas.test.ts`
+- Testes: `validador.test.ts`, `woocommerce.test.ts`, `serialize.test.ts`, `receitas-externas.test.ts`, `dialeto.test.ts` (executarReceita não liberada), `apendice-0697-banco-externo-receitas.test.ts`
 - Spec 25: seção D8 escrita e esta lista
 - e2e: `tests/e2e/banco-externo-receitas.spec.ts` registrada em `SPECS_PARTE_1` do `.github/workflows/e2e.yml` (não rodada aqui — veredito do CI)
 

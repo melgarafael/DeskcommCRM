@@ -1,0 +1,154 @@
+{
+  "format": "followup_flow",
+  "version": 1,
+  "exported_at": "2026-10-17T12:00:00.000Z",
+  "flow": {
+    "name": "Exemplo: retomar quem parou de responder",
+    "surface": "followup",
+    "handoff_policy": "pause",
+    "trigger_config": {
+      "kind": "silence",
+      "params": { "threshold_minutes": 1440, "max_silence_minutes": 2880 },
+      "cancel_on_reply": true
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "inicio",
+          "type": "trigger",
+          "label": "Início do fluxo",
+          "position": { "x": 0, "y": 0 },
+          "config": {}
+        },
+        {
+          "id": "msg1",
+          "type": "action",
+          "label": "Primeira retomada",
+          "position": { "x": 0, "y": 140 },
+          "config": {
+            "mode": "text",
+            "body": "Oi, {{contact.name}}! Ficou alguma dúvida sobre o que conversamos?"
+          }
+        },
+        {
+          "id": "espera1",
+          "type": "wait",
+          "label": "Esperar 1 dia",
+          "position": { "x": 0, "y": 280 },
+          "config": { "mode": "fixed", "duration_ms": 86400000 }
+        },
+        {
+          "id": "ja_quente",
+          "type": "condition",
+          "label": "Já marcado como quente?",
+          "position": { "x": 0, "y": 420 },
+          "config": {
+            "combinator": "and",
+            "checks": [{ "field": "tag", "op": "eq", "value": "quente" }]
+          }
+        },
+        {
+          "id": "tarefa",
+          "type": "internal_task",
+          "label": "Avisar o vendedor",
+          "position": { "x": -260, "y": 560 },
+          "config": {
+            "titulo": "Ligar para {{contact.name}} — lead quente parado",
+            "vence_em_dias": 0,
+            "atribuir_a": "dono_do_lead",
+            "prioridade": "high"
+          }
+        },
+        {
+          "id": "msg2",
+          "type": "action",
+          "label": "Última tentativa",
+          "position": { "x": 260, "y": 560 },
+          "config": {
+            "mode": "text",
+            "body": "Vou deixar a conversa aberta por aqui. Quando quiser retomar, é só responder."
+          }
+        },
+        {
+          "id": "tag_frio",
+          "type": "edit_lead_tag",
+          "label": "Marcar como frio",
+          "position": { "x": 260, "y": 700 },
+          "config": { "tags": ["frio"] }
+        },
+        {
+          "id": "fim_quente",
+          "type": "end",
+          "label": "Passou para o vendedor",
+          "position": { "x": -260, "y": 700 },
+          "config": { "outcome": "converted" }
+        },
+        {
+          "id": "fim_frio",
+          "type": "end",
+          "label": "Esgotado",
+          "position": { "x": 260, "y": 840 },
+          "config": { "outcome": "exhausted" }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "inicio",
+          "target": "msg1",
+          "priority": 0,
+          "condition": { "type": "always" }
+        },
+        {
+          "id": "e2",
+          "source": "msg1",
+          "target": "espera1",
+          "priority": 0,
+          "condition": { "type": "always" }
+        },
+        {
+          "id": "e3",
+          "source": "espera1",
+          "target": "ja_quente",
+          "priority": 0,
+          "condition": { "type": "always" }
+        },
+        {
+          "id": "e4",
+          "source": "ja_quente",
+          "target": "tarefa",
+          "priority": 0,
+          "condition": { "type": "cond_result", "value": true }
+        },
+        {
+          "id": "e5",
+          "source": "ja_quente",
+          "target": "msg2",
+          "priority": 0,
+          "condition": { "type": "cond_result", "value": false }
+        },
+        {
+          "id": "e6",
+          "source": "tarefa",
+          "target": "fim_quente",
+          "priority": 0,
+          "condition": { "type": "always" }
+        },
+        {
+          "id": "e7",
+          "source": "msg2",
+          "target": "tag_frio",
+          "priority": 0,
+          "condition": { "type": "always" }
+        },
+        {
+          "id": "e8",
+          "source": "tag_frio",
+          "target": "fim_frio",
+          "priority": 0,
+          "condition": { "type": "always" }
+        }
+      ]
+    }
+  }
+}

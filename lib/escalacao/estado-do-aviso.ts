@@ -95,6 +95,7 @@ export interface ConfiguracaoNaTela {
   telefone: string;
   rotulo: string | null;
   ligado: boolean;
+  respostaWhatsappHabilitada?: boolean;
 }
 
 /** O que o `pacing_ledger` responde sobre o número que ENVIA os avisos. */
@@ -282,7 +283,13 @@ export function avisosDaTela(f: FatosDaTelaDeAviso): AvisoDaTela[] {
       alertas.push({
         codigo: "descarte_acontecendo",
         bloqueia: false,
-        dados: { ignoradas: f.descarte.ignoradas, ultimaEm: f.descarte.ultimaEm },
+        dados: {
+          ignoradas: f.descarte.ignoradas,
+          ultimaEm: f.descarte.ultimaEm,
+          // 1 = a opção de responder casos por este número está ligada, e a
+          // frase da tela ensina o comando em vez de dizer que tudo é ignorado.
+          comandos: f.config?.respostaWhatsappHabilitada ? 1 : 0,
+        },
       });
     }
   }

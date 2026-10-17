@@ -106,12 +106,15 @@ const CURADORIA: {
     porQue: "Você não fica com o sistema aberto o dia todo — mas fica com o WhatsApp.",
     // Comportamento real do motor (`lib/escalacao/aviso-ao-suporte.ts`): o aviso
     // sai na ABERTURA do caso, uma vez, e o número escolhido só recebe — o que
-    // chegar nele é descartado antes de virar contato.
+    // chegar nele é descartado antes de virar contato. A exceção é a opção
+    // "Responder casos por este WhatsApp" (desligada por padrão), que aceita
+    // RESPONDER/PERGUNTAR (`lib/escalacao/resposta-whatsapp-ao-caso.ts`).
     comoFunciona: [
       "Você escolhe um número da equipe para receber os avisos",
       "Quando ele trava e abre um pedido de ajuda, chega uma mensagem nesse número, na hora",
       "A mensagem traz o assunto e um link que abre o atendimento — e nunca o telefone do cliente",
       "Responder àquele número não chega ao cliente: ele é só da equipe",
+      "Se você ligar a opção, a equipe também orienta a IA respondendo ao aviso com RESPONDER ou PERGUNTAR",
     ],
   },
   {

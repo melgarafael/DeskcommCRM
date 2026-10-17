@@ -148,6 +148,7 @@ export interface EventoDoChamado {
   actor_user_id: string | null;
   human_action: string | null;
   body: string | null;
+  source: string | null;
   created_at: string;
 }
 
@@ -274,7 +275,7 @@ export async function lerChamado(
 
   const { data: events, error: eventsErr } = await supabase
     .from("agent_case_events")
-    .select("id, kind, actor_kind, actor_user_id, human_action, body, created_at")
+    .select("id, kind, actor_kind, actor_user_id, human_action, body, source:metadata->>source, created_at")
     .eq("organization_id", organizationId)
     .eq("case_id", caseId)
     .order("created_at", { ascending: true });

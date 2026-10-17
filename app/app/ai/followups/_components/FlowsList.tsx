@@ -8,12 +8,14 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FlowArrow, Plus, Sparkle } from "@/lib/ui/icons";
+import { FlowArrow, Plus, Sparkle, UploadSimple } from "@/lib/ui/icons";
 import { useFollowupFlows, type FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import { DeleteFollowupFlowButton } from "./DeleteFollowupFlowButton";
 import { DuplicateFollowupFlowButton } from "./DuplicateFollowupFlowButton";
+import { ExportFollowupFlowButton } from "./ExportFollowupFlowButton";
 import { FlowStatusBadge } from "./FlowStatusBadge";
+import { ImportFlowDialog } from "./ImportFlowDialog";
 import { ModelosDialog } from "./ModelosDialog";
 import { NewFlowDialog } from "./NewFlowDialog";
 import { RenameFollowupFlowButton } from "./RenameFollowupFlowButton";
@@ -39,6 +41,7 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
   const { data } = useFollowupFlows({ initialData, ...(surface ? { surface } : {}) });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [modelosOpen, setModelosOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const deAtendimento = surface === "atendimento";
 
   const flows = data ?? [];
@@ -68,9 +71,23 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
     </Button>
   );
 
+  // Importar fica ao lado de "Novo fluxo", sempre como botão secundário: é o
+  // caminho de quem JÁ tem um fluxo pronto (exportado aqui ou em outra conta).
+  const importButton = (
+    <Button
+      onClick={() => setImportOpen(true)}
+      variant="outline"
+      className="w-full sm:w-auto"
+      data-testid="import-followup-flow"
+    >
+      <UploadSimple size={14} aria-hidden className="mr-2" /> {t("Importar fluxo")}
+    </Button>
+  );
+
   const dialogos = canWrite && (
     <>
       <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} surface={surface} />
+      <ImportFlowDialog open={importOpen} onOpenChange={setImportOpen} baseHref={baseHref} />
       {!deAtendimento && (
         <ModelosDialog
           open={modelosOpen}
@@ -102,6 +119,7 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
             <div className="mt-1 flex flex-col items-center gap-2 sm:flex-row">
               {!deAtendimento && modelosButton}
               {newFlowButton}
+              {importButton}
             </div>
           )}
         </Card>
@@ -116,6 +134,7 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           {!deAtendimento && modelosButton}
           {newFlowButton}
+          {importButton}
         </div>
       )}
 
@@ -148,6 +167,7 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
                 <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-2">
                   <RenameFollowupFlowButton flowId={flow.id} flowName={flow.name} />
                   <DuplicateFollowupFlowButton flowId={flow.id} />
+                  <ExportFollowupFlowButton flowId={flow.id} />
                   <DeleteFollowupFlowButton flowId={flow.id} flowName={flow.name} listHref={baseHref} />
                 </div>
               )}

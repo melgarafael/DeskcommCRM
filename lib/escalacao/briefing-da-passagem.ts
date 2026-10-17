@@ -145,7 +145,22 @@ export interface EntradaDoBriefing {
     blocker: string;
     razaoHumana?: string | null;
   } | null;
+  /**
+   * Os campos que um fluxo DETERMINÍSTICO coletou no turno (pergunta de um
+   * campo por turno), já em pares rótulo/valor. Nenhum modelo passou por aqui:
+   * a coleta é regex, e o valor é palavra do cliente — por isso o bloco sai
+   * rotulado "confira antes de usar", e não como instrução.
+   *
+   * Opcional porque só os fluxos de coleta têm um; os treze caminhos de
+   * passagem de hoje não mudam de forma com ele ausente.
+   */
+  camposColetados?: Readonly<Record<string, string>> | null;
 }
+
+/** Tetos do bloco de campos — um cartão não vira página de texto. */
+const MAX_CAMPOS_COLETADOS = 12;
+const MAX_ROTULO_DO_CAMPO = 80;
+const MAX_VALOR_DO_CAMPO = 400;
 
 export interface BriefingDaPassagem {
   /** O texto pronto para leitura humana. Nunca vazio (ver `PISO_DO_BRIEFING`). */
@@ -187,6 +202,40 @@ function normalizarTentativas(
 }
 
 /**
+ * Descarta campo em branco e apara rótulo/valor nos tetos. A ordem é a de
+ * `Object.entries` — determinística para o mesmo objeto, que é o que um fluxo
+ * determinístico produz.
+ */
+function normalizarCamposColetados(
+  brutos: Readonly<Record<string, string>> | null | undefined,
+): Array<{ rotulo: string; valor: string }> {
+  const saida: Array<{ rotulo: string; valor: string }> = [];
+  for (const [chave, valorBruto] of Object.entries(brutos ?? {})) {
+    if (saida.length >= MAX_CAMPOS_COLETADOS) break;
+    const rotulo = limpo(chave);
+    const valor = limpo(valorBruto);
+    if (rotulo === null || valor === null) continue;
+    saida.push({ rotulo: rotulo.slice(0, MAX_ROTULO_DO_CAMPO), valor: valor.slice(0, MAX_VALOR_DO_CAMPO) });
+  }
+  return saida;
+}
+
+/**
+ * O bloco de dados coletados. O rótulo de VERIFICAÇÃO não é enfeite: o valor
+ * veio do cliente, e a pessoa que assume age em cima dele — mesma disciplina da
+ * fala literal e do "segundo a IA — confira", com a diferença de que aqui a
+ * coleta é determinística (sem modelo no meio), o que muda a confiabilidade do
+ * valor, não a necessidade de conferir o preenchimento.
+ */
+function blocoDeCamposColetados(campos: ReadonlyArray<{ rotulo: string; valor: string }>): string {
+  if (campos.length === 0) return "";
+  return [
+    "Dados coletados automaticamente (confira antes de usar):",
+    ...campos.map((c) => `• ${c.rotulo}: ${c.valor}`),
+  ].join("\n");
+}
+
+/**
  * O bloco que já existia: resumo acumulado → declaração → compromissos →
  * objeções → próxima ação.
  *
@@ -218,6 +267,7 @@ function blocoDoCheckpoint(
  */
 export function montarBriefingDaPassagem(e: EntradaDoBriefing): BriefingDaPassagem {
   const tentativas = normalizarTentativas(e.declaradoPeloModelo?.tentativas);
+  const campos = normalizarCamposColetados(e.camposColetados);
   // A declaração fresca vence a do checkpoint: a do checkpoint é do turno
   // anterior, e numa passagem o que vale é o que a pessoa acabou de dizer.
   const declaracao = e.declaracaoDoTurno ?? e.checkpoint?.declaracao ?? null;
@@ -228,9 +278,13 @@ export function montarBriefingDaPassagem(e: EntradaDoBriefing): BriefingDaPassag
 
   // `title` é a LEITURA da IA sobre o que a pessoa quer — nunca a fala dela
   // (isso é `notes`). Cai para a declaração quando o modelo não declarou nada,
-  // porque um cartão sem título é um cartão que ninguém identifica na lista.
+  // e para os rótulos dos campos coletados quando nem declaração há: um fluxo
+  // de coleta sem título nenhum deixaria o cartão sem nome na lista da Central.
   const intencoes = declaracao?.intencoes.map((i) => i.o_que).join("; ") ?? "";
-  const title = limpo(e.declaradoPeloModelo?.cliente_quer) ?? limpo(intencoes);
+  const title =
+    limpo(e.declaradoPeloModelo?.cliente_quer) ??
+    limpo(intencoes) ??
+    (campos.length > 0 ? `Dados coletados: ${campos.map((c) => c.rotulo).join(", ")}`.slice(0, 300) : null);
 
   // Precedência declarada, e não "o que estiver preenchido": o texto de quem
   // ACIONOU a passagem é mais específico que a razão registrada no caso, e é ele
@@ -268,6 +322,14 @@ export function montarBriefingDaPassagem(e: EntradaDoBriefing): BriefingDaPassag
     blocos.push(
       `Últimas mensagens do cliente (palavras dele): ${falas.map((f) => `"${f}"`).join("; ")}`,
     );
+  }
+
+  // Depois da fala do cliente e ANTES do bloco legado — mesma regra dos blocos
+  // novos: o checkpoint continua byte a byte o de sempre para quem não coletou
+  // campo nenhum.
+  const doBlocoDeCampos = blocoDeCamposColetados(campos);
+  if (doBlocoDeCampos !== "") {
+    blocos.push(doBlocoDeCampos);
   }
 
   if (doCheckpoint !== "") {

@@ -82,7 +82,11 @@ function sessao(role: Role = "admin") {
 /** O client de sessão: um `rpc` que devolve o que o caso mandar, e um `from`. */
 function clienteDeSessao(opts: {
   rpc?: { data?: unknown; error?: { message: string } | null };
-  config?: { channel_session_id: string | null; telefone_destino: string } | null;
+  config?: {
+    channel_session_id: string | null;
+    telefone_destino: string;
+    resposta_whatsapp_habilitada?: boolean;
+  } | null;
   erroDaConfig?: { message: string } | null;
 }) {
   const rpc = vi.fn(async () => opts.rpc ?? { data: {}, error: null });
@@ -172,6 +176,7 @@ describe("PUT — salvar a configuração", () => {
         p_telefone: TELEFONE,
         p_ligado: true,
         p_confirma_contato: false,
+        p_resposta_whatsapp_habilitada: false,
       }),
     );
   });
@@ -267,7 +272,9 @@ describe("POST /teste — o botão que manda de verdade", () => {
   });
 
   it("usa a configuração SALVA, não um corpo do cliente", async () => {
-    clienteDeSessao({ config: { channel_session_id: CANAL, telefone_destino: TELEFONE } });
+    clienteDeSessao({
+      config: { channel_session_id: CANAL, telefone_destino: TELEFONE, resposta_whatsapp_habilitada: true },
+    });
     vi.mocked(enviarAvisoDeTeste).mockResolvedValue({
       enviado: true,
       destinoMascarado: "••••6398",
@@ -278,6 +285,7 @@ describe("POST /teste — o botão que manda de verdade", () => {
       organizationId: ORG,
       channelSessionId: CANAL,
       telefone: TELEFONE,
+      respostaWhatsappHabilitada: true,
     });
   });
 

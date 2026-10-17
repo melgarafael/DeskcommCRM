@@ -48,7 +48,9 @@ import { nomeDeArquivoLimpo } from "@/lib/messaging/media/nome-de-arquivo";
 import {
   ehNumeroInternoDeAviso,
   registrarMensagemIgnorada,
+  type ChatIdentidade,
 } from "@/lib/escalacao/numero-interno-de-aviso";
+import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -480,6 +482,16 @@ function bodyOf(p: WahaPayload): string | null {
  */
 export function telefoneAlternativoDe(p: WahaPayload): string | null {
   return telefoneDoJid(p._data?.key?.remoteJidAlt ?? p._data?.key?.participantAlt ?? null);
+}
+
+/**
+ * Quem escreveu, para o corte do número de avisos: o `@lid` leva junto o
+ * telefone de `telefoneAlternativoDe`. Sem ele, o número cadastrado em modo
+ * privacidade não é reconhecido — o transporte resolve o destino do aviso por
+ * telefone, e o `destino_jid` gravado nunca termina em `@lid`.
+ */
+export function identidadeDoRemetente(p: WahaPayload, parsed: ChatIdentity): ChatIdentidade {
+  return parsed.kind === "lid" ? { ...parsed, phone: telefoneAlternativoDe(p) } : parsed;
 }
 
 /**
@@ -940,11 +952,14 @@ async function handleInbound(
   // dispara o pedido de rodízio pelo banco. Cortar depois já teria criado
   // contato, conversa e uma "conversa do suporte" na fila de um atendente — e o
   // "cancelar" que alguém da equipe digitasse bloquearia esse contato.
-  if (await ehNumeroInternoDeAviso(admin, session.organization_id, parsed)) {
-    await registrarMensagemIgnorada(admin, session.organization_id, {
-      direction: "inbound",
-      sessionId: session.id,
-    });
+  if (await consumirRespostaDoSuporteNoWhatsApp(admin, {
+    organizationId: session.organization_id,
+    channelSessionId: session.id,
+    identidade: identidadeDoRemetente(p, parsed),
+    direction: "inbound",
+    texto,
+    externalId: p.id,
+  })) {
     return;
   }
 

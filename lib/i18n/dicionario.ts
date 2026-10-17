@@ -2556,6 +2556,35 @@ export const DICIONARIO: Traducoes = {
     es: "Solo cambia el nombre interno. Las inscripciones y la versión publicada siguen iguales.",
   },
   "Duplicando…": { es: "Duplicando…" },
+  // Exportar / importar fluxo (lib/followup/portabilidade.ts).
+  "Exportando…": { es: "Exportando…" },
+  "Importar fluxo": { es: "Importar flujo" },
+  "a etapa foi ligada à etapa de mesmo nome desta conta.": { es: "la etapa se vinculó a la etapa con el mismo nombre en esta cuenta." },
+  "a etapa não existe nesta conta. Escolha a etapa no editor antes de publicar.": { es: "la etapa no existe en esta cuenta. Elige la etapa en el editor antes de publicar." },
+  "o modelo de mensagem foi ligado ao modelo de mesmo nome desta conta.": { es: "la plantilla de mensaje se vinculó a la plantilla con el mismo nombre en esta cuenta." },
+  "o modelo de mensagem não existe nesta conta. Escolha outro no editor antes de publicar.": { es: "la plantilla de mensaje no existe en esta cuenta. Elige otra en el editor antes de publicar." },
+  "o modelo de reserva não existe nesta conta e foi retirado.": { es: "la plantilla de respaldo no existe en esta cuenta y se quitó." },
+  "a pessoa da tarefa não é desta conta; a tarefa vai para o dono do lead.": { es: "la persona de la tarea no es de esta cuenta; la tarea irá al responsable del lead." },
+  "o próximo fluxo foi ligado ao fluxo de mesmo nome desta conta.": { es: "el siguiente flujo se vinculó al flujo con el mismo nombre en esta cuenta." },
+  "o próximo fluxo não existe nesta conta; ao finalizar, nada é iniciado.": { es: "el siguiente flujo no existe en esta cuenta; al finalizar, no se inicia nada." },
+  "o gatilho apontava para algo que não existe nesta conta e voltou para Manual. Escolha o gatilho antes de publicar.": { es: "el disparador apuntaba a algo que no existe en esta cuenta y volvió a Manual. Elige el disparador antes de publicar." },
+  "Arquivo grande demais para um fluxo (máximo de 512 KB).": { es: "Archivo demasiado grande para un flujo (máximo de 512 KB)." },
+  "O conteúdo não é um JSON válido. Use o arquivo baixado em «Exportar».": { es: "El contenido no es un JSON válido. Usa el archivo descargado en «Exportar»." },
+  "Não consegui importar o fluxo. Tente de novo.": { es: "No pude importar el flujo. Inténtalo de nuevo." },
+  "Use um arquivo baixado em «Exportar», desta ou de outra conta. O fluxo entra como rascunho: nada é enviado até você revisar e publicar.": { es: "Usa un archivo descargado en «Exportar», de esta u otra cuenta. El flujo entra como borrador: no se envía nada hasta que lo revises y publiques." },
+  "Importado como rascunho:": { es: "Importado como borrador:" },
+  "Resolva antes de publicar:": { es: "Resuelve antes de publicar:" },
+  "Ajustado automaticamente:": { es: "Ajustado automáticamente:" },
+  "Todas as referências do arquivo existem nesta conta. Revise o fluxo e publique quando quiser.": { es: "Todas las referencias del archivo existen en esta cuenta. Revisa el flujo y publícalo cuando quieras." },
+  "Importar outro": { es: "Importar otro" },
+  "Arquivo do fluxo (.json)": { es: "Archivo del flujo (.json)" },
+  "Ou cole o conteúdo do arquivo": { es: "O pega el contenido del archivo" },
+  "Deixe em branco para usar o nome do arquivo": { es: "Déjalo en blanco para usar el nombre del archivo" },
+  "Fluxo exportado.": { es: "Flujo exportado." },
+  "Fluxo importado como rascunho.": { es: "Flujo importado como borrador." },
+  "O arquivo não é um fluxo válido. Confira os itens abaixo e tente de novo.": { es: "El archivo no es un flujo válido. Revisa los puntos de abajo e inténtalo de nuevo." },
+  "Este arquivo é de um fluxo de atendimento, e os fluxos de atendimento estão desligados nesta instalação.": { es: "Este archivo es de un flujo de atención, y los flujos de atención están desactivados en esta instalación." },
+  "Este fluxo ainda não tem caixas suficientes para exportar. Monte o fluxo no editor e salve antes.": { es: "Este flujo todavía no tiene suficientes cajas para exportar. Arma el flujo en el editor y guárdalo antes." },
   "Fluxo duplicado.": { es: "Flujo duplicado." },
   "Fluxo renomeado.": { es: "Flujo renombrado." },
   "Novo fluxo de follow-up": { es: "Nuevo flujo de seguimiento" },
@@ -3409,6 +3438,7 @@ export const DICIONARIO: Traducoes = {
   "O cliente respondeu": { es: "El cliente respondió" },
   "O cliente não respondeu a tempo": { es: "El cliente no respondió a tiempo" },
   "Você concluiu o caso": { es: "Concluiste el caso" },
+  "A equipe respondeu pelo WhatsApp": { es: "El equipo respondió por WhatsApp" },
   "Você pediu uma informação ao cliente": { es: "Pediste información al cliente" },
   "Você decidiu passar para atendimento humano": { es: "Decidiste pasar a atención humana" },
   "O sistema abriu o caso automaticamente": { es: "El sistema abrió el caso automáticamente" },
@@ -13710,6 +13740,8 @@ export const DICIONARIO: Traducoes = {
     { es: "La conversación tocó el tema de reembolsos" },
   "Uma pessoa da equipe escalou um atendimento":
     { es: "Alguien del equipo escaló una atención" },
+  "Um fluxo automático coletou dados e passou a conversa para verificação humana":
+    { es: "Un flujo automático recopiló datos y pasó la conversación a verificación humana" },
   "A mensagem ficou na fila porque o canal está fora do ar":
     { es: "El mensaje quedó en la cola porque el canal está fuera de servicio" },
   "O canal recusou a mensagem de aviso":
@@ -13736,6 +13768,29 @@ export const DICIONARIO: Traducoes = {
     { es: "(resumen escrito por la IA a partir de la conversación)" },
   "Responder aqui não chega ao cliente — abra o link para responder.":
     { es: "Las respuestas aquí no le llegan al cliente. Abre el enlace para responder." },
+  "Para orientar a IA sem falar diretamente com o cliente, envie:": {
+    es: "Para orientar a la IA sin hablar directamente con el cliente, envía:",
+  },
+  "Para pedir que a IA esclareça algo com o cliente, envie:": {
+    es: "Para pedirle a la IA que aclare algo con el cliente, envía:",
+  },
+  "Responder casos por este WhatsApp": { es: "Responder casos por este WhatsApp" },
+  "Permite usar RESPONDER ou PERGUNTAR no número que recebe os avisos. Desligado por padrão.": {
+    es: "Permite usar RESPONDER o PERGUNTAR en el número que recibe los avisos. Está desactivado por defecto.",
+  },
+  "Recebido. A IA vai seguir com o cliente.": { es: "Recibido. La IA continuará con el cliente." },
+  "Não consegui: esse caso já foi respondido ou não existe.": {
+    es: "No pude hacerlo: el caso ya fue respondido o no existe.",
+  },
+  "Formato: RESPONDER <id> <orientação> ou PERGUNTAR <id> <pergunta>.": {
+    es: "Formato: RESPONDER <id> <indicación> o PERGUNTAR <id> <pregunta>.",
+  },
+  "Para orientar a IA, responda ao aviso de um caso com RESPONDER ou PERGUNTAR, o ID do caso e a sua mensagem. Responder a esta mensagem de teste não chega a ninguém.": {
+    es: "Para orientar a la IA, responde al aviso de un caso con RESPONDER o PERGUNTAR, el ID del caso y tu mensaje. Responder a este mensaje de prueba no le llega a nadie.",
+  },
+  "A IA usa sua orientação e o histórico para continuar o atendimento.": {
+    es: "La IA usa tu indicación y el historial para continuar la atención.",
+  },
   "Dúvida": { es: "Duda" },
   Pagamento: { es: "Pago" },
   "Acesso ou cadastro": { es: "Acceso o registro" },
@@ -13795,6 +13850,8 @@ export const DICIONARIO: Traducoes = {
     { es: "El mensaje trae el asunto y un enlace que abre la atención, pero nunca el teléfono del cliente" },
   "Responder àquele número não chega ao cliente: ele é só da equipe":
     { es: "Las respuestas a ese número no llegan al cliente: es solo del equipo" },
+  "Se você ligar a opção, a equipe também orienta a IA respondendo ao aviso com RESPONDER ou PERGUNTAR":
+    { es: "Si activas la opción, el equipo también puede orientar a la IA respondiendo al aviso con RESPONDER o PERGUNTAR" },
   // A DESCRIÇÃO da entrada no catálogo de navegação. Ela é cobrada por um
   // guarda PRÓPRIO (`tests/unit/nav-hub.test.tsx`), que varre rótulo e
   // descrição de todo destino do grupo IA — e não pelo guarda de espanhol das
@@ -13815,6 +13872,8 @@ export const DICIONARIO: Traducoes = {
     { es: "Todavía no hay suficientes casos en los últimos 30 días para comparar. La comparación aparecerá automáticamente cuando los haya." },
   "As respostas para este número são ignoradas de propósito":
     { es: "Las respuestas a este número se ignoran a propósito" },
+  "Mensagens comuns deste número são ignoradas":
+    { es: "Los mensajes comunes de este número se ignoran" },
   "Aviso de teste enviado. Confira o WhatsApp desse número.":
     { es: "Aviso de prueba enviado. Revisa el WhatsApp de ese número." },
   "Aviso no WhatsApp":
@@ -13895,6 +13954,8 @@ export const DICIONARIO: Traducoes = {
     { es: "Cuando la atención automática se trabe, aquí llegan el tipo de asunto, el primer nombre del cliente, lo que necesita y un enlace para abrir la conversación." },
   "Quem conduz as conversas desta conta é um sistema de fora, e ele não abre casos aqui.":
     { es: "Un sistema externo lleva las conversaciones de esta cuenta y no abre casos aquí." },
+  "Para orientar a IA sem falar diretamente com o cliente, responda ao aviso com RESPONDER, o ID do caso e sua orientação. Use PERGUNTAR, o ID do caso e a pergunta para pedir que a IA esclareça algo com o cliente. Outras mensagens deste número são ignoradas.":
+    { es: "Para orientar a la IA sin hablar directamente con el cliente, responde al aviso con RESPONDER, el ID del caso y tu indicación. Usa PERGUNTAR, el ID del caso y la pregunta para pedirle a la IA que aclare algo con el cliente. Los demás mensajes de este número se ignoran." },
   "Quem responder a esse número não vira atendimento, não vira contato e não chega ao CRM. É assim que o recurso funciona.":
     { es: "Quien responda a ese número no genera una conversación ni un contacto, y tampoco llega al CRM. Así funciona esta opción." },
   "Receber avisos no WhatsApp":

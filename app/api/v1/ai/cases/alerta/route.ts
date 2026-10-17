@@ -74,6 +74,7 @@ const corpo = z
       .regex(/^\+[1-9][0-9]{7,14}$/),
     rotulo: z.string().trim().max(60).nullable().optional(),
     ligado: z.boolean(),
+    resposta_whatsapp_habilitada: z.boolean().default(false),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
   })
@@ -176,6 +177,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       p_rotulo: dados.rotulo ?? null,
       p_ligado: dados.ligado,
       p_confirma_contato: dados.confirma_contato ?? false,
+      p_resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
     } as never,
   );
 
@@ -205,6 +207,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       trocou_numero: Boolean(resultado.trocou_numero),
       antes_ligado: Boolean(resultado.antes_ligado),
       depois_ligado: dados.ligado,
+      resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
       canal: dados.channel_session_id,
       confirmou_contato: dados.confirma_contato ?? false,
     },

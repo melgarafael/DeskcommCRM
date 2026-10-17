@@ -92,7 +92,13 @@ function recusa(
 
 export async function enviarAvisoDeTeste(
   deps: DepsDoAvisoDeTeste,
-  entrada: { organizationId: string; channelSessionId: string; telefone: string },
+  entrada: {
+    organizationId: string;
+    channelSessionId: string;
+    telefone: string;
+    /** A opção de responder casos por este número, como está SALVA. */
+    respostaWhatsappHabilitada?: boolean;
+  },
 ): Promise<ResultadoDoAvisoDeTeste> {
   const agora = deps.clock();
   const { organizationId: orgId, channelSessionId, telefone } = entrada;
@@ -150,6 +156,7 @@ export async function enviarAvisoDeTeste(
     marca: marca.nome,
     idioma: marca.idioma,
     link: `${deps.urlPublica.replace(/\/+$/, "")}/app/ai/cases`,
+    respostaWhatsappHabilitada: entrada.respostaWhatsappHabilitada === true,
   });
 
   // ── 14. O transporte ─────────────────────────────────────────────────────

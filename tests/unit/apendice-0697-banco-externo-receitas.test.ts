@@ -11,9 +11,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const RAIZ = join(__dirname, "..", "..");
-const MIGRATION = "supabase/migrations/20261020140000_0693_banco_externo_receitas.sql";
+const MIGRATION = "supabase/migrations/20261017215111_0697_banco_externo_receitas.sql";
 
-describe("o apêndice do baseline espelha a migration 0693 (receitas do banco externo)", () => {
+describe("o apêndice do baseline espelha a migration 0697 (receitas do banco externo)", () => {
   it("controle: os dois arquivos existem e não estão vazios", () => {
     expect(existsSync(join(RAIZ, MIGRATION))).toBe(true);
     const migration = readFileSync(join(RAIZ, MIGRATION), "utf8");
@@ -45,7 +45,7 @@ describe("o apêndice do baseline espelha a migration 0693 (receitas do banco ex
   it("a migration tem cabeçalho `-- manifest:` com descrição não vazia", () => {
     const migration = readFileSync(join(RAIZ, MIGRATION), "utf8");
     const manifest = /^-- manifest:[ \t]*(\S.*)$/m.exec(migration);
-    expect(manifest, "a migration 0693 precisa de uma linha `-- manifest: <o quê e por quê>` no cabeçalho").not.toBeNull();
+    expect(manifest, "a migration 0697 precisa de uma linha `-- manifest: <o quê e por quê>` no cabeçalho").not.toBeNull();
     expect(manifest![1]!.trim().length).toBeGreaterThan(0);
   });
 });

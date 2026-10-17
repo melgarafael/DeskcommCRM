@@ -70,7 +70,9 @@ const FRASE_EXTRA_DO_TESTE = {
     "Este número mandou uma mensagem agora há pouco. O WhatsApp exige um intervalo entre elas — tente de novo em alguns segundos.",
 } as const;
 
-const RASCUNHO_VAZIO = { canal: "", telefone: "", rotulo: "", ligado: false };
+const RASCUNHO_VAZIO = {
+  canal: "", telefone: "", rotulo: "", ligado: false, respostaWhatsappHabilitada: false,
+};
 type Rascunho = typeof RASCUNHO_VAZIO;
 
 function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
@@ -80,6 +82,7 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
     telefone: estado.config.telefone,
     rotulo: estado.config.rotulo ?? "",
     ligado: estado.config.ligado,
+    respostaWhatsappHabilitada: estado.config.resposta_whatsapp_habilitada,
   };
 }
 
@@ -177,6 +180,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         telefone: rascunho.telefone,
         rotulo: rascunho.rotulo.trim() === "" ? null : rascunho.rotulo.trim(),
         ligado: rascunho.ligado,
+        resposta_whatsapp_habilitada: rascunho.respostaWhatsappHabilitada,
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
@@ -262,6 +266,24 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
             {t("Esse número ainda não está completo.")}
           </p>
         ) : null}
+      </div>
+
+      <div className="flex items-start gap-3 rounded-lg border p-3">
+        <Switch
+          id="resposta-whatsapp-habilitada"
+          checked={rascunho.respostaWhatsappHabilitada}
+          disabled={!jaSalvo || salvar.isPending}
+          onCheckedChange={(v) => setRascunho((r) => ({ ...r, respostaWhatsappHabilitada: v }))}
+          aria-label={t("Responder casos por este WhatsApp")}
+        />
+        <div className="space-y-1">
+          <Label htmlFor="resposta-whatsapp-habilitada" className="text-sm font-medium">
+            {t("Responder casos por este WhatsApp")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t("Permite usar RESPONDER ou PERGUNTAR no número que recebe os avisos. Desligado por padrão.")}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">

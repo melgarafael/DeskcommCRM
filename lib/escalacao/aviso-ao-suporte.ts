@@ -131,6 +131,7 @@ export interface ConfigDoAviso {
   telefone_destino: string;
   destino_jid: string | null;
   ligado: boolean;
+  resposta_whatsapp_habilitada: boolean;
 }
 
 export interface CasoDoAviso {
@@ -508,8 +509,10 @@ export async function aplicaAvisoDeCaso(
     title: caso.title,
     summary: caso.summary,
     blocker: caso.blocker,
+    caseId: caso.id,
     nomeDoCliente: nome,
     link: linkDoCaso(deps.urlPublica, caso.id),
+    respostaWhatsappHabilitada: cfg.resposta_whatsapp_habilitada,
   });
 
   // ── 14. O transporte ─────────────────────────────────────────────────────
@@ -692,7 +695,7 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
     async carregaConfig(orgId) {
       const { data, error } = await admin
         .from("config_aviso_de_caso")
-        .select("organization_id, channel_session_id, telefone_destino, destino_jid, ligado")
+        .select("organization_id, channel_session_id, telefone_destino, destino_jid, ligado, resposta_whatsapp_habilitada")
         .eq("organization_id", orgId)
         .maybeSingle();
       if (error) throw new Error(error.message);

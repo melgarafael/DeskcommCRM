@@ -71,9 +71,10 @@ export async function lerEventosDoCaso(
     actor_kind: string;
     human_action: string | null;
     body: string | null;
+    source: string | null;
     created_at: Date;
   }>(
-    `select kind, actor_kind, human_action, body, created_at
+    `select kind, actor_kind, human_action, body, metadata->>'source' as source, created_at
        from agent_case_events
       where organization_id = $1 and case_id = $2
       order by created_at asc
@@ -87,6 +88,7 @@ export async function lerEventosDoCaso(
       kind: r.kind,
       actor_kind: r.actor_kind,
       human_action: r.human_action,
+      source: r.source,
     } as Parameters<typeof caseEventLabel>[0]),
     quando: new Date(r.created_at).toISOString(),
     corpo: r.body,

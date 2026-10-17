@@ -298,3 +298,50 @@ describe("D11 — a equipe sabe quando foi o Jev que percebeu a irritação", ()
     expect(corpo).toContain(traduzir(MARCA_DO_JEV, "es"));
   });
 });
+
+describe("campos coletados — o dado determinístico que um fluxo recolheu", () => {
+  it("sem campos: o corpo é BYTE A BYTE o de antes (o caminho legado não muda)", () => {
+    const sem = montarBriefingDaPassagem({ checkpoint: CHECKPOINT, motivo: { codigo: "requested_human" } });
+    const comVazio = montarBriefingDaPassagem({
+      checkpoint: CHECKPOINT,
+      motivo: { codigo: "requested_human" },
+      camposColetados: {},
+    });
+    expect(comVazio.body).toBe(sem.body);
+  });
+
+  it("com campos: rótulo de verificação, um campo por linha, e o bloco vem ANTES do checkpoint", () => {
+    const b = montarBriefingDaPassagem({
+      checkpoint: CHECKPOINT,
+      camposColetados: { nome: "Maria", exame: "Hemograma" },
+    });
+    expect(b.body).toContain("Dados coletados automaticamente (confira antes de usar):");
+    expect(b.body).toContain("• nome: Maria");
+    expect(b.body).toContain("• exame: Hemograma");
+    expect(b.body.indexOf("Dados coletados")).toBeLessThan(b.body.indexOf("Contexto acumulado"));
+  });
+
+  it("sem título de outro lugar, os rótulos dos campos identificam o cartão na lista", () => {
+    const b = montarBriefingDaPassagem({ checkpoint: null, camposColetados: { nome: "Maria", exame: "Hemograma" } });
+    expect(b.title).toBe("Dados coletados: nome, exame");
+  });
+
+  it("campo em branco é descartado; valor aparado no teto (o cartão não vira página)", () => {
+    const b = montarBriefingDaPassagem({
+      checkpoint: null,
+      camposColetados: { "  ": "x", vazio: "   ", ok: "  valor  " },
+    });
+    expect(b.body).toContain("• ok: valor");
+    expect(b.body).not.toContain("vazio");
+    const grande = montarBriefingDaPassagem({ checkpoint: null, camposColetados: { k: "x".repeat(1000) } });
+    expect((grande.body.split("• k: ")[1] ?? "").length).toBe(400);
+  });
+
+  it("mais de 12 campos: só os 12 primeiros entram", () => {
+    const campos: Record<string, string> = {};
+    for (let i = 0; i < 15; i++) campos[`c${i}`] = "v";
+    const b = montarBriefingDaPassagem({ checkpoint: null, camposColetados: campos });
+    expect(b.body).toContain("• c11: v");
+    expect(b.body).not.toContain("• c12: v");
+  });
+});

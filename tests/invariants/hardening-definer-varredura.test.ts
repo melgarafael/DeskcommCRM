@@ -268,7 +268,7 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "com segurança sem medir o disparo de cada trigger.",
   },
   {
-    fn: "fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean)",
+    fn: "fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_caso` — a tabela não tem " +
       "INSERT/UPDATE/DELETE para authenticated, só `grant select` sob RLS de " +

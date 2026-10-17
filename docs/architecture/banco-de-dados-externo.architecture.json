@@ -216,7 +216,7 @@
       "id": "receitasColuna",
       "lane": "dados",
       "label": "receitas (jsonb) em external_db_connections",
-      "sublabel": "migration 0693 · instâncias de receita por org · RLS herda da tabela · fora do _safe",
+      "sublabel": "migration 0697 · instâncias de receita por org · RLS herda da tabela · fora do _safe",
       "type": "table",
       "dot": "sky"
     },
@@ -516,7 +516,7 @@
       "id": "e51",
       "from": "migration0372",
       "to": "receitasColuna",
-      "label": "coluna receitas (0693)"
+      "label": "coluna receitas (0697)"
     },
     {
       "id": "e52",

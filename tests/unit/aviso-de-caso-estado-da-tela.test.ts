@@ -48,6 +48,7 @@ function fatos(patch: Partial<FatosDaTelaDeAviso> = {}): FatosDaTelaDeAviso {
       telefone: "+5531998966398",
       rotulo: "Plantão da Ana",
       ligado: true,
+      respostaWhatsappHabilitada: false,
     },
     urlPublicaOk: true,
     agentesPublicados: { total: 1, comCasos: 1, assistidos: 0 },
@@ -257,7 +258,17 @@ describe("os estados que só informam", () => {
     const ontem = new Date(AGORA.getTime() - 24 * 3600_000).toISOString();
     const lista = avisosDaTela(fatos({ descarte: { ignoradas: 3, ultimaEm: ontem } }));
     const aviso = lista.find((a) => a.codigo === "descarte_acontecendo");
-    expect(aviso?.dados).toMatchObject({ ignoradas: 3, ultimaEm: ontem });
+    expect(aviso?.dados).toMatchObject({ ignoradas: 3, ultimaEm: ontem, comandos: 0 });
+  });
+
+  it("com a resposta pelo WhatsApp ligada, o descarte avisa a tela para ensinar o comando", () => {
+    const ontem = new Date(AGORA.getTime() - 24 * 3600_000).toISOString();
+    const base = fatos();
+    const lista = avisosDaTela(fatos({
+      descarte: { ignoradas: 3, ultimaEm: ontem },
+      config: { ...base.config!, respostaWhatsappHabilitada: true },
+    }));
+    expect(lista.find((a) => a.codigo === "descarte_acontecendo")?.dados).toMatchObject({ comandos: 1 });
   });
 
   it("descarte VELHO não aparece — o contador é acumulado, e a janela é a recência", () => {

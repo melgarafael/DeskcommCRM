@@ -405,7 +405,7 @@ describe("0292 — fn_definir_aviso_de_caso é a única porta, e ela confere o p
   it("anon não tem EXECUTE na função", () => {
     expect(
       booleano(
-        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean)', 'EXECUTE')::text`,
+        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean)', 'EXECUTE')::text`,
       ),
       "a função nasceu exposta à anon key, que vai para o browser",
     ).toBe(false);

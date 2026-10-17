@@ -90,6 +90,11 @@ export const MOTIVOS_DA_PASSAGEM = [
   "legal_mention",
   "refund_mention",
   "caso_escalado",
+  // Um fluxo DETERMINÍSTICO coletou dados (campo a campo) e passou para
+  // verificação humana. Distinto de `requested_human` porque o cliente NÃO
+  // pediu uma pessoa — mentir no rótulo faria quem assume abrir com um
+  // agradecimento que ninguém pediu. Par da migration 0693.
+  "verificacao_manual",
 ] as const;
 export type MotivoDaPassagem = (typeof MOTIVOS_DA_PASSAGEM)[number];
 
@@ -134,6 +139,7 @@ export const FRASE_DO_MOTIVO = {
   legal_mention: "A conversa tocou em assunto jurídico",
   refund_mention: "A conversa tocou em reembolso",
   caso_escalado: "Uma pessoa da equipe escalou um atendimento",
+  verificacao_manual: "Um fluxo automático coletou dados e passou a conversa para verificação humana",
 } satisfies Record<MotivoDaPassagem, string>;
 
 /**
