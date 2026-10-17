@@ -1,6 +1,4 @@
-import { headers } from "next/headers";
-
-import { normalizarIdioma, parseAcceptLanguage, type Idioma } from "@/lib/i18n/idiomas";
+import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 
 /**
  * O idioma de quem ainda não tem sessão (ou cujo perfil não tem `locale`
@@ -8,19 +6,19 @@ import { normalizarIdioma, parseAcceptLanguage, type Idioma } from "@/lib/i18n/i
  * `app/app/layout.tsx`: sem `IdiomaProvider`, sem membership, sem
  * organização de quem consultar.
  *
- * Cadeia: preferência salva → `Accept-Language` do navegador → padrão
- * pt-BR. O header é só um SINAL de primeira visita, nunca sobrepõe uma
- * preferência já salva — inclusive um valor antigo desconhecido nela (esse
- * caso já degrada pro padrão dentro de `normalizarIdioma`, e é um problema
- * diferente do que este arquivo resolve: visitante que NUNCA teve conta).
+ * Instalação Holospace (fork `holospace-saas/deskcomm-crm`): um único
+ * tenant, espanhol rioplatense sempre — regra de ouro 6 do projeto
+ * `holospace-universe`. Não negocia pelo `Accept-Language` do navegador:
+ * qualquer visitante sem conta aqui é cliente ou prospect de língua
+ * espanhola, nunca outra. O upstream usava o header como sinal antes de
+ * cair no padrão `pt-BR` (`IDIOMA_PADRAO`); aqui cai direto em `"es"`.
  *
- * Server-only de propósito (`next/headers`): `lib/i18n/idiomas.ts` continua
- * puro porque componente cliente (`SeletorDeIdioma.tsx`) o importa.
+ * `preferência salva → "es"` continua sendo a cadeia: uma preferência já
+ * salva no perfil (inclusive uma desconhecida, que `normalizarIdioma`
+ * degrada) sempre vence sobre este padrão.
  */
 export async function idiomaDoVisitante(
   localeBruto: string | null | undefined,
 ): Promise<Idioma> {
-  if (localeBruto) return normalizarIdioma(localeBruto);
-  const hdrs = await headers();
-  return normalizarIdioma(parseAcceptLanguage(hdrs.get("accept-language")));
+  return normalizarIdioma(localeBruto ?? "es");
 }

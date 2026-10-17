@@ -47,10 +47,10 @@ export default async function PublicLayout({ children }: { children: React.React
   // A maioria destas telas roda ANTES do login (não há usuário nenhum), mas
   // duas — `/login/mfa` e, em parte, `/login/recovery` — rodam com uma sessão
   // parcial já criada (primeiro fator verificado, segundo pendente). Onde há
-  // sessão, o idioma salvo no perfil vale; sem ela, o do navegador (Accept-Language),
-  // pela MESMA função das páginas (`idiomaDoVisitante`). Com o perfil só, quem chegava
-  // sem sessão via o servidor no idioma do navegador e os formulários do cliente
-  // (cadastro, login, senha) no padrão pt-BR do provider.
+  // sessão, o idioma salvo no perfil vale; sem ela, `idiomaDoVisitante` cai
+  // direto em espanhol nesta instalação (fork Holospace, um único tenant —
+  // ver o cabeçalho de `lib/i18n/idiomaAnonimo.ts`), não no Accept-Language
+  // do navegador.
   const supabase = await createClient();
   const {
     data: { user },
