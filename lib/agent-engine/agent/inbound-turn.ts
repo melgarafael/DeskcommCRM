@@ -4391,6 +4391,8 @@ async function executarTurnoDoAgente(
                 conversationId: PASTA_DE_TESTE_DE_MIDIA,
                 codigo,
               }),
+            // #2923 — a mesma conferência de fato do envio real (ver `conferirAfirmacoes` acima).
+            conferirAfirmacoes,
           )
         : rawTools;
     const tools = wrapToolsWithBreaker(previewTools, {

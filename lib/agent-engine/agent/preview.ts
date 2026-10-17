@@ -27,6 +27,7 @@ import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
+import type { ConferenciaDeFato } from '../guardrails/factual-claim';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -271,6 +272,13 @@ export function applyPreviewPolicy(
    * teste falha a mídia em vez de aprovar texto com foto pendente.
    */
   prepararMidia?: (codigo: string) => Promise<FotosPreparadas>,
+  /**
+   * #2923 — o MESMO conferidor de afirmações de fato (#2231) que o turno passa ao
+   * envio real. Sem ele, o rascunho assistido saía sem a camada 6.3 da cadeia e a
+   * tarefa do Jev nunca observava o modo assistido. O estado da tarefa continua
+   * mandando (`factualClaimGate`): desligada ou só observando, nada é barrado.
+   */
+  conferirAfirmacoes?: (body: string) => Promise<ConferenciaDeFato | null>,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -332,12 +340,18 @@ export function applyPreviewPolicy(
                   });
               }
               const avisos: Array<{ code: string; message: string }> = [];
+              // As duas leituras do corpo correm juntas, como no `runBeforeSend`.
+              const [semanticPromise, factualClaim] = await Promise.all([
+                semanticClassifier ? semanticClassifier(body) : null,
+                conferirAfirmacoes ? conferirAfirmacoes(body) : null,
+              ]);
               const result = evaluateBeforeSend(
                 {
                   ...ctx,
                   ...liveContext?.(),
                   body,
-                  semanticPromise: semanticClassifier ? await semanticClassifier(body) : null,
+                  semanticPromise,
+                  factualClaim,
                 },
                 p.kind === 'sandbox' ? gatesDoSandbox(avisos) : BEFORE_SEND_GATES,
               );
