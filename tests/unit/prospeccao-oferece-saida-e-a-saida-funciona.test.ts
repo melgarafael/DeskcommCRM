@@ -83,13 +83,21 @@ describe("e a saída oferecida realmente funciona (a volta)", () => {
 
 describe("o caminho de envio usa o rodapé — e não o texto cru do modelo", () => {
   it("o worker manda `comSaida(...)`, não `generated.texto`", () => {
-    // Sem esta asserção, o módulo poderia estar perfeito e desligado: o defeito
+    // Sem estas asserções, o módulo poderia estar perfeito e desligado: o defeito
     // original era exatamente um caminho de envio que mandava o texto cru.
+    // O rodapé é montado UMA vez (`corpo`), fatiado em bolhas e cada bolha vira o
+    // body — então a cerca procura as três pernas, não só a chamada.
     const worker = fs.readFileSync(path.join(RAIZ, "lib/prospecting/worker.ts"), "utf8");
-    expect(worker).toMatch(/body:\s*comSaida\(/);
+    expect(worker).toMatch(/corpo\s*=\s*comSaida\(/);
+    expect(worker).toMatch(/splitForSend\(\s*corpo/);
+    expect(worker).toMatch(/body:\s*baloes\[i\]/);
     expect(
       worker.includes("body: generated.texto"),
       "o envio voltou a mandar o texto do modelo sem a saída",
+    ).toBe(false);
+    expect(
+      worker.includes("body: corpo"),
+      "o envio voltou a mandar o corpo inteiro, ignorando o fatiamento",
     ).toBe(false);
   });
 });
