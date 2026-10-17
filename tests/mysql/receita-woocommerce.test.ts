@@ -185,7 +185,7 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       await conexao.query("SET SESSION lock_wait_timeout = 5");
       const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
       await conexao.query("COMMIT");
-      const titulos = (linhas as { post_title: string }[]).map((l) => l.post_title);
+      const titulos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar("C1-woocommerce-busca", `busca 'camisa' → ${titulos.join(", ")}`);
       expect(titulos).toContain("Camisa azul");
       expect(titulos).not.toContain("Rascunho invisível");
@@ -209,14 +209,16 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       await conexao.query("SET SESSION lock_wait_timeout = 5");
       const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
       await conexao.query("COMMIT");
-      const ids = (linhas as { id: number }[]).map((l) => l.id);
+      // O serializador do dialeto devolve BIGINT como string (montagem.ts:191:
+      // typeof v === "bigint" → v.toString()).
+      const ids = (linhas as { id: string }[]).map((l) => l.id);
       registrar("C1-woocommerce-preco_max", `preco_max=60 → ids ${ids.join(", ")}`);
-      expect(ids).toContain(expect.any(Number));
+      expect(ids.length).toBeGreaterThanOrEqual(1);
       // a bota (120,00) não entra
       const [semBota] = await root.query(
         `select ID as id from \`${banco}\`.\`${WP_PREFIXO}posts\` where post_title = 'Bota de couro'`,
       );
-      const idBota = Number((extrairLinhas<{ id: number }>(semBota)[0] as { id: number })?.id);
+      const idBota = String((extrairLinhas<{ id: string }>(semBota)[0] as { id: string })?.id);
       expect(ids).not.toContain(idBota);
     } finally {
       conexao.release();

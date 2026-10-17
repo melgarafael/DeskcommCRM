@@ -14252,6 +14252,7 @@ export const DICIONARIO: Traducoes = {
   "Salvo.": { es: "Guardado." },
   "Carregando receitas…": { es: "Cargando recetas…" },
   "Prefixo:": { es: "Prefijo:" },
+  "Não foi possível carregar as receitas.": { es: "No se pudieron cargar las recetas." },
   // Frase inteira, e não "Ativada" seco: essa chave já existe neste arquivo,
   // de outra tela e no feminino (`Activada`) — reusá-la duplicaria a chave e
   // discordaria do gênero de `Recorrido`.

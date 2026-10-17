@@ -39,7 +39,6 @@ let conexaoId: string;
 let moduloAntes: string | null = null;
 
 test.use({ viewport: { width: 1600, height: 900 } });
-test.describe.configure({ timeout: 300_000 });
 
 async function loginComoAgent(page: Page, creds: CredsE2E): Promise<void> {
   const usuario = creds.users.agent;

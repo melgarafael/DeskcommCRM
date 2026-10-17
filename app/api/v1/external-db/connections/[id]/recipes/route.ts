@@ -1,15 +1,16 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
+ * GET /api/v1/external-db/connections/:id/recipes (qualquer autenticado)
  * PUT /api/v1/external-db/connections/:id/recipes (admin)
  *
  * As INSTÂNCIAS DE RECEITA da conexão: receita escolhida + parâmetros preenchidos
  * na tela (fixos), gravados na coluna `receitas` (jsonb) de
- * `external_db_connections`. Um UPDATE atômico, sem estado pela metade — idempotente:
- * repetir o mesmo corpo grava o mesmo estado (não há Idempotency-Key).
+ * `external_db_connections`. O GET lê com `organization_id` SÓ da sessão e o `id`
+ * da conexão (zero linhas → 404). Bruto inválido → lista vazia, nunca 500 mudo.
  *
  * NÃO exige que a receita rode agora: a pré-visualização é que consulta o banco de
  * origem, e só para `mysql` nesta fatia. Se alguma instância só aceita um motor que
- * não é o desta conexão, recusa com `receita_incompativel_com_o_motor` (422).
+ * não é o desta conexão, recusa com `receita_incompatível_com_o_motor` (422).
  *
  * A organização vem do contexto autenticado, nunca do corpo.
  *
@@ -33,6 +34,34 @@ import { seModuloDesligado } from "../../../_falha";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+  const requestId = randomUUID();
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
+  const { id } = await ctx.params;
+
+  const authz = await requireRole("viewer", { requestId, resource: "external_db_connections" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  const { data, error } = await createAdminClient()
+    .from("external_db_connections")
+    .select("receitas")
+    .eq("organization_id", authz.org.orgId)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) return fail("internal_error", "Erro ao ler as receitas.", 500, { requestId });
+  if (!data) return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
+
+  // Bruto inválido → lista vazia: o que o assistente enxerga é nada, falha fechada.
+  const lida = lerReceitasDoBanco(data.receitas);
+  return ok(
+    { receitas: lida.ok ? lida.instancias : [] },
+    { requestId },
+  );
+}
 
 export async function PUT(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();

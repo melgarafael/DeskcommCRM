@@ -112,6 +112,19 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
   if (motor !== "mysql") return null;
   if (opcoes.length === 0 && receitas.length === 0) return null;
 
+  // Query falhou: nunca fica em silêncio (Living System, item 1). Mostra mensagem
+  // legível com botão para tentar de novo.
+  if (query.isError) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        {t("Não foi possível carregar as receitas.")}{" "}
+        <Button size="sm" onClick={() => query.refetch()}>
+          {t("Tentar de novo")}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <Card className="border border-border">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
