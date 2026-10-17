@@ -130,7 +130,10 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
 
   it("mede o DDL e as tabelas criadas", async () => {
     const tabelas = extrairLinhas<{ table_name: string }>(
-      await root.query(`select table_name from information_schema.tables where table_schema = ?`, [banco]),
+      await root.query(
+        `select table_name as table_name from information_schema.tables where table_schema = ?`,
+        [banco],
+      ),
     );
     registrar("C1-woocommerce", `tabelas: ${tabelas.map((t) => t.table_name).join(", ")}`);
     expect(tabelas.map((t) => t.table_name).sort()).toEqual([
@@ -170,24 +173,26 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
 
   it("busca por título encontra a camisa e não o rascunho", async () => {
     const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
-    const resultado = await lerTabelaMysql(
-      pool,
-      banco,
-      {
-        schema: banco,
-        tabela: `${WP_PREFIXO}posts`,
-        colunas: ["ID", "post_title"],
-        filtros: [],
-        limite: 5,
-        offset: 0,
-      },
-      new Set(["ID", "post_title", "post_type", "post_status", "guid"]),
-      { limiteMax: 5 },
+    // Passa pela receita de verdade: montar + executar o SQL montado contra o MySQL.
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      { prefixo: WP_PREFIXO },
+      { busca: "camisa", preco_max: undefined, so_em_estoque: undefined, limite: 5 },
+      5,
     );
-    const titulos = resultado.linhas.map((l) => l.post_title);
-    registrar("C1-woocommerce-busca", `busca 'camisa' → ${titulos.join(", ")}`);
-    expect(titulos).toContain("Camisa azul");
-    expect(titulos).not.toContain("Rascunho invisível");
+    const conexao = await pool.getConnection();
+    try {
+      await conexao.query("START TRANSACTION READ ONLY");
+      await conexao.query("SET SESSION max_execution_time = 10000");
+      await conexao.query("SET SESSION lock_wait_timeout = 5");
+      const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
+      await conexao.query("COMMIT");
+      const titulos = (linhas as { post_title: string }[]).map((l) => l.post_title);
+      registrar("C1-woocommerce-busca", `busca 'camisa' → ${titulos.join(", ")}`);
+      expect(titulos).toContain("Camisa azul");
+      expect(titulos).not.toContain("Rascunho invisível");
+    } finally {
+      conexao.release();
+    }
   });
 
   it("preco_max filtra: só produtos até 60", async () => {
@@ -205,14 +210,14 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       await conexao.query("SET SESSION lock_wait_timeout = 5");
       const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
       await conexao.query("COMMIT");
-      const ids = (linhas as { ID: number }[]).map((l) => l.ID);
+      const ids = (linhas as { id: number }[]).map((l) => l.id);
       registrar("C1-woocommerce-preco_max", `preco_max=60 → ids ${ids.join(", ")}`);
       expect(ids).toContain(expect.any(Number));
       // a bota (120,00) não entra
       const [semBota] = await root.query(
-        `select ID from \`${banco}\`.\`${WP_PREFIXO}posts\` where post_title = 'Bota de couro'`,
+        `select ID as id from \`${banco}\`.\`${WP_PREFIXO}posts\` where post_title = 'Bota de couro'`,
       );
-      const idBota = Number((extrairLinhas<{ ID: number }>(semBota)[0] as { ID: number })?.ID);
+      const idBota = Number((extrairLinhas<{ id: number }>(semBota)[0] as { id: number })?.id);
       expect(ids).not.toContain(idBota);
     } finally {
       conexao.release();
@@ -233,7 +238,7 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       await conexao.query("SET SESSION lock_wait_timeout = 5");
       const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
       await conexao.query("COMMIT");
-      const titulos = (linhas as { post_title: string }[]).map((l) => l.post_title);
+      const titulos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar("C1-woocommerce-so_em_estoque", `so_em_estoque → ${titulos.join(", ")}`);
       expect(titulos).not.toContain("Produto sem estoque");
     } finally {
@@ -255,7 +260,7 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       await conexao.query("SET SESSION lock_wait_timeout = 5");
       const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
       await conexao.query("COMMIT");
-      expect((linhas as { ID: number }[]).length).toBeLessThanOrEqual(1);
+      expect((linhas as { id: number }[]).length).toBeLessThanOrEqual(1);
     } finally {
       conexao.release();
     }
@@ -275,7 +280,7 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       await conexao.query("SET SESSION lock_wait_timeout = 5");
       const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
       await conexao.query("COMMIT");
-      const titulos = (linhas as { post_title: string }[]).map((l) => l.post_title);
+      const titulos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       expect(titulos).not.toContain("Rascunho invisível");
     } finally {
       conexao.release();
@@ -331,7 +336,7 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
   it("mede colunas liberadas: fonte sem colunas restritas lê todas; com restrição lê só as marcadas", async () => {
     const colunas = extrairLinhas<{ column_name: string }>(
       await root.query(
-        `select column_name from information_schema.columns where table_schema = ? and table_name = ?`,
+        `select column_name as column_name from information_schema.columns where table_schema = ? and table_name = ?`,
         [banco, `${WP_PREFIXO}posts`],
       ),
     );

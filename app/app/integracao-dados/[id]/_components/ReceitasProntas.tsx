@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components
 import { toast } from "sonner";
 
 import { previewReceita, salvarReceitas, useReceitasDaConexao } from "@/hooks/external-db/useReceitasDaConexao";
+import { randomId } from "@/lib/random-id";
 import { useT } from "@/hooks/i18n/useT";
 import { RECEITAS, receitaDe } from "@/lib/external-db/receitas/registro";
 import type { InstanciaDeReceita } from "@/lib/external-db/receitas/tipos";
@@ -66,7 +67,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
   const adicionar = () => {
     if (!canWrite) return;
     const nova: InstanciaDeReceita = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       receita: "",
       rotulo: "",
       descricao: "",
