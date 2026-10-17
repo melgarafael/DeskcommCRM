@@ -11,6 +11,7 @@ import { type NextRequest } from "next/server";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
+import { assumeParaQuemClicou } from "@/lib/conversations/assumir-ao-abrir";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import { openConversationWithContactSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -58,7 +59,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const admin = createAdminClient();
     const result = await openSharedContactConversation(admin, authz.organizationId, input);
-    return ok(result, { requestId });
+
+    // Quem abre a conversa a assume, se ela está livre (ver `assumir-ao-abrir.ts`).
+    const bloqueadaPor = await assumeParaQuemClicou(authz, admin, result.conversation_id);
+    return ok({ ...result, bloqueada_por: bloqueadaPor }, { requestId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "open_failed";
     if (msg === "contact_not_found") {
