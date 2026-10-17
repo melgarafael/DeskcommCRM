@@ -149,7 +149,7 @@ A fatia R1 (receita `woocommerce` + instância + tool) entrega:
 - `lib/external-db/receitas/instancias.ts` — `instanciaDeReceitaSchema`, `lerReceitasDoBanco`, `validarFixosDaReceita`
 - `lib/external-db/dialeto.ts` — `Dialeto.executarReceita` + checagem `tabelaLiberada` no `criarDialetoDeLeitura`
 - `lib/external-db/dialetos/mysql/dialeto.ts` + `leitura.ts` — `executarReceitaMysql` (armadura `consultarMysql`, serialização `0x`, corte por itens e bytes)
-- `supabase/migrations/20261017215111_0697_banco_externo_receitas.sql` — coluna `receitas jsonb`, CHECK de forma, view `_safe` com `receitas_count`
+- `supabase/migrations/20261021100000_0697_banco_externo_receitas.sql` — coluna `receitas jsonb`, CHECK de forma, view `_safe` com `receitas_count`
 - `supabase/baseline.sql` — apêndice idempotente da 0697 antes do fim
 - `lib/external-db/receitas/instancias.ts` + rotas `PUT /recipes` e `POST /recipes/preview` (admin, audit só contagens)
 - `lib/audit/actions.ts` — `external_db_recipes.updated` e `external_db_recipes.previewed`
