@@ -14234,6 +14234,24 @@ export const DICIONARIO: Traducoes = {
   "Conecte um banco de dados de outro sistema — o seu segundo CRM, um ERP, uma planilha num banco PostgreSQL ou MySQL — e o agente passa a consultá-lo em tempo real. A conexão é sempre somente leitura: nada que o agente faz altera o banco de origem.": {
     es: "Conecta la base de datos de otro sistema (tu segundo CRM, un ERP, una hoja de cálculo en una base PostgreSQL o MySQL) y el agente podrá consultarla en tiempo real. La conexión es siempre de solo lectura: nada de lo que haga el agente modifica la base de origen.",
   },
+
+  // ─── Receitas prontas (Spec 25 R1) ───
+  "Receitas prontas": { es: "Recetas listas" },
+  "Adicionar receita": { es: "Agregar receta" },
+  "Nenhuma receita cadastrada ainda. Adicione uma para o assistente consultar o banco de origem.": {
+    es: "No hay recetas registradas todavía. Agrega una para que el asistente consulte la base de datos de origen.",
+  },
+  "Prefixo das tabelas": { es: "Prefijo de las tablas" },
+  "O prefixo aparece antes de _posts no banco do WordPress (padrão wp_).": {
+    es: "El prefijo va antes de _posts en la base de WordPress (por defecto wp_).",
+  },
+  "Pré-visualizar": { es: "Vista previa" },
+  "Pré-visualizando…": { es: "Vista previa…" },
+  "Pré-visualização (até 5 linhas)": { es: "Vista previa (hasta 5 filas)" },
+  "truncado": { es: "truncado" },
+  "Salvo.": { es: "Guardado." },
+  "Carregando receitas…": { es: "Cargando recetas…" },
+  "Prefixo:": { es: "Prefijo:" },
   // Frase inteira, e não "Ativada" seco: essa chave já existe neste arquivo,
   // de outra tela e no feminino (`Activada`) — reusá-la duplicaria a chave e
   // discordaria do gênero de `Recorrido`.

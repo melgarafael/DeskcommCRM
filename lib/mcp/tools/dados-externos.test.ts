@@ -17,6 +17,8 @@ const dialeto = {
   colunasDaTabela: vi.fn(),
   lerTabela: vi.fn(),
   catalogoCompleto: vi.fn(),
+  schemaDasReceitas: vi.fn(() => "public"),
+  executarReceita: vi.fn(),
 } satisfies { [K in keyof Dialeto]: ReturnType<typeof vi.fn> };
 const listarTabelas = dialeto.listarTabelas;
 const colunasDaTabela = dialeto.colunasDaTabela;

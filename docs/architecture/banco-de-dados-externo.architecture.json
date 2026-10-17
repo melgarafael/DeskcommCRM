@@ -31,7 +31,9 @@
     "drivers",
     "dialeto",
     "apiLeitura",
-    "telaExplorador"
+    "telaExplorador",
+    "apiReceitas",
+    "toolReceita"
   ],
   "nodes": [
     {
@@ -201,6 +203,46 @@
       "sublabel": "aplicam redigirParaAuditoria (tira os valores de filtro) e motivoDoVazio (erro não é sucesso)",
       "type": "lib",
       "dot": "amber"
+    },
+    {
+      "id": "receitasColuna",
+      "lane": "dados",
+      "label": "receitas (jsonb) em external_db_connections",
+      "sublabel": "migration 0693 · instâncias de receita por org · RLS herda da tabela · fora do _safe",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "receitasCount",
+      "lane": "dados",
+      "label": "receitas_count na view _safe",
+      "sublabel": "jsonb_array_length(receitas) · última coluna da view · contagem só",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "instanciaReceita",
+      "lane": "nucleo",
+      "label": "receitas/*.ts",
+      "sublabel": "DefinicaoDeReceita, registro, validador, instancias (Zod central)",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "toolReceita",
+      "lane": "agente",
+      "label": "crm_consultar_receita",
+      "sublabel": "listar/executar instâncias · organização do ctx · modulo banco_externo · rastro sem valores",
+      "type": "lib",
+      "dot": "amber"
+    },
+    {
+      "id": "apiReceitas",
+      "lane": "api",
+      "label": "PUT/POST connections/[id]/recipes",
+      "sublabel": "grava instâncias e pré-visualiza (admin) · auditoria só contagens",
+      "type": "api",
+      "dot": "green"
     }
   ],
   "edges": [
@@ -419,6 +461,66 @@
       "from": "apiConnections",
       "to": "drivers",
       "label": "fecha o pool ao editar ou apagar"
+    },
+    {
+      "id": "e51",
+      "from": "migration0372",
+      "to": "receitasColuna",
+      "label": "coluna receitas (0693)"
+    },
+    {
+      "id": "e52",
+      "from": "receitasColuna",
+      "to": "receitasCount",
+      "label": "contagem exposta"
+    },
+    {
+      "id": "e53",
+      "from": "credenciais",
+      "to": "instanciaReceita",
+      "label": "linha com receitas"
+    },
+    {
+      "id": "e54",
+      "from": "instanciaReceita",
+      "to": "drivers",
+      "label": "abre o dialeto"
+    },
+    {
+      "id": "e55",
+      "from": "drivers",
+      "to": "toolReceita",
+      "label": "dialeto pronto"
+    },
+    {
+      "id": "e56",
+      "from": "toolReceita",
+      "to": "apiReceitas",
+      "label": "mesma conexão"
+    },
+    {
+      "id": "e57",
+      "from": "apiReceitas",
+      "to": "telaExplorador",
+      "label": "seção Receitas prontas"
+    },
+    {
+      "id": "e58",
+      "from": "telaFontes",
+      "to": "apiReceitas",
+      "label": "grava instâncias"
+    },
+    {
+      "id": "e59",
+      "from": "apiReceitas",
+      "to": "auditlog",
+      "label": "audita sem valores"
+    },
+    {
+      "id": "e60",
+      "from": "apiReceitas",
+      "to": "receitasCount",
+      "label": "contagem exposta pela API"
     }
   ],
   "cards": [

@@ -513,11 +513,15 @@ beforeAll(() => {
         if not exists (select 1 from public.external_db_connections where organization_id = v_org) then
           insert into public.external_db_connections
             (organization_id, label, host, port, database_name, username,
-             password_encrypted, password_iv, password_tag)
+             password_encrypted, password_iv, password_tag,
+             receitas)
             values (v_org, 'RLS invariant fonte externa', 'db.invariante.interno', 5432,
                     'outro_crm', 'leitor',
                     '\\x00'::bytea, '\\x000000000000000000000000'::bytea,
-                    '\\x00000000000000000000000000000000'::bytea);
+                    '\\x00000000000000000000000000000000'::bytea,
+                    case when v_org = 'aaaaaaaa-0000-4000-8000-000000000001'::uuid
+                      then '[{"id":"00000000-0000-4000-8000-000000000001","receita":"woocommerce-produtos","rotulo":"Invariante loja","descricao":"Apenas org A","fixos":{"prefixo":"wp_"},"ativa":true}]'::jsonb
+                      else '[]'::jsonb end);
         end if;
 
         -- migrations 0374/0375 -- a campanha e quem ela alcancou. A tabela
@@ -802,6 +806,40 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
     expect(countAs(USER_B,
       `select count(*) from public.ai_reply_drafts where organization_id = '${ORG_A}';`,
     )).toBe(0);
+  });
+
+  it("external_db_connections_safe: receitas não sai pela view, receitas_count sim", () => {
+    // A coluna `receitas` NÃO existe na view _safe (D3 da Spec 23 / D3 da Spec 25).
+    const colunas = sql(`
+      select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'external_db_connections_safe'
+      order by ordinal_position;
+    `);
+    expect(colunas.split("\n").map((l) => l.trim()).filter(Boolean)).not.toContain("receitas");
+    expect(colunas.split("\n").map((l) => l.trim()).filter(Boolean)).toContain("receitas_count");
+
+    // org A tem receitas na tabela-base; org B lê 0 linhas com receitas não vazias (RLS).
+    const receitasA = countAs(USER_A,
+      `select count(*) from public.external_db_connections
+       where organization_id = '${ORG_A}' and jsonb_array_length(receitas) > 0;`);
+    expect(receitasA).toBeGreaterThanOrEqual(1);
+
+    const receitasB = countAs(USER_B,
+      `select count(*) from public.external_db_connections
+       where organization_id = '${ORG_B}' and jsonb_array_length(receitas) > 0;`);
+    expect(receitasB).toBe(0);
+  });
+
+  it("external_db_connections_safe: org A lê receitas_count da própria linha; org B lê 0", () => {
+    const countA = countAs(USER_A,
+      `select receitas_count from public.external_db_connections_safe
+       where organization_id = '${ORG_A}';`);
+    expect(Number(countA)).toBeGreaterThanOrEqual(1);
+
+    const countB = countAs(USER_B,
+      `select receitas_count from public.external_db_connections_safe
+       where organization_id = '${ORG_B}';`);
+    expect(Number(countB)).toBe(0);
   });
 
   it("ai_reply_drafts: os dois tenants têm linhas antes de testar as cercas", () => {

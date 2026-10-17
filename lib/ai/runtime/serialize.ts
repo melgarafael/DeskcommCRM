@@ -13,6 +13,20 @@ const REDACT_KEYS = new Set([
   "cpf",
 ]);
 
+/** Nomes de tool cujo resultado `linhas` deve ser RESUMIDO no rastro (D8), nunca o conteúdo.
+ *
+ * Regra de escopo da D8 (Spec 25, R1): o rastro de `crm_consultar_receita` guarda
+ * os argumentos sem os valores dos parâmetros de busca (só os nomes) e o resultado
+ * SÓ como contagem de linhas + colunas + `truncado`. Nenhuma linha da origem vai
+ * para o rastro.
+ *
+ * A regra é POR NOME DE TOOL (não por chave genérica), para não mudar o rastro de
+ * outras tools que não são desta fatia. */
+const TOOL_RESULTADO_RESUMIDO = new Set(["crm_consultar_receita"]);
+
+/** Chaves de resultado que, para as tools acima, são resumidas (nunca o array inteiro). */
+const RESULTADO_RESUMIDO = new Set(["linhas"]);
+
 function redactValue(value: unknown): unknown {
   if (typeof value === "string") {
     return value.length > 500 ? `${value.slice(0, 500)}...[truncated]` : value;
@@ -26,6 +40,39 @@ function redactValue(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+/** Redige os argumentos de `crm_consultar_receita`: guarda os NOMES dos parâmetros
+ * de busca, nunca os valores. */
+function redigirArgsReceita(args: unknown): unknown {
+  if (args && typeof args === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+      if (k === "busca" && v && typeof v === "object") {
+        out[k] = Object.keys(v as Record<string, unknown>);
+      } else {
+        out[k] = redactValue(v);
+      }
+    }
+    return out;
+  }
+  return redactValue(args);
+}
+
+/** Resume o resultado de `crm_consultar_receita`: `linhas` vira contagem, o resto segue redação normal. */
+function resumirResultadoReceita(result: unknown): unknown {
+  if (result && typeof result === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(result as Record<string, unknown>)) {
+      if (RESULTADO_RESUMIDO.has(k) && Array.isArray(v)) {
+        out[k] = `[${v.length} itens resumidos pelo rastro]`;
+      } else {
+        out[k] = redactValue(v);
+      }
+    }
+    return out;
+  }
+  return redactValue(result);
 }
 
 interface MinimalStep {
@@ -57,10 +104,12 @@ export function serializeSteps(steps: ReadonlyArray<MinimalStep>): SerializedSte
     const toolEntries = calls.map((call, i) => {
       const match = results[i];
       const result = match?.output ?? match?.result;
+      const toolName = String(call.toolName ?? "unknown");
+      const resumido = TOOL_RESULTADO_RESUMIDO.has(toolName);
       return {
-        tool_name: String(call.toolName ?? "unknown"),
-        args: redactValue(call.input ?? {}),
-        result: result === undefined ? undefined : redactValue(result),
+        tool_name: toolName,
+        args: resumido ? redigirArgsReceita(call.input ?? {}) : redactValue(call.input ?? {}),
+        result: result === undefined ? undefined : (resumido ? resumirResultadoReceita(result) : redactValue(result)),
       };
     });
     return {

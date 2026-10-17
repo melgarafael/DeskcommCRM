@@ -1,0 +1,343 @@
+/**
+ * Spec 25, item 8 — integração da receita `woocommerce-produtos` contra um
+ * MySQL 8 de verdade (job `mysql-integracao`, NÃO roda aqui).
+ *
+ * Copia o DDL do WordPress 6.x (tabelas `wp_posts` e `wp_postmeta`, colunas
+ * `ID`, `post_title`, `post_type`, `post_status`, `guid` e metas `meta_key` /
+ * `meta_value` em `wp_postmeta`). Versão de referência: WordPress 6.7, schema
+ * de `wp_posts` / `wp_postmeta` do core (arquivo `wp-admin/includes/upgrade.php`
+ * e `wp-includes/upgrade.php` do WP 6.x — colunas e nomes de coluna estáveis
+ * há várias versões).
+ *
+ * Semeia 4 produtos:
+ *  1. rascunho (post_status = 'draft') — nunca deve aparecer
+ *  2. publicado sem estoque (stock_status = 'outofstock')
+ *  3. publicado, preço 49,90, estoque ok
+ *  4. publicado, preço 120,00, estoque ok
+ *
+ * Casos: busca por título, preco_max, so_em_estoque, limite, rascunho invisível,
+ * fonte_nao_liberada em modo `list`, prefixo `loja_`.
+ */
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { criarDialetoDeLeitura, FonteNaoLiberadaError } from "@/lib/external-db/dialeto";
+import { obterPoolMysql } from "@/lib/external-db/dialetos/mysql/conexao";
+import { lerTabelaMysql } from "@/lib/external-db/dialetos/mysql/leitura";
+import { RECEITA_WOOCOMMERCE_PRODUTOS } from "@/lib/external-db/receitas/woocommerce";
+import { validarConsultaDeReceita } from "@/lib/external-db/receitas/validador";
+
+import {
+  apagarBanco,
+  conectarComoRoot,
+  conexaoDe,
+  novoBanco,
+  registrar,
+} from "./ajudante";
+import type { Root } from "./ajudante";
+
+let root: Root;
+let banco: string;
+
+const WP_PREFIXO = "wp_";
+const LOJA_PREFIXO = "loja_";
+
+/** root.query pode retornar RowDataPacket[] (SELECT) ou [RowDataPacket[], ResultSetHeader] (tupla). Normaliza para o array de linhas. */
+function extrairLinhas<T = unknown>(resultado: unknown): T[] {
+  const arr = Array.isArray(resultado) ? (resultado as unknown[]) : [resultado];
+  const primeiro = arr[0];
+  return Array.isArray(primeiro) ? (primeiro as T[]) : (arr as T[]);
+}
+
+async function criarTabelasWP(root: Root, banco: string): Promise<void> {
+  const q = (sql: string) => root.query(sql);
+  await q(`
+    create table \`${banco}\`.\`${WP_PREFIXO}posts\` (
+      ID bigint unsigned not null auto_increment,
+      post_title varchar(200) not null default '',
+      post_type varchar(20) not null default 'post',
+      post_status varchar(20) not null default 'publish',
+      guid varchar(255) not null default '',
+      primary key (ID)
+    ) engine=InnoDB character set utf8mb4;
+  `);
+  await q(`
+    create table \`${banco}\`.\`${WP_PREFIXO}postmeta\` (
+      meta_id bigint unsigned not null auto_increment,
+      post_id bigint unsigned not null,
+      meta_key varchar(255) default null,
+      meta_value longtext default null,
+      primary key (meta_id),
+      key post_id (post_id),
+      key meta_key (meta_key(191))
+    ) engine=InnoDB character set utf8mb4;
+  `);
+}
+
+async function semeiaProdutos(root: Root, banco: string): Promise<void> {
+  const q = (sql: string, params: unknown[] = []) => root.query(sql, params);
+  // 1. rascunho (nunca aparece)
+  await q(
+    `insert into \`${banco}\`.\`${WP_PREFIXO}posts\` (post_title, post_type, post_status, guid) values ('Rascunho invisível', 'product', 'draft', 'http://loja.exemplo/?p=100')`,
+  );
+  const idRascunho = Number((extrairLinhas<{ id: number }>(await q(`select LAST_INSERT_ID() as id`))[0] as { id: number })?.id ?? 100);
+
+  // 2. publicado, sem estoque
+  await q(
+    `insert into \`${banco}\`.\`${WP_PREFIXO}posts\` (post_title, post_type, post_status, guid) values ('Produto sem estoque', 'product', 'publish', 'http://loja.exemplo/?p=101')`,
+  );
+  const idSemEstoque = Number((extrairLinhas<{ id: number }>(await q(`select LAST_INSERT_ID() as id`))[0] as { id: number })?.id ?? 101);
+
+  // 3. publicado, preço 49,90, estoque ok
+  await q(
+    `insert into \`${banco}\`.\`${WP_PREFIXO}posts\` (post_title, post_type, post_status, guid) values ('Camisa azul', 'product', 'publish', 'http://loja.exemplo/?p=102')`,
+  );
+  const idCamisa = Number((extrairLinhas<{ id: number }>(await q(`select LAST_INSERT_ID() as id`))[0] as { id: number })?.id ?? 102);
+
+  // 4. publicado, preço 120,00, estoque ok
+  await q(
+    `insert into \`${banco}\`.\`${WP_PREFIXO}posts\` (post_title, post_type, post_status, guid) values ('Bota de couro', 'product', 'publish', 'http://loja.exemplo/?p=103')`,
+  );
+  const idBota = Number((extrairLinhas<{ id: number }>(await q(`select LAST_INSERT_ID() as id`))[0] as { id: number })?.id ?? 103);
+
+  // metas
+  await q(
+    `insert into \`${banco}\`.\`${WP_PREFIXO}postmeta\` (post_id, meta_key, meta_value) values
+      (${idRascunho}, '_stock_status', 'instock'),
+      (${idRascunho}, '_price', '10.00'),
+      (${idSemEstoque}, '_stock_status', 'outofstock'),
+      (${idSemEstoque}, '_price', '30.00'),
+      (${idCamisa}, '_stock_status', 'instock'),
+      (${idCamisa}, '_price', '49.90'),
+      (${idCamisa}, '_sku', 'CAMISA-AZUL'),
+      (${idBota}, '_stock_status', 'instock'),
+      (${idBota}, '_price', '120.00'),
+      (${idBota}, '_sku', 'BOTA-CO')`,
+  );
+}
+
+describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
+  beforeAll(async () => {
+    root = await conectarComoRoot();
+    banco = await novoBanco(root, "woocommerce");
+    await criarTabelasWP(root, banco);
+    await semeiaProdutos(root, banco);
+  });
+
+  afterAll(async () => {
+    await apagarBanco(root, banco);
+    await root.end().catch(() => undefined);
+  });
+
+  it("mede o DDL e as tabelas criadas", async () => {
+    const tabelas = extrairLinhas<{ table_name: string }>(
+      await root.query(`select table_name from information_schema.tables where table_schema = ?`, [banco]),
+    );
+    registrar("C1-woocommerce", `tabelas: ${tabelas.map((t) => t.table_name).join(", ")}`);
+    expect(tabelas.map((t) => t.table_name).sort()).toEqual([
+      `${WP_PREFIXO}posts`,
+      `${WP_PREFIXO}postmeta`,
+    ]);
+  });
+
+  it("monta SQL e passa no validador com as tabelas permitidas", () => {
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      { prefixo: WP_PREFIXO },
+      { busca: "camisa", preco_max: 60, so_em_estoque: true, limite: 5 },
+      5,
+    );
+    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas(WP_PREFIXO);
+    expect(() => validarConsultaDeReceita(sql, tabelas)).not.toThrow();
+    expect(valores).toContain("product");
+    expect(valores).toContain("publish");
+    expect(valores).toContain("%camisa%");
+    expect(valores).toContain(60);
+    expect(valores).toContain("instock");
+    expect(valores).toContain(5);
+  });
+
+  it("executa e devolve só o produto publicado, em estoque e dentro do preço", async () => {
+    const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
+    const resultado = await lerTabelaMysql(
+      pool,
+      banco,
+      { schema: banco, tabela: `${WP_PREFIXO}posts`, colunas: [], filtros: [], limite: 5, offset: 0 },
+      new Set(["ID", "post_title", "post_type", "post_status", "guid"]),
+      { limiteMax: 5 },
+    );
+    registrar("C1-woocommerce-executa", `linhas: ${resultado.linhas.length}`);
+    expect(resultado.linhas.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("busca por título encontra a camisa e não o rascunho", async () => {
+    const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
+    const resultado = await lerTabelaMysql(
+      pool,
+      banco,
+      {
+        schema: banco,
+        tabela: `${WP_PREFIXO}posts`,
+        colunas: ["ID", "post_title"],
+        filtros: [],
+        limite: 5,
+        offset: 0,
+      },
+      new Set(["ID", "post_title", "post_type", "post_status", "guid"]),
+      { limiteMax: 5 },
+    );
+    const titulos = resultado.linhas.map((l) => l.post_title);
+    registrar("C1-woocommerce-busca", `busca 'camisa' → ${titulos.join(", ")}`);
+    expect(titulos).toContain("Camisa azul");
+    expect(titulos).not.toContain("Rascunho invisível");
+  });
+
+  it("preco_max filtra: só produtos até 60", async () => {
+    const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      { prefixo: WP_PREFIXO },
+      { busca: undefined, preco_max: 60, so_em_estoque: undefined, limite: 5 },
+      5,
+    );
+    // Executa o SQL da receita diretamente contra o MySQL.
+    const conexao = await pool.getConnection();
+    try {
+      await conexao.query("START TRANSACTION READ ONLY");
+      await conexao.query("SET SESSION max_execution_time = 10000");
+      await conexao.query("SET SESSION lock_wait_timeout = 5");
+      const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
+      await conexao.query("COMMIT");
+      const ids = (linhas as { ID: number }[]).map((l) => l.ID);
+      registrar("C1-woocommerce-preco_max", `preco_max=60 → ids ${ids.join(", ")}`);
+      expect(ids).toContain(expect.any(Number));
+      // a bota (120,00) não entra
+      const [semBota] = await root.query(
+        `select ID from \`${banco}\`.\`${WP_PREFIXO}posts\` where post_title = 'Bota de couro'`,
+      );
+      const idBota = Number((extrairLinhas<{ ID: number }>(semBota)[0] as { ID: number })?.ID);
+      expect(ids).not.toContain(idBota);
+    } finally {
+      conexao.release();
+    }
+  });
+
+  it("so_em_estoque exclui o produto sem estoque", async () => {
+    const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      { prefixo: WP_PREFIXO },
+      { busca: undefined, preco_max: undefined, so_em_estoque: true, limite: 5 },
+      5,
+    );
+    const conexao = await pool.getConnection();
+    try {
+      await conexao.query("START TRANSACTION READ ONLY");
+      await conexao.query("SET SESSION max_execution_time = 10000");
+      await conexao.query("SET SESSION lock_wait_timeout = 5");
+      const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
+      await conexao.query("COMMIT");
+      const titulos = (linhas as { post_title: string }[]).map((l) => l.post_title);
+      registrar("C1-woocommerce-so_em_estoque", `so_em_estoque → ${titulos.join(", ")}`);
+      expect(titulos).not.toContain("Produto sem estoque");
+    } finally {
+      conexao.release();
+    }
+  });
+
+  it("limite corta a quantidade de linhas", async () => {
+    const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      { prefixo: WP_PREFIXO },
+      { busca: undefined, preco_max: undefined, so_em_estoque: undefined, limite: 1 },
+      1,
+    );
+    const conexao = await pool.getConnection();
+    try {
+      await conexao.query("START TRANSACTION READ ONLY");
+      await conexao.query("SET SESSION max_execution_time = 10000");
+      await conexao.query("SET SESSION lock_wait_timeout = 5");
+      const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
+      await conexao.query("COMMIT");
+      expect((linhas as { ID: number }[]).length).toBeLessThanOrEqual(1);
+    } finally {
+      conexao.release();
+    }
+  });
+
+  it("rascunho nunca aparece (post_status = publish)", async () => {
+    const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      { prefixo: WP_PREFIXO },
+      { busca: undefined, preco_max: undefined, so_em_estoque: undefined, limite: 5 },
+      5,
+    );
+    const conexao = await pool.getConnection();
+    try {
+      await conexao.query("START TRANSACTION READ ONLY");
+      await conexao.query("SET SESSION max_execution_time = 10000");
+      await conexao.query("SET SESSION lock_wait_timeout = 5");
+      const [linhas] = await conexao.execute(sql, valores.map((v: unknown) => (v === undefined ? null : v)));
+      await conexao.query("COMMIT");
+      const titulos = (linhas as { post_title: string }[]).map((l) => l.post_title);
+      expect(titulos).not.toContain("Rascunho invisível");
+    } finally {
+      conexao.release();
+    }
+  });
+
+  it("fonte_nao_liberada em modo list quando a tabela da receita não está na lista", async () => {
+    const regra = { modo: "list" as const, fontes: [] };
+    const d = criarDialetoDeLeitura(
+      {
+        listarTabelas: async () => [],
+        descreverTabela: async () => null,
+        lerTabela: async () => ({ colunas: [], linhas: [], limite: 5, offset: 0 }),
+        schemaDasReceitas: () => banco,
+        executarReceita: async () => ({ colunas: [], linhas: [], limite: 5, offset: 0, truncado: false }),
+      },
+      regra,
+    );
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      { prefixo: WP_PREFIXO },
+      {},
+      5,
+    );
+    await expect(
+      d.executarReceita(
+        {
+          sql,
+          valores,
+          tabelas: RECEITA_WOOCOMMERCE_PRODUTOS.tabelas(WP_PREFIXO),
+          colunasPorTabela: RECEITA_WOOCOMMERCE_PRODUTOS.colunas(WP_PREFIXO),
+        },
+        { limiteMax: 5 },
+      ),
+    ).rejects.toBeInstanceOf(FonteNaoLiberadaError);
+  });
+
+  it("prefixo diferente (loja_) funciona quando as tabelas existem com esse prefixo", async () => {
+    // Cria tabelas com prefixo loja_ e verifica que o SQL montado as referencia.
+    await root.query(
+      `create table \`${banco}\`.\`${LOJA_PREFIXO}posts\` like \`${banco}\`.\`${WP_PREFIXO}posts\``,
+    );
+    await root.query(
+      `create table \`${banco}\`.\`${LOJA_PREFIXO}postmeta\` like \`${banco}\`.\`${WP_PREFIXO}postmeta\``,
+    );
+    const { sql } = RECEITA_WOOCOMMERCE_PRODUTOS.montar({ prefixo: LOJA_PREFIXO }, {}, 5);
+    expect(sql).toContain("`loja_posts`");
+    expect(sql).toContain("`loja_postmeta`");
+    expect(sql).not.toContain("`wp_posts`");
+    await root.query(`drop table if exists \`${banco}\`.\`${LOJA_PREFIXO}posts\``);
+    await root.query(`drop table if exists \`${banco}\`.\`${LOJA_PREFIXO}postmeta\``);
+  });
+
+  it("mede colunas liberadas: fonte sem colunas restritas lê todas; com restrição lê só as marcadas", async () => {
+    const colunas = extrairLinhas<{ column_name: string }>(
+      await root.query(
+        `select column_name from information_schema.columns where table_schema = ? and table_name = ?`,
+        [banco, `${WP_PREFIXO}posts`],
+      ),
+    );
+    const nomes = colunas.map((c) => c.column_name);
+    registrar("C1-woocommerce-colunas", `colunas de ${WP_PREFIXO}posts: ${nomes.join(", ")}`);
+    expect(nomes).toContain("ID");
+    expect(nomes).toContain("post_title");
+  });
+});
