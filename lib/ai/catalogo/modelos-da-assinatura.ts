@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { lerLoginCodexRenovandoSeProxima } from "@/lib/ai/credenciais/login-codex";
 import { OPENAI_MODELS_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 import { PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
+import { cabecalhosDaAssinatura } from "./cabecalhos-da-assinatura";
 
 export interface ModeloDaAssinatura {
   provider: typeof PROVEDOR_POR_ASSINATURA;
@@ -54,6 +55,11 @@ export class FalhaAoListarModelosDaAssinatura extends Error {
  * `null` continua significando UMA coisa só: não há conta conectada nesta
  * organização. Tudo mais (rede, HTTP fora de 200, formato desconhecido) é
  * `FalhaAoListarModelosDaAssinatura`, visível para quem chamou.
+ *
+ * O pedido leva os cabeçalhos da credencial JÁ GRAVADA
+ * (`cabecalhosDaAssinatura`): o `Authorization` e o `ChatGPT-Account-Id` que o
+ * backend do Codex exige. Sem esse id, uma credencial válida respondia
+ * `http_401` e a conta conectada parecia desconectada (#2952).
  */
 export async function listarModelosDaAssinatura(orgId: string): Promise<ModeloDaAssinatura[] | null> {
   const admin = createAdminClient();
@@ -63,7 +69,7 @@ export async function listarModelosDaAssinatura(orgId: string): Promise<ModeloDa
   let response: Response;
   try {
     response = await fetch(OPENAI_MODELS_ENDPOINT, {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
+      headers: cabecalhosDaAssinatura(tokens),
       signal: AbortSignal.timeout(10_000),
       redirect: "error",
       cache: "no-store",

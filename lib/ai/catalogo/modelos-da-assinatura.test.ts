@@ -13,11 +13,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *       no espelho `models_available`;
  *   (b) falha HTTP continua visível e não toca o espelho;
  *   (c) um 200 em formato que não conhecemos não grava lixo — e também não
- *       engole o problema em `[]`.
+ *       engole o problema em `[]`;
+ *   (d) o pedido leva o ID DA CONTA que o backend do Codex exige
+ *       (`ChatGPT-Account-Id`), lido da credencial já gravada — sem ele uma
+ *       credencial VÁLIDA respondia `http_401` (#2952).
  */
 
+/** Um JWT de mentira: aqui só o payload interessa — quem assina é o login real. */
+function jwtFalso(claims: Record<string, unknown>): string {
+  const parte = (valor: unknown) => Buffer.from(JSON.stringify(valor)).toString("base64url");
+  return `${parte({ alg: "none", typ: "JWT" })}.${parte(claims)}.nao-assinado`;
+}
+
+const CONTA_DO_ID_TOKEN = "conta-do-workspace-1";
+const ID_TOKEN_DA_CONTA = jwtFalso({
+  "https://api.openai.com/auth": { chatgpt_account_id: CONTA_DO_ID_TOKEN },
+});
+const ACCESS_TOKEN_DA_CONTA = jwtFalso({
+  "https://api.openai.com/auth": { chatgpt_account_id: "conta-do-access-token" },
+});
+const TOKEN_SEM_CLAIM = jwtFalso({ sub: "user-1" });
+
 const update = vi.hoisted(() => vi.fn());
-const semConta = vi.hoisted(() => vi.fn((): { access_token: string } | null => ({ access_token: "at" })));
+const semConta = vi.hoisted(() =>
+  vi.fn((): { access_token: string; id_token?: string } | null => ({
+    access_token: "at",
+    id_token: ID_TOKEN_DA_CONTA,
+  })),
+);
 
 vi.mock("@/lib/ai/credenciais/login-codex", () => ({
   lerLoginCodexRenovandoSeProxima: vi.fn(async () => semConta()),
@@ -57,9 +80,15 @@ function respondeCom(corpo: unknown, status = 200) {
   return stubDeFetch(async () => new Response(JSON.stringify(corpo), { status }));
 }
 
+/** Os cabeçalhos do primeiro pedido da listagem, do jeito que saíram. */
+function cabecalhosDoPedido(chamada: ReturnType<typeof stubDeFetch>): Headers {
+  const [, init] = chamada.mock.calls[0] as unknown as [string, RequestInit];
+  return new Headers(init.headers);
+}
+
 beforeEach(() => {
   update.mockClear();
-  semConta.mockImplementation(() => ({ access_token: "at" }));
+  semConta.mockImplementation(() => ({ access_token: "at", id_token: ID_TOKEN_DA_CONTA }));
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -141,7 +170,48 @@ describe("listarModelosDaAssinatura", () => {
     expect(chamada).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
+});
 
+/**
+ * (#2952) A credencial estava validada e a conversa funcionava; só a LISTAGEM
+ * tomava 401, e com ela o espelho `models_available` ficava vazio — o botão
+ * "Criar agente" desabilitado e todo "Publicar" em `model_not_found`. O que
+ * faltava era o id da conta que o backend do Codex exige em todo pedido.
+ */
+describe("listarModelosDaAssinatura — o cabeçalho da conta (#2952)", () => {
+  it("manda o ChatGPT-Account-Id lido da claim do id_token gravado", async () => {
+    const chamada = respondeCom({ models: [{ slug: "gpt-a", visibility: "list" }] });
+
+    await listarModelosDaAssinatura("org-1");
+
+    const cabecalhos = cabecalhosDoPedido(chamada);
+    expect(cabecalhos.get("ChatGPT-Account-Id")).toBe(CONTA_DO_ID_TOKEN);
+    expect(cabecalhos.get("Authorization")).toBe("Bearer at");
+  });
+
+  it("sem a claim no id_token, o id sai do access_token da mesma sessão", async () => {
+    semConta.mockImplementation(() => ({
+      access_token: ACCESS_TOKEN_DA_CONTA,
+      id_token: TOKEN_SEM_CLAIM,
+    }));
+    const chamada = respondeCom({ models: [{ slug: "gpt-a", visibility: "list" }] });
+
+    await listarModelosDaAssinatura("org-1");
+
+    expect(cabecalhosDoPedido(chamada).get("ChatGPT-Account-Id")).toBe("conta-do-access-token");
+  });
+
+  it("sem a claim em token nenhum o cabeçalho não é inventado — e a listagem segue", async () => {
+    semConta.mockImplementation(() => ({ access_token: "at", id_token: TOKEN_SEM_CLAIM }));
+    const chamada = respondeCom({ models: [{ slug: "gpt-a", visibility: "list" }] });
+
+    const modelos = await listarModelosDaAssinatura("org-1");
+
+    const cabecalhos = cabecalhosDoPedido(chamada);
+    expect(cabecalhos.get("ChatGPT-Account-Id")).toBeNull();
+    expect(cabecalhos.get("Authorization")).toBe("Bearer at");
+    expect(modelos?.map((m) => m.model_id)).toEqual(["gpt-a"]);
+  });
 });
 
 describe("listarModelosDaAssinaturaOuVazio", () => {

@@ -9,10 +9,17 @@ import { AddCredentialDialog } from "./AddCredentialDialog";
 import type { ProvedorComChave } from "@/lib/ai/pontos/provedores";
 
 const api = vi.hoisted(() => ({ post: vi.fn() }));
+/** O `toast` é lido nas asserções: o aviso do provedor da assinatura sai por ele (#2952). */
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  loading: vi.fn(),
+  dismiss: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("../_actions", () => ({ refreshCredentialsView: vi.fn() }));
 vi.mock("@/lib/api/client", () => ({ apiClient: api }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() } }));
+vi.mock("sonner", () => ({ toast }));
 
 function montar(providerInicial?: ProvedorComChave) {
   const client = new QueryClient();
@@ -118,5 +125,49 @@ describe("AddCredentialDialog — ajuda ao escolher", () => {
         base_url: "https://gw.exemplo/v1",
       }),
     );
+  });
+});
+
+/**
+ * (#2952) Com a credencial da assinatura validada, o formulário ainda exigia
+ * uma chave que NÃO existe para esse provedor — a conta se conecta pelo login
+ * (PKCE). O vazio passa a ser aceito SÓ ali; nos demais provedores a chave
+ * continua sendo cobrada com o mesmo rigor de antes.
+ */
+describe("AddCredentialDialog — a chave no provedor da assinatura (#2952)", () => {
+  const MENSAGEM_DA_ASSINATURA =
+    "A conta do ChatGPT não se cadastra colando uma chave: ela se conecta pelo botão de login em IA › Credenciais.";
+
+  it("aceita salvar sem chave e diz onde a conta se conecta", async () => {
+    api.post.mockClear();
+    toast.error.mockClear();
+    montar("openai-assinatura");
+
+    // Sem chave a colar: o campo deixa de ser obrigatório e a tela explica o caminho.
+    expect(screen.getByLabelText("Chave")).not.toBeRequired();
+    expect(screen.getByText(MENSAGEM_DA_ASSINATURA)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar e validar" }));
+
+    // O vazio é aceito (nenhum erro de campo) — e nada é enviado: um POST com
+    // chave vazia só gastaria a volta para a rota devolver esta mesma frase.
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(MENSAGEM_DA_ASSINATURA),
+    );
+    expect(screen.queryByText("Chave muito curta")).not.toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("nos outros provedores a chave continua obrigatória e com o mesmo mínimo", async () => {
+    api.post.mockClear();
+    montar("anthropic");
+
+    expect(screen.getByLabelText("Chave")).toBeRequired();
+
+    fireEvent.change(screen.getByLabelText("Chave"), { target: { value: "curta" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar e validar" }));
+
+    expect(await screen.findByText("Chave muito curta")).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
   });
 });
