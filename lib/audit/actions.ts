@@ -349,6 +349,7 @@ export const AUDIT_ACTIONS = [
   "followup_flow.disabled",
   "followup_flow.deleted",
   "followup_flow.duplicated",
+  "followup_flow.imported",
   "followup_flow.rolled_back",
   "followup.worker_run",
   "followup.silence_sweep_run",
