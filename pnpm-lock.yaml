@@ -162,8 +162,8 @@ importers:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       nodemailer:
-        specifier: 10.1.1
-        version: 10.1.1
+        specifier: 10.1.2
+        version: 10.1.2
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
@@ -4540,8 +4540,8 @@ packages:
     resolution: {integrity: sha512-5qr2okC4ItAI0hG5SaV0HoYMpnM/Y6+Oqr7AmPYy/2uEoGvS+GbSKLeRxSS1uAdu59yz0ouzcuXievSgg///WA==}
     engines: {node: '>=18'}
 
-  nodemailer@10.1.1:
-    resolution: {integrity: sha512-pbqZRoeYUO+1E8TJ/11WeY4D2EVujj1hsYjz3qff/vUFDtGnmi7p3iqzTFslYOfQ6PnjVcWxx/CIUSHCSrO/QA==}
+  nodemailer@10.1.2:
+    resolution: {integrity: sha512-rnQn9Rzh8RAwcp42MVsIvxbsv6YZ2a2/av+uyJ/LPU1+2QSlrRgFsWWZTKenyRUqkIl8urOI0c4+CEcmFdsvQw==}
     engines: {node: '>=20.0.0'}
 
   normalize-svg-path@1.1.0:
@@ -9973,7 +9973,7 @@ snapshots:
   node-releases@2.0.59:
     optional: true
 
-  nodemailer@10.1.1: {}
+  nodemailer@10.1.2: {}
 
   normalize-svg-path@1.1.0:
     dependencies:

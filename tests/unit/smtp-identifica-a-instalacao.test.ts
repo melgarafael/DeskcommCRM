@@ -48,7 +48,9 @@ beforeEach(async () => {
           } else mensagem += `${linha}\r\n`;
         } else if (/^(EHLO|HELO) /.test(linha)) {
           saudacoes.push(linha);
-          socket.write("250 smtp.example.test\r\n");
+          // Anuncia PIPELINING como os provedores reais: desde o 10.1 o Nodemailer
+          // manda MAIL FROM, RCPT TO e DATA num lote só quando o servidor anuncia.
+          socket.write("250-smtp.example.test\r\n250 PIPELINING\r\n");
         } else if (linha === "DATA") {
           emDados = true;
           socket.write("354 End with a dot\r\n");
