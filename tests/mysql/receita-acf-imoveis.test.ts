@@ -443,7 +443,7 @@ describe("receita acf-imoveis contra MySQL 8 de verdade", () => {
         post_type: "imovel",
         campos: { preco: "preco", quartos: "quartos", bairro: "bairro" },
       },
-      { preco_max: 1000000 },
+      { preco_max: 1000000, bairro: "milhar" }, // isola o imóvel: sem o bairro, o teto de 5 o esconderia de qualquer jeito
       5,
     );
     const conexao = await pool.getConnection();
@@ -470,7 +470,7 @@ describe("receita acf-imoveis contra MySQL 8 de verdade", () => {
         post_type: "imovel",
         campos: { preco: "preco", quartos: "quartos", bairro: "bairro" },
       },
-      { preco_max: 1300000 },
+      { preco_max: 1300000, bairro: "milhar" }, // 6 imóveis cabem no preço; sem o bairro, o teto de 5 corta o sexto
       5,
     );
     const conexao2 = await pool.getConnection();
