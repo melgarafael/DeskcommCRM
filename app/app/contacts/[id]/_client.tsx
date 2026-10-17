@@ -35,10 +35,12 @@ import {
   useUnmarkAlwaysHumanContact,
 } from "@/hooks/contacts/useAlwaysHumanContact";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
+import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { canonicalTagsDoFunil } from "@/lib/contacts/etiquetas";
+import { ROLE_RANK, roleAtLeast } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
@@ -84,6 +86,11 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   // As DEFINIÇÕES continuam no funil (`crm_pipelines.settings.fields[]`) — só o
   // VALOR mora no contato. `camposDoFunil` é o mesmo leitor que o Kanban usa.
   const pipelineQuery = useDefaultPipeline(Boolean(activeOrg));
+  // As duas fontes do autocompletar de etiquetas (issue #2732). Os dois hooks
+  // ficam ANTES dos early returns pelo mesmo motivo do `desbloquear` abaixo:
+  // chamá-los depois mudaria a ordem dos hooks entre renderizações.
+  const vocabularioDeEtiquetas = useContactTagVocabulary(activeOrg?.orgId ?? null);
+  const canonicalTags = canonicalTagsDoFunil(pipelineQuery.data?.pipeline.settings ?? null);
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
   // Desfazer o descadastro é o override da regra W-02 — só admin, e auditado.
@@ -144,6 +151,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   const podeMarcarPessoal =
     (user.is_platform_admin && !user.support) ||
     (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
+
+  // Criar etiqueta nova é decisão de quem responde pelo vocabulário da
+  // organização (issue #2732): só gerente/admin. O rank vem de `roleAtLeast`,
+  // o helper canônico de comparação de papel no cliente — a mesma régua que o
+  // `requireRole` aplica nas rotas, sem reimplementar a matriz aqui.
+  const podeCriarEtiqueta =
+    (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager");
 
   // Uma decisão, um lugar (lib/contacts/rotulo-do-contato.ts). Esta tela era
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
@@ -547,6 +561,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         open={editOpen}
         onOpenChange={setEditOpen}
         customFieldDefs={camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null)}
+        vocabulario={vocabularioDeEtiquetas.data}
+        canonicalTags={canonicalTags}
+        podeCriarEtiqueta={podeCriarEtiqueta}
       />
       <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
     </div>

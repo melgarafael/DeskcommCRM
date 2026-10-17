@@ -20,6 +20,7 @@ import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { contactPatchSchemaDoPais, type ContactPatch } from "@/lib/schemas/contacts";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import type { Contact } from "@/lib/types/contacts";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
@@ -29,7 +30,8 @@ interface FormShape {
   phone_number?: string;
   /** `AAAA-MM-DD` — a MESMA forma de `contactPatchSchema` e da coluna do banco. */
   birthdate?: string;
-  tagsRaw?: string;
+  /** As etiquetas do contato — o seletor com autocompletar grava esta lista. */
+  tags?: string[];
   custom_fields?: Record<string, unknown>;
 }
 
@@ -39,9 +41,26 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Definições vindas de `crm_pipelines.settings.fields[]`. Vazio = a seção some. */
   customFieldDefs?: CustomFieldDef[];
+  /** Etiquetas já usadas na organização (`useContactTagVocabulary`). */
+  vocabulario?: readonly string[] | null;
+  /** `pipelines.settings.canonical_tags` do funil padrão. */
+  canonicalTags?: readonly string[] | null;
+  /**
+   * Criar etiqueta nova (issue #2732) — só gerente/admin. A tela calcula com o
+   * guard de papel canônico e passa pronto; o padrão é NÃO oferecer.
+   */
+  podeCriarEtiqueta?: boolean;
 }
 
-export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs = [] }: Props) {
+export function EditContactDialog({
+  contact,
+  open,
+  onOpenChange,
+  customFieldDefs = [],
+  vocabulario,
+  canonicalTags,
+  podeCriarEtiqueta = false,
+}: Props) {
   const t = useT();
   const perfil = perfilDoPais(useActiveOrg()?.country);
   const update = useUpdateContact(contact.id);
@@ -53,12 +72,13 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
       birthdate: contact.birthdate ?? "",
-      tagsRaw: contact.tags.join(", "),
+      tags: contact.tags,
       custom_fields: contact.custom_fields ?? {},
     },
   });
 
   const customFields = useWatch({ control: form.control, name: "custom_fields" });
+  const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
 
   useEffect(() => {
     if (open) {
@@ -67,7 +87,7 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
         birthdate: contact.birthdate ?? "",
-        tagsRaw: contact.tags.join(", "),
+        tags: contact.tags,
         custom_fields: contact.custom_fields ?? {},
       });
     }
@@ -77,7 +97,7 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
     setServerError(null);
     // A MESMA normalização da API (lib/contacts/tag-normalizada): o que a ficha
     // grava é o que o filtro `?tag=` casa (issue #1224).
-    const tags = normalizarTags((values.tagsRaw ?? "").split(","));
+    const tags = normalizarTags(values.tags ?? []);
 
     const payload: Record<string, unknown> = {};
     if (values.name?.trim()) payload.name = values.name.trim();
@@ -135,7 +155,15 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
           </div>
           <div className="space-y-2">
             <Label htmlFor="ec-tags">{t("Tags")}</Label>
-            <Input id="ec-tags" {...form.register("tagsRaw")} />
+            <EtiquetasDoContato
+              inputId="ec-tags"
+              value={tags}
+              onChange={(next) => form.setValue("tags", next, { shouldDirty: true })}
+              vocabulario={vocabulario}
+              canonicalTags={canonicalTags}
+              podeCriarEtiqueta={podeCriarEtiqueta}
+              disabled={update.isPending}
+            />
           </div>
           {customFieldDefs.length > 0 && (
             <div className="space-y-3 rounded-md border border-border p-3">
