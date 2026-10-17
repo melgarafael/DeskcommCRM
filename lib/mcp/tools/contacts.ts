@@ -197,10 +197,14 @@ const propostaShape = {
 };
 
 /**
- * ⚠️ Esta ferramenta NÃO grava o dado. Ela cria uma proposta que uma pessoa
- * confirma — e o `description` diz isso ao modelo em primeiro lugar, de
- * propósito: um modelo que acredite ter gravado responderia "pronto, já
- * atualizei seu cadastro" ao cliente, prometendo o que não aconteceu.
+ * ⚠️ Esta ferramenta NÃO grava o dado — com UMA exceção (#2593): o TELEFONE
+ * de um contato SEM número é gravado na hora, em E.164, com auditoria. Nos
+ * demais casos ela cria uma proposta que uma pessoa confirma, e o `description`
+ * diz as DUAS coisas ao modelo em primeiro lugar, de propósito: um modelo que
+ * acredite ter gravado responderia "pronto, já atualizei seu cadastro" ao
+ * cliente, prometendo o que não aconteceu — e um que ache que nunca grava nada
+ * responderia "vou anotar para alguém confirmar" num caso em que o número já
+ * entrou na ficha.
  *
  * Ela é de CATÁLOGO, e não nativa do Operador, porque o Operador não monta
  * ToolSet nativo nenhum (zero ocorrências de `tool(` em operator-turn.ts) e só
@@ -212,10 +216,12 @@ export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
   name: "crm_propose_contact_field",
   description:
     "Registra uma informação que o cliente forneceu (email, nome, telefone ou data de nascimento) como PROPOSTA para " +
-    "uma pessoa confirmar. NADA é gravado no cadastro por conta desta chamada, e a proposta vence " +
-    "sozinha se ninguém decidir. Nunca diga ao cliente que o cadastro foi atualizado. Recusa se já " +
-    "houver proposta do mesmo campo aguardando decisão, se o valor for igual ao que já está " +
-    "gravado, ou se o contato foi anonimizado.",
+    "uma pessoa confirmar; a proposta vence sozinha se ninguém decidir. EXCEÇÃO: um TELEFONE informado para um " +
+    "contato que está SEM número no cadastro é gravado NA HORA, em formato internacional E.164 — aí sim pode " +
+    "dizer ao cliente que o número ficou anotado. Nunca é gravado: telefone de quem JÁ tem número no cadastro " +
+    "(trocar exige decisão humana), email, nome e data de nascimento — para esses nunca diga que o cadastro foi " +
+    "atualizado. Recusa se já houver proposta do mesmo campo aguardando decisão, se o valor for igual ao que já " +
+    "está gravado, ou se o contato foi anonimizado.",
   inputSchema: propostaShape,
   category: "write",
   requiresRole: "agent",
@@ -229,7 +235,52 @@ export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
       trecho: input.trecho ?? null,
     });
 
+    // Mesmo payload de ator das outras tools de escrita. Inline porque
+    // `retencao.ts` mantém o dele local — extrair para um módulo comum tocaria
+    // um arquivo alheio sem que este trabalho peça isso. Subiu para cima do
+    // `if` porque o desfecho APLICADO também audita (#2593) e é o mesmo ator.
+    const a =
+      ctx.actor.type === "user"
+        ? { actorUserId: ctx.actor.id as string | null, metadataActor: { actor_type: "user" } }
+        : { actorUserId: null, metadataActor: { actor_type: ctx.actor.type, actor_id: ctx.actor.id } };
+
     if (!r.criada) {
+      // ── #2593: o telefone de ficha vazia JÁ ESTÁ na ficha ──────────────────
+      //
+      // Este é o ÚNICO desfecho em que a mensagem pode ser repetida ao
+      // cliente — ele aconteceu de verdade. Os de baixo continuam sendo do
+      // fluxo interno, para o modelo decidir o que fazer em seguida.
+      if (r.motivo === "aplicado_automaticamente") {
+        await audit({
+          action: "contact.field_auto_applied",
+          actorUserId: a.actorUserId,
+          organizationId: ctx.organizationId,
+          resourceType: "contact",
+          resourceId: input.contact_id,
+          requestId: ctx.requestId,
+          // O que a issue pede que o registro diga: quem propôs, o trecho que
+          // o cliente escreveu, quando — e o par antes/depois da L-06.
+          metadata: {
+            ...a.metadataActor,
+            campo: input.campo,
+            old_value: null,
+            new_value: r.telefone,
+            trecho: input.trecho ?? null,
+            automatico: true,
+            legal_basis: "L-05 transactional (dado informado pelo titular em atendimento iniciado por ele)",
+          },
+        });
+        return {
+          proposta_criada: false,
+          motivo: r.motivo,
+          telefone: r.telefone,
+          mensagem:
+            "este contato estava SEM telefone e o número que a pessoa informou foi GRAVADO no cadastro, " +
+            `em formato internacional (${r.telefone}); pode dizer ao cliente que ficou anotado. ` +
+            "Um número que já existia no cadastro nunca é substituído por esta chamada.",
+        };
+      }
+
       // As mensagens são para o MODELO decidir o que fazer em seguida — e
       // nenhuma delas é para repetir ao cliente. Falam do fluxo interno, não do
       // atendimento.
@@ -247,13 +298,6 @@ export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
       return { proposta_criada: false, motivo: r.motivo, mensagem: explicacao[r.motivo] };
     }
 
-    // Mesmo payload de ator das outras tools de escrita. Inline porque
-    // `retencao.ts` mantém o dele local — extrair para um módulo comum tocaria
-    // um arquivo alheio sem que este trabalho peça isso.
-    const a =
-      ctx.actor.type === "user"
-        ? { actorUserId: ctx.actor.id as string | null, metadataActor: { actor_type: "user" } }
-        : { actorUserId: null, metadataActor: { actor_type: ctx.actor.type, actor_id: ctx.actor.id } };
     await audit({
       action: "contact.field_proposed",
       actorUserId: a.actorUserId,

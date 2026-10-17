@@ -227,3 +227,201 @@ describe("propor nascimento", () => {
     expect(inseridas).toHaveLength(0);
   });
 });
+
+// --------------------------------------------------------------------------
+// #2593 — o telefone informado pelo cliente é aplicado SOZINHO
+// --------------------------------------------------------------------------
+
+/**
+ * O dublê dos três casos da issue: ficha VAZIA (grava), valor INVÁLIDO (não
+ * grava) e ficha JÁ PREENCHIDA (não sobrescreve). Ele precisa enxergar as
+ * DUAS escritas possíveis — o UPDATE condicional do telefone e o INSERT da
+ * proposta — porque a prova desses casos é justamente qual das duas aconteceu
+ * (e, no terceiro, que a primeira NÃO aconteceu).
+ */
+function dbDeTelefone(
+  contato: Linha,
+  opcao: { linhasAtualizadas?: number; erroNoUpdate?: { code?: string; message: string } } = {},
+) {
+  const inseridas: Linha[] = [];
+  const atualizacoes: Array<{ patch: Linha; filtros: Record<string, unknown> }> = [];
+
+  const db = {
+    from(tabela: string) {
+      if (tabela === "contacts") {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: contato, error: null }),
+              }),
+            }),
+          }),
+          update: (patch: Linha) => {
+            const filtros: Record<string, unknown> = {};
+            const cadeia = {
+              eq: (coluna: string, valor: unknown) => {
+                filtros[coluna] = valor;
+                return cadeia;
+              },
+              is: (coluna: string, valor: unknown) => {
+                filtros[`${coluna} IS`] = valor;
+                return cadeia;
+              },
+              select: async () => {
+                atualizacoes.push({ patch, filtros });
+                if (opcao.erroNoUpdate) return { data: null, error: opcao.erroNoUpdate };
+                const travou = filtros["phone_number IS"] === null;
+                const linhas = travou ? (opcao.linhasAtualizadas ?? 1) : 0;
+                return { data: linhas > 0 ? [{ id: contato.id }] : [], error: null };
+              },
+            };
+            return cadeia;
+          },
+        };
+      }
+      return {
+        insert: (linha: Linha) => {
+          inseridas.push(linha);
+          return {
+            select: () => ({ single: async () => ({ data: { id: "proposta-1" }, error: null }) }),
+          };
+        },
+      };
+    },
+  };
+  return { db: db as unknown as SupabaseClient, inseridas, atualizacoes };
+}
+
+const FICHA_VAZIA: Linha = {
+  id: CONTATO,
+  is_anonymized: false,
+  email: null,
+  name: null,
+  phone_number: null,
+  birthdate: null,
+  // Uma finalidade que o patch NÃO pode apagar: o `consent` é merge por
+  // finalidade, e gravar `transactional` cego mataria o marketing de quem já
+  // tinha dado.
+  consent: { marketing: { granted: true, granted_at: "2026-01-01T00:00:00.000Z" } },
+};
+
+describe("#2593: o telefone informado pelo cliente", () => {
+  it("caso 1 — ficha SEM telefone: grava sozinho em E.164, sem nascer proposta", async () => {
+    const { db, inseridas, atualizacoes } = dbDeTelefone({ ...FICHA_VAZIA });
+
+    const r = await proporDadoDoContato(db, {
+      organizationId: ORG,
+      contactId: CONTATO,
+      campo: "phone_number",
+      valor: "(11) 99999-8888",
+      trecho: "meu número é (11) 99999-8888",
+    });
+
+    // O desfecho é ESCRITA, não fila — é o que a issue pede.
+    expect(r).toEqual({ criada: false, motivo: "aplicado_automaticamente", telefone: "+5511999998888" });
+    expect(inseridas, "nada entra na fila de propostas quando o telefone já foi gravado").toHaveLength(0);
+
+    expect(atualizacoes).toHaveLength(1);
+    const { patch, filtros } = atualizacoes[0]!;
+    expect(patch.phone_number).toBe("+5511999998888");
+    // A TRAVA: sem `phone_number IS null` no UPDATE, este código seria capaz de
+    // sobrescrever um número que entrou entre a leitura e a escrita.
+    expect(filtros).toMatchObject({ organization_id: ORG, id: CONTATO, "phone_number IS": null });
+    // A base legal gravada no mesmo ato, em merge — `marketing` sobrevive.
+    expect(patch.consent).toMatchObject({
+      marketing: { granted: true, granted_at: "2026-01-01T00:00:00.000Z" },
+      transactional: {
+        granted: true,
+        granted_at: expect.any(String),
+        source: expect.stringContaining("aplicado automaticamente"),
+      },
+    });
+  });
+
+  it("caso 2 — valor que não vira E.164: nada é gravado no cadastro", async () => {
+    // Curto demais: recusado pela régua da própria proposta, nem chega à escrita.
+    const curto = dbDeTelefone({ ...FICHA_VAZIA });
+    const r1 = await proporDadoDoContato(curto.db, {
+      organizationId: ORG,
+      contactId: CONTATO,
+      campo: "phone_number",
+      valor: "123",
+    });
+    expect(r1).toEqual({ criada: false, motivo: "valor_invalido" });
+    expect(curto.atualizacoes, "valor inválido não pode encostar em contacts").toHaveLength(0);
+    expect(curto.inseridas).toHaveLength(0);
+
+    // 8 dígitos passam na régua LARGA da proposta (`valorAceitavel`), mas sem
+    // DDI não viram E.164 — a regra da casa só dá `+55` para 10/11 dígitos.
+    // Este é o caso em que a validação de E.164 é quem segura a escrita.
+    const semDdi = dbDeTelefone({ ...FICHA_VAZIA });
+    const r2 = await proporDadoDoContato(semDdi.db, {
+      organizationId: ORG,
+      contactId: CONTATO,
+      campo: "phone_number",
+      valor: "12345678",
+    });
+    expect(r2.criada, JSON.stringify(r2)).toBe(true);
+    expect(semDdi.atualizacoes, "sem DDI não há gravação automática").toHaveLength(0);
+    expect(semDdi.inseridas).toHaveLength(1);
+  });
+
+  it("caso 3 — ficha JÁ COM telefone: o número existente não é sobrescrito", async () => {
+    const { db, inseridas, atualizacoes } = dbDeTelefone({
+      ...FICHA_VAZIA,
+      phone_number: "+551133334444",
+    });
+
+    const r = await proporDadoDoContato(db, {
+      organizationId: ORG,
+      contactId: CONTATO,
+      campo: "phone_number",
+      valor: "(11) 99999-8888",
+      trecho: "agora é outro número",
+    });
+
+    // Trocar telefone continua sendo decisão humana: nasce proposta, com o
+    // `valor_anterior` de quem decidiu ver os dois lados.
+    expect(r.criada, JSON.stringify(r)).toBe(true);
+    expect(atualizacoes, "nenhum UPDATE sai daqui — sobrescrever é o defeito").toHaveLength(0);
+    expect(inseridas).toHaveLength(1);
+    expect(inseridas[0]).toMatchObject({
+      campo: "phone_number",
+      valor_anterior: "+551133334444",
+      organization_id: ORG,
+      contact_id: CONTATO,
+    });
+  });
+
+  it("o UPDATE que não casa linha vira PROPOSTA — a informação não se perde e nada é sobrescrito", async () => {
+    // Corrida: alguém preencheu o número entre a leitura e a escrita (0 linhas
+    // casadas). A trava do `is("phone_number", null)` fez o banco recusar…
+    const corrida = dbDeTelefone({ ...FICHA_VAZIA }, { linhasAtualizadas: 0 });
+    const r1 = await proporDadoDoContato(corrida.db, {
+      organizationId: ORG,
+      contactId: CONTATO,
+      campo: "phone_number",
+      valor: "(11) 99999-8888",
+    });
+    expect(r1.criada, JSON.stringify(r1)).toBe(true);
+    expect(corrida.inseridas, "sem linha gravada, o número continua como proposta").toHaveLength(1);
+
+    // …e o mesmo para telefone que já é de OUTRO contato vivo desta
+    // organização (índice parcial `uniq_contacts_org_phone` → 23505): a
+    // deduplicação é da casa, e resolver isso é decisão humana (merge), não
+    // uma escrita automática em cima de dois cadastros.
+    const duplicado = dbDeTelefone(
+      { ...FICHA_VAZIA },
+      { erroNoUpdate: { code: "23505", message: "duplicate key value violates unique constraint" } },
+    );
+    const r2 = await proporDadoDoContato(duplicado.db, {
+      organizationId: ORG,
+      contactId: CONTATO,
+      campo: "phone_number",
+      valor: "(11) 99999-8888",
+    });
+    expect(r2.criada, JSON.stringify(r2)).toBe(true);
+    expect(duplicado.inseridas).toHaveLength(1);
+  });
+});
