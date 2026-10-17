@@ -18,7 +18,6 @@
  */
 import { z } from "zod";
 
-import { LeituraInvalidaError } from "../leitura";
 import { montarTabelaDireta, RECEITA_TABELA_DIRETA } from "./tabela-direta";
 import type { DefinicaoDeReceita } from "./tipos";
 
@@ -154,7 +153,7 @@ export const RECEITA_JETENGINE_IMOVEIS: DefinicaoDeReceita = {
     if (b.cidade) {
       // Sem coluna de cidade mapeada, ignorar o filtro em silêncio faria o
       // agente achar que filtrou. Recusa com motivo legível.
-      if (!f.campos.cidade) throw new LeituraInvalidaError("filtro_sem_coluna:cidade");
+      if (!f.campos.cidade) throw new Error("filtro_sem_coluna:cidade");
       extras[f.campos.cidade] = b.cidade;
     }
 

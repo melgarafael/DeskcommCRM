@@ -182,7 +182,7 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
         valores.map((v: unknown) => (v === undefined ? null : v)),
       );
       await conexao.query("COMMIT");
-      const modelos = (linhas as { modelo: string }[]).map((l) => l.modelo);
+      const modelos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar("C1-tabela-direta-texto", `texto 'vermelho' → ${modelos.join(", ")}`);
       expect(modelos).toContain("Sedan Vermelho");
       expect(modelos).toContain("SUV Vermelho");
@@ -220,7 +220,7 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
         valores.map((v: unknown) => (v === undefined ? null : v)),
       );
       await conexao.query("COMMIT");
-      const modelos = (linhas as { modelo: string }[]).map((l) => l.modelo);
+      const modelos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar("C1-tabela-direta-preco_max_65k", `preco_max=65000 → ${modelos.join(", ")}`);
       expect(modelos).toContain("Hatch Azul"); // 48000 <= 65000
       expect(modelos).toContain("Sedan Vermelho"); // 65000 <= 65000
@@ -259,7 +259,7 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
         valores.map((v: unknown) => (v === undefined ? null : v)),
       );
       await conexao.query("COMMIT");
-      const modelos = (linhas as { modelo: string }[]).map((l) => l.modelo);
+      const modelos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar(
         "C1-tabela-direta-preco_max_decimal",
         `preco_max=65000 → ${modelos.join(", ")}`,
@@ -301,7 +301,7 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
         valores.map((v: unknown) => (v === undefined ? null : v)),
       );
       await conexao.query("COMMIT");
-      const modelos = (linhas as { modelo: string }[]).map((l) => l.modelo);
+      const modelos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar("C1-tabela-direta-preco_max_1m", `preco_max=1000000 → ${modelos.join(", ")}`);
       // 1.200.000 → 1200000 > 1000000, Luxo Prata NÃO entra
       expect(modelos).not.toContain("Luxo Prata");
@@ -338,7 +338,7 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
         valores.map((v: unknown) => (v === undefined ? null : v)),
       );
       await conexao.query("COMMIT");
-      const modelos = (linhas as { modelo: string }[]).map((l) => l.modelo);
+      const modelos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar("C1-tabela-direta-numero_min", `numero_min=2019 → ${modelos.join(", ")}`);
       expect(modelos).toContain("Coupe Preto"); // 2019
       expect(modelos).toContain("Luxo Prata"); // 2022
@@ -379,7 +379,7 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
         valores.map((v: unknown) => (v === undefined ? null : v)),
       );
       await conexao.query("COMMIT");
-      const modelos = (linhas as { modelo: string }[]).map((l) => l.modelo);
+      const modelos = (linhas as { titulo: string }[]).map((l) => l.titulo);
       registrar("C1-tabela-direta-status", `status=1 → ${modelos.join(", ")}`);
       expect(modelos).not.toContain("Carro inativo"); // status = 0
     } finally {
