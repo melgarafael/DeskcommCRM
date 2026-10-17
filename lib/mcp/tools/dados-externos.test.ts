@@ -25,6 +25,7 @@ const lerTabela = dialeto.lerTabela;
 const CONEXAO: ConexaoExterna = {
   id: "conn-1",
   organizationId: "org-1",
+  dbType: "postgres",
   label: "Outro CRM",
   host: "db.exemplo.com",
   port: 5432,
@@ -53,7 +54,9 @@ const TABELA: TabelaExterna = {
   estimativaLinhas: 4200,
 };
 
-function ctxFake(conexoes: Array<{ id: string; label: string }> = [{ id: "conn-1", label: "Outro CRM" }]) {
+function ctxFake(
+  conexoes: Array<{ id: string; label: string; db_type: string }> = [{ id: "conn-1", label: "Outro CRM", db_type: "postgres" }],
+) {
   const chain = {
     select: () => chain,
     eq: () => chain,
@@ -93,6 +96,11 @@ describe("crm_describe_external_data", () => {
     expect((r.tabelas as Array<{ chave: string[] }>)[0]?.chave).toEqual(["id"]);
   });
 
+  it("a resposta traz o motor da conexão", async () => {
+    const r = (await crmDescribeExternalData.handler({}, ctxFake())) as Record<string, unknown>;
+    expect((r.conexao as { motor: string }).motor).toBe("postgres");
+  });
+
   it("filtra por nome de tabela e devolve vazio quando não acha", async () => {
     const tabelas = [
       TABELA,
@@ -115,12 +123,15 @@ describe("crm_describe_external_data", () => {
 
   it("com mais de uma conexão e sem id, pede para escolher", async () => {
     const ctx = ctxFake([
-      { id: "a", label: "A" },
-      { id: "b", label: "B" },
+      { id: "a", label: "A", db_type: "postgres" },
+      { id: "b", label: "B", db_type: "postgres" },
     ]);
     const r = (await crmDescribeExternalData.handler({}, ctx)) as Record<string, unknown>;
     expect(r.erro).toBe("conexao_ambigua");
-    expect(r.conexoes).toHaveLength(2);
+    expect(r.conexoes).toEqual([
+      { id: "a", label: "A", motor: "postgres" },
+      { id: "b", label: "B", motor: "postgres" },
+    ]);
   });
 
   it("sem conexão ativa, explica em vez de lançar", async () => {
@@ -189,6 +200,15 @@ describe("crm_query_external_data", () => {
     expect(r.linhas).toHaveLength(1);
     expect(r.truncado).toBe(true);
     expect(r.aviso).toBeTruthy();
+  });
+
+  it("a resposta traz o motor da conexão", async () => {
+    vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [], limite: 20, offset: 0 });
+    const r = (await crmQueryExternalData.handler(
+      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 20 },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect((r.conexao as { motor: string }).motor).toBe("postgres");
   });
 
   it("descobre o schema quando ele não é informado e há só uma candidata", async () => {
