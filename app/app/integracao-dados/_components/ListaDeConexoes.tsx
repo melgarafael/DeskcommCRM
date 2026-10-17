@@ -31,6 +31,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { PencilSimple, Plus, PlugsConnected, Trash } from "@/lib/ui/icons";
 
 import { FormularioDeConexao } from "./FormularioDeConexao";
+import { AvisoDoTeste } from "./AvisoDoTeste";
 
 interface Props {
   initialData: ConexaoExternaRow[];
@@ -93,6 +94,9 @@ export function ListaDeConexoes({ initialData, canWrite }: Props) {
       const resultado = await testarConexao(conexao.id);
       if (resultado.ok) {
         toast.success(t("Conexão bem-sucedida."));
+        if (resultado.aviso) {
+          toast.warning(t("O teste passou, mas há um aviso sobre o usuário deste banco. Veja no cartão da conexão."));
+        }
         if (canWrite && conexao.source_mode === "list" && conexao.sources_count === 0) {
           // Conexão nova que acabou de passar no teste: o passo que falta é escolher o que o assistente lê.
           router.push(`/app/integracao-dados/${conexao.id}?fontes=1`);
@@ -139,7 +143,7 @@ export function ListaDeConexoes({ initialData, canWrite }: Props) {
           <h2 className="font-medium">{t("Nenhum banco externo conectado ainda")}</h2>
           <p className="max-w-md text-sm text-muted-foreground">
             {t(
-              "Quando o seu outro sistema escreve num PostgreSQL, conecte-o aqui e o agente passa a responder com esses dados — pedido, assinatura, matrícula, saldo.",
+              "Quando o seu outro sistema guarda os dados num banco PostgreSQL ou MySQL, conecte-o aqui e o agente passa a responder com esses dados — pedido, assinatura, matrícula, saldo.",
             )}
           </p>
           {canWrite && (
@@ -181,6 +185,7 @@ export function ListaDeConexoes({ initialData, canWrite }: Props) {
                   {conexao.label}
                 </Link>
                 <EstadoDaConexao conexao={conexao} />
+                <Badge variant="outline">{conexao.db_type === "mysql" ? "MySQL" : "PostgreSQL"}</Badge>
               </div>
               <p className="truncate text-sm text-muted-foreground">
                 {conexao.host}:{conexao.port}/{conexao.database_name} · {conexao.username}
@@ -188,6 +193,7 @@ export function ListaDeConexoes({ initialData, canWrite }: Props) {
               {conexao.last_test_ok === false && conexao.last_test_error && (
                 <p className="truncate text-xs text-destructive">{conexao.last_test_error}</p>
               )}
+              <AvisoDoTeste aviso={conexao.last_test_aviso} />
               <ResumoDasFontes conexao={conexao} canWrite={canWrite} />
               {!conexao.customer_key_column && (
                 <p className="text-xs text-amber-700 dark:text-amber-400">

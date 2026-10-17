@@ -28,6 +28,7 @@
     "migration0372",
     "credenciais",
     "acesso",
+    "drivers",
     "dialeto",
     "apiLeitura",
     "telaExplorador"
@@ -37,7 +38,7 @@
       "id": "migration0372",
       "lane": "dados",
       "label": "external_db_connections",
-      "sublabel": "migration 0372 · tenant-aware, RLS, senha AES-GCM",
+      "sublabel": "migration 0372 · tenant-aware, RLS, senha AES-GCM · 0691 soma db_type e last_test_aviso",
       "type": "table",
       "dot": "sky"
     },
@@ -45,7 +46,7 @@
       "id": "safeview",
       "lane": "dados",
       "label": "external_db_connections_safe",
-      "sublabel": "view sem as colunas cifradas · a única que a tela lê",
+      "sublabel": "view sem as colunas cifradas · a única que a tela lê · 0691 soma db_type e last_test_aviso",
       "type": "table",
       "dot": "sky"
     },
@@ -106,6 +107,14 @@
       "dot": "blue"
     },
     {
+      "id": "drivers",
+      "lane": "nucleo",
+      "label": "drivers.ts",
+      "sublabel": "escolhe o motor pela conexão: abre o dialeto, testa e fecha o pool",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
       "id": "dialeto",
       "lane": "nucleo",
       "label": "dialeto.ts",
@@ -157,7 +166,7 @@
       "id": "telaLista",
       "lane": "ui",
       "label": "Lista de conexões",
-      "sublabel": "todos veem · card de cadastro/edição só para admin",
+      "sublabel": "todos veem · card de cadastro/edição só para admin · selo do motor e aviso do teste",
       "type": "route",
       "dot": "purple"
     },
@@ -236,12 +245,6 @@
       "from": "guardas",
       "to": "apiConnections",
       "label": "valida no cadastro"
-    },
-    {
-      "id": "e10",
-      "from": "pool",
-      "to": "acesso",
-      "label": "pool da conexão"
     },
     {
       "id": "e11",
@@ -346,12 +349,6 @@
       "label": "o que é visível"
     },
     {
-      "id": "e38",
-      "from": "acesso",
-      "to": "dialeto",
-      "label": "abre o pool e liga a regra"
-    },
-    {
       "id": "e39",
       "from": "dialeto",
       "to": "apiLeitura",
@@ -392,6 +389,36 @@
       "from": "telaFontes",
       "to": "telaExplorador",
       "label": "a grade passa a mostrar só o liberado"
+    },
+    {
+      "id": "e46",
+      "from": "acesso",
+      "to": "drivers",
+      "label": "abre o dialeto pelo motor da conexão"
+    },
+    {
+      "id": "e47",
+      "from": "drivers",
+      "to": "dialeto",
+      "label": "cria o dialeto do motor"
+    },
+    {
+      "id": "e48",
+      "from": "pool",
+      "to": "drivers",
+      "label": "pool do PostgreSQL"
+    },
+    {
+      "id": "e49",
+      "from": "apiTest",
+      "to": "drivers",
+      "label": "testa pelo driver do motor"
+    },
+    {
+      "id": "e50",
+      "from": "apiConnections",
+      "to": "drivers",
+      "label": "fecha o pool ao editar ou apagar"
     }
   ],
   "cards": [

@@ -58198,3 +58198,39 @@ comment on column public.webhook_lead_captures.outcome is
   'criado = virou lead novo; duplicado = envio repetido, nada mudou no card; atualizado = o card da mesma fonte recebeu o dado novo (issue #2316, só com a opção da fonte ligada); recusado = não entrou (reject_reason diz por quê).';
 
 notify pgrst, 'reload schema';
+
+-- ---- motor do banco externo e aviso do teste (migration 0691) ----
+alter table public.external_db_connections
+  add column if not exists db_type text not null default 'postgres',
+  add column if not exists last_test_aviso text;
+
+alter table public.external_db_connections
+  drop constraint if exists external_db_connections_db_type_valido,
+  drop constraint if exists external_db_connections_last_test_aviso_valido;
+
+alter table public.external_db_connections
+  add constraint external_db_connections_db_type_valido
+    check (db_type in ('postgres', 'mysql')),
+  add constraint external_db_connections_last_test_aviso_valido
+    check (last_test_aviso is null or char_length(last_test_aviso) <= 500);
+
+comment on column public.external_db_connections.db_type is
+  'Motor do banco externo: postgres | mysql. Imutável depois de criada (trocar de motor = apagar e criar). Vocabulário espelhado em TipoBanco (lib/external-db/types.ts).';
+comment on column public.external_db_connections.last_test_aviso is
+  'Aviso (não erro) do último teste bem-sucedido, por exemplo privilégio de escrita no usuário do MySQL. Nulo = nada a avisar.';
+
+drop view if exists public.external_db_connections_safe;
+create view public.external_db_connections_safe
+  with (security_invoker = true)
+  as
+  select id, organization_id, label, host, port, database_name, username,
+         ssl_mode, enabled, max_rows, max_filters, max_response_bytes,
+         customer_key_column, customer_key_kind,
+         last_tested_at, last_test_ok, last_test_error,
+         created_by, created_at, updated_at,
+         source_mode, jsonb_array_length(sources) as sources_count,
+         db_type, last_test_aviso
+  from public.external_db_connections;
+
+revoke all on public.external_db_connections_safe from anon;
+grant select on public.external_db_connections_safe to authenticated;

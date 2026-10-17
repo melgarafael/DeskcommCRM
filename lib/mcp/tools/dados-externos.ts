@@ -101,12 +101,12 @@ async function resolverConexao(ctx: McpContext, connectionId?: string): Promise<
   // existir de verdade; ausente/errado = pedir escolha.
   const { data } = await ctx.supabase
     .from("external_db_connections_safe")
-    .select("id, label")
+    .select("id, label, db_type")
     .eq("organization_id", ctx.organizationId)
     .eq("enabled", true)
     .order("label", { ascending: true });
 
-  const conexoes = (data ?? []) as Array<{ id: string; label: string }>;
+  const conexoes = (data ?? []) as Array<{ id: string; label: string; db_type: string }>;
   if (conexoes.length === 0) {
     return {
       ok: false,
@@ -128,7 +128,7 @@ async function resolverConexao(ctx: McpContext, connectionId?: string): Promise<
     resposta: {
       erro: "conexao_ambigua",
       mensagem: "há mais de um banco conectado; diga qual usar pelo connection_id.",
-      conexoes,
+      conexoes: conexoes.map((c) => ({ id: c.id, label: c.label, motor: c.db_type })),
     },
   };
 }
@@ -323,7 +323,7 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
     const truncado = tabelas.length > MAX_TABELAS_DESCRITAS || truncadoPorBytes;
 
     return {
-      conexao: { id: acesso.conexao.id, label: acesso.conexao.label },
+      conexao: { id: acesso.conexao.id, label: acesso.conexao.label, motor: acesso.conexao.dbType },
       tabelas: descritas,
       ...(truncado ? { truncado: true, total_de_tabelas: tabelas.length } : {}),
       aviso: AVISO_DADOS_NAO_CONFIAVEIS,
@@ -587,7 +587,7 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     }
 
     return {
-      conexao: { id: acesso.conexao.id, label: acesso.conexao.label },
+      conexao: { id: acesso.conexao.id, label: acesso.conexao.label, motor: acesso.conexao.dbType },
       schema,
       tabela,
       colunas: resultado.colunas,

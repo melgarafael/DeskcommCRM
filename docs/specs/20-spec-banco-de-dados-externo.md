@@ -14,6 +14,8 @@ dados de um **PostgreSQL externo** — o segundo CRM/ERP do dono, que outro sist
 escreve. O schema muda com frequência, então a introspecção é **ao vivo**: nada
 hard-coded, nada de espelhar schema.
 
+> **Atualização (Spec 23, Fatia 4a).** Desde a Spec 23 o conector também fala MySQL (`db_type = 'mysql'`, por exemplo o banco de um site WordPress). O parágrafo acima descreve o escopo original, só PostgreSQL.
+
 ## Decisões (CONFIRMADO por código)
 
 | # | Tema | Decisão |
