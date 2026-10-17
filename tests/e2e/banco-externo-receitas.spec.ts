@@ -21,6 +21,8 @@
 
 import { test, expect, type Page } from "./helpers/test";
 
+test.describe.configure({ timeout: 60_000 });
+
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 

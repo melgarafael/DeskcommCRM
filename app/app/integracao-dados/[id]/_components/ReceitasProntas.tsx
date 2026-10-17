@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,7 @@ interface Props {
 
 const PREFIXO_PADRAO = "wp_";
 const PREFIXO_REGEX = /^[A-Za-z0-9_]{1,20}$/;
+const BUSCA_PADRAO = { limite: 5 };
 
 function receitasDisponiveis(motor: "mysql" | "postgres"): DefinicaoDeReceita[] {
   return [...RECEITAS.values()].filter((r) => r.motores.includes(motor));
@@ -37,8 +38,15 @@ function receitasDisponiveis(motor: "mysql" | "postgres"): DefinicaoDeReceita[] 
 export default function ReceitasProntas({ connectionId, motor, canWrite }: Props) {
   const t = useT();
   const query = useReceitasDaConexao(connectionId);
-  const [rascunho, setRascunho] = useState<InstanciaDeReceita[]>([]);
-  const [editando, setEditando] = useState<InstanciaDeReceita | null>(null);
+  const idInputRotulo = useId();
+  const idInputDescricao = useId();
+  const idInputPrefixo = useId();
+
+  // Uma linha em edição (rascunho local, ainda não salvo). A lista completa
+  // sempre deriva do servidor (query.data) + o rascunho em edição, então
+  // acompanha o servidor após cada refetch sem setState síncrono em efeito.
+  const [rascunho, setRascunho] = useState<InstanciaDeReceita | null>(null);
+  const [confirmandoRemocao, setConfirmandoRemocao] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     instancia: { id: string; receita: string; rotulo: string };
     colunas: string[];
@@ -48,17 +56,27 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
   } | null>(null);
   const [previewando, setPreviewando] = useState(false);
 
-  const receitas = query.data?.receitas ?? [];
+  const lista = useMemo(() => {
+    const base = [...(query.data?.receitas ?? [])];
+    if (rascunho) {
+      const idx = base.findIndex((i) => i.id === rascunho.id);
+      if (idx >= 0) base[idx] = rascunho;
+      else base.push(rascunho);
+    }
+    return base;
+  }, [query.data, rascunho]);
 
+  const receitas = lista;
   const jaCadastradas = new Set(receitas.map((r) => r.receita));
   const opcoes = receitasDisponiveis(motor).filter((r) => !jaCadastradas.has(r.id));
 
   const salvar = async () => {
     if (!canWrite) return;
     try {
-      await salvarReceitas(connectionId, rascunho);
+      await salvarReceitas(connectionId, lista);
       toast.success(t("Salvo."));
-      setEditando(null);
+      setRascunho(null);
+      await query.refetch();
     } catch (err) {
       showApiError(err);
     }
@@ -66,40 +84,51 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
 
   const adicionar = () => {
     if (!canWrite) return;
+    const primeira = opcoes[0];
+    if (!primeira) return;
+    const receita = receitaDe(primeira.id);
     const nova: InstanciaDeReceita = {
       id: randomId(),
-      receita: "",
-      rotulo: "",
-      descricao: "",
+      receita: primeira.id,
+      rotulo: receita?.rotulo ?? primeira.id,
+      descricao: receita?.descricao ?? "",
       fixos: { prefixo: PREFIXO_PADRAO },
       ativa: true,
     };
-    setRascunho([...rascunho, nova]);
-    setEditando(nova);
+    setRascunho(nova);
   };
 
   const editar = (inst: InstanciaDeReceita) => {
     if (!canWrite) return;
-    setEditando(inst);
-    setRascunho(rascunho.map((i) => (i.id === inst.id ? inst : i)));
+    setRascunho(inst);
   };
 
   const remover = async (id: string) => {
     if (!canWrite) return;
-    setRascunho(rascunho.filter((i) => i.id !== id));
-    if (editando?.id === id) setEditando(null);
+    setConfirmandoRemocao(id);
+  };
+
+  const confirmarRemocao = async () => {
+    if (!confirmandoRemocao) return;
+    const prox = lista.filter((i) => i.id !== confirmandoRemocao);
+    setConfirmandoRemocao(null);
     try {
-      await salvarReceitas(connectionId, rascunho.filter((i) => i.id !== id));
+      await salvarReceitas(connectionId, prox);
+      await query.refetch();
     } catch (err) {
       showApiError(err);
     }
+  };
+
+  const cancelarRemocao = () => {
+    setConfirmandoRemocao(null);
   };
 
   const executarPreview = async (inst: InstanciaDeReceita) => {
     if (!canWrite) return;
     setPreviewando(true);
     try {
-      const resultado = await previewReceita(connectionId, inst.id, inst.fixos);
+      const resultado = await previewReceita(connectionId, inst.id, BUSCA_PADRAO);
       setPreview(resultado);
     } catch (err) {
       showApiError(err);
@@ -145,7 +174,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
 
         {receitas.map((inst) => {
           const receita = receitaDe(inst.receita);
-          const editandoEsta = editando?.id === inst.id;
+          const editandoEsta = rascunho?.id === inst.id;
           const cols =
             inst.fixos && typeof inst.fixos === "object" && "prefixo" in inst.fixos
               ? String((inst.fixos as { prefixo?: string }).prefixo ?? PREFIXO_PADRAO)
@@ -156,37 +185,43 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
               <Card key={inst.id} className="border border-border p-3 mb-2">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div className="col-span-1 md:col-span-2">
-                    <Label className="text-xs text-muted-foreground">{t("Rótulo")}</Label>
+                    <Label htmlFor={idInputRotulo} className="text-xs text-muted-foreground">
+                      {t("Rótulo")}
+                    </Label>
                     <Input
+                      id={idInputRotulo}
                       value={inst.rotulo}
                       onChange={(e) => {
                         const prox = { ...inst, rotulo: e.target.value };
-                        editar(prox);
-                        setRascunho(rascunho.map((i) => (i.id === inst.id ? prox : i)));
+                        setRascunho(prox);
                       }}
                     />
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">{t("Descrição")}</Label>
+                    <Label htmlFor={idInputDescricao} className="text-xs text-muted-foreground">
+                      {t("Descrição")}
+                    </Label>
                     <Input
+                      id={idInputDescricao}
                       value={inst.descricao}
                       onChange={(e) => {
                         const prox = { ...inst, descricao: e.target.value };
-                        editar(prox);
-                        setRascunho(rascunho.map((i) => (i.id === inst.id ? prox : i)));
+                        setRascunho(prox);
                       }}
                     />
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">{t("Prefixo das tabelas")}</Label>
+                    <Label htmlFor={idInputPrefixo} className="text-xs text-muted-foreground">
+                      {t("Prefixo das tabelas")}
+                    </Label>
                     <Input
+                      id={idInputPrefixo}
                       value={cols}
                       onChange={(e) => {
                         const valor = e.target.value;
                         if (!PREFIXO_REGEX.test(valor)) return;
                         const prox = { ...inst, fixos: { ...(inst.fixos as object), prefixo: valor } };
-                        editar(prox);
-                        setRascunho(rascunho.map((i) => (i.id === inst.id ? prox : i)));
+                        setRascunho(prox);
                       }}
                     />
                     <p className="text-xs text-muted-foreground">
@@ -198,8 +233,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                       checked={inst.ativa}
                       onCheckedChange={(ativa) => {
                         const prox = { ...inst, ativa };
-                        editar(prox);
-                        setRascunho(rascunho.map((i) => (i.id === inst.id ? prox : i)));
+                        setRascunho(prox);
                       }}
                     />
                     <Label className="text-xs ml-2 text-muted-foreground">{t("Ativa")}</Label>
@@ -209,15 +243,30 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                   <Button size="sm" onClick={salvar}>
                     {t("Salvar")}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setEditando(null)}>
+                  <Button size="sm" variant="outline" onClick={() => setRascunho(null)}>
                     {t("Cancelar")}
                   </Button>
                   <Button size="sm" onClick={() => executarPreview(inst)} disabled={previewando}>
                     {previewando ? t("Pré-visualizando…") : t("Pré-visualizar")}
                   </Button>
-                  <Button size="sm" variant="destructive" onClick={() => remover(inst.id)}>
-                    {t("Remover")}
-                  </Button>
+                  {canWrite && (
+                    <>
+                      {confirmandoRemocao === inst.id ? (
+                        <>
+                          <Button size="sm" variant="outline" onClick={confirmarRemocao}>
+                            {t("Sim")}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={cancelarRemocao}>
+                            {t("Não")}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button size="sm" variant="destructive" onClick={() => remover(inst.id)}>
+                          {t("Remover")}
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </div>
                 {preview && preview.instancia.id === inst.id && (
                   <div className="mt-3 border-t pt-2">
@@ -278,9 +327,22 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                     </Button>
                   )}
                   {canWrite && (
-                    <Button size="sm" variant="destructive" onClick={() => remover(inst.id)}>
-                      {t("Remover")}
-                    </Button>
+                    <>
+                      {confirmandoRemocao === inst.id ? (
+                        <>
+                          <Button size="sm" variant="outline" onClick={confirmarRemocao}>
+                            {t("Sim")}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={cancelarRemocao}>
+                            {t("Não")}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button size="sm" variant="destructive" onClick={() => remover(inst.id)}>
+                          {t("Remover")}
+                        </Button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
