@@ -13,10 +13,17 @@
  * ele vem embutido na própria mensagem. Procure por `extrairAtribuicao` para
  * achar os dois; citar o caminho aqui é justamente o que o invariante proíbe.
  *
- * Não há extrator de Google Ads: não existe mecanismo nativo equivalente para
- * WhatsApp. Aquele caminho depende de uma landing page que capture o `gclid` e
- * embuta um código de rastreio na mensagem pré-preenchida, e essa LP ainda não
- * existe.
+ * O TERCEIRO caminho é o formulário (issue #2317): quem anuncia para uma landing
+ * page com formulário manda o clique no próprio envio, e o extrator do webhook
+ * de entrada o lê para estampar a MESMA atribuição — `lib/conversoes` passa a
+ * saber de que clique veio a venda, sem depender do `referral` do
+ * clique-pro-WhatsApp.
+ *
+ * Não há extrator de Google Ads a partir do TEXTO da mensagem: não existe
+ * mecanismo nativo equivalente para WhatsApp. Aquele caminho depende de uma
+ * landing page que capture o `gclid` e o mande — ou embutido num código de
+ * rastreio na mensagem pré-preenchida (`lib/leads/origem-do-site.ts`), ou no
+ * payload do formulário (o terceiro caminho acima).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -26,7 +33,11 @@ export type PlataformaDeAnuncio = "meta_ads" | "google_ads";
 
 export interface AtribuicaoDeAnuncio {
   plataforma: PlataformaDeAnuncio;
-  /** `ctwa_clid` — identifica o clique específico que abriu a conversa. */
+  /**
+   * O CLIQUE que abriu a conversa — `ctwa_clid` no clique-pro-WhatsApp, e
+   * `fbclid`/`gclid` no lead que chega por formulário (#2317). É ele que liga a
+   * venda ao anúncio; sem clique não há atribuição utilizável.
+   */
   sourceId: string | null;
   /**
    * O ANÚNCIO, que não é o clique.
