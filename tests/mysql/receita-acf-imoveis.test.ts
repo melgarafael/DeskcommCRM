@@ -524,7 +524,7 @@ describe("receita acf-imoveis contra MySQL 8 de verdade", () => {
       );
       const casaCentro = titulos.find((t) => t.titulo === "Casa Centro");
       expect(casaCentro).toBeDefined();
-      expect(String(casaCentro!.preco)).toBe("480000");
+      expect(Number(casaCentro!.preco)).toBe(480000);
     } finally {
       conexao3.release();
     }
