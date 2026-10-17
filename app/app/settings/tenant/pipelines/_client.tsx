@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/select";
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
+import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
@@ -36,6 +37,8 @@ export interface PipelineRow {
   slug: string;
   vocabulary: Record<string, string> | null;
   settings: Record<string, unknown> | null;
+  /** Opcional só para os testes; a página sempre manda (ver `ehFunilPadrao`). */
+  is_default?: boolean;
 }
 
 /**
@@ -59,7 +62,7 @@ export const TIPOS_DE_CAMPO = customFieldSchema.shape.type.options;
 
 /** Tipos cujo valor sai de uma lista fechada — são os que mostram o campo de opções. */
 export function tipoTemOpcoes(tipo: CustomFieldDef["type"]): boolean {
-  return tipo === "select" || tipo === "multiselect";
+  return tipo === "select" || tipo === "multiselect" || tipo === "searchable_select";
 }
 
 /**
@@ -289,6 +292,7 @@ export function PipelinesClient({
               pipeline={p}
               etapas={etapas[p.id] ?? []}
               comandaDisponivel={comandaDisponivel}
+              ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
             />
           )}
         </Card>
@@ -301,10 +305,18 @@ function PipelineEditor({
   pipeline,
   etapas,
   comandaDisponivel,
+  ehFunilPadrao,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
   comandaDisponivel: boolean;
+  /**
+   * A ficha do contato lê as definições SÓ do funil padrão — a mesma régua de
+   * `/api/v1/pipelines/default`: `is_default`, senão o primeiro não arquivado por
+   * `position` (a página entrega a lista nessa ordem). Num funil secundário,
+   * marcar "Contato" tiraria o campo do card sem pô-lo na ficha: some de toda tela.
+   */
+  ehFunilPadrao: boolean;
 }) {
   const t = useT();
   const v = pipeline.vocabulary ?? {};
@@ -329,6 +341,9 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  // O texto CSV de importação de opções (#2521), por chave de campo — vive só
+  // enquanto a pessoa cola; "Importar" o transforma em opções e o limpa.
+  const [csvDeOpcoes, setCsvDeOpcoes] = useState<Record<string, string>>({});
   const [fields, setFields] = useState<CustomFieldDef[]>(camposDoFunil(pipeline.settings));
   const [isPending, startTransition] = useTransition();
 
@@ -346,7 +361,15 @@ function PipelineEditor({
         ? {
             ...f,
             options: (f.options ?? [])
-              .map((o) => ({ value: o.value.trim(), label: o.label.trim() }))
+              .map((o) => ({
+                value: o.value.trim(),
+                label: o.label.trim(),
+                // Os APELIDOS da opção (#2521) sobrevivem ao salvar: o input de
+                // opções preserva `value` e apelidos de todo rótulo que já
+                // existia (ver o `onChange` dele), e esquecer a chave aqui
+                // apagaria o que a importação CSV cadastrou.
+                ...(o.aliases && o.aliases.length > 0 ? { aliases: o.aliases } : {}),
+              }))
               .filter((o) => o.label !== ""),
           }
         : f;
@@ -613,15 +636,97 @@ function PipelineEditor({
                   // motivo só o INÍCIO é aparado (o espaço que o `join(", ")`
                   // põe): aparar o fim apagaria o espaço recém-digitado, e
                   // "Clareamento" + " " + "D" viraria "ClareamentoD".
+                  //
+                  // O input só mostra RÓTULOS, mas a opção é mais que isso: o
+                  // `value` canônico e os apelidos que a importação CSV trouxe
+                  // (#2521). Reconstruir tudo como `{ value: label }` faria uma
+                  // tecla qualquer trocar `maceio-al` por `Maceió (AL)` e apagar
+                  // os apelidos — e os negócios já gravados com `maceio-al`
+                  // deixariam de casar com a lista. Por isso o rótulo que JÁ
+                  // existia (comparado aparado) mantém a opção dele; só o rótulo
+                  // sem par vira opção nova. O limite: renomear um rótulo
+                  // importado gera opção nova, porque o texto do meio da edição
+                  // não casa com nada.
                   const options = e.target.value
                     .split(",")
                     .map((s) => s.trimStart())
-                    .map((label) => ({ value: label, label }));
+                    .map((label) => {
+                      const existente = (f.options ?? []).find(
+                        (o) => label.trim() !== "" && o.label.trim() === label.trim(),
+                      );
+                      return existente ? { ...existente, label } : { value: label, label };
+                    });
                   const next = [...fields];
                   next[i] = { ...f, options };
                   setFields(next);
                 }}
               />
+            )}
+            {/* ── LISTA PESQUISÁVEL (#2521) ────────────────────────────────
+                Duas coisas só deste tipo: a válvula "permitir valor novo" e a
+                importação de opções em lote. A importação usa o CSV que a
+                agência já tem (municípios do IBGE, destinos, IATA) — `value,
+                label, apelidos` por linha, apelidos separados por `;`. O que
+                já existe não duplica, e o que foi importado fica junto das
+                opções digitadas à mão. */}
+            {f.type === "searchable_select" && (
+              <div className="space-y-1 md:col-span-4">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("Permitir valor novo")} ${i + 1}`}
+                    checked={f.allow_new === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      next[i] = { ...f, allow_new: ev.target.checked };
+                      setFields(next);
+                    }}
+                  />
+                  {t("Permitir valor novo (fora da lista)")}
+                </label>
+                <div className="flex items-start gap-2">
+                  <textarea
+                    aria-label={`${t("Importar opções (CSV)")} ${i + 1}`}
+                    className="min-h-16 w-full rounded-md border border-border bg-transparent p-2 text-xs"
+                    placeholder={t("value,label,apelidos — uma opção por linha")}
+                    value={csvDeOpcoes[f.key] ?? ""}
+                    onChange={(e) =>
+                      setCsvDeOpcoes((current) => ({ ...current, [f.key]: e.target.value }))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label={`${t("Importar opções do campo")} ${i + 1}`}
+                    onClick={() => {
+                      const texto = csvDeOpcoes[f.key] ?? "";
+                      if (texto.trim() === "") return;
+                      const r = importarOpcoesCsv(f.options ?? [], texto);
+                      const next = [...fields];
+                      next[i] = { ...f, options: r.opcoes };
+                      setFields(next);
+                      setCsvDeOpcoes((current) => {
+                        const proximo = { ...current };
+                        delete proximo[f.key];
+                        return proximo;
+                      });
+                      if (r.adicionadas.length > 0) {
+                        toast.success(
+                          `${r.adicionadas.length} ${t("opções importadas.")}` +
+                            (r.ignoradas.length > 0
+                              ? ` ${r.ignoradas.length} ${t("já existiam.")}`
+                              : ""),
+                        );
+                      } else {
+                        toast.info(t("Nenhuma opção nova para importar."));
+                      }
+                    }}
+                  >
+                    {t("Importar")}
+                  </Button>
+                </div>
+              </div>
             )}
             {/* ── QUANDO ESTE CAMPO OBRIGA (issue #1536) ────────────────────
                 O `obrigatorio_em` nasceu no schema sem nenhuma tela: quem
@@ -814,6 +919,42 @@ function PipelineEditor({
                 )}
               </p>
             </div>
+            {/* ── A QUE PERTENCE O CAMPO (issue #2791) ──────────────────────
+                `negocio` (padrão) é o campo como ele sempre foi: aparece no
+                card e no dossiê do negócio, gravado em `crm_leads.custom_fields`.
+                `contato` tira o campo do card e o leva para a ficha do contato,
+                cujo valor mora em `contacts.custom_fields`. A chave só é
+                gravada quando vale `contato` — um funil sem ela continua
+                idêntico ao de antes. */}
+            {/* Fora do funil padrão o seletor só aparece para DESFAZER uma marca
+                "Contato" que já exista (gravada quando este era o padrão). */}
+            {(ehFunilPadrao || escopoDoCampo(f) === "contato") && (
+              <div className="flex flex-wrap items-center gap-3 md:col-span-4">
+                <span className="text-xs font-medium">{t("Este campo pertence a:")}</span>
+                <Select
+                  value={escopoDoCampo(f)}
+                  onValueChange={(escopo) => {
+                    const next = [...fields];
+                    const copia = { ...next[i] } as CustomFieldDef;
+                    if (escopo === "contato") copia.escopo = "contato";
+                    else delete (copia as { escopo?: unknown }).escopo;
+                    next[i] = copia;
+                    setFields(next);
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label={`${t("Escopo do campo")} ${i + 1}`}
+                    className="h-8 w-40 text-xs"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="negocio">{t("Negócio")}</SelectItem>
+                    <SelectItem value="contato">{t("Contato")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         ))}
         {fields.length < 50 && (

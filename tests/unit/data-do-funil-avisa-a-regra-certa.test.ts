@@ -462,6 +462,30 @@ describe("a varredura da data do funil", () => {
     expect([...varridas]).toEqual([ORG]);
   });
 
+  it("a varredura só lê o NEGÓCIO: a data num campo do contato (#2791) nunca dispara", async () => {
+    // O defeito que motivou `camposDeDataDoNegocio` e a recusa do servidor
+    // (`lib/automation/campo-do-gatilho-de-data.ts`): um campo de escopo
+    // `contato` guarda o valor em `contacts.custom_fields`, e o negócio fica sem
+    // a chave. Se um dia a varredura passar a ler o contato, este caso fica
+    // vermelho — e a recusa pode ser revista.
+    const CONTATO = "cccccccc-0000-4000-8000-00000000000c";
+    mundo.linhas("crm_leads").length = 0;
+    mundo.linhas("crm_leads").push(
+      leadDoFunil(LEAD_ATELIE, CASAMENTO, { contact_id: CONTATO, custom_fields: {} }),
+    );
+    mundo.linhas("contacts").push({
+      id: CONTATO,
+      organization_id: ORG,
+      custom_fields: { [CAMPO]: CASAMENTO },
+    });
+
+    const resposta = await varrer();
+
+    expect(emitidosPeloCron(mundo)).toEqual([]);
+    expect(resposta.data.emitidos).toBe(0);
+    expect(mundo.consultas.filter((c) => c.tabela === "contacts")).toEqual([]);
+  });
+
   it("sem segredo de cron, não varre nada", async () => {
     const req = new NextRequest("http://localhost/api/v1/cron/lead-date-field-due");
     const res = await GET(req);

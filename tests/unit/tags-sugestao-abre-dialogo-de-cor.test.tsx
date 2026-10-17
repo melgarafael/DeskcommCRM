@@ -58,7 +58,7 @@ function montar(tags: string[] = ["vip"]) {
   render(
     <QueryClientProvider client={client}>
       <ProvedorDeCoresDasEtiquetas>
-        <ContactTagsEditor contactId="c-1" orgId={ORG} tags={tags} />
+        <ContactTagsEditor entityId="c-1" orgId={ORG} tags={tags} />
       </ProvedorDeCoresDasEtiquetas>
     </QueryClientProvider>,
   );

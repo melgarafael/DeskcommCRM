@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 /**
  * CustomFieldsEditor — lê `crm_pipelines.settings.fields[]` e renderiza o
  * input certo por tipo. Usado pelo dossiê e pelo painel do inbox, via
@@ -26,6 +26,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
+import { buscarOpcoes, valorCanonico } from "@/lib/leads/campos-pesquisaveis";
 import { cn } from "@/lib/utils";
 import { camposVisiveis, type MostrarQuando } from "@/lib/schemas/mostrar-quando";
 
@@ -37,6 +38,7 @@ export type CustomFieldType =
   | "date"
   | "select"
   | "multiselect"
+  | "searchable_select"
   | "boolean"
   | "email"
   | "phone"
@@ -47,7 +49,7 @@ export interface CustomFieldDef {
   label: string;
   type: CustomFieldType;
   required?: boolean;
-  options?: Array<{ value: string; label: string }>;
+  options?: Array<{ value: string; label: string; aliases?: string[] }>;
   /**
    * A condição de exibição (issue #2728) — `lib/schemas/mostrar-quando.ts`.
    *
@@ -57,6 +59,8 @@ export interface CustomFieldDef {
    * e viaja no save — esconder não é limpar.
    */
   mostrar_quando?: MostrarQuando;
+  /** Só no `searchable_select`: aceita valor fora da lista (issue #2521). */
+  allow_new?: boolean;
 }
 
 interface Props {
@@ -71,6 +75,38 @@ interface Props {
 export function CustomFieldsEditor({ fields, value, onChange, disabled, className }: Props) {
   const t = useT();
   const [rascunhosDeMoeda, setRascunhosDeMoeda] = useState<Record<string, string>>({});
+  // O rascunho do `searchable_select`: enquanto a pessoa digita, o input mostra
+  // o TEXTO buscado; o valor gravado no lead é o `value` canônico, resolvido no
+  // blur (issue #2521). Sem o rascunho, editar apagaria a opção a cada tecla.
+  const [rascunhosDeBusca, setRascunhosDeBusca] = useState<Record<string, string>>({});
+  // Os campos cujo último blur RECUSOU o texto (fora da lista, sem `allow_new`).
+  // Sem o aviso, o input só voltava ao valor anterior e a pessoa não sabia por quê.
+  const [recusados, setRecusados] = useState<Record<string, true>>({});
+  // A lista aberta do `searchable_select` e a opção destacada nela. Um campo
+  // por vez, porque só um tem o foco. `-1` = nada destacado: sair do campo
+  // sem ter escolhido não grava palpite. Só as SETAS mexem no destaque: o
+  // mouse sobre uma opção é realce visual (`hover:`), não escolha. Quando o
+  // `onMouseEnter` destacava, clicar no campo e sair com Tab gravava a opção
+  // que estava sob o ponteiro parado (prova pela tela, 17/10). Pela mesma
+  // razão, Enter com o mouse sobre uma opção e sem seta não grava nada.
+  const [buscaAberta, setBuscaAberta] = useState<string | null>(null);
+  const [destacado, setDestacado] = useState(-1);
+  const baseId = useId();
+  // A lista é `absolute` e abre para baixo, dentro de containers que rolam
+  // (dossiê, diálogo Editar contato): perto do fim, ela nascia fora da área
+  // visível, e a opção destacada pelas setas também — Enter gravava o que não
+  // se via. Traz a lista à vista ao abrir e a cada tecla, e a opção destacada
+  // quando ela muda. `nearest` não mexe em nada que já está visível.
+  useEffect(() => {
+    if (buscaAberta === null) return;
+    const lista = document.getElementById(`${baseId}-${buscaAberta}-opcoes`);
+    lista?.scrollIntoView?.({ block: "nearest" });
+    if (destacado >= 0) {
+      document
+        .getElementById(`${baseId}-${buscaAberta}-opcoes-${destacado}`)
+        ?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [baseId, buscaAberta, destacado, rascunhosDeBusca]);
   // O campo é do mesmo caminho do contato: o exemplo segue o país da
   // organização, e não o DDI brasileiro em duro.
   const telefoneExemplo = perfilDoPais(useActiveOrg()?.country).telefoneExemplo;
@@ -223,6 +259,151 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                     );
                   })}
                 </div>
+              </div>
+            );
+          }
+          case "searchable_select": {
+            // LISTA PESQUISÁVEL (#2521): um input com autocompletar sobre as
+            // opções. Grava o `value` CANÔNICO da opção escolhida ("maceio" →
+            // "maceio-al"), nunca a grafia digitada — é o que faz o filtro e o
+            // relatório de "Maceió" voltarem a bater. `allow_new` deixa passar
+            // um valor novo, aparado, quando o funil o permite.
+            const opcoes = f.options ?? [];
+            const canonico = typeof v === "string" ? v : "";
+            const rotuloAtual = opcoes.find((o) => o.value === canonico)?.label ?? canonico;
+            const rascunho = rascunhosDeBusca[f.key];
+            const listaId = `${baseId}-${f.key}-opcoes`;
+            // A lista é NOSSA, não um `<datalist>`: o navegador refiltra o
+            // datalist pelo rótulo e leva acento em conta, e "sao paulo" ou
+            // "mcz" não mostravam nada, embora `buscarOpcoes` achasse a opção.
+            const resultados = buscarOpcoes(opcoes, rascunho ?? "");
+            const aberta = buscaAberta === f.key && resultados.length > 0;
+            const limparRascunho = () =>
+              setRascunhosDeBusca(({ [f.key]: _limpo, ...resto }) => resto);
+            const fechar = () => {
+              setBuscaAberta(null);
+              setDestacado(-1);
+            };
+            const escolher = (valor: string) => {
+              set(f.key, valor);
+              limparRascunho();
+              setRecusados(({ [f.key]: _limpo, ...resto }) => resto);
+              fechar();
+            };
+            // Sem escolha explícita, o texto digitado vale se casar exatamente
+            // (ou se o campo aceita valor novo). Mesma régua no blur e no Enter.
+            const resolverRascunho = () => {
+              fechar();
+              if (rascunho === undefined) return;
+              const achado = valorCanonico(opcoes, rascunho);
+              if (achado !== null) set(f.key, achado);
+              else if (rascunho.trim() === "") set(f.key, "");
+              else if (f.allow_new === true) set(f.key, rascunho.trim());
+              // Sem casar e sem `allow_new`, o valor não é gravado: o
+              // input volta ao que estava, e o aviso abaixo explica.
+              else setRecusados((current) => ({ ...current, [f.key]: true }));
+              limparRascunho();
+            };
+            return (
+              <div key={f.key} className="space-y-2">
+                {labelEl}
+                <div className="relative">
+                  <Input
+                    id={id}
+                    type="text"
+                    role="combobox"
+                    aria-expanded={aberta}
+                    aria-controls={listaId}
+                    aria-autocomplete="list"
+                    aria-activedescendant={
+                      aberta && destacado >= 0 ? `${listaId}-${destacado}` : undefined
+                    }
+                    autoComplete="off"
+                    placeholder={t("Digite para buscar…")}
+                    value={rascunho ?? rotuloAtual}
+                    onFocus={() => {
+                      setBuscaAberta(f.key);
+                      setDestacado(-1);
+                    }}
+                    onChange={(e) => {
+                      setRascunhosDeBusca((current) => ({ ...current, [f.key]: e.target.value }));
+                      setRecusados(({ [f.key]: _limpo, ...resto }) => resto);
+                      setBuscaAberta(f.key);
+                      setDestacado(-1);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        if (!aberta) setBuscaAberta(f.key);
+                        else setDestacado((i) => Math.min(i + 1, resultados.length - 1));
+                      } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setDestacado((i) => Math.max(i - 1, 0));
+                      } else if (e.key === "Enter") {
+                        // Com a lista aberta (ou texto ainda não resolvido), o
+                        // Enter é do CAMPO, nunca do formulário: sem o
+                        // preventDefault ele caía na submissão implícita do
+                        // <form> de Editar contato e do dossiê, que salvava o
+                        // valor VELHO e jogava fora o digitado (prova pela
+                        // tela, 17/10). Lista fechada e nada pendente: o Enter
+                        // segue para o formulário, como em qualquer input.
+                        if (!aberta && rascunho === undefined) return;
+                        e.preventDefault();
+                        const alvo = aberta ? resultados[destacado] : undefined;
+                        if (alvo) escolher(alvo.value);
+                        else resolverRascunho();
+                      } else if (e.key === "Escape") {
+                        fechar();
+                      }
+                    }}
+                    onBlur={() => {
+                      // Destacar com as setas e sair com Tab é escolha explícita.
+                      const alvo = aberta ? resultados[destacado] : undefined;
+                      if (alvo) {
+                        escolher(alvo.value);
+                        return;
+                      }
+                      resolverRascunho();
+                    }}
+                    disabled={disabled}
+                  />
+                  {aberta && (
+                    <ul
+                      id={listaId}
+                      role="listbox"
+                      className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-surface shadow-md"
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      {resultados.map((o, i) => (
+                        <li
+                          key={o.value}
+                          id={`${listaId}-${i}`}
+                          role="option"
+                          aria-selected={i === destacado}
+                          className={cn(
+                            "flex min-h-11 cursor-pointer items-center px-3 py-2 text-sm",
+                            i === destacado
+                              ? "bg-accent text-accent-foreground"
+                              : "hover:bg-accent/50",
+                          )}
+                          onClick={() => escolher(o.value)}
+                        >
+                          {o.label}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {recusados[f.key] && (
+                  <p className="text-xs text-destructive">
+                    {t("Esse valor não está na lista. Escolha uma das opções.")}
+                  </p>
+                )}
+                {f.allow_new === true && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("Este campo aceita um valor novo, fora da lista.")}
+                  </p>
+                )}
               </div>
             );
           }

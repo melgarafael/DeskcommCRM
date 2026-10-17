@@ -9,6 +9,10 @@ import type { NextRequest } from "next/server";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import {
+  MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
+  campoDoGatilhoDeDataEhDoContato,
+} from "@/lib/automation/campo-do-gatilho-de-data";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import { updateAutomationRuleSchema } from "@/lib/schemas";
 import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD } from "@/lib/schemas/webhooks";
@@ -83,6 +87,26 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
     if (!source) {
       return fail("invalid_request", t("A fonte escolhida não pertence a esta empresa."), 422, { requestId });
+    }
+  }
+
+  // Gatilho por data num campo do contato (#2791) nunca dispara: a regra que
+  // chega assim — pela API, ou antiga sendo regravada ou religada — é recusada.
+  // Desligar e renomear não passam por aqui.
+  if (
+    parsed.data.trigger_event !== undefined ||
+    parsed.data.trigger_config !== undefined ||
+    parsed.data.is_active === true
+  ) {
+    const campoDeData = await campoDoGatilhoDeDataEhDoContato(
+      supabase,
+      activeOrg.orgId,
+      parsed.data.trigger_event ?? gravada.trigger_event,
+      parsed.data.trigger_config ?? (existing as { trigger_config: unknown }).trigger_config,
+    );
+    if ("erro" in campoDeData) return fail("internal_error", campoDeData.erro, 500, { requestId });
+    if (campoDeData.doContato) {
+      return fail("invalid_request", t(MENSAGEM_CAMPO_DE_DATA_DO_CONTATO), 422, { requestId });
     }
   }
 

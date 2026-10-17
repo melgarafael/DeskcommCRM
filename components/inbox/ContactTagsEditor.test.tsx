@@ -39,7 +39,7 @@ function renderEditor() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <ContactTagsEditor contactId="k1" orgId="o1" tags={[]} />
+      <ContactTagsEditor entityId="k1" orgId="o1" tags={[]} />
     </QueryClientProvider>,
   );
 }

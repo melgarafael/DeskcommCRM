@@ -59,8 +59,15 @@ export interface EntradaDaJanela {
   agora?: Date;
 }
 
-/** `null` = a conversa não tem canal associado (não há janela do canal a consultar). */
-async function canalDaConversa(
+/**
+ * `null` = a conversa não tem canal associado (não há janela do canal a consultar).
+ *
+ * Exportada porque o freio de ritmo (`ritmo-do-texto-fixo.ts`, aplicado em
+ * `enviar-texto-fixo.ts`) precisa do MESMO canal que a janela consulta. Dois
+ * leitores com a mesma pergunta divergem no dia em que um deles passa a
+ * considerar o canal arquivado e o outro não.
+ */
+export async function canalDaConversa(
   admin: SupabaseClient,
   organizationId: string,
   conversationId: string,

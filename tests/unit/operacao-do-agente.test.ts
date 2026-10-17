@@ -40,7 +40,8 @@ import {
   execucoesDasRegras,
   listarRegrasAutomaticas,
 } from "@/lib/operacao/regras-automaticas";
-import { ORG_ID, OUTRA_ORG, PIPE, USER_ID, etapa, makeDb } from "@/tests/helpers/stages-db-double";
+import { MENSAGEM_CAMPO_DE_DATA_DO_CONTATO } from "@/lib/automation/campo-do-gatilho-de-data";
+import { ORG_ID, OUTRA_ORG, PIPE, USER_ID, etapa, funilRow, makeDb } from "@/tests/helpers/stages-db-double";
 
 const AGENTE: Actor = { type: "ai_agent", id: "aa11", role: "agent" };
 const PESSOA: Actor = { type: "user", id: USER_ID, role: "manager" };
@@ -161,6 +162,51 @@ describe("criar entrada automática de contatos — tenancy sob service-role", (
     expect(db.escritas).toEqual([]);
     // A regra continua desligada no "banco" — o veredito de verdade.
     expect(db.tabelas.automation_rules[0]?.is_active).toBe(false);
+  });
+});
+
+describe("religar pelo MCP passa pela mesma recusa do gatilho por data (#2791)", () => {
+  // `crm_set_automation_rule_active` não passa pelo PATCH da rota. Sem a guarda
+  // aqui, uma regra antiga apontada para um campo do CONTATO voltaria ligada e
+  // muda: a varredura lê o negócio.
+  const funil = funilRow({
+    id: PIPE,
+    name: "Ateliê",
+    settings: {
+      fields: [
+        { key: "nascimento", label: "Nascimento", type: "date", escopo: "contato" },
+        { key: "entrega", label: "Entrega", type: "date", escopo: "negocio" },
+      ],
+    },
+  });
+  const regra = (campo: string) => ({
+    id: "r1",
+    organization_id: ORG_ID,
+    name: "Aniversário",
+    is_active: false,
+    actions: [],
+    conditions: [],
+    trigger_event: "lead.date_field_due",
+    trigger_config: { pipeline_id: PIPE, campo, dias: 0 },
+  });
+
+  it("⭐ religar com campo do contato → 422 e nenhuma escrita", async () => {
+    const db = makeDb({ pipelines: [funil], automationRules: [regra("nascimento")] });
+    const erro = await recusa(() => definirRegraAtiva(deps(db, AGENTE), { id: "r1", ativa: true }));
+
+    expect(erro.status).toBe(422);
+    expect(erro.message).toBe(MENSAGEM_CAMPO_DE_DATA_DO_CONTATO);
+    expect(db.escritas).toEqual([]);
+  });
+
+  it("controle: religar com campo do negócio passa, e desligar a do contato também", async () => {
+    const db = makeDb({ pipelines: [funil], automationRules: [regra("entrega")] });
+    await definirRegraAtiva(deps(db, AGENTE), { id: "r1", ativa: true });
+    expect(db.escritas.filter((e) => e.table === "automation_rules")).toHaveLength(1);
+
+    const db2 = makeDb({ pipelines: [funil], automationRules: [{ ...regra("nascimento"), is_active: true }] });
+    await definirRegraAtiva(deps(db2, AGENTE), { id: "r1", ativa: false });
+    expect(db2.escritas.filter((e) => e.table === "automation_rules")).toHaveLength(1);
   });
 });
 

@@ -97,7 +97,7 @@ afterEach(() => cleanup());
 
 describe("paleta ao lado da tag presente (#2771)", () => {
   it("⭐ no editor do CONTATO: escolher um tom grava `definir_cor` e repinta na hora", async () => {
-    montar(<ContactTagsEditor contactId="c-1" orgId="org-1" tags={["vip"]} />);
+    montar(<ContactTagsEditor entityId="c-1" orgId="org-1" tags={["vip"]} />);
 
     // RED: o gatilho ainda não existe fora de Settings.
     const gatilho = await screen.findByRole("button", { name: "Cor da etiqueta vip" }, { timeout: 5000 });
@@ -141,7 +141,7 @@ describe("paleta ao lado da tag presente (#2771)", () => {
 
   it("agent não vê o gatilho — a rota exigiria manager + MFA (#2718, decisão A)", async () => {
     sessao.papel = "agent";
-    montar(<ContactTagsEditor contactId="c-1" orgId="org-1" tags={["vip"]} />);
+    montar(<ContactTagsEditor entityId="c-1" orgId="org-1" tags={["vip"]} />);
 
     // Espera pela VOCABULÁRIO (que o editor busca) para não afirmar ausência
     // antes de a tela estar pronta.

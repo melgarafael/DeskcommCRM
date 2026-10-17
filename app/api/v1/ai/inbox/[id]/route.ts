@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { avisoVisivelPara } from "@/lib/ai/inbox-destino";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -56,6 +57,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .update({ status: parsed.data.status })
     .eq("id", id)
     .eq("organization_id", org.orgId)
+    // O aviso pessoal do colega (0689) não existe para quem não o vê: 404.
+    .or(avisoVisivelPara(authUser.id))
     .select("id, kind, severity, title, body, ref_kind, ref_id, status, created_at")
     .maybeSingle();
   if (error) {

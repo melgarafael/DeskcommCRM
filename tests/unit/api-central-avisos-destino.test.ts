@@ -20,7 +20,7 @@ function client(admin: boolean, readable = false) {
     const chain = {
       select: () => chain, order: () => chain, limit: () => chain,
       eq: (key: string, value: string) => { calls.push([key, value]); return chain; },
-      in: () => chain, update: () => chain,
+      in: () => chain, update: () => chain, or: () => chain,
       maybeSingle: async () => ({ data: item, error: null }),
       then: (resolve: (data: unknown) => unknown) => Promise.resolve({ data: admin ? [item] : readable ? [{ id }] : [], error: null, count: 1 }).then(resolve),
     }; return chain;
@@ -80,7 +80,7 @@ describe("Central: fila aberta por gravidade", () => {
         select: () => chain, order: () => chain,
         limit: (n: number) => { teto = n; return chain; },
         eq: (k: string, v: string) => { filtros[k] = v; return chain; },
-        in: () => chain,
+        in: () => chain, or: () => chain,
         then: (resolve: (d: unknown) => unknown) => {
           consultas.push(filtros);
           const data = linhas.filter(l => !filtros.severity || l.severity === filtros.severity).slice(0, teto);

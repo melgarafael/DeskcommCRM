@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
+import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
@@ -22,6 +23,8 @@ import { ContactCard } from "@/components/inbox/media/ContactCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
+import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
+import { AnuncioCard } from "@/components/inbox/AnuncioCard";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -35,6 +38,8 @@ interface Props {
   onResponder?: (m: Message) => void;
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
+  /** As reações a ESTA mensagem — marca no canto do balão, nunca balão próprio. */
+  reacoes?: ReacaoNoBalao[];
   /**
    * QUEM está lendo a conversa. É o que separa "Você" de "Atendente": a coluna
    * `sent_via='user'` só diz *"um humano digitou no CRM"*, nunca QUAL humano.
@@ -71,6 +76,7 @@ export function MessageBubble({
   debugCitations,
   onResponder,
   citada,
+  reacoes,
   viewerUserId,
   onEditar,
   onApagar,
@@ -201,6 +207,10 @@ export function MessageBubble({
   // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
+  // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
+  // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
+  // pelo anúncio, como o WhatsApp mostra no celular.
+  const anuncio = !isOutbound ? lerAnuncioDaMensagem(message.metadata?.anuncio) : null;
 
   async function salvarEdicao() {
     const novoTexto = texto.trim();
@@ -244,6 +254,8 @@ export function MessageBubble({
           // a mensagem, e trocá-lo apagaria essa leitura justo na bolha achada.
           searchMatch && "ring-2 ring-foreground ring-offset-2 ring-offset-background",
           apagada && "opacity-70",
+          // Espaço para a marca de reação, que fica metade para fora do balão.
+          Boolean(reacoes?.length) && "mb-3",
         )}
       >
         {temMenu && (
@@ -393,6 +405,8 @@ export function MessageBubble({
           </p>
         ) : (
           <>
+            {anuncio && <AnuncioCard anuncio={anuncio} compacto className="mb-1.5" />}
+
             {hasMedia && (
               <div className={cn(message.body && "mb-1")}>
                 <MediaRenderer message={message} agora={agora} />
@@ -455,6 +469,22 @@ export function MessageBubble({
             </TooltipProvider>
           )}
         </div>
+        {reacoes?.length ? (
+          <span
+            role="img"
+            data-testid="message-reactions"
+            aria-label={reacoes
+              .map((r) => t(r.direction === "inbound" ? "Cliente reagiu com {emoji}" : "Atendente reagiu com {emoji}").replace("{emoji}", r.emoji))
+              .join(", ")}
+            className={cn(
+              "absolute -bottom-3 flex items-center gap-0.5 rounded-full border border-border bg-background px-1.5 py-0.5 text-xs leading-none text-foreground shadow-sm",
+              isOutbound ? "right-2" : "left-2",
+            )}
+          >
+            {[...new Set(reacoes.map((r) => r.emoji))].join("")}
+            {reacoes.length > 1 && <span className="text-[10px] text-muted-foreground">{reacoes.length}</span>}
+          </span>
+        ) : null}
       </div>
       <AlertDialog open={apagando} onOpenChange={setApagando}>
         <AlertDialogContent>

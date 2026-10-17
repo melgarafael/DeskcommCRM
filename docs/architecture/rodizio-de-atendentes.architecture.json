@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "titulo": "Rodízio de atendentes na ação Atribuir (#2041)",
+    "pergunta": "Como um lead que nasce sem conversa (formulário) ganha dono em rodízio, sem dois leads simultâneos irem para a mesma pessoa?",
+    "resumo": "O rodízio é um modo da ação assign_owner das Automações. A fila mora na própria regra (automation_rules.actions). A ação só passa a regra e o lead para fn_automation_rodizio_atribuir, que trava por regra, escolhe o próximo elegível, grava a vez no histórico e o dono no lead, numa transação só. O UPDATE do dono emite lead.assigned, que dá o push. Substitui o desenho de grupos do PR #2269, de quem vieram a trava e o histórico."
+  },
+  "lanes": [
+    { "id": "humano", "label": "O que o humano vê" },
+    { "id": "regra", "label": "Regras puras" },
+    { "id": "motor", "label": "Motor de automações" },
+    { "id": "dados", "label": "Banco" }
+  ],
+  "mainPath": ["form", "regras", "acao", "funcao", "historico", "leads", "atividade"],
+  "nodes": [
+    { "id": "form", "lane": "humano", "col": 1, "type": "frontend", "label": "AssignOwnerForm", "sublabel": "um atendente fixo × em rodízio · subir, descer, pausar, tirar" },
+    { "id": "atividade", "lane": "humano", "col": 4, "type": "frontend", "label": "ActivityTab", "sublabel": "detail.nome + posicao no molde traduzido: Vez de <nome>, posição N · ou o motivo de ninguém" },
+    { "id": "schema", "lane": "regra", "col": 2, "type": "regra", "label": "configDoAtribuirSchema", "sublabel": "{ user_id } | { modo: rodizio, fila } · um rodízio por regra" },
+    { "id": "acao", "lane": "motor", "col": 3, "type": "worker", "label": "actions/assign-owner.ts", "sublabel": "modo rodízio: rpc(regra, lead) e traduz o desfecho" },
+    { "id": "regras", "lane": "dados", "col": 2, "type": "tabela", "label": "automation_rules", "sublabel": "a fila mora em actions[].config.fila" },
+    { "id": "funcao", "lane": "dados", "col": 3, "type": "funcao", "label": "fn_automation_rodizio_atribuir", "sublabel": "advisory lock por regra · escolhe · registra · UPDATE do dono · service_role" },
+    { "id": "historico", "lane": "dados", "col": 4, "type": "tabela", "label": "automation_rodizio_atribuicoes", "sublabel": "append-only · o próximo é calculado da linha mais nova" },
+    { "id": "leads", "lane": "dados", "col": 4, "type": "tabela", "label": "crm_leads", "sublabel": "owner_user_id · trg_emit_event_on_lead_change → lead.assigned (push)" }
+  ],
+  "edges": [
+    { "id": "r1", "from": "form", "to": "schema", "label": "o corpo da regra passa pelo mesmo schema da rota" },
+    { "id": "r2", "from": "schema", "to": "regras", "label": "POST/PATCH /api/v1/automation-rules grava a fila na regra" },
+    { "id": "r3", "from": "regras", "to": "acao", "label": "lead.created casa a regra; o motor executa a ação" },
+    { "id": "r4", "from": "acao", "to": "funcao", "label": "rpc(p_org, p_rule, p_lead, p_event) — a fila não vai na chamada; o mesmo evento não anda a fila duas vezes" },
+    { "id": "r5", "from": "regras", "to": "funcao", "label": "a função lê a fila da regra gravada, dentro da org" },
+    { "id": "r6", "from": "funcao", "to": "historico", "label": "lê o último da regra e grava a vez nova" },
+    { "id": "r7", "from": "funcao", "to": "leads", "label": "UPDATE do dono na mesma transação" },
+    { "id": "r8", "from": "acao", "to": "atividade", "label": "o resultado da ação vira a linha da aba Atividade" }
+  ],
+  "cards": [
+    { "titulo": "Por que uma função só", "texto": "Cada RPC é uma transação, e a trava solta no fim dela. Se o registro da vez ficasse no TypeScript, depois da chamada, dois leads simultâneos leriam o mesmo último e iriam para a mesma pessoa. Trava, escolha, registro e dono acontecem juntos." },
+    { "titulo": "O laço de retorno (invariante 7)", "texto": "Quando ninguém da fila pode receber (todos pausados, revogados ou viewer), a ação devolve skipped com o motivo ninguem_disponivel e a aba Atividade mostra a frase; o lead fica sem dono e aparece para quem vê leads sem dono. Regra editada no meio vira sem_rodizio, também com frase." }
+  ]
+}

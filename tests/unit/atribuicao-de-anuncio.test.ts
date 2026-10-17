@@ -12,6 +12,7 @@ describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
       source_url: "https://fb.me/anuncio123",
       headline: "Agende sua consulta",
       body: "Clique e fale com a gente",
+      thumbnail_url: "https://scontent.example.fbcdn.net/anuncio.jpg",
       ctwa_clid: "AfE...clid",
     });
     expect(r).toEqual({
@@ -21,6 +22,7 @@ describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
       titulo: "Agende sua consulta",
       corpo: "Clique e fale com a gente",
       sourceUrl: "https://fb.me/anuncio123",
+      miniatura: "https://scontent.example.fbcdn.net/anuncio.jpg",
       bruto: expect.objectContaining({ source_type: "ad" }),
     });
   });
@@ -88,6 +90,7 @@ describe("extrairAtribuicaoWaha — externalAdReply do WAHA e forma legada", () 
             title: "Serviço de exemplo",
             body: "Saiba mais",
             sourceUrl: "https://fb.me/anuncio",
+            thumbnailUrl: "https://scontent.example.fbcdn.net/servico.jpg",
           },
         },
       },
@@ -100,6 +103,7 @@ describe("extrairAtribuicaoWaha — externalAdReply do WAHA e forma legada", () 
       titulo: "Serviço de exemplo",
       corpo: "Saiba mais",
       sourceUrl: "https://fb.me/anuncio",
+      miniatura: "https://scontent.example.fbcdn.net/servico.jpg",
       bruto: expect.objectContaining({ sourceType: "ad" }),
     });
   });
@@ -126,6 +130,7 @@ describe("extrairAtribuicaoWaha — externalAdReply do WAHA e forma legada", () 
       titulo: "Agende sua consulta",
       corpo: "Clique e fale com a gente",
       sourceUrl: "https://fb.me/anuncio123",
+      miniatura: null,
       bruto: expect.objectContaining({ ctwaClid: "clid-999" }),
     });
   });

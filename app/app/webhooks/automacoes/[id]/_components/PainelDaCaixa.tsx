@@ -26,7 +26,7 @@ import {
   type ProblemaDoDesenho,
   type TelaDoGatilho,
 } from "@/lib/automation/desenho-da-regra";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
 import { ActionConfigForm, type ActionItem } from "@/app/app/webhooks/_components/ActionConfigForm";
 import { CURATED_FIELDS, OP_LABELS, type Op } from "@/app/app/webhooks/_components/RuleEditor";
 import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
@@ -85,9 +85,7 @@ export function PainelDoGatilho({
   const fontes = fontesRes?.data ?? [];
   const evento = dados.evento;
   const tela = dados.tela;
-  const camposDeData = camposDoFunil(funis.find((p) => p.id === tela.data.pipeline_id)?.settings ?? null).filter(
-    (c) => c.type === "date",
-  );
+  const camposDeData = camposDeDataDoNegocio(funis.find((p) => p.id === tela.data.pipeline_id)?.settings ?? null);
   const valorDaFonte = tela.fonte ?? QUALQUER_FONTE;
 
   return (

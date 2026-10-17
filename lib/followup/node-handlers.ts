@@ -6,6 +6,7 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  */
 import { NO_REPLY_BRANCH_ID, REPEAT_BODY_BRANCH_ID, REPEAT_DONE_BRANCH_ID, nodeBranches } from "./graph-schema";
 import type { FlowEdge, FlowNode, ReplySaveTo } from "./graph-schema";
+import { avaliarDataRelativa, ehOpDeData, type OpDeData } from "./condicao-por-data";
 import { parseReplyCount } from "./parse-count";
 import { clampEspera, esperaPlanejadaDe, type EsperaAdaptativa } from "./timing-plan";
 import { fraseDeConfirmacao } from "./vocabulario";
@@ -84,6 +85,12 @@ export interface EnrollmentRow {
 
 /** Minimal typed facts a `condition` node can check — loaded by the engine, never guessed. */
 export interface LeadFacts {
+  /**
+   * Fuso da ORGANIZAÇÃO, para a condição por data comparar dia de calendário —
+   * ver `condicao-por-data.ts`. Ausente cai no padrão do produto; o motor só o
+   * resolve quando o grafo tem regra de data.
+   */
+  fuso?: string | null;
   lead_stage: string | null;
   tags: string[];
   steps_taken: number;
@@ -470,9 +477,32 @@ export function ultimoDesfechoDe(events: EnrollmentEventRef[]): string | null {
 }
 
 function evaluateCheck(
-  check: { field: "lead_stage" | "tag" | "steps_taken" | "last_outcome"; op: "eq" | "neq" | "gte" | "lte" | "contains"; value: string | number },
+  check: {
+    field: "lead_stage" | "tag" | "steps_taken" | "last_outcome" | "lead_date";
+    op: "eq" | "neq" | "gte" | "lte" | "contains" | OpDeData;
+    value: string | number;
+    key?: string;
+  },
   lead: LeadFacts,
+  agora: Date,
 ): boolean {
+  // A regra de data sai ANTES de tudo: ela não tem valor "atual" comparável
+  // pelos operadores comuns, e `custom_fields` é jsonb — qualquer coisa pode
+  // estar lá. Campo ausente ou ilegível responde `false`, nunca `true`.
+  if (check.field === "lead_date") {
+    if (!ehOpDeData(check.op) || !check.key) return false;
+    return avaliarDataRelativa({
+      valor: lead.custom_fields?.[check.key],
+      op: check.op,
+      dias: check.value,
+      agora,
+      fuso: lead.fuso,
+    });
+  }
+  // Operador de data em campo que não é de data: o schema recusa no publish, e
+  // aqui responde `false` em vez de cair num `switch` que não o conhece.
+  if (ehOpDeData(check.op)) return false;
+
   const actual: string | number | null | string[] =
     check.field === "lead_stage" ? lead.lead_stage
     : check.field === "tag" ? lead.tags
@@ -515,11 +545,18 @@ function evaluateCheck(
   }
 }
 
-function evaluateCondition(
+/**
+ * Exportada para a revalidação imediatamente antes do envio
+ * (`condicao-antes-do-envio.ts`): a mesma função, nunca uma segunda régua —
+ * duas avaliações da mesma condição que pudessem divergir seriam pior que
+ * nenhuma revalidação.
+ */
+export function evaluateCondition(
   config: Extract<FlowNode, { type: "condition" }>["config"],
   lead: LeadFacts,
+  agora: Date,
 ): boolean {
-  const results = config.checks.map((check) => evaluateCheck(check, lead));
+  const results = config.checks.map((check) => evaluateCheck(check, lead, agora));
   return config.combinator === "and" ? results.every(Boolean) : results.some(Boolean);
 }
 
@@ -667,7 +704,7 @@ export function processNode(input: {
         // lista é a precedência — a mesma ordem que o usuário vê no formulário.
         // Duas regras verdadeiras não podem sortear caminho; `combinator` não
         // é consultado aqui, porque nesse modo a regra não vota, ela roteia.
-        const hitId = node.config.checks.find((c) => c.id !== undefined && evaluateCheck(c, lead))?.id;
+        const hitId = node.config.checks.find((c) => c.id !== undefined && evaluateCheck(c, lead, clock()))?.id;
         // Nenhuma regra passou -> o ramo obrigatório 'else', que na aresta é `always`.
         // `selectEdge` também cai nele quando o usuário deixou um ramo sem ligar:
         // sair pela saída de escape é ruim, ficar preso no nó é pior.
@@ -683,7 +720,7 @@ export function processNode(input: {
         }
         return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
       }
-      const result = evaluateCondition(node.config, lead);
+      const result = evaluateCondition(node.config, lead, clock());
       const edge = selectEdge(edges, node.id, { type: "cond_result", value: result });
       if (!edge) return { kind: "fail", error: `condition node "${node.id}" has no matching edge for result ${result}` };
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };

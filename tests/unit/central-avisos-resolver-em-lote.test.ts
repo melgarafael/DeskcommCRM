@@ -66,6 +66,11 @@ function adminFalso() {
           filtros.push([coluna, valor]);
           return cadeia;
         },
+        // O recorte de destinatário (0689) — os avisos daqui são todos da
+        // empresa; o efeito dele é medido em `central-aviso-com-destinatario`.
+        or() {
+          return cadeia;
+        },
         select() {
           if (erroDoBanco) return Promise.resolve({ data: null, error: erroDoBanco });
           const alvo = tabela.filter((linha) => filtros.every(([c, v]) => linha[c] === v));

@@ -264,9 +264,23 @@ export function ConditionForm({
                 // O valor NÃO sobrevive à troca de campo: "3" de passos virava a
                 // etapa "3", e o id de uma etapa virava uma etiqueta — regra com
                 // cara de pronta que nunca decide. Recomeça "a preencher".
-                const next = checks.map((c, i) =>
-                  i === idx ? { ...c, field: campo, op: operadorValidoPara(campo, c.op), value: "" } : c,
-                );
+                const next = checks.map((c, i) => {
+                  if (i !== idx) return c;
+                  const trocado = {
+                    ...c,
+                    field: campo,
+                    op: operadorValidoPara(campo, c.op),
+                    // A regra de data começa em 0 dias = "hoje ou já passou",
+                    // que é o caso que quase todo mundo quer; os outros campos
+                    // recomeçam "a preencher".
+                    value: campo === "lead_date" ? 0 : "",
+                  };
+                  // A chave só pertence à regra de data: deixá-la para trás
+                  // guardaria `fim_teste` numa regra de etiqueta, e o publish
+                  // recusaria uma regra que a tela mostra como pronta.
+                  if (campo !== "lead_date") delete (trocado as { key?: string }).key;
+                  return trocado;
+                });
                 setChecks(next);
                 commit({ checks: next });
               }}
@@ -312,6 +326,44 @@ export function ConditionForm({
                 falhou={etapasFalharam}
                 onEscolher={(stageId) => trocarValor(idx, stageId)}
               />
+            ) : CAMPOS_DA_CONDICAO[check.field].tipoDeValor === "dias" ? (
+              // DUAS entradas, porque a regra de data tem duas partes: QUAL
+              // campo do negócio guarda a data, e QUANTOS dias de prazo. Sem a
+              // primeira o publish recusa a regra (`campo_de_data_ausente`).
+              <div className="grid gap-2">
+                <Input
+                  aria-label={t("Campo do negócio com a data")}
+                  placeholder={t("Ex.: fim_teste")}
+                  value={String((check as { key?: string }).key ?? "")}
+                  onChange={(e) => {
+                    const next = checks.map((c, i) =>
+                      i === idx ? { ...c, key: e.target.value.trim() } : c,
+                    );
+                    setChecks(next);
+                    commit({ checks: next });
+                  }}
+                />
+                <Input
+                  aria-label={t("Prazo em dias")}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  placeholder={t("0 = inclui hoje")}
+                  value={String(check.value)}
+                  // Número no motor, como "passos dados": gravar o texto faria
+                  // o prazo nunca ser comparável e a regra responder sempre não.
+                  onChange={(e) => {
+                    const bruto = e.target.value.trim();
+                    trocarValor(idx, /^\d+$/.test(bruto) ? Number(bruto) : bruto);
+                  }}
+                />
+                <p className="text-xs text-text-muted">
+                  {t(
+                    "O campo é o mesmo nome usado na ficha do negócio. O prazo conta em dias de calendário no fuso da organização; 0 inclui o dia de hoje.",
+                  )}
+                </p>
+              </div>
             ) : CAMPOS_DA_CONDICAO[check.field].tipoDeValor === "numero" ? (
               <Input
                 aria-label={t("Valor")}

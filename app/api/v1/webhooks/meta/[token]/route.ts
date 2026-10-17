@@ -34,7 +34,12 @@ import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
 import { statusUpdate } from "@/lib/channels/meta/status-update";
-import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "@/lib/channels/meta/ingest";
+import {
+  ingestMetaAppContactSync,
+  ingestMetaEcho,
+  ingestMetaInbound,
+  ingestMetaReaction,
+} from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
 import {
@@ -150,6 +155,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
           reason: r.status === "failed" ? r.reason : undefined,
           external_id: e.externalId,
           phone_number_id: e.phoneNumberId,
+        });
+      }
+      continue;
+    }
+
+    if (e.kind === "reaction") {
+      // Reação (#2797): linha LIGADA à mensagem alvo, e sem carimbo nenhum —
+      // o carimbo abriria a janela de 24h, moveria a ordenação da Inbox e
+      // geraria prévia/contador por um gesto que não é mensagem. Quem grava é
+      // `ingestMetaReaction`, que também trata a remoção (emoji vazio) e o
+      // descarte de reação sem alvo.
+      const r = await ingestMetaReaction(admin, e, { organizationId: session.organizationId });
+      desfechos.push(`reacao:${r.status}`);
+      if (r.status === "failed" || r.status === "no_session") {
+        logger.error("[meta.ingest] reação não ingerida", {
+          request_id: requestId,
+          status: r.status,
+          reason: r.status === "failed" ? r.reason : undefined,
+          external_id: e.externalId,
         });
       }
       continue;

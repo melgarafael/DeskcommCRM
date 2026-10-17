@@ -22,6 +22,10 @@
  */
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import {
+  MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
+  campoDoGatilhoDeDataEhDoContato,
+} from "@/lib/automation/campo-do-gatilho-de-data";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import type { DepsDaOperacao } from "@/lib/operacao/entradas-automaticas";
 
@@ -82,10 +86,10 @@ export async function listarRegrasAutomaticas(
 async function regraDaOrg(
   deps: DepsDaOperacao,
   id: string,
-): Promise<{ id: string; name: string; is_active: boolean }> {
+): Promise<{ id: string; name: string; is_active: boolean; trigger_event: string; trigger_config: unknown }> {
   const { data, error } = await deps.supabase
     .from("automation_rules")
-    .select("id, name, is_active")
+    .select("id, name, is_active, trigger_event, trigger_config")
     .eq("id", id)
     .eq("organization_id", deps.organizationId)
     .maybeSingle();
@@ -93,7 +97,13 @@ async function regraDaOrg(
   if (!data) {
     throw new ApiError(404, "not_found", undefined, deps.requestId, "Essa regra não existe aqui.");
   }
-  return data as unknown as { id: string; name: string; is_active: boolean };
+  return data as unknown as {
+    id: string;
+    name: string;
+    is_active: boolean;
+    trigger_event: string;
+    trigger_config: unknown;
+  };
 }
 
 /** Liga ou desliga a regra. Ver o aviso do topo antes de afrouxar o risco disto. */
@@ -102,6 +112,23 @@ export async function definirRegraAtiva(
   input: { id: string; ativa: boolean },
 ): Promise<RegraVisivel> {
   const antes = await regraDaOrg(deps, input.id);
+
+  // A mesma recusa do PATCH da rota: religar por aqui não passa por ela, e uma
+  // regra antiga com gatilho por data num campo do contato voltaria muda.
+  if (input.ativa) {
+    const campoDeData = await campoDoGatilhoDeDataEhDoContato(
+      deps.supabase,
+      deps.organizationId,
+      antes.trigger_event,
+      antes.trigger_config,
+    );
+    if ("erro" in campoDeData) {
+      throw new ApiError(500, "internal_error", undefined, deps.requestId, campoDeData.erro);
+    }
+    if (campoDeData.doContato) {
+      throw new ApiError(422, "invalid_request", undefined, deps.requestId, MENSAGEM_CAMPO_DE_DATA_DO_CONTATO);
+    }
+  }
 
   const { data: updated, error } = await deps.supabase
     .from("automation_rules")

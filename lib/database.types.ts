@@ -1630,6 +1630,7 @@ export type Database = {
           legacy_recovery_code: string | null
           kind: string
           organization_id: string | null
+          para_user_id: string | null
           ref_id: string | null
           ref_kind: string | null
           resolved_at: string | null
@@ -1645,6 +1646,7 @@ export type Database = {
           legacy_recovery_code?: string | null
           kind: string
           organization_id?: string | null
+          para_user_id?: string | null
           ref_id?: string | null
           ref_kind?: string | null
           resolved_at?: string | null
@@ -1660,6 +1662,7 @@ export type Database = {
           legacy_recovery_code?: string | null
           kind?: string
           organization_id?: string | null
+          para_user_id?: string | null
           ref_id?: string | null
           ref_kind?: string | null
           resolved_at?: string | null

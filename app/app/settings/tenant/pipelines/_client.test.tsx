@@ -212,6 +212,41 @@ describe("o input de opções de um campo de lista fechada", () => {
   });
 });
 
+describe("lista pesquisável: editar as opções à mão depois de importar (#2521)", () => {
+  const FUNIL_DESTINO: PipelineRow = {
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "Viagens",
+    slug: "viagens",
+    vocabulary: null,
+    settings: { fields: [{ key: "destino", label: "Destino", type: "searchable_select" }] },
+  };
+
+  it("acrescentar uma opção não troca o `value` nem apaga os apelidos da que veio do CSV", async () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(<PipelinesClient pipelines={[FUNIL_DESTINO]} podeEditarConfig />);
+
+    fireEvent.change(screen.getByLabelText(/Importar opções \(CSV\) 1/i), {
+      target: { value: "maceio-al,Maceió (AL),maceio;mcz" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Importar opções do campo 1/i }));
+
+    // Rótulo exato: o botão "Importar opções do campo 1" também casaria com a regex.
+    const opcoes = screen.getByLabelText("Opções do campo 1") as HTMLInputElement;
+    expect(opcoes).toHaveValue("Maceió (AL)");
+    // Cada tecla reconstrói a lista a partir dos rótulos: é aqui que `maceio-al`
+    // virava `Maceió (AL)` e os apelidos sumiam.
+    digitar(opcoes, ", Recife");
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    const patch = vi.mocked(updatePipelineConfig).mock.calls[0]?.[1];
+    expect(patch?.fields?.[0]?.options).toEqual([
+      { value: "maceio-al", label: "Maceió (AL)", aliases: ["maceio", "mcz"] },
+      { value: "Recife", label: "Recife" },
+    ]);
+  });
+});
+
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -395,5 +430,55 @@ describe("escreveMostrarQuando — o item 'ainda não escolhi' não vira valor",
     );
     expect(meio).toEqual({ campo: "tipo", operador: "igual" });
     expect(normalizaMostrarQuando(meio)).toBeUndefined();
+  });
+});
+
+describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
+  // A ficha do contato lê as definições SÓ do funil padrão (/api/v1/pipelines/default).
+  // Marcar "Contato" num funil secundário tiraria o campo do card sem levá-lo à
+  // ficha: ele sumiria de toda tela. A régua é a da rota: `is_default`, senão o
+  // primeiro da lista (que a página entrega por `position`).
+  const campo = (escopo?: "contato") => ({
+    fields: [{ key: "cpf", label: "CPF", type: "text", ...(escopo ? { escopo } : {}) }],
+  });
+  const funil = (id: string, nome: string, extra: Partial<PipelineRow> = {}): PipelineRow => ({
+    id,
+    name: nome,
+    slug: nome.toLowerCase(),
+    vocabulary: null,
+    settings: campo(),
+    ...extra,
+  });
+  const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  it("sem nenhum funil marcado, o padrão é o primeiro — o seletor aparece só nele", () => {
+    render(<PipelinesClient pipelines={[funil(A, "Vendas"), funil(B, "Pos")]} podeEditarConfig />);
+    expect(screen.getAllByLabelText(/Escopo do campo 1/i)).toHaveLength(1);
+    expect(screen.getAllByText("Este campo pertence a:")).toHaveLength(1);
+  });
+
+  it("com is_default no segundo, o seletor sai do primeiro e vai para ele", () => {
+    const { container } = render(
+      <PipelinesClient
+        pipelines={[funil(A, "Vendas", { is_default: false }), funil(B, "Pos", { is_default: true })]}
+        podeEditarConfig
+      />,
+    );
+    const cards = container.querySelectorAll("h2");
+    expect(cards[0]?.textContent).toBe("Vendas");
+    expect(screen.getAllByLabelText(/Escopo do campo 1/i)).toHaveLength(1);
+    const cardDoPos = cards[1]?.closest("div.space-y-6");
+    expect(cardDoPos?.textContent).toContain("Este campo pertence a:");
+  });
+
+  it("num funil secundário, um campo JÁ marcado Contato mantém o seletor para desfazer", () => {
+    render(
+      <PipelinesClient
+        pipelines={[funil(A, "Vendas"), funil(B, "Pos", { settings: campo("contato") })]}
+        podeEditarConfig
+      />,
+    );
+    expect(screen.getAllByLabelText(/Escopo do campo 1/i)).toHaveLength(2);
   });
 });

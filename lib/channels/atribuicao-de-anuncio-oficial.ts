@@ -46,6 +46,7 @@ export function extrairAtribuicaoMeta(referral: unknown): AtribuicaoDeAnuncio | 
     titulo,
     corpo: str(r.body),
     sourceUrl,
+    miniatura: str(r.thumbnail_url) ?? str(r.image_url),
     bruto: r,
   };
 }

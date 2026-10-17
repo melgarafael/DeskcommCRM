@@ -45,7 +45,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { camposVisiveis } from "@/lib/schemas/mostrar-quando";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 
@@ -186,6 +186,11 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
   const visiveis = new Set(camposVisiveis(campos, valores).map((campo) => campo.key));
 
   for (const campo of campos) {
+    // Campo do CONTATO (issue #2791) não entra na régua do NEGÓCIO: ele nem
+    // aparece no card, e o valor mora em `contacts.custom_fields` — exigi-lo
+    // numa etapa do funil barraria o negócio por um campo que a tela do funil
+    // não mostra. Marcas de `obrigatorio_em` num campo `contato` são inertes.
+    if (escopoDoCampo(campo) !== "negocio") continue;
     if (!campoExigidoNoDestino(campo, entrada.destino)) continue;
     // O campo OCULTO pela condição não é cobrado (issue #2728): quem não o
     // vê na ficha não tem como preenchê-lo, e barar a escrita por um campo

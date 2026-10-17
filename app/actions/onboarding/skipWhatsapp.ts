@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { audit } from "@/lib/audit";
-import { requireOnboardingCtx, patchOnboardingState, OnboardingError } from "./_shared";
+import { requireOnboardingCtx, patchOnboardingState } from "./_shared";
 
 export async function skipWhatsapp(): Promise<void> {
   const ctx = await requireOnboardingCtx();
@@ -59,5 +59,3 @@ export async function markNuvemshopConfigured(): Promise<void> {
   });
   redirect("/onboarding");
 }
-
-export { OnboardingError };

@@ -788,6 +788,24 @@ describe("StagesSection — Escape descarta o rascunho do nome e da chance (#216
       { win_probability: 40 },
     ]);
   });
+
+  it("apagar a chance gravada manda null (#2999: só funciona se a leitura trouxer o valor)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    const etapas = ETAPAS.map((e) => (e.id === "e1" ? { ...e, win_probability: 40 } : e));
+    vi.mocked(apiClient.get).mockResolvedValue({ data: estado({}, etapas) });
+    montar();
+    const campo = await screen.findByTestId("probabilidade-e1");
+    expect(campo).toHaveValue(40);
+
+    await user.clear(campo);
+    await user.tab();
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]).toEqual([
+      `/api/v1/pipelines/${PIPE}/stages/e1`,
+      { win_probability: null },
+    ]);
+  });
 });
 
 describe("taxa histórica por etapa — a contagem ao lado do campo (#1753)", () => {

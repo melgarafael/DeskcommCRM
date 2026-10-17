@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
-import { sugestaoParaMostrar } from "@/lib/agent-engine/agent/sugestao-de-resposta";
+import { motivoDoVeto, sugestaoParaMostrar } from "@/lib/agent-engine/agent/sugestao-de-resposta";
 type Draft = {
   id: string;
   revision: string;
@@ -48,6 +48,9 @@ export function ReplyReviewPanel({
   // uma sugestão rejeitada ficava na tela para sempre, sem botão de fechar.
   const draft = sugestaoParaMostrar(query.data?.data.drafts);
   const body = draft ? (edits[draft.id] ?? draft.edited_body ?? draft.original_body ?? "") : "";
+  // A causa do veto, em linguagem de quem opera (issue #2975): sem código
+  // conhecido, a frase genérica de sempre continua sendo a verdade.
+  const motivo = draft ? motivoDoVeto(draft.error_code) : null;
   async function generate() {
     setNotice(null);
     setBusy(true);
@@ -182,7 +185,9 @@ export function ReplyReviewPanel({
           )}
           {draft.status === "failed" && (
             <p className="text-xs">
-              {t("Confira a configuração do agente e tente gerar novamente.")}
+              {motivo
+                ? t(motivo.texto)
+                : t("Confira a configuração do agente e tente gerar novamente.")}
             </p>
           )}
         </>

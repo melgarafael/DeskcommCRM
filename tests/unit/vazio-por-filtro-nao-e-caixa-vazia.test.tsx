@@ -31,6 +31,12 @@ vi.mock("@/hooks/ai/useAutomaticoAtivo", () => ({
 vi.mock("@/components/inbox/ConversationListItem", () => ({
   ConversationListItem: () => null,
 }));
+// A lista passou a ler o cliente de queries (#3006: a mutação de "exemplo para
+// a IA" mora nela, uma vez só). Sem um provider, `useQueryClient()` estoura
+// "No QueryClient set" antes de qualquer asserção deste arquivo.
+vi.mock("@/hooks/inbox/useMarcarComoExemplo", () => ({
+  useMarcarComoExemplo: () => ({ alternar: () => undefined, salvando: false }),
+}));
 
 const { ConversationList } = await import("@/components/inbox/ConversationList");
 

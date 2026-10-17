@@ -27,12 +27,13 @@
  * doença que esta rota cura é exatamente estados distintos colapsados num só.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { lerAnuncioDaMensagem, lerAnuncioDoContato, mesmoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { prospectEnrichmentSchema } from "@/lib/prospecting/schema";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { camposDoFunil, settingsDoEmbed } from "@/lib/leads/campos-do-funil";
+import { camposDoFunil, camposPorEscopo, settingsDoEmbed } from "@/lib/leads/campos-do-funil";
 import { motivosDoFunil } from "@/lib/leads/motivos-de-perda-do-funil";
 import { createClient } from "@/lib/supabase/server";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
@@ -92,7 +93,7 @@ export async function GET(
   }
 
   const { data: contactScope, error: scopeError } = await supabase.from("contacts")
-    .select("organization_id, is_anonymized").eq("id", contactId).maybeSingle();
+    .select("organization_id, is_anonymized, source_metadata").eq("id", contactId).maybeSingle();
   if (scopeError) return fail("internal_error", scopeError.message, 500, { requestId });
   if (!contactScope) return fail("not_found", "Contato não encontrado.", 404, { requestId });
   // Candidates are worker-only. Authorize the contact through RLS first, then
@@ -114,6 +115,7 @@ export async function GET(
       return { enrichment: null, enrichment_error: true };
     }
   })();
+  const anuncios = await anunciosDoContato(supabase, contactId, contactScope);
   const [leads, orders, activities, demandas, fatos, historico] = await Promise.all([
     supabase
       .from("crm_leads")
@@ -184,16 +186,55 @@ export async function GET(
       })),
       demandas: demandas.data ?? [],
       fatos: fatos.data ?? [], historico: historico.data ?? [],
+      ...anuncios,
     },
     { requestId },
   );
+}
+
+/**
+ * De qual anúncio a pessoa veio, para o painel ao lado da conversa.
+ *
+ * Dois anúncios, porque são duas perguntas: o de ORIGEM (primeiro toque, o que
+ * o contato guarda e nunca reescreve) e o MAIS RECENTE que ela clicou, quando é
+ * outro — numa loja com vários produtos, quem chegou pelo anúncio de um e
+ * voltou pelo de outro está falando do segundo.
+ *
+ * Auxiliar e por isso fora do `Promise.all` de cima: a leitura da mensagem que
+ * falha vira "sem anúncio mais recente", nunca um painel inteiro em erro. E
+ * contato anonimizado não mostra anúncio nenhum.
+ */
+async function anunciosDoContato(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  contactId: string,
+  contato: { organization_id: string; is_anonymized: boolean | null; source_metadata: unknown },
+) {
+  if (contato.is_anonymized) return { anuncio_de_origem: null, anuncio_mais_recente: null };
+  const origem = lerAnuncioDoContato(contato.source_metadata);
+  const { data, error } = await supabase
+    .from("messages")
+    .select("anuncio:metadata->anuncio, created_at")
+    .eq("contact_id", contactId)
+    .eq("organization_id", contato.organization_id)
+    .eq("direction", "inbound")
+    .not("metadata->anuncio", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const linha = error ? null : (data as { anuncio: unknown; created_at: string } | null);
+  const recente = linha ? lerAnuncioDaMensagem(linha.anuncio) : null;
+  const outro = recente && !(origem && mesmoAnuncio(origem, recente));
+  return {
+    anuncio_de_origem: origem,
+    anuncio_mais_recente: outro ? { ...recente, recebido_em: linha!.created_at } : null,
+  };
 }
 
 function comCamposDoFunil(row: Record<string, unknown>) {
   const { crm_pipelines, crm_stages, ...lead } = row;
   return {
     ...lead,
-    field_defs: camposDoFunil(settingsDoEmbed(crm_pipelines)),
+    field_defs: camposPorEscopo(camposDoFunil(settingsDoEmbed(crm_pipelines)), "negocio"),
     funil_nome: nomeDoEmbed(crm_pipelines),
     etapa_nome: nomeDoEmbed(crm_stages),
     etapas_do_funil: etapasDoEmbed(crm_pipelines),

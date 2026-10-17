@@ -74,6 +74,42 @@ export async function carregaEtapasCitadas(
   return { ok: true, etapas };
 }
 
+/**
+ * O funil que as etapas citadas pelo grafo compartilham — `null` quando o grafo
+ * não cita etapa nenhuma, ou cita etapas de funis DIFERENTES.
+ *
+ * ─── Por que isto existe ───────────────────────────────────────────────────
+ *
+ * `loadLeadFacts` escolhia a oportunidade do contato pelo `updated_at` mais
+ * recente, SEM filtrar funil. Com mais de um funil — e quatro é o normal numa
+ * operação montada: captação, vendas, onboarding, suporte — a condição
+ * `lead_stage` de um fluxo de vendas era avaliada contra o card de captação,
+ * porque foi ele que mudou por último.
+ *
+ * Medido na instalação do relato (15/10/2026): dos 143 contatos com
+ * oportunidade, 2 tinham card em mais de um funil, e nos DOIS o card que o
+ * motor escolheria era o de captação na etapa «Perdido (manter)» — um fluxo de
+ * vendas leria "perdido" e nunca casaria a condição. A regra automática que
+ * cria card em outro funil estava desligada no dia; religá-la multiplica o caso.
+ *
+ * `null` devolve o comportamento de antes de propósito: grafo que não fala de
+ * etapa não tem funil preferido, e grafo que fala de DOIS funis não tem como
+ * eleger um sem adivinhar. Nenhum fluxo publicado muda de resultado a menos
+ * que estivesse lendo o card errado.
+ *
+ * Aceita `unknown` e DEGRADA em vez de lançar. Dois motivos, e o segundo é
+ * prático: o método que alimenta isto é opcional no adaptador, e vários falsos
+ * de teste são `Proxy` que devolvem função para QUALQUER chave — ali o método
+ * "existe" e responde `null`. Lançar faria o motor morrer por causa da forma do
+ * falso; devolver `null` é o mesmo que "não sei de que funil é", que é
+ * exatamente o comportamento de antes.
+ */
+export function funilUnicoDasEtapas(funis: unknown): string | null {
+  if (!Array.isArray(funis)) return null;
+  const distintos = new Set(funis.filter((f): f is string => typeof f === "string" && f !== ""));
+  return distintos.size === 1 ? [...distintos][0]! : null;
+}
+
 export function nomesDasEtapas(etapas: ReadonlyMap<string, EtapaCitada>): NomesDeValor {
   return { etapa: (id) => etapas.get(id)?.nome ?? null };
 }

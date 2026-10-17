@@ -119,6 +119,13 @@ export type InboxKind =
   // pessoa da equipe. O aviso leva o nome e a data, nunca o endereço — é
   // gravado pela rota `PATCH /api/v1/admin/tenants/[id]/members/[userId]/email`.
   | 'email_de_login_trocado'
+  // (migration 0655, issue #2529) O prazo da tarefa pede gente ANTES de vencer
+  // (`task_due`) e pede quando ela vence sem conclusão (`task_overdue`). Dois
+  // kinds, e não um: quem lê a Central decide pelo rótulo se ainda dá tempo de
+  // concluir ou se já é reagendamento — e o cron que os emite decide qual dos
+  // dois dispara pela MESMA lista (`lib/tarefas/preferencia-de-lembrete.ts`).
+  | 'task_due'
+  | 'task_overdue'
   | 'other';
 
 export interface InboxItemRow {

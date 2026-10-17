@@ -31,7 +31,7 @@ import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
-import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
+import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import {
@@ -573,6 +573,12 @@ async function insertMessage(
   const { msg } = input;
   const temAnexo = msg.attachments.length > 0;
   const primeiro = msg.attachments[0];
+  // O anúncio DESTA mensagem, quando ela nasceu de um clique. O contato guarda
+  // só o primeiro (primeiro toque, em `efeitosDaEntrada`); sem este rastro, quem
+  // volta por OUTRO anúncio aparece na conversa como se viesse do antigo.
+  // Só na entrada: eco de saída não vem de clique de ninguém.
+  const anuncio =
+    msg.direction === "inbound" ? metadataDoAnuncio(extrairAtribuicaoMeta(msg.referral)) : {};
 
   const { data, error } = await admin
     .from("messages")
@@ -623,11 +629,14 @@ async function insertMessage(
       ...(temAnexo && primeiro?.url
         ? { media_url: primeiro.url, media_mime: mimeDoAnexo(primeiro.type) }
         : {}),
-      metadata: temAnexo
-        ? { provider_attachments: msg.attachments }
-        : msg.location
-          ? { location: msg.location }
-          : {},
+      metadata: {
+        ...(temAnexo
+          ? { provider_attachments: msg.attachments }
+          : msg.location
+            ? { location: msg.location }
+            : {}),
+        ...anuncio,
+      },
       ...(msg.sentAt ? { sent_at: msg.sentAt } : {}),
     })
     .select("id")

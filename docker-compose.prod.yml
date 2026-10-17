@@ -179,7 +179,11 @@ services:
       # de mensagem dos dois eventos em 22.815 mensagens reais, os que chegaram
       # SÓ por `message` foram ZERO, e 1.642 chegaram só por `message.any` (os
       # que saíram de nós, que `message` não cobre). Superconjunto estrito.
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
+      # `message.reaction` entra: é por onde chega o 👍/😐 do cliente (#2797).
+      # O WAHA trata reação como evento PRÓPRIO — sem assiná-lo, um gesto que o
+      # CRM recebe pela API oficial nunca chegaria pelo canal por QR. `message.any`
+      # NÃO o cobre (a reação não vem como mensagem).
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
       # Nome EXATO da doc do WAHA (events#hmac-authentication): WHATSAPP_HOOK_HMAC
       # não existe nele — sem o _KEY ele ignora e nunca assina.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}

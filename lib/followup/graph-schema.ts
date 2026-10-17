@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { PRIORIDADES_DA_TAREFA } from '@/lib/tarefas/tipos';
+import { ehOpDeData, OPS_DE_DATA } from './condicao-por-data';
 
 /**
  * Flow graph schema for the follow-up automation system.
@@ -332,18 +333,52 @@ export const editLeadTagConfigSchema = z.strictObject({
  * — identity lives on the rule itself, never in a parallel array that would
  * desync the moment the user reorders the rules.
  */
-export const conditionCheckSchema = z.strictObject({
-  id: declaredBranchIdSchema.optional(),
-  label: z.string().min(1).max(60).optional(),
-  field: z.enum([
-    'lead_stage',
-    'tag',
-    'steps_taken',
-    'last_outcome',
-  ]),
-  op: z.enum(['eq', 'neq', 'gte', 'lte', 'contains']),
-  value: z.union([z.string(), z.number()]),
-});
+export const conditionCheckSchema = z
+  .strictObject({
+    id: declaredBranchIdSchema.optional(),
+    label: z.string().min(1).max(60).optional(),
+    field: z.enum([
+      'lead_stage',
+      'tag',
+      'steps_taken',
+      'last_outcome',
+      // Data relativa sobre um campo personalizado do negócio — ver
+      // `condicao-por-data.ts`. É o que permite perguntar "o período de teste
+      // terminou?", que nenhum dos quatro campos acima alcança.
+      'lead_date',
+    ]),
+    op: z.enum(['eq', 'neq', 'gte', 'lte', 'contains', ...OPS_DE_DATA]),
+    value: z.union([z.string(), z.number()]),
+    /**
+     * A chave em `crm_leads.custom_fields` que a regra lê (ex.: `fim_teste`).
+     * Só `lead_date` usa, e para ele é OBRIGATÓRIA no PUBLISH: regra de data
+     * sem campo não tem o que comparar, e deixá-la passar daria uma condição
+     * que responde sempre `false` sem dizer por quê. Aqui, no rascunho, a
+     * chave VAZIA passa — ver o aviso logo abaixo.
+     */
+    key: z.string().max(60, 'Nome do campo muito longo: máximo de 60 caracteres.').optional(),
+  })
+  // ⚠️ `key` VAZIA PASSA AQUI, de propósito, e isso foi achado pela prova de
+  // tela. O rascunho é validado SÓ estruturalmente — a mesma razão pela qual
+  // `move_lead.stage_id` e `edit_lead_tag.tags` aceitam vazio: quem escolhe o
+  // campo de data ainda não digitou o nome dele, e o painel grava a cada
+  // tecla (`commit` → `safeParse`). Exigir a chave aqui fazia aparecer um erro
+  // no instante em que a pessoa escolhia «Data de um campo do negócio», antes
+  // de ela ter chance de preencher — e a regra nem era persistida, então o nó
+  // continuava com a regra ANTERIOR enquanto a tela mostrava a nova.
+  //
+  // Quem exige é o publish (`campo_de_data_ausente` em `validate-publish.ts`),
+  // como exige etapa de destino e tag. O mesmo vale para o prazo: limpar o
+  // campo para redigitar passa por um valor vazio, e o publish é que recusa
+  // (`check_value_not_number`).
+  .refine((c) => c.field !== 'lead_date' || ehOpDeData(c.op), {
+    message: `uma regra de data usa ${OPS_DE_DATA.join(' ou ')}`,
+    path: ['op'],
+  })
+  .refine((c) => c.field === 'lead_date' || !ehOpDeData(c.op), {
+    message: 'passou_ha e falta_para existem só para regra de data',
+    path: ['op'],
+  });
 
 export type ConditionCheck = z.infer<typeof conditionCheckSchema>;
 

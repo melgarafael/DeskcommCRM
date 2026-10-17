@@ -223,6 +223,77 @@ export const conditionSchema = z.object({
 });
 
 /**
+ * O `config` de `assign_owner` (#2041): uma pessoa fixa, a forma de sempre, ou
+ * um RODÍZIO, em que a posição na `fila` é a ordem e `pausado` tira a pessoa da
+ * vez sem tirá-la da fila.
+ *
+ * `modo` é o discriminador e é OPCIONAL na forma fixa: as regras gravadas antes
+ * do rodízio têm só `{ user_id }` e continuam válidas sem migração de dados. O
+ * union discriminado (e não `z.union`) mantém o caminho do erro no campo
+ * (`fila`, `user_id`), que é o que a tela usa para dizer o que corrigir.
+ */
+export const configDoAtribuirSchema = z.discriminatedUnion("modo", [
+  z.object({ modo: z.literal("fixo").optional(), user_id: z.string().uuid() }),
+  z.object({
+    modo: z.literal("rodizio"),
+    fila: z
+      .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+      .min(1)
+      .max(50)
+      .superRefine((fila, ctx) => {
+        const vistos = new Set<string>();
+        for (const [indice, pessoa] of fila.entries()) {
+          if (vistos.has(pessoa.user_id)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [indice, "user_id"],
+              message: "Cada pessoa entra uma vez só na fila do rodízio.",
+            });
+          }
+          vistos.add(pessoa.user_id);
+        }
+      }),
+  }),
+]);
+
+const ehRodizio = (acao: { type: string; config?: unknown }) =>
+  acao.type === "assign_owner" && (acao.config as { modo?: unknown } | undefined)?.modo === "rodizio";
+
+export const MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR =
+  "Uma automação tem no máximo um rodízio de atendentes, como ação direta: a vez de cada pessoa é contada pela automação.";
+
+/**
+ * Uma regra tem no máximo UM rodízio, e só como ação direta. A vez de cada
+ * pessoa é contada por regra (`fn_automation_rodizio_atribuir` lê a fila da
+ * própria regra), então um segundo rodízio na mesma regra — ou um escondido
+ * dentro de `ai_decide` — andaria pela fila do primeiro, calado.
+ */
+function umRodizioPorRegra(
+  acoes: ReadonlyArray<{ type: string; config?: unknown }>,
+  ctx: z.RefinementCtx,
+): void {
+  let rodizios = 0;
+  for (const [indice, acao] of acoes.entries()) {
+    if (acao.type === "ai_decide") {
+      const opcoes = (acao.config as { opcoes?: Array<{ acao?: { type: string; config?: unknown } }> }).opcoes ?? [];
+      for (const [k, opcao] of opcoes.entries()) {
+        if (opcao.acao && ehRodizio(opcao.acao)) {
+          ctx.addIssue({
+            code: "custom",
+            path: [indice, "config", "opcoes", k, "acao", "config", "modo"],
+            message: MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR,
+          });
+        }
+      }
+      continue;
+    }
+    if (ehRodizio(acao) && ++rodizios > 1) {
+      ctx.addIssue({ code: "custom", path: [indice, "config", "modo"], message: MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR });
+    }
+  }
+}
+
+/**
  * As ações FIXAS do motor — a fonte única de "que ações existem, e com que
  * config".
  *
@@ -304,7 +375,7 @@ const acoesFixas = [
       destino: z.enum(["card", "contato"]).optional(),
     }),
   }),
-  z.object({ type: z.literal("assign_owner"), config: z.object({ user_id: z.string().uuid() }) }),
+  z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
   z.object({
     type: z.literal("send_ai_message"),
     config: z.object({
@@ -481,7 +552,7 @@ export const createAutomationRuleSchema = z
     name: z.string().min(1).max(120),
     trigger_event: z.enum(TRIGGER_EVENTS),
     conditions: z.array(conditionSchema).max(10).default([]),
-    actions: z.array(actionSchema).min(1).max(10),
+    actions: z.array(actionSchema).min(1).max(10).superRefine(umRodizioPorRegra),
     /**
      * O que o gatilho precisa saber além do nome dele (#989).
      *
@@ -567,7 +638,7 @@ export const updateAutomationRuleSchema = z
     name: z.string().min(1).max(120).optional(),
     trigger_event: z.enum(TRIGGER_EVENTS).optional(),
     conditions: z.array(conditionSchema).max(10).optional(),
-    actions: z.array(actionSchema).min(1).max(10).optional(),
+    actions: z.array(actionSchema).min(1).max(10).superRefine(umRodizioPorRegra).optional(),
     trigger_config: z.record(z.string(), z.unknown()).optional(),
     is_active: z.boolean().optional(),
   })

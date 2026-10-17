@@ -192,3 +192,59 @@ describe("form source AI authorization configuration", () => {
     expect(createWebhookSourceSchema.parse({ name: "Synthetic", default_pipeline_id: UUID, default_stage_id: UUID2, authorize_ai_on_capture: true })).not.toHaveProperty("authorize_ai_on_capture");
   });
 });
+
+// #2041 — o rodízio na ação "Atribuir a um atendente". A forma antiga ({ user_id })
+// precisa continuar válida e sair do parse SEM `modo`: é o que está gravado nas
+// regras de quem já instalou.
+describe("assign_owner: atendente fixo ou rodízio", () => {
+  const regra = (actions: unknown[]) =>
+    createAutomationRuleSchema.safeParse({ name: "Rodízio", trigger_event: "lead.created", actions });
+  const rodizio = (fila: unknown[]) => ({ type: "assign_owner", config: { modo: "rodizio", fila } });
+
+  it("a forma de sempre ({ user_id }) segue válida e sem modo inventado", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID });
+  });
+
+  it("aceita a fila em ordem, com pausa", () => {
+    const fila = [{ user_id: UUID, pausado: false }, { user_id: UUID2, pausado: true }];
+    const r = regra([rodizio(fila)]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ modo: "rodizio", fila });
+  });
+
+  it("recusa fila vazia, pessoa repetida e modo desconhecido, apontando o campo", () => {
+    const vazia = regra([rodizio([])]);
+    expect(vazia.success).toBe(false);
+    expect(vazia.error?.issues[0]?.path).toEqual(["actions", 0, "config", "fila"]);
+
+    const repetida = regra([rodizio([{ user_id: UUID, pausado: false }, { user_id: UUID, pausado: true }])]);
+    expect(repetida.success).toBe(false);
+    expect(repetida.error?.issues[0]?.path).toEqual(["actions", 0, "config", "fila", 1, "user_id"]);
+
+    expect(regra([{ type: "assign_owner", config: { modo: "sorteio", user_id: UUID } }]).success).toBe(false);
+  });
+
+  it("uma regra tem no máximo um rodízio, e nunca dentro do ai_decide", () => {
+    const fila = [{ user_id: UUID, pausado: false }];
+    expect(regra([rodizio(fila), rodizio(fila)]).success).toBe(false);
+    expect(regra([rodizio(fila), { type: "assign_owner", config: { user_id: UUID2 } }]).success).toBe(true);
+    const dentroDaIa = regra([
+      {
+        type: "ai_decide",
+        config: {
+          custo_de_token: true,
+          instrucao: "Escolha",
+          opcoes: [
+            { id: "a", rotulo: "A", acao: rodizio(fila) },
+            { id: "b", rotulo: "B", acao: { type: "add_tag", config: { tags: ["x"] } } },
+          ],
+        },
+      },
+    ]);
+    expect(dentroDaIa.success).toBe(false);
+    const patch = updateAutomationRuleSchema.safeParse({ actions: [rodizio(fila), rodizio(fila)] });
+    expect(patch.success).toBe(false);
+  });
+});

@@ -1534,6 +1534,27 @@ real, não pela tela).
 
 **Evidência:** ainda não versionada. A spec grava as duas fotos (o card com o link gerado e o painel da empresa com o mesmo link) na pasta `evidence/cobranca-link-pelo-dono/` quando roda; elas entram aqui, citadas, depois da primeira rodada verde do `e2e`.
 
+## J46 — O anúncio que trouxe a pessoa aparece na conversa e no painel `[P1]` (2026-10-12)
+
+Contexto: pedido de uma operação real (loja com vários produtos anunciados). O
+contato já guardava o anúncio de primeiro toque (`source_metadata.ad_*`), e só
+a ficha do contato o mostrava; a mensagem nascida do clique não guardava de qual
+anúncio veio. A ingestão dos três transportes passa a gravar `metadata.anuncio`
+(título, texto, id, link e miniatura — nunca o clique nem o cru), a bolha dessa
+mensagem leva o cartão do anúncio (imagem, título, texto, «Ver anúncio») e o
+painel ao lado ganha «Anúncio de origem», com o anúncio mais recente quando a
+pessoa voltou por outro (`components/inbox/AnuncioCard.tsx`,
+`components/inbox/AnuncioDoContato.tsx`,
+`app/api/v1/contacts/[id]/crm-summary/route.ts`).
+
+Spec: `tests/e2e/inbox-anuncio-de-origem.spec.ts`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J46.1 | Abrir a conversa de quem veio de um anúncio e voltou por outro | cada bolha de clique tem o cartão do SEU anúncio, com a imagem carregada (`naturalWidth > 0`) e o link; o painel mostra o anúncio de origem e «Voltou por outro anúncio» com o segundo; os cartões cabem na coluna (`boundingBox`) | **PASS pela tela** — Evidência: `evidence/inbox-anuncio-de-origem/01-anuncio-na-bolha-e-no-painel.png` |
+| J46.2 | Mensagem recebida de um clique, nos três transportes (intermediado, oficial direto, QR) | `metadata.anuncio` com título, texto, id, link e miniatura; sem `ctwa_clid` nem payload cru; sem anúncio, a chave nem aparece; o primeiro toque do contato segue estampado como antes | **PASS (unit)** — `tests/unit/mensagem-guarda-o-seu-anuncio.test.ts` |
+| J46.3 | Endereço do anúncio que não é `https:` (`javascript:`, `data:`, `http:`) | não chega a `href` nem a `src` | **PASS (unit)** — `tests/unit/anuncio-visivel-na-inbox.test.tsx` |
+
 ## J47 — Ler a conversa selecionada no tema escuro `[P1]` (2026-10-12)
 
 Contexto: relatado por uma operação real, com a captura — no tema escuro, a linha

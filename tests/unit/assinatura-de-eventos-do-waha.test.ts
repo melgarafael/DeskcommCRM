@@ -35,7 +35,16 @@ import { describe, expect, it } from "vitest";
  * banco de todo clone, sem trazer uma única mensagem a mais.
  */
 
-const COMPOSES = ["docker-compose.prod.yml", "docker-compose.yml"];
+const COMPOSES = ["docker-compose.prod.yml", "docker-compose.yml", "docker-compose.local.yml"];
+
+/** A lista de eventos do `WHATSAPP_HOOK_EVENTS` de um compose, em ordem. */
+function eventosDe(arquivo: string): string[] {
+  const linha =
+    readFileSync(arquivo, "utf8")
+      .split("\n")
+      .find((l) => l.includes("WHATSAPP_HOOK_EVENTS")) ?? "";
+  return (linha.split('"')[1] ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+}
 
 describe("a assinatura de eventos do canal por QR", () => {
   for (const arquivo of COMPOSES) {
@@ -66,4 +75,39 @@ describe("a assinatura de eventos do canal por QR", () => {
       }
     });
   }
+});
+
+/**
+ * OS TRÊS COMPOSES CONTAM A MESMA HISTÓRIA — e a divergência fica vermelha.
+ *
+ * A reação chega pelo evento PRÓPRIO `message.reaction` (#2797): o WAHA não a
+ * entrega dentro de `message.any`, então o evento tem de estar assinado em TODO
+ * compose que sobe um WAHA. O PR #2815 acrescentou só no `docker-compose.yml`
+ * (o de desenvolvimento) e a instalação real — que sobe o `.prod.yml` pelo kit
+ * — continuava sem assinar: o código tratava a reação perfeitamente e o
+ * transporte nunca a enviava. É o mesmo elo silencioso de `message.edited`
+ * (345db9cae), e a divergência entre os arquivos é o que o esconde.
+ *
+ * O `.local.yml` entra aqui também: um clone que só rodasse o compose local
+ * teria o mesmo buraco, e descobri-lo de novo custaria o mesmo tanto.
+ */
+describe("os três composes assinam os mesmos eventos do canal por QR", () => {
+  it("todos assinam `message.reaction` (sem ele a reação nunca chega)", () => {
+    for (const arquivo of COMPOSES) {
+      expect(
+        eventosDe(arquivo),
+        `${arquivo} não assina message.reaction — a reação do cliente não chega`,
+      ).toContain("message.reaction");
+    }
+  });
+
+  it("a lista de eventos é IDÊNTICA nos três (a divergência fica vermelha)", () => {
+    const referencia = eventosDe(COMPOSES[0]!);
+    for (const arquivo of COMPOSES) {
+      expect(
+        eventosDe(arquivo),
+        `${arquivo} divergiu do ${COMPOSES[0]} — a instalação que sobe este compose não vê os mesmos eventos`,
+      ).toEqual(referencia);
+    }
+  });
 });

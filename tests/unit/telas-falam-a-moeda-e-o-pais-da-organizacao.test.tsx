@@ -22,7 +22,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PERFIS_DO_PAIS, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
 
 const orgAtiva = vi.hoisted(() => ({ atual: null as { currency?: string | null; country?: string | null } | null }));
-vi.mock("@/hooks/auth/AuthProvider", () => ({ useActiveOrg: () => orgAtiva.atual }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  useActiveOrg: () => orgAtiva.atual,
+  // O ContactTagsEditor (renderizado dentro do formulário de negócio desde o
+  // #2979) lê o papel da organização por aqui. Sem o export, o mock estoura e
+  // derruba os casos deste arquivo. `null` desliga só a opção de definir cor,
+  // que é o que o teste da moeda não exercita.
+  useAuth: () => ({ activeOrg: null }),
+}));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
 vi.mock("@/lib/api/client", () => ({ apiClient: api }));

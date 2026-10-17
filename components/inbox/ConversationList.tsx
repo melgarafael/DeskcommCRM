@@ -9,6 +9,7 @@ import { Check } from "@/lib/ui/icons";
 import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
 
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
+import { useMarcarComoExemplo } from "@/hooks/inbox/useMarcarComoExemplo";
 
 import { ConversationListItem } from "./ConversationListItem";
 import { EmptyInbox } from "@/components/empty";
@@ -42,6 +43,12 @@ interface Props {
   selecionados?: Set<string>;
   onAlternarSelecao?: (id: string) => void;
   onSelecionarTodosVisiveis?: () => void;
+  /**
+   * Quem a rota `usable-for-rag` aceita (atendente para cima, ou admin de
+   * plataforma fora do suporte). Sem isto a linha mostra o selo e não o
+   * controle: o leitor veria um botão que só devolve 403.
+   */
+  podeMarcarExemplo?: boolean;
 }
 
 export function ConversationList({
@@ -54,6 +61,7 @@ export function ConversationList({
   selecionados,
   onAlternarSelecao,
   onSelecionarTodosVisiveis,
+  podeMarcarExemplo = false,
 }: Props) {
   const t = useT();
   // Só mostra POR ONDE a conversa entrou quando há mais de um número. Com um
@@ -74,6 +82,15 @@ export function ConversationList({
   // Uma leitura por lista, compartilhada por todas as linhas (react-query dedupa
   // com o cabeçalho, que faz a mesma pergunta).
   const automaticoDaOrg = useAutomaticoAtivo();
+
+  /**
+   * O "exemplo para a IA" (#3006) mora AQUI, uma vez por lista — e não em cada
+   * linha. A mutação é a mesma para todas as linhas, e a linha é renderizada
+   * sem `QueryClientProvider` em vários testes do repo: um hook por linha
+   * derrubaria todos com "No QueryClient set". Mesma razão do `automaticoDaOrg`
+   * logo acima.
+   */
+  const { alternar: alternarExemplo } = useMarcarComoExemplo();
 
   // Sem filtro de cliente: TODO filtro é parâmetro do schema e roda no banco.
   // `clientFilter` era o mecanismo que permitia um filtro existir fora do contrato
@@ -244,6 +261,7 @@ export function ConversationList({
             automaticoDaOrg={automaticoDaOrg.data}
             selecionado={selecionados?.has(c.id)}
             onAlternarSelecao={onAlternarSelecao}
+            onAlternarExemplo={podeMarcarExemplo ? alternarExemplo : undefined}
           />
         ))}
         {q.hasNextPage && (

@@ -88,7 +88,7 @@ export function opcoes<K extends string>(mapa: Record<K, string>): ReadonlyArray
  * `stage_id` (um UUID, veja `engine.ts` → `loadLeadFacts`), então um campo de
  * texto livre pede ao dono da clínica que digite um identificador interno.
  */
-export type TipoDeValor = "etapa" | "etiqueta" | "numero" | "texto";
+export type TipoDeValor = "etapa" | "etiqueta" | "numero" | "texto" | "dias";
 
 export interface CampoDeCondicao {
   rotulo: string;
@@ -100,6 +100,10 @@ export const CAMPOS_DA_CONDICAO: Record<CampoDaCondicao, CampoDeCondicao> = {
   tag: { rotulo: "Etiqueta do contato", tipoDeValor: "etiqueta" },
   steps_taken: { rotulo: "Passos já dados no fluxo", tipoDeValor: "numero" },
   last_outcome: { rotulo: "Desfecho do passo anterior", tipoDeValor: "texto" },
+  // O VALOR desta regra é um PRAZO EM DIAS, não uma data: a data mora no campo
+  // do negócio (`key`), e o que a tela pede é "quantos dias". Ver
+  // `condicao-por-data.ts`.
+  lead_date: { rotulo: "Data de um campo do negócio", tipoDeValor: "dias" },
 };
 
 // ─── condição: o par (campo, operador) ───────────────────────────────────
@@ -160,6 +164,18 @@ function passos(valor: string | number): string {
  * A frase de cada par. Ordem das chaves = ordem no seletor (o mais usado
  * primeiro), então mexer na ordem aqui mexe na tela.
  */
+const AVISO_DATA_PEDE_PRAZO =
+  "A regra de data compara um PRAZO EM DIAS, não um valor: use «já passou há» ou «falta».";
+
+/** "1 dia" / "3 dias" — a frase da regra de data é lida por quem monta o fluxo. */
+function diasEmPalavras(valor: string | number): string {
+  const n = Number(valor);
+  return Number.isFinite(n) && Math.abs(n) === 1 ? `${valor} dia` : `${valor} dias`;
+}
+
+const AVISO_SO_DATA =
+  "«já passou há» e «falta» existem só para a regra de data de um campo do negócio.";
+
 const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparador>> = {
   lead_stage: {
     eq: {
@@ -190,6 +206,18 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
       frase: (v) => `A etapa do lead é no máximo ${aspas(v)}`,
       oferecido: false,
       aviso: AVISO_SO_NUMERO,
+    },
+    passou_ha: {
+      rotulo: "já passou há",
+      frase: () => "A etapa do lead — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
+    falta_para: {
+      rotulo: "falta",
+      frase: () => "A etapa do lead — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
     },
   },
   tag: {
@@ -223,6 +251,18 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
       oferecido: false,
       aviso: AVISO_SO_NUMERO,
     },
+    passou_ha: {
+      rotulo: "já passou há",
+      frase: () => "A etiqueta do contato — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
+    falta_para: {
+      rotulo: "falta",
+      frase: () => "A etiqueta do contato — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
   },
   steps_taken: {
     gte: {
@@ -250,6 +290,18 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
       frase: (v) => `O número de passos contém ${aspas(v)}`,
       oferecido: false,
       aviso: AVISO_SO_TEXTO,
+    },
+    passou_ha: {
+      rotulo: "já passou há",
+      frase: () => "Os passos dados — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
+    falta_para: {
+      rotulo: "falta",
+      frase: () => "Os passos dados — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
     },
   },
   last_outcome: {
@@ -279,6 +331,66 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
       frase: (v) => `O desfecho do passo anterior é no máximo ${aspas(v)}`,
       oferecido: false,
       aviso: AVISO_SO_NUMERO,
+    },
+    passou_ha: {
+      rotulo: "já passou há",
+      frase: () => "O desfecho do passo anterior — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
+    falta_para: {
+      rotulo: "falta",
+      frase: () => "O desfecho do passo anterior — regra de data aplicada a campo que não é data",
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
+  },
+  lead_date: {
+    passou_ha: {
+      rotulo: "já passou há",
+      frase: (v) =>
+        Number(v) === 0
+          ? "A data do campo é hoje ou já passou"
+          : `A data do campo já passou há ${diasEmPalavras(v)} ou mais`,
+      oferecido: true,
+    },
+    falta_para: {
+      rotulo: "falta",
+      frase: (v) =>
+        Number(v) === 0
+          ? "A data do campo é hoje ou ainda está por vir"
+          : `Falta ${diasEmPalavras(v)} ou mais para a data do campo`,
+      oferecido: true,
+    },
+    eq: {
+      rotulo: "é igual a",
+      frase: (v) => `A data do campo é igual a ${aspas(v)}`,
+      oferecido: false,
+      aviso: AVISO_DATA_PEDE_PRAZO,
+    },
+    neq: {
+      rotulo: "é diferente de",
+      frase: (v) => `A data do campo é diferente de ${aspas(v)}`,
+      oferecido: false,
+      aviso: AVISO_DATA_PEDE_PRAZO,
+    },
+    contains: {
+      rotulo: "contém",
+      frase: (v) => `A data do campo contém ${aspas(v)}`,
+      oferecido: false,
+      aviso: AVISO_DATA_PEDE_PRAZO,
+    },
+    gte: {
+      rotulo: "é pelo menos",
+      frase: (v) => `A data do campo é pelo menos ${aspas(v)}`,
+      oferecido: false,
+      aviso: AVISO_DATA_PEDE_PRAZO,
+    },
+    lte: {
+      rotulo: "é no máximo",
+      frase: (v) => `A data do campo é no máximo ${aspas(v)}`,
+      oferecido: false,
+      aviso: AVISO_DATA_PEDE_PRAZO,
     },
   },
 };

@@ -32,7 +32,11 @@ services:
       # container seria o próprio WAHA e o webhook nunca chegaria. Porta 3002:
       # a stack da fusão é isolada do checkout principal (3001 é do gov-loop).
       WHATSAPP_HOOK_URL: ${WAHA_HOOK_BASE_URL:-http://host.docker.internal:3003}/api/v1/webhooks/waha
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
+      # `message.reaction` (#2797): sem ele na lista o WAHA NUNCA entrega o gesto,
+      # e o CRM fica sem a resposta mais comum do WhatsApp. O roteador tem o ramo
+      # próprio (`handleReaction`, lib/waha/ingest.ts): a reação vira linha
+      # `type='reaction'` ligada ao alvo, e não carimba a conversa como mensagem.
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
       # Nome EXATO da doc do WAHA (events#hmac-authentication): sem o _KEY ele ignora.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}

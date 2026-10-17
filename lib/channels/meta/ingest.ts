@@ -25,7 +25,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
-import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
+import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import {
   ehNumeroInternoDeAviso,
   registrarMensagemIgnorada,
@@ -37,6 +37,7 @@ import { extrairAtribuicaoMeta } from "../atribuicao-de-anuncio-oficial";
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
 import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { marcarConversaComMensagem } from "../marcar-conversa";
+import { gravarReacaoDeMensagem } from "../reacao";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
 import { nomeDeArquivoLimpo } from "@/lib/messaging/media/nome-de-arquivo";
@@ -45,6 +46,7 @@ import type {
   AppContactSyncEvent,
   InboundMessageEvent,
   OutboundEchoEvent,
+  ReactionEvent,
 } from "./webhook";
 
 type Admin = SupabaseClient;
@@ -289,6 +291,9 @@ export async function ingestMetaInbound(
         // `metadata` aqui, então nada já gravado é sobrescrito.
         ...(nomeDoArquivo ? { media_filename: nomeDoArquivo } : {}),
         ...(e.sharedContact ? { shared_contact: e.sharedContact } : {}),
+        // O anúncio DESTA mensagem, não só o primeiro do contato: é o que mostra
+        // na conversa que a pessoa voltou por outro anúncio. Ver `metadataDoAnuncio`.
+        ...metadataDoAnuncio(atribuicao),
       },
     })
     .select("id")
@@ -601,4 +606,96 @@ export async function ingestMetaAppContactSync(
   }
 
   return { status: "synced", contactId: contactId as string };
+}
+
+/**
+ * A REAÇÃO recebida pelo canal oficial (#2797, fatias 1 e 2).
+ *
+ * O evento nasce no normalizador (`parseMetaWebhook`, `kind: "reaction"`) e o
+ * que este caminho FAZ é tudo o que a issue pede — e nada além:
+ *
+ *   - grava linha `type='reaction'` LIGADA ao alvo (`reply_to_message_id` +
+ *     `metadata.reaction = { emoji, target_external_id, author }`);
+ *   - emoji vazio (o usuário REMOVEU a reação) apaga a anterior do MESMO autor
+ *     sobre o MESMO alvo;
+ *   - sem alvo no CRM: descartada com log — nunca linha cega;
+ *   - NÃO carimba a conversa: não há `marcarConversaComMensagem` aqui, então a
+ *     reação não move `last_message_at`, não abre a janela de 24h, não gera
+ *     prévia nem contador de não lidas. Ela não é mensagem.
+ *
+ * O que também NÃO roda, de propósito: `aplicarEfeitosPosEntrada`. Opt-out,
+ * nascimento de lead e despacho do agente são efeitos de mensagem QUE CHEGA, e
+ * um 👍 não pede resposta — "não acordar a IA por reação" é a fatia seguinte da
+ * mesma issue, e o caminho dela já começa aqui sem reescrita.
+ */
+export async function ingestMetaReaction(
+  admin: Admin,
+  e: ReactionEvent,
+  dono: ChannelTenantScope & {
+    /** Ver `ingestMetaInbound`: sessão já resolvida pelo token (canal parceiro). */
+    channelSessionId?: string;
+  },
+): Promise<IngestOutcome> {
+  let sessao: { id: string; organization_id: string } | null;
+  if (dono.channelSessionId) {
+    sessao = { id: dono.channelSessionId, organization_id: dono.organizationId };
+  } else {
+    try {
+      sessao = await sessionByPhoneNumberId(admin, dono.organizationId, e.phoneNumberId);
+    } catch (err) {
+      return { status: "failed", reason: err instanceof Error ? err.message : "sessao_do_numero" };
+    }
+  }
+  // Número que não administramos: 200 e nada gravado, como nas outras duas.
+  if (!sessao) return { status: "no_session" };
+  const orgId = sessao.organization_id;
+
+  // Mesma guarda da recebida e do eco: do número interno de avisos não nasce
+  // linha nenhuma, nem a de um gesto.
+  if (
+    await ehNumeroInternoDeAviso(admin, orgId, {
+      kind: "phone",
+      phone: `+${e.from.replace(/\D/g, "")}`,
+      lid: null,
+    })
+  ) {
+    await registrarMensagemIgnorada(admin, orgId, { direction: "inbound", sessionId: sessao.id });
+    return { status: "ignored", reason: "numero_interno_de_aviso" };
+  }
+
+  const desfecho = await gravarReacaoDeMensagem(admin, {
+    organizationId: orgId,
+    channelSessionId: sessao.id,
+    externalId: e.externalId,
+    alvoExternalId: e.targetExternalId,
+    // O `wamid` é canônico dos dois lados (o envio e o recebimento gravam o
+    // MESMO id inteiro), então não há segunda forma a tentar nem sufixo.
+    candidatosDoAlvo: [e.targetExternalId],
+    sufixoDoAlvo: null,
+    emoji: e.emoji,
+    // A grafia do autor neste canal é o `wa_id`. Ela só precisa ser estável
+    // DENTRO do canal: o apagão da remoção corre na mesma organização e no
+    // mesmo alvo, que é onde só o autor separa.
+    author: e.from,
+    // A Cloud API não entrega reação NOSSA: o gesto que chega é do contato.
+    direction: "inbound",
+    sentAt: e.sentAt.toISOString(),
+    // Sem `sent_via`: o canal oficial não tem esse carimbo (idem a recebida).
+    sentVia: null,
+    canal: "meta",
+  });
+
+  if (desfecho.status === "falha") return { status: "failed", reason: desfecho.motivo };
+  // O descarte com log já saiu de `gravarReacaoDeMensagem`; aqui fica o
+  // desfecho contável que a rota escreve no corpo da resposta.
+  if (desfecho.status === "sem_alvo") return { status: "ignored", reason: "reacao_sem_alvo" };
+  if (desfecho.status === "duplicada") return { status: "duplicate" };
+  // `gravada` e `removida` são a mesma entrega vista pelos dois lados. A
+  // remoção apagou uma linha, então não há `messageId` a reportar — `""` é o
+  // valor que o chamador já trata como "sem mensagem" nos outros caminhos.
+  return {
+    status: "ingested",
+    messageId: desfecho.status === "gravada" ? (desfecho.messageId ?? "") : "",
+    conversationId: desfecho.conversationId,
+  };
 }

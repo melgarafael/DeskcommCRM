@@ -1170,6 +1170,7 @@ jobs:
         pausa-de-reentrada.spec.ts
         funil-arquivado-volta-pela-tela.spec.ts
         inbox-selecionada-no-escuro.spec.ts
+        inbox-anuncio-de-origem.spec.ts
         followup-builder.spec.ts
         followup-journey.spec.ts
         followup-dossie.spec.ts

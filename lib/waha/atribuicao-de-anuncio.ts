@@ -59,6 +59,7 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
     titulo,
     corpo: str(ad.body),
     sourceUrl,
+    miniatura: str(ad.thumbnailUrl) ?? str(ad.thumbnail_url),
     bruto: ad,
   };
 }

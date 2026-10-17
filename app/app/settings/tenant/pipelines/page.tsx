@@ -36,7 +36,7 @@ export default async function PipelinesSettingsPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("crm_pipelines")
-    .select("id, name, slug, vocabulary, settings")
+    .select("id, name, slug, vocabulary, settings, is_default")
     .eq("organization_id", activeOrg.orgId)
     .eq("is_archived", false)
     .order("position");

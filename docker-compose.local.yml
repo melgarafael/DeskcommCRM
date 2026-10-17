@@ -107,7 +107,10 @@ services:
       # enviada pelo app em X-Api-Key.
       WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512}"
       WHATSAPP_HOOK_URL: http://host.docker.internal:${APP_PORT:-3000}/api/v1/webhooks/waha
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
+      # `message.reaction` entra: é por onde chega o 👍/😐 do cliente (#2797).
+      # Mantido IGUAL ao `docker-compose.prod.yml` — o consumidor local de quem
+      # desenvolve não pode ver menos eventos que a instalação real.
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
       # Nome EXATO da doc do WAHA (events#hmac-authentication): sem o _KEY ele ignora.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
       WHATSAPP_DEFAULT_ENGINE: NOWEB

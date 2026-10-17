@@ -430,6 +430,19 @@ export function descreveEvento(
         ...motor,
       };
     }
+    case "condition_revalidated": {
+      // O operador tem de ler ISTO e não "o fluxo parou": o envio não saiu
+      // porque a condição que ele desenhou deixou de valer enquanto a espera
+      // corria. Sem a linha, o passo lê como defeito onde houve obediência.
+      return {
+        titulo: "Não enviou: a condição deixou de valer na hora do envio",
+        detalhe:
+          p.esperado === true
+            ? "o caminho tinha sido o «Sim» e a regra agora responde «Não»"
+            : "o caminho tinha sido o «Não» e a regra agora responde «Sim»",
+        ...motor,
+      };
+    }
     case "turn_discarded": {
       // Duas origens, um event_type: a suspensão da CONTA (migration 0501) e o
       // descarte durante a PAUSA da INSCRIÇÃO (#2262). O motivo decide a frase

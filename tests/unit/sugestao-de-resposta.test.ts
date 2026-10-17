@@ -4,7 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  CODIGOS_DE_VETO_CONHECIDOS,
   motivoDaFalha,
+  motivoDoVeto,
   sugestaoParaMostrar,
 } from "@/lib/agent-engine/agent/sugestao-de-resposta";
 
@@ -139,5 +141,51 @@ describe("a rota não volta a engolir a causa", () => {
     // Guarda de vacuidade: se a expressão parasse de casar com qualquer coisa,
     // o caso de cima ficaria verde para sempre, inclusive com o defeito de volta.
     expect(/catch\s*\{/.test("try { x() } catch { }")).toBe(true);
+  });
+});
+
+/**
+ * A TERCEIRA REGRA (issue #2975): o CÓDIGO do veto vira a frase de quem opera.
+ *
+ * O rascunho guarda só o código do primeiro impedimento
+ * (`ai_reply_drafts.error_code`), e o painel mostrava a MESMA frase genérica
+ * para todos os vetos — de "o contato está descadastrado" a "a janela de 24h
+ * fechou". Esta suíte varre o CATÁLOGO inteiro (exportado pelo módulo, para que
+ * um `case` novo sem par aqui deixe de ser silencioso) e cobra o lado oposto:
+ * código desconhecido ou ausente devolve `null`, que é o que mantém o texto
+ * genérico na tela.
+ */
+describe("o código do veto vira a causa em linguagem de quem opera", () => {
+  it("todo código conhecido tem causa própria, com ação avaliada", () => {
+    for (const codigo of CODIGOS_DE_VETO_CONHECIDOS) {
+      const motivo = motivoDoVeto(codigo);
+      expect(motivo, `sem tradução para ${codigo}`).not.toBeNull();
+      expect(motivo!.codigo).toBe(codigo);
+      expect(motivo!.texto.length, `texto curto demais em ${codigo}`).toBeGreaterThan(30);
+      expect(typeof motivo!.acionavel).toBe("boolean");
+    }
+  });
+
+  it("as causas DEFINITIVAS (opt-out, LGPD) não fingem ter ação local", () => {
+    expect(motivoDoVeto("contato_bloqueado")!.acionavel).toBe(false);
+    expect(motivoDoVeto("lgpd_anonymized")!.acionavel).toBe(false);
+  });
+
+  it("generation_failed abre pela falha de geração e não culpa provedor nem chave", () => {
+    // Quem grava `generation_failed` é o catch de `reply-drafts.ts`: a prévia ou o
+    // LLM lançou, ou `getLeadContext` não montou o contexto. Contato bloqueado ou
+    // anonimizado é recusado ANTES, por `fn_reply_begin` (rota 422
+    // `reply_context_unavailable`, sem rascunho gravado) — por isso a frase não o
+    // nomeia como causa. E não manda conferir a chave: o motivo real fica no log.
+    const texto = motivoDoVeto("generation_failed")!.texto;
+    expect(texto).not.toMatch(/provedor|chave|tempo esgotado/i);
+    expect(texto).toMatch(/^A geração da sugestão falhou/);
+    expect(texto).toMatch(/contexto da conversa/);
+  });
+
+  it("CONTROLE: código desconhecido e ausente devolvem null — o genérico fica", () => {
+    expect(motivoDoVeto("veto_que_ainda_nao_existe")).toBeNull();
+    expect(motivoDoVeto(null)).toBeNull();
+    expect(motivoDoVeto(undefined)).toBeNull();
   });
 });

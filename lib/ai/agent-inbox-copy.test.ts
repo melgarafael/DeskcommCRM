@@ -6,6 +6,7 @@ import {
   SEVERITY_LABEL,
   type PromessaSemDono,
 } from "./agent-inbox-copy";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 
 describe("agent-inbox-copy — rótulos leigos dos avisos do runtime", () => {
   it("traduz kinds conhecidos do schema (agent_inbox_items.kind)", () => {
@@ -50,6 +51,29 @@ describe("agent-inbox-copy — rótulos leigos dos avisos do runtime", () => {
     // uma escolha. O teste falha se alguém remover o rótulo.
     expect(kindLabel("next_action_ambiguous")).not.toBe("Aviso do assistente");
     expect(kindLabel("next_action_ambiguous")).toContain("escolha");
+  });
+
+  /**
+   * O rótulo é o título do aviso na Central, e lá ele passa por `t()`
+   * (`kindLabel(item.kind, t)` em AgentInboxList). Sem entrada `es` no
+   * dicionário, quem usa a interface em espanhol lê o título em português — e
+   * o guarda das telas não vê, porque o texto mora num mapa fora do JSX.
+   * Os dois avisos de tarefa (#2529) nasceram assim. A lista abaixo é o que já
+   * estava sem `es` antes desta cerca: ela só encolhe.
+   */
+  it("todo rótulo tem tradução em espanhol", () => {
+    const AINDA_SEM_ES = new Set([
+      "appointment_outcome_required",
+      "appointment_recovery_review",
+      "proposal_expired_notice",
+      "proposal_acceptance_rate_drop",
+      "proposal_promised_not_created",
+    ]);
+    const semEs = Object.entries(KIND_LABEL)
+      .filter(([, rotulo]) => !DICIONARIO[rotulo]?.es)
+      .map(([k]) => k);
+    expect(semEs.filter((k) => !AINDA_SEM_ES.has(k)), "kind novo sem `es` no dicionário").toEqual([]);
+    expect([...AINDA_SEM_ES].filter((k) => !semEs.includes(k)), "ganhou `es`: tire da lista").toEqual([]);
   });
 
   it("severidades têm rótulo leigo", () => {

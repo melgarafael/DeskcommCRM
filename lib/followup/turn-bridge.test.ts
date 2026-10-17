@@ -404,3 +404,108 @@ it("adapter PG preserva provenance e leitor de inbound filtra a conversa solicit
   expect(sql).toMatch(/conversation_id\s*=\s*\$3/);
   expect(values[2]).toBe("conv-1");
 });
+
+/**
+ * A CHAVE DO ADIAMENTO DISTINGUE A DECISÃO, NÃO O JOB.
+ *
+ * `fn_followup_inline_settle` faz `update ... where id=p_id`: o job re-agendado
+ * é a MESMA linha, com o MESMO id. Enquanto a chave era
+ * `${nó}:${passo}:adiado:${jobId}`, dois adiamentos do mesmo job no mesmo passo
+ * colidiam — e a colisão não custava só uma linha no dossiê:
+ * `fn_followup_apply_step` roda o patch ANTES do insert do evento, então o
+ * 23505 abortava a função e DESFAZIA o `next_eval_at`; o caminho sem
+ * `applyEnrollmentStep` o perdia por outra via (`if (!inserted) return` antes do
+ * `updateEnrollment`).
+ *
+ * A sequência real é janela → ritmo: a janela de disparo adia até a abertura e,
+ * na abertura, o teto diário do número adia até a virada do dia.
+ */
+describe("adiamento: janela e depois ritmo, no MESMO job", () => {
+  const ABERTURA = new Date("2026-07-23T11:00:00.000Z");
+  const VIRADA = new Date("2026-07-24T03:00:00.000Z");
+
+  it("os dois motivos ficam registrados, com chaves distintas", async () => {
+    const { db, insertEnrollmentEvent } = fakeDb({ enrollment: enrollment(), graph: ACTION_GRAPH });
+
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: ABERTURA, reason: "outside_window" }, clock, "job-1",
+    );
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: VIRADA, reason: "daily_cap" }, clock, "job-1",
+    );
+
+    const chamadas = insertEnrollmentEvent.mock.calls.map((c) => c[0] as { idempotency_key: string; payload: Record<string, unknown> });
+    expect(chamadas).toHaveLength(2);
+    expect(chamadas[0]!.idempotency_key).not.toBe(chamadas[1]!.idempotency_key);
+    expect(chamadas[0]!.payload.reason).toBe("outside_window");
+    expect(chamadas[1]!.payload.reason).toBe("daily_cap");
+  });
+
+  it("`next_eval_at` AVANÇA no segundo adiamento — é o que a colisão desfazia", async () => {
+    const { db, updateEnrollment } = fakeDb({ enrollment: enrollment(), graph: ACTION_GRAPH });
+
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: ABERTURA, reason: "outside_window" }, clock, "job-1",
+    );
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: VIRADA, reason: "daily_cap" }, clock, "job-1",
+    );
+
+    expect(updateEnrollment).toHaveBeenCalledTimes(2);
+    expect(updateEnrollment.mock.calls[0]![2]).toMatchObject({ next_eval_at: ABERTURA.toISOString() });
+    expect(updateEnrollment.mock.calls[1]![2]).toMatchObject({ next_eval_at: VIRADA.toISOString() });
+  });
+
+  it("nenhum dos dois faz o passo avançar nem o envio acontecer", async () => {
+    const { db, updateEnrollment } = fakeDb({ enrollment: enrollment(), graph: ACTION_GRAPH });
+
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: ABERTURA, reason: "outside_window" }, clock, "job-1",
+    );
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: VIRADA, reason: "daily_cap" }, clock, "job-1",
+    );
+
+    for (const chamada of updateEnrollment.mock.calls) {
+      const patch = chamada[2] as Record<string, unknown>;
+      // Estacionar não é avançar: o passo continua devendo a conclusão.
+      expect(patch).not.toHaveProperty("steps_taken");
+      expect(patch).not.toHaveProperty("current_node_id");
+      expect(patch).not.toHaveProperty("status");
+      expect(patch.claimed_until).toBeNull();
+    }
+  });
+
+  it("REPLAY da MESMA decisão continua no-op — a correção não virou chave única por chamada", async () => {
+    const { db, updateEnrollment, insertEnrollmentEvent } = fakeDb({ enrollment: enrollment(), graph: ACTION_GRAPH });
+    const mesma = { kind: "deferred", until: ABERTURA, reason: "outside_window" } as const;
+
+    await completeTurnForEnrollment(db, "org-1", "enr-1", "a1", mesma, clock, "job-1");
+    await completeTurnForEnrollment(db, "org-1", "enr-1", "a1", mesma, clock, "job-1");
+
+    expect(insertEnrollmentEvent).toHaveBeenCalledTimes(2);
+    // O segundo insert foi recusado pela chave repetida, e o patch NÃO reaplicou.
+    expect(updateEnrollment).toHaveBeenCalledTimes(1);
+  });
+
+  it("jobs DIFERENTES com o mesmo motivo seguem distintos", async () => {
+    const { db, updateEnrollment } = fakeDb({ enrollment: enrollment(), graph: ACTION_GRAPH });
+
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: ABERTURA, reason: "outside_window" }, clock, "job-1",
+    );
+    await completeTurnForEnrollment(
+      db, "org-1", "enr-1", "a1",
+      { kind: "deferred", until: VIRADA, reason: "outside_window" }, clock, "job-2",
+    );
+
+    expect(updateEnrollment).toHaveBeenCalledTimes(2);
+  });
+});

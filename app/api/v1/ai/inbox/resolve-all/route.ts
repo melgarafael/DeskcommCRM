@@ -32,6 +32,7 @@ import { randomUUID } from "node:crypto";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { avisoVisivelPara } from "@/lib/ai/inbox-destino";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -62,6 +63,8 @@ export async function POST(): Promise<Response> {
     .from("agent_inbox_items")
     .update({ status: "resolved" })
     .eq("organization_id", org.orgId)
+    // Só o que ESTA pessoa vê: o aviso pessoal do colega (0689) não é dela para resolver.
+    .or(avisoVisivelPara(authUser.id))
     .eq("status", "open")
     .select("id");
   if (error) {

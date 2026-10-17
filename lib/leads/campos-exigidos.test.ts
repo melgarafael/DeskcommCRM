@@ -395,3 +395,47 @@ describe("settingsDoFunil — fail-open documentado", () => {
     void vi;
   });
 });
+
+describe("campo de escopo contato não entra na régua do negócio (issue #2791)", () => {
+  it("um campo do contato com obrigatorio_em NÃO barra o movimento do negócio", () => {
+    const settings = {
+      fields: [
+        {
+          key: "cor_favorita",
+          label: "Cor favorita",
+          type: "text",
+          escopo: "contato",
+          obrigatorio_em: { etapas: [ETAPA_PROPOSTA] },
+        },
+      ],
+    };
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: {} },
+        settingsDoFunil: settings,
+        destino: { stageId: ETAPA_PROPOSTA },
+      }).faltando,
+    ).toEqual([]);
+  });
+
+  it("o MESMO campo marcado como do negócio volta a barrar — o controle", () => {
+    const settings = {
+      fields: [
+        {
+          key: "concorrente",
+          label: "Concorrente",
+          type: "text",
+          escopo: "negocio",
+          obrigatorio_em: { etapas: [ETAPA_PROPOSTA] },
+        },
+      ],
+    };
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: {} },
+        settingsDoFunil: settings,
+        destino: { stageId: ETAPA_PROPOSTA },
+      }).faltando.map((c) => c.chave),
+    ).toEqual(["concorrente"]);
+  });
+});

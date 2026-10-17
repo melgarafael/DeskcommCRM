@@ -149,7 +149,7 @@ export function ConversationHeader({
    * leituras divergiram em primeiro lugar. A regra mora em `lib/inbox`,
    * espelhando os gates que o MOTOR lê, e esta tela só a consome.
    */
-  const { comando, automaticoAtivo, travaVigente, motivo } = comandoDaConversa({
+  const fatosDoComando = {
     status,
     assigned_to_user_id: conversation.assigned_to_user_id,
     assigned_to_user_name: conversation.assigned_to_user_name ?? null,
@@ -160,7 +160,28 @@ export function ConversationHeader({
     is_blocked: conversation.contacts?.is_blocked ?? null,
     is_group: conversation.is_group ?? false,
     automaticoDaOrg: automaticoDaOrg.data,
-  });
+  };
+  const { comando, automaticoAtivo, travaVigente, motivo } = comandoDaConversa(fatosDoComando);
+  /**
+   * O QUE "LIBERAR" FAZ DEPENDE DO ESTADO, e a guia do botão (#3003) não pode
+   * prometer o automático de volta quando ele não volta.
+   *
+   * `fn_conversation_assign` com dono `null` deixa a conversa aberta e sem dono,
+   * mas só limpa `bot_silenced_until` quando NÃO houve escalação
+   * (`last_handoff_at is null`). Depois de uma escalação, com o contato travado
+   * (`force_human`), descadastrado, em grupo ou numa org sem automático, a
+   * conversa cai na fila esperando gente. A pergunta é a mesma regra de quem
+   * manda, aplicada ao estado que a RPC vai gravar.
+   */
+  const liberarDevolveAoAutomatico =
+    comandoDaConversa({
+      ...fatosDoComando,
+      status: "open",
+      assigned_to_user_id: null,
+      assigned_to_user_name: null,
+      assignee_kind: null,
+      bot_silenced_until: conversation.last_handoff_at ? fatosDoComando.bot_silenced_until : null,
+    }).comando.quem === "automatico";
 
   const encerrada = status === "closed" || status === "archived" || status === "resolved";
   /**
@@ -365,6 +386,21 @@ export function ConversationHeader({
             size="sm"
             variant="outline"
             disabled={release.isPending}
+            // GUIA CURTA (#3003): o rótulo diz o GESTO, não a consequência. "Liberar"
+            // não conta para onde a conversa vai — de volta ao automático ou para a
+            // fila (ver `liberarDevolveAoAutomatico`) — e essa é exatamente a
+            // pergunta "o que acontece se eu clicar aqui?".
+            //
+            // A guia vai em `title`, e NÃO em `aria-label`: o `aria-label`
+            // SUBSTITUI o nome acessível, e `getByRole("button", { name: "Liberar" })`
+            // de `inbox-header-nao-trava` e de `ConversationHeader.test` deixaria de
+            // achar o botão. É o mesmo caminho já usado por "Assumir", "Devolver ao
+            // automático" e "Pausar o automático" neste arquivo.
+            title={
+              liberarDevolveAoAutomatico
+                ? t("Solta esta conversa: ela fica sem dono e o atendimento automático volta a responder.")
+                : t("Solta esta conversa: ela fica sem dono e volta para a fila, esperando um atendente.")
+            }
             onClick={() => release.mutate({ conversation_id: conversation.id })}
           >
             {t("Liberar")}
@@ -420,7 +456,17 @@ export function ConversationHeader({
           </Button>
         )}
         {!encerrada && (
-          <Button size="sm" variant="outline" onClick={() => setReassignOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            // GUIA CURTA (#3003): "Transferir" não diz PARA QUEM. A aba Número do
+            // diálogo é a outra metade da resposta — mas ela aparece quando a org
+            // tem outro número com telefone, inclusive fora do ar (com a opção
+            // desabilitada; `outrosNumerosDoContato`), e ela não move esta
+            // conversa: continua o atendimento do contato por lá.
+            title={t("Passa esta conversa para outro atendente. Se houver outro número conectado, dá para continuar o atendimento por ele.")}
+            onClick={() => setReassignOpen(true)}
+          >
             {t("Transferir")}
           </Button>
         )}
@@ -435,12 +481,19 @@ export function ConversationHeader({
             size="sm"
             variant="outline"
             disabled={close.isPending}
+            // GUIA CURTA (#3003): "Fechar" sozinho não distingue encerrar de
+            // arquivar — que é o clique errado relatado na issue. A guia diz o que
+            // muda e o que continua disponível depois (reabrir).
+            title={t("Encerra o atendimento. Depois você pode reabrir a conversa.")}
             onClick={() => setConfirmFecharOpen(true)}
           >
             {t("Fechar")}
           </Button>
         )}
         {encerrada && <Button size="sm" variant="outline" disabled={reopen.isPending}
+          // GUIA CURTA (#3003): o par de "Fechar" precisa da mesma clareza — o
+          // rótulo não diz que a conversa volta a ser atendida.
+          title={t("Reabre o atendimento desta conversa, que estava encerrada.")}
           onClick={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>
           {t("Reabrir")}
         </Button>}
@@ -457,6 +510,12 @@ export function ConversationHeader({
             size="sm"
             variant="ghost"
             disabled={arquivar.isPending}
+            // GUIA CURTA (#3003): "Arquivar" parece "guardar e pronto", e não é —
+            // numa conversa ainda aberta ele ENCERRA o atendimento (o diálogo de
+            // confirmação diz isso com todas as letras, e a guia diz antes dele).
+            // Ela NÃO some do inbox: sai da Fila e de Minhas, e segue em Todas e
+            // em Arquivadas (`tabToFilter` em InboxLayout).
+            title={t("Guarda a conversa na aba Arquivadas. Se ainda estiver aberta, o atendimento é encerrado.")}
             onClick={() => setConfirmArquivarOpen(true)}
           >
             {arquivar.isPending ? t("Arquivando...") : t("Arquivar")}
@@ -502,7 +561,13 @@ export function ConversationHeader({
             escolhido à parte. Não é esconder ação; é não repeti-la. */}
         {c?.id && (
           <Button asChild size="sm" variant="ghost" className="xl:hidden">
-            <Link href={`/app/contacts/${c.id}`} className="flex items-center gap-1">
+            <Link
+              href={`/app/contacts/${c.id}`}
+              className="flex items-center gap-1"
+              // GUIA CURTA (#3003): o rótulo promete "contato" e entrega uma
+              // página inteira; a guia diz qual.
+              title={t("Abre a ficha completa deste contato.")}
+            >
               {t("Ver contato")}
               <ArrowRight size={12} weight="regular" aria-hidden />
             </Link>

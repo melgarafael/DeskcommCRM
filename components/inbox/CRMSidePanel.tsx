@@ -3,6 +3,7 @@
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { AcervoSearch } from "./AcervoSearch";
 import { LeadEnrichment } from "./LeadEnrichment";
+import { AnuncioDoContato, type AnuncioDeOrigem, type AnuncioMaisRecente } from "./AnuncioDoContato";
 import type { ProspectEnrichment } from "@/lib/prospecting/schema";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -19,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
+import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
@@ -43,6 +44,20 @@ import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
 interface Props {
   conversation: ConversationWithContact | null;
+  /**
+   * O painel inteiro recolhido (issue #3004): em vez do conteúdo, desenha só o
+   * trilho com o botão de expandir — e a tela (`InboxLayout`) devolve a largura
+   * ao fio da conversa. São DOIS valores, um estado: `recolhido` diz como
+   * desenhar, `onAlternarRecolhido` diz se há controle.
+   */
+  recolhido?: boolean;
+  /**
+   * O clique do controle. Só existe na coluna do desktop: o painel do celular
+   * abre dentro de um `Sheet`, que já tem o próprio gesto de fechar — por isso o
+   * controle é OPCIONAL, como o `showCollapseControl` do menu da esquerda, e o
+   * `Sheet` do Inbox não o passa.
+   */
+  onAlternarRecolhido?: () => void;
 }
 
 interface LeadRow {
@@ -412,6 +427,26 @@ function InboxLeadEditor({
         </div>
       )}
       <EtapaDoNegocio key={`etapa-${ativo.id}`} lead={ativo} onMovido={onSalvo} />
+      {/*
+        ABRIR O NEGÓCIO NO QUADRO DO FUNIL (issue #3004).
+
+        Antes, ir do atendimento ao card exigia sair do Inbox, abrir o quadro e
+        procurar o negócio na mão — trabalho que o próprio sistema já sabia fazer:
+        a rota do funil entende `?lead=`, o MESMO parâmetro que
+        `app/app/leads/[id]/page.tsx` já usa para jogar quem chega pela captação
+        direto no negócio (`KanbanBoard.leadInicial` abre o dossiê do card). Aqui
+        só se reusa essa âncora com o `pipeline_id` do negócio ativo — nada novo
+        de rota, nada de quadro reimplementado.
+      */}
+      <Button asChild size="sm" variant="outline" className="h-7 w-full text-xs">
+        <Link
+          href={`/app/pipelines/${ativo.pipeline_id}?lead=${ativo.id}`}
+          data-testid="inbox-abrir-no-funil"
+        >
+          <ArrowRight size={12} className="mr-1" weight="regular" aria-hidden />
+          {t("Abrir no funil")}
+        </Link>
+      </Button>
       <LevarParaOutroFunil
         key={`levar-${ativo.id}`}
         lead={ativo}
@@ -615,7 +650,56 @@ function CamposDoFunil({
   );
 }
 
-export function CRMSidePanel({ conversation }: Props) {
+/**
+ * O CONTROLE DE RECOLHER O PAINEL INTEIRO (issue #3004).
+ *
+ * Mesmo ícone e mesmo vocabulário do recolher do menu da esquerda
+ * (`BotaoDeRecolher` em `components/shell/Sidebar.tsx`): `CaretDoubleLeft` para
+ * recolher, `CaretDoubleRight` para expandir, o verbo "Recolher"/"Expandir" no
+ * rótulo. O que muda é o ALVO na frase: aqui há dois recolhedores na mesma tela,
+ * e um leitor de tela que ouvisse "Recolher" nos dois não saberia qual. O
+ * alvo explícito ("painel do contato") é o que os distingue — o vocabulário
+ * continua o mesmo.
+ *
+ * É `Link`/botão próprio e não o `Button` do design system porque o recolher da
+ * esquerda também não é: é um controle de casca, discreto (`text-muted-foreground`
+ * até o hover), que não compete com as ações do contato.
+ */
+function BotaoDeRecolherDoPainel({
+  recolhido,
+  onAlternar,
+}: {
+  recolhido: boolean;
+  onAlternar: () => void;
+}) {
+  const t = useT();
+  // Um rótulo só para `aria-label` e `title`: os dois nomeiam a MESMA ação.
+  const rotulo = recolhido ? t("Expandir painel do contato") : t("Recolher painel do contato");
+  return (
+    <button
+      type="button"
+      onClick={onAlternar}
+      // Vocabulário e ícone iguais aos do menu da esquerda (`BotaoDeRecolher`).
+      className={cn(
+        "flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+        recolhido && "justify-center",
+      )}
+      aria-label={rotulo}
+      aria-expanded={!recolhido}
+      title={rotulo}
+      data-testid="inbox-recolher-painel"
+    >
+      {recolhido ? (
+        <CaretDoubleRight size={14} aria-hidden />
+      ) : (
+        <CaretDoubleLeft size={14} aria-hidden />
+      )}
+      {!recolhido && <span>{t("Recolher")}</span>}
+    </button>
+  );
+}
+
+export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolhido }: Props) {
   const { user, activeOrg } = useAuth();
   const readonly = user.support?.access_mode === "support_readonly";
   // Criar tarefa é `agent`+ (a rota cobra `requireRole("agent")`): a MESMA régua
@@ -648,6 +732,7 @@ export function CRMSidePanel({ conversation }: Props) {
   const [demandas, setDemandas] = useState<DemandaRow[] | null>(null);
   const [fatos, setFatos] = useState<Array<{ id: string; headline: string; body: string }>>([]);
   const [historico, setHistorico] = useState<Array<{ id: string; desfecho: string; fechada_em: string }>>([]);
+  const [anuncios, setAnuncios] = useState<{ origem: AnuncioDeOrigem | null; recente: AnuncioMaisRecente | null }>({ origem: null, recente: null });
   const [summaryContactId, setSummaryContactId] = useState<string | null>(null);
   /**
    * O TERCEIRO ESTADO. Antes existiam dois — carregando e "tem N itens" — e a
@@ -685,6 +770,7 @@ export function CRMSidePanel({ conversation }: Props) {
       setActivities(null);
       setDemandas(null);
       setFatos([]); setHistorico([]);
+      setAnuncios({ origem: null, recente: null });
       setLeadAtivoId(null);
       idsDeNegocioVistos.current.clear();
       procurarNovoNegocio.current = false;
@@ -709,6 +795,8 @@ export function CRMSidePanel({ conversation }: Props) {
             demandas: DemandaRow[];
             fatos?: Array<{ id: string; headline: string; body: string }>;
             historico?: Array<{ id: string; desfecho: string; fechada_em: string }>;
+            anuncio_de_origem?: AnuncioDeOrigem | null;
+            anuncio_mais_recente?: AnuncioMaisRecente | null;
           };
         }>(`/api/v1/contacts/${contactId}/crm-summary`);
         if (cancelled) return;
@@ -736,6 +824,7 @@ export function CRMSidePanel({ conversation }: Props) {
         // que é o caso saudável.
         setDemandas(r.data.demandas ?? []);
         setFatos(r.data.fatos ?? []); setHistorico(r.data.historico ?? []);
+        setAnuncios({ origem: r.data.anuncio_de_origem ?? null, recente: r.data.anuncio_mais_recente ?? null });
       } catch {
         if (cancelled) return;
         // Falha NÃO vira lista vazia. Os dados ficam `null` e o painel diz que
@@ -746,6 +835,7 @@ export function CRMSidePanel({ conversation }: Props) {
         setActivities(null);
         setDemandas(null);
         setFatos([]); setHistorico([]);
+        setAnuncios({ origem: null, recente: null });
       }
     }
 
@@ -807,9 +897,30 @@ export function CRMSidePanel({ conversation }: Props) {
    */
   const negocioAtivoId = leadAtivoId ?? leads?.[0]?.id ?? null;
 
+  /**
+   * RECOLHIDO (issue #3004): só o trilho, com o botão de expandir. Sem o
+   * controle — o caso do `Sheet` do celular — o trilho não teria porta de volta,
+   * então nesse caso o painel desenha inteiro, como sempre desenhou.
+   */
+  if (recolhido && onAlternarRecolhido) {
+    return (
+      <aside
+        className="flex h-full flex-col items-center border-l border-border bg-background py-2"
+        data-testid="inbox-painel-recolhido"
+      >
+        <BotaoDeRecolherDoPainel recolhido onAlternar={onAlternarRecolhido} />
+      </aside>
+    );
+  }
+
   if (!conversation) {
     return (
-      <aside className="flex h-full items-center justify-center border-l border-border p-4 text-center text-xs text-muted-foreground">
+      <aside className="relative flex h-full items-center justify-center border-l border-border p-4 text-center text-xs text-muted-foreground">
+        {onAlternarRecolhido && (
+          <div className="absolute top-2 right-2">
+            <BotaoDeRecolherDoPainel recolhido={false} onAlternar={onAlternarRecolhido} />
+          </div>
+        )}
         {t("Selecione uma conversa para ver detalhes do contato.")}
       </aside>
     );
@@ -817,6 +928,19 @@ export function CRMSidePanel({ conversation }: Props) {
 
   return (
     <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
+      {/*
+        O CONTROLE DE RECOLHER, NO ALTO (issue #3004) — mesmo lugar do recolher
+        do menu da esquerda. `sticky` para não rolar para fora com o conteúdo, e
+        o `-mx-4 -mt-4` esticam a faixa até as bordas do painel cancelando o
+        padding do `<aside>`, para o controle encostar no alto sem empurrar a
+        primeira seção. Sem `onAlternarRecolhido` (o `Sheet` do celular) não
+        desenha nada: quem já tem o gesto de fechar não precisa deste.
+      */}
+      {onAlternarRecolhido && (
+        <div className="sticky top-0 z-10 -mx-4 -mt-4 flex shrink-0 justify-end border-b border-border bg-background px-4 py-1">
+          <BotaoDeRecolherDoPainel recolhido={false} onAlternar={onAlternarRecolhido} />
+        </div>
+      )}
       <section>
         <h3 className="text-xs font-semibold text-text">
           {t("Contato")}
@@ -864,9 +988,16 @@ export function CRMSidePanel({ conversation }: Props) {
               </Button>
             )}
           </div>
-          {tagEditorOpen && contactId && <ContactTagsEditor contactId={contactId} orgId={conversation.organization_id} tags={tags} />}
+          {tagEditorOpen && contactId && (
+            // Contexto de PESSOA: a etiqueta vai para `contacts.tags` (#2979).
+            <ContactTagsEditor entityId={contactId} orgId={conversation.organization_id} tags={tags} />
+          )}
         </Card>
       </section>
+
+      {contactId && summaryContactId === contactId && !erro && (
+        <AnuncioDoContato contactId={contactId} origem={anuncios.origem} recente={anuncios.recente} />
+      )}
 
       <LeadEnrichment
         data={summaryContactId === contactId && !erro && !contact?.is_anonymized ? enrichment : null}

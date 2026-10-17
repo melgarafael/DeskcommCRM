@@ -138,7 +138,7 @@ Executores em `lib/automation/actions/` (um arquivo por ação, interface comum 
 
 - **`create_or_move_lead`** — config `{pipeline_id, stage_id}`. Se o evento já referencia um lead, move (reusa update handler, recalcula `position_in_stage`); senão cria via `createLeadHandler` a partir do contato do evento.
 - **`add_tag`** — config `{tags: string[]}`; merge idempotente no lead/contato do evento.
-- **`assign_owner`** — config `{user_id}`; valida membership no tenant. Round-robin fica pra v2.
+- **`assign_owner`** — config `{user_id}`; valida membership no tenant. Round-robin fica pra v2. *(Atualização, #2041: o rodízio existe — config `{ modo: "rodizio", fila: [{ user_id, pausado }] }`, escolhido por `fn_automation_rodizio_atribuir`, migration 0692; mapa em `docs/architecture/rodizio-de-atendentes.architecture.json`.)*
 - **`call_webhook`** — config `{url, secret?}`. POST JSON, envelope `{event, occurred_at, data}` (sem `organization_id` no body p/ fora), header `X-Deskcomm-Signature` (HMAC SHA-256 do body com o secret, se houver) + `X-Deskcomm-Event`. Timeout 10s. 3 tentativas com backoff curto (1s/5s) dentro do worker; falha final → run `partial`/`failed` visível na UI com "Reenviar". URL validada: https obrigatório em produção, bloqueio de IPs privados/loopback (anti-SSRF).
 - **`send_whatsapp_message`** — config `{channel_session_id, template}` com variáveis `{{nome}}`, `{{lead.campo}}`, `{{custom_fields.x}}`. Serviço novo `lib/automation/start-conversation.ts`: upsert de contato por telefone E.164 → cria/acha `conversation` (contato + sessão) → envia pelo caminho de produção existente (`sendMessageHandler`). Contato `is_blocked` (STOP) → ação pulada com motivo no run.
 

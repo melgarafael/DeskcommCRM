@@ -82,6 +82,10 @@ interface TriggerFormState {
   segments: string;
   /** Pausa de reentrada do gatilho de silêncio, em HORAS na tela; o fio guarda minutos. */
   reentryPauseHours: number;
+  /** Quantas vezes o fluxo pode recomeçar para o mesmo contato; 0 = sem teto. */
+  maxEnrollments: number;
+  /** Exige que a equipe tenha respondido a última mensagem do cliente. */
+  exigeResposta: boolean;
   /** Teto do silêncio, em minutos; 0 = sem teto. */
   maxSilenceMinutes: number;
   /** A pausa conta do último ENVIO deste fluxo (e não da última mensagem do cliente). */
@@ -146,6 +150,8 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
       reentry_pause_minutes?: number;
       max_silence_minutes?: number;
       reentry_pause_basis?: string;
+      max_enrollments_por_contato?: number;
+      exige_resposta_da_equipe?: boolean;
     } | undefined) ?? {};
   const minutosRetorno =
     kind === "inbound_after_silence" && typeof params.threshold_minutes === "number"
@@ -170,6 +176,11 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
     maxSilenceMinutes:
       kind === "silence" && typeof params.max_silence_minutes === "number" ? params.max_silence_minutes : 0,
     pauseFromLastSend: kind === "silence" && params.reentry_pause_basis === "ultimo_envio",
+    maxEnrollments:
+      kind === "silence" && typeof params.max_enrollments_por_contato === "number"
+        ? params.max_enrollments_por_contato
+        : 0,
+    exigeResposta: kind === "silence" && params.exige_resposta_da_equipe === true,
     stageId: kind === "stage_change" && typeof params.stage_id === "string" ? params.stage_id : "",
     cancelOnReply: raw.cancel_on_reply === true,
   };
@@ -216,6 +227,10 @@ function toTriggerConfig(form: TriggerFormState): Record<string, unknown> {
       ...(pausa > 0 ? { reentry_pause_minutes: pausa } : {}),
       ...(pausa > 0 && form.pauseFromLastSend ? { reentry_pause_basis: "ultimo_envio" } : {}),
       ...(form.maxSilenceMinutes > 0 ? { max_silence_minutes: Math.round(form.maxSilenceMinutes) } : {}),
+      ...(form.maxEnrollments > 0
+        ? { max_enrollments_por_contato: Math.round(form.maxEnrollments) }
+        : {}),
+      ...(form.exigeResposta ? { exige_resposta_da_equipe: true } : {}),
     },
     ...cancelOnReply,
   };
@@ -337,6 +352,8 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
         form.segments !== saved.segments ||
         form.reentryPauseHours !== saved.reentryPauseHours ||
         form.maxSilenceMinutes !== saved.maxSilenceMinutes ||
+        form.maxEnrollments !== saved.maxEnrollments ||
+        form.exigeResposta !== saved.exigeResposta ||
         form.pauseFromLastSend !== saved.pauseFromLastSend)) ||
     (form.kind === "inbound_after_silence" &&
       (form.thresholdValor !== saved.thresholdValor ||
@@ -624,6 +641,46 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
                     />
                   </div>
                 )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="trigger-max-enrollments">
+                  {t("Quantas vezes no máximo, por contato (opcional)")}
+                </Label>
+                <Input
+                  id="trigger-max-enrollments"
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={form.maxEnrollments}
+                  onChange={(e) => setForm((f) => ({ ...f, maxEnrollments: Number(e.target.value) }))}
+                  data-testid="trigger-max-enrollments"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "A pausa acima só espaça os reinícios: quem nunca responde volta a receber o fluxo a cada pausa, para sempre. Com um limite, o fluxo para de recomeçar depois deste número de vezes. 0 = sem limite.",
+                  )}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <Label
+                    htmlFor="trigger-exige-resposta"
+                    className="text-xs font-normal leading-snug"
+                  >
+                    {t("Só começar se a equipe já respondeu a última mensagem do cliente")}
+                  </Label>
+                  <Switch
+                    id="trigger-exige-resposta"
+                    checked={form.exigeResposta}
+                    onCheckedChange={(checked) => setForm((f) => ({ ...f, exigeResposta: checked }))}
+                    data-testid="trigger-exige-resposta"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "O tempo de silêncio conta da última mensagem do cliente, e mensagem da equipe não zera essa conta — então quem escreveu e ainda não foi atendido também entra no fluxo. Ligue isto quando o fluxo é para quem sumiu, e não para quem está esperando resposta.",
+                  )}
+                </p>
               </div>
             </>
           )}

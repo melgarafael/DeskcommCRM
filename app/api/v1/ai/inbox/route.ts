@@ -14,7 +14,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
+import { avisoVisivelPara, resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
 import { anexarLinkDePagamento } from "@/lib/cobranca/central";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -34,6 +34,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
+  // Aviso com destinatário (0689) só aparece para ele — na lista E no sino.
+  const visivel = avisoVisivelPara(authz.user.id);
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(new URL(req.url).searchParams.entries()),
@@ -52,6 +54,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       .from("agent_inbox_items")
       .select("id, kind, severity, title, body, ref_kind, ref_id, status, created_at")
       .eq("organization_id", org.orgId)
+      .or(visivel)
       .order("created_at", { ascending: false })
       .limit(limit);
     if (status !== "all") query = query.eq("status", status);
@@ -74,6 +77,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .from("agent_inbox_items")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", org.orgId)
+    .or(visivel)
     .eq("status", "open");
 
   const comDestino = await resolverDestinosDosAvisos(await createClient(), org.orgId, org.role, data);

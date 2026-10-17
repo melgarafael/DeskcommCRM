@@ -11,7 +11,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { MENSAGEM_DO_LACO_DE_LEAD, createAutomationRuleSchema } from "@/lib/schemas/webhooks";
+import {
+  MENSAGEM_DO_LACO_DE_LEAD,
+  MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR,
+  createAutomationRuleSchema,
+} from "@/lib/schemas/webhooks";
 
 import {
   AVISO_LIGACAO_TROCADA,
@@ -291,6 +295,14 @@ describe("cada problema aparece na caixa que o causou", () => {
     const desenho = desenhoDaRegra({ ...regra, trigger_event: "lead.won", actions: [PASSO_DA_IA] });
     const r = validarDesenho({ nome: "x", desenho, regraGravada: null });
     expect(r.problemas).toEqual([{ caixa: "acao-1", mensagem: MENSAGEM_DO_LACO_DE_LEAD }]);
+  });
+
+  it("o rodízio escondido numa opção da IA diz por que, no passo da IA (#2041)", () => {
+    const rodizio = { type: "assign_owner", config: { modo: "rodizio", fila: [{ user_id: PESSOA, pausado: false }] } };
+    const passo = { ...PASSO_DA_IA, config: { ...PASSO_DA_IA.config, opcoes: [...PASSO_DA_IA.config.opcoes, { id: "r", rotulo: "Rodízio", acao: rodizio }] } };
+    const desenho = desenhoDaRegra({ ...regra, actions: [passo] });
+    const r = validarDesenho({ nome: "x", desenho, regraGravada: null });
+    expect(r.problemas).toEqual([{ caixa: "acao-1", mensagem: MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR }]);
   });
 
   it("gatilho de data sem funil usa a frase do próprio schema, no gatilho", () => {

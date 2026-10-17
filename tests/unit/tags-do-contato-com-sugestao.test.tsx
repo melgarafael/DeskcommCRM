@@ -45,7 +45,7 @@ describe("ContactTagsEditor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <ContactTagsEditor contactId="c-1" orgId={ORG} tags={["vip"]} />
+        <ContactTagsEditor entityId="c-1" orgId={ORG} tags={["vip"]} />
       </QueryClientProvider>,
     );
 
@@ -84,7 +84,7 @@ describe("ContactTagsEditor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <ContactTagsEditor contactId="c-1" orgId={ORG} tags={["vip"]} />
+        <ContactTagsEditor entityId="c-1" orgId={ORG} tags={["vip"]} />
       </QueryClientProvider>,
     );
 
@@ -102,7 +102,7 @@ describe("ContactTagsEditor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <ContactTagsEditor contactId="c-1" orgId={ORG} tags={["VIP"]} />
+        <ContactTagsEditor entityId="c-1" orgId={ORG} tags={["VIP"]} />
       </QueryClientProvider>,
     );
 
@@ -117,7 +117,7 @@ describe("ContactTagsEditor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <ContactTagsEditor contactId="c-1" orgId={ORG} tags={["VIP"]} />
+        <ContactTagsEditor entityId="c-1" orgId={ORG} tags={["VIP"]} />
       </QueryClientProvider>,
     );
 
@@ -138,7 +138,7 @@ describe("ContactTagsEditor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <ContactTagsEditor contactId="c-1" orgId={ORG} tags={["cliente"]} />
+        <ContactTagsEditor entityId="c-1" orgId={ORG} tags={["cliente"]} />
       </QueryClientProvider>,
     );
 
@@ -164,7 +164,7 @@ describe("ContactTagsEditor", () => {
     render(
       <QueryClientProvider client={client}>
         <ProvedorDeCoresDasEtiquetas>
-          <ContactTagsEditor contactId="c-1" orgId={ORG} tags={["cliente"]} />
+          <ContactTagsEditor entityId="c-1" orgId={ORG} tags={["cliente"]} />
         </ProvedorDeCoresDasEtiquetas>
       </QueryClientProvider>,
     );

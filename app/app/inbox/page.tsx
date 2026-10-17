@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { InboxLayout } from "@/components/inbox/InboxLayout";
@@ -39,6 +40,11 @@ export default async function InboxPage({
     );
   }
   const { id, rascunho } = await searchParams;
+  // A preferência do painel do contato recolhido é lida AQUI, no servidor, pelo
+  // mesmo motivo do `sidebar_collapsed` (`app/app/layout.tsx`): sem isto o
+  // primeiro render traz o painel aberto e a grade só se ajusta depois da
+  // hidratação — a conversa nasce estreita e pula para larga.
+  const painelRecolhido = (await cookies()).get("inbox_painel_recolhido")?.value === "1";
   // ?rascunho= é a ponta da caixa de entrada da issue #1611: o texto mora no
   // servidor, e a URL só carrega o ID. Aqui a leitura acontece com a SESSÃO do
   // atendente (RLS), então um rascunho de outra organização vira
@@ -57,5 +63,11 @@ export default async function InboxPage({
       }),
     };
   }
-  return <InboxLayout initialSelectedId={id ?? null} rascunho={avisoDeRascunho} />;
+  return (
+    <InboxLayout
+      initialSelectedId={id ?? null}
+      rascunho={avisoDeRascunho}
+      painelRecolhidoInicial={painelRecolhido}
+    />
+  );
 }

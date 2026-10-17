@@ -179,7 +179,11 @@ export function CamposObrigatoriosDialog({
                 </div>
               );
             }
-            if (campo.tipo === "select" && campo.opcoes && campo.opcoes.length > 0) {
+            if (
+              (campo.tipo === "select" || campo.tipo === "searchable_select") &&
+              campo.opcoes &&
+              campo.opcoes.length > 0
+            ) {
               return (
                 <div key={campo.chave} className="space-y-1">
                   <Label className="text-xs">{rotuloCampo}</Label>

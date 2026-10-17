@@ -33,6 +33,7 @@ import {
 } from "@/lib/automation/gatilhos-de-tempo";
 import {
   MENSAGEM_DO_LACO_DE_LEAD,
+  MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR,
   acoesQueFechamLaco,
   createAutomationRuleSchema,
   type CreateAutomationRuleInput,
@@ -144,6 +145,8 @@ export const PROBLEMA_DO_CAMPO: Record<string, string> = {
   instruction: "Diga o que a IA deve fazer com os dados.",
   tags: "Escreva de 1 a 10 tags, cada uma com até 60 caracteres.",
   user_id: "Escolha o atendente.",
+  fila: "Monte a fila do rodízio com pelo menos uma pessoa, sem repetir ninguém.",
+  modo: MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR,
   url: "Informe um endereço válido, começando com https://.",
   flow_pointer_id: "Escolha o fluxo de follow-up.",
   titulo: "Dê um título à tarefa.",
@@ -399,7 +402,12 @@ function problemaDaRecusa(recusa: Recusa, percurso: Percurso): ProblemaDoDesenho
     const caixa = percurso.acoes[indice];
     if (!caixa) return null;
     const acao = (caixa.data as DadosDaAcao).acao;
-    if (acao.type === "ai_decide") return { caixa: caixa.id, mensagem: PROBLEMAS.passoDaIaInvalido };
+    if (acao.type === "ai_decide") {
+      // O rodízio escondido numa opção da IA tem frase própria (#2041); o resto
+      // do passo da IA só se corrige pela API.
+      const doRodizio = recusa.message === MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR;
+      return { caixa: caixa.id, mensagem: doRodizio ? MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR : PROBLEMAS.passoDaIaInvalido };
+    }
     const campo = resto.find((p): p is string => typeof p === "string" && p !== "config");
     if (campo === undefined || campo === "type") return { caixa: caixa.id, mensagem: PROBLEMAS.acaoDesconhecida };
     if (recusa.code === "too_big" && campo !== "tags" && campo !== "vence_em_dias") {

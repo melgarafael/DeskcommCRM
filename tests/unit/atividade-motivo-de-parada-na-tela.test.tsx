@@ -155,4 +155,15 @@ describe("aba Atividade: o motivo de parada chega em português, com o detalhe t
 
     expect(tela).toContain("motivo_ainda_sem_frase");
   });
+
+  it("a vez do rodízio sai do molde traduzível, com nome e posição colados depois (#2041)", () => {
+    // A frase pronta em `explicacao` muda a cada lead e nunca casaria com o
+    // dicionário: quem lia em inglês via português. Sem `explicacao` aqui, só o
+    // caminho do molde produz a frase.
+    const tela = telaDaAba(
+      corrida([{ type: "assign_owner", status: "success", detail: { user_id: "u-1", posicao: 2, nome: "Ana" } }], "success"),
+    );
+
+    expect(tela).toContain("Vez de Ana, posição 2 da fila do rodízio.");
+  });
 });

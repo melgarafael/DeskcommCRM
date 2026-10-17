@@ -157,10 +157,29 @@ export async function completeTurnForEnrollment(
     //    chave `${node}:${steps}`; gastar essa chave aqui faria o motor ler o
     //    adiamento como "a ação já aconteceu" — no `match_reply` de confirmação
     //    isso vira ler a resposta de uma pergunta que nunca saiu.
-    // 2. A chave carrega o JOB, porque a unidade de idempotência é ele: o mesmo
-    //    job retentado depois de um crash grava o mesmo adiamento (23505, no-op),
-    //    e o job re-agendado que adia DE NOVO grava um adiamento novo — que é
-    //    exatamente a prova de vida que o dead-man precisa ver.
+    // 2. A chave carrega o JOB, o MOTIVO e o INSTANTE — porque a identidade de
+    //    um adiamento é a DECISÃO de adiar, não o job.
+    //
+    //    ⚠️ ESTA LINHA DIZIA que "o job re-agendado que adia DE NOVO grava um
+    //    adiamento novo", e isso era FALSO: `fn_followup_inline_settle` faz
+    //    `update ... where id=p_id` e devolve a MESMA linha para `pending` com
+    //    `run_after` novo — o id do job não muda nunca. Então dois adiamentos
+    //    do mesmo job no mesmo passo colidiam na chave.
+    //
+    //    A colisão não era só uma linha a menos no dossiê. `fn_followup_apply_step`
+    //    roda `fn_followup_patch` ANTES do insert do evento; o 23505 do insert
+    //    aborta a função inteira e DESFAZ o patch, e o adaptador engole o erro
+    //    (`if(error?.code==="23505") return;`). O caminho sem `applyEnrollmentStep`
+    //    perde o patch pelo mesmo motivo, por outra via (`if (!inserted) return`
+    //    antes do `updateEnrollment`). Resultado: `next_eval_at` NÃO avançava.
+    //
+    //    Medido na sequência janela → ritmo (#2658 + o freio do texto fixo): a
+    //    janela adia até a abertura e, na abertura, o teto diário adia até a
+    //    virada — mesmo job, mesmo nó, mesmo passo, mesma chave.
+    //
+    //    Com motivo e instante na chave, cada decisão tem identidade própria. O
+    //    retry da MESMA chamada continua no-op: `result.until` já está calculado
+    //    quando se chega aqui, então repetir a chamada repete a chave.
     // 3. `next_eval_at` vai para a abertura da janela. É o que faz o motor
     //    simplesmente não acordar durante a espera, em vez de gastar rechecks
     //    nela. No `match_reply` soma-se a carência: a pergunta só sai em
@@ -177,7 +196,7 @@ export async function completeTurnForEnrollment(
       node_id: node.id,
       event_type: EVENTO_ACAO_ADIADA,
       payload: { until: result.until.toISOString(), next_eval_at: voltaEm.toISOString(), reason: result.reason },
-      idempotency_key: `${node.id}:${enrollment.steps_taken}:adiado:${jobId ?? result.until.toISOString()}`,
+      idempotency_key: `${node.id}:${enrollment.steps_taken}:adiado:${jobId ?? "inline"}:${result.reason}:${result.until.toISOString()}`,
     };
     await db.assertServiceBoundary?.(enrollment);
     if (db.applyEnrollmentStep) {
@@ -389,7 +408,7 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       if (naoAntesDe) params.push(naoAntesDe);
       const { rows } = await pool.query<{ body: string | null }>(
         `select body from messages
-         where organization_id = $1 and contact_id = $2 and ($3::uuid is null or conversation_id=$3) and direction = 'inbound' ${desde}
+         where organization_id = $1 and contact_id = $2 and ($3::uuid is null or conversation_id=$3) and direction = 'inbound' and type <> 'reaction' ${desde}
          order by sent_at desc limit 1`,
         params,
       );

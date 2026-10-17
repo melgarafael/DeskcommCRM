@@ -9,6 +9,7 @@ import { format, isToday, isYesterday } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageBubble } from "./MessageBubble";
+import { separarReacoes } from "@/lib/inbox/reacoes-no-fio";
 import { NoteCard } from "./NoteCard";
 import { PassagemCard } from "./PassagemCard";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
@@ -170,9 +171,11 @@ export function ChatThread({
     [passagens, currentUser.id, dono?.userId, dono?.nome],
   );
 
+  const { falas, reacoesPorAlvo } = useMemo(() => separarReacoes(messages), [messages]);
+
   const items: ThreadItem[] = useMemo(
-    () => mergeThreadItems(messages, notes, cartoes),
-    [messages, notes, cartoes],
+    () => mergeThreadItems(falas, notes, cartoes),
+    [falas, notes, cartoes],
   );
 
   const paginas = q.data?.pages.length ?? 0;
@@ -406,6 +409,7 @@ export function ChatThread({
                   // citada é antiga demais e ficou fora da página, o fio some —
                   // que é melhor que segurar a conversa esperando.
                   citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
+                  reacoes={reacoesPorAlvo.get(item.data.id)}
                   // Sem isto o balão diz "Você" em toda mensagem digitada no
                   // CRM — inclusive nas do colega, porque `sent_via='user'` só
                   // registra que um humano digitou, nunca qual.

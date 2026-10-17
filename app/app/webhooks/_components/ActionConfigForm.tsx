@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,15 @@ import {
   type FollowupFlowPointerRow,
 } from "@/hooks/followup/useFollowupFlows";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
+import { CaretDown, CaretUp, Pause, Play, X } from "@/lib/ui/icons";
+
+/**
+ * #2041 — uma pessoa fixa (a forma de sempre, sem `modo`) ou um rodízio, em que
+ * a posição na `fila` é a ordem. Mesma forma do `configDoAtribuirSchema` da API.
+ */
+export type ConfigDoAtribuir =
+  | { modo?: "fixo"; user_id: string }
+  | { modo: "rodizio"; fila: Array<{ user_id: string; pausado: boolean }> };
 
 export type ActionItem =
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
@@ -57,7 +67,7 @@ export type ActionItem =
       type: "add_tag";
       config: { tags: string[]; destino?: "card" | "contato" };
     }
-  | { type: "assign_owner"; config: { user_id: string } }
+  | { type: "assign_owner"; config: ConfigDoAtribuir }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
   | {
       type: "start_message_flow";
@@ -563,22 +573,173 @@ function AddTagForm({
   );
 }
 
-function AssignOwnerForm({ config, onChange }: FormProps<{ user_id: string }>) {
+function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
   const t = useT();
-  const { data: members } = useAssignableMembers(true);
+  const { data: members, isLoading: carregandoMembros } = useAssignableMembers(true);
+  // Enquanto a lista de membros não chega, o nome é `null` (a tela mostra um
+  // esqueleto): o começo do user_id que aparecia ali não diz nada a ninguém.
+  const nomeDe = (userId: string) => {
+    if (carregandoMembros) return null;
+    const membro = members?.find((m) => m.user_id === userId);
+    return membro?.full_name ?? userId.slice(0, 8);
+  };
+
+  if (config.modo !== "rodizio") {
+    return (
+      <div className="space-y-2">
+        <ModoDoAtribuir
+          modo="fixo"
+          onChange={() =>
+            onChange({ modo: "rodizio", fila: config.user_id ? [{ user_id: config.user_id, pausado: false }] : [] })
+          }
+        />
+        <div className="space-y-1">
+          <Label>{t("Atendente")}</Label>
+          <Select value={config.user_id} onValueChange={(v) => onChange({ user_id: v })}>
+            <SelectTrigger>
+              <SelectValue placeholder={t("Escolha o atendente")} />
+            </SelectTrigger>
+            <SelectContent>
+              {(members ?? []).map((m) => (
+                <SelectItem key={m.user_id} value={m.user_id}>
+                  {m.full_name ?? m.user_id.slice(0, 8)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    );
+  }
+
+  const fila = config.fila;
+  const mudarFila = (nova: typeof fila) => onChange({ modo: "rodizio", fila: nova });
+  const trocar = (de: number, para: number) => {
+    const nova = [...fila];
+    const [pessoa] = nova.splice(de, 1);
+    if (pessoa) nova.splice(para, 0, pessoa);
+    mudarFila(nova);
+  };
+  const foraDaFila = (members ?? []).filter((m) => !fila.some((p) => p.user_id === m.user_id));
+
+  return (
+    <div className="space-y-2">
+      <ModoDoAtribuir modo="rodizio" onChange={() => onChange({ user_id: fila[0]?.user_id ?? "" })} />
+      <div className="space-y-1">
+        <Label>{t("Fila do rodízio")}</Label>
+        <p className="text-xs text-muted-foreground">
+          {t("Cada lead vai para a próxima pessoa da fila, nesta ordem. Quem está pausado é pulado sem sair da fila.")}
+        </p>
+        {fila.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("Ninguém na fila ainda. Adicione pelo menos uma pessoa.")}</p>
+        ) : (
+          <ol className="space-y-1" data-testid="fila-do-rodizio" aria-busy={carregandoMembros}>
+            {fila.map((pessoa, i) => {
+              const nomeCarregado = nomeDe(pessoa.user_id);
+              const nome = nomeCarregado ?? String(i + 1);
+              // Duas partes que QUEBRAM de linha quando a largura não cabe as
+              // duas (celular): o nome nunca disputa espaço com os 4 botões de
+              // 44px — a 360px ele ficava com 51px, e com 0px quando pausado.
+              return (
+                <li
+                  key={pessoa.user_id}
+                  className="flex flex-wrap items-center gap-x-1 gap-y-0.5 rounded-md border px-2 py-1"
+                >
+                  <div className="flex min-w-0 grow basis-48 items-center gap-1" data-testid="pessoa-da-fila">
+                    <span className="w-5 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
+                    {nomeCarregado === null ? (
+                      <Skeleton aria-hidden className="h-4 w-24 max-w-full" />
+                    ) : (
+                      <span
+                        className={`min-w-0 flex-1 truncate text-sm ${pessoa.pausado ? "text-muted-foreground line-through" : ""}`}
+                      >
+                        {nomeCarregado}
+                      </span>
+                    )}
+                    {pessoa.pausado ? (
+                      <span className="shrink-0 text-xs text-muted-foreground">{t("pausado")}</span>
+                    ) : null}
+                  </div>
+                  <div className="ml-auto flex shrink-0 items-center">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`${t("Subir na fila")}: ${nome}`}
+                      disabled={i === 0}
+                      onClick={() => trocar(i, i - 1)}
+                    >
+                      <CaretUp size={16} aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`${t("Descer na fila")}: ${nome}`}
+                      disabled={i === fila.length - 1}
+                      onClick={() => trocar(i, i + 1)}
+                    >
+                      <CaretDown size={16} aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`${pessoa.pausado ? t("Voltar ao rodízio") : t("Pausar no rodízio")}: ${nome}`}
+                      onClick={() => mudarFila(fila.map((p, k) => (k === i ? { ...p, pausado: !p.pausado } : p)))}
+                    >
+                      {pessoa.pausado ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`${t("Tirar da fila")}: ${nome}`}
+                      onClick={() => mudarFila(fila.filter((_, k) => k !== i))}
+                    >
+                      <X size={16} aria-hidden />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
+      {foraDaFila.length > 0 ? (
+        <div className="space-y-1">
+          <Label>{t("Adicionar à fila")}</Label>
+          <Select value="" onValueChange={(v) => mudarFila([...fila, { user_id: v, pausado: false }])}>
+            <SelectTrigger>
+              <SelectValue placeholder={t("Escolha quem entra no rodízio")} />
+            </SelectTrigger>
+            <SelectContent>
+              {foraDaFila.map((m) => (
+                <SelectItem key={m.user_id} value={m.user_id}>
+                  {m.full_name ?? m.user_id.slice(0, 8)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A escolha entre um atendente fixo e o rodízio. Trocar de modo leva junto quem já estava escolhido. */
+function ModoDoAtribuir({ modo, onChange }: { modo: "fixo" | "rodizio"; onChange: () => void }) {
+  const t = useT();
   return (
     <div className="space-y-1">
-      <Label>{t("Atendente")}</Label>
-      <Select value={config.user_id} onValueChange={(v) => onChange({ user_id: v })}>
+      <Label>{t("Como atribuir")}</Label>
+      <Select value={modo} onValueChange={(v) => v !== modo && onChange()}>
         <SelectTrigger>
-          <SelectValue placeholder={t("Escolha o atendente")} />
+          <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {(members ?? []).map((m) => (
-            <SelectItem key={m.user_id} value={m.user_id}>
-              {m.full_name ?? m.user_id.slice(0, 8)}
-            </SelectItem>
-          ))}
+          <SelectItem value="fixo">{t("Um atendente fixo")}</SelectItem>
+          <SelectItem value="rodizio">{t("Em rodízio entre estas pessoas")}</SelectItem>
         </SelectContent>
       </Select>
     </div>

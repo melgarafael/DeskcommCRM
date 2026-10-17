@@ -37,6 +37,7 @@ interface StageRow {
   is_lost: boolean;
   is_archived: boolean;
   agent_stage_hint: string | null;
+  win_probability?: number | null;
   pipeline_id: string;
   organization_id: string;
 }
@@ -232,7 +233,7 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
     authOk();
     makeDb({
       stages: [
-        ...funil(),
+        ...funil().map((e) => (e.id === "e2" ? { ...e, win_probability: 40 } : e)),
         etapa({ id: "e9", name: "Arquivada", position: 9, is_archived: true, agent_stage_hint: "qualifying" }),
       ],
     });
@@ -260,6 +261,9 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
       name: "Novo",
       is_won: false,
       is_lost: false,
+      // #2999: a chance de fechamento viaja na mesma leitura — a tela de etapas
+      // lê daqui. Ausente na fixture = etapa sem calibração = null.
+      win_probability: null,
       // Migration 0440: a tela de etapas lê daqui a chave «avisar na Central».
       // Ausente na fixture = etapa anterior à coluna = desligada.
       avisar_na_central: false,
@@ -270,6 +274,10 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
       last_change_actor_kind: null,
       last_change_at: null,
     });
+
+    // O valor gravado volta como foi gravado (e não `undefined`, que a tela lê
+    // como "sem calibração" e mostra o campo vazio).
+    expect(body.data.etapas[1]).toMatchObject({ id: "e2", win_probability: 40 });
 
     expect(body.data.mapeamento).toEqual(
       mapa({ negotiating: "e2", won: "e3", lost: "e4" }),

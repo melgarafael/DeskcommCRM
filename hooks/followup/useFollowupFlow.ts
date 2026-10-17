@@ -83,10 +83,18 @@ export function usePublishFollowupFlow(id: string) {
       const res = await apiClient.post<SingleResponse>(`/api/v1/ai/followup-flows/${id}/publish`, {});
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: followupFlowQueryKey(id) });
       qc.invalidateQueries({ queryKey: ["followup", "flows", "list"] });
       toast.success(t("Fluxo publicado."));
+      // OS AVISOS DO GATILHO, um a um, no momento em que a pessoa está olhando.
+      // Eles não reprovam a publicação (ver `avisosDoGatilho`), e guardá-los
+      // para depois é guardá-los para nunca. `duration` longa de propósito: a
+      // frase é longa e diz o que fazer, não só que há algo errado.
+      const avisos = (data as { avisos?: Array<{ code: string; message: string }> } | undefined)?.avisos;
+      for (const aviso of avisos ?? []) {
+        toast.warning(t(aviso.message), { duration: 12_000 });
+      }
     },
   });
 }
