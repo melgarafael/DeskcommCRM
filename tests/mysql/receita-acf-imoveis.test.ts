@@ -492,7 +492,7 @@ describe("receita acf-imoveis contra MySQL 8 de verdade", () => {
       // A coluna preco devolvida vale 1200000.
       const casaMilhar = titulos.find((t) => t.titulo === "Casa com pontos milhar");
       expect(casaMilhar).toBeDefined();
-      expect(String(casaMilhar!.preco)).toBe("1200000");
+      expect(Number(casaMilhar!.preco)).toBe(1200000); // o MySQL devolve DECIMAL como texto ("1200000.00")
     } finally {
       conexao2.release();
     }
