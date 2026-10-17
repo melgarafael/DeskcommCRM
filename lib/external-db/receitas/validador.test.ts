@@ -105,4 +105,38 @@ describe("validarConsultaDeReceita — segunda trava", () => {
       validarConsultaDeReceita("select * from wp_posts_123 where id = ?", TABELAS),
     ).toThrow(/tabela_nao_liberada:wp_posts_123/);
   });
+
+  describe("consulta de sugestão de campos ACF (D5)", () => {
+    const TABELAS_ACF = ["wp_posts", "wp_postmeta"];
+
+    it("aceita a consulta fixa de sugestão (SELECT, count, tabelas permitidas)", () => {
+      const sql =
+        "select pm.meta_key as meta_key, count(*) as frequencia from `wp_postmeta` pm join `wp_posts` p on p.ID = pm.post_id where p.post_type = ? and pm.meta_key not like '\\_%%' group by pm.meta_key order by frequencia desc limit 50";
+      expect(() => validarConsultaDeReceita(sql, TABELAS_ACF)).not.toThrow();
+    });
+
+    it("rejeita sugestão com ponto-e-vírgula", () => {
+      expect(() =>
+        validarConsultaDeReceita(
+          "select pm.meta_key from `wp_postmeta` pm; drop table wp_postmeta",
+          TABELAS_ACF,
+        ),
+      ).toThrow(/consulta_nao_pode_ter_mais_de_um_comando/);
+    });
+
+    it("rejeita sugestão com INTO", () => {
+      expect(() =>
+        validarConsultaDeReceita("select pm.meta_key into @x from `wp_postmeta` pm", TABELAS_ACF),
+      ).toThrow(/palavra_proibida/);
+    });
+
+    it("rejeita sugestão que cita tabela fora da lista", () => {
+      expect(() =>
+        validarConsultaDeReceita(
+          "select pm.meta_key from wp_postmeta pm join wp_options o on o.option_id = pm.meta_id",
+          TABELAS_ACF,
+        ),
+      ).toThrow(/tabela_nao_liberada:wp_options/);
+    });
+  });
 });

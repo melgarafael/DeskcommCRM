@@ -169,3 +169,29 @@ A fatia R1 (receita `woocommerce` + instância + tool) entrega:
 - e2e: `tests/e2e/banco-externo-receitas.spec.ts` registrada em `SPECS_PARTE_1` do `.github/workflows/e2e.yml` (não rodada aqui — veredito do CI)
 
 Destino: núcleo, dentro do módulo de banco externo, que nasce desligado (revisão 1 da Spec 25, aceita pelo mantenedor).
+
+## R2 entregue: o que mudou
+
+A fatia R2 (receita `acf-imoveis`) entrega:
+
+- `lib/external-db/receitas/tipos.ts` — `FamiliaReceita` estendido com `"acf-imoveis"`
+- `lib/external-db/receitas/acf-imoveis.ts` — receita `acf-imoveis` (JOIN posts+postmeta, uma junção por campo mapeado; `meta_key` sempre como valor `?`, nunca identificador; conversão robusta de preço `"650.000,00"` / `"480000"` via `REPLACE(REPLACE(...))`; `post_type` válido pelo admin; teto 5)
+- `lib/external-db/receitas/acf-imoveis.unit.test.ts` — render de cada `?` com seu valor; nenhum `meta_key` no texto do SQL; contagem `?` = `valores.length`; Zod recusa `meta_key`/`post_type` inválidos
+- `lib/external-db/receitas/registro.ts` — receita `acf-imoveis` registrada no mapa `RECEITAS`
+- `lib/external-db/receitas/validador.test.ts` — consulta de sugestão passa; variações com `;` ou `INTO` não passam
+- `app/api/v1/external-db/connections/[id]/recipes/suggest/route.ts` — `POST /recipes/suggest` (admin, `requireSupportWrite`, org da sessão, consulta fixa `count(*)` sem `_*`, limitada a 50, validador, fontes liberadas, deteta JetEngine, audit só contagens)
+- `app/api/v1/external-db/connections/[id]/recipes/suggest/route.test.ts` — rotas de sugestão (admin, org da sessão, papel abaixo de admin barrado, validador, motor incompatível)
+- `hooks/external-db/useReceitasDaConexao.ts` — `sugerirCamposACF` (chamada à rota de sugestão)
+- `app/app/integracao-dados/[id]/_components/ReceitasProntas.tsx` — quando a receita é `acf-imoveis`, mostra "Tipo de post" + mapeamento (Preço, Quartos, Bairro, Cidade, Área) com rótulos ligados (`useId` + `htmlFor`); botão "Sugerir campos" preenche só os vazios sem sobrescrever; rótulos PT+ES no dicionário
+- `app/app/integracao-dados/[id]/_components/ReceitasProntas.acf.test.tsx` — componente ACF: campos aparecem, rótulos ligados, sugerir não sobrescreve, salvar envia fixos completos, canWrite=false bloqueia
+- `lib/i18n/dicionario.ts` — entradas em espanhol dos textos novos da R2
+- `lib/audit/actions.ts` — ação `external_db_recipes.suggested`
+- `tests/mysql/receita-acf-imoveis.test.ts` — C1 contra MySQL 8 de verdade (job `mysql-integracao`, não roda aqui): DDL `wp_posts`/`wp_postmeta`, 5 imóveis + 1 rascunho + 1 outro `post_type`, bairro case-insensitive, `quartos_min`, `preco_max` (os dois formatos), `limite`, rascunho invisível, outro `post_type` invisível, mapeamento com nomes diferentes, `fonte_nao_liberada` em modo `list`
+- `docs/architecture/banco-de-dados-externo.architecture.json` — rota de sugestão com ≥ 2 arestas
+- `.changes/banco-externo-receitas-acf-imoveis.md` — `impacto: capacidade_nova`, `secao: adicionado`
+
+Limitação declarada (D2/C1): bairro vem de campo ACF (`meta_key`); sem junção a taxonomia (`wp_terms`/`wp_term_taxonomy`/`wp_term_relationships`) nesta fatia — fica para o JetEngine/R3.
+
+Resultado esperado do C1: o CI roda `tests/mysql/receita-acf-imoveis.test.ts` no job `mysql-integracao` e o veredito do CI é a fonte da verdade.
+
+Destino: núcleo, dentro do módulo de banco externo, que nasce desligado (mesmo destino da R1).

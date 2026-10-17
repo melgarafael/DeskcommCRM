@@ -937,6 +937,8 @@ export const AUDIT_ACTIONS = [
   "external_db_connection.deleted",
   "external_db_connection.tested",
   "external_db_connection.read",
+  /** POST /api/v1/external-db/connections/:id/recipes/suggest — sugestão de campos ACF (Spec 25 R2). */
+  "external_db_recipes.suggested",
   // Campanhas (migration 0375). Toda mudança de ESTADO da campanha audita: são
   // as ações que fazem mensagem sair para gente que não pediu, e "quem mandou
   // isso, e quando?" precisa de resposta. Edição de rascunho não audita — não

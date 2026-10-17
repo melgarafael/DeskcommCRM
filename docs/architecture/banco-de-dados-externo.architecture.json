@@ -165,6 +165,14 @@
       "dot": "green"
     },
     {
+      "id": "apiSuggest",
+      "lane": "api",
+      "label": "POST connections/[id]/recipes/suggest",
+      "sublabel": "sugere meta_key de um post_type (ACF): admin · validador + fontes liberadas",
+      "type": "api",
+      "dot": "green"
+    },
+    {
       "id": "telaLista",
       "lane": "ui",
       "label": "Lista de conexões",
@@ -335,6 +343,24 @@
       "from": "apiConnections",
       "to": "auditlog",
       "label": "audita mutação"
+    },
+    {
+      "id": "e40",
+      "from": "apiConnections",
+      "to": "apiSuggest",
+      "label": "sub-rota de sugestão"
+    },
+    {
+      "id": "e41",
+      "from": "apiSuggest",
+      "to": "dialeto",
+      "label": "consulta fixa de meta_key"
+    },
+    {
+      "id": "e42",
+      "from": "apiSuggest",
+      "to": "auditlog",
+      "label": "audita só contagens"
     },
     {
       "id": "e23",

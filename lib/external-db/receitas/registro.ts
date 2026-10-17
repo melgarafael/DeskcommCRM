@@ -2,12 +2,14 @@
  * REGISTRO DE RECEITAS: mapa id → definição. Nada de `if` por provedor fora
  * desta pasta — quem quer uma receita chama `receitaDe(id)`.
  */
+import { RECEITA_ACF_IMOVEIS } from "./acf-imoveis";
 import { RECEITA_WOOCOMMERCE_PRODUTOS } from "./woocommerce";
 import type { DefinicaoDeReceita } from "./tipos";
 
-/** Todas as receitas prontas, pelo id. Começa com woocommerce (fatia R1). */
+/** Todas as receitas prontas, pelo id. Começa com woocommerce (fatia R1) e acf-imoveis (fatia R2). */
 export const RECEITAS: ReadonlyMap<string, DefinicaoDeReceita> = new Map([
   [RECEITA_WOOCOMMERCE_PRODUTOS.id, RECEITA_WOOCOMMERCE_PRODUTOS],
+  [RECEITA_ACF_IMOVEIS.id, RECEITA_ACF_IMOVEIS],
 ]);
 
 /** Os ids de todas as receitas (para o enum do Zod nas instâncias). */

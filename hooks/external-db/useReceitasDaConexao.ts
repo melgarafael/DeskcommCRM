@@ -68,3 +68,27 @@ export async function previewReceita(
   );
   return res.data;
 }
+
+interface SugerirCamposACFResponse {
+  data: {
+    receita: string;
+    prefixo: string;
+    post_type: string;
+    meta_keys: string[];
+    mapeamento_sugerido: Record<string, string | null>;
+    aviso?: string;
+  };
+}
+
+/** Pede ao servidor os meta_key mais frequentes de um post_type (só acf-imoveis). */
+export async function sugerirCamposACF(
+  connectionId: string,
+  prefixo: string,
+  post_type: string,
+): Promise<SugerirCamposACFResponse["data"]> {
+  const res = await apiClient.post<SugerirCamposACFResponse>(
+    `/api/v1/external-db/connections/${connectionId}/recipes/suggest`,
+    { receita: "acf-imoveis", prefixo, post_type },
+  );
+  return res.data;
+}

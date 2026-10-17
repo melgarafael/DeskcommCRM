@@ -12,7 +12,12 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 
-import { previewReceita, salvarReceitas, useReceitasDaConexao } from "@/hooks/external-db/useReceitasDaConexao";
+import {
+  previewReceita,
+  salvarReceitas,
+  sugerirCamposACF,
+  useReceitasDaConexao,
+} from "@/hooks/external-db/useReceitasDaConexao";
 import { randomId } from "@/lib/random-id";
 import { useT } from "@/hooks/i18n/useT";
 import { RECEITAS, receitaDe } from "@/lib/external-db/receitas/registro";
@@ -29,7 +34,25 @@ interface Props {
 
 const PREFIXO_PADRAO = "wp_";
 const PREFIXO_REGEX = /^[A-Za-z0-9_]{1,20}$/;
+const POST_TYPE_PADRAO = "imovel";
+const POST_TYPE_REGEX = /^[a-z0-9_\-]{1,20}$/;
 const BUSCA_PADRAO = { limite: 5 };
+
+const CAMPOS_ACF: { chave: string; rotulo: string }[] = [
+  { chave: "preco", rotulo: "Preço" },
+  { chave: "quartos", rotulo: "Quartos" },
+  { chave: "bairro", rotulo: "Bairro" },
+  { chave: "cidade", rotulo: "Cidade" },
+  { chave: "area", rotulo: "Área" },
+];
+
+function fixosPadraoAcf(): InstanciaDeReceita["fixos"] {
+  return {
+    prefixo: PREFIXO_PADRAO,
+    post_type: POST_TYPE_PADRAO,
+    campos: { preco: "preco", quartos: "quartos", bairro: "bairro" },
+  };
+}
 
 function receitasDisponiveis(motor: "mysql" | "postgres"): DefinicaoDeReceita[] {
   return [...RECEITAS.values()].filter((r) => r.motores.includes(motor));
@@ -41,6 +64,15 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
   const idInputRotulo = useId();
   const idInputDescricao = useId();
   const idInputPrefixo = useId();
+  const idInputPostType = useId();
+  const idInputSugerir = useId();
+  const idBaseAcf = useId();
+
+  // IDs de label para os campos ACF de mapeamento, derivados de um useId base.
+  const idsCamposAcf: Record<string, string> = {};
+  for (const c of CAMPOS_ACF) {
+    idsCamposAcf[c.chave] = `${idBaseAcf}-${c.chave}`;
+  }
 
   // Uma linha em edição (rascunho local, ainda não salvo). A lista completa
   // sempre deriva do servidor (query.data) + o rascunho em edição, então
@@ -55,6 +87,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
     truncado?: boolean;
   } | null>(null);
   const [previewando, setPreviewando] = useState(false);
+  const [sugerindo, setSugerindo] = useState(false);
 
   const lista = useMemo(() => {
     const base = [...(query.data?.receitas ?? [])];
@@ -92,7 +125,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
       receita: primeira.id,
       rotulo: receita?.rotulo ?? primeira.id,
       descricao: receita?.descricao ?? "",
-      fixos: { prefixo: PREFIXO_PADRAO },
+      fixos: primeira.id === "acf-imoveis" ? fixosPadraoAcf() : { prefixo: PREFIXO_PADRAO },
       ativa: true,
     };
     setRascunho(nova);
@@ -138,6 +171,46 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
     }
   };
 
+  /** Chama a rota de sugestão e preenche os campos vazios, sem sobrescrever o já digitado. */
+  const sugerirCampos = async () => {
+    if (!canWrite || !rascunho) return;
+    const fixos = rascunho.fixos as {
+      prefixo?: string;
+      post_type?: string;
+      campos?: Record<string, string>;
+    };
+    if (!fixos.prefixo || !fixos.post_type) {
+      toast.error(t("Preencha o prefixo e o tipo de post antes de sugerir."));
+      return;
+    }
+    setSugerindo(true);
+    try {
+      const sugerido = await sugerirCamposACF(connectionId, fixos.prefixo, fixos.post_type);
+      const mapeamento = sugerido.mapeamento_sugerido as Record<string, string | null>;
+      const camposAtuais = { ...(fixos.campos ?? {}) };
+      for (const [campo, metaKey] of Object.entries(mapeamento)) {
+        // Não sobrescreve o que o admin já digitou.
+        if (metaKey && !camposAtuais[campo]) {
+          camposAtuais[campo] = metaKey;
+        }
+      }
+      const prox: InstanciaDeReceita = {
+        ...rascunho,
+        fixos: { ...fixos, campos: camposAtuais },
+      };
+      setRascunho(prox);
+      if (sugerido.aviso) {
+        toast.warning(sugerido.aviso);
+      } else {
+        toast.success(t("Campos sugeridos preenchidos."));
+      }
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setSugerindo(false);
+    }
+  };
+
   if (motor !== "mysql") return null;
   if (opcoes.length === 0 && receitas.length === 0) return null;
 
@@ -165,25 +238,32 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
         )}
       </CardHeader>
       <CardContent className="space-y-3">
-        {!query.data && <p className="text-sm text-muted-foreground">{t("Carregando receitas…")}</p>}
+        {!query.data && (
+          <p className="text-sm text-muted-foreground">{t("Carregando receitas…")}</p>
+        )}
         {query.data && receitas.length === 0 && canWrite && (
           <p className="text-sm text-muted-foreground">
-            {t("Nenhuma receita cadastrada ainda. Adicione uma para o assistente consultar o banco de origem.")}
+            {t(
+              "Nenhuma receita cadastrada ainda. Adicione uma para o assistente consultar o banco de origem.",
+            )}
           </p>
         )}
 
         {receitas.map((inst) => {
           const receita = receitaDe(inst.receita);
           const editandoEsta = rascunho?.id === inst.id;
-          const cols =
-            inst.fixos && typeof inst.fixos === "object" && "prefixo" in inst.fixos
-              ? String((inst.fixos as { prefixo?: string }).prefixo ?? PREFIXO_PADRAO)
-              : PREFIXO_PADRAO;
+          const fixos = inst.fixos as {
+            prefixo?: string;
+            post_type?: string;
+            campos?: Record<string, string>;
+          };
+          const cols = fixos.prefixo ?? PREFIXO_PADRAO;
 
           if (editandoEsta && canWrite) {
+            const ehAcf = receita?.id === "acf-imoveis";
             return (
-              <Card key={inst.id} className="border border-border p-3 mb-2">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <Card key={inst.id} className="mb-2 border border-border p-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                   <div className="col-span-1 md:col-span-2">
                     <Label htmlFor={idInputRotulo} className="text-xs text-muted-foreground">
                       {t("Rótulo")}
@@ -220,7 +300,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                       onChange={(e) => {
                         const valor = e.target.value;
                         if (!PREFIXO_REGEX.test(valor)) return;
-                        const prox = { ...inst, fixos: { ...(inst.fixos as object), prefixo: valor } };
+                        const prox = { ...inst, fixos: { ...fixos, prefixo: valor } };
                         setRascunho(prox);
                       }}
                     />
@@ -228,7 +308,27 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                       {t("O prefixo aparece antes de _posts no banco do WordPress (padrão wp_).")}
                     </p>
                   </div>
-                  <div className="col-span-1 md:col-span-1 flex items-end">
+                  {ehAcf && (
+                    <div>
+                      <Label htmlFor={idInputPostType} className="text-xs text-muted-foreground">
+                        {t("Tipo de post")}
+                      </Label>
+                      <Input
+                        id={idInputPostType}
+                        value={fixos.post_type ?? POST_TYPE_PADRAO}
+                        onChange={(e) => {
+                          const valor = e.target.value;
+                          if (!POST_TYPE_REGEX.test(valor)) return;
+                          const prox = { ...inst, fixos: { ...fixos, post_type: valor } };
+                          setRascunho(prox);
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("Qual tipo de post do WordPress (padrão imovel).")}
+                      </p>
+                    </div>
+                  )}
+                  <div className="col-span-1 flex items-end md:col-span-1">
                     <Switch
                       checked={inst.ativa}
                       onCheckedChange={(ativa) => {
@@ -236,10 +336,61 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                         setRascunho(prox);
                       }}
                     />
-                    <Label className="text-xs ml-2 text-muted-foreground">{t("Ativa")}</Label>
+                    <Label className="ml-2 text-xs text-muted-foreground">{t("Ativa")}</Label>
                   </div>
                 </div>
-                <div className="flex gap-2 mt-2">
+
+                {ehAcf && (
+                  <div className="mt-2 border-t pt-3">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">
+                      {t("Mapeamento de campos (meta_key)")}
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {CAMPOS_ACF.map((c) => {
+                        const idInput = idsCamposAcf[c.chave];
+                        const valorAtual = fixos.campos?.[c.chave] ?? "";
+                        const obrigatorio = c.chave !== "cidade" && c.chave !== "area";
+                        return (
+                          <div key={c.chave} className="col-span-1">
+                            <Label
+                              htmlFor={idInput}
+                              className={`text-xs text-muted-foreground ${obrigatorio ? "font-medium" : ""}`}
+                            >
+                              {t(c.rotulo)}
+                              {obrigatorio ? " *" : ""}
+                            </Label>
+                            <Input
+                              id={idInput}
+                              value={valorAtual}
+                              onChange={(e) => {
+                                const valor = e.target.value;
+                                if (!/^[A-Za-z0-9_\-]{1,64}$/.test(valor) && valor !== "") return;
+                                const proxCampos = { ...fixos.campos, [c.chave]: valor };
+                                const prox = { ...inst, fixos: { ...fixos, campos: proxCampos } };
+                                setRascunho(prox);
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 flex items-end gap-2">
+                      <Button
+                        size="sm"
+                        onClick={sugerirCampos}
+                        disabled={sugerindo}
+                        id={idInputSugerir}
+                      >
+                        {sugerindo ? t("Sugerindo…") : t("Sugerir campos")}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        {t("Preenche só os campos ainda vazios; a palavra final é sua.")}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-2 flex gap-2">
                   <Button size="sm" onClick={salvar}>
                     {t("Salvar")}
                   </Button>
@@ -270,8 +421,9 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                 </div>
                 {preview && preview.instancia.id === inst.id && (
                   <div className="mt-3 border-t pt-2">
-                    <p className="text-xs text-muted-foreground mb-1">
-                      {t("Pré-visualização (até 5 linhas)")} — {preview.linhas_devolvidas} {t("linhas")}
+                    <p className="mb-1 text-xs text-muted-foreground">
+                      {t("Pré-visualização (até 5 linhas)")} — {preview.linhas_devolvidas}{" "}
+                      {t("linhas")}
                       {preview.truncado ? ` · ${t("truncado")}` : ""}
                     </p>
                     <div className="overflow-x-auto">
@@ -279,7 +431,9 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                         <TableHeader>
                           <TableRow>
                             {preview.colunas.map((c) => (
-                              <TableCell key={c} className="text-xs font-medium">{c}</TableCell>
+                              <TableCell key={c} className="text-xs font-medium">
+                                {c}
+                              </TableCell>
                             ))}
                           </TableRow>
                         </TableHeader>
@@ -303,14 +457,24 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
           }
 
           return (
-            <Card key={inst.id} className="border border-border p-3 mb-2">
+            <Card key={inst.id} className="mb-2 border border-border p-3">
               <div className="flex flex-row items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium">{inst.rotulo || (receita?.rotulo ?? inst.receita)}</p>
-                  <p className="text-xs text-muted-foreground">{inst.descricao || (receita?.descricao ?? "")}</p>
+                  <p className="text-sm font-medium">
+                    {inst.rotulo || (receita?.rotulo ?? inst.receita)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {inst.descricao || (receita?.descricao ?? "")}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {t("Prefixo:")} <span className="font-mono">{cols}</span>
                   </p>
+                  {ehAcfInstance(receita) && (
+                    <p className="text-xs text-muted-foreground">
+                      {t("Tipo de post:")}{" "}
+                      <span className="font-mono">{fixos.post_type ?? POST_TYPE_PADRAO}</span>
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-1">
                   <Badge variant={inst.ativa ? "success" : "secondary"}>
@@ -348,8 +512,9 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
               </div>
               {preview && preview.instancia.id === inst.id && (
                 <div className="mt-3 border-t pt-2">
-                  <p className="text-xs text-muted-foreground mb-1">
-                    {t("Pré-visualização (até 5 linhas)")} — {preview.linhas_devolvidas} {t("linhas")}
+                  <p className="mb-1 text-xs text-muted-foreground">
+                    {t("Pré-visualização (até 5 linhas)")} — {preview.linhas_devolvidas}{" "}
+                    {t("linhas")}
                     {preview.truncado ? ` · ${t("truncado")}` : ""}
                   </p>
                   <div className="overflow-x-auto">
@@ -357,7 +522,9 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                       <TableHeader>
                         <TableRow>
                           {preview.colunas.map((c) => (
-                            <TableCell key={c} className="text-xs font-medium">{c}</TableCell>
+                            <TableCell key={c} className="text-xs font-medium">
+                              {c}
+                            </TableCell>
                           ))}
                         </TableRow>
                       </TableHeader>
@@ -382,4 +549,8 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
       </CardContent>
     </Card>
   );
+}
+
+function ehAcfInstance(receita: DefinicaoDeReceita | undefined): boolean {
+  return receita?.id === "acf-imoveis";
 }

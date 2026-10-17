@@ -16199,6 +16199,24 @@ export const DICIONARIO: Traducoes = {
   "atualizado": { es: "actualizado" },
   "recusado": { es: "rechazado" },
   "Recusado.": { es: "Rechazado." },
+  // ─── Banco externo: receitas prontas ACF (Spec 25 R2) — só as que ainda não existem ───
+  "Tipo de post": { es: "Tipo de entrada" },
+  Quartos: { es: "Habitaciones" },
+  Área: { es: "Área" },
+  "Sugerir campos": { es: "Sugerir campos" },
+  "Preencha o prefixo e o tipo de post antes de sugerir.": {
+    es: "Completa el prefijo y el tipo de entrada antes de sugerir.",
+  },
+  "Campos sugeridos preenchidos.": { es: "Campos sugeridos completados." },
+  "Qual tipo de post do WordPress (padrão imovel).": {
+    es: "Qué tipo de entrada de WordPress (predeterminado imovel).",
+  },
+  "Mapeamento de campos (meta_key)": { es: "Mapeo de campos (meta_key)" },
+  "Sugerindo…": { es: "Sugiriendo…" },
+  "Preenche só os campos ainda vazios; a palavra final é sua.": {
+    es: "Rellena solo los campos aún vacíos; la última palabra es tuya.",
+  },
+  "Tipo de post:": { es: "Tipo de entrada:" },
 };
 
 /**

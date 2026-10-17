@@ -12,7 +12,7 @@
 import type { z } from "zod";
 
 export type MotorReceita = "mysql" | "postgres";
-export type FamiliaReceita = "woocommerce";
+export type FamiliaReceita = "woocommerce" | "acf-imoveis";
 
 export interface DefinicaoDeReceita {
   /** Identificador estável da receita (ex.: "woocommerce-produtos"). */
