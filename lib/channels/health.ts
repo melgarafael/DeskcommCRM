@@ -233,7 +233,7 @@ export async function listarConexoesCaidas(
     )
     .map((s) => ({
     id: s.id as string,
-    apelido: (s.display_name as string | null) ?? (s.phone_number as string | null) ?? "sem nome",
+    apelido: (s.display_name as string | null) ?? (s.phone_number as string | null) ?? "sin nombre",
     status: (s.status as string | null) ?? "",
   }));
 }

@@ -169,7 +169,7 @@ async function handle(req: NextRequest): Promise<Response> {
           .eq("organization_id", s.organization_id);
       }
 
-      const apelido = s.display_name ?? s.phone_number ?? "sem nome";
+      const apelido = s.display_name ?? s.phone_number ?? "sin nombre";
       const desfecho = await sincronizarSaudeDaConexao(
         admin,
         { id: s.id, organization_id: s.organization_id, status: statusFinal },
