@@ -51,23 +51,66 @@ describe("receita woocommerce-produtos (unit, sem MySQL)", () => {
     expect(sql).not.toContain("instock");
     expect(sql).not.toContain("publish");
     expect(sql).not.toContain("product");
-    // Todo valor virou um placeholder `?`. `%camisa%` entra duas vezes (post_title
-    // e SKU). As quatro meta_key dos joins (`_price`, `_regular_price`, `_sku`,
-    // `_stock_status`) também vão por placeholder, antes do limite.
+    // Todo valor virou um placeholder `?`. A ordem dos valores espelha a ordem
+    // dos `?` no texto: primeiro as quatro meta_key dos JOINs (que aparecem
+    // antes do WHERE), depois as cláusulas do WHERE e por fim o LIMIT.
     expect(sql.split("?").length - 1).toBe(valores.length);
     expect(valores).toEqual([
+      "_price",
+      "_regular_price",
+      "_sku",
+      "_stock_status",
       "product",
       "publish",
       "%camisa%",
       "%camisa%",
       60,
       "instock",
-      "_price",
-      "_regular_price",
-      "_sku",
-      "_stock_status",
       3,
     ]);
+  });
+
+  /**
+   * Teste obrigatório do R-A: renderiza o SQL substituindo cada `?`, em
+   * sequência, pelo valor correspondente de `valores`. Se a ordem dos valores
+   * não casar com a ordem dos `?` no texto, a junção `mp.meta_key = ?`
+   * receberia `"product"` em vez de `"_price"` e a consulta nunca devolvesse
+   * nada (defeito real medido no CI).
+   */
+  it("placeholders estão alinhados com os valores na ordem do texto (R-A)", () => {
+    const { sql, valores } = RECEITA_WOOCOMMERCE_PRODUTOS.montar(
+      fixos,
+      { busca: "camisa", preco_max: 60, so_em_estoque: true, limite: 3 },
+      3,
+    );
+
+    // Render: substitui cada `?` pelo valor correspondente, em sequência.
+    const partes = sql.split("?");
+    if (partes.length - 1 !== valores.length) {
+      throw new Error(`esperava ${valores.length} placeholders, achou ${partes.length - 1}`);
+    }
+    let renderizado = "";
+    for (let i = 0; i < partes.length; i++) {
+      renderizado += partes[i];
+      if (i < valores.length) {
+        const v = valores[i];
+        renderizado += typeof v === "string" ? `'${v.replace(/'/g, "''")}'` : String(v);
+      }
+    }
+
+    // O número de `?` bate com o número de valores.
+    expect(sql.split("?").length - 1).toBe(valores.length);
+
+    // Cada meta_key dos JOINs recebe o seu próprio valor (não "product").
+    expect(renderizado).toContain("meta_key = '_price'");
+    expect(renderizado).toContain("meta_key = '_regular_price'");
+    expect(renderizado).toContain("meta_key = '_sku'");
+    expect(renderizado).toContain("meta_key = '_stock_status'");
+
+    // As cláusulas do WHERE recebem os valores de filtro.
+    expect(renderizado).toContain("post_type = 'product'");
+    expect(renderizado).toContain("post_status = 'publish'");
+    expect(renderizado).toContain("limit 3");
   });
 
   it("prefixo inválido é recusado pelo Zod", () => {

@@ -93,6 +93,21 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
       return `?`;
     };
 
+    // Monta na ORDEM do texto do SQL: primeiro os JOINs (que aparecem antes
+    // do WHERE), depois as cláusulas do WHERE, por fim o LIMIT. Cada chamada a
+    // `marcador()` empurra um valor em `valores` exatamente na posição do `?`
+    // que gera no texto, então valores nunca saem fora de ordem.
+    const joins: string[] = [
+      // preço de venda (mp): sempre participa para poder ordenar/filtrar por preço e projetar
+      `join ${postmeta} ${mp} on ${mp}.post_id = ${posts}.ID and ${mp}.meta_key = ${marcador("_price")}`,
+      // preço regular (mrp): fallback quando _price não existe ou é 0
+      `left join ${postmeta} ${mrp} on ${mrp}.post_id = ${posts}.ID and ${mrp}.meta_key = ${marcador("_regular_price")}`,
+      // SKU
+      `left join ${postmeta} ${msku} on ${msku}.post_id = ${posts}.ID and ${msku}.meta_key = ${marcador("_sku")}`,
+      // estoque
+      `left join ${postmeta} ${mstock} on ${mstock}.post_id = ${posts}.ID and ${mstock}.meta_key = ${marcador("_stock_status")}`,
+    ];
+
     const clausulas: string[] = [
       `${posts}.post_type = ${marcador("product")}`,
       `${posts}.post_status = ${marcador("publish")}`,
@@ -119,17 +134,6 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
     if (soEmEstoque) {
       clausulas.push(`${mstock}.meta_value = ${marcador("instock")}`);
     }
-
-    const joins: string[] = [
-      // preço de venda (mp): sempre participa para poder ordenar/filtrar por preço e projetar
-      `join ${postmeta} ${mp} on ${mp}.post_id = ${posts}.ID and ${mp}.meta_key = ${marcador("_price")}`,
-      // preço regular (mrp): fallback quando _price não existe ou é 0
-      `left join ${postmeta} ${mrp} on ${mrp}.post_id = ${posts}.ID and ${mrp}.meta_key = ${marcador("_regular_price")}`,
-      // SKU
-      `left join ${postmeta} ${msku} on ${msku}.post_id = ${posts}.ID and ${msku}.meta_key = ${marcador("_sku")}`,
-      // estoque
-      `left join ${postmeta} ${mstock} on ${mstock}.post_id = ${posts}.ID and ${mstock}.meta_key = ${marcador("_stock_status")}`,
-    ];
 
     const sql =
       `select ${posts}.ID as id, ` +

@@ -91,7 +91,7 @@ test.beforeAll(async () => {
       ssl_mode: "require",
       enabled: true,
       db_type: "mysql",
-      receitas: "[]",
+      receitas: [],
     })
     .select("id")
     .single();

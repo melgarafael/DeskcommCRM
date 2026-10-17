@@ -136,10 +136,9 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       ),
     );
     registrar("C1-woocommerce", `tabelas: ${tabelas.map((t) => t.table_name).join(", ")}`);
-    expect(tabelas.map((t) => t.table_name).sort()).toEqual([
-      `${WP_PREFIXO}posts`,
-      `${WP_PREFIXO}postmeta`,
-    ]);
+    expect(tabelas.map((t) => t.table_name).sort()).toEqual(
+      [`${WP_PREFIXO}posts`, `${WP_PREFIXO}postmeta`].sort(),
+    );
   });
 
   it("monta SQL e passa no validador com as tabelas permitidas", () => {
