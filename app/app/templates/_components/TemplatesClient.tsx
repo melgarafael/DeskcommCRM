@@ -24,9 +24,19 @@ import { Plus, PencilSimple, Trash } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { PIX_KEYS_QUERY, usePixKeys, type PixKey } from "@/hooks/inbox/usePixKeys";
 import { TemplateFormDialog } from "./TemplateFormDialog";
+import { PixKeyFormDialog } from "./PixKeyFormDialog";
 
 const TEMPLATES_KEY = ["message-templates"];
+
+const TIPO_LABEL: Record<string, string> = {
+  cpf: "CPF",
+  cnpj: "CNPJ",
+  email: "E-mail",
+  random: "Chave aleatória",
+  phone: "Celular",
+};
 
 interface Props {
   canShare: boolean;
@@ -36,40 +46,42 @@ interface Props {
 export function TemplatesClient({ canShare, currentUserId }: Props) {
   const t = useT();
   const { data: templates, isLoading } = useMessageTemplates();
+  const { data: pixKeys, isLoading: pixLoading } = usePixKeys();
   const qc = useQueryClient();
   const del = useMutation({
     mutationFn: async (id: string) => apiClient.delete(`/api/v1/message-templates/${id}`),
     onError: showApiError,
     onSuccess: () => qc.invalidateQueries({ queryKey: TEMPLATES_KEY }),
   });
+  const delPix = useMutation({
+    mutationFn: async (id: string) => apiClient.delete(`/api/v1/pix-keys/${id}`),
+    onError: showApiError,
+    onSuccess: () => qc.invalidateQueries({ queryKey: PIX_KEYS_QUERY }),
+  });
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<MessageTemplate | null>(null);
-  // Deep link: `/app/templates?modelo=<id>` abre aquele modelo. É o link que a
-  // integração devolve ("use o modelo X") e que a tela não tinha — sem ele, quem
-  // recebe a mensagem cai na lista e tem de caçar de qual texto se falava.
-  // `?.` porque o hook devolve null fora de um contexto de navegação (o que
-  // acontece em teste e em render estático), como no resto do repo.
+  const [pixFormOpen, setPixFormOpen] = React.useState(false);
+  const [editingPix, setEditingPix] = React.useState<PixKey | null>(null);
+
   const idDoModelo = useSearchParams()?.get("modelo") ?? null;
   const [abertoPelaUrl, setAbertoPelaUrl] = React.useState(false);
-  // Só quem pode editar/apagar pela RLS vê as ações: o dono do pessoal, ou
-  // manager+ no compartilhado (owner null). Sem isto, um agent veria botões
-  // que o backend rejeita (404/nada apagado).
+
   const canModify = React.useCallback(
     (template: MessageTemplate) =>
       template.owner_user_id === currentUserId || (template.owner_user_id === null && canShare),
     [canShare, currentUserId],
   );
+  const canModifyPix = React.useCallback(
+    (key: PixKey) =>
+      key.owner_user_id === currentUserId || (key.owner_user_id === null && canShare),
+    [canShare, currentUserId],
+  );
 
   React.useEffect(() => {
     if (abertoPelaUrl || !idDoModelo) return;
-    // A lista chega depois: enquanto ela não tem o modelo pedido, NÃO marca como
-    // aberto — marcar aqui faria o link depender de o dado já estar em cache.
     const alvo = templates?.find((template) => template.id === idDoModelo);
     if (!alvo) return;
     setAbertoPelaUrl(true);
-    // O link só abre a EDIÇÃO para quem pode editar — a mesma régua da lista.
-    // Um agent que recebe o link de um compartilhado fica na lista, onde o
-    // modelo está visível: abrir o form ali seria um Salvar que a RLS recusa.
     if (!canModify(alvo)) return;
     setEditing(alvo);
     setFormOpen(true);
@@ -83,8 +95,16 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
     setEditing(template);
     setFormOpen(true);
   };
+  const openNewPix = () => {
+    setEditingPix(null);
+    setPixFormOpen(true);
+  };
+  const openEditPix = (key: PixKey) => {
+    setEditingPix(key);
+    setPixFormOpen(true);
+  };
 
-  if (isLoading) {
+  if (isLoading || pixLoading) {
     return (
       <div className="space-y-2">
         <Skeleton className="h-16 w-full" />
@@ -94,27 +114,112 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex sm:justify-end">
-        <Button type="button" onClick={openNew} className="w-full sm:w-auto">
-          <Plus /> {t("Novo template")}
-        </Button>
-      </div>
-      {!templates?.length ? (
-        <p className="text-sm text-muted-foreground">{t("Nenhum template ainda.")}</p>
-      ) : (
-        <ul className="space-y-2">
-          {templates.map((template) => {
-            return (
+    <div className="space-y-8">
+      <section className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={openNewPix} className="w-full sm:w-auto">
+            <Plus /> {t("Nova chave Pix")}
+          </Button>
+          <Button type="button" onClick={openNew} className="w-full sm:w-auto">
+            <Plus /> {t("Nova resposta")}
+          </Button>
+        </div>
+
+        {!templates?.length ? (
+          <p className="text-sm text-muted-foreground">{t("Nenhuma resposta rápida ainda.")}</p>
+        ) : (
+          <ul className="space-y-2">
+            {templates.map((template) => {
+              return (
+                <li
+                  key={template.id}
+                  className="flex items-start justify-between gap-4 rounded-md border bg-card p-4"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">
+                        {template.shortcut ? `/${template.shortcut}` : template.title}
+                      </span>
+                      <Badge variant={template.owner_user_id ? "neutral" : "default"}>
+                        {t(template.owner_user_id ? "Pessoal" : "Todos")}
+                      </Badge>
+                    </div>
+                    <p className="line-clamp-2 text-sm text-muted-foreground">{template.body}</p>
+                  </div>
+                  {canModify(template) && (
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("Editar template")}
+                        onClick={() => openEdit(template)}
+                      >
+                        <PencilSimple />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("Excluir template")}
+                          >
+                            <Trash />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t("Excluir este template?")}</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {t("Essa ação não pode ser desfeita.")}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() =>
+                                del.mutate(template.id, {
+                                  onSuccess: () => toast.success(t("Template excluído.")),
+                                })
+                              }
+                            >
+                              {t("Excluir")}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium">{t("Chaves Pix")}</h2>
+        {!pixKeys?.length ? (
+          <p className="text-sm text-muted-foreground">
+            {t("Nenhuma chave Pix cadastrada. Use o botão Nova chave Pix.")}
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {pixKeys.map((key) => (
               <li
-                key={template.id}
+                key={key.id}
                 className="flex items-start justify-between gap-4 rounded-md border bg-card p-4"
               >
                 <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{template.title}</span>
-                    <Badge variant={template.owner_user_id ? "neutral" : "default"}>
-                      {t(template.owner_user_id ? "Pessoal" : "Compartilhado")}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{key.name}</span>
+                    <Badge className="bg-orange-500 text-white hover:bg-orange-500">
+                      {t("Pix")}
+                    </Badge>
+                    <Badge variant="neutral">{t(TIPO_LABEL[key.key_type] ?? key.key_type)}</Badge>
+                    <Badge variant={key.owner_user_id ? "neutral" : "default"}>
+                      {t(key.owner_user_id ? "Somente eu" : "Todos")}
                     </Badge>
                     {/* A resposta rápida que leva imagem do próprio operador
                         (#2526) se anuncia na lista: sem isto, quem usa o menu
@@ -126,16 +231,16 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                       </Badge>
                     )}
                   </div>
-                  <p className="line-clamp-2 text-sm text-muted-foreground">{template.body}</p>
+                  <p className="truncate text-sm text-muted-foreground">{key.key_value}</p>
                 </div>
-                {canModify(template) && (
+                {canModifyPix(key) && (
                   <div className="flex shrink-0 gap-1">
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      aria-label={t("Editar template")}
-                      onClick={() => openEdit(template)}
+                      aria-label={t("Editar chave Pix")}
+                      onClick={() => openEditPix(key)}
                     >
                       <PencilSimple />
                     </Button>
@@ -145,14 +250,14 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          aria-label={t("Excluir template")}
+                          aria-label={t("Excluir chave Pix")}
                         >
                           <Trash />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>{t("Excluir este template?")}</AlertDialogTitle>
+                          <AlertDialogTitle>{t("Excluir esta chave Pix?")}</AlertDialogTitle>
                           <AlertDialogDescription>
                             {t("Essa ação não pode ser desfeita.")}
                           </AlertDialogDescription>
@@ -161,8 +266,8 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                           <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
                           <AlertDialogAction
                             onClick={() =>
-                              del.mutate(template.id, {
-                                onSuccess: () => toast.success(t("Template excluído.")),
+                              delPix.mutate(key.id, {
+                                onSuccess: () => toast.success(t("Chave Pix excluída.")),
                               })
                             }
                           >
@@ -174,15 +279,22 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                   </div>
                 )}
               </li>
-            );
-          })}
-        </ul>
-      )}
+            ))}
+          </ul>
+        )}
+      </section>
+
       <TemplateFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
         canShare={canShare}
         template={editing}
+      />
+      <PixKeyFormDialog
+        open={pixFormOpen}
+        onOpenChange={setPixFormOpen}
+        canShare={canShare}
+        pixKey={editingPix}
       />
     </div>
   );

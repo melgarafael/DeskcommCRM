@@ -7692,6 +7692,128 @@ export type Database = {
           },
         ]
       }
+      pix_keys: {
+        Row: {
+          created_at: string
+          created_by_user_id: string | null
+          id: string
+          key_type: string
+          key_value: string
+          name: string
+          organization_id: string
+          owner_user_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          key_type: string
+          key_value: string
+          name: string
+          organization_id: string
+          owner_user_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          key_type?: string
+          key_value?: string
+          name?: string
+          organization_id?: string
+          owner_user_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pix_keys_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_messages: {
+        Row: {
+          body: string | null
+          conversation_id: string
+          created_at: string
+          created_by_user_id: string | null
+          id: string
+          last_error: string | null
+          media_mime: string | null
+          media_size_bytes: number | null
+          media_storage_path: string | null
+          media_url: string | null
+          metadata: Json | null
+          organization_id: string
+          reply_to_message_id: string | null
+          send_at: string
+          sent_message_id: string | null
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          conversation_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          last_error?: string | null
+          media_mime?: string | null
+          media_size_bytes?: number | null
+          media_storage_path?: string | null
+          media_url?: string | null
+          metadata?: Json | null
+          organization_id: string
+          reply_to_message_id?: string | null
+          send_at: string
+          sent_message_id?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          conversation_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          last_error?: string | null
+          media_mime?: string | null
+          media_size_bytes?: number | null
+          media_storage_path?: string | null
+          media_url?: string | null
+          metadata?: Json | null
+          organization_id?: string
+          reply_to_message_id?: string | null
+          send_at?: string
+          sent_message_id?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           ack: number | null
