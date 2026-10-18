@@ -1,24 +1,20 @@
 /**
  * Spec 25, fatia R5 — o apartamento: quem se interessa vira lead no funil.
  *
- * PROVA EM PAR (docs/doctrine/prova-em-par.md). O par e a unidade:
- *   - pela TELA: o admin configura o "Funil de destino" da receita de imoveis,
- *     salva, recarrega, e o cartao diz "Leads vao para: <funil> > <etapa>";
- *   - pela FERRAMENTA (direto, o mesmo `crm_registrar_interesse_no_item` que o
- *     agente chama): com o MESMO pedido ("apartamento 2 quartos no Centro", item
- *     4821) nasce UM lead no funil escolhido, com a referencia `acf-imoveis:4821`
- *     na descricao; o segundo interesse no mesmo item NAO duplica; e a tela do
- *     funil mostra o card.
+ * O QUE ESTA SPEC PROVA: a TELA. O admin configura o "Funil de destino" da receita
+ * de imoveis, salva, recarrega, e o cartao diz "Leads vao para: <funil> > <etapa>";
+ * o destino gravado no banco e exatamente o escolhido.
  *
- * O QUE ESTA SPEC NAO FAZ, e por que (declarado, nao escondido):
- *   - nao sobe MySQL/WordPress: o e2e fresco nao tem banco de origem (a R1 ja
- *     declara isso). O resultado da consulta que o agente teria visto entra no
- *     registro do turno (`ItensDaReceitaNoTurno.registrar`) com a MESMA forma que
- *     `crm_consultar_receita` devolve; a consulta em si e provada em
- *     `tests/mysql/receita-acf-imoveis.test.ts`.
- *   - nao ha duble de MODELO para agente nos e2e do repositorio (`git grep dubl
- *     tests/e2e`: so Stripe/Asaas/Resend/Jev). Portanto o lado "pelo agente,
- *     conversando" NAO esta coberto aqui: o par fica com a tela + a ferramenta.
+ * O LADO FERRAMENTA DO PAR NAO ESTA AQUI, e nao ha como estar: o Playwright nao
+ * resolve o alias `@/` (importar o handler quebra), e nao existe rota HTTP que
+ * chegue a `crm_registrar_interesse_no_item` — o contato vem so de
+ * `ctx.contatoDoTurno`, montado por quem monta o turno do agente, e o MCP externo
+ * nao tem contato de turno (a ferramenta recusa de proposito). Ele e provado em
+ * `lib/mcp/tools/interesse-em-item.test.ts` com o MESMO pedido ("apartamento 2
+ * quartos no Centro", item 4821): um lead com a referencia `acf-imoveis:4821`, o
+ * segundo interesse sem duplicar, sem destino so aviso, outra organizacao recusada.
+ * Tambem nao ha duble de MODELO de agente nos e2e (so Stripe/Asaas/Resend/Jev) nem
+ * MySQL de origem no e2e fresco: o lado "pelo agente conversando" fica sem cobertura.
  *
  * Pre-requisitos (banco local do baseline, app buildada):
  *   pnpm e2e:env && pnpm e2e:build
@@ -42,8 +38,6 @@ const ESPERA = 30_000;
 const sufixo = Date.now().toString(36).slice(-4);
 const NOME_DO_FUNIL = `Imoveis E2E ${sufixo}`;
 const NOME_DA_ETAPA = `Interessado ${sufixo}`;
-const TITULO = "Apartamento 2 quartos no Centro";
-const REFERENCIA = "acf-imoveis:4821";
 
 let creds: CredsE2E;
 let orgId: string;
@@ -163,59 +157,4 @@ test("TELA: o admin escolhe o funil de destino da receita e ele persiste", async
   const linha = await db.from("external_db_connections").select("receitas").eq("id", conexaoId).single();
   const gravada = (linha.data!.receitas as Array<{ destino?: { pipeline_id: string; stage_id: string } }>)[0]!;
   expect(gravada.destino).toEqual({ pipeline_id: funilId, stage_id: etapaId });
-});
-
-test("FERRAMENTA: o mesmo pedido cria UM lead com a referencia, e o segundo interesse nao duplica", async ({ page }) => {
-  // Importacao tardia: o modulo le o ambiente do servidor ao carregar.
-  const { crmRegistrarInteresseNoItem } = await import("@/lib/mcp/tools/interesse-em-item");
-  const { ItensDaReceitaNoTurno } = await import("@/lib/external-db/receitas/itens-do-turno");
-
-  // O que `crm_consultar_receita` devolveria para "apartamento 2 quartos no Centro".
-  const itens = new ItensDaReceitaNoTurno();
-  itens.registrar({
-    instancia: { id: instanciaId },
-    linhas: [{ id: 4821, titulo: TITULO, preco: 480000, imagem_url: null }],
-  });
-  const ctx = {
-    organizationId: orgId,
-    role: "ai_operator",
-    actor: { type: "ai_agent", id: randomUUID(), agent_id: null },
-    apiTokenId: randomUUID(),
-    requestId: randomUUID(),
-    supabase: db,
-    contatoDoTurno: contatoId,
-    itensDaReceitaNoTurno: itens,
-  } as never;
-
-  const primeira = (await crmRegistrarInteresseNoItem.handler({ instancia_id: instanciaId, item_id: "4821" }, ctx)) as {
-    resultado: string;
-  };
-  expect(primeira.resultado).toBe("lead_criado");
-
-  // Outro turno (registro novo), mesmo contato e mesmo item: atualiza, nao duplica.
-  const itens2 = new ItensDaReceitaNoTurno();
-  itens2.registrar({ instancia: { id: instanciaId }, linhas: [{ id: 4821, titulo: TITULO, preco: 480000 }] });
-  const segunda = (await crmRegistrarInteresseNoItem.handler(
-    { instancia_id: instanciaId, item_id: "4821" },
-    { ...(ctx as object), itensDaReceitaNoTurno: itens2 } as never,
-  )) as { resultado: string };
-  expect(segunda.resultado).toBe("interesse_repetido");
-
-  const leads = await db
-    .from("crm_leads")
-    .select("id, source, pipeline_id, stage_id, contact_id, description")
-    .eq("organization_id", orgId)
-    .eq("contact_id", contatoId);
-  expect(leads.data).toHaveLength(1);
-  expect(leads.data![0]).toMatchObject({ source: "external", pipeline_id: funilId, stage_id: etapaId });
-  expect(leads.data![0]!.description).toContain(`[ref:${REFERENCIA}]`);
-
-  const notas = await db.from("crm_lead_activities").select("reason").eq("lead_id", leads.data![0]!.id).eq("type", "note");
-  expect(notas.data!.map((n) => n.reason).join(" | ")).toContain(TITULO);
-  expect(notas.data!.map((n) => n.reason).join(" | ")).toMatch(/Interesse repetido/);
-
-  // E a tela do funil mostra o card.
-  await loginComoAdmin(page, creds);
-  await page.goto(`/app/pipelines/${funilId}`);
-  await expect(page.getByText(new RegExp(`Interesse: ${TITULO}`))).toBeVisible({ timeout: ESPERA });
 });
