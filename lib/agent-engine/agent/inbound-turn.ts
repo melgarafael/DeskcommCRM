@@ -84,6 +84,7 @@ import {
   prepararFotoDaReceita,
   subirImagemNoStorage,
 } from './foto-da-receita';
+import { ItensDaReceitaNoTurno } from '@/lib/external-db/receitas/itens-do-turno';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
   applyLeadStateUpdate,
@@ -2992,6 +2993,9 @@ async function executarTurnoDoAgente(
   // Spec 25 R4: as `imagem_url` que `crm_consultar_receita` devolveu NESTE turno — a única
   // fonte de URL que o `send_message` aceita para a foto de um item de receita.
   const imagensDaReceita = new ImagensDaReceitaNoTurno();
+  // Spec 25 R5: os ITENS (id + título + preço) que a mesma consulta devolveu — só item visto neste
+  // turno pode virar lead em `crm_registrar_interesse_no_item`.
+  const itensDaReceita = new ItensDaReceitaNoTurno();
   // Lido pelo `casePromiseGate` (#1873): true só depois de `schedule_followup` AGENDAR com
   // sucesso neste turno. Libera apenas a promessa de retorno do próprio assistente.
   let followupAgendadoNesteTurno = false;
@@ -4470,6 +4474,7 @@ async function executarTurnoDoAgente(
             jobId: preview?.runId ?? liveJob().id,
             contactId: leadId || null,
             conversationId: input.conversationId,
+            itensDaReceita,
           },
           configDoTurno,
           runLog,
@@ -4507,6 +4512,7 @@ async function executarTurnoDoAgente(
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
                   const resultado = await executeOriginal(...args);
                   imagensDaReceita.registrar(resultado);
+                  itensDaReceita.registrar(resultado);
                   return resultado;
                 }) as typeof mcpTool.execute,
               };

@@ -10,6 +10,7 @@ import type { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Actor } from "@/lib/api/handlers/types";
+import type { ItensDaReceitaNoTurno } from "@/lib/external-db/receitas/itens-do-turno";
 import type { Role } from "@/lib/auth/types";
 
 export interface McpContext {
@@ -39,6 +40,13 @@ export interface McpContext {
    * saem do turno.
    */
   contatoDoTurno?: string;
+  /**
+   * Os itens que `crm_consultar_receita` devolveu NESTE turno (Spec 25 R5).
+   * Contexto de CONFIANÇA, como `contatoDoTurno`: montado por quem monta o turno
+   * (`inbound-turn.ts`), nunca vindo dos argumentos. Ausente = nenhum item foi
+   * consultado, e `crm_registrar_interesse_no_item` recusa.
+   */
+  itensDaReceitaNoTurno?: ItensDaReceitaNoTurno;
   organizationId: string;
   role: Role;
   actor: Actor;

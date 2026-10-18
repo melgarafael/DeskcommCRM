@@ -25,6 +25,7 @@ import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_t
 import { IDS_DO_HARNESS, motivoDoHarness } from '@/lib/mcp/tools/ferramentas-do-harness';
 import type { McpAuthResult } from '@/lib/mcp/auth';
 import type { McpContext } from '@/lib/mcp/types';
+import type { ItensDaReceitaNoTurno } from '@/lib/external-db/receitas/itens-do-turno';
 import { modulosLigados } from '@/lib/instalacao/modulos';
 import { capacidadesDaOrganizacao } from '@/lib/organizacao/capacidades';
 import { filtrarToolsComCallbackDesabilitado } from '@/lib/followup/callback-policy';
@@ -68,6 +69,8 @@ export async function buildMcpTurnTools(
     contactId: string | null;
     /** A conversa do turno — o canal que o servidor MCP externo recebe (#2147). */
     conversationId?: string | null;
+    /** Os itens de receita consultados neste turno (Spec 25 R5) — vão ao `ctx` das tools. */
+    itensDaReceita?: ItensDaReceitaNoTurno;
   },
   agentConfig: PublishedAgentConfig,
   log: Logger,
@@ -124,6 +127,7 @@ export async function buildMcpTurnTools(
     apiTokenId: ephemeral.id,
     requestId: ids.jobId,
     supabase: cfg.supabase,
+    ...(ids.itensDaReceita ? { itensDaReceitaNoTurno: ids.itensDaReceita } : {}),
   };
   const auth: McpAuthResult = {
     organizationId: ids.organizationId,

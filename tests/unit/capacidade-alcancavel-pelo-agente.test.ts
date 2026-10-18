@@ -72,6 +72,9 @@ const INALCANCAVEIS_CONHECIDAS: ReadonlyArray<string> = [];
 const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // `app/api/v1/leads/` — POST exige `agent`. Um atendente cria negócio pela tela.
   "crm_create_lead",
+  // Spec 25 R5 — mesma escrita do `crm_create_lead` (POST `app/api/v1/leads/` exige `agent`),
+  // só que o funil vem da instância da receita, escolhido pelo admin.
+  "crm_registrar_interesse_no_item",
   // `app/api/v1/leads/[id]/retomar/` — POST exige `agent` (issue #1538).
   "crm_retomar_lead",
   // `app/api/v1/leads/[id]/` — PATCH exige `agent`.

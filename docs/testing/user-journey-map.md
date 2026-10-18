@@ -3568,3 +3568,17 @@ do commit (resposta perdida, processo reiniciado) e retomada pela segunda tentat
 partir da lápide, com o 500 que não diz "nada foi apagado": medida por unidade em
 `lib/tenants/exclusao.test.ts` e `…/delete/route.test.ts`, e o inventário da lápide em
 `tests/invariants/gestao-de-tenants.test.ts`.
+
+## J48 — O apartamento: quem se interessa vira lead no funil `[P1]` (Spec 25, R5)
+
+Jornada do dono de imobiliária com o site em WordPress. Instalação fresca, módulo `banco_externo` ligado.
+
+| Caso | O que se faz | Esperado | Prova |
+|---|---|---|---|
+| 35.1 | Integração de dados › receita de imóveis › Editar › Funil de destino (funil + etapa) › Salvar | Cartão diz "Leads vão para: funil › etapa" e sobrevive ao recarregar | `tests/e2e/banco-externo-interesse-vira-lead.spec.ts` (escrita, **não executada** na sessão: veredito do CI) |
+| 35.2 | Cliente pede "apartamento 2 quartos no Centro" e diz que quer o primeiro | Um lead no funil escolhido, `source = external`, referência `[ref:acf-imoveis:4821]` na descrição, nota com título e preço | mesma spec (lado da ferramenta) + `lib/mcp/tools/interesse-em-item.test.ts` |
+| 35.3 | O mesmo cliente demonstra interesse de novo no mesmo item | Nota "Interesse repetido em <data>", nenhum lead novo | idem |
+| 35.4 | A receita não tem funil de destino | Nenhum lead; aviso na Central com o item e "Configure em Integração de dados" | unitário |
+| 35.5 | Funil/etapa de outra empresa na configuração | 422 ao salvar; na execução vira aviso, nunca lead | rota + unitário |
+
+**Não coberto (declarado):** o lado "pelo agente, conversando" do par. Os e2e do repositório não têm dublê de modelo para agente, e o e2e fresco não tem MySQL de origem; a consulta é provada em `tests/mysql/` (job `mysql-integracao`).

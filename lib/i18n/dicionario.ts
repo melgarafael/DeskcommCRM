@@ -14379,6 +14379,29 @@ export const DICIONARIO: Traducoes = {
     es: "Conecta la base de datos de otro sistema (tu segundo CRM, un ERP, una hoja de cálculo en una base PostgreSQL o MySQL) y el agente podrá consultarla en tiempo real. La conexión es siempre de solo lectura: nada de lo que haga el agente modifica la base de origen.",
   },
 
+  // ─── Interesse em item de receita vira lead (Spec 25 R5) ───
+  "Interesse em item sem funil de destino": { es: "Interés en un ítem sin embudo de destino" },
+  "O agente identificou interesse em {titulo} ({referencia}), mas a receita {receita} não tem funil de destino. Configure em Integração de dados.": {
+    es: "El agente identificó interés en {titulo} ({referencia}), pero la receta {receita} no tiene embudo de destino. Configúralo en Integración de datos.",
+  },
+  "O agente identificou interesse em {titulo} ({referencia}), mas o funil de destino da receita {receita} não está mais disponível. Escolha outro em Integração de dados.": {
+    es: "El agente identificó interés en {titulo} ({referencia}), pero el embudo de destino de la receta {receita} ya no está disponible. Elige otro en Integración de datos.",
+  },
+  "O agente identificou interesse em {titulo} ({referencia}), mas a etapa de destino da receita {receita} exige campos que o cliente ainda não informou. Ajuste a etapa ou escolha outra em Integração de dados.": {
+    es: "El agente identificó interés en {titulo} ({referencia}), pero la etapa de destino de la receta {receita} exige campos que el cliente aún no informó. Ajusta la etapa o elige otra en Integración de datos.",
+  },
+  "Sem funil de destino": { es: "Sin embudo de destino" },
+  "o funil configurado": { es: "el embudo configurado" },
+  "Leads vão para:": { es: "Los leads van a:" },
+  "Sem funil de destino: interesse vira aviso na Central": { es: "Sin embudo de destino: el interés se convierte en un aviso en la Central" },
+  "Quando o cliente demonstra interesse em um item, o lead nasce neste funil e etapa.": {
+    es: "Cuando el cliente muestra interés en un ítem, el lead nace en este embudo y etapa.",
+  },
+  "Não foi possível carregar os funis.": { es: "No fue posible cargar los embudos." },
+  "A etapa escolhida não pertence ao funil de destino.": { es: "La etapa elegida no pertenece al embudo de destino." },
+  "O funil ou a etapa de destino não existe nesta empresa.": { es: "El embudo o la etapa de destino no existe en esta empresa." },
+  "Não foi possível conferir o funil de destino agora.": { es: "No fue posible comprobar el embudo de destino ahora." },
+
   // ─── Receitas prontas (Spec 25 R1) ───
   "Receitas prontas": { es: "Recetas listas" },
   "Adicionar receita": { es: "Agregar receta" },

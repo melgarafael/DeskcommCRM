@@ -133,3 +133,24 @@ describe("crm_consultar_receita — executar", () => {
     expect(executarReceita).not.toHaveBeenCalled();
   });
 });
+
+describe("crm_consultar_receita — lê a TABELA, não a view _safe", () => {
+  it("a coluna receitas não existe na view _safe (0697): a consulta vai a external_db_connections", async () => {
+    const tabelas: string[] = [];
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
+    const ctx = {
+      organizationId: "org-x",
+      role: "agent",
+      actor: { type: "ai_agent", id: "a" },
+      apiTokenId: "t",
+      requestId: "r",
+      supabase: { from: (t: string) => (tabelas.push(t), chain) },
+    } as unknown as McpContext;
+    await crmConsultarReceita.handler({ acao: "listar", connection_id: "conn-1" }, ctx);
+    expect(tabelas).toEqual(["external_db_connections"]);
+  });
+});

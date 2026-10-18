@@ -19,4 +19,15 @@ export const TOOLS_RECEITAS_EXTERNAS = declararTools([
     pacotes: ["organizar"],
     modulo: "banco_externo",
   },
+  {
+    name: "crm_registrar_interesse_no_item",
+    category: "write",
+    rotulo: "Registrar interesse num item do banco conectado",
+    explicacao:
+      "Quando o cliente demonstra interesse num item que o assistente achou no banco conectado (um imóvel, um produto), abre a oportunidade no funil escolhido para aquela receita, com a referência do item. Sem funil escolhido, só avisa a equipe na Central.",
+    oQueToca: "Funil de vendas e Central de avisos",
+    risco: "atencao",
+    pacotes: ["vender"],
+    modulo: "banco_externo",
+  },
 ]);

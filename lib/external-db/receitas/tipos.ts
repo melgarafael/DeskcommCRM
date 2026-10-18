@@ -43,6 +43,16 @@ export interface DefinicaoDeReceita {
 /** O resultado de montar: SQL com placeholders e os valores ligados. */
 export type ConsultaMontadaReceita = { sql: string; valores: unknown[] };
 
+/**
+ * Para onde vai o lead quando o cliente demonstra interesse num item da receita
+ * (Spec 25, R5 / D6). Escolhido pelo admin na tela; funil e etapa são conferidos
+ * contra a organização na gravação E na hora de usar.
+ */
+export interface DestinoDaInstancia {
+  pipeline_id: string; // uuid de crm_pipelines
+  stage_id: string; // uuid de crm_stages, da mesma pipeline
+}
+
 /** Uma instância gravada: receita escolhida + parâmetros preenchidos na tela. */
 export interface InstanciaDeReceita {
   id: string; // uuid
@@ -51,4 +61,6 @@ export interface InstanciaDeReceita {
   descricao: string; // 0..300
   fixos: unknown; // validado pelo parametrosFixos da receita escolhida
   ativa: boolean;
+  /** Funil e etapa do lead de interesse. Ausente: o interesse vira aviso na Central. */
+  destino?: DestinoDaInstancia;
 }

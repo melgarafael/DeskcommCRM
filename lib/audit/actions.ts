@@ -1138,6 +1138,9 @@ export const AUDIT_ACTIONS = [
   // só contagens (linhas, colunas, truncado), nunca valores lidos do banco de
   // origem.
   "external_db_recipes.previewed",
+  // O agente registrou o interesse de um cliente num item de receita (Spec 25 R5).
+  // metadata: só ids, a referência `<familia>:<id>` e o desfecho — nunca texto do cliente.
+  "external_db_recipes.interest_registered",
 
   // Gestão de tenants pelo admin da plataforma (migration 0614).
   // A LÁPIDE, gravada pelo banco dentro de `fn_excluir_organizacao`, com

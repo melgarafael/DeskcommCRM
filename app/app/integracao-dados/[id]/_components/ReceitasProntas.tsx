@@ -20,10 +20,11 @@ import {
   sugerirCamposTabelaDireta,
   useReceitasDaConexao,
 } from "@/hooks/external-db/useReceitasDaConexao";
+import { useEtapasParaDestino, useFunisParaDestino } from "@/hooks/external-db/useDestinoDeReceita";
 import { randomId } from "@/lib/random-id";
 import { useT } from "@/hooks/i18n/useT";
 import { RECEITAS, receitaDe } from "@/lib/external-db/receitas/registro";
-import type { InstanciaDeReceita } from "@/lib/external-db/receitas/tipos";
+import type { DestinoDaInstancia, InstanciaDeReceita } from "@/lib/external-db/receitas/tipos";
 import type { DefinicaoDeReceita } from "@/lib/external-db/receitas/tipos";
 
 interface Props {
@@ -486,6 +487,18 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                   </div>
                 </div>
 
+                <div className="mt-2 border-t pt-3">
+                  <DestinoDaInstancia
+                    destino={inst.destino}
+                    editavel
+                    onChange={(destino) => {
+                      const { destino: _antigo, ...resto } = inst;
+                      void _antigo;
+                      setRascunho(destino ? { ...resto, destino } : resto);
+                    }}
+                  />
+                </div>
+
                 {ehAcf && (
                   <div className="mt-2 border-t pt-3">
                     <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -729,6 +742,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                   <p className="text-xs text-muted-foreground">
                     {t("Prefixo:")} <span className="font-mono">{cols}</span>
                   </p>
+                  <DestinoDaInstancia destino={inst.destino} editavel={false} podeLerFunis={canWrite} />
                   {ehAcfInstance(receita) && (
                     <p className="text-xs text-muted-foreground">
                       {t("Tipo de post:")}{" "}
@@ -813,4 +827,106 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
 
 function ehAcfInstance(receita: DefinicaoDeReceita | undefined): boolean {
   return receita?.id === "acf-imoveis";
+}
+
+interface DestinoProps {
+  destino: DestinoDaInstancia | undefined;
+  editavel: boolean;
+  /** No cartão: só quem pode ler os funis (gestor+) vê os nomes. */
+  podeLerFunis?: boolean;
+  onChange?: (destino: DestinoDaInstancia | undefined) => void;
+}
+
+/**
+ * O funil e a etapa onde nasce o lead quando o cliente se interessa por um item
+ * (Spec 25 R5 / D6). No cartão mostra o destino ou o aviso de que não há; na edição
+ * deixa escolher entre os funis e etapas DA ORGANIZAÇÃO (o servidor confere de novo).
+ */
+function DestinoDaInstancia({ destino, editavel, podeLerFunis = true, onChange }: DestinoProps) {
+  const t = useT();
+  const idFunil = useId();
+  const idEtapa = useId();
+  const [funilEscolhido, setFunilEscolhido] = useState<string>(destino?.pipeline_id ?? "");
+  const funis = useFunisParaDestino(editavel || (podeLerFunis && !!destino));
+  const pipelineId = editavel ? funilEscolhido || null : (destino?.pipeline_id ?? null);
+  const etapas = useEtapasParaDestino(pipelineId, editavel || (podeLerFunis && !!destino));
+
+  if (!editavel) {
+    if (!destino) {
+      return (
+        <p className="text-xs text-muted-foreground">
+          {t("Sem funil de destino: interesse vira aviso na Central")}
+        </p>
+      );
+    }
+    const nomeFunil = funis.data?.find((f) => f.id === destino.pipeline_id)?.name;
+    const nomeEtapa = etapas.data?.find((e) => e.id === destino.stage_id)?.name;
+    return (
+      <p className="text-xs text-muted-foreground">
+        {t("Leads vão para:")}{" "}
+        <span className="font-medium">
+          {nomeFunil && nomeEtapa ? `${nomeFunil} › ${nomeEtapa}` : t("o funil configurado")}
+        </span>
+      </p>
+    );
+  }
+
+  if (funis.isError) {
+    return <p className="text-xs text-muted-foreground">{t("Não foi possível carregar os funis.")}</p>;
+  }
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{t("Funil de destino")}</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div>
+          <Label htmlFor={idFunil} className="text-xs text-muted-foreground">
+            {t("Funil")}
+          </Label>
+          <select
+            id={idFunil}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={funilEscolhido}
+            onChange={(e) => {
+              setFunilEscolhido(e.target.value);
+              onChange?.(undefined);
+            }}
+          >
+            <option value="">{t("Sem funil de destino")}</option>
+            {(funis.data ?? []).map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label htmlFor={idEtapa} className="text-xs text-muted-foreground">
+            {t("Etapa de destino")}
+          </Label>
+          <select
+            id={idEtapa}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            disabled={!funilEscolhido}
+            value={destino?.stage_id ?? ""}
+            onChange={(e) => {
+              if (!funilEscolhido || !e.target.value) return onChange?.(undefined);
+              onChange?.({ pipeline_id: funilEscolhido, stage_id: e.target.value });
+            }}
+          >
+            <option value="">{t("Escolha a etapa")}</option>
+            {(etapas.data ?? [])
+              .filter((e) => !e.is_won && !e.is_lost)
+              .map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+          </select>
+        </div>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {t("Quando o cliente demonstra interesse em um item, o lead nasce neste funil e etapa.")}
+      </p>
+    </div>
+  );
 }

@@ -103,8 +103,12 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
     if (!resolvida.ok) return resolvida.resposta;
 
     const admin = ctx.supabase;
+    // A TABELA, não a view `_safe`: a coluna `receitas` fica FORA da view de propósito
+    // (migration 0697, só `receitas_count` é exposta). Lida da view, a consulta devolvia
+    // erro de coluna inexistente e a ferramenta respondia sempre "falha_na_leitura".
+    // O `organization_id` do ctx no filtro substitui a RLS (client de serviço).
     const { data: conexoes, error } = await admin
-      .from("external_db_connections_safe")
+      .from("external_db_connections")
       .select("id, db_type, receitas")
       .eq("organization_id", ctx.organizationId)
       .eq("enabled", true)

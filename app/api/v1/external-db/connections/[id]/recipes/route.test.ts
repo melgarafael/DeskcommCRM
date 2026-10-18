@@ -19,6 +19,7 @@ const deps = vi.hoisted(() => ({
   receitas: vi.fn(),
   receitaDe: vi.fn(),
   validarFixos: vi.fn(),
+  validarDestino: vi.fn(),
   moduloDesligado: vi.fn(),
 }));
 
@@ -39,6 +40,7 @@ vi.mock("@/lib/external-db/receitas/instancias", async (importOriginal) => {
   return {
     lerReceitasDoBanco: deps.receitas,
     validarFixosDaReceita: deps.validarFixos,
+    validarDestinoDaInstancia: deps.validarDestino,
     atualizarReceitasSchema: actual.atualizarReceitasSchema,
   };
 });
@@ -106,6 +108,7 @@ beforeEach(() => {
     motores: ["mysql"],
   } as unknown as ReturnType<typeof receitaDe>);
   deps.validarFixos.mockImplementation(() => undefined);
+  deps.validarDestino.mockResolvedValue({ ok: true });
 });
 
 describe("GET /connections/:id/recipes", () => {
@@ -250,10 +253,72 @@ describe("PUT /connections/:id/recipes", () => {
       metadata: Record<string, unknown>;
     };
     expect(evento.action).toBe("external_db_recipes.updated");
-    expect(evento.metadata).toEqual({ receitas: 1, ativas: 1 } as Record<string, unknown>);
+    expect(evento.metadata).toEqual({ receitas: 1, ativas: 1, com_destino: 0 } as Record<string, unknown>);
     const texto = JSON.stringify(evento);
     expect(texto).not.toContain("prefixo");
     expect(texto).not.toContain("Produtos da loja");
     expect(texto).not.toContain("Produtos publicados do WooCommerce");
+  });
+});
+
+describe("PUT /connections/:id/recipes — destino do lead de interesse (R5)", () => {
+  const DESTINO = {
+    pipeline_id: "66666666-6666-4666-8666-666666666666",
+    stage_id: "77777777-7777-4777-8777-777777777777",
+  };
+
+  it("destino válido: confere contra a organização DA SESSÃO e grava", async () => {
+    const { visto, client } = banco({ data: { db_type: "mysql", receitas: [{ ...INSTANCIA, destino: DESTINO }] } });
+    deps.admin.mockReturnValue(client);
+
+    const res = await PUT(put({ receitas: [{ ...INSTANCIA, destino: DESTINO }] }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(deps.validarDestino).toHaveBeenCalledWith(client, ORG, DESTINO);
+    expect(visto.payload).toEqual({ receitas: [{ ...INSTANCIA, destino: DESTINO }] });
+    expect(deps.audit.mock.calls[0]![0].metadata).toMatchObject({ com_destino: 1 });
+  });
+
+  it("funil ou etapa de OUTRA organização: 422 destino_invalido e nada é gravado", async () => {
+    const { visto, client } = banco({ data: { db_type: "mysql", receitas: [] } });
+    deps.admin.mockReturnValue(client);
+    deps.validarDestino.mockResolvedValue({ ok: false, motivo: "funil_inexistente" });
+
+    const res = await PUT(put({ receitas: [{ ...INSTANCIA, destino: DESTINO }] }), ctx);
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as { error: { code: string } };
+    expect(corpo.error.code).toBe("destino_invalido");
+    expect(visto.payload).toBeUndefined();
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
+
+  it("etapa de outro funil: 422 com a mensagem da etapa", async () => {
+    const { visto, client } = banco({ data: { db_type: "mysql", receitas: [] } });
+    deps.admin.mockReturnValue(client);
+    deps.validarDestino.mockResolvedValue({ ok: false, motivo: "etapa_de_outro_funil" });
+
+    const res = await PUT(put({ receitas: [{ ...INSTANCIA, destino: DESTINO }] }), ctx);
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as { error: { message: string } };
+    expect(corpo.error.message).toMatch(/etapa/i);
+    expect(visto.payload).toBeUndefined();
+  });
+
+  it("destino com chave estranha ou uuid inválido: 422 pelo Zod strict, sem consultar o banco", async () => {
+    const res = await PUT(put({ receitas: [{ ...INSTANCIA, destino: { ...DESTINO, organization_id: ORG } }] }), ctx);
+    expect(res.status).toBe(422);
+    const res2 = await PUT(put({ receitas: [{ ...INSTANCIA, destino: { pipeline_id: "x", stage_id: "y" } }] }), ctx);
+    expect(res2.status).toBe(422);
+    expect(deps.validarDestino).not.toHaveBeenCalled();
+  });
+
+  it("sem destino: não consulta funil nenhum (instância antiga continua gravável)", async () => {
+    const { client } = banco({ data: { db_type: "mysql", receitas: [INSTANCIA] } });
+    deps.admin.mockReturnValue(client);
+    const res = await PUT(put({ receitas: [INSTANCIA] }), ctx);
+    expect(res.status).toBe(200);
+    expect(deps.validarDestino).not.toHaveBeenCalled();
   });
 });

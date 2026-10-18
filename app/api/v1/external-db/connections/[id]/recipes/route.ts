@@ -23,7 +23,12 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { atualizarReceitasSchema, validarFixosDaReceita, lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
+import {
+  atualizarReceitasSchema,
+  validarDestinoDaInstancia,
+  validarFixosDaReceita,
+  lerReceitasDoBanco,
+} from "@/lib/external-db/receitas/instancias";
 import { receitaDe } from "@/lib/external-db/receitas/registro";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -131,6 +136,26 @@ export async function PUT(req: NextRequest, ctx: Ctx): Promise<Response> {
     );
   }
 
+  // O funil e a etapa de destino do lead de interesse (R5/D6) têm de ser DESTA
+  // organização (a da sessão) e a etapa tem de ser do funil. Funil de outra
+  // organização responde igual a funil que não existe.
+  for (const inst of receitas) {
+    if (!inst.destino) continue;
+    const veredito = await validarDestinoDaInstancia(admin, activeOrg.orgId, inst.destino);
+    if (veredito.ok) continue;
+    if (veredito.motivo === "indisponivel") {
+      return fail("internal_error", t("Não foi possível conferir o funil de destino agora."), 500, { requestId });
+    }
+    return fail(
+      "destino_invalido",
+      veredito.motivo === "etapa_de_outro_funil"
+        ? t("A etapa escolhida não pertence ao funil de destino.")
+        : t("O funil ou a etapa de destino não existe nesta empresa."),
+      422,
+      { requestId },
+    );
+  }
+
   const { data: atualizado, error } = await admin
     .from("external_db_connections")
     .update({ receitas })
@@ -152,7 +177,11 @@ export async function PUT(req: NextRequest, ctx: Ctx): Promise<Response> {
     resourceType: "external_db_connection",
     resourceId: id,
     requestId,
-    metadata: { receitas: receitas.length, ativas },
+    metadata: {
+      receitas: receitas.length,
+      ativas,
+      com_destino: receitas.filter((i) => i.destino).length,
+    },
   });
 
   return ok(

@@ -125,8 +125,20 @@ Spec 23:
 | R2 | Receita `acf-imoveis` (exige C1 ACF verde) |
 | R3 | Receita `jetengine-imoveis` (exige C1 JetEngine verde) + `tabela-direta` |
 | R4 | `imagem_url` no envio (exige C3/C6 verdes). **FEITA em código**: receitas devolvem `imagem_url` (WordPress: `_thumbnail_id` → `guid` do anexo, LEFT JOIN; `tabela-direta`: `colunas.imagem`; `jetengine-imoveis`: `campos.imagem`, valor só-dígitos resolve pelo `guid` do anexo — **INFERIDO**, não medido em JetEngine real) e `send_message` aceita `imagem_url` (só URL devolvida por `crm_consultar_receita` no mesmo turno; `assertUrlDeMidiaSegura` antes de qualquer fetch; `redirect: manual`, no máx. 2 saltos reconferidos; 8 s; 5 MB por contagem de bytes; jpeg/png/webp por `content-type` e bytes). **C3 segue NÃO MEDIDO no WAHA real**: 8 s / 5 MB / 3 tipos são a proposta, em constantes em `lib/agent-engine/agent/foto-da-receita.ts`. C6 coberto por teste unitário (fetch com zero chamadas). Residual declarado: janela de DNS-rebinding entre a guarda e o fetch (mesma de `outbound-ip.ts`). |
-| R5 | Ida ao funil (D6: contrato, padrão de destino, dedup) + e2e do apartamento |
+| R5 | Ida ao funil (D6: contrato, padrão de destino, dedup) + e2e do apartamento. **FEITA em código**, ver "R5 entregue" abaixo |
 | R6 | Runbook do leigo (a regra de escopo da D8 já entrou antes da R1) |
+
+## R5 entregue: o interesse vira lead (D6)
+
+- **Destino na instância:** `destino?: { pipeline_id, stage_id }` (Zod `.strict()`). Sem migration: a coluna `receitas` é jsonb. A rota `PUT .../recipes` confere, contra a organização DA SESSÃO, que o funil e a etapa existem, estão vivos, que a etapa é do funil e que não é de ganho/perda (`validarDestinoDaInstancia`); senão 422 `destino_invalido`. A mesma conferência roda de novo na execução.
+- **Ferramenta `crm_registrar_interesse_no_item`** (`{ instancia_id, item_id }`, módulo `banco_externo`): contato = `ctx.contatoDoTurno` (o modelo não tem campo para ele); organização = a do ctx; `item_id` só vale se `crm_consultar_receita` o devolveu neste turno (`ItensDaReceitaNoTurno`); título e preço da nota saem desse snapshot. Cria o lead por `crmCreateLead.handler` (mesmo caminho do `crm_create_lead`: régua da etapa, tenancy, `lead.created`), `source: "external"`, referência `<familia>:<id>` na `description` como `[ref:<familia>:<id>]`, e uma nota na linha do tempo.
+- **Sem destino** (ou destino que sumiu, ou etapa que exige campos que o cliente não deu): aviso na Central (`kind other`, `ref_kind contact`) e NENHUM lead.
+- **Regra de dedup (contato + referência):** lead da MESMA organização, do MESMO contato, `source = 'external'`, `status = 'open'` cuja `description` contenha o marcador exato `[ref:<familia>:<id>]`. Achou: não cria, acrescenta a nota "Interesse repetido em <data>". Lead GANHO ou PERDIDO não conta: interesse depois de fechado é nova oportunidade e cria lead novo. Limite: a referência não carrega a conexão; dois bancos da mesma família com o mesmo id para o mesmo contato colidiriam.
+- **Teto:** 3 interesses distintos por turno (`TETO_DE_INTERESSES_POR_TURNO`); repetir um item já tratado no turno devolve o mesmo desfecho sem gastar teto. O teto de envios (`DEFAULT_MAX_SENDS_PER_TURN`) não se aplica (a ferramenta não envia); o de passos (`AGENT_MAX_STEPS`) vale como para qualquer ferramenta.
+- **Contato bloqueado, anonimizado ou pessoal:** não vira lead nem aviso.
+- **Audit:** o lead audita `lead.created` pelo caminho de `crm_create_lead`; os demais desfechos emitem `external_db_recipes.interest_registered` só com ids, referência e desfecho.
+- **Defeito achado e corrigido junto:** `crm_consultar_receita` lia `receitas` da view `external_db_connections_safe`, que não tem essa coluna (0697); em produção respondia sempre "falha_na_leitura". Os testes com mock não viam. Agora lê a tabela, com `organization_id` no filtro.
+- **Não coberto:** o lado "pelo agente conversando" do par (não há dublê de modelo de agente nos e2e, nem MySQL no e2e fresco); a spec e2e cobre tela + ferramenta e **não foi executada** nesta sessão.
 
 ## Living System Checklist — receitas (resumo)
 

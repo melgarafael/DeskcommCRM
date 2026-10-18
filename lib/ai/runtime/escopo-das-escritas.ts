@@ -79,6 +79,9 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
     owner_user_id: "configuracao",
     owner_agent_id: "configuracao",
   },
+  // Spec 25 R5: contato SÓ do turno (o modelo não tem campo para ele); a instância e o item
+  // são validados pelo próprio handler contra a organização e a consulta do turno.
+  crm_registrar_interesse_no_item: { instancia_id: "configuracao", item_id: "configuracao" },
   crm_update_lead: {
     lead_id: "negocio",
     contact_id: "contato",

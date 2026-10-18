@@ -283,6 +283,14 @@
       "sublabel": "send_message.imagem_url · só a URL que a receita devolveu no turno · guarda anti-SSRF antes do fetch · 8 s / 5 MB / jpeg-png-webp (C3 proposto, não medido no WAHA)",
       "type": "lib",
       "dot": "amber"
+    },
+    {
+      "id": "interesseNoItem",
+      "lane": "agente",
+      "label": "interesse-em-item.ts",
+      "sublabel": "crm_registrar_interesse_no_item · contato = o da conversa · item só se veio da consulta do turno · destino da instância conferido contra a organização · dedup contato + referência · sem destino = aviso na Central",
+      "type": "lib",
+      "dot": "amber"
     }
   ],
   "edges": [
@@ -627,6 +635,24 @@
       "from": "fotoReceita",
       "to": "toolsAgente",
       "label": "foto sai pelo envio do agente (enviarComFotos), texto = legenda"
+    },
+    {
+      "id": "e69",
+      "from": "toolReceita",
+      "to": "interesseNoItem",
+      "label": "itens devolvidos (id, título, preço) viram a lista do turno"
+    },
+    {
+      "id": "e70",
+      "from": "interesseNoItem",
+      "to": "instanciaReceita",
+      "label": "lê o destino (funil + etapa) da instância e o confere contra a organização"
+    },
+    {
+      "id": "e71",
+      "from": "interesseNoItem",
+      "to": "toolsAgente",
+      "label": "cria o lead por crm_create_lead (source external, referência na descrição) ou abre aviso na Central"
     }
   ],
   "cards": [

@@ -7,10 +7,11 @@
  * parcial. O `fixos` é validado pelo `parametrosFixos` da receita escolhida
  * pela rota de gravação (`validarFixosDaReceita`).
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { IDS_DAS_RECEITAS, receitaDe } from "./registro";
-import type { InstanciaDeReceita } from "./tipos";
+import type { DestinoDaInstancia, InstanciaDeReceita } from "./tipos";
 
 const MAX_INSTANCIAS = 20;
 
@@ -19,6 +20,14 @@ const MAX_INSTANCIAS = 20;
  * cruzada `fixos` × `parametrosFixos da receita` é feita pela rota antes de
  * gravar, em `validarFixosDaReceita`.
  */
+/** Funil + etapa do lead de interesse (R5/D6). `.strict()`: chave estranha é recusada. */
+export const destinoDaInstanciaSchema = z
+  .object({
+    pipeline_id: z.string().uuid(),
+    stage_id: z.string().uuid(),
+  })
+  .strict();
+
 export const instanciaDeReceitaSchemaItem = z
   .object({
     id: z.string().uuid(),
@@ -27,8 +36,47 @@ export const instanciaDeReceitaSchemaItem = z
     descricao: z.string().trim().max(300),
     fixos: z.unknown(),
     ativa: z.boolean(),
+    destino: destinoDaInstanciaSchema.optional(),
   })
   .strict();
+
+export type VereditoDoDestino = { ok: true } | { ok: false; motivo: "funil_inexistente" | "etapa_inexistente" | "etapa_de_outro_funil" | "indisponivel" };
+
+/**
+ * O funil e a etapa de destino existem NESTA organização, vivos, e a etapa é do funil?
+ * Roda na gravação da instância E na hora de usar (o funil pode ter sido arquivado
+ * depois). `organization_id` vem sempre do chamador (sessão/turno), nunca do corpo.
+ * Funil de outra organização é "inexistente": a resposta não confirma que ele existe.
+ */
+export async function validarDestinoDaInstancia(
+  admin: SupabaseClient,
+  organizationId: string,
+  destino: DestinoDaInstancia,
+): Promise<VereditoDoDestino> {
+  const funil = await admin
+    .from("crm_pipelines")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("id", destino.pipeline_id)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (funil.error) return { ok: false, motivo: "indisponivel" };
+  if (!funil.data) return { ok: false, motivo: "funil_inexistente" };
+  const etapa = await admin
+    .from("crm_stages")
+    .select("id, pipeline_id, is_won, is_lost")
+    .eq("organization_id", organizationId)
+    .eq("id", destino.stage_id)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (etapa.error) return { ok: false, motivo: "indisponivel" };
+  if (!etapa.data) return { ok: false, motivo: "etapa_inexistente" };
+  const e = etapa.data as { pipeline_id: string; is_won: boolean; is_lost: boolean };
+  if (e.pipeline_id !== destino.pipeline_id) return { ok: false, motivo: "etapa_de_outro_funil" };
+  // Lead novo não nasce já ganho nem perdido.
+  if (e.is_won || e.is_lost) return { ok: false, motivo: "etapa_inexistente" };
+  return { ok: true };
+}
 
 /**
  * Valida `fixos` contra o `parametrosFixos` da receita. Lança se não bater.

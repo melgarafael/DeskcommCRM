@@ -186,7 +186,7 @@ export const POLITICAS_DE_AVISO = {
     refs: ["task"],
     orientacao: "A tarefa venceu sem conclusão. Abra e conclua, ou reagende o prazo se ele não for mais possível.",
   },
-  other: { refs: ["agenda_reminder_sender", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
+  other: { refs: ["agenda_reminder_sender", "contact", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
 /**
