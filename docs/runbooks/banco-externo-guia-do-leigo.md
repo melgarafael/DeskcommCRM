@@ -259,8 +259,10 @@ Como funciona na conversa:
 
 - **WooCommerce e ACF:** a **imagem destacada** do produto ou do imóvel no WordPress.
 - **Tabela direta e JetEngine:** uma coluna de imagem da tabela (URL direta ou, no
-  WordPress, o número do anexo). **O formulário da tela ainda não tem campo para esta
-  coluna** (passo 10): sem ela, essas duas receitas respondem só com texto.
+  WordPress, o número do anexo). Na tela da receita, preencha **"Coluna da foto"**
+  (tabela direta) ou **"Campo da foto"** (JetEngine); o campo é opcional, e o botão
+  "Sugerir campos" tenta achar colunas chamadas `foto`, `imagem`, `image`, `thumbnail`,
+  `img` ou `photo`. Sem ele, essas duas receitas respondem só com texto.
 
 O agente manda **um item por mensagem**: foto com legenda (título, preço, bairro...). O
 padrão é 2 itens por vez, e o limite de envios por conversa é 3.

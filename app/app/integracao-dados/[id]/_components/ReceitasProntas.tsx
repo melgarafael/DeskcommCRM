@@ -588,6 +588,28 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                           />
                         </div>
                       ))}
+                      <div className="col-span-1">
+                        <Label htmlFor={`${idInputTd}-imagem`} className="text-xs text-muted-foreground font-medium">
+                          {t("Coluna da foto")}
+                        </Label>
+                        <Input
+                          id={`${idInputTd}-imagem`}
+                          aria-describedby={`${idInputTd}-imagem-dica`}
+                          value={(fixos.colunas as Record<string, string> | undefined)?.imagem ?? ""}
+                          onChange={(e) => {
+                            const valor = e.target.value;
+                            if (valor !== "" && !/^[A-Za-z0-9_]{1,64}$/.test(valor)) return;
+                            const proxColunas = { ...((fixos.colunas as Record<string, unknown> | undefined) ?? {}) };
+                            // Campo opcional: vazio remove a chave (o servidor recusa string vazia).
+                            if (valor === "") delete proxColunas.imagem;
+                            else proxColunas.imagem = valor;
+                            setRascunho({ ...inst, fixos: { ...fixos, colunas: proxColunas } });
+                          }}
+                        />
+                        <p id={`${idInputTd}-imagem-dica`} className="mt-1 text-xs text-muted-foreground">
+                          {t("Opcional: coluna com o endereço (URL) da imagem.")}
+                        </p>
+                      </div>
                     </div>
                     <div className="mt-2 flex items-end gap-2">
                       <Button
@@ -647,6 +669,27 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                             />
                           </div>
                         ))}
+                        <div className="col-span-1">
+                          <Label htmlFor={`${idInputJe}-imagem`} className="text-xs text-muted-foreground font-medium">
+                            {t("Campo da foto")}
+                          </Label>
+                          <Input
+                            id={`${idInputJe}-imagem`}
+                            aria-describedby={`${idInputJe}-imagem-dica`}
+                            value={(fixos.campos as Record<string, string> | undefined)?.imagem ?? ""}
+                            onChange={(e) => {
+                              const valor = e.target.value;
+                              if (valor !== "" && !/^[A-Za-z0-9_]{1,64}$/.test(valor)) return;
+                              const proxCampos = { ...((fixos.campos as Record<string, string> | undefined) ?? {}) };
+                              if (valor === "") delete proxCampos.imagem;
+                              else proxCampos.imagem = valor;
+                              setRascunho({ ...inst, fixos: { ...fixos, campos: proxCampos } });
+                            }}
+                          />
+                          <p id={`${idInputJe}-imagem-dica`} className="mt-1 text-xs text-muted-foreground">
+                            {t("Opcional: URL da imagem ou ID do anexo do WordPress.")}
+                          </p>
+                        </div>
                       </div>
                       <div className="mt-2 flex items-end gap-2">
                         <Button

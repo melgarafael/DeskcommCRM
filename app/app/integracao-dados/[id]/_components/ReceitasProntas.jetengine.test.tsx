@@ -247,6 +247,40 @@ describe("Receitas prontas — caminho jetengine-imoveis", () => {
     expect(fixos.campos.area).toBe("area");
   });
 
+  it("Campo da foto aparece, e salvar envia imagem só quando preenchida", async () => {
+    renderComQuery([INSTANCIA_JETENGINE], true);
+    const abrirESalvar = async (valor: string | null) => {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Editar/i })!);
+      });
+      if (valor !== null) {
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/Campo da foto/i), { target: { value: valor } });
+        });
+      }
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Salvar/i })!);
+      });
+      const chamadas = deps.salvarReceitas.mock.calls;
+      return (chamadas[chamadas.length - 1]![1] as InstanciaDeReceita[])[0]!.fixos as Record<string, Record<string, unknown>>;
+    };
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Editar/i })!);
+    });
+    expect(screen.getByLabelText(/Campo da foto/i)).toHaveValue("");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Cancelar/i })!);
+    });
+
+    // vazio: a chave não vai (o servidor recusa string vazia)
+    expect("imagem" in (await abrirESalvar(null)).campos!).toBe(false);
+    // preenchido: a chave vai
+    expect((await abrirESalvar("imagem_destaque")).campos!.imagem).toBe("imagem_destaque");
+    // apagar de novo remove a chave
+    expect("imagem" in (await abrirESalvar("")).campos!).toBe(false);
+  });
+
   it("canWrite=false → nenhum botão de mudar nem sugerir", () => {
     renderComQuery([INSTANCIA_JETENGINE], false);
 

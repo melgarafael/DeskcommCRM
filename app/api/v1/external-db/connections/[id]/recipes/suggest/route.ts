@@ -105,6 +105,7 @@ function sugerirMapeamentoTabelaDireta(colunas: string[]): Record<string, string
     titulo: null,
     preco: null,
     filtro_numero: null,
+    imagem: null,
   };
   for (const c of colunas) {
     const lower = c.toLowerCase();
@@ -112,6 +113,7 @@ function sugerirMapeamentoTabelaDireta(colunas: string[]): Record<string, string
     else if (!mapa.titulo && /^(nome|titulo|modelo|descricao)$/.test(lower)) mapa.titulo = c;
     else if (!mapa.preco && /^(preco|valor|price)$/.test(lower)) mapa.preco = c;
     else if (!mapa.filtro_numero && /^(ano|year)$/.test(lower)) mapa.filtro_numero = c;
+    else if (!mapa.imagem && /^(foto|imagem|image|thumbnail|img|photo)$/.test(lower)) mapa.imagem = c;
   }
   return mapa;
 }
@@ -125,6 +127,7 @@ function sugerirMapeamentoJetEngine(colunas: string[]): Record<string, string | 
     cidade: null,
     area: null,
     titulo: null,
+    imagem: null,
   };
   for (const c of colunas) {
     const lower = c.toLowerCase();
@@ -134,6 +137,7 @@ function sugerirMapeamentoJetEngine(colunas: string[]): Record<string, string | 
     else if (!mapa.cidade && /cidade|city/.test(lower)) mapa.cidade = c;
     else if (!mapa.area && /area|metragem|m2|sqm/.test(lower)) mapa.area = c;
     else if (!mapa.titulo && /^(nome|titulo|titulo_imovel|imovel)$/.test(lower)) mapa.titulo = c;
+    else if (!mapa.imagem && /^(foto|imagem|image|thumbnail|img|photo)$/.test(lower)) mapa.imagem = c;
   }
   return mapa;
 }

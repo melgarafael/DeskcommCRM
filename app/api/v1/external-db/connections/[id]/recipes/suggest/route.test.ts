@@ -201,19 +201,20 @@ describe("POST /connections/:id/recipes/suggest", () => {
     }
 
     it("sugere o mapeamento a partir das colunas liberadas, pelo dialeto (sem SQL de catálogo)", async () => {
-      const colunasDaTabela = vi.fn(async () => new Set(["id", "modelo", "preco", "ano", "cor"]));
+      const colunasDaTabela = vi.fn(async () => new Set(["id", "modelo", "preco", "ano", "cor", "foto"]));
       const executarReceita = dialetoCom({ colunasDaTabela });
       const res = await POST(post({ receita: "tabela-direta", tabela: "carros" }), ctx);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(colunasDaTabela).toHaveBeenCalledWith("banco_teste", "carros");
       expect(executarReceita).not.toHaveBeenCalled();
-      expect(body.data.colunas).toEqual(["id", "modelo", "preco", "ano", "cor"]);
+      expect(body.data.colunas).toEqual(["id", "modelo", "preco", "ano", "cor", "foto"]);
       expect(body.data.mapeamento_sugerido).toEqual({
         id: "id",
         titulo: "modelo",
         preco: "preco",
         filtro_numero: "ano",
+        imagem: "foto",
       });
     });
 
