@@ -20,7 +20,7 @@
  * de lançar; quem chama manda só o texto e conta o motivo ao modelo.
  *
  * Os números abaixo são a PROPOSTA do C3 da Spec 25 e AINDA NÃO FORAM MEDIDOS
- * no WAHA real (limite de tamanho aceito, tempo de envio de imagem remota).
+ * no canal de WhatsApp real (limite de tamanho aceito, tempo de envio de imagem remota).
  */
 import { createHash } from 'node:crypto';
 
@@ -29,11 +29,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 import type { FotoParaEnvio } from './fotos-do-produto';
 
-/** C3 (proposta, não medida no WAHA real): tempo total para baixar a imagem. */
+/** C3 (proposta, não medida no canal de WhatsApp real): tempo total para baixar a imagem. */
 export const FOTO_DA_RECEITA_TIMEOUT_MS = 8_000;
-/** C3 (proposta, não medida no WAHA real): teto de bytes do corpo da imagem. */
+/** C3 (proposta, não medida no canal de WhatsApp real): teto de bytes do corpo da imagem. */
 export const FOTO_DA_RECEITA_MAX_BYTES = 5 * 1024 * 1024;
-/** C3 (proposta, não medida no WAHA real): redirecionamentos seguidos (cada um é reconferido). */
+/** C3 (proposta, não medida no canal de WhatsApp real): redirecionamentos seguidos (cada um é reconferido). */
 export const FOTO_DA_RECEITA_MAX_SALTOS = 2;
 
 const BUCKET_DA_CONVERSA = 'whatsapp-media';
