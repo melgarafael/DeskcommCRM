@@ -126,7 +126,7 @@ Spec 23:
 | R3 | Receita `jetengine-imoveis` (exige C1 JetEngine verde) + `tabela-direta` |
 | R4 | `imagem_url` no envio (exige C3/C6 verdes). **FEITA em código**: receitas devolvem `imagem_url` (WordPress: `_thumbnail_id` → `guid` do anexo, LEFT JOIN; `tabela-direta`: `colunas.imagem`; `jetengine-imoveis`: `campos.imagem`, valor só-dígitos resolve pelo `guid` do anexo — **INFERIDO**, não medido em JetEngine real) e `send_message` aceita `imagem_url` (só URL devolvida por `crm_consultar_receita` no mesmo turno; `assertUrlDeMidiaSegura` antes de qualquer fetch; `redirect: manual`, no máx. 2 saltos reconferidos; 8 s; 5 MB por contagem de bytes; jpeg/png/webp por `content-type` e bytes). **C3 segue NÃO MEDIDO no WAHA real**: 8 s / 5 MB / 3 tipos são a proposta, em constantes em `lib/agent-engine/agent/foto-da-receita.ts`. C6 coberto por teste unitário (fetch com zero chamadas). Residual declarado: janela de DNS-rebinding entre a guarda e o fetch (mesma de `outbound-ip.ts`). |
 | R5 | Ida ao funil (D6: contrato, padrão de destino, dedup) + e2e do apartamento. **FEITA em código**, ver "R5 entregue" abaixo |
-| R6 | Runbook do leigo (a regra de escopo da D8 já entrou antes da R1) |
+| R6 | Runbook do leigo (a regra de escopo da D8 já entrou antes da R1). **FEITA**: `docs/runbooks/banco-externo-guia-do-leigo.md` |
 
 ## R5 entregue: o interesse vira lead (D6)
 

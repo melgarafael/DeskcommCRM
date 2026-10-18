@@ -150,6 +150,7 @@ acessibilidade).
 | [`saas/coolify.md`](saas/coolify.md) | **VPS com Coolify** — CRM e banco (Supabase self-hosted) na mesma VPS, atrás do proxy do Coolify; painel fechado e acessado por túnel; consumo medido |
 | [`runbooks/ai-credentials-rotation.md`](runbooks/ai-credentials-rotation.md) | Rotação de credenciais de IA |
 | [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) | **CSS personalizado que trancou a tela** — `?sem_css=1` e o `delete` em `platform_config` |
+| [`runbooks/banco-externo-guia-do-leigo.md`](runbooks/banco-externo-guia-do-leigo.md) | **Guia do leigo: banco externo e receitas prontas** — pedir o acesso só de leitura ao técnico, conectar, escolher a receita (WooCommerce, ACF, JetEngine, tabela direta), mapear, pré-visualizar, funil de destino, foto e problemas comuns |
 | [`../SECURITY.md`](../SECURITY.md) | Política de reporte de vulnerabilidade |
 
 ## 7. Testes e QA
