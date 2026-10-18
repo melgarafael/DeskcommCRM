@@ -58,6 +58,9 @@ CRONS="
 * * * * *|45|api/v1/cron/webhook-replay
 */5 * * * *|25|api/v1/cron/storage-redaction?limit=50
 */5 * * * *|25|api/v1/cron/snooze-watcher
+# Mensagens agendadas no composer. Minuto a minuto: o atendente escolhe
+# horário fino e uma varredura mais lenta atrasaria o disparo sem ganho.
+* * * * *|45|api/v1/cron/scheduled-messages
 */5 * * * *|60|api/v1/cron/handoff-devolucao
 # A CAMPANHA. Minuto a minuto, e a rodada manda no máximo uma mensagem por
 # número: é o cron que dá a cadência base, e o ritmo da campanha e do canal

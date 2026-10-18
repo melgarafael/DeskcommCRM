@@ -148,6 +148,8 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   // Um `viewer` que sondasse esta rota levaria 403 em toda abertura de conversa.
   "inbox.passagens.view": "agent",
   "message-templates.view": "agent",
+  "pix-keys.view": "agent",
+  "scheduled-messages.view": "agent",
   "ai.agents.view": "manager",
   "ai.agents.write": "admin",
   "ai.memory.view": "manager",

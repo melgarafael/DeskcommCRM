@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
+import { PixSendDialog } from "@/components/inbox/composer/PixSendDialog";
+import { ScheduleMessageDialog } from "@/components/inbox/composer/ScheduleMessageDialog";
+import { ScheduledMessagesBanner } from "@/components/inbox/composer/ScheduledMessagesBanner";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
@@ -29,6 +32,7 @@ import { useCreateNote } from "@/hooks/inbox/useCreateNote";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia, type DestinoDoUpload } from "@/hooks/inbox/useUploadMedia";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
@@ -175,6 +179,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    */
   const [pendingEm, setPendingEm] = useState<"reply" | "note">("reply");
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [pixOpen, setPixOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">(initialMode);
   /**
@@ -195,6 +201,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [mencoes, setMencoes] = useState<MencaoEscolhida[]>([]);
   const [mencaoDispensada, setMencaoDispensada] = useState(false);
   const [mencaoIndice, setMencaoIndice] = useState(0);
+  const queryClient = useQueryClient();
   useEffect(() => {
     onDraftChange?.(text, mode);
   }, [text, mode, onDraftChange]);
@@ -626,6 +633,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   return (
     <>
+      <ScheduledMessagesBanner conversationId={conversationId} />
       <div
         className={cn(
           "relative border-t border-border bg-background px-3 py-2",
@@ -759,6 +767,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={respostaBarrada}
             onPick={escolherArquivo}
             onPickContact={mode === "reply" ? () => setContactPickerOpen(true) : undefined}
+            onPickPix={mode === "reply" ? () => setPixOpen(true) : undefined}
+            onPickSchedule={mode === "reply" ? () => setScheduleOpen(true) : undefined}
           />
           <EmojiButton
             disabled={isDisabled}
@@ -917,6 +927,55 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             },
             { onSuccess: () => setContactPickerOpen(false) },
           );
+        }}
+      />
+      <PixSendDialog
+        open={pixOpen}
+        onOpenChange={setPixOpen}
+        conversationId={conversationId}
+        sending={send.isPending || upload.isPending}
+        onSendText={(body, metadata) => {
+          send.mutate({
+            conversation_id: conversationId,
+            type: "text",
+            body,
+            metadata,
+          });
+        }}
+        onSendImage={(file, caption, metadata) => {
+          void (async () => {
+            try {
+              const uploaded = await upload.mutateAsync({
+                conversationId,
+                file,
+                filename: file.name,
+                destino: "mensagem",
+              });
+              send.mutate({
+                conversation_id: conversationId,
+                type: uploaded.kind,
+                body: caption,
+                media_storage_path: uploaded.storage_path,
+                media_mime: uploaded.media_mime,
+                media_size_bytes: uploaded.media_size_bytes,
+                metadata,
+              });
+            } catch {
+              /* toast do upload */
+            }
+          })();
+        }}
+      />
+      <ScheduleMessageDialog
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        conversationId={conversationId}
+        body={text}
+        onScheduled={() => {
+          setText("");
+          void queryClient.invalidateQueries({
+            queryKey: ["scheduled-messages", conversationId],
+          });
         }}
       />
     </>
