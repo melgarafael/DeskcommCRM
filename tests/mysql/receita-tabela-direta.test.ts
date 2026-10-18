@@ -344,8 +344,9 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
       expect(modelos).toContain("Luxo Prata"); // 2022
       expect(modelos).toContain("Pickup Azul"); // 2020
       expect(modelos).not.toContain("Sedan Vermelho"); // 2018
-      expect(modelos).not.toContain("Hatch Azul"); // 2020? Sim, 2020 >= 2019
-      // Na verdade 2020 >= 2019, então Hatch Azul entra
+      expect(modelos).toContain("Hatch Azul"); // 2020 >= 2019 entra
+      expect(modelos).not.toContain("SUV Vermelho"); // 2018
+      expect(modelos).not.toContain("Carro inativo"); // 2015 e status = 0
     } finally {
       conexao.release();
     }

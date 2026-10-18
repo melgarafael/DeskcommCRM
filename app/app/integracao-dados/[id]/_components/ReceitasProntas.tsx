@@ -434,7 +434,7 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                       }}
                     />
                   </div>
-                  {(ehAcf || ehJetEngine) && (
+                  {!ehTabelaDireta && (
                   <div>
                     <Label htmlFor={idInputPrefixo} className="text-xs text-muted-foreground">
                       {t("Prefixo das tabelas")}

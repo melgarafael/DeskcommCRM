@@ -132,6 +132,14 @@ describe("Receitas prontas — comportamento da lista", () => {
     expect(args[0]!.rotulo).toBe("Produtos da loja WooCommerce");
   });
 
+  it("woocommerce mostra o campo Prefixo das tabelas (regressão da R3: só ACF e JetEngine o tinham)", async () => {
+    renderComQuery([], true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Adicionar receita/i }));
+    });
+    expect(screen.getByLabelText(/Prefixo das tabelas/i)).toHaveValue("wp_");
+  });
+
   it("monta em carregando, depois a query resolve com 1 receita → ela aparece; adicionar outra e salvar → PUT recebe as 2", async () => {
     // Primeira renderização: query ainda carregando (data undefined)
     deps.useReceitasDaConexao.mockReturnValue({

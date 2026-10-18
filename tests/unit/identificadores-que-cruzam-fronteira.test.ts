@@ -187,6 +187,10 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.
   { arquivo: "lib/propostas/storage.ts", fronteira: "storage.chave-de-objeto" },
+  // A foto de um item de receita do banco externo (Spec 25, R4): `<org>/<conversa>/receita-<sha256 hex>.<jpg|png|webp>`
+  // no bucket `whatsapp-media`, a mesma pasta da conversa das fotos de produto. Dois uuids,
+  // hex e extensão decidida pelos BYTES (mimePelosBytes), nunca pelo texto da URL.
+  { arquivo: "lib/agent-engine/agent/foto-da-receita.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/extensions/ExtensionsManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
