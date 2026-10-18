@@ -38,7 +38,10 @@ interface Props {
 type Modo = "chave" | "cobranca";
 
 function dataUrlParaFile(dataUrl: string, nome: string): File {
-  const [meta, b64] = dataUrl.split(",");
+  const virgula = dataUrl.indexOf(",");
+  if (virgula < 0) throw new Error("Data URL inválida.");
+  const meta = dataUrl.slice(0, virgula);
+  const b64 = dataUrl.slice(virgula + 1);
   const mime = /data:(.*?);/.exec(meta)?.[1] ?? "image/png";
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);

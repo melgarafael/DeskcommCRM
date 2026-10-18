@@ -221,15 +221,6 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                     <Badge variant={key.owner_user_id ? "neutral" : "default"}>
                       {t(key.owner_user_id ? "Somente eu" : "Todos")}
                     </Badge>
-                    {/* A resposta rápida que leva imagem do próprio operador
-                        (#2526) se anuncia na lista: sem isto, quem usa o menu
-                        "/" do composer não tem como saber qual script não é
-                        só texto até escolher. */}
-                    {template.midias && template.midias.length > 0 && (
-                      <Badge variant="neutral">
-                        {t("Imagens")} {template.midias.length}
-                      </Badge>
-                    )}
                   </div>
                   <p className="truncate text-sm text-muted-foreground">{key.key_value}</p>
                 </div>
