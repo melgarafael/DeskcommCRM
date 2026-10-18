@@ -147,6 +147,14 @@ export async function baixarImagemDaReceita(
     let atual = urlInicial;
     for (let salto = 0; ; salto += 1) {
       // A guarda vem ANTES de qualquer fetch — inclusive o de cada salto.
+      // LIMITAÇÃO CONHECIDA (DNS rebinding): a guarda resolve o nome e o `fetch` resolve de
+      // novo, então um DNS com TTL zero pode responder público aqui e privado ao conectar.
+      // Fechar de vez pede fixar o IP resolvido na conexão (dispatcher do undici com `lookup`
+      // validado), e a casa não tem esse dispatcher em lugar nenhum nem o `undici` como
+      // dependência (a mesma janela está declarada em `lib/automation/outbound-ip.ts` e em
+      // `destinos-internos-autorizados.ts`). Fica para o egress inteiro, não só para a foto.
+      // Mitigam: a URL vem de uma coluna do banco do próprio cliente, redirect manual com a
+      // guarda a cada salto, teto de bytes e só imagem (jpeg/png/webp, conferida pelos bytes) é aceita.
       try {
         await assertUrl(atual);
       } catch (err) {

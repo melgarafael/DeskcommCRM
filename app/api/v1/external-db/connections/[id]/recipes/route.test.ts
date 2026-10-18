@@ -321,4 +321,35 @@ describe("PUT /connections/:id/recipes — destino do lead de interesse (R5)", (
     expect(res.status).toBe(200);
     expect(deps.validarDestino).not.toHaveBeenCalled();
   });
+
+  it("fixos que a receita recusa (tabela \"carros pro\"): 422 validation_failed com o motivo, nunca 500", async () => {
+    // A função REAL: é ela quem lança, e a rota é quem tem de transformar em 422.
+    const real = await vi.importActual<typeof import("@/lib/external-db/receitas/instancias")>(
+      "@/lib/external-db/receitas/instancias",
+    );
+    const registro = await vi.importActual<typeof import("@/lib/external-db/receitas/registro")>(
+      "@/lib/external-db/receitas/registro",
+    );
+    deps.validarFixos.mockImplementation(real.validarFixosDaReceita);
+    deps.receitaDe.mockImplementation(registro.receitaDe);
+    const { visto, client } = banco({ data: { receitas: [], db_type: "mysql" } });
+    deps.admin.mockReturnValue(client);
+    const instancia = {
+      ...INSTANCIA,
+      receita: "tabela-direta",
+      fixos: {
+        tabela: "carros pro",
+        colunas: { id: "id", titulo: "modelo", filtros_texto: [], exibir: [] },
+      },
+    };
+
+    const res = await PUT(put({ receitas: [instancia] }), ctx);
+
+    expect(res.status).toBe(422);
+    const corpo = JSON.stringify(await res.json());
+    expect(corpo).toContain("validation_failed");
+    expect(corpo).toContain("Use apenas letras, números e underline no nome da tabela.");
+    expect(visto.payload).toBeUndefined();
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
 });

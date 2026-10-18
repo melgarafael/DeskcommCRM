@@ -87,7 +87,11 @@ export function validarFixosDaReceita(receitaId: string, fixos: unknown): void {
   if (!receita) throw new Error(`receita_inexistente:${receitaId}`);
   const parseado = receita.parametrosFixos.safeParse(fixos);
   if (!parseado.success) {
-    throw new Error(`fixos_invalidos:${receitaId}: ${parseado.error.message}`);
+    // Motivo legível (as mensagens do Zod da receita já são em português), não o JSON cru do Zod.
+    const motivo = parseado.error.issues
+      .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
+      .join("; ");
+    throw new Error(`fixos_invalidos:${receitaId}: ${motivo}`);
   }
 }
 

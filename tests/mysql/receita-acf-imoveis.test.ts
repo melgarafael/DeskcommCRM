@@ -139,6 +139,22 @@ async function semeiaImoveis(root: Root, banco: string): Promise<void> {
       ?.id ?? 8,
   );
 
+  // 9. publicado, preço COM símbolo "R$ 650.000,00": o CAST cru dava 0 e passava em todo teto
+  await q(
+    `insert into \`${banco}\`.\`${WP_PREFIXO}posts\` (post_title, post_type, post_status, guid) values ('Casa com símbolo de moeda', 'imovel', 'publish', 'http://imoveis.exemplo/?p=9')`,
+  );
+  const idSimbolo = Number(
+    (extrairLinhas<{ id: number }>(await q(`select LAST_INSERT_ID() as id`))[0] as { id: number })?.id ?? 9,
+  );
+
+  // 10. publicado, preço sem número nenhum ("Consulte"): vira NULL, nunca 0
+  await q(
+    `insert into \`${banco}\`.\`${WP_PREFIXO}posts\` (post_title, post_type, post_status, guid) values ('Casa preço sob consulta', 'imovel', 'publish', 'http://imoveis.exemplo/?p=10')`,
+  );
+  const idSobConsulta = Number(
+    (extrairLinhas<{ id: number }>(await q(`select LAST_INSERT_ID() as id`))[0] as { id: number })?.id ?? 10,
+  );
+
   // metas ACF (pares meta_key / _meta_key)
   await q(
     `insert into \`${banco}\`.\`${WP_PREFIXO}postmeta\` (post_id, meta_key, meta_value) values
@@ -189,7 +205,19 @@ async function semeiaImoveis(root: Root, banco: string): Promise<void> {
       (${idMilhar}, '_quartos', 'quartos_milhar'),
       (${idMilhar}, 'quartos', '3'),
       (${idMilhar}, '_bairro', 'bairro_milhar'),
-      (${idMilhar}, 'bairro', 'Bairro Milhar')`,
+      (${idMilhar}, 'bairro', 'Bairro Milhar'),
+      (${idSimbolo}, '_preco', 'preco_simbolo'),
+      (${idSimbolo}, 'preco', 'R$ 650.000,00'),
+      (${idSimbolo}, '_quartos', 'quartos_simbolo'),
+      (${idSimbolo}, 'quartos', '3'),
+      (${idSimbolo}, '_bairro', 'bairro_simbolo'),
+      (${idSimbolo}, 'bairro', 'Bairro Simbolo'),
+      (${idSobConsulta}, '_preco', 'preco_consulta'),
+      (${idSobConsulta}, 'preco', 'Consulte'),
+      (${idSobConsulta}, '_quartos', 'quartos_consulta'),
+      (${idSobConsulta}, 'quartos', '2'),
+      (${idSobConsulta}, '_bairro', 'bairro_consulta'),
+      (${idSobConsulta}, 'bairro', 'Bairro Consulta')`,
   );
 }
 
@@ -367,6 +395,48 @@ describe("receita acf-imoveis contra MySQL 8 de verdade", () => {
     } finally {
       conexao.release();
     }
+  });
+
+  it("preço com símbolo ('R$ 650.000,00') vale 650000, e preço sem número não passa em teto nenhum", async () => {
+    const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
+    const fixos = {
+      prefixo: WP_PREFIXO,
+      post_type: "imovel",
+      campos: { preco: "preco", quartos: "quartos", bairro: "bairro" },
+    };
+    const buscar = async (busca: Record<string, unknown>) => {
+      const { sql, valores } = RECEITA_ACF_IMOVEIS.montar(fixos, busca, 5);
+      const conexao = await pool.getConnection();
+      try {
+        await conexao.query("START TRANSACTION READ ONLY");
+        await conexao.query("SET SESSION max_execution_time = 10000");
+        await conexao.query("SET SESSION lock_wait_timeout = 5");
+        const [linhas] = await conexao.execute(
+          sql,
+          valores.map((v: unknown) => (v === undefined ? null : v)),
+        );
+        await conexao.query("COMMIT");
+        return linhas as { titulo: string; preco: unknown }[];
+      } finally {
+        conexao.release();
+      }
+    };
+
+    // Teto de 300000: o imóvel de R$ 650.000,00 NÃO pode entrar (antes virava 0 e entrava).
+    const ate300 = (await buscar({ preco_max: 300000 })).map((l) => l.titulo);
+    registrar("C1-acf-imoveis-preco_simbolo_300k", `preco_max=300000 → ${ate300.join(", ")}`);
+    expect(ate300).not.toContain("Casa com símbolo de moeda");
+    expect(ate300).not.toContain("Casa preço sob consulta");
+    expect(ate300).toContain("Apartamento 2 quartos");
+
+    // Teto de 700000: o símbolo entra (650000 <= 700000); o sem número continua de fora.
+    const ate700 = (await buscar({ preco_max: 700000, bairro: "Simbolo" })).map((l) => l.titulo);
+    expect(ate700).toEqual(["Casa com símbolo de moeda"]);
+    expect((await buscar({ preco_max: 700000, bairro: "Consulta" })).length).toBe(0);
+
+    // Na listagem sem filtro de preço, o sem número aparece com preço ausente (NULL), não 0.
+    const semNumero = (await buscar({ bairro: "Consulta" }))[0];
+    expect(semNumero?.preco ?? null).toBeNull();
   });
 
   it("preco_max trata ponto decimal: '650000.50' → 650000.5", async () => {

@@ -125,7 +125,23 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     receita.tetoDeItens,
   );
 
-  const { sql, valores } = receita.montar(instancia.fixos, buscaValidada, limiteItens);
+  let montada: { sql: string; valores: unknown[] };
+  try {
+    montada = receita.montar(instancia.fixos, buscaValidada, limiteItens);
+  } catch (err) {
+    // A receita não consegue montar a consulta com o mapeamento desta instância
+    // (coluna que não existe, filtro sem coluna mapeada): é erro de configuração, 422 legível.
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.startsWith("coluna_inexistente:")) {
+      const coluna = /"([^"]+)"/.exec(msg)?.[1] ?? msg.split(".").pop() ?? "";
+      return fail("coluna_inexistente", t('A coluna "{coluna}" não existe na tabela. Confira o mapeamento.').replace("{coluna}", coluna), 422, { requestId });
+    }
+    if (msg.startsWith("filtro_sem_coluna:")) {
+      return fail("filtro_sem_coluna", t("Esta receita não tem a coluna do filtro pedido mapeada. Busque sem esse filtro ou confira o mapeamento."), 422, { requestId });
+    }
+    return fail("falha_na_leitura", t("Não foi possível montar a consulta desta receita."), 500, { requestId });
+  }
+  const { sql, valores } = montada;
 
   const tabelasPermitidas = receita.tabelas(instancia.fixos);
 

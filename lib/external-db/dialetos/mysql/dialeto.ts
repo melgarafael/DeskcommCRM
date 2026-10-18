@@ -13,8 +13,7 @@ export function criarDialetoMysql(conexao: ConexaoExterna, regra: RegraDeFontes)
       listarTabelas: () => listarTabelasMysql(pool, banco),
       descreverTabela: (schema, tabela) => descreverTabelaMysql(pool, banco, schema, tabela),
       lerTabela: (pedido, permitidas, opcoes) => lerTabelaMysql(pool, banco, pedido, permitidas, opcoes),
-      // SABOTAGEM J1: schema vazio em vez do banco da conexão — deve ficar vermelho.
-      schemaDasReceitas: () => "",
+      schemaDasReceitas: () => banco,
       executarReceita: (consulta, opcoes) =>
         executarReceitaMysql(pool, banco, consulta, conexao.maxResponseBytes, opcoes),
     },

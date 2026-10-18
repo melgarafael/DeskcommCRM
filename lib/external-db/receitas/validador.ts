@@ -13,7 +13,20 @@
 import { LeituraInvalidaError } from "../montagem";
 
 const PROIBIDOS_TEXTO = ["--", "/*", "#"];
-const PROIBIDOS_PALAVRA = ["INTO", "FOR UPDATE", "LOCK", "SLEEP(", "BENCHMARK(", "LOAD_FILE", "OUTFILE"];
+/**
+ * Palavras perigosas, como PALAVRA INTEIRA (limite de palavra): `INTO` não casa dentro de `quinto` nem
+ * `LOCK` dentro de `bloco_clock` (o sublinhado conta como letra). Os identificadores entre
+ * crases saem do texto ANTES da checagem: nome de coluna não executa nada.
+ */
+const PROIBIDOS_PALAVRA: ReadonlyArray<{ nome: string; regex: RegExp }> = [
+  { nome: "INTO", regex: /\bINTO\b/i },
+  { nome: "FOR UPDATE", regex: /\bFOR\s+UPDATE\b/i },
+  { nome: "LOCK", regex: /\bLOCK\b/i },
+  { nome: "SLEEP(", regex: /\bSLEEP\s*\(/i },
+  { nome: "BENCHMARK(", regex: /\bBENCHMARK\s*\(/i },
+  { nome: "LOAD_FILE", regex: /\bLOAD_FILE\b/i },
+  { nome: "OUTFILE", regex: /\bOUTFILE\b/i },
+];
 
 /** Tabelas que aparecem após FROM ou JOIN (case-insensitive, com ou without as). */
 function tabelasDoSql(sql: string): string[] {
@@ -46,11 +59,11 @@ export function validarConsultaDeReceita(sql: string, tabelasPermitidas: readonl
     }
   }
 
-  // Sem palavras perigosas (case-insensitive).
-  const upper = trim.toUpperCase();
-  for (const proibido of PROIBIDOS_PALAVRA) {
-    if (upper.includes(proibido.toUpperCase())) {
-      throw new LeituraInvalidaError(`palavra_proibida:${proibido}`);
+  // Sem palavras perigosas (palavra inteira, sem os identificadores entre crases).
+  const semIdentificadores = trim.replace(/`(?:[^`]|``)*`/g, "``");
+  for (const { nome, regex } of PROIBIDOS_PALAVRA) {
+    if (regex.test(semIdentificadores)) {
+      throw new LeituraInvalidaError(`palavra_proibida:${nome}`);
     }
   }
 

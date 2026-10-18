@@ -157,6 +157,41 @@ describe("POST /connections/:id/recipes/preview", () => {
     expect(deps.acessar).not.toHaveBeenCalled();
   });
 
+  it("a receita não consegue montar (preco_max sem coluna de preço): 422 legível, nunca 500", async () => {
+    const real = await vi.importActual<typeof import("@/lib/external-db/receitas/tabela-direta")>(
+      "@/lib/external-db/receitas/tabela-direta",
+    );
+    const { client } = banco({
+      data: {
+        db_type: "mysql",
+        max_rows: 200,
+        receitas: [],
+      },
+    });
+    deps.admin.mockReturnValue(client);
+    deps.receitas.mockReturnValue({
+      ok: true,
+      instancias: [
+        {
+          id: INSTANCIA_ID,
+          receita: "tabela-direta",
+          rotulo: "Carros",
+          fixos: { tabela: "carros", colunas: { id: "id", titulo: "modelo", filtros_texto: [], exibir: [] } },
+          ativa: true,
+        },
+      ],
+    });
+    deps.receitaDe.mockReturnValue(real.RECEITA_TABELA_DIRETA);
+
+    const res = await POST(post({ instancia_id: INSTANCIA_ID, busca: { preco_max: 50000 } }), ctx);
+
+    expect(res.status).toBe(422);
+    const corpo = JSON.stringify(await res.json());
+    expect(corpo).toContain("coluna_inexistente");
+    expect(corpo).toContain("preco");
+    expect(deps.acessar).not.toHaveBeenCalled();
+  });
+
   it("fonte não liberada → fonte_nao_liberada (com dialeto dublê)", async () => {
     deps.acessar.mockResolvedValue({
       ok: true,

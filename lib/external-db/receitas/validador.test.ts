@@ -59,6 +59,30 @@ describe("validarConsultaDeReceita — segunda trava", () => {
     );
   });
 
+  it("palavra proibida dentro de identificador entre crases NÃO bloqueia (bloco_clock, quinto)", () => {
+    const sql =
+      "select `wp_posts`.`bloco_clock` as c, `wp_posts`.`quinto` as q, `wp_posts`.`into` as i from `wp_posts` where `wp_posts`.`lock` = ?";
+    expect(() => validarConsultaDeReceita(sql, TABELAS)).not.toThrow();
+  });
+
+  it("palavra proibida SEM crase continua bloqueada, mesmo ao lado de identificador com crase", () => {
+    expect(() =>
+      validarConsultaDeReceita("select `bloco_clock` from wp_posts into outfile '/tmp/x'", TABELAS),
+    ).toThrow(/palavra_proibida:INTO/);
+    expect(() =>
+      validarConsultaDeReceita("select `a` from wp_posts into`b`", TABELAS),
+    ).toThrow(/palavra_proibida:INTO/);
+    expect(() => validarConsultaDeReceita("select 1 from wp_posts into outfile '/tmp/x'", TABELAS)).toThrow(
+      /palavra_proibida/,
+    );
+    expect(() => validarConsultaDeReceita("lock tables wp_posts read", TABELAS)).toThrow(
+      /consulta_deve_comecar_com_select/,
+    );
+    expect(() =>
+      validarConsultaDeReceita("select `ID` from `wp_posts` lock in share mode", TABELAS),
+    ).toThrow(/palavra_proibida:LOCK/);
+  });
+
   it("rejeita SLEEP(", () => {
     expect(() => validarConsultaDeReceita("select sleep(5) from wp_posts", TABELAS)).toThrow(
       /palavra_proibida/,

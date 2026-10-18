@@ -115,6 +115,11 @@ async function leadAbertoComAReferencia(
     .eq("contact_id", contactId)
     .eq("source", "external")
     .eq("status", "open")
+    // Mais recente primeiro: se o teto cortar algo, corta o lead ANTIGO, que é o
+    // que menos provavelmente ainda é o interesse em curso. 200 leads abertos de
+    // origem externa para um MESMO contato já é patológico; o teto só protege a
+    // memória, não é regra de negócio.
+    .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw new Error("leads_ilegiveis");
   const marcador = marcadorDaReferencia(referencia);
@@ -122,6 +127,15 @@ async function leadAbertoComAReferencia(
     (l.description ?? "").includes(marcador),
   );
   return achado?.id ?? null;
+}
+
+/**
+ * Texto do cliente/banco externo dentro da `description`: sem colchetes, para que
+ * um título como "[ref:acf-imoveis:9]" nunca forje o marcador de dedup de OUTRO
+ * item. O marcador legítimo é o ÚNICO trecho entre colchetes que a ferramenta grava.
+ */
+function semColchetes(texto: string): string {
+  return texto.replace(/\[/g, "(").replace(/\]/g, ")");
 }
 
 function dataBr(d = new Date()): string {
@@ -281,7 +295,7 @@ export const crmRegistrarInteresseNoItem: McpToolDefinition<typeof shape> = {
           pipeline_id: instancia.destino.pipeline_id,
           stage_id: instancia.destino.stage_id,
           title: `Interesse: ${item.titulo}`.slice(0, 200),
-          description: `${marcadorDaReferencia(referencia)} Interesse em "${item.titulo}" (receita ${rotulo}).`,
+          description: `${marcadorDaReferencia(referencia)} Interesse em "${semColchetes(item.titulo)}" (receita ${semColchetes(rotulo)}).`,
           contact_id: contatoId,
           source: "external",
         },

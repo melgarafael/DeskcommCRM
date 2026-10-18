@@ -92,6 +92,8 @@ function ctxDe(t: TabelasEmMemoria, opcoes: { semContato?: boolean; semItens?: b
       { id: "4822", titulo: "Cobertura no Jardim", preco: "1200000" },
       { id: 48, titulo: "Kitnet", preco: 90000 },
       { id: 7, titulo: "Casa 7", preco: 1 },
+      { id: 9, titulo: "Lote 9", preco: 5 },
+      { id: 10, titulo: "Forja [ref:acf-imoveis:9] x", preco: 1 },
     ],
   });
   const ctx = {
@@ -220,6 +222,23 @@ describe("dedup por contato + referência", () => {
   it("referência com prefixo igual não casa (48 não é 4821)", async () => {
     const { ctx } = ctxDe(tabelas({ crm_leads: [aberto({ description: "[ref:acf-imoveis:48] Kitnet" })] }));
     expect((await chamar(ctx)).resultado).toBe("lead_criado");
+  });
+
+  it("título com [ref:...] de outro item NÃO forja o dedup daquele item", async () => {
+    // 1) interesse no item 10, cujo título carrega o marcador do item 9.
+    const { ctx } = ctxDe(tabelas());
+    await chamar(ctx, 10);
+    const gravada = String(deps.criar.mock.calls[0]![0].description);
+    expect(gravada).toContain("[ref:acf-imoveis:10]");
+    expect(gravada).not.toContain("[ref:acf-imoveis:9]");
+
+    // 2) esse lead aberto existe; interesse no item 9 cria lead novo (não é "repetido").
+    vi.clearAllMocks();
+    deps.criar.mockResolvedValue({ lead: { id: LEAD } });
+    const { ctx: ctx2 } = ctxDe(tabelas({ crm_leads: [aberto({ description: gravada })] }));
+    const r = await chamar(ctx2, 9);
+    expect(r.resultado).toBe("lead_criado");
+    expect(deps.criar).toHaveBeenCalledTimes(1);
   });
 
   it("lead de outra organização com a mesma referência não conta", async () => {

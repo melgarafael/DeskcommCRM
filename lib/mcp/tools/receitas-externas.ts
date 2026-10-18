@@ -51,6 +51,27 @@ const consultaReceitaShape = {
 
 
 
+/**
+ * O tipo de um campo do Zod 4 (`number`, `string`, `boolean`, `array`…), sem o
+ * embrulho de optional/default/nullable. No Zod 4 o tipo mora em `def.type`; o
+ * `_def.typeName` do Zod 3 não existe mais, e por isso todo campo saía "desconhecido".
+ */
+const EMBRULHOS_DO_ZOD = new Set(["optional", "default", "prefault", "nullable", "readonly", "catch", "nonoptional"]);
+
+function tipoDoCampo(campo: unknown): string {
+  let atual = campo as { _zod?: { def?: { type?: string; innerType?: unknown } }; def?: { type?: string; innerType?: unknown } };
+  for (let i = 0; i < 8; i++) {
+    const def = atual?._zod?.def ?? atual?.def;
+    if (!def?.type) return "desconhecido";
+    if (EMBRULHOS_DO_ZOD.has(def.type) && def.innerType) {
+      atual = def.innerType as typeof atual;
+      continue;
+    }
+    return def.type;
+  }
+  return "desconhecido";
+}
+
 function motivoDoVazioReceita(resultado: unknown): string | null {
   if (resultado === null || typeof resultado !== "object") return null;
   const r = resultado as { erro?: unknown; linhas_devolvidas?: unknown };
@@ -155,7 +176,7 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
                     const objeto = receita.parametrosDaBusca as unknown as z.ZodObject<{ [k: string]: z.ZodTypeAny }>;
                     return Object.entries(objeto.shape ?? {}).map(([nome, campo]) => ({
                       nome,
-                      tipo: ((campo as unknown) as { _def?: { typeName?: string } })._def?.typeName ?? "desconhecido",
+                      tipo: tipoDoCampo(campo),
                     }));
                   })(),
                 }
