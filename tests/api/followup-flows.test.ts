@@ -65,7 +65,7 @@ const INVALID_GRAPH: FlowGraph = {
 
 type Row = Record<string, unknown>;
 
-function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], conexoes: Row[] = []) {
+function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], conexoes: Row[] = [], modelos: Row[] = []) {
   const tables: Record<string, Row[]> = {
     followup_flow_pointers: pointers,
     followup_flow_versions: versions,
@@ -77,6 +77,10 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], conexoes: 
     // O publish lê os providers das conexões: o plano B da IA só é exigido de
     // quem tem canal com janela de 24 h (revisão do #1729).
     channel_sessions: conexoes,
+    // O publish confere que o modelo citado existe NESTA org (seguimento do
+    // #3056). A linha leva `tabela` para cair na tabela que o motor lê.
+    message_templates: modelos.filter((m) => m.tabela === "message_templates"),
+    meta_templates: modelos.filter((m) => m.tabela === "meta_templates"),
   };
 
   function builder(table: string) {
@@ -252,14 +256,14 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], conexoes: 
   return { from: (table: string) => builder(table), rpc };
 }
 
-function session(effectiveRole: Role, db: ReturnType<typeof makeDb>) {
+function session(effectiveRole: Role, db: ReturnType<typeof makeDb>, idioma: AuthUser["idioma"] = "pt-BR") {
   const user: AuthUser = {
     id: USER_ID,
     email: "m@example.com",
     full_name: null,
     avatar_url: null,
     is_platform_admin: false,
-    idioma: "pt-BR" as const,
+    idioma,
     organizations: [{ organization_id: ORG_ID, organization_name: "Org", role: effectiveRole }],
   };
   vi.mocked(requireRole).mockImplementation(async (min: Role) => {
@@ -578,6 +582,72 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
       expect(res.status).toBe(422);
       const body = (await res.json()) as { error: { details: { errors: Array<{ code: string }> } } };
       expect(body.error.details.errors.map((e) => e.code)).toEqual(["long_wait_needs_template"]);
+    });
+  });
+
+  describe("modelo de mensagem que não existe nesta conta (seguimento do #3056)", () => {
+    const PID = "33333333-3333-4333-8333-333333333333";
+    const MODELO = "55555555-5555-4555-8555-555555555555";
+    const comPassos = (...acoes: FlowNode[]): FlowGraph => {
+      const ids = ["t1", ...acoes.map((a) => a.id), "e1"];
+      return {
+        nodes: [trigger("t1"), ...acoes, end("e1")],
+        edges: ids.slice(1).map((alvo, i) => edge(`x${i}`, ids[i]!, alvo)),
+      };
+    };
+    const passoDeModelo: FlowNode = {
+      id: "m1", type: "action", label: "m1", position: pos, config: { mode: "template", template_id: MODELO },
+    };
+    const iaComPlanoB = (planoB = MODELO): FlowNode => ({
+      id: "ia1", type: "action", label: "ia1", position: pos,
+      config: { mode: "ai_message", prompt_hint: "oi", fallback_template_id: planoB },
+    });
+    const ponteiro = (g: FlowGraph) => [{ id: PID, organization_id: ORG_ID, status: "draft", draft_graph: g }];
+
+    it("modelo de OUTRA org → 422 modelo_inexistente, com a frase no idioma de quem publica", async () => {
+      const db = makeDb(ponteiro(comPassos(passoDeModelo)), [], [], [], [
+        { tabela: "message_templates", id: MODELO, organization_id: OTHER_ORG_ID },
+      ]);
+      session("manager", db, "es");
+      const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+      const res = await POST(req("POST"), ctx(PID));
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: { details: { errors: Array<{ code: string; message: string }> } } };
+      expect(body.error.details.errors).toEqual([
+        {
+          node_id: "m1",
+          code: "modelo_inexistente",
+          message: "Elige una plantilla de mensaje: la que estaba aquí no existe en esta cuenta.",
+        },
+      ]);
+    });
+
+    it("plano B apontando para texto pronto → 422: o motor só lê o plano B em meta_templates", async () => {
+      const db = makeDb(ponteiro(comPassos(iaComPlanoB())), [], [], [], [
+        { tabela: "message_templates", id: MODELO, organization_id: ORG_ID },
+      ]);
+      session("manager", db);
+      const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+      const res = await POST(req("POST"), ctx(PID));
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: { details: { errors: Array<{ code: string }> } } };
+      expect(body.error.details.errors.map((e) => e.code)).toEqual(["modelo_inexistente"]);
+    });
+
+    it("modelo da própria org publica — texto pronto no passo, modelo do canal no plano B", async () => {
+      const DO_CANAL = "66666666-6666-4666-8666-666666666666";
+      const db = makeDb(
+        ponteiro(comPassos(passoDeModelo, iaComPlanoB(DO_CANAL))),
+        [], [], [],
+        [
+          { tabela: "message_templates", id: MODELO, organization_id: ORG_ID },
+          { tabela: "meta_templates", id: DO_CANAL, organization_id: ORG_ID },
+        ],
+      );
+      session("manager", db);
+      const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+      const res = await POST(req("POST"), ctx(PID));
+      expect(res.status).toBe(200);
     });
   });
 

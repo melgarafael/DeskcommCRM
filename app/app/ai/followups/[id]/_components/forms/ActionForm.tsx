@@ -52,6 +52,19 @@ function SeletorDeModelo({
   const prontos = soAprovados ? [] : (textos.data ?? []);
   const doCanal = aprovados.data ?? [];
 
+  // Seguimento do #3056: o id gravado que não está em nenhuma das listas (fluxo
+  // importado de outra conta, modelo apagado) deixava o seletor EM BRANCO, sem
+  // dizer nada. Só afirma a ausência com as duas listas carregadas — lista que
+  // falhou ou não pôde ser lida não prova que o modelo sumiu. Indisponível, o
+  // `value` vai "" — é o que faz o Radix mostrar o placeholder «Escolha um modelo».
+  const listasLidas = (soAprovados || textos.isSuccess) && aprovados.isSuccess;
+  const indisponivel = listasLidas && valor !== "" && !prontos.some((m) => m.id === valor) && !doCanal.some((m) => m.id === valor);
+  const aviso = indisponivel && (
+    <p role="alert" className="text-xs text-warning-fg">
+      {t("O modelo que estava aqui não está disponível nesta conta. Escolha um modelo para este passo.")}
+    </p>
+  );
+
   if ((!soAprovados && textos.isLoading) || aprovados.isLoading) {
     return <p className="text-xs text-text-muted">{t("Carregando seus modelos…")}</p>;
   }
@@ -67,9 +80,12 @@ function SeletorDeModelo({
   // tela justamente para quem ainda não tem modelo, e nada explicaria onde ele foi.
   if (!soAprovados && prontos.length === 0 && doCanal.length === 0) {
     return (
-      <p className="text-xs text-text-muted">
-        {t("Você ainda não tem modelos de mensagem. Crie um em Ajustes → Modelos e ele aparece aqui.")}
-      </p>
+      <div className="space-y-2">
+        {aviso}
+        <p className="text-xs text-text-muted">
+          {t("Você ainda não tem modelos de mensagem. Crie um em Ajustes → Modelos e ele aparece aqui.")}
+        </p>
+      </div>
     );
   }
 
@@ -78,7 +94,7 @@ function SeletorDeModelo({
   return (
     <div className="space-y-2">
       <Select
-        value={valor === "" ? SEM_MODELO : valor}
+        value={indisponivel ? "" : valor === "" ? SEM_MODELO : valor}
         onValueChange={(v) => onChange(v === SEM_MODELO ? "" : v)}
       >
         <SelectTrigger id={id}>
@@ -108,6 +124,7 @@ function SeletorDeModelo({
           )}
         </SelectContent>
       </Select>
+      {aviso}
       {escolhido && <p className="whitespace-pre-line text-xs text-text-muted">{escolhido.texto}</p>}
       {soAprovados && doCanal.length === 0 && (
         <p className="text-xs text-text-muted">

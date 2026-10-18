@@ -40,6 +40,7 @@ import { z } from "zod";
 import { triggerConfigSchema, FOLLOWUP_FLOW_SURFACES, type TriggerConfig } from "./api-schemas";
 import { flowGraphSchema, type FlowGraph, type FlowNode } from "./graph-schema";
 import { randomId } from "@/lib/random-id";
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 import { MAX_FOLLOWUP_FLOW_NAME } from "./nome-da-copia";
 
@@ -412,8 +413,8 @@ export function reconciliarComAConta(
             return { ...node, config: { ...node.config, template_id: r.id } };
           }
           // O modo `template` exige um id (uuid) — não há "vazio" válido. Fica o
-          // de fora, e a pendência BLOQUEIA: a publicação não confere o modelo,
-          // então quem avisa é esta tela.
+          // de fora, e a pendência BLOQUEIA: a publicação também recusaria
+          // (`modelo_inexistente`), mas esta tela avisa antes de o fluxo existir.
           pendencias.push({
             codigo: "modelo_nao_encontrado",
             bloqueia: true,
@@ -560,6 +561,27 @@ export function nomeDoImportado(original: string, ocupados: Iterable<string>): s
     if (!taken.has(nome)) return nome;
   }
   return `${raiz.slice(0, 71)} ${randomId().slice(0, 8)}`.slice(0, MAX_FOLLOWUP_FLOW_NAME);
+}
+
+// `Record<Idioma, …>`: idioma novo promovido no registro obriga a escolher o locale aqui.
+const LOCALE_DO_ZOD: Record<Idioma, () => { localeError: z.core.$ZodErrorMap }> = {
+  "pt-BR": z.locales.pt,
+  es: z.locales.es,
+};
+
+/**
+ * O idioma das mensagens GENÉRICAS do Zod numa leitura
+ * (`schema.safeParse(x, zodNoIdioma(idioma))`). Sem isto a lista de problemas
+ * saía em inglês («Invalid UUID») para quem lê em português ou espanhol. As
+ * frases são as dos locales que o próprio Zod traz.
+ *
+ * Mensagem escrita no schema vence o locale e sai como está: em `graph-schema.ts`
+ * parte delas é inglês («min_ms must be <= max_ms») e parte é português, que
+ * quem lê em espanhol recebe em português.
+ */
+export function zodNoIdioma(idioma: Idioma): { error: z.core.$ZodErrorMap } {
+  // ponytail: locale `pt` do Zod é português de Portugal («Demasiado pequeno»); troque por mapa próprio se alguém tropeçar.
+  return { error: LOCALE_DO_ZOD[idioma]().localeError };
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   nomeDoImportado,
   problemasDoArquivo,
   reconciliarComAConta,
+  zodNoIdioma,
   resolverPorNome,
   type ContextoDaConta,
   type NomesDaOrigem,
@@ -244,6 +245,69 @@ describe("importação: arquivo inválido", () => {
     expect(r.success).toBe(false);
     if (!r.success)
       expect(problemasDoArquivo(r.error)[0]).toMatch(/^flow\.graph\.nodes\.1\.config/);
+  });
+});
+
+describe("importação: os problemas saem no idioma de quem lê", () => {
+  // O caso da prova do #3056: modelo com id que não é uuid e caixa sem `config`.
+  // Antes saía «Invalid UUID» e «Invalid input: expected object, received undefined».
+  function arquivoQuebrado() {
+    const arquivo = JSON.parse(
+      JSON.stringify(
+        exportar(
+          grafo([
+            { id: "m1", type: "action", label: "Modelo", position: pos, config: { mode: "template", template_id: MODELO_ORIGEM } },
+            { id: "a2", type: "action", label: "Texto", position: pos, config: { mode: "text", body: "Oi" } },
+          ]),
+        ),
+      ),
+    );
+    arquivo.flow.graph.nodes[1].config.template_id = "nao-e-uuid";
+    delete arquivo.flow.graph.nodes[2].config;
+    return arquivo;
+  }
+
+  it.each([
+    [
+      "pt-BR",
+      [
+        "flow.graph.nodes.1.config.template_id: Formato do UUID inválido",
+        'flow.graph.nodes.2.config: Entrada inválida: esperava um objeto, recebeu um valor "undefined"',
+      ],
+    ],
+    [
+      "es",
+      [
+        "flow.graph.nodes.1.config.template_id: Inválido UUID",
+        "flow.graph.nodes.2.config: Entrada inválida: se esperaba objeto, recibido indefinido",
+      ],
+    ],
+  ] as const)("%s, com o caminho até o campo", (idioma, esperado) => {
+    const r = arquivoDeFluxoSchema.safeParse(arquivoQuebrado(), zodNoIdioma(idioma));
+    expect(r.success).toBe(false);
+    if (!r.success) expect(problemasDoArquivo(r.error)).toEqual(esperado);
+  });
+
+  it("arquivo de outro formato: nenhuma linha fica em inglês", () => {
+    const r = arquivoDeFluxoSchema.safeParse({ format: "outro", version: 1, flow: {} }, zodNoIdioma("pt-BR"));
+    expect(r.success).toBe(false);
+    if (!r.success)
+      expect(problemasDoArquivo(r.error)).toEqual([
+        'format: Entrada inválida: esperava "followup_flow"',
+        'flow.name: Entrada inválida: esperava um texto, recebeu um valor "undefined"',
+        'flow.graph: Entrada inválida: esperava um objeto, recebeu um valor "undefined"',
+      ]);
+  });
+
+  it("mensagem escrita no schema continua vencendo o locale", () => {
+    const g = grafo([]);
+    g.edges.push({ id: "solta", source: "t1", target: "nao-existe", priority: 0, condition: { type: "always" } });
+    const arquivo = JSON.parse(JSON.stringify(exportar(g)));
+    const semLocale = arquivoDeFluxoSchema.safeParse(arquivo);
+    const emEspanhol = arquivoDeFluxoSchema.safeParse(arquivo, zodNoIdioma("es"));
+    expect(semLocale.success || emEspanhol.success).toBe(false);
+    if (!semLocale.success && !emEspanhol.success)
+      expect(problemasDoArquivo(emEspanhol.error)).toEqual(problemasDoArquivo(semLocale.error));
   });
 });
 

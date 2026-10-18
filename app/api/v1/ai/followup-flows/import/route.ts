@@ -33,6 +33,7 @@ import {
   nomeDoImportado,
   problemasDoArquivo,
   reconciliarComAConta,
+  zodNoIdioma,
 } from "@/lib/followup/portabilidade";
 import { contextoDaConta } from "@/lib/followup/portabilidade-db";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
-  const corpo = corpoSchema.safeParse(raw);
+  const corpo = corpoSchema.safeParse(raw, zodNoIdioma(authz.user.idioma));
   if (!corpo.success) {
     return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const arquivo = arquivoDeFluxoSchema.safeParse(corpo.data.file);
+  const arquivo = arquivoDeFluxoSchema.safeParse(corpo.data.file, zodNoIdioma(authz.user.idioma));
   if (!arquivo.success) {
     return fail(
       "invalid_flow_file",

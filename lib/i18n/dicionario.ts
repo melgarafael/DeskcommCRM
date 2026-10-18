@@ -10855,6 +10855,8 @@ export const DICIONARIO: Traducoes = {
   },
   "Fluxo não tem rascunho pronto para publicar.": { es: "El flujo no tiene un borrador listo para publicar." },
   "Fluxo reprovado na validação de publish.": { es: "El flujo no pasó la validación de publicación." },
+  "Escolha um modelo de mensagem: o que estava aqui não existe nesta conta.": { es: "Elige una plantilla de mensaje: la que estaba aquí no existe en esta cuenta." },
+  "O modelo que estava aqui não está disponível nesta conta. Escolha um modelo para este passo.": { es: "La plantilla que estaba aquí no está disponible en esta cuenta. Elige una plantilla para este paso." },
   "Follow-up não encontrado.": { es: "Follow-up no encontrado." },
   "Fonte de conhecimento não encontrada.": { es: "Fuente de conocimiento no encontrada." },
   "Fonte não encontrada.": { es: "Fuente no encontrada." },
