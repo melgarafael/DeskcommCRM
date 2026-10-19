@@ -934,36 +934,29 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         onOpenChange={setPixOpen}
         conversationId={conversationId}
         sending={send.isPending || upload.isPending}
-        onSendText={(body, metadata) => {
-          send.mutate({
+        onSendPix={async ({ qrFile, caption, copyBody, metadata }) => {
+          // 1) QR com intro  2) mensagem só com chave/EMV (toque longo → Copiar)
+          const uploaded = await upload.mutateAsync({
+            conversationId,
+            file: qrFile,
+            filename: qrFile.name,
+            destino: "mensagem",
+          });
+          await send.mutateAsync({
             conversation_id: conversationId,
-            type: "text",
-            body,
+            type: uploaded.kind,
+            body: caption,
+            media_storage_path: uploaded.storage_path,
+            media_mime: uploaded.media_mime,
+            media_size_bytes: uploaded.media_size_bytes,
             metadata,
           });
-        }}
-        onSendImage={(file, caption, metadata) => {
-          void (async () => {
-            try {
-              const uploaded = await upload.mutateAsync({
-                conversationId,
-                file,
-                filename: file.name,
-                destino: "mensagem",
-              });
-              send.mutate({
-                conversation_id: conversationId,
-                type: uploaded.kind,
-                body: caption,
-                media_storage_path: uploaded.storage_path,
-                media_mime: uploaded.media_mime,
-                media_size_bytes: uploaded.media_size_bytes,
-                metadata,
-              });
-            } catch {
-              /* toast do upload */
-            }
-          })();
+          await send.mutateAsync({
+            conversation_id: conversationId,
+            type: "text",
+            body: copyBody,
+            metadata,
+          });
         }}
       />
       <ScheduleMessageDialog

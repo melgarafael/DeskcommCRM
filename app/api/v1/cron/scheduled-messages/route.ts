@@ -108,6 +108,16 @@ async function handle(req: NextRequest): Promise<Response> {
           updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
+
+      // Atendimento oculto: conversa fica pending até o contato responder.
+      const meta = row.metadata as { atendimento_oculto?: boolean } | null;
+      if (meta?.atendimento_oculto) {
+        await admin
+          .from("conversations")
+          .update({ status: "pending", updated_at: new Date().toISOString() })
+          .eq("id", row.conversation_id)
+          .eq("organization_id", row.organization_id);
+      }
       enviados += 1;
       void audit({
         action: "scheduled_message.sent",

@@ -63,9 +63,14 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const raw = await req.json().catch(() => null);
   const parsed = createScheduledMessageSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("validation_failed", t("Dados inválidos."), 422, {
+    const flat = parsed.error.flatten();
+    const primeira =
+      flat.fieldErrors.send_at?.[0] ??
+      flat.formErrors[0] ??
+      t("Dados inválidos.");
+    return fail("validation_failed", t(primeira), 422, {
       requestId,
-      details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
+      details: flat.fieldErrors as Record<string, unknown>,
     });
   }
 
@@ -79,6 +84,10 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   const input = parsed.data;
+  const metadata = {
+    ...(input.metadata ?? {}),
+    ...(input.atendimento_oculto ? { atendimento_oculto: true } : {}),
+  };
   const { data, error } = await supabase
     .from("scheduled_messages")
     .insert({
@@ -93,7 +102,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       media_storage_path: input.media_storage_path ?? null,
       media_mime: input.media_mime ?? null,
       media_size_bytes: input.media_size_bytes ?? null,
-      metadata: input.metadata ?? null,
+      metadata: Object.keys(metadata).length > 0 ? metadata : null,
       reply_to_message_id: input.reply_to_message_id ?? null,
     })
     .select(COLS)
