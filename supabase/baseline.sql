@@ -55741,6 +55741,154 @@ create trigger trg_contato_anonimizado_esquece_a_agenda
   when (new.is_anonymized is true and new.address_book_name is not null)
   execute function public.fn_contato_anonimizado_esquece_a_agenda();
 
+-- ---- campanha com modelo aprovado (migration 0710) ----
+-- ═══ Por que a campanha precisa de modelo ═══
+--
+-- Número oficial (API da plataforma, direto ou por provedor parceiro) só aceita
+-- texto livre para quem escreveu nas últimas 24 horas. Uma campanha fala
+-- justamente com quem NÃO escreveu: com `message_body` sozinho, cada destinatário
+-- de um número oficial virava falha (`131047`, ou recusa do parceiro antes de
+-- sair). O corpo da campanha oficial é um modelo aprovado, e cada variável dele
+-- (`{{1}}`, `{{2}}`…) diz DE ONDE sai o valor — nome do contato, campo do
+-- negócio, texto fixo —, nunca o valor: quem resolve é a preparação, contato a
+-- contato, e o valor resolvido fica em `campaign_recipients.variables`.
+--
+-- ═══ Por que `message_mode` tem CHECK ═══
+--
+-- Vocabulário FECHADO: só existe o que o despacho sabe mandar. Linha legada não
+-- existe (a coluna nasce aqui com default `text`, que é o que toda campanha
+-- anterior é). Vigiado por `tests/invariants/vocabulario-banco-x-typescript.test.ts`
+-- contra `MODOS_DA_MENSAGEM` em `lib/campanhas/tipos.ts`.
+--
+-- ═══ Por que o trigger de ack muda ═══
+--
+-- `fn_campanha_sincroniza_ack` só olhava `status`, e o webhook do oficial direto
+-- (`lib/channels/meta/status-update.ts`) mantém `status = 'sent'` e carimba
+-- `delivered_at`/`read_at`. O trigger saía cedo (status igual) e a campanha
+-- ficava com zero entregues e zero lidos para sempre nesse canal. Agora ele
+-- dispara também pelos carimbos e deriva o estado efetivo deles. Status
+-- analítico continua não retrocedendo.
+--
+-- Idempotente: `add column if not exists`, constraint recriada por nome,
+-- `create or replace function`, trigger recriado.
+
+alter table public.campaigns
+  add column if not exists message_mode text not null default 'text',
+  add column if not exists provider_template_name text,
+  add column if not exists provider_template_language text,
+  add column if not exists provider_template_variables jsonb not null default '{}'::jsonb;
+
+alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
+alter table public.campaigns
+  add constraint campaigns_message_mode_check check (message_mode in ('text', 'template'));
+
+-- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
+-- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
+alter table public.campaigns drop constraint if exists campaigns_modelo_exige_nome_e_idioma;
+alter table public.campaigns
+  add constraint campaigns_modelo_exige_nome_e_idioma check (
+    message_mode <> 'template'
+    or (coalesce(btrim(provider_template_name), '') <> ''
+        and coalesce(btrim(provider_template_language), '') <> '')
+  );
+
+comment on column public.campaigns.message_mode is
+  'text = corpo livre em message_body (número por QR); template = modelo aprovado (número oficial). Migration 0710.';
+comment on column public.campaigns.provider_template_name is
+  'Nome do modelo aprovado na plataforma, quando message_mode = template.';
+comment on column public.campaigns.provider_template_language is
+  'Idioma exato do modelo (es, es_AR, pt_BR…): nome + idioma identificam a definição.';
+comment on column public.campaigns.provider_template_variables is
+  'slotKey ("1", "header:1", "button0:1") → origem do valor ({kind: contact_first_name|contact_name|lead_custom|fixed}). Nunca o valor: ele é resolvido por contato na preparação.';
+
+-- O ack pelos carimbos de entrega e leitura (`fn_campanha_sincroniza_ack`) já
+-- vem do bloco da #2937: esta migration não o redefine.
+
+
+
+-- ---- campanha com envio rápido (migration 0711) ----
+-- ═══ Por que a campanha precisa de duas velocidades ═══
+--
+-- O despacho manda uma mensagem por número a cada rodada do cron. Para o número
+-- por QR é a proteção contra banimento; para o oficial, onde o limite é da
+-- plataforma (nível diário de contatos únicos e mensagens por segundo), uma
+-- campanha de 500 pessoas levava 9 horas. Quem opera loja quer avisar a base
+-- inteira de uma vez — uma oferta que vale "só hoje" não pode chegar à noite.
+--
+-- O gradual continua o padrão: é o mais seguro para a qualidade do número (a
+-- campanha para sozinha no primeiro erro grave antes de alcançar todo mundo).
+--
+-- ═══ Por que o CHECK amarra rápida a modelo ═══
+--
+-- Rajada por QR é o caminho mais curto para o número ser banido. A regra vive
+-- no banco além da API: uma campanha editada por fora (script, SQL) não escapa.
+-- Antes do CHECK, a auto-cura devolve a `gradual` qualquer linha que o violaria.
+--
+-- Idempotente: `add column if not exists`, constraints recriadas por nome.
+
+alter table public.campaigns
+  add column if not exists velocidade text not null default 'gradual';
+
+-- O vocabulário FINAL vive aqui, no bloco único da constraint: `transmissao`
+-- (migration 0712) foi acrescentado a esta lista, e o bloco da 0712 não a recria
+-- (`tests/unit/baseline-constraint-reconstruida.test.ts`).
+alter table public.campaigns drop constraint if exists campaigns_velocidade_check;
+alter table public.campaigns
+  add constraint campaigns_velocidade_check check (velocidade in ('gradual', 'rapida', 'transmissao'));
+
+update public.campaigns
+   set velocidade = 'gradual'
+ where velocidade = 'rapida'
+   and message_mode <> 'template';
+
+alter table public.campaigns drop constraint if exists campaigns_rapida_so_com_modelo;
+alter table public.campaigns
+  add constraint campaigns_rapida_so_com_modelo check (velocidade = 'gradual' or message_mode = 'template');
+
+comment on column public.campaigns.velocidade is
+  'gradual = uma mensagem por número a cada rodada (uma por minuto); rapida = rajada de várias por segundo, só com modelo aprovado (número oficial). Migration 0711.';
+
+-- ---- campanha por transmissão do provedor (migration 0712) ----
+-- ═══ Por que uma terceira velocidade ═══
+--
+-- A rápida (0711) manda em rajada, mas quem dispara é a rodada do cron, uma
+-- mensagem por chamada. A transmissão entrega a lista ao provedor numa chamada:
+-- a campanha aparece no painel de transmissões dele, com o relatório de cada
+-- destinatário (enviado, entregue, lido, falhou e o motivo), e 500 pessoas saem
+-- em segundos. Medido em 16/10/2026 com 2 destinatários: entregues em 1 a 3 s.
+--
+-- ═══ Por que o id da transmissão mora na campanha ═══
+--
+-- Cada mensagem da transmissão volta pelo webhook como uma saída que o CRM não
+-- mandou. Sem o id, a ingestão a lia como "uma pessoa respondeu pelo celular" —
+-- e calava o agente naquela conversa — e guardava "[Template: nome]" no lugar
+-- do texto, então o agente não sabia o que a pessoa tinha recebido. Com o id, o
+-- eco acha a campanha e o destinatário, e a linha nasce com o texto do modelo.
+-- Único por organização: dois ecos nunca podem apontar para duas campanhas.
+--
+-- O CHECK `campaigns_rapida_so_com_modelo` (0711) já cobre a transmissão: tudo
+-- que não é `gradual` exige modelo.
+--
+-- Idempotente: `add column if not exists`, constraint recriada por nome, índice
+-- `if not exists`.
+
+alter table public.campaigns
+  add column if not exists provider_broadcast_id text;
+
+-- `transmissao` entra no CHECK `campaigns_velocidade_check` no bloco único da
+-- constraint (o da migration 0711, acima): reconstruí-la aqui faria o bloco
+-- antigo falhar ao re-aplicar num banco que já tem campanha por transmissão.
+
+create unique index if not exists campaigns_provider_broadcast_id_uidx
+  on public.campaigns (organization_id, provider_broadcast_id)
+  where provider_broadcast_id is not null;
+
+comment on column public.campaigns.velocidade is
+  'gradual = uma mensagem por número a cada rodada (uma por minuto); rapida = rajada de várias por segundo; transmissao = a lista inteira entregue ao provedor numa chamada. As duas últimas só com modelo aprovado (número oficial). Migrations 0711 e 0712.';
+
+comment on column public.campaigns.provider_broadcast_id is
+  'Id da transmissão no provedor (velocidade = transmissao). O eco de cada mensagem traz este id e volta por ele à campanha e ao destinatário. Migration 0712.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

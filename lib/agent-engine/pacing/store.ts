@@ -217,6 +217,26 @@ export async function loadPacingState(
 }
 
 /** Registra um envio efetivado — chamado pela cadeia de envio (F2-13) após o accept do CRM. */
+/**
+ * Os envios de uma TRANSMISSÃO (migration 0712) no mesmo livro: a lista sai
+ * pelo provedor de uma vez, e o número precisa contar cada mensagem para o ritmo
+ * do agente e das outras campanhas — uma linha por mensagem, como `recordSend`.
+ */
+export async function recordSends(
+  db: Queryable,
+  tenantId: string,
+  channelSessionId: string,
+  sentAt: Date,
+  quantas: number,
+): Promise<void> {
+  if (quantas <= 0) return;
+  await db.query(
+    `insert into pacing_ledger (organization_id, channel_session_id, sent_at)
+     select $1, $2, $3 from generate_series(1, $4)`,
+    [tenantId, channelSessionId, sentAt, quantas],
+  );
+}
+
 export async function recordSend(
   db: Queryable,
   tenantId: string,

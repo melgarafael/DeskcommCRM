@@ -503,6 +503,25 @@ const PARES: Array<{
     simbolo: "STATUS_DO_DESTINATARIO",
   },
   {
+    tabela: "campaigns",
+    coluna: "message_mode",
+    // lib/campanhas/tipos.ts → MODOS_DA_MENSAGEM. Migration 0710 (#1330, fatia
+    // 4): o número oficial manda modelo aprovado, e o despacho escolhe o
+    // caminho por esta coluna. Um modo só no TypeScript viraria `23514` ao
+    // salvar a campanha; só no CHECK, campanha que o despacho não sabe mandar.
+    arquivo: "lib/campanhas/tipos.ts",
+    simbolo: "MODOS_DA_MENSAGEM",
+  },
+  {
+    tabela: "campaigns",
+    coluna: "velocidade",
+    // lib/campanhas/tipos.ts → VELOCIDADES_DA_CAMPANHA. Migrations 0711 e
+    // 0712: o despacho escolhe rajada, uma-por-rodada ou a transmissão do
+    // provedor por esta coluna.
+    arquivo: "lib/campanhas/tipos.ts",
+    simbolo: "VELOCIDADES_DA_CAMPANHA",
+  },
+  {
     tabela: "external_db_connections",
     coluna: "source_mode",
     arquivo: "lib/external-db/types.ts",

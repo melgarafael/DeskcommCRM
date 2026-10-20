@@ -35,6 +35,7 @@ describe("capabilities do canal intermediado", () => {
       groups: "limited",
       costPerMessage: true,
       alteraMensagemEnviada: false,
+      transmissao: true,
     });
   });
 

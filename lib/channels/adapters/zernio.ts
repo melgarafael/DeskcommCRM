@@ -39,6 +39,8 @@ import type { FetchedMedia } from "@/lib/messaging/media/types";
 import { resolveZernioCreds } from "../zernio/credentials";
 import { zernioTemplateOps } from "../zernio/templates";
 import { zernioReportConversion } from "../zernio/conversoes";
+import { parametrosDoParceiro } from "../zernio/parametros-do-modelo";
+import type { TemplateContract } from "../meta/template-contract";
 import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { zernioMediaFetchInit } from "../zernio/webhook";
@@ -255,6 +257,7 @@ export const zernioAdapter: ChannelAdapter = {
     name: string;
     language: string;
     values: Record<string, string>;
+    contrato?: TemplateContract | null;
   }): Promise<{ externalId: string | null }> {
     const admin = createAdminClient();
     const creds = await resolveZernioCreds(admin, {
@@ -267,13 +270,14 @@ export const zernioAdapter: ChannelAdapter = {
       );
     }
 
-    // `{{1}}`, `{{2}}`… viram posições. Chave que não é número fica de fora em
-    // vez de entrar em ordem alfabética — ordem inventada manda o valor errado
-    // para o lugar errado, e o cliente recebe o nome de outra pessoa.
-    const params = Object.keys(input.values)
-      .filter((k) => /^\d+$/.test(k))
-      .sort((a, b) => Number(a) - Number(b))
-      .map((k) => input.values[k] ?? "");
+    // A ordem e o lugar de cada valor saem do CONTRATO conferido: cabeçalho,
+    // corpo e sufixo de link numa lista plana; imagem trocada em `headerMedia`;
+    // cupom em `templateButtonParams`. Sem contrato (modelo fora do espelho),
+    // só as chaves numéricas, em ordem numérica — ver `parametros-do-modelo.ts`.
+    const { templateParams: params, headerMedia, templateButtonParams } = parametrosDoParceiro(
+      input.contrato ?? null,
+      input.values,
+    );
 
     await input.beforeSend?.();
     const res = await fetch(`${creds.baseUrl}/v1/inbox/conversations`, {
@@ -288,6 +292,8 @@ export const zernioAdapter: ChannelAdapter = {
         templateName: input.name,
         ...(input.language ? { templateLanguage: input.language } : {}),
         ...(params.length ? { templateParams: params } : {}),
+        ...(headerMedia ? { headerMedia } : {}),
+        ...(templateButtonParams ? { templateButtonParams } : {}),
       }),
     });
 
@@ -296,11 +302,17 @@ export const zernioAdapter: ChannelAdapter = {
       data?: { messageId?: string };
       error?: string;
       code?: string;
+      platformError?: { code?: number | string };
     } | null;
 
     if (!res.ok || json?.success === false) {
       const detalhe = json?.code ? `${json.code}: ${json.error ?? ""}` : (json?.error ?? res.statusText);
-      throw new Error(`zernio_template_failed: ${res.status} ${detalhe}`.trim());
+      // O código da PLATAFORMA (131050, 132015…) vai marcado no texto: é ele que
+      // diz se a falha é desta pessoa ou do número inteiro, e quem lê a falha
+      // (a campanha) decide por ele — `codigoDaPlataforma` em `erro-da-plataforma.ts`.
+      const plataforma =
+        json?.platformError?.code !== undefined ? ` [plataforma:${json.platformError.code}]` : "";
+      throw new Error(`zernio_template_failed: ${res.status} ${detalhe}${plataforma}`.trim());
     }
 
     return { externalId: json?.data?.messageId ?? null };

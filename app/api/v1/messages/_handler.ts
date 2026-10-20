@@ -1053,7 +1053,7 @@ export async function sendMessageHandler(
         // característica do transporte. O caminho de baixo já conferia; o
         // adapter postava direto, e um parâmetro a mais virava `400` cru em vez
         // de "falta o valor {{2}}".
-        await conferirDefinicao(supabase, {
+        const contrato = await conferirDefinicao(supabase, {
           organizationId: ctx.organization_id,
           // A conexão dona da definição: dois números têm modelos diferentes, e
           // conferir a do número errado aprovaria um envio que a plataforma
@@ -1076,6 +1076,7 @@ export async function sendMessageHandler(
                 name: input.template_name ?? "",
                 language: input.template_language ?? "",
                 values: input.template_values ?? {},
+                contrato,
               })
             ).externalId
           : await sendTemplateForSession(supabase, {

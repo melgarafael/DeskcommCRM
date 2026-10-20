@@ -1,3 +1,4 @@
+import type { VariaveisDoModelo } from "@/lib/channels/meta/variaveis-do-fluxo";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
@@ -121,6 +122,8 @@ export interface FollowupJobRequest {
      * fechada). O turno resolve qual dos dois é e envia sem modelo de IA.
      */
     template_id?: string;
+    /** action mode `template` — de onde sai cada variável do modelo aprovado. */
+    template_values?: VariaveisDoModelo;
     volta_index?: number;
     volta_total?: number;
     /** ai_classify — Task 5.1: classes possíveis + dica opcional pro classificador. */
@@ -382,6 +385,7 @@ function turnPayloadExtras(
     const volta = latestRepeatIndex(events);
     return {
       template_id: node.config.template_id,
+      ...(node.config.template_values ? { template_values: node.config.template_values } : {}),
       ...(volta ? { volta_index: volta.index, volta_total: volta.total } : {}),
     };
   }

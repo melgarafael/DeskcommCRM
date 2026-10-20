@@ -40,6 +40,7 @@ const CAPABILITIES = [
   "groups",
   "costPerMessage",
   "alteraMensagemEnviada",
+  "transmissao",
 ] as const;
 
 describe("matriz capability × provider é exaustiva", () => {

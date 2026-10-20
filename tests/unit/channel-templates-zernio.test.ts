@@ -81,7 +81,13 @@ describe("list", () => {
   it("traduz para o vocabulário neutro, sem inventar campos", async () => {
     responde({
       templates: [
-        { name: "cuenta_activa", language: "es", status: "APPROVED", category: "UTILITY", components: [{ type: "BODY" }] },
+        {
+          name: "cuenta_activa",
+          language: "es",
+          status: "APPROVED",
+          category: "UTILITY",
+          components: [{ type: "BODY" }],
+        },
       ],
     });
     const t = await zernioTemplateOps.list({ organizationId: ORG, sessionRef: "acc_1" });
@@ -97,7 +103,9 @@ describe("list", () => {
 
   it("resposta sem templates devolve lista vazia, não undefined", async () => {
     responde({});
-    await expect(zernioTemplateOps.list({ organizationId: ORG, sessionRef: "acc_1" })).resolves.toEqual([]);
+    await expect(
+      zernioTemplateOps.list({ organizationId: ORG, sessionRef: "acc_1" }),
+    ).resolves.toEqual([]);
   });
 });
 
@@ -111,7 +119,10 @@ describe("create — a assimetria maiúscula/minúscula", () => {
         name: "t",
         language: "es",
         category: "UTILITY",
-        components: [{ type: "BODY", text: "oi" }, { type: "FOOTER", text: "rodapé" }],
+        components: [
+          { type: "BODY", text: "oi" },
+          { type: "FOOTER", text: "rodapé" },
+        ],
       },
     });
     const comps = corpo().components as { type: string }[];
@@ -134,6 +145,37 @@ describe("create — a assimetria maiúscula/minúscula", () => {
       type: "body",
       text: "oi {{1}}",
       example: { body_text: [["M"]] },
+    });
+  });
+
+  it("normaliza também o `type` dos BOTÕES — o discriminador se repete um nível abaixo", async () => {
+    // O que a tela escreve (`montarComponents`): `QUICK_REPLY` em maiúscula.
+    responde({ template: {} });
+    await zernioTemplateOps.create({
+      organizationId: ORG,
+      sessionRef: "acc_1",
+      draft: {
+        name: "t",
+        language: "es",
+        category: "UTILITY",
+        components: [
+          { type: "BODY", text: "oi" },
+          {
+            type: "BUTTONS",
+            buttons: [
+              { type: "QUICK_REPLY", text: "Sí, confirmo" },
+              { type: "URL", text: "Ver", url: "https://x" },
+            ],
+          },
+        ],
+      },
+    });
+    expect((corpo().components as Record<string, unknown>[])[1]).toEqual({
+      type: "buttons",
+      buttons: [
+        { type: "quick_reply", text: "Sí, confirmo" },
+        { type: "url", text: "Ver", url: "https://x" },
+      ],
     });
   });
 
@@ -180,7 +222,12 @@ describe("update e remove", () => {
 
   it("remove usa DELETE e escapa o nome na URL", async () => {
     responde({ success: true });
-    await zernioTemplateOps.remove({ organizationId: ORG, sessionRef: "acc_1", name: "a/b", language: "es" });
+    await zernioTemplateOps.remove({
+      organizationId: ORG,
+      sessionRef: "acc_1",
+      name: "a/b",
+      language: "es",
+    });
     expect(ultima().init.method).toBe("DELETE");
     expect(ultima().url).toContain("a%2Fb");
   });
@@ -194,7 +241,13 @@ describe("erros da plataforma", () => {
       400,
     );
     await expect(
-      zernioTemplateOps.update({ organizationId: ORG, sessionRef: "acc_1", name: "t", language: "es", patch: { category: "UTILITY" } }),
+      zernioTemplateOps.update({
+        organizationId: ORG,
+        sessionRef: "acc_1",
+        name: "t",
+        language: "es",
+        patch: { category: "UTILITY" },
+      }),
     ).rejects.toThrow(/can only be edited/);
   });
 
@@ -211,9 +264,9 @@ describe("erros da plataforma", () => {
 
   it("sem credencial falha nomeando o motivo, sem tocar a rede", async () => {
     credsRef.current = null;
-    await expect(zernioTemplateOps.list({ organizationId: ORG, sessionRef: "acc_1" })).rejects.toThrow(
-      /zernio_not_configured/,
-    );
+    await expect(
+      zernioTemplateOps.list({ organizationId: ORG, sessionRef: "acc_1" }),
+    ).rejects.toThrow(/zernio_not_configured/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -233,7 +286,12 @@ describe("o changelog de 28/08 do provedor", () => {
 
   it("o DELETE sempre nomeia a variante — sem idioma, a API apaga TODAS", async () => {
     responde({ success: true });
-    await zernioTemplateOps.remove({ organizationId: ORG, sessionRef: "acc_1", name: "promo", language: "es" });
+    await zernioTemplateOps.remove({
+      organizationId: ORG,
+      sessionRef: "acc_1",
+      name: "promo",
+      language: "es",
+    });
     expect(ultima().url).toContain("language=es");
   });
 });

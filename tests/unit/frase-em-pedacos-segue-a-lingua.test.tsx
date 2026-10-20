@@ -19,7 +19,14 @@
  *     pnpm vitest run tests/unit/frase-em-pedacos-segue-a-lingua.test.tsx
  */
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// O ActionForm consulta os modelos aprovados já no topo, para o mapa de
+// variáveis do passo de modelo. Esta tela não monta QueryClient — e o assunto
+// aqui é a frase, não a lista.
+vi.mock("@/hooks/followup/useModelosAprovadosDoFluxo", () => ({
+  useModelosAprovadosDoFluxo: () => ({ isLoading: false, isError: false, data: [] }),
+}));
 
 import { ActionForm } from "@/app/app/ai/followups/[id]/_components/forms/ActionForm";
 import { SuspendedBanner } from "@/components/admin/tenants/SuspendedBanner";

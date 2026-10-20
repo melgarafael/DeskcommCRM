@@ -520,6 +520,40 @@ diálogo e é asserida na spec.
 
 ---
 
+## J48 — Campanha pelo número oficial, com modelo aprovado `[P1]` (2026-10-15)
+
+Contexto: issue #1330, fatia 4. Número oficial só aceita texto livre dentro das
+24 h da última mensagem do cliente, e a campanha fala com quem não escreveu —
+a campanha de texto num número oficial falhava em cada envio. Agora, no número
+oficial, o formulário oferece os modelos aprovados DAQUELE número
+(`GET /api/v1/campaigns/modelos`), o mapa de onde sai cada variável
+(`lib/campanhas/modelo.ts`) e a prévia (`components/channels/PreviaDoModelo.tsx`,
+a mesma do inbox). Migration 0710.
+
+Spec: `tests/e2e/campanha-com-modelo-aprovado.spec.ts`, na `SPECS_PARTE_5`. Os
+casos 1, 2 e o da escolha do envio rápido rodam no CI; o envio de teste e a
+rodada rápida precisam do dublê do provedor (ambiente do `next start`) e pulam
+sem ele — o comando está no cabeçalho da spec.
+
+Envio rápido (migration 0711, 2026-10-16): `campaigns.velocidade` (`gradual` |
+`rapida`, só com modelo). Na rápida, a rodada do cron manda em rajada
+(`lib/campanhas/rajada.ts`: 6 inícios por segundo, 4 em voo, até 38 s por
+rodada) em vez de uma mensagem por rodada; o 429 do provedor e o 130429 da
+plataforma devolvem a pessoa à fila em vez de falhá-la.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J48.1 | Escolher um número oficial na nova campanha | o campo de texto some; aparece o seletor de modelos do número, o pausado desabilitado, a mídia do cabeçalho já com o link salvo, «Falta escolher a origem de» até tudo ter origem, e a prévia com «[Primeiro nome do contato]» e o texto fixo | **PASS pela tela** — Evidência: `evidence/campanha-com-modelo-aprovado/01-modelo-escolhido-com-previa.png` |
+| J48.2 | Contar o público com um contato cujo nome é só telefone | 1 pode receber; o outro fica de fora com «Falta um dado que a mensagem usa» | **PASS pela tela** — `evidence/campanha-com-modelo-aprovado/02-publico-com-quem-fica-de-fora.png` |
+| J48.3 | Salvar e preparar | a campanha grava `message_mode = template` e o mapa; o destinatário guarda os valores em `variables.modelo` e o texto preenchido em `rendered_body` (o que o agente lê) | **PASS pela tela + banco** — `evidence/campanha-com-modelo-aprovado/03-detalhe-do-rascunho.png`, `evidence/campanha-com-modelo-aprovado/04-lista-preparada.png` |
+| J48.4 | Enviar teste (com o dublê do provedor) | o provedor recebe nome, idioma, `templateParams` na ordem do contrato e `headerMedia`; a conversa guarda o modelo com o texto preenchido | **PASS pela tela, local** — `evidence/campanha-com-modelo-aprovado/05-teste-enviado.png`; no CI pula (sem dublê) |
+| J48.5 | Falha da plataforma no envio | da pessoa (131050, 131049, 131026) segue para a próxima com o motivo em frase; do envio inteiro (132015, 131048, 131042…) pausa a campanha com o motivo | **PASS (unit)** — `lib/channels/erro-da-plataforma.test.ts`; rodada **NÃO MEDIDA** pela tela |
+| J48.6 | Entrega e leitura pelo oficial direto | o trigger de ack lê `delivered_at`/`read_at` e o destinatário vira entregue/lido | **PASS (banco)** — do #2937: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` |
+| J48.7 | Escolher «Rápido» no ritmo de uma campanha do número oficial (migration 0711) | a campanha que já existia vem «Gradual»; «Rápido» grava `velocidade = rapida`, some o campo de intervalo, e a confirmação de «Iniciar envio» diz «Envio rápido: sai tudo em cerca de 1 min.» | **PASS pela tela + banco** (2026-10-16) — `evidence/campanha-com-modelo-aprovado/06-envio-rapido-escolhido.png` |
+| J48.8 | Campanha rápida de 3 pessoas, uma rodada do cron (com o dublê do provedor) | o provedor recebe os 3 modelos, cada um com o primeiro nome da pessoa; os 3 destinatários ficam `sent`, a campanha `completed`, e a tela mostra «Enviadas 3» | **PASS pela tela, local** (2026-10-16) — `evidence/campanha-com-modelo-aprovado/07-rapida-lista-inteira-numa-rodada.png`; no CI pula (sem dublê) |
+| J48.9 | Escolher «Broadcast» numa campanha do número oficial cujo provedor faz broadcast (migration 0712) | com `{{1}}` = primeiro nome, a opção aparece travada e diz «usa dados de cada pessoa ({{1}})»; com texto fixo nas duas variáveis ela destrava, a tela lista «amiga» e «Cafeteira Elétrica» como o que sai para todos, e somem intervalo e tetos (fica a janela) | **PASS pela tela** (2026-10-18) — `evidence/campanha-com-modelo-aprovado/08-broadcast-travado-com-nome.png`, `evidence/campanha-com-modelo-aprovado/09-broadcast-escolhido-texto-fixo.png` |
+| J48.10 | Campanha por broadcast de 3 pessoas, duas rodadas do cron (com o dublê do provedor) | 1ª rodada: o provedor recebe UM broadcast com o modelo e os valores já escritos, os 3 telefones e o envio — nenhum envio de um em um; a campanha guarda o id. 2ª rodada: o relatório leva os 3 a `delivered`, a campanha conclui e a tela mostra «Entregues 3» | **PASS pela tela, local** (2026-10-18) — `evidence/campanha-com-modelo-aprovado/10-broadcast-entregue-pelo-relatorio.png`; no CI pula (sem dublê) |
+
 ## J9 — Ver o que o follow-up já fez, e intervir sem matá-lo `[P1]`
 
 Contexto do código: o dossiê do enrollment (`/app/ai/followups/enrollments/[id]`,
