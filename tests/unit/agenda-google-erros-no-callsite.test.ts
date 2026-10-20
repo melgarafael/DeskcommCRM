@@ -104,7 +104,7 @@ describe("erros do Google são sanitizados no ponto que os persiste", () => {
       "mensagemDaRecusaDePublicacao",
     );
     expect(catchReal).toContain("mensagemDaRecusaDePublicacao(e, metodoEmVoo)");
-    expect(catchReal).toContain('call("error", { message })');
+    expect(catchReal).toContain('call("error", { message, failure_kind: classification })');
     expect(catchReal).not.toMatch(/\be\.message\b/);
   });
 

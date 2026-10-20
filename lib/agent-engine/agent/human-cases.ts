@@ -294,6 +294,7 @@ export async function resolveCaseFromHuman(
   caseId: string,
   actorUserId: string,
   note: string,
+  humanEventId?: string,
 ): Promise<boolean> {
   const { rowCount } = await db.query(
     `with updated as (
@@ -302,11 +303,11 @@ export async function resolveCaseFromHuman(
         where organization_id = $1 and id = $2 and status = 'awaiting_human'
         returning id
      )
-     insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body)
-     select $1::uuid, id, 'human_replied', 'human', $3::uuid, 'resolved', $4::text from updated
+     insert into agent_case_events (id, organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body)
+     select coalesce($5::uuid, gen_random_uuid()), $1::uuid, id, 'human_replied', 'human', $3::uuid, 'resolved', $4::text from updated
      union all
-     select $1::uuid, id, 'resolved', 'human', $3::uuid, null::text, null::text from updated`,
-    [tenantId, caseId, actorUserId, note],
+     select gen_random_uuid(), $1::uuid, id, 'resolved', 'human', $3::uuid, null::text, null::text from updated`,
+    [tenantId, caseId, actorUserId, note, humanEventId ?? null],
   );
   return transitioned(rowCount);
 }
@@ -321,6 +322,7 @@ export async function markAwaitingLead(
   caseId: string,
   actorUserId: string,
   ask: string,
+  humanEventId?: string,
 ): Promise<boolean> {
   const { rowCount } = await db.query(
     `with updated as (
@@ -329,11 +331,11 @@ export async function markAwaitingLead(
         where organization_id = $1 and id = $2 and status = 'awaiting_human'
         returning id
      )
-     insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body)
-     select $1::uuid, id, 'human_replied', 'human', $3::uuid, 'need_lead_info', $4::text from updated
+     insert into agent_case_events (id, organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body)
+     select coalesce($5::uuid, gen_random_uuid()), $1::uuid, id, 'human_replied', 'human', $3::uuid, 'need_lead_info', $4::text from updated
      union all
-     select $1::uuid, id, 'lead_asked', 'human', $3::uuid, null::text, null::text from updated`,
-    [tenantId, caseId, actorUserId, ask],
+     select gen_random_uuid(), $1::uuid, id, 'lead_asked', 'human', $3::uuid, null::text, null::text from updated`,
+    [tenantId, caseId, actorUserId, ask, humanEventId ?? null],
   );
   return transitioned(rowCount);
 }

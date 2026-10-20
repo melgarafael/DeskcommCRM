@@ -516,6 +516,28 @@ function adiada<T>() {
 describe('o Jev no roteador (onda 2 do Jev, bloco 2.2)', () => {
   const semSticky = { ...baseInput, signal: 'meu pedido não chegou', stickyAgentId: null, stickyIntent: null };
 
+  it.each([4, 12])('loader nativo leva a quantidade salva %i às entradas do roteador e da reserva', async quantidade => {
+    const { loadActiveRouter } = await import('./router-config');
+    const query = vi.fn(async (sql: string, params: unknown[]) => {
+      if (sql.includes('from ai_routers')) {
+        expect(params).toEqual([semSticky.tenantId, semSticky.channelSessionId]);
+        return { rows: [{ id: 'r1', name: 'Roteador', fallback_agent_id: null, config: { context_message_count: quantidade, sticky: false } }] };
+      }
+      if (sql.includes('from ai_router_members')) return { rows: members.map(m => ({ agent_id: m.agentId, intent_name: m.intentName, intent_description: m.intentDescription, examples: m.examples })) };
+      throw new Error(`consulta inesperada: ${sql}`);
+    });
+    const jev = jevFalso('observando');
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    const recentMessages = Array.from({ length: 16 }, (_, n) => ({ direction: 'inbound' as const, body: `histórico ${n}` }));
+    await resolveTurnAgent({ query } as never, {} as never, { ...semSticky, recentMessages }, makeDeps({
+      loadActiveRouter: vi.fn(loadActiveRouter), loadPublishedAgentConfigById: idAwareLoader(), classifyIntent, consultarJev: jev.consultarJev,
+    }));
+    expect(jev.consultarJev).toHaveBeenCalledOnce();
+    const [, entradaDoJev] = jev.consultarJev.mock.calls[0]! as unknown as [unknown, Record<string, unknown>];
+    expect(entradaDoJev).toMatchObject({ contextMessageCount: quantidade, recentMessages: recentMessages.slice(-quantidade) });
+    expect(classifyIntent.mock.calls[0]![2].recentMessages).toEqual(recentMessages.slice(-quantidade));
+  });
+
   async function rodar(opts: {
     daIa: IntentVerdict | null;
     jev: ReturnType<typeof jevFalso>;
@@ -534,7 +556,7 @@ describe('o Jev no roteador (onda 2 do Jev, bloco 2.2)', () => {
     return { out, classifyIntent };
   }
 
-  it('pergunta EM PARALELO: o Jev começa antes de a IA de sempre responder, com a mensagem sozinha', async () => {
+  it('pergunta EM PARALELO: o Jev começa antes de a IA de sempre responder, com o mesmo contexto recente', async () => {
     const jev = jevFalso('observando');
     const classifyIntent = vi.fn(async () => {
       // A IA de sempre ainda não respondeu, e o Jev já foi perguntado.
@@ -549,10 +571,12 @@ describe('o Jev no roteador (onda 2 do Jev, bloco 2.2)', () => {
     }));
     expect(classifyIntent).toHaveBeenCalledOnce();
     const [, entrada] = jev.consultarJev.mock.calls[0]! as unknown as [unknown, Record<string, unknown>];
-    // R4: só a última mensagem — o contexto das 4 anteriores fica com a IA de sempre.
+    // O adaptador do Jev confere o aceite antes de enviar este contexto.
     expect(entrada).toEqual({
       organizationId: 'org-1',
       mensagem: 'meu pedido não chegou',
+      recentMessages: [{ direction: 'outbound', body: 'contexto' }],
+      contextMessageCount: 8,
       membros: members,
       contactId: 'lead-1',
       jobId: 'job-1',

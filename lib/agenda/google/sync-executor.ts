@@ -67,9 +67,12 @@ export function mensagemDaRecusaDePublicacao(
     if (erro.status === 412) return erro.message;
     return classificarErroDoGoogle(erro, OPERACAO_POR_METODO[metodo]).mensagem;
   }
-  return erro instanceof Error && "code" in erro
-    ? "O compromisso mudou. A sincronização vai reler a versão atual."
-    : "Não foi possível sincronizar. Confira a conexão e tente novamente.";
+  if (erro instanceof Error && "code" in erro && ["40001", "PT409"].includes(String(erro.code)) &&
+      ["google_stale", "appointment_stale", "google_write_unavailable", "meet_stale"].includes(erro.message))
+    return "O compromisso mudou. A sincronização vai reler a versão atual.";
+  if (erro instanceof Error && "code" in erro && ["57014", "55P03", "40P01"].includes(String(erro.code)))
+    return "A sincronização aguarda uma operação do sistema. A reserva está preservada e será relida.";
+  return "Não foi possível sincronizar. Confira a conexão e tente novamente.";
 }
 
 /**
@@ -115,8 +118,8 @@ export async function tokenForConnection(db: SupabaseClient, org: string, connec
     .eq("organization_id", org)
     .eq("id", connectionId)
     .single();
-  if (error || data?.status !== "healthy")
-    throw new Error("A conexão Google precisa de atenção nas configurações.");
+  if (error) throw new Error("Não foi possível reler a conexão Google.");
+  if (data?.status !== "healthy") throw Object.assign(new Error("A conexão Google precisa de atenção nas configurações."), { publicationHumanRequired: data?.status !== "rate_limited" });
   const { data: member, error: membershipError } = await db
     .from("user_organizations")
     .select("user_id")
@@ -124,11 +127,27 @@ export async function tokenForConnection(db: SupabaseClient, org: string, connec
     .eq("user_id", data.user_id)
     .is("revoked_at", null)
     .maybeSingle();
-  if (membershipError || !member) throw new Error("O responsável não possui vínculo ativo.");
+  if (membershipError || !member) throw Object.assign(new Error("O responsável não possui vínculo ativo."), { publicationHumanRequired: !membershipError });
   const token = await decryptWebhookSecret(db, data.oauth_access_token_encrypted);
-  if (!token) throw new Error("Reconecte a conta Google para continuar.");
+  if (!token) throw Object.assign(new Error("Reconecte a conta Google para continuar."), { publicationHumanRequired: true });
   return token;
 }
+export type PublicationPhase = "claim" | "contact" | "token" | "read" | "prepare" | "renew" | "write" | "checkpoint" | "meet" | "idle" | "error" | "release";
+/** Allowlisted technical identifiers; no error text, RPC arguments or bodies. */
+export function publicationFailureDiagnostic(error: unknown, phase: PublicationPhase, elapsedMs: number, deadlineExpired = false) {
+  // DOMException from another realm need not be instanceof the local Error.
+  // Read only primitive identifiers and emit allowlisted values, never text.
+  const e = typeof error === "object" && error !== null ? error as { name?: unknown; code?: unknown; message?: unknown } : null;
+  const code = typeof e?.code === "string" || typeof e?.code === "number" ? String(e.code) : "";
+  const name = typeof e?.name === "string" ? e.name : "";
+  const domain = ["40001", "PT409"].includes(code) && typeof e?.message === "string" && ["google_stale", "appointment_stale", "google_write_unavailable", "meet_stale"].includes(e.message) ? e.message : null;
+  return { event: "google_publication_failure", phase, elapsed_ms: Math.max(0, Math.round(elapsedMs)), deadline_expired: deadlineExpired,
+    error_type: ["Error", "AbortError", "TimeoutError", "ZodError"].includes(name) ? name : "unknown",
+    sqlstate: /^[A-Z0-9]{5}$/.test(code) ? code : null,
+    http_status: error instanceof GoogleHttpError ? error.status : null,
+    domain, lease_lost: domain === "google_stale" };
+}
+
 
 /**
  * O gate de #2063: a reunião nasce aberta SÓ quando a organização ligou a opção
@@ -166,6 +185,7 @@ export async function decidirEspacoAberto(
 }
 export interface ExecuteOptions {
   transport?: GoogleFetch;
+  signal?: AbortSignal;
   calendarFence?: CalendarFence;
   remote?: EventoDoGoogle;
   token?: string;
@@ -176,23 +196,29 @@ export async function reconcileAppointment(
   id: string,
   options: ExecuteOptions = {},
 ): Promise<"busy" | "processed" | "unchanged" | "terminal" | "failed"> {
-  const raw = await googleRpc(db, "fn_google_appointment", {
-    p_org: org,
-    p_id: id,
-    p_action: "claim",
-    p_args: options.calendarFence ? { calendar_fence: options.calendarFence } : {},
-  });
+  const startedAt = Date.now();
+  let phase: PublicationPhase = "claim";
+  let raw: unknown;
+  try {
+    raw = await googleRpc(db, "fn_google_appointment", {
+      p_org: org, p_id: id, p_action: "claim",
+      p_args: options.calendarFence ? { calendar_fence: options.calendarFence } : {},
+    });
+  } catch (error) {
+    logger.warn("Falha técnica na publicação Google", publicationFailureDiagnostic(error, phase, Date.now() - startedAt, options.signal?.aborted));
+    throw error;
+  }
   if (!raw) return "busy";
-  if (typeof raw === "object" && "terminal" in raw && (raw.terminal === "redacted" || raw.terminal === "not_configured"))
+  if (typeof raw === "object" && "terminal" in raw && (raw.terminal === "redacted" || raw.terminal === "not_configured" || raw.terminal === "human_required"))
     return "terminal";
   let a = appointmentSnapshotSchema.parse(raw);
-  const call = (action: string, extra: Record<string, unknown> = {}) =>
-    googleRpc(db, "fn_google_appointment", {
-      p_org: org,
-      p_id: id,
-      p_action: action,
+  const call = (action: PublicationPhase | "commit", extra: Record<string, unknown> = {}) => {
+    phase = action === "commit" ? "checkpoint" : action;
+    return googleRpc(db, "fn_google_appointment", {
+      p_org: org, p_id: id, p_action: action,
       p_args: { ...expectedAppointment(a, options.calendarFence), ...extra },
     });
+  };
   const commit = async (result: Record<string, unknown>) => {
     const saved = await call("commit", { result });
     if (saved && typeof saved === "object" && "overlap" in saved) return false;
@@ -209,12 +235,16 @@ export async function reconcileAppointment(
       await commit({ ack: true });
       return "processed";
     }
+    phase = "contact";
     const contato = await emailDoContato(db, org, a.contact_id);
     if (!a.google_connection_id || !a.google_calendar_id || !a.google_event_id)
       throw new Error("Publicação antiga sem identidade completa. Revise a conexão.");
+    phase = "token";
     const api = googleTransport(
       options.token ?? (await tokenForConnection(db, org, a.google_connection_id)),
-      options.transport,
+      options.signal ? ((url, init) => (options.transport ?? fetch)(url, {
+        ...init, signal: AbortSignal.any([options.signal!, ...(init?.signal ? [init.signal] : [])]),
+      })) : options.transport,
     );
     let meetingObserved = false;
     const meetingDue =
@@ -310,6 +340,7 @@ export async function reconcileAppointment(
     const espacoAberto = () => espacoAbertoPublicado() || espacoAbertoNaIntencao;
     let local = localProjection({ ...a, meet_aberto: espacoAberto() });
     // Listagem é sinal de mudança, não versão para um PATCH: GET exato revalida.
+    phase = "read";
     const event = await api.get(a.google_calendar_id, a.google_event_id);
     const linked = event?.extendedProperties?.private;
     const association =
@@ -721,6 +752,7 @@ export async function reconcileAppointment(
       await call("renew");
       // O método que está em voo — é ele que a frase da recusa vai usar.
       metodoEmVoo = method;
+      phase = "write";
       const response = await api.write(
         a.google_calendar_id!,
         a.google_event_id!,
@@ -749,11 +781,16 @@ export async function reconcileAppointment(
       }
     }
   } catch (e) {
+    logger.warn("Falha técnica na publicação Google", publicationFailureDiagnostic(e, phase, Date.now() - startedAt, options.signal?.aborted));
     // Nunca persistir corpo remoto, e-mail ou payload no erro exibido: a frase
     // sai dos identificadores da recusa, nunca do texto livre do Google.
     const message = mensagemDaRecusaDePublicacao(e, metodoEmVoo);
     try {
-      await call("error", { message });
+      const classification = e instanceof Error && "publicationHumanRequired" in e && e.publicationHumanRequired === true ? "human_required" : e instanceof GoogleHttpError && e.status === 412
+        ? "transient" : ["transitorio", "recuar", "ressincronizar", "evento_sumiu", "ja_esta_feito"].includes(
+          classificarErroDoGoogle(e, OPERACAO_POR_METODO[metodoEmVoo]).desfecho,
+        ) ? "transient" : "human_required";
+      await call("error", { message, failure_kind: classification });
     } catch {
       /* aquisição perdida não escreve erro tardio */
     }

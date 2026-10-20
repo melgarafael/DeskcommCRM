@@ -150,7 +150,7 @@ export type ResultadoDaConsulta =
       agendaExternaNuncaLida: boolean;
       /** Cobertura incompleta para o trecho futuro consultado; o passado não oferece horários. */
       googleCoberturaParcial: boolean;
-      servico?: { event_type_id: string; booking_mode: string; revision: number; availability: DisponibilidadeDoServico[] };
+      servico?: { event_type_id: string; booking_mode: string; revision: number; requires_confirmation: boolean; availability: DisponibilidadeDoServico[] };
     }
   | {
       ok: false;
@@ -235,7 +235,7 @@ export async function horariosLivresDaOrg(
         .map((row) => ({ inicio: new Date(row.starts_at), fim: new Date(row.ends_at!) })),
         fusoDaRegra: service.service_timezone, publicouHorarios: service.schedule.length > 0, fusoSuposto: false,
         fontesDefasadas: [], agendaExternaNuncaLida: unverified, googleCoberturaParcial: unverified,
-        servico: { event_type_id: tipo.id, booking_mode: service.booking_mode, revision: service.service_revision, availability: result.availability } };
+        servico: { event_type_id: tipo.id, booking_mode: service.booking_mode, revision: service.service_revision, requires_confirmation: service.requires_confirmation, availability: result.availability } };
     } catch (error) {
       return { ok: false, codigo: "erro_interno", motivoParaOperador: error instanceof Error ? error.message : "Não foi possível consultar o serviço.",
         motivoParaCliente: `Não consegui verificar os horários deste serviço agora. ${NAO_OFERECA}` };

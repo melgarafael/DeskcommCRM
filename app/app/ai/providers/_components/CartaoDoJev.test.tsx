@@ -115,6 +115,31 @@ function montar(d: DadosDoJev | null, opcoes: { erro?: string; idioma?: string }
 
 const cartao = () => screen.getByTestId("cartao-do-jev");
 
+describe('histórico específico do clima', () => {
+  it('cancelar não envia autorização; confirmar limita a finalidade ao clima', async () => {
+    montar(dados({ config: { contexto_clima: null } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Usar histórico no clima' }));
+    let dialogo = await screen.findByRole('alertdialog');
+    expect(dialogo.textContent).toMatch(/até 16 mensagens anteriores deste atendimento/);
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Cancelar' }));
+    expect(chamadas).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Usar histórico no clima' }));
+    dialogo = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Autorizar histórico do clima' }));
+    await waitFor(() => expect(chamadas).toHaveLength(1));
+    expect(chamadas[0]?.corpo).toEqual({ contexto_clima: true, aceite_contexto_clima: true });
+  });
+
+  it('permite revogar e não oferece mutação a quem não administra', async () => {
+    montar(dados({ config: { contexto_clima: { em: '2026-10-20T14:00:00Z', por: 'admin', versao: 1 } } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Desativar histórico do clima' }));
+    await waitFor(() => expect(chamadas[0]?.corpo).toEqual({ contexto_clima: false }));
+    cleanup();
+    montar(dados({ config: { contexto_clima: null }, pode_editar: false }));
+    expect(screen.queryByRole('button', { name: 'Usar histórico no clima' })).toBeNull();
+  });
+});
+
 /**
  * "Deixar o Jev decidir" pede confirmação: o clique no cartão abre o diálogo, e
  * só o do diálogo muda alguma coisa. Devolve o diálogo, já confirmado.
@@ -1601,5 +1626,43 @@ describe("CartaoDoJev — o aviso da área da saúde (DEC-012 #2)", () => {
     expect(aviso).toHaveTextContent(/Se a sua empresa é da área da saúde/);
     expect(aviso).toHaveTextContent(/LGPD trata como sensível/);
     expect(aviso).toHaveTextContent(/contrato da TypeSafe/);
+  });
+});
+
+
+describe("autorização e probabilidades da revisão",()=>{
+  it("v1 permanece sem upgrade automático; cancelar diálogo não escreve e v2 exibe o quarto sinal",async()=>{
+    montar(dados({config:{contexto_revisao:{em:"2026-10-09T12:00:00Z",por:"admin",versao:1}},ultima_revisao:[{sinal:"repasse",probabilidade:0.95,em:"agora"}]}));
+    expect(chamadas).toHaveLength(0);
+    expect(screen.getByTestId("jev-contexto-revisao")).toHaveTextContent("A IA de reserva assume esses casos.");
+    expect(screen.getByTestId("jev-revisao-repasse")).toHaveTextContent("95%");
+    fireEvent.click(screen.getByRole("button",{name:"Autorizar contexto ampliado"}));
+    const dialog=screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("decisões humanas registradas em Casos");
+    expect(dialog).toHaveTextContent("Notas humanas podem conter dados pessoais e condições comerciais");
+    fireEvent.click(within(dialog).getByRole("button",{name:"Cancelar"}));
+    expect(chamadas).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button",{name:"Autorizar contexto ampliado"}));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button",{name:"Autorizar contexto da revisão"}));
+    await waitFor(()=>expect(chamadas[0]?.corpo).toEqual({contexto_revisao:true,aceite_contexto_revisao:true,versao_contexto_revisao:2}));
+  });
+  it("exige diálogo próprio antes de enviar aceite de revisão",async()=>{
+    montar(dados({config:{contexto_revisao:null}}));
+    fireEvent.click(screen.getByRole("button",{name:"Autorizar contexto da revisão"}));
+    const dialog=screen.getByRole("alertdialog");expect(dialog).toHaveTextContent("trechos da base e do catálogo");
+    fireEvent.click(within(dialog).getByRole("button",{name:"Autorizar contexto da revisão"}));
+    await waitFor(()=>expect(chamadas[0]?.corpo).toEqual({contexto_revisao:true,aceite_contexto_revisao:true,versao_contexto_revisao:2}));
+  });
+  it("revogação não desliga o roteador e mostra porcentagens de sim",async()=>{
+    montar(dados({config:{contexto_revisao:{em:"2026-10-09T12:00:00Z",por:"admin",versao:1}},ultima_revisao:[{sinal:"comercial",probabilidade:0.03,em:"agora"},{sinal:"retorno",probabilidade:0.92,em:"agora"},{sinal:"so_assistente",probabilidade:0.37,em:"agora"}]}));
+    expect(screen.getByTestId("jev-revisao-comercial")).toHaveTextContent("3%");
+    expect(screen.getByTestId("jev-revisao-so_assistente")).toHaveTextContent("37%");
+    expect(screen.getByTestId("jev-contexto-revisao")).toHaveTextContent("não a porcentagem de acerto");
+    fireEvent.click(screen.getByRole("button",{name:"Desativar contexto da revisão"}));
+    await waitFor(()=>expect(chamadas[0]?.corpo).toEqual({contexto_revisao:false}));
+  });
+  it("gerente vê estado mas não autoriza",()=>{
+    montar(dados({config:{contexto_revisao:null},pode_editar:false}));
+    expect(screen.queryByRole("button",{name:"Autorizar contexto da revisão"})).toBeNull();
   });
 });

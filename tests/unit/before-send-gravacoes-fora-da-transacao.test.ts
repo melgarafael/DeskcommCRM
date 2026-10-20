@@ -163,3 +163,29 @@ describe('#2426 · runBeforeSend não grava pelo pool enquanto a transação est
     expect(escritas.some((s) => s.includes('insert into before_send_traces'))).toBe(true);
   });
 });
+
+describe('releitura técnica usa a repetição existente, fora da transação e sem envio duplicado',()=>{
+ it.each(['agenda_review_context_incomplete','agenda_review_inconclusive','agenda_review_candidate_misbound'])
+ ('falha %s persistente só faz duas revisões',async code=>{
+  const {cliente,estado}=clienteComTransacao();const {pool,violacoes}=poolAuditoriado(cliente,estado);
+  const classifyPromiseSemantic=vi.fn(async()=>{expect(estado.aberta).toBe(false);
+   return {isPromise:false,suspectPhrase:null,prometeuRetornoHumano:false,retornoSoDoAssistente:false,agendaCompativel:false};});
+  const send=vi.fn();
+  const result=await runBeforeSend(argsDoTurno(pool,{classifyPromiseSemantic,send,gates:[gateQueVeta(code)]}));
+  expect(result).toMatchObject({status:'vetoed',code});
+  expect(classifyPromiseSemantic).toHaveBeenCalledTimes(2);expect(send).not.toHaveBeenCalled();
+  expect(violacoes).toEqual([]);expect(estado.aberta).toBe(false);
+ });
+ it('fonte recuperada exige novo positivo estrito antes de um único envio',async()=>{
+  const {semanticPromiseGate}=await import('@/lib/agent-engine/guardrails/before-send');
+  const {cliente,estado}=clienteComTransacao();const {pool,violacoes}=poolAuditoriado(cliente,estado);
+  let leituras=0;
+  const classifyPromiseSemantic=vi.fn(async()=>{expect(estado.aberta).toBe(false);leituras++;
+   return {isPromise:false,suspectPhrase:null,prometeuRetornoHumano:false,retornoSoDoAssistente:false,
+    agendaCompativel:leituras===2,...(leituras===1?{agendaReviewIssue:'contexto_incompleto' as const}:{})};});
+  const send=vi.fn(async()=>({kind:'sent' as const,idempotencyKey:'k',messageId:'m'}));
+  const result=await runBeforeSend(argsDoTurno(pool,{agendaRequestReviewRequired:true,classifyPromiseSemantic,send,gates:[semanticPromiseGate]}));
+  expect(result.status).toBe('sent');expect(classifyPromiseSemantic).toHaveBeenCalledTimes(2);
+  expect(send).toHaveBeenCalledTimes(1);expect(violacoes).toEqual([]);
+ });
+});

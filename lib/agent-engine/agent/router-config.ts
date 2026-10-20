@@ -11,7 +11,7 @@
  *     nunca derruba o turno.
  */
 import type pg from 'pg';
-import { CLASSIFIER_CONTEXT_MESSAGES, MAX_CLASSIFIER_CONTEXT_MESSAGES } from '@/lib/ai/classifier-context';
+import { CLASSIFIER_CONTEXT_MESSAGES, quantidadeDeHistoricoSalva } from '@/lib/ai/classifier-context';
 
 export interface RouterMember {
   agentId: string;
@@ -93,7 +93,7 @@ export async function loadActiveRouter(
     [organizationId, channelSessionId],
   );
   const router = routerRows[0];
-  if (router === undefined) return null;
+  if (router === undefined || routerRows.length !== 1) return null;
 
   const { rows: memberRows } = await db.query<MemberRow>(
     `select agent_id, intent_name, intent_description, examples, flow_pointer_id, pipeline_id, stage_id
@@ -124,11 +124,7 @@ export async function loadActiveRouter(
     typeof cfg.min_confidence === 'number' && cfg.min_confidence >= 0 && cfg.min_confidence <= 1
       ? cfg.min_confidence
       : 0.6;
-  const contextMessageCount =
-    typeof cfg.context_message_count === 'number' && Number.isInteger(cfg.context_message_count) &&
-    cfg.context_message_count >= 0 && cfg.context_message_count <= MAX_CLASSIFIER_CONTEXT_MESSAGES
-      ? cfg.context_message_count
-      : CLASSIFIER_CONTEXT_MESSAGES;
+  const contextMessageCount = quantidadeDeHistoricoSalva(router.config) ?? CLASSIFIER_CONTEXT_MESSAGES;
 
   return {
     id: router.id,

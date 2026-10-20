@@ -1,4 +1,5 @@
 import type { MeetingBookingContext } from "@/lib/agenda/meet-delivery";
+import type { PropostaDeAgenda } from "@/lib/agenda/pedido";
 /**
  * Tipos compartilhados do MCP server interno (Spec 11).
  *
@@ -13,6 +14,8 @@ import type { Actor } from "@/lib/api/handlers/types";
 import type { Role } from "@/lib/auth/types";
 
 export interface McpContext {
+  /** Revisor de execução fornecido pelo servidor; argumentos MCP não concedem autoridade. */
+  conferirPedidoAgenda?: (proposta: PropostaDeAgenda) => Promise<boolean>;
   /** Somente o runtime in-process fornece o job original, nunca o cliente MCP. */
   meetingBooking?: MeetingBookingContext;
   /** Chave `Idempotency-Key` da requisição MCP externa, quando enviada. */

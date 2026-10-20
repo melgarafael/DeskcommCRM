@@ -1,10 +1,18 @@
-/** Janela do classificador de intenção da IA de sempre. O Jev recebe só a mensagem atual (R4).
+/** Janela comum dos classificadores; o Jev só recebe histórico com aceite específico.
  * Não é a memória do agente que conversa: serve só para desambiguar a mensagem atual.
  */
-export const CLASSIFIER_CONTEXT_MESSAGES = 4;
-export const NEW_ROUTER_CONTEXT_MESSAGES = 8;
+export const CLASSIFIER_CONTEXT_MESSAGES = 8;
+export const NEW_ROUTER_CONTEXT_MESSAGES = CLASSIFIER_CONTEXT_MESSAGES;
 export const MAX_CLASSIFIER_CONTEXT_MESSAGES = 16;
 export const MAX_CLASSIFIER_CONTEXT_CHARS = 1000;
+
+/** Campo nativo de ai_routers.config. Ausente/inválido não vira configuração salva. */
+export function quantidadeDeHistoricoSalva(config: unknown): number | null {
+  const valor = config !== null && typeof config === 'object' && !Array.isArray(config)
+    ? (config as Record<string, unknown>).context_message_count : undefined;
+  return typeof valor === 'number' && Number.isInteger(valor) && valor >= 0 && valor <= MAX_CLASSIFIER_CONTEXT_MESSAGES
+    ? valor : null;
+}
 
 export interface ClassifierContextMessage {
   direction: 'inbound' | 'outbound';

@@ -1,3 +1,5 @@
+import { conferirPedidoDaAgenda } from "@/lib/mcp/agenda-pedido";
+import { googlePublication } from "@/lib/agenda/google/publication";
 /**
  * As ferramentas de AGENDA — a IA consulta horário e (adiante) marca compromisso.
  *
@@ -73,7 +75,7 @@ function espalhaPorDia(
 ): { inicio: Date; fim: Date }[] {
   const porDia = new Map<string, { inicio: Date; fim: Date }[]>();
   for (const s of slots) {
-    const dia = rotuloLocal(s.inicio, fuso).slice(0, 20);
+    const dia = diaLocalISO(s.inicio, fuso);
     const lista = porDia.get(dia);
     if (lista) lista.push(s);
     else porDia.set(dia, [s]);
@@ -240,6 +242,8 @@ function payloadDeHorarios(
     horarios: escolhidos.map((s) => ({
       // `inicio` é o que volta em `starts_at` — copie, não reescreva.
       inicio: s.inicio.toISOString(),
+      dia: diaLocalISO(s.inicio, consulta.fusoDaRegra),
+      horario_local: horaLocalDoRotulo(rotuloLocal(s.inicio, consulta.fusoDaRegra)),
       fim: s.fim.toISOString(),
       // `quando` é para FALAR com a pessoa. Um só, e do início: o fim não
       // responde pergunta nenhuma (a duração é do tipo) e dobraria o custo.
@@ -271,7 +275,7 @@ function payloadDeHorarios(
      */
     agenda_externa_nunca_lida: consulta.agendaExternaNuncaLida,
     ...(consulta.servico ? { servico: { modo: consulta.servico.booking_mode, revisao: consulta.servico.revision,
-      horarios: consulta.servico.availability.map((a) => ({ inicio: a.starts_at, fim: a.ends_at, disponivel: a.available,
+      horarios: consulta.servico.availability.filter((a) => a.available && escolhidos.some((s) => s.inicio.getTime() === Date.parse(a.starts_at) && s.fim.getTime() === Date.parse(a.ends_at ?? ""))).map((a) => ({ inicio: a.starts_at, fim: a.ends_at, disponivel: a.available,
         motivo: a.reason, capacidade: a.capacity_limit, vagas: a.remaining_capacity, duracao_minutos: a.duration_minutes,
         cobertura_verificada: a.coverage_verified })), reserva: "nao_executada" } } : {}),
   };
@@ -299,6 +303,7 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
     "fala com a pessoa. " +
     "A lista vem cortada no `limite` e espalhada ao longo do período: `total_de_horarios` diz quantos " +
     "existem e `ha_mais` avisa que sobraram — lista cortada NÃO é agenda cheia. " +
+    "Se o período ou horário desejado não aparecer e houver mais opções, consulte novamente o dia pertinente antes de negar disponibilidade. " +
     "QUANDO: informe `dias_a_frente` (a partir de agora — ex.: 7 para a próxima semana). " +
     "Para uma data que o cliente nomeou, use `dia` em YYYY-MM-DD; o servidor aplica o fuso da agenda. " +
     "Se mandar os DOIS, o período começa em `dia` e anda `dias_a_frente` dias — `dia` recorta a um dia só quando vier sozinho. " +
@@ -477,7 +482,7 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
     "COM ele e ocupa o tempo de um atendente. O mesmo cliente pode ter os dois. " +
     "USE ANTES DE MARCAR e antes de cobrar: cliente que já tem consulta marcada não deve " +
     "receber oferta de horário como se não tivesse, nem ser cobrado como se estivesse parado." +
-    " Em conversa de atendimento, lista apenas os compromissos do contato desta conversa.",
+    " Em conversa de atendimento, lista apenas os compromissos do contato desta conversa. Situação confirmada no CRM não comprova Google: leia google_publication. Pending/retrying transitório é recuperação automática; acompanhe a mesma reserva com resume_google_publication, sem Caso por demora nem nova reserva.",
   inputSchema: listarShape,
   category: "read",
   requiresRole: "agent",
@@ -534,6 +539,22 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
       return { compromissos: [], motivo: r.codigo, mensagem: r.motivoParaCliente };
     }
 
+    const proofIds = r.agendamentos.map((a) => a.id);
+    const proofRows = proofIds.length ? await ctx.supabase.from("calendar_appointments")
+      .select("id,status,owner_user_id,location_kind,service_occurrence_id,service_publication_mode,google_event_id,google_local_revision,google_synced_local_revision,needs_google_push,google_sync_error,google_sync_failure_kind,google_conflict")
+      .eq("organization_id", ctx.organizationId).in("id", proofIds) : { data: [], error: null };
+    const proofs = new Map((proofRows.data ?? []).map((row) => [String(row.id), row]));
+    const ownersWithoutIdentity = [...new Set((proofRows.data ?? []).filter((row) => !row.service_occurrence_id && !row.google_event_id && row.owner_user_id).map((row) => String(row.owner_user_id)))];
+    const connections = ownersWithoutIdentity.length ? await ctx.supabase.from("calendar_connections").select("user_id")
+      .eq("organization_id", ctx.organizationId).in("user_id", ownersWithoutIdentity) : { data: [], error: null };
+    const connected = new Set((connections.data ?? []).map((row) => String(row.user_id)));
+    const publicationFor = (id: string) => {
+      const row = proofs.get(id);
+      if (proofRows.error || connections.error || !row) return "unknown";
+      if (!row.service_occurrence_id && !row.google_event_id && row.location_kind !== "google_meet" && !connected.has(String(row.owner_user_id))) return "not_configured";
+      return googlePublication(row);
+    };
+
     // O NOME DO RESPONSÁVEL segue a mesma regra de exposição de #1528: sai pelo
     // helper (`lib/mcp/tools/_users.ts`), que devolve SÓ o `full_name` — nunca
     // e-mail, telefone ou o `user_metadata` inteiro — e é não-crítico: falha de
@@ -554,6 +575,8 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         quando: rotuloLocal(new Date(a.iniciaEm), a.fuso),
         fim_quando: rotuloLocal(new Date(a.terminaEm), a.fuso),
         situacao: a.situacao,
+        google_publication: publicationFor(a.id),
+        google_failure_kind: proofs.get(a.id)?.google_sync_failure_kind ?? null,
         meet_state: a.meetingState,
         meeting_url: a.meetingState === "ready" ? a.meetingUrl : null,
         // O RÓTULO DO CONTATO nunca é montado aqui: vem de `nomeDoContato` por
@@ -685,7 +708,7 @@ function compromissoComHorarioLocal(r: Record<string, unknown>): Record<string, 
 
 const marcarShape = {
   event_type_slug: z.string().min(1).describe("o identificador legível do tipo de atendimento"),
-  starts_at: z.string().datetime({ offset: true }).describe("o instante exato do início, vindo de `crm_find_free_slots`"),
+  starts_at: z.string().datetime({ offset: true }).describe("Copie o campo inicio da consulta SEM reconstruir a hora. ISO com Z é UTC: 14:40 em America/Sao_Paulo pode ser 17:40Z, não 14:40Z. Se ainda não consultou, consulte dia e hora no fuso da agenda com as ferramentas disponíveis."),
   contact_id: z.string().uuid().describe("quem vai ser atendido"),
   owner_user_id: z.string().uuid().optional(),
   participant_name: z.string().trim().min(1).max(120).optional().describe("Nome da pessoa atendida, quando é diferente do contato responsável. Não invente."),
@@ -753,6 +776,11 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
             "equipe inclui no convite.",
         };
       }
+      const revisao = await conferirPedidoDaAgenda(ctx, { acao: "criar", eventTypeId: tipo.id,
+        eventTypeSlug: input.event_type_slug, startsAt: input.starts_at, contactId: input.contact_id,
+        ownerUserId: input.owner_user_id, participants: input.participants ?? (input.participant_name ? [input.participant_name] : undefined),
+        expectedServiceRevision: input.expected_service_revision });
+      if (revisao && 'motivo' in revisao) return { marcado: false, permitido: false, ...revisao };
       const r = await marcarAgendamentoHandler(
         ctx.supabase,
         {
@@ -765,7 +793,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
         },
         {
           event_type_id: tipo.id,
-          starts_at: input.starts_at,
+          starts_at: new Date(input.starts_at).toISOString(),
           contact_id: input.contact_id,
           ...(input.owner_user_id ? { owner_user_id: input.owner_user_id } : {}),
           ...(input.title ? { title: input.title } : {}),
@@ -777,7 +805,8 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           ...(input.guest_email !== undefined ? { guest_email: input.guest_email } : {}),
           ...(input.participant_name !== undefined ? { participant_name: input.participant_name } : {}),
           ...(input.participants !== undefined ? { participants: input.participants } : {}),
-          ...(input.expected_service_revision !== undefined ? { expected_service_revision: input.expected_service_revision } : {}),
+          ...((input.expected_service_revision ?? revisao?.expectedServiceRevision) !== undefined
+            ? { expected_service_revision: input.expected_service_revision ?? revisao?.expectedServiceRevision } : {}),
         },
       );
       /**
@@ -811,9 +840,14 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           ? "O link ainda está sendo criado. Não invente um link nem afirme que ele já foi enviado."
           : null,
       ].filter(Boolean);
-      if (r.service_occurrence_id) avisos.push("A reserva CRM e a publicação Google são estados separados. Use o estado google_publication do recibo; não afirme publicação ou comunicação que ainda não foi comprovada.");
+      if (r.google_publication) avisos.push("A reserva CRM e a publicação Google são estados separados. Use o estado google_publication do recibo; não afirme publicação ou comunicação que ainda não foi comprovada.");
 
+      if (!aguardaConfirmacao && (r.google_publication === "pending" || r.google_publication === "retrying"))
+        avisos.push("A reserva já foi salva. A espera pela publicação é operacional: não abra Caso nem peça aprovação humana por essa espera. O atendimento será retomado automaticamente com o recibo atualizado.");
+      if (r.google_publication === "failed" || r.google_publication === "conflict")
+        avisos.push("A publicação precisa de intervenção humana. Use a causa atual do contexto e preserve esta reserva; não marque outra para contornar a falha.");
       return {
+        ...(r.attendance_continuation ? { attendance_continuation: r.attendance_continuation } : {}),
         marcado: r.service_occurrence_id ? r.status === "pending" || r.status === "confirmed" : true,
         compromisso: compromissoComHorarioLocal(r),
         // Campo próprio, além da mensagem: um booleano no topo é o que o modelo
@@ -1072,7 +1106,7 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
 
 const remarcarShape = {
   appointment_id: z.string().uuid(),
-  new_starts_at: z.string().datetime({ offset: true }).describe("o novo início, vindo de `crm_find_free_slots`"),
+  new_starts_at: z.string().datetime({ offset: true }).describe("Copie inicio da consulta, preservando UTC/offset; Z não é hora local. Não reconstrua o instante a partir do texto quando."),
   notes: z.string().max(2000).optional(),
 };
 
@@ -1092,16 +1126,28 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
   requiresScope: "mcp:write",
   handler: async (input, ctx) =>
     semDerrubarOTurno("remarcado", async () => {
+      const revisao = await conferirPedidoDaAgenda(ctx, { acao: "remarcar", appointmentId: input.appointment_id,
+        startsAt: input.new_starts_at });
+      if (revisao && 'motivo' in revisao) return { remarcado: false, permitido: false, ...revisao };
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
         { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
         {
           id: input.appointment_id,
-          starts_at: input.new_starts_at,
+          starts_at: new Date(input.new_starts_at).toISOString(),
+          ...(revisao?.appointmentRevision !== undefined ? { revision: revisao.appointmentRevision } : {}),
           ...(input.notes ? { notes: input.notes } : {}),
         },
       );
-      return { remarcado: true, compromisso: compromissoComHorarioLocal(r) };
+      // A origem vem da releitura scoped aprovada antes da escrita. O escritor
+      // recebe sua revisão por CAS; só associar a prova ao retorno da mesma
+      // reserva, revisão seguinte e destino solicitado, nunca ao texto de notes.
+      const origem = revisao?.reservaAnterior;
+      const mesmaEscrita = origem && r.id === input.appointment_id &&
+        Number(r.revision) === origem.revisao + 1 && typeof r.starts_at === "string" &&
+        Date.parse(r.starts_at) === Date.parse(input.new_starts_at);
+      return { remarcado: true, compromisso: compromissoComHorarioLocal(r),
+        ...(mesmaEscrita ? { origem_remarcacao: { ...origem, reserva_id: input.appointment_id } } : {}) };
     }),
 };
 

@@ -111,7 +111,7 @@ export default async function PrivacyPage() {
           </li>
           <li>
             {t(
-              "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, que recebe cada mensagem do cliente, sozinha e já sem CPF, telefone e e-mail, para avaliar se ele está irritado, se a mensagem tenta manipular o atendimento automático, a qual área da empresa ela se destina, se ela pede para falar com uma pessoa ou para parar de receber mensagens e, quando ela responde a um follow-up, em qual das saídas do fluxo ela se encaixa;",
+              "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, diretamente ou pela OpenRouter quando esse destino é escolhido, recebe a mensagem atual para as tarefas de classificação ativadas. Com autorização específica e revogável para a revisão de respostas, esse mesmo destinatário também recebe a resposta candidata, as evidências consultadas e o contexto curado da conversa, que pode incluir resumo, mensagens do cliente e dos atendentes, decisões humanas registradas em Casos, pedido atual, continuidade e recibos das operações. CPF, telefone e e-mail reconhecidos são ocultados antes do envio; outros dados pessoais podem permanecer no texto;",
             )}
           </li>
           <li>

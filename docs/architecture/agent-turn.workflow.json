@@ -369,6 +369,14 @@
       "type": "screen",
       "label": "Execuções e prévia",
       "sublabel": "conteudo_bloqueado; revisão pelo operador"
+    },
+    {
+      "id": "google_publication_turn",
+      "lane": "worker",
+      "col": 8,
+      "type": "backend",
+      "label": "Retoma a reserva publicada",
+      "sublabel": "reentrada agendada"
     }
   ],
   "edges": [
@@ -858,6 +866,18 @@
       "from": "bloqueioProvedor",
       "to": "execucoesFalhas",
       "label": "llm_calls e mensagem sanitizada no teste"
+    },
+    {
+      "id": "google-publication-native-event",
+      "from": "eventlog",
+      "to": "google_publication_turn",
+      "label": "publicação/causa atuais + posse durável"
+    },
+    {
+      "id": "google-publication-native-turn",
+      "from": "google_publication_turn",
+      "to": "turn",
+      "label": "mesmos contexto, revisão e envio"
     }
   ],
   "cards": [
@@ -919,6 +939,15 @@
         "Saída: candidata inteira + seleção limitada por relevância, preservando política e produto → classificador → gates existentes; sem exceção automática",
         "Sem fonte consultada mantém regra anterior; cliente, notas e prompt não autorizam oferta",
         "Laço: impedimento no Teste → humano corrige Catálogo/Conhecimento → próxima consulta usa a fonte atualizada"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Disponibilidade no pacote factual",
+      "items": [
+        "A ponte nativa do turno observa o resultado real de crm_find_free_slots; projeção limitada chega ao Jev, reserva e confirmador no mesmo pacote.",
+        "Consulta não é autorização, reserva ou publicação: fuso, serviço, paginação, ressalvas e falha conservam o alcance. Escrita posterior invalida a leitura.",
+        "Fingerprint inclui consultas do turno. Veto preserva recuperação limitada e Caso; Inbox identifica gate/código sem atribuir toda retenção à proteção do número."
       ]
     }
   ]

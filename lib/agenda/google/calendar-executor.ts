@@ -123,7 +123,11 @@ export async function syncCalendar(
         pruneIds.add(eventId);
         continue;
       }
-      if (ehEventoNosso(event.id))
+      // A remoção local pode ocorrer depois de cancelar no Google. A lápide
+      // autenticada não é uma reserva ativa sem vínculo: processe o cancelamento
+      // para remover ocupação antiga e permitir o avanço do cursor. Eventos
+      // nossos ainda ativos continuam exigindo a tupla persistida.
+      if (ehEventoNosso(event.id) && event.status !== "cancelled")
         throw new Error("Evento do produto sem vínculo. Revise a publicação antiga.");
       const read = doEventoDoGoogle(event, { fusoDoCalendario: timeZone! });
       if (read.tipo === "recusado")

@@ -26,6 +26,7 @@ export type { InboxRefKind } from '@/lib/ai/inbox-destino';
  * kind numa migration adiciona aqui na mesma mudança.
  */
 export type InboxKind =
+  | 'review_capture_stopped'
   | 'case_stale'
   | 'canal_mudo_sem_numero'
   // (migration 0589, issue #2389) A pausa de uma conexão era silenciosa para

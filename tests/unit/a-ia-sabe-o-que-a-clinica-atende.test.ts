@@ -308,3 +308,35 @@ describe("crm_find_free_slots — o que o modelo consegue ler e escolher", () =>
     expect(r.ha_mais).toBe(false);
   });
 });
+
+
+it("serviço coletivo publica exatamente o mesmo recorte disponível para agente e revisão", async () => {
+  const horarios = [8, 14, 15].map(h => ({ inicio: new Date(`2030-11-19T${String(h + 3).padStart(2, '0')}:00:00Z`), fim: new Date(`2030-11-19T${String(h + 3).padStart(2, '0')}:40:00Z`) }));
+  horariosRespondem(horarios);
+  const base = vi.mocked(horariosLivresDaOrg).getMockImplementation()!;
+  const consulta = await base(ctx.supabase, ctx.organizationId, {} as never);
+  if (!consulta.ok) throw new Error('consulta inválida');
+  vi.mocked(horariosLivresDaOrg).mockResolvedValue({ ...consulta, servico: {
+    event_type_id: 'privado', booking_mode: 'collective_unlimited', revision: 4, requires_confirmation: false,
+    availability: [...horarios.map(h => ({ starts_at: h.inicio.toISOString(), ends_at: h.fim.toISOString(), available: true, coverage_verified: true })),
+      { starts_at: '2030-11-19T20:00:00Z', ends_at: '2030-11-19T20:40:00Z', available: false, coverage_verified: true }],
+  } } as Awaited<ReturnType<typeof horariosLivresDaOrg>>);
+  const r = await crmFindFreeSlots.handler({ event_type_slug: 'consulta', dia: '2030-11-19', limite: 2 }, ctx) as {
+    horarios: {inicio:string;fim:string}[]; servico:{horarios:{inicio:string;fim:string;disponivel:boolean}[]};ha_mais:boolean;
+  };
+  const { criarObservacaoDeConsultasDaAgenda } = await import('@/lib/agenda/consulta-do-turno');
+  const o = criarObservacaoDeConsultasDaAgenda();
+  o.concluir(o.iniciar({ event_type_slug: 'consulta', dia: '2030-11-19' }), r);
+  expect(r.servico.horarios.map(h => h.inicio)).toEqual(r.horarios.map(h => h.inicio));
+  expect(o.atual()!.consultas[0]!.resultado!.horarios.map(h => h.inicio)).toEqual(r.horarios.map(h => h.inicio));
+  expect(r.servico.horarios.every(h => h.disponivel)).toBe(true);
+  expect(r.ha_mais).toBe(true);
+  expect(r.servico.horarios).toHaveLength(2);
+});
+
+it("sábado usa a mesma chave de dia civil dos demais dias, sem agrupar pela hora do rótulo", async () => {
+  horariosRespondem(['2030-11-23T11:00:00Z', '2030-11-23T12:00:00Z', '2030-11-23T13:00:00Z', '2030-11-25T11:00:00Z']
+    .map(inicio => ({ inicio: new Date(inicio), fim: new Date(Date.parse(inicio) + 2400000) })));
+  const r = await crmFindFreeSlots.handler({ event_type_slug: 'consulta', dias_a_frente: 14, limite: 2 }, ctx) as {horarios:{dia:string}[]};
+  expect(r.horarios.map(h => h.dia)).toEqual(['2030-11-23', '2030-11-25']);
+});

@@ -74,6 +74,11 @@ import type { HandlerCtx } from "@/lib/api/handlers/types";
  *     npx vitest run tests/unit/agenda-emite-atividade.test.ts
  */
 
+// The publication reader uses the server transport after the authenticated write.
+// It must read the same persisted fixture, never a real QA/prod client.
+const publicationDb = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => publicationDb.client }));
+
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
   isServiceRoleConfigured: vi.fn(() => true),
@@ -167,10 +172,12 @@ function dadoDaTabela(tabela: string): unknown {
 
 function cliente(): SupabaseClient {
   const leitura = (tabela: string) => {
+    let requestedIds: string[] | null = null;
     const cadeia: Record<string, unknown> = {};
     for (const m of ["eq", "neq", "in", "is", "not", "or", "gte", "lte", "lt", "gt", "order", "limit"]) {
       cadeia[m] = () => cadeia;
     }
+    cadeia.in = (column: string, values: string[]) => { if(column === "id") requestedIds=values;return cadeia; };
     const resposta = () => ({ data: dadoDaTabela(tabela), error: null });
     cadeia.maybeSingle = async () => resposta();
     cadeia.single = async () => resposta();
@@ -179,11 +186,11 @@ function cliente(): SupabaseClient {
     // solta que `maybeSingle` devolve. Agenda vazia: este arquivo não é sobre
     // sobreposição (essa mora em `pessoa-marca-fora-da-grade.test.ts`).
     cadeia.then = (r: (v: unknown) => unknown) =>
-      r(tabela === "calendar_appointments" ? { data: [], error: null } : resposta());
+      r(tabela === "calendar_appointments" ? { data: requestedIds ? [banco.criado ?? banco.agendamento].filter((row) => row && requestedIds!.includes(String(row.id))) : [], error: null } : resposta());
     return cadeia;
   };
 
-  return {
+  const client = {
     from: (tabela: string) => ({
       select: () => leitura(tabela),
       insert: (linha: Linha) => {
@@ -212,11 +219,14 @@ function cliente(): SupabaseClient {
       banco.rpc.push({ fn, args });
       if(fn==="fn_appointment_change") {
         expect(args.p_org).toBe(ORG);expect(args.p_id).toBe(AGENDAMENTO);
-        return {data:{...banco.agendamento,...args.p_patch as Linha,revision:2},error:null};
+        banco.criado = {...banco.criado,...banco.agendamento,...args.p_patch as Linha,revision:2};
+        return {data:banco.criado,error:null};
       }
       return { data: null, error: null };
     },
   } as unknown as SupabaseClient;
+  publicationDb.client=client;
+  return client;
 }
 
 const ctx: HandlerCtx = {

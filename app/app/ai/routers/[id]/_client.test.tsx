@@ -96,16 +96,19 @@ describe("seletor de roteiro na intenção × módulo", () => {
 });
 
 describe("tamanho do contexto do roteador", () => {
-  it("roteador legado mostra quatro mensagens e salva oito quando o admin escolhe", async () => {
+  it.each([4, 12, 16])("roteador sem limite salvo mostra oito mensagens e salva %i pelo painel", async quantidade => {
     authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
     flowsMock.mockReturnValue({ data: undefined });
     updateMock.mockClear();
     renderizar();
-    const campo = screen.getByLabelText("Mensagens anteriores para o roteamento");
-    expect(campo).toHaveValue(4);
-    fireEvent.change(campo, { target: { value: "8" } });
+    const campo = screen.getByLabelText("Histórico recente dos decisores");
+    expect(campo).toHaveValue(8);
+    expect(screen.getByTestId('historico-sem-configuracao')).toHaveTextContent('o roteador usa 8 e o sentimento usa 16');
+    expect(screen.getByText(/Neste canal, a quantidade salva vale/)).toBeTruthy();
+    expect(screen.getByText(/Este campo não limita evidências/)).toBeTruthy();
+    fireEvent.change(campo, { target: { value: String(quantidade) } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ context_message_count: 8 }) }));
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ context_message_count: quantidade }) }));
   });
 });
 

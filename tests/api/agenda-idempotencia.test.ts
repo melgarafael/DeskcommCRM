@@ -33,6 +33,7 @@ const OUTRO_INICIO = "2026-09-21T14:00:00.000Z";
 
 function bancoDeTeste() {
   const recibos: Array<Record<string, unknown>> = [];
+  const persistidas: Array<Record<string, unknown>> = [];
   const inseridos: Array<Record<string, unknown>> = [];
   let sequencia = 0;
   const tipo = {
@@ -61,6 +62,9 @@ function bancoDeTeste() {
         filtros.push([campo, valor]);
         return q;
       }) as never;
+      let requestedIds: string[] = [];
+      q.in = ((_column: string, ids: string[]) => {requestedIds=ids;return q;}) as never;
+      q.then = ((resolve: (value: unknown) => unknown) => Promise.resolve({data:tabela === "calendar_appointments" ? persistidas.filter(row => requestedIds.includes(String(row.id)) && casa(row,filtros)) : [],error:null}).then(resolve)) as never;
       q.gt = ((campo: string, valor: unknown) => {
         limites.push([campo, valor]);
         return q;
@@ -93,23 +97,9 @@ function bancoDeTeste() {
 
         if (tabela === "calendar_appointments") {
           inseridos.push(linha);
-          return {
-            select: () => ({
-              single: async () => ({
-                data: {
-                  id: `appointment-${++sequencia}`,
-                  starts_at: linha.starts_at,
-                  ends_at: linha.ends_at,
-                  status: linha.status,
-                  time_zone: linha.time_zone,
-                  revision: 1,
-                  meeting_state: "none",
-                  meeting_url: null,
-                },
-                error: null,
-              }),
-            }),
-          };
+          const persisted = {...linha,id:`appointment-${++sequencia}`,revision:1,meeting_state:"none",meeting_url:null};
+          persistidas.push(persisted);
+          return {select:()=>({single:async()=>({data:persisted,error:null})})};
         }
         return Promise.resolve({ data: null, error: null });
       }) as never;

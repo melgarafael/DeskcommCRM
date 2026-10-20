@@ -92,6 +92,8 @@ interface Consulta {
   insert(linha: Linha | Linha[]): Consulta;
   update(mudanca: Linha): Consulta;
   eq(coluna: string, valor: unknown): Consulta;
+  neq(coluna: string, valor: unknown): Consulta;
+  lt(coluna: string, valor: unknown): Consulta;
   is(coluna: string, valor: unknown): Consulta;
   in(coluna: string, valores: unknown[]): Consulta;
   not(coluna: string, operador: string, valor: unknown): Consulta;
@@ -174,6 +176,8 @@ function fazerAdmin(banco: Banco, rpcs: Linha[]) {
         return c;
       },
       eq: (col, val) => (filtros.push((l) => l[col] === val), c),
+      neq: (col, val) => (filtros.push((l) => l[col] !== val), c),
+      lt: (col, val) => (filtros.push((l) => (l[col] as never) < (val as never)), c),
       is: (col, val) => (filtros.push((l) => (l[col] ?? null) === val), c),
       in: (col, vals) => (filtros.push((l) => vals.includes(l[col])), c),
       not: (col, _op, val) => (filtros.push((l) => (l[col] ?? null) !== val), c),
@@ -567,6 +571,97 @@ describe("LGPD: a nota não volta para uma mensagem anonimizada durante a mediç
 });
 
 describe("o Jev no worker de clima", () => {
+  it.each([0, 4, 12])('quantidade salva %i do roteador do canal chega ao Jev e à reserva pelo worker nativo', async quantidade => {
+    const c = jevLigado('observacao');
+    (c.settings!.jev as Linha).contexto_clima = { ...ACEITE, versao: 1 };
+    const banco = montarBanco(c);
+    banco.conversations![0]!.channel_session_id = 'canal-certo';
+    banco.ai_routers = [
+      { id: 'r-certo', organization_id: ORG, channel_session_id: 'canal-certo', is_active: true, config: { context_message_count: quantidade } },
+      { id: 'r-outro-canal', organization_id: ORG, channel_session_id: 'canal-outro', is_active: true, config: { context_message_count: 2 } },
+      { id: 'r-outro-tenant', organization_id: randomUUID(), channel_session_id: 'canal-certo', is_active: true, config: { context_message_count: 1 } },
+    ];
+    Object.assign(banco.messages[0]!, { body: 'Pode dx', created_at: '2026-10-20T14:30:00Z', service_revision: 1 });
+    for (let n = 0; n < 17; n++) banco.messages.push({ id: `m${n}`, organization_id: ORG, conversation_id: CONV, service_revision: 1,
+      body: `fala anterior ${n}`, direction: 'inbound', status: 'delivered', created_at: `2026-10-20T14:29:${String(n).padStart(2, '0')}Z`, sent_at: null });
+    fornecedor(async () => respostaDoJev(2));
+    await rodar(c, banco);
+    const pacote = chamadasAoJev.find(x => x.corpo.questions?.clima)?.corpo.state as { historico: unknown[] };
+    expect(pacote.historico).toHaveLength(quantidade);
+    expect(pacote).toMatchObject({ janela_historico: { quantidade, origem: 'roteador', motivo: 'configurado' } });
+    expect(JSON.parse(String(vi.mocked(generateObject).mock.calls[0]![0].prompt))).toEqual(pacote);
+    expect(banco.messages[0]!.metadata).toMatchObject({ sentiment_context: { mensagens: quantidade, janela: { quantidade, origem: 'roteador' } } });
+    expect(banco.agent_inbox_items).toHaveLength(0);
+  });
+  it.each(['sem_roteador', 'config_ausente_ou_invalida', 'vinculo_ambiguo'] as const)('mantém fallback16 no clima: %s', async motivo => {
+    const c = jevLigado('decide');
+    (c.settings!.jev as Linha).contexto_clima = { ...ACEITE, versao: 1 };
+    const banco = montarBanco(c);banco.conversations![0]!.channel_session_id = 'canal-certo';
+    const router = { id: 'r1', organization_id: ORG, channel_session_id: 'canal-certo', is_active: true, config: {} };
+    banco.ai_routers = motivo === 'sem_roteador' ? [] : motivo === 'vinculo_ambiguo' ? [router, { ...router, id: 'r2' }] : [router];
+    Object.assign(banco.messages[0]!, { created_at: '2026-10-20T14:30:00Z', service_revision: 1 });
+    fornecedor(async () => respostaDoJev(2));await rodar(c, banco);
+    expect(chamadasAoJev.find(x => x.corpo.questions?.clima)?.corpo.state).toMatchObject({ janela_historico: { quantidade: 16, origem: 'padrao_clima', motivo } });
+  });
+  it('troca do destino durante a chamada invalida a autorização da fotografia na reserva', async () => {
+    const c = jevLigado('observacao');(c.settings!.jev as Linha).contexto_clima = { ...ACEITE, versao: 1 };
+    const banco = montarBanco(c);Object.assign(banco.messages[0]!, { body: 'Pode dx', created_at: '2026-10-20T14:30:00Z', service_revision: 1 });
+    fornecedor(async () => { (c.settings!.jev as Linha).origem = 'openrouter'; return respostaDoJev(2); });
+    await rodar(c, banco);
+    expect(vi.mocked(generateObject).mock.calls[0]![0].prompt).toBe('Pode dx');
+  });
+  it('revogação depois do Jev retira histórico da reserva; falha da reserva não apaga a fotografia usada pelo Jev', async () => {
+    const c = jevLigado('observacao');
+    (c.settings!.jev as Linha).contexto_clima = { ...ACEITE, versao: 1 };
+    const banco = montarBanco(c);
+    Object.assign(banco.messages[0]!, { created_at: '2026-10-20T14:30:00Z', service_revision: 1 });
+    banco.messages.push({ id: 'anterior', organization_id: ORG, conversation_id: CONV, service_revision: 1,
+      body: 'Em que posso ajudar?', direction: 'outbound', status: 'sent', created_at: '2026-10-20T14:29:00Z', sent_at: '2026-10-20T14:29:01Z' });
+    fornecedor(async () => {
+      (c.settings!.jev as Linha).contexto_clima = null;
+      return respostaDoJev(2);
+    });
+    vi.mocked(generateObject).mockRejectedValueOnce(new Error('reserva indisponível'));
+    await rodar(c, banco);
+    expect(vi.mocked(generateObject).mock.calls[0]![0].prompt).toBe(banco.messages[0]!.body);
+    expect(banco.messages[0]!.metadata).toMatchObject({ sentiment_engine: 'jev', sentiment_context: { mensagens: 1, cobertura: 'present' } });
+  });
+  it('histórico autorizado chega igual ao Jev e à reserva, isolado por empresa/conversa/revisão/fronteira', async () => {
+    const c = jevLigado('observacao');
+    (c.settings!.jev as Linha).contexto_clima = { ...ACEITE, versao: 1 };
+    const banco = montarBanco(c);
+    Object.assign(banco.messages[0]!, { body: 'Pode dx', created_at: '2026-10-20T14:30:00Z', service_revision: 1 });
+    const anterior = { id: 'anterior', organization_id: ORG, conversation_id: CONV, service_revision: 1,
+      body: 'Cancelamento concluído. Posso ajudar com algo mais?', direction: 'outbound', status: 'sent',
+      created_at: '2026-10-20T14:29:00Z', sent_at: '2026-10-20T14:29:01Z' };
+    banco.messages.push(anterior,
+      { ...anterior, id: 'outro-tenant', organization_id: randomUUID(), body: 'NAO VAZAR EMPRESA' },
+      { ...anterior, id: 'outra-conversa', conversation_id: randomUUID(), body: 'NAO VAZAR CONVERSA' },
+      { ...anterior, id: 'revisao-antiga', service_revision: 2, body: 'NAO VAZAR REVISAO' },
+      { ...anterior, id: 'futura', created_at: '2026-10-20T14:31:00Z', body: 'NAO VAZAR FUTURO' },
+      { ...anterior, id: 'rascunho', status: 'pending', body: 'NAO VAZAR RASCUNHO' });
+    fornecedor(async () => respostaDoJev(2));
+    const { resultado } = await rodar(c, banco);
+    expect(resultado.skipped).toBe(false);
+    const pacote = chamadasAoJev.find(x => x.corpo.questions?.clima)?.corpo.state;
+    expect(pacote).toMatchObject({ mensagem_atual: 'Pode dx', historico: [{ autor: 'atendimento', texto: anterior.body }] });
+    expect(JSON.stringify(pacote)).not.toContain('NAO VAZAR');
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(vi.mocked(generateObject).mock.calls[0]![0].prompt))).toEqual(pacote);
+    expect(banco.messages[0]!.metadata).toMatchObject({ sentiment_context: { mensagens: 1, cobertura: 'limited', omitidas: 1 } });
+  });
+
+  it('aceites do roteador/revisão não autorizam histórico no clima', async () => {
+    const c = jevLigado('decide');
+    Object.assign(c.settings!.jev as Linha, { contexto_roteador: { ...ACEITE, versao: 2 }, contexto_revisao: { ...ACEITE, versao: 2 } });
+    const banco = montarBanco(c);
+    Object.assign(banco.messages[0]!, { body: 'Pode dx', created_at: '2026-10-20T14:30:00Z', service_revision: 1 });
+    fornecedor(async () => respostaDoJev(2));
+    await rodar(c, banco);
+    expect(chamadasAoJev.find(x => x.corpo.questions?.clima)?.corpo.state).toBe('Pode dx');
+    expect(generateObject).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     chamadasAoJev = [];
   });

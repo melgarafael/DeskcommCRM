@@ -1,3 +1,4 @@
+import { avisarComunicacaoPendente } from '@/lib/escalacao/comunicacao-do-caso';
 /**
  * Handler do job `case_reply_turn` (spec 15 §4.3) — o "loop de follow-up de
  * cabeça pra baixo": em vez do TEMPO reinjetar um turno (`followup_turn`), é a
@@ -17,6 +18,7 @@
  * do job.
  */
 import { z } from 'zod';
+import { resolverEventoDoJob } from './contexto-de-decisao-humana';
 import type pg from 'pg';
 
 import { withFields } from '../obs/logger';
@@ -37,6 +39,7 @@ export const caseReplyTurnPayloadSchema = z
     case_id: z.string().uuid(),
     action: z.string(),
     body: z.string().optional(),
+    human_event_id: z.string().uuid().optional(),
   })
   .passthrough();
 export type CaseReplyTurnPayload = z.infer<typeof caseReplyTurnPayloadSchema>;
@@ -47,56 +50,6 @@ type ReentryAction = (typeof REENTRY_ACTIONS)[number];
 
 function isReentryAction(action: string): action is ReentryAction {
   return (REENTRY_ACTIONS as readonly string[]).includes(action);
-}
-
-/**
- * Status ESPERADO do caso pra cada ação de re-entrada — a rota (Wave 5) faz a
- * transição + o enqueue no MESMO commit, então quando este job roda o caso JÁ
- * está no status pós-transição, não mais em `awaiting_human`. `resolved` é
- * status TERMINAL de propósito (o humano concluiu); checar contra
- * "ainda aberto" (como antes) descartava TODO envio de conclusão ao lead —
- * bug real da Wave 7, achado na prova E2E. Um status diferente do esperado
- * pra aquela action é sinal genuíno de corrida/anomalia → no-op defensivo.
- */
-const EXPECTED_STATUS_FOR_ACTION: Record<ReentryAction, string> = {
-  resolved: 'resolved',
-  need_lead_info: 'awaiting_lead',
-};
-
-interface CaseConversationRow {
-  conversationId: string;
-  channelSessionId: string;
-}
-
-/**
- * Resolve a conversa DO CASO (não a mais recente do contato — o followup_turn
- * faz isso, mas um caso já sabe qual é a sua conversa). Retorna null quando o
- * caso não existe, está num status diferente do esperado pra esta `action`
- * (ver `EXPECTED_STATUS_FOR_ACTION`) ou a conversa não tem número associado —
- * todos os casos são NO-OP, nunca crash.
- */
-async function resolveCaseConversation(
-  pool: pg.Pool,
-  tenantId: string,
-  caseId: string,
-  action: ReentryAction,
-): Promise<CaseConversationRow | null> {
-  const { rows } = await pool.query<{ status: string; conversation_id: string; channel_session_id: string | null }>(
-    `select ac.status, ac.conversation_id, conv.channel_session_id
-       from agent_cases ac
-       join conversations conv
-         on conv.id = ac.conversation_id and conv.organization_id = ac.organization_id
-      where ac.organization_id = $1 and ac.id = $2`,
-    [tenantId, caseId],
-  );
-  const row = rows[0];
-  if (row === undefined) {
-    return null;
-  }
-  if (row.status !== EXPECTED_STATUS_FOR_ACTION[action] || row.channel_session_id === null) {
-    return null;
-  }
-  return { conversationId: row.conversation_id, channelSessionId: row.channel_session_id };
 }
 
 /**
@@ -158,19 +111,26 @@ export function createCaseReplyTurnHandler(deps: InboundTurnDeps) {
     }
     const action: ReentryAction = payload.action;
 
-    const caseConversation = await resolveCaseConversation(pool, tenantId, payload.case_id, action);
+    const caseConversation = await resolverEventoDoJob(pool, job);
     if (caseConversation === null) {
-      runLog.info('case_reply_turn no-op — caso inexistente, terminal ou sem número associado', {
-        action: payload.action,
+      runLog.info('case_reply_turn pendente — evento ou fronteira sem prova válida', {
+        action: payload.action, event:'human_case_event_unverifiable',
       });
+      try { await avisarComunicacaoPendente(pool,tenantId,payload.case_id,job.id); }
+      catch { runLog.warn('aviso de comunicação pendente não gravado',{event:'case_communication_notice_failed'}); }
       return;
     }
 
-    await runAgentTurn(deps, job, pool, ctx, {
+    let completed=false;
+    try { await runAgentTurn(deps, job, pool, ctx, {
+      humanCaseEventId: caseConversation.eventId,
       channelSessionId: caseConversation.channelSessionId,
       conversationId: caseConversation.conversationId,
       buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) =>
-        buildCaseReplyOpeningMessage(action, payload.case_id, payload.body, previous, leadState, context, notesIndexBlock, projeta),
-    });
+        buildCaseReplyOpeningMessage(action, payload.case_id, caseConversation.note, previous, leadState, context, notesIndexBlock, projeta),
+    }); completed=true; } finally {
+      try { await avisarComunicacaoPendente(pool,tenantId,payload.case_id,completed?job.id:undefined); }
+      catch { runLog.warn('aviso de comunicação pendente não gravado',{event:'case_communication_notice_failed'}); }
+    }
   };
 }

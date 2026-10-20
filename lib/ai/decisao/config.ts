@@ -74,6 +74,7 @@ const tarefasSchema = z.object({
   campo_do_negocio: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   sinal_de_urgencia: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   afirmacao_de_fato: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
+  revisao_resposta: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
 });
 
 export const idDaTarefaSchema = tarefasSchema.keyof();
@@ -118,6 +119,25 @@ export const configDoJevSchema = z
      * chave — o objeto inteiro sumiria, e com ele as tarefas boas.
      */
     tarefas: tarefasSchema.optional(),
+    /** Aceite separado e revogável: só o roteador pode enviar contexto recente. */
+    contexto_roteador: z
+      .object({
+        em: z.string().datetime(),
+        por: z.string().uuid(),
+        versao: z.union([z.literal(1), z.literal(2)]),
+        origem: z.enum(ORIGENS_DO_JEV).optional(),
+      })
+      .nullable()
+      .optional()
+      .catch(null),
+    /** Histórico recente só para medir o clima; não autoriza outras tarefas. */
+    contexto_clima: z.object({ em: z.string().datetime(), por: z.string().uuid(),
+      versao: z.literal(1), origem: z.enum(ORIGENS_DO_JEV).optional(),
+    }).nullable().optional().catch(null),
+    /** Aceite próprio para candidata, evidências consultadas e contexto curado. */
+    contexto_revisao: z.object({
+      em: z.string().datetime(), por: z.string().uuid(), versao: z.union([z.literal(1),z.literal(2)]), origem: z.enum(ORIGENS_DO_JEV).optional(),
+    }).nullable().optional().catch(null),
     alterado_em: z.string().datetime().optional(),
     alterado_por: z.string().uuid().optional(),
   })
@@ -141,14 +161,21 @@ export function lerConfigDoJev(settings: unknown): ConfigDoJev {
       ? (settings as Record<string, unknown>).jev
       : undefined;
   const lido = configDoJevSchema.safeParse(jev ?? {});
-  return lido.success ? lido.data : { ...DESLIGADO };
+  if (!lido.success) return { ...DESLIGADO };
+  const config=lido.data;
+  // Aceites legados foram dados à TypeSafe direta, não a um novo intermediário.
+  for (const campo of ["contexto_roteador", "contexto_revisao", "contexto_clima"] as const) {
+    const contexto=config[campo];
+    if (contexto && (contexto.origem ?? ORIGEM_PADRAO)!==config.origem) config[campo]=null;
+  }
+  return config;
 }
 
 export type ResultadoDeGravarConfig =
   | { ok: true; config: ConfigDoJev }
   | { ok: false; motivo: "leitura_falhou" | "config_invalida" | "escrita_recusada" };
 
-export type MudancaDaConfig = Partial<Pick<ConfigDoJev, "ligado" | "modo" | "modo_roteador" | "origem" | "aceite">> & {
+export type MudancaDaConfig = Partial<Pick<ConfigDoJev, "ligado" | "modo" | "modo_roteador" | "origem" | "aceite" | "contexto_roteador" | "contexto_revisao" | "contexto_clima">> & {
   /** Só as tarefas que mudam; as outras ficam como estão. */
   tarefas?: Partial<Record<IdDaTarefa, EstadoDaTarefa>>;
 };

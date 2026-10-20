@@ -37,6 +37,11 @@ import type { ResultadoDaConsulta } from "@/lib/agenda/consulta";
 import { ENTIDADE_DO_AGENDAMENTO } from "@/lib/agenda/tipos";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 
+// The publication reader uses the server transport after the authenticated write.
+// It must read the same persisted fixture, never a real QA/prod client.
+const publicationDb = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => publicationDb.client }));
+
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
   isServiceRoleConfigured: vi.fn(() => true),
@@ -105,10 +110,12 @@ function dadoDaTabela(tabela: string): unknown {
 
 function cliente(): SupabaseClient {
   const leitura = (tabela: string) => {
+    let requestedIds: string[] | null = null;
     const cadeia: Record<string, unknown> = {};
     for (const m of ["eq", "neq", "in", "is", "not", "or", "gte", "lte", "lt", "gt", "order", "limit"]) {
       cadeia[m] = () => cadeia;
     }
+    cadeia.in = (column: string, values: string[]) => { if(column === "id") requestedIds=values;return cadeia; };
     const resposta = () => ({ data: dadoDaTabela(tabela), error: null });
     cadeia.maybeSingle = async () => resposta();
     cadeia.single = async () => resposta();
@@ -116,11 +123,11 @@ function cliente(): SupabaseClient {
     // do compromisso pedem array. Compromisso vazio na lista — os `maybeSingle`
     // é que devolvem a linha.
     cadeia.then = (r: (v: unknown) => unknown) =>
-      r(tabela === "calendar_appointments" ? { data: [], error: null } : resposta());
+      r(tabela === "calendar_appointments" ? { data: requestedIds ? [banco.criado ?? banco.agendamento].filter((row) => row && requestedIds!.includes(String(row.id))) : [], error: null } : resposta());
     return cadeia;
   };
 
-  return {
+  const client = {
     from: (tabela: string) => ({
       select: () => leitura(tabela),
       insert: (linha: Linha) => {
@@ -161,6 +168,7 @@ function cliente(): SupabaseClient {
         // a situação — foi exatamente o defeito que este bloco pegou.
         const patch = args.p_patch as Linha;
         banco.agendamento = { ...(banco.agendamento ?? {}), ...patch, revision: 2 };
+        banco.criado = {...banco.criado,...banco.agendamento};
         return { data: banco.agendamento, error: null };
       }
       if (fn === "emit_event") {
@@ -170,6 +178,8 @@ function cliente(): SupabaseClient {
       return { data: null, error: null };
     },
   } as unknown as SupabaseClient;
+  publicationDb.client=client;
+  return client;
 }
 
 const ctx: HandlerCtx = {

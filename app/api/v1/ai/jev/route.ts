@@ -317,7 +317,7 @@ function irritadosPercebidos(
 }
 
 function configPublica(c: ConfigDoJev) {
-  return { ligado: c.ligado, modo: c.modo, modo_roteador: c.modo_roteador, aceite: c.aceite };
+  return { ligado: c.ligado, modo: c.modo, modo_roteador: c.modo_roteador, aceite: c.aceite, contexto_roteador: c.contexto_roteador ?? null, contexto_revisao: c.contexto_revisao ?? null, contexto_clima: c.contexto_clima ?? null };
 }
 
 /**
@@ -572,6 +572,16 @@ export async function GET(): Promise<Response> {
     emUso ??
     [...doProvedorDaOrigem].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ??
     null;
+
+  const revisoesRecentes = await db.from("jev_observacoes")
+    .select("rotulo_jev, probabilidade_jev, created_at")
+    .eq("organization_id", org.orgId).eq("tarefa", "revisao_resposta")
+    .gte("created_at", diasAtras(DIAS_DA_CONCORDANCIA))
+    .order("created_at", { ascending: false }).limit(3);
+  const ultimaRevisao = (revisoesRecentes.data ?? []).map(r => ({
+    sinal: r.rotulo_jev.split(":")[0], probabilidade: Number(r.probabilidade_jev), em: r.created_at,
+  }));
+
   // A credencial OpenRouter da empresa, se houver uma validada: é o que o cartão
   // oferece REAPROVEITAR em vez de exigir uma chave TypeSafe separada (issue
   // #2947). Vale mesmo com a origem de hoje sendo a TypeSafe — é justamente o
@@ -615,6 +625,7 @@ export async function GET(): Promise<Response> {
         erro_de_validacao: mostrada?.validation_error ?? null,
       },
       config: configPublica(config),
+      ultima_revisao: ultimaRevisao,
       tarefas: TAREFAS,
       por_tarefa: porTarefa(
         config,
@@ -659,6 +670,13 @@ const corpoDoPatch = z
     origem: z.enum(ORIGENS_DO_JEV).optional(),
     /** A caixa marcada na tela. Pesa ao ligar pela primeira vez e ao trocar a origem para a OpenRouter. */
     aceite_lgpd: z.literal(true).optional(),
+    contexto_roteador: z.boolean().optional(),
+    aceite_contexto_roteador: z.literal(true).optional(),
+    contexto_clima: z.boolean().optional(),
+    aceite_contexto_clima: z.literal(true).optional(),
+    contexto_revisao: z.boolean().optional(),
+    aceite_contexto_revisao: z.literal(true).optional(),
+    versao_contexto_revisao: z.union([z.literal(1), z.literal(2)]).optional(),
     tarefa: idDaTarefaSchema.optional(),
     estado: z.enum(ESTADOS_DA_TAREFA).optional(),
   })
@@ -669,17 +687,21 @@ const corpoDoPatch = z
   .refine((c) => c.modo === undefined || c.tarefa === undefined, {
     message: "informe `modo` ou `tarefa`, não os dois",
   })
-  .refine(
-    (c) =>
-      c.ligado !== undefined ||
-      c.modo !== undefined ||
-      c.modo_roteador !== undefined ||
-      c.origem !== undefined ||
-      c.tarefa !== undefined,
-    {
-      message: "informe `ligado`, `modo`, `modo_roteador`, `origem` ou `tarefa`",
-    },
-  );
+  .refine((c) => c.aceite_contexto_roteador === undefined || c.contexto_roteador === true, {
+    message: "aceite de contexto exige ativar o contexto do roteador",
+  })
+  .refine((c) => c.aceite_contexto_clima === undefined || c.contexto_clima === true, {
+    message: "aceite de clima exige ativar o histórico do clima",
+  })
+  .refine((c) => c.aceite_contexto_revisao === undefined || c.contexto_revisao === true, {
+    message: "aceite de revisão exige ativar o contexto da revisão",
+  })
+  .refine((c) => c.versao_contexto_revisao === undefined || c.contexto_revisao === true, {
+    message: "versão do aceite exige ativar o contexto da revisão",
+  })
+  .refine((c) => c.ligado !== undefined || c.modo !== undefined || c.modo_roteador !== undefined || c.origem !== undefined || c.tarefa !== undefined || c.contexto_roteador !== undefined || c.contexto_revisao !== undefined || c.contexto_clima !== undefined, {
+    message: "informe `ligado`, `modo`, `modo_roteador`, `origem`, `tarefa` ou `contexto_roteador`",
+  });
 
 export async function PATCH(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -755,6 +777,10 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       mudanca.aceite = { ...atual.aceite, em: new Date().toISOString(), por: user.id };
     }
     mudanca.origem = corpo.origem;
+    // Os aceites de contexto nomeiam o destino. Trocar a origem não os transfere.
+    if (atual.contexto_roteador != null) mudanca.contexto_roteador = null;
+    if (atual.contexto_clima != null) mudanca.contexto_clima = null;
+    if (atual.contexto_revisao != null) mudanca.contexto_revisao = null;
   }
   if (corpo.modo_roteador !== undefined && corpo.modo_roteador !== atual.modo_roteador) {
     // Decisão B (doc 89): sem a IA de sempre, o Jev não roteia sozinho. O turno
@@ -818,6 +844,42 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     mudanca.ligado = true;
   }
 
+  // Aceite separado: não amplia o alcance das outras tarefas nem muda quem decide.
+  if (corpo.contexto_roteador === true &&
+    (mudanca.origem !== undefined || atual.contexto_roteador == null ||
+      (atual.contexto_roteador.versao === 1 && corpo.aceite_contexto_roteador === true))) {
+    if (corpo.aceite_contexto_roteador !== true) {
+      return fail("jev_exige_aceite", t("Para usar o histórico no roteador, confirme o envio das mensagens recentes à TypeSafe AI."), 422, { requestId });
+    }
+    mudanca.contexto_roteador = { em: new Date().toISOString(), por: user.id, versao: 2, origem: corpo.origem ?? atual.origem };
+  } else if (corpo.contexto_roteador === false && atual.contexto_roteador != null) {
+    mudanca.contexto_roteador = null;
+  }
+
+  if (corpo.contexto_clima === true && (mudanca.origem !== undefined || atual.contexto_clima == null)) {
+    if (corpo.aceite_contexto_clima !== true) return fail("jev_exige_aceite", t("Confirme o envio do histórico recente para avaliar o clima da conversa."), 422, { requestId });
+    mudanca.contexto_clima = { em: new Date().toISOString(), por: user.id, versao: 1, origem: corpo.origem ?? atual.origem };
+  } else if (corpo.contexto_clima === false && atual.contexto_clima != null) mudanca.contexto_clima = null;
+
+  const versaoRevisao = corpo.versao_contexto_revisao ?? 1;
+  if (corpo.contexto_revisao === true && (mudanca.origem !== undefined || atual.contexto_revisao == null ||
+      (versaoRevisao === 2 && atual.contexto_revisao.versao === 1))) {
+    if (corpo.aceite_contexto_revisao !== true) {
+      return fail("jev_exige_aceite", t("Para revisar com o Jev, confirme o envio da resposta, das evidências consultadas e do contexto da conversa à TypeSafe AI."), 422, { requestId });
+    }
+    mudanca.contexto_revisao = { em: new Date().toISOString(), por: user.id, versao: versaoRevisao, origem: corpo.origem ?? atual.origem };
+  } else if (corpo.contexto_revisao === false && atual.contexto_revisao != null) {
+    mudanca.contexto_revisao = null;
+  }
+  if (pedido?.tarefa === "revisao_resposta" && pedido.estado !== "desligada") {
+    if (mudanca.contexto_revisao === null || (mudanca.contexto_revisao === undefined && atual.contexto_revisao == null)) {
+      return fail("jev_exige_aceite", t("Autorize o contexto da revisão antes de ativar esta tarefa."), 422, { requestId });
+    }
+    if (!(await temIaDeSempre(getRequestPool(), llmEdgeConfigFromEnv(env), org.orgId))) {
+      return fail("jev_sem_ia_de_sempre", t("Cadastre uma IA de reserva antes de ativar a revisão pelo Jev."), 422, { requestId });
+    }
+  }
+
   // Pedir o estado que já vale não é mutação: sem escrita e sem auditoria.
   if (Object.keys(mudanca).length === 0) {
     return ok({ config: configPublica(atual), alterado: false }, { requestId });
@@ -863,7 +925,25 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       ...(mudanca.tarefas !== undefined && pedido
         ? { tarefa: pedido.tarefa, estado: pedido.estado, estado_anterior: estadoAnterior ?? null }
         : {}),
+      ...(mudanca.contexto_revisao !== undefined ? {
+        contexto_revisao: mudanca.contexto_revisao !== null,
+        contexto_revisao_versao: mudanca.contexto_revisao?.versao ?? null,
+        contexto_revisao_versao_anterior: atual.contexto_revisao?.versao ?? null,
+        contexto_revisao_anterior: atual.contexto_revisao != null,
+        aceite_revisao_registrado: mudanca.contexto_revisao !== null,
+      } : {}),
       aceite_registrado: mudanca.aceite !== undefined,
+      ...(mudanca.contexto_clima !== undefined ? {
+        contexto_clima: mudanca.contexto_clima !== null,
+        contexto_clima_anterior: atual.contexto_clima != null,
+        aceite_contexto_clima_registrado: mudanca.contexto_clima !== null,
+      } : {}),
+      ...(mudanca.contexto_roteador !== undefined ? {
+        ...(pedido === null ? { tarefa: "roteador" } : {}),
+        contexto_roteador: mudanca.contexto_roteador !== null,
+        contexto_roteador_anterior: atual.contexto_roteador != null,
+        aceite_contexto_registrado: mudanca.contexto_roteador !== null,
+      } : {}),
     },
   });
 

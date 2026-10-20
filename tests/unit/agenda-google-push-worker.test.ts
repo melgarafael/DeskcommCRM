@@ -33,7 +33,7 @@ beforeEach(() => {
     order: () => chain,
     limit: async () => ({ data: rows, error: null }),
   };
-  vi.mocked(createAdminClient).mockReturnValue({ from: () => chain } as never);
+  vi.mocked(createAdminClient).mockReturnValue({ from: () => chain, rpc: vi.fn(async () => ({data:0,error:null})) } as never);
   vi.mocked(reconcileAppointment).mockResolvedValue("processed");
 });
 const request = (authorized = true) =>

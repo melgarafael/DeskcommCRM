@@ -129,3 +129,12 @@ export function extrairObjetoJsonDoTexto(texto: string): Record<string, unknown>
 function ehObjeto(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
+
+/** Todos os objetos top-level, sem selecionar um veredito entre respostas contraditórias.
+ * Os leitores históricos do primeiro objeto continuam intactos. Só a revisão de agenda
+ * usa esta coleção para exigir concordância de todos os sinais literais recebidos. */
+export function extrairObjetosJsonDoTexto(texto: string): Record<string, unknown>[] {
+  const inteiro = tentarParsear(texto);
+  if (inteiro !== NADA) return ehObjeto(inteiro) ? [inteiro] : [];
+  return blocosDeNivelSuperior(texto).map(tentarParsear).filter(ehObjeto);
+}

@@ -17,6 +17,7 @@ import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/leg
 import { isoLocalComOffset } from '@/lib/tempo/agora';
 import { logger } from '@/lib/logger';
 import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
+import { mensagemDoAtendimentoSql } from '@/lib/atendimento/historico-mensagens';
 
 /**
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
@@ -38,6 +39,9 @@ export interface LeadContextKnobs {
 
 /** Uma mensagem do histórico, já curada. */
 export interface LeadContextMessage {
+  id?: string;
+  author?: 'client' | 'human_authenticated' | 'agent' | 'system' | 'unknown_outbound';
+  status?: string;
   direction: 'inbound' | 'outbound';
   /** Corpo textual; mídia usa o derivado (transcrição/visão/pdf) ou marcador [tipo]. */
   body: string;
@@ -201,6 +205,10 @@ function paraDecisao(row: DecisionRow): UltimaDecisaoHumana | null {
 }
 
 interface HistoryRow {
+  id?: string;
+  sent_via?: string;
+  sent_by_user_id?: string | null;
+  status?: string;
   direction: 'inbound' | 'outbound';
   type: string;
   body: string | null;
@@ -260,18 +268,17 @@ export async function getLeadContext(
       conversationId
         ? db
             .query<HistoryRow>(
-              `select direction, type, body, media_url, media_storage_path, media_mime,
+              `select id, sent_via, sent_by_user_id, status, direction, type, body, media_url, media_storage_path, media_mime,
                       media_derived_text, sent_at
                from messages
                where organization_id = $1 and conversation_id = $2
                  and direction in ('inbound', 'outbound')
-                 and exists(select 1 from conversations c where c.organization_id=$1 and c.id=$2
-                   and ((messages.direction='inbound' and messages.service_revision=c.service_revision
-                     and messages.demanda_id is not distinct from c.current_demanda_id)
-                     or (messages.direction='outbound' and messages.sent_at >= c.service_started_at)))
+                 and (direction='inbound' or status in ('sent','delivered','read'))
+                 and exists(select 1 from conversations c where c.organization_id=$1 and c.id=$2 and c.contact_id=$4
+                   and ${mensagemDoAtendimentoSql('messages')})
                order by sent_at desc, id desc
                limit $3`,
-              [input.tenantId, conversationId, knobs.historyLimit],
+              [input.tenantId, conversationId, knobs.historyLimit, input.leadId],
             )
             .then((r) => r.rows.reverse())
         : Promise.resolve<HistoryRow[]>([]),
@@ -439,6 +446,8 @@ function fitToBudget(
     return {
       direction: m.direction,
       body,
+      ...(m.id ? { id:m.id, status:m.status,
+        author:m.direction==='inbound'?'client' as const:m.sent_by_user_id?'human_authenticated' as const:m.sent_via==='ai'?'agent' as const:m.sent_via==='system'?'system' as const:'unknown_outbound' as const } : {}),
       // Hora de PAREDE do tenant, não UTC cru — ver o comentário de `sent_at` na
       // interface acima e o cabeçalho de `isoLocalComOffset`.
       sent_at: isoLocalComOffset(m.sent_at, fuso),

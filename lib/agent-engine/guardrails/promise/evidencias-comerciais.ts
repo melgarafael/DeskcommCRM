@@ -9,6 +9,13 @@ export interface EvidenciaComercial {
   titulo: string;
   conteudo: string;
 }
+export interface CoberturaComercial {
+  estado: 'present' | 'not_found' | 'excluded_by_limit' | 'stale' | 'unavailable';
+  encontrados: number;
+  selecionados: number;
+  omitidos: number;
+  motivos: string[];
+}
 
 import { canonizarTipoDeFonte, type TipoDeFonteId } from "@/lib/ai/rag/tipos-de-fonte";
 import type { Queryable } from "../../queue/queue";
@@ -43,7 +50,7 @@ export async function carregarFontesQueProvamOferta(
 ): Promise<string[]> {
   if (fontesDoAgente.length === 0) return [];
   const { rows } = await db.query<{ id: string; source_type: string }>(
-    "select id::text as id, source_type from ai_knowledge_sources where organization_id = $1 and id = any($2::uuid[])",
+    "select id::text as id, source_type from ai_knowledge_sources where organization_id = $1 and is_active and id = any($2::uuid[])",
     [tenantId, fontesDoAgente],
   );
   return fontesQueProvamOferta(rows);
@@ -84,12 +91,17 @@ function texto(value: unknown): string | null {
 export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly string[]) {
   const fontes = new Set(fontesHabilitadas);
   const evidencias = new Map<string, EvidenciaComercial>();
+  const omitidas = new Map<string, string>();
+  const revisoes = new Map<string, string>();
+  const fontesObsoletas = new Set<string>();
+  const excluir = (chave: string, motivo: string) => { evidencias.delete(chave); omitidas.set(chave, motivo); };
 
   function guardar(evidencia: EvidenciaComercial) {
     const chave = `${evidencia.origem}:${evidencia.referencia}`;
     evidencias.delete(chave);
     // Nunca cortar uma frase: a ressalva no fim pode mudar toda a autorização.
-    if (JSON.stringify(evidencia).length > MAX_POR_EVIDENCIA) return;
+    if (JSON.stringify(evidencia).length > MAX_POR_EVIDENCIA) { excluir(chave, 'item_inteiro_excede_limite'); return; }
+    omitidas.delete(chave);
     evidencias.set(chave, evidencia);
     const daOrigem = () =>
       [...evidencias.entries()].filter(([, e]) => e.origem === evidencia.origem);
@@ -99,7 +111,7 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
     ) {
       const primeira = daOrigem()[0]?.[0];
       if (primeira === undefined) break;
-      evidencias.delete(primeira);
+      excluir(primeira, 'acervo_excede_limite');
     }
   }
 
@@ -117,6 +129,7 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
       // Nem outro agente, nem o índice legado sem fonte identificável autorizam
       // uma oferta aqui. A consulta original continua disponível ao Conversador.
       if (!fonte || !fontes.has(fonte) || !id || !conteudo) continue;
+      if (fontesObsoletas.has(fonte)) { excluir(`conhecimento:${fonte}:${id}`, 'fonte_alterada_no_turno'); continue; }
       guardar({
         origem: "conhecimento",
         referencia: `${fonte}:${id}`,
@@ -150,9 +163,38 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
   return {
     registrarConhecimento,
     registrarCatalogo,
+    codigosConsultados: (): string[] => [...evidencias.values()].filter(e => e.origem === 'catalogo').map(e => e.referencia),
+    /** Releitura do mesmo tenant. Fonte alterada não reentra por cache neste run. */
+    revalidar: (atual: { fontes: Array<{ id: string; revisao: string; ativa: boolean }>; produtos: Array<{ codigo: string; nome: string; descricao: string; preco: string; disponivel: boolean }> } | undefined): void => {
+      if (!atual) { for (const chave of evidencias.keys()) excluir(chave, 'releitura_indisponivel'); return; }
+      for (const fonte of atual.fontes) {
+        if (!fonte.ativa || revisoes.has(fonte.id) && revisoes.get(fonte.id) !== fonte.revisao) fontesObsoletas.add(fonte.id);
+        revisoes.set(fonte.id, fonte.revisao);
+      }
+      for (const [chave, e] of evidencias) {
+        if (e.origem === 'conhecimento') {
+          const fonte = e.referencia.split(':')[0]!;
+          if (!atual.fontes.some(f => f.id === fonte && f.ativa) || fontesObsoletas.has(fonte)) excluir(chave, 'fonte_alterada_no_turno');
+        } else {
+          const p = atual.produtos.find(p => p.codigo === e.referencia);
+          if (!p?.disponivel || e.conteudo !== JSON.stringify({ nome: p.nome, preco: p.preco, descricao: p.descricao })) excluir(chave, 'produto_alterado_no_turno');
+        }
+      }
+    },
+    cobertura: (candidata = ''): CoberturaComercial => {
+      const selecionados = selecionar(candidata).length;
+      const motivos = [...new Set(omitidas.values())];
+      if (evidencias.size > selecionados) motivos.push('pacote_excede_limite');
+      return { estado: motivos.some(m => m.includes('alterad')) ? 'stale' : motivos.includes('releitura_indisponivel') ? 'unavailable' : motivos.length ? 'excluded_by_limit' : selecionados ? 'present' : 'not_found',
+        encontrados: evidencias.size + omitidas.size, selecionados, omitidos: omitidas.size + evidencias.size - selecionados, motivos };
+    },
     // Relevância escolhe o CONTEXTO, nunca concede autorização. O classificador
     // recebe os trechos completos, inclusive condições/negações, e decide.
-    ler: (candidata = ""): EvidenciaComercial[] => {
+    ler: selecionar,
+    // Inclui itens excluídos: a omissão e sua causa também invalidam o memo.
+    contexto: (): string => JSON.stringify({ evidencias:[...evidencias.values()], omitidas:[...omitidas], revisoes:[...revisoes] }),
+  };
+  function selecionar(candidata = ""): EvidenciaComercial[] {
       const consulta = termos(candidata);
       const acervo = [...evidencias.values()].map((e, ordem) => ({
         e,
@@ -189,9 +231,5 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
         }
       for (const { e } of ordenadas) adicionar(e);
       return escolhidas.map((e) => ({ ...e }));
-    },
-    // Inclui também itens fora do pacote selecionado: uma consulta pode mudar
-    // qual item é pertinente à mesma candidata. Usado só no memo do turno.
-    contexto: (): string => JSON.stringify([...evidencias.values()]),
-  };
+  }
 }

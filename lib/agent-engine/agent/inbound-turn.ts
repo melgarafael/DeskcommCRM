@@ -1,9 +1,23 @@
+import { criarConsultaDeFuncionamento } from './funcionamento-na-consulta';
+import { criarContextoCompartilhadoDoTurno, observarFerramentasDoTurno } from './contexto-compartilhado-do-turno';
+import { criarObservacaoDeConsultasDaAgenda } from '@/lib/agenda/consulta-do-turno';
+import { criarRecuperacaoDeEnvioDaAgenda, CORRECAO_DO_ENVIO_DE_AGENDA } from './recuperacao-envio-agenda';
+import { criarObservacaoDaAgenda, observaReciboDeAgenda, projetarResultadoAgendaDoTurno, type PublicacaoAgendaObservada } from '@/lib/agenda/recibo-do-turno';
+import { INSTRUCAO_ALCANCE_RECIBO_AGENDA } from '@/lib/agenda/pedido';
+import { capturarRevisao } from '@/lib/ai/diagnostico-revisao/captura';
+import { criarRevisorDePedidoDeAgenda } from '../guardrails/promise/agenda-pedido';
+import { precisaRevisarAgenda } from '../guardrails/promise/contrato-contexto';
+import { resumeGooglePublication } from "@/lib/agenda/google/continuation-recovery";
+import { googlePublicationDeferred } from "@/lib/atendimento/fronteira-server";
 import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
+import { carregarContextoDeDecisaoHumana, type ContextoDeDecisaoHumana } from './contexto-de-decisao-humana';
+import { pacoteFactualDaRevisao } from '../guardrails/promise/contrato-contexto';
+import { carregarContextoDoAtendimento, criarFontesConsultadasDoTurno, contextoDoAtendimentoIndisponivel, type ContextoDoAtendimento } from './contexto-do-atendimento';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
  * Loop do agente v0 — handler do job `inbound_turn` (F2-09; blueprint 8.8).
@@ -202,7 +216,7 @@ import {
   criarEvidenciasComerciaisDoTurno,
 } from '../guardrails/promise/evidencias-comerciais';
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
-import { classifyPromise, memoizarPorCandidata } from '../guardrails/promise/semantic';
+import { classifyPromise, memoizarPorCandidata, type PromiseClassification } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import {
@@ -501,8 +515,13 @@ export const AGENT_TOOL_DEFS = {
       })
       .passthrough(),
   },
+  resume_google_publication: {
+    description: "Acompanhe a MESMA reserva já salva quando a mensagem atual pede confirmação ou cobra a publicação. Consulte crm_list_appointments para obter os IDs. Esta ação não reserva nem altera o Google: vincula a recuperação ao pedido atual e devolve o recibo comprovado. Pending/retrying transitório não abre Caso nem exige aprovação humana. Não use se o cliente cancelou, pediu outra reserva/remarcação ou atendimento humano; use os caminhos próprios. Não envie confirmação antiga nem reserve novamente.",
+    inputSchema: z.strictObject({ appointment_ids: z.array(z.uuid()).min(1).max(20) }),
+  },
   open_human_case: {
     description:
+      'Publicação Google pending/retrying transitória é recuperação automática, não bloqueio humano: consulte o recibo atual e use resume_google_publication quando o pedido atual acompanha a mesma reserva. Caso de publicação só para failed/conflict ou aprovação humana genuína. ' +
       'Abra um caso para um humano de retaguarda quando você NÃO conseguir resolver o pedido do lead ' +
       'sozinho (liberar acesso, corrigir algo num sistema, uma decisão que exige uma pessoa). Você CONTINUA ' +
       'conversando com o lead normalmente — não silencia. Use SEMPRE que for prometer ao lead que alguém vai ' +
@@ -968,7 +987,7 @@ function agendaSystemBlock(toolIds: readonly string[]): string {
 
   return (
     '## Agenda — nunca confirme sem checar\n' +
-    'Você só pode dizer a um lead que um horário/consulta/visita está confirmado DEPOIS de chamar ' +
+    'Ao criar ou alterar uma reserva, você só pode dizer a um lead que está confirmado DEPOIS de chamar ' +
     `${marcar}${remarcacao} e ver o retorno confirmando o ` +
     'sucesso. Isso vale mesmo quando o lead já aceitou um horário que você ofereceu — aceite verbal não é ' +
     'reserva. NUNCA diga "confirmado", "está marcado" ou equivalente baseado só no histórico da conversa. ' +
@@ -979,8 +998,15 @@ function agendaSystemBlock(toolIds: readonly string[]): string {
     '⚠️ EXCEÇÃO: se o retorno trouxer `aguarda_confirmacao: true`, o horário foi apenas RESERVADO e ' +
     'ainda depende de alguém da equipe aprovar. Nesse caso NÃO diga que está confirmado: diga que ' +
     'separou o horário e que a equipe confirma. ' +
-    'Se ainda não chamou a ferramenta neste turno, chame antes de responder; se a chamada falhar ou você não ' +
+    'Para criar ou alterar uma reserva, se ainda não chamou a ferramenta neste turno, chame antes de responder; se a chamada falhar ou você não ' +
     'tiver certeza do resultado, diga que vai verificar e NÃO afirme que está confirmado.\n' +
+    (tem('crm_list_appointments')
+      ? 'Quando o pedido só acompanha uma reserva já salva ou cobra sua confirmação, consulte `crm_list_appointments` ' +
+        'e os fatos atuais do mesmo compromisso: não crie nem remarque novamente só para confirmar. ' +
+        'Comunique apenas o estado relido e a publicação comprovada da revisão atual. Publicação pendente não é ' +
+        'confirmação; aprovação humana realmente exigida continua necessária. Essa releitura não prova por si ' +
+        'a origem de uma alteração passada nem autoriza outro horário. Não use apenas o histórico da conversa.\n'
+      : '') +
     // Sem a ferramenta que só CONSULTA, este parágrafo não tem o que mandar
     // chamar: mandar chamar uma que MARCA seria mandar reservar um horário que o
     // lead só mencionou. Quem tem a conjunta recebe o parágrafo dela, abaixo, e o
@@ -997,7 +1023,7 @@ function agendaSystemBlock(toolIds: readonly string[]): string {
     (tem('crm_find_free_slots') && tem('crm_book_appointment')
       ? 'Se o lead escolheu um horário que VOCÊ já ofereceu nesta conversa com `crm_find_free_slots`, ele já ' +
         'foi checado: preserve o `inicio` que a ferramenta devolveu e chame `crm_book_appointment` ' +
-        'diretamente. ' +
+        'diretamente, copiando o instante UTC de inicio sem trocar apenas o rótulo de hora. Z significa UTC, não hora local. ' +
         'NÃO consulte de novo montando datas/horas em UTC; só consulte outra vez se a reserva recusar o horário.\n'
       : '') +
     // Issue #831: consultar e encerrar o turno é o meio-caminho que deixa o lead sem
@@ -1117,6 +1143,9 @@ export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
   ) {
     blocos.push(AGENDA_CADEIA_SYSTEM_BLOCK);
   }
+  if (blocos.length > 0) blocos[0] += '\n' + INSTRUCAO_ALCANCE_RECIBO_AGENDA;
+  else if (toolIds.some(id => ['crm_list_appointments', 'crm_reschedule_appointment', 'crm_cancel_appointment'].includes(id)))
+    blocos.push(INSTRUCAO_ALCANCE_RECIBO_AGENDA);
   return blocos;
 }
 
@@ -1496,6 +1525,8 @@ export function inboundsNaoRespondidos(messages: readonly LeadContextMessage[]):
  * no SUFIXO — depois do prefixo cacheável, sem invalidar o cache F2-17).
  */
 export interface AgentTurnInput {
+  /** Somente do handler nativo após lease/fronteira/revisão/publicação relidas; nunca do payload. */
+  googlePublicationObservation?: PublicacaoAgendaObservada;
   resolvedAgent?: TurnAgentResolution;
   /** número (channel_sessions.id do CRM) — chave da serialização anti-ban do envio. */
   channelSessionId: string;
@@ -1503,6 +1534,8 @@ export interface AgentTurnInput {
   conversationId: string;
   /** Id da mensagem que criou o job inbound; não é usado por follow-ups. */
   inboundMessageId?: string;
+  /** Ponteiro validado no handler; nunca a nota do payload. */
+  humanCaseEventId?: string;
   /** monta a abertura APÓS o ritual de leitura (inbound vs. bloco temporal do follow-up). */
   buildOpening: (ritual: {
     previous: LeadCheckpointRow | null;
@@ -1919,11 +1952,11 @@ export async function runAgentTurn(
  * entra porque responde a um caso em aberto: ninguém "chama" um caso, o caso chama.
  */
 export function eTurnoDeResposta(job: Pick<JobRow, 'kind'>): boolean {
-  return job.kind === 'inbound_turn' || job.kind === 'case_reply_turn';
+  return job.kind === 'inbound_turn' || job.kind === 'case_reply_turn' || job.kind === 'google_publication_turn';
 }
 
 function turnoVaiFalarComOLead(job: JobRow): boolean {
-  if (job.kind === 'inbound_turn' || job.kind === 'case_reply_turn') return true;
+  if (job.kind === 'inbound_turn' || job.kind === 'case_reply_turn' || job.kind === 'google_publication_turn') return true;
   if (job.kind !== 'followup_turn') return false;
   const purpose = (job.payload as { purpose?: unknown } | null)?.purpose;
   return purpose === undefined || purpose === 'send_message';
@@ -2800,6 +2833,7 @@ async function executarTurnoDoAgente(
   // O que o modelo de fato mandou neste turno (depois da cadeia). A trava "a
   // pergunta saiu?" do roteiro de atendimento lê daqui.
   const corposEnviados: string[] = [];
+  const recuperacaoAgenda = criarRecuperacaoDeEnvioDaAgenda();
   // DUPLICATA PRÓXIMA NO MESMO TURNO: a trava `near-dup.ts` guarda DUAS memórias.
   // `aceitos` = corpos de `send_message` que PASSARAM pela cadeia e foram aceitos
   // neste turno (o corpo PRÉ-cadeia, para comparar candidato contra candidato) —
@@ -2857,10 +2891,44 @@ async function executarTurnoDoAgente(
   //
   // Memo POR CORPO e por evidências, por turno (`memoizarPorCandidata`): os
   // fail-safes de vocabulário e de promessa re-rodam a cadeia com o MESMO texto.
-  const classificadorMemoizado = camadaLigada(
+  let contextoHumano: ContextoDeDecisaoHumana | undefined;
+  let contextoDoAtendimento: ContextoDoAtendimento | undefined;
+  const lerContextoHumano = async (db: Queryable = pool, lock = false, atendimento = contextoDoAtendimento) => {
+    // Uma devolutiva já criada conserva sua fonte, mesmo se Casos foi desligado depois.
+    if (preview?.kind === 'sandbox' || (!agentConfig?.casesEnabled && !input.humanCaseEventId)) return undefined;
+    try { return await carregarContextoDeDecisaoHumana(db, { tenantId,leadId,conversationId:input.conversationId }, { now:deps.clock?.() ?? new Date(),lock,canonicalRequest:atendimento?.pedido?.mensagem ?? null }); }
+    catch { runLog.warn('contexto de decisões indisponível', { event:'human_decision_context_unavailable' }); return undefined; }
+  };
+  const momentoDaRevisao = (deps.clock?.() ?? new Date()).toISOString();
+  const fontesConsultadas = criarFontesConsultadasDoTurno(momentoDaRevisao);
+  if (orgMemory.content) fontesConsultadas.registrar('memoria_org','documento',orgMemory.content);
+  for (const entry of orgMemory.entries) fontesConsultadas.registrar('memoria_org',entry.id,`${entry.title}\n${entry.body}`);
+  const lerContextoDoAtendimento = async (db: Queryable = pool): Promise<ContextoDoAtendimento | undefined> => {
+    if (preview?.kind === 'sandbox') return undefined;
+    try {
+      const atual = fontesConsultadas.aplicar(await carregarContextoDoAtendimento(db, { tenantId, leadId, conversationId:input.conversationId, jobId:liveJob().id,
+        knowledgeSourceIds:agentConfig?.knowledgeSourceIds ?? [],skillVersionIds:fontesConsultadas.skillVersionIds(),productCodes:evidenciasComerciais.codigosConsultados() }));
+      evidenciasComerciais.revalidar(atual.validacaoComercial);
+      return atual;
+    }
+    catch { evidenciasComerciais.revalidar(undefined); runLog.warn('fontes do atendimento indisponíveis', { event:'review_service_context_unavailable' }); return contextoDoAtendimentoIndisponivel(); }
+  };
+  contextoDoAtendimento = await lerContextoDoAtendimento();
+  contextoHumano = await lerContextoHumano();
+  const contextoCompartilhado = criarContextoCompartilhadoDoTurno();
+  contextoCompartilhado.registrarInstrucao('agente_publicado', agentConfig?.systemPrompt ?? '');
+  contextoCompartilhado.registrarInstrucao('roteiro_ativo', roteiro?.bloco ?? '');
+  const consultasAgendaDoTurno = criarObservacaoDeConsultasDaAgenda(clock);
+  const operacaoAgendaDoTurno = criarObservacaoDaAgenda(job?.kind === 'google_publication_turn' ? input.googlePublicationObservation : undefined);
+  const fingerprintDaFotografia = (humano: ContextoDeDecisaoHumana | undefined, atendimento: ContextoDoAtendimento | undefined) =>
+    `${humano?.fingerprint ?? 'sem_decisao'}|${atendimento?.fingerprint ?? 'sem_fontes'}|${JSON.stringify(corposEnviados)}|${JSON.stringify(operacaoAgendaDoTurno.atual())}|${JSON.stringify(consultasAgendaDoTurno.atual())}|${contextoCompartilhado.atual()?.fingerprint ?? 'sem_leituras'}`;
+  const fotografiasDaRevisao = new Map<string, string>();
+  const revisarAgenda = () => Boolean(agentConfig && temFerramentaDeAgenda(agentConfig.toolIds)) || precisaRevisarAgenda({ candidate: "", serviceContext: contextoDoAtendimento, agendaOperationReceipt:operacaoAgendaDoTurno.atual() });
+  const promessaSemanticaLigada = camadaLigada(
     camadas.promessa_semantica,
     deps.knobs.promiseSemantic?.enabled === true,
-  )
+  );
+  const classificadorMemoizado = (revisarAgenda() || promessaSemanticaLigada)
     ? memoizarPorCandidata((candidate: string) =>
         classifyPromise(
           pool,
@@ -2868,10 +2936,19 @@ async function executarTurnoDoAgente(
           { tenantId, leadId: leadId || null, jobId: job?.id },
           {
             candidate,
+            agendaReviewRequired: revisarAgenda(),
+            agendaOperationReceipt: operacaoAgendaDoTurno.atual(),
+            agendaAvailability: consultasAgendaDoTurno.atual(),
+            agentContext: contextoCompartilhado.atual(),
             commercialEvidence: evidenciasComerciais.ler(candidate),
+            commercialCoverage: evidenciasComerciais.cobertura(candidate),
+            ...(contextoHumano ? { humanDecisionContext:contextoHumano } : {}),
+            ...(contextoDoAtendimento ? { serviceContext:contextoDoAtendimento } : {}),
+            sentAntecedents:corposEnviados,
+            pendingAgendaCommunication: recuperacaoAgenda.contexto(),
             conversationContext: montarContextoDaRevisao(
               effectiveContext.messages, effectivePrevious?.rolling_summary,
-              (deps.clock?.() ?? new Date()).toISOString(), fusoDaOrg,
+              momentoDaRevisao, contextoDoAtendimento?.fuso ?? fusoDaOrg,
             ),
             ...argsAux(deps.knobs.promiseSemantic?.model),
           },
@@ -2879,12 +2956,26 @@ async function executarTurnoDoAgente(
         ),
         // As evidências crescem entre o veto e o reenvio; o veredito de antes
         // da consulta não vale para a mesma frase depois dela.
-        () => evidenciasComerciais.contexto(),
+        () => `${evidenciasComerciais.contexto()}|${fingerprintDaFotografia(contextoHumano, contextoDoAtendimento)}|${JSON.stringify(recuperacaoAgenda.contexto())}|contrato_4`,
       )
     : undefined;
   const semanticClassifier = classificadorMemoizado === undefined ? undefined : async (candidate: string) => {
     await recuperarEvidencias(candidate);
-    return classificadorMemoizado(candidate);
+    contextoDoAtendimento = await lerContextoDoAtendimento();
+    contextoHumano = await lerContextoHumano();
+    if (contextoDoAtendimento) runLog.info('contexto factual da revisão montado', { event:'review_context_sources',versao:1,cobertura:contextoDoAtendimento.cobertura });
+    const fotografia = fingerprintDaFotografia(contextoHumano, contextoDoAtendimento);
+    const verdict = await classificadorMemoizado(candidate);
+    fotografiasDaRevisao.set(candidate, fotografia);
+    // Conferência de agenda não liga categorias que a organização desligou.
+    const vereditoEfetivo = promessaSemanticaLigada ? verdict : { isPromise:false,suspectPhrase:null,
+      prometeuRetornoHumano:false,retornoSoDoAssistente:false,agendaCompativel:verdict.agendaCompativel,
+      ...(verdict.agendaReviewIssue ? {agendaReviewIssue:verdict.agendaReviewIssue} : {}) };
+    await capturarRevisao(pool, {tenantId,jobId:job?.id}, 'reserva', {
+      versao:2,etapa:'revisao_normalizada',papel:'controle_do_envio',candidata:candidate,
+      veredito:vereditoEfetivo,veredito_modelo:verdict,recibo_observado:operacaoAgendaDoTurno.atual() ?? null,
+    });
+    return vereditoEfetivo;
   };
   // Conferência de fato (#2231): a TERCEIRA camada do before_send, depois da
   // F4-01/F4-02. A evidência é lida NA HORA (nasce no meio do turno) e a
@@ -2898,6 +2989,8 @@ async function executarTurnoDoAgente(
       contactId: leadId || null,
       agentId: agentConfig?.agentId ?? null,
       lerEvidencias: () => evidenciasComerciais.ler(),
+      fingerprintContexto: () => `${evidenciasComerciais.contexto()}|${fingerprintDaFotografia(contextoHumano,contextoDoAtendimento)}`,
+
       // #2923 — o RUN que mediu: o job no turno automático, o RASCUNHO na prévia
       // (é o que o `runId` da prévia já carrega). É o ponteiro que a resposta
       // aprovada usa para fechar a linha que a prévia deixou em aberto.
@@ -3021,6 +3114,7 @@ async function executarTurnoDoAgente(
     .filter((sk): sk is (typeof skills)[number] => sk !== undefined)
     .filter((sk) => !skillMatch.matched.some((m) => m.name === sk.name));
   const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoRoteiro]);
+  for (const skill of [...skillMatch.matched, ...skillsDoRoteiro]) fontesConsultadas.registrar('skill_ativa',skill.versionId,skill.body);
   if (!preview && deps.knobs.goldenCandidates === true) {
     await recordSkillMissCandidates(
       pool,
@@ -3078,6 +3172,48 @@ async function executarTurnoDoAgente(
    * a correção depende.
    */
   const mcpToolIdsDoTurno: string[] = [];
+
+  const consultarConhecimentoDoAgente = async (query: string) => {
+        const fontes = agentConfig?.knowledgeSourceIds ?? [];
+        if (fontes.length === 0 && agentConfig?.activeKbVersionId == null) {
+          return {
+            ok: false,
+            error: {
+              code: 'no_knowledge_base',
+              message: 'este agente não tem material de consulta habilitado — siga sem ele.',
+            },
+          };
+        }
+        const out = await searchKnowledge(
+          pool,
+          {
+            organizationId: tenantId,
+            knowledgeSourceIds: fontes,
+            kbVersionId: agentConfig?.activeKbVersionId ?? null,
+            query,
+            topK: agentConfig?.ragTopK ?? 5,
+            threshold: agentConfig?.ragSimilarityThreshold ?? 0.4,
+            jobId: job?.id,
+            agentId: agentConfig?.agentId ?? null,
+          },
+          { log: runLog, embed: deps.embed },
+        );
+        if (out.ok && out.results.length > 0) {
+          evidenciasComerciais.registrarConhecimento(out);
+          // As citações são montadas AQUI, pelo código, a partir do resultado
+          // cru — é por isso que os ids podem sair do que vai ao modelo sem
+          // perder nada: quem precisa deles é esta linha, não o modelo.
+          pendingCitations = citationsFromHits(out.results);
+        }
+        // `chunk_id` e `knowledge_source_id` viajavam CRUS para o modelo em toda
+        // busca com RAG — dois UUIDs por resultado, sem uso nenhum do lado dele
+        // (nenhuma ferramenta os aceita como argumento). UUID cru na resposta ao
+        // cliente foi MEDIDO nesta base; esta era uma fonte silenciosa dele.
+        return turnoProjeta(mcpToolIdsDoTurno) ? projetarRetornoDeTool(out) : out;
+  };
+  const funcionamentoNaConsulta = criarConsultaDeFuncionamento(() => consultarConhecimentoDoAgente(
+    "Qual é o horário de funcionamento presencial: abertura e fechamento em cada dia da semana, finais de semana e exceções/feriados?",
+  ));
 
   const rawTools: ToolSet = {
     get_lead_context: tool({
@@ -3255,53 +3391,22 @@ async function executarTurnoDoAgente(
     search_knowledge: tool({
       ...AGENT_TOOL_DEFS.search_knowledge,
       execute: async ({ query }) => {
-        const fontes = agentConfig?.knowledgeSourceIds ?? [];
-        if (fontes.length === 0 && agentConfig?.activeKbVersionId == null) {
-          return {
-            ok: false,
-            error: {
-              code: 'no_knowledge_base',
-              message: 'este agente não tem material de consulta habilitado — siga sem ele.',
-            },
-          };
-        }
-        const out = await searchKnowledge(
-          pool,
-          {
-            organizationId: tenantId,
-            knowledgeSourceIds: fontes,
-            kbVersionId: agentConfig?.activeKbVersionId ?? null,
-            query,
-            topK: agentConfig?.ragTopK ?? 5,
-            threshold: agentConfig?.ragSimilarityThreshold ?? 0.4,
-            jobId: job?.id,
-            agentId: agentConfig?.agentId ?? null,
-          },
-          { log: runLog, embed: deps.embed },
-        );
-        if (out.ok && out.results.length > 0) {
-          evidenciasComerciais.registrarConhecimento(out);
-          // As citações são montadas AQUI, pelo código, a partir do resultado
-          // cru — é por isso que os ids podem sair do que vai ao modelo sem
-          // perder nada: quem precisa deles é esta linha, não o modelo.
-          pendingCitations = citationsFromHits(out.results);
-        }
-        // `chunk_id` e `knowledge_source_id` viajavam CRUS para o modelo em toda
-        // busca com RAG — dois UUIDs por resultado, sem uso nenhum do lado dele
-        // (nenhuma ferramenta os aceita como argumento). UUID cru na resposta ao
-        // cliente foi MEDIDO nesta base; esta era uma fonte silenciosa dele.
-        return turnoProjeta(mcpToolIdsDoTurno) ? projetarRetornoDeTool(out) : out;
+        return consultarConhecimentoDoAgente(query);
       },
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: corpoDoModelo, produto_codigo }) => {
+      execute: async ({ body: corpoDoModelo, produto_codigo }) => recuperacaoAgenda.emOrdem(async () => {
         tentativasDeEnvio += 1;
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
         // Ver `formato-whatsapp.ts`.
         const body = formatarParaWhatsApp(corpoDoModelo);
+        if (!recuperacaoAgenda.permitirTentativa()) {
+          return { ok: false, error: { code: 'agenda_communication_pending', message:
+            'A resposta anterior de agenda não foi entregue. Não avance para formulários ou orientações; a recuperação limitada cuidará dessa resposta. Não repita operações.' } };
+        }
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
@@ -3556,6 +3661,7 @@ async function executarTurnoDoAgente(
             casesEnabled: agentConfig?.casesEnabled ?? false,
             hasOpenCase,
             openedCaseThisTurn,
+            humanDecisionContextPresent: Boolean(input.humanCaseEventId || contextoHumano?.decisions.length),
             // Nome(s) próprio(s) que o prompt do tenant usa pra retaguarda humana (ex.:
             // "Fulano") — o mesmo vocabulário que `matchesHandoffKeyword` já usa do lado
             // do CLIENTE, agora somado ao alvo genérico do `casePromiseGate` do lado do
@@ -3579,6 +3685,7 @@ async function executarTurnoDoAgente(
             // um agente que só CONSULTA promete "vou verificar" igual, e enquanto a
             // condição era só `crm_book_appointment` ele ficava sem o gate. Quem não tem
             // ferramenta de agenda nenhuma segue desarmado — vetá-lo não teria cura.
+            agendaRequestReviewRequired: revisarAgenda(),
             agenda: {
               active: agentConfig !== null && temFerramentaDeAgenda(agentConfig.toolIds),
               ferramentas: agentConfig === null ? [] : ferramentasDeAgendaDoAgente(agentConfig.toolIds),
@@ -3594,7 +3701,16 @@ async function executarTurnoDoAgente(
             // Gate 5 (F4-02): classificador semântico roteado pelo MESMO seam agnóstico (budget
             // da org checado nele). Closure com tenant/lead/job da ROW fechados — nunca do payload.
             ...(semanticClassifier !== undefined
-              ? { classifyPromiseSemantic: semanticClassifier }
+              ? { classifyPromiseSemantic: semanticClassifier,
+                  validateHumanDecision: async (db: pg.PoolClient, candidate: string, verdict: PromiseClassification | null): Promise<'valid'|'not_eligible'|'stale'> => {
+                    const fingerprint = fotografiasDaRevisao.get(candidate);
+                    if (!fingerprint) return 'not_eligible';
+                    const freshService = await lerContextoDoAtendimento(db);
+                    if (freshService?.estadoDoJob && freshService.estadoDoJob !== 'running') return 'stale';
+                    const fresh = await lerContextoHumano(db, true, freshService);
+                    if (fingerprintDaFotografia(fresh, freshService) !== fingerprint) return 'stale';
+                    return verdict?.repasseConcluidoFiel === true && fresh?.decisions.some(d=>d.eligible) ? 'valid' : 'not_eligible';
+                  } }
               : {}),
             // Conferência de fato (#2231): só o `send_message` arma, pelo mesmo
             // motivo do vocabulário interno — é o único corpo escrito pelo
@@ -3712,6 +3828,13 @@ async function executarTurnoDoAgente(
             },
           };
           let chain = await runBeforeSend(beforeSendArgs);
+          // Uma devolutiva já tem Caso: preservar pendência antes do fallback genérico.
+          if (input.humanCaseEventId && casePromiseVetoCount >= 1 &&
+              chain.status === 'vetoed' && chain.code === "case_promise_without_case") {
+            casePromiseVetoCount += 1;
+            runLog.info("repasse de caso aguarda revisão", { event:"case_reply_review_pending", case_event_id:input.humanCaseEventId });
+            return { ok:false, error:{ code:chain.code, message:"A conclusão não foi validada para repasse. Releia o contexto do caso e reformule sem acrescentar compromissos; não abra um caso duplicado." } };
+          }
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
             // Wave 4 — fail-safe da invariante sagrada: o lead NUNCA recebe promessa-de-
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
@@ -3765,6 +3888,8 @@ async function executarTurnoDoAgente(
             clinicalClaimVetoCount += 1;
             if (
               clinicalClaimVetoCount >= MAX_VETOS_DE_AFIRMACAO_CLINICA &&
+              !input.humanCaseEventId && // Reentrada: a falha volta ao Caso que já contém a decisão.
+
               agentConfig?.casesEnabled === true &&
               !openedCaseThisTurn &&
               !hasOpenCase
@@ -3837,6 +3962,11 @@ async function executarTurnoDoAgente(
             });
           }
           if (chain.status === 'vetoed') {
+            await capturarRevisao(pool, {tenantId,jobId:job?.id}, 'reserva', {
+              versao:2,etapa:'decisao_envio',papel:'controle_do_envio',candidata:body,
+              status:chain.status,code:chain.code,motivo:chain.message,recibo_observado:operacaoAgendaDoTurno.atual() ?? null,
+            });
+            if (revisarAgenda()) recuperacaoAgenda.recusar(body, chain.code);
             // Cap de warm-up/diário: reescrever o texto não resolve (é rate limit, não
             // conteúdo) — ensinar o modelo a "tentar de novo" só gasta passo. Guardamos
             // pra reagendar o JOB inteiro depois que o turno terminar (mesmo padrão de
@@ -3853,6 +3983,11 @@ async function executarTurnoDoAgente(
             return { ok: false, error: { code: chain.code, message: chain.message } };
           }
           const outcome = chain.outcome;
+          await capturarRevisao(pool, {tenantId,jobId:job?.id}, 'reserva', {
+            versao:2,etapa:'resultado_envio',papel:'controle_do_envio',candidata:body,
+            resultado:outcome,recibo_observado:operacaoAgendaDoTurno.atual() ?? null,
+          });
+          recuperacaoAgenda.registrarCanal(outcome.kind);
           outcomes.push(outcome);
           // MEMÓRIA DE DUPLICATA: só o que saiu de fato vira referência para a régua.
           // sent/already_sent/queued = o corpo (ou quase) chegou/chegará ao cliente;
@@ -3955,7 +4090,7 @@ async function executarTurnoDoAgente(
           // legítimas.
           dupTrava.liberar(body);
         }
-      },
+      }),
     }),
     update_lead_state: tool({
       ...AGENT_TOOL_DEFS.update_lead_state,
@@ -4078,6 +4213,7 @@ async function executarTurnoDoAgente(
               },
             };
           }
+          fontesConsultadas.registrar('nota_memoria',noteId,body);
           return { ok: true, note_id: noteId, body };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -4216,7 +4352,7 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.read_skill_reference,
       execute: async ({ skill_name, ref_path }) => {
         try {
-          return await readSkillReference(
+          const result = await readSkillReference(
             { admin: deps.crmCfg.supabase },
             {
               organizationId: tenantId,
@@ -4225,6 +4361,11 @@ async function executarTurnoDoAgente(
               refPath: ref_path,
             },
           );
+          if (result.ok) {
+            const skill=skillMatch.matched.find(s=>s.name===result.skill_name);
+            if (skill) fontesConsultadas.registrar('referencia_skill',`${result.skill_name}:${result.ref_path}`,result.content,skill.versionId);
+          }
+          return result;
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
@@ -4260,11 +4401,30 @@ async function executarTurnoDoAgente(
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
   // agente). ponytail: snapshot mínimo; enriquecer se a UI precisar de mais.
   const buildCaseContextSnapshot = (): Record<string, unknown> => ({
+    ...(input.inboundMessageId ? { request_message_id: input.inboundMessageId } : {}),
     contact_name: effectiveContext.contact.name,
     last_messages: effectiveContext.messages
       .slice(-5)
       .map((m) => ({ direction: m.direction, body: m.body })),
   });
+
+  if (!preview && liveJob().kind === "inbound_turn") {
+    rawTools.resume_google_publication = tool({
+      ...AGENT_TOOL_DEFS.resume_google_publication,
+      execute: async ({ appointment_ids }) => {
+        const seq = operacaoAgendaDoTurno.iniciar();
+        const result = await resumeGooglePublication(deps.crmCfg.supabase, tenantId, appointment_ids,
+          proof => operacaoAgendaDoTurno.publicar(seq, proof));
+        contextoDoAtendimento = await lerContextoDoAtendimento();
+        const recibo = projetarResultadoAgendaDoTurno(operacaoAgendaDoTurno.atual(), contextoDoAtendimento);
+        await capturarRevisao(pool, {tenantId,jobId:job?.id}, 'reserva', {
+          versao:2,etapa:'resultado_ferramenta_agenda',papel:'ponte_nativa',ferramenta:'resume_google_publication',
+          resultado:result,recibo_observado:operacaoAgendaDoTurno.atual() ?? null,recibo_relido:recibo ?? null,
+        });
+        return recibo ? {...result,resultado_agenda_do_turno:recibo} : result;
+      },
+    });
+  }
 
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
   // entram quando a tela habilita (cases_enabled) — mesmo padrão do handoff acima.
@@ -4303,7 +4463,7 @@ async function executarTurnoDoAgente(
           return {
             ok: true,
             case_id: res.caseId,
-            message: `caso aberto; continue a conversa com o lead normalmente. ${frase}`,
+            message: `caso aberto; continue a conversa normalmente. ${frase} Você pode dizer com naturalidade que vai confirmar com a equipe e retornar por aqui; o Caso já registrado sustenta esse compromisso de resposta, sem prometer solução, prazo ou atendimento humano imediato. Não precisa usar a expressão pedido registrado.`,
           };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -4426,14 +4586,21 @@ async function executarTurnoDoAgente(
           },
           configDoTurno,
           runLog,
-          preview ? { readOnly: true } : undefined,
+          { readOnly: Boolean(preview), conferirPedidoAgenda: criarRevisorDePedidoDeAgenda({
+            pool, cfg: deps.llmCfg, tenantId, leadId, conversationId: input.conversationId,
+            jobId: liveJob().id, casesEnabled: agentConfig?.casesEnabled, log: runLog, registry: deps.registry,
+            contextoDoTurno: () => ({ agentContext: contextoCompartilhado.atual(),
+              agendaAvailability: consultasAgendaDoTurno.atual(),
+              conversationContext: montarContextoDaRevisao(effectiveContext.messages, effectivePrevious?.rolling_summary,
+                momentoDaRevisao, contextoDoAtendimento?.fuso ?? fusoDaOrg) }),
+          }) },
         );
         if (mcp !== null) {
           mcpCleanup = mcp.cleanup;
           for (const [name, mcpTool] of Object.entries(mcp.tools)) {
             if (name in rawTools) continue;
             if (
-              (name === 'crm_search_products' || name === 'crm_search_knowledge') &&
+              (name === 'crm_search_products' || name === 'crm_search_knowledge' || name === 'crm_get_org_memory') &&
               typeof mcpTool.execute === 'function'
             ) {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
@@ -4444,7 +4611,8 @@ async function executarTurnoDoAgente(
                   // O modelo escolhe a consulta, nunca fornece a autorização.
                   // A ponte MCP já aplica organização, papel e escopo de leitura.
                   if (name === 'crm_search_products') evidenciasComerciais.registrarCatalogo(resultado);
-                  else evidenciasComerciais.registrarConhecimento(resultado);
+                  else if (name === 'crm_search_knowledge') evidenciasComerciais.registrarConhecimento(resultado);
+                  else fontesConsultadas.registrarMemoriaDaTool(resultado);
                   return resultado;
                 }) as typeof mcpTool.execute,
               };
@@ -4452,13 +4620,38 @@ async function executarTurnoDoAgente(
             }
             // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
             // precisa saber para não vetar um turno que já checou a agenda de verdade.
-            if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
+            if ((AGENDA_TOOL_NAMES.has(name) || observaReciboDeAgenda(name)) && typeof mcpTool.execute === 'function') {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
               rawTools[name] = {
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
-                  agendaToolCalledThisTurn = true;
-                  return executeOriginal(...args);
+                  if (AGENDA_TOOL_NAMES.has(name)) agendaToolCalledThisTurn = true;
+                  const seq = observaReciboDeAgenda(name) ? operacaoAgendaDoTurno.iniciar() : null;
+                  if (seq !== null) consultasAgendaDoTurno.invalidar();
+                  const consultaSeq = name === 'crm_find_free_slots' ? consultasAgendaDoTurno.iniciar(args[0]) : null;
+                  let resultado: Awaited<ReturnType<typeof executeOriginal>>;
+                  try {
+                    resultado = await executeOriginal(...args);
+                    if (consultaSeq !== null && ((agentConfig?.knowledgeSourceIds.length ?? 0) > 0 || agentConfig?.activeKbVersionId))
+                      resultado = await funcionamentoNaConsulta.anexar(resultado) as typeof resultado;
+                  }
+                  catch (err) {
+                    if (consultaSeq !== null) consultasAgendaDoTurno.falhar(consultaSeq);
+                    throw err;
+                  }
+                  if (consultaSeq !== null) consultasAgendaDoTurno.concluir(consultaSeq, resultado);
+                  if (seq !== null) {
+                    operacaoAgendaDoTurno.concluir(seq, name, resultado);
+                    contextoDoAtendimento = await lerContextoDoAtendimento();
+                    const recibo = projetarResultadoAgendaDoTurno(operacaoAgendaDoTurno.atual(), contextoDoAtendimento);
+                    await capturarRevisao(pool, {tenantId,jobId:job?.id}, 'reserva', {
+                      versao:2,etapa:'resultado_ferramenta_agenda',papel:'ponte_nativa',ferramenta:name,
+                      resultado,recibo_observado:operacaoAgendaDoTurno.atual() ?? null,recibo_relido:recibo ?? null,
+                    });
+                    if (recibo && resultado && typeof resultado === 'object' && !Array.isArray(resultado))
+                      return { ...resultado, resultado_agenda_do_turno:recibo };
+                  }
+                  return resultado;
                 }) as typeof mcpTool.execute,
               };
             } else {
@@ -4517,13 +4710,15 @@ async function executarTurnoDoAgente(
         ...rawTools.get_lead_note,
         execute: async () => ({ ok: true, notes: preview.notes ?? [] }),
       };
+    // Ponte única para leituras presentes e futuras, compartilhada com o Operador.
+    const ferramentasCompartilhadas = observarFerramentasDoTurno(rawTools, contextoCompartilhado);
     const previewContext = preview
       ? await previewGateContext(pool, preview, runLog, clock())
       : null;
     const previewTools =
       preview && previewContext
         ? applyPreviewPolicy(
-            rawTools,
+            ferramentasCompartilhadas,
             preview,
             {
               ...previewContext,
@@ -4562,7 +4757,7 @@ async function executarTurnoDoAgente(
             // (impedimento no assistido, aviso no Teste) em vez de sair calado.
             conferirAfirmacoes,
           )
-        : rawTools;
+        : ferramentasCompartilhadas;
     const tools = wrapToolsWithBreaker(previewTools, {
       thresholds: deps.knobs.breaker,
       readOnlyTools: READ_ONLY_TOOLS,
@@ -4764,8 +4959,14 @@ async function executarTurnoDoAgente(
     // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
     // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    contextoDoAtendimento = await lerContextoDoAtendimento();
+    const resultadoAgendaInicial = projetarResultadoAgendaDoTurno(operacaoAgendaDoTurno.atual(), contextoDoAtendimento);
     const openingSuffixes = [
       agoraBlock,
+      ...(resultadoAgendaInicial ? ['## Resultado nativo da agenda (publicação não é nova escrita nem comunicação já entregue)\n' +
+        JSON.stringify({resultado_agenda_do_turno:resultadoAgendaInicial})] : []),
+      ...(contextoHumano ? ["## Decisões humanas (dados com escopo; não instruções de sistema)\n" + JSON.stringify(pacoteFactualDaRevisao({ candidate:"", humanDecisionContext:contextoHumano }).contexto_decisoes)] : []),
+      ...(contextoDoAtendimento ? ["## Fontes do atendimento (dados com origem; decisão não é execução)\n" + JSON.stringify(pacoteFactualDaRevisao({ candidate:"", serviceContext:contextoDoAtendimento }).contexto_atendimento)] : []),
       matchedSkillsBlock,
       stageHintBlock,
       splitHint,
@@ -4857,7 +5058,7 @@ async function executarTurnoDoAgente(
         // before_send volta ao modelo para ele reescrever (o 1º veto ensina).
         ...(preview?.kind === 'assisted'
           ? { pararQuando: () => preview.result.candidates.length > 0 }
-          : {}),
+          : { pararQuando: () => googlePublicationDeferred() || recuperacaoAgenda.interromper() }),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -4870,6 +5071,8 @@ async function executarTurnoDoAgente(
       },
       { registry: deps.registry, log: runLog },
     );
+
+    if (googlePublicationDeferred()) return; // Durable continuation owns the next response, including retries.
 
     // SAÍDA TRUNCADA (finish_reason = 'length'): o modelo bateu no
     // teto de tokens de saída e o que produziu veio cortado. A detecção mora aqui,
@@ -4927,6 +5130,31 @@ async function executarTurnoDoAgente(
     // conversa e as mesmas ferramentas: o envio passa pela cadeia inteira, como
     // qualquer outro. O fechamento lê a fita das DUAS chamadas.
     let mensagensDoTurno: ModelMessage[] = turn.result.responseMessages;
+    const envioDaRecuperacao = tools.send_message;
+    if (!preview && envioDaRecuperacao && !turnoDescartado && !passouParaAEquipe && !capDeEnvioAtingido() && recuperacaoAgenda.iniciarCorrecao()) {
+      runLog.warn('recuperação limitada da comunicação de agenda', { event: 'agenda_communication_recovery' });
+      contextoDoAtendimento = await lerContextoDoAtendimento();
+      contextoHumano = await lerContextoHumano();
+      const pedidoDeRecuperacao: ModelMessage = { role: 'user', content: CORRECAO_DO_ENVIO_DE_AGENDA + '\n' +
+        JSON.stringify(pacoteFactualDaRevisao({ candidate: '', pendingAgendaCommunication: recuperacaoAgenda.contexto(),
+          serviceContext: contextoDoAtendimento, humanDecisionContext: contextoHumano,
+          agendaOperationReceipt:operacaoAgendaDoTurno.atual() })) };
+      try {
+        const recuperacao = await runModelCall(pool, deps.llmCfg, {
+          tenantId, leadId: leadId || null, jobId: job?.id, agentId: agentConfig?.agentId ?? null,
+          purpose: 'agent_turn', system, messages: [...openingMessages, ...mensagensDoTurno, pedidoDeRecuperacao],
+          tools: { send_message: envioDaRecuperacao }, maxSteps: Math.min(maxSteps, 2),
+          pararQuando: recuperacaoAgenda.interromper,
+          ...(agentConfig !== null ? { model: agentConfig.model, llmOverride: {
+            provider: agentConfig.provider, credentialId: agentConfig.credentialId } } : {}),
+        }, { registry: deps.registry, log: runLog });
+        mensagensDoTurno = [...mensagensDoTurno, pedidoDeRecuperacao, ...recuperacao.result.responseMessages];
+      } finally { recuperacaoAgenda.encerrarCorrecao(); }
+      if (runError !== null) throw runError;
+      if (outcomes.some(o => o.kind === 'failed')) throw new Error('recuperação de agenda falhou no canal');
+      if (recuperacaoAgenda.contexto()) runLog.error('comunicação de agenda continua pendente', { event: 'agenda_communication_unresolved' });
+    }
+
     // Foi PEDIDA (e logo abaixo EXECUTADA) a correção limitada do turno mudo? O
     // valor é consumido DEPOIS dela, no desfecho terminal, junto com
     // `correcaoTruncou` (o sinal de FALHA da própria correção): correção que
@@ -4990,7 +5218,8 @@ async function executarTurnoDoAgente(
     // FALHA TERMINAL VISÍVEL — só com sinal de FALHA, nunca por silêncio
     // deliberado (#2938): o CORRECAO_DO_TURNO_MUDO autoriza o modelo a responder
     // "nada a dizer", então silêncio que persiste com a correção NÃO é defeito.
-    // Duas causas, um único bloco (um caso humano por turno, nunca duplicado):
+    // Truncamento ou recuperação de agenda recusada: um único desfecho visível.
+    // Um caso humano por turno, nunca duplicado:
     //  - saída TRUNCADA (finish_reason=length): o modelo cortou no teto de tokens;
     //  - a correção limitada do turno mudo (UMA, `correcaoDoTurnoMudoPedida`
     //    acima) TAMBÉM terminou truncada (`correcaoTruncou`) — sinal de falha.
@@ -5076,11 +5305,59 @@ async function executarTurnoDoAgente(
       }
     }
 
+    // A revisão recusada é uma falha de comunicação distinta de truncamento.
+    // Uma prévia nunca abre Caso ou move o funil. Fila aceita/descarte/handoff/
+    // teto também não são autorização para escalar ou repetir a operação.
+    const comunicacaoAgendaFalhou =
+      !preview && Boolean(recuperacaoAgenda.contexto()) &&
+      !turnoDescartado && !passouParaAEquipe && !capDeEnvioAtingido();
+    if (comunicacaoAgendaFalhou) {
+      const desfechoAgenda = 'agenda_communication_unresolved';
+      runLog.error('agenda_communication_unresolved — resposta de agenda não entregue', {
+        job_id: job?.id ?? null,
+        kind: liveJob().kind,
+      });
+      const haCasoDeAgenda = agentConfig?.casesEnabled === true
+        ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
+        : false;
+      if (agentConfig?.casesEnabled === true && !openedCaseThisTurn && !haCasoDeAgenda) {
+        try {
+          const caso = await openCase(pool,
+            { tenantId, conversationId: input.conversationId, agentId: agentConfig?.agentId ?? null },
+            {
+              title: recuperacaoAgenda.falhaTecnica() ? 'Falha técnica na revisão da resposta' : 'Resposta de agenda não entregue após revisão',
+              summary: recuperacaoAgenda.falhaTecnica()
+                ? 'A revisão ficou inconclusiva por falha de contexto ou vinculação e a recuperação limitada não entregou a resposta. Conferir a falha técnica; não solicitar aprovação humana para substituir informação perdida nem repetir a reserva.'
+                : 'A resposta de agenda foi vetada e a recuperação limitada não a entregou. Releia o pedido e a reserva existentes; não reserve novamente para contornar a comunicação.',
+              blocker: recuperacaoAgenda.falhaTecnica()
+                ? 'Falta uma revisão válida da candidata atual. Isso não comprova erro do agente, pedido inválido ou operação executada. Reconciliar as fontes e a comunicação sem inventar aprovação.'
+                : 'A revisão continuou recusando a resposta. A operação e a comunicação têm estados distintos; não assumir nem desfazer a reserva sem conferir o recibo atual.',
+              kind: 'problema',
+              source: 'guardrail_autofallback',
+              contextSnapshot: buildCaseContextSnapshot(),
+            });
+          if (caso.ok) {
+            openedCaseThisTurn = true;
+            moverParaHandoffBestEffort(desfechoAgenda);
+          } else {
+            runLog.error('agenda_communication_unresolved — caso humano não abriu (já existe)', {
+              job_id: job?.id ?? null, code: caso.error.code,
+            });
+          }
+        } catch (err) {
+          runLog.error('agenda_communication_unresolved — openCase lançou', {
+            job_id: job?.id ?? null,
+            error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+          });
+        }
+      }
+    }
+
     // ROTEIRO: a pergunta pendente é compromisso. Se o modelo não a fez, o motor
     // a manda — pela MESMA cadeia de guardrails, dentro do teto de envios. Roda
     // mesmo com o teto cheio: registrar que o MODELO fez a pergunta é o que a
     // torna "a pergunta atual" no turno seguinte.
-    if (roteiro !== null) {
+    if (roteiro !== null && !recuperacaoAgenda.interromper()) {
       await garantirPerguntaDoRoteiro(
         { pool, log: runLog },
         {

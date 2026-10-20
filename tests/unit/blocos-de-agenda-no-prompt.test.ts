@@ -79,3 +79,13 @@ describe("blocos de agenda residentes", () => {
     }
   });
 });
+
+
+it.each([['crm_cancel_appointment'],['crm_reschedule_appointment'],['crm_list_appointments'],[BOOK,FIND]])
+('o agente recebe limite individual antes de comunicar a agenda: %j',(...ids)=>{
+ const text=blocosDeAgendaResidentes(ids).join('\n');
+ expect(text).toContain('não um inventário de toda a agenda');
+ expect(text).toContain('não comprova a ausência');
+ expect(text).toContain('não sustenta afirmações sobre os');
+ expect(text).toContain('Não altere nem');
+});

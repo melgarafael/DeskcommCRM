@@ -384,11 +384,35 @@ describe("temFerramentaDeMarcacao (#831)", () => {
     }
     // Controle: sem isto, um `blocoResidenteDaAgenda` que devolvesse sempre null
     // deixaria o laço sem nenhuma asserção e o caso verde.
-    expect(blocosMedidos).toBe(14);
+    // Agora a combinação só-remarca também recebe o alcance do recibo,
+    // sem ganhar ferramentas de criar. O caso explícito abaixo mede o conteúdo.
+    expect(blocosMedidos).toBe(15);
   });
 
   it("agente sem ferramenta de agenda nenhuma não recebe bloco", async () => {
     const { blocoResidenteDaAgenda } = await import("@/lib/agent-engine/agent/inbound-turn");
     expect(blocoResidenteDaAgenda(["crm_update_lead_state"])).toBeNull();
   });
+});
+
+
+it('recuperação de confirmação consulta a reserva existente e não manda gravar de novo',async()=>{
+ const {blocoResidenteDaAgenda}=await import('@/lib/agent-engine/agent/inbound-turn');
+ const bloco=blocoResidenteDaAgenda(['crm_book_appointment','crm_list_appointments']);
+ expect(bloco).toContain('Ao criar ou alterar uma reserva, você só pode dizer');
+ expect(bloco).toContain('só acompanha uma reserva já salva');
+ expect(bloco).toContain('não crie nem remarque novamente só para confirmar');
+ expect(bloco).toContain('crm_list_appointments');
+ expect(bloco).toContain('aprovação humana realmente exigida');
+ expect(blocoResidenteDaAgenda(['crm_book_appointment'])).not.toContain('crm_list_appointments');
+});
+
+it('só remarca recebe o alcance do recibo sem aprender uma ferramenta ausente', async () => {
+  const { blocoResidenteDaAgenda } = await import('@/lib/agent-engine/agent/inbound-turn');
+  const { INSTRUCAO_ALCANCE_RECIBO_AGENDA } = await import('@/lib/agenda/pedido');
+  const bloco = blocoResidenteDaAgenda(['crm_reschedule_appointment']);
+  expect(bloco).toBe(INSTRUCAO_ALCANCE_RECIBO_AGENDA);
+  expect(bloco).not.toContain('crm_book_appointment');
+  expect(bloco).not.toContain('crm_find_and_book_appointment');
+  expect(bloco).not.toContain('crm_find_free_slots');
 });

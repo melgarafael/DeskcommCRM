@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { googlePushCandidates } from "@/lib/agenda/google/candidates";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
+import { googleRpc } from "@/lib/agenda/google/sync-store";
 import { reconcileAppointment } from "@/lib/agenda/google/sync-executor";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,6 +14,7 @@ async function executar(req: NextRequest) {
       { status: 401 },
     );
   const db = createAdminClient();
+  await googleRpc(db, "fn_google_continuation_recover", {});
   const { data, error } = await googlePushCandidates(db);
   if (error)
     return NextResponse.json(

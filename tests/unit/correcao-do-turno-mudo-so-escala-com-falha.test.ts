@@ -190,3 +190,25 @@ describe("desfecho distinto, caso humano único, nunca duplica", () => {
     expect(bloco).not.toContain("sendTurnMessage");
   });
 });
+
+describe("falha de comunicação da agenda separada do truncamento", () => {
+  it("prévia, descarte, handoff e teto não abrem Caso de comunicação", () => {
+    const inicio = turno.indexOf("const comunicacaoAgendaFalhou =");
+    const fim = turno.indexOf("if (comunicacaoAgendaFalhou)", inicio);
+    expect(inicio).toBeGreaterThan(-1);
+    expect(fim).toBeGreaterThan(inicio);
+    const condicao = turno.slice(inicio, fim);
+    for (const guarda of ["!preview", "recuperacaoAgenda.contexto()", "!turnoDescartado", "!passouParaAEquipe", "!capDeEnvioAtingido()"])
+      expect(condicao).toContain(guarda);
+  });
+  it("falha real permanece visível e deduplicada, sem repetir operação ou envio", () => {
+    const inicio = turno.indexOf("if (comunicacaoAgendaFalhou)");
+    const bloco = turno.slice(inicio, idxRoteiro);
+    expect(bloco).toContain("agenda_communication_unresolved");
+    expect(bloco).toContain("agentConfig?.casesEnabled === true");
+    expect(bloco).toContain("!openedCaseThisTurn && !haCasoDeAgenda");
+    expect(bloco).toContain("if (caso.ok)");
+    expect(bloco).not.toContain("runBeforeSend");
+    expect(bloco).not.toContain("runModelCall");
+  });
+});

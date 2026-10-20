@@ -13,8 +13,8 @@ export type SendOutcome =
       crmMessageId: string | null;
     }
   | { kind: "blocked"; idempotencyKey: string };
-type Intent = { tenantId: string; leadId: string | null; jobId: string; seq: number; body: string };
-type Row = { id: string; status: SendLedgerStatus; crm_message_id: string | null };
+type Intent = { tenantId: string; leadId: string | null; jobId: string; seq: number; body: string; humanEventId?: string };
+type Row = { id: string; status: SendLedgerStatus; crm_message_id: string | null; job_id?:string };
 interface LedgerStore {
   create(input: Intent, hash: string): Promise<string>;
   find(input: Intent): Promise<Row | null>;
@@ -55,7 +55,24 @@ export async function sendWithLedger(
     key = prior.id;
     if (prior.status === "accepted")
       return { kind: "already_sent", idempotencyKey: key, crmMessageId: prior.crm_message_id };
+    if(input.humanEventId && prior.job_id && prior.job_id!==input.jobId){
+      const actual=await store.message(input.tenantId,key);
+      if(actual&&['sent','delivered','read'].includes(actual.status)){
+        await store.update(input.tenantId,key,'accepted',actual.id,null);
+        return {kind:'already_sent',idempotencyKey:key,crmMessageId:actual.id};
+      }
+      return {kind:prior.status==='failed'?'failed':'queued',idempotencyKey:key,crmMessageId:prior.crm_message_id};
+    }
     if (prior.status === "vetoed") return { kind: "blocked", idempotencyKey: key };
+    if (prior.status === "failed" && input.humanEventId) {
+      const message = await store.message(input.tenantId,key);
+      if (message && ['sent','delivered','read'].includes(message.status)) {
+        await store.update(input.tenantId,key,'accepted',message.id,null);
+        return {kind:'already_sent',idempotencyKey:key,crmMessageId:message.id};
+      }
+      // Uma falha ambígua nunca cria outro id para o mesmo evento humano.
+      return {kind:'failed',idempotencyKey:key,crmMessageId:message?.id??prior.crm_message_id};
+    }
     if (prior.status === "failed") key = await store.rotate(input, hash);
     else replay = true;
   }
@@ -111,16 +128,16 @@ export function pgSendLedger(db: Queryable): LedgerStore {
   return {
     async create(i, hash) {
       const { rows } = await db.query<{ id: string }>(
-        "insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash) values ($1, $2, $3, $4, $5) returning id",
-        [i.tenantId, i.leadId, i.jobId, i.seq, hash],
+        "insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash, human_event_id) values ($1, $2, $3, $4, $5, $6) on conflict do nothing returning id",
+        [i.tenantId, i.leadId, i.jobId, i.seq, hash, i.humanEventId??null],
       );
-      if (!rows[0]) throw new Error("send_ledger_insert_missing");
+      if (!rows[0]) throw Object.assign(new Error("send_ledger_duplicate"),{code:"23505"});
       return rows[0].id;
     },
     async find(i) {
       const { rows } = await db.query<Row>(
-        "select * from send_ledger where organization_id=$1 and job_id=$2 and seq=$3",
-        [i.tenantId, i.jobId, i.seq],
+        "select * from send_ledger where organization_id=$1 and seq=$3 and (job_id=$2 or ($4::uuid is not null and human_event_id=$4))",
+        [i.tenantId, i.jobId, i.seq, i.humanEventId??null],
       );
       return rows[0] ?? null;
     },

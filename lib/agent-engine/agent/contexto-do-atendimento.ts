@@ -5,6 +5,7 @@ import type { Queryable } from '../queue/queue';
 import { resolveActiveLeadForContact, type LeadCandidate } from '@/lib/leads/active-lead';
 import { formatCents } from '@/lib/money';
 import { fusoValido, FUSO_PADRAO } from '@/lib/tempo/fusos';
+import { isoLocalComOffset, rotuloLocal } from '@/lib/tempo/agora';
 
 export type CategoriaDoContexto = 'perfil' | 'decisoes' | 'operacoes' | 'continuidade';
 export interface CoberturaDoContexto {
@@ -60,6 +61,61 @@ export interface FontesDoAtendimento {
 const string = (v: unknown): string => typeof v === 'string' ? v : '';
 const object = (v: unknown): Registro => v && typeof v === 'object' && !Array.isArray(v) ? v as Registro : {};
 const array = (v: unknown): Registro[] => Array.isArray(v) ? v.map(object) : [];
+
+/** Mesmo instante em hora de parede; não escolhe outro horário nem concede autorização. */
+function horarioLocalDaReserva(a: Registro): Registro {
+  const fuso = string(a.time_zone);
+  const inicio = new Date(string(a.starts_at));
+  if (!fusoValido(fuso) || !Number.isFinite(inicio.getTime())) return { horario_local_estado: 'unavailable' };
+  const fim = new Date(string(a.ends_at));
+  return { horario_local_estado: 'present', inicio_local: isoLocalComOffset(inicio, fuso),
+    fim_local: Number.isFinite(fim.getTime()) ? isoLocalComOffset(fim, fuso) : null,
+    quando_local: rotuloLocal(inicio, fuso) };
+}
+
+/** Cancelamento é resultado próprio; não confirma nem reativa a reserva. */
+function naturezaDoCancelamento(a: Registro): string | null {
+  if (a.status !== 'cancelled' || a.cancelled_at == null) return null;
+  if (a.google_publication === 'removed' && a.google_local_revision != null &&
+      String(a.google_local_revision) === String(a.google_synced_local_revision) &&
+      a.needs_google_push === false && a.google_sync_error == null && a.google_sync_failure_kind == null) {
+    return 'cancelamento_sincronizado_no_google';
+  }
+  return 'cancelamento_salvo_sem_remocao_comprovada';
+}
+
+/** Descreve o recibo, sem conceder envio nem fabricar autoria humana/da IA. */
+function naturezaDaConfirmacao(a: Registro): string {
+  if (a.status !== 'confirmed' || a.cancelled_at != null) return 'reserva_nao_confirmada';
+  if (a.service_human_confirmed === true) return 'confirmacao_humana_atestada_na_agenda';
+  if (a.service_requires_confirmation === true) return 'confirmacao_humana_exigida_sem_atestado';
+  // O fluxo individual legado confirma nativamente sem campos de serviço.
+  // A combinação precisa vir completa da query, não de campos ausentes.
+  const individualNativo = a.service_occurrence_id === null && a.service_booking_mode === null &&
+    a.service_requires_confirmation === null;
+  if (a.service_requires_confirmation !== false && !individualNativo) return 'natureza_da_confirmacao_nao_atestada';
+  if (a.google_publication !== 'synced' || a.google_local_revision == null ||
+      String(a.google_local_revision) !== String(a.google_synced_local_revision) ||
+      a.needs_google_push !== false || a.google_sync_error != null || a.google_sync_failure_kind != null) {
+    return 'reserva_salva_sem_publicacao_comprovada';
+  }
+  return individualNativo ? 'reserva_publicada_pelo_fluxo_individual' : 'reserva_publicada_sem_aprovacao_humana_exigida';
+}
+/** Prioridade de transporte, não autorização: atividade vigente antes do histórico.
+ * updated_at também muda na sincronização Google de cancelamentos antigos. Não
+ * representa a última decisão/operação do cliente e não pode expulsar sua reserva.
+ * Cancelamentos continuam disponíveis, pelo instante próprio da operação.
+ */
+function ordenarReservasParaContexto(a: Registro, b: Registro): number {
+  const instante = (v: unknown): number => {
+    const t = Date.parse(string(v));
+    return Number.isFinite(t) ? t : 0;
+  };
+  return Number(a.status === 'cancelled') - Number(b.status === 'cancelled') ||
+    instante(b.status === 'cancelled' ? b.cancelled_at ?? b.created_at : b.created_at) -
+      instante(a.status === 'cancelled' ? a.cancelled_at ?? a.created_at : a.created_at) ||
+    instante(b.created_at) - instante(a.created_at) || string(a.id).localeCompare(string(b.id));
+}
 const provenienciaDaAcao = z.object({
   versao: z.literal(1), origem: z.literal('next_action_authenticated'),
   papel: z.enum(['agent', 'manager', 'admin']), proposta_seq: z.number().int().nonnegative(),
@@ -79,7 +135,11 @@ const LIMITE_PERFIL_INDIVIDUAL = 8000;
 const LIMITE_PERFIL_ORGANIZACIONAL = 24000;
 function cabeNoPerfil(perfil: readonly FonteDoAtendimento[], item: FonteDoAtendimento): boolean {
   const size = JSON.stringify(item).length;
-  if (perfil.length >= LIMITE_ITENS_PERFIL || size > LIMITE_ITEM_PERFIL) return false;
+  // O documento geral aceita até 50k no editor e chega inteiro ao agente.
+  // Na revisão pode usar a quota organizacional existente, sem ampliar o total
+  // nem cortar o final. Skills, referências e notas mantêm o teto por item de 8k.
+  const limiteItem = item.origem === 'memoria_org' ? LIMITE_PERFIL_ORGANIZACIONAL : LIMITE_ITEM_PERFIL;
+  if (perfil.length >= LIMITE_ITENS_PERFIL || size > limiteItem) return false;
   const organizacional = ORIGENS_ORGANIZACIONAIS.has(item.origem);
   const limite = organizacional ? LIMITE_PERFIL_ORGANIZACIONAL : LIMITE_PERFIL_INDIVIDUAL;
   const usados = perfil.reduce((total, fonte) =>
@@ -110,7 +170,7 @@ export function normalizarFontesDoAtendimento(f: FontesDoAtendimento, tenantId: 
   const mensagem = object(f.job?.canonical_message);
   const texto = string(mensagem.text);
   const tipoTurno = string(f.job?.kind);
-  const requerMensagem = tipoTurno === 'inbound_turn' || tipoTurno === 'case_reply_turn';
+  const requerMensagem = tipoTurno === 'inbound_turn' || tipoTurno === 'case_reply_turn' || tipoTurno === 'google_publication_turn';
   out.pedido = { estado: texto.length > 8000 ? 'excluded_by_limit' : string(mensagem.id) ? 'present' : requerMensagem ? 'unavailable' : 'not_applicable',
     tipoTurno, gatilhoEm: string(f.job?.trigger_at ?? f.job?.created_at),
     mensagem: string(mensagem.id) && texto.length <= 8000 ? { id: string(mensagem.id), text: texto, at: string(mensagem.at), origem: string(mensagem.origem) } : null };
@@ -175,14 +235,16 @@ export function normalizarFontesDoAtendimento(f: FontesDoAtendimento, tenantId: 
     if (!alias.has(string(p.lead_id))) continue;
     adicionar('operacoes', p, 'proposta', alias.get(string(p.lead_id))!, 'verified', { titulo: p.titulo, estado: p.status, decidida_em: p.decided_at, motivo: p.decision_reason, significado: 'estado_da_proposta_nao_pagamento_ou_matricula' });
   }
-  for (const a of f.agenda.filter(pertence)) adicionar('operacoes', a, 'agenda_persistida', 'contato', 'verified', { titulo: a.title, estado: a.status, inicio: a.starts_at, fim: a.ends_at, fuso: a.time_zone, cancelada_em: a.cancelled_at,
+  for (const a of f.agenda.filter(pertence).sort(ordenarReservasParaContexto)) adicionar('operacoes', a, 'agenda_persistida', 'contato', 'verified', { titulo: a.title, estado: a.status, inicio: a.starts_at, fim: a.ends_at, fuso: a.time_zone, ...horarioLocalDaReserva(a), cancelada_em: a.cancelled_at,
+    natureza_confirmacao: naturezaDaConfirmacao(a), natureza_cancelamento: naturezaDoCancelamento(a), publicacao_google: a.google_publication, revisao_reserva: a.revision, revisao_google_local: a.google_local_revision, revisao_google_publicada: a.google_synced_local_revision, publicacao_pendente: a.needs_google_push, motivo_publicacao: a.google_sync_error, classificacao_falha: a.google_sync_failure_kind, comunicacao: 'nao_comprovada_pela_reserva',
+    ...(a.location_kind === 'google_meet' ? { estado_reuniao: a.meeting_state, link_reuniao: a.meeting_url } : {}),
     ...(a.service_booking_mode ? { participante: a.participant_name, modo: a.service_booking_mode, regra_capacidade: a.service_capacity_rule,
       limite: a.service_capacity_limit, revisao_regra: a.service_rule_revision, revisao_atual_servico: a.current_service_revision,
-      publicacao_google: a.google_publication, confirmacao_equipe_exigida: a.service_requires_confirmation,
-      confirmacao_equipe_atestada: a.service_human_confirmed, confirmada_pela_equipe_em: a.service_confirmed_at, comunicacao: 'nao_comprovada_pela_reserva',
+      confirmacao_equipe_exigida: a.service_requires_confirmation,
+      confirmacao_equipe_atestada: a.service_human_confirmed, confirmada_pela_equipe_em: a.service_confirmed_at,
       significado_servico: 'consulta_nao_reserva_reserva_nao_publicacao_nem_comunicacao' } : {}), significado: 'registro_da_agenda_nao_presenca' });
   for (const c of f.retornos.filter(pertence)) adicionar('operacoes', c, 'callback_ia', 'contato', 'verified', { agendado_para: c.next_run_at, habilitado: c.enabled, cancelado_em: c.cancelled_at, promessa: c.promise, motivo: c.reason, significado: 'retorno_da_ia_nao_telefonema_humano' });
-  for (const c of f.caso.filter(pertence)) adicionar('continuidade', c, 'caso_humano', 'contato', 'recorded', { estado: c.status, pergunta_humana: c.human_ask, resposta_cliente: c.lead_update, significado: 'resposta_do_cliente_nao_verificacao' });
+  for (const c of f.caso.filter(pertence)) adicionar('continuidade', c, 'caso_humano', 'contato', 'recorded', { estado: c.status, titulo: c.title, resumo: c.summary, bloqueio: c.blocker, natureza: 'pendencia_operacional_do_pedido_original', autoridade: 'nao_atesta_decisao_humana_nem_veto_global', pedido_original: c.original_request, pergunta_humana: c.human_ask, resposta_cliente: c.lead_update, significado: 'resposta_do_cliente_nao_verificacao', alcance: 'pendencia_do_pedido_original_nao_aprovacao_de_outro_pedido' });
   if (f.job && pertence(f.job)) adicionar('continuidade', f.job, 'gatilho_persistido', 'contato', 'verified', { tipo_turno: f.job.kind, modo: f.job.mode, proposito: f.job.purpose, motivo: f.job.reason, promessa_anterior: f.job.promise, prometido_em: f.job.promised_at, fluxo: f.job.flow_kind, significado: 'gatilho_nao_nova_promessa' });
   if (f.conversa && pertence(f.conversa)) adicionar('continuidade', f.conversa, 'estado_atual', 'contato', 'verified', { atendimento: f.conversa.service_revision, em_comando_humano: f.conversa.force_human, significado: 'nao_autoriza_envio_durante_takeover' });
   out.cobertura = (Object.keys(encontrados) as CategoriaDoContexto[]).map(categoria => ({ categoria,
@@ -211,15 +273,18 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
     (select coalesce(jsonb_agg(x),'[]') from (select a.id,a.organization_id,a.contact_id,a.lead_id,a.type,a.payload,a.reason,a.actor_kind,a.performed_by_user_id,a.performed_at,s.next_action_seq as current_action_seq from crm_lead_activities a join crm_leads l on l.id=a.lead_id and l.organization_id=a.organization_id and l.contact_id=a.contact_id left join lead_state s on s.organization_id=a.organization_id and s.contact_id=a.contact_id where a.organization_id=$1 and a.contact_id=$2 and a.type in ('next_action_approved','next_action_dismissed','note_added') order by a.performed_at desc,a.id limit 9) x) as atividades,
     (select coalesce(jsonb_agg(x),'[]') from (select id,organization_id,contact_id,lead_id,titulo,status,decided_at,decision_reason,created_at,updated_at from crm_proposals where organization_id=$1 and contact_id=$2 and (conversation_id=$3 or conversation_id is null) and status<>'rascunho' order by updated_at desc,id limit 9) x) as propostas,
     (select coalesce(jsonb_agg(x),'[]') from (select a.id,a.organization_id,a.contact_id,a.title,a.status,a.starts_at,a.ends_at,a.time_zone,a.cancelled_at,a.created_at,a.updated_at,
-      a.participant_name,a.service_booking_mode,a.service_capacity_rule,a.service_capacity_limit,a.service_rule_revision,t.service_revision current_service_revision,
-      a.service_requires_confirmation,a.service_confirmed_at,
+      a.service_occurrence_id,a.participant_name,a.service_booking_mode,a.service_capacity_rule,a.service_capacity_limit,a.service_rule_revision,t.service_revision current_service_revision,
+      a.location_kind,a.meeting_state,a.meeting_url,a.revision,a.google_local_revision,a.google_synced_local_revision,a.needs_google_push,a.google_sync_error,a.google_sync_failure_kind,a.service_requires_confirmation,a.service_confirmed_at,
       (a.status='confirmed' and a.service_confirmed_by_user_id is not null and a.service_confirmed_at is not null) service_human_confirmed,
-      case when a.service_publication_mode='none' then 'not_configured' when a.google_conflict is not null then 'conflict'
-        when a.google_sync_error is not null then 'failed' when a.google_event_id is not null and a.google_synced_local_revision=a.google_local_revision then case when a.status='cancelled' then 'removed' else 'synced' end else 'pending' end google_publication
+      case when (a.service_occurrence_id is not null and a.service_publication_mode='none') or (a.service_occurrence_id is null and a.google_event_id is null and a.location_kind<>'google_meet' and not exists(select 1 from calendar_connections gc0 where gc0.organization_id=a.organization_id and gc0.user_id=a.owner_user_id)) then 'not_configured' when a.google_conflict is not null then 'conflict'
+        when a.google_sync_failure_kind='human_required' then 'failed' when a.google_sync_error is not null then 'retrying' when a.google_event_id is not null and a.google_synced_local_revision=a.google_local_revision and not a.needs_google_push then case when a.status='cancelled' then 'removed' else 'synced' end else 'pending' end google_publication
       from calendar_appointments a left join calendar_event_types t on t.organization_id=a.organization_id and t.id=a.event_type_id
-      where a.organization_id=$1 and a.contact_id=$2 and a.conversation_id=$3 and not a.service_block order by a.updated_at desc,a.id limit 9) x) as agenda,
+      where a.organization_id=$1 and a.contact_id=$2 and a.conversation_id=$3 and not a.service_block order by (a.status='cancelled'),case when a.status='cancelled' then coalesce(a.cancelled_at,a.created_at) else a.created_at end desc,a.created_at desc,a.id limit 9) x) as agenda,
     (select coalesce(jsonb_agg(x),'[]') from (select id,organization_id,contact_id,next_run_at,enabled,cancelled_at,payload->>'promise' as promise,payload->>'reason' as reason,created_at,updated_at from cron_jobs where organization_id=$1 and contact_id=$2 and job_kind='followup_turn' and payload->>'conversation_id'=$3::text order by updated_at desc,id limit 9) x) as retornos,
-    (select coalesce(jsonb_agg(x),'[]') from (select ac.id,ac.organization_id,c.contact_id,ac.status,
+    (select coalesce(jsonb_agg(x),'[]') from (select ac.id,ac.organization_id,c.contact_id,ac.status,ac.title,ac.summary,ac.blocker,
+      (select coalesce(m.media_derived_text,m.body) from messages m where m.organization_id=ac.organization_id
+        and m.conversation_id=ac.conversation_id and m.contact_id=c.contact_id and m.direction='inbound'
+        and m.id::text=ac.context_snapshot->>'request_message_id') as original_request,
       (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='human_replied' and human_action='need_lead_info' and actor_kind='human' and actor_user_id is not null order by created_at desc,id limit 1) as human_ask,
       (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='lead_provided' and actor_kind='lead' order by created_at desc,id limit 1) as lead_update,
       ac.created_at,ac.updated_at from agent_cases ac join conversations c on c.id=ac.conversation_id and c.organization_id=ac.organization_id where ac.organization_id=$1 and c.contact_id=$2 and c.id=$3 and ac.status in ('awaiting_lead','awaiting_human') order by ac.updated_at desc,ac.id limit 9) x) as caso,
@@ -230,7 +295,7 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
         from messages m join escopo s on s.id=m.conversation_id and s.organization_id=m.organization_id
         where m.organization_id=$1 and m.conversation_id=$3 and m.contact_id=$2 and m.direction='inbound' and m.service_revision=s.service_revision
           and (m.demanda_id is not distinct from s.current_demanda_id or m.demanda_id is null)
-          and m.id::text=case when j.kind='inbound_turn' then j.payload->>'inbound_message_id' when j.kind='case_reply_turn' then ac.context_snapshot->>'request_message_id' end))
+          and m.id::text=case when j.kind='inbound_turn' then j.payload->>'inbound_message_id' when j.kind='case_reply_turn' then ac.context_snapshot->>'request_message_id' when j.kind='google_publication_turn' then public.fn_google_continuation_request_message($1,$2,$3,j.id)::text end))
       from job_queue j left join agent_case_events e on j.kind='case_reply_turn'
         and (e.id::text=j.payload->>'human_event_id' or (not j.payload ? 'human_event_id' and e.metadata->>'legacy_reply_job_id'=j.id::text))
         and e.case_id::text=j.payload->>'case_id'

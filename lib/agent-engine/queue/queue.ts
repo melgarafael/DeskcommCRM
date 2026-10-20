@@ -24,7 +24,7 @@ export type JobKind =
   | 'case_reply_turn'
   | 'operator_turn'
   | 'transactional_delivery'
-  | 'approved_reply';
+  | 'approved_reply' | 'google_publication_turn';
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'dead';
 
 export interface JobRow {

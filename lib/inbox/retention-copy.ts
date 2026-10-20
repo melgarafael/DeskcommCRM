@@ -6,6 +6,7 @@
  */
 
 import { cidadeDoFuso } from "@/lib/tempo/fusos";
+import { falhaTecnicaDaRevisaoDeAgenda } from '@/lib/agenda/falha-revisao';
 
 /** Contexto dos knobs efetivos do número — interpola janela/horário na copy. */
 export interface RetentionContext {
@@ -15,7 +16,7 @@ export interface RetentionContext {
   timezone: string;
 }
 
-export type RetentionKind = "protection" | "compliance" | "quality";
+export type RetentionKind = "protection" | "compliance" | "quality" | "review" | "window" | "neutral";
 
 export interface RetentionCopy {
   kind: RetentionKind;
@@ -27,17 +28,21 @@ const TITLES: Record<RetentionKind, string> = {
   protection: "Resposta segurada pela proteção do número",
   compliance: "Resposta bloqueada por conformidade",
   quality: "Resposta retida para correção",
+  review: "Resposta bloqueada pela revisão da IA",
+  window: "Resposta retida pela janela de envio",
+  neutral: "Resposta não enviada",
 };
 
 /**
  * Copy por código de veto. Códigos de proteção (pacing/spinning) tranquilizam:
  * foi proteção anti-bloqueio, não erro. Conformidade (stop/LGPD) é definitivo.
- * Qualidade (promise/disclosure) explica que o assistente corrige sozinho.
+ * Origem desconhecida é neutra. O aviso não promete recuperação automática.
  */
 export function retentionCopy(
   code: string | null,
   ctx: RetentionContext,
   t: (texto: string) => string = (texto) => texto,
+  gate?: string | null,
 ): RetentionCopy {
   // O fuso vai escrito: "22h" sem dizer DE ONDE foi o que escondeu, por meses,
   // uma janela avaliada em São Paulo numa operação de Manaus. É o fuso que o
@@ -49,12 +54,33 @@ export function retentionCopy(
     description,
   });
 
+  const neutral = () => make("neutral", t("O envio foi interrompido, mas a origem do bloqueio não foi identificada. A resposta não foi enviada ao contato."));
+  if ((!gate || gate === 'semantic_promise') && falhaTecnicaDaRevisaoDeAgenda(code)) {
+    return { ...make('neutral', t('Uma falha técnica impediu concluir a revisão com as informações e a resposta corretas. A mensagem não foi enviada ao contato.')),
+      title:t('Resposta não enviada por falha na revisão') };
+  }
+  // O gate é a origem registrada pelo servidor; não inferir pela prosa do modelo.
+  if (["semantic_promise", "case_promise", "factual_claim"].includes(gate ?? "") ||
+      (!gate && code === "agenda_request_mismatch")) {
+    return make("review", code === "agenda_request_mismatch"
+      ? t("A revisão não conseguiu validar a resposta sobre o agendamento. Ela não foi enviada ao contato.")
+      : t("A revisão da IA não validou as informações ou os compromissos desta resposta. Ela não foi enviada ao contato."));
+  }
+  const origem: Record<string, string> = {
+    outside_window:"pacing", warmup_cap:"pacing", daily_cap:"pacing", mass_identical:"spinning",
+    contato_bloqueado:"stop", lgpd_anonymized:"lgpd", lgpd_missing_legal_basis:"lgpd",
+    promise_out_of_table:"promise", promise_semantic:"semantic_promise", disclosure_required:"disclosure",
+    messaging_window_closed:"messaging_window",
+  };
+  if (gate && origem[code ?? ""] !== gate) return neutral();
   switch (code) {
     case "outside_window":
       return make(
-        "protection",
-        `${t("Fora da janela de envio")} (${janela}). ${t("A resposta fica agendada para a próxima abertura da janela, às")} ${ctx.window_start_hour}h — ${t("isso protege o número contra bloqueio do WhatsApp.")}`,
+        "window",
+        `${t("O envio foi retido fora da janela configurada")} (${janela}). ${t("A resposta não foi enviada ao contato.")}`,
       );
+    case "messaging_window_closed":
+      return make("window", t("A janela de atendimento permitida por este canal está encerrada. A resposta não foi enviada ao contato."));
     case "warmup_cap":
       return make(
         "protection",
@@ -97,10 +123,7 @@ export function retentionCopy(
         ),
       );
     case "promise_semantic":
-      return make(
-        "quality",
-        t("A resposta continha uma promessa não autorizada. O assistente foi orientado a reescrever antes de enviar."),
-      );
+      return make("review", t("A revisão da IA não validou os compromissos desta resposta. Ela não foi enviada ao contato."));
     case "disclosure_required":
       return make(
         "quality",
@@ -109,9 +132,6 @@ export function retentionCopy(
         ),
       );
     default:
-      return make(
-        "protection",
-        `${t("Uma trava de segurança segurou esta resposta")}${code ? ` (${t("código")} ${code})` : ""}. ${t("Ela não foi enviada ao contato.")}`,
-      );
+      return neutral();
   }
 }

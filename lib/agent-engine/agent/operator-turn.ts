@@ -1,3 +1,5 @@
+import { criarContextoCompartilhadoDoTurno, observarFerramentasDoTurno } from './contexto-compartilhado-do-turno';
+import { criarRevisorDePedidoDeAgenda } from '../guardrails/promise/agenda-pedido';
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 /**
  * Handler do job `operator_turn` — o papel OPERADOR (spec 16 §3.2).
@@ -479,6 +481,8 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
     // Sem ferramenta configurada o papel ainda tem valor e ainda roda: ele
     // registra a promessa em aberto. Chamar o modelo para descobrir que ele não
     // tem mão nenhuma seria gastar a chave do self-hoster para nada.
+    const contextoCompartilhado = criarContextoCompartilhadoDoTurno();
+    contextoCompartilhado.registrarInstrucao('papel_operador', SYSTEM_DO_OPERADOR);
     let mcp: Awaited<ReturnType<typeof buildMcpTurnTools>> = null;
     const mao = maoDoOperador(agentConfig);
     if (mao.toolIds.length > 0) {
@@ -498,6 +502,10 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
           // `FORA_DO_OPERADOR` (a proposta nascia na primeira mensagem).
           mao,
           log,
+          { conferirPedidoAgenda: criarRevisorDePedidoDeAgenda({ pool, cfg: deps.llmCfg,
+            tenantId, leadId, conversationId: payload.conversation_id, jobId: job.id,
+            requestJobId: payload.origin_job_id, casesEnabled: agentConfig.casesEnabled, log, registry: deps.registry,
+            contextoDoTurno: () => ({ agentContext: contextoCompartilhado.atual() }) }) },
         );
       } catch (err) {
         // Mesma doutrina do turno do Conversador: capacidade que não montou não
@@ -529,6 +537,10 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
     let saida: Awaited<ReturnType<typeof runModelCall>> | null = null;
     try {
       if (mcp !== null) {
+        const briefing = renderBriefingDoOperador(declaracao, promessas,
+          renderAgora(deps.clock?.() ?? new Date(), await fusoDaOrganizacao(pool, tenantId, log)),
+          { leadId: leadCardId, contactId: leadId, conversationId: payload.conversation_id });
+        contextoCompartilhado.registrarInstrucao('briefing_operador', briefing);
         saida = await runModelCall(
           pool,
           deps.llmCfg,
@@ -544,18 +556,10 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
             messages: [
               {
                 role: 'user',
-                content: renderBriefingDoOperador(
-                  declaracao,
-                  promessas,
-                  renderAgora(
-                    deps.clock?.() ?? new Date(),
-                    await fusoDaOrganizacao(pool, tenantId, log),
-                  ),
-                  { leadId: leadCardId, contactId: leadId, conversationId: payload.conversation_id },
-                ),
+                content: briefing,
               },
             ],
-            tools: mcp.tools,
+            tools: observarFerramentasDoTurno(mcp.tools, contextoCompartilhado),
             maxSteps: agentConfig.maxSteps,
             // O modelo E o provider/credencial, sempre juntos — a regra do PR
             // #151 (`aux-model-args.ts`). Este era o último call site que

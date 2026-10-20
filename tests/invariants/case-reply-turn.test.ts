@@ -89,6 +89,21 @@ beforeAll(async () => {
   await insertCase(CASE_NEED_INFO_FLOW, "awaiting_lead");
   await insertCase(CASE_STATUS_MISMATCH, "escalated");
   await insertCase(CASE_INVALID_ACTION, "awaiting_human");
+
+  // A reentrada exige evento humano persistido e fronteira comprovável.
+  // Fixture de legado: não fabrica papel histórico nem exceção privilegiada.
+  const actor = "eeeeeeee-0000-4000-8000-000000000005";
+  await pool.query("insert into auth.users(id,email) values($1,'crt-human@example.test')", [actor]);
+  const boundary = { organization_id: ORG, contact_id: CONTACT, conversation_id: CONV,
+    service_revision: 1, demanda_id: null, demanda_revision: null };
+  for (const [id, action, note] of [
+    [CASE_RESOLVED_FLOW, "resolved", "cliente liberado no sistema X"],
+    [CASE_NEED_INFO_FLOW, "need_lead_info", "CPF do titular da compra"],
+  ]) {
+    await pool.query("update agent_cases set context_snapshot=$2 where id=$1", [id, {service_boundary: boundary}]);
+    await pool.query(`insert into agent_case_events(organization_id,case_id,kind,actor_kind,actor_user_id,human_action,body)
+      values($1,$2,'human_replied','human',$3,$4,$5)`, [ORG,id,actor,action,note]);
+  }
 });
 
 afterAll(async () => {
