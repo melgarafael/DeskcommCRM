@@ -103,7 +103,7 @@ import {
 } from "./abertura/checkpoint";
 import { buildOpeningMessage, ritualBlocks } from "./abertura/ritual";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
-import { buildCompromissosBlock } from './compromissos-do-contato';
+import { buildCompromissosBlock, evidenciasDeAgendamento } from './compromissos-do-contato';
 import { buildOrigemBlock } from './abertura/origem-do-contato';
 import { agendaNoFechamento } from './abertura/agenda-no-fechamento';
 import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-followup';
@@ -204,7 +204,7 @@ import {
   criarEvidenciasComerciaisDoTurno,
 } from '../guardrails/promise/evidencias-comerciais';
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
-import { classifyPromise, memoizarPorCandidata } from '../guardrails/promise/semantic';
+import { classifyPromise, memoizarPorCandidata, type EvidenciaDeAgendamento } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import {
@@ -2906,6 +2906,7 @@ async function executarTurnoDoAgente(
     return [];
   });
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
+  let evidenciasDaAgenda: EvidenciaDeAgendamento[] = [];
   const recuperarEvidencias = criarRecuperadorDeEvidencias(pool, {
     tenantId,
     fontes: fontesQueProvamOferta,
@@ -2930,6 +2931,7 @@ async function executarTurnoDoAgente(
           {
             candidate,
             commercialEvidence: evidenciasComerciais.ler(candidate),
+            appointmentEvidence: evidenciasDaAgenda,
             conversationContext: montarContextoDaRevisao(
               effectiveContext.messages, effectivePrevious?.rolling_summary,
               (deps.clock?.() ?? new Date()).toISOString(), fusoDaOrg,
@@ -2940,11 +2942,15 @@ async function executarTurnoDoAgente(
         ),
         // As evidências crescem entre o veto e o reenvio; o veredito de antes
         // da consulta não vale para a mesma frase depois dela.
-        () => evidenciasComerciais.contexto(),
+        () => JSON.stringify([evidenciasComerciais.contexto(), evidenciasDaAgenda]),
       )
     : undefined;
   const semanticClassifier = classificadorMemoizado === undefined ? undefined : async (candidate: string) => {
     await recuperarEvidencias(candidate);
+    // Releitura antes de cada envio: a ferramenta pode reservar, remarcar ou cancelar no turno.
+    evidenciasDaAgenda = leadId
+      ? await evidenciasDeAgendamento(pool, tenantId, leadId, deps.clock?.() ?? new Date())
+      : [];
     return classificadorMemoizado(candidate);
   };
   // Conferência de fato (#2231): a TERCEIRA camada do before_send, depois da

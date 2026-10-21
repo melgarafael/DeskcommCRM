@@ -49,6 +49,7 @@ import {
 import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { classifyPromise } from '../guardrails/promise/semantic';
+import { evidenciasDeAgendamento } from './compromissos-do-contato';
 import { scheduleCronJob } from '../cron/scheduler';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
@@ -1297,12 +1298,16 @@ async function sendFixedOutbound(
     ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
     ...(camadaSemanticaLigada
       ? {
-          classifyPromiseSemantic: (candidate: string) =>
+          classifyPromiseSemantic: async (candidate: string) =>
             classifyPromise(
               pool,
               deps.llmCfg,
               { tenantId, leadId, jobId: job.id },
-              { candidate, ...(deps.knobs.promiseSemantic?.model !== undefined ? { model: deps.knobs.promiseSemantic.model } : {}) },
+              {
+                candidate,
+                appointmentEvidence: await evidenciasDeAgendamento(pool, tenantId, leadId, clock()),
+                ...(deps.knobs.promiseSemantic?.model !== undefined ? { model: deps.knobs.promiseSemantic.model } : {}),
+              },
               { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
             ),
         }
