@@ -165,3 +165,38 @@ it("SSR não oferece edição antes de instalar os handlers", () => {
   const doc = new DOMParser().parseFromString(html, "text/html");
   expect(doc.querySelector("fieldset")?.hasAttribute("disabled")).toBe(true);
 });
+
+describe("Marca global usa o mesmo rascunho com destino explícito de novas organizações", () => {
+  it("prévia não chama gravador; salvar envia ao destino global sem aplicar ao tenant", async () => {
+    const applyAction = vi.fn().mockResolvedValue({ ok: true, revision: 1, appliedNow: true });
+    const user = userEvent.setup();
+    render(<ThemeEditor {...props} scope="installation-default" applyAction={applyAction} />);
+    expect(screen.getByRole("heading", { name: "Tema inicial de novas organizações" })).toBeTruthy();
+    expect(screen.getByText(/As organizações existentes mantêm suas escolhas/)).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText("Tema em edição"), "demo");
+    await user.selectOptions(screen.getByLabelText("Espaçamento"), "wide");
+    await user.click(screen.getByRole("button", { name: "Visualizar prévia" }));
+    expect(applyAction).not.toHaveBeenCalled();expect(mocks.update).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Salvar tema inicial" }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledOnce());
+    expect(applyAction).toHaveBeenCalledWith(expect.objectContaining({ themeId: "demo", revision: 0, options: { "global.spacing": "wide" } }));
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.success).toHaveBeenCalledWith("Tema inicial salvo para as próximas organizações.");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+  });
+  it("erro de autoridade global conserva rascunho e explica o nível necessário", async () => {
+    const applyAction = vi.fn().mockResolvedValue({ ok: false, error: "forbidden" });
+    const user = userEvent.setup();
+    render(<ThemeEditor {...props} scope="installation-default" applyAction={applyAction} />);
+    await user.selectOptions(screen.getByLabelText("Tema em edição"), "demo");
+    await user.click(screen.getByRole("button", { name: "Salvar tema inicial" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Somente administradores plenos da plataforma");
+    expect((screen.getByLabelText("Tema em edição") as HTMLSelectElement).value).toBe("demo");
+    expect(mocks.refresh).not.toHaveBeenCalled();expect(mocks.update).not.toHaveBeenCalled();
+  });
+  it("sem autoridade global a seção é legível e os controles ficam desabilitados", () => {
+    render(<ThemeEditor {...props} scope="installation-default" canWrite={false} />);
+    expect(screen.getByRole("button", { name: "Salvar tema inicial" }).closest("fieldset")).toBeDisabled();
+    expect(screen.getByText("Somente administradores plenos da plataforma podem definir o tema inicial.")).toBeTruthy();
+  });
+});

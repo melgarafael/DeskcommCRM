@@ -11,7 +11,8 @@ import {
   type UiOptionValues,
   type UiAreaContract,
 } from "@/lib/ui-themes/contracts";
-import { resolveUiTheme, resolveUiArea, type UiThemeSavedState } from "@/lib/ui-themes/resolve";
+import { resolveUiTheme, resolveUiArea, type UiThemeSavedState, type UiThemeSelection } from "@/lib/ui-themes/resolve";
+import type { UiThemeApplyInput } from "@/lib/ui-themes/apply-input";
 import { registeredUiAreas } from "@/lib/ui-themes/areas";
 import { PreviewFrame } from "./PreviewFrame";
 import { UiThemeProvider } from "./Provider";
@@ -37,16 +38,21 @@ export function ThemeEditor({
   loadError,
   canWrite,
   areaCatalog = registeredUiAreas,
+  scope = "organization",
+  applyAction = updateUiTheme,
 }: {
   catalog: readonly InstalledUiTheme[];
-  saved: UiThemeSavedState | null;
+  saved: UiThemeSavedState | UiThemeSelection | null;
   catalogHash: string;
   loadError: string | null;
   canWrite: boolean;
   areaCatalog?: readonly UiAreaContract[];
+  scope?: "organization" | "installation-default";
+  applyAction?: (input: UiThemeApplyInput) => Promise<UpdateUiThemeResult>;
 }) {
   const t = useT(),
     router = useRouter();
+  const initialDefault = scope === "installation-default";
   // A native select can change before React has installed its handlers. Keep editing closed until hydration.
   const interactive = useSyncExternalStore(subscribeToHydration, clientReady, serverWaiting);
   const active = resolveUiTheme(catalog, saved);
@@ -114,7 +120,7 @@ export function ThemeEditor({
     setError(null);
     request.current ??= crypto.randomUUID();
     try {
-      const result = await updateUiTheme({
+      const result = await applyAction({
         themeId: draftId,
         installationId: entry.installationId,
         options: values,
@@ -123,10 +129,14 @@ export function ThemeEditor({
         catalogHash,
       });
       if (!result.ok) {
-        setError(t(errors[result.error]));
+        setError(initialDefault && result.error === "forbidden"
+          ? t("Somente administradores plenos da plataforma podem definir o tema inicial.")
+          : t(errors[result.error]));
         return;
       }
-      toast.success(t("Tema aplicado à organização."));
+      toast.success(initialDefault
+        ? t("Tema inicial salvo para as próximas organizações.")
+        : t("Tema aplicado à organização."));
       router.refresh();
     } catch {
       setError(t(errors.db_error));
@@ -142,11 +152,13 @@ export function ThemeEditor({
     >
       <header>
         <h2 id="ui-theme-heading" className="text-lg font-semibold">
-          {t("Tema da interface")}
+          {initialDefault ? t("Tema inicial de novas organizações") : t("Tema da interface")}
         </h2>
         <p className="mt-1 text-sm text-text-muted">
-          {t("Ativo:")} <strong>{active.package.title}</strong>.{" "}
-          {t("A escolha vale para esta organização.")}
+          {initialDefault ? t("Definido:") : t("Ativo:")} <strong>{active.package.title}</strong>.{" "}
+          {initialDefault
+            ? t("Novas organizações começam com este tema e suas opções. As organizações existentes mantêm suas escolhas e cada uma pode trocar seu próprio tema depois.")
+            : t("A escolha vale para esta organização.")}
         </p>
       </header>
       {loadError ? (
@@ -167,7 +179,9 @@ export function ThemeEditor({
       ) : null}
       {!canWrite ? (
         <p className="text-sm text-text-muted">
-          {t("Somente administradores autorizados podem aplicar um tema.")}
+          {initialDefault
+            ? t("Somente administradores plenos da plataforma podem definir o tema inicial.")
+            : t("Somente administradores autorizados podem aplicar um tema.")}
         </p>
       ) : null}
       <fieldset
@@ -255,7 +269,7 @@ export function ThemeEditor({
             {showPreview ? t("Fechar prévia") : t("Visualizar prévia")}
           </Button>
           <Button type="button" onClick={apply} disabled={!entry || pending}>
-            {pending ? t("Aplicando…") : t("Aplicar tema")}
+            {pending ? t("Aplicando…") : initialDefault ? t("Salvar tema inicial") : t("Aplicar tema")}
           </Button>
           {entry && entry.package.options.length > 0 ? (
             <Button

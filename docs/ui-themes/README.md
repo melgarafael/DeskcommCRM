@@ -54,6 +54,18 @@ Para adaptadores próprios, `rootProps`, `slotProps` e `after` de `UiThemeArea` 
 
 ## Seleção, segurança e retorno
 
+### Tema inicial em Marca global
+
+Em **Administração → Marca**, a seção **Tema inicial de novas organizações** permite ao administrador pleno da instalação escolher um pacote incorporado e suas opções para as empresas criadas depois desse salvamento. A mesma prévia, rascunho e cancelamento são reutilizados com um destino de gravação explícito. Salvar o padrão não muda a organização ativa, a marca global ou a aparência da sessão administrativa.
+
+`platform_ui_theme_defaults` é um singleton server-side da instalação. A action `updateInitialUiTheme` usa o guard nativo de escrita de plataforma/MFA, recusa acompanhamento de tenant e valida o catálogo atual. `fn_ui_theme_initial_default_apply`, exclusiva de `service_role`, relê o administrador pleno sob lock, compara revisão e audita `ui_theme.initial_default_updated` na mesma transação. Não recebe organização ou identidade administrativa do browser.
+
+O trigger `fn_ui_theme_seed_new_organization` copia somente a seleção visual e as opções do tema escolhido para o estado próprio de uma organização nova, na mesma transação do seu `INSERT`. Não copia marca, dados empresariais ou opções inativas de outros temas. A auditoria identifica `source: installation_initial_default` e a revisão de origem; a cópia automática não atribui ao administrador uma ação humana sobre aquele tenant.
+
+Sem um padrão global salvo, a criação continua no comportamento Padrão. Mudar o padrão não altera organizações existentes, e cada empresa pode trocar depois seu tema normalmente. O catálogo e o resolvedor continuam decidindo se a identidade do pacote está disponível: remoção, desativação e reinstalação degradam para Padrão com diagnóstico, preservando a seleção para correção. Padrão permanece a referência nativa; o padrão inicial da instalação é outra configuração.
+
+Esse laço conecta Marca global → action/RPC → singleton → criação de organização → estado próprio → loader/resolvedor, com retorno de erros e auditoria à administração. Não há cron, worker ou evento comercial sem consumidor. Um erro na escolha inicial é corrigido em Marca global para futuras criações; uma empresa já criada administra sua seleção em Marca da organização.
+
 Uma entrada instalada tem `installationId`, `enabled` e o pacote. Padrão é sempre disponível. Ausência, remoção, desativação ou identidade de instalação diferente deixam a seleção salva preservada, mas usam Padrão com diagnóstico na Marca. Reinstalação usa identidade nova e exige aplicação explícita. Atualização compatível conserva a identidade; mudar a forma das opções exige incrementar `optionsVersion`. Não reutilize uma entrada antiga como procedimento de reinstalação.
 
 `organization_ui_themes` guarda uma linha por organização, configurações separadas por tema, revisão e recibo do último pedido. Trocar para Padrão conserva opções de outros temas. Não grave a seleção no JSON de configurações gerais nem diretamente pelo navegador.

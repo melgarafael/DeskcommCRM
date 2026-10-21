@@ -34,6 +34,43 @@ export type Database = {
   }
   public: {
     Tables: {
+      platform_ui_theme_defaults: {
+        Row: {
+          id: number;
+          configurations: NonNullable<Json>;
+          installation_id: string;
+          last_request_hash: string | null;
+          last_request_id: string | null;
+          revision: number;
+          theme_id: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          id?: number;
+          configurations?: NonNullable<Json>;
+          installation_id?: string;
+          last_request_hash?: string | null;
+          last_request_id?: string | null;
+          revision?: number;
+          theme_id?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          id?: number;
+          configurations?: NonNullable<Json>;
+          installation_id?: string;
+          last_request_hash?: string | null;
+          last_request_id?: string | null;
+          revision?: number;
+          theme_id?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       organization_ui_themes: {
         Row: {
           configurations: NonNullable<Json>;
@@ -10426,6 +10463,19 @@ isOneToOne: false
                 }
     }
     Functions: {
+      fn_ui_theme_initial_default_apply: {
+        Args: {
+          p_actor: string;
+          p_catalog_hash: string;
+          p_expected_revision: number;
+          p_installation: string;
+          p_options_version: number;
+          p_request: string;
+          p_theme: string;
+          p_values: Json;
+        };
+        Returns: Json;
+      };
       fn_ui_theme_apply: {
         Args: {
           p_actor: string;

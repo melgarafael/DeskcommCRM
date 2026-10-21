@@ -46,6 +46,8 @@ Desabilitar/remover a entrada preserva a seleção salva e usa Padrão com diagn
 
 ## Conferir a entrega
 
+Um administrador pleno pode usar o pacote incorporado como tema inicial em **Administração → Marca**. A identidade instalada, a versão das opções e a seleção visual são copiadas para cada organização criada depois do salvamento. Não é instalação dinâmica nem mudança forçada das empresas existentes. Ao atualizar/remover um pacote, confira também o padrão inicial e seu diagnóstico nessa tela; não reutilize uma identidade antiga para reativar um pacote removido.
+
 Valide schema, compatibilidade das áreas, defaults/valores inválidos e fallback. Confira a seleção por organização, concorrência/auditoria e retorno ao Padrão no recorte afetado. No navegador, prove as ações nativas, teclado, layouts estreitos, texto longo, estados vazios/erro e claro/escuro. A prévia isolada serve à aparência; não comprova entrega a provedores ou execução empresarial.
 
 Para distribuir uma variante pública, prepare catálogo, fontes, contexto de build, imports, histórico e evidências sem pacotes/dados privados. Confira fisicamente o público sem esses fontes; ocultar uma opção no seletor não remove seu código do artefato. Use evidência genérica. Não publique uma branch privada como ancestralidade da contribuição.

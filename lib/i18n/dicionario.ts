@@ -39,6 +39,12 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Somente administradores plenos da plataforma podem definir o tema inicial.": { es: "Solo los administradores con acceso completo a la plataforma pueden definir el tema inicial." },
+  "Tema inicial salvo para as próximas organizações.": { es: "Tema inicial guardado para las próximas organizaciones." },
+  "Tema inicial de novas organizações": { es: "Tema inicial de nuevas organizaciones" },
+  "Definido:": { es: "Definido:" },
+  "Novas organizações começam com este tema e suas opções. As organizações existentes mantêm suas escolhas e cada uma pode trocar seu próprio tema depois.": { es: "Las nuevas organizaciones comienzan con este tema y sus opciones. Las organizaciones existentes mantienen su selección y cada una puede cambiar su propio tema después." },
+  "Salvar tema inicial": { es: "Guardar tema inicial" },
   // Temas da interface e amostras visuais.
   "Escolha um serviço para consultar horários livres.": { es: "Elige un servicio para consultar los horarios disponibles." },
   "Nenhum compromisso neste período.": { es: "No hay citas en este período." },

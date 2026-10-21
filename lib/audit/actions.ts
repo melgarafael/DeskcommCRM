@@ -1241,6 +1241,7 @@ export const AUDIT_ACTIONS = [
   // "sair de todos os dispositivos" (metadata.escopo diz qual).
   "notification_prefs.push_subscription_removed",
   "ui_theme.updated",
+  "ui_theme.initial_default_updated",
   "agenda.service_block",
   "agenda.service_configure",
   "agenda.service_refresh",

@@ -9,12 +9,14 @@ import {
   type UiRegionStyle,
 } from "./contracts";
 
-export interface UiThemeSavedState {
-  organization_id: string;
+export interface UiThemeSelection {
   theme_id: string;
   installation_id: string;
   revision: number;
   configurations: Record<string, { version: number; values: UiOptionValues }>;
+}
+export interface UiThemeSavedState extends UiThemeSelection {
+  organization_id: string;
 }
 export type UiThemeFallback =
   | "unavailable"
@@ -33,7 +35,7 @@ export interface ResolvedUiTheme {
 }
 export function resolveUiTheme(
   catalog: readonly InstalledUiTheme[],
-  state: UiThemeSavedState | null,
+  state: UiThemeSelection | null,
 ): ResolvedUiTheme {
   const standard = {
     package: padrao,

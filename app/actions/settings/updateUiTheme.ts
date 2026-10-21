@@ -8,17 +8,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { installedUiThemes } from "@/lib/ui-themes/installed";
 import { validateUiThemeOptions } from "@/lib/ui-themes/contracts";
 import { uiThemeCatalogHash } from "@/lib/ui-themes/server";
+import { uiThemeApplyInputSchema } from "@/lib/ui-themes/apply-input";
 
-const inputSchema = z
-  .object({
-    themeId: z.string().min(2).max(64),
-    installationId: z.string().min(4).max(100),
-    catalogHash: z.string().regex(/^[0-9a-f]{64}$/),
-    revision: z.number().int().min(0).max(2147483646),
-    requestId: z.string().uuid(),
-    options: z.record(z.string(), z.union([z.string().max(128), z.boolean(), z.number().finite()])),
-  })
-  .strict();
 export type UpdateUiThemeResult =
   | { ok: true; revision: number; appliedNow: boolean }
   | {
@@ -33,7 +24,7 @@ export type UpdateUiThemeResult =
         | "db_error";
     };
 export async function updateUiTheme(input: unknown): Promise<UpdateUiThemeResult> {
-  const parsed = inputSchema.safeParse(input);
+  const parsed = uiThemeApplyInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "validation_failed" };
   const user = await loadAuthUser();
   if (!user) return { ok: false, error: "unauthenticated" };

@@ -16,6 +16,11 @@ import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 import { FormularioDaMarca } from "./_form";
+import { ThemeEditor } from "@/components/ui-themes/ThemeEditor";
+import { installedUiThemes } from "@/lib/ui-themes/installed";
+import { readInitialUiThemeState, uiThemeCatalogHash } from "@/lib/ui-themes/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { updateInitialUiTheme } from "@/app/actions/settings/updateInitialUiTheme";
 
 export const metadata = { title: "Marca da instalação" };
 export const dynamic = "force-dynamic";
@@ -65,9 +70,10 @@ export default async function Page() {
   if (!usuario?.is_platform_admin) notFound();
   const idioma = normalizarIdioma(usuario.locale);
 
-  const [linha, cssPersonalizado] = await Promise.all([
+  const [linha, cssPersonalizado, initialTheme] = await Promise.all([
     marcaDaInstalacao(),
     cssPersonalizadoDaInstalacao(),
+    readInitialUiThemeState(createAdminClient()),
   ]);
   const validacaoCss = validarCssPersonalizado(cssPersonalizado);
   // A MESMA pilha do `app/layout.tsx` — banco acima, arquivo de instalação
@@ -122,6 +128,16 @@ export default async function Page() {
         fallbackMotivo={linha?.fallback_reason ?? null}
       />
       <CssPersonalizado gravado={cssPersonalizado} erroAtual={validacaoCss.erro} />
+      <ThemeEditor
+        key={`initial-${initialTheme.state?.revision ?? 0}`}
+        catalog={installedUiThemes}
+        catalogHash={uiThemeCatalogHash()}
+        saved={initialTheme.state}
+        loadError={initialTheme.error}
+        canWrite={usuario.platform_admin_scope === "full" && !usuario.support}
+        scope="installation-default"
+        applyAction={updateInitialUiTheme}
+      />
     </div>
   );
 }

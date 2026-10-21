@@ -3,17 +3,37 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Temas de apresentação por organização",
-    "subtitle": "Pacotes incorporados, rascunho isolado e aplicação autorizada",
+    "subtitle": "Escolha por organização e tema inicial definido em Marca global",
     "output": "ui-themes.html",
     "quality_profile": "standard"
   },
   "lanes": [
-    { "id": "package", "label": "Imagem e contratos" },
-    { "id": "human", "label": "Organização e editor" },
-    { "id": "write", "label": "Autoridade e persistência" },
-    { "id": "render", "label": "Interface" }
+    {
+      "id": "package",
+      "label": "Imagem e contratos"
+    },
+    {
+      "id": "human",
+      "label": "Organização e editor"
+    },
+    {
+      "id": "write",
+      "label": "Autoridade e persistência"
+    },
+    {
+      "id": "render",
+      "label": "Interface"
+    }
   ],
-  "mainPath": ["catalog", "editor", "action", "rpc", "state", "resolver", "host"],
+  "mainPath": [
+    "catalog",
+    "editor",
+    "action",
+    "rpc",
+    "state",
+    "resolver",
+    "host"
+  ],
   "nodes": [
     {
       "id": "catalog",
@@ -94,6 +114,54 @@
       "type": "frontend",
       "label": "Provider + adaptadores do host",
       "sublabel": "componentes e handlers nativos; slots de filtros independentes; cabeçalho de coluna e partes da casca; fallback completo"
+    },
+    {
+      "id": "initial-editor",
+      "lane": "human",
+      "col": 1,
+      "type": "frontend",
+      "label": "Marca global / ThemeEditor",
+      "sublabel": "somente novas organizações; rascunho e prévia não afetam empresas existentes"
+    },
+    {
+      "id": "initial-action",
+      "lane": "write",
+      "col": 2,
+      "type": "api",
+      "label": "updateInitialUiTheme",
+      "sublabel": "guard nativo de escrita de plataforma plena/MFA; sem acompanhamento de tenant"
+    },
+    {
+      "id": "initial-rpc",
+      "lane": "write",
+      "col": 3,
+      "type": "database",
+      "label": "fn_ui_theme_initial_default_apply",
+      "sublabel": "autoridade revalidada sob lock; CAS, recibo e auditoria atômica"
+    },
+    {
+      "id": "initial-state",
+      "lane": "write",
+      "col": 4,
+      "type": "database",
+      "label": "platform_ui_theme_defaults",
+      "sublabel": "singleton de instalação; acesso server-side only; marca e tenants existentes intactos"
+    },
+    {
+      "id": "new-org",
+      "lane": "write",
+      "col": 3,
+      "type": "database",
+      "label": "organizations INSERT",
+      "sublabel": "todos os caminhos reais de criação de uma organização"
+    },
+    {
+      "id": "initial-seed",
+      "lane": "write",
+      "col": 5,
+      "type": "database",
+      "label": "fn_ui_theme_seed_new_organization",
+      "sublabel": "trigger atômico; cópia somente da seleção visual; sem sobrescrever estado do tenant"
     }
   ],
   "edges": [
@@ -103,7 +171,12 @@
       "to": "editor",
       "label": "pacotes disponíveis e assinatura da fotografia"
     },
-    { "id": "e2", "from": "editor", "to": "preview", "label": "rascunho transitório sem gravação" },
+    {
+      "id": "e2",
+      "from": "editor",
+      "to": "preview",
+      "label": "rascunho transitório sem gravação"
+    },
     {
       "id": "e3",
       "from": "editor",
@@ -116,8 +189,18 @@
       "to": "rpc",
       "label": "ator e organização resolvidos pelo servidor"
     },
-    { "id": "e5", "from": "rpc", "to": "state", "label": "gravação comparada à revisão" },
-    { "id": "e6", "from": "rpc", "to": "audit", "label": "mutação e auditoria na mesma transação" },
+    {
+      "id": "e5",
+      "from": "rpc",
+      "to": "state",
+      "label": "gravação comparada à revisão"
+    },
+    {
+      "id": "e6",
+      "from": "rpc",
+      "to": "audit",
+      "label": "mutação e auditoria na mesma transação"
+    },
     {
       "id": "e7",
       "from": "rpc",
@@ -142,7 +225,12 @@
       "to": "resolver",
       "label": "regiões, versão e opções aceitas"
     },
-    { "id": "e11", "from": "resolver", "to": "host", "label": "seleção projetada e fallback" },
+    {
+      "id": "e11",
+      "from": "resolver",
+      "to": "host",
+      "label": "seleção projetada e fallback"
+    },
     {
       "id": "e12",
       "from": "resolver",
@@ -154,6 +242,78 @@
       "from": "contracts",
       "to": "host",
       "label": "composição recebe regiões já autorizadas"
+    },
+    {
+      "id": "initial-1",
+      "from": "catalog",
+      "to": "initial-editor",
+      "label": "pacotes incorporados e identidade atual"
+    },
+    {
+      "id": "initial-2",
+      "from": "initial-editor",
+      "to": "preview",
+      "label": "prévia isolada compartilhada"
+    },
+    {
+      "id": "initial-3",
+      "from": "initial-editor",
+      "to": "initial-action",
+      "label": "salvar o início das futuras organizações"
+    },
+    {
+      "id": "initial-4",
+      "from": "initial-action",
+      "to": "initial-rpc",
+      "label": "ator da sessão confiável, catálogo e opções válidos"
+    },
+    {
+      "id": "initial-5",
+      "from": "initial-rpc",
+      "to": "initial-state",
+      "label": "revisão e configuração persistidas"
+    },
+    {
+      "id": "initial-6",
+      "from": "initial-rpc",
+      "to": "audit",
+      "label": "ui_theme.initial_default_updated sem org inventada"
+    },
+    {
+      "id": "initial-7",
+      "from": "initial-rpc",
+      "to": "initial-editor",
+      "label": "recibo ou recusa visível; rascunho preservado"
+    },
+    {
+      "id": "initial-8",
+      "from": "initial-state",
+      "to": "initial-editor",
+      "label": "loader do singleton e diagnóstico de fallback"
+    },
+    {
+      "id": "initial-9",
+      "from": "new-org",
+      "to": "initial-seed",
+      "label": "criação do tenant na mesma transação"
+    },
+    {
+      "id": "initial-10",
+      "from": "initial-state",
+      "to": "initial-seed",
+      "label": "somente o tema selecionado e suas opções"
+    },
+    {
+      "id": "initial-11",
+      "from": "initial-seed",
+      "to": "state",
+      "label": "estado próprio da nova organização"
+    },
+    {
+      "id": "initial-12",
+      "from": "initial-seed",
+      "to": "audit",
+      "label": "origem installation_initial_default, sem valores de opções"
     }
   ],
   "cards": [
