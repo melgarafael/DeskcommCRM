@@ -1,4 +1,7 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { calendarArea } from "@/lib/ui-themes/areas";
+import { ListaDoPeriodo } from "./ListaDoPeriodo";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -50,6 +53,7 @@ export function AgendaInterativa({
   recorte,
   tipos,
   tipo,
+  todosServicos=false,
   onEscolherTipo,
   onMarcarEm,
   onAbrirAgendamento,
@@ -96,6 +100,7 @@ export function AgendaInterativa({
    * aqui troca lá.
    */
   tipos: Array<{ id: string; nome: string; duracaoMin: number }>;
+  todosServicos?: boolean;
   onEscolherTipo: (id: string) => void;
   /**
    * O clique num bloco livre da grade. OPCIONAL de propósito: quem só lê não
@@ -109,6 +114,8 @@ export function AgendaInterativa({
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
+  const { contribution, regionClass } = useUiThemeArea(calendarArea);
+  const periodList=contribution?.configuration.periodList === true && visao === "semana";
   const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
     tipo ? { event_type_id: tipo.id, de: recorte.de, ate: recorte.ate } : null,
   );
@@ -227,14 +234,15 @@ export function AgendaInterativa({
     : "";
 
   return (
-    <div className={cn("flex min-h-0 flex-col gap-2", className)}>
+    <div className={cn("flex min-h-0 flex-col gap-2", className,regionClass("content"))}>
       {horarios?.google_cobertura_parcial && <p role="status" className="text-xs text-warning">{t("Ocupação do Google ainda não verificada neste período.")}</p>}
-      {tipos.length > 1 && (
+      {(tipos.length > 1 || todosServicos) && (
         <div
           data-testid="tipo-da-grade"
-          className="flex flex-wrap items-center gap-1.5 text-xs text-text-muted"
+          className={cn("flex flex-wrap items-center gap-1.5 text-xs text-text-muted",regionClass("services"))}
         >
-          <span className="shrink-0">{t("Horários livres de")}</span>
+          <span className="shrink-0">{t(todosServicos ? "Serviços" : "Horários livres de")}</span>
+          {todosServicos && <button type="button" aria-pressed={tipo===null} data-testid="tipo-da-grade-todos" onClick={()=>onEscolherTipo("")} className={cn("min-h-9 rounded-full border px-3 py-1",tipo===null ? "border-transparent bg-accent text-accent-foreground":"border-border")}>{t("Todos")}</button>}
           {tipos.map((t) => (
             <button
               key={t.id}
@@ -338,6 +346,8 @@ export function AgendaInterativa({
         </div>
       )}
 
+      {todosServicos && tipo===null && tipos.length>0 && <p role="status" className="text-xs text-muted-foreground">{t("Escolha um serviço para consultar horários livres.")}</p>}
+      {periodList && <ListaDoPeriodo items={agendamentos} fuso={fuso} onOpen={onAbrirAgendamento} className={regionClass("period-list")}/>}
       <GradeDaAgenda
         visao={visao}
         ancora={ancora}
@@ -346,7 +356,7 @@ export function AgendaInterativa({
         pessoas={pessoas}
         agendamentos={desenhados}
         onAbrirAgendamento={onAbrirAgendamento}
-        className="min-h-0 flex-1"
+        className={cn("min-h-0 flex-1",periodList && regionClass("grid"))}
         interacao={
           tipo && onMarcarEm
             ? {

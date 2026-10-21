@@ -1,3 +1,4 @@
+import { stageColorSchema } from "@/lib/leads/stage-color";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH/DELETE /api/v1/pipelines/[id]/stages/[stageId] — renomear, marcar
@@ -41,6 +42,7 @@ interface RouteCtx {
 const bodySchema = z
   .object({
     name: z.string().min(1).max(80).optional(),
+    color: stageColorSchema.optional(),
     is_won: z.boolean().optional(),
     is_lost: z.boolean().optional(),
     depois_de: z.string().min(1).nullable().optional(),

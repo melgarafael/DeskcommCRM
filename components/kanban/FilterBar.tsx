@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { pipelineArea } from "@/lib/ui-themes/areas";
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { Input } from "@/components/ui/input";
@@ -52,6 +54,7 @@ const STATUS_OPTIONS: Array<{ value: NonNullable<LeadFilters["status"]>; label: 
 
 export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps) {
   const t = useT();
+  const { regionClass } = useUiThemeArea(pipelineArea);
   const user = useUser();
   const { data: members } = useAssignableMembers(true);
   const { data: agents } = useAssignableAgents(true);
@@ -189,7 +192,7 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
   const categoriaLabel = filters.lostCategory ?? t("Todas");
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
+    <div className={cn("flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2",regionClass("toolbar"))}>
       <Input
         type="search"
         placeholder={t("Buscar por título…")}

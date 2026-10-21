@@ -65,6 +65,8 @@ export type Agendamento = {
   comeca: string;
   termina: string;
   tipo?: string;
+  /** Service identity from the native authorized query, used only for display filtering. */
+  tipoSlug?: string;
   local?: string;
   origem: OrigemDoAgendamento;
   situacao: SituacaoDoAgendamento;

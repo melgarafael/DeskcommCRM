@@ -81,6 +81,8 @@ function seedOrg(org: string, user: string, sess: string, tag: string): string {
     insert into public.user_organizations (user_id, organization_id, role, accepted_at)
       values ('${user}', '${org}', 'agent', now())
       on conflict do nothing;
+    insert into public.organization_ui_themes (organization_id) values ('${org}')
+      on conflict (organization_id) do nothing;
     insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
       values ('${sess}', '${org}', 'rls-inv-${tag}', '\\x00'::bytea)
       on conflict (id) do nothing;
@@ -635,6 +637,8 @@ beforeAll(() => {
  * cabeçalho do caso de `contact_field_proposals` abaixo.
  */
 export const TABLES = [
+  // Theme preferences are tenant-readable; writes are tested by ui-theme-selection.test.ts.
+  "organization_ui_themes",
   "conversations",
   "messages",
   "contacts",

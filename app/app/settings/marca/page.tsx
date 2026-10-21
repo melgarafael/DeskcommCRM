@@ -1,3 +1,8 @@
+import { ThemeEditor } from "@/components/ui-themes/ThemeEditor";
+import { installedUiThemes } from "@/lib/ui-themes/installed";
+import { readUiThemeState, uiThemeCatalogHash } from "@/lib/ui-themes/server";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
+import { supportWriteError } from "@/lib/impersonate/support";
 /**
  * Configurações → Marca. A tela onde o admin de UMA organização troca o nome e a
  * cor que a empresa dele mostra dentro do sistema.
@@ -56,11 +61,10 @@ export default async function MarcaDaOrganizacaoPage() {
   // política para buscar o que a política já entrega. Quem precisa de privilégio
   // é a ESCRITA — e ela mora na função SQL, não nesta tela.
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("organizations")
-    .select("settings, country")
-    .eq("id", activeOrg.orgId)
-    .maybeSingle();
+  const [{ data }, themeSnapshot] = await Promise.all([
+    supabase.from("organizations").select("settings, country").eq("id", activeOrg.orgId).maybeSingle(),
+    readUiThemeState(supabase, activeOrg.orgId),
+  ]);
 
   const gravada = marcaDaOrganizacaoDeSettings(data?.settings ?? null);
   const linha = await marcaDaInstalacao();
@@ -80,6 +84,12 @@ export default async function MarcaDaOrganizacaoPage() {
         </p>
       </header>
 
+      <ThemeEditor
+        key={`${activeOrg.orgId}:${themeSnapshot.state?.revision ?? 0}:${JSON.stringify(gravada)}`}
+        catalog={installedUiThemes} saved={themeSnapshot.state}
+        catalogHash={uiThemeCatalogHash()} loadError={themeSnapshot.error}
+        canWrite={podeAdministrarEmpresa(user, activeOrg) && !supportWriteError(user.support)}
+      />
       <FormularioDaMarcaDaOrganizacao
         gravada={{
           app_name: gravada?.app_name ?? null,

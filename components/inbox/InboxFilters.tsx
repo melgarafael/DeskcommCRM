@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { inboxArea } from "@/lib/ui-themes/areas";
 import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CaretLeft, CaretRight, MagnifyingGlass } from "@/lib/ui/icons";
@@ -118,6 +120,7 @@ interface Props {
 
 export function InboxFilters({ value, onChange }: Props) {
   const t = useT();
+  const { regionClass } = useUiThemeArea(inboxArea);
   const [searchInput, setSearchInput] = useState(value.search);
   const tabsListRef = useRef<HTMLDivElement>(null);
   const [moreTabs, setMoreTabs] = useState({ left: false, right: false });
@@ -226,9 +229,12 @@ export function InboxFilters({ value, onChange }: Props) {
   const podeFiltrarPorAtendente = roleAtLeast(activeOrg?.role, "manager");
   const mostrarSeletorDeAtendente = podeFiltrarPorAtendente && value.tab !== "mine";
 
-  const tabs = activeOrg
+  const nativeTabs = activeOrg
     ? visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode)
     : INBOX_TABS.map((t) => t.value);
+  const { contribution } = useUiThemeArea(inboxArea);
+  const allFirst = contribution?.configuration.allTabFirst === true;
+  const tabs = allFirst ? [...nativeTabs].sort((a,b)=>a === "all" ? -1 : b === "all" ? 1 : 0) : nativeTabs;
   const moveTab = (direction: -1 | 1) => {
     const next = tabs[tabs.indexOf(value.tab) + direction];
     if (next) onChange(comAba(value, next));
@@ -390,7 +396,7 @@ export function InboxFilters({ value, onChange }: Props) {
   }, [searchInput]);
 
   return (
-    <div className="border-b border-border bg-background">
+    <div className={cn("border-b border-border bg-background", regionClass("filters"))}>
       <div className="space-y-2 px-3 pt-3 pb-2">
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1">

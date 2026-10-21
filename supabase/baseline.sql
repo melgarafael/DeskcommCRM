@@ -58693,3 +58693,91 @@ create view public.external_db_connections_safe
 
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
+
+
+-- Temas de apresentação por organização (migration 0724)
+-- manifest: Guarda a seleção e opções de apresentação por organização com revisão, identidade de instalação, autorização revalidada e auditoria atômica, sem regravar settings de outros domínios.
+create table if not exists public.organization_ui_themes (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  theme_id text not null default 'padrao' check (theme_id ~ '^[a-z][a-z0-9-]{1,63}$'),
+  installation_id text not null default 'builtin-padrao-v1' check (installation_id ~ '^[a-zA-Z0-9_-]{4,100}$'),
+  revision integer not null default 0 check (revision >= 0),
+  configurations jsonb not null default '{}'::jsonb check (jsonb_typeof(configurations)='object' and pg_column_size(configurations)<=1048576),
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  last_request_id uuid,
+  last_request_hash text
+);
+alter table public.organization_ui_themes enable row level security;
+revoke all on table public.organization_ui_themes from public,anon,authenticated,service_role;
+grant select on table public.organization_ui_themes to authenticated,service_role;
+drop policy if exists tenant_isolation_organization_ui_themes_all on public.organization_ui_themes;
+create policy tenant_isolation_organization_ui_themes_all on public.organization_ui_themes
+ for select to authenticated using (organization_id in (select public.fn_user_org_ids()));
+
+create or replace function public.fn_ui_theme_apply(
+  p_org uuid,p_actor uuid,p_theme text,p_installation text,p_catalog_hash text,
+  p_options_version integer,p_values jsonb,p_expected_revision integer,p_request uuid
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare
+  v_old public.organization_ui_themes%rowtype;
+  v_revision integer;
+  v_hash text;
+  v_configs jsonb;
+  v_platform boolean;
+begin
+  if p_org is null or p_actor is null or p_theme is null or p_installation is null or p_request is null
+    or p_theme !~ '^[a-z][a-z0-9-]{1,63}$' or p_installation !~ '^[a-zA-Z0-9_-]{4,100}$'
+    or p_catalog_hash is null or p_catalog_hash !~ '^[0-9a-f]{64}$'
+    or p_options_version is null or p_options_version<1
+    or p_expected_revision is null or p_expected_revision<0
+    or jsonb_typeof(p_values) is distinct from 'object' or pg_column_size(p_values)>32768 then
+    raise exception 'ui_theme_invalid' using errcode='22023';
+  end if;
+  if exists(select 1 from jsonb_each(p_values) o
+      where o.key !~ '^(global|[a-z][a-z0-9-]{1,63})\.[a-z][a-z0-9-]{0,47}$'
+        or jsonb_typeof(o.value) not in('string','number','boolean')) then
+    raise exception 'ui_theme_invalid' using errcode='22023';
+  end if;
+  -- Serializa também a primeira gravação, quando ainda não há linha de tema.
+  perform 1 from public.organizations where id=p_org and status='active' for update;
+  if not found then raise exception 'ui_theme_org_unavailable' using errcode='42501';end if;
+  -- Releitura DEPOIS da espera. O papel não pode ser revogado no meio do commit.
+  perform 1 from public.platform_admins where user_id=p_actor and revoked_at is null and scope='full' for share;
+  v_platform:=found;
+  if not v_platform then
+    perform 1 from public.user_organizations where organization_id=p_org and user_id=p_actor
+      and role='admin' and revoked_at is null for share;
+    if not found then raise exception 'ui_theme_forbidden' using errcode='42501';end if;
+  end if;
+  select * into v_old from public.organization_ui_themes where organization_id=p_org for update;
+  v_revision:=coalesce(v_old.revision,0);
+  v_hash:=encode(extensions.digest(jsonb_build_object('theme',p_theme,'installation',p_installation,
+    'catalog',p_catalog_hash,'version',p_options_version,'values',p_values)::text,'sha256'),'hex');
+  if v_old.last_request_id=p_request then
+    if v_old.last_request_hash is distinct from v_hash then
+      raise exception 'ui_theme_request_conflict' using errcode='PT409';
+    end if;
+    return jsonb_build_object('revision',v_revision,'applied_now',false);
+  end if;
+  if v_revision<>p_expected_revision then
+    raise exception 'ui_theme_revision_conflict' using errcode='PT409';
+  end if;
+  v_configs:=jsonb_set(coalesce(v_old.configurations,'{}'::jsonb),array[p_theme],
+    jsonb_build_object('version',p_options_version,'values',p_values),true);
+  insert into public.organization_ui_themes(organization_id,theme_id,installation_id,revision,configurations,updated_by,last_request_id,last_request_hash)
+    values(p_org,p_theme,p_installation,v_revision+1,v_configs,p_actor,p_request,v_hash)
+  on conflict(organization_id) do update set theme_id=excluded.theme_id,installation_id=excluded.installation_id,
+    revision=excluded.revision,configurations=excluded.configurations,updated_by=excluded.updated_by,
+    updated_at=clock_timestamp(),last_request_id=excluded.last_request_id,last_request_hash=excluded.last_request_hash;
+  -- A alteração e o recibo público da auditoria são uma única transação.
+  -- Opções e conteúdo da organização não são copiados para o log.
+  insert into public.api_audit_log(organization_id,actor_user_id,acting_as_platform_admin,action,resource_type,resource_id,request_id,bypassed_rls,metadata)
+    values(p_org,p_actor,v_platform,'ui_theme.updated','organization_ui_theme',p_org,p_request::text,true,
+      jsonb_build_object('theme_id',p_theme,'installation_id',p_installation,'revision',v_revision+1,'options_version',p_options_version));
+  return jsonb_build_object('revision',v_revision+1,'applied_now',true);
+end;
+$$;
+revoke all on function public.fn_ui_theme_apply(uuid,uuid,text,text,text,integer,jsonb,integer,uuid) from public,anon,authenticated;
+grant execute on function public.fn_ui_theme_apply(uuid,uuid,text,text,text,integer,jsonb,integer,uuid) to service_role;
+notify pgrst,'reload schema';

@@ -34,6 +34,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      organization_ui_themes: {
+        Row: {
+          configurations: NonNullable<Json>;
+          installation_id: string;
+          last_request_hash: string | null;
+          last_request_id: string | null;
+          organization_id: string;
+          revision: number;
+          theme_id: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          configurations?: NonNullable<Json>;
+          installation_id?: string;
+          last_request_hash?: string | null;
+          last_request_id?: string | null;
+          organization_id: string;
+          revision?: number;
+          theme_id?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          configurations?: NonNullable<Json>;
+          installation_id?: string;
+          last_request_hash?: string | null;
+          last_request_id?: string | null;
+          organization_id?: string;
+          revision?: number;
+          theme_id?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_ui_themes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       channel_integrations: {
         Row: { organization_id: string; profile_id: string; credential_encrypted: string; created_at: string; updated_at: string }
         Insert: { organization_id: string; profile_id: string; credential_encrypted: string; created_at?: string; updated_at?: string }
@@ -10330,6 +10375,20 @@ export type Database = {
       }
     }
     Functions: {
+      fn_ui_theme_apply: {
+        Args: {
+          p_actor: string;
+          p_catalog_hash: string;
+          p_expected_revision: number;
+          p_installation: string;
+          p_options_version: number;
+          p_org: string;
+          p_request: string;
+          p_theme: string;
+          p_values: Json;
+        };
+        Returns: Json;
+      };
       fn_authorize_ai_form_capture: {
         Args: { p_organization_id: string; p_source_id: string; p_lead_id: string; p_contact_id: string; p_request_id: string; p_ttl_ms: number }
         Returns: boolean

@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { inboxArea } from "@/lib/ui-themes/areas";
 
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { AcervoSearch } from "./AcervoSearch";
@@ -58,6 +60,8 @@ interface Props {
    * `Sheet` do Inbox não o passa.
    */
   onAlternarRecolhido?: () => void;
+  fixado?: boolean;
+  onAlternarFixado?: () => void;
 }
 
 interface LeadRow {
@@ -699,7 +703,7 @@ function BotaoDeRecolherDoPainel({
   );
 }
 
-export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolhido }: Props) {
+export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolhido,fixado=false,onAlternarFixado }: Props) {
   const { user, activeOrg } = useAuth();
   const readonly = user.support?.access_mode === "support_readonly";
   // Criar tarefa é `agent`+ (a rota cobra `requireRole("agent")`): a MESMA régua
@@ -714,6 +718,7 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
   const podeLevarParaOutroFunil = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const localeDaData = useLocaleDeData();
   const t = useT();
+  const { regionClass } = useUiThemeArea(inboxArea);
   const contact = conversation?.contacts ?? null;
   const contactId = contact?.id ?? null;
   const [desfechoDraft, setDesfechoDraft] = useState<DesfechoDraft | null>(null);
@@ -902,6 +907,8 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
    * controle — o caso do `Sheet` do celular — o trilho não teria porta de volta,
    * então nesse caso o painel desenha inteiro, como sempre desenhou.
    */
+  const pinControl=onAlternarFixado ? <Button type="button" variant="ghost" size="sm" className="h-9 px-2 text-xs" aria-pressed={fixado} aria-label={t(fixado?"Desafixar ficha":"Fixar ficha")} onClick={onAlternarFixado}>{t(fixado?"Desafixar":"Fixar")}</Button> : null;
+
   if (recolhido && onAlternarRecolhido) {
     return (
       <aside
@@ -927,7 +934,7 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
   }
 
   return (
-    <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
+    <aside className={cn("flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4",regionClass("contact"))}>
       {/*
         O CONTROLE DE RECOLHER, NO ALTO (issue #3004) — mesmo lugar do recolher
         do menu da esquerda. `sticky` para não rolar para fora com o conteúdo, e
@@ -936,9 +943,10 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
         primeira seção. Sem `onAlternarRecolhido` (o `Sheet` do celular) não
         desenha nada: quem já tem o gesto de fechar não precisa deste.
       */}
-      {onAlternarRecolhido && (
+      {(onAlternarRecolhido || onAlternarFixado) && (
         <div className="sticky top-0 z-10 -mx-4 -mt-4 flex shrink-0 justify-end border-b border-border bg-background px-4 py-1">
-          <BotaoDeRecolherDoPainel recolhido={false} onAlternar={onAlternarRecolhido} />
+          {pinControl}
+          {onAlternarRecolhido && <BotaoDeRecolherDoPainel recolhido={false} onAlternar={onAlternarRecolhido} />}
         </div>
       )}
       <section>

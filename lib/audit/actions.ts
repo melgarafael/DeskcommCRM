@@ -1199,6 +1199,7 @@ export const AUDIT_ACTIONS = [
   // Inscrição de push removida no servidor: desligar os alertas, sair, ou
   // "sair de todos os dispositivos" (metadata.escopo diz qual).
   "notification_prefs.push_subscription_removed",
+  "ui_theme.updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

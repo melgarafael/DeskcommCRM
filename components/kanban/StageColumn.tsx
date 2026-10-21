@@ -1,4 +1,8 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { pipelineArea } from "@/lib/ui-themes/areas";
+import { StageColor } from "./StageColor";
+import { stageDecoration } from "@/lib/leads/stage-color";
 import { Droppable } from "@hello-pangea/dnd";
 import { useRef, useState, type CSSProperties } from "react";
 import { useT } from "@/hooks/i18n/useT";
@@ -55,6 +59,7 @@ export function StageColumn({
   onRenomear,
 }: StageColumnProps) {
   const t = useT();
+  const { contribution, regionClass } = useUiThemeArea(pipelineArea);
   // O TOTAL É POR MOEDA (#1531). Antes ele somava todos os `value_cents` e
   // escrevia o resultado na moeda do primeiro negócio: R$ 5.000 e 5.000 € saíam
   // "R$ 10.000,00", um valor que não existe. Agora cada moeda tem o seu total,
@@ -150,7 +155,8 @@ export function StageColumn({
         coluna de etapa não vira painel. De `md` para cima volta o `w-80` de
         sempre, onde a graça é justamente ver várias etapas ao mesmo tempo.
       */
-      className="bg-surface-muted/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
+      className={cn("bg-surface-muted/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80",regionClass("column"))}
+      style={{ "--ui-stage-color": stageDecoration(stage.color) } as CSSProperties}
       data-etapa-do-quadro={stage.id}
     >
       {/* Cabeçalho e total PRESOS no alto do quadro enquanto os cards rolam: com
@@ -193,11 +199,13 @@ export function StageColumn({
                   : "opacity-0 group-hover/etapa:opacity-100 pointer-coarse:opacity-100",
               )}
             />
+            {podeRenomear && contribution?.configuration.editStageColor === true ? <StageColor pipelineId={pipelineId} stageId={stage.id} name={stage.name} color={stage.color}/> : (
             <span
               className={cn("h-2 w-2 rounded-full", !stage.color && "bg-text-muted/40")}
               style={accentStyle}
               aria-hidden
             />
+            )}
             {podeRenomear && onRenomear ? (
               // `key` pelo nome: remonta (e descarta o rascunho) quando o nome
               // GRAVADO muda — mesmo contrato de `NomeDaEtapa` em Configurações,
@@ -253,6 +261,7 @@ export function StageColumn({
                 lead={lead}
                 index={idx}
                 pipelineId={pipelineId}
+                stageColor={stage.color}
                 isSelected={selectedLeadIds?.has(lead.id)}
                 isSelecting={(selectedLeadIds?.size ?? 0) > 0}
                 pulseCount={pulses?.get(lead.id) ?? 0}

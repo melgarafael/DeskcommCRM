@@ -1,5 +1,8 @@
 "use client";
-import { useState, type RefObject } from "react";
+import { cn } from "@/lib/utils";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { inboxArea } from "@/lib/ui-themes/areas";
+import { useState, type ReactNode, type RefObject } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 import {
@@ -58,6 +61,8 @@ interface Props {
   botaoBuscaRef?: RefObject<HTMLButtonElement | null>;
   /** Seleciona outra conversa no Inbox — a aba Número do Transferir abre a do outro número. */
   onAbrirConversa?: (id: string) => void;
+  /** Host-owned contact navigation; no new business command. */
+  detailsAction?: ReactNode;
 }
 
 /**
@@ -92,8 +97,10 @@ export function ConversationHeader({
   onBuscar,
   buscaAberta,
   botaoBuscaRef,
+  detailsAction,
 }: Props) {
   const t = useT();
+  const { regionClass } = useUiThemeArea(inboxArea);
   const { user, activeOrg } = useAuth();
   const claim = useClaimConversation();
   const release = useReleaseConversation();
@@ -217,7 +224,7 @@ export function ConversationHeader({
     automaticoAtivo && !encerrada && conversation.assigned_to_user_id !== null;
 
   if (user.support?.access_mode === "support_readonly") return <header className="flex items-center justify-between border-b p-4">
-    <strong>{displayName}</strong><span className="text-sm text-muted-foreground">{STATUS_LABEL[status] ?? status} · Somente leitura</span>
+    <strong>{displayName}</strong><span className="text-sm text-muted-foreground">{STATUS_LABEL[status] ?? status} · Somente leitura</span>{detailsAction}
   </header>;
   return (
     // `flex-wrap` porque este header travava a LARGURA DA TELA INTEIRA. Ele
@@ -238,7 +245,7 @@ export function ConversationHeader({
     // fileira que rola na horizontal — a mesma régua de não esconder ação, sem
     // pagar em altura. `py-2` pelo mesmo motivo: cada pixel de altura ali é
     // tirado da conversa.
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 md:gap-3 md:px-4 md:py-3">
+    <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 md:gap-3 md:px-4 md:py-3",regionClass("header"))}>
       {/* FAIXA DA CARTEIRA (#2591, regra 2): "este cliente pertence à carteira de
           A". `w-full` a põe numa linha própria acima da identidade, sem disputar
           espaço com a barra de ações — a faixa só existe quando o dono é OUTRA
@@ -323,6 +330,7 @@ export function ConversationHeader({
             ação de atendimento, e não muda de lugar com o estado da conversa.
             Só o ícone porque a barra já quebrou a caixa útil em 1280px uma vez
             (ver o comentário do interruptor abaixo). */}
+        {detailsAction}
         {onBuscar && (
           <Button
             ref={botaoBuscaRef}

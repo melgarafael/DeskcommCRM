@@ -1,6 +1,9 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { pipelineArea } from "@/lib/ui-themes/areas";
 import { Draggable } from "@hello-pangea/dnd";
-import type { MouseEvent } from "react";
+import type { MouseEvent, CSSProperties } from "react";
+import { stageDecoration } from "@/lib/leads/stage-color";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
@@ -25,6 +28,7 @@ interface KanbanCardProps {
   lead: Lead;
   index: number;
   pipelineId: string;
+  stageColor?: string | null;
   isSelected?: boolean;
   /**
    * Há seleção viva no quadro. Só muda a VISIBILIDADE da caixa (que fora disso
@@ -72,6 +76,7 @@ export function KanbanCard({
   lead,
   index,
   pipelineId,
+  stageColor,
   isSelected,
   isSelecting = false,
   pulseCount = 0,
@@ -79,6 +84,7 @@ export function KanbanCard({
   onOpen,
 }: KanbanCardProps) {
   const t = useT();
+  const { regionClass } = useUiThemeArea(pipelineArea);
   const value = formatValor(card.valueCents, card.currency);
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
@@ -132,6 +138,7 @@ export function KanbanCard({
           // isso vira nested-interactive no axe. "group" mantém o foco e o
           // teclado do dnd (tabIndex e handlers continuam vindo do spread) sem
           // aninhar dois controles — nada de aria-hidden nem de suprimir regra.
+          style={{ ...provided.draggableProps.style, ...(stageDecoration(stageColor) ? { "--ui-stage-color": stageDecoration(stageColor) } : {}) } as CSSProperties}
           role="group"
           aria-label={`${t("Lead")}: ${card.title}`}
           onClick={handleClick}
@@ -139,6 +146,7 @@ export function KanbanCard({
           title={card.tags.length > 0 ? `Tags: ${card.tags.join(", ")}` : undefined}
           className={cn(
             "group relative overflow-hidden rounded-md border border-border bg-surface",
+            regionClass("card"),
             "py-2.5 pl-3 pr-3 shadow-xs transition-colors",
             "hover:border-border-strong",
             snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
@@ -218,7 +226,7 @@ export function KanbanCard({
                   acessibilidade; deixar só onKeyDown daria uma ação que existe
                   e NÃO É DESCOBERTA por leitor de tela. O título como button
                   atende mouse, teclado e leitor sem desfazer a decisão antiga. */}
-              <h3 className="line-clamp-2 h-10 text-sm font-medium leading-5 text-text">
+              <h3 data-ui-part="card-title" className="line-clamp-2 h-10 text-sm font-medium leading-5 text-text">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -249,7 +257,7 @@ export function KanbanCard({
           </p>
 
           {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
-          <div className="mt-1.5 flex h-6 items-center gap-2 text-xs">
+          <div data-ui-state={state.slot.type} className={cn("mt-1.5 flex h-6 items-center gap-2 text-xs",regionClass("state"))}>
             {state.slot.type === "awaiting" && (
               // A proposta do agente é a ÚNICA linha do card com ação: é o
               // ponto onde a decisão do humano entra. Sem os botões aqui, o
@@ -278,12 +286,12 @@ export function KanbanCard({
               <span className="truncate text-warning-fg">{state.slot.label}</span>
             )}
             {state.slot.type === "meter" && (
-              <ScoreSlot
+              <span className={cn("min-w-0",regionClass("score"))}><ScoreSlot
                 probability={state.slot.probability}
                 band={state.slot.band}
                 reason={state.slot.reason}
                 factors={state.slot.factors}
-              />
+              /></span>
             )}
           </div>
 

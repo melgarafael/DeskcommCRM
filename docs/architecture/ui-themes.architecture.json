@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Temas de apresentação por organização",
+    "subtitle": "Pacotes incorporados, rascunho isolado e aplicação autorizada",
+    "output": "ui-themes.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "package", "label": "Imagem e contratos" },
+    { "id": "human", "label": "Organização e editor" },
+    { "id": "write", "label": "Autoridade e persistência" },
+    { "id": "render", "label": "Interface" }
+  ],
+  "mainPath": ["catalog", "editor", "action", "rpc", "state", "resolver", "host"],
+  "nodes": [
+    {
+      "id": "catalog",
+      "lane": "package",
+      "col": 0,
+      "type": "service",
+      "label": "installedUiThemes",
+      "sublabel": "Padrão obrigatório; identidade de instalação; pacotes confiáveis compilados"
+    },
+    {
+      "id": "contracts",
+      "lane": "package",
+      "col": 4,
+      "type": "service",
+      "label": "Contratos de área e opções",
+      "sublabel": "registro extensível; slots obrigatórios; classes e variantes finitas"
+    },
+    {
+      "id": "editor",
+      "lane": "human",
+      "col": 1,
+      "type": "frontend",
+      "label": "Marca / ThemeEditor",
+      "sublabel": "ativo e rascunho separados; cancelar não grava"
+    },
+    {
+      "id": "preview",
+      "lane": "human",
+      "col": 2,
+      "type": "frontend",
+      "label": "Prévia isolada",
+      "sublabel": "componentes reais + dados sintéticos; claro/escuro e largura locais"
+    },
+    {
+      "id": "action",
+      "lane": "write",
+      "col": 2,
+      "type": "api",
+      "label": "updateUiTheme",
+      "sublabel": "sessão/organização confiáveis; admin, suporte, MFA, catálogo e opções"
+    },
+    {
+      "id": "rpc",
+      "lane": "write",
+      "col": 3,
+      "type": "database",
+      "label": "fn_ui_theme_apply",
+      "sublabel": "service_role; revalidação sob lock; CAS e recibo idempotente"
+    },
+    {
+      "id": "state",
+      "lane": "write",
+      "col": 4,
+      "type": "database",
+      "label": "organization_ui_themes",
+      "sublabel": "RLS; uma linha por organização; opções separadas por tema"
+    },
+    {
+      "id": "audit",
+      "lane": "write",
+      "col": 4,
+      "type": "database",
+      "label": "api_audit_log",
+      "sublabel": "ui_theme.updated atômico; leitor no painel de auditoria nativo"
+    },
+    {
+      "id": "resolver",
+      "lane": "render",
+      "col": 5,
+      "type": "service",
+      "label": "Loader SSR + resolvedor",
+      "sublabel": "Padrão e diagnóstico em ausência/remoção/incompatibilidade; não apaga a seleção"
+    },
+    {
+      "id": "host",
+      "lane": "render",
+      "col": 6,
+      "type": "frontend",
+      "label": "Provider + adaptadores do host",
+      "sublabel": "componentes e handlers nativos; slots prontos; página sem contribuição mantém fallback"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "catalog",
+      "to": "editor",
+      "label": "pacotes disponíveis e assinatura da fotografia"
+    },
+    { "id": "e2", "from": "editor", "to": "preview", "label": "rascunho transitório sem gravação" },
+    {
+      "id": "e3",
+      "from": "editor",
+      "to": "action",
+      "label": "aplicar: opções, revisão e identificador do pedido"
+    },
+    {
+      "id": "e4",
+      "from": "action",
+      "to": "rpc",
+      "label": "ator e organização resolvidos pelo servidor"
+    },
+    { "id": "e5", "from": "rpc", "to": "state", "label": "gravação comparada à revisão" },
+    { "id": "e6", "from": "rpc", "to": "audit", "label": "mutação e auditoria na mesma transação" },
+    {
+      "id": "e7",
+      "from": "rpc",
+      "to": "editor",
+      "label": "recibo ou conflito; erro conserva edição"
+    },
+    {
+      "id": "e8",
+      "from": "state",
+      "to": "resolver",
+      "label": "leitura scoped sem cache global de organização"
+    },
+    {
+      "id": "e9",
+      "from": "catalog",
+      "to": "resolver",
+      "label": "compatibilidade e identidade instalada"
+    },
+    {
+      "id": "e10",
+      "from": "contracts",
+      "to": "resolver",
+      "label": "regiões, versão e opções aceitas"
+    },
+    { "id": "e11", "from": "resolver", "to": "host", "label": "seleção projetada e fallback" },
+    {
+      "id": "e12",
+      "from": "resolver",
+      "to": "editor",
+      "label": "estado ativo e motivo do fallback"
+    },
+    {
+      "id": "e13",
+      "from": "contracts",
+      "to": "host",
+      "label": "composição recebe regiões já autorizadas"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "sky",
+      "title": "Fronteira",
+      "items": [
+        "Tema não recebe banco, rede, credenciais ou autoridade empresarial.",
+        "Extensões declarativas v1 e aparência nativa claro/escuro conservam seus contratos.",
+        "Nenhum evento sem consumidor, worker, cron ou nova decisão de atendimento é criado."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Retorno e operação",
+      "items": [
+        "Remoção/desativação/reinstalação não apaga opções nem reativa seleção com identidade antiga.",
+        "Conflitos exigem releitura; o último pedido idêntico não duplica auditoria.",
+        "A prévia não comprova a experiência das áreas reais: conferir componentes autenticados no navegador."
+      ]
+    }
+  ]
+}

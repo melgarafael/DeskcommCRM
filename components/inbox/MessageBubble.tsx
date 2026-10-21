@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { inboxArea } from "@/lib/ui-themes/areas";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
@@ -104,6 +106,7 @@ export function MessageBubble({
   }, [editando]);
   const localeDaData = useLocaleDeData();
   const t = useT();
+  const { regionClass } = useUiThemeArea(inboxArea);
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: localeDaData });
   const isFailed = message.status === "failed";
@@ -240,6 +243,7 @@ export function MessageBubble({
         data-testid="message-bubble"
         className={cn(
           "relative max-w-[75%] min-w-0 text-sm",
+          !isBareSticker && regionClass(isOutbound ? "bubble-out" : "bubble-in"),
           isBareSticker
             ? "px-0 py-0"
             : cn(

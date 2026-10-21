@@ -1,3 +1,4 @@
+import { stageColorSchema } from "./stage-color";
 /**
  * As operações de ETAPA de funil — ler o funil, criar, editar e arquivar coluna.
  *
@@ -52,10 +53,11 @@ export interface DepsDeEtapa {
 
 /** As colunas que a tela e as regras usam. `position` entra: a reordenação calcula em cima dela. */
 const COLUNAS =
-  "id, name, slug, position, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
+  "id, name, slug, position, color, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
 
 /** A etapa como sai para quem lê — inclui a autoria da última mudança de configuração. */
 export interface EtapaVisivel {
+  color: string | null;
   id: string;
   name: string;
   slug: string;
@@ -87,6 +89,7 @@ export interface EtapaVisivel {
 
 type EtapaLida = EtapaEditavel & {
   avisar_na_central?: boolean | null;
+  color?: string | null;
   last_change_actor_kind: string | null;
   last_change_at: string | null;
 };
@@ -135,6 +138,7 @@ export function corpo(etapas: EtapaLida[]): { etapas: EtapaVisivel[] } {
       .map((e) => ({
         id: e.id,
         name: e.name,
+        color: e.color ?? null,
         slug: e.slug,
         position: e.position,
         is_won: e.is_won,
@@ -310,6 +314,7 @@ export async function criarEtapa(
 // ---------------------------------------------------------------------------
 
 export interface PedidoDeEdicao {
+  color?: string | null;
   name?: string;
   is_won?: boolean;
   is_lost?: boolean;
@@ -403,6 +408,10 @@ export async function atualizarEtapa(
     }
   }
 
+  if (pedido.color !== undefined && !stageColorSchema.safeParse(pedido.color).success) {
+    throw new ApiError(422,"unprocessable_entity",undefined,deps.requestId,"Escolha uma cor hexadecimal de seis dígitos ou restaure o padrão.");
+  }
+
   const temMarcacao = pedido.is_won !== undefined || pedido.is_lost !== undefined;
   if (temMarcacao) {
     const veredito = validarMarcacao(etapas, stageId, pedido);
@@ -412,6 +421,7 @@ export async function atualizarEtapa(
   }
 
   const patchDoAlvo: PatchDeMarcacao & {
+    color?: string | null;
     name?: string;
     position?: number;
     win_probability?: number | null;
@@ -419,6 +429,7 @@ export async function atualizarEtapa(
     expected_duration_hours?: number | null;
   } = {};
   if (pedido.name !== undefined) patchDoAlvo.name = pedido.name.trim();
+  if (pedido.color !== undefined) patchDoAlvo.color = pedido.color;
   // `undefined` não viaja; `null` limpa a calibração de propósito.
   if (pedido.win_probability !== undefined) patchDoAlvo.win_probability = pedido.win_probability;
   if (pedido.avisar_na_central !== undefined) patchDoAlvo.avisar_na_central = pedido.avisar_na_central;

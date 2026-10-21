@@ -130,7 +130,7 @@ export default async function AgendaPage() {
     supabase
       .from("calendar_event_types")
       .select(
-        "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id",
+        "id, slug, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id",
       )
       .eq("organization_id", activeOrg.orgId)
       .eq("is_active", true)
@@ -281,6 +281,7 @@ export default async function AgendaPage() {
       tiposIniciais={(tipos ?? []).map((t) => ({
         id: t.id,
         nome: t.name,
+        slug: t.slug,
         duracaoMin: t.duration_minutes,
         // Quem DE FATO atende este tipo. Sem isto a tela mostrava o primeiro da
         // lista de pessoas como responsável e marcava na agenda dele — enquanto
@@ -298,6 +299,8 @@ export default async function AgendaPage() {
           id: a.id,
           revision: a.revision,
           titulo: a.title ?? "Agendamento",
+          tipo: tipos?.find((type) => type.id === a.event_type_id)?.name,
+          tipoSlug: tipos?.find((type) => type.id === a.event_type_id)?.slug,
           responsavelId: a.owner_user_id ?? "",
           comeca: a.starts_at,
           termina: a.ends_at,

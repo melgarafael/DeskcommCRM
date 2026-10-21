@@ -1,3 +1,7 @@
+import { UiThemeProvider } from "@/components/ui-themes/Provider";
+import { installedUiThemes } from "@/lib/ui-themes/installed";
+import { resolveUiTheme } from "@/lib/ui-themes/resolve";
+import { readUiThemeState } from "@/lib/ui-themes/server";
 import { InterfaceRefresh } from "@/hooks/auth/InterfaceRefresh";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -62,6 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * e não aqui: a precedência é regra do produto, não detalhe deste layout.
    */
   let cssDaOrganizacao: string | null = null;
+  let uiTheme = resolveUiTheme(installedUiThemes, null);
   // O tema de extensão, se a organização escolheu um. `null` = quem não
   // escolheu — e aí o `EstiloDoTemaDaExtensao` não renderiza nada.
   let cssDoTemaDaExtensao: string | null = null;
@@ -87,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const temaDaExtensao = lerCssDoTemaDaExtensao(admin, activeOrg.orgId);
 
     /**
-     * As cinco consultas que TODA página de `/app` paga, disparadas juntas.
+     * As consultas independentes que TODA página de `/app` paga, disparadas juntas.
      *
      * Elas eram sequenciais e independentes: cada uma esperava a anterior sem
      * precisar do resultado dela, e a soma aparecia como a tela que não reage ao
@@ -110,7 +115,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    este layout — a cerca anterior lia o texto-fonte e reprovava esta
      *    refatoração sem que nada tivesse quebrado.
      */
-    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos] = await Promise.all([
+    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, themeSnapshot] = await Promise.all([
       admin
         .from("organizations")
         .select("onboarded_at, status, settings, timezone")
@@ -126,9 +131,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ),
       // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
       modulosLigados(admin),
+      readUiThemeState(admin, activeOrg.orgId),
     ]);
 
     const orgRow = orgRes.data;
+    uiTheme = resolveUiTheme(installedUiThemes, themeSnapshot.state);
+    if (themeSnapshot.error) uiTheme = { ...uiTheme, fallback: themeSnapshot.error };
     // Erro de leitura LANÇA: `orgRow` nulo passava por "sem onboarding pendente
     // e não suspensa" e renderizava a casca de uma org que ninguém conseguiu ler.
     if (orgRes.error) {
@@ -300,6 +308,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         veria a tela de cadastro de MFA — a PRIMEIRA tela dele — com a cor da
         instalação, e depois o resto do produto com a dele.
       */}
+      <UiThemeProvider key={activeOrg?.orgId ?? "none"} theme={uiTheme}>
       <div data-marca-org="" className="contents">
         <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
         <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
@@ -315,6 +324,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           shell
         )}
       </div>
+      </UiThemeProvider>
       </ProvedorDeCoresDasEtiquetas>
     </AuthProvider>
     </IdiomaProvider>

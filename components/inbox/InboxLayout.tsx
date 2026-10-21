@@ -1,4 +1,9 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { inboxArea } from "@/lib/ui-themes/areas";
+import { UiThemeArea } from "@/components/ui-themes/Area";
+import { useInboxPresentation } from "@/components/ui-themes/useInboxPresentation";
+import { inboxPresentationSchema } from "@/lib/ui-themes/inbox-presentation";
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -21,7 +26,7 @@ import {
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { ConversationList } from "./ConversationList";
 import { BarraDeAcoesEmLote } from "./BarraDeAcoesEmLote";
-import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
+import { InboxFilters, visibleInboxTabs, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
@@ -137,8 +142,8 @@ const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archive
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
  * lista volta RLS-scoped (a tab só some cosmeticamente); default: fila.
  */
-function parseFilterParam(v: string | null): InboxTab {
-  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "unassigned";
+function parseFilterParam(v: string | null, initial: InboxTab = "unassigned"): InboxTab {
+  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : initial;
 }
 
 /**
@@ -187,10 +192,37 @@ export function InboxLayout({
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const orgId = activeOrg?.orgId ?? null;
 
+  const { contribution, regionClass } = useUiThemeArea(inboxArea);
+  const presentationConfig = inboxPresentationSchema.parse(contribution?.configuration ?? {});
+  const gradeRef = useRef<HTMLDivElement | null>(null);
+  const [faixaNativa, setFaixa] = useState<Faixa | null>(null);
+  const [larguras, setLarguras] = useState<LargurasDoInbox | null>(null);
+  // Espelho do estado para o fim do arraste (pointerup) persistir o valor mais
+  // recente sem depender de um render que ainda não aconteceu.
+  const largurasRef = useRef<LargurasDoInbox | null>(null);
+
+  const aplicarLarguras = useCallback((proximas: LargurasDoInbox | null) => {
+    largurasRef.current = proximas;
+    setLarguras(proximas);
+  }, []);
+
+
+  /** The floating contact view shares state with native mobile navigation. */
+  const [fichaAberta, setFichaAberta] = useState(false);
+  const closeAdaptiveContact = useCallback(() => setFichaAberta(false), []);
+  const presentation = useInboxPresentation(presentationConfig,orgId,user.id,gradeRef,
+    larguras ?? {lista:presentationConfig.listWidth ?? faixaNativa?.lista ?? 300,ficha:presentationConfig.detailWidth ?? faixaNativa?.ficha ?? 300},closeAdaptiveContact);
+  const { enabled: adaptiveMode, toggleCollapsed: toggleAdaptiveCollapsed } = presentation;
+  const faixa=useMemo(()=>presentation.enabled && faixaNativa ? {...faixaNativa,temFicha:presentation.layout.inlineContact} : faixaNativa,[presentation.enabled,faixaNativa,presentation.layout.inlineContact]);
+  const widthStorage=useCallback(()=>presentation.enabled ? presentation.storage : armazenamentoDoNavegador(),[presentation.enabled,presentation.storage]);
+  const initialThemeTab=presentationConfig.initialFilter ?? "unassigned";
+  const initialTab=activeOrg && visibleInboxTabs(activeOrg.role,activeOrg.visibility_mode).includes(initialThemeTab) ? initialThemeTab : "unassigned";
+
+
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = parseFilterParam(searchParams.get("filter"));
+  const tab = parseFilterParam(searchParams.get("filter"),initialTab);
   const idNaUrl = searchParams.get("id");
   /**
    * `?tag=` é o destino do link de cada linha do relatório Por etiqueta
@@ -235,8 +267,6 @@ export function InboxLayout({
   const ultimoIdNaUrl = useRef(idNaUrl);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
-  /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
-  const [fichaAberta, setFichaAberta] = useState(false);
   /**
    * O PAINEL DO CONTATO RECOLHIDO (issue #3004).
    *
@@ -250,15 +280,17 @@ export function InboxLayout({
    * esquerda (`toggleSidebar`). O estado local dá o retorno IMEDIATO do clique —
    * sem ele o painel só reagiria depois da volta ao servidor.
    */
-  const [painelRecolhido, setPainelRecolhido] = useState(painelRecolhidoInicial);
+  const [painelRecolhidoNativo, setPainelRecolhido] = useState(painelRecolhidoInicial);
+  const painelRecolhido=presentation.enabled ? presentation.preference.collapsed : painelRecolhidoNativo;
   const alternarPainelDoContato = useCallback(() => {
+    if(adaptiveMode){toggleAdaptiveCollapsed();return;}
     const proximo = !painelRecolhido;
     setPainelRecolhido(proximo);
     // O action recebe o estado ATUAL, como o `toggleSidebar` do menu da esquerda.
     startTransition(() => {
       void togglePainelDoContato(painelRecolhido);
     });
-  }, [painelRecolhido]);
+  }, [painelRecolhido,adaptiveMode,toggleAdaptiveCollapsed]);
   /**
    * A busca dentro da conversa (#1793) pertence à CONVERSA em que foi aberta.
    * Guardar o id junto fecha a busca em qualquer troca — clique, atalho j/k,
@@ -411,7 +443,7 @@ export function InboxLayout({
   const selectionNotFound =
     needsFetch && !single.isPending && !single.data && isNotFound(single.error);
 
-  const colunas = colunasDoCelular(Boolean(selectedId));
+  const colunas = presentation.enabled ? {lista:presentation.layout.mobile && selectedId ? "hidden" : "flex",conversa:presentation.layout.mobile && !selectedId ? "hidden" : "flex"} : colunasDoCelular(Boolean(selectedId));
 
   const claim = useClaimConversation();
   const close = useCloseConversation();
@@ -537,18 +569,6 @@ export function InboxLayout({
    * `md`) — é o que garante primeiro render idêntico ao do servidor: sem
    * divisória nenhuma e sem estilo nenhum na grade. No celular nada muda.
    */
-  const gradeRef = useRef<HTMLDivElement | null>(null);
-  const [faixa, setFaixa] = useState<Faixa | null>(null);
-  const [larguras, setLarguras] = useState<LargurasDoInbox | null>(null);
-  // Espelho do estado para o fim do arraste (pointerup) persistir o valor mais
-  // recente sem depender de um render que ainda não aconteceu.
-  const largurasRef = useRef<LargurasDoInbox | null>(null);
-
-  const aplicarLarguras = useCallback((proximas: LargurasDoInbox | null) => {
-    largurasRef.current = proximas;
-    setLarguras(proximas);
-  }, []);
-
   useEffect(() => {
     const medir = () => setFaixa(faixaDaLargura(window.innerWidth));
     medir();
@@ -566,20 +586,20 @@ export function InboxLayout({
       return;
     }
     const grade = gradeRef.current;
-    const largura = grade ? grade.getBoundingClientRect().width : 0;
-    const salvas = lerLarguras(armazenamentoDoNavegador(), faixa.id);
+    const largura = grade ? (presentation.enabled ? grade.clientWidth : grade.getBoundingClientRect().width) : 0;
+    const salvas = lerLarguras(widthStorage(), faixa.id);
     aplicarLarguras(
       salvas
-        ? resolverLarguras({ ...salvas, larguraContainer: largura, temFicha: faixa.temFicha })
+        ? resolverLarguras({ ...salvas, larguraContainer: largura, temFicha: faixa.temFicha, conversaMinima:presentationConfig.minimumConversationWidth })
         : null,
     );
-  }, [faixa, aplicarLarguras]);
+  }, [faixa, aplicarLarguras,widthStorage,presentation.enabled,presentationConfig.minimumConversationWidth]);
 
   /** O que vale AGORA na tela: o ajuste salvo, ou o padrão da faixa. */
-  const efetivas: LargurasDoInbox | null = larguras ?? (faixa ? largurasPadrao(faixa) : null);
+  const efetivas: LargurasDoInbox | null = presentation.enabled ? (presentation.layout.mobile ? null : {lista:presentation.layout.listWidth,ficha:presentation.layout.detailWidth}) : larguras ?? (faixa ? largurasPadrao(faixa) : null);
 
   const estiloDaGrade: CSSProperties | undefined =
-    faixa && larguras
+    presentation.enabled ? {gridTemplateColumns:presentation.layout.gridTemplateColumns} : faixa && larguras
       ? {
           gridTemplateColumns: painelRecolhido && faixa.temFicha
             ? // Recolhido: a ficha sai da conta e o trilho do painel entra no
@@ -594,7 +614,7 @@ export function InboxLayout({
 
   const larguraDaGrade = (): number => {
     const grade = gradeRef.current;
-    return grade ? grade.getBoundingClientRect().width : 0;
+    return grade ? (presentation.enabled ? grade.clientWidth : grade.getBoundingClientRect().width) : 0;
   };
 
   const arrastar = (coluna: "lista" | "ficha", evento: ReactPointerEvent<HTMLSpanElement>) => {
@@ -605,6 +625,7 @@ export function InboxLayout({
     // tamanho enquanto o ponteiro anda, e remediá-la a cada move faria o
     // alvo tremer contra o próprio valor que o usuário está arrastando.
     const retangulo = grade.getBoundingClientRect();
+    const larguraUtil=presentation.enabled ? grade.clientWidth : retangulo.width;
     evento.preventDefault();
     evento.stopPropagation();
     evento.currentTarget.setPointerCapture?.(evento.pointerId);
@@ -618,13 +639,13 @@ export function InboxLayout({
           ? { ...base, lista: movimento.clientX - retangulo.left }
           : { ...base, ficha: retangulo.right - movimento.clientX };
       aplicarLarguras(
-        resolverLarguras({ ...pedido, larguraContainer: retangulo.width, temFicha }),
+        resolverLarguras({ ...pedido, larguraContainer: larguraUtil, temFicha, conversaMinima:presentationConfig.minimumConversationWidth }),
       );
     };
     const aoSoltar = () => {
       window.removeEventListener("pointermove", aoMover);
       window.removeEventListener("pointerup", aoSoltar);
-      gravarLarguras(armazenamentoDoNavegador(), faixaAtual.id, largurasRef.current);
+      gravarLarguras(widthStorage(), faixaAtual.id, largurasRef.current);
     };
     window.addEventListener("pointermove", aoMover);
     window.addEventListener("pointerup", aoSoltar);
@@ -640,17 +661,17 @@ export function InboxLayout({
     evento.preventDefault();
     const base = { ...(largurasRef.current ?? efetivas), [coluna]: proximo };
     aplicarLarguras(
-      resolverLarguras({ ...base, larguraContainer: larguraDaGrade(), temFicha: faixa.temFicha }),
+      resolverLarguras({ ...base, larguraContainer: larguraDaGrade(), temFicha: faixa.temFicha, conversaMinima:presentationConfig.minimumConversationWidth }),
     );
-    gravarLarguras(armazenamentoDoNavegador(), faixa.id, largurasRef.current);
+    gravarLarguras(widthStorage(), faixa.id, largurasRef.current);
   };
 
   /** Duplo clique na divisória: apaga a memória da faixa e volta ao CSS. */
   const restaurarPadrao = useCallback(() => {
     if (!faixa) return;
-    gravarLarguras(armazenamentoDoNavegador(), faixa.id, null);
+    gravarLarguras(widthStorage(), faixa.id, null);
     aplicarLarguras(null);
-  }, [faixa, aplicarLarguras]);
+  }, [faixa, aplicarLarguras,widthStorage]);
 
   // Altura da grade: a conta desconta TUDO que fica acima e abaixo dela.
   //   3.5rem            TopBar (`h-14`, em components/shell/TopBar.tsx)
@@ -692,64 +713,16 @@ export function InboxLayout({
   // Em 1280 isso dá 424px de conversa em vez de 372 — 54px de folga sobre o
   // piso do composer (370px), em vez dos 2px que a versão de uma faixa só
   // deixava. Margem de 2px não é margem, é sorte.
-  return (
-    <OpenConversationProvider conversationId={selectedId}>
-    <div
-      ref={gradeRef}
-      className={cn(
-        "grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[300px_1fr]",
-        // Recolhido (issue #3004), a terceira trilha vira o trilho estreito do
-        // botão de expandir e a conversa fica com o que era da ficha. Duas
-        // listas em vez de uma classe com valor em variável: o Tailwind precisa
-        // do literal para gerar o CSS.
-        painelRecolhido
-          ? "xl:grid-cols-[272px_1fr_2.75rem] 2xl:grid-cols-[300px_1fr_2.75rem]"
-          : "xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]",
-      )}
-      style={estiloDaGrade}
-      /*
-       * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
-       * já publica (`LeadDossier`), e pela mesma razão: quando a entrega morre,
-       * nenhuma tela avisa. Foi o único achado que atravessou o dia intacto
-       * quando o realtime quebrou pela primeira vez, e voltou a morder agora.
-       *
-       * `divergencias` é o que a rede de segurança contou: refetch trouxe estado
-       * novo que o canal NÃO tinha entregue. Zero com o canal vivo; subindo é a
-       * assinatura de canal que assina e não entrega — o defeito que não grita.
-       *
-       * ⚠️ `data-realtime-status` vem do STATUS do canal, não de um objeto que
-       * existe sempre. A primeira versão desta linha derivava o valor de
-       * `listQ.seguranca`, que nunca é nulo — ela diria `ativo` inclusive com o
-       * canal morto. Controle decorativo é pior que controle nenhum: mente com
-       * cara de instrumento.
-       *
-       * Atributo de dado e não texto na tela de propósito: quem lê isto é o
-       * teste e quem depura, não o atendente. Pôr um aviso permanente na cara de
-       * quem atende seria ruído; esconder o sinal do todo é o que custou o dia.
-       */
-      data-realtime-status={listQ.realtimeStatus}
-      data-refetch-divergencias={listQ.seguranca?.divergencias ?? 0}
-    >
-      {/*
-        NO CELULAR, UMA COISA POR VEZ.
 
-        Antes as duas colunas caíam empilhadas em `grid-cols-1`: a lista inteira
-        primeiro e a conversa DEPOIS dela. Para responder era preciso rolar a
-        lista toda até o fim, e o composer ficava fora da tela — que é o
-        "incômodo" relatado por quem atende do telefone.
-
-        Sem media query em JavaScript de propósito: `useMediaQuery` decide DEPOIS
-        da hidratação, então a primeira pintura mostra o layout errado e pisca. A
-        classe condicional é resolvida pelo CSS, na primeira pintura, e some no
-        `md` — onde as duas colunas cabem juntas e a regra não se aplica.
-      */}
+  const listRegion=(
       <div
         className={cn(
-          "h-full min-h-0 flex-col border-r border-border md:flex",
+          presentation.enabled ? "h-full min-h-0 flex-col border-r border-border" : "h-full min-h-0 flex-col border-r border-border md:flex",
+          regionClass("list"),
           colunas.lista,
         )}
       >
-        <BotaoIniciarConversa />
+        <div className={regionClass("start")} style={{display:"contents"}}><BotaoIniciarConversa /></div>
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         {podeAgirEmLote && (
           <BarraDeAcoesEmLote
@@ -786,22 +759,12 @@ export function InboxLayout({
           />
         </div>
       </div>
-
-      {/*
-        AS DUAS COLUNAS DECIDEM PELO MESMO DADO — `selectedId`, não o objeto.
-
-        A da lista some quando há `selectedId`; se esta aparecesse só quando a
-        conversa já está CARREGADA, a janela entre as duas coisas não mostra
-        nenhuma das colunas. No celular isso é a tela em branco, e ela tem dois
-        casos reais: o instante do deep-link `/inbox/<id>`, enquanto a busca
-        única ainda responde; e o estado permanente de conversa fora do acesso,
-        cuja mensagem ("Conversa não encontrada") é justamente o que ficava
-        escondido — deixando o dono numa tela vazia, sem sequer o botão de
-        voltar, porque ele morava dentro do ramo da conversa carregada.
-      */}
+  );
+  const conversationRegion=(
       <div
         className={cn(
-          "h-full min-h-0 min-w-0 flex-col md:flex",
+          presentation.enabled ? "h-full min-h-0 min-w-0 flex-col" : "h-full min-h-0 min-w-0 flex-col md:flex",
+          regionClass("conversation"),
           colunas.conversa,
         )}
       >
@@ -812,7 +775,7 @@ export function InboxLayout({
           conversa, e só aparece quando há uma.
         */}
         {selectedId && (
-          <div className="flex items-center gap-1 border-b border-border px-1 py-1 md:hidden">
+          <div className={cn("flex items-center gap-1 border-b border-border px-1 py-1",presentation.enabled ? !presentation.layout.mobile && "hidden" : "md:hidden")}>
             <Button
               variant="ghost"
               size="sm"
@@ -824,6 +787,7 @@ export function InboxLayout({
             </Button>
             <div className="flex-1" />
             {selectedConversation && (
+              presentation.enabled ? <Button variant="ghost" size="sm" className="h-9 gap-1 px-2" onClick={()=>setFichaAberta(true)}><IdentificationCard size={16}/>{t("Ficha")}</Button> : (
               <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
                 <SheetTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-9 gap-1 px-2 xl:hidden">
@@ -836,6 +800,7 @@ export function InboxLayout({
                   <CRMSidePanel conversation={selectedConversation} />
                 </SheetContent>
               </Sheet>
+              )
             )}
           </div>
         )}
@@ -854,6 +819,7 @@ export function InboxLayout({
               }
               buscaAberta={buscaAberta}
               botaoBuscaRef={botaoBuscaRef}
+              detailsAction={presentation.enabled && !presentation.layout.inlineContact && !presentation.layout.mobile ? <Button variant="ghost" size="sm" className="h-9 gap-1 px-2" onClick={()=>setFichaAberta(true)}><IdentificationCard size={16}/>{t("Ficha")}</Button> : undefined}
             />
             {buscaAberta && (
               <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
@@ -881,7 +847,7 @@ export function InboxLayout({
                 </Button>
               </div>
             )}
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className={cn("min-h-0 flex-1 overflow-hidden",regionClass("history"))}>
               <ChatThread
                 conversationId={selectedConversation.id}
                 searchTerm={buscaAberta ? busca.termo : ""}
@@ -951,14 +917,20 @@ export function InboxLayout({
           </div>
         )}
       </div>
-
-      <div className="hidden h-full min-h-0 min-w-0 xl:block">
+  );
+  const contactRegion=presentation.enabled && !presentation.layout.inlineContact ? null : (
+      <div className={presentation.enabled ? "h-full min-h-0 min-w-0" : "hidden h-full min-h-0 min-w-0 xl:block"}>
         <CRMSidePanel
           conversation={selectedConversation}
           recolhido={painelRecolhido}
           onAlternarRecolhido={alternarPainelDoContato}
+          fixado={presentation.preference.pinned}
+          onAlternarFixado={presentation.enabled ? ()=>{presentation.setPinned(!presentation.preference.pinned);if(presentation.preference.pinned)setFichaAberta(true);} : undefined}
         />
       </div>
+  );
+  const adjuncts=(<>
+
 
       {/*
         AS DUAS DIVISÓRIAS (#2579) — só a partir do `md`, quando as colunas
@@ -1030,7 +1002,94 @@ export function InboxLayout({
         onToggleHelp={() => setHelpOpen((v) => !v)}
       />
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      {presentation.enabled && selectedConversation && !presentation.layout.inlineContact && (
+        <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
+          <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
+            <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
+            <CRMSidePanel conversation={selectedConversation} fixado={presentation.preference.pinned}
+              onAlternarFixado={()=>{presentation.setPinned(!presentation.preference.pinned);setFichaAberta(false);}}/>
+          </SheetContent>
+        </Sheet>
+      )}
+
+  </>);
+  const nativeLayout=(
+    <div
+      ref={gradeRef}
+      className={cn(
+        "grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[300px_1fr]",
+        // Recolhido (issue #3004), a terceira trilha vira o trilho estreito do
+        // botão de expandir e a conversa fica com o que era da ficha. Duas
+        // listas em vez de uma classe com valor em variável: o Tailwind precisa
+        // do literal para gerar o CSS.
+        painelRecolhido
+          ? "xl:grid-cols-[272px_1fr_2.75rem] 2xl:grid-cols-[300px_1fr_2.75rem]"
+          : "xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]",
+      )}
+      style={estiloDaGrade}
+      /*
+       * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
+       * já publica (`LeadDossier`), e pela mesma razão: quando a entrega morre,
+       * nenhuma tela avisa. Foi o único achado que atravessou o dia intacto
+       * quando o realtime quebrou pela primeira vez, e voltou a morder agora.
+       *
+       * `divergencias` é o que a rede de segurança contou: refetch trouxe estado
+       * novo que o canal NÃO tinha entregue. Zero com o canal vivo; subindo é a
+       * assinatura de canal que assina e não entrega — o defeito que não grita.
+       *
+       * ⚠️ `data-realtime-status` vem do STATUS do canal, não de um objeto que
+       * existe sempre. A primeira versão desta linha derivava o valor de
+       * `listQ.seguranca`, que nunca é nulo — ela diria `ativo` inclusive com o
+       * canal morto. Controle decorativo é pior que controle nenhum: mente com
+       * cara de instrumento.
+       *
+       * Atributo de dado e não texto na tela de propósito: quem lê isto é o
+       * teste e quem depura, não o atendente. Pôr um aviso permanente na cara de
+       * quem atende seria ruído; esconder o sinal do todo é o que custou o dia.
+       */
+      data-realtime-status={listQ.realtimeStatus}
+      data-refetch-divergencias={listQ.seguranca?.divergencias ?? 0}
+    >
+      {/*
+        NO CELULAR, UMA COISA POR VEZ.
+
+        Antes as duas colunas caíam empilhadas em `grid-cols-1`: a lista inteira
+        primeiro e a conversa DEPOIS dela. Para responder era preciso rolar a
+        lista toda até o fim, e o composer ficava fora da tela — que é o
+        "incômodo" relatado por quem atende do telefone.
+
+        Sem media query em JavaScript de propósito: `useMediaQuery` decide DEPOIS
+        da hidratação, então a primeira pintura mostra o layout errado e pisca. A
+        classe condicional é resolvida pelo CSS, na primeira pintura, e some no
+        `md` — onde as duas colunas cabem juntas e a regra não se aplica.
+      */}
+      {listRegion}
+
+
+      {/*
+        AS DUAS COLUNAS DECIDEM PELO MESMO DADO — `selectedId`, não o objeto.
+
+        A da lista some quando há `selectedId`; se esta aparecesse só quando a
+        conversa já está CARREGADA, a janela entre as duas coisas não mostra
+        nenhuma das colunas. No celular isso é a tela em branco, e ela tem dois
+        casos reais: o instante do deep-link `/inbox/<id>`, enquanto a busca
+        única ainda responde; e o estado permanente de conversa fora do acesso,
+        cuja mensagem ("Conversa não encontrada") é justamente o que ficava
+        escondido — deixando o dono numa tela vazia, sem sequer o botão de
+        voltar, porque ele morava dentro do ramo da conversa carregada.
+      */}
+      {conversationRegion}
+      {contactRegion}
+      {adjuncts}
     </div>
+  );
+  return (
+    <OpenConversationProvider conversationId={selectedId}>
+      <UiThemeArea contract={inboxArea} slots={{list:listRegion,conversation:conversationRegion,contact:contactRegion}}
+        rootProps={{ref:gradeRef,className:"grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full",style:estiloDaGrade,
+          "data-realtime-status":listQ.realtimeStatus,"data-refetch-divergencias":listQ.seguranca?.divergencias??0}}
+        slotProps={{list:{style:{display:"contents"}},conversation:{style:{display:"contents"}},contact:{style:{display:contactRegion?"contents":"none"}}}}
+        after={adjuncts} fallback={nativeLayout}/>
     </OpenConversationProvider>
   );
 }

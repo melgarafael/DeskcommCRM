@@ -112,7 +112,10 @@ export function resolverLarguras(pedido: {
   ficha: number;
   larguraContainer: number;
   temFicha: boolean;
+  /** Optional presentation floor; native callers retain 420px. */
+  conversaMinima?: number;
 }): LargurasDoInbox {
+  const minimoDaConversa = typeof pedido.conversaMinima === "number" && Number.isFinite(pedido.conversaMinima) && pedido.conversaMinima >= 370 && pedido.conversaMinima <= 900 ? pedido.conversaMinima : CONVERSA_MINIMA;
   let lista = limitarLista(pedido.lista);
   let ficha = limitarFicha(pedido.ficha);
   const fichaOcupada = pedido.temFicha ? ficha : 0;
@@ -121,16 +124,16 @@ export function resolverLarguras(pedido: {
   if (!mede) return { lista, ficha };
 
   const sobra = () => pedido.larguraContainer - lista - fichaOcupada;
-  if (sobra() < CONVERSA_MINIMA && lista > LIMITES_LISTA.min) {
+  if (sobra() < minimoDaConversa && lista > LIMITES_LISTA.min) {
     lista = Math.max(
       LIMITES_LISTA.min,
-      Math.min(lista, Math.round(pedido.larguraContainer - fichaOcupada - CONVERSA_MINIMA)),
+      Math.min(lista, Math.round(pedido.larguraContainer - fichaOcupada - minimoDaConversa)),
     );
   }
-  if (pedido.temFicha && sobra() < CONVERSA_MINIMA && ficha > LIMITES_FICHA.min) {
+  if (pedido.temFicha && sobra() < minimoDaConversa && ficha > LIMITES_FICHA.min) {
     ficha = Math.max(
       LIMITES_FICHA.min,
-      Math.min(ficha, Math.round(pedido.larguraContainer - lista - CONVERSA_MINIMA)),
+      Math.min(ficha, Math.round(pedido.larguraContainer - lista - minimoDaConversa)),
     );
   }
   return { lista, ficha };

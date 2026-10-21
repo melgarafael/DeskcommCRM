@@ -1,4 +1,7 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { pipelineArea } from "@/lib/ui-themes/areas";
+import { cn } from "@/lib/utils";
 import { useCallback, useMemo, useState } from "react";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { useQueryClient } from "@tanstack/react-query";
@@ -93,6 +96,7 @@ export function KanbanBoard({
   podeRenomearEtapa = false,
 }: KanbanBoardProps) {
   const t = useT();
+  const { regionClass } = useUiThemeArea(pipelineArea);
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
   const queryResult = useBoard(useExternal ? null : pipelineId);
   // O funil INTEIRO, sem o filtro da página: com `leads` vindo de fora esse
@@ -304,7 +308,7 @@ export function KanbanBoard({
           "o quadro cabe na tela"). O respiro até os filtros vem do `gap-4` da
           página. */}
       <div
-        className="flex min-h-0 flex-1 items-start gap-3 overflow-auto px-4 pb-4"
+        className={cn("flex min-h-0 flex-1 items-start gap-3 overflow-auto px-4 pb-4",regionClass("board"))}
         data-quadro-do-funil
       >
         {data.stages.map((stage) => (

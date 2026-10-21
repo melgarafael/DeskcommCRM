@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { inboxArea } from "@/lib/ui-themes/areas";
 import { useT } from "@/hooks/i18n/useT";
 import {
   forwardRef,
@@ -144,6 +146,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   ref,
 ) {
   const t = useT();
+  const { regionClass } = useUiThemeArea(inboxArea);
   const [text, setText] = useState(initialDraft);
   // O aviso some no primeiro ENVIO: depois do clique o rascunho foi usado, e
   // deixar a faixa prometendo texto que já saiu seria mentira de tela.
@@ -627,8 +630,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   return (
     <>
       <div
+        data-ui-mode={mode}
         className={cn(
           "relative border-t border-border bg-background px-3 py-2",
+          regionClass("composer"),
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
@@ -689,7 +694,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </p>
           </div>
         )}
-        <div className="mb-1.5 flex gap-1">
+        <div data-ui-part="composer-modes" className="mb-1.5 flex gap-1">
           <button
             type="button"
             onClick={() => setMode("reply")}
@@ -779,7 +784,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               });
             }}
           />
-          <textarea
+          <textarea data-ui-part="composer-input"
             ref={taRef}
             value={text}
             onChange={(e) => {

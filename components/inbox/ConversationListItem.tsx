@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { inboxArea } from "@/lib/ui-themes/areas";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -166,6 +168,7 @@ export function ConversationListItem({
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
+  const { regionClass } = useUiThemeArea(inboxArea);
   const c = conversation.contacts ?? null;
   const displayName = rotuloParaAEquipe(c, t);
   const phoneFallback = c?.phone_number ? phoneForDisplay(c.phone_number) : "??";
@@ -292,6 +295,7 @@ export function ConversationListItem({
           data-testid={`selecao-em-lote-${conversation.id}`}
           onClick={() => onAlternarSelecao(conversation.id)}
           className={cn(
+          regionClass("list-item"),
             "mt-3 ml-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors",
             "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent",
             selecionado

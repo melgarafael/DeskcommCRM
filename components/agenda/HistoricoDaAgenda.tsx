@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { calendarArea } from "@/lib/ui-themes/areas";
 import Link from "next/link";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
@@ -34,7 +36,7 @@ const ABAS = [
   { id: "cancelados", rotulo: "Cancelados" },
 ] as const;
 
-export type AbaDoHistorico = (typeof ABAS)[number]["id"];
+export type AbaDoHistorico = (typeof ABAS)[number]["id"] | "todos";
 
 /**
  * A VARIANTE do selo por situação. O RÓTULO não mora aqui.
@@ -60,6 +62,7 @@ const VARIANTE_DA_SITUACAO: Record<
 
 function separar(agendamentos: Agendamento[], agora: Date): Record<AbaDoHistorico, Agendamento[]> {
   const vazio: Record<AbaDoHistorico, Agendamento[]> = {
+    todos: [...agendamentos].sort((a,b)=>Date.parse(a.comeca)-Date.parse(b.comeca)),
     proximos: [],
     aguardando: [],
     passados: [],
@@ -140,7 +143,10 @@ export function HistoricoDaAgenda({
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
-  const [aba, setAba] = React.useState<AbaDoHistorico>("proximos");
+  const { contribution, regionClass } = useUiThemeArea(calendarArea);
+  const allFirst = contribution?.configuration.historyAllFirst === true;
+  const abas=allFirst ? [{id:"todos" as const,rotulo:"Todos"},...ABAS] : ABAS;
+  const [aba, setAba] = React.useState<AbaDoHistorico>(()=>allFirst ? "todos":"proximos");
   const grupos = React.useMemo(() => separar(agendamentos, agora), [agendamentos, agora]);
   const daAba = grupos[aba];
 
@@ -148,14 +154,14 @@ export function HistoricoDaAgenda({
     <div
       data-testid="historico-da-agenda"
       data-aba={aba}
-      className={cn("flex min-h-0 flex-col", className)}
+      className={cn("flex min-h-0 flex-col", className, regionClass("history"))}
     >
       <div
         role="tablist"
         aria-label={t("Filtrar o histórico")}
-        className="flex flex-wrap items-center gap-0.5 rounded-md border border-border bg-surface p-0.5"
+        className={cn("flex flex-wrap items-center gap-0.5 rounded-md border border-border bg-surface p-0.5",regionClass("status"))}
       >
-        {ABAS.map((a) => {
+        {abas.map((a) => {
           const n = grupos[a.id].length;
           return (
             <button
@@ -194,6 +200,7 @@ export function HistoricoDaAgenda({
       <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface">
         {daAba.length === 0 ? (
           <p data-testid="historico-vazio" className="p-8 text-center text-sm text-text-muted">
+            {aba === "todos" && t("Nenhum compromisso neste período.")}
             {aba === "proximos" && t("Nada marcado daqui para a frente.")}
             {aba === "aguardando" && t("Ninguém esperando confirmação.")}
             {aba === "passados" && t("Ainda não há atendimentos concluídos.")}
@@ -202,6 +209,7 @@ export function HistoricoDaAgenda({
         ) : (
           <ul>
             {daAba.map((a) => {
+              const abaDaLinha=aba === "todos" ? a.situacao === "cancelled" ? "cancelados" : a.situacao === "pending" ? "aguardando" : isBefore(new Date(a.comeca),agora) ? "passados":"proximos" : aba;
               const pessoa = pessoas.find((p) => p.id === a.responsavelId);
               const variante = VARIANTE_DA_SITUACAO[a.situacao];
               const comeca = new Date(a.comeca);
@@ -255,7 +263,7 @@ export function HistoricoDaAgenda({
                       e eu o generalizei para todas — errado: o passado tem as
                       duas ações mais importantes do histórico.
                     */}
-                    {aba === "aguardando" && (
+                    {abaDaLinha === "aguardando" && (
                       // PRIMEIRO na ordem, e é deliberado: confirmar é o que se
                       // faz com a maioria dos pedidos, e o que a pessoa procura
                       // ao abrir esta aba. Remarcar e cancelar são a exceção.
@@ -269,7 +277,7 @@ export function HistoricoDaAgenda({
                         {t("Confirmar")}
                       </Button>
                     )}
-                    {(aba === "proximos" || aba === "aguardando") && (
+                    {(abaDaLinha === "proximos" || abaDaLinha === "aguardando") && (
                       <>
                         <Button
                           variant="ghost"
@@ -301,7 +309,7 @@ export function HistoricoDaAgenda({
                         </Button>
                       </>
                     )}
-                    {aba === "passados" &&
+                    {abaDaLinha === "passados" &&
                       a.situacao !== "completed" &&
                       a.situacao !== "no_show" && (
                         // Decisão 17. Só enquanto o desfecho NÃO foi registrado:

@@ -1,0 +1,11 @@
+.header {
+  border-block-end-width: 2px;
+}
+.regular {
+  font-weight: 400;
+  border-block-end-width: 1px;
+}
+.emphasis {
+  font-weight: 600;
+  border-block-end-width: 4px;
+}

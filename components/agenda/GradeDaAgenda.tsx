@@ -1,4 +1,6 @@
 "use client";
+import { useUiThemeArea } from "@/components/ui-themes/Area";
+import { calendarArea } from "@/lib/ui-themes/areas";
 
 import * as React from "react";
 
@@ -377,6 +379,7 @@ function BlocoDeAgendamento({
   };
 }) {
   const t = useT();
+  const { regionClass } = useUiThemeArea(calendarArea);
   const comeca = new Date(agendamento.comeca);
   const termina = new Date(agendamento.termina);
   const duracao = Math.max(differenceInMinutes(termina, comeca), 15);
@@ -427,6 +430,7 @@ function BlocoDeAgendamento({
       }`}
       className={cn(
         "absolute flex flex-col items-start overflow-hidden rounded-sm px-1.5 py-0.5 text-left",
+        regionClass("event"),
         "border border-border/60 transition-colors duration-fast ease-out",
         doGoogle ? "cursor-default" : "cursor-pointer hover:border-border-strong",
         // `grab` só quando remarcar é possível: o cursor é a única pista de que
