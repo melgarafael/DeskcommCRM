@@ -188,7 +188,7 @@ describe("a régua da action e a do banco são a mesma (#2804, item 2 pendente)"
         /constraint platform_smtp_settings_host check \(smtp_host is null or smtp_host ~ '([^']+)'\)/g,
       ),
     ];
-    return achei.map((m) => m[1]);
+    return achei.map((m) => m[1] ?? "");
   }
 
   it.each([
