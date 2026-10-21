@@ -42,9 +42,13 @@ export function ForgotPasswordForm() {
         // #2755 — sem SMTP a instalação não envia e-mail NENHUM: dizer
         // "tente novamente" mandava quem esqueceu a senha repetir um gesto que
         // nunca vai funcionar. Dizemos o que é, e quem resolve é o administrador.
+        // #3039 — e a frase deixou de ser um absoluto sobre a instalação: ela
+        // só aparece quando o serviço de login JÁ respondeu que não conseguiu
+        // enviar. Quem põe o SMTP direto no `.env` do Supabase envia por um
+        // caminho que o app não enxerga, e esse caso não chega mais aqui.
         setServerError(
           t(
-            "A recuperação de senha não está disponível nesta instalação: sem SMTP configurado não sai e-mail nenhum. Contate o administrador para configurar em /admin/email.",
+            "A recuperação de senha não está disponível nesta instalação: o serviço de login não conseguiu enviar o e-mail — não há SMTP configurado. Contate o administrador para configurar em /admin/email.",
           ),
         );
       } else {
