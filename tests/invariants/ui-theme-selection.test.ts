@@ -3,7 +3,9 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 if (!process.env.TEST_DB_CONTAINER) throw new Error("Use pnpm test:db");
 const pool = new pg.Pool({
-  connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT}/postgres`,
+  connectionString:
+    process.env.TEST_DB_URL ??
+    `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT}/postgres`,
   max: 4,
 });
 const org = randomUUID(),
