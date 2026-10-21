@@ -319,6 +319,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera um painel em",
     painelEm: "/app/ai/credentials",
   },
+  {
+    modulo: "laudos",
+    id: "modulo-laudos",
+    rotulo: "Consulta de laudos no atendimento",
+    descricao:
+      "Ligado, quando um cliente pergunta se o laudo ou report está pronto (inglês, hindi ou hinglish), a IA conduz um fluxo determinístico: pergunta os dados necessários um por vez e entrega a conversa para um humano verificar. Ela nunca afirma status nem prazo. Desligado, a pergunta segue o caminho normal da IA.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele age dentro da conversa que a IA já atende.",
+  },
 ];
 
 /**

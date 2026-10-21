@@ -134,6 +134,17 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     oQueFaz:
       "Conecta a assinatura do ChatGPT (o mesmo login do Codex): cada empresa conecta a própria conta, em Credenciais, com a chave de API da mesma empresa como reserva. Desligado por padrão.",
   },
+  // O fluxo determinístico de consulta de laudo no turno do agente (o gate
+  // antes do modelo, `lib/agent-engine/agent/report-readiness/`). A IA não
+  // consulta status de laboratório nenhum: responde quem pergunta se o laudo
+  // saiu, coleta os dados da coleta e passa a conversa para verificação
+  // humana. Desligado por padrão — quem administra o servidor liga em
+  // /admin/sistema (mesma disciplina dos demais módulos por flag).
+  laudos: {
+    nome: "Consulta de laudos",
+    oQueFaz:
+      "Quem pergunta se o laudo saiu recebe a resposta certa na hora, com os dados coletados e a conversa passada para verificação humana, sem a IA prometer status, prazo ou valor. Desligado por padrão.",
+  },
 };
 
 /**

@@ -15938,6 +15938,9 @@ export const DICIONARIO: Traducoes = {
   "Você já tem um pagamento em andamento. Use o link para concluir.": { es: "Ya tienes un pago en curso. Usa el enlace para completarlo." },
   "O administrador do sistema ainda não conectou a cobrança.": { es: "El administrador del sistema aún no conectó el cobro." },
   "Sua empresa não tem plano de cobrança.": { es: "Tu empresa no tiene plan de cobro." },
+  // ─── fluxo determinístico de consulta de laudo (módulo opcional `laudos`) ──
+  "Consulta de laudos": { es: "Consulta de informes" },
+  "Quem pergunta se o laudo saiu recebe a resposta certa na hora, com os dados coletados e a conversa passada para verificação humana, sem a IA prometer status, prazo ou valor. Desligado por padrão.": { es: "Quien pregunta si su informe está listo recibe la respuesta adecuada al instante, con los datos recogidos y la conversación pasada a verificación humana, sin que la IA prometa estado, plazo ni valor. Desactivado por defecto." },
   // ─── #1639 — login do Codex por assinatura (fatia do login) ────────────────
   "Login do Codex por assinatura": { es: "Inicio de sesión de Codex por suscripción" },
   "Conecta a assinatura do ChatGPT (o mesmo login do Codex): cada empresa conecta a própria conta, em Credenciais, com a chave de API da mesma empresa como reserva. Desligado por padrão.": { es: "Conecta la suscripción de ChatGPT (el mismo inicio de sesión de Codex): cada empresa conecta su propia cuenta, en Credenciales, con la clave de API de la misma organización como reserva. Desactivado por defecto." },

@@ -62,6 +62,12 @@ export const MODULOS_OPCIONAIS = [
   "financeiro",
   "cobranca",
   "login_codex",
+  // O fluxo DETERMINÍSTICO de consulta de laudo no turno do agente (o gate
+  // antes do modelo). Sem integração de status nenhuma no core: pergunta os
+  // dados do paciente um por vez e entrega para verificação humana, com os
+  // campos na passagem. Desligado (default), o turno é o de sempre
+  // (`lib/agent-engine/agent/report-readiness/`).
+  "laudos",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -83,6 +89,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "crm_b2b",
   "cobranca",
   "login_codex",
+  "laudos",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -110,6 +117,11 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // que o mantenedor pôs (02/10): só quem administra a instalação liga, e
   // ligar libera o painel de conexão em /admin/sistema.
   login_codex: "MODULO_LOGIN_CODEX",
+  // O fluxo de consulta de laudo no turno do agente. Desligado por padrão é a
+  // mesma disciplina dos demais: quem administra a instalação decide se o
+  // gate determinístico de "report pronto?" conduz a conversa no lugar do
+  // modelo (`lib/agent-engine/agent/report-readiness/workflow.ts`).
+  laudos: "MODULO_LAUDOS",
 };
 
 const LIGADO = "ligado";

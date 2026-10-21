@@ -159,6 +159,7 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
     expect(MODULOS_NA_TELA.filter((m) => m.foraDoMenu).map((m) => m.modulo)).toEqual([
       "cobranca",
       "login_codex",
+      "laudos",
     ]);
   });
 });

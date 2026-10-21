@@ -45,6 +45,7 @@ import {
   type DesfechoDoAvisoDaPassagem,
   type MotivoDaPassagem,
   type OrigemDaPassagem,
+  type PassagemNova,
 } from '@/lib/escalacao/passagem';
 import { traduzir } from '@/lib/i18n/dicionario';
 import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
@@ -60,6 +61,17 @@ import type { DeclaracaoDoTurno } from './declaracao';
 
 /** Postgres `infinity`: o bot nunca reassume após handoff. */
 const SILENCE_INFINITY = 'infinity';
+
+/**
+ * O RECIBO da passagem com dados coletados — a chave de `conversations.metadata`
+ * que guarda a MENSAGEM da última tentativa cuja linha foi gravada (#2885, a
+ * metade "idempotente"). Um retry do mesmo turno (mesma mensagem reivindicada
+ * pelo fluxo) lê o recibo antes de inserir e não duplica a linha; uma tentativa
+ * NOVA (outra mensagem) tem outra chave e grava o fato novo. Mesmo domicílio
+ * do claim do fluxo (`report_status_flow`): JSONB em `conversations.metadata`,
+ * sem migration, sem coluna nova.
+ */
+const CHAVE_DO_RECIBO_DA_PASSAGEM = 'passagem_verificacao_manual';
 
 /**
  * Normaliza para a detecção determinística: minúsculas + sem acento (NFD) — os padrões
@@ -208,6 +220,19 @@ export async function performHumanHandoff(
      * briefing do chamador já carrega o que o turno tem.
      */
     camposColetados?: Readonly<Record<string, string>>;
+    /**
+     * A chave da TENTATIVA que gerou esta passagem — a mensagem que o fluxo
+     * determinístico reivindicou (claim em `conversations.metadata`).
+     *
+     * Presente E `camposColetados` presente: o INSERT da linha e o RECIBO da
+     * tentativa correm na MESMA transação, sob advisory lock por conversa —
+     * retry do mesmo turno não duplica a linha, e duas tentativas
+     * CONCORRENTES se serializam (um lookup solto antes do insert não
+     * bastaria: sem o lock, duas chamadas simultâneas liam "sem recibo" e
+     * gravavam duas linhas). Ausente = cada chamada grava a sua, o
+     * comportamento de sempre.
+     */
+    idempotenciaDaPassagem?: string;
     log: Logger;
   },
 ): Promise<void> {
@@ -261,6 +286,14 @@ export async function performHumanHandoff(
   await guardServiceEffect();
   await cancelPendingCronsForLead(db, ids.tenantId, ids.leadId);
 
+  // O vocabulário que o log FINAL registra: o motivo/origem da LINHA que este
+  // chamador gravou (ou tentou gravar). O caminho (c3) os escreve com
+  // `verificacao_manual`/`runtime_nativo` — o log que dizia `nao_declarado`
+  // enquanto a linha dizia `verificacao_manual` contava o mesmo atendimento em
+  // duas formas diferentes (nota do mantenedor no PR #3052).
+  let motivoGravado: string = opts.passagem?.motivoCodigo ?? 'nao_declarado';
+  let origemGravada: string = opts.passagem?.origem ?? 'nao_declarada';
+
   // (c2) A LINHA DE FATO. Vem antes do aviso porque o aviso REMETE a ela: o
   // corpo da Central diz "abra a conversa para ver o contexto", e o contexto é
   // esta linha. Não deduplica — uma passagem é uma passagem, e duas seguidas são
@@ -300,12 +333,14 @@ export async function performHumanHandoff(
   // que houve, porque é a primeira frase de quem abre a conversa.
   if (opts.passagem === undefined && temCamposColetados(opts.camposColetados)) {
     await guardServiceEffect();
+    motivoGravado = 'verificacao_manual';
+    origemGravada = 'runtime_nativo';
     const briefing = montarBriefingDaPassagem({
       checkpoint: null,
       camposColetados: opts.camposColetados,
       motivo: { codigo: 'verificacao_manual' },
     });
-    const gravou = await registrarPassagem(db, {
+    const nova: PassagemNova = {
       organizationId: ids.tenantId,
       contactId: ids.leadId,
       conversationId: ids.conversationId,
@@ -313,12 +348,19 @@ export async function performHumanHandoff(
       origem: 'runtime_nativo',
       motivoCodigo: 'verificacao_manual',
       briefing,
-    });
-    // Mesma disciplina do (c2): a passagem já aconteceu, o erro vira log.
-    if (!gravou.gravada) {
-      opts.log.warn('passagem com dados coletados não registrada — o aviso sai, os campos não', {
-        erro: gravou.erro,
-      });
+      ...(opts.avisoAoLead !== undefined ? { aviso: desfechoDaPassagem(opts.avisoAoLead) } : {}),
+    };
+    const chave = opts.idempotenciaDaPassagem?.trim() || null;
+    if (chave === null) {
+      const gravou = await registrarPassagem(db, nova);
+      // Mesma disciplina do (c2): a passagem já aconteceu, o erro vira log.
+      if (!gravou.gravada) {
+        opts.log.warn('passagem com dados coletados não registrada — o aviso sai, os campos não', {
+          erro: gravou.erro,
+        });
+      }
+    } else {
+      await gravarPassagemComRecibo(db, ids, nova, chave, opts.log);
     }
   }
 
@@ -400,8 +442,8 @@ export async function performHumanHandoff(
   // cliente: o comentário "PII fora do log" já era falso quando foi escrito. O
   // que sai agora é o código canônico do motivo, que é vocabulário fechado.
   opts.log.info('handoff humano aplicado (force_human + silêncio + crons cancelados + inbox)', {
-    motivo_codigo: opts.passagem?.motivoCodigo ?? 'nao_declarado',
-    origem: opts.passagem?.origem ?? 'nao_declarada',
+    motivo_codigo: motivoGravado,
+    origem: origemGravada,
   });
 }
 
@@ -414,6 +456,87 @@ export async function performHumanHandoff(
 function temCamposColetados(campos: Readonly<Record<string, string>> | undefined): boolean {
   if (campos === undefined) return false;
   return Object.values(campos).some((v) => typeof v === 'string' && v.trim() !== '');
+}
+
+/**
+ * GRAVA A PASSAGEM COM RECIBO — o caminho idempotente do (c3) (#2885, a metade
+ * "idempotente": a passagem é o fato, e uma retentativa do MESMO turno não é um
+ * fato novo — é o mesmo, pela segunda vez).
+ *
+ * Tudo numa transação só:
+ *
+ *   1. `pg_advisory_xact_lock` por conversa serializa as tentativas — o padrão
+ *      que `before-send.ts` já usa por número. Sem o lock, um lookup solto
+ *      antes do insert NÃO prova nada: duas chamadas simultâneas leem "sem
+ *      recibo" ao mesmo tempo e gravam duas linhas;
+ *   2. o RECIBO (`conversations.metadata.passagem_verificacao_manual.msg`, a
+ *      mensagem que o fluxo reivindicou) diz qual tentativa já tem linha —
+ *      mesma chave = retry do mesmo turno = pula; chave diferente = fato novo =
+ *      grava;
+ *   3. INSERT e recibo são atômicos: morrer no meio não deixa recibo sem linha
+ *      (retry reinsere) nem linha sem recibo (retry duplicaria).
+ *
+ * Não lança, como o resto do handoff: a passagem já aconteceu quando isto roda
+ * (`force_human` gravado, conversa fora do automático) — erro vira `warn` no
+ * logger do chamador e a chamada segue. O que se perde é a linha de contexto, e
+ * o aviso da Central (d) sai do mesmo jeito.
+ */
+async function gravarPassagemComRecibo(
+  db: pg.Pool,
+  ids: HandoffIds,
+  nova: PassagemNova,
+  chave: string,
+  log: Logger,
+): Promise<void> {
+  const cliente = await db.connect();
+  try {
+    await cliente.query('begin');
+    await cliente.query('select pg_advisory_xact_lock(hashtext($1))', [
+      `${ids.tenantId}:${ids.conversationId}:verificacao_manual`,
+    ]);
+    const { rows } = await cliente.query<{ msg: string | null }>(
+      `select metadata->'${CHAVE_DO_RECIBO_DA_PASSAGEM}'->>'msg' as msg
+         from conversations where organization_id = $1 and id = $2`,
+      [ids.tenantId, ids.conversationId],
+    );
+    if (rows[0]?.msg === chave) {
+      // Retry da MESMA tentativa: a linha existe, o fato já está registrado —
+      // e o resto do handoff (efeitos (a)–(d)) segue idempotente por fora.
+      await cliente.query('rollback');
+      log.info('passagem com dados coletados já gravada — retry não duplica a linha', {
+        motivo_codigo: 'verificacao_manual',
+      });
+      return;
+    }
+    const gravou = await registrarPassagem(cliente, nova);
+    if (!gravou.gravada) {
+      await cliente.query('rollback');
+      log.warn('passagem com dados coletados não registrada — o aviso sai, os campos não', {
+        erro: gravou.erro,
+      });
+      return;
+    }
+    await cliente.query(
+      `update conversations
+          set metadata = coalesce(metadata, '{}'::jsonb)
+              || jsonb_build_object($3, jsonb_build_object('msg', $4::text, 'gravado_em', to_jsonb(now())))
+        where organization_id = $1 and id = $2`,
+      [ids.tenantId, ids.conversationId, CHAVE_DO_RECIBO_DA_PASSAGEM, chave],
+    );
+    await cliente.query('commit');
+  } catch (err) {
+    try {
+      await cliente.query('rollback');
+    } catch {
+      // A conexão pode ter morrido — o `release` do `finally` ainda roda, e o
+      // advisory lock sai junto com a transação que o prendeu.
+    }
+    log.warn('passagem com dados coletados não registrada — o aviso sai, os campos não', {
+      erro: err instanceof Error ? err.message.slice(0, 200) : 'erro_desconhecido',
+    });
+  } finally {
+    cliente.release();
+  }
 }
 
 /**
