@@ -29,7 +29,7 @@
  * Nada com Postgres real nem com a plataforma: que o canal aceita o modelo é do
  * adapter (`sendTemplate`), não deste turno.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
 
@@ -157,6 +157,18 @@ let criarHandler: typeof import("@/lib/agent-engine/agent/followup-turn").create
 beforeAll(async () => {
   ({ createFollowupTurnHandler: criarHandler } = await import("@/lib/agent-engine/agent/followup-turn"));
 }, 60_000);
+
+// Relógio fixo DENTRO da janela anti-ban de disparo: desde a #3108 o passo de IA
+// lê essa janela antes do turno, e com o relógio real os casos de "a IA
+// escreve" viravam adiamento depois das 22h. Só o `Date` é falso, para a
+// janela de 24 h (medida contra `Date.now()`) andar junto.
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-20T15:00:00.000Z")); // terça, 12h em São Paulo
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   runBeforeSend.mockClear();
