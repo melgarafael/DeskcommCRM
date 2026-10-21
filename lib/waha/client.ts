@@ -240,6 +240,38 @@ const sessionSnapshotSchema = z.object({
 export type WahaSessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 type SessionOperation = "create" | "start" | "stop" | "logout" | "delete";
 
+/**
+ * Um contato do aparelho, como o `GET /api/contacts/all` devolve (doc do WAHA,
+ * seção "Get all contacts").
+ *
+ * `name` é o nome salvo na AGENDA do aparelho; `pushname` é o nome de perfil
+ * do WhatsApp. Os marcadores vêm como `null` quando o WAHA não os traz —
+ * mentir com `false` convidaria o chamador a tratar "não sei" como "não é".
+ */
+export interface ContatoDoAparelho {
+  id: string;
+  name: string | null;
+  pushname: string | null;
+  /** `true` = está salvo na agenda do aparelho. */
+  isMyContact: boolean | null;
+  /** `true` = o número tem WhatsApp. `false` = salvo na agenda, mas sem WhatsApp. */
+  isWAContact: boolean | null;
+  /** `true` = é o próprio número do operador. */
+  isMe: boolean | null;
+}
+
+/** Tolerante aos extras que o WAHA acrescenta; só o que usamos é tipado. */
+const contatoDoAparelhoSchema = z.object({
+  id: z.string(),
+  name: z.string().nullish(),
+  pushname: z.string().nullish(),
+  pushName: z.string().nullish(),
+  isMyContact: z.boolean().nullish(),
+  isWAContact: z.boolean().nullish(),
+  isMe: z.boolean().nullish(),
+}).passthrough();
+
+
 /** Mantém o prefixo/status que checkHealth e os callers já classificam. */
 export class WahaSessionError extends Error {
   constructor(
@@ -899,6 +931,70 @@ export class WahaClient {
       throw new Error(`waha_${res.status}`);
     }
     return res.json() as Promise<{ numberExists: boolean; chatId?: string | null; pn?: string | null }>;
+  }
+
+  /**
+   * Uma página da AGENDA do aparelho pareado (`GET /api/contacts/all`) — issue #2736.
+   *
+   * ─── O que este endpoint devolve, e por que ele é o caminho certo ──────────
+   *
+   * É a lista de contatos que o PRÓPRIO aparelho conhece: `id` (`<número>@c.us`),
+   * `name` (o nome salvo na AGENDA), `pushname` (o nome de perfil do WhatsApp)
+   * e os marcadores `isMyContact` (está salvo na agenda do aparelho),
+   * `isWAContact` (o número tem WhatsApp) e `isMe` (é o próprio operador).
+   * Ou seja: o filtro "quem está salvo no celular" já vem pronto de lá — o CRM
+   * não precisa adivinhar nada.
+   *
+   * ─── Paginação, e a ordenação que ela exige ────────────────────────────────
+   *
+   * `limit`/`offset` chegam na doc do WAHA como a saída para timeout em lista
+   * grande. Sem uma ordenação FIXA, porém, o offset é uma aposta: a lista pode
+   * voltar numa ordem que não é estável entre chamadas, e o salto pula ou
+   * repete contato sem erro nenhum. Por isso `sortBy=id&sortOrder=asc` vão
+   * junto em TODA chamada — é o que torna "página seguinte" uma pergunta com
+   * resposta.
+   *
+   * ─── O caso NOWEB sem store, que vem vazio e não é erro ────────────────────
+   *
+   * No NOWEB (o engine padrão do kit) este endpoint só enxerga o que o store
+   * da sessão guardou (`noweb.store.enabled` — a opção "Guardar histórico" da
+   * conexão). Sem ele a resposta é `[]`: lista vazia é um desfecho legítimo e
+   * quem chama decide o que comunicar; HTTP errado continua sendo exceção.
+   */
+  async listarAgendaDoAparelho(
+    session: string,
+    pagina: { limit: number; offset: number },
+  ): Promise<ContatoDoAparelho[]> {
+    const url = new URL(`${this.baseUrl}/api/contacts/all`);
+    url.searchParams.set("session", session);
+    url.searchParams.set("limit", String(pagina.limit));
+    url.searchParams.set("offset", String(pagina.offset));
+    url.searchParams.set("sortBy", "id");
+    url.searchParams.set("sortOrder", "asc");
+    const res = await this.fetchComTeto(url, {
+      headers: { "X-Api-Key": this.apiKey, Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`waha_contacts_all_${res.status}`);
+    const bruto: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(bruto)) return [];
+    const contatos: ContatoDoAparelho[] = [];
+    for (const item of bruto) {
+      const parsed = contatoDoAparelhoSchema.safeParse(item);
+      if (!parsed.success) continue;
+      const c = parsed.data;
+      contatos.push({
+        id: c.id,
+        name: c.name?.trim() || null,
+        // O doc do WAHA escreve `pushname` minúsculo; builds antigos devolvem
+        // `pushName`. As duas casas no schema custam um campo e evitam perder
+        // o nome inteiro por diferença de caixa.
+        pushname: (c.pushname ?? c.pushName)?.trim() || null,
+        isMyContact: c.isMyContact ?? null,
+        isWAContact: c.isWAContact ?? null,
+        isMe: c.isMe ?? null,
+      });
+    }
+    return contatos;
   }
 
   async sendContactVcard(

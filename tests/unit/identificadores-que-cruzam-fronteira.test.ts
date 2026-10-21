@@ -193,6 +193,7 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "components/modulos/ModulosManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "hooks/ai/useSkills.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "hooks/contacts/useImportContacts.ts", fronteira: "api.idempotency-key", papel: "gerador" },
+  { arquivo: "hooks/contacts/useSyncPhoneContacts.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "lib/api/client.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "lib/api/idempotency.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "lib/extensions/http.ts", fronteira: "api.idempotency-key", papel: "validador" },

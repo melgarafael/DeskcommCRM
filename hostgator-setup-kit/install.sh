@@ -1913,10 +1913,8 @@ esac
   printf '# Opcional — sem ela a IA responde sem a base e pede o áudio em texto.\n'
   envq OPENAI_API_KEY "${OPENAI_API_KEY:-}"
   printf '# Web Push: aviso na bandeja do sistema com a aba do CRM fechada.\n'
-  printf '# Opcional e VAZIO por padrão — sem o par, os avisos aparecem só com o\n'
-  printf '# site aberto, que é exatamente o que acontecia antes. Para ligar:\n'
-  printf '#   npx web-push generate-vapid-keys\n'
-  printf '# e cole as duas chaves aqui (depois: docker compose up -d app).\n'
+  printf '# Gerado pelo install/update uma única vez. NÃO troque: trocar desliga\n'
+  printf '# os avisos de todo aparelho já inscrito.\n'
   envq VAPID_PUBLIC_KEY "${VAPID_PUBLIC_KEY:-}"
   envq VAPID_PRIVATE_KEY "${VAPID_PRIVATE_KEY:-}"
   printf '# Provisionamento por sistema externo (POST /api/v1/tenants/provision):\n'
@@ -1981,6 +1979,10 @@ esac
   fi
 } > .env
 chmod 600 .env
+# O par dos avisos com o app fechado (Web Push): gerado aqui uma única vez, pela
+# MESMA função que a atualização usa (`gravar_imagens`). Reexecutar o install
+# não troca nada: o `load_env` lá em cima trouxe o par, e o `envq` o regravou.
+completar_par_vapid .env
 # O .env definitivo existe: o rascunho cumpriu o papel e some — deixá-lo no
 # disco seria uma segunda cópia dos segredos, e desatualizada na primeira
 # correção que alguém fizer no .env.

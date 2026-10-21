@@ -1,8 +1,17 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * PATCH  /api/v1/message-templates/[id] — atualiza título/corpo/atalho e a
- *        LISTA de imagens (`midias`, #2526).
+ * PATCH  /api/v1/message-templates/[id] — atualiza título/corpo/atalho, a mídia
+ *        do recurso e a LISTA de imagens (`midias`, #2526).
  * DELETE /api/v1/message-templates/[id] — remove o template e as imagens dele.
+ *
+ * ─── A rota GET (URL assinada do áudio) saiu em #2833 ───────────────────────
+ *
+ * Ela existia para o caminho próprio da barra de recursos: o clique assinava a
+ * URL do áudio e armava um anexo pendente só dele. Com a barra passando pelo
+ * MESMO `applyTemplate` do `/` (que baixa os bytes por
+ * `GET /message-templates/:id/midias/:indice`, a rota que já existia), ninguém
+ * mais a chamava: o grep de chamadores — `useMessageTemplates`, hooks e telas —
+ * ficou vazio, e o compositor era o último consumidor.
  *
  * O `.eq("organization_id", org.orgId)` é defesa extra, não substitui a RLS
  * `message_templates_write` — quem já não é dono (agent) nem manager (compartilhado)
@@ -48,6 +57,9 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * PATCH — atualiza título/corpo/atalho, a mídia do recurso e a LISTA de imagens.
+ */
 export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;

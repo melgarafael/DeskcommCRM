@@ -144,6 +144,9 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions$/i,
   /^\/api\/v1\/prospecting$/,
   /^\/api\/v1\/agenda\/tipos$/,
+  // A configuração de serviços valida sessão/Bearer e papel na própria rota.
+  // Só este endpoint: nenhum sub-path futuro herda a passagem pela borda.
+  /^\/api\/v1\/agenda\/servicos$/,
   // VERSÃO, PUBLICAÇÃO E TESTE DO AGENTE SERVER-TO-SERVER (issue #2052).
   // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
@@ -177,8 +180,9 @@ export const PUBLIC_PATHS: RegExp[] = [
   // antes desta linha: `GET /icon` → 307 para `/login?next=%2Ficon`, enquanto
   // `/icon.png` (inexistente) devolvia 404 — a diferença é só a extensão.
   /^\/icon$/,
-  // PNGs públicos do app instalado, apenas dois tamanhos e somente marca da instalação.
-  /^\/app-icon\/(192|512)$/,
+  // PNGs públicos do app instalado, só os tamanhos que o manifest e o iPhone
+  // pedem, e somente com a marca da instalação.
+  /^\/app-icon\/(180|192|512|maskable)$/,
   /^\/manifest\.webmanifest$/,
   /^\/team\/accept-invite\/.+$/,
   // OS MOLDES DE E-MAIL DO GoTrue. Quem busca é o GoTrue, um processo de

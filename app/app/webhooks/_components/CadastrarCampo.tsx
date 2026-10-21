@@ -17,6 +17,7 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import {
   TIPOS_CADASTRAVEIS_DA_CAPTACAO,
@@ -28,30 +29,6 @@ import {
 } from "@/lib/webhooks/campo-da-captacao";
 
 type Traduz = (texto: string) => string;
-
-/** O rótulo de cada tipo na tela. Cada texto é literal dentro de `t()` para o guarda de tradução enxergá-lo. */
-function rotuloDoTipo(tipo: TipoCadastravel, t: Traduz): string {
-  switch (tipo) {
-    case "text":
-      return t("Texto");
-    case "textarea":
-      return t("Texto longo");
-    case "number":
-      return t("Número");
-    case "currency":
-      return t("Moeda (BRL)");
-    case "date":
-      return t("Data");
-    case "email":
-      return t("E-mail");
-    case "phone":
-      return t("Telefone");
-    case "url":
-      return t("Link");
-    case "boolean":
-      return t("Sim/Não");
-  }
-}
 
 export interface CampoDoFunilDaCaptacao {
   /** Só é `true` quando há funil legível e a fonte ainda existe — sem isso não se oferece o botão. */

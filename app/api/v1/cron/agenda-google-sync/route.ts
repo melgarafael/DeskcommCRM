@@ -75,6 +75,11 @@ async function executar(req: NextRequest) {
       if (calendarError) throw calendarError;
       for (const calendar of calendars ?? []) {
         if (!calendar.counts_for_conflicts && !calendar.is_destination) {
+          const { data: serviceSources, error: sourceError } = await db.from("calendar_service_calendar_sources")
+            .select("event_type_id").eq("organization_id", org).eq("calendar_id", calendar.id).limit(1);
+          const { data: serviceDestinations, error: destinationError } = await db.from("calendar_event_types")
+            .select("id").eq("organization_id", org).eq("destination_calendar_id", calendar.id).eq("service_enabled", true).limit(1);
+          if (sourceError || destinationError) throw sourceError ?? destinationError;
           const { data: linked, error: linkError } = await db
             .from("calendar_google_reconcilable_appointments")
             .select("id")
@@ -83,7 +88,7 @@ async function executar(req: NextRequest) {
             .eq("google_calendar_id", calendar.external_calendar_id)
             .limit(1);
           if (linkError) throw linkError;
-          if (!linked?.length) {
+          if (!linked?.length && !serviceSources?.length && !serviceDestinations?.length) {
             // Sem consumidor agora: retire do início do lote. Uma escolha
             // futura rearma o prazo na própria RPC de seleção.
             const { error: deferredError } = await db

@@ -12,7 +12,8 @@
  * `/api/v1/team/assignable` documenta como "mínima"), e a Agenda desistir de
  * listar deixa o Atendente sem ver com quem é o compromisso. A boa é a lista
  * MÍNIMA, com o menor papel que resolve: quem lê a agenda de outra pessoa é
- * `agent`, e o que sai daqui é id, papel e nome — nada de PII.
+ * `agent`, e o que sai daqui é id, papel, nome e rótulo de apresentação.
+ * O fallback explícito por e-mail é restrito à agenda, sem reduzir o papel da rota da equipe.
  */
 export const ROTA_DA_LISTA_DE_PESSOAS = "/api/v1/agenda/pessoas";
 
@@ -26,9 +27,10 @@ export const PAPEL_MINIMO_DA_LISTA = "agent";
 
 /**
  * As colunas expostas. `email` e `last_sign_in_at` NÃO entram: a barra de
- * pessoas mostra nome, e o resto é dado pessoal a mais numa tela que não usa.
+ * pessoas usa display_label: nome válido, ou e-mail quando falta nome.
+ * Não expõe e-mail separadamente quando já existe nome; full_name conserva seu contrato.
  */
-export const CAMPOS_DA_LISTA = ["user_id", "role", "full_name"] as const;
+export const CAMPOS_DA_LISTA = ["user_id", "role", "full_name", "display_label"] as const;
 
 /**
  * POR QUE a lista não veio — o que a tela precisa dizer.

@@ -24,6 +24,7 @@ import { Plus, PencilSimple, Trash } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { ehRecursoDeAudio } from "@/lib/inbox/recursos";
 import { TemplateFormDialog } from "./TemplateFormDialog";
 
 const TEMPLATES_KEY = ["message-templates"];
@@ -97,11 +98,11 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
     <div className="space-y-4">
       <div className="flex sm:justify-end">
         <Button type="button" onClick={openNew} className="w-full sm:w-auto">
-          <Plus /> {t("Novo template")}
+          <Plus /> {t("Nova resposta rápida")}
         </Button>
       </div>
       {!templates?.length ? (
-        <p className="text-sm text-muted-foreground">{t("Nenhum template ainda.")}</p>
+        <p className="text-sm text-muted-foreground">{t("Nenhuma resposta rápida ainda.")}</p>
       ) : (
         <ul className="space-y-2">
           {templates.map((template) => {
@@ -116,17 +117,20 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                     <Badge variant={template.owner_user_id ? "neutral" : "default"}>
                       {t(template.owner_user_id ? "Pessoal" : "Compartilhado")}
                     </Badge>
+                    {ehRecursoDeAudio(template) && <Badge variant="neutral">🎧 {t("Áudio")}</Badge>}
                     {/* A resposta rápida que leva imagem do próprio operador
                         (#2526) se anuncia na lista: sem isto, quem usa o menu
                         "/" do composer não tem como saber qual script não é
                         só texto até escolher. */}
-                    {template.midias && template.midias.length > 0 && (
+                    {!ehRecursoDeAudio(template) && template.midias && template.midias.length > 0 && (
                       <Badge variant="neutral">
                         {t("Imagens")} {template.midias.length}
                       </Badge>
                     )}
                   </div>
-                  <p className="line-clamp-2 text-sm text-muted-foreground">{template.body}</p>
+                  <p className="line-clamp-2 text-sm text-muted-foreground">
+                    {ehRecursoDeAudio(template) ? t("Resposta rápida de áudio") : template.body}
+                  </p>
                 </div>
                 {canModify(template) && (
                   <div className="flex shrink-0 gap-1">
@@ -134,7 +138,7 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      aria-label={t("Editar template")}
+                      aria-label={t("Editar resposta rápida")}
                       onClick={() => openEdit(template)}
                     >
                       <PencilSimple />
@@ -145,14 +149,14 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          aria-label={t("Excluir template")}
+                          aria-label={t("Excluir resposta rápida")}
                         >
                           <Trash />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>{t("Excluir este template?")}</AlertDialogTitle>
+                          <AlertDialogTitle>{t("Excluir esta resposta rápida?")}</AlertDialogTitle>
                           <AlertDialogDescription>
                             {t("Essa ação não pode ser desfeita.")}
                           </AlertDialogDescription>
@@ -162,7 +166,7 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                           <AlertDialogAction
                             onClick={() =>
                               del.mutate(template.id, {
-                                onSuccess: () => toast.success(t("Template excluído.")),
+                                onSuccess: () => toast.success(t("Resposta rápida excluída.")),
                               })
                             }
                           >

@@ -17,9 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
+import { camposQueMudaram, mensagemDaRecusa, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
 import { contactPatchSchemaDoPais, type ContactPatch } from "@/lib/schemas/contacts";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import type { Contact } from "@/lib/types/contacts";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
@@ -29,7 +31,8 @@ interface FormShape {
   phone_number?: string;
   /** `AAAA-MM-DD` — a MESMA forma de `contactPatchSchema` e da coluna do banco. */
   birthdate?: string;
-  tagsRaw?: string;
+  /** As etiquetas do contato — o seletor com autocompletar grava esta lista. */
+  tags?: string[];
   custom_fields?: Record<string, unknown>;
 }
 
@@ -39,9 +42,20 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Definições vindas de `crm_pipelines.settings.fields[]`. Vazio = a seção some. */
   customFieldDefs?: CustomFieldDef[];
+  /** Etiquetas já usadas na organização (`useContactTagVocabulary`). */
+  vocabulario?: readonly string[] | null;
+  /** `pipelines.settings.canonical_tags` do funil padrão. */
+  canonicalTags?: readonly string[] | null;
 }
 
-export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs = [] }: Props) {
+export function EditContactDialog({
+  contact,
+  open,
+  onOpenChange,
+  customFieldDefs = [],
+  vocabulario,
+  canonicalTags,
+}: Props) {
   const t = useT();
   const perfil = perfilDoPais(useActiveOrg()?.country);
   const update = useUpdateContact(contact.id);
@@ -53,12 +67,18 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
       birthdate: contact.birthdate ?? "",
-      tagsRaw: contact.tags.join(", "),
+      tags: contact.tags,
       custom_fields: contact.custom_fields ?? {},
     },
   });
 
   const customFields = useWatch({ control: form.control, name: "custom_fields" });
+  const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
+  // A etiqueta que o texto AINDA digitado no campo de etiquetas viraria — o
+  // campo avisa pelo `onPendente`, e o `Salvar` inclui isto no payload. Sem
+  // isso, quem digita e salva sem Enter perde o texto em silêncio (defeito
+  // medido na tela do PR #2831).
+  const [etiquetaPendente, setEtiquetaPendente] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -67,17 +87,58 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
         birthdate: contact.birthdate ?? "",
-        tagsRaw: contact.tags.join(", "),
+        tags: contact.tags,
         custom_fields: contact.custom_fields ?? {},
       });
     }
   }, [open, contact, form]);
 
+  // Na ficha o diálogo fica MONTADO entre aberturas, e o pendente também:
+  // fechar por qualquer caminho o descarta, senão o texto de uma edição
+  // cancelada entra no próximo Salvar, e um chip removido volta sozinho.
+  function mudarAbertura(v: boolean) {
+    if (!v) setEtiquetaPendente(null);
+    onOpenChange(v);
+  }
+
   async function onSubmit(values: FormShape) {
     setServerError(null);
+
+    // ── O PADRÃO (#2730) ──────────────────────────────────────────────────
+    //
+    // A MESMA régua do servidor, mais um portão aqui: o `CustomFieldsEditor`
+    // já avisa conforme se digita, mas o submit é o último degrau antes do 422
+    // da API — e a frase que aparece é a DO CAMPO (`mensagem_padrao`), não
+    // "dados inválidos". Sem `padrao` a lista vem vazia: o campo livre segue
+    // livre, byte a byte, e nada disto acontece.
+    //
+    // ⚠️ Julga o DIFF, não o mapa que o formulário carrega (#2814). O
+    // `CustomFieldsEditor` devolve o `custom_fields` INTEIRO a cada tecla — o
+    // campo escondido por `mostrar_quando` viaja junto com o valor que ele já
+    // tinha — e o portão recusava a gravação por um campo que a pessoa nem
+    // tocou: trocar só o nome devolvia o erro de `idades`. Mesma conta do
+    // servidor (`camposQueMudaram` → `camposAlterados`), mesmo estado anterior
+    // (o contato que o diálogo recebeu para abrir).
+    const recusas = recusasDePadrao(
+      customFieldDefs,
+      camposQueMudaram(values.custom_fields, contact.custom_fields),
+    );
+    if (recusas.length > 0) {
+      setServerError(mensagemDaRecusa(recusas[0]!, t));
+      return;
+    }
+
+    // O texto que ficou NO CAMPO sem Enter não pode sumir ao salvar (defeito
+    // medido na tela do PR #2831): quem digita "cliente diamante", ou uma
+    // etiqueta que já existe, e clica em Salvar espera a etiqueta gravada. O
+    // campo já resolveu o pendente pela MESMA régua do Enter — reusa a grafia
+    // existente, ou cria a nova — e ela entra no payload aqui.
     // A MESMA normalização da API (lib/contacts/tag-normalizada): o que a ficha
     // grava é o que o filtro `?tag=` casa (issue #1224).
-    const tags = normalizarTags((values.tagsRaw ?? "").split(","));
+    const tags = normalizarTags([
+      ...(values.tags ?? []),
+      ...(etiquetaPendente ? [etiquetaPendente] : []),
+    ]);
 
     const payload: Record<string, unknown> = {};
     if (values.name?.trim()) payload.name = values.name.trim();
@@ -103,14 +164,14 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
     try {
       await update.mutateAsync(parsed.data as ContactPatch);
       toast.success(t("Contato atualizado"));
-      onOpenChange(false);
+      mudarAbertura(false);
     } catch {
       // hook handles toast
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={mudarAbertura}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("Editar contato")}</DialogTitle>
@@ -135,7 +196,15 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
           </div>
           <div className="space-y-2">
             <Label htmlFor="ec-tags">{t("Tags")}</Label>
-            <Input id="ec-tags" {...form.register("tagsRaw")} />
+            <EtiquetasDoContato
+              inputId="ec-tags"
+              value={tags}
+              onPendente={setEtiquetaPendente}
+              onChange={(next) => form.setValue("tags", next, { shouldDirty: true })}
+              vocabulario={vocabulario}
+              canonicalTags={canonicalTags}
+              disabled={update.isPending}
+            />
           </div>
           {customFieldDefs.length > 0 && (
             <div className="space-y-3 rounded-md border border-border p-3">
@@ -153,12 +222,16 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
               />
             </div>
           )}
-          {serverError && <p className="text-sm text-error-fg">{serverError}</p>}
+          {serverError && (
+            <p role="alert" className="text-sm text-error-fg">
+              {serverError}
+            </p>
+          )}
           <DialogFooter>
             <Button
               type="button"
               variant="ghost"
-              onClick={() => onOpenChange(false)}
+              onClick={() => mudarAbertura(false)}
               disabled={update.isPending}
             >
               {t("Cancelar")}

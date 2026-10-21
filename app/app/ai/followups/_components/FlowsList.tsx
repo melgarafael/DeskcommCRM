@@ -35,6 +35,20 @@ function formatUpdatedAt(iso: string, idioma: string): string {
   });
 }
 
+/**
+ * A política de handoff em palavra de gente, para o cartão da lista (#3104).
+ *
+ * A coluna mostrava o valor CRU do banco (`pause`, `cancel`, `allow`) ao lado
+ * de «Handoff» — com o perfil em espanhol, «Transferencia: pause». O `value`
+ * gravado continua o mesmo; o seletor da barra de publicação mantém as frases
+ * longas dele («Pausar durante handoff»), porque ali há espaço para explicar.
+ */
+const HANDOFF_EM_PALAVRA: Record<string, string> = {
+  pause: "Pausar",
+  cancel: "Cancelar",
+  allow: "Permitir",
+};
+
 export function FlowsList({ initialData, canWrite, surface }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -160,11 +174,13 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
                   </div>
                   <div>
                     <dt className="text-text-muted">{t("Handoff")}</dt>
-                    <dd className="font-mono">{flow.handoff_policy}</dd>
+                    <dd className="font-mono">
+                      {t(HANDOFF_EM_PALAVRA[flow.handoff_policy] ?? flow.handoff_policy)}
+                    </dd>
                   </div>
                 </dl>
                 <p className="mt-auto pt-2 text-xs text-text-muted">
-                  Atualizado em {formatUpdatedAt(flow.updated_at, tagDoIdioma)}
+                  {t("Atualizado em")} {formatUpdatedAt(flow.updated_at, tagDoIdioma)}
                 </p>
               </Link>
               {canWrite && (

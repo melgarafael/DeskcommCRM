@@ -1,5 +1,5 @@
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { BarraInferior } from "@/components/shell/BarraInferior";
@@ -9,6 +9,7 @@ import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessage
 import { useInboundCallAlerts } from "@/hooks/calls/useInboundCallAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
+import { ensureNotifyServiceWorker } from "@/lib/notifications/service_worker";
 import { estiloDaReserva, useOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
 
 interface AppShellProps {
@@ -30,6 +31,13 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
   useInboundCallAlerts();
   useCrmAlerts();
   useNotifyOpenFromServiceWorker();
+  // O SW em todo /app, e não só depois da permissão de avisos: é ele que
+  // responde a página neutra quando a navegação cai sem rede (ADR-0006, D4),
+  // e é aqui que a versão nova dele substitui a antiga depois de um deploy.
+  // Sem contexto seguro (http://IP) a função devolve null e nada acontece.
+  useEffect(() => {
+    void ensureNotifyServiceWorker();
+  }, []);
   // O SINAL DE PRESENÇA (issue #996) sai daqui porque presença é "esta aba
   // está aberta" — não "a pessoa está na tela Equipe". Quem atende passa o dia
   // no Inbox e na Agenda; um emissor amarrado à tela de gestão diria que só o

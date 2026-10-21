@@ -891,6 +891,14 @@ export const NAV_CATALOG = [
     section: "Sua conta",
   },
   {
+    href: "/app/settings/aplicativo",
+    label: "App no celular",
+    description: "Instale o sistema na tela de início do celular e receba os avisos.",
+    icon: "DeviceMobile",
+    group: "organizacao",
+    section: "Sua conta",
+  },
+  {
     href: "/app/team",
     label: "Equipe",
     description: "Quem trabalha aqui, com qual papel e quanta conversa cada um aguenta.",

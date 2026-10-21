@@ -32,9 +32,14 @@ function absUrl(path: string): string {
 }
 
 /**
- * `new Notification()` é o que o Chrome desenha na bandeja; `silent: false`
- * usa o som do SO (AudioContext some com a aba oculta). Se o construtor falha,
- * cai no `showNotification` do service worker.
+ * Com o service worker controlando a página, o aviso sai pelo registro dele —
+ * o MESMO que mostra o push. Só aí a mesma tag substitui de um lado para o
+ * outro: no Chrome do computador, `new Notification` e o aviso do SW vivem em
+ * listas separadas, e o mesmo aviso apareceria duas vezes.
+ *
+ * Sem SW no controle, `new Notification()`; `silent: false` usa o som do SO
+ * (AudioContext some com a aba oculta). Se o construtor falha (Android), cai
+ * no `showNotification` do service worker.
  */
 export function emitNotification(input: EmitNotificationInput): void {
   if (typeof window === "undefined") return;
@@ -56,7 +61,6 @@ export function emitNotification(input: EmitNotificationInput): void {
     silent: false,
     renotify: true,
     icon,
-    badge: marca,
     data: { href },
   };
 
@@ -68,15 +72,26 @@ export function emitNotification(input: EmitNotificationInput): void {
     }
   }
 
+  const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : undefined;
+  if (sw?.controller) {
+    void sw.ready
+      .then((reg) => reg.showNotification(input.title, opts))
+      .catch(() => mostrarPeloConstrutor(input.title, opts, href));
+    return;
+  }
+  mostrarPeloConstrutor(input.title, opts, href);
+}
+
+function mostrarPeloConstrutor(title: string, opts: NotificationOptions, href: string): void {
   try {
-    const n = new Notification(input.title, opts);
+    const n = new Notification(title, opts);
     n.onclick = () => {
       window.focus();
       if (href) window.location.assign(href);
       n.close();
     };
   } catch {
-    void showInOsTray(input.title, opts);
+    void showInOsTray(title, opts);
   }
 }
 

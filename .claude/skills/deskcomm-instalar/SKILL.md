@@ -1,6 +1,6 @@
 ---
 name: deskcomm-instalar
-description: 'Guia de instalação e operação do DeskcommCRM numa VPS (HostGator ou qualquer servidor com Docker), para quem não é técnico ou instala para um cliente. Use SEMPRE que alguém quiser instalar, subir, configurar, atualizar, fazer backup ou restaurar o CRM, trocar domínio, cor ou e-mails, conectar o WhatsApp, ou quando aparecer erro de instalação — SSL/cadeado, DNS, Supabase (connection string, pooler, IPv6), chave de IA, Resend, proxy (Traefik, CloudPanel, Hostinger), "app reiniciando", "esqueci a senha", "perdi o autenticador" — mesmo que a pessoa não diga a palavra "instalar". Conduz passo a passo, roda os scripts do kit e explica em português simples.'
+description: 'Guia de instalação e operação do DeskcommCRM numa VPS (HostGator ou qualquer servidor com Docker), para quem não é técnico ou instala para um cliente. Use SEMPRE que alguém quiser instalar, subir, configurar, atualizar, fazer backup ou restaurar o CRM, trocar domínio, cor ou e-mails, conectar o WhatsApp, ou quando aparecer erro de instalação — SSL/cadeado, DNS, Supabase (nuvem ou no servidor, pooler, IPv6), chave de IA, Resend, proxy (Traefik, CloudPanel, Hostinger), "app reiniciando", "esqueci a senha", "perdi o autenticador" — mesmo que a pessoa não diga a palavra "instalar". Conduz passo a passo, roda os scripts do kit e explica em português simples.'
 metadata:
   publico: leigo, agência, operador de VPS
   fonte-de-verdade: hostgator-setup-kit/install.sh
@@ -30,12 +30,13 @@ Quando este guia e o instalador discordarem, o instalador está certo: leia o tr
 
 ## Primeiro: descubra o cenário
 
-Três perguntas, uma por vez, antes de qualquer comando:
+Quatro perguntas, uma por vez, antes de qualquer comando:
 
 | pergunta | por que importa |
 |---|---|
 | **Onde estamos rodando?** — dentro da VPS (por SSH), no computador da pessoa, ou no computador de uma agência que vai instalar na VPS de um cliente | O instalador roda **dentro da VPS**. Fora dela, você só prepara (domínio, Supabase, chaves) e monta o comando que ela vai colar no servidor |
 | **Já tem servidor?** | Sem servidor: o `comecar.sh`, no computador da pessoa, nomeia o plano (2 vCPU / 4 GB, 80 GB, Ubuntu 22.04/24.04, datacenter em São Paulo — o de 1 vCPU / 2 GB **não** dá conta do WhatsApp) e abre o link de parceria. Ele roda de qualquer pasta, sem clone — e este guia pode ter sido aberto fora de um: `curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh \| bash` (dentro de um clone, `bash hostgator-setup-kit/comecar.sh`) |
+| **Onde vai ficar o banco: na nuvem da Supabase ou no próprio servidor?** | Decide o instalador e o tamanho do servidor. Régua no passo 3; o modo no próprio servidor (single-server) está em `references/supabase-local.md` |
 | **É para você ou para um cliente?** | Para cliente, leia `references/agencia.md` antes de pedir qualquer chave: o token do Supabase é uma chave mestra da **conta**, e o plano grátis permite **2 projetos por usuário** |
 
 ## O caminho principal, na ordem
@@ -68,9 +69,34 @@ Se a escolha não for OpenAI, o instalador pede a chave da OpenAI **à parte e o
 para ouvir áudios e indexar a base de conhecimento. Dá para cadastrar depois em IA › Credenciais.
 Dá para trocar de provedor depois pela tela, em Agente de IA › Provedores.
 
-### 3. O banco (Supabase) — prefira o token
+### 3. O banco (Supabase) — na nuvem ou no próprio servidor
 
-Peça **primeiro** o token de acesso pessoal do Supabase (supabase.com/dashboard/account/tokens).
+São dois caminhos, e os dois são do kit:
+
+| | Supabase na nuvem (`install.sh`) | Supabase no próprio servidor (`install-single-server.sh`) |
+|---|---|---|
+| servidor | 4 GB de RAM bastam | **mínimo 4 GB, recomendado 8 GB**, e uns 40 GB livres de disco (as imagens do Supabase são grandes, da ordem de 9 GB; depois de instalar, `docker system df` mostra o real) |
+| o que a pessoa entrega | conta na Supabase (token ou 4 cópias do painel) | só o domínio |
+| distância até o banco | a região do projeto: fora de São Paulo, cada consulta atravessa o continente | dentro do servidor |
+| limites | os do plano: no grátis, 500 MB de banco, 1 GB de arquivos e uma cota de leitura e escrita em disco que uma importação grande esgota | os do disco do servidor |
+| backup | o grátis não faz; o `backup.sh` cobre banco e WhatsApp | o `backup.sh` cobre banco, WhatsApp **e arquivos anexados** — e passa a ser a única cópia |
+
+Recomende o **próprio servidor** quando ele tem 8 GB ou mais e a pessoa vai operar de verdade
+(importar histórico, ligar agentes de IA). Recomende a **nuvem** quando o servidor tem menos de
+4 GB, quando a pessoa quer banco gerenciado por terceiro, ou com Cloudflare Tunnel
+(`REVERSE_PROXY=cloudflared`, que o single-server recusa). Medido numa VPS ARM64 em São Paulo
+(2 núcleos, 12 GB) na v1.85.0, com o Supabase `self-hosted/v0.8.1`, em 20/10/2026, numa
+instalação migrada da nuvem: os 11 serviços do Supabase usaram ~1,5 GB de RAM em repouso, e a latência do
+banco no `healthcheck.sh` caiu de ~150 ms (projeto grátis nos EUA) para 17 ms.
+
+**Single-server:** siga `references/supabase-local.md`. Do caminho abaixo, o passo 2 não se aplica:
+o instalador não pergunta a IA, que nasce desligada e se cadastra depois em IA › Credenciais. Faça
+o passo 4 (o domínio aponta para a VPS antes) e, no passo 5, rode
+`bash hostgator-setup-kit/install-single-server.sh --domain <domínio>` no lugar do `install.sh`.
+Com `--domain` ele não faz nenhuma pergunta. **Só em instalação nova:** num CRM que já tem dados na nuvem, **não** rode o
+`install-single-server.sh` (ele grava um dono novo e o banco local nasce vazio); peça ajuda antes.
+
+**Nuvem — prefira o token.** Peça **primeiro** o token de acesso pessoal do Supabase (supabase.com/dashboard/account/tokens).
 Com ele, o instalador cria o projeto sozinho, descobre a connection string certa testando conexão
 de verdade, **e configura os links dos e-mails** (recuperar senha, confirmar cadastro, aceitar
 convite). O token não fica salvo em lugar nenhum: é usado uma vez e some.
@@ -126,7 +152,9 @@ caminho. Se a pessoa já tiver a chave em mãos, ótimo: ela é validada na hora
    celular **já aberto em Aparelhos conectados** antes de clicar, o QR vale só uns minutos.
 4. Agendar backup diário (o Supabase grátis **não** faz backup sozinho):
    `crontab -e` → `0 3 * * *  cd /caminho/deskcommcrm && bash hostgator-setup-kit/backup.sh`.
-   Os arquivos ficam **na mesma VPS**; copiar para fora é manual.
+   Os arquivos ficam **na mesma VPS**; copiar para fora é manual. No single-server isso não é
+   opcional: o servidor guarda o banco e os anexos, e o backup é a única outra cópia — combine
+   com a pessoa para onde ele vai (outro servidor, armazenamento da hospedagem, o computador dela).
 5. Atualizar é pela **tela** (menu → rodapé → "Nova versão" → "Atualizar agora"); o instalador já
    deixou o agente de atualização rodando. `bash hostgator-setup-kit/update.sh` é o caminho manual.
 
@@ -159,6 +187,10 @@ vez de reimplementar: eles carregam correções de instalações reais.
   Marca, e o `.env` é só a semente.
 - Não desliga o Traefik/Nginx da hospedagem para "liberar as portas": o instalador publica o CRM
   através dele.
+- No single-server, não apaga `.runtime/supabase/volumes/` (é o **banco** e os **arquivos**), não
+  abre as portas 8000 e 5432 para a internet (o Supabase é publicado só pelo Caddy) e não roda o
+  `docker compose` do CRM sem o `-f docker-compose.single-server.yml` (prefira os scripts do kit,
+  que escolhem os arquivos certos).
 - Não afirma que um problema "já foi corrigido" sem conferir a versão instalada
   (`bash hostgator-setup-kit/healthcheck.sh` mostra) — as armadilhas deste guia foram medidas na
   v1.17.0 e envelhecem.

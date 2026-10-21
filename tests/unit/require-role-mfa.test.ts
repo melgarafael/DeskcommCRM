@@ -43,11 +43,18 @@ function montarStub({ role, temFator, aal }: Cenario) {
   return {
     rpc: vi.fn(async () => ({ data: role, error: null })),
     auth: {
+      // Os fatores vêm do `getUser()` — a mesma ida ao GoTrue que `loadAuthUser`
+      // faz (`sessaoDaRequisicao` em lib/auth/server.ts).
+      getUser: vi.fn(async () => ({
+        data: {
+          user: {
+            id: USER_ID,
+            factors: temFator ? [{ id: "f1", factor_type: "totp", status: "verified" }] : [],
+          },
+        },
+        error: null,
+      })),
       mfa: {
-        listFactors: vi.fn(async () => ({
-          data: { totp: temFator ? [{ id: "f1", status: "verified" }] : [] },
-          error: null,
-        })),
         getAuthenticatorAssuranceLevel: vi.fn(async () => ({
           data: { currentLevel: aal, nextLevel: temFator ? "aal2" : aal },
           error: null,
@@ -165,7 +172,7 @@ describe("requireRole — leituras independentes em paralelo", () => {
       stub as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     const resultado = requireRole("admin");
-    await vi.waitFor(() => expect(stub.auth.mfa.listFactors).toHaveBeenCalled());
+    await vi.waitFor(() => expect(stub.auth.getUser).toHaveBeenCalled());
     liberar({ data: "admin", error: null });
     expect((await resultado).ok).toBe(true);
   });
@@ -173,7 +180,7 @@ describe("requireRole — leituras independentes em paralelo", () => {
   it("preserva forbidden_role mesmo se a leitura de MFA falhar", async () => {
     preparar({ role: "viewer", temFator: false, aal: "aal1" });
     const stub = montarStub({ role: "viewer", temFator: false, aal: "aal1" });
-    stub.auth.mfa.listFactors.mockRejectedValue(new Error("MFA indisponível"));
+    stub.auth.getUser.mockRejectedValue(new Error("MFA indisponível"));
     vi.mocked(createClient).mockResolvedValue(
       stub as unknown as Awaited<ReturnType<typeof createClient>>,
     );
@@ -185,7 +192,7 @@ describe("requireRole — leituras independentes em paralelo", () => {
   it("não libera acesso quando a leitura de MFA necessária falha", async () => {
     preparar({ role: "admin", temFator: false, aal: "aal1" });
     const stub = montarStub({ role: "admin", temFator: false, aal: "aal1" });
-    stub.auth.mfa.listFactors.mockRejectedValue(new Error("MFA indisponível"));
+    stub.auth.getUser.mockRejectedValue(new Error("MFA indisponível"));
     vi.mocked(createClient).mockResolvedValue(
       stub as unknown as Awaited<ReturnType<typeof createClient>>,
     );
@@ -257,7 +264,7 @@ describe("requireRole — os caminhos que não passam pela leitura paralela", ()
     expect(r.ok).toBe(false);
     if (!r.ok) expect((await r.response.json()).error.code).toBe("mfa_required");
     expect(stub.rpc).toHaveBeenCalledTimes(1);
-    expect(stub.auth.mfa.listFactors).toHaveBeenCalledTimes(1);
+    expect(stub.auth.getUser).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -269,7 +276,7 @@ describe("requireRole — a leitura paralela não vaza nem guarda nada", () => {
     preparar({ role: "viewer", temFator: false, aal: "aal1" });
     const stub = montarStub({ role: "viewer", temFator: false, aal: "aal1" });
     let rejeitar!: (e: Error) => void;
-    stub.auth.mfa.listFactors.mockImplementation(
+    stub.auth.getUser.mockImplementation(
       () =>
         new Promise((_, reject) => {
           rejeitar = reject;
@@ -307,6 +314,6 @@ describe("requireRole — a leitura paralela não vaza nem guarda nada", () => {
     const r = await requireRole("admin");
     expect(r.ok).toBe(false);
     expect(stub.rpc).toHaveBeenCalledTimes(2);
-    expect(stub.auth.mfa.listFactors).toHaveBeenCalledTimes(2);
+    expect(stub.auth.getUser).toHaveBeenCalledTimes(2);
   });
 });

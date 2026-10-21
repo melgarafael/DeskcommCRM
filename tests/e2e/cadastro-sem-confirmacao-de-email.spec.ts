@@ -121,11 +121,12 @@ test("⭐ o cadastro não manda esperar um e-mail que não vai chegar", async ({
   await page.getByRole("button", { name: /Continuar para o onboarding/i }).click();
   await expect(page).toHaveURL(/\/onboarding\/welcome/, { timeout: 40_000 });
 
-  const { data: vinculo } = await svc
+  const { data: vinculo, error: vinculoError } = await svc
     .from("user_organizations")
-    .select("organization_id, role, organizations(display_name)")
+    .select("organization_id, role, organizations!user_organizations_organization_id_fkey(display_name)")
     .eq("user_id", idUsuario)
     .maybeSingle();
+  expect(vinculoError, "a consulta do vínculo precisa ser válida, sem embed ambíguo").toBeNull();
   expect(vinculo, "a tela navegou sem provisionar organização nenhuma").not.toBeNull();
   const v = vinculo as unknown as {
     organization_id: string;

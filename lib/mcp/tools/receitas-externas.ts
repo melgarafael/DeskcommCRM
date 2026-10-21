@@ -17,10 +17,12 @@
  * `sem_fontes_liberadas`/`fonte_nao_liberada`; módulo desligado →
  * `modulo_desligado`. Nunca silêncio (Living System, item 1).
  *
- * Auditoria da execução sem valores (padrão `redigirConsulta`).
+ * Auditoria da execução sem valores: `redigirParaAuditoria` usa a mesma redação
+ * do rastro (`redigirArgsReceita`) — a busca entra só com os nomes das chaves.
  */
 import { z } from "zod";
 
+import { redigirArgsReceita } from "@/lib/ai/runtime/serialize";
 import { abrirAcesso } from "@/lib/external-db/acesso";
 import { lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
 import { limiteDaReceita } from "@/lib/external-db/receitas/limite";
@@ -111,6 +113,7 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  redigirParaAuditoria: redigirArgsReceita,
   motivoDoVazio: motivoDoVazioReceita,
   handler: async (input, ctx) => {
     const { acao, connection_id, instancia_id, busca } = input;
@@ -178,8 +181,8 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
       };
     }
 
-    // acao === "executar"
-    const instancia = lida.instancias.find((i) => i.id === instancia_id);
+    // acao === "executar" — só instância ATIVA, a mesma regra do `listar`.
+    const instancia = lida.instancias.find((i) => i.id === instancia_id && i.ativa);
     if (!instancia) {
       return { erro: "nao_encontrada", mensagem: "essa receita não existe nesta conexão." };
     }

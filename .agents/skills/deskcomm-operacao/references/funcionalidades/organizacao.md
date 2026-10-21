@@ -83,9 +83,9 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 
 ### Organização → Notificações
 
-- **Avisos chegam no celular** — Três avisos passam ao push com CRM fechado; precisa do par VAPID no .env. Onde: Organização → Notificações → push. _(desde 1.57.0)_
+- **Avisos chegam no celular** — Três avisos passam ao push com CRM fechado; o par VAPID nasce com a instalação pelo kit. Onde: Organização → Notificações → push. _(desde 1.57.0)_
 - **Som próprio por aviso** — Dá para trocar o som de etapa que avisa e de pedido de pessoa, MP3 ou WAV. Onde: Organização → Notificações → sons. _(desde 1.57.0)_
-- **Aviso com aba fechada** — Navegador avisa na bandeja com VAPID no .env; sem chave segue igual. Onde: Organização → Notificações → push. _(desde 1.8.0)_
+- **Aviso com aba fechada** — Navegador avisa na bandeja com o par VAPID, que o kit cria sozinho (install e atualização) e nunca troca; fora do kit, gere à mão. Onde: Organização → Notificações → push. _(desde 1.8.0)_
 
 ### Organização → Organização
 - **Alíneas do art. 15.º pela tela** — Para organização fora do Brasil, o cartão em Configurações › Empresa preenche as alíneas a), c) e d) que o relatório de acesso imprime. Onde: Organização → Organização. _(desde 1.78.0)_

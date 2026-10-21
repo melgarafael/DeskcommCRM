@@ -847,9 +847,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         requestId,
       },
       leadInput,
-      // O lead de formulário entra no funil mesmo com campo exigido em branco:
-      // decisão do #2295 (ver `exigirCamposDaEtapa` no handler).
-      { exigirCamposDaEtapa: false },
+      // O lead de formulário entra no funil mesmo com campo exigido em branco
+      // (#2295) e mesmo com valor fora do `padrao` do campo (#2730): ver as
+      // duas opções no handler.
+      { exigirCamposDaEtapa: false, exigirPadraoDoCampo: false },
     );
   } catch (err) {
     if (err instanceof ApiError) {

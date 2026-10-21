@@ -134,12 +134,33 @@ export function ehSessaoAusente(error: { name?: string } | null | undefined): bo
   return error?.name === "AuthSessionMissingError";
 }
 
-export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
+/**
+ * O `getUser()` da requisição: UMA ida ao servidor de autenticação, partilhada
+ * por `loadAuthUser` e `isMfaEnrolled`.
+ *
+ * Cada tela de `/app` pedia o usuário ao GoTrue duas vezes — uma aqui, outra
+ * dentro do `listFactors()` do auth-js, que chama `getUser()` pela rede e só
+ * filtra `user.factors`. A resposta é a mesma; a segunda ida era uma espera a
+ * mais (e uma linha a mais no log do Supabase) em toda tela.
+ *
+ * O CLIENTE vai junto com a resposta, e não por enfeite: se o `getUser`
+ * renovou o token, é este cliente que tem o token novo — as consultas de
+ * `loadAuthUser` precisam sair dele, como sempre saíram.
+ */
+const sessaoDaRequisicao = cache(async () => {
   const supabase = await createClient();
+  const resposta = await supabase.auth.getUser();
+  return { supabase, resposta };
+});
+
+export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+    supabase,
+    resposta: {
+      data: { user },
+      error,
+    },
+  } = await sessaoDaRequisicao();
   // ⚠️ O `error` era DESCARTADO — nem chegava a ser desestruturado —, e aqui
   // `user: null` é tão ambíguo quanto o `data: null` que a query logo abaixo
   // trata com todo o cuidado: significa "não está logado" (estado normal) E
@@ -211,7 +232,7 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
           // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
           // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
           // com o alias: um embed por relação, sem renomear o que já existia.
-          "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations(interface_settings)",
+          "organization_id, role, interface_settings, accepted_at, organizations!user_organizations_organization_id_fkey(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations!user_organizations_organization_id_fkey(interface_settings)",
         )
         .eq("user_id", user.id)
         .is("revoked_at", null)
@@ -395,18 +416,23 @@ export async function requireAuth(): Promise<AuthUser> {
  * Returns true if the current session has at least one verified TOTP factor.
  * Use only in Server Components / Server Actions (cookie session).
  *
- * LANÇA quando não conseguiu ler os fatores. O `listFactors()` do auth-js não
- * lança: ele chama `getUser()` pela rede e, se falhar, DEVOLVE
- * `{ data: null, error }`. Ler só `data` transformava essa falha em "não tem
- * fator" — e `mfaEmDivida` liberava a sessão `aal1` de quem TEM fator. Uma
- * leitura que não aconteceu não pode virar resposta: quem decide acesso falha
- * fechado (a exceção vira 500 na rota, nunca 200).
+ * LANÇA quando não conseguiu ler os fatores. O `getUser()` do auth-js não
+ * lança: se falhar, ele DEVOLVE `{ data: { user: null }, error }`. Ler só
+ * `data` transformava essa falha em "não tem fator" — e `mfaEmDivida` liberava
+ * a sessão `aal1` de quem TEM fator. Uma leitura que não aconteceu não pode
+ * virar resposta: quem decide acesso falha fechado (a exceção vira 500 na rota,
+ * nunca 200).
+ *
+ * Lê `user.factors` da MESMA ida ao GoTrue que `loadAuthUser` já fez
+ * (`sessaoDaRequisicao`), com a regra do `listFactors()` do auth-js 2.117:
+ * fator `totp` com `status === "verified"`.
  */
 export const isMfaEnrolled = cache(async (): Promise<boolean> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.mfa.listFactors();
+  const {
+    resposta: { data, error },
+  } = await sessaoDaRequisicao();
   if (error) throw error;
-  return !!data?.totp?.some((f) => f.status === "verified");
+  return !!data.user?.factors?.some((f) => f.factor_type === "totp" && f.status === "verified");
 });
 
 /**

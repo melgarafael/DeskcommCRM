@@ -155,6 +155,7 @@ import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDo
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
+import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
 import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
@@ -2207,69 +2208,6 @@ async function executarTurnoDoAgente(
       intent: routed.intentName,
     });
   }
-  // Horário de funcionamento da versão publicada (spec da tela: TriggerEditor).
-  // Vale SÓ para o turno inbound: a janela do lojista é sobre QUANDO ele atende
-  // quem chega, e adiar por ela um follow-up já prometido ao lead atrasaria uma
-  // promessa que não é dele. O que segura o follow-up é a janela anti-ban logo
-  // acima (`pacing/engine.ts`), que vale para os dois.
-  //
-  // Adia, não descarta: o job volta a 'pending' na abertura, SEM consumir
-  // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
-  // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
-  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
-    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
-    if (esperaMs !== null) {
-      // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
-      // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
-      // pacing lê a janela `resposta*` e o aviso CONTA no ledger); as réguas de
-      // opt-out, teto de envio e LGPD continuam valendo — a ordem e os vetores
-      // moram em `aviso-fora-do-horario.ts`. Qualquer erro aqui só PERDE um
-      // aviso: o turno é adiado de qualquer forma, e a resposta não pode morrer
-      // por causa de um recado.
-      try {
-        const aviso = await enviaAvisoForaDoHorario(
-          portasDeProducao(pool, deps.crmCfg.supabase, runLog),
-          {
-            organizationId: tenantId,
-            conversationId: input.conversationId,
-            contactId: leadId,
-            channelSessionId: input.channelSessionId,
-            texto: agentConfig.avisoForaDoHorario ?? null,
-            janela: agentConfig.janelaDeAtendimento,
-            agora: clock(),
-          },
-        );
-        runLog.info(
-          aviso.enviar
-            ? 'aviso de fora do horário enviado'
-            : 'aviso de fora do horário não enviado',
-          { motivo: aviso.enviar ? 'enviado' : aviso.motivo },
-        );
-      } catch (err) {
-        runLog.warn('aviso de fora do horário falhou — o turno segue adiado para a abertura', {
-          error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
-        });
-      }
-      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
-        acquiredAt: claimOfJob(liveJob())?.acquired_at,
-        delayMs: esperaMs,
-        reason:
-          'fora do horário de funcionamento do agente — turno adiado para a abertura da janela',
-      });
-      runLog.info(
-        'turno adiado — fora do horário de funcionamento configurado na versão publicada',
-        {
-          agent_id: agentConfig.agentId,
-          espera_ms: esperaMs,
-          janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
-        },
-      );
-      throw new JobSettledError(
-        'fora do horário de funcionamento — job reagendado para a abertura da janela',
-      );
-    }
-  }
-
   // Fase 3: grava a decisão de roteamento e a aderência da conversa ao agente.
   // Fire-and-forget — falha de telemetria nunca derruba a resposta ao lead.
   if (!preview && routed.routerId !== null) {
@@ -2646,6 +2584,128 @@ async function executarTurnoDoAgente(
       lead_avisado: aviso.avisado,
     });
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
+  }
+
+  // O FILTRO DE PALAVRA-CHAVE da versão publicada (#2679) — DEPOIS das duas
+  // detecções determinísticas acima (pedido de humano e opt-out ambíguo) e
+  // ANTES do gate da janela logo abaixo: a mesma ordem do modo assistido, onde
+  // elas também vêm primeiro (#1648). A tela promete "só entra quando a
+  // mensagem contiver uma dessas palavras" (TriggerEditor) e, até este PR, a
+  // promessa era decorativa: o único leitor do campo era o dispatcher legado,
+  // NO-OP desde a Fase 0 (`palavra-chave-do-gatilho.ts` documenta o defeito e
+  // a régua de falha aberta).
+  //
+  // A ORDEM É O CONSERTO do CR do #2696 (ponto 1): quem escreve "quero falar
+  // com um atendente" ou "me deixa em paz" numa conversa cujo filtro não cobre
+  // essas palavras continua tendo a passagem para humano, o item na Central e
+  // o aviso ao lead — o filtro decide se o MODELO entra, nunca se a pessoa é
+  // ouvida.
+  //
+  // O QUE É JULGADO é `inboundsPendentes` — o que o cliente disse e ainda não
+  // foi respondido, a MESMA lista que o handoff usa —, e não a mensagem fixada
+  // no job: o drain coalesce a segunda mensagem de uma rajada no job da
+  // primeira, e "oi" seguido de "quero um orçamento" tem de entrar pelo
+  // segundo (ponto 3). Cada mensagem é julgada sozinha
+  // (`turnoDisparaNasMensagens`).
+  //
+  // "SEM TEXTO" é a régua do roteador (`resolve-turn-agent.ts`): sem `body` e
+  // sem `media_derived_text`. O corpo composto por `corpoDaMensagem` devolve
+  // `[audio]`/`[image]` — nunca `null` — para mídia ainda não transcrita, e é
+  // `corpoTemTexto` que faz a falha aberta da mídia rodar de verdade
+  // (ponto 2).
+  //
+  // Diferente da JANELA logo abaixo, um miss NÃO adia: não há "depois" em que
+  // a mesma mensagem venha a casar. O turno é encerrado sem resposta (`return`,
+  // o mesmo consumo do job de todo outro veto do início do turno — lead em
+  // handoff, conversa não elegível) e a mensagem continua visível na linha do
+  // tempo da Central: o operador vê, responde à mão ou corrige o filtro na
+  // tela. Regex quebrada, corpo sem texto ou nada a julgar ⇒ o turno SEGUE —
+  // entrar de menos cala o cliente, e esta porta é a única que este gate
+  // existe para não criar.
+  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.filtroDePalavraChave != null) {
+    const corposDoTurno =
+      inboundsPendentes.length > 0
+        ? inboundsPendentes
+        : mensagemDoJob.trim() === ''
+          ? []
+          : [mensagemDoJob];
+    if (!turnoDisparaNasMensagens(agentConfig.filtroDePalavraChave, corposDoTurno)) {
+      runLog.info('turno pulado — mensagem fora do filtro de palavra-chave da versão publicada', {
+        agent_id: agentConfig.agentId,
+        agent_version_id: agentConfig.versionId,
+        mensagens_pendentes: corposDoTurno.length,
+      });
+      return;
+    }
+  }
+
+  // Horário de funcionamento da versão publicada (spec da tela: TriggerEditor).
+  // Vale SÓ para o turno inbound: a janela do lojista é sobre QUANDO ele atende
+  // quem chega, e adiar por ela um follow-up já prometido ao lead atrasaria uma
+  // promessa que não é dele. O que segura o follow-up é a janela anti-ban
+  // acima (`pacing/engine.ts`), que vale para os dois.
+  //
+  // ⚠️ ORDEM: ela vem DEPOIS das detecções determinísticas e do filtro de
+  // palavra-chave. Um pedido de humano ou um opt-out fora do horário é
+  // tratado AGORA (aviso + passagem na Central), não às 8h — e uma mensagem
+  // fora do filtro não recebe aviso de fora do horário nenhum: quem não entra
+  // no agente não fala por ele.
+  //
+  // Adia, não descarta: o job volta a 'pending' na abertura, SEM consumir
+  // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
+  // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
+  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
+    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    if (esperaMs !== null) {
+      // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
+      // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
+      // pacing lê a janela `resposta*` e o aviso CONTA no ledger); as réguas de
+      // opt-out, teto de envio e LGPD continuam valendo — a ordem e os vetores
+      // moram em `aviso-fora-do-horario.ts`. Qualquer erro aqui só PERDE um
+      // aviso: o turno é adiado de qualquer forma, e a resposta não pode morrer
+      // por causa de um recado.
+      try {
+        const aviso = await enviaAvisoForaDoHorario(
+          portasDeProducao(pool, deps.crmCfg.supabase, runLog),
+          {
+            organizationId: tenantId,
+            conversationId: input.conversationId,
+            contactId: leadId,
+            channelSessionId: input.channelSessionId,
+            texto: agentConfig.avisoForaDoHorario ?? null,
+            janela: agentConfig.janelaDeAtendimento,
+            agora: clock(),
+          },
+        );
+        runLog.info(
+          aviso.enviar
+            ? 'aviso de fora do horário enviado'
+            : 'aviso de fora do horário não enviado',
+          { motivo: aviso.enviar ? 'enviado' : aviso.motivo },
+        );
+      } catch (err) {
+        runLog.warn('aviso de fora do horário falhou — o turno segue adiado para a abertura', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+        });
+      }
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
+        delayMs: esperaMs,
+        reason:
+          'fora do horário de funcionamento do agente — turno adiado para a abertura da janela',
+      });
+      runLog.info(
+        'turno adiado — fora do horário de funcionamento configurado na versão publicada',
+        {
+          agent_id: agentConfig.agentId,
+          espera_ms: esperaMs,
+          janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
+        },
+      );
+      throw new JobSettledError(
+        'fora do horário de funcionamento — job reagendado para a abertura da janela',
+      );
+    }
   }
 
   // ROTEIRO DE ATENDIMENTO (módulo opcional `fluxos_atendimento`, #1130). Entra

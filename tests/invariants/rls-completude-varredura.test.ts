@@ -75,6 +75,7 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  ...["calendar_resources", "calendar_service_schedule", "calendar_service_professionals", "calendar_service_resources", "calendar_service_calendar_sources", "calendar_service_occurrences", "calendar_service_occurrence_resources", "calendar_service_blocks"].map(tabela => ({ tabela, razao: "tests/invariants/agenda-servicos.test.ts — oito tabelas com linhas positivas no tenant próprio, JWT authenticated de duas organizações e contagem zero do vizinho; INSERT/UPDATE/DELETE diretos recusados mesmo para manager. As RPCs mantêm ator, revisão e FKs compostas." })),
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },

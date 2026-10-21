@@ -28,7 +28,7 @@ import {
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
-import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
@@ -51,6 +51,8 @@ import { mimeDaMidia, type MidiaDeTemplate } from "@/lib/templates/midias";
 import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
 import { cn } from "@/lib/utils";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
+import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
+import { type Recurso } from "@/lib/inbox/recursos";
 import type { Message } from "@/lib/types/messaging";
 
 export interface ComposerHandle {
@@ -155,6 +157,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * A FILA de anexos (#2526): o "+" escolhe uma, a resposta rápida traz as
    * várias que o operador carregou no template. Uma lista e não um arquivo é o
    * que permite o preview das duas antes de qualquer byte sair.
+   *
+   * É a MESMA fila que recebe a mídia de um recurso da barra (#2833): o clique
+   * do recurso passa pelo `applyTemplate`, e imagem e áudio entram aqui — com
+   * prévia e retry — em vez de um caminho próprio que perdia a imagem.
    */
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   /**
@@ -207,6 +213,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const createNote = useCreateNote();
   const templates = useMessageTemplates();
   const slash = resolveSlash(text);
+  // O Esc/escolha vale só para o `/` em curso: saiu do `/` por QUALQUER caminho
+  // (digitado ou escrito pelo `applyTemplate`, inclusive o clique da barra com o
+  // campo vazio), o próximo `/` volta a abrir o menu.
+  if (menuDismissed && !slash.open) setMenuDismissed(false);
   const menuOpen = mode === "reply" && slash.open && !menuDismissed;
 
   /**
@@ -411,6 +421,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   /**
+   * A escolha de um recurso na barra (#2833) — o MESMO caminho do `/`.
+   *
+   * Não existe plano próprio da barra: o recurso é entregue ao `applyTemplate`,
+   * que já separa as duas naturezas — texto cai no campo editável, e mídia
+   * (imagem OU áudio) entra na fila de anexos com o corpo como legenda. Era o
+   * caminho próprio que perdia a imagem do recurso. Nada é enviado aqui: é o
+   * critério central da issue, e o teste o cobre.
+   */
+  function escolherRecurso(recurso: Recurso) {
+    void applyTemplate(recurso);
+  }
+
+  /**
    * Baixa os BYTES de uma imagem do template (#2526).
    *
    * Pela própria origem (`/midias/:indice` devolve o corpo, não um 302): o
@@ -433,7 +456,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   /**
-   * Escolhe a resposta rápida (#2526).
+   * Escolhe a resposta rápida (#2526) — e é o MESMO caminho da barra de recursos
+   * (#2833): o `/` e a barra entregam o recurso AQUI, um caminho só.
    *
    * SÓ TEXTO continua sendo o de sempre, byte por byte: o corpo interpolado
    * vai para o campo. Com IMAGEM, o texto sai como legenda da primeira imagem
@@ -447,7 +471,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * preview: sem o Blob não há o que mostrar, e o operador só poderia aprovar
    * às cegas.
    */
-  async function applyTemplate(template: MessageTemplate) {
+  async function applyTemplate(template: Recurso) {
     const payload = payloadDeUso(template, contato);
     setMenuDismissed(true);
 
@@ -752,6 +776,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </button>
           </div>
         )}
+        {/* A BARRA DE RECURSOS (#2833) — um botão por título cadastrado. O clique
+            NÃO envia: entrega o recurso ao MESMO `applyTemplate` que o `/` usa.
+            Texto cai no campo editável; mídia (imagem OU áudio) entra na fila de
+            anexos, com prévia e legenda — não há barra de anexo própria. */}
+        {mode === "reply" && (
+          <BarraDeRecursos
+            recursos={templates.data ?? []}
+            disabled={respostaBarrada}
+            onEscolher={escolherRecurso}
+          />
+        )}
         <div className="flex items-end gap-2">
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
@@ -801,7 +836,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               // retry depois de uma falha. Quem digita DURANTE o envio poda as
               // escolhas aqui — o `onError` da nota devolve as que foram enviadas.
               setMencoes((atual) => podarMencoes(e.target.value, atual));
-              if (!resolveSlash(e.target.value).open) setMenuDismissed(false);
               // Sumiu o `@` (apagou, ou o Enter escolheu): o Esc de uma vez
               // não pode travar a lista da PRÓXIMA menção.
               if (!resolverMencao(e.target.value, pos)) setMencaoDispensada(false);

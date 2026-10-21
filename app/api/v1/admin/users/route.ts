@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       role,
       accepted_at,
       revoked_at,
-      organizations!inner(display_name, slug)
+      organizations!user_organizations_organization_id_fkey!inner(display_name, slug)
     `,
     )
     .order("user_id", { ascending: false });

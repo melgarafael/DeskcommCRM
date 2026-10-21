@@ -2422,6 +2422,10 @@ gravar_imagens() {
     set_env_var "$envfile" WAHA_IMAGE "$WAHA_IMAGE"
     c_ylw "$(t "  (WAHA trocado para a variante oficial ARM64: {1})" "$WAHA_IMAGE")"
   fi
+  # O par dos avisos com o app fechado mora aqui pelo MESMO motivo do WAHA
+  # acima: é a função que o update.sh antigo chama depois de reler o kit, então
+  # o par chega já na primeira atualização. E chega antes do pull e do `up -d`.
+  completar_par_vapid "$envfile"
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
@@ -2461,6 +2465,96 @@ completar_segredos_da_voz() {  # completar_segredos_da_voz [envfile]
   done
 
   printf '%s' "${criados# }"
+}
+
+# ── O par VAPID: avisos com o app fechado (Web Push) ────────────────────────
+#
+# Nasce sozinho na instalação e na atualização, UMA vez, e nunca é trocado
+# (ADR-0006, D6): trocar o par desliga os avisos de todo aparelho já inscrito, e
+# cada atendente teria de religá-los à mão. Operador não edita `.env` para ter
+# push (docs/doctrine/packaging.md).
+#
+# A lacuna aqui é VALOR VAZIO, não só linha ausente — diferente de
+# `completar_segredos_da_voz`: o install grava `VAPID_*=""` em toda instalação,
+# então vazio é o padrão, não a escolha de alguém. Vazio é medido com a régua do
+# `trim()` do app (lib/notifications/vapid.ts): espaço e CR de um `.env` editado
+# no Windows contam como vazio, senão a tela pede para atualizar e a atualização
+# não faz nada.
+
+_b64url() { base64 | tr -d '\n=' | tr '/+' '_-'; }
+
+# Par P-256 só com openssl + coreutils (xxd não é garantido num Ubuntu mínimo).
+# Imprime "publica privada" em base64url sem padding. A chave fica só em memória.
+# Formato inesperado = falha, nunca lixo gravado.
+gerar_par_vapid() {
+  local pem hex pub priv
+  pem="$(openssl ecparam -name prime256v1 -genkey -noout 2>/dev/null)" || return 1
+  hex="$(printf '%s\n' "$pem" | openssl ec -outform DER 2>/dev/null | od -An -v -tx1 | tr -d ' \n')" || return 1
+  # SEC1 DER de P-256, 121 bytes:
+  #   30 77 02 01 01 04 20 <privada:32> a0 0a <oid> a1 44 03 42 00 04 <X:32> <Y:32>
+  [ "${#hex}" -eq 242 ] && [ "${hex:0:14}" = 30770201010420 ] && [ "${hex:112:2}" = 04 ] || return 1
+  pub="$(printf '%s\n' "$pem" | openssl ec -outform DER 2>/dev/null | tail -c 65 | _b64url)" || return 1
+  priv="$(printf '%s\n' "$pem" | openssl ec -outform DER 2>/dev/null | head -c 39 | tail -c 32 | _b64url)" || return 1
+  [ "${#pub}" -eq 87 ] && [ "${#priv}" -eq 43 ] || return 1
+  printf '%s %s\n' "$pub" "$priv"
+}
+
+# completar_par_vapid [envfile] — usada pelo install.sh (depois de escrever o
+# .env) e pela atualização (antes da decisão de versão e dentro de
+# `gravar_imagens`). Quando cria o par, deixa PAR_VAPID_CRIADO=1. Sempre devolve 0: o
+# push é opcional, e nem a instalação nem a atualização morrem por causa dele.
+completar_par_vapid() {
+  local envfile="${1:-.env}" pub priv par tmp
+  [ -f "$envfile" ] || return 0
+  # `export ` e recuo no começo da linha: o Compose lê as duas formas, então
+  # elas também são o par (senão o kit gravaria um segundo, e o Compose fica
+  # com o último — a troca que a D6 proíbe).
+  pub="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?VAPID_PUBLIC_KEY=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"' \t\r")"
+  priv="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?VAPID_PRIVATE_KEY=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"' \t\r")"
+
+  [ -n "$pub" ] && [ -n "$priv" ] && return 0
+  if [ -n "$pub$priv" ]; then
+    # Meia chave: gerar a outra quebraria o par, e trocar a que existe é a
+    # troca que a D6 proíbe. Quem decide é quem opera.
+    c_ylw "$(t "  ⚠ Só uma das duas chaves dos avisos com o app fechado (VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY) está no .env. Não gerei a outra, para não quebrar o par.")"
+    c_ylw "$(t "    Para o kit gerar um par novo, apague as duas linhas e rode: bash hostgator-setup-kit/update.sh")"
+    return 0
+  fi
+  if [ ! -w "$envfile" ]; then
+    # Montagem somente-leitura ou permissão errada: não é erro daqui, mas a tela
+    # manda atualizar, e a atualização calada não diria por que nada mudou.
+    c_ylw "$(t "  ⚠ Não criei as chaves dos avisos com o app fechado: não consigo escrever no .env. Confira a permissão do arquivo e rode a atualização de novo.")"
+    return 0
+  fi
+
+  if ! par="$(gerar_par_vapid)"; then
+    # Falha fechado na ação (nada gravado) e aberto na informação (o aviso).
+    c_ylw "$(t "  ⚠ Não consegui gerar as chaves dos avisos com o app fechado; o resto segue normal. Para tentar de novo: bash hostgator-setup-kit/update.sh")"
+    return 0
+  fi
+  pub="${par% *}"; priv="${par#* }"
+
+  # As duas chaves numa escrita só: dois `set_env_var` seguidos deixariam meia
+  # chave se o processo morresse entre eles — e a regra acima se recusaria, para
+  # sempre, a curar o que o próprio kit estragou.
+  tmp="${envfile}.tmp.$$"
+  # `umask 077`: a cópia leva todos os segredos do .env e não pode passar um
+  # instante legível por outros usuários antes do chmod.
+  if ! ( umask 077
+         { { grep -vE '^[[:space:]]*(export[[:space:]]+)?VAPID_(PUBLIC|PRIVATE)_KEY=' "$envfile" || true; } \
+           && printf 'VAPID_PUBLIC_KEY=%s\nVAPID_PRIVATE_KEY=%s\n' "$pub" "$priv"; } > "$tmp" ) \
+     || ! chmod 600 "$tmp" || ! mv "$tmp" "$envfile"; then
+    rm -f "$tmp"
+    c_ylw "$(t "  ⚠ Não consegui gerar as chaves dos avisos com o app fechado; o resto segue normal. Para tentar de novo: bash hostgator-setup-kit/update.sh")"
+    return 0
+  fi
+  # O ambiente também: o `load_env` exportou o vazio, e é dele que o compose lê
+  # o que interpola.
+  VAPID_PUBLIC_KEY="$pub"; VAPID_PRIVATE_KEY="$priv"
+  export VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY
+  # Para quem chamou saber que precisa subir o app de novo (o retorno é sempre 0).
+  PAR_VAPID_CRIADO=1
+  c_grn "$(t "✓ chaves dos avisos com o app fechado criadas (uma vez só: não troque, trocar desliga os avisos de todo aparelho já inscrito)")"
 }
 
 # Grava (ou reescreve) uma chave no .env — sem duplicar linha se ela já existe.

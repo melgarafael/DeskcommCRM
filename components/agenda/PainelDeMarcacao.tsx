@@ -522,7 +522,7 @@ export function PainelDeMarcacao({
             {format(parede(marcado.instante), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
           </p>
           <p className="mt-0.5 text-xs text-text-subtle">
-            {t(tipo)} · {duracaoMin} {t("min · com")} {responsavel.nome}
+            {tipo} · {duracaoMin} {t("min · com")} {responsavel.nome}
           </p>
           {quemSeraAtendido && !quemSeraAtendido.aceitaMensagem && (
             // Repetido aqui de propósito: o aviso do passo anterior sumiu da
@@ -620,7 +620,7 @@ export function PainelDeMarcacao({
           <AvatarDaPessoa pessoa={responsavel} tamanho="sm" />
           <span className="truncate text-sm font-semibold">{responsavel.nome}</span>
         </div>
-        <h3 className="mt-3 text-base font-semibold leading-tight">{tipo}</h3>
+        <h3 className="mt-3 break-words text-base font-semibold leading-tight">{t("Agendar")} {tipo}</h3>
         <dl className="mt-3 space-y-2 text-xs text-text-muted">
           <div className="flex items-center gap-1.5">
             <Clock size={14} aria-hidden />

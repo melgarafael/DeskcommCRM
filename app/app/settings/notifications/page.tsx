@@ -1,8 +1,11 @@
+import Link from "next/link";
+
 import { requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { Card } from "@/components/ui/card";
 import { vapidPronto } from "@/lib/notifications/vapid";
 import { NotificationPrefsClient } from "./_client";
+import { PushProntoNesteEndereco } from "./_push-neste-endereco";
 import { TaskReminderPrefs } from "./_tarefas";
 import { SonsDosAvisos } from "./_sons";
 import { ConteudoNaTelaBloqueada } from "./_tela-bloqueada";
@@ -33,8 +36,8 @@ export const dynamic = "force-dynamic";
  *
  * ⚠️ O INTERRUPTOR CONTINUA LIGÁVEL DE PROPÓSITO, e isto não é descuido: sem
  * VAPID o aviso na bandeja AINDA funciona enquanto a aba está aberta — é
- * `new Notification()` em `lib/notifications/emit.ts`, que não depende de
- * inscrição nenhuma. Desabilitar o controle tiraria capacidade que a
+ * `lib/notifications/emit.ts` (pelo service worker ou por `new Notification()`),
+ * que não depende de inscrição nenhuma. Desabilitar o controle tiraria capacidade que a
  * instalação tem. O que faltava era dizer a verdade sobre a metade que ela
  * não tem, e como consegui-la.
  *
@@ -56,17 +59,18 @@ export default async function NotificationsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Notificações")}</h1>
         <p className="text-sm text-muted-foreground">{t("Canais e categorias.")}</p>
+        <Link
+          href="/app/settings/aplicativo"
+          data-testid="link-app-no-celular"
+          className="inline-flex min-h-11 items-center text-sm font-medium text-accent underline-offset-4 hover:underline"
+        >
+          {t("Receber no celular: instalar o app")}
+        </Link>
       </header>
 
       {pushPronto ? (
-        <Card
-          data-testid="push-status-pronto"
-          className="border-amber-500/40 bg-amber-50/40 p-4 text-sm dark:bg-amber-900/10"
-        >
-          {t(
-            "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para as cinco categorias, inclusive com a aba fechada.",
-          )}
-        </Card>
+        // O par é a metade do servidor; a do navegador (https) só o cliente vê.
+        <PushProntoNesteEndereco />
       ) : (
         <Card
           data-testid="push-status-faltando-chaves"
@@ -81,8 +85,14 @@ export default async function NotificationsPage() {
                 marca escrita à mão. «o site» diz a mesma coisa e serve a quem
                 revende o sistema com a marca dele. */}
             {t(
-              "Ligar o Push abaixo já faz o aviso aparecer na bandeja do sistema enquanto você está com o site aberto numa aba. Para receber também com a aba fechada, quem administra o servidor precisa gerar um par de chaves uma única vez e reiniciar:",
+              "Ligar o Push abaixo já faz o aviso aparecer na bandeja do sistema enquanto você está com o site aberto numa aba. Para receber também com a aba fechada, quem administra o servidor precisa rodar a atualização da instalação: ela cria sozinha, uma única vez, o par de chaves que falta, mesmo quando não há versão nova:",
             )}
+          </p>
+          <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-2 text-xs">
+            <code>bash hostgator-setup-kit/update.sh</code>
+          </pre>
+          <p className="mt-2 text-muted-foreground">
+            {t("Em servidor montado sem o kit de instalação, gere o par uma única vez:")}
           </p>
           <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-2 text-xs">
             <code>npx web-push generate-vapid-keys</code>
@@ -90,6 +100,7 @@ export default async function NotificationsPage() {
           <p className="mt-2 text-muted-foreground">
             {t("O resultado vai no arquivo")} <code>.env</code>, {t("em")}{" "}
             <code>VAPID_PUBLIC_KEY</code> {t("e")} <code>VAPID_PRIVATE_KEY</code>.{" "}
+            {t("Não troque um par que já existe: trocar desliga os avisos de todo aparelho já inscrito.")}{" "}
             {t("Email ainda não está disponível.")}
           </p>
         </Card>

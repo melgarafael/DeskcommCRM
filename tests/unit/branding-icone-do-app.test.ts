@@ -9,6 +9,7 @@ vi.mock("@/lib/branding/saida", () => ({ NEUTROS_DE_SAIDA: { fundo: "#ffffff" } 
 import { gerarIconeDoApp, lerArquivoDoIcone } from "@/lib/branding/icone-do-app";
 import { logger } from "@/lib/logger";
 import { TAMANHO_MAXIMO_DO_LOGO } from "@/lib/branding/logo";
+import { lerPng } from "../helpers/png-sintetico";
 
 const caminho = "platform/00000000-0000-4000-8000-000000000001.png";
 // PNG vermelho, 1×1: arquivo real, em vez de simular o renderizador.
@@ -89,6 +90,30 @@ describe("PNG real do aplicativo", () => {
     expect(corpo.readUInt32BE(16)).toBe(lado);
     expect(corpo.readUInt32BE(20)).toBe(lado);
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+  it.each([
+    [180, 0.8],
+    [512, 0.56],
+  ] as const)("o desenho encolhe para a zona segura (%i, conteúdo %f) e o fundo ocupa o lado inteiro", async (lado, conteudo) => {
+    const corpo = Buffer.from(
+      await gerarIconeDoApp(lado, marca, `data:image/png;base64,${png.toString("base64")}`, conteudo),
+    );
+    expect(corpo.readUInt32BE(16)).toBe(lado);
+    expect(corpo.readUInt32BE(20)).toBe(lado);
+    const { rgba } = lerPng(corpo);
+    const pixel = (x: number, y: number) => [...rgba.subarray(4 * (y * lado + x), 4 * (y * lado + x) + 3)];
+    const meio = Math.floor(lado / 2);
+    // A margem que o recorte do sistema come é fundo; o desenho fica no centro.
+    expect(pixel(Math.floor((lado * (1 - conteudo)) / 4), meio)).toEqual([255, 255, 255]);
+    expect(pixel(meio, meio)).toEqual([255, 0, 0]);
+  });
+  it("sem encolher (192 e 512 de sempre), o desenho vai até a borda", async () => {
+    const corpo = Buffer.from(
+      await gerarIconeDoApp(192, marca, `data:image/png;base64,${png.toString("base64")}`),
+    );
+    const { rgba } = lerPng(corpo);
+    const i = 4 * (96 * 192 + 4);
+    expect([...rgba.subarray(i, i + 3)]).toEqual([255, 0, 0]);
   });
   it("arquivo com assinatura PNG mas truncado não derruba o ícone do aplicativo", async () => {
     const corpo = Buffer.from(

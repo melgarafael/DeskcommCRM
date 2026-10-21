@@ -91,9 +91,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         title,
         body,
         shortcut: shortcut ?? null,
-        // `midias` nasce vazia: a imagem nova é gravada pela rota de upload,
-        // que gera o caminho sabendo o id do template (#2526). Aceitar caminho
-        // aqui seria aceitar um arquivo que ninguém conferiu.
+        // `midias` nasce vazia: a mídia nova (a imagem da #2526 ou o áudio do
+        // recurso, #2833) é gravada pela rota de upload, que gera o caminho
+        // sabendo o id do template. Aceitar caminho aqui seria aceitar um
+        // arquivo que ninguém conferiu.
         midias: [],
         created_by_user_id: user.id,
       })

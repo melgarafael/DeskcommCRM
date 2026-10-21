@@ -137,6 +137,7 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
         // recebe. `rotuloDoLocal` é o MESMO tradutor que a tela usa.
         onde: rotuloDoLocal(t.localKind, t.localDetalhes) ?? null,
         precisa_confirmacao: t.precisaConfirmacao,
+        ...(t.servico ? { servico: t.servico } : {}),
       })),
     };
   },
@@ -269,6 +270,10 @@ function payloadDeHorarios(
      * segunda decisão do modelo: virou escrita na mesma chamada.
      */
     agenda_externa_nunca_lida: consulta.agendaExternaNuncaLida,
+    ...(consulta.servico ? { servico: { modo: consulta.servico.booking_mode, revisao: consulta.servico.revision,
+      horarios: consulta.servico.availability.map((a) => ({ inicio: a.starts_at, fim: a.ends_at, disponivel: a.available,
+        motivo: a.reason, capacidade: a.capacity_limit, vagas: a.remaining_capacity, duracao_minutos: a.duration_minutes,
+        cobertura_verificada: a.coverage_verified })), reserva: "nao_executada" } } : {}),
   };
 }
 
@@ -683,6 +688,9 @@ const marcarShape = {
   starts_at: z.string().datetime({ offset: true }).describe("o instante exato do início, vindo de `crm_find_free_slots`"),
   contact_id: z.string().uuid().describe("quem vai ser atendido"),
   owner_user_id: z.string().uuid().optional(),
+  participant_name: z.string().trim().min(1).max(120).optional().describe("Nome da pessoa atendida, quando é diferente do contato responsável. Não invente."),
+  participants: z.array(z.string().trim().min(1).max(120)).min(1).max(20).optional().describe("Pessoas expressamente solicitadas para o mesmo serviço e horário. Reserva o grupo inteiro ou recusa sem criar parte dele."),
+  expected_service_revision: z.number().int().positive().optional().describe("Revisão que voltou da consulta de serviço."),
   title: z.string().min(1).max(200).optional(),
   notes: z
     .string()
@@ -767,6 +775,9 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
             ? { location_details: input.location_details }
             : {}),
           ...(input.guest_email !== undefined ? { guest_email: input.guest_email } : {}),
+          ...(input.participant_name !== undefined ? { participant_name: input.participant_name } : {}),
+          ...(input.participants !== undefined ? { participants: input.participants } : {}),
+          ...(input.expected_service_revision !== undefined ? { expected_service_revision: input.expected_service_revision } : {}),
         },
       );
       /**
@@ -791,7 +802,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
       const aguardaConfirmacao = r.status === "pending";
       const avisos = [
         aguardaConfirmacao
-          ? "O horário ficou RESERVADO para esta pessoa, e ninguém mais consegue pegá-lo — mas " +
+          ? (r.service_booking_mode && r.service_booking_mode !== "individual" ? "A pessoa ficou RESERVADA neste serviço — mas " : "O horário ficou RESERVADO para esta pessoa, e ninguém mais consegue pegá-lo — mas ") +
             "ainda NÃO está confirmado: alguém da equipe precisa aprovar. Não diga que está " +
             "confirmado, marcado ou garantido. Diga que o horário foi separado e que a equipe " +
             "confirma."
@@ -800,9 +811,10 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           ? "O link ainda está sendo criado. Não invente um link nem afirme que ele já foi enviado."
           : null,
       ].filter(Boolean);
+      if (r.service_occurrence_id) avisos.push("A reserva CRM e a publicação Google são estados separados. Use o estado google_publication do recibo; não afirme publicação ou comunicação que ainda não foi comprovada.");
 
       return {
-        marcado: true,
+        marcado: r.service_occurrence_id ? r.status === "pending" || r.status === "confirmed" : true,
         compromisso: compromissoComHorarioLocal(r),
         // Campo próprio, além da mensagem: um booleano no topo é o que o modelo
         // enxerga sem precisar interpretar prosa.
@@ -833,6 +845,9 @@ async function marcarHorario(
     title?: string;
     notes?: string;
     guestEmail?: string;
+    participants?: string[];
+    participantName?: string;
+    serviceRevision?: number;
   },
 ): Promise<unknown> {
   return crmBookAppointment.handler(
@@ -844,6 +859,9 @@ async function marcarHorario(
       ...(args.title !== undefined ? { title: args.title } : {}),
       ...(args.notes !== undefined ? { notes: args.notes } : {}),
       ...(args.guestEmail !== undefined ? { guest_email: args.guestEmail } : {}),
+      ...(args.participants !== undefined ? { participants: args.participants } : {}),
+      ...(args.participantName !== undefined ? { participant_name: args.participantName } : {}),
+      ...(args.serviceRevision !== undefined ? { expected_service_revision: args.serviceRevision } : {}),
     },
     ctx,
   );
@@ -851,6 +869,8 @@ async function marcarHorario(
 
 const consultarEMarcarShape = {
   event_type_slug: z.string().min(1).describe("o identificador legível do tipo de atendimento"),
+  participant_name: marcarShape.participant_name,
+  participants: marcarShape.participants,
   dia: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "dia deve estar em YYYY-MM-DD")
@@ -974,6 +994,9 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
       startsAt: achado.inicio.toISOString(),
       contactId: input.contact_id,
       ...(input.owner_user_id !== undefined ? { ownerUserId: input.owner_user_id } : {}),
+      ...(input.participants !== undefined ? { participants: input.participants } : {}),
+      ...(input.participant_name !== undefined ? { participantName: input.participant_name } : {}),
+      ...(consulta.servico ? { serviceRevision: consulta.servico.revision } : {}),
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.guest_email !== undefined ? { guestEmail: input.guest_email } : {}),
@@ -1127,6 +1150,7 @@ export const crmConfirmAppointment: McpToolDefinition<typeof confirmarShape> = {
   description:
     "Confirma que o cliente VAI COMPARECER a um compromisso que estava aguardando a resposta dele. " +
     "Use quando ele disser que vem — 'confirmado', 'pode marcar', 'estarei lá'. " +
+    "Em um serviço que exige aprovação da equipe, a resposta do cliente não substitui essa aprovação: a reserva continua aguardando a equipe. " +
     "Serve só para compromisso na situação `pending`: chame `crm_list_appointments` antes e veja a " +
     "situação. Confirmar o que já estava confirmado devolve `ja_estava: true` — não é erro, e não é " +
     "motivo para avisar a pessoa de novo. " +

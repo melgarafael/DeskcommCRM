@@ -46,9 +46,9 @@ globalThis.ResizeObserver = class {
 };
 
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
+import { ROTULOS_DO_TIPO } from "@/lib/schemas/rotulos-do-campo";
 import {
   PipelinesClient,
-  ROTULOS_DO_TIPO,
   TIPOS_DE_CAMPO,
   tipoTemOpcoes,
   type EtapaDoFunil,

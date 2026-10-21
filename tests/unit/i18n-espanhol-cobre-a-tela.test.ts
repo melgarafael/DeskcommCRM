@@ -1023,13 +1023,6 @@ const DADO_DO_OPERADOR_CONGELADO: { arquivo: string; expressao: string; motivo: 
       "(linha 107)",
   },
   {
-    arquivo: "components/agenda/PainelDeMarcacao.tsx",
-    expressao: "tipo",
-    motivo:
-      "tipo do compromisso cadastrado pelo operador — é EXATAMENTE o defeito do #600 (08257eed, " +
-      '"Retorno" virando "Seguimiento"); o conserto por literal em cada ramo segue pendente',
-  },
-  {
     arquivo: "components/ai/ChaveDeConhecimento.tsx",
     expressao: "a",
     motivo:

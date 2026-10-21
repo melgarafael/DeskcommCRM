@@ -655,7 +655,9 @@ const schema = z.object({
 
   /**
    * Par VAPID do Web Push. Opcionais: sem elas a bandeja só funciona com a aba
-   * viva (Notification API + SW local). Gerar: `npx web-push generate-vapid-keys`.
+   * viva (Notification API + SW local). O kit gera o par sozinho no install e na
+   * atualização; fora dele, `npx web-push generate-vapid-keys`. Nunca troque um par
+   * existente: trocar desliga os avisos de todo aparelho já inscrito.
    */
   VAPID_PUBLIC_KEY: z.string().optional().default(""),
   VAPID_PRIVATE_KEY: z.string().optional().default(""),

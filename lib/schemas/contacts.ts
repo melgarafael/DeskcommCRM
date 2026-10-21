@@ -16,7 +16,7 @@ import {
 } from "@/lib/inbox/marcador-da-conversa";
 import { isValidCpf, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
 
-const PHONE_REGEX = /^\+\d{8,15}$/;
+export const PHONE_REGEX = /^\+\d{8,15}$/;
 
 /**
  * Teto de 32 KB no jsonb inteiro. O CHECK do banco só garante que é OBJETO —

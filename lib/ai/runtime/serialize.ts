@@ -43,20 +43,16 @@ function redactValue(value: unknown): unknown {
 }
 
 /** Redige os argumentos de `crm_consultar_receita`: guarda os NOMES dos parâmetros
- * de busca, nunca os valores. */
-function redigirArgsReceita(args: unknown): unknown {
-  if (args && typeof args === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
-      if (k === "busca" && v && typeof v === "object") {
-        out[k] = Object.keys(v as Record<string, unknown>);
-      } else {
-        out[k] = redactValue(v);
-      }
-    }
-    return out;
+ * de busca, nunca os valores. Serve ao rastro e à auditoria da tool (os dois
+ * ingressos), para a regra ser uma só. Uma `busca` que não é objeto não tem nome
+ * de chave a guardar: sai como marcador, nunca como o valor. */
+export function redigirArgsReceita(args: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (k !== "busca") out[k] = redactValue(v);
+    else out[k] = v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v) : "[omitido]";
   }
-  return redactValue(args);
+  return out;
 }
 
 /** Resume o resultado de `crm_consultar_receita`: `linhas` vira contagem, o resto segue redação normal. */
@@ -108,7 +104,11 @@ export function serializeSteps(steps: ReadonlyArray<MinimalStep>): SerializedSte
       const resumido = TOOL_RESULTADO_RESUMIDO.has(toolName);
       return {
         tool_name: toolName,
-        args: resumido ? redigirArgsReceita(call.input ?? {}) : redactValue(call.input ?? {}),
+        args: resumido
+          ? typeof call.input === "object" && call.input !== null
+            ? redigirArgsReceita(call.input)
+            : "[omitido]"
+          : redactValue(call.input ?? {}),
         result: result === undefined ? undefined : (resumido ? resumirResultadoReceita(result) : redactValue(result)),
       };
     });

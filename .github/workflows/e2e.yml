@@ -990,6 +990,7 @@ jobs:
         whatsapp-pareamento-por-codigo.spec.ts
         central-avisos-destino.spec.ts
         agenda-google-sync.spec.ts
+        agenda-servicos.spec.ts
         encerramento-atendimento.spec.ts
         passagem-com-contexto.spec.ts
         interface-por-vinculo.spec.ts
@@ -1262,6 +1263,7 @@ jobs:
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
+        app-no-celular.spec.ts
         celular-cabe-na-tela.spec.ts
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts

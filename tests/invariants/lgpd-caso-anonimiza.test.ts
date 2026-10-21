@@ -70,7 +70,16 @@ const AVISO_VIZINHO = "02800000-7777-4000-8000-000000000004";
 
 /** O nome que tem de sumir de toda parte. */
 const NOME = "Marina Boaventura";
-const ROTULO = `Cliente Anonimizado #${ALVO.slice(0, 8)}`;
+/**
+ * O rótulo NÃO deriva mais do id (#2342): a cascata gera um sufixo OPACO no
+ * passo 1 e o grava no contato, e cada passo seguinte reusa este MESMO valor —
+ * é o que faz o rótulo servir de ponteiro de uma ponta a outra da cascata.
+ * O teste lê o que o banco guardou, e a prova de que o defeito foi embora está
+ * no teste do título: rótulo igual ao do contato, sem nenhum pedaço do id.
+ */
+function rotuloDoContato(): string {
+  return valor(`select name from public.contacts where id = '${ALVO}';`);
+}
 
 /** Um valor escalar do psql (`-tA`), com nulo visível em vez de linha vazia. */
 function valor(consulta: string): string {
@@ -254,7 +263,7 @@ describe("0280 — a cascata de LGPD alcança o caso que a IA abriu", () => {
   });
 
   it("o título do caso vira o rótulo do titular", () => {
-    expect(campoDoCaso(CASO_ALVO, "title")).toBe(ROTULO);
+    expect(campoDoCaso(CASO_ALVO, "title")).toBe(rotuloDoContato());
   });
 
   it("o resumo e o bloqueio viram os textos fixos", () => {
@@ -337,7 +346,7 @@ describe("0280 — a cascata de LGPD alcança o caso que a IA abriu", () => {
     expect((JSON.parse(segunda) as { already_anonymized: boolean }).already_anonymized).toBe(true);
     // `resolved_at = now()` no passo dos avisos só é idempotente por causa do
     // retorno antecipado — se alguém tirar o `if v_already`, este caso reprova.
-    expect(campoDoCaso(CASO_ALVO, "title")).toBe(ROTULO);
+    expect(campoDoCaso(CASO_ALVO, "title")).toBe(rotuloDoContato());
     expect(campoDoCaso(CASO_ALVO, "updated_at")).toBe(antes.updatedAt);
   });
 });

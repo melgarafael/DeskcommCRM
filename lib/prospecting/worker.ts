@@ -12,6 +12,8 @@ import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-d
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { comSaida } from "./rodape-de-saida";
+import { splitForSend } from "@/lib/agent-engine/agent/split-message";
+import type { Message } from "@/lib/types/messaging";
 import {
   proximoEnvioDaEsteiraFria,
   tetoDiarioDaEsteiraFria,
@@ -21,7 +23,7 @@ import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { assertProspectingDelivery } from "./guard";
+import { assertProspectingContinuation, assertProspectingDelivery } from "./guard";
 import { campaignConfigSchema } from "./schema";
 import { ProspectingError } from "./provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -34,11 +36,30 @@ import {
   type Candidate,
 } from "./store";
 
+/**
+ * Teto de mensagens FÍSICAS da abordagem fria — o mesmo do turno de conversa
+ * (`MAX_SENDS_PER_TURN`, padrão 3, em `lib/agent-engine/env.ts`), que desde o
+ * #1724 vale também para as bolhas. O que passar dele segue junto na última
+ * bolha (`splitForSend`). Constante local, e não import de `inbound-turn.ts`:
+ * aquilo puxaria o motor de turno inteiro para a rota de cron da prospecção.
+ * ponytail: não lê o env; se o operador mexer em MAX_SENDS_PER_TURN, a fria segue em 3.
+ */
+const TETO_DE_BOLHAS_DA_ABORDAGEM = 3;
+
 export async function sendNextCandidate(
   pool: pg.Pool,
   db: pg.PoolClient,
   admin: SupabaseClient,
   c: Campaign,
+  /**
+   * A pausa ENTRE bolhas, injetável para o teste (mesmo expediente do `sleep`
+   * do turno). Bolhas são mensagens FÍSICAS no mesmo número: saírem no mesmo
+   * milissegundo é a cadência de robô que a detecção de automação procura, e o
+   * ritmo do número (`throttle_ms` + `jitter_max_ms`, 0010) já existe para
+   * isto. Só entre bolhas — a primeira sai já.
+   */
+  dormir: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
 ) {
   const cfg = campaignConfigSchema.parse(c.config);
   await validateConfig(db, c.organization_id, cfg);
@@ -222,8 +243,18 @@ export async function sendNextCandidate(
     await assertProspectingDelivery(admin, guard);
     await assertServiceBoundarySupabase(admin, boundary);
     const agent = (
-      await db.query(
-        "select published_version_id,operation_revision from ai_agents where organization_id=$1 and id=$2 and operation_mode='automatic' and paused_at is null and archived_at is null",
+      await db.query<{
+        published_version_id: string;
+        operation_revision: number | string;
+        split_messages: boolean | null;
+        split_max_chars: number | null;
+      }>(
+        // O ESTILO DE RESPOSTA do agente mora na versão publicada (`ai_agent_versions`,
+        // migration 0059), não no agente: é a MESMA coluna que a tela "Estilo de
+        // resposta" grava e que o turno inbound lê. `LEFT JOIN` porque a ponta é o
+        // agente — sem versão publicada a linha continua vindo, e o teste de
+        // `published_version_id` abaixo responde com o mesmo erro de antes.
+        "select a.published_version_id,a.operation_revision,v.split_messages,v.split_max_chars from ai_agents a left join ai_agent_versions v on v.organization_id=a.organization_id and v.id=a.published_version_id where a.organization_id=$1 and a.id=$2 and a.operation_mode='automatic' and a.paused_at is null and a.archived_at is null",
         [c.organization_id, cfg.agent_id],
       )
     ).rows[0];
@@ -268,43 +299,175 @@ export async function sendNextCandidate(
     });
     if (!authorization.ok)
       throw new ProspectingError("Não foi possível preparar o atendimento da resposta.");
-    const message = await sendMessageHandler(
-      admin,
-      {
-        organization_id: c.organization_id,
-        actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
-        requestId: `prospecting:${p.id}`,
-        serviceBoundary: boundary,
-        internalMessageId: p.message_id,
-        proactiveContext: { organizationId: c.organization_id, contactId: p.contact_id },
-        prospectingDelivery: guard,
-        agentOperation: {
-          organizationId: c.organization_id,
-          agentId: cfg.agent_id,
-          versionId: agent.published_version_id,
-          revision: String(agent.operation_revision),
-        },
-      },
-      {
-        conversation_id: p.conversation_id,
-        type: "text",
-        // A SAÍDA vai junto da primeira mensagem, e é montada aqui — não pedida
-        // ao modelo. Sem ela, a saída que a pessoa usa é "Denunciar spam", que
-        // é invisível ao sistema e queima o número do CLIENTE que instalou.
-        // O idioma sai de `organizations.locale`: um rodapé em português numa
-        // instalação em espanhol oferece uma palavra que a pessoa não responde,
-        // e o detector de opt-out só reconhece a palavra ISOLADA.
-        body: cfg.exit_offer === "first_message" ? comSaida(generated.texto, locale) : generated.texto,
-      },
+    // A SAÍDA é montada aqui — não pedida ao modelo — e vai JUNTO DA PRIMEIRA
+    // BOLHA quando a CAMPANHA manda oferecê-la aí (`exit_offer`, migration 0705:
+    // ver o `if` depois de `splitForSend`). Sem ela, a saída que a pessoa usa é
+    // "Denunciar spam", que é
+    // invisível ao sistema e queima o número do CLIENTE que instalou. O idioma
+    // sai de `organizations.locale`: um rodapé em português numa instalação em
+    // espanhol oferece uma palavra que a pessoa não responde, e o detector de
+    // opt-out só reconhece a palavra ISOLADA.
+    //
+    // POR QUE NA PRIMEIRA, e não na última (revisão do PR #2680): quem está do
+    // outro lado não abre a conversa por partes. Se qualquer bolha depois da
+    // primeira não sair — veto do canal, status não confirmado, ou a pessoa
+    // respondendo no meio — quem recebeu a apresentação fica SEM saída numa
+    // mensagem fria, que é o desfecho que mais queima número. O rodapé é a única
+    // parte da abordagem que não pode depender do resto ter dado certo.
+    //
+    // O corte vem ANTES do rodapé por isso: o texto do modelo é que é fatiado no
+    // estilo configurado, e o rodapé (parágrafo próprio, ~60 caracteres) entra na
+    // primeira bolha já pronta. Isso a deixa alguns caracteres acima de
+    // `split_max_chars` — é o mesmo preço que o `splitForSend` já paga quando o
+    // teto de bolhas do turno é atingido: a alternativa seria picar a saída em
+    // duas mensagens, e aí ela voltaria a depender de uma bolha posterior.
+    const baloes = splitForSend(
+      generated.texto,
+      agent.split_messages ?? false,
+      agent.split_max_chars ?? 600,
+      TETO_DE_BOLHAS_DA_ABORDAGEM,
     );
-    const sent = ["sent", "delivered", "read"].includes(message.status);
-    if (!sent) {
+    // Texto vazio com o estilo ligado não devolve bolha nenhuma (`splitForSend` →
+    // `[]`), e a abordagem fria não pode sair sem bolha nenhuma: neste caso a
+    // primeira bolha é vazia (e, no modo `first_message`, é ela que leva o rodapé).
+    if (baloes.length === 0) baloes.push("");
+    // A SAÍDA ENTRA NA 1ª BOLHA SÓ QUANDO A CONFIGURAÇÃO MANDA OFERECÊ-LA JÁ NA
+    // PRIMEIRA MENSAGEM. `exit_offer` (migration 0705, `prospecting_saida_configuravel`)
+    // tem dois valores: em `"first_message"` a saída sai junto da PRIMEIRA
+    // mensagem — é o caso acima, e sem ela quem recebe a apresentação fica SEM
+    // caminho de volta; em `"second_message"` a saída é RESERVADA por
+    // `saida-configuravel.ts` (`exit_offered_at`) e servida na SEGUNDA mensagem
+    // (é o `context.ts` que manda o agente só cumprimentar na primeira). Pôr o
+    // rodapé aqui incondicionalmente ofereceria a saída DUAS vezes — e na
+    // mensagem que o operador não escolheu.
+    if (cfg.exit_offer === "first_message") baloes[0] = comSaida(baloes[0]!, locale);
+    let mensagem: Message | undefined;
+    let falhouEm: Message | undefined;
+    /** A conversa deixou de ser fria ENTRE bolhas: a pessoa respondeu ou um humano assumiu. */
+    let parouEm: string | undefined;
+    /** Uma bolha DEPOIS da primeira lançou no envio (agente pausado no meio, erro transitório). */
+    let lancouEm: string | undefined;
+    /** Bolhas FÍSICAS confirmadas — é o "o que saiu" que a trilha registra. */
+    let entregues = 0;
+    for (let i = 0; i < baloes.length; i++) {
+      if (i > 0) {
+        // Bolhas são mensagens FÍSICAS no mesmo número: saírem juntas é a cadência
+        // de robô que a detecção procura. O ritmo do número (throttle + jitter,
+        // knobs 0010) que decide a pausa — a primeira sai sem esperar.
+        await dormir(
+          (knobs.throttleMs ?? 1200) + Math.floor(Math.random() * (knobs.jitterMaxMs ?? 800)),
+        );
+        // A guarda de PRIMEIRO CONTATO já cumpriu o papel dela na 1ª bolha (é ela
+        // que recusa conversa com `last_outbound_at` — carimbo que o PRÓPRIO
+        // handler grava ao enviar a 1ª). Entre as seguintes vale a conferência
+        // leve: a pessoa respondeu, foi bloqueada ou um humano assumiu → PARA,
+        // mas só ESTE candidato: a campanha não é pausada, porque nada nela
+        // falhou (e a pessoa responder é o desfecho que ela procura).
+        try {
+          await assertProspectingContinuation(admin, {
+            organizationId: c.organization_id,
+            candidateId: p.id,
+            conversationId: p.conversation_id,
+          });
+        } catch (error) {
+          parouEm =
+            error instanceof ProspectingError
+              ? error.message
+              : "A abordagem foi interrompida entre bolhas.";
+          break;
+        }
+      }
+      try {
+        mensagem = await sendMessageHandler(
+          admin,
+          {
+            organization_id: c.organization_id,
+            actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
+            requestId: `prospecting:${p.id}`,
+            serviceBoundary: boundary,
+            // O RECIBO E A IDEMPOTÊNCIA do candidato moram na PRIMEIRA bolha: é a
+            // linha `messages` de id estável (`p.message_id`) que o `sending`
+            // grava antes, e o eco do próprio envio casa por ela. As demais são
+            // mensagens próprias — repetir o id faria o handler devolver a linha
+            // de antes sem enviar (o ramo 23505).
+            // A GUARDA CHEIA acompanha a PRIMEIRA bolha, e só ela: o handler a
+            // roda na entrada de cada envio (`_handler.ts:437`) e ela recusa
+            // conversa com `last_outbound_at` — que é o carimbo que o próprio
+            // handler grava logo depois de enviar esta bolha. Repetida nas
+            // seguintes, ela recusava a 2ª com 409 de escopo `campanha`, pausava a
+            // campanha no primeiro contato e deixava a pessoa sem a saída.
+            ...(i === 0
+              ? { internalMessageId: p.message_id, prospectingDelivery: guard }
+              : {}),
+            proactiveContext: { organizationId: c.organization_id, contactId: p.contact_id },
+            agentOperation: {
+              organizationId: c.organization_id,
+              agentId: cfg.agent_id,
+              versionId: agent.published_version_id,
+              revision: String(agent.operation_revision),
+            },
+          },
+          {
+            conversation_id: p.conversation_id,
+            type: "text",
+            body: baloes[i]!,
+          },
+        );
+      } catch (error) {
+        // Na 1ª bolha nada saiu: o erro segue para o `catch` de fora (candidato
+        // `failed`, campanha decidida pelo tick), como antes. Depois dela a
+        // pessoa JÁ recebeu a apresentação: o handler revalida a cada envio o
+        // que muda com o tempo (agente pausado ou editado, agenda, erro de
+        // banco), e deixar isso subir pausaria a campanha, marcaria `failed`
+        // quem foi abordado e perderia a trilha. Para só este candidato.
+        if (i === 0) throw error;
+        lancouEm = "Uma mensagem depois da primeira não pôde ser enviada.";
+        logger.warn("[prospecting] bolha seguinte lançou no envio; a abordagem parou aqui", {
+          organization_id: c.organization_id,
+          campaign_id: c.id,
+          candidate_id: p.id,
+          sent_bubbles: entregues,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        break;
+      }
+      // Veto/bloqueio/falha: para aqui, como o `sendInBubbles` do turno. Não se
+      // segue mandando bolha atrás de um canal que acabou de recusar. A falha
+      // numa bolha DEPOIS da primeira é do CANDIDATO: a abordagem dele parou no
+      // meio. Nunca da campanha — as outras pessoas não têm nada a ver com o
+      // canal ter recusado este texto, e pausar a fila inteira por isso é o que
+      // a casa não faz em lugar nenhum.
+      if (!["sent", "delivered", "read"].includes(mensagem.status)) {
+        falhouEm = mensagem;
+        break;
+      }
+      entregues++;
+    }
+    const sent = falhouEm === undefined && parouEm === undefined && lancouEm === undefined;
+    if (falhouEm) {
       // This lane never auto-retries an uncertain send. The Inbox keeps the evidence.
+      // O id é o da bolha que falhou (pode não ser a primeira).
       await db.query(
         "update messages set status='failed' where organization_id=$1 and id=$2 and status in ('queued','sending')",
-        [c.organization_id, p.message_id],
+        [c.organization_id, falhouEm.id ?? p.message_id],
       );
     }
+    if (parouEm)
+      logger.info("[prospecting] a conversa deixou de ser fria entre bolhas; a campanha segue", {
+        organization_id: c.organization_id,
+        campaign_id: c.id,
+        candidate_id: p.id,
+        sent_bubbles: entregues,
+        reason: parouEm,
+      });
+    // A abordagem SAIU quando a PRIMEIRA bolha foi confirmada — pare o resto
+    // porque a pessoa respondeu, porque o canal não confirmou uma bolha seguinte
+    // ou porque ela lançou. A pessoa recebeu a apresentação: `failed` aqui a
+    // tiraria de `SQL_CONTAR_ENVIO_AUTOMATICO` (`saida-configuravel.ts`) e do
+    // `context.ts`, que só enxergam `sending`/`sent` — e no modo
+    // `second_message` ela nunca receberia a saída. O que não saiu fica na
+    // conversa (a bolha marcada `failed`) e na trilha (`bubbles_sent`).
+    const abordou = entregues > 0;
     const ehPrimeira = cfg.exit_offer === "first_message";
     await db.query(
       `update prospecting_candidates set status=$3,
@@ -314,8 +477,8 @@ export async function sendNextCandidate(
       [
         c.organization_id,
         p.id,
-        sent ? "sent" : "failed",
-        sent ? null : "Envio não confirmado. Consulte a conversa antes de reenviar.",
+        abordou ? "sent" : "failed",
+        abordou ? null : "Envio não confirmado. Consulte a conversa antes de reenviar.",
       ],
     );
 
@@ -335,6 +498,12 @@ export async function sendNextCandidate(
      * trilha responde é "houve abordagem para este contato", e a recusa do
      * transporte é parte dessa história, não outra.
      *
+     * Com bolhas, `sent` (todas confirmadas) deixou de ser a resposta inteira: a
+     * abordagem fatiada pode sair em parte — a 1ª bolha entregue e a 2ª recusada
+     * —, e é justamente num caso desses que "por que vocês me escreveram?"
+     * precisa de resposta. Por isso `bubbles_sent`/`bubbles_total` vão junto: a
+     * trilha registra O QUE SAIU, não só que alguma coisa foi tentada.
+     *
      * Sem PII: nem telefone, nem o texto gerado. Os ponteiros bastam para
      * chegar à conversa, e o texto vive nela.
      */
@@ -351,6 +520,11 @@ export async function sendNextCandidate(
         agent_id: cfg.agent_id,
         channel_session_id: cfg.channel_session_id,
         sent,
+        // Bolhas FÍSICAS confirmadas / bolhas em que o texto foi fatiado.
+        bubbles_sent: entregues,
+        bubbles_total: baloes.length,
+        // Por que as seguintes não saíram, quando a conversa deixou de ser fria.
+        ...(parouEm || lancouEm ? { stopped_reason: parouEm ?? lancouEm } : {}),
       },
       requestId: `prospecting:${p.id}`,
     });

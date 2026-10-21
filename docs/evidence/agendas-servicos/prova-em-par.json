@@ -1,0 +1,21 @@
+{
+  "source": "native CI image e2362815, reused synthetic Supabase and real queue/worker wrapper/MCP/gates; provider and channel controlled",
+  "raw_input": "Quero reservar a Atividade fictícia para Pessoa fictícia A em 2026-10-15 às 14h. Confirme a reserva para mim.",
+  "availability_pair_equal": true,
+  "booking_receipt_pair_equal_except_dedup_marker": true,
+  "same_reservation_identity": true,
+  "participant": "Pessoa fictícia A",
+  "duration_minutes": 40,
+  "booking_mode": "collective_unlimited",
+  "reservation": "confirmed",
+  "human_confirmation": "not_required",
+  "communication": "not_proven_by_booking",
+  "google_publication": "not_configured",
+  "reservation_rows_before_direct_retry": 1,
+  "reservation_rows_after_direct_retry": 1,
+  "reviewer_sees_reservation_in_same_turn": true,
+  "external_messages": 0,
+  "limits": "Controlled provider proposes tool calls; does not prove real model choice, universal accuracy, daemon scheduling or external message delivery. Earlier probe omitted worker wrapper: write refused; then corrected instrument without changing product.",
+  "historical_integrated_proof": true,
+  "split_scope": "Historical evidence from the integrated branch; this independent agenda PR does not enable or change JEV/reserve review."
+}

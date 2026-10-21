@@ -87,6 +87,34 @@ fi
 # tela nunca ligaria justamente em quem já está em dia. É idempotente.
 setup_update_agent_cron
 
+# ── 0+. O par VAPID também em quem não vai atualizar nada ───────────────────
+# A tela de Notificações manda rodar a atualização, sem --force. Quem já está na
+# última versão sai pela saída "nada a atualizar" logo abaixo, e quem segue a
+# `main` sai pela recusa de versão anterior: sem esta chamada, nos dois o par
+# nunca nasceria. Só na lacuna, nunca troca um par existente (D6).
+#
+# Aqui o par só vai para o .env. Quem sobe o app e o worker de novo para lê-lo é
+# `subir_para_ler_o_par`, e SÓ nas duas saídas sem atualização: no caminho de
+# atualização de verdade o `up -d` lá embaixo já recria os dois, e as recusas de
+# uma atualização real (registro fora, árvore suja) prometem não ter parado
+# nada — ali o par liga na atualização que vier depois.
+PAR_VAPID_CRIADO=""
+PAR_LIGADO_AGORA=""
+completar_par_vapid .env
+subir_para_ler_o_par() {
+  [ -n "$PAR_VAPID_CRIADO" ] || return 0
+  PAR_VAPID_CRIADO=""
+  # `never`: recriar para ler o .env, nunca trocar de imagem. Com tag de canal
+  # (`always`) o compose baixaria o topo do canal antes de recriar — app novo sem
+  # o baseline, logo antes de uma recusa que diz que nada mudou.
+  if ( export APP_PULL_POLICY=never WORKER_PULL_POLICY=never; dc up -d --no-deps app worker ) >/dev/null 2>&1; then
+    PAR_LIGADO_AGORA=1
+    c_grn "$(t "✓ app e worker reiniciados para ligar os avisos com o app fechado")"
+  else
+    c_ylw "$(t "⚠ Criei as chaves dos avisos com o app fechado, mas não consegui reiniciar o app e o worker. Os avisos ligam quando eles reiniciarem, o que acontece sozinho na próxima atualização.")"
+  fi
+}
+
 # ── 1. Tem atualização mesmo? ────────────────────────────────────────────────
 step "Procurando atualizações"
 git fetch --tags --quiet origin 2>/dev/null || c_ylw "⚠ não consegui falar com o GitHub — sigo com o código que já está aqui."
@@ -151,6 +179,7 @@ if [ -n "$MESMA_TAG" ] && [ -z "$FORCE" ] && ! image_desatualizada; then
     c_ylw "    bash hostgator-setup-kit/update.sh --to $TARGET_TAG --force"
   fi
   c_grn "✓ Você já está na versão mais recente ($TARGET_TAG). Nada a atualizar."
+  subir_para_ler_o_par
   exit 0
 fi
 
@@ -166,9 +195,10 @@ fi
 if [ -z "$FORCE" ] && [ -z "$MESMA_TAG" ]; then
   is_already_in_head "$TARGET_TAG" && CONTIDA=0 || CONTIDA=$?
   case "$CONTIDA" in
-    0) refuse "A versão $TARGET_TAG é ANTERIOR à que já está instalada neste servidor.
+    0) subir_para_ler_o_par
+       refuse "A versão $TARGET_TAG é ANTERIOR à que já está instalada neste servidor.
      Instalar ela seria voltar no tempo e desligar coisas que você já tem.
-     Não mexi em nada: nem no banco, nem no app — está tudo como estava.
+     Não mexi em nada${PAR_LIGADO_AGORA:+ além das chaves dos avisos com o app fechado}: nem no banco, nem na versão do app — está tudo como estava.
      Se você REALMENTE quer voltar para a $TARGET_TAG, rode:
        bash hostgator-setup-kit/update.sh --to $TARGET_TAG --force" ;;
     2) refuse "Não consegui ter CERTEZA de que a versão $TARGET_TAG é mais nova que a instalada
@@ -681,6 +711,11 @@ export APP_IMAGE="${IMG_APP}:${VERSAO_ALVO}"
 export WORKER_IMAGE="${IMG_WORKER}:${VERSAO_ALVO}"
 export SCHEDULER_IMAGE="${IMG_SCHEDULER}:${VERSAO_ALVO}"
 export VOICE_AGENT_IMAGE="${IMG_VOICE_AGENT}:${VERSAO_ALVO}"
+# `gravar_imagens` também cria, só na lacuna, o par VAPID dos avisos com o app
+# fechado (`completar_par_vapid`), e nunca troca um par que já existe. Mora lá
+# dentro, e não numa linha daqui, porque é ela que o update.sh ANTIGO chama
+# depois de reler o kit: assim o par chega já na primeira atualização, antes do
+# pull e do `up -d` abaixo.
 gravar_imagens .env "$VERSAO_ALVO"
 
 # Os segredos da chamada de voz (spec 18), para quem instalou antes dela existir.

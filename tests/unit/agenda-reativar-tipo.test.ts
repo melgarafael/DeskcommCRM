@@ -351,6 +351,7 @@ describe("travessia tela → rota: a tela não manda campo que a rota descarta",
   const tela = ast(TELA);
   const camposDoTipo = chavesDaConstante(rota, "camposDoTipo");
   const soNoPatch = chavesDoExtend(rota, "alterarSchema");
+  const soNaCriacao = chavesDoExtend(rota, "criarComRascunhoSchema");
 
   it("CONTROLE: as duas pontas foram realmente lidas", () => {
     // Sem isto, um `camposDoTipo` que o leitor não achasse viraria lista vazia e
@@ -389,10 +390,17 @@ describe("travessia tela → rota: a tela não manda campo que a rota descarta",
   });
 
   it("POST: toda chave enviada na criação é aceita pelo `criarSchema`", () => {
-    const aceitas = new Set(camposDoTipo);
+    const aceitas = new Set([...camposDoTipo, ...soNaCriacao]);
     const enviadas = chavesEnviadas(tela, "post", "/api/v1/agenda/tipos");
     expect(enviadas.length).toBeGreaterThan(1);
     expect(enviadas.filter((c) => !aceitas.has(c))).toEqual([]);
+  });
+
+  it("rascunho é aceito apenas na criação efetivamente usada, sem liberar is_active no PATCH", () => {
+    expect(soNaCriacao).toContain("service_draft");
+    expect(soNaCriacao).not.toContain("is_active");
+    expect([...camposDoTipo, ...soNoPatch]).not.toContain("service_draft");
+    expect(readFileSync(ROTA_TIPOS, "utf8")).toContain("criarComRascunhoSchema.safeParse");
   });
 
   it("o botão Reativar aponta para uma rota que EXISTE", () => {

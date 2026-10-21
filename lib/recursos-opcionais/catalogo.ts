@@ -330,10 +330,10 @@ const DO_SERVIDOR: RecursoOpcional[] = [
     nome: "Notificação com a aba fechada",
     oQueFaz: "Os alertas chegam na bandeja do computador mesmo com o sistema fechado.",
     nivel: "servidor",
-    padrao: "desligado",
+    padrao: "ligado",
     quemDecide: "dono_do_servidor",
     href: null,
-    comoLigar: "No arquivo de ambiente, o par VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY.",
+    comoLigar: "Nasce pronto pelo kit de instalação, mas só funciona em endereço com https (em http://IP nenhum navegador entrega o aviso com o sistema fechado). Se aparecer desligado, rode no servidor: bash hostgator-setup-kit/update.sh",
     ler: peloServidor("web_push"),
   },
   {

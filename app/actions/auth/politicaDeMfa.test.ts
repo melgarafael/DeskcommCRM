@@ -38,8 +38,12 @@ function preparar({ temFator, aal }: { temFator: boolean; aal: "aal1" | "aal2" }
   vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: "org", role: "admin" } as never);
   vi.mocked(createClient).mockResolvedValue({
     auth: {
+      // Os fatores vêm do `getUser()` — a mesma ida ao GoTrue que `loadAuthUser` faz.
+      getUser: async () => ({
+        data: { user: { id: "eu", factors: temFator ? [{ id: "f1", factor_type: "totp", status: "verified" }] : [] } },
+        error: null,
+      }),
       mfa: {
-        listFactors: async () => ({ data: { totp: temFator ? [{ id: "f1", status: "verified" }] : [] }, error: null }),
         getAuthenticatorAssuranceLevel: async () => ({ data: { currentLevel: aal }, error: null }),
       },
     },

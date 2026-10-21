@@ -47,6 +47,7 @@ import {
 type AgendamentoDaResposta = AgendamentoListado & { origem?: "google_sync" };
 
 const listarSchema = z.object({
+  collective_only: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   contact_id: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
   owner_user_id: z.string().uuid().optional(),
@@ -91,6 +92,9 @@ const marcarSchema = z.object({
   description: z.string().max(2000).optional(),
   location_details: z.string().max(300).optional(),
   guest_email: emailDoConvidado.optional(),
+  participant_name: z.string().trim().min(1).max(120).optional(),
+  participants: z.array(z.string().trim().min(1).max(120)).min(1).max(20).optional(),
+  expected_service_revision: z.number().int().positive().optional(),
 });
 
 const alterarSchema = z
@@ -163,6 +167,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const url = new URL(req.url);
   const parsed = listarSchema.safeParse({
+    collective_only: url.searchParams.get("collective_only") ?? undefined,
     contact_id: url.searchParams.get("contact_id") ?? undefined,
     lead_id: url.searchParams.get("lead_id") ?? undefined,
     owner_user_id: url.searchParams.get("owner_user_id") ?? undefined,
@@ -181,6 +186,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
   const resultado = await listaAgendamentos(supabase, activeOrg.orgId, {
+    ...(parsed.data.collective_only !== undefined ? { somenteColetivas: parsed.data.collective_only } : {}),
     contactId: parsed.data.contact_id ?? null,
     leadId: parsed.data.lead_id ?? null,
     ownerUserId: parsed.data.owner_user_id ?? null,
@@ -217,6 +223,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   // ─── A OCUPAÇÃO DO GOOGLE ENTRA AQUI, e não em `listaAgendamentos` ────────
+  if (parsed.data.collective_only) return ok(resultado.agendamentos, { requestId });
   //
   // O defeito, medido em produção em 2026-09-01: 114 eventos vindos do Google no
   // banco, 1 deles na semana desenhada, e a tela mostrando a agenda vazia.

@@ -6,6 +6,10 @@
  * respondia "não tem fator", e `mfaEmDivida()` liberava a sessão `aal1` de quem
  * TEM fator cadastrado.
  *
+ * Hoje `isMfaEnrolled()` lê `user.factors` do próprio `getUser()` (a mesma ida
+ * ao GoTrue que `loadAuthUser` faz), e a forma da falha é a mesma: o `getUser()`
+ * DEVOLVE `{ data: { user: null }, error }`, não lança.
+ *
  * O stub reproduz a forma REAL da falha — um valor devolvido, não uma promessa
  * rejeitada. `mockRejectedValue` aqui passaria mesmo sem o conserto, porque a
  * rejeição já propagava; o defeito mora justamente no erro que chega como dado.
@@ -36,7 +40,7 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 
 const FALHA_DO_GETUSER = Object.assign(new Error("fetch failed"), { name: "AuthRetryableFetchError", status: 0 });
 
-function preparar(listFactors: () => Promise<unknown>): void {
+function preparar(getUser: () => Promise<unknown>): void {
   vi.mocked(loadAuthUser).mockResolvedValue({
     id: USER_ID,
     email: "admin@teste.local",
@@ -48,8 +52,8 @@ function preparar(listFactors: () => Promise<unknown>): void {
   vi.mocked(createClient).mockResolvedValue({
     rpc: vi.fn(async () => ({ data: "admin", error: null })),
     auth: {
+      getUser: vi.fn(getUser),
       mfa: {
-        listFactors: vi.fn(listFactors),
         getAuthenticatorAssuranceLevel: vi.fn(async () => ({
           data: { currentLevel: "aal1", nextLevel: "aal2" },
           error: null,
@@ -64,18 +68,18 @@ beforeEach(() => {
 });
 
 describe("leitura dos fatores de MFA — falha devolvida não vira 'sem fator'", () => {
-  it("listFactors DEVOLVE {data:null, error}: isMfaEnrolled lança em vez de responder false", async () => {
-    preparar(async () => ({ data: null, error: FALHA_DO_GETUSER }));
+  it("getUser DEVOLVE {data:{user:null}, error}: isMfaEnrolled lança em vez de responder false", async () => {
+    preparar(async () => ({ data: { user: null }, error: FALHA_DO_GETUSER }));
     await expect(isMfaEnrolled()).rejects.toBe(FALHA_DO_GETUSER);
   });
 
   it("…e mfaEmDivida não responde 'sem dívida' — as rotas que a chamam direto não liberam", async () => {
-    preparar(async () => ({ data: null, error: FALHA_DO_GETUSER }));
+    preparar(async () => ({ data: { user: null }, error: FALHA_DO_GETUSER }));
     await expect(mfaEmDivida()).rejects.toBe(FALHA_DO_GETUSER);
   });
 
   it("…e requireRole NÃO devolve ok:true para a sessão aal1", async () => {
-    preparar(async () => ({ data: null, error: FALHA_DO_GETUSER }));
+    preparar(async () => ({ data: { user: null }, error: FALHA_DO_GETUSER }));
     const desfecho = await requireRole("admin", { requestId: "req-1" }).then(
       (r) => (r.ok ? "liberou" : `negou ${r.response.status}`),
       () => "lançou",
@@ -84,14 +88,17 @@ describe("leitura dos fatores de MFA — falha devolvida não vira 'sem fator'",
   });
 
   it("CONTROLE: leitura bem-sucedida com fator e sessão aal1 segue barrada com 403", async () => {
-    preparar(async () => ({ data: { totp: [{ id: "f1", status: "verified" }] }, error: null }));
+    preparar(async () => ({
+      data: { user: { id: USER_ID, factors: [{ id: "f1", factor_type: "totp", status: "verified" }] } },
+      error: null,
+    }));
     const r = await requireRole("admin", { requestId: "req-2" });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.response.status).toBe(403);
   });
 
   it("CONTROLE: leitura bem-sucedida SEM fator passa (quem não cadastrou precisa alcançar o cadastro)", async () => {
-    preparar(async () => ({ data: { totp: [] }, error: null }));
+    preparar(async () => ({ data: { user: { id: USER_ID, factors: [] } }, error: null }));
     const r = await requireRole("admin", { requestId: "req-3" });
     expect(r.ok).toBe(true);
   });

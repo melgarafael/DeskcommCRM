@@ -63,6 +63,14 @@ describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
     expect(fora).toEqual([]);
   });
 
+  it("o aviso com a aba fechada diz que depende de https e manda atualizar sem --force (ADR-0006)", () => {
+    // O servidor detecta só o par VAPID; em http://IP o navegador não entrega push.
+    const push = RECURSOS_OPCIONAIS.find((r) => r.id === "web_push");
+    expect(push?.comoLigar).toMatch(/https/);
+    expect(push?.comoLigar).toContain("bash hostgator-setup-kit/update.sh");
+    expect(push?.comoLigar).not.toContain("--force");
+  });
+
   it("ids não se repetem", () => {
     const ids = RECURSOS_OPCIONAIS.map((r) => r.id);
     expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);

@@ -21,6 +21,7 @@ import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
+import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
 import {
   mostrarQuandoSchema,
@@ -59,35 +60,6 @@ export interface PipelineRow {
  * nasce oferecido aqui.
  */
 export const TIPOS_DE_CAMPO = customFieldSchema.shape.type.options;
-
-/**
- * O RÓTULO de cada tipo, em português de quem configura o funil (issue #3037).
- *
- * O `value` do seletor continua sendo o NOME TÉCNICO (`text`, `multiselect`,
- * `searchable_select`…) — é o que o schema e a API gravam. O que muda é só o
- * que a pessoa LÊ: `multiselect` e `searchable_select` não dizem qual é a lista
- * de várias escolhas e qual é a pesquisável, e o dono do negócio não deveria
- * precisar saber o vocabulário do banco para configurar o próprio funil.
- *
- * `Record<CustomFieldDef["type"], string>` de propósito: tipo novo no schema
- * sem rótulo aqui passa a reprovar no typecheck, em vez de voltar a aparecer
- * cru na tela. Onde o rótulo já é chave do dicionário, a MESMA chave é
- * reutilizada — nada de entrada duplicada.
- */
-export const ROTULOS_DO_TIPO: Record<CustomFieldDef["type"], string> = {
-  text: "Texto curto",
-  textarea: "Texto longo",
-  number: "Número",
-  currency: "Moeda (BRL)",
-  date: "Data",
-  select: "Lista de uma escolha",
-  multiselect: "Lista de várias escolhas",
-  searchable_select: "Lista pesquisável",
-  boolean: "Sim ou não",
-  email: "E-mail",
-  phone: "Telefone",
-  url: "Link (URL)",
-};
 
 /** Tipos cujo valor sai de uma lista fechada — são os que mostram o campo de opções. */
 export function tipoTemOpcoes(tipo: CustomFieldDef["type"]): boolean {
@@ -632,7 +604,7 @@ function PipelineEditor({
               <SelectContent>
                 {TIPOS_DE_CAMPO.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
-                    {t(ROTULOS_DO_TIPO[tipo])}
+                    {rotuloDoTipo(tipo, t)}
                   </SelectItem>
                 ))}
               </SelectContent>

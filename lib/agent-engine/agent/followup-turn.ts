@@ -41,6 +41,12 @@ import { contextoDoContato, renderizarTextoDeFollowup } from '@/lib/automation/t
 import { classificarMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
 import { isStatusSendable } from '@/lib/channels/meta/template-binding';
 import { deriveTemplateContract } from '@/lib/channels/meta/template-contract';
+import {
+  resolverVariaveisDoModelo,
+  variaveisDoModeloSchema,
+  type VariaveisDoModelo,
+} from '@/lib/channels/meta/variaveis-do-fluxo';
+import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { classifyPromise } from '../guardrails/promise/semantic';
 import { scheduleCronJob } from '../cron/scheduler';
@@ -108,6 +114,8 @@ export const followupTurnPayloadSchema = z
     fixed_media_url: z.string().url().max(2000).optional(),
     /** action mode `template` — `message_templates` (texto) ou `meta_templates` (modelo aprovado do canal). */
     template_id: z.string().uuid().optional(),
+    /** action mode `template` — de onde sai cada variável do modelo aprovado (nome do contato, campo do negócio). */
+    template_values: variaveisDoModeloSchema.optional(),
     /** action mode `ai_message` — modelo aprovado que sai no lugar da IA com a janela de 24 h fechada. */
     fallback_template_id: z.string().uuid().optional(),
     volta_index: z.number().int().optional(),
@@ -589,6 +597,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
           fixedBody: payload.fixed_body,
           fixedMediaUrl: payload.fixed_media_url,
           templateId: payload.template_id,
+          templateValues: payload.template_values,
           fallbackTemplateId: payload.fallback_template_id,
           voltaIndex: payload.volta_index,
           voltaTotal: payload.volta_total,
@@ -680,6 +689,7 @@ async function runFlowDrivenTurn(
     /** #2734 — mídia opcional (imagem ou PDF) do passo `action`/`text`. */
     fixedMediaUrl: string | undefined;
     templateId: string | undefined;
+    templateValues: VariaveisDoModelo | undefined;
     fallbackTemplateId: string | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
@@ -713,7 +723,11 @@ async function runFlowDrivenTurn(
       input.fallbackTemplateId !== undefined &&
       (await janelaFechada(pool, target, clock()))
     ) {
-      passo = await resolveModeloAprovado(pool, target.tenantId, target.channelSessionId, input.fallbackTemplateId);
+      // O plano B não tem mapa de variáveis: modelo com `{{1}}` segue recusado aqui.
+      passo = await resolveModeloAprovado(pool, target.tenantId, target.channelSessionId, input.fallbackTemplateId, {
+        contactId: target.leadId,
+        variaveis: undefined,
+      });
     }
     if (passo !== null && passo.tipo === 'recusado') {
       runLog.info('passo do fluxo pulado — o modelo não pode sair', { motivo: passo.motivo });
@@ -1007,6 +1021,7 @@ async function resolveFlowSendBody(
     /** #2734 — mídia opcional do passo (`media_url` do nó de ação). */
     fixedMediaUrl: string | undefined;
     templateId: string | undefined;
+    templateValues: VariaveisDoModelo | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
   },
@@ -1045,7 +1060,10 @@ async function resolveFlowSendBody(
   // lia `message_templates`, e um fluxo apontado para um modelo aprovado — o único
   // envio que passa com a janela de 24 h fechada — morria neste `throw` no primeiro
   // disparo, depois de o editor ter aceitado e publicado o grafo.
-  const aprovado = await resolveModeloAprovado(pool, tenantId, channelSessionId, input.templateId);
+  const aprovado = await resolveModeloAprovado(pool, tenantId, channelSessionId, input.templateId, {
+    contactId,
+    variaveis: input.templateValues,
+  });
   if (aprovado === null) {
     throw new Error('followup_turn sem modelo de mensagem — o template_id do passo não existe nesta organização');
   }
@@ -1060,14 +1078,19 @@ async function resolveFlowSendBody(
  * (`definicaoNaConexao`, a mesma regra do `send_template` do agente): dois números
  * podem espelhar o mesmo nome, e disparar a linha de outra conta é recusa certa.
  *
- * O fluxo não tem de onde tirar valor para variável, então modelo com `{{1}}` é
- * recusado com o motivo — mandar o marcador cru ao cliente seria pior.
+ * VARIÁVEIS (`{{1}}`, `{{2}}`…) saem do mapa do passo (`variaveis`): nome do
+ * contato ou campo do negócio, lidos AGORA — um passo que sai horas depois usa o
+ * dado de agora (`lib/channels/meta/variaveis-do-fluxo.ts`). Variável sem origem
+ * ou vazia neste contato recusa o passo com o motivo: mandar o marcador cru ou
+ * um parâmetro em branco ao cliente seria pior. E a recusa é AQUI, e não no
+ * envio: lá ela viraria envio falho e re-tentativa por algo que tempo não conserta.
  */
 async function resolveModeloAprovado(
   pool: pg.Pool,
   tenantId: string,
   channelSessionId: string,
   metaTemplateId: string,
+  alvoDasVariaveis: { contactId: string; variaveis: VariaveisDoModelo | undefined },
 ): Promise<PassoSemIa | null> {
   const { rows } = await pool.query<{ name: string; language: string }>(
     `select name, language from meta_templates where organization_id = $1 and id = $2 limit 1`,
@@ -1096,16 +1119,49 @@ async function resolveModeloAprovado(
     parameter_format: linha.parameter_format,
     components: linha.components as never,
   });
+  let values: Record<string, string> = {};
   if (contrato.slots.length > 0) {
-    return {
-      tipo: 'recusado',
-      motivo: `O modelo "${alvo.name}" tem variáveis, e o fluxo não tem de onde tirar os valores. Use um modelo sem variáveis.`,
-    };
+    const dados = await dadosParaVariaveis(pool, tenantId, alvoDasVariaveis.contactId);
+    const resolucao = resolverVariaveisDoModelo(contrato, alvoDasVariaveis.variaveis, dados);
+    if (!resolucao.ok) {
+      return {
+        tipo: 'recusado',
+        motivo: `O modelo "${alvo.name}" não pode sair: ${resolucao.problemas.join('; ')}.`,
+      };
+    }
+    values = resolucao.values;
   }
   return {
     tipo: 'modelo_aprovado',
-    body: renderTemplateBody(linha.components, {}, meta),
-    modelo: { name: alvo.name, language: alvo.language, values: {} },
+    body: renderTemplateBody(linha.components, values, meta),
+    modelo: { name: alvo.name, language: alvo.language, values },
+  };
+}
+
+/**
+ * O nome do contato e os campos do negócio MAIS RECENTE dele — o mesmo negócio
+ * que o motor do fluxo lê para as condições (`loadLeadFacts`, em
+ * `lib/followup/turn-bridge.ts`). Só roda quando o modelo tem variável.
+ */
+async function dadosParaVariaveis(
+  pool: pg.Pool,
+  tenantId: string,
+  contactId: string,
+): Promise<{ nomeDoContato: string | null; camposDoNegocio: Record<string, unknown> }> {
+  const [contatos, negocios] = await Promise.all([
+    pool.query<{ name: string | null; display_name: string | null }>(
+      `select name, display_name from contacts where organization_id = $1 and id = $2`,
+      [tenantId, contactId],
+    ),
+    pool.query<{ custom_fields: Record<string, unknown> | null }>(
+      `select custom_fields from crm_leads where organization_id = $1 and contact_id = $2
+       order by updated_at desc limit 1`,
+      [tenantId, contactId],
+    ),
+  ]);
+  return {
+    nomeDoContato: nomeDoContato(contatos.rows[0] ?? null),
+    camposDoNegocio: negocios.rows[0]?.custom_fields ?? {},
   };
 }
 

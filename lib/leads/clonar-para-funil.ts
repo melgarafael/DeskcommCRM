@@ -205,6 +205,7 @@ export function montaPayloadDoClone(
   etapa: EtapaDoFunil,
 ): CreateLeadInput & {
   custom_fields: Record<string, unknown>;
+  custom_fields_da_origem: Record<string, unknown>;
   source_metadata: Record<string, unknown>;
   dono_herdado: true;
   /** `null` para origem aberta; o id da origem quando a clonagem É a retomada. */
@@ -230,6 +231,8 @@ export function montaPayloadDoClone(
     tags: origem.tags ?? [],
     source: origem.source ?? "manual",
     custom_fields: origem.custom_fields ?? {},
+    // O que já estava gravado não é julgado de novo pelo padrão do destino (#2730).
+    custom_fields_da_origem: origem.custom_fields ?? {},
     source_metadata: {
       ...(origem.source_metadata ?? {}),
       clonado_de: {

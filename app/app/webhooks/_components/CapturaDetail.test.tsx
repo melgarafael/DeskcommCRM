@@ -112,6 +112,16 @@ describe("campo novo", () => {
     expect((screen.getByLabelText("Rótulo") as HTMLInputElement).value).toBe("Contato email");
   });
 
+  it("o tipo sugerido usa o MESMO rótulo dos Funis (#3095)", () => {
+    abrir(captura({ cidade: "Goiânia" }));
+    fireEvent.click(screen.getByText("Cadastrar como campo do lead"));
+
+    // "cidade" sugere `text`: antes da #3095 a captação dizia "Texto" e os
+    // Funis diziam "Texto curto" para o mesmo tipo. As duas telas leem o mapa
+    // de `lib/schemas/rotulos-do-campo.ts`, e cada teste exige a mesma grafia.
+    expect(screen.getByRole("combobox").textContent?.trim()).toBe("Texto curto");
+  });
+
   it("grava o que já existia MAIS o campo novo", async () => {
     abrir(captura({ cidade: "Goiânia" }));
     fireEvent.click(screen.getByText("Cadastrar como campo do lead"));

@@ -183,7 +183,7 @@ export async function reconcileAppointment(
     p_args: options.calendarFence ? { calendar_fence: options.calendarFence } : {},
   });
   if (!raw) return "busy";
-  if (typeof raw === "object" && "terminal" in raw && raw.terminal === "redacted")
+  if (typeof raw === "object" && "terminal" in raw && (raw.terminal === "redacted" || raw.terminal === "not_configured"))
     return "terminal";
   let a = appointmentSnapshotSchema.parse(raw);
   const call = (action: string, extra: Record<string, unknown> = {}) =>

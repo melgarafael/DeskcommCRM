@@ -243,6 +243,24 @@ export const customFieldSchema = z.object({
    */
   mostrar_quando: mostrarQuandoSchema.optional(),
   /**
+   * O FORMATO que o valor tem de ter (issue #2730): regex em string, na grafia
+   * do `pipeline.settings.fields` — `"^\\d{1,2}(,\\d{1,2})*$"` por exemplo.
+   *
+   * Opcional e SEM refinamento aqui de propósito. `camposDoFunil` lê esta
+   * definição com `safeParse` e DESCARTE o campo que não passa: se este schema
+   * passasse a exigir regex compilável, um `padrao` quebrado apagaria o campo
+   * inteiro da tela em vez de bloquear a gravação dele. A régua em si é em
+   * `lib/leads/padrao-do-campo` — fecha a porta com frase legível e nunca
+   * lança — e é lá que a regex inválida vira `padrao_invalido`.
+   *
+   * `mensagem_padrao` é a frase que o DONO escreveu para quem digitar fora do
+   * formato ("Use só números separados por vírgula, ex.: 2,9"). É dado, não
+   * interface: aparece como está, em qualquer idioma, porque traduzi-la seria
+   * trocar a instrução que o próprio operador deu.
+   */
+  padrao: z.string().optional(),
+  mensagem_padrao: z.string().optional(),
+  /**
    * PERMITIR VALOR NOVO (issue #2521) — só faz sentido no `searchable_select`.
    *
    * LIGADO, a pessoa pode cadastrar na ficha um valor que não está na lista e
@@ -440,8 +458,27 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  * mostraria o selo de uma regra que o trigger não aplica.
  */
 export const crmSettingsSchema = z
-  .object({ cliente_pela_agenda: z.boolean().catch(false) })
-  .catch({ cliente_pela_agenda: false });
+  .object({
+    cliente_pela_agenda: z.boolean().catch(false),
+    /**
+     * `telefone_de_ficha_vazia` (issue #2593): o telefone que o cliente diz
+     * numa conversa entra SOZINHO na ficha SEM número — sem passar pela fila de
+     * proposta que a spec 17 §4b exige para o resto do dado ouvido.
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização, e é o oposto do `cliente_pela_agenda`
+     * só na régua de leitura: lá "ausente = desligado", aqui TAMBÉM (só o booleano
+     * `true` liga). Não é assimetria acidental — a spec 17 §4b diz que o dado
+     * ouvido é PROPOSTO, não gravado, e a exceção só existe onde quem instala
+     * decide abrir mão dessa garantia. Um jsonb ausente tem de continuar sendo o
+     * comportamento de sempre.
+     *
+     * Não mora no `settings.agenda` porque aquele objeto é SUBSTITUÍDO inteiro
+     * pelo `fn_agenda_settings` (ver `colegasPodemMexerNaAgendaLigado`); `crm` é
+     * o bloco que as regras de contato já usam.
+     */
+    telefone_de_ficha_vazia: z.boolean().catch(false),
+  })
+  .catch({ cliente_pela_agenda: false, telefone_de_ficha_vazia: false });
 
 /**
  * `organizations.settings.notificacoes.conteudo_na_tela_bloqueada` — o que o
@@ -481,6 +518,25 @@ export function clientePelaAgendaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).cliente_pela_agenda === true;
+}
+
+/**
+ * O interruptor de #2593 está ligado nesta organização? **Desligado por
+ * padrão**, e nunca lança.
+ *
+ * A régua é "SÓ O BOOLEANO `true` LIGA": ausente, `false`, a string `"true"`,
+ * `1`, array ou qualquer lixo é DESLIGADO. É deliberadamente o mais
+ * conservador dos dois lados — quem atualizar o produto sem abrir a tela
+ * continua com a regra da spec 17 §4b intacta (o dado ouvido é proposto, não
+ * gravado), e um `settings` torto nunca liga uma escrita automática por
+ * acidente.
+ */
+export function telefoneDeFichaVaziaLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).telefone_de_ficha_vazia === true;
 }
 
 /**

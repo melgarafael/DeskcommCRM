@@ -52,6 +52,7 @@ export {
   List,
   Bell,
   BellSlash,
+  DeviceMobile,
   EnvelopeSimple,
   PaperPlaneTilt,
   Smiley,

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   audit: vi.fn(),
   guard: vi.fn(),
+  continuation: vi.fn(),
   boundary: vi.fn(),
   preflight: vi.fn(),
   authorize: vi.fn(),
@@ -29,7 +30,15 @@ vi.mock("@/lib/ai/elegibilidade/autorizacao", () => ({ autorizarContatoParaIA: m
 vi.mock("@/lib/ai/elegibilidade/consulta-pre-go-live", () => ({
   decidirPreGoLiveDoCanalViaSupabase: mocks.preflight,
 }));
-vi.mock("@/lib/prospecting/guard", () => ({ assertProspectingDelivery: mocks.guard }));
+vi.mock("@/lib/prospecting/guard", () => ({
+  assertProspectingDelivery: mocks.guard,
+  // A conferência LEVE entre bolhas (`guard.ts`): a guarda cheia recusa conversa
+  // com `last_outbound_at` — carimbo do NOSSO próprio envio —, então quem checa
+  // as bolhas seguintes é esta. Ela vem da mesma `@/lib/prospecting/guard`, e o
+  // cenário de verdade (guarda REAL + handler carimbando) mora em
+  // `lib/prospecting/prospeccao-bolhas-com-guarda-real.test.ts`.
+  assertProspectingContinuation: mocks.continuation,
+}));
 vi.mock("@/lib/agent-engine/pacing/store", () => ({
   loadChannelKnobs: mocks.knobs,
   loadPacingState: vi.fn().mockResolvedValue({ sentToday: 0 }),
@@ -68,6 +77,8 @@ vi.mock("@/lib/prospecting/store", () => ({
   prepararCandidatoNoEnvio: mocks.prepare,
 }));
 import { sendNextCandidate, tickProspecting } from "@/lib/prospecting/worker";
+import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
+import { ProspectingError } from "@/lib/prospecting/provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { withProspectingLock } from "@/lib/prospecting/store";
 import type { Campaign } from "@/lib/prospecting/store";
@@ -106,15 +117,26 @@ function database(
     last_attempt: null as Date | null,
   },
   row: Record<string, unknown> = candidate,
+  // A VERSÃO PUBLICADA do agente. `split_messages`/`split_max_chars` moram em
+  // `ai_agent_versions` (é onde a tela "Estilo de resposta" grava), então a
+  // linha vem do JOIN que o worker faz — sem os campos = agente sem estilo
+  // configurado = balão único (o comportamento de antes).
+  agente: Record<string, unknown> = { published_version_id: id, operation_revision: 1 },
 ) {
   return {
-    query: vi.fn(async (sql: string) => {
+    // O 2º parâmetro existe porque as queries mutantes do envio levam os params —
+    // sem ele a tupla de `mock.calls` tem comprimento 1 e `calls[i][1]` reprova o
+    // typecheck (TS2493) mesmo com o teste passando no vitest.
+    query: vi.fn(async (sql: string, _params?: unknown[]) => {
       if (sql.startsWith("select daily_message_limit"))
         return { rows: [{ daily_message_limit: 50 }] };
       if (sql.includes("count(*) filter")) return { rows: [counts] };
       if (sql.startsWith("select * from prospecting_candidates")) return { rows: [row] };
-      if (sql.startsWith("select published_version_id"))
-        return { rows: [{ published_version_id: id, operation_revision: 1 }] };
+      // Aceita as DUAS formas: a da main (`select published_version_id,operation_revision
+      // from ai_agents`) e a do fix (mesmas colunas, com o JOIN em `ai_agent_versions`
+      // para trazer o estilo). É fixture de leitura — a falha que interessa é a do
+      // comportamento, não a da forma da query.
+      if (/^select (a\.)?published_version_id/.test(sql)) return { rows: [agente] };
       return { rows: [] };
     }),
   };
@@ -127,6 +149,7 @@ beforeEach(() => {
   mocks.pacing.mockReturnValue({ allow: true, waitMs: 0 });
   mocks.preflight.mockResolvedValue({ permite: true });
   mocks.guard.mockResolvedValue(undefined);
+  mocks.continuation.mockResolvedValue(undefined);
   mocks.boundary.mockResolvedValue(undefined);
   mocks.generate.mockResolvedValue({
     ok: true,
@@ -309,6 +332,325 @@ describe("gradual outreach", () => {
     expect(body).toContain("PARAR");
     const instrucao = mocks.generate.mock.calls[0]?.[2]?.instrucao as string;
     expect(instrucao).not.toContain("NÃO apresenta serviço");
+  });
+});
+
+/*
+ * A ABERTURA DA CAMPANHA TAMBÉM É "ESTILO DE RESPOSTA" (issue #2665).
+ *
+ * A opção "Responder em várias mensagens curtas" da tela do agente vale para o
+ * turno de resposta, mas a PRIMEIRA mensagem de uma campanha de Prospecção
+ * saía inteira, numa bolha só, acima do tamanho máximo configurado. Medido numa
+ * VPS em produção: 79 aberturas de campanha, 79 em uma única mensagem (média
+ * 265 caracteres, máximo 428), enquanto 18 de 30 turnos de resposta saíram em
+ * 2+ bolhas como configurado.
+ *
+ * A causa: o divisor (`splitForSend`, a fonte única da decisão) só era chamado
+ * no `inbound-turn.ts`. O worker da prospecção mandava o texto do modelo direto
+ * para o canal.
+ */
+describe("abordagem fria obedece o Estilo de resposta do agente (issue #2665)", () => {
+  const textoDoModelo =
+    "Olá! Somos a Acme e ajudamos lojas como a de vocês a vender mais.\n\n" +
+    "Queria entender como vocês atendem hoje.";
+  /** Teto escolhido para forçar o corte: o 1º parágrafo sozinho passa dele. */
+  const MAX = 60;
+  const versaoComEstilo = {
+    published_version_id: id,
+    operation_revision: 1,
+    split_messages: true,
+    split_max_chars: MAX,
+  };
+  const dormir = vi.fn().mockResolvedValue(undefined);
+
+  it("sai em VÁRIAS bolhas curtas, com a saída na PRIMEIRA e o recibo na PRIMEIRA", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    const corpos = mocks.send.mock.calls.map(([, , input]) => String(input?.body));
+    expect(corpos.length, "a abordagem saiu em uma mensagem só").toBeGreaterThan(1);
+    // A 1ª bolha é a ÚNICA que pode passar do teto: ela leva o rodapé de saída,
+    // que não é estilo — é a saída da mensagem fria (ver worker.ts). As demais
+    // obedecem ao "Estilo de resposta" do agente.
+    for (const corpo of corpos.slice(1))
+      expect(
+        corpo.length,
+        `bolha acima do teto configurado (${MAX}): ${corpo}`,
+      ).toBeLessThanOrEqual(MAX);
+    expect(corpos[0]!.length).toBeLessThanOrEqual(MAX + rodapeDeSaida(null).length + 2);
+
+    // Nada do texto se perde no corte — as bolhas somadas são o texto inteiro.
+    const somado = corpos.join(" ");
+    expect(somado).toContain("vender mais.");
+    expect(somado).toContain("atendem hoje.");
+
+    // A SAÍDA ("responda PARAR") chega JUNTO DA PRIMEIRA bolha. Se ela viesse na
+    // última — como no head anterior —, qualquer bolha que falhasse no meio
+    // deixaria a pessoa sem caminho de volta numa mensagem fria.
+    expect(corpos[0], "a saída não está na 1ª bolha").toContain("responda PARAR");
+    expect(
+      corpos.at(-1),
+      "a saída voltou a depender da ÚLTIMA bolha — o defeito medido na revisão do PR",
+    ).not.toContain("responda PARAR");
+
+    // Recibo e idempotência do candidato ficam na PRIMEIRA bolha; as demais são
+    // mensagens próprias, sem o id estável (repetir o id faria o handler
+    // devolver a linha de antes sem enviar).
+    expect(mocks.send.mock.calls[0]?.[1]).toMatchObject({
+      internalMessageId: "stable-message",
+      prospectingDelivery: { candidateId: "candidate" },
+    });
+    for (const [, ctx] of mocks.send.mock.calls.slice(1))
+      expect(ctx, "bolha seguinte reusando o id estável da primeira").not.toHaveProperty(
+        "internalMessageId",
+      );
+
+    // A GUARDA DE PRIMEIRO CONTATO vai só na PRIMEIRA bolha. Ela recusa conversa
+    // com `last_outbound_at` — carimbo que o próprio handler grava ao enviar a 1ª
+    // —, e repetida numa bolha seguinte ela pausava a campanha no primeiro
+    // contato. Entre as seguintes vale a conferência leve.
+    for (const [, ctx] of mocks.send.mock.calls.slice(1))
+      expect(
+        ctx,
+        "guarda de primeiro contato de novo numa bolha seguinte: pausa a campanha no 1º contato",
+      ).not.toHaveProperty("prospectingDelivery");
+    expect(mocks.continuation).toHaveBeenCalledTimes(corpos.length - 1);
+    for (const chamada of mocks.continuation.mock.calls)
+      expect(chamada[1]).toMatchObject({ candidateId: "candidate", conversationId: id });
+
+    // Bolhas são mensagens físicas: entre uma e outra vai o ritmo do número
+    // (throttle + jitter), nunca o envio costado.
+    expect(dormir, "bolhas seguidas sem pausa é cadência de robô").toHaveBeenCalledTimes(
+      corpos.length - 1,
+    );
+  });
+
+  /**
+   * A CONFIGURAÇÃO DECIDE ONDE A SAÍDA É OFERECIDA (migration 0705).
+   *
+   * `exit_offer` tem dois valores, e o worker respeita os dois: em
+   * `first_message` a saída vai junto da PRIMEIRA bolha; em `second_message` a
+   * saída é RESERVADA por `saida-configuravel.ts` (`exit_offered_at`) e servida
+   * na SEGUNDA mensagem (`context.ts` manda o agente só cumprimentar na
+   * primeira). Pôr o rodapé aqui incondicionalmente ofereceria a saída duas
+   * vezes — e na mensagem que o operador não escolheu.
+   */
+  async function bolhasComExitOffer(modo: "first_message" | "second_message") {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    const escolhida = {
+      ...campaign,
+      config: { ...campaign.config, exit_offer: modo },
+    } as Campaign;
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, escolhida, dormir);
+    return {
+      corpos: mocks.send.mock.calls.map(([, , input]) => String(input?.body)),
+      db,
+    };
+  }
+
+  it("exit_offer=first_message: o rodapé sai na 1ª bolha e a reserva é gravada neste envio", async () => {
+    const { corpos, db } = await bolhasComExitOffer("first_message");
+    expect(corpos.length, "a abordagem saiu em uma mensagem só").toBeGreaterThan(1);
+    expect(corpos[0], "a saída não está na 1ª bolha").toContain("responda PARAR");
+    // Oferecida na PRIMEIRA mensagem, é neste envio que a saída fica reservada —
+    // é isso que impede a 2ª mensagem de oferecê-la de novo.
+    const reserva = db.query.mock.calls.find(([q]) => q.includes("exit_offered_at"));
+    expect(String(reserva?.[0])).toContain("and true then now()");
+  });
+
+  it("exit_offer=second_message: a 1ª bolha sai SEM o rodapé — a saída é da 2ª mensagem", async () => {
+    const { corpos, db } = await bolhasComExitOffer("second_message");
+    expect(corpos.length, "a abordagem saiu em uma mensagem só").toBeGreaterThan(1);
+    for (const corpo of corpos)
+      expect(
+        corpo,
+        "o rodapé saiu sem a configuração mandar: a saída seria oferecida duas vezes",
+      ).not.toContain("responda PARAR");
+    // O texto do modelo chega inteiro e fatiado: o que a configuração muda é ONDE
+    // a saída é oferecida, não o estilo de resposta.
+    const somado = corpos.join(" ");
+    expect(somado).toContain("vender mais.");
+    expect(somado).toContain("atendem hoje.");
+    // A GUARDA LEVE entre as bolhas seguintes continua valendo — a pessoa
+    // responder no meio PARA a abordagem (sem pausar a campanha).
+    expect(mocks.continuation).toHaveBeenCalledTimes(corpos.length - 1);
+    expect(dormir).toHaveBeenCalledTimes(corpos.length - 1);
+    // E este envio NÃO reserva a saída: quem reserva é a 2ª mensagem.
+    const reserva = db.query.mock.calls.find(([q]) => q.includes("exit_offered_at"));
+    expect(String(reserva?.[0])).toContain("and false then now()");
+  });
+
+  it("sem o estilo ligado, a abordagem continua saindo em UMA mensagem (não regredir)", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    await sendNextCandidate(
+      {} as never,
+      database(undefined, candidate, {
+        published_version_id: id,
+        operation_revision: 1,
+        split_messages: false,
+      }) as never,
+      {} as never,
+      campaign,
+      dormir,
+    );
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    const corpo = String(mocks.send.mock.calls[0]?.[2]?.body);
+    expect(corpo.startsWith(textoDoModelo)).toBe(true);
+    expect(corpo).toContain("responda PARAR");
+    expect(mocks.send.mock.calls[0]?.[1]).toMatchObject({ internalMessageId: "stable-message" });
+    expect(dormir).not.toHaveBeenCalled();
+  });
+
+  it("agente cuja linha não traz os campos (clone antigo) segue em balão único", async () => {
+    await sendNextCandidate(
+      {} as never,
+      database(undefined, candidate, { published_version_id: id, operation_revision: 1 }) as never,
+      {} as never,
+      campaign,
+      dormir,
+    );
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("a abordagem sai em no MÁXIMO 3 mensagens: o que passa segue junto na última (#1724)", async () => {
+    // Cinco parágrafos curtos, cada um cabe sozinho numa bolha: sem o teto, são
+    // cinco mensagens seguidas para quem nunca falou com a empresa.
+    const paragrafos = ["Um.", "Dois.", "Três.", "Quatro.", "Cinco."];
+    mocks.generate.mockResolvedValue({ ok: true, texto: paragrafos.join("\n\n") });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    const db = database(undefined, candidate, { ...versaoComEstilo, split_max_chars: 600 });
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    expect(mocks.send, "passou do teto de mensagens do turno").toHaveBeenCalledTimes(3);
+    const ultima = String(mocks.send.mock.calls[2]?.[2]?.body);
+    for (const resto of ["Três.", "Quatro.", "Cinco."])
+      expect(ultima, "o que passou do teto se perdeu").toContain(resto);
+  });
+
+  it("a 2ª bolha não confirmada PARA o envio, e a candidatura conta como abordada (a 1ª chegou)", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    // `mockImplementation` e não `mockResolvedValueOnce`: o fila de "once" sobrevive
+    // ao `clearAllMocks` (que só limpa as chamadas) e vaza para os testes seguintes.
+    let balao = 0;
+    mocks.send.mockImplementation(async () => ({
+      status: balao++ === 0 ? "sent" : "queued",
+      id: `balao-${balao}`,
+    }));
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    expect(mocks.send, "seguiu mandando bolha após o envio não confirmado").toHaveBeenCalledTimes(2);
+    const falha = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update messages set status='failed'"),
+    );
+    expect(falha?.[1]).toContain("balao-2");
+    // A pessoa recebeu a 1ª bolha: `failed` a tiraria da reserva da saída e do
+    // contexto da campanha, que só enxergam `sending`/`sent`.
+    const candidatura = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    );
+    expect(candidatura?.[1], "quem recebeu a 1ª bolha ficou como falha").toEqual([
+      id,
+      "candidate",
+      "sent",
+      null,
+    ]);
+    // A falha não escapou como erro: o candidato é marcado e o tick SEGUE com a
+    // campanha (nada foi lançado). E a trilha registra O QUE SAIU — uma bolha de
+    // três —, porque uma mensagem foi de fato entregue.
+    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
+      action: "prospecting.approach_sent",
+      metadata: { sent: false, bubbles_sent: 1, bubbles_total: 3 },
+    });
+  });
+
+  it("second_message com a 2ª bolha não confirmada: a candidatura fica `sent` e a saída da 2ª mensagem continua garantida", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    let balao = 0;
+    mocks.send.mockImplementation(async () => ({
+      status: balao++ === 0 ? "sent" : "queued",
+      id: `balao-${balao}`,
+    }));
+    const segunda = {
+      ...campaign,
+      config: { ...campaign.config, exit_offer: "second_message" },
+    } as Campaign;
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, segunda, dormir);
+
+    const [sql, params] = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    ) as [string, unknown[]];
+    // `sent` é o que grava automatic_sends=1 e mantém o candidato visível para
+    // `SQL_CONTAR_ENVIO_AUTOMATICO`, que é quem serve a saída na 2ª mensagem.
+    expect(params, "a apresentação chegou e a saída nunca viria").toEqual([
+      id,
+      "candidate",
+      "sent",
+      null,
+    ]);
+    expect(sql).toContain("automatic_sends = case when $3 = 'sent' then 1");
+    expect(sql, "reservou a saída que este modo serve na 2ª mensagem").toContain(
+      "and false then now()",
+    );
+  });
+
+  it("uma bolha seguinte que LANÇA no envio para só este candidato: não pausa a campanha nem perde a trilha", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    let balao = 0;
+    mocks.send.mockImplementation(async () => {
+      if (balao++ > 0) throw new Error("agente pausado entre as bolhas");
+      return { status: "sent", id: "balao-1" };
+    });
+    const db = database(undefined, candidate, versaoComEstilo);
+    // Lançar daqui faria o tick pausar a campanha inteira.
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    const candidatura = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    );
+    expect(candidatura?.[1]).toEqual([id, "candidate", "sent", null]);
+    expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
+      action: "prospecting.approach_sent",
+      metadata: { sent: false, bubbles_sent: 1, bubbles_total: 3 },
+    });
+  });
+
+  it("a pessoa responde entre bolhas: PARA sem pausar a campanha e registra o que saiu", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    // A conferência leve entre bolhas recusa: a pessoa respondeu (ou mandou STOP).
+    // Escopo `candidato` — é o que impede o tick de pausar a campanha inteira.
+    mocks.continuation.mockRejectedValueOnce(
+      new ProspectingError(
+        "A pessoa respondeu ou o atendimento foi assumido; a abordagem parou aqui.",
+        409,
+        "candidato",
+      ),
+    );
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    // Só a 1ª bolha saiu — e a abordagem SAIU (a pessoa foi abordada; o que é
+    // falha é a conversa ter continuado fria, não a pessoa ter respondido).
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    const candidatura = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    );
+    expect(candidatura?.[1]).toEqual([id, "candidate", "sent", null]);
+    expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
+      metadata: {
+        sent: false,
+        bubbles_sent: 1,
+        bubbles_total: 3,
+        stopped_reason: "A pessoa respondeu ou o atendimento foi assumido; a abordagem parou aqui.",
+      },
+    });
   });
 });
 

@@ -50,12 +50,20 @@ export async function lerArquivoDoIcone(
   }
 }
 
-/** Um PNG por tamanho do app. Sem arquivo válido, preserva símbolo ou cor + inicial. */
+/**
+ * Um PNG por tamanho do app. Sem arquivo válido, preserva símbolo ou cor + inicial.
+ *
+ * `conteudo` é a fração do lado que o DESENHO ocupa; o fundo opaco ocupa sempre
+ * o lado inteiro. Abaixo de 1 é para quem recorta o ícone: o iPhone arredonda
+ * os cantos, e o Android (ícone `maskable`) recorta num círculo de 80% do lado.
+ */
 export async function gerarIconeDoApp(
-  lado: 192 | 512,
+  lado: 180 | 192 | 512,
   marca: MarcaDeSaida,
   arquivo: string | null,
+  conteudo = 1,
 ): Promise<ArrayBuffer> {
+  const caixa = Math.round(lado * conteudo);
   const desenhar = (imagem: string | null) => {
     const produto = marcaEhADoProduto({ name: marca.nome, logoUrl: marca.logoUrl });
     return new ImageResponse(
@@ -68,18 +76,18 @@ export async function gerarIconeDoApp(
           justifyContent: "center",
           background: imagem || produto ? NEUTROS_DE_SAIDA.fundo : marca.accent,
           color: marca.accentFg,
-          fontSize: Math.round(lado * 0.62),
+          fontSize: Math.round(caixa * 0.62),
         }}
       >
         {imagem ? (
           // O src é data: gerado de bytes limitados do Storage da instalação.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imagem} alt="" width={lado} height={lado} style={{ objectFit: "contain" }} />
+          <img src={imagem} alt="" width={caixa} height={caixa} style={{ objectFit: "contain" }} />
         ) : produto ? (
           <svg
             viewBox={SIMBOLO.viewBox}
-            width={Math.round(lado * 0.78)}
-            height={Math.round(lado * 0.78)}
+            width={Math.round(caixa * 0.78)}
+            height={Math.round(caixa * 0.78)}
           >
             <g fill={CORES_DA_MARCA.claro.simbolo} transform={SIMBOLO.transform}>
               <path d={SIMBOLO.d} />
