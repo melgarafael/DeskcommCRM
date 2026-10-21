@@ -4,11 +4,21 @@ import { headers } from "next/headers";
 import { audit } from "@/lib/audit";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import { checkSmtpConfiguration } from "@/lib/email/smtp";
+import { hostSmtpAceito } from "@/lib/email/host-do-servidor";
+import { MENSAGEM_DA_RECUSA_DO_SMTP } from "@/lib/email/recusa-do-smtp";
 import { saveSmtpConfig } from "@/lib/email/config";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 
 const schema = z.object({
-  host: z.string().trim().max(253),
+  host: z
+    .string()
+    .trim()
+    .max(253)
+    // O MESMO formato da constraint `platform_smtp_settings_host`
+    // (`supabase/baseline.sql`), medido em `lib/email/host-do-servidor.ts`.
+    // Vazio passa: é como a instalação desliga o SMTP e volta ao serviço
+    // externo, e a constraint o aceita (`smtp_host is null or …`).
+    .refine(hostSmtpAceito, MENSAGEM_DA_RECUSA_DO_SMTP.endereco),
   port: z.coerce.number().int().min(1).max(65535),
   security: z.enum(["starttls", "tls", "none"]),
   username: z.string().trim().max(320),
@@ -25,13 +35,15 @@ export async function updateSmtp(input: z.input<typeof schema>) {
   if (!parsed.success) {
     const field = parsed.error.issues[0]?.path[0];
     const error =
-      field === "port"
-        ? "Informe uma porta entre 1 e 65535."
-        : field === "from_email"
-          ? "Informe somente o e-mail do remetente, por exemplo suporte@empresa.com."
-          : field === "security"
-            ? "Selecione STARTTLS, TLS ou Sem criptografia."
-            : "Revise os dados SMTP informados.";
+      field === "host"
+        ? MENSAGEM_DA_RECUSA_DO_SMTP.endereco
+        : field === "port"
+          ? "Informe uma porta entre 1 e 65535."
+          : field === "from_email"
+            ? "Informe somente o e-mail do remetente, por exemplo suporte@empresa.com."
+            : field === "security"
+              ? "Selecione STARTTLS, TLS ou Sem criptografia."
+              : "Revise os dados SMTP informados.";
     return { ok: false as const, error };
   }
 
@@ -45,7 +57,18 @@ export async function updateSmtp(input: z.input<typeof schema>) {
     fromName: parsed.data.from_name,
     updatedBy: user.id,
   });
-  if (!result.ok) return result;
+  if (!result.ok) {
+    // A MENSAGEM CRUA DO POSTGRES MORRE AQUI (#2804, item 3).
+    //
+    // O toast recebia `error.message` do Supabase sem tratamento — e ele chega
+    // nomeando tabela e constraint (`new row for relation
+    // "platform_smtp_settings" violates check constraint …`), que é o que o
+    // operador menos pode usar. A causa crua vai para o log do servidor, onde
+    // quem depura a lê inteira; a tela recebe a frase de
+    // `MENSAGEM_DA_RECUSA_DO_SMTP.gravacao`.
+    console.error("[admin/email] falha ao gravar o servidor SMTP", result.error);
+    return { ok: false as const, error: MENSAGEM_DA_RECUSA_DO_SMTP.gravacao };
+  }
 
   const requestHeaders = await headers();
   await audit({

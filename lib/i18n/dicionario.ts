@@ -39,6 +39,18 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // As duas frases que a tela de /admin/email mostra quando a gravação do
+  // servidor SMTP é recusada (#2804). A chave é o texto em português, como
+  // manda a regra deste arquivo: o `toast.error(t(r.error))` do formulário
+  // traduz o que a action devolveu.
+  "O endereço do servidor aceita só letras, números, pontos e hífens, até 253 caracteres, começando com letra ou número. Não use sublinhado no nome — se ele é o nome de um contêiner Docker, use o endereço IP dele ou um apelido sem sublinhado. Também não use smtp:// na frente nem a porta no fim.":
+    {
+      es: "La dirección del servidor solo acepta letras, números, puntos y guiones, hasta 253 caracteres, empezando por letra o número. No uses guion bajo en el nombre: si es el nombre de un contenedor Docker, usa su dirección IP o un alias sin guion bajo. Tampoco uses smtp:// delante ni el puerto al final.",
+    },
+  "Não foi possível gravar o servidor de e-mail, e nada foi alterado. Confira os dados e tente de novo; se o problema continuar, fale com o suporte.":
+    {
+      es: "No se pudo guardar el servidor de correo y nada cambió. Revisa los datos e inténtalo de nuevo; si el problema continúa, contacta con soporte.",
+    },
   ...TEXTOS_AGENDA_SERVICOS,
   ...TEXTOS_AGENDA_CONFIGURACAO,
   "Há um ajuste proporcional esperando pagamento. Escolher outro plano cancela esse ajuste.": { es: "Hay un ajuste proporcional esperando el pago. Elegir otro plan cancela ese ajuste." },
