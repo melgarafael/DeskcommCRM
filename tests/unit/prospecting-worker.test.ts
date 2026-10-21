@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   pacing: vi.fn(),
   paradas: vi.fn(),
   prepare: vi.fn(),
+  preparo: vi.fn(),
 }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.send }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
@@ -76,6 +77,9 @@ vi.mock("@/lib/prospecting/store", () => ({
   validateConfig: vi.fn().mockResolvedValue(undefined),
   prepararCandidatoNoEnvio: mocks.prepare,
 }));
+// O preparo automático (B2) tem a suíte própria em lib/prospecting/preparo.test.ts;
+// aqui só se mede QUANDO o tick o chama (ordem, fora do bloqueio, fail-open).
+vi.mock("@/lib/prospecting/preparo", () => ({ prepararCandidatos: mocks.preparo }));
 import { sendNextCandidate, tickProspecting } from "@/lib/prospecting/worker";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import { ProspectingError } from "@/lib/prospecting/provider";
@@ -332,6 +336,53 @@ describe("gradual outreach", () => {
     expect(body).toContain("PARAR");
     const instrucao = mocks.generate.mock.calls[0]?.[2]?.instrucao as string;
     expect(instrucao).not.toContain("NÃO apresenta serviço");
+  });
+
+  it("modo second_message: os dados da 1ª mensagem não levam Auditoria, Detalhe nem Rascunho", async () => {
+    // Auditoria definitiva + prévia válida do MESMO agente: no modo da 1ª, as três
+    // chaves entram (controle); no da 2ª, a 1ª mensagem só cumprimenta e nenhuma
+    // entra — o prompt frio deixa citar a Auditoria "como o motivo do contato".
+    const verificadoEm = new Date().toISOString();
+    const auditado = {
+      ...candidate,
+      data: {
+        name: "Example",
+        socials: [],
+        website: "https://example.test/",
+        site: {
+          ver: 1,
+          classe: "fora-do-ar",
+          problemas: ["http-503"],
+          checklist: { tem: [], falta: [] },
+          final_url: "https://example.test/",
+          http_status: 503,
+          tempo_ms: 300,
+          conteudo_resumo: "Página de erro do servidor",
+          pagespeed: null,
+          verificado_em: verificadoEm,
+          provisorio: false,
+          tentativas: 0,
+        },
+        previa: {
+          texto: "RASCUNHO-COM-OFERTA",
+          baseada_em: `fora-do-ar@${verificadoEm}`,
+          gerada_em: verificadoEm,
+          agente_id: id,
+        },
+      },
+    };
+    const dadosDoModo = async (modo: "first_message" | "second_message") => {
+      vi.clearAllMocks();
+      mocks.generate.mockResolvedValue({ ok: true, texto: "Olá. Falo com a Example?" });
+      const comModo = { ...campaign, config: { ...campaign.config, exit_offer: modo } } as Campaign;
+      await sendNextCandidate({} as never, database(undefined, auditado) as never, {} as never, comModo);
+      return mocks.generate.mock.calls[0]?.[2]?.dados as Record<string, string>;
+    };
+    const primeira = await dadosDoModo("first_message");
+    expect(Object.keys(primeira)).toEqual(expect.arrayContaining(["Auditoria", "Detalhe", "Rascunho de abordagem"]));
+    const segunda = await dadosDoModo("second_message");
+    expect(segunda["Empresa"]).toBe("Example");
+    for (const chave of ["Auditoria", "Detalhe", "Rascunho de abordagem"]) expect(segunda).not.toHaveProperty(chave);
   });
 });
 
@@ -666,6 +717,17 @@ describe("tick da prospecção × organização parada", () => {
     expect(sql).not.toMatch(/organization_id <> all/);
     expect(params ?? []).toEqual([]);
   });
+
+  it("a consulta de organizações do tick (a de campanhas rodando) não mexe em data->'site'", async () => {
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    await tickProspecting({ query } as never, {} as never);
+    const [sql] = query.mock.calls[0]!;
+    // O portão do BLOCO COM BLOQUEIO continua só com quem roda busca/campanha. A
+    // verificação de site e a prévia (B2) saem por `prepararCandidatos`, fora do
+    // bloqueio, e as organizações só-rascunho vêm de uma SEGUNDA consulta.
+    expect(sql).not.toMatch(/data->'site'/);
+    expect(sql).toMatch(/status='running'/);
+  });
 });
 
 describe("tick da prospecção × organização que para no meio do envio", () => {
@@ -803,5 +865,200 @@ describe("funil só no envio: a checagem do canal vem ANTES de criar qualquer co
     });
     const checagem = mocks.preflight.mock.invocationCallOrder[0] ?? Infinity;
     expect(checagem).toBeLessThan(mocks.prepare.mock.invocationCallOrder[0] ?? 0);
+  });
+});
+
+/**
+ * A PROVA EM PAR DA PRÉVIA (B1, `docs/doctrine/prova-em-par.md`).
+ *
+ * A tela gera a prévia com a estratégia e a guarda no candidato. Se o ENVIO não
+ * levar a MESMA estratégia e o MESMO rascunho, o par se rompe: a pessoa revisa
+ * um texto e o tick manda outro, e nenhum dos dois lados acusa sozinho. Aqui
+ * mede-se o lado da ferramenta (o worker) com o mesmo candidato que a tela
+ * (caso C, `route.test.ts`) mede do outro lado.
+ */
+describe("a abordagem fria leva a estratégia e a prévia guardada (par com a tela)", () => {
+  const comPrevia = {
+    ...candidate,
+    data: {
+      name: "Example",
+      website: null,
+      site: null,
+      socials: [],
+      previa: {
+        texto: "Rascunho guardado pela tela",
+        baseada_em: "sem-site@derivado",
+        gerada_em: "2026-10-11T09:00:00.000Z",
+        // O MESMO agente da campanha: a prévia de outro agente não é aproveitada.
+        agente_id: id,
+      },
+    },
+  };
+
+  it("F) a prévia escrita por OUTRO agente (o padrão) não vai: o envio escreve do zero", async () => {
+    const deOutro = {
+      ...comPrevia,
+      data: {
+        ...comPrevia.data,
+        previa: { ...comPrevia.data.previa, agente_id: "11111111-1111-4111-8111-111111111111" },
+      },
+    };
+    await sendNextCandidate({} as never, database(undefined, deOutro) as never, {} as never, campaign);
+    const args = mocks.generate.mock.calls[0]![2] as { dados: Record<string, string> };
+    expect(args.dados["Rascunho de abordagem"]).toBeUndefined();
+  });
+
+  it("F) passa a estratégia na instrução e o rascunho nos dados", async () => {
+    await sendNextCandidate({} as never, database(undefined, comPrevia) as never, {} as never, campaign);
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+    const args = mocks.generate.mock.calls[0]![2] as {
+      instrucao: string;
+      dados: Record<string, string>;
+    };
+    expect(args.dados["Rascunho de abordagem"]).toBe("Rascunho guardado pela tela");
+    // A mesma estratégia que a tela mostra ("Sem site", sem-site derivado).
+    expect(args.instrucao).toContain("Sem site");
+    expect(args.instrucao).toContain("Estratégia");
+  });
+
+  it("F) sem prévia guardada o rascunho não vai — mas a estratégia continua indo", async () => {
+    await sendNextCandidate({} as never, database() as never, {} as never, campaign);
+    const args = mocks.generate.mock.calls[0]![2] as {
+      instrucao: string;
+      dados: Record<string, string>;
+    };
+    expect(args.dados["Rascunho de abordagem"]).toBeUndefined();
+    expect(args.instrucao).toContain("Sem site");
+  });
+});
+
+describe("tick × preparo automático (B2)", () => {
+  const ORG_A = "10000000-0000-4000-8000-00000000000a";
+  const ORG_B = "10000000-0000-4000-8000-00000000000b";
+  type Corpo = (d: unknown) => Promise<unknown>;
+
+  function montar(opts: { segundaConsulta?: string[]; preparoFalhaEm?: string } = {}) {
+    mocks.paradas.mockResolvedValue([]);
+    const ordem: string[] = [];
+    const base = database();
+    const db = {
+      query: vi.fn(async (sql: string) =>
+        sql.startsWith("select * from prospecting_campaigns where organization_id=$1 and status='running'")
+          ? { rows: [campaign] }
+          : base.query(sql),
+      ),
+    };
+    (withProspectingLock as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_pool: unknown, org: string, fn: Corpo) => {
+        ordem.push(`bloqueio:${org}`);
+        const r = await fn(db);
+        ordem.push(`fim-bloqueio:${org}`);
+        return r;
+      },
+    );
+    mocks.preparo.mockImplementation(async (_p: unknown, _a: unknown, org: string) => {
+      ordem.push(`preparo:${org}`);
+      if (org === opts.preparoFalhaEm) throw new Error("preparo caiu");
+      return { sites: 0, previas: 0, pulou: false };
+    });
+    const sqls: string[] = [];
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        sqls.push(sql);
+        if (sql.includes("'draft'"))
+          return { rows: (opts.segundaConsulta ?? []).map((organization_id) => ({ organization_id })) };
+        return { rows: [{ organization_id: ORG_A }] };
+      }),
+    };
+    return { pool, ordem, sqls, db };
+  }
+
+  it("organização só com campanha em rascunho/pausada e pendência entra na rodada (só no preparo)", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    expect(ordem).toContain(`preparo:${ORG_B}`);
+    // Nada do bloco com bloqueio (busca, abordagem) para quem não roda campanha.
+    expect(ordem).not.toContain(`bloqueio:${ORG_B}`);
+  });
+
+  it("a segunda consulta é barata, filtra operante e limita 20, e a primeira ficou como era", async () => {
+    const { pool, sqls } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    expect(sqls).toHaveLength(2);
+    expect(sqls[0]).toMatch(/pc\.status='running' or pc\.search_status in \('starting','running'\)/);
+    expect(sqls[0]).not.toContain("'draft'");
+    const segunda = sqls[1]!;
+    expect(segunda).toContain("'draft','paused'");
+    expect(segunda).toContain("fn_org_operante");
+    expect(segunda).toMatch(/limit 20/);
+    expect(segunda).toContain("exists");
+    expect(segunda).toContain("selected is not false");
+    expect(segunda).toContain("data->'previa' is null");
+  });
+
+  it("espelho SQL de `opcoesDoPreparo` (doc 163, B): sem a chave, a prévia NÃO entra; a verificação do site, sim", async () => {
+    const { pool, sqls } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    const segunda = sqls[1]!;
+    // Prévia: só `true` gravado liga — chave ausente (campanha antiga) cai no 'false'.
+    expect(segunda).toContain("coalesce(pc.search->>'gerar_previa','false') = 'true'");
+    expect(segunda).not.toContain("coalesce(pc.search->>'gerar_previa','true')");
+    // Verificação do site: só `false` gravado desliga — chave ausente segue verificando.
+    expect(segunda).toContain("coalesce(pc.search->>'avaliar_site','true') <> 'false'");
+  });
+
+  it("une as duas listas sem duplicar: a mesma organização é preparada uma vez", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_A, ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    expect(ordem.filter((x) => x === `preparo:${ORG_A}`)).toHaveLength(1);
+    expect(ordem.filter((x) => x === `bloqueio:${ORG_A}`)).toHaveLength(1);
+  });
+
+  it("o preparo roda DEPOIS e FORA do bloqueio da organização", async () => {
+    const { pool, ordem } = montar();
+    await tickProspecting(pool as never, {} as never);
+    const fim = ordem.indexOf(`fim-bloqueio:${ORG_A}`);
+    const preparo = ordem.indexOf(`preparo:${ORG_A}`);
+    expect(fim).toBeGreaterThanOrEqual(0);
+    expect(preparo).toBeGreaterThan(fim);
+  });
+
+  it("o preparo nunca atrasa o envio de ninguém: todos os blocos com bloqueio rodam antes dos preparos", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    const ultimoBloqueio = ordem.lastIndexOf(`fim-bloqueio:${ORG_A}`);
+    const primeiroPreparo = ordem.findIndex((x) => x.startsWith("preparo:"));
+    expect(ultimoBloqueio).toBeLessThan(primeiroPreparo);
+  });
+
+  it("recebe o resto do prazo, no máximo 100 s por organização, e um requestId", async () => {
+    const { pool } = montar();
+    const antes = Date.now();
+    await tickProspecting(pool as never, {} as never);
+    const [, , org, requestId, deadline] = mocks.preparo.mock.calls[0]!;
+    expect(org).toBe(ORG_A);
+    expect(typeof requestId).toBe("string");
+    expect(deadline).toBeGreaterThan(antes);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 100_000);
+  });
+
+  it("falha do preparo não impede o envio nem as outras organizações", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_B], preparoFalhaEm: ORG_A });
+    mocks.send.mockResolvedValue({ status: "sent" });
+    await expect(tickProspecting(pool as never, {} as never)).resolves.toBeDefined();
+    expect(mocks.send).toHaveBeenCalledTimes(1); // sendNextCandidate rodou
+    expect(ordem).toContain(`preparo:${ORG_B}`); // e a outra organização seguiu
+  });
+
+  it("falha da SEGUNDA consulta não derruba a rodada das organizações que já rodam", async () => {
+    const { pool, ordem } = montar();
+    const original = pool.query.getMockImplementation()!;
+    pool.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("'draft'")) throw new Error("consulta caiu");
+      return original(sql);
+    });
+    await expect(tickProspecting(pool as never, {} as never)).resolves.toBeDefined();
+    expect(ordem).toContain(`bloqueio:${ORG_A}`);
+    expect(ordem).toContain(`preparo:${ORG_A}`);
   });
 });

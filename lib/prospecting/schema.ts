@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
+import type { PreviaSalva } from "@/lib/prospecting/previa";
+
 /**
  * Os dois números do RITMO da campanha, com os mesmos limites no início e no
  * ajuste. Moram aqui, uma vez, porque o ajuste de uma campanha pausada
@@ -10,6 +13,15 @@ import { z } from "zod";
 const LIMITE_DIARIO = z.number().int().min(1).max(50);
 const INTERVALO_MINUTOS = z.number().int().min(5).max(1440);
 
+/** O que a campanha vende, em prioridade. Default = comportamento atual. */
+export const OFERTAS_DA_CAMPANHA = ["site", "automacao_crm", "automacao_n8n"] as const;
+export const ofertasDaCampanhaSchema = z
+  .array(z.enum(OFERTAS_DA_CAMPANHA))
+  .min(1)
+  .max(3)
+  .default(["site"]);
+export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
+
 export const campaignConfigSchema = z
   .object({
     agent_id: z.string().uuid(),
@@ -19,6 +31,7 @@ export const campaignConfigSchema = z
     qualified_stage_id: z.string().uuid(),
     instruction: z.string().trim().min(10).max(2000),
     qualification: z.string().trim().min(10).max(2000),
+    ofertas: ofertasDaCampanhaSchema,
     daily_limit: LIMITE_DIARIO.default(10),
     interval_minutes: INTERVALO_MINUTOS.default(15),
     legal_basis_ref: z.string().trim().min(3).max(500),
@@ -45,6 +58,10 @@ export const searchSchema = z
     limit: z.number().int().min(1).max(100).default(20),
     budget_usd: z.number().min(0.5).max(10).default(1),
     enrich: z.boolean().default(true),
+    // Preparo automático (B2) — ver `opcoes-do-preparo.ts`. Ligados por padrão NA BUSCA
+    // NOVA (que grava as duas chaves); campanha antiga, sem a chave, não gera prévia.
+    avaliar_site: z.boolean().default(true),
+    gerar_previa: z.boolean().default(true),
   })
   .strict();
 export const prospectingInputSchema = z.discriminatedUnion("action", [
@@ -89,6 +106,28 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("discard_unselected"), id: z.string().uuid() }).strict(),
+  // Reanálise manual da auditoria (spec 24): reescreve `data.site` na hora.
+  // Fechada a token (fora de ACOES_ABERTAS_AO_TOKEN): exige sessão.
+  z
+    .object({
+      action: z.literal("reanalisar_site"),
+      id: z.string().uuid(),
+      candidate_ids: z.array(z.string().uuid()).min(1).max(50),
+    })
+    .strict(),
+  // Prévia da abordagem (spec 24): gera a copy SEM enviar. Somente leitura —
+  // não audita (sem mutação); o custo aparece em `llm_calls`. Fora da allowlist.
+  z
+    .object({
+      action: z.literal("prever_abordagem"),
+      id: z.string().uuid(),
+      candidate_id: z.string().uuid(),
+    })
+    .strict(),
+  // Verificação de site sob demanda (spec 24): enriquece o próximo lote da
+  // campanha AGORA, em vez de esperar o tick. Fechada a token: quem dispara
+  // gasta rede e é uma pessoa revisando a fila.
+  z.object({ action: z.literal("verificar_sites"), id: z.string().uuid() }).strict(),
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;
@@ -115,6 +154,14 @@ export interface Prospect {
   reviews: number | null;
   emails: string[];
   socials: string[];
+  /** Veredito do enriquecimento de site (spec 24). Ausente = pendente. */
+  site?: SiteEnrichment | null;
+  /**
+   * A prévia da abordagem que a tela gerou e guardou (B1). Só vale enquanto a
+   * auditoria em que ela se apoiou continuar de pé (`previaValida`); ausente ou
+   * vencida, o envio escreve do zero.
+   */
+  previa?: PreviaSalva | null;
 }
 
 /** The existing Maps integrations normalize Brazilian numbers; never guess a foreign country. */
@@ -160,6 +207,32 @@ export function safePublicLink(value: string | null): string | undefined {
 }
 
 /** Public business context shared by prospecting and the Inbox; no raw provider payload. */
+export const siteEnrichmentSchema = z.object({
+  ver: z.literal(1),
+  classe: z.enum(["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar"]),
+  problemas: z.array(z.string().max(60)).max(20),
+  checklist: z.object({
+    tem: z.array(z.string().max(30)).max(12),
+    falta: z.array(z.string().max(30)).max(12),
+  }),
+  final_url: z.string().max(500).nullable(),
+  http_status: z.number().int().min(100).max(599).nullable(),
+  tempo_ms: z.number().int().min(0).max(60000),
+  conteudo_resumo: z.string().max(1500).nullable(),
+  pagespeed: z
+    .object({
+      nota: z.number().int().min(0).max(100),
+      lcp: z.string().max(30).nullable(),
+      medida_em: z.string().max(40),
+    })
+    .nullable(),
+  verificado_em: z.string().max(40),
+  // Com default para as linhas escritas antes do campo existir: ausência =
+  // definitivo antigo, nunca provisório fantasma.
+  provisorio: z.boolean().default(false),
+  tentativas: z.number().int().min(0).max(99).default(0),
+});
+export type SiteEnrichmentValidado = z.infer<typeof siteEnrichmentSchema>;
 export const prospectEnrichmentSchema = z.object({
   name: z.string().max(200),
   category: z.string().max(500).nullable(),
@@ -170,5 +243,6 @@ export const prospectEnrichmentSchema = z.object({
   reviews: z.number().int().nonnegative().nullable(),
   emails: z.array(z.string().max(500)).max(5),
   socials: z.array(z.string().max(500)).max(15),
+  site: siteEnrichmentSchema.optional(),
 });
 export type ProspectEnrichment = z.infer<typeof prospectEnrichmentSchema>;

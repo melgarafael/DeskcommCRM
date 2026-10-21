@@ -105,7 +105,9 @@ describe("o resumo da campanha não deixa contador órfão nem espremido", () =>
     abrir("pt-BR");
     const grade = (await screen.findByText("Calificados")).parentElement!.parentElement!;
     const contadores = Array.from(grade.children);
-    expect(contadores).toHaveLength(5);
+    // 6 desde o "Score médio" da auditoria de site (#2711); a regra de baixo é a
+    // que importa, e ela vale para qualquer contagem.
+    expect(contadores).toHaveLength(6);
 
     // A grade responde à largura do CARD: em 1024px o card é estreito, e uma
     // regra presa à janela (md:/lg:) espremia 5 colunas nele.

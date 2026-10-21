@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { audit } from "@/lib/audit";
 import type pg from "pg";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -24,7 +25,16 @@ import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consu
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { assertProspectingContinuation, assertProspectingDelivery } from "./guard";
-import { campaignConfigSchema } from "./schema";
+import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
+import {
+  INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
+  LIMITE_TENTATIVAS,
+  siteEfetivo,
+} from "./site-efetivo";
+import { previaDoAgente } from "./previa";
+import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
+import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
+import { prepararCandidatos } from "./preparo";
 import { ProspectingError } from "./provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import {
@@ -260,29 +270,45 @@ export async function sendNextCandidate(
     ).rows[0];
     if (!agent?.published_version_id)
       throw new ProspectingError("Agente pausado ou sem versão publicada.");
+    // A MESMA estratégia e a MESMA prévia da tela (B1). O veredito sai de
+    // `siteEfetivo` — a leitura única que `prever_abordagem` também usa — para o
+    // par tela×envio não divergir (quem não tem site já é `sem-site` derivado,
+    // sem rede). A prévia guardada só entra se ainda estiver ancorada na
+    // auditoria atual E escrita pelo MESMO agente (`previaDoAgente`); vencida ou
+    // de outro agente (a do padrão da organização), o envio escreve do zero.
+    const personalizacao = await personalizacaoDaOrganizacao(db, c.organization_id);
+    const site = siteEfetivo(p.data, new Date().toISOString());
+    const estrategia = site
+      ? estrategiaDoCandidato(p.data, site, {
+          ofertas: (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[],
+          nicho: c.search?.niche ?? p.data.category ?? "",
+          sobrescritaVocabulario: personalizacao.vocabulario ?? null,
+          status: p.status,
+        })
+      : null;
+    // Modo "saída na 2ª": a 1ª mensagem só cumprimenta, então nada de ângulo de
+    // venda — nem estratégia (na instrução) nem Auditoria/Detalhe/Rascunho (nos
+    // dados), que o prompt frio deixa citar "como o motivo do contato".
+    const soCumprimenta = cfg.exit_offer !== "first_message";
     const generated = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: `${
-        cfg.instruction
-      }\nFaça uma primeira abordagem curta e transparente. Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. Critérios a confirmar durante a conversa: ${cfg.qualification}${
-        cfg.exit_offer === "first_message"
-          ? ""
-          : "\nEsta primeira mensagem NÃO apresenta serviço, preço nem proposta: só cumprimenta e confirma se falou com a empresa certa."
-      }`,
+      instrucao: instrucaoDeAbordagemFria(
+        cfg.instruction,
+        cfg.qualification,
+        blocoVozVendedor(personalizacao) || undefined,
+        estrategia,
+        soCumprimenta,
+      ),
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
       origemDaAbordagem: "prospeccao_fria",
-      dados: {
-        Empresa: p.data.name,
-        Segmento: p.data.category ?? "",
-        Endereço: p.data.address ?? "",
-        Site: p.data.website ?? "",
-        Avaliação: String(p.data.rating ?? ""),
-        Redes: p.data.socials.join(", "),
-      },
+      // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
+      dados: soCumprimenta
+        ? montarDadosDeAbordagem(p.data, null, null)
+        : montarDadosDeAbordagem(p.data, site, previaDoAgente(p.data, cfg.agent_id)),
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.
@@ -553,16 +579,70 @@ export async function sendNextCandidate(
   }
 }
 
-export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
+/**
+ * Organizações com candidato esperando o PREPARO AUTOMÁTICO (B2) e SEM campanha
+ * rodando nem busca ativa — as que a consulta do bloco com bloqueio não alcança:
+ * campanha em rascunho ou pausada. Barata de propósito: um `exists` que para no
+ * primeiro candidato pendente, e a régua `fn_org_operante` no SQL, antes do
+ * `limit 20` (mesma razão da primeira consulta: filtrar depois deixaria a org
+ * parada no topo da ordem para sempre).
+ *
+ * "Pendente" = marcada, ainda na fila, e (a) site na web sem veredito, ou
+ * (b) com veredito definitivo (ou sem site) e sem prévia (agente da campanha ou o padrão).
+ * É o espelho em SQL de `precisaDeRede`/`previaPorGerar`; quem decide de verdade
+ * é o preparo, em TS — esta consulta só escolhe quem vale a pena abrir.
+ */
+const ORGS_COM_PREPARO_PENDENTE =
+  "select pc.organization_id from prospecting_campaigns pc where pc.status in ('draft','paused') " +
+  "and public.fn_org_operante(pc.organization_id) " +
+  "and exists (select 1 from prospecting_candidates c where c.organization_id=pc.organization_id " +
+  "and c.campaign_id=pc.id and c.selected is not false and c.status in ('new','queued') and (" +
+  // (a) verificação por fazer: site na web sem veredito, ou provisório já elegível a nova tentativa
+  // (os interruptores da busca: `avaliar_site` e `gerar_previa` desligados tiram a organização da rodada;
+  // chave ausente = avaliação ligada e prévia DESLIGADA, a mesma régua de `opcoesDoPreparo`)
+  "(coalesce(pc.search->>'avaliar_site','true') <> 'false' and " +
+  "nullif(trim(c.data->>'website'), '') is not null and (c.data->'site' is null " +
+  `or (coalesce((c.data->'site'->>'provisorio')::boolean, false) ` +
+  `and coalesce(nullif(c.data->'site'->>'tentativas', '')::int, 0) < ${LIMITE_TENTATIVAS} ` +
+  `and coalesce(nullif(c.data->'site'->>'verificado_em', '')::timestamptz, 'epoch'::timestamptz) <= now() - interval '${INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN} minutes'))) ` +
+  // (b) prévia por gerar: veredito definitivo (ou sem site) e nenhuma prévia. Sem exigir agente
+  // na campanha: o agente padrão da organização a atende (`config-padrao.ts`); quem decide se
+  // existe um é o preparo, em TS.
+  "or (coalesce(pc.search->>'avaliar_site','true') <> 'false' and coalesce(pc.search->>'gerar_previa','false') = 'true' and c.data->'previa' is null " +
+  "and ((c.data->'site' is not null and not coalesce((c.data->'site'->>'provisorio')::boolean, false)) " +
+  "or (c.data->'site' is null and nullif(trim(c.data->>'website'), '') is null))))) " +
+  "group by pc.organization_id order by min(pc.updated_at) limit 20";
+
+/** Teto de tempo do preparo de UMA organização dentro do tick. */
+const PRAZO_DO_PREPARO_MS = 100_000;
+
+export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requestId?: string) {
   // Organização parada (suspensa, redigida, arquivada) não prospecta: a busca é
   // paga e a abordagem sai para fora. O corte é no SQL, antes do `limit 20`:
   // a ordem é `min(updated_at)`, e a org pulada nunca toca `updated_at` —
   // filtrar depois a deixaria no topo para sempre. A régua é a SQL
   // `fn_org_operante` (mesma de `organizations.status = 'active'`) — não se
   // trafega a lista de ids das paradas na consulta (cortaria em `max_rows`).
+  //
+  // A verificação de site e a prévia (B2) rodam por aqui, no PREPARO AUTOMÁTICO
+  // (`prepararCandidatos`) — FORA do bloqueio da organização, com teto por rodada
+  // e bloqueio próprio. Dentro do bloqueio elas seguravam a organização por
+  // minutos (409 na tela) com 100+ leads; fora, o envio e a tela não esperam.
   const { rows: organizations } = await pool.query<{ organization_id: string }>(
     "select pc.organization_id from prospecting_campaigns pc where (pc.status='running' or pc.search_status in ('starting','running')) and public.fn_org_operante(pc.organization_id) group by pc.organization_id order by min(pc.updated_at) limit 20",
   );
+  // Segunda consulta, à parte (a primeira não muda): quem só tem rascunho/pausada.
+  // Fail-open: se ela falhar, as organizações que já rodam seguem como antes.
+  let apenasPreparo: string[] = [];
+  try {
+    apenasPreparo = (
+      await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE)
+    ).rows.map((r) => r.organization_id);
+  } catch (error) {
+    logger.error("[prospecting] consulta das organizações a preparar falhou", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const deadline = Date.now() + 180000;
   let processed = 0;
   for (const { organization_id: org } of organizations) {
@@ -599,6 +679,8 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
             );
           }
         }
+        // (Nada de fetch de site aqui dentro: a verificação e a prévia são do
+        // `prepararCandidatos`, depois deste bloco e fora do bloqueio.)
         const c = (
           await db.query<Campaign>(
             "select * from prospecting_campaigns where organization_id=$1 and status='running'",
@@ -676,6 +758,29 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
           // porque parece cobertura. Agora vai a causa.
           error: error instanceof Error ? error.message : String(error),
         });
+    }
+  }
+  // Fase do PREPARO, DEPOIS de todos os blocos com bloqueio: ela é a parte lenta
+  // (rede + modelo) e não pode comer o prazo do tick antes de uma organização
+  // posterior ter a vez de enviar. Fora do bloqueio de cada organização; o
+  // preparo tem o bloqueio próprio, o teto e o prazo dele. Uma falha daqui
+  // nunca impede as outras organizações (fail-open).
+  const paraPreparar = [...new Set([...organizations.map((o) => o.organization_id), ...apenasPreparo])];
+  for (const org of paraPreparar) {
+    if (Date.now() >= deadline) break;
+    try {
+      await prepararCandidatos(
+        pool,
+        admin,
+        org,
+        requestId ?? randomUUID(),
+        Math.min(deadline, Date.now() + PRAZO_DO_PREPARO_MS),
+      );
+    } catch (error) {
+      logger.error("[prospecting] preparo automático falhou", {
+        organization_id: org,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return { processed };
