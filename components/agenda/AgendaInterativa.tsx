@@ -53,11 +53,12 @@ export function AgendaInterativa({
   recorte,
   tipos,
   tipo,
-  todosServicos=false,
+  todosServicos = false,
   onEscolherTipo,
   onMarcarEm,
   onAbrirAgendamento,
   className,
+  periodControls,
 }: {
   visao: VisaoDaAgenda;
   ancora: Date;
@@ -111,11 +112,13 @@ export function AgendaInterativa({
   onMarcarEm?: (instante: string) => void;
   onAbrirAgendamento?: (id: string) => void;
   className?: string;
+  /** Optional native history controls, composed by the page; no effect on occupancy or availability. */
+  periodControls?: React.ReactNode;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const { contribution, regionClass } = useUiThemeArea(calendarArea);
-  const periodList=contribution?.configuration.periodList === true && visao === "semana";
+  const periodList = contribution?.configuration.periodList === true && visao === "semana";
   const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
     tipo ? { event_type_id: tipo.id, de: recorte.de, ate: recorte.ate } : null,
   );
@@ -203,7 +206,10 @@ export function AgendaInterativa({
     if (!pendente) return;
     const alvo = agendamentos.find((a) => a.id === pendente.id);
     if (!alvo) return;
-    const duracao = Math.max(differenceInMinutes(new Date(alvo.termina), new Date(alvo.comeca)), 15);
+    const duracao = Math.max(
+      differenceInMinutes(new Date(alvo.termina), new Date(alvo.comeca)),
+      15,
+    );
     const comeca = new Date(pendente.instante);
     const antes = { comeca: alvo.comeca, termina: alvo.termina };
     setOtimista({
@@ -234,15 +240,37 @@ export function AgendaInterativa({
     : "";
 
   return (
-    <div className={cn("flex min-h-0 flex-col gap-2", className,regionClass("content"))}>
-      {horarios?.google_cobertura_parcial && <p role="status" className="text-xs text-warning">{t("Ocupação do Google ainda não verificada neste período.")}</p>}
+    <div className={cn("flex min-h-0 flex-col gap-2", className, regionClass("content"))}>
+      {horarios?.google_cobertura_parcial && (
+        <p role="status" className="text-xs text-warning">
+          {t("Ocupação do Google ainda não verificada neste período.")}
+        </p>
+      )}
       {(tipos.length > 1 || todosServicos) && (
         <div
           data-testid="tipo-da-grade"
-          className={cn("flex flex-wrap items-center gap-1.5 text-xs text-text-muted",regionClass("services"))}
+          className={cn(
+            "flex flex-wrap items-center gap-1.5 text-xs text-text-muted",
+            regionClass("services"),
+          )}
         >
           <span className="shrink-0">{t(todosServicos ? "Serviços" : "Horários livres de")}</span>
-          {todosServicos && <button type="button" aria-pressed={tipo===null} data-testid="tipo-da-grade-todos" onClick={()=>onEscolherTipo("")} className={cn("min-h-9 rounded-full border px-3 py-1",tipo===null ? "border-transparent bg-accent text-accent-foreground":"border-border")}>{t("Todos")}</button>}
+          {todosServicos && (
+            <button
+              type="button"
+              aria-pressed={tipo === null}
+              data-testid="tipo-da-grade-todos"
+              onClick={() => onEscolherTipo("")}
+              className={cn(
+                "min-h-9 rounded-full border px-3 py-1",
+                tipo === null
+                  ? "border-transparent bg-accent text-accent-foreground"
+                  : "border-border",
+              )}
+            >
+              {t("Todos")}
+            </button>
+          )}
           {tipos.map((t) => (
             <button
               key={t.id}
@@ -263,6 +291,8 @@ export function AgendaInterativa({
         </div>
       )}
 
+      {periodControls}
+
       {/*
         O MOTIVO EM TEXTO, e não só no `title` de cada bloco.
 
@@ -276,7 +306,7 @@ export function AgendaInterativa({
           data-testid="motivo-da-grade"
           data-motivo={motivo}
           role="status"
-          className="rounded-sm border border-border bg-surface-sunken px-3 py-2 text-xs leading-4 text-text-muted"
+          className="bg-surface-sunken rounded-sm border border-border px-3 py-2 text-xs leading-4 text-text-muted"
         >
           {motivo === "sem-jornada" ? (
             <>
@@ -290,11 +320,19 @@ export function AgendaInterativa({
             </>
           ) : motivo === "erro" ? (
             <>
-              <span className="font-semibold text-text">{t("Não consegui carregar os horários.")}</span> {t("Os blocos ficam bloqueados até eu conseguir — é mais seguro que oferecer um horário que talvez não exista.")}
+              <span className="font-semibold text-text">
+                {t("Não consegui carregar os horários.")}
+              </span>{" "}
+              {t(
+                "Os blocos ficam bloqueados até eu conseguir — é mais seguro que oferecer um horário que talvez não exista.",
+              )}
             </>
           ) : (
             <>
-              <span className="font-semibold text-text">{t("Nenhum horário livre neste período.")}</span> {t("Os blocos vazios continuam aqui, e o que estiver publicado fica clicável.")}
+              <span className="font-semibold text-text">
+                {t("Nenhum horário livre neste período.")}
+              </span>{" "}
+              {t("Os blocos vazios continuam aqui, e o que estiver publicado fica clicável.")}
             </>
           )}
         </div>
@@ -312,9 +350,13 @@ export function AgendaInterativa({
           <p className="text-xs leading-4 text-text">
             {t("Remarcar")} <span className="font-semibold">{nomeDoPendente}</span> {t("para")}{" "}
             <span className="font-semibold">
-              {format(dataDeParede(new Date(pendente.instante), fuso), t("EEEE, d 'de' MMMM 'às' HH:mm"), {
-                locale: localeDaData,
-              })}
+              {format(
+                dataDeParede(new Date(pendente.instante), fuso),
+                t("EEEE, d 'de' MMMM 'às' HH:mm"),
+                {
+                  locale: localeDaData,
+                },
+              )}
             </span>
             {t("? Quem foi atendido recebe o aviso da mudança.")}
           </p>
@@ -346,8 +388,19 @@ export function AgendaInterativa({
         </div>
       )}
 
-      {todosServicos && tipo===null && tipos.length>0 && <p role="status" className="text-xs text-muted-foreground">{t("Escolha um serviço para consultar horários livres.")}</p>}
-      {periodList && <ListaDoPeriodo items={agendamentos} fuso={fuso} onOpen={onAbrirAgendamento} className={regionClass("period-list")}/>}
+      {todosServicos && tipo === null && tipos.length > 0 && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t("Escolha um serviço para consultar horários livres.")}
+        </p>
+      )}
+      {periodList && (
+        <ListaDoPeriodo
+          items={agendamentos}
+          fuso={fuso}
+          onOpen={onAbrirAgendamento}
+          className={regionClass("period-list")}
+        />
+      )}
       <GradeDaAgenda
         visao={visao}
         ancora={ancora}
@@ -356,7 +409,7 @@ export function AgendaInterativa({
         pessoas={pessoas}
         agendamentos={desenhados}
         onAbrirAgendamento={onAbrirAgendamento}
-        className={cn("min-h-0 flex-1",periodList && regionClass("grid"))}
+        className={cn("min-h-0 flex-1", periodList && regionClass("grid"))}
         interacao={
           tipo && onMarcarEm
             ? {
@@ -370,7 +423,12 @@ export function AgendaInterativa({
                     // está na disponibilidade publicada. Remarcar assim mesmo
                     // criaria um compromisso que o motor não teria oferecido.
                     setPendente(null);
-                    setRecusa(t("Não dá para remarcar para esse horário — {motivo}.").replace("{motivo}", t(razao)));
+                    setRecusa(
+                      t("Não dá para remarcar para esse horário — {motivo}.").replace(
+                        "{motivo}",
+                        t(razao),
+                      ),
+                    );
                     return;
                   }
                   setRecusa(null);

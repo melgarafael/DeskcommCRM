@@ -110,11 +110,12 @@ export function ReplyReviewPanel({
   return (
     <section
       data-ui-part="reply-review"
+      data-ui-review-status={draft?.status ?? "idle"}
       className="mb-3 space-y-2 rounded-md border bg-muted/30 p-3"
       aria-label={t("Assistência do agente")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">
+        <p data-ui-part="reply-review-title" className="text-sm font-medium">
           {t(draft ? (statuses[draft.status] ?? "Assistência do agente") : "Assistência do agente")}
         </p>
         <Button

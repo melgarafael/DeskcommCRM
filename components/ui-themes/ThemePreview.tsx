@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
 import type { Message } from "@/lib/types/messaging";
-import { inboxArea } from "@/lib/ui-themes/areas";
+import { inboxArea, inboxFiltersArea, inboxHeaderArea } from "@/lib/ui-themes/areas";
 import { UiThemeArea, useUiThemeArea } from "./Area";
 
 function message(id: string, direction: "inbound" | "outbound", body: string): Message {
@@ -51,10 +51,39 @@ function InboxThemePreview() {
           {t("Iniciar conversa")}
         </Button>
       </div>
-      <div className={`border-b border-border p-3 ${regionClass("filters") ?? ""}`}>
-        <p className="text-sm font-medium">{t("Todas as conversas")}</p>
-        <p className="mt-2 text-xs text-text-muted">{t("Buscar conversa")}</p>
-      </div>
+      <UiThemeArea
+        contract={inboxFiltersArea}
+        slots={{
+          search: (
+            <input
+              aria-label={t("Buscar conversas")}
+              placeholder={t("Buscar conversas")}
+              className="w-full rounded border px-2"
+              readOnly
+              tabIndex={-1}
+            />
+          ),
+          views: (
+            <Button variant="ghost" className="w-full justify-start">
+              {t("Todas as conversas")}
+            </Button>
+          ),
+          quick: (
+            <>
+              <Button variant="outline">{t("Não lidos")}</Button>
+              <Button variant="outline">{t("Grupos")}</Button>
+            </>
+          ),
+          advanced: <Button variant="outline">{t("Filtros")}</Button>,
+          selection: null,
+        }}
+        fallback={
+          <div className={`border-b border-border p-3 ${regionClass("filters") ?? ""}`}>
+            <p className="text-sm font-medium">{t("Todas as conversas")}</p>
+            <p className="mt-2 text-xs text-text-muted">{t("Buscar conversa")}</p>
+          </div>
+        }
+      />
       <div className="border-b border-border bg-accent-soft p-4">
         <p className="text-sm font-semibold">{t("Contato de exemplo")}</p>
         <p className="mt-1 text-xs text-text-muted">{t("Uma conversa para visualizar o tema")}</p>
@@ -63,10 +92,33 @@ function InboxThemePreview() {
   );
   const conversation = (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-bg">
-      <header className={`border-b border-border bg-surface p-4 ${regionClass("header") ?? ""}`}>
-        <p className="text-sm font-semibold">{t("Contato de exemplo")}</p>
-        <p className="text-xs text-text-muted">{t("Conversa de demonstração")}</p>
-      </header>
+      <UiThemeArea
+        contract={inboxHeaderArea}
+        slots={{
+          identity: (
+            <div>
+              <p className="text-sm font-semibold">{t("Contato de exemplo")}</p>
+              <p className="text-xs text-text-muted">{t("Conversa de demonstração")}</p>
+            </div>
+          ),
+          primary: <Button>{t("Assumir")}</Button>,
+          tools: null,
+          actions: (
+            <Button variant="ghost" aria-label={t("Mais ações da conversa")}>
+              ⋯
+            </Button>
+          ),
+          notices: null,
+        }}
+        fallback={
+          <header
+            className={`border-b border-border bg-surface p-4 ${regionClass("header") ?? ""}`}
+          >
+            <p className="text-sm font-semibold">{t("Contato de exemplo")}</p>
+            <p className="text-xs text-text-muted">{t("Conversa de demonstração")}</p>
+          </header>
+        }
+      />
       <div
         className={`flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 ${regionClass("history") ?? ""}`}
       >
@@ -120,7 +172,7 @@ export function ThemePreview({ areaId = "inbox" }: { areaId?: string }) {
   const t = useT();
   if (areaId === "pipeline") return <PipelineThemePreview />;
   if (areaId === "calendar") return <CalendarThemePreview />;
-  if (areaId === "inbox") return <InboxThemePreview />;
+  if (["inbox", "inbox-filters", "inbox-header"].includes(areaId)) return <InboxThemePreview />;
   return (
     <p className="p-6 text-sm text-text-muted">
       {t(

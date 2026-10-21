@@ -79,6 +79,7 @@ export function useInboxPresentation(
   const [width, setWidth] = useState(0);
   const { lista, ficha } = sizes;
   const minimumConversationWidth = config.minimumConversationWidth;
+  const minimumDetailWidth = config.minimumDetailWidth;
   useEffect(() => {
     if (!enabled) return;
     const element = root.current;
@@ -90,7 +91,7 @@ export function useInboxPresentation(
         resolveAdaptiveInbox(
           usefulWidth,
           { pinned, collapsed },
-          { minimumConversationWidth },
+          { minimumConversationWidth, minimumDetailWidth },
           { lista, ficha },
         ).inlineContact
       ) {
@@ -114,6 +115,7 @@ export function useInboxPresentation(
     lista,
     ficha,
     minimumConversationWidth,
+    minimumDetailWidth,
     onInlineContact,
   ]);
   const update = useCallback(

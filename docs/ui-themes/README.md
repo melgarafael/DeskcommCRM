@@ -34,9 +34,21 @@ Classes vêm de CSS Modules compilados e revisados. Opções são `boolean`, `en
 
 Sua `configuration` aceita somente as chaves de `inboxPresentationSchema`: `initialFilter` (um dos seis recortes nativos), `allTabFirst`, `contactMode` (`native` ou `adaptive`), `initialContactPinned`, `listWidth`, `detailWidth` e `minimumConversationWidth`. O schema publica limites numéricos. A entrada inicial respeita os recortes permitidos ao papel e um filtro explícito na URL. `{}` conserva a apresentação e as preferências nativas.
 
+O adaptador também aceita `selectionControl: persistent | toggle` para o controle nativo de seleção múltipla e `minimumDetailWidth` para o piso revisado da ficha. Sem essas chaves, os limites e a seleção nativos permanecem. O ajuste de largura, teclado e armazenamento usam o mesmo piso; a leitura mínima da conversa continua sendo respeitada.
+
+`inbox-filters` é uma área independente, com slots `search`, `views`, `quick`, `advanced` e `selection` (opcional). A receita do pacote organiza esses controles; os filtros, contagens, permissões, debounce, etiquetas múltiplas e suas regras continuam em `InboxFilters`. A configuração do host permite `viewControl: tabs | select` e `advancedControl: inline | panel`. Sem contribuição, renderiza a composição nativa. As regiões `filter-advanced` e `filter-panel` alcançam os controles e seu portal; os demais nomes correspondem aos slots. O contrato não contém uma composição particular do tema.
+
+O funil oferece a região `column-header`, separada de `column` e `card`, para decorar o cabeçalho sem alterar o conteúdo dos negócios. A casca publica `data-ui-part="shell-main|shell-topbar|shell-sidebar|shell-brand"`; a barra lateral também publica `data-ui-collapsed`. Esses pontos são apenas apresentação: a preferência e o controle nativos continuam responsáveis por expandir/recolher o menu.
+
+No cartão, `data-ui-part="card-footer"` permite reorganizar responsável e tempo na etapa em larguras estreitas; `card-state-border` é a borda decorativa redundante do estado. A etiqueta canônica e o score permanecem sob a região `state`, com o mesmo significado e ações.
+
+`inbox-header` expõe `identity`, `tools`, `primary`, `actions` e `notices`. `actionsControl: inline | disclosure` permite apresentar ações secundárias em um painel expansível, sem alterar seus handlers ou desmontar seus diálogos ao recolher o painel. `actions-trigger` e `actions-panel` decoram esse controle; as confirmações ficam no host e mantêm seus gates. A ausência da contribuição conserva a barra nativa completa. No inbox, `contact-card` estiliza a ficha resumida; `list-item` pertence à linha inteira, incluindo a seleção quando disponível.
+
 O modo adaptativo mede a largura útil da raiz, preserva uma largura mínima de leitura e oferece ficha fixa, recolhida ou sobreposta conforme o espaço. Preferência de ficha e larguras pertence à combinação organização + usuário + área; não é opção empresarial. Bloqueio do armazenamento conserva os controles utilizáveis na sessão. A composição nunca remonta o editor para apenas fixar ou recolher a ficha.
 
 Partes estáveis do editor: `data-ui-part="composer-input"`, `composer-modes` e `reply-review`; a raiz publica `data-ui-mode="reply" | "note"`. Use esses pontos sob a região `composer`. Preserve o significado visual da nota, as advertências, a sugestão expandida e seus controles de aprovação. Não oculte ações ou estados para ganhar espaço.
+
+O painel de assistência publica `data-ui-review-status` (`idle` sem sugestão; nos demais casos o status nativo) e `data-ui-part="reply-review-title"`. Um tema pode compactar o título auxiliar apenas em `idle`, mantendo o nome acessível da seção; estados de sugestão, revisão, erro e seus controles continuam visíveis.
 
 Para adaptadores próprios, `rootProps`, `slotProps` e `after` de `UiThemeArea` são entradas exclusivas do host: preservam refs, atributos, medidas e complementos na raiz real da composição. Não pertencem ao manifesto do pacote. `validateConfiguration` também é função pura do contrato do host, nunca código recebido do pacote. Mudança incompatível de validação ou semântica exige nova versão do contrato; a função não é serializada no catálogo mostrado ao editor.
 
@@ -67,3 +79,9 @@ Toda configuração suportada tem leitura, escrita e erro visível na Marca. Fal
 Leia [AUTHORING.md](AUTHORING.md) para copiar o exemplo público, compor regiões, registrar outra área e manter versões/remoção. A prévia da Marca oferece amostras das áreas iniciais; Restaurar opções muda somente o rascunho, que ainda precisa de Aplicar para ser salvo.
 
 O catálogo público canônico fica em `lib/ui-themes/public-catalog.ts`; a entrada pública de `installed.ts` o reexporta. Testes do contrato usam essa referência; cada distribuição confere também sua entrada efetiva. A prova do artefato público precisa excluir fisicamente os fontes privados.
+
+## Compor os controles do calendário
+
+`calendar.historyControlsBeforeGrid` projeta os filtros nativos do histórico entre os serviços e a grade. Os contadores, agrupamentos e ações continuam sendo os de `HistoricoDaAgenda`; o texto identifica que o filtro pertence ao histórico. A grade e a ocupação externa continuam completas, e a consulta de horários livres não é alterada. A ausência da opção conserva a posição e o estado local nativos. O host compõe `FiltrosDoHistorico` com o histórico controlado e usa `AgendaInterativa.periodControls` apenas para inserir os controles, sem entregar capacidades de negócio ao pacote.
+
+`UiThemeArea` normaliza os nós de cada slot com `React.Children.toArray` para preservar identidades React estáveis na composição, inclusive quando o host entrega mais de um nó. Os nós continuam pertencendo ao host.

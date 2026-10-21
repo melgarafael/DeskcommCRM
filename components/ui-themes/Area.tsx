@@ -1,5 +1,5 @@
 "use client";
-import { type ReactNode, type ComponentPropsWithRef } from "react";
+import { Children, type ReactNode, type ComponentPropsWithRef } from "react";
 import type { UiAreaContract, UiLayout } from "@/lib/ui-themes/contracts";
 import { regionClassName, resolveUiArea } from "@/lib/ui-themes/resolve";
 import { useUiTheme } from "./Provider";
@@ -63,7 +63,7 @@ export function UiThemeArea({
             .filter(Boolean)
             .join(" ")}
         >
-          {slots[node.name]}
+          {Children.toArray(slots[node.name])}
           {key === "root" ? after : null}
         </div>
       );

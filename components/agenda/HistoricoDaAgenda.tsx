@@ -62,7 +62,7 @@ const VARIANTE_DA_SITUACAO: Record<
 
 function separar(agendamentos: Agendamento[], agora: Date): Record<AbaDoHistorico, Agendamento[]> {
   const vazio: Record<AbaDoHistorico, Agendamento[]> = {
-    todos: [...agendamentos].sort((a,b)=>Date.parse(a.comeca)-Date.parse(b.comeca)),
+    todos: [...agendamentos].sort((a, b) => Date.parse(a.comeca) - Date.parse(b.comeca)),
     proximos: [],
     aguardando: [],
     passados: [],
@@ -83,6 +83,70 @@ function separar(agendamentos: Agendamento[], agora: Date): Record<AbaDoHistoric
     (isBefore(new Date(a.comeca), agora) ? vazio.passados : vazio.proximos).push(a);
   }
   return vazio;
+}
+
+/** Reuses the native history groups and labels; never filters occupancy or availability. */
+export function FiltrosDoHistorico({
+  agendamentos,
+  agora,
+  aba,
+  onChange,
+}: {
+  agendamentos: Agendamento[];
+  agora: Date;
+  aba: AbaDoHistorico;
+  onChange: (aba: AbaDoHistorico) => void;
+}) {
+  const t = useT();
+  const { contribution, regionClass } = useUiThemeArea(calendarArea);
+  const allFirst = contribution?.configuration.historyAllFirst === true;
+  const abas = allFirst ? [{ id: "todos" as const, rotulo: "Todos" }, ...ABAS] : ABAS;
+  const grupos = React.useMemo(() => separar(agendamentos, agora), [agendamentos, agora]);
+  return (
+    <div
+      role="tablist"
+      aria-label={t("Filtrar o histórico")}
+      className={cn(
+        "flex flex-wrap items-center gap-0.5 rounded-md border border-border bg-surface p-0.5",
+        regionClass("status"),
+      )}
+    >
+      {abas.map((a) => {
+        const n = grupos[a.id].length;
+        return (
+          <button
+            key={a.id}
+            role="tab"
+            type="button"
+            data-testid={`aba-${a.id}`}
+            aria-selected={aba === a.id}
+            onClick={() => onChange(a.id)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs transition-colors duration-fast ease-out",
+              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
+              aba === a.id
+                ? "bg-accent font-semibold text-accent-foreground"
+                : "text-text-muted hover:bg-surface-elevated hover:text-text",
+            )}
+          >
+            <span>{t(a.rotulo)}</span>
+            {/* O contador vem SEMPRE, inclusive zero: "Cancelados 0" responde a
+                  pergunta sem gastar um clique, e some-lo faria a aba vazia
+                  parecer não carregada. */}
+            <span
+              data-testid={`contador-${a.id}`}
+              className={cn(
+                "rounded-full px-1.5 text-[10px] tabular-nums",
+                aba === a.id ? "bg-accent-foreground/20" : "bg-surface-elevated text-text-subtle",
+              )}
+            >
+              {n}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -106,6 +170,9 @@ export function HistoricoDaAgenda({
   onFaltou,
   onConfirmar,
   className,
+  aba: abaControlada,
+  onAbaChange,
+  ocultarFiltros = false,
 }: {
   agendamentos: Agendamento[];
   pessoas: Pessoa[];
@@ -140,13 +207,22 @@ export function HistoricoDaAgenda({
    */
   onConfirmar?: (id: string) => void;
   className?: string;
+  aba?: AbaDoHistorico;
+  onAbaChange?: (aba: AbaDoHistorico) => void;
+  ocultarFiltros?: boolean;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const { contribution, regionClass } = useUiThemeArea(calendarArea);
   const allFirst = contribution?.configuration.historyAllFirst === true;
-  const abas=allFirst ? [{id:"todos" as const,rotulo:"Todos"},...ABAS] : ABAS;
-  const [aba, setAba] = React.useState<AbaDoHistorico>(()=>allFirst ? "todos":"proximos");
+  const [abaLocal, setAbaLocal] = React.useState<AbaDoHistorico>(() =>
+    allFirst ? "todos" : "proximos",
+  );
+  const aba = abaControlada ?? abaLocal;
+  const mudarAba = (proxima: AbaDoHistorico) => {
+    setAbaLocal(proxima);
+    onAbaChange?.(proxima);
+  };
   const grupos = React.useMemo(() => separar(agendamentos, agora), [agendamentos, agora]);
   const daAba = grupos[aba];
 
@@ -156,46 +232,14 @@ export function HistoricoDaAgenda({
       data-aba={aba}
       className={cn("flex min-h-0 flex-col", className, regionClass("history"))}
     >
-      <div
-        role="tablist"
-        aria-label={t("Filtrar o histórico")}
-        className={cn("flex flex-wrap items-center gap-0.5 rounded-md border border-border bg-surface p-0.5",regionClass("status"))}
-      >
-        {abas.map((a) => {
-          const n = grupos[a.id].length;
-          return (
-            <button
-              key={a.id}
-              role="tab"
-              type="button"
-              data-testid={`aba-${a.id}`}
-              aria-selected={aba === a.id}
-              onClick={() => setAba(a.id)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs transition-colors duration-fast ease-out",
-                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
-                aba === a.id
-                  ? "bg-accent font-semibold text-accent-foreground"
-                  : "text-text-muted hover:bg-surface-elevated hover:text-text",
-              )}
-            >
-              <span>{t(a.rotulo)}</span>
-              {/* O contador vem SEMPRE, inclusive zero: "Cancelados 0" responde a
-                  pergunta sem gastar um clique, e some-lo faria a aba vazia
-                  parecer não carregada. */}
-              <span
-                data-testid={`contador-${a.id}`}
-                className={cn(
-                  "rounded-full px-1.5 text-[10px] tabular-nums",
-                  aba === a.id ? "bg-accent-foreground/20" : "bg-surface-elevated text-text-subtle",
-                )}
-              >
-                {n}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {!ocultarFiltros && (
+        <FiltrosDoHistorico
+          agendamentos={agendamentos}
+          agora={agora}
+          aba={aba}
+          onChange={mudarAba}
+        />
+      )}
 
       <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface">
         {daAba.length === 0 ? (
@@ -209,7 +253,16 @@ export function HistoricoDaAgenda({
         ) : (
           <ul>
             {daAba.map((a) => {
-              const abaDaLinha=aba === "todos" ? a.situacao === "cancelled" ? "cancelados" : a.situacao === "pending" ? "aguardando" : isBefore(new Date(a.comeca),agora) ? "passados":"proximos" : aba;
+              const abaDaLinha =
+                aba === "todos"
+                  ? a.situacao === "cancelled"
+                    ? "cancelados"
+                    : a.situacao === "pending"
+                      ? "aguardando"
+                      : isBefore(new Date(a.comeca), agora)
+                        ? "passados"
+                        : "proximos"
+                  : aba;
               const pessoa = pessoas.find((p) => p.id === a.responsavelId);
               const variante = VARIANTE_DA_SITUACAO[a.situacao];
               const comeca = new Date(a.comeca);
@@ -226,7 +279,9 @@ export function HistoricoDaAgenda({
                   />
                   <div className="w-28 shrink-0">
                     <div className="text-sm font-medium tabular-nums first-letter:uppercase">
-                      {format(dataDeParede(comeca, fuso), t("d 'de' MMM"), { locale: localeDaData })}
+                      {format(dataDeParede(comeca, fuso), t("d 'de' MMM"), {
+                        locale: localeDaData,
+                      })}
                     </div>
                     <div className="text-[11px] text-text-muted tabular-nums">
                       {format(dataDeParede(comeca, fuso), "HH:mm")}

@@ -1,6 +1,10 @@
 "use client";
-import type { CSSProperties } from "react";
-import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
+import { useState, type CSSProperties } from "react";
+import {
+  HistoricoDaAgenda,
+  FiltrosDoHistorico,
+  type AbaDoHistorico,
+} from "@/components/agenda/HistoricoDaAgenda";
 import { GradeDaAgenda } from "@/components/agenda/GradeDaAgenda";
 import { ListaDoPeriodo } from "@/components/agenda/ListaDoPeriodo";
 import type { Agendamento, Pessoa } from "@/components/agenda/tipos";
@@ -32,7 +36,14 @@ export function PipelineThemePreview() {
           )}
           style={{ "--ui-stage-color": i === 0 ? "#71899e" : "#8979a1" } as CSSProperties}
         >
-          <h4 className="border-b border-border p-3 text-sm font-medium">{stage}</h4>
+          <h4
+            className={cn(
+              "border-b border-border p-3 text-sm font-medium",
+              regionClass("column-header"),
+            )}
+          >
+            {stage}
+          </h4>
           <article
             className={cn("m-2 rounded-lg border border-border bg-bg p-3", regionClass("card"))}
           >
@@ -108,6 +119,9 @@ export function CalendarThemePreview() {
   const t = useT();
   const { contribution, regionClass } = useUiThemeArea(calendarArea);
   const config = contribution?.configuration ?? {};
+  const [aba, setAba] = useState<AbaDoHistorico>(() =>
+    config.historyAllFirst ? "todos" : "proximos",
+  );
   const controls = (
     <header className="flex flex-col gap-3">
       <h3 className="font-semibold">{t("Agenda de exemplo")}</h3>
@@ -121,6 +135,8 @@ export function CalendarThemePreview() {
   );
   const history = (
     <HistoricoDaAgenda
+      aba={config.historyControlsBeforeGrid ? aba : undefined}
+      ocultarFiltros={config.historyControlsBeforeGrid === true}
       agendamentos={appointments}
       pessoas={people}
       agora={anchor}
@@ -149,6 +165,17 @@ export function CalendarThemePreview() {
   );
   const content = (
     <div className="flex min-h-0 flex-col gap-3">
+      {config.historyControlsBeforeGrid === true && (
+        <div data-ui-part="calendar-history-controls">
+          <span className="text-[11px] text-text-muted">{t("Filtrar o histórico")}</span>
+          <FiltrosDoHistorico
+            agendamentos={appointments}
+            agora={anchor}
+            aba={aba}
+            onChange={setAba}
+          />
+        </div>
+      )}
       {config.gridFirst === true ? (
         <>
           {grid}

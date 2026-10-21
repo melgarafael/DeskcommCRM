@@ -128,6 +128,7 @@ export function SidebarContent({
   return (
     <>
       <div
+        data-ui-part="shell-brand"
         className={cn(
           "flex h-14 items-center border-b px-4",
           collapsed ? "justify-center" : "justify-start",
@@ -198,10 +199,7 @@ export function SidebarContent({
           )
         ) : (
           <span
-            className={cn(
-              "min-w-0 truncate font-semibold tracking-tight",
-              collapsed && "sr-only",
-            )}
+            className={cn("min-w-0 truncate font-semibold tracking-tight", collapsed && "sr-only")}
             title={nome}
           >
             {nome}
@@ -462,6 +460,8 @@ function BotaoDeRecolher({
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
+      data-ui-part="shell-sidebar"
+      data-ui-collapsed={collapsed}
       className={cn(
         // ⚠️ `sticky`, e NUNCA `fixed`.
         //

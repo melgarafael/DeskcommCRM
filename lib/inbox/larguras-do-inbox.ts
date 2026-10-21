@@ -88,9 +88,13 @@ export function limitarLista(valor: number): number {
 }
 
 /** Arredonda e prende a ficha nos seus próprios limites (260–560). */
-export function limitarFicha(valor: number): number {
-  if (!Number.isFinite(valor)) return LIMITES_FICHA.min;
-  return limitar(Math.round(valor), LIMITES_FICHA.min, LIMITES_FICHA.max);
+export function limitarFicha(valor: number, minimo?: number): number {
+  const piso =
+    typeof minimo === "number" && Number.isFinite(minimo)
+      ? limitar(Math.round(minimo), 240, LIMITES_FICHA.max)
+      : LIMITES_FICHA.min;
+  if (!Number.isFinite(valor)) return piso;
+  return limitar(Math.round(valor), piso, LIMITES_FICHA.max);
 }
 
 /**
@@ -114,10 +118,18 @@ export function resolverLarguras(pedido: {
   temFicha: boolean;
   /** Optional presentation floor; native callers retain 420px. */
   conversaMinima?: number;
+  fichaMinima?: number;
 }): LargurasDoInbox {
-  const minimoDaConversa = typeof pedido.conversaMinima === "number" && Number.isFinite(pedido.conversaMinima) && pedido.conversaMinima >= 370 && pedido.conversaMinima <= 900 ? pedido.conversaMinima : CONVERSA_MINIMA;
+  const minimoDaConversa =
+    typeof pedido.conversaMinima === "number" &&
+    Number.isFinite(pedido.conversaMinima) &&
+    pedido.conversaMinima >= 360 &&
+    pedido.conversaMinima <= 900
+      ? pedido.conversaMinima
+      : CONVERSA_MINIMA;
+  const minimoDaFicha = limitarFicha(0, pedido.fichaMinima);
   let lista = limitarLista(pedido.lista);
-  let ficha = limitarFicha(pedido.ficha);
+  let ficha = limitarFicha(pedido.ficha, minimoDaFicha);
   const fichaOcupada = pedido.temFicha ? ficha : 0;
 
   const mede = Number.isFinite(pedido.larguraContainer) && pedido.larguraContainer > 0;
@@ -130,9 +142,9 @@ export function resolverLarguras(pedido: {
       Math.min(lista, Math.round(pedido.larguraContainer - fichaOcupada - minimoDaConversa)),
     );
   }
-  if (pedido.temFicha && sobra() < minimoDaConversa && ficha > LIMITES_FICHA.min) {
+  if (pedido.temFicha && sobra() < minimoDaConversa && ficha > minimoDaFicha) {
     ficha = Math.max(
-      LIMITES_FICHA.min,
+      minimoDaFicha,
       Math.min(ficha, Math.round(pedido.larguraContainer - lista - minimoDaConversa)),
     );
   }
@@ -149,12 +161,13 @@ export function moverPorSeta(
   coluna: "lista" | "ficha",
   atual: number,
   tecla: string,
+  fichaMinima?: number,
 ): number | null {
   const passo = tecla === "ArrowLeft" ? -PASSO_TECLADO : tecla === "ArrowRight" ? PASSO_TECLADO : 0;
   if (passo === 0) return null;
   return coluna === "lista"
     ? limitarLista(atual + passo)
-    : limitarFicha(atual - passo);
+    : limitarFicha(atual - passo, fichaMinima);
 }
 
 /** Recorte mínimo do `Storage` — o teste passa um objeto falso e segue o resto. */
@@ -176,6 +189,7 @@ export function chaveDaFaixa(faixa: FaixaId): string {
 export function lerLarguras(
   storage: StorageLeve | null | undefined,
   faixa: FaixaId,
+  fichaMinima?: number,
 ): LargurasDoInbox | null {
   if (!storage) return null;
   try {
@@ -186,7 +200,7 @@ export function lerLarguras(
     if (!Number.isFinite(dado.lista) || !Number.isFinite(dado.ficha)) return null;
     // O limite na LEITURA também: uma chave gravada por uma versão antiga com
     // outra regra não pode entrar já estourada.
-    return { lista: limitarLista(dado.lista), ficha: limitarFicha(dado.ficha) };
+    return { lista: limitarLista(dado.lista), ficha: limitarFicha(dado.ficha, fichaMinima) };
   } catch {
     return null;
   }
@@ -202,6 +216,7 @@ export function gravarLarguras(
   storage: StorageLeve | null | undefined,
   faixa: FaixaId,
   larguras: LargurasDoInbox | null,
+  fichaMinima?: number,
 ): void {
   if (!storage) return;
   try {
@@ -211,7 +226,10 @@ export function gravarLarguras(
     }
     storage.setItem(
       chaveDaFaixa(faixa),
-      JSON.stringify({ lista: limitarLista(larguras.lista), ficha: limitarFicha(larguras.ficha) }),
+      JSON.stringify({
+        lista: limitarLista(larguras.lista),
+        ficha: limitarFicha(larguras.ficha, fichaMinima),
+      }),
     );
   } catch {
     // Sem persistência o ajuste vale nesta sessão.

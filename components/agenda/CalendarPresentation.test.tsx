@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UiThemeProvider } from "@/components/ui-themes/Provider";
 import { uiThemePackageSchema } from "@/lib/ui-themes/contracts";
 import { padrao } from "@/ui-themes/padrao/definition";
-import { HistoricoDaAgenda } from "./HistoricoDaAgenda";
+import { HistoricoDaAgenda, FiltrosDoHistorico, type AbaDoHistorico } from "./HistoricoDaAgenda";
 import { ListaDoPeriodo } from "./ListaDoPeriodo";
 import type { Agendamento } from "./tipos";
 
@@ -84,5 +85,46 @@ describe("calendar presentation preserves native actions", () => {
     expect(open).toHaveBeenCalledWith("futuro");
     expect(screen.getByRole("button", { name: /Ocupado na agenda do Google/ })).toBeDisabled();
     expect(open).toHaveBeenCalledTimes(1);
+  });
+  it("projects the same history filters above the grid without replacing grid or action callbacks", () => {
+    const confirm = vi.fn();
+    function Projected() {
+      const [aba, setAba] = useState<AbaDoHistorico>("todos");
+      return (
+        <>
+          <FiltrosDoHistorico agendamentos={rows} agora={now} aba={aba} onChange={setAba} />
+          <section aria-label="Grade preservada">ocupação preservada</section>
+          <HistoricoDaAgenda
+            agendamentos={rows}
+            pessoas={[]}
+            agora={now}
+            fuso="America/Sao_Paulo"
+            aba={aba}
+            ocultarFiltros
+            onConfirmar={confirm}
+          />
+        </>
+      );
+    }
+    render(
+      <UiThemeProvider theme={{ package: demo, values: {}, fallback: null, requestedId: demo.id }}>
+        <Projected />
+      </UiThemeProvider>,
+    );
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+    fireEvent.click(screen.getByRole("tab", { name: /Aguardando confirmação/ }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByTestId("linha-pendente")).toBeVisible();
+    fireEvent.click(screen.getByTestId("confirmar-pendente"));
+    expect(confirm).toHaveBeenCalledWith("pendente");
+    fireEvent.click(screen.getByRole("tab", { name: /Cancelados/ }));
+    expect(screen.getByTestId("linha-cancelado")).toBeVisible();
+    expect(within(screen.getByTestId("linha-cancelado")).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByRole("region", { name: "Grade preservada" })).toHaveTextContent(
+      "ocupação preservada",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /Todos/ }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
   });
 });

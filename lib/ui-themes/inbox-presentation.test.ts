@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compatibleArea } from "./contracts";
 import { inboxArea } from "./areas";
-import { resolverLarguras } from "@/lib/inbox/larguras-do-inbox";
+import { resolverLarguras, limitarFicha, moverPorSeta } from "@/lib/inbox/larguras-do-inbox";
 import {
   readInboxPanel,
   resolveAdaptiveInbox,
@@ -10,6 +10,30 @@ import {
 } from "./inbox-presentation";
 
 describe("inbox presentation contract", () => {
+  it("opts into a narrower contact while preserving the native limits", () => {
+    expect(limitarFicha(248)).toBe(260);
+    expect(limitarFicha(248, 248)).toBe(248);
+    expect(limitarFicha(-1, -1)).toBe(240);
+    expect(moverPorSeta("ficha", 248, "ArrowRight", 248)).toBe(248);
+    const result = resolveAdaptiveInbox(
+      900,
+      { pinned: true, collapsed: false },
+      { minimumConversationWidth: 365, minimumDetailWidth: 248 },
+      { lista: 276, ficha: 248 },
+    );
+    expect(result.inlineContact).toBe(true);
+    expect(result.gridTemplateColumns).toBe("276px minmax(0,1fr) 248px");
+    expect(
+      resolverLarguras({
+        lista: 276,
+        ficha: 248,
+        larguraContainer: 900,
+        temFicha: true,
+        conversaMinima: 365,
+        fichaMinima: 248,
+      }),
+    ).toEqual({ lista: 276, ficha: 248 });
+  });
   it("honors a presentation reading floor while preserving the native default", () => {
     const pedido = { lista: 400, ficha: 300, larguraContainer: 1150, temFicha: true };
     expect(resolverLarguras(pedido)).toEqual({ lista: 400, ficha: 300 });

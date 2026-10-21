@@ -953,7 +953,7 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
         <h3 className="text-xs font-semibold text-text">
           {t("Contato")}
         </h3>
-        <Card className="mt-2 space-y-2 p-3 text-sm">
+        <Card className={cn("mt-2 space-y-2 p-3 text-sm", regionClass("contact-card"))}>
           <div className="font-medium">{displayName}</div>
           {contact?.phone_number && (
             <div className="text-xs text-muted-foreground">{phoneForDisplay(contact.phone_number)}</div>

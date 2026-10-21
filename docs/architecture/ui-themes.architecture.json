@@ -93,7 +93,7 @@
       "col": 6,
       "type": "frontend",
       "label": "Provider + adaptadores do host",
-      "sublabel": "componentes e handlers nativos; slots prontos; página sem contribuição mantém fallback"
+      "sublabel": "componentes e handlers nativos; slots de filtros independentes; cabeçalho de coluna e partes da casca; fallback completo"
     }
   ],
   "edges": [

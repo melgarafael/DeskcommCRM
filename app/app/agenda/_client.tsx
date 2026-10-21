@@ -2,7 +2,11 @@
 import { useUiThemeArea } from "@/components/ui-themes/Area";
 import { calendarArea } from "@/lib/ui-themes/areas";
 import { UiThemeArea } from "@/components/ui-themes/Area";
-import { calendarPresentationSchema, initialCalendarService, calendarServiceMatches } from "@/lib/ui-themes/calendar-presentation";
+import {
+  calendarPresentationSchema,
+  initialCalendarService,
+  calendarServiceMatches,
+} from "@/lib/ui-themes/calendar-presentation";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -22,7 +26,11 @@ import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
 import { ReservasColetivas } from "@/components/agenda/ReservasColetivas";
 import { FiltroDePessoas } from "@/components/agenda/FiltroDePessoas";
-import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
+import {
+  HistoricoDaAgenda,
+  FiltrosDoHistorico,
+  type AbaDoHistorico,
+} from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
@@ -145,6 +153,9 @@ export function AgendaClient({
   const t = useT();
   const { contribution } = useUiThemeArea(calendarArea);
   const presentationConfig = calendarPresentationSchema.parse(contribution?.configuration ?? {});
+  const [abaDoHistorico, setAbaDoHistorico] = React.useState<AbaDoHistorico>(() =>
+    presentationConfig.historyAllFirst ? "todos" : "proximos",
+  );
   const router = useRouter();
   const [marcando, setMarcando] = React.useState(false);
   // O compromisso criado NESTA abertura do painel. Serve para levar a grade até
@@ -237,12 +248,17 @@ export function AgendaClient({
   // comportamento de sempre para quem não escolheu nada.
   const busca = useSearchParams();
   const caminho = usePathname();
-  const [tipoId, setTipoId] = React.useState<string | null>(
-    () => initialCalendarService(busca.get("tipo"),tiposIniciais,presentationConfig.allServices === true),
+  const [tipoId, setTipoId] = React.useState<string | null>(() =>
+    initialCalendarService(
+      busca.get("tipo"),
+      tiposIniciais,
+      presentationConfig.allServices === true,
+    ),
   );
   const tipo = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
   const todosServicos = presentationConfig.allServices === true && tipoId === null;
-  const filtroDoServico = presentationConfig.allServices === true && !todosServicos ? tipo?.slug ?? null : null;
+  const filtroDoServico =
+    presentationConfig.allServices === true && !todosServicos ? (tipo?.slug ?? null) : null;
   /**
    * ESCOLHER O TIPO GRAVA NA URL — a outra metade do `useState` acima.
    *
@@ -258,7 +274,7 @@ export function AgendaClient({
       setTipoId(id || null);
       const parametros = new URLSearchParams(busca.toString());
       if (id) parametros.set("tipo", id);
-      else if (presentationConfig.allServices) parametros.set("tipo","todos");
+      else if (presentationConfig.allServices) parametros.set("tipo", "todos");
       else parametros.delete("tipo");
       const query = parametros.toString();
       window.history.replaceState(null, "", query ? `${caminho}?${query}` : caminho);
@@ -430,7 +446,10 @@ export function AgendaClient({
     agendamentosVivos ?? (naJanelaDoServidor ? agendamentosIniciais : []);
 
   const agendamentos = React.useMemo(
-    () => (isolada === null ? todos : todos.filter((a) => a.responsavelId === isolada)).filter((a)=>calendarServiceMatches(a,filtroDoServico)),
+    () =>
+      (isolada === null ? todos : todos.filter((a) => a.responsavelId === isolada)).filter((a) =>
+        calendarServiceMatches(a, filtroDoServico),
+      ),
     [isolada, todos, filtroDoServico],
   );
 
@@ -472,8 +491,11 @@ export function AgendaClient({
         ? `${format(startOfWeek(ancora, { weekStartsOn: 0 }), t("d 'de' MMM"), { locale: localeDaData })} — ${format(addDays(startOfWeek(ancora, { weekStartsOn: 0 }), 6), t("d 'de' MMM"), { locale: localeDaData })}`
         : format(ancora, t("EEEE, d 'de' MMMM"), { locale: localeDaData });
 
-  const noticeRegion = (<>
-      {tiposIniciais.some((tipo) => tipo.servicoColetivo) && <ReservasColetivas today={hojeNaOrganizacao} zone={fusoDaAgenda} canWrite={podeMarcar}/>}
+  const noticeRegion = (
+    <>
+      {tiposIniciais.some((tipo) => tipo.servicoColetivo) && (
+        <ReservasColetivas today={hojeNaOrganizacao} zone={fusoDaAgenda} canWrite={podeMarcar} />
+      )}
       {/*
         Em Suspense porque `useSearchParams` obriga: sem a fronteira, o Next
         reprova o build da rota. Fallback nulo porque a ausência do aviso é o
@@ -491,12 +513,15 @@ export function AgendaClient({
         contaConectada={contaConectada}
         enderecoDeRetorno={enderecoDeRetorno}
       />
-
-  </>);
-  const controlsRegion=(<>
+    </>
+  );
+  const controlsRegion = (
+    <>
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{tituloDaAgenda ?? t("Agendamentos")}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {tituloDaAgenda ?? t("Agendamentos")}
+          </h1>
           <p className="text-sm text-muted-foreground">
             {t("O que está marcado, com quem, e quem atende — seu e da equipe.")}
           </p>
@@ -665,8 +690,21 @@ export function AgendaClient({
         sem dado: as quatro abas com contador zero respondem "não há nada" sem
         gastar um clique, e some-lo faria a tela parecer menor do que é.
       */}
-  </>);
-  const historyRegion=(<>
+    </>
+  );
+  const historyControls = presentationConfig.historyControlsBeforeGrid ? (
+    <div data-ui-part="calendar-history-controls" className="flex flex-col gap-1">
+      <span className="text-[11px] text-text-muted">{t("Filtrar o histórico")}</span>
+      <FiltrosDoHistorico
+        agendamentos={agendamentosAcionaveis}
+        agora={new Date()}
+        aba={abaDoHistorico}
+        onChange={setAbaDoHistorico}
+      />
+    </div>
+  ) : null;
+  const historyRegion = (
+    <>
       {/*
         ⚠️ A LISTA DAQUI NÃO É A MESMA DA GRADE, e a diferença é uma linha.
 
@@ -697,6 +735,9 @@ export function AgendaClient({
         melhor. A ocupação continua inteira onde ela serve.
       */}
       <HistoricoDaAgenda
+        aba={presentationConfig.historyControlsBeforeGrid ? abaDoHistorico : undefined}
+        onAbaChange={presentationConfig.historyControlsBeforeGrid ? setAbaDoHistorico : undefined}
+        ocultarFiltros={presentationConfig.historyControlsBeforeGrid === true}
         agendamentos={agendamentosAcionaveis}
         pessoas={pessoas}
         agora={new Date()}
@@ -750,14 +791,16 @@ export function AgendaClient({
           })
         }
       />
-
-  </>);
-  const gridRegion=(<>
+    </>
+  );
+  const gridRegion = (
+    <>
       {/* A GRADE INTERATIVA — clicar num bloco livre marca ali, arrastar um card
           remarca. Toda a fiação (a consulta de horários da janela desenhada, a
           proposta de remarcação, o otimismo com volta atrás) mora em
           `AgendaInterativa`; aqui fica só o que esta tela já sabia. */}
       <AgendaInterativa
+        periodControls={historyControls}
         fuso={fusoDaAgenda}
         visao={visao}
         ancora={ancora}
@@ -800,14 +843,17 @@ export function AgendaClient({
            primeiro (#1657). */
         onAbrirAgendamento={(id) => {
           const parametros = new URLSearchParams();
-          if (todosServicos) parametros.set("tipo","todos");
+          if (todosServicos) parametros.set("tipo", "todos");
           else if (tipo) parametros.set("tipo", tipo.id);
           parametros.set("compromisso", id);
           router.push(`/app/agenda?${parametros.toString()}`);
         }}
         className="min-h-0 flex-1"
-      />  </>);
-  const emptyRegion=(<>
+      />{" "}
+    </>
+  );
+  const emptyRegion = (
+    <>
       {/* ⚠️ O VAZIO NÃO ESCONDE MAIS A GRADE, e o achado veio do CI.
           Isto era um ternário: com zero agendamentos, `EmptyAgenda` entrava NO
           LUGAR de `GradeDaAgenda`. Numa instalação nova — que é o estado de
@@ -828,8 +874,10 @@ export function AgendaClient({
           <EmptyAgenda />
         </div>
       ) : null}
-  </>);
-  const dialogs=(<>
+    </>
+  );
+  const dialogs = (
+    <>
       <Sheet
         open={marcando}
         onOpenChange={(aberto) => {
@@ -1241,10 +1289,27 @@ export function AgendaClient({
           </div>
         </SheetContent>
       </Sheet>
-
-  </>);
-  const contentRegion=(<> {presentationConfig.gridFirst ? <>{gridRegion}{historyRegion}{emptyRegion}</> : <>{historyRegion}{emptyRegion}{gridRegion}</>} </>);
-  const nativeLayout=(
+    </>
+  );
+  const contentRegion = (
+    <>
+      {" "}
+      {presentationConfig.gridFirst ? (
+        <>
+          {gridRegion}
+          {historyRegion}
+          {emptyRegion}
+        </>
+      ) : (
+        <>
+          {historyRegion}
+          {emptyRegion}
+          {gridRegion}
+        </>
+      )}{" "}
+    </>
+  );
+  const nativeLayout = (
     <div
       data-testid="tela-agenda"
       data-fonte={agendamentosIniciais.length > 0 ? "api" : "api-sem-dado"}
@@ -1257,5 +1322,18 @@ export function AgendaClient({
       {contentRegion}
     </div>
   );
-  return <UiThemeArea contract={calendarArea} slots={{notice:noticeRegion,controls:controlsRegion,content:contentRegion}} rootProps={{className:"flex h-full flex-col gap-4 p-6","data-testid":"tela-agenda","data-fonte":agendamentosIniciais.length>0 ? "api":"api-sem-dado","data-fuso":fusoDeApresentacao ?? "organizacao"}} after={dialogs} fallback={nativeLayout}/>;
+  return (
+    <UiThemeArea
+      contract={calendarArea}
+      slots={{ notice: noticeRegion, controls: controlsRegion, content: contentRegion }}
+      rootProps={{
+        className: "flex h-full flex-col gap-4 p-6",
+        "data-testid": "tela-agenda",
+        "data-fonte": agendamentosIniciais.length > 0 ? "api" : "api-sem-dado",
+        "data-fuso": fusoDeApresentacao ?? "organizacao",
+      }}
+      after={dialogs}
+      fallback={nativeLayout}
+    />
+  );
 }

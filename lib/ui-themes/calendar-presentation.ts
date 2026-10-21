@@ -4,6 +4,7 @@ export const calendarPresentationSchema = z
     allServices: z.boolean().optional(),
     historyAllFirst: z.boolean().optional(),
     periodList: z.boolean().optional(),
+    historyControlsBeforeGrid: z.boolean().optional(),
     gridFirst: z.boolean().optional(),
   })
   .strict();

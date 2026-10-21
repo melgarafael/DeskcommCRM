@@ -110,11 +110,7 @@ export function KanbanCard({
   // O título é o maior e mais natural alvo do card. Quem lê "Segurando Shift,
   // um clique seleciona tudo entre o card anterior e o que você clicou" e clica
   // no card clica no nome dele — e recebia o dossiê.
-  const decidirClique = (e: {
-    shiftKey: boolean;
-    metaKey: boolean;
-    ctrlKey: boolean;
-  }): void => {
+  const decidirClique = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): void => {
     if (e.shiftKey) {
       onSelect?.(card.id, "intervalo");
       return;
@@ -138,7 +134,14 @@ export function KanbanCard({
           // isso vira nested-interactive no axe. "group" mantém o foco e o
           // teclado do dnd (tabIndex e handlers continuam vindo do spread) sem
           // aninhar dois controles — nada de aria-hidden nem de suprimir regra.
-          style={{ ...provided.draggableProps.style, ...(stageDecoration(stageColor) ? { "--ui-stage-color": stageDecoration(stageColor) } : {}) } as CSSProperties}
+          style={
+            {
+              ...provided.draggableProps.style,
+              ...(stageDecoration(stageColor)
+                ? { "--ui-stage-color": stageDecoration(stageColor) }
+                : {}),
+            } as CSSProperties
+          }
           role="group"
           aria-label={`${t("Lead")}: ${card.title}`}
           onClick={handleClick}
@@ -147,7 +150,7 @@ export function KanbanCard({
           className={cn(
             "group relative overflow-hidden rounded-md border border-border bg-surface",
             regionClass("card"),
-            "py-2.5 pl-3 pr-3 shadow-xs transition-colors",
+            "py-2.5 pr-3 pl-3 shadow-xs transition-colors",
             "hover:border-border-strong",
             snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
             isSelected && "ring-2 ring-accent",
@@ -170,6 +173,7 @@ export function KanbanCard({
           {/* Borda de estado — 2px, a única cor do card. */}
           <span
             aria-hidden
+            data-ui-part="card-state-border"
             className={cn(
               "absolute inset-y-0 left-0 w-0.5",
               state.border === "accent" && "bg-accent",
@@ -204,9 +208,7 @@ export function KanbanCard({
                 className={cn(
                   "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
                   "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
-                  isSelected || isSelecting
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100",
+                  isSelected || isSelecting ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                 )}
               />
               {card.canonicalTag && (
@@ -226,7 +228,10 @@ export function KanbanCard({
                   acessibilidade; deixar só onKeyDown daria uma ação que existe
                   e NÃO É DESCOBERTA por leitor de tela. O título como button
                   atende mouse, teclado e leitor sem desfazer a decisão antiga. */}
-              <h3 data-ui-part="card-title" className="line-clamp-2 h-10 text-sm font-medium leading-5 text-text">
+              <h3
+                data-ui-part="card-title"
+                className="line-clamp-2 h-10 text-sm leading-5 font-medium text-text"
+              >
                 <button
                   type="button"
                   onClick={(e) => {
@@ -249,7 +254,7 @@ export function KanbanCard({
           {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe. */}
           <p
             className={cn(
-              "mt-1 h-5 text-xs font-medium leading-5 tabular-nums",
+              "mt-1 h-5 text-xs leading-5 font-medium tabular-nums",
               value ? "text-text" : "text-text-muted",
             )}
           >
@@ -257,7 +262,10 @@ export function KanbanCard({
           </p>
 
           {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
-          <div data-ui-state={state.slot.type} className={cn("mt-1.5 flex h-6 items-center gap-2 text-xs",regionClass("state"))}>
+          <div
+            data-ui-state={state.slot.type}
+            className={cn("mt-1.5 flex h-6 items-center gap-2 text-xs", regionClass("state"))}
+          >
             {state.slot.type === "awaiting" && (
               // A proposta do agente é a ÚNICA linha do card com ação: é o
               // ponto onde a decisão do humano entra. Sem os botões aqui, o
@@ -286,12 +294,14 @@ export function KanbanCard({
               <span className="truncate text-warning-fg">{state.slot.label}</span>
             )}
             {state.slot.type === "meter" && (
-              <span className={cn("min-w-0",regionClass("score"))}><ScoreSlot
-                probability={state.slot.probability}
-                band={state.slot.band}
-                reason={state.slot.reason}
-                factors={state.slot.factors}
-              /></span>
+              <span className={cn("min-w-0", regionClass("score"))}>
+                <ScoreSlot
+                  probability={state.slot.probability}
+                  band={state.slot.band}
+                  reason={state.slot.reason}
+                  factors={state.slot.factors}
+                />
+              </span>
             )}
           </div>
 
@@ -309,7 +319,10 @@ export function KanbanCard({
           <ContatoNoCard lead={lead} />
 
           {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio */}
-          <div className="mt-1 flex h-6 items-center justify-between gap-2">
+          <div
+            data-ui-part="card-footer"
+            className="mt-1 flex h-6 items-center justify-between gap-2"
+          >
             <div className="flex min-w-0 items-center gap-2">
               <OwnerBadge
                 ownerKind={card.owner.kind}
@@ -318,7 +331,7 @@ export function KanbanCard({
               />
               <TarefasNoCard tarefas={lead.tarefas} />
             </div>
-            <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-muted">
+            <span className="shrink-0 text-[11px] whitespace-nowrap text-text-muted tabular-nums">
               {state.showStageAge && age
                 ? `${age} ${t("em")} ${card.stageName}`
                 : `${t("em")} ${card.stageName}`}

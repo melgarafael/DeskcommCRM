@@ -277,6 +277,7 @@ export function ConversationListItem({
     <div
       className={cn(
         "relative flex w-full items-start border-b border-border/70",
+        regionClass("list-item"),
         selecionado && "bg-accent-soft",
       )}
     >
@@ -295,7 +296,6 @@ export function ConversationListItem({
           data-testid={`selecao-em-lote-${conversation.id}`}
           onClick={() => onAlternarSelecao(conversation.id)}
           className={cn(
-          regionClass("list-item"),
             "mt-3 ml-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors",
             "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent",
             selecionado
