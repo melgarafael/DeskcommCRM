@@ -1,1 +1,1 @@
-export { installedUiThemes } from "./public-catalog";
+export { publicUiThemeCatalog as installedUiThemes } from "./public-catalog";
