@@ -23,7 +23,7 @@ export function PipelineThemePreview() {
   );
   const board = (
     <div className={cn("flex min-h-80 gap-3 overflow-x-auto", regionClass("board"))}>
-      {["Entrada", "Em análise"].map((stage, i) => (
+      {[t("Entrada"), t("Em análise")].map((stage, i) => (
         <section
           key={stage}
           className={cn(
@@ -32,7 +32,7 @@ export function PipelineThemePreview() {
           )}
           style={{ "--ui-stage-color": i === 0 ? "#71899e" : "#8979a1" } as CSSProperties}
         >
-          <h4 className="border-b border-border p-3 text-sm font-medium">{t(stage)}</h4>
+          <h4 className="border-b border-border p-3 text-sm font-medium">{stage}</h4>
           <article
             className={cn("m-2 rounded-lg border border-border bg-bg p-3", regionClass("card"))}
           >
