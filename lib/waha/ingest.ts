@@ -81,13 +81,46 @@ export type Admin = ReturnType<typeof createAdminClient>;
 const JANELA_DO_ECO_MS = 60_000;
 
 /**
+ * Os estados em que uma linha NOSSA já SAIU para o canal — e portanto o eco
+ * dela pode estar voltando.
+ *
+ * `sent` faz parte desta lista, e a falta dele era o defeito do #3138: `sent`
+ * SEM `external_id` não é acidente nem estado impossível, é DESFECHO escrito de
+ * propósito nos dois caminhos que enviam por nós, exatamente quando o eco vence
+ * o `unique (organization_id, external_id)`:
+ *
+ *   - `app/api/v1/messages/_handler.ts:1254-1257` — "a mensagem SAIU e fica
+ *     `sent` sem o id — nunca `queued`, que é pedir para ser reenviada";
+ *   - `lib/agent-engine/edge/crm/session-reconciler.ts:471-479` — o watchdog
+ *     reenvia, `markRedriveSent` devolve true (o eco já ocupava o id),
+ *     `removeRedriveEcho` APAGA a linha do eco e `stampExternalIdAfterEcho` é
+ *     BLINDADO: falhando ele, a linha NOSSA fica `sent` sem id e a linha do eco
+ *     já não existe.
+ *
+ * Com essas duas condições, uma REENTREGA do mesmo eco não tinha com o que
+ * casar: o dedup por `external_id` não acha id nenhum (a linha do eco foi
+ * apagada pela nossa própria limpeza), a re-checagem pós-insert exige uma linha
+ * NOSSA COM o id, e esta régua da janela recusava a linha porque o status já
+ * dizia `sent`. O eco do nosso próprio envio era lido como "uma pessoa
+ * respondeu pelo canal": IA pausada por 1 h, linha duplicada e lead nascido
+ * pela conversa do celular (issue #3138).
+ *
+ * `failed` fica FORA de propósito: ali nada foi ao canal, então não existe eco
+ * que explique a mensagem. A comparação de corpo abaixo limita o resto — frase
+ * diferente continua sendo digitação de verdade (os controles de #519/#2066).
+ */
+const STATUS_DE_ENVIO_NOSSO = ["queued", "sending", "sent", "delivered", "read"];
+
+/**
  * A mensagem `fromMe` que chegou é o eco de um envio que ESTE CRM acabou de
  * fazer — e não alguém digitando no celular?
  *
  * A prova exigida é forte: uma linha nossa na MESMA conversa, ainda sem
- * `external_id` (portanto ainda em voo), com o MESMO corpo, dentro da janela.
- * Qualquer uma dessas faltando, a resposta é "não sei" — e "não sei" silencia,
- * porque é o desfecho seguro do lado do atendente humano (#371).
+ * `external_id` (portanto sem o carimbo do canal), com o MESMO corpo, dentro da
+ * janela, e em um dos estados em que a linha SAIU (`STATUS_DE_ENVIO_NOSSO` —
+ * `sent` inclusive, ver o #3138). Qualquer uma dessas faltando, a resposta é
+ * "não sei" — e "não sei" silencia, porque é o desfecho seguro do lado do
+ * atendente humano (#371).
  *
  * Mídia não tem corpo comparável (o eco traz `media_url`, não texto): ali a
  * prova cai para "existe envio nosso em voo do mesmo tipo na janela", que é mais
@@ -121,10 +154,14 @@ async function ehEcoDeEnvioNosso(
     // integração deixa de ser reconhecida como envio NOSSO, o eco do próprio
     // envio vira "resposta pelo celular" e cala a IA por três horas.
     .in("sent_via", ["ai", "user", "automation", "system"])
-    // Sem `external_id` = ainda não confirmada pelo canal = ainda em voo. É esta
-    // a janela exata em que o eco é indistinguível de digitação humana.
+    // Sem `external_id` = o id do canal ainda não está gravado nesta linha. É
+    // esta a janela exata em que o eco é indistinguível de digitação humana.
     .is("external_id", null)
-    .in("status", ["queued", "sending"])
+    // O `status` NÃO separa "em voo" de "saiu": `sent` sem id é desfecho
+    // declarado dos dois caminhos que enviam por nós, e exigir só
+    // `queued|sending` fazia o eco DELES ser lido como pessoa (ver
+    // `STATUS_DE_ENVIO_NOSSO`, issue #3138).
+    .in("status", STATUS_DE_ENVIO_NOSSO)
     .gte("created_at", desde)
     .limit(20);
 

@@ -195,19 +195,40 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   resposta_vazia: "A IA não devolveu nenhuma escolha entre as opções desta ação. Tente de novo ou corrija a instrução.",
   sem_json: "A IA respondeu fora do formato esperado e nada foi executado. Tente de novo em alguns minutos.",
   escolha_ausente: "A IA respondeu sem dizer qual opção escolher, então nada foi executado. Tente de novo ou corrija a instrução.",
-  /* #2726 — a ação `send_email`. Os sete nascem em
+  /*
+   * Os motivos da ação 'Mensagem para a equipe' (notify_team, #2642): depois do
+   * recorte do PR #2834 o aviso sai SÓ pelo WhatsApp do número cadastrado em
+   * Avisos, então os motivos de e-mail que existiam aqui saíram com o caminho —
+   * o e-mail para uma pessoa da equipe é o `send_email`, cujas frases estão no
+   * bloco abaixo.
+   */
+  sem_numero_de_aviso_cadastrado: "O aviso à equipe não tem número cadastrado. Cadastre-o em Configurações › Avisos.",
+  canal_da_equipe_nao_encontrado: "O número cadastrado para avisar a equipe não está mais entre as conexões desta organização.",
+  canal_sem_chave: "A conexão do número da equipe está sem credencial. Reconecte o número em Conexões.",
+  telefone_da_equipe_invalido: "O telefone cadastrado para avisar a equipe não é válido para este canal. Corrija-o em Configurações › Avisos.",
+  whatsapp_falhou: "O canal do número da equipe recusou a mensagem agora. A automação tenta de novo no próximo disparo.",
+  whatsapp_enviado: "A equipe foi avisada pelo WhatsApp.",
+  canal_nao_suportado: "A regra guarda um canal que esta ação não envia. Abra a automação e salve de novo com o WhatsApp da equipe.",
+  /* #2726 — a ação `send_email`. Os códigos nascem em
      lib/automation/actions/send-email.ts e chegam aos DOIS canais da tela:
      `detail.reason` nas recusas (pelo `para.motivo`, origem declarada em
      ORIGENS no teste da guarda — `no_contact`, `contact_blocked` e
      `consent_declined` já moravam aqui, `no_email` e `dono_sem_email` são
      novos) e `action.error` nos cinco códigos do provedor (pelo
      `codigoDaFalha`, literal no resultado). Sem frase aqui quem operava a
-     automação lia o código cru. */
+     automação lia o código cru.
+     #2642 — o destinatário "membro da equipe" acrescenta os três motivos do
+     vínculo conferido no envio (`sem_membro`, `membro_fora_da_equipe`,
+     `membro_sem_email`) e `membro_indeterminado` quando a consulta não volta. */
   no_email: "O contato não tem e-mail cadastrado, então não havia endereço para onde enviar.",
   dono_sem_email:
     "O negócio não tem responsável com e-mail cadastrado, então não havia endereço para onde enviar. Escolha outro destinatário na automação.",
   dono_fora_da_equipe:
     "O responsável do negócio não faz mais parte da equipe, então o e-mail não foi enviado. Troque o responsável do negócio ou escolha outro destinatário na automação.",
+  sem_membro: "A regra não tem a pessoa da equipe escolhida. Abra a automação e escolha quem deve receber.",
+  membro_fora_da_equipe:
+    "A pessoa escolhida não faz mais parte da equipe, então o e-mail não foi enviado. Escolha outra pessoa na automação.",
+  membro_sem_email: "A pessoa escolhida não tem e-mail cadastrado no acesso dela.",
   email_nao_configurado:
     "Nenhum e-mail está configurado nesta instalação: ligue o servidor em Admin › E-mail ou conecte o serviço externo de envio.",
   email_recusado:

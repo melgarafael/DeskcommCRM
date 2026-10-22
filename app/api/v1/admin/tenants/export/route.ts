@@ -40,7 +40,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import type { AdminTenantRow } from "@/hooks/useAdminTenants";
 import { fail } from "@/lib/api/wrappers";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { normalizarIdioma, parseAcceptLanguage } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -61,8 +61,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
-    return fail("forbidden", "Platform admin required", 403, { requestId });
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId);
   }
 
   // O idioma de quem exporta: preferência salva no perfil, e o `Accept-Language`

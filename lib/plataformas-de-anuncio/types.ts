@@ -90,6 +90,16 @@ export interface ConversaoOffline {
    * é só o telefone, e o transporte declara a origem de acordo.
    */
   cliqueDeOrigem: string;
+  /**
+   * A identidade do NAVEGADOR, quando o clique foi capturado na PÁGINA
+   * (formulário, #2317): o `fbc`/`fbp` que a landing page mandou. Só existe
+   * junto com `cliqueDeOrigem` vazio — é o outro lado da mesma troca: quem tem
+   * `ctwa_clid` não tem cookie de página, e quem tem cookie de página não veio
+   * de uma conversa. Quem lê `cliqueDeOrigem` para decidir a origem declarada
+   * não precisa olhar este campo; o transporte, sim, para montar o
+   * `user_data`.
+   */
+  identidadeDoNavegador?: { fbc: string | null; fbp: string | null };
   identificadoresGoogle?: IdentificadoresGoogle;
   /** E.164 sem `+`, ainda EM CLARO: o hash é responsabilidade do transporte. */
   telefone: string | null;

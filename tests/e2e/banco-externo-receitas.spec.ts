@@ -124,7 +124,7 @@ test("admin adiciona a receita woocommerce, salva e persiste após recarregar", 
   // Desde a R2 o botão pergunta qual receita antes de abrir o formulário.
   await page.getByRole("button", { name: /produtos da loja woocommerce/i }).click();
 
-  await page.getByLabel(/rótulo/i).fill("Produtos da loja");
+  await page.getByLabel(/nome da receita/i).fill("Produtos da loja");
   await page.getByLabel(/descrição/i).fill("Produtos publicados do WooCommerce");
   await page.getByLabel(/prefixo das tabelas/i).fill("wp_");
 
@@ -152,7 +152,7 @@ test("usuário agent não vê o botão de salvar", async ({ page }) => {
   await page.getByRole("button", { name: /adicionar receita/i }).click();
   // Desde a R2 o botão pergunta qual receita antes de abrir o formulário.
   await page.getByRole("button", { name: /produtos da loja woocommerce/i }).click();
-  await page.getByLabel(/rótulo/i).fill("Produtos da loja");
+  await page.getByLabel(/nome da receita/i).fill("Produtos da loja");
   await page.getByLabel(/descrição/i).fill("Produtos publicados do WooCommerce");
   await page.getByLabel(/prefixo das tabelas/i).fill("wp_");
   await page.getByRole("button", { name: /salvar/i }).click();

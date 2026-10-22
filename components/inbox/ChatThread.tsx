@@ -258,6 +258,40 @@ export function ChatThread({
   }, [items.length, conversationId, paginas]);
 
   /**
+   * QUANDO A ALTURA DO FIO MUDA, QUEM ESTAVA NO FIM CONTINUA NO FIM (F2 da ADR-0006).
+   *
+   * O efeito acima só reancora quando o CONTEÚDO muda. No celular o fio também
+   * encolhe sem conteúdo novo — o teclado abre, a faixa de citação aparece — e
+   * aí o último balão sumia atrás do composer.
+   *
+   * A distância até o fim é a de ANTES da mudança, guardada no `scroll`: dentro
+   * do callback do `ResizeObserver` o `clientHeight` já encolheu, e medir ali
+   * daria a distância nova, maior que a régua de 120px — "está lendo o
+   * histórico" para quem não rolou nada. Encolher o fio não dispara `scroll`,
+   * então o valor guardado é o certo. A régua é a mesma do efeito acima.
+   */
+  const fioMontado = !!conversationId && !q.isLoading && !q.isError && items.length > 0;
+  const distanciaDoFim = useRef(0);
+  useEffect(() => {
+    const sc = scrollerRef.current;
+    if (!fioMontado || !sc || typeof ResizeObserver === "undefined") return;
+    const medir = () => {
+      distanciaDoFim.current = sc.scrollHeight - sc.scrollTop - sc.clientHeight;
+    };
+    medir();
+    sc.addEventListener("scroll", medir, { passive: true });
+    const observador = new ResizeObserver(() => {
+      if (distanciaDoFim.current <= 120) sc.scrollTop = sc.scrollHeight;
+      medir();
+    });
+    observador.observe(sc);
+    return () => {
+      sc.removeEventListener("scroll", medir);
+      observador.disconnect();
+    };
+  }, [fioMontado, conversationId]);
+
+  /**
    * O ESTADO DO CANAL DESTE THREAD, PUBLICADO SEMPRE — inclusive quando não há
    * mensagem nenhuma.
    *

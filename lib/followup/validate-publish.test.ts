@@ -210,15 +210,28 @@ describe('validateFlowForPublish', () => {
     if (!comJanela.ok) expect(comJanela.errors.map((e) => e.code)).toEqual(['long_wait_needs_template']);
   });
 
-  it('algumCanalExigeModeloForaDaJanela: only a known message channel without freeform outside the window counts', () => {
+  it('algumCanalExigeModeloForaDaJanela: só conta canal que EXIGE modelo e tem catálogo aprovado', () => {
     // Pela matriz de capabilities, sem nomear provider (invariante 1 da restrição de canal).
     const semJanela = PROVIDERS_DE_MENSAGEM.filter((p) => CHANNEL_CAPABILITIES[p].freeformOutsideWindow);
-    const comJanela = PROVIDERS_DE_MENSAGEM.filter((p) => !CHANNEL_CAPABILITIES[p].freeformOutsideWindow);
+    // Exigir o plano B só faz sentido em canal que fecha a janela E tem
+    // DEFINIÇÕES aprovadas para oferecer (#3109): o canal social de
+    // Instagram/Facebook fecha a janela e não tem catálogo nenhum, então exigir
+    // por causa dele reprovava o publish da organização inteira sem oferecer saída.
+    const exigeModelo = PROVIDERS_DE_MENSAGEM.filter(
+      (p) => !CHANNEL_CAPABILITIES[p].freeformOutsideWindow && CHANNEL_CAPABILITIES[p].requiresTemplates,
+    );
+    const fechaSemCatalogo = PROVIDERS_DE_MENSAGEM.filter(
+      (p) => !CHANNEL_CAPABILITIES[p].freeformOutsideWindow && !CHANNEL_CAPABILITIES[p].requiresTemplates,
+    );
     expect(semJanela.length).toBeGreaterThan(0);
-    expect(comJanela.length).toBeGreaterThan(0);
+    expect(exigeModelo.length).toBeGreaterThan(0);
+    // A matriz tem de continuar tendo o caso que a issue mediu; sem ele este
+    // teste deixaria de cobrir a existência do canal que fecha a janela sem modelo.
+    expect(fechaSemCatalogo.length).toBeGreaterThan(0);
     expect(algumCanalExigeModeloForaDaJanela([])).toBe(false);
     expect(algumCanalExigeModeloForaDaJanela(semJanela)).toBe(false);
-    for (const p of comJanela) expect(algumCanalExigeModeloForaDaJanela([...semJanela, p])).toBe(true);
+    expect(algumCanalExigeModeloForaDaJanela(fechaSemCatalogo)).toBe(false);
+    for (const p of exigeModelo) expect(algumCanalExigeModeloForaDaJanela([...semJanela, p])).toBe(true);
     expect(algumCanalExigeModeloForaDaJanela([...PROVIDERS_SEM_MENSAGEM, 'provider_do_futuro', null])).toBe(false);
   });
 

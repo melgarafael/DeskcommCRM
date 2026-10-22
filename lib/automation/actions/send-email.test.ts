@@ -91,17 +91,82 @@ function tabelaDeVinculos(linhas: Vinculo[], falha: { message: string } | null) 
   return consulta;
 }
 
+/** Uma linha de qualquer tabela do resumo, como o PostgREST a devolve. */
+type Linha = Record<string, unknown>;
+
+/**
+ * As tabelas que o RESUMO lê (#2642), com o cenário de um negócio ganho: a
+ * pontuação com o motivo e o checkpoint com o que a conversa combinou.
+ */
+function tabelasDoResumo(): Record<string, Linha[]> {
+  return {
+    organizations: [{ id: "org-1", locale: "pt-BR" }],
+    crm_lead_scores: [
+      {
+        organization_id: "org-1",
+        lead_id: "lead-1",
+        ai_probability: 72,
+        ai_probability_reason: "dois compromissos marcados e nenhum orçamento enviado",
+      },
+    ],
+    lead_checkpoints: [
+      {
+        organization_id: "org-1",
+        contact_id: "contato-1",
+        seq: 3,
+        commitments: ["enviar proposta até sexta"],
+        objections: ["preço acima do orçamento do cliente"],
+        next_action: "ligar para fechar o pagamento",
+      },
+    ],
+  };
+}
+
+/** O mesmo dublê, para as tabelas do resumo: aplica os filtros e devolve a primeira linha. */
+function tabelaGenerica(linhas: Linha[]) {
+  let restantes = [...linhas];
+  const consulta = {
+    select: () => consulta,
+    eq: (coluna: string, valor: unknown) => {
+      restantes = restantes.filter((l) => l[coluna] === valor);
+      return consulta;
+    },
+    is: () => consulta,
+    order: () => consulta,
+    limit: () => consulta,
+    maybeSingle: async () => ({ data: restantes[0] ?? null, error: null }),
+  };
+  return consulta;
+}
+
+/** Quais tabelas a ação LEU — é assim que o teste prova que o resumo é sob demanda. */
+interface Leitura {
+  tabelas: Record<string, Linha[]>;
+  lidas: string[];
+}
+
 function ctx(
   override: Record<string, unknown> = {},
   vinculos: Vinculo[] = EQUIPE_ATIVA,
   falhaDaConsulta: { message: string } | null = null,
+  resumo: Leitura | null = null,
+  emailDoAcesso: (id: string) => string | null = () => "dono@estudio.com",
 ): ActionCtx {
   return {
     admin: {
-      auth: { admin: { getUserById: vi.fn(async () => ({ data: { user: { email: "dono@estudio.com" } } })) } },
+      auth: {
+        admin: {
+          getUserById: vi.fn(async (id: string) => ({ data: { user: { email: emailDoAcesso(id) } } })),
+        },
+      },
       from: (tabela: string) => {
-        if (tabela !== "user_organizations") throw new Error(`tabela inesperada: ${tabela}`);
-        return tabelaDeVinculos(vinculos, falhaDaConsulta);
+        if (tabela === "user_organizations") return tabelaDeVinculos(vinculos, falhaDaConsulta);
+        // Sem `resumo`, ler qualquer outra tabela é defeito: o dublê estoura e
+        // o teste de `{{resumo}}` que não é usado vira vermelho se a ação
+        // passar a carregar o resumo sempre.
+        if (resumo === null) throw new Error(`tabela inesperada: ${tabela}`);
+        resumo.lidas.push(tabela);
+        return tabelaGenerica(resumo.tabelas[tabela] ?? []);
       },
     } as unknown as ActionCtx["admin"],
     organizationId: "org-1",
@@ -125,7 +190,13 @@ function ctx(
 
 const acao = () => getAction("send_email");
 
-beforeEach(() => enviar.mockReset());
+beforeEach(() => {
+  enviar.mockReset();
+  // Sucesso por PADRÃO no dublê: um teste de recusa não pode passar só porque o
+  // transporte estourou com `undefined` — se a ação chamar o envio quando não
+  // devia, a asserção de `skipped` é quem fica vermelha, não um TypeError.
+  enviar.mockResolvedValue({ ok: true, id: "e-mail-padrao", via: "smtp" });
+});
 
 describe("send_email no schema", () => {
   it("a regra com a ação é aceita, com destinatário, assunto e corpo", () => {
@@ -389,5 +460,195 @@ describe("limite de envio por organização", () => {
     for (let i = 0; i <= LIMITE_DE_EMAILS_POR_JANELA; i++) {
       expect(await acao()!.postponeUntil!(c, FIXO)).toBeNull();
     }
+  });
+});
+
+/**
+ * #2642 — o destinatário "membro da equipe" e a variável `{{resumo}}`.
+ *
+ * É o e-mail que antes morava no `notify_team`, com o recorte do PR #2834. O
+ * que este bloco cobra:
+ *
+ *   1. o endereço vem do ACESSO da pessoa, nunca de um campo da regra;
+ *   2. o vínculo é conferido NO ENVIO — membro removido da organização não
+ *      recebe (o defeito do #2794). É o teste que fica vermelho se alguém
+ *      voltar a resolver o destinatário sem olhar `user_organizations`;
+ *   3. `{{resumo}}` resolve com a pontuação, o motivo e o que a passagem
+ *      combinou, montado no disparo;
+ *   4. sem `{{resumo}}` no modelo, a ação NÃO lê as tabelas do resumo (o dublê
+ *      estoura em qualquer tabela que não seja `user_organizations`).
+ */
+const MEMBRO_ID = "66666666-6666-4666-8666-666666666666";
+const EQUIPE_COM_MEMBRO: Vinculo[] = [
+  { user_id: MEMBRO_ID, organization_id: "org-1", revoked_at: null },
+];
+const ACESSO_DO_MEMBRO = (id: string) => (id === MEMBRO_ID ? "pessoa@estudio.com" : null);
+
+/** O modelo sem `{{resumo}}`: é o que a maioria das regras de e-mail tem. */
+const CONFIG_MEMBRO = {
+  destinatario: "membro_da_equipe",
+  membro_id: MEMBRO_ID,
+  assunto: "Negócio ganho: {{lead.title}}",
+  corpo: "Oi! O negócio {{lead.title}} foi ganho.",
+  formato: "texto",
+};
+
+/** O mesmo destinatário, com o resumo automático no corpo. */
+const CONFIG_COM_RESUMO = { ...CONFIG_MEMBRO, corpo: "Oi!\n\n{{resumo}}" };
+
+/** O lead do contexto, com o `contact_id` que liga o negócio ao checkpoint. */
+function contextoDoResumo(): Record<string, unknown> {
+  return { lead: { ...(contexto().lead as Record<string, unknown>), contact_id: "contato-1" } };
+}
+
+describe("send_email — o destinatário \"membro da equipe\" (#2642)", () => {
+  it("no schema: aceita com a pessoa escolhida, e recusa sem ela", () => {
+    expect(
+      actionSchema.safeParse({ type: "send_email", config: CONFIG_MEMBRO }).success,
+    ).toBe(true);
+
+    // Sem `membro_id` a regra salvaria e só falharia no disparo — a mesma
+    // recusa que o endereço fixo sem endereço já tem.
+    expect(
+      actionSchema.safeParse({
+        type: "send_email",
+        config: { ...CONFIG_MEMBRO, membro_id: "" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("entrega no e-mail do ACESSO da pessoa, não num endereço da regra", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-membro", via: "smtp" });
+
+    const r = await acao()!.execute(
+      ctx({}, EQUIPE_COM_MEMBRO, null, null, ACESSO_DO_MEMBRO),
+      CONFIG_MEMBRO,
+    );
+
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(enviar.mock.calls[0]![0].to).toBe("pessoa@estudio.com");
+    expect(r).toEqual({
+      type: "send_email",
+      status: "success",
+      detail: { destinatario: "membro_da_equipe", via: "smtp", email_id: "e-mail-membro" },
+    });
+  });
+
+  it("MEMBRO REMOVIDO da organização não recebe: o vínculo é conferido no envio", async () => {
+    // O vínculo continua gravado, mas revogado — exatamente o caso do #2794:
+    // revogar não reescreve a regra, então quem barra é a checagem do disparo.
+    const vinculos: Vinculo[] = [
+      { user_id: MEMBRO_ID, organization_id: "org-1", revoked_at: "2026-01-01T00:00:00Z" },
+    ];
+    const r = await acao()!.execute(
+      ctx({}, vinculos, null, null, ACESSO_DO_MEMBRO),
+      CONFIG_MEMBRO,
+    );
+
+    expect(r.status).toBe("skipped");
+    expect((r.detail as { reason: string }).reason).toBe("membro_fora_da_equipe");
+    expect(enviar, "e-mail saiu para quem já não é da equipe").not.toHaveBeenCalled();
+  });
+
+  it("membro de OUTRA organização também não recebe", async () => {
+    const vinculos: Vinculo[] = [
+      { user_id: MEMBRO_ID, organization_id: "org-2", revoked_at: null },
+    ];
+    const r = await acao()!.execute(
+      ctx({}, vinculos, null, null, ACESSO_DO_MEMBRO),
+      CONFIG_MEMBRO,
+    );
+
+    expect(r.status).toBe("skipped");
+    expect((r.detail as { reason: string }).reason).toBe("membro_fora_da_equipe");
+    expect(enviar).not.toHaveBeenCalled();
+  });
+
+  it("consulta do vínculo que não volta não envia, e diz que foi a consulta", async () => {
+    const r = await acao()!.execute(
+      ctx({}, EQUIPE_COM_MEMBRO, { message: "timeout" }, null, ACESSO_DO_MEMBRO),
+      CONFIG_MEMBRO,
+    );
+
+    expect(r.status).toBe("skipped");
+    expect((r.detail as { reason: string }).reason).toBe("membro_indeterminado");
+    expect(enviar).not.toHaveBeenCalled();
+  });
+
+  it("pessoa sem e-mail no acesso: skipped com o motivo, sem tentar enviar", async () => {
+    const r = await acao()!.execute(
+      ctx({}, EQUIPE_COM_MEMBRO, null, null, () => null),
+      CONFIG_MEMBRO,
+    );
+
+    expect(r.status).toBe("skipped");
+    expect((r.detail as { reason: string }).reason).toBe("membro_sem_email");
+    expect(enviar).not.toHaveBeenCalled();
+  });
+
+  it("sem a pessoa escolhida na execução, a regra não roda (missing_config)", async () => {
+    const r = await acao()!.execute(
+      ctx({}, EQUIPE_COM_MEMBRO, null, null, ACESSO_DO_MEMBRO),
+      { ...CONFIG_MEMBRO, membro_id: "" },
+    );
+
+    expect(r).toEqual({ type: "send_email", status: "failed", error: "missing_config" });
+    expect(enviar).not.toHaveBeenCalled();
+  });
+});
+
+describe("send_email — a variável {{resumo}} (#2642)", () => {
+  it("resolve só com dado de forma fixa: a pontuação sai sem o motivo, e a passagem não sai", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-resumo", via: "smtp" });
+    const leitura: Leitura = { tabelas: tabelasDoResumo(), lidas: [] };
+
+    await acao()!.execute(
+      ctx(contextoDoResumo(), EQUIPE_COM_MEMBRO, null, leitura, ACESSO_DO_MEMBRO),
+      CONFIG_COM_RESUMO,
+    );
+
+    const pedido = enviar.mock.calls[0]![0];
+    expect(pedido.to).toBe("pessoa@estudio.com");
+    // O resumo vem do MESMO montador do WhatsApp da equipe: só o número da
+    // pontuação; o texto livre da conversa não vai na mensagem (doc 176, A).
+    expect((pedido.text ?? "").split("\n")).toContain("Pontuação: 72%");
+    expect(pedido.text).not.toContain("dois compromissos marcados");
+    expect(pedido.text).not.toContain("enviar proposta até sexta");
+    expect(pedido.subject).toBe("Negócio ganho: Lua de mel");
+    // Nada de marcação sobrando no que sai.
+    expect(JSON.stringify(pedido)).not.toContain("{{");
+    // As duas leituras do resumo aconteceram, e só elas: o checkpoint nem é lido.
+    expect([...new Set(leitura.lidas)].sort()).toEqual(["crm_lead_scores", "organizations"]);
+  });
+
+  it("modelo SEM {{resumo}} não lê as tabelas do resumo", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-simples", via: "smtp" });
+    const leitura: Leitura = { tabelas: tabelasDoResumo(), lidas: [] };
+
+    // Montar o resumo custa duas consultas: quem não usa a variável não paga
+    // por elas. (Nos outros testes do bloco o `resumo` é `null`, e o dublê
+    // ESTOURA em qualquer tabela que não seja `user_organizations` — é a mesma
+    // prova, pelo lado de quem carrega demais.)
+    const r = await acao()!.execute(
+      ctx(contextoDoResumo(), EQUIPE_COM_MEMBRO, null, leitura, ACESSO_DO_MEMBRO),
+      CONFIG_MEMBRO,
+    );
+
+    expect(r.status).toBe("success");
+    expect(leitura.lidas).toEqual([]);
+  });
+
+  it("no HTML, o resumo entra escapado — a fala do modelo não vira marcação", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-html", via: "smtp" });
+    const leitura: Leitura = { tabelas: tabelasDoResumo(), lidas: [] };
+
+    await acao()!.execute(
+      ctx(contextoDoResumo(), EQUIPE_COM_MEMBRO, null, leitura, ACESSO_DO_MEMBRO),
+      { ...CONFIG_COM_RESUMO, corpo: "<p>{{resumo}}</p>", formato: "html" },
+    );
+
+    const pedido = enviar.mock.calls[0]![0];
+    expect(pedido.html).toContain("Pontuação: 72%");
+    expect(pedido.html).toContain("<p>");
   });
 });

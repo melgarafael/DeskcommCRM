@@ -9,8 +9,9 @@ import { combinarInterfaces } from "@/lib/navigation/interface";
  * and then filter by `user_id` (a trusted source).
  */
 import { readSupportContext } from "@/lib/impersonate/support";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/auth/safe-next";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -580,4 +581,21 @@ export async function mfaEmDivida(): Promise<boolean> {
   // Cadastrar e provar são perguntas diferentes. Quem TEM fator prova, sempre.
   if (!(await isMfaEnrolled())) return false;
   return (await sessionAal()) !== "aal2";
+}
+
+/**
+ * O portão de SESSÃO das telas: quem tem fator e não o provou nesta sessão vai
+ * ao desafio, de volta para onde estava. É a mesma pergunta das rotas
+ * (`mfaEmDivida`), para que a tela e as rotas por trás dela respondam igual.
+ *
+ * Não custa leitura nova no `/app`: `isMfaEnrolled` é `cache` da requisição e o
+ * layout já a pediu; `sessionAal` lê o token da própria sessão. Falha ao ler os
+ * fatores LANÇA (o `isMfaEnrolled`), como nas rotas — nenhuma tela renderiza.
+ */
+export async function exigirProvaDeMfa(): Promise<void> {
+  if (!(await mfaEmDivida())) return;
+  // `x-pathname` vem do `proxy.ts`, gravado ANTES do `NextResponse.next` — só o
+  // que existe ali chega aqui (tests/unit/proxy-encaminha-o-caminho.test.ts).
+  const caminho = safeNext((await headers()).get("x-pathname"), "/app");
+  redirect(`/login/mfa?next=${encodeURIComponent(caminho)}`);
 }

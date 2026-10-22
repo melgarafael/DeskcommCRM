@@ -32,6 +32,7 @@ import { MatchReplyForm } from "@/app/app/ai/followups/[id]/_components/forms/Ma
 import { NodePalette } from "@/app/app/ai/followups/[id]/_components/NodePalette";
 import { ActionConfigForm, defaultActionConfig } from "@/app/app/webhooks/_components/ActionConfigForm";
 import { CaixaDaAutomacao } from "@/app/app/webhooks/automacoes/[id]/_components/CaixaDaAutomacao";
+import { PaletaDaAutomacao } from "@/app/app/webhooks/automacoes/[id]/_components/PaletaDaAutomacao";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
@@ -139,5 +140,24 @@ describe("o cartão do e-mail no designer de automação", () => {
     caixa("pt-BR", { destinatario: "contato", assunto: "Boas-vindas", corpo: "", formato: "texto" });
     expect(screen.getByTestId("caixa-acao-1").textContent).toContain("“Boas-vindas”");
     expect(screen.getByTestId("caixa-acao-1").textContent).not.toContain("send_email");
+  });
+});
+
+// #2642 — a ação nova caiu na mesma classe do e-mail: cartão com o tipo cru e nome da paleta sem chave.
+describe("a mensagem para a equipe no designer de automação", () => {
+  it("o cartão diz o destino, nunca o tipo cru", () => {
+    const props = {
+      id: "acao-1",
+      selected: false,
+      data: { kind: "acao", acao: { type: "notify_team", config: {} } },
+    } as unknown as ComponentProps<typeof CaixaDaAutomacao>;
+    render(noIdioma("es", <ReactFlowProvider><CaixaDaAutomacao {...props} /></ReactFlowProvider>));
+    expect(screen.getByTestId("caixa-acao-1").textContent).toContain("WhatsApp del equipo");
+    expect(screen.getByTestId("caixa-acao-1").textContent).not.toContain("notify_team");
+  });
+
+  it("a paleta traduz o nome", () => {
+    render(noIdioma("es", <PaletaDaAutomacao evento="lead.won" temCondicoes={false} onAdd={() => {}} />));
+    expect(screen.getByTestId("paleta-notify_team").textContent).toContain("Mensaje para el equipo");
   });
 });

@@ -22,8 +22,12 @@
  * 3. Identidade. Para conversão vinda de anúncio clique-para-WhatsApp, o
  *    `ctwa_clid` é o que liga a venda ao clique — é ele que carrega a atribuição,
  *    e o telefone hasheado só reforça. A exceção é quem veio de anúncio para
- *    uma PÁGINA (UTM da Meta, sem clique): aí o telefone é a identidade, e a
- *    origem declarada muda (ver abaixo). Sem nenhum dos dois, é recusa.
+ *    uma PÁGINA: aí o `ctwa_clid` não existe, e a identidade é o `fbc`/`fbp` do
+ *    navegador (lead de FORMULÁRIO, #2317) ou, sem eles, só o telefone — a
+ *    origem declarada muda (ver abaixo). Sem nenhum desses, é recusa.
+ *    Mandar o clique da PÁGINA (`fbclid`, ou o `fbc` inteiro) no lugar do
+ *    `ctwa_clid` foi o defeito que o #2317 corrigiu: o campo aceita a string,
+ *    descreve outra coisa, e a venda não fica atribuída.
  *
  * 4. Página ou WABA (#2098). No mesmo evento `business_messaging` do canal
  *    `whatsapp`, a Meta exige `user_data.page_id` OU
@@ -43,6 +47,16 @@
  * exige o `messaging_channel` junto. Declarar `website` passaria no envio e a
  * conversão não seria atribuída ao anúncio — o pior desfecho possível, porque
  * devolve 200 e não produz efeito nenhum.
+ *
+ * ─── Por que `system_generated` mesmo com `fbc`/`fbp` (#2317) ───────────────
+ *
+ * O lead de formulário TEM identidade de navegador, e mesmo assim o evento sai
+ * `system_generated`: a venda não aconteceu no navegador, foi registrada no CRM
+ * horas ou dias depois do preenchimento — `website` afirmaria um evento no site
+ * que não existiu. O que viaja de página é só a identidade (`fbc`/`fbp`), e é
+ * ela que liga a venda ao clique do anúncio. `business_messaging` continua fora
+ * deste caso por um motivo mais duro: ele exige `ctwa_clid`, e o formulário não
+ * tem um — passar o `fbclid` ali seria entregar ao campo a string errada.
  */
 import { createHash } from "node:crypto";
 
@@ -129,6 +143,19 @@ async function enviar(
   }
 
   const userData: Record<string, unknown> = comClique ? { ctwa_clid: conversao.cliqueDeOrigem } : {};
+  // ─── A identidade da PÁGINA (#2317) ───────────────────────────────────────
+  //
+  // O lead que chegou por FORMULÁRIO trouxe o clique da landing page, e a
+  // identidade dele não é `ctwa_clid`: é o `fbc`/`fbp` que o pixel escreveu no
+  // navegador (o telefone em hash, logo abaixo, reforça). Só no ramo SEM
+  // clique — quem tem `ctwa_clid` veio de uma conversa e não tem cookie de
+  // página nosso. Sem estes dois campos o evento sai sem NADA que ligue a venda
+  // ao anúncio, e a resposta pode ser 200 sem atribuir coisa nenhuma.
+  if (!comClique && conversao.identidadeDoNavegador) {
+    const { fbc, fbp } = conversao.identidadeDoNavegador;
+    if (fbc) userData.fbc = fbc;
+    if (fbp) userData.fbp = fbp;
+  }
   // ─── Página ou WABA, só no clique-para-WhatsApp (#2098) ────────────────────
   //
   // A Meta cobra UM dos dois apenas quando a origem é `business_messaging` +

@@ -25,7 +25,7 @@
  * Awaitable, mas NUNCA LANÇA: telemetria que falha não pode derrubar uma
  * ligação em curso. A falha vai para o log.
  */
-import { codigoDoErro, providerDoModelo } from "@/lib/ai/log-invocation";
+import { codigoDoErro, provedorDaChamada } from "@/lib/ai/log-invocation";
 import { logger } from "@/lib/logger";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -64,7 +64,8 @@ export async function registrarChamadaDeIa(admin: Admin, chamada: ChamadaDeIa): 
       contact_id:
         chamada.contact_id && chamada.contact_id.trim() !== "" ? chamada.contact_id : null,
       purpose: chamada.purpose,
-      provider: chamada.provider ?? providerDoModelo(chamada.model),
+      // A MESMA régua de `logInvocation` (importada, nunca copiada — #3098).
+      provider: provedorDaChamada(chamada.provider, chamada.model),
       model: chamada.model,
       input_tokens: Math.max(0, Math.round(chamada.input_tokens)),
       output_tokens: Math.max(0, Math.round(chamada.output_tokens)),

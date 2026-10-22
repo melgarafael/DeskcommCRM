@@ -13,6 +13,7 @@ import {
   Sparkle,
   Tag,
   UserCircle,
+  UsersThree,
   WebhooksLogo,
 } from "@/lib/ui/icons";
 
@@ -55,6 +56,12 @@ export const VISUAL_DA_ACAO: Record<ActionType, VisualDaCaixa> = {
   start_message_flow: { icon: FlowArrow, paleta: "Iniciar follow-up", ...SUCESSO },
   create_task: { icon: Bell, paleta: "Tarefa interna", ...AVISO },
   apply_task_plan: { icon: ListChecks, paleta: "Plano de tarefas", ...AVISO },
+  // #2642 — o único destino que não é o lead: a EQUIPE. UsersThree porque quem
+  // recebe é gente da casa (o WhatsApp cadastrado em Avisos), e SUCESSO
+  // porque a caixa envia, como as
+  // duas vizinhas de mensagem. Entrada exigida pelo Record<ActionType, …> da
+  // main (o tipo ganhou `notify_team` neste PR).
+  notify_team: { icon: UsersThree, paleta: "Mensagem para a equipe", ...SUCESSO },
 };
 
 /** A ordem da paleta: a mesma do seletor "Adicionar ação" do editor de hoje. */

@@ -487,13 +487,18 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         // alcance. `dvh` acompanha a barra do navegador aparecendo e sumindo.
         // Princípio 2 de `docs/design-system/screen-flow/07-responsive-strategy.md`.
         //
+        // O topo e a altura descontam `--faixas-de-cima` (`FaixasDeCima`): as
+        // faixas grudam em `top-0` com z-50, e uma barra em `top-0` passaria
+        // por baixo delas ao rolar — e com `h-dvh` cheio o documento mediria a
+        // tela mais a faixa.
+        //
         // `shrink-0` porque item de flex encolhe por padrão, e uma barra de 60
         // espremida para caber é o mesmo defeito por outro caminho.
         //
         // `duration-base` em vez do `duration-200` literal: 200ms é o mesmo
         // número, mas vindo de `--duration-base`. A Lei de movimento fecha a
         // tabela de durações, e número solto é o que a faz apodrecer.
-        "sticky top-0 z-30 flex h-dvh shrink-0 flex-col border-r bg-card transition-[width] duration-base",
+        "sticky top-[var(--faixas-de-cima,0px)] z-30 flex h-[calc(100dvh-var(--faixas-de-cima,0px))] shrink-0 flex-col border-r bg-card transition-[width] duration-base",
         collapsed ? "w-16" : "w-60",
       )}
     >

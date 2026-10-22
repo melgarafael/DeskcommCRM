@@ -1615,6 +1615,74 @@ tela bloqueada seguindo a decisão (a); o toque no aviso caindo na conversa. É
 critério de pronto da F1 na ADR, e o CI não alcança — vai para
 `evidence/<data>-f1/`.
 
+## J49 — Atender pelo celular `[P0]` (2026-10-21)
+
+Contexto: ADR-0006, fase F2 ("Atende pelo celular"), primeira PR. O atendente
+(papel `agent`), no telefone e com uma mão, abre uma conversa da lista: ela
+ocupa a tela inteira (camada `fixed` abaixo do `md`, em `colunasDoCelular`),
+cobre a barra de cima e a de abas, respeita a faixa de WhatsApp desconectado
+(`components/shell/FaixasDeCima.tsx` publica `--faixas-de-cima`) e cola na área
+visível quando o teclado abre (`lib/ui/altura-visivel.ts`, `data-teclado-aberto`).
+O voltar da tela desfaz o passo (`navegarNoInbox`) em vez de empilhar. Por que
+P0: é o caminho de trabalho do atendente no celular, e a primeira impressão de
+quem instalou a PWA da F1.
+
+Spec: `tests/e2e/atender-pelo-celular.spec.ts` (parte 6), 390×844 com
+`isMobile` + `hasTouch`, login `agent`, conversa semeada pelo próprio arquivo.
+O arquivo reprova se o navegador não casar `(pointer: coarse)`. Evidência:
+`evidence/atender-pelo-celular-20261021/` (gravada pelo CI).
+
+Resultado: **PENDENTE** em todas as linhas até o primeiro verde da parte 6 no
+CI — a coluna abaixo diz QUEM mede, não o que foi medido.
+
+| # | Caso | Expectativa | Quem mede |
+|---|------|-------------|-----------|
+| J49.1 (A-1) | Tela cheia | coluna `fixed` com topo = `--faixas-de-cima` e base = 844 (±1); `elementFromPoint` sobre o TopBar e sobre a barra de abas cai DENTRO da conversa; `body.scrollWidth ≤ 390` e, como a camada é `fixed` e não aumenta o documento, `scrollWidth − clientWidth` da própria coluna ≤ 1 e a borda direita da fileira do composer ≤ 390; fio ≥ 300px (o valor real vai como anotação do teste); busca da lista e campo de mensagem com fonte ≥ 16px; o foco não fica num elemento da lista escondida | E2E (CI) + UNIT `citada-apagada-e-tela-em-branco` (classes da camada, só `max-md:`) |
+| J49.2 (A-2) | Alvos tocáveis | «‹ Conversas» e «Ficha» ≥ 44×44; todo botão da fileira de ações ≥ 44 de altura; «Assumir» dentro da tela e com o menor `left` da fileira | E2E (CI) + UNIT `inbox-header-nao-trava` |
+| J49.3 (A-3) | Voltar pela tela, depois o voltar do navegador | a lista aparece sem `id=`; o voltar do navegador vai para a entrada ANTERIOR à lista (`?filter=mine`), não reabre a conversa | E2E (CI) + UNIT `voltar-do-inbox-no-celular` |
+| J49.4 (A-4) | Link direto (o clique no aviso) e voltar | a lista aparece e `history.length` não muda | E2E (CI) + UNIT |
+| J49.5 (A-5) | Gesto de voltar do sistema | devolve a lista, sem `id=` | E2E (CI) |
+| J49.6 (A-6) `[P0]` | WhatsApp desconectado | com a faixa na tela o documento não rola (`scrollY` ≤ 1 depois de `scrollTo` ao fim); aberta a conversa, topo da camada = base das faixas (±1), a faixa continua por cima (`elementFromPoint`), o composer termina ≤ 844 e a barra de voltar fica abaixo da faixa; de volta à lista e com a página rolada (espaçador de 3000px no `<main>`), o topo do `<header>` sticky = base das faixas (±1) e `elementFromPoint` no topo dele cai no header | E2E (CI, conexão `FAILED` semeada e apagada no `finally`, com a remoção conferida) + UNIT `faixas-de-cima` |
+| J49.7 (A-7) | Teclado aberto, modelo Android | janela de 500px: `data-teclado-aberto`, fileira de ações escondida, último balão dentro do fio e composer ≤ 500 | E2E (CI) + UNIT `altura-visivel` |
+
+**NÃO MEDIDO — só o aparelho prova:** o teclado do iOS (que NÃO encolhe a
+janela: ali quem mede é o `visualViewport.offsetTop`, e a fórmula da camada com
+`--vv-topo` nunca rodou num Safari de verdade); o gesto de borda do app
+instalado, da conversa e da lista, e o toque no aviso com o app fechado seguido
+de «‹ Conversas»; a área segura real (o composer não encostar no indicador de
+home, `env(safe-area-inset-*)` vale 0 no Chromium); a reancoragem do fio com o
+teclado do Android de verdade, e não só a janela encolhida do modelo; o zoom
+do Safari (a detecção do teclado compara `height × scale` e lê rotação em
+`documentElement.clientWidth`, provado só em unidade); o elástico de rolagem
+no fim do fio repassando movimento ao `visualViewport` (a camada pode tremer;
+candidato: `overscroll-y-contain` no rolador do `ChatThread`, só se a sonda
+no iPhone mostrar o tremor); a folga `pr-8` da fileira de ações rolável num
+Safari antigo; o voltar do Android instalado aberto a frio pelo aviso, que
+sai do app direto da conversa (já era assim antes desta entrega).
+
+**Limite aceito (acessibilidade):** com a conversa aberta no celular, o
+`TopBar` e a barra de abas ficam cobertos pela camada mas seguem na árvore de
+acessibilidade e na ordem de foco — o VoiceOver e o TalkBack alcançam
+controles escondidos atrás da conversa. A lista fica `invisible` (fora da
+árvore); as barras da casca não, porque ficam no `AppShell` e tirá-las exige
+um sinal da casca que esta entrega não criou.
+
+**Achados do mapa de código, consertados nesta entrega:** o documento media a
+tela MAIS a faixa de canal caído (o composer nascia abaixo da borda justo com o
+WhatsApp desconectado); o «‹ Conversas» empilhava a lista e o voltar do sistema
+reabria a conversa; a busca da lista sobrescrevia o `text-base` do `Input` com
+`text-sm` (zoom do iPhone ao tocar); os botões da barra de voltar tinham 36px; o
+esqueleto de carregamento desenhava duas colunas em 390px. Efeito colateral
+declarado: a faixa da cobrança passou a ficar fixa no topo, empilhada com as
+outras.
+
+**Achados da revisão, consertados:** o `TopBar` e a `Sidebar` grudavam em
+`top-0` e passavam por baixo das faixas ao rolar (agora grudam em
+`--faixas-de-cima`, e a `Sidebar` desconta a faixa da altura); o campo de
+mensagem tinha 14px (zoom do iPhone no foco) e o zoom zerava a régua do
+teclado; a busca podia seguir focada na lista escondida; link direto X
+seguido de troca para Y deixava X para o voltar do sistema reabrir.
+
 ## Jornadas exercitadas (instalação final, virgem)
 
 | Jornada | Resultado |
@@ -2038,7 +2106,7 @@ primeira tela é a primeira impressão.
 |---|---|---|
 | Em 390×844, o sidebar de desktop sai da árvore acessível e a navegação vira gaveta | `[P1]` | **PASS**, medido por ferramenta em `tests/e2e/navegacao.spec.ts` (bloco `mobile`): `documentElement.scrollWidth <= clientWidth + 1` depois do login, com a gaveta aberta, e depois de navegar por ela. Evidência em `.superpowers/evidence/nav-mobile-390-drawer-aberta.png` — a captura é apoio, quem afirma é a medida |
 | `/admin` em 390px | — | **NÃO COBERTO.** `components/admin/AdminSidebar.tsx:58` é `w-60` sem prefixo responsivo: o mesmo defeito da #203, instância não consertada. Público é só platform admin, por isso ficou como issue e não como bloqueio |
-| Estouro DENTRO do `<main>` | — | **NÃO COBERTO.** `AppShell.tsx` dá `overflow-auto` ao `<main>`, que é contêiner de rolagem próprio: conteúdo largo rola lá dentro sem aumentar `documentElement.scrollWidth`. A sonda é fiel ao sintoma da #203 e não prova que as telas densas (Kanban, Inbox) são usáveis em 390px |
+| Estouro DENTRO do `<main>` | — | **NÃO COBERTO.** `AppShell.tsx` dá `overflow-auto` ao `<main>`, que é contêiner de rolagem próprio: conteúdo largo rola lá dentro sem aumentar `documentElement.scrollWidth`. A sonda é fiel ao sintoma da #203 e não prova que as telas densas (Kanban, Inbox) são usáveis em 390px. **O Inbox em 390px tem a J49 escrita** (2026-10-21: tela cheia, estouro dentro da camada, alvos, voltar, faixa de canal caído e teclado, medidos por ferramenta) — vira PASS só no primeiro verde do CI; o Kanban continua NÃO COBERTO |
 
 **Armadilha que custou dois testes verdes:** `loginComoAdmin` espera a virada da
 janela TOTP entre logins consecutivos (o servidor recusa código repetido), e

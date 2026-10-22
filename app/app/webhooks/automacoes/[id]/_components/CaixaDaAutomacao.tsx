@@ -115,6 +115,9 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
       const assunto = cfg(config, "assunto").trim();
       return <>{assunto ? `“${assunto}”` : t("Escreva o e-mail")}</>;
     }
+    // #2642 — mesmo defeito do e-mail: sem caso, o cartão dizia « notify_team » cru.
+    case "notify_team":
+      return <>{t("WhatsApp da equipe")}</>;
     case "add_tag": {
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
       return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;

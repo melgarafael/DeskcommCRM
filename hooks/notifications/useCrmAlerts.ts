@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
+import { avisosDoNegocio, estadoDoAntigo, estadoDoNovo, type AvisoDeNegocio, type EstadoVisto } from "./aviso-de-negocio";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { entregarAviso } from "@/lib/notifications/deliver";
 import { mencaoAtingeUsuario, textoLegivelDeMencao } from "@/lib/notifications/mentions";
@@ -28,52 +29,57 @@ function sides(payload: unknown): {
   };
 }
 
+/** Título do sino por aviso — o `kind` é o mesmo nome, e é o que a entrega usa. */
+const TITULO_DO_AVISO: Record<AvisoDeNegocio, string> = {
+  lead_assigned: "Lead atribuído a você",
+  lead_won: "Lead ganho",
+  lead_lost: "Lead perdido",
+};
+
 export function useCrmAlerts(): void {
   const orgId = useActiveOrg()?.orgId ?? null;
   const user = useUser();
+  /**
+   * ⚠️ O HISTÓRICO VEM DAQUI, NÃO DO `old` DO REALTIME (issue #3040).
+   *
+   * Sem `REPLICA IDENTITY FULL` o UPDATE chega com `old = { id }` e só isso:
+   * comparar com ele dizia que TODO evento mudou o responsável, e cada resposta
+   * do vendedor (o `#2958` carimba `last_activity_at`) virava um "Lead atribuído
+   * a você". O último estado visto por negócio mora no cliente — a decisão
+   * inteira está em `./aviso-de-negocio.ts`, com o porquê.
+   */
+  const memorias = useRef(new Map<string, EstadoVisto>());
 
   const onLead = useCallback(
     (payload: unknown) => {
       const { novo, antigo } = sides(payload);
       if (!novo) return;
+      const leadId = str(novo.id);
+      if (!leadId) return;
+
+      // O que já sabíamos deste negócio: a memória do próprio cliente; na falta
+      // dela, o `old` — e só quando ele de fato carrega os campos (instalação
+      // com REPLICA IDENTITY FULL). Sem nenhum dos dois o histórico é
+      // desconhecido, e aí não se notifica nada.
+      const anterior = memorias.current.get(leadId) ?? estadoDoAntigo(antigo);
+      const estado = estadoDoNovo(novo);
+      memorias.current.set(leadId, estado);
+
+      const avisos = avisosDoNegocio(anterior, estado, user.id);
+      if (avisos.length === 0) return;
+
       const title = str(novo.title) || "Lead";
       const pipelineId = str(novo.pipeline_id);
       const href = pipelineId ? `/app/pipelines/${pipelineId}` : "/app/kanban";
-      const owner = str(novo.owner_user_id);
-      const ownerAntes = str(antigo?.owner_user_id);
-      const status = str(novo.status);
-      const statusAntes = str(antigo?.status);
 
-      if (owner && owner === user.id && owner !== ownerAntes) {
+      for (const aviso of avisos) {
         entregarAviso({
-          category: "lead_assigned",
-          kind: "lead_assigned",
-          title: "Lead atribuído a você",
+          category: aviso,
+          kind: aviso,
+          title: TITULO_DO_AVISO[aviso],
           body: title,
           corpoSemPrevia: title,
-          tag: str(novo.id) ?? undefined,
-          href,
-        });
-      }
-      if (owner === user.id && status === "won" && statusAntes !== "won") {
-        entregarAviso({
-          category: "lead_won",
-          kind: "lead_won",
-          title: "Lead ganho",
-          body: title,
-          corpoSemPrevia: title,
-          tag: str(novo.id) ?? undefined,
-          href,
-        });
-      }
-      if (owner === user.id && status === "lost" && statusAntes !== "lost") {
-        entregarAviso({
-          category: "lead_lost",
-          kind: "lead_lost",
-          title: "Lead perdido",
-          body: title,
-          corpoSemPrevia: title,
-          tag: str(novo.id) ?? undefined,
+          tag: leadId,
           href,
         });
       }

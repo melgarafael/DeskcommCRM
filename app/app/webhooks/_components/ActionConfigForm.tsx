@@ -48,12 +48,14 @@ export type ActionItem =
     }
   // #2726 — o e-mail de saída: mesmo campo que a irmã de WhatsApp (`assunto`/
   // `corpo` no lugar do `template`), e `email_fixo` só preenche quando o
-  // destinatário é o endereço gravado na regra.
+  // destinatário é o endereço gravado na regra. `membro_id` só preenche no
+  // destinatário "membro da equipe" (#2642, recorte do PR #2834).
   | {
       type: "send_email";
       config: {
-        destinatario: "contato" | "dono_do_lead" | "fixo";
+        destinatario: "contato" | "dono_do_lead" | "membro_da_equipe" | "fixo";
         email_fixo: string;
+        membro_id: string;
         assunto: string;
         corpo: string;
         formato: string;
@@ -86,7 +88,12 @@ export type ActionItem =
   // #1752 — a SEQUÊNCIA: o plano mora em `organizations.settings.task_plans`,
   // e o editor só escolhe QUAL deles aplicar. `plano_id` é o id do JSON (não
   // uuid) — mesmos campos do schema da API e da ação `apply_task_plan`.
-  | { type: "apply_task_plan"; config: { plano_id: string } };
+  | { type: "apply_task_plan"; config: { plano_id: string } }
+  // #2642 — o destino é o WhatsApp que o ADMIN já registrou em Avisos. Por
+  // isso não existe campo de número, de endereço, de pessoa nem de canal: a
+  // configuração guarda só o canal, e é o executor que lê o destino
+  // cadastrado. Mesmos campos do schema da API.
+  | { type: "notify_team"; config: { canal: "whatsapp" } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -99,7 +106,14 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "send_email":
       return {
         type,
-        config: { destinatario: "contato", email_fixo: "", assunto: "", corpo: "", formato: "texto" },
+        config: {
+          destinatario: "contato",
+          email_fixo: "",
+          membro_id: "",
+          assunto: "",
+          corpo: "",
+          formato: "texto",
+        },
       };
     case "send_ai_message":
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
@@ -121,6 +135,11 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
       };
     case "apply_task_plan":
       return { type, config: { plano_id: "" } };
+    // #2642 — o destino é o WhatsApp que o ADMIN cadastrou em Avisos, e só
+    // ele: depois do recorte do PR #2834 não há pessoa nem canal a escolher, e
+    // por isso o `config` guarda apenas o canal (o schema exige o literal).
+    case "notify_team":
+      return { type, config: { canal: "whatsapp" } };
   }
 }
 
@@ -304,6 +323,13 @@ function SendWhatsappForm({
  * + os campos do funil), porque quem montou a regra já escreveu aquela
  * mensagem e não deve recomeçar: `{{destino}}` resolve igual nos dois canais.
  *
+ * #2642 (recorte do PR #2834) acrescentou duas coisas, e é aqui que elas
+ * aparecem: o destinatário "membro da equipe" (o e-mail que antes morava no
+ * `notify_team`) e o botão `{{resumo}}`, que insere o resumo automático do
+ * negócio. O endereço da pessoa NÃO se digita: vem do acesso dela, e o vínculo
+ * com a empresa é conferido no momento do envio — por isso o aviso embaixo do
+ * campo.
+ *
  * O que NÃO está aqui de propósito: transporte, credencial e remetente. O
  * envio sai pelo que já foi configurado em Admin › E-mail (SMTP ou Resend) —
  * e o aviso embaixo do corpo diz isso, porque sem ele a pessoa procura uma
@@ -313,14 +339,16 @@ function SendEmailForm({
   config,
   onChange,
 }: FormProps<{
-  destinatario: "contato" | "dono_do_lead" | "fixo";
+  destinatario: "contato" | "dono_do_lead" | "membro_da_equipe" | "fixo";
   email_fixo: string;
+  membro_id: string;
   assunto: string;
   corpo: string;
   formato: string;
 }>) {
   const t = useT();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const { data: membros } = useAssignableMembers(true);
   const pipeline = useDefaultPipeline(true);
   const camposDoFormulario = camposDoFunil(pipeline.data?.pipeline.settings ?? null)
     .filter((f) => !TEMPLATE_VARS.some((v) => v.token === `{{${f.key}}}`))
@@ -347,7 +375,10 @@ function SendEmailForm({
           <Select
             value={config.destinatario}
             onValueChange={(v) =>
-              onChange({ ...config, destinatario: v as "contato" | "dono_do_lead" | "fixo" })
+              onChange({
+                ...config,
+                destinatario: v as "contato" | "dono_do_lead" | "membro_da_equipe" | "fixo",
+              })
             }
           >
             <SelectTrigger>
@@ -356,6 +387,7 @@ function SendEmailForm({
             <SelectContent>
               <SelectItem value="contato">{t("E-mail do contato")}</SelectItem>
               <SelectItem value="dono_do_lead">{t("E-mail do responsável do negócio")}</SelectItem>
+              <SelectItem value="membro_da_equipe">{t("E-mail de uma pessoa da equipe")}</SelectItem>
               <SelectItem value="fixo">{t("Endereço fixo")}</SelectItem>
             </SelectContent>
           </Select>
@@ -382,10 +414,43 @@ function SendEmailForm({
           </p>
         </div>
       ) : null}
+      {config.destinatario === "membro_da_equipe" ? (
+        <div className="space-y-1">
+          <Label>{t("Pessoa da equipe")}</Label>
+          <Select
+            value={config.membro_id}
+            onValueChange={(v) => onChange({ ...config, membro_id: v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t("Escolha quem recebe")} />
+            </SelectTrigger>
+            <SelectContent>
+              {(membros ?? []).map((m) => (
+                <SelectItem key={m.user_id} value={m.user_id}>
+                  {m.full_name ?? m.user_id.slice(0, 8)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "A pessoa recebe no e-mail cadastrado no acesso dela, e o vínculo com a empresa é conferido no momento do envio.",
+            )}
+          </p>
+        </div>
+      ) : null}
       <div className="space-y-1">
         <Label>{t("Corpo do e-mail")}</Label>
         <div className="flex flex-wrap gap-1">
-          {[...TEMPLATE_VARS.map((v) => ({ ...v, label: t(v.label) })), ...camposDoFormulario].map((v) => (
+          {[
+            ...TEMPLATE_VARS.map((v) => ({ ...v, label: t(v.label) })),
+            // #2642 — a variável desta ação: o resumo do negócio montado no
+            // disparo (só dado de forma fixa + atalho para a ficha; doc 176 A).
+            // Fica só no e-mail de propósito: no WhatsApp da equipe o corpo É
+            // o resumo, sem modelo.
+            { token: "{{resumo}}", label: t("Resumo do negócio") },
+            ...camposDoFormulario,
+          ].map((v) => (
             <Button
               key={v.token}
               type="button"
@@ -420,6 +485,11 @@ function SendEmailForm({
       <p className="text-xs text-muted-foreground">
         {t(
           "As variáveis do WhatsApp valem aqui: {{nome}}, {{primeiro_nome}}, {{lead.title}} e os campos do formulário como {{destino}}.",
+        )}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          "A variável Resumo do negócio leva o nome da regra, o cliente, o telefone, o valor, a pontuação e um atalho para o negócio no CRM (quando a instalação tem endereço público), e nada do que foi conversado com o cliente. O resto do corpo vai como você escrever, inclusive as outras variáveis.",
         )}
       </p>
       <p className="text-xs text-muted-foreground">
@@ -1066,6 +1136,34 @@ function ApplyTaskPlanForm({ config, onChange }: FormProps<{ plano_id: string }>
   );
 }
 
+/**
+ * `notify_team` (#2642) — o formulário do aviso que NUNCA vai para o lead.
+ *
+ * Depois do recorte do PR #2834 não há escolha nenhuma aqui: o resumo vai para
+ * o WhatsApp que o ADMIN cadastrou em Avisos, e o corpo é montado no disparo
+ * só com dado de forma fixa e o atalho para a ficha. O formulário NÃO
+ * oferece destino colado, pessoa nem texto — um campo de texto seria um
+ * template, que é exatamente o defeito do aviso de caso que esta ação fecha, e
+ * "quem recebe" virou pergunta sem resposta útil (o destino é o da empresa).
+ *
+ * O e-mail para uma pessoa da equipe mora no `send_email`, no destinatário
+ * "E-mail de uma pessoa da equipe".
+ */
+function NotifyTeamForm() {
+  const t = useT();
+  return (
+    <div className="space-y-1">
+      <Label>{t("WhatsApp da equipe")}</Label>
+      <p className="text-xs text-muted-foreground">
+        {t("Vai para o WhatsApp cadastrado em Avisos.")}{" "}
+        {t(
+          "O resumo leva o nome da regra, o cliente, o telefone, o valor, a pontuação e um atalho para o negócio no CRM (quando a instalação tem endereço público). O que foi conversado com o cliente não vai na mensagem.",
+        )}
+      </p>
+    </div>
+  );
+}
+
 export function ActionConfigForm({
   action,
   onChange,
@@ -1144,5 +1242,7 @@ export function ActionConfigForm({
           onChange={(config) => onChange({ type: action.type, config })}
         />
       );
+    case "notify_team":
+      return <NotifyTeamForm />;
   }
 }

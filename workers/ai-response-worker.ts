@@ -302,6 +302,11 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
         conversation_id: ctx.conversation_id,
         message_id: persisted.outbound_message_id,
         invocation_kind: "bot_respond",
+        // O provedor EFETIVO do binding (issue #3098) — o comentário acima já
+        // dizia que o modelo RESOLVIDO é o que vai para o provedor; o provedor
+        // dele vai junto, senão o palpite por barra carimbaria `openrouter` num
+        // id de modelo de provedor personalizado.
+        provider: resolvido.provider,
         model: resolvido.modelId,
         prompt_tokens: response.prompt_tokens,
         completion_tokens: response.completion_tokens,
@@ -328,6 +333,8 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
       conversation_id: ctx.conversation_id,
       message_id: persisted.outbound_message_id,
       invocation_kind: "bot_respond",
+      // O provedor EFETIVO do binding (issue #3098) — ver o G3 acima.
+      provider: resolvido.provider,
       model: resolvido.modelId,
       prompt_tokens: response.prompt_tokens,
       completion_tokens: response.completion_tokens,
@@ -354,6 +361,9 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
       conversation_id: ctx.conversation_id,
       message_id: ctx.message_id,
       invocation_kind: "bot_respond",
+      // A linha de ERRO também diz de quem era a chamada (issue #3098): o id do
+      // modelo tem barra nos dois casos e o palpite diria `openrouter`.
+      provider: resolvido.provider,
       model: resolvido.modelId,
       prompt_tokens: 0,
       completion_tokens: 0,
