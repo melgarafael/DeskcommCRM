@@ -245,6 +245,17 @@ describe("aplicaGatilhoDeMensagem", () => {
     expect(reg.enrollments).toHaveLength(0);
   });
 
+  it("mensagem velha (backlog) não dispara nada", async () => {
+    const reg: Registro = { enrollments: [], eventos: [] };
+    const s = await aplicaGatilhoDeMensagem(
+      { db: fakeDb({ pointers: [PALAVRA], texto: "promo", registro: reg }), gateDb: gate, clock: () => new Date(AGORA.getTime() + 2 * 3600_000) },
+      evento(),
+      "especificos",
+    );
+    expect(s.skipped_velha).toBe(1);
+    expect(reg.enrollments).toHaveLength(0);
+  });
+
   it("humano no comando ou fluxo vivo seguram tudo", async () => {
     for (const o of [{ humano: true }, { vivo: true }]) {
       const reg: Registro = { enrollments: [], eventos: [] };

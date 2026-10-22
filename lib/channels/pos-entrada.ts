@@ -55,6 +55,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
+import { dispararGatilhosDeMensagem } from "@/lib/followup/gatilho-mensagem-no-request";
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
@@ -180,7 +181,10 @@ export async function aplicarEfeitosPosEntrada(
   // UMA VOZ: a resposta do cliente avança o follow-up DESTE contato antes de o
   // turno do agente ser pedido.
   await acelerarFollowupDoInbound(admin, sinal);
-  await pedirDespachoDoAgente(admin, entrada);
+  // UMA VOZ: a mensagem que dispara um fluxo de Automações (palavra-chave,
+  // link/QR, anúncio) inscreve AQUI, antes do turno — e o agente não é chamado.
+  const fluxoDisparado = await dispararGatilhosDeMensagem(admin, sinal);
+  if (!fluxoDisparado) await pedirDespachoDoAgente(admin, entrada);
   // O dreno do event_log vem DEPOIS do despacho: nenhum handler dele decide se
   // o agente fala (o "cliente voltou" é previsto por `deveCederTurnoAoRetorno`
   // nas duas ordens), e cada evento drenado aqui atrasava o pedido do turno.

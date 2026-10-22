@@ -28,6 +28,12 @@ export const PADRAO_DO_CODIGO = /^[a-z0-9][a-z0-9-]{2,39}$/;
 /** Janela em que a atribuição de anúncio gravada conta como "esta mensagem veio do anúncio". */
 export const JANELA_DO_ANUNCIO_MS = 10 * 60 * 1000;
 
+/**
+ * Mensagem mais velha que isto não dispara gatilho: é backlog (worker parado,
+ * reentrega), e um fluxo de "promo" respondendo horas depois é pior que nada.
+ */
+export const JANELA_DA_MENSAGEM_MS = 30 * 60 * 1000;
+
 /** Ordem de prioridade: o mais específico ganha o único slot vivo do contato. */
 export const PRIORIDADE_DO_GATILHO = {
   ref_link: 0,

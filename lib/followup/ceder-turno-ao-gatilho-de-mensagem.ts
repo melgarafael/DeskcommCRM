@@ -18,7 +18,12 @@ import type pg from "pg";
 import { agenteDoGatilhoAutomatico, noDeGatilhoDoGrafo } from "./agent-followup-gate";
 import { flowGraphSchema } from "./graph-schema";
 import { EVENTO_DO_ENROLLMENT_POR_MENSAGEM, gatilhoDoPointer } from "./gatilho-mensagem";
-import { ordenarCandidatos, type FatosDaMensagem, type GatilhoEspecifico } from "./gatilho-mensagem-regra";
+import {
+  JANELA_DA_MENSAGEM_MS,
+  ordenarCandidatos,
+  type FatosDaMensagem,
+  type GatilhoEspecifico,
+} from "./gatilho-mensagem-regra";
 import { humanoNoComando, type EstadoDaConversaDeRetorno } from "./gatilho-retorno";
 import type { PedidoDeCessao } from "./ceder-turno-ao-retorno";
 
@@ -134,10 +139,13 @@ export async function deveCederTurnoAoGatilhoDeMensagem(
     );
     const msg = mensagens[0];
     if (!msg) return false;
+    const recebida = dataOuNula(msg.created_at) ?? agora;
+    // O produtor ignora mensagem velha (backlog); prever o contrário calaria o agente à toa.
+    if (agora.getTime() - recebida.getTime() > JANELA_DA_MENSAGEM_MS) return false;
     const meta = raw.source_metadata;
     const fatos: FatosDaMensagem = {
       texto: msg.body,
-      recebida_em: dataOuNula(msg.created_at) ?? agora,
+      recebida_em: recebida,
       anuncio:
         meta && typeof meta === "object" && meta.ad_platform
           ? {

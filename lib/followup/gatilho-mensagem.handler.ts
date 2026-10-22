@@ -51,7 +51,7 @@ async function rodar(key: string, fase: FaseDoGatilhoDeMensagem, row: EventRow):
         `ja_vivo=${summary.skipped_existing} origem_obsoleta=${summary.skipped_stale_origin} ` +
         `gate=${summary.pointers_barrados_pelo_gate} humano=${summary.skipped_humano} ` +
         `grupo=${summary.skipped_grupo} bloqueado=${summary.skipped_bloqueado} ` +
-        `agente=${summary.skipped_agente} pausa=${summary.skipped_pausa}`,
+        `agente=${summary.skipped_agente} pausa=${summary.skipped_pausa} velha=${summary.skipped_velha}`,
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

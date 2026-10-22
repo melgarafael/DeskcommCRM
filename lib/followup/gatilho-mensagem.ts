@@ -40,6 +40,7 @@ import {
   limparPalavras,
   ordenarCandidatos,
   respostaPadraoEmPausa,
+  JANELA_DA_MENSAGEM_MS,
   type FatosDaMensagem,
   type GatilhoEspecifico,
 } from "./gatilho-mensagem-regra";
@@ -87,6 +88,8 @@ export interface GatilhoMensagemSummary {
   skipped_bloqueado: number;
   skipped_agente: number;
   skipped_pausa: number;
+  /** Mensagem velha demais (backlog): nenhum gatilho de mensagem responde. */
+  skipped_velha: number;
   contact_id: string | null;
 }
 
@@ -114,6 +117,7 @@ function vazio(): GatilhoMensagemSummary {
     skipped_bloqueado: 0,
     skipped_agente: 0,
     skipped_pausa: 0,
+    skipped_velha: 0,
     contact_id: null,
   };
 }
@@ -185,6 +189,10 @@ export async function aplicaGatilhoDeMensagem(
 
   const mensagem = await deps.db.carregaMensagem(row.organization_id, mensagemId);
   if (!mensagem) return summary;
+  if (agora.getTime() - mensagem.recebida_em.getTime() > JANELA_DA_MENSAGEM_MS) {
+    summary.skipped_velha = daFase.length;
+    return summary;
+  }
 
   let candidatos: PointerDeMensagem[];
   if (fase === "especificos") {
