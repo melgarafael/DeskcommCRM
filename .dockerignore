@@ -30,3 +30,7 @@ scratchpad
 evidence
 .superpowers
 *.tsbuildinfo
+
+# Backups da instalação (dump do banco, .env empacotado, mídia): ficam ao
+# lado do código na VPS e entrariam inteiros na imagem do worker (`COPY . .`).
+backups
