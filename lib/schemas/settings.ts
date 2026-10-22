@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { ehHexValido } from "@/lib/branding/rampa";
+import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
@@ -499,10 +500,21 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  * `fn_marcar_contato_como_cliente`. Ausente, `false`, a string `"true"` ou
  * qualquer lixo é desligado aqui E lá. Se os dois idiomas divergissem, a tela
  * mostraria o selo de uma regra que o trigger não aplica.
+ *
+ * `internal_contact_tags` (#2353): a lista de etiquetas que marcam um contato
+ * INTERNO (equipe, sócio, família, fornecedor). Contato com uma delas não vira
+ * card e não recebe atendimento da IA — ver `lib/contacts/tags-internas.ts`.
+ * Mora no MESMO bolso jsonb porque já existia para a chave acima: nenhuma
+ * coluna nem tabela nova, e o par (liga/desliga + lista) fica no lugar em que a
+ * organização já procura as regras de CRM. Ausente/lixo → lista vazia (nenhum
+ * contato é interno), que é o comportamento de antes desta chave existir.
  */
+export const internalContactTagsSchema = z.array(z.string()).catch([]);
+
 export const crmSettingsSchema = z
   .object({
     cliente_pela_agenda: z.boolean().catch(false),
+    internal_contact_tags: internalContactTagsSchema,
     /**
      * `telefone_de_ficha_vazia` (issue #2593): o telefone que o cliente diz
      * numa conversa entra SOZINHO na ficha SEM número — sem passar pela fila de
@@ -521,7 +533,7 @@ export const crmSettingsSchema = z
      */
     telefone_de_ficha_vazia: z.boolean().catch(false),
   })
-  .catch({ cliente_pela_agenda: false, telefone_de_ficha_vazia: false });
+  .catch({ cliente_pela_agenda: false, internal_contact_tags: [], telefone_de_ficha_vazia: false });
 
 /**
  * `organizations.settings.notificacoes.conteudo_na_tela_bloqueada` — o que o
@@ -561,6 +573,20 @@ export function clientePelaAgendaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).cliente_pela_agenda === true;
+}
+
+/**
+ * As etiquetas de contato INTERNO desta organização, na forma em que o banco as
+ * guarda (`normalizarTag`: minúscula, aparada, sem repetição). Nunca lança — um
+ * jsonb torto devolve lista vazia, que é "nenhum contato é interno", o mesmo
+ * estado de toda organização que nunca configurou a lista.
+ */
+export function tagsInternasDaOrg(settings: unknown): string[] {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return normalizarTags(crmSettingsSchema.parse(crm ?? {}).internal_contact_tags);
 }
 
 /**

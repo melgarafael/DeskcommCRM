@@ -146,14 +146,23 @@ describe("MessageBubble — ações sobre mensagem própria", () => {
     expect(screen.queryByRole("menuitem", { name: "Apagar para todos" })).not.toBeInTheDocument();
   });
 
-  it("mantém o texto apagado dentro da bolha do CRM sem mostrar o texto revogado pelo cliente", () => {
-    const { rerender } = render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
-    expect(screen.getByText("Esta mensagem foi apagada")).toBeInTheDocument();
+  it("apagada pelo ATENDENTE: cinza, diz quem apagou e mantém o texto visível só no CRM", () => {
+    render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo atendente")).toBeInTheDocument();
     expect(screen.getByText("valor combinado")).toBeInTheDocument();
     expect(screen.getByText("Visível só aqui no CRM")).toBeInTheDocument();
-    expect(screen.getByTestId("message-bubble").className).toContain("opacity-70");
-    rerender(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    const classes = screen.getByTestId("message-bubble").className;
+    // Cinza: a apagada sai das cores da direção — `bg-primary` é o envio vivo.
+    expect(classes).toContain("bg-muted/60");
+    expect(classes).not.toContain("bg-primary");
+  });
+
+  it("apagada pelo CONTATO: cinza, diz quem apagou e NÃO mostra o texto", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo contato")).toBeInTheDocument();
     expect(screen.queryByText("texto do cliente")).not.toBeInTheDocument();
+    expect(screen.queryByText("Visível só aqui no CRM")).not.toBeInTheDocument();
+    expect(screen.getByTestId("message-bubble").className).toContain("bg-muted/60");
   });
 
   it("põe o menu dentro da bolha sem ocupar uma coluna ao lado", () => {

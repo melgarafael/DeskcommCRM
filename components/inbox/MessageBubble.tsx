@@ -27,6 +27,7 @@ import { ApiError } from "@/lib/api/types";
 import { FRASES_DE_FALHA, fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
+import { marcadorDaApagada, textoDaApagadaApareceNaInbox } from "@/lib/messaging/apagada";
 import { AnuncioCard } from "@/components/inbox/AnuncioCard";
 import {
   extractCitations,
@@ -168,9 +169,10 @@ export function MessageBubble({
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   // Apagada pelo autor ("apagar para todos"). A linha continua no histórico —
   // sumir com ela deixaria a resposta seguinte respondendo ao nada —, mas o
-  // texto não aparece: mostrá-lo seria expor justamente o que o cliente pediu
-  // para tirar do ar.
+  // texto do CLIENTE não aparece: mostrá-lo seria expor justamente o que ele
+  // pediu para tirar do ar. A régua mora em `lib/messaging/apagada.ts`.
   const apagada = Boolean(message.revoked_at);
+  const textoApagadoVisivel = apagada && textoDaApagadaApareceNaInbox(message.direction);
   const ocultaNoCrm = Boolean(message.metadata?.crm_hidden_at);
   const editada = Boolean(message.edited_at) && !apagada;
   const enviadaPeloAtendente = isOutbound && ["user", "crm"].includes(message.sent_via)
@@ -310,10 +312,14 @@ export function MessageBubble({
                   : "rounded-bl-sm bg-muted text-foreground",
               ),
           isFailed && "border border-destructive",
+          // Apagada sai das cores da DIREÇÃO e vai para o CINZA: a diferença
+          // entre o que foi apagado e o que está vivo tem de ser vista de
+          // relance, e o fundo é justamente o que diz de quem é a mensagem —
+          // trocá-lo é o ponto.
+          apagada && "bg-muted/60 text-muted-foreground ring-1 ring-border",
           // A marca da busca é ANEL, não cor de fundo: o fundo já diz de quem é
           // a mensagem, e trocá-lo apagaria essa leitura justo na bolha achada.
           searchMatch && "ring-2 ring-foreground ring-offset-2 ring-offset-background",
-          apagada && "opacity-70",
           // Espaço para a marca de reação, que fica metade para fora do balão.
           Boolean(reacoes?.length) && "mb-3",
         )}
@@ -452,10 +458,11 @@ export function MessageBubble({
           </div>
         ) : apagada ? (
           <div className="space-y-1">
-            <p className="italic leading-snug opacity-70">{t("Esta mensagem foi apagada")}</p>
+            <p className="italic leading-snug opacity-80">{t(marcadorDaApagada(message.direction))}</p>
             {/* O WhatsApp revoga o envio; o CRM conserva o corpo para auditoria
-                interna. Não revelamos texto de uma mensagem apagada pelo cliente. */}
-            {isOutbound && message.body && (
+                interna. Não revelamos texto de uma mensagem apagada pelo cliente
+                (`textoDaApagadaApareceNaInbox`). */}
+            {textoApagadoVisivel && message.body && (
               <div className="border-t border-current/20 pt-1">
                 <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
                 <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
@@ -499,7 +506,10 @@ export function MessageBubble({
         <div
           className={cn(
             "mt-1 flex items-center justify-end gap-1 text-[10px]",
-            isOutbound ? "text-primary-foreground" : "text-muted-foreground",
+            // O carimbo acompanha o FUNDO: numa bolha apagada (cinza) o
+            // `primary-foreground` do envio sumiria — hora e check invisíveis
+            // numa bolha que existe justamente para deixar registro.
+            apagada || !isOutbound ? "text-muted-foreground" : "text-primary-foreground",
           )}
         >
           {editada && (

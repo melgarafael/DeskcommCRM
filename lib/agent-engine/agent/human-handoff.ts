@@ -48,6 +48,7 @@ import {
 } from '@/lib/escalacao/passagem';
 import { traduzir } from '@/lib/i18n/dicionario';
 import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
+import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
 import { ehOptOutProvavel } from '@/lib/opt-out/deteccao';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 
@@ -318,6 +319,16 @@ export function detectAmbiguousOptOut(message: string): boolean {
  * setado no contato OU alguma conversa dele ainda está silenciada (bot_silenced_until no
  * futuro — 'infinity' sempre vale). Lido no INÍCIO do turno, antes de qualquer chamada
  * de modelo. Só o humano (via CRM) libera.
+ *
+ * #2353: a MESMA guarda barra o CONTATO INTERNO (equipe, sócio, família, fornecedor) —
+ * quem tem uma etiqueta da lista da organização
+ * (`organizations.settings.crm.internal_contact_tags`) não recebe atendimento
+ * automático, igual a uma conversa em "Assumir". A régua é a única
+ * (`lib/contacts/tags-internas.ts`); aqui ela entra pela forma SQL de lá, porque este
+ * predicado é SQL direto e roda no caminho quente do worker — o envio FIXO do follow-up
+ * e o modelo aprovado do worker passam por ele ANTES de qualquer gate de elegibilidade,
+ * e era por ali que o texto fixo continuava saindo para quem ganhou a etiqueta depois de
+ * o card nascer.
  */
 export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: string): Promise<boolean> {
   const { rows } = await db.query<{ handoff: boolean }>(
@@ -327,6 +338,7 @@ export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: str
        -- leitura, mesmo efeito — o turno nem começa. force_human é a trava de
        -- handoff, que a devolução limpa; esta é a que ela não alcança.
        or c.ai_opt_out
+       or ${sqlContatoInterno('c')}
        or exists (
          select 1 from conversations v
          where v.organization_id = $1 and v.contact_id = c.id

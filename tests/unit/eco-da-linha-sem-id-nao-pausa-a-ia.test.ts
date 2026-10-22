@@ -246,7 +246,11 @@ function banco(linhas: Linha[]) {
           const enc: Record<string, unknown> = { error: null };
           enc.eq = () => enc;
           enc.in = () => enc;
-          enc.then = (ok: (v: unknown) => unknown) => Promise.resolve(ok({ error: null }));
+          // A pausa termina o UPDATE com `select("id")` e confere as linhas
+          // afetadas (#534): o dublê devolve a linha, como o supabase-js.
+          enc.select = () => enc;
+          enc.then = (ok: (v: unknown) => unknown) =>
+            Promise.resolve(ok({ data: [{ id: "conversa-1" }], error: null }));
           return enc;
         },
       };

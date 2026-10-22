@@ -55,6 +55,7 @@ import { logger } from "@/lib/logger";
 import { ORIGEM_DO_WHATSAPP } from "@/lib/channels/origem-do-negocio";
 
 import { lerClientePelaAgenda } from "@/lib/contacts/cliente-pela-agenda";
+import { ehContatoInterno, lerTagsInternas } from "@/lib/contacts/tags-internas";
 import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
 
 import { emitLeadActivity } from "./activity-emitter";
@@ -105,6 +106,7 @@ export type MotivoSemLead =
   | "ja_existe" // o contato já tem lead aberto: um por demanda, não um por mensagem
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
   | "contato_pessoal" // marcado como pessoal (spec 21): não é oportunidade, nunca nasce
+  | "contato_interno" // #2353: equipe/sócio/família/fornecedor — tag interna, não é negócio
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
   | "erro"; // qualquer falha de escrita
@@ -273,7 +275,7 @@ export async function garantirLeadDaConversa(
     // `first_service_at` viaja no select que JÁ existe: decidir o funil não custa
     // uma consulta a mais no caminho quente da ingestão. É por isso que o fato
     // mora numa coluna de `contacts`, e não é derivado da agenda a cada inbound.
-    .select("is_blocked,is_personal,display_name,name,phone_number,source,source_metadata,first_service_at")
+    .select("is_blocked,is_personal,display_name,name,phone_number,source,source_metadata,first_service_at,tags")
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
@@ -281,6 +283,20 @@ export async function garantirLeadDaConversa(
   if (contato?.is_blocked === true) return { criado: false, motivo: "contato_bloqueado" };
   if ((contato as { is_personal?: boolean } | null)?.is_personal === true)
     return { criado: false, motivo: "contato_pessoal" };
+
+  // 1b · #2353 · contato INTERNO (equipe, sócio, família, fornecedor) não vira
+  // card. A tag pode ter sido posta ANTES da primeira mensagem (cadastro ou
+  // importação), que é o caso que a issue resolve. A leitura da lista da
+  // organização só acontece quando o contato TEM etiqueta: o caminho comum
+  // (contato sem tag) não paga consulta a mais no quente. Falha de leitura cai
+  // em lista vazia — o card nasce, e o motivo do erro fica no log (fail-open,
+  // como o resto do arquivo).
+  const tagsDoContato = (contato as { tags?: string[] } | null)?.tags ?? [];
+  if (tagsDoContato.length > 0) {
+    const tagsInternas = await lerTagsInternas(db, organizationId);
+    if (ehContatoInterno(tagsDoContato, tagsInternas))
+      return { criado: false, motivo: "contato_interno" };
+  }
 
   // 2 · já existe demanda aberta?
   const { data: existente } = await db

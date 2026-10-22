@@ -142,6 +142,10 @@ export const AUDIT_ACTIONS = [
   "message.received",
   "message.edited",
   "message.revoked",
+  // A revogação chegou pelo CANAL — o autor apagou no aplicativo, e não pela
+  // tela do CRM (cuja ação é `message.revoked`). É a única trilha de quem apaga
+  // sem passar por tela nenhuma (#3277).
+  "message.revoked_in_channel",
   "message.hidden_in_crm",
   "message.restored_in_crm",
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
@@ -857,6 +861,10 @@ export const AUDIT_ACTIONS = [
   // "Cliente pela agenda" ligada ou desligada (migration 0262). Ligar reescreve
   // etiquetas de toda a organização; metadata leva as contagens.
   "crm.cliente_pela_agenda_alterado",
+  // A lista de etiquetas de contato INTERNO (#2353) mudou. Decisão de
+  // configuração da organização que muda o que vira card no funil e o que a IA
+  // responde: "desde quando a equipe parou de virar lead?" só tem resposta aqui.
+  "crm.tags_internas_alteradas",
   // A etiqueta da ORGANIZAÇÃO renomeada, juntada ou excluída na tela de Tags
   // (issue #852, fatia S4). É um código só porque a linha já carrega
   // `metadata.acao` (renomear/juntar/excluir) e o alcance da operação (contatos,
