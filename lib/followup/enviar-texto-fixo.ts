@@ -11,6 +11,7 @@ import { ApiError } from "@/lib/api/types";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
+import { motivoDeEncerramentoPorElegibilidade } from "@/lib/followup/bloqueio-do-envio";
 import { decidirAdiamentoPorJanela } from "@/lib/followup/janela-de-disparo";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { completeTurnForEnrollment, type TurnBridgeAdminClient } from "@/lib/followup/turn-bridge";
@@ -137,6 +138,21 @@ export async function enviarTextoFixoPendente(
           conversation_id: conversationId,
           motivo: elegib.motivo,
         });
+        // Bloqueio do canal: a inscrição encerra COM o motivo no histórico, em
+        // vez de ficar parada em "envio na fila" sem explicação.
+        const encerramento = motivoDeEncerramentoPorElegibilidade(elegib.motivo);
+        if (encerramento) {
+          await completeTurnForEnrollment(
+            ponte,
+            job.organization_id,
+            enrollmentId,
+            nodeId,
+            { kind: "skipped", reason: encerramento },
+            undefined,
+            job.id,
+            jobClaim,
+          );
+        }
         await settle(job.organization_id,job.id,jobClaim.acquired_at,true);
         continue;
       }
