@@ -28,10 +28,10 @@ import { ConversationList } from "./ConversationList";
 import { BarraDeAcoesEmLote } from "./BarraDeAcoesEmLote";
 import {
   InboxFilters,
-  visibleInboxTabs,
   type InboxFiltersValue,
   type InboxTab,
 } from "./InboxFilters";
+import { visibleInboxTabs } from "@/lib/inbox/abas-visiveis";
 import { ChatThread } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";

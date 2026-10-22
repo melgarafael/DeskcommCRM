@@ -47,7 +47,7 @@ function InboxThemePreview() {
   const list = (
     <aside className="flex h-full min-h-0 flex-col border-r border-border bg-surface">
       <div className="border-b border-border p-3">
-        <Button className="w-full" tabIndex={-1}>
+        <Button disabled title={t("Amostra visual: use esta ação na página correspondente.")} className="w-full" tabIndex={-1}>
           {t("Iniciar conversa")}
         </Button>
       </div>
@@ -58,23 +58,23 @@ function InboxThemePreview() {
             <input
               aria-label={t("Buscar conversas")}
               placeholder={t("Buscar conversas")}
-              className="w-full rounded border px-2"
+              className="w-full rounded-md border px-2"
               readOnly
               tabIndex={-1}
             />
           ),
           views: (
-            <Button variant="ghost" className="w-full justify-start">
+            <Button disabled title={t("Amostra visual: use esta ação na página correspondente.")} variant="ghost" className="w-full justify-start">
               {t("Todas as conversas")}
             </Button>
           ),
           quick: (
             <>
-              <Button variant="outline">{t("Não lidos")}</Button>
-              <Button variant="outline">{t("Grupos")}</Button>
+              <Button disabled title={t("Amostra visual: use esta ação na página correspondente.")} variant="outline">{t("Não lidos")}</Button>
+              <Button disabled title={t("Amostra visual: use esta ação na página correspondente.")} variant="outline">{t("Grupos")}</Button>
             </>
           ),
-          advanced: <Button variant="outline">{t("Filtros")}</Button>,
+          advanced: <Button disabled title={t("Amostra visual: use esta ação na página correspondente.")} variant="outline">{t("Filtros")}</Button>,
           selection: null,
         }}
         fallback={
@@ -101,10 +101,10 @@ function InboxThemePreview() {
               <p className="text-xs text-text-muted">{t("Conversa de demonstração")}</p>
             </div>
           ),
-          primary: <Button>{t("Assumir")}</Button>,
+          primary: <Button disabled title={t("Amostra visual: use esta ação na página correspondente.")}>{t("Assumir")}</Button>,
           tools: null,
           actions: (
-            <Button variant="ghost" aria-label={t("Mais ações da conversa")}>
+            <Button disabled title={t("Amostra visual: use esta ação na página correspondente.")} variant="ghost" aria-label={t("Mais ações da conversa")}>
               ⋯
             </Button>
           ),

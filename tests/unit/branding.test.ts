@@ -285,6 +285,11 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   },
 
   // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
+  "lib/ui-themes/inbox-presentation.ts": {
+    categoria: "INFRA",
+    motivo: "namespace estável de localStorage das preferências visuais do inbox, isoladas por organização/usuário; renomear perderia larguras e estado do painel já salvos. Não aparece na interface nem define a marca da instalação.",
+    marcas: ["deskcomm"],
+  },
   "app/layout.tsx": {
     categoria: "INFRA",
     motivo:

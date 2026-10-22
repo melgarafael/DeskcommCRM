@@ -1,4 +1,5 @@
 "use client";
+import { randomId } from "@/lib/random-id";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -118,7 +119,7 @@ export function ThemeEditor({
     if (!entry || pending || loadError || !canWrite) return;
     setPending(true);
     setError(null);
-    request.current ??= crypto.randomUUID();
+    request.current ??= randomId();
     try {
       const result = await applyAction({
         themeId: draftId,

@@ -22,7 +22,7 @@ export function PipelineThemePreview() {
   const toolbar = (
     <header className={cn("flex items-center justify-between gap-3", regionClass("toolbar"))}>
       <h3 className="font-semibold">{t("Funil de exemplo")}</h3>
-      <Button disabled>{t("Novo negócio")}</Button>
+      <Button title={t("Amostra visual: use esta ação na página correspondente.")} disabled>{t("Novo negócio")}</Button>
     </header>
   );
   const board = (
@@ -126,8 +126,8 @@ export function CalendarThemePreview() {
     <header className="flex flex-col gap-3">
       <h3 className="font-semibold">{t("Agenda de exemplo")}</h3>
       <div className={cn("flex flex-wrap gap-2", regionClass("services"))}>
-        {config.allServices === true && <Button disabled>{t("Todos")}</Button>}
-        <Button disabled variant="outline">
+        {config.allServices === true && <Button title={t("Amostra visual: use esta ação na página correspondente.")} disabled>{t("Todos")}</Button>}
+        <Button title={t("Amostra visual: use esta ação na página correspondente.")} disabled variant="outline">
           {t("Serviço de exemplo")}
         </Button>
       </div>
