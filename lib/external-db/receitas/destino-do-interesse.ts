@@ -93,8 +93,9 @@ export function orientacaoDeInteresse(
       `Ao mostrar os itens ao cliente, escreva junto de cada um o código dele no formato "cód. <id>" ` +
       `(o campo id da linha): é por esse código que você acha o item quando o cliente escolher, sem ` +
       `consultar de novo. Quando o cliente disser que tem interesse em UM item, abra o negócio com ` +
-      `crm_create_lead usando pipeline_id e stage_id de "destino", o contact_id desta conversa, um title ` +
-      `com o nome do item e referencia_externa no formato indicado (troque <id do item> pelo código). ` +
+      `crm_create_lead passando o contact_id desta conversa, um title com o nome do item e ` +
+      `referencia_externa no formato indicado (troque <id do item> pelo código). NÃO informe pipeline_id ` +
+      `nem stage_id: o sistema usa o funil e a etapa de "destino", que o dono configurou. ` +
       `Só diga ao cliente que registrou o interesse depois que crm_create_lead responder com sucesso. ` +
       `Não abra negócio por item que o cliente apenas viu.`,
   };
