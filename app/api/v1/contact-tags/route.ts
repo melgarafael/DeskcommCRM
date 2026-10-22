@@ -73,15 +73,28 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // chip tem de dizer exatamente o que o clique grava. Devolvendo a tag crua,
   // "VIP", "vip " e "vip" viravam TRÊS chips que gravam a mesma coisa, e dois
   // deles nunca sumiam da tela.
-  const tags = [
-    ...new Set(
-      (data ?? [])
-        .flatMap((c: { tags: string[] | null }) => c.tags ?? [])
-        .map(normalizarTag)
-        .filter(Boolean),
-    ),
-  ]
-    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+  //
+  // ─── E A ORDEM PASSA A SER A DE USO (#3180) ───────────────────────────────
+  //
+  // O editor de etiquetas usa este caminho para SUGERIR, e com o campo vazio
+  // ele oferece as primeiras da lista. Em ordem alfabética era sempre o mesmo
+  // bloco do começo do alfabeto — com 73 etiquetas, as mesmas oito. As mais
+  // usadas são o que serve de sugestão para quem ainda não digitou nada.
+  //
+  // A contagem sai da MESMA leitura que a rota já fazia (o PostgREST não agrega
+  // `unnest`), e o desempate é alfabético para duas respostas iguais à mesma
+  // pergunta não saírem em ordens diferentes.
+  const contagem = new Map<string, number>();
+  for (const contato of data ?? []) {
+    for (const crua of contato.tags ?? []) {
+      const tag = normalizarTag(crua);
+      if (tag === "") continue;
+      contagem.set(tag, (contagem.get(tag) ?? 0) + 1);
+    }
+  }
+  const tags = [...contagem]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"))
+    .map(([tag]) => tag)
     .slice(0, TETO_DE_TAGS);
   return ok(tags, { requestId });
 }

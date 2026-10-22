@@ -616,6 +616,29 @@ gravar_modelos_do_gotrue() {  # gravar_modelos_do_gotrue <.env do Supabase> <htt
     [ -n "$valor" ] || valor="${base}${caminho}"
     set_env_var "$env_sb" "$chave" "$valor"
   done
+  # O ASSUNTO dos dois e-mails. O GoTrue não o tira do molde: lê de uma
+  # configuração própria (`GOTRUE_MAILER_SUBJECTS_*`), e sem ela manda o padrão
+  # dele, em inglês — « Confirm Your Signup », « Reset Your Password » — por cima
+  # do corpo em português. Na nuvem quem grava é o marca-emails.sh
+  # (`mailer_subjects_*`); no single-server, ninguém gravava.
+  #
+  # SEM a marca, de propósito: o `APP_NAME` do .env do app ainda não existe
+  # quando o instalador passa por aqui, e é só a semente — a marca de um
+  # revendedor mora no banco (`platform_branding`). Um assunto com o nome do
+  # produto vazaria nos e-mails dele. O texto é o título do molde
+  # (`lib/email/templates/acesso-gotrue.ts`). Valor já presente manda, como no
+  # molde: o assunto que o operador escreveu fica.
+  for chave in GOTRUE_MAILER_SUBJECTS_CONFIRMATION GOTRUE_MAILER_SUBJECTS_RECOVERY; do
+    [ -z "$(valor_do_env "$env_sb" "$chave")" ] || continue
+    valor="${!chave:-}"
+    if [ -z "$valor" ]; then
+      case "$chave" in
+        *CONFIRMATION) valor="Confirme seu e-mail" ;;
+        *) valor="Redefinir sua senha" ;;
+      esac
+    fi
+    set_env_var "$env_sb" "$chave" "$valor"
+  done
   return 0
 }
 
