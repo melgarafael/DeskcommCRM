@@ -20,7 +20,7 @@ export const REFERENCIAS_DE_AVISO = {
   conversation: { tabela: "conversations", papel: "agent", rotulo: "Abrir conversa", href: (id: string) => `/app/inbox/${id}` },
   contact: { tabela: "contacts", papel: "agent", rotulo: "Ver contato", href: (id: string) => `/app/contacts/${id}` },
   lead: { tabela: "crm_leads", papel: "agent", rotulo: "Abrir negócio", href: (id: string, pipelineId?: string) => `/app/pipelines/${pipelineId}?lead=${id}` },
-  followup_enrollment: { tabela: "followup_enrollments", papel: "viewer", rotulo: "Abrir acompanhamento", href: (id: string) => `/app/ai/followups/enrollments/${id}` },
+  followup_enrollment: { tabela: "followup_enrollments", papel: "viewer", rotulo: "Abrir acompanhamento", href: (id: string) => `/app/automacoes/fluxos/enrollments/${id}` },
   channel_session: { tabela: "channel_sessions", papel: "admin", rotulo: "Revisar conexão", href: () => "/app/connections", ativo: true },
   ai_knowledge_source: { tabela: "ai_knowledge_sources", papel: "manager", rotulo: "Abrir base de conhecimento", href: () => "/app/ai/knowledge/sources" },
   agent_case: { tabela: "agent_cases", papel: "agent", rotulo: "Abrir atendimento", href: (id: string) => `/app/ai/cases?caso=${id}` },
@@ -28,7 +28,7 @@ export const REFERENCIAS_DE_AVISO = {
   // O PONTEIRO do fluxo, não a inscrição: o aviso de `followup_sem_agente` é
   // sobre um fluxo que não tem inscrição nenhuma — é exatamente essa a queixa.
   // `manager` é a mesma régua da aba Fluxos (`canWrite` em FlowsList).
-  followup_flow: { tabela: "followup_flow_pointers", papel: "manager", rotulo: "Abrir o fluxo", href: (id: string) => `/app/ai/followups/${id}` },
+  followup_flow: { tabela: "followup_flow_pointers", papel: "manager", rotulo: "Abrir o fluxo", href: (id: string) => `/app/automacoes/fluxos/${id}` },
   // A credencial do provedor que ficou sem saldo (`lib/agent-engine/queue/espera-de-saldo.ts`).
   // O remédio é recarregar na conta do provedor, fora do CRM; a tela de
   // credenciais é onde se confere QUAL chave é, e onde se troca por outra.

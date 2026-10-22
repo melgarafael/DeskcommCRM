@@ -39,7 +39,7 @@ import { describe, expect, it } from "vitest";
 
 const RAIZ = process.cwd();
 const PUBLISH = path.join(RAIZ, "app/api/v1/ai/followup-flows/[id]/publish/route.ts");
-const SELETOR = path.join(RAIZ, "app/app/ai/followups/[id]/_components/TriggerConfigControl.tsx");
+const SELETOR = path.join(RAIZ, "app/app/automacoes/fluxos/[id]/_components/TriggerConfigControl.tsx");
 
 function kindsComMotor(): string[] {
   const fonte = readFileSync(PUBLISH, "utf8");

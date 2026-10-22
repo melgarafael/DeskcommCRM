@@ -50,7 +50,7 @@
       "lane": "humano",
       "col": 2,
       "type": "frontend",
-      "label": "/app/ai/followups/enrollments/[id]",
+      "label": "/app/automacoes/fluxos/enrollments/[id]",
       "sublabel": "rota própria: link compartilhável, sobrevive ao F5"
     },
     {

@@ -35,7 +35,7 @@
       "lane": "humano",
       "col": 2,
       "type": "frontend",
-      "label": "/app/webhooks/automacoes/[id]",
+      "label": "/app/automacoes/regras/[id]",
       "sublabel": "canvas do construtor de follow-up · manager+ · id ou nova"
     },
     {
@@ -88,7 +88,7 @@
     { "id": "a6", "from": "rota", "to": "regras", "label": "INSERT/UPDATE com organization_id da sessão" },
     { "id": "a7", "from": "regras", "to": "motor", "label": "o motor roda a regra salva e ligada, como sempre" },
     { "id": "a8", "from": "regras", "to": "designer", "label": "a lista de automações reabre a regra no designer — e no editor em lista" },
-    { "id": "a9", "from": "designer", "to": "aba", "label": "voltar abre a aba Automações (/app/webhooks?aba=automacoes)" }
+    { "id": "a9", "from": "designer", "to": "aba", "label": "voltar abre a aba Automações (/app/automacoes/regras)" }
   ],
   "cards": [
     {

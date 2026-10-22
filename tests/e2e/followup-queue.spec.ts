@@ -157,7 +157,7 @@ test.describe("followup queue — fila unificada (Task 7.1)", () => {
     const live = await createLiveEnrollment(page, "mgr");
 
     // --- 1. a aba Fila lista o enrollment real ---
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
     await page.getByRole("tab", { name: "Fila" }).click();
 
@@ -272,7 +272,7 @@ test.describe("followup queue — fila unificada (Task 7.1)", () => {
     const cancelBody = (await cancelRes.json()) as { error?: { code?: string } };
     expect(cancelBody.error?.code).toBe("forbidden_role");
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
     await page.getByRole("tab", { name: "Fila" }).click();
     // any member consegue ver a fila (GET queue é viewer+) — só não há coluna de ação.

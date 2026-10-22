@@ -17,7 +17,14 @@ import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
  * Doutrina: docs/doctrine/sistema-vivo.md — "por qual porta se chega até mim?"
  */
 
-export type NavGroupId = "atendimento" | "crm" | "ia" | "canais" | "analise" | "organizacao";
+export type NavGroupId =
+  | "atendimento"
+  | "crm"
+  | "automacoes"
+  | "ia"
+  | "canais"
+  | "analise"
+  | "organizacao";
 
 export interface NavGroup {
   id: NavGroupId;
@@ -89,6 +96,15 @@ export interface NavMetadata {
 export const NAV_GROUPS: NavGroup[] = [
   { id: "atendimento", label: "Atendimento" },
   { id: "crm", label: "CRM", hub: { href: "/app/crm", label: "Ver tudo em CRM" } },
+  // Automações tem casa própria (out/2026): os Fluxos (antigos Follow-ups, o
+  // construtor visual no estilo ManyChat), as Regras QUANDO/SE/ENTÃO (que
+  // moravam escondidas em Webhooks) e o freio da IA (que morava em
+  // Configurações). Antes, automação estava em três grupos diferentes.
+  {
+    id: "automacoes",
+    label: "Automações",
+    hub: { href: "/app/automacoes", label: "Ver tudo em Automações" },
+  },
   { id: "ia", label: "Agente de IA", hub: { href: "/app/ai", label: "Ver tudo em IA" } },
   { id: "canais", label: "Canais" },
   { id: "analise", label: "Análise", hub: { href: "/app/analise", label: "Ver tudo em Análise" } },
@@ -520,20 +536,50 @@ export const NAV_CATALOG = [
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
-    href: "/app/ai/agents",
-    label: "Agentes",
-    description: "Quem atende por você: instruções, modelo, ferramentas e publicação.",
-    icon: "Robot",
-    group: "ia",
-    section: "Montar o agente",
+    // Os antigos "Follow-ups" (out/2026): o construtor visual de fluxos, agora o
+    // centro do módulo Automações, no estilo do ManyChat. A rota antiga
+    // `/app/ai/followups` redireciona para cá (next.config.ts).
+    href: "/app/automacoes/fluxos",
+    label: "Fluxos",
+    description:
+      "Fluxos visuais que conversam, distribuem e movem o cliente sozinhos: gatilho, mensagens, condições e ações ligados por setas.",
+    icon: "FlowArrow",
+    group: "automacoes",
+    section: "Montar automações",
     minRole: "manager",
     sidebar: true,
   },
   {
-    href: "/app/ai/followups",
-    label: "Follow-ups",
-    description: "Como o agente retoma uma conversa que esfriou, para nenhuma morrer no silêncio.",
-    icon: "FlowArrow",
+    // As regras QUANDO/SE/ENTÃO, que viviam numa aba de Webhooks. A rota antiga
+    // `/app/webhooks?aba=automacoes` redireciona para cá.
+    href: "/app/automacoes/regras",
+    label: "Regras",
+    description: "Quando algo acontece, se a condição bate, então o sistema age: etiqueta, tarefa, mensagem, webhook.",
+    icon: "Lightning",
+    group: "automacoes",
+    section: "Montar automações",
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
+    // A porta do freio POR EMPRESA do passo `ai_decide` (issue #2367). O #2228
+    // criou o passo e o deixou opcional POR REGRA; sem esta tela, desligar de
+    // uma vez todos os `ai_decide` de uma organização só existiria como
+    // `UPDATE` à mão no `organizations.settings` — o anti-exemplo de "toda
+    // configuração tem superfície" (docs/doctrine/restricao-de-canal.md).
+    href: "/app/automacoes/configuracoes",
+    label: "Configurações das automações",
+    description: "O freio único do passo em que a IA escolhe entre as opções de uma regra, para a empresa inteira.",
+    icon: "ShieldCheck",
+    group: "automacoes",
+    section: "Ajustes",
+    minRole: "manager",
+  },
+  {
+    href: "/app/ai/agents",
+    label: "Agentes",
+    description: "Quem atende por você: instruções, modelo, ferramentas e publicação.",
+    icon: "Robot",
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
@@ -916,20 +962,6 @@ export const NAV_CATALOG = [
     label: "Distribuição de atendimento",
     description: "Quem recebe cada cliente novo, e o que cada atendente enxerga.",
     icon: "UsersThree",
-    group: "organizacao",
-    section: "Sua empresa",
-    minRole: "manager",
-  },
-  {
-    // A porta do freio POR EMPRESA do passo `ai_decide` (issue #2367). O #2228
-    // criou o passo e o deixou opcional POR REGRA; sem esta tela, desligar de
-    // uma vez todos os `ai_decide` de uma organização só existiria como
-    // `UPDATE` à mão no `organizations.settings` — o anti-exemplo de "toda
-    // configuração tem superfície" (docs/doctrine/restricao-de-canal.md).
-    href: "/app/settings/automacoes",
-    label: "Automações",
-    description: "O freio único do passo em que a IA escolhe entre as opções de uma regra, para a empresa inteira.",
-    icon: "FlowArrow",
     group: "organizacao",
     section: "Sua empresa",
     minRole: "manager",

@@ -1,7 +1,7 @@
 /**
  * Task 6.1 — página + lista de fluxos de follow-up.
  *
- * Critério de aceite (1): logado como MANAGER, navega pra /app/ai/followups →
+ * Critério de aceite (1): logado como MANAGER, navega pra /app/automacoes/fluxos →
  * clica "Novo fluxo" → digita um nome → o fluxo aparece na lista com badge
  * "Rascunho". Task 6.2 estende este spec com o editor visual (grafo).
  *
@@ -103,7 +103,7 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
   test("manager cria um fluxo e ele aparece na lista com badge Rascunho", async ({ page }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
     await page.screenshot({ path: "test-results/followup-6.1-01-list.png", fullPage: true });
 
@@ -133,7 +133,7 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
 
   test("manager duplica e renomeia um fluxo pela lista", async ({ page }) => {
     await login(page, creds.users.manager!.email);
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
 
     const flowName = `E2E Cópia ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
@@ -169,7 +169,7 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
     // corrigida aqui pra refletir o RBAC atual: a página carrega, mas o
     // botão "Novo fluxo" não aparece pro viewer.
     await login(page, creds.users.viewer!.email);
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Novo fluxo" })).toHaveCount(0);
   });
@@ -237,7 +237,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
   test("manager cria um fluxo, clica na linha e o canvas React Flow abre", async ({ page }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const flowName = `E2E Builder ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
@@ -264,7 +264,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
   test("adiciona os 4 nós via paleta e conecta trigger→wait→action→end", async ({ page }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const flowName = `E2E Connect ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
@@ -318,7 +318,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
   }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const flowName = `E2E Organizar ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
@@ -390,7 +390,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
   }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const flowName = `E2E Config ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
@@ -444,7 +444,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
   }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const flowName = `E2E Acceptance ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
@@ -579,7 +579,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
   test("exclui nó pelo painel e pela barra; exclui aresta pelo painel", async ({ page }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const flowName = `E2E Excluir ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
@@ -713,7 +713,7 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
   }) => {
     await login(page, creds.users.manager!.email);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const flowName = `E2E Classify ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
@@ -1038,7 +1038,7 @@ test.describe("followup flow builder — controle de gatilho na PublishBar (Task
     const { data: flow } = (await createRes.json()) as { data: { id: string } };
 
     try {
-      await page.goto(`/app/ai/followups/${flow.id}`);
+      await page.goto(`/app/automacoes/fluxos/${flow.id}`);
       await expect(page.getByTestId("flow-builder-shell")).toBeVisible();
 
       // Draft novo nasce trigger_config={kind:'manual'} — o botão mostra isso sem precisar abrir o popover.

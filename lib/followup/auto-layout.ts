@@ -51,6 +51,9 @@ const TYPE_ORDER: Record<NodeType, number> = {
   // porque são o MEIO do caminho (mover o card, etiquetar) e não o epílogo.
   move_lead: 8.5,
   edit_lead_tag: 8.6,
+  // Automações: a distribuição e o divisor são meio de caminho, como as ações acima.
+  split: 8.7,
+  distribute: 8.8,
   end: 9,
 };
 

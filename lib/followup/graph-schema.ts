@@ -28,6 +28,12 @@ export const NODE_TYPES = [
   // fora desta fatia e é o passo seguinte da issue.
   'move_lead',
   'edit_lead_tag',
+  // Módulo Automações (out/2026), no estilo do ManyChat: `distribute` entrega a
+  // conversa a uma pessoa da equipe (rodízio, menor carga, percentual, aleatório,
+  // dono da carteira) e `split` divide os contatos entre saídas por percentual
+  // (o "Randomizador"). Nenhum dos dois fala com o cliente.
+  'distribute',
+  'split',
   'end',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -63,6 +69,8 @@ export const CONDITION_FALSE_BRANCH_ID = 'false';
 export const REPEAT_BODY_BRANCH_ID = 'body';
 /** Saída do `repeat` quando o contador chegou a zero. */
 export const REPEAT_DONE_BRANCH_ID = 'done';
+/** Saída do `distribute` quando a conversa ficou com alguém (ou já tinha dono). */
+export const DISTRIBUTE_ASSIGNED_BRANCH_ID = 'assigned';
 
 /** Branch ids the contract owns — a user-declared branch may not claim one. */
 export const RESERVED_BRANCH_IDS = [
@@ -72,6 +80,7 @@ export const RESERVED_BRANCH_IDS = [
   CONDITION_FALSE_BRANCH_ID,
   REPEAT_BODY_BRANCH_ID,
   REPEAT_DONE_BRANCH_ID,
+  DISTRIBUTE_ASSIGNED_BRANCH_ID,
 ] as const;
 
 /** Id of a branch the user declared (a check, an AI class) — opaque, stable across renames. */
@@ -325,6 +334,75 @@ export const editLeadTagConfigSchema = z.strictObject({
 });
 
 /**
+ * Nó `distribute` (Automações, out/2026) — entrega a conversa do contato a uma
+ * pessoa da equipe, como o "Atribuir conversa" do ManyChat.
+ *
+ * `destino`:
+ * - `atendente` — sempre a mesma pessoa;
+ * - `equipe` — uma lista escolhida no próprio bloco, repartida pelo `modo`:
+ *   `rodizio` (quem está há mais tempo sem receber), `carga` (quem tem menos
+ *   conversas abertas), `percentual` (pelo `peso` de cada pessoa) ou `aleatorio`;
+ * - `carteira` — o vendedor dono do cliente (`contacts.carteira_user_id`).
+ *
+ * `so_disponiveis` (padrão ligado) usa a MESMA régua do rodízio da empresa
+ * (`lib/routing`): só recebe quem está marcado disponível, dentro do horário e
+ * abaixo da capacidade. Desligado, qualquer membro ativo da lista recebe.
+ * `limite_por_atendente` é um teto extra de conversas abertas por pessoa.
+ *
+ * Duas saídas: "Distribuído" (`assigned`) e "Ninguém disponível" (o fallback).
+ * Conversa que JÁ tem dono nunca é trocada — sai por "Distribuído".
+ *
+ * `usuario_id` aceita vazio porque o rascunho nasce sem escolha; quem exige a
+ * escolha é o `validate-publish` (`destino_ausente`), como no `move_lead`.
+ */
+export const DISTRIBUTE_MODES = ['rodizio', 'carga', 'percentual', 'aleatorio'] as const;
+export type DistributeMode = (typeof DISTRIBUTE_MODES)[number];
+
+export const distributeMemberSchema = z.strictObject({
+  usuario_id: z.string().max(64),
+  /** Só lido no modo `percentual`: a fatia relativa desta pessoa. */
+  peso: z.number().int().min(1).max(100).optional(),
+});
+
+export const distributeConfigSchema = z.strictObject({
+  destino: z.discriminatedUnion('tipo', [
+    z.strictObject({ tipo: z.literal('atendente'), usuario_id: z.string().max(64) }),
+    z.strictObject({
+      tipo: z.literal('equipe'),
+      modo: z.enum(DISTRIBUTE_MODES),
+      membros: z.array(distributeMemberSchema).max(50),
+    }),
+    z.strictObject({ tipo: z.literal('carteira') }),
+  ]),
+  so_disponiveis: z.boolean().default(true),
+  limite_por_atendente: z.number().int().min(1).max(500).optional(),
+});
+export type DistributeConfig = z.infer<typeof distributeConfigSchema>;
+
+/**
+ * Nó `split` (Automações, out/2026) — o "Randomizador" do ManyChat: cada
+ * contato sai por UMA das saídas, na proporção dos pesos. A escolha é
+ * determinística por inscrição (hash do id), então um replay do tick nunca
+ * muda o caminho de quem já passou.
+ */
+export const splitBranchSchema = z.strictObject({
+  id: declaredBranchIdSchema,
+  label: z.string().min(1).max(40),
+  peso: z.number().int().min(1).max(100),
+});
+export type SplitBranch = z.infer<typeof splitBranchSchema>;
+
+export const splitConfigSchema = z
+  .strictObject({
+    saidas: z.array(splitBranchSchema).min(2).max(10),
+  })
+  .refine((c) => new Set(c.saidas.map((b) => b.id)).size === c.saidas.length, {
+    message: 'saidas[].id must be unique within the node',
+    path: ['saidas'],
+  });
+export type SplitConfig = z.infer<typeof splitConfigSchema>;
+
+/**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,
  * so it carries the stable id an edge references and the label the handle shows
  * — identity lives on the rule itself, never in a parallel array that would
@@ -338,6 +416,14 @@ export const conditionCheckSchema = z.strictObject({
     'tag',
     'steps_taken',
     'last_outcome',
+    // Automações (out/2026): os campos que a distribuição precisa decidir —
+    // quando, por onde e de onde o contato chegou.
+    'hora_do_dia',
+    'dia_da_semana',
+    'canal',
+    'origem',
+    'cliente_recorrente',
+    'ddd',
   ]),
   op: z.enum(['eq', 'neq', 'gte', 'lte', 'contains']),
   value: z.union([z.string(), z.number()]),
@@ -591,6 +677,28 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
     }),
     config: editLeadTagConfigSchema,
   }),
+  // Automações: entrega a conversa a alguém da equipe
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('distribute'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: distributeConfigSchema,
+  }),
+  // Automações: divide os contatos entre saídas por percentual
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('split'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: splitConfigSchema,
+  }),
   // End node: terminal state
   z.strictObject({
     id: z.string().min(1),
@@ -813,6 +921,9 @@ const FALLBACK_OTHERS_LABEL = 'Outros casos';
 /** O mesmo escape num nó cujas saídas são REGRAS: "o resto", dito com a palavra das regras. */
 const FALLBACK_NONE_LABEL = 'Nenhuma delas';
 const NO_REPLY_LABEL = 'Sem resposta';
+/** As duas saídas do `distribute`. */
+const DISTRIBUTE_ASSIGNED_LABEL = 'Distribuído';
+const DISTRIBUTE_NOBODY_LABEL = 'Ninguém disponível';
 
 function fallbackBranch(label: string): FlowBranch {
   return {
@@ -939,6 +1050,30 @@ export function nodeBranches(node: BranchableNode): FlowBranch[] {
         },
         fallbackBranch(FALLBACK_OTHERS_LABEL),
       ];
+
+    case 'distribute':
+      return [
+        {
+          id: DISTRIBUTE_ASSIGNED_BRANCH_ID,
+          label: DISTRIBUTE_ASSIGNED_LABEL,
+          check: null,
+          kind: 'match',
+          condition: { type: 'branch', branch_id: DISTRIBUTE_ASSIGNED_BRANCH_ID },
+        },
+        fallbackBranch(DISTRIBUTE_NOBODY_LABEL),
+      ];
+
+    case 'split': {
+      const total = node.config.saidas.reduce((soma, b) => soma + b.peso, 0) || 1;
+      const saidas: FlowBranch[] = node.config.saidas.map((b) => ({
+        id: b.id,
+        label: `${b.label} · ${Math.round((b.peso / total) * 100)}%`,
+        check: null,
+        kind: 'match' as const,
+        condition: { type: 'branch' as const, branch_id: b.id },
+      }));
+      return [...saidas, fallbackBranch(FALLBACK_OTHERS_LABEL)];
+    }
 
     default:
       return [fallbackBranch(FALLBACK_ALWAYS_LABEL)];

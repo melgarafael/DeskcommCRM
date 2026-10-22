@@ -32,7 +32,7 @@ import { RuleEditor } from "./RuleEditor";
 import { useT } from "@/hooks/i18n/useT";
 
 const RULES_QUERY_KEY = ["automation-rules"];
-const DESIGNER_NOVA = "/app/webhooks/automacoes/nova";
+const DESIGNER_NOVA = "/app/automacoes/regras/nova";
 
 function triggerLabel(trigger: string, t: (texto: string) => string): string {
   return t(TRIGGER_LABELS[trigger as TriggerEvent] ?? trigger);
@@ -151,7 +151,7 @@ export function RulesTab() {
               />
               <div className="flex items-center gap-1">
                 <Button asChild variant="ghost" size="icon">
-                  <Link href={`/app/webhooks/automacoes/${r.id}`} aria-label={t("Abrir no designer")}>
+                  <Link href={`/app/automacoes/regras/${r.id}`} aria-label={t("Abrir no designer")}>
                     <FlowArrow />
                   </Link>
                 </Button>

@@ -45,6 +45,7 @@ import { conditionLabel } from "./edge-condition-options";
 import {
   CONDITION_FALSE_BRANCH_ID,
   CONDITION_TRUE_BRANCH_ID,
+  DISTRIBUTE_ASSIGNED_BRANCH_ID,
   FALLBACK_BRANCH_ID,
   NO_REPLY_BRANCH_ID,
   REPEAT_BODY_BRANCH_ID,
@@ -88,7 +89,7 @@ export function opcoes<K extends string>(mapa: Record<K, string>): ReadonlyArray
  * `stage_id` (um UUID, veja `engine.ts` → `loadLeadFacts`), então um campo de
  * texto livre pede ao dono da clínica que digite um identificador interno.
  */
-export type TipoDeValor = "etapa" | "etiqueta" | "numero" | "texto";
+export type TipoDeValor = "etapa" | "etiqueta" | "numero" | "texto" | "opcao" | "canal";
 
 export interface CampoDeCondicao {
   rotulo: string;
@@ -100,6 +101,36 @@ export const CAMPOS_DA_CONDICAO: Record<CampoDaCondicao, CampoDeCondicao> = {
   tag: { rotulo: "Etiqueta do contato", tipoDeValor: "etiqueta" },
   steps_taken: { rotulo: "Passos já dados no fluxo", tipoDeValor: "numero" },
   last_outcome: { rotulo: "Desfecho do passo anterior", tipoDeValor: "texto" },
+  // Automações (out/2026): quando, por onde e de onde o contato chegou.
+  hora_do_dia: { rotulo: "Hora do dia (0 a 23)", tipoDeValor: "numero" },
+  dia_da_semana: { rotulo: "Dia da semana", tipoDeValor: "opcao" },
+  canal: { rotulo: "Número de WhatsApp que recebeu", tipoDeValor: "canal" },
+  origem: { rotulo: "De onde o contato veio", tipoDeValor: "opcao" },
+  cliente_recorrente: { rotulo: "Já é cliente (já comprou)", tipoDeValor: "opcao" },
+  ddd: { rotulo: "DDD do telefone", tipoDeValor: "texto" },
+};
+
+/**
+ * As escolhas dos campos `opcao` — o valor gravado à esquerda, o que a pessoa
+ * lê à direita. O motor compara o valor gravado (texto).
+ */
+export const OPCOES_DO_CAMPO: Partial<Record<CampoDaCondicao, Record<string, string>>> = {
+  dia_da_semana: {
+    "1": "Segunda-feira",
+    "2": "Terça-feira",
+    "3": "Quarta-feira",
+    "4": "Quinta-feira",
+    "5": "Sexta-feira",
+    "6": "Sábado",
+    "0": "Domingo",
+  },
+  origem: {
+    meta_ads: "Anúncio da Meta (Facebook/Instagram)",
+    google_ads: "Anúncio do Google",
+    site: "Site",
+    organico: "Sem anúncio (orgânico)",
+  },
+  cliente_recorrente: { sim: "Sim", nao: "Não" },
 };
 
 // ─── condição: o par (campo, operador) ───────────────────────────────────
@@ -154,6 +185,17 @@ function passos(valor: string | number): string {
   if (semValor(valor)) return `${VALOR_A_PREENCHER} passos`;
   const n = Number(valor);
   return Number.isFinite(n) && Math.abs(n) === 1 ? `${valor} passo` : `${valor} passos`;
+}
+
+/** Os pares (igual/diferente) dos campos novos de escolha — a frase usa o sujeito do campo. */
+function igualOuDiferente(sujeito: string, eh: string, naoEh: string): Record<OperadorDaCondicao, Comparador> {
+  return {
+    eq: { rotulo: eh, frase: (v) => `${sujeito} ${eh} ${aspas(v)}`, oferecido: true },
+    neq: { rotulo: naoEh, frase: (v) => `${sujeito} ${naoEh} ${aspas(v)}`, oferecido: true },
+    contains: { rotulo: "contém", frase: (v) => `${sujeito} contém ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_TEXTO },
+    gte: { rotulo: "é pelo menos", frase: (v) => `${sujeito} é pelo menos ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_NUMERO },
+    lte: { rotulo: "é no máximo", frase: (v) => `${sujeito} é no máximo ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_NUMERO },
+  };
 }
 
 /**
@@ -281,6 +323,18 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
       aviso: AVISO_SO_NUMERO,
     },
   },
+  hora_do_dia: {
+    gte: { rotulo: "é a partir de", frase: (v) => `Agora são ${aspas(v)}h ou mais`, oferecido: true },
+    lte: { rotulo: "é até", frase: (v) => `Agora são ${aspas(v)}h ou menos`, oferecido: true },
+    eq: { rotulo: "é exatamente", frase: (v) => `Agora é a hora ${aspas(v)}`, oferecido: true },
+    neq: { rotulo: "não é", frase: (v) => `Agora não é a hora ${aspas(v)}`, oferecido: false },
+    contains: { rotulo: "contém", frase: (v) => `A hora contém ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_TEXTO },
+  },
+  dia_da_semana: igualOuDiferente("Hoje", "é", "não é"),
+  canal: igualOuDiferente("A conversa chegou pelo número", "é", "não é"),
+  origem: igualOuDiferente("O contato veio de", "é", "não é"),
+  cliente_recorrente: igualOuDiferente("Já é cliente:", "é", "não é"),
+  ddd: igualOuDiferente("O DDD do telefone", "é", "não é"),
 };
 
 /** Como se lê o par (campo, operador). Total: todo par salvo tem descrição, mesmo o que não se oferece mais. */
@@ -305,6 +359,8 @@ export function comparadoresDoCampo(
 export interface NomesDeValor {
   /** «Etapa · Funil» da etapa com este id, ou `null` quando nenhuma etapa tem esse id. */
   etapa?: (id: string) => string | null;
+  /** Nome do número de WhatsApp com este `channel_session_id`. */
+  canal?: (id: string) => string | null;
 }
 
 /** A checagem inteira em uma frase — para resumo do nó, `aria-label` e revisão antes de publicar. */
@@ -318,7 +374,11 @@ export function fraseDaCondicao(
 }
 
 function valorExibido(campo: CampoDaCondicao, valor: string | number, nomes: NomesDeValor): string | number {
-  if (campo !== "lead_stage" || semValor(valor)) return valor;
+  if (semValor(valor)) return valor;
+  const opcoesDoCampo = OPCOES_DO_CAMPO[campo];
+  if (opcoesDoCampo) return opcoesDoCampo[String(valor).trim()] ?? valor;
+  if (campo === "canal") return nomes.canal?.(String(valor).trim()) ?? (temFormaDeId(valor) ? "(número não encontrado)" : valor);
+  if (campo !== "lead_stage") return valor;
   const texto = String(valor).trim();
   const nome = nomes.etapa?.(texto);
   if (nome) return nome;
@@ -390,6 +450,7 @@ export const RAMOS_RESERVADOS_EM_FRASE: Record<RamoReservado, string> = {
   [CONDITION_FALSE_BRANCH_ID]: "quando a condição é falsa",
   [REPEAT_BODY_BRANCH_ID]: "quando ainda falta uma volta",
   [REPEAT_DONE_BRANCH_ID]: "quando as voltas acabaram",
+  [DISTRIBUTE_ASSIGNED_BRANCH_ID]: "quando a conversa ficou com alguém",
 };
 
 /**
@@ -448,6 +509,7 @@ export const RAMOS_RESERVADOS: Record<RamoReservado, string> = {
   [CONDITION_FALSE_BRANCH_ID]: conditionLabel({ type: "cond_result", value: false }),
   [REPEAT_BODY_BRANCH_ID]: "Próxima volta",
   [REPEAT_DONE_BRANCH_ID]: "Acabou",
+  [DISTRIBUTE_ASSIGNED_BRANCH_ID]: "Distribuído",
 };
 
 // ─── classificação pela IA ───────────────────────────────────────────────

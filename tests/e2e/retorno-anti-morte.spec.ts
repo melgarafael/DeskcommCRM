@@ -123,7 +123,7 @@ test("a linha do tempo do negócio mostra o retorno em português de gente", asy
 test("uma pessoa desmarca o retorno pela fila, e o agente descobre", async ({ page }) => {
   await login(page, creds.users.manager!.email);
 
-  await page.goto("/app/ai/followups");
+  await page.goto("/app/automacoes/fluxos");
   await page.getByRole("tab", { name: /fila/i }).click();
 
   const linha = page.locator('[data-testid="queue-row"]', { hasText: creds.retorno.contact_name });

@@ -4,8 +4,9 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  * `engine.ts` owns the tick/DB orchestration; this file only decides "given
  * this node + these facts, what happens next" so it's testable without Postgres.
  */
-import { NO_REPLY_BRANCH_ID, REPEAT_BODY_BRANCH_ID, REPEAT_DONE_BRANCH_ID, nodeBranches } from "./graph-schema";
-import type { FlowEdge, FlowNode, ReplySaveTo } from "./graph-schema";
+import { DISTRIBUTE_ASSIGNED_BRANCH_ID, NO_REPLY_BRANCH_ID, REPEAT_BODY_BRANCH_ID, REPEAT_DONE_BRANCH_ID, nodeBranches } from "./graph-schema";
+import { escolherSaidaDoDivisor } from "./distribuicao";
+import type { ConditionCheck, FlowEdge, FlowNode, ReplySaveTo } from "./graph-schema";
 import { parseReplyCount } from "./parse-count";
 import { clampEspera, esperaPlanejadaDe, type EsperaAdaptativa } from "./timing-plan";
 import { fraseDeConfirmacao } from "./vocabulario";
@@ -95,7 +96,25 @@ export interface LeadFacts {
   last_outcome: string | null;
   contact_name?: string | null;
   custom_fields?: Record<string, unknown>;
+  /**
+   * Automações (out/2026) — os fatos da condição que não moram no lead.
+   * Carregados pelo motor só quando a condição pede (`CAMPOS_DE_CONTEXTO`).
+   * Ausente = desconhecido, e desconhecido não satisfaz regra nenhuma.
+   */
+  hora_do_dia?: number | null;
+  /** 0 = domingo … 6 = sábado, no fuso da organização, como texto ("0".."6"). */
+  dia_da_semana?: string | null;
+  /** `channel_session_id` do número que recebeu a conversa. */
+  canal?: string | null;
+  /** `meta_ads` | `google_ads` | `site` | `organico`. */
+  origem?: string | null;
+  cliente_recorrente?: "sim" | "nao" | null;
+  ddd?: string | null;
 }
+
+/** Os campos de condição que o motor só lê quando a condição pede. */
+export const CAMPOS_DE_CONTEXTO = ["hora_do_dia", "dia_da_semana", "canal", "origem", "cliente_recorrente", "ddd"] as const;
+export type FatosDeContexto = Pick<LeadFacts, (typeof CAMPOS_DE_CONTEXTO)[number]>;
 
 /** Reference to a `followup_enrollment_events` row — only what `resolveWaitPhase` needs. */
 export interface EnrollmentEventRef {
@@ -470,14 +489,20 @@ export function ultimoDesfechoDe(events: EnrollmentEventRef[]): string | null {
 }
 
 function evaluateCheck(
-  check: { field: "lead_stage" | "tag" | "steps_taken" | "last_outcome"; op: "eq" | "neq" | "gte" | "lte" | "contains"; value: string | number },
+  check: { field: ConditionCheck["field"]; op: "eq" | "neq" | "gte" | "lte" | "contains"; value: string | number },
   lead: LeadFacts,
 ): boolean {
   const actual: string | number | null | string[] =
     check.field === "lead_stage" ? lead.lead_stage
     : check.field === "tag" ? lead.tags
     : check.field === "steps_taken" ? lead.steps_taken
-    : lead.last_outcome;
+    : check.field === "last_outcome" ? lead.last_outcome
+    : check.field === "hora_do_dia" ? (lead.hora_do_dia ?? null)
+    : check.field === "dia_da_semana" ? (lead.dia_da_semana ?? null)
+    : check.field === "canal" ? (lead.canal ?? null)
+    : check.field === "origem" ? (lead.origem ?? null)
+    : check.field === "cliente_recorrente" ? (lead.cliente_recorrente ?? null)
+    : (lead.ddd ?? null);
 
   if (Array.isArray(actual)) {
     // 'tag' é multi-valorado: eq/contains viram "está entre as tags"; gte/lte não fazem sentido.
@@ -500,7 +525,15 @@ function evaluateCheck(
   // porta que a ausência de dado abre. Ausência não prova a negativa: um lead
   // sem classificação não é um lead "que não foi hot".
   if (actual === null) return false;
-  const expected = check.field === "steps_taken" ? valorDePassos(check.value) : check.value;
+  // Os campos novos (Automações) comparam texto aparado — o valor vem de um
+  // seletor, e "1" (segunda) não pode virar o número 1 e falhar no `===`.
+  const novo = (CAMPOS_DE_CONTEXTO as readonly string[]).includes(check.field) && check.field !== "hora_do_dia";
+  const expected =
+    check.field === "steps_taken" || check.field === "hora_do_dia"
+      ? valorDePassos(check.value)
+      : novo
+        ? String(check.value).trim()
+        : check.value;
   switch (check.op) {
     case "eq":
       return actual === expected;
@@ -571,6 +604,12 @@ export function processNode(input: {
   repeatTotal?: number | null;
   /** Próximo nó pela aresta `always` — a ação olha o `match_reply` seguinte para pular o envio. */
   proximo?: FlowNode | null;
+  /**
+   * `distribute`: o desfecho da entrega, decidido pelo motor ANTES deste passo
+   * (`db.distribuirAtendimento`). `true` = a conversa ficou com alguém (ou já
+   * tinha dono). Ausente = ninguém recebeu — sai pela saída de escape.
+   */
+  distribuido?: boolean;
 }): NodeResult {
   const {
     node,
@@ -590,6 +629,7 @@ export function processNode(input: {
     repeatTaken,
     repeatTotal,
     proximo,
+    distribuido,
   } = input;
 
   switch (node.type) {
@@ -910,6 +950,38 @@ export function processNode(input: {
       const edge = selectEdge(edges, node.id, { type: "always" });
       if (!edge) return { kind: "fail", error: `edit_lead_tag node "${node.id}" has no outbound edge` };
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    case "distribute": {
+      // Automações: QUEM grava a atribuição é o motor, antes deste passo — a
+      // saída depende do resultado, então ela não pode esperar o `advance`
+      // como o `move_lead`. A gravação é idempotente por natureza (conversa com
+      // dono nunca é trocada), então um replay cai no mesmo ramo.
+      //
+      // Sem `selectEdge` aqui de propósito: ele cai na saída `always` quando o
+      // ramo pedido não tem seta, e a `always` deste nó é "Ninguém disponível".
+      // Quem RECEBEU nunca pode seguir pelo caminho de quem ficou sem ninguém
+      // (ex.: o aviso ao gestor). Sem a seta do próprio ramo, o fluxo termina —
+      // a distribuição é o último passo de muito fluxo.
+      const saidas = edges.filter((e) => e.source === node.id).sort((x, y) => y.priority - x.priority);
+      const edge = distribuido
+        ? saidas.find((e) => e.condition.type === "branch" && e.condition.branch_id === DISTRIBUTE_ASSIGNED_BRANCH_ID)
+        : saidas.find((e) => e.condition.type === "always");
+      if (!edge) {
+        return { kind: "complete", outcome: null, cancel_reason: distribuido ? "distribuido" : "ninguem_disponivel" };
+      }
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock(), class: distribuido ? "distribuido" : "ninguem_disponivel" };
+    }
+
+    case "split": {
+      // Randomizador: a mesma inscrição sai sempre pela mesma saída (hash da
+      // inscrição + nó), então o replay do tick nunca troca o caminho.
+      const saida = escolherSaidaDoDivisor(node.config.saidas, `${enrollment.id}:${node.id}`);
+      const edge =
+        (saida ? selectEdge(edges, node.id, { type: "branch", branch_id: saida }) : null) ??
+        selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `split node "${node.id}" has no edge for branch "${saida ?? "else"}"` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock(), class: saida ?? undefined };
     }
 
     case "end": {

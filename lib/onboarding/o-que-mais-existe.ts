@@ -54,7 +54,7 @@ const CURADORIA: {
     ],
   },
   {
-    href: "/app/ai/followups",
+    href: "/app/automacoes/fluxos",
     comoChamar: "Voltar a falar com quem sumiu",
     porQue: "Para nenhum cliente sumir no silêncio — ele volta a falar sozinho, na hora certa.",
     // A peça mais técnica do produto, e a que mais assusta quem lê o nome. Os

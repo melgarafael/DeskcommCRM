@@ -273,7 +273,7 @@ test.describe("Jev — a resposta ao follow-up, pela tela", () => {
       await expect(cartao.getByTestId("jev-sem-fluxo-followup")).toContainText(NAO_RODA_SEM_FLUXO);
       await expect(
         cartao.getByTestId("jev-sem-fluxo-followup").getByRole("link", { name: "Abrir os follow-ups" }),
-      ).toHaveAttribute("href", "/app/ai/followups");
+      ).toHaveAttribute("href", "/app/automacoes/fluxos");
       // Parada, ela não observa nada: sem a frase de só observar e sem concordância.
       await expect(cartao.getByTestId("jev-so-observa-followup")).toHaveCount(0);
       await expect(cartao.getByTestId("jev-concordancia-followup")).toHaveCount(0);

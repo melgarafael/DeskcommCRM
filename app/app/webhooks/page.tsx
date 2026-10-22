@@ -5,7 +5,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { WebhooksClient, type AbaDosWebhooks } from "./_components/WebhooksClient";
 
-const ABAS: ReadonlyArray<AbaDosWebhooks> = ["receber", "leads", "automacoes", "atividade"];
+const ABAS: ReadonlyArray<AbaDosWebhooks> = ["receber", "leads", "atividade"];
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Webhooks" };
@@ -21,6 +21,8 @@ export default async function WebhooksPage({
   if (!canManage) redirect("/app/inbox");
   const idioma = user.idioma;
   const pedida = (await searchParams).aba;
+  // As regras QUANDO/SE/ENTÃO moram em Automações › Regras; o link antigo segue valendo.
+  if (pedida === "automacoes") redirect("/app/automacoes/regras");
   const abaInicial = ABAS.find((a) => a === pedida);
 
   return (
@@ -29,7 +31,7 @@ export default async function WebhooksPage({
         <h1 className="text-2xl font-semibold tracking-tight">Webhooks</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir(
-            "Receba contatos de fora (landing pages, formulários) e crie automações que agem sozinhas.",
+            "Receba contatos de fora (landing pages, formulários) e acompanhe o que chegou.",
             idioma,
           )}
         </p>

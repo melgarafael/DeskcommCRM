@@ -111,7 +111,7 @@ test.describe("construtor de follow-up — a tela não fala em código (W2-LINGU
     });
     expect(criaModelo.status(), "o seletor de modelo só existe se houver ao menos um").toBe(201);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     const nomeDoFluxo = `E2E Linguagem ${Date.now()}`;
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialogo = page.getByRole("dialog");

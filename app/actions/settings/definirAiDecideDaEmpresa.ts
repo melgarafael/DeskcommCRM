@@ -77,6 +77,6 @@ export async function definirAiDecideDaEmpresa(ligar: boolean): Promise<Resultad
     metadata: { ligado: entrada.data },
   });
 
-  revalidatePath("/app/settings/automacoes");
+  revalidatePath("/app/automacoes/configuracoes");
   return { ok: true };
 }

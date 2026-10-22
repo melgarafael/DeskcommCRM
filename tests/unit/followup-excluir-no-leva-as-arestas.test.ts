@@ -34,7 +34,7 @@ import { describe, expect, it } from "vitest";
  * topo já satisfaria a asserção.
  */
 
-const FONTE = "app/app/ai/followups/[id]/_components/FlowCanvas.tsx";
+const FONTE = "app/app/automacoes/fluxos/[id]/_components/FlowCanvas.tsx";
 const SRC = readFileSync(FONTE, "utf8");
 
 /** Corpo do `const <nome> = useCallback(` até fechar as chaves que abriu. */

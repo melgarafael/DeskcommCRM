@@ -59,7 +59,7 @@ async function login(page: Page, email: string): Promise<void> {
 }
 
 async function novoFluxo(page: Page, nome: string): Promise<string> {
-  await page.goto("/app/ai/followups");
+  await page.goto("/app/automacoes/fluxos");
   await page.getByRole("button", { name: "Novo fluxo" }).click();
   const dialogo = page.getByRole("dialog");
   const campoNome = dialogo.getByLabel("Nome");
@@ -423,7 +423,7 @@ test.describe("o cartão do nó diz o que o motor faz", () => {
     ).toBe(fimDaEtapa);
     expect(doResto.current_node_id).toBe(fimDoResto);
 
-    await page.goto(`/app/ai/followups/${flowId}`);
+    await page.goto(`/app/automacoes/fluxos/${flowId}`);
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: PRAZO });
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "cartoes-03-dois-leads-duas-saidas.png"), fullPage: true });
   });

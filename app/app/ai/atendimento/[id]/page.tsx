@@ -4,7 +4,7 @@ import { carregarFluxoParaEdicao } from "@/lib/followup/editar";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
-import { FlowBuilder } from "../../followups/[id]/_components/FlowBuilder";
+import { FlowBuilder } from "@/app/app/automacoes/fluxos/[id]/_components/FlowBuilder";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * Editor de um fluxo de ATENDIMENTO. Reusa o MESMO construtor dos Follow-ups,
  * mas vive numa rota própria: abrir um fluxo daqui não joga o usuário na lista
  * de Follow-ups (era o que acontecia quando a lista linkava para
- * `/app/ai/followups/<id>`).
+ * `/app/automacoes/fluxos/<id>`).
  */
 export default async function AtendimentoFlowBuilderPage({
   params,

@@ -181,7 +181,7 @@ test.describe("gatilho de caso aberto", () => {
           .status(),
       ).toBe(200);
 
-      await page.goto(`/app/ai/followups/${flowId}`);
+      await page.goto(`/app/automacoes/fluxos/${flowId}`);
       await expect(page.getByTestId("flow-builder-shell")).toBeVisible({ timeout: ESPERA });
 
       const botaoDoGatilho = page.getByTestId("trigger-config-button");
@@ -258,7 +258,7 @@ test.describe("gatilho de caso aberto", () => {
         )
         .toBe(true);
 
-      await page.goto("/app/ai/followups");
+      await page.goto("/app/automacoes/fluxos");
       await page.getByRole("tab", { name: "Fila" }).click();
       const linha = page.getByTestId("queue-row").filter({ hasText: cenario.contactName });
       await expect(linha).toHaveCount(1, { timeout: ESPERA });

@@ -8,7 +8,7 @@ const DETAIL_COLUMNS =
 
 /**
  * Carrega o pointer + o rascunho que o editor desenha. Compartilhado pelas duas
- * rotas de edição — `/app/ai/followups/[id]` (retomada) e `/app/ai/atendimento/[id]`
+ * rotas de edição — `/app/automacoes/fluxos/[id]` (retomada) e `/app/ai/atendimento/[id]`
  * (atendimento): o editor é o MESMO, mas a tela (e a rota) de cada superfície é
  * própria, para a navegação não jogar o usuário na lista da outra.
  */

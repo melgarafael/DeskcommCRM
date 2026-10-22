@@ -43,7 +43,7 @@ test.describe("Pausa de reentrada do gatilho de silêncio", () => {
 
   test("põe 48 horas de pausa, a pausa sobrevive a outra edição, e zerar a tira", async ({ page }) => {
     await login(page, c.users.manager!.email, c.password);
-    await page.goto(`/app/ai/followups/${fluxoId}`);
+    await page.goto(`/app/automacoes/fluxos/${fluxoId}`);
 
     const botao = page.getByTestId("trigger-config-button");
     await expect(botao).toBeVisible({ timeout: 60_000 });
@@ -85,7 +85,7 @@ test.describe("Pausa de reentrada do gatilho de silêncio", () => {
 
   test("o teto do silêncio: recusa um teto menor que o mínimo, e grava e mostra a faixa", async ({ page }) => {
     await login(page, c.users.manager!.email, c.password);
-    await page.goto(`/app/ai/followups/${fluxoId}`);
+    await page.goto(`/app/automacoes/fluxos/${fluxoId}`);
     const botao = page.getByTestId("trigger-config-button");
     await expect(botao).toBeVisible({ timeout: 60_000 });
 
@@ -115,7 +115,7 @@ test.describe("Pausa de reentrada do gatilho de silêncio", () => {
     // Um toque curto "no máximo 1× por dia": contada da última mensagem, a pausa
     // de 24 h não se cumpriria nunca dentro de um teto de 60 min.
     await login(page, c.users.manager!.email, c.password);
-    await page.goto(`/app/ai/followups/${fluxoId}`);
+    await page.goto(`/app/automacoes/fluxos/${fluxoId}`);
     const botao = page.getByTestId("trigger-config-button");
     await expect(botao).toBeVisible({ timeout: 60_000 });
 

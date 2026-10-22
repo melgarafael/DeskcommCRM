@@ -204,7 +204,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     await rodaTickDoMotor(page);
 
     // --- 1. da fila para o dossiê, pelo clique ---
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("tab", { name: "Fila" }).click();
     await page.getByLabel("Buscar contato").fill(cenario.contactName);
     // Espera a RESPOSTA da fila, não um relógio: o debounce é de 250ms e o
@@ -217,7 +217,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     const linha = page.locator('[data-testid="queue-row"]', { hasText: cenario.contactName });
     await expect(linha).toBeVisible({ timeout: 30_000 });
     await linha.getByTestId("queue-abrir-dossie").click();
-    await page.waitForURL(new RegExp(`/app/ai/followups/enrollments/${cenario.enrollmentId}`));
+    await page.waitForURL(new RegExp(`/app/automacoes/fluxos/enrollments/${cenario.enrollmentId}`));
 
     await expect(page.getByRole("heading", { name: cenario.contactName })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("dossie-status")).toHaveText("Ativo", { timeout: 30_000 });
@@ -310,7 +310,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
       expect(((await res.json()) as { error?: { code?: string } }).error?.code).toBe("forbidden_role");
     }
 
-    await page.goto(`/app/ai/followups/enrollments/${cenario.enrollmentId}`);
+    await page.goto(`/app/automacoes/fluxos/enrollments/${cenario.enrollmentId}`);
     await expect(page.getByRole("heading", { name: cenario.contactName })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("dossie-timeline")).toBeVisible();
     await expect(page.getByTestId("dossie-acoes")).toHaveCount(0);
@@ -374,7 +374,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
       ],
     });
 
-    await page.goto(`/app/ai/followups/enrollments/${enrollment.id}`);
+    await page.goto(`/app/automacoes/fluxos/enrollments/${enrollment.id}`);
     const bloco = page.getByTestId("dossie-plano-de-tempo");
     await expect(bloco).toBeVisible({ timeout: 30_000 });
     // O que o nó permitiu, não o que a IA pediu.
@@ -447,7 +447,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     await tickAte((e) => e.current_node_id === "end-sem-resposta", "carência vencida → Sem resposta");
 
     // --- da fila para o dossiê, pelo clique ---
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("tab", { name: "Fila" }).click();
     await page.getByLabel("Buscar contato").fill(cenario.contactName);
     await page.waitForResponse(
@@ -457,7 +457,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     const linha = page.locator('[data-testid="queue-row"]', { hasText: cenario.contactName });
     await expect(linha).toBeVisible({ timeout: 30_000 });
     await linha.getByTestId("queue-abrir-dossie").click();
-    await page.waitForURL(new RegExp(`/app/ai/followups/enrollments/${cenario.enrollmentId}`));
+    await page.waitForURL(new RegExp(`/app/automacoes/fluxos/enrollments/${cenario.enrollmentId}`));
 
     // A espera e o porquê da saída, em português — nem "travado", nem "Seguiu em frente".
     const historia = page.getByTestId("dossie-timeline");

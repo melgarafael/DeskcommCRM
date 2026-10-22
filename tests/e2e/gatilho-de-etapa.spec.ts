@@ -206,7 +206,7 @@ test.describe("gatilho de etapa do funil", () => {
           .status(),
       ).toBe(200);
 
-      await page.goto(`/app/ai/followups/${flowId}`);
+      await page.goto(`/app/automacoes/fluxos/${flowId}`);
       await expect(page.getByTestId("flow-builder-shell")).toBeVisible({ timeout: ESPERA });
 
       const botaoDoGatilho = page.getByTestId("trigger-config-button");
@@ -368,7 +368,7 @@ test.describe("gatilho de etapa do funil", () => {
         .toBe(true);
 
       // ---- 6. e o dono vê o follow-up na fila, sem ter apertado nada ----
-      await page.goto("/app/ai/followups");
+      await page.goto("/app/automacoes/fluxos");
       await page.getByRole("tab", { name: "Fila" }).click();
       const linha = page.getByTestId("queue-row").filter({ hasText: contato.display_name });
       await expect(linha).toHaveCount(1, { timeout: ESPERA });

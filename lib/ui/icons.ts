@@ -28,6 +28,9 @@ export {
   // admin platform
   Buildings,
   FlowArrow,
+  Lightning,
+  Shuffle,
+  UserSwitch,
   ChatsCircle,
   ClipboardText,
   Scales,

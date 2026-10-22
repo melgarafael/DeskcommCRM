@@ -125,7 +125,7 @@ test.describe("condição com várias regras — uma bolinha por regra", () => {
 
     // ─── 1. fluxo novo ───────────────────────────────────────────────────
     const nomeDoFluxo = `E2E Ramos ${Date.now()}`;
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialogo = page.getByRole("dialog");
     const campoNome = dialogo.getByLabel("Nome");
@@ -341,7 +341,7 @@ test.describe("condição com várias regras — uma bolinha por regra", () => {
     // O que o defeito impedia: dois leads, o MESMO nó de condição, destinos diferentes.
     expect(doVip.current_node_id).not.toBe(doAtrasado.current_node_id);
 
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("tab", { name: "Fila" }).click();
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "ramos-04-dois-leads-dois-caminhos.png"), fullPage: true });
   });

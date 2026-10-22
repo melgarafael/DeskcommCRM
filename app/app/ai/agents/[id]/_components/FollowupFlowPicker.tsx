@@ -42,7 +42,7 @@ export function FollowupFlowPicker({ value, onChange, disabled }: Props) {
     return (
       <p className="text-xs text-muted-foreground">
         {t("Nenhum fluxo publicado ainda.")}{" "}
-        <Link href="/app/ai/followups" className="underline underline-offset-2 hover:text-foreground">
+        <Link href="/app/automacoes/fluxos" className="underline underline-offset-2 hover:text-foreground">
           {t("Publique um fluxo de follow-up")}
         </Link>{" "}
         {t("para vinculá-lo.")}

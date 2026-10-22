@@ -243,7 +243,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     //    class_match(no_reply), always).
     // =========================================================================
     const flowName = `E2E Jornada ${stamp}`;
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Nome").fill(flowName);
@@ -488,7 +488,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
       // contato E fluxo (não só contato) — o gatilho de silêncio é
       // cross-contato, então mais de um pointer de teste pode ter enrollado
       // o mesmo contato em runs anteriores (ver nota de cleanup abaixo).
-      await page.goto("/app/ai/followups");
+      await page.goto("/app/automacoes/fluxos");
       await page.getByRole("tab", { name: "Fila" }).click();
       await page.getByLabel("Buscar contato").fill(seed.contactName);
       const queueRow = page
@@ -577,7 +577,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
 
     // [REAL UI] O operador abre o dossiê pela fila (clique no contato) e lê
     // que o fluxo ESPERA a resposta — não que travou.
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("tab", { name: "Fila" }).click();
     await page.getByLabel("Buscar contato").fill(seed.contactName);
     const rowEsperando = page
@@ -585,7 +585,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
       .filter({ hasText: flowName });
     await expect(rowEsperando).toBeVisible({ timeout: 30_000 });
     await rowEsperando.getByTestId("queue-abrir-dossie").click();
-    await page.waitForURL(new RegExp(`/app/ai/followups/enrollments/${enrollmentId}`));
+    await page.waitForURL(new RegExp(`/app/automacoes/fluxos/enrollments/${enrollmentId}`));
     const historia = page.getByTestId("dossie-timeline");
     await expect(historia).toContainText("Esperando a resposta do cliente", { timeout: 30_000 });
     await expect(historia).toContainText("o fluxo segue sem a resposta");
@@ -646,7 +646,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     expect(completed.completed_at).toBeTruthy();
 
       // `goto`, não `reload`: a página aberta agora é o dossiê (passo 6).
-      await page.goto("/app/ai/followups");
+      await page.goto("/app/automacoes/fluxos");
       await page.getByRole("tab", { name: "Fila" }).click();
       await page.getByLabel("Buscar contato").fill(seed.contactName);
       const finalRow = page

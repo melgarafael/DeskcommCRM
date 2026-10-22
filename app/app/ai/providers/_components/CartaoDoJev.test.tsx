@@ -1534,7 +1534,7 @@ describe("CartaoDoJev — a tarefa do follow-up, que só observa", () => {
     expect(linha).not.toHaveTextContent("Só observa");
     const semFluxo = screen.getByTestId("jev-sem-fluxo-followup");
     expect(semFluxo).toHaveTextContent("nenhum follow-up publicado tem o passo “Classificar (IA)”");
-    expect(within(semFluxo).getByRole("link", { name: "Abrir os follow-ups" })).toHaveAttribute("href", "/app/ai/followups");
+    expect(within(semFluxo).getByRole("link", { name: "Abrir os follow-ups" })).toHaveAttribute("href", "/app/automacoes/fluxos");
     expect(screen.queryByTestId("jev-concordancia-followup")).toBeNull();
     expect(screen.queryByTestId("jev-so-observa-followup")).toBeNull();
     expect(screen.queryByTestId("jev-nova-followup")).toBeNull();
@@ -1572,7 +1572,7 @@ describe("CartaoDoJev — a tarefa do follow-up, que só observa", () => {
     // O caminho para resolver, antes de ligar também — é a primeira impressão de quem ainda não publicou.
     expect(within(semFluxoAoLigar).getByRole("link", { name: "Abrir os follow-ups" })).toHaveAttribute(
       "href",
-      "/app/ai/followups",
+      "/app/automacoes/fluxos",
     );
     // O clima observa e pode decidir: a frase de sempre (controle).
     expect(screen.getByTestId("jev-ao-ligar")).toHaveTextContent(

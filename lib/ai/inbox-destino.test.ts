@@ -49,7 +49,7 @@ describe("destinos da Central", () => {
   it.each([
     ["handoff", "conversation", `/app/inbox/${ID}`], ["job_dead", "conversation", `/app/inbox/${ID}`],
     ["handoff", "contact", `/app/contacts/${ID}`], ["other", "lead", `/app/pipelines/${PIPELINE}?lead=${ID}`],
-    ["followup_dead", "followup_enrollment", `/app/ai/followups/enrollments/${ID}`],
+    ["followup_dead", "followup_enrollment", `/app/automacoes/fluxos/enrollments/${ID}`],
     ["qr_rescan", "channel_session", "/app/connections"], ["conhecimento_nao_indexado", "ai_knowledge_source", "/app/ai/knowledge/sources"],
     ["other", "agenda_reminder_sender", "/app/settings/tenant/agenda"],
     ["other", "ai_provider_credential", "/app/ai/credentials"],

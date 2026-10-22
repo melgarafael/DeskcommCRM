@@ -139,6 +139,8 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   // #2065 — as duas ações que também não falam com o cliente.
   move_lead: "Mover no funil",
   edit_lead_tag: "Editar tag",
+  distribute: "Distribuir atendimento",
+  split: "Dividir em %",
   end: "Fim",
 };
 
@@ -215,6 +217,21 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         resumo: node.config.tags.length
           ? `grava a(s) tag(s) ${node.config.tags.join(", ")} no lead — sem mensagem ao cliente`
           : "grava tag no lead, ainda sem destino escolhido — sem mensagem ao cliente",
+      };
+    case "distribute": {
+      const d = node.config.destino;
+      const para =
+        d.tipo === "atendente"
+          ? "para um atendente escolhido"
+          : d.tipo === "carteira"
+            ? "para o vendedor dono da carteira"
+            : `entre ${d.membros.length} pessoa(s) da equipe`;
+      return { ...base, resumo: `entrega a conversa ${para} — sem mensagem ao cliente` };
+    }
+    case "split":
+      return {
+        ...base,
+        resumo: `divide os contatos entre ${node.config.saidas.map((b) => `${b.label} (${b.peso})`).join(", ")}`,
       };
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
@@ -492,6 +509,33 @@ export function descreveEvento(
         detalhe: texto(p.error) ?? texto(p.codigo),
         ...motor,
       };
+    case "distribution_assigned":
+      // Automações: o bloco `distribute` entregou a conversa (ou ela já tinha
+      // dono). O nome de quem recebeu está no histórico da conversa; aqui a
+      // trilha diz o fato e o porquê do caminho seguido.
+      return {
+        titulo:
+          texto(p.resultado) === "ja_tinha_dono"
+            ? "A conversa já tinha dono — o fluxo seguiu por Distribuído"
+            : "A conversa foi entregue a uma pessoa da equipe",
+        detalhe: null,
+        ...motor,
+      };
+    case "distribution_unassigned": {
+      const MOTIVO: Record<string, string> = {
+        sem_conversa: "o contato não tem conversa aberta",
+        sem_candidatos: "o bloco não tem ninguém escolhido",
+        sem_carteira: "o cliente não tem vendedor dono",
+        ninguem_elegivel: "ninguém da lista estava disponível, no horário e abaixo do limite",
+        disputa: "as pessoas da lista ficaram indisponíveis no meio da entrega",
+      };
+      const motivo = texto(p.motivo);
+      return {
+        titulo: "Ninguém recebeu a conversa — o fluxo seguiu por Ninguém disponível",
+        detalhe: motivo ? (MOTIVO[motivo] ?? motivo) : texto(p.resultado),
+        ...motor,
+      };
+    }
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
     case "reactivity_replied":

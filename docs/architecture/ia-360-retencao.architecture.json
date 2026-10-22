@@ -29,7 +29,7 @@
       "lane": "humano",
       "col": 5,
       "type": "frontend",
-      "label": "/app/ai/followups · aba Fila",
+      "label": "/app/automacoes/fluxos · aba Fila",
       "sublabel": "vê o retorno combinado e DESMARCA — a porta que não existia antes desta wave"
     },
     {

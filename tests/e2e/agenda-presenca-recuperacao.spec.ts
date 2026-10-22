@@ -561,7 +561,7 @@ test("gestão configura prazos e gatilho; falta inicia uma vez e resposta interr
   // que a tela enviou. Fixar o número aqui é o que separa "a chave apareceu" de
   // "a chave apareceu com o valor certo".
   expect(agenda?.pending_expires_after_minutes).toBe(1440);
-  await page.goto(`/app/ai/followups/${pointer}`);
+  await page.goto(`/app/automacoes/fluxos/${pointer}`);
   await page.getByTestId("trigger-config-button").click();
   await page.getByLabel("Tipo de gatilho").click();
   await page.getByRole("option", { name: "Falta confirmada pela equipe", exact: true }).click();

@@ -137,7 +137,7 @@ test("o fluxo publicado por fora do construtor abre com os nós que estão no ar
 
   // ─── A TELA ──────────────────────────────────────────────────────────────
   await entrar(page, creds);
-  await page.goto(`/app/ai/followups/${ponteiroId}`);
+  await page.goto(`/app/automacoes/fluxos/${ponteiroId}`);
   await expect(page.getByTestId("flow-builder-shell")).toBeVisible({ timeout: 25_000 });
   await expect(page.getByTestId("flow-canvas")).toBeVisible({ timeout: 20_000 });
 

@@ -5,7 +5,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
-import { FlowsList } from "../followups/_components/FlowsList";
+import { FlowsList } from "@/app/app/automacoes/fluxos/_components/FlowsList";
 import { ComoUsar } from "./_components/ComoUsar";
 
 export const dynamic = "force-dynamic";

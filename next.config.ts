@@ -90,6 +90,16 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "*.supabase.in" },
     ],
   },
+  // Automações ganhou casa própria (out/2026). Os endereços antigos continuam
+  // valendo — favoritos, links em mensagens e e-mails não podem morrer em 404.
+  async redirects() {
+    return [
+      { source: "/app/ai/followups", destination: "/app/automacoes/fluxos", permanent: false },
+      { source: "/app/ai/followups/:path*", destination: "/app/automacoes/fluxos/:path*", permanent: false },
+      { source: "/app/webhooks/automacoes/:path*", destination: "/app/automacoes/regras/:path*", permanent: false },
+      { source: "/app/settings/automacoes", destination: "/app/automacoes/configuracoes", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

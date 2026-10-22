@@ -149,7 +149,7 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     await login(page, creds.users.manager!.email);
 
     // ─── 1. o fluxo, criado pela tela ────────────────────────────────────
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("button", { name: "Novo fluxo" }).click();
     const dialog = page.getByRole("dialog");
     // Esperar o FOCO, não só a visibilidade. O Radix anima a abertura e o
@@ -248,7 +248,7 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     }
 
     // ─── 7. A CONSEQUÊNCIA, lida na tela da Fila ─────────────────────────
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await page.getByRole("tab", { name: "Fila" }).click();
     await page.getByLabel("Buscar contato").fill(contactName);
     const linha = page.locator('[data-testid="queue-row"]', { hasText: contactName });

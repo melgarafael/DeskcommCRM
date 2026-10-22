@@ -43,6 +43,8 @@ import {
   type EnrollmentStatus,
   type LeadFacts,
   type NodeResult,
+  CAMPOS_DE_CONTEXTO,
+  type FatosDeContexto,
 } from "./node-handlers";
 import { coletarEsperasAdaptativas, type EsperaAdaptativa, type TimingPlan } from "./timing-plan";
 import {
@@ -50,6 +52,8 @@ import {
   type AvisoRecuperacaoEsgotada,
 } from "./no-show-recuperacao-esgotada";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
+import { distribuirAtendimento, type ResultadoDaDistribuicao } from "./distribuir-atendimento";
+import { carregarFatosDeContexto } from "./fatos-de-contexto";
 import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -206,6 +210,31 @@ export interface AdminClient {
     enrollment_id: string;
     config: Extract<FlowNode, { type: "edit_lead_tag" }>["config"];
   }): Promise<void>;
+  /**
+   * Nó `distribute` (Automações, out/2026): entrega a conversa a alguém da
+   * equipe. Diferente dos nós acima, roda ANTES do passo — a saída do nó
+   * depende do resultado. Opcional: omitida (teste de engine puro), o nó sai
+   * por "Ninguém disponível".
+   */
+  /**
+   * Automações: os fatos da condição que não moram no lead (hora, dia, número,
+   * origem, cliente recorrente, DDD). Opcional: sem ele, esses campos ficam
+   * desconhecidos e a regra que os usa não é satisfeita.
+   */
+  carregarFatosDeContexto?(item: {
+    organization_id: string;
+    contact_id: string;
+    conversation_id: string | null;
+    agora: Date;
+  }): Promise<FatosDeContexto>;
+  distribuirAtendimento?(item: {
+    organization_id: string;
+    contact_id: string;
+    conversation_id: string | null;
+    enrollment_id: string;
+    node_id: string;
+    config: Extract<FlowNode, { type: "distribute" }>["config"];
+  }): Promise<ResultadoDaDistribuicao>;
   /**
    * Régua de recuperação de falta esgotada sem resposta — abre um item na
    * Central referenciando o COMPROMISSO. Opcional: só a produção precisa; os
@@ -892,6 +921,28 @@ async function processEnrollment(
 
   if (node.type === "condition") {
     lead.last_outcome = ultimoDesfechoDe(events);
+    const pedeContexto = node.config.checks.some((c) => (CAMPOS_DE_CONTEXTO as readonly string[]).includes(c.field));
+    if (pedeContexto && db.carregarFatosDeContexto) {
+      try {
+        Object.assign(
+          lead,
+          await db.carregarFatosDeContexto({
+            organization_id: enrollment.organization_id,
+            contact_id: enrollment.contact_id,
+            conversation_id: enrollment.conversation_id,
+            agora: clock(),
+          }),
+        );
+      } catch (err) {
+        // Sem os fatos, a regra que os usa só não é satisfeita — o nó segue
+        // pela saída de escape em vez de travar o tick.
+        logger.warn("followup_condition_context_failed", {
+          organization_id: enrollment.organization_id,
+          enrollment_id: enrollment.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   if (vaiPlanejar) {
@@ -960,6 +1011,50 @@ async function processEnrollment(
   const nextAlways = selectEdge(graph.edges, node.id, { type: "always" });
   const proximo = nextAlways ? (graph.nodes.find((n) => n.id === nextAlways.target) ?? null) : null;
 
+  // Automações — `distribute`: a entrega acontece ANTES do passo, porque a saída
+  // do nó depende dela. É idempotente (conversa com dono não é trocada), então
+  // o replay do tick chega ao mesmo ramo. O desfecho vira linha na trilha da
+  // inscrição com chave própria, para quem montou o fluxo ver QUEM recebeu.
+  let distribuido: boolean | undefined;
+  if (node.type === "distribute" && db.distribuirAtendimento) {
+    let desfecho: ResultadoDaDistribuicao | null = null;
+    try {
+      desfecho = await db.distribuirAtendimento({
+        organization_id: enrollment.organization_id,
+        contact_id: enrollment.contact_id,
+        conversation_id: enrollment.conversation_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        config: node.config,
+      });
+    } catch (err) {
+      logger.warn("followup_distribute_failed", {
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    distribuido = desfecho !== null && desfecho.resultado !== "ninguem_disponivel";
+    try {
+      await db.insertEnrollmentEvent({
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        event_type: distribuido ? "distribution_assigned" : "distribution_unassigned",
+        payload: desfecho ? { ...desfecho } : { resultado: "erro" },
+        idempotency_key: `${node.id}:${enrollment.steps_taken}:distribuicao`,
+      });
+    } catch (registroErr) {
+      logger.warn("followup_distribute_event_failed", {
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        error: registroErr instanceof Error ? registroErr.message : String(registroErr),
+      });
+    }
+  }
+
   const result = processNode({
     node,
     edges: graph.edges,
@@ -978,6 +1073,7 @@ async function processEnrollment(
     repeatTaken,
     repeatTotal,
     proximo,
+    distribuido,
   });
   // #2528 — O TEXTO FIXO VAI COM OS DADOS DE QUEM RECEBE. O render é no
   // ENFILEIRAMENTE (e não no envio) porque são dois caminhos que mandam este
@@ -1324,6 +1420,19 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
      *   e `null` é a origem "indisponível" — nunca inventamos um id de evento
      *   que não existe no `event_log` para viajar no payload do evento gravado.
      */
+    async carregarFatosDeContexto(item) {
+      return carregarFatosDeContexto(admin, item);
+    },
+    async distribuirAtendimento(item) {
+      return distribuirAtendimento(admin, {
+        organization_id: item.organization_id,
+        contact_id: item.contact_id,
+        conversation_id: item.conversation_id,
+        chave: `${item.enrollment_id}:${item.node_id}`,
+        config: item.config,
+        now: new Date(),
+      });
+    },
     async editarTagDoLead(item) {
       const { data: lead, error } = await admin
         .from("crm_leads")

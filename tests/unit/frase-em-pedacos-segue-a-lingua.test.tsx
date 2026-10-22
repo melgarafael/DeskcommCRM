@@ -21,7 +21,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ActionForm } from "@/app/app/ai/followups/[id]/_components/forms/ActionForm";
+import { ActionForm } from "@/app/app/automacoes/fluxos/[id]/_components/forms/ActionForm";
 import { SuspendedBanner } from "@/components/admin/tenants/SuspendedBanner";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";

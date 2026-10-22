@@ -161,7 +161,7 @@ describe("sidebarGroups", () => {
     // poucas vezes; caso pede resposta no mesmo dia.
     expect(ia?.items.map((i) => i.href)).toEqual([
       "/app/ai/agents",
-      "/app/ai/followups",
+      "/app/automacoes/fluxos",
       "/app/ai/cases",
     ]);
   });

@@ -238,12 +238,12 @@ export function DetalheDoCompromisso({
                 {a.recovery.enrollment_id ? (
                   <Link
                     className="underline"
-                    href={`/app/ai/followups/enrollments/${a.recovery.enrollment_id}`}
+                    href={`/app/automacoes/fluxos/enrollments/${a.recovery.enrollment_id}`}
                   >
                     {t("Abrir acompanhamento")}
                   </Link>
                 ) : (
-                  <Link className="underline" href="/app/ai/followups">
+                  <Link className="underline" href="/app/automacoes/fluxos">
                     {t("Revisar acompanhamentos")}
                   </Link>
                 )}
@@ -253,7 +253,7 @@ export function DetalheDoCompromisso({
                 <p>
                   {t("Falta confirmada. O resultado da recuperação ainda não está disponível.")}
                 </p>
-                <Link className="underline" href="/app/ai/followups">
+                <Link className="underline" href="/app/automacoes/fluxos">
                   {t("Revisar acompanhamentos")}
                 </Link>
               </div>

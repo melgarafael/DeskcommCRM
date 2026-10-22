@@ -43,6 +43,7 @@ export const PUBLISH_ERROR_CODES = [
   'motivo_da_perda_ausente',
   'motivo_da_perda_invalido',
   'tag_ausente',
+  'destino_ausente',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -155,8 +156,8 @@ function cicloDoEncadeamento(
  * recusava em silêncio; a recusa aqui é o erro que a pessoa lê no editor.
  */
 export const NOS_DA_SUPERFICIE: Record<FollowupFlowSurface, readonly NodeType[]> = {
-  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
-  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
+  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'distribute', 'split', 'end'],
+  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'distribute', 'split', 'end'],
   atendimento: ['trigger', 'collect', 'skill', 'end'],
 };
 
@@ -583,6 +584,31 @@ function conferirTags(
 }
 
 /**
+ * Automações — `distribute` sem ninguém escolhido. O rascunho salva o bloco
+ * vazio; publicado, ele sairia SEMPRE por "Ninguém disponível" com cara de
+ * distribuição configurada.
+ */
+function conferirDistribuicao(
+  node: Extract<FlowNode, { type: 'distribute' }>,
+  errors: PublishValidationError[]
+): void {
+  const d = node.config.destino;
+  const vazio =
+    d.tipo === 'atendente'
+      ? d.usuario_id.trim() === ''
+      : d.tipo === 'equipe'
+        ? d.membros.filter((m) => m.usuario_id.trim() !== '').length === 0
+        : false;
+  if (vazio) {
+    errors.push({
+      node_id: node.id,
+      code: 'destino_ausente',
+      message: `A caixa "${node.label}" não tem ninguém para receber — escolha o atendente ou as pessoas da equipe.`,
+    });
+  }
+}
+
+/**
  * Uma regra de condição que não pode decidir nada. O rascunho aceita todas estas
  * formas — trabalho pela metade precisa salvar —, mas publicada cada uma é uma
  * saída que nunca é tomada ou que é tomada sempre, com cara de regra pronta:
@@ -770,6 +796,25 @@ export function validateFlowForPublish(
   for (const node of [...nodes].sort(byId)) {
     if (node.type === 'move_lead') conferirEtapaDestino(node, contexto, errors);
     if (node.type === 'edit_lead_tag') conferirTags(node, errors);
+    if (node.type === 'distribute') conferirDistribuicao(node, errors);
+  }
+
+  // Automações — cada saída do divisor precisa de seta: uma fatia sem destino
+  // mandaria aquela porcentagem dos contatos para a saída de escape calada.
+  // (A saída de escape não é cobrada: o divisor sempre escolhe uma fatia.)
+  for (const node of [...nodes].sort(byId)) {
+    if (node.type !== 'split') continue;
+    const outgoing = outEdges.get(node.id) ?? [];
+    for (const branch of nodeBranches(node)) {
+      if (branch.kind === 'fallback') continue;
+      if (outgoing.some((e) => branchIdForCondition(node, e.condition) === branch.id)) continue;
+      errors.push({
+        node_id: node.id,
+        code: 'missing_branch_edge',
+        branch_id: branch.id,
+        message: `Nó "${node.id}": a saída "${rotuloDoRamo(branch, nomes)}" não está ligada a nada.`,
+      });
+    }
   }
 
   for (const node of [...nodes].sort(byId)) {

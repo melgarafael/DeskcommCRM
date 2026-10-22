@@ -151,7 +151,7 @@ describe("os dois lugares que abriam a tela continuam perguntando ao rascunho", 
   });
 
   it("a página do construtor resolve o rascunho pela regra", async () => {
-    const fonte = await ler("app/app/ai/followups/[id]/page.tsx");
+    const fonte = await ler("app/app/automacoes/fluxos/[id]/page.tsx");
     expect(fonte, "a página parou de importar a regra").toMatch(
       /import \{ rascunhoDoFluxo \} from "@\/lib\/followup\/rascunho"/,
     );

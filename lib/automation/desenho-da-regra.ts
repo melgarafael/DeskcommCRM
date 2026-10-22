@@ -1,7 +1,7 @@
 /**
  * O DESENHO de uma automação: a mesma regra de sempre, vista como caixas ligadas.
  *
- * É a peça pura do designer de automações (`app/app/webhooks/automacoes/[id]`).
+ * É a peça pura do designer de automações (`app/app/automacoes/regras/[id]`).
  * O canvas é só OUTRA FORMA de montar o corpo que o editor em gaveta
  * (`app/app/webhooks/_components/RuleEditor.tsx`) já manda para
  * `/api/v1/automation-rules` — gatilho, condições e a lista de ações em ordem.

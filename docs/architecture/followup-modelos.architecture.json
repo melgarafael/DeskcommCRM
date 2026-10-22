@@ -68,7 +68,7 @@
       "lane": "humano",
       "col": 4,
       "type": "frontend",
-      "label": "/app/ai/followups/[id]",
+      "label": "/app/automacoes/fluxos/[id]",
       "sublabel": "abre já desenhado: a pessoa lê os textos e publica"
     },
     {

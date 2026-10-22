@@ -45,7 +45,7 @@ async function login(page: Page, email: string): Promise<void> {
 test.describe("follow-ups · modelos prontos de clínica", () => {
   test("manager instala um modelo e cai no construtor com o fluxo desenhado", async ({ page }) => {
     await login(page, creds.users.manager!.email);
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
 
     await page.getByRole("button", { name: /Começar de um modelo/i }).click();
@@ -82,7 +82,7 @@ test.describe("follow-ups · modelos prontos de clínica", () => {
       // O grafo veio pronto: a mensagem do primeiro toque está no canvas.
       await expect(page.getByText("Oferece outra data").first()).toBeVisible();
 
-      await page.goto("/app/ai/followups");
+      await page.goto("/app/automacoes/fluxos");
     }
 
     // Nasce RASCUNHO: instalar não manda mensagem para ninguém.
@@ -103,7 +103,7 @@ test.describe("follow-ups · modelos prontos de clínica", () => {
 
   test("modelo de etapa não instala sem etapa escolhida", async ({ page }) => {
     await login(page, creds.users.manager!.email);
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
 
     await page.getByRole("button", { name: /Começar de um modelo/i }).click();
     const cartaoDoExame = page.getByTestId("modelo-clinica-exame-marcar");
@@ -120,7 +120,7 @@ test.describe("follow-ups · modelos prontos de clínica", () => {
 
   test("viewer não vê a galeria de modelos (RBAC)", async ({ page }) => {
     await login(page, creds.users.viewer!.email);
-    await page.goto("/app/ai/followups");
+    await page.goto("/app/automacoes/fluxos");
     await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Começar de um modelo/i })).toHaveCount(0);
   });
