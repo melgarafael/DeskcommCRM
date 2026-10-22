@@ -41,7 +41,9 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
     startTransition(async () => {
       const res = await enrollMfa();
       if (!res.ok) {
-        setError(res.message ?? t("Não foi possível iniciar a configuração."));
+        // O `message` é o texto cru do GoTrue, em inglês (« A factor with the friendly name … already
+        // exists ») — a tela o mostrava em todo idioma. Fica a frase do produto; o motivo segue no retorno da action.
+        setError(t("Não foi possível iniciar a configuração."));
         setStep("intro");
         return;
       }
@@ -65,7 +67,7 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
         if (res.error === "verify_failed" || res.error === "invalid_code") {
           setError(t("Código inválido. Tente novamente."));
         } else {
-          setError(res.message ?? t("Falha ao confirmar. Tente novamente."));
+          setError(t("Falha ao confirmar. Tente novamente."));
         }
         setCode("");
         return;

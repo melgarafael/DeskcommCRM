@@ -746,18 +746,30 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     }
   }
 
-  // A ATRIBUIÇÃO DE ANÚNCIO do lead de formulário (issue #2317). Quem anuncia
-  // para uma landing page com formulário não tinha a origem estampada no
-  // contato: `fbclid`, `fbc`, `fbp`, `gclid`, `ad_id`, `adset_id` e
-  // `campaign_id` viravam campo personalizado do card, e `lib/conversoes` não
-  // sabia de que clique veio a venda. Aqui o payload que traz uma chave de
-  // anúncio reservada grava a atribuição no contato pela MESMA guarda de
-  // primeiro toque (`fn_estampar_atribuicao_de_anuncio`) que o
-  // clique-pro-WhatsApp já usa — sem regra paralela. A falha é tolerada dentro
-  // de `estamparAtribuicaoDoContato`: perder a atribuição é ruim, perder a
-  // captação é pior.
+  /**
+   * A ATRIBUIÇÃO DE ANÚNCIO do lead de formulário (issues #2317 e #3149).
+   *
+   * Quem anuncia para uma landing page com formulário não tinha a origem
+   * estampada no contato: `fbclid`, `fbc`, `fbp`, `gclid`, `ad_id`, `adset_id` e
+   * `campaign_id` viravam campo personalizado do card, e `lib/conversoes` não
+   * sabia de que clique veio a venda.
+   *
+   * A entrada é `mapped.source_metadata`, e não o payload cru, para haver UM
+   * caminho só: o mapeador GENÉRICO e os DEDICADOS (Elementor, RD Station,
+   * Respondi) já entregam as chaves de anúncio ali — cada um lendo na forma do
+   * seu fornecedor. Assim o extrator (`extrairAtribuicaoDoInbound`) é o mesmo
+   * nos três, e um fornecedor novo não precisa de uma segunda regra aqui.
+   *
+   * A gravação é a MESMA função do clique-pro-WhatsApp
+   * (`estamparAtribuicaoDoContato` → `fn_estampar_atribuicao_de_anuncio`), com a
+   * guarda de primeiro toque no banco — sem regra paralela. A falha é tolerada
+   * dentro dela: perder a atribuição é ruim, perder a captação é pior.
+   *
+   * Sem contato resolvido não há onde carimbar: o envio sem telefone (e sem
+   * e-mail) segue criando o lead sem contato, como sempre.
+   */
   if (contactId) {
-    const atribuicao = extrairAtribuicaoDoInbound(payload);
+    const atribuicao = extrairAtribuicaoDoInbound(mapped.source_metadata);
     if (atribuicao) {
       await estamparAtribuicaoDoContato(admin, source.organization_id, contactId, atribuicao);
     }

@@ -138,6 +138,13 @@ export interface Message {
   /** A mensagem que esta responde (citação). `null` = envio solto. */
   reply_to_message_id: string | null;
   created_at: string;
+  /**
+   * Última escrita na linha (trigger `trg_messages_updated_at`). É o relógio do
+   * reenvio (`lib/messaging/reenvio.ts`): linha `queued` parada há muito pode
+   * ter perdido o processo que a enviava. Opcional porque linhas montadas fora
+   * do `MSG_COLS` (otimistas antigas, fixtures) não o trazem.
+   */
+  updated_at?: string;
 }
 
 /** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */

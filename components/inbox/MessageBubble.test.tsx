@@ -25,6 +25,7 @@ import userEvent from "@testing-library/user-event";
 
 import { MessageBubble } from "./MessageBubble";
 import type { Message } from "@/lib/types/messaging";
+import { ApiError } from "@/lib/api/types";
 
 function msg(over: Partial<Message> = {}): Message {
   return {
@@ -398,5 +399,93 @@ describe("MessageBubble — remetente de grupo", () => {
       />,
     );
     expect(screen.queryByText("Maria · +5521999990000")).toBeNull();
+  });
+});
+
+describe("MessageBubble — mensagem que falhou", () => {
+  const agora = () => new Date().toISOString();
+
+  it("diz o motivo à vista e oferece tentar de novo quando nada saiu", async () => {
+    const onReenviar = vi.fn(async () => undefined);
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "storage_sign_failed", sent_by_user_id: "eu", updated_at: agora(),
+    })} viewerUserId="eu" onReenviar={onReenviar} />);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não conseguimos preparar o arquivo para envio.");
+    fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    await waitFor(() => expect(onReenviar).toHaveBeenCalledWith(false));
+  });
+
+  it("o texto cru do canal não aparece na linha visível", () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "canal_x_error", error_message: "fetch failed http://servico-interno:3000/api/sendText",
+      sent_by_user_id: "eu",
+    })} viewerUserId="eu" />);
+    expect(screen.getByTestId("motivo-da-falha")).not.toHaveTextContent("http");
+    expect(document.body.textContent).not.toContain("http://servico-interno");
+  });
+
+  it("código sem frase cai na frase genérica", () => {
+    render(<MessageBubble message={msg({ status: "failed", error_code: "codigo_novo" })} />);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não foi possível enviar esta mensagem.");
+  });
+
+  it("quando pode ter chegado, o toque abre a confirmação antes de enviar", async () => {
+    const onReenviar = vi.fn(async () => undefined);
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "send_timeout", sent_by_user_id: "eu",
+    })} viewerUserId="eu" onReenviar={onReenviar} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(await screen.findByText(/Confira no WhatsApp do cliente antes de enviar de novo/)).toBeInTheDocument();
+    expect(onReenviar).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Enviar de novo" }));
+    await waitFor(() => expect(onReenviar).toHaveBeenCalledWith(true));
+  });
+
+  it("mensagem de pessoa parada sem conexão diz que NÃO foi enviada, e oferece tentar de novo", () => {
+    // Ninguém reenvia a mensagem do atendente quando o número volta: "Aguardando"
+    // seria uma promessa que não se cumpre.
+    render(<MessageBubble message={msg({
+      status: "queued", sent_via: "user", sent_by_user_id: "eu", updated_at: agora(),
+      metadata: { queued_reason: "channel_session_not_working" },
+    })} viewerUserId="eu" onReenviar={vi.fn(async () => undefined)} />);
+    expect(screen.getByText("Não enviada — sem conexão")).toBeInTheDocument();
+    expect(screen.queryByText("Aguardando conexão")).toBeNull();
+    expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
+  });
+
+  it("parada por falta de conexão da IA diz 'Aguardando conexão'; o envio normal não", () => {
+    const { unmount } = render(<MessageBubble message={msg({
+      status: "queued", sent_via: "ai", metadata: { queued_reason: "channel_session_not_working" },
+    })} />);
+    expect(screen.getByText("Aguardando conexão")).toBeInTheDocument();
+    unmount();
+    render(<MessageBubble message={msg({ status: "queued", metadata: { _optimistic: true }, updated_at: agora() })}
+      viewerUserId="eu" onReenviar={vi.fn(async () => undefined)} />);
+    expect(screen.queryByText("Aguardando conexão")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+  });
+
+  it("se a rota pede confirmação onde a bolha viu 'nada saiu', a confirmação abre", async () => {
+    const onReenviar = vi.fn(async () => {
+      throw new ApiError(409, "confirmacao_necessaria", undefined, "r", "Confirme antes de enviar de novo.");
+    });
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "storage_sign_failed", sent_by_user_id: "eu",
+    })} viewerUserId="eu" onReenviar={onReenviar} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(await screen.findByText(/Confira no WhatsApp do cliente antes de enviar de novo/)).toBeInTheDocument();
+    expect(onReenviar).toHaveBeenCalledWith(false);
+  });
+
+  it("mensagem da IA que falhou não tem botão", () => {
+    render(<MessageBubble message={msg({ status: "failed", error_code: "channel_disabled", sent_via: "ai" })}
+      viewerUserId="eu" onReenviar={vi.fn(async () => undefined)} podeReenviarDeOutros />);
+    expect(screen.getByTestId("motivo-da-falha")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+  });
+
+  it("sem quem reenvie (leitura do super-admin) não há botão", () => {
+    render(<MessageBubble message={msg({ status: "failed", error_code: "channel_disabled", sent_by_user_id: "eu" })} viewerUserId="eu" />);
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
   });
 });

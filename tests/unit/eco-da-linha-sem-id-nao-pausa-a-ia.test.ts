@@ -114,6 +114,7 @@ interface Linha {
   body: string | null;
   type: string;
   created_at: string;
+  updated_at: string;
   [k: string]: unknown;
 }
 
@@ -315,6 +316,9 @@ const envioQueSaiuSemId = (over: Partial<Linha> = {}): Linha => ({
   body: TEXTO,
   type: "chat",
   created_at: new Date(Date.now() - 4_000).toISOString(),
+  // A janela do eco mede `updated_at` desde o reenvio (#3192); sem a coluna no
+  // dublê, o filtro `gte` comparava "undefined" e passava por acidente.
+  updated_at: new Date(Date.now() - 4_000).toISOString(),
   ...over,
 });
 

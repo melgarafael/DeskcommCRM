@@ -1266,6 +1266,12 @@ jobs:
       # posição na lista NÃO decide a ordem de execução — no job 108983924934
       # ela rodou em 39º de 77, e a parte inteira passou (77 passed). Medido:
       # 16,1 s de caso.
+      #
+      # `reenvio-pelo-celular` entrou em 2026-10-21 (F2 da ADR-0006, PR C). Semeia
+      # o próprio canal (desativado, depois em STARTING), contato, conversa e
+      # mensagens pelo service role e apaga tudo no fim, inclusive o aviso que o
+      # cron `recover-stuck-messages` abre para a conversa dele. Não depende de
+      # WAHA nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_5: >-
         extensoes-da-instalacao.spec.ts
         admin-credencial-google.spec.ts
@@ -1296,6 +1302,7 @@ jobs:
         buffer-ssr-caixa-orfa.spec.ts
         contadores-do-menu.spec.ts
         honorarios-instalar-e-pagar.spec.ts
+        reenvio-pelo-celular.spec.ts
 
       # ─── PARTE 6 — nasceu em 2026-09-28, e o orçamento de 24 min a pediu ───
       #

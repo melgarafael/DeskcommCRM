@@ -115,16 +115,33 @@ const STATUS_DE_ENVIO_NOSSO = ["queued", "sending", "sent", "delivered", "read"]
  * A mensagem `fromMe` que chegou é o eco de um envio que ESTE CRM acabou de
  * fazer — e não alguém digitando no celular?
  *
- * A prova exigida é forte: uma linha nossa na MESMA conversa, ainda sem
- * `external_id` (portanto sem o carimbo do canal), com o MESMO corpo, dentro da
- * janela, e em um dos estados em que a linha SAIU (`STATUS_DE_ENVIO_NOSSO` —
- * `sent` inclusive, ver o #3138). Qualquer uma dessas faltando, a resposta é
- * "não sei" — e "não sei" silencia, porque é o desfecho seguro do lado do
- * atendente humano (#371).
+ * A prova exigida é forte: uma linha nossa na MESMA conversa, com o MESMO corpo,
+ * dentro da janela, e UMA destas duas marcas:
+ *
+ *   - ainda SEM `external_id`, num dos estados em que a linha saiu
+ *     (`STATUS_DE_ENVIO_NOSSO` — `sent` inclusive, #3138), ou
+ *   - já com `external_id` igual a um dos ids que o CANAL entregou nesta mensagem
+ *     — o carimbo do envio (#3165).
+ *
+ * Qualquer uma dessas faltando, a resposta é "não sei" — e "não sei" silencia,
+ * porque é o desfecho seguro do lado do atendente humano (#371).
  *
  * Mídia não tem corpo comparável (o eco traz `media_url`, não texto): ali a
  * prova cai para "existe envio nosso em voo do mesmo tipo na janela", que é mais
  * permissivo e assumidamente mais fraco.
+ *
+ * ⚠️ A SEGUNDA marca existe porque a janela não é só "antes de o envio confirmar":
+ * o carimbo pode cair DURANTE a ingestão — depois da re-checagem pós-insert e
+ * antes desta decisão (#3165). Sem ela, a linha já `sent` não é vista, o eco volta
+ * a ser lido como resposta pelo celular e a IA pausa por 1 h (o relato do #3138,
+ * com o estado final de uma linha só, a nossa, já com o id).
+ *
+ * E o que fecha essa janela é a LEITURA ÚNICA: o id e o texto saem da MESMA linha
+ * do MESMO instante, então nenhuma escrita pode cair "entre" as duas perguntas.
+ * Duas consultas em sequência — o id numa, o texto na outra — ENCOLHEM a janela e
+ * não a fecham: o carimbo que cai entre elas faz a IA pausar de novo.
+ * `lib/waha/ingest-eco-carimbado-no-meio.test.ts` é a catraca, e ele carimba o id
+ * depois de CADA leitura da janela, não num ponto só.
  */
 async function ehEcoDeEnvioNosso(
   admin: Admin,
@@ -135,7 +152,7 @@ async function ehEcoDeEnvioNosso(
   const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
   const { data, error } = await admin
     .from("messages")
-    .select("id, body, type")
+    .select("id, body, type, external_id, status")
     .eq("organization_id", organizationId)
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
@@ -154,15 +171,23 @@ async function ehEcoDeEnvioNosso(
     // integração deixa de ser reconhecida como envio NOSSO, o eco do próprio
     // envio vira "resposta pelo celular" e cala a IA por três horas.
     .in("sent_via", ["ai", "user", "automation", "system"])
-    // Sem `external_id` = o id do canal ainda não está gravado nesta linha. É
-    // esta a janela exata em que o eco é indistinguível de digitação humana.
-    .is("external_id", null)
-    // O `status` NÃO separa "em voo" de "saiu": `sent` sem id é desfecho
-    // declarado dos dois caminhos que enviam por nós, e exigir só
-    // `queued|sending` fazia o eco DELES ser lido como pessoa (ver
-    // `STATUS_DE_ENVIO_NOSSO`, issue #3138).
+    // ⚠️ O `external_id` NÃO é filtro aqui, de propósito (#3165): as duas marcas
+    // da prova — id nulo (em voo) e id igual ao que o canal entregou (carimbado
+    // durante a ingestão) — são decididas sobre a MESMA linha desta leitura, no
+    // corpo do laço. Filtrar por id no SQL exigiria OU duas consultas (a janela
+    // que este conserto fecha: o carimbo cai entre elas) OU um `.or()` de DSL que
+    // a consulta não precisa para ser correta.
+    //
+    // O `status` estreita o conjunto: `sent` entra porque é o status que o envio
+    // grava JUNTO do id (`marcarEnviada`); `queued`/`sending` são o "em voo" de
+    // sempre. Qual status vale para qual das duas marcas é o laço abaixo — aqui é
+    // só o recorte de linhas que a decisão pode usar.
     .in("status", STATUS_DE_ENVIO_NOSSO)
-    .gte("created_at", desde)
+    // `updated_at`, e não `created_at`: o reenvio (`POST /messages/{id}/retry`)
+    // põe na fila uma linha criada há muito tempo, e o eco dele tem de casar do
+    // mesmo jeito. Para o envio novo dá no mesmo (`updated_at` nasce igual a
+    // `created_at` e só cresce), então a janela só fica mais larga, nunca mais estreita.
+    .gte("updated_at", desde)
     .limit(20);
 
   if (error) {
@@ -173,8 +198,42 @@ async function ehEcoDeEnvioNosso(
   }
 
   const corpo = (p.body ?? "").trim();
+  // As formas que o id desta mensagem pode ter no banco: o composto que o webhook
+  // entregou e a cauda que o envio grava (`marcarEnviada` → `canonicalExternalId`).
+  // Mesmo par que a re-checagem pós-insert usa, algumas linhas acima.
+  //
+  // Payload sem id (não é o caso deste caminho — `fromMe` traz o composto, e a
+  // re-checagem acima já depende disso) não casa ninguém: a lista fica vazia e a
+  // MARCA 2 não dispara.
+  const idDoEco = p.id ?? null;
+  const caudaDoEco = idDoEco === null ? null : bareWaMessageId(idDoEco);
+  const idsDaMensagem = idDoEco === null ? [] : caudaDoEco === idDoEco ? [idDoEco] : [idDoEco, caudaDoEco];
+
   for (const linha of data ?? []) {
-    const l = linha as { body: string | null; type?: string | null };
+    const l = linha as {
+      body: string | null;
+      type?: string | null;
+      external_id?: string | null;
+      status?: string | null;
+    };
+
+    // ── MARCA 2 (#3165): o CARIMBO do envio já está NESTA linha, com o id do
+    // canal que acabou de chegar. É a MESMA mensagem — e é prova mais forte que a
+    // de baixo, porque o id do canal não se repete entre mensagens: o corpo nem
+    // precisa ser comparado.
+    //
+    // A leitura é UMA só (o `.in("status", …)` e o `.select` acima), então esta
+    // pergunta e a comparação de corpo abaixo leem o MESMO retrato: o carimbo que
+    // cair no meio da ingestão aparece aqui, e não escapa para o lado de fora da
+    // janela como escapava quando o filtro era `.is("external_id", null)` no SQL.
+    if (l.external_id != null && idsDaMensagem.includes(l.external_id)) return true;
+
+    // ── MARCA 1: linha ainda SEM id, num status de `STATUS_DE_ENVIO_NOSSO` (o
+    // filtro do SQL acima; `sent` sem id é o #3138). Linha com id que NÃO é desta mensagem (outro envio
+    // nosso, na mesma janela) não entra: ela nunca foi a janela do eco DESTA
+    // mensagem, e era exatamente o que o `is null` do SQL garantia.
+    if (l.external_id != null) continue;
+
     if (p.type && p.type !== "chat") {
       // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
       // possível. Mais fraco, e escrito para ninguém supor o contrário.

@@ -164,7 +164,31 @@ export interface Prospect {
   previa?: PreviaSalva | null;
 }
 
-/** The existing Maps integrations normalize Brazilian numbers; never guess a foreign country. */
+/**
+ * Telefone do candidato em E.164, ou `null`.
+ *
+ * O provedor de Mapas devolve o número como a empresa o publicou: brasileiro sem
+ * código de país (`(11) 99999-0000`), brasileiro em E.164 (`+55 11 99999-0000`) ou
+ * estrangeiro em E.164 (`+351 912 345 678`). O defeito #3080 mediu o custo de
+ * recusar o terceiro caso: três buscas em Portugal, 59 empresas achadas e nenhuma
+ * abordável, porque todo número que não fosse `+55` virava `null`.
+ *
+ * Sem `+` o país não está no dado, e adivinhar continua fora: só o ramo brasileiro
+ * (10 ou 11 dígitos) prefixa `55`, como antes. Com `+` e OUTRO código de país, o
+ * país está escrito no próprio número — passa, nos 8 a 15 dígitos que o E.164
+ * admite. `55` fica de fora desse ramo de propósito: brasileiro truncado (com `+`,
+ * mas curto demais) não vira estrangeiro. Qualquer outra coisa segue `null`.
+ */
+function normalizeProspectPhone(raw: string): string | null {
+  let digits = raw.replace(/\D/g, "");
+  if (!raw.startsWith("+") && [10, 11].includes(digits.length)) digits = `55${digits}`;
+  if (/^55\d{10,11}$/.test(digits)) return `+${digits}`;
+  if (raw.startsWith("+") && /^\d{8,15}$/.test(digits) && !digits.startsWith("55")) {
+    return `+${digits}`;
+  }
+  return null;
+}
+
 export function normalizeProspect(item: Record<string, unknown>): Prospect | null {
   const str = (key: string, limit = 500) =>
     typeof item[key] === "string" ? (item[key] as string).trim().slice(0, limit) : null;
@@ -173,9 +197,7 @@ export function normalizeProspect(item: Record<string, unknown>): Prospect | nul
   if (!name || !place || item.permanentlyClosed === true || item.temporarilyClosed === true)
     return null;
   const raw = str("phoneUnformatted") || str("phone") || "";
-  let digits = raw.replace(/\D/g, "");
-  if (!raw.startsWith("+") && [10, 11].includes(digits.length)) digits = `55${digits}`;
-  const phone = /^55\d{10,11}$/.test(digits) ? `+${digits}` : null;
+  const phone = normalizeProspectPhone(raw);
   const urls = (key: string) =>
     Array.isArray(item[key])
       ? (item[key] as unknown[])
