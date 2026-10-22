@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { DestinoDoInteresse } from "./DestinoDoInteresse";
 import { toast } from "sonner";
 
 import { previewReceita, salvarReceitas, useReceitasDaConexao } from "@/hooks/external-db/useReceitasDaConexao";
@@ -1059,6 +1060,10 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                       {t("O prefixo aparece antes de _posts no banco do WordPress (padrão wp_).")}
                     </p>
                   </div>
+                  <DestinoDoInteresse
+                    valor={inst.destino_do_interesse}
+                    onChange={(destino) => setRascunho({ ...inst, destino_do_interesse: destino })}
+                  />
                   {ehWordpress && (
                     <div>
                       <Label htmlFor={idInputPostType} className="text-xs text-muted-foreground">
