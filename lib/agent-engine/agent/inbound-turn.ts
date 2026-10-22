@@ -79,12 +79,8 @@ import {
   PASTA_DE_TESTE_DE_MIDIA,
   type FotoParaEnvio,
 } from './fotos-do-produto';
-import {
-  descreverSemQuery,
-  paraMidiaDoCanal,
-  prepararImagemPorUrl,
-  type FotoDeUrl,
-} from './imagem-por-url';
+import { descreverSemQuery } from './imagem-por-url';
+import { baixarImagemSegura, guardarImagemNaConversa } from './baixar-imagem-segura';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
   applyLeadStateUpdate,
@@ -3519,7 +3515,7 @@ async function executarTurnoDoAgente(
         // `let` das fotos declarado antes do bloco porque o escopo precisa
         // alcançar a cadeia; envolver a reserva não altera o caminho do gate —
         // ele segue inteiramente síncrono do `checar` até a reserva.
-        let fotosDoProduto: Array<FotoParaEnvio | FotoDeUrl> = [];
+        let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
         // Foto por URL (`imagem_url`, Spec 25 R4): só uma das duas formas de foto vale
         // por mensagem — `produto_codigo` e `imagem_url` juntos são recusados abaixo.
@@ -3577,21 +3573,33 @@ async function executarTurnoDoAgente(
               },
             };
           }
-          // Foto por URL (Spec 25 R4): mesma regra de fora do lock, só fora da prévia. O
-          // formato e a guarda anti-SSRF (C6) rodam ANTES de qualquer envio. Recusada, a
-          // mensagem segue só com texto (D7) e o motivo volta ao modelo; o log leva host +
-          // caminho, nunca a query (que pode ter token).
+          // Foto por URL (Spec 25 R4, opção A): mesma regra de fora do lock, só fora da
+          // prévia. O CRM baixa a imagem com a própria rede (IP validado, sem redirect,
+          // teto de 5 MB, conteúdo conferido), guarda no Storage da conversa e manda ao
+          // canal só o storagePath. Qualquer falha: a mensagem segue só com texto (D7) e o
+          // motivo volta ao modelo; o log leva host + caminho, nunca a query.
           if (temImagemPorUrl && !preview) {
             const url = (imagem_url ?? '').trim();
-            const validada = await prepararImagemPorUrl(url);
-            if (validada.ok) {
-              fotosDoProduto = [validada.foto];
+            let motivo: string | null = null;
+            const baixada = await baixarImagemSegura(url);
+            if (!baixada.ok) {
+              motivo = baixada.motivo;
             } else {
-              motivoFotoRecusada = validada.motivo;
+              const guardada = await guardarImagemNaConversa(createAdminClient(), {
+                tenantId,
+                conversationId: input.conversationId,
+                bytes: baixada.bytes,
+                mime: baixada.mime,
+              });
+              if (guardada.ok) fotosDoProduto = [{ storagePath: guardada.storagePath, mime: guardada.mime }];
+              else motivo = guardada.motivo;
+            }
+            if (motivo !== null) {
+              motivoFotoRecusada = motivo;
               runLog.warn('imagem_url recusada — a mensagem sai só com texto', {
                 job_id: job?.id ?? null,
                 imagem: descreverSemQuery(url),
-                motivo: validada.motivo,
+                motivo,
               });
             }
           }
@@ -3784,7 +3792,7 @@ async function executarTurnoDoAgente(
                 Math.floor(Math.random() * (pacingDoTurno?.knobs.jitterMaxMs ?? 800));
               const enviar = (
                 corpo: string,
-                media?: FotoParaEnvio | FotoDeUrl,
+                media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
                 seq += 1;
                 return liveChannel().send({
@@ -3796,7 +3804,7 @@ async function executarTurnoDoAgente(
                   seq,
                   conversationId: input.conversationId,
                   body: corpo,
-                  ...(media ? { media: paraMidiaDoCanal(media) } : {}),
+                  ...(media ? { media } : {}),
                 });
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
@@ -3805,16 +3813,16 @@ async function executarTurnoDoAgente(
                   corposEnviados.push(finalBody);
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
                   // medido ANTES DE CADA FOTO, depois do texto.
-                  // `fotosDoProduto` leva UMA das duas formas (são exclusivas, ver o bloco
-                  // acima): a foto do catálogo ou a foto por URL. O teto e a legenda valem
-                  // para as duas.
+                  // `fotosDoProduto` leva UMA das duas fontes (são exclusivas, ver o bloco
+                  // acima): a foto do catálogo ou a foto por URL já guardada na conversa. O
+                  // teto e a legenda valem para as duas.
                   return enviarComFotos(finalBody, fotosDoProduto, {
                     sleep,
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
                     enviarFoto: async (foto, legenda) => {
                       const resultado = await enviar(legenda, foto);
-                      if ('url' in foto && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
+                      if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
                       return resultado;
                     },
                     enviarTexto: (texto) =>

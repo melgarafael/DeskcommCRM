@@ -40,7 +40,7 @@ describe("send_message aceita imagem_url", () => {
   });
 });
 
-describe("validação da foto por URL — antes da cadeia e nunca na prévia", () => {
+describe("validação e guarda da foto por URL — antes da cadeia e nunca na prévia", () => {
   it("a recusa de produto_codigo + imagem_url existe e libera a reserva antes de devolver", () => {
     const i = corpoDoSend.indexOf("imagem_e_produto_juntos");
     expect(i).toBeGreaterThan(-1);
@@ -48,17 +48,27 @@ describe("validação da foto por URL — antes da cadeia e nunca na prévia", (
     expect(bloco).toContain("dupTrava.liberar(body);");
   });
 
-  it("a guarda (formato + C6) roda ANTES de runBeforeSend, e só fora da prévia", () => {
-    const guarda = corpoDoSend.indexOf("prepararImagemPorUrl(url)");
+  it("o download e a guarda (baixarImagemSegura) rodam ANTES de runBeforeSend, e só fora da prévia", () => {
+    const baixa = corpoDoSend.indexOf("baixarImagemSegura(url)");
     const cadeia = corpoDoSend.indexOf("runBeforeSend(beforeSendArgs)");
-    expect(guarda).toBeGreaterThan(-1);
+    expect(baixa).toBeGreaterThan(-1);
     expect(cadeia).toBeGreaterThan(-1);
-    expect(guarda).toBeLessThan(cadeia);
-    expect(corpoDoSend.slice(0, guarda)).toContain("temImagemPorUrl && !preview");
+    expect(baixa).toBeLessThan(cadeia);
+    expect(corpoDoSend.slice(0, baixa)).toContain("temImagemPorUrl && !preview");
+  });
+
+  it("a foto é guardada na conversa com o tenant do turno antes de sair", () => {
+    const baixa = corpoDoSend.indexOf("baixarImagemSegura(url)");
+    const guarda = corpoDoSend.indexOf("guardarImagemNaConversa(createAdminClient(), {");
+    expect(guarda).toBeGreaterThan(baixa);
+    const chamada = corpoDoSend.slice(guarda, corpoDoSend.indexOf("});", guarda));
+    expect(chamada).toContain("tenantId,");
+    expect(chamada).toContain("conversationId: input.conversationId,");
+    expect(corpoDoSend).toContain("fotosDoProduto = [{ storagePath: guardada.storagePath, mime: guardada.mime }];");
   });
 
   it("a foto recusada não derruba o texto: o motivo é registrado e o envio segue só com texto", () => {
-    expect(corpoDoSend).toContain("motivoFotoRecusada = validada.motivo;");
+    expect(corpoDoSend).toContain("motivoFotoRecusada = motivo;");
     expect(corpoDoSend).toContain("runLog.warn('imagem_url recusada");
   });
 
@@ -69,9 +79,11 @@ describe("validação da foto por URL — antes da cadeia e nunca na prévia", (
   });
 });
 
-describe("entrega — a foto por URL sai de DENTRO do send do guardrail, pelo mesmo teto", () => {
-  it("o canal recebe a mídia por URL, pela conversão de paraMidiaDoCanal", () => {
-    expect(corpoDoSend).toContain("...(media ? { media: paraMidiaDoCanal(media) } : {})");
+describe("entrega — o canal recebe só storagePath, de DENTRO do send do guardrail", () => {
+  it("enviar volta a receber só FotoParaEnvio (sem media por URL)", () => {
+    expect(corpoDoSend).toContain("media?: FotoParaEnvio,");
+    expect(corpoDoSend).toContain("...(media ? { media } : {}),");
+    expect(corpoDoSend).not.toContain("paraMidiaDoCanal");
   });
 
   it("a foto sai de dentro do send (com o corpo que a cadeia aprovou) e obedece restantes()", () => {
@@ -80,8 +92,8 @@ describe("entrega — a foto por URL sai de DENTRO do send do guardrail, pelo me
     expect(send).toContain("restantes: () => maxSendsPerTurn - seq,");
   });
 
-  it("registra se a foto por URL saiu (OK_KINDS), não só que foi tentada", () => {
-    expect(corpoDoSend).toContain("if ('url' in foto && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;");
+  it("registra se a foto saiu (OK_KINDS), não só que foi tentada", () => {
+    expect(corpoDoSend).toContain("if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;");
   });
 });
 
