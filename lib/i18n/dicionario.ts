@@ -14693,7 +14693,6 @@ export const DICIONARIO: Traducoes = {
   "Funil do interesse": { es: "Embudo del interés" },
   "Etapa do interesse": { es: "Etapa del interés" },
   "Sem funil (passar para a equipe)": { es: "Sin embudo (pasar al equipo)" },
-  "Escolha a etapa": { es: "Elige la etapa" },
   "Falta escolher a etapa: sem ela, o interesse continua indo para a equipe.": {
     es: "Falta elegir la etapa: sin ella, el interés sigue yendo al equipo.",
   },

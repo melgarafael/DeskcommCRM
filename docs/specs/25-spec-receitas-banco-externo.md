@@ -528,3 +528,41 @@ escolha do funil/etapa padrão na instância da receita + aviso na Central.
   banco.
 - O agente de verdade chamando a ferramenta com a referência (só testes com
   Supabase simulado); fica para o e2e do apartamento, na R5b.
+
+## R5b entregue: o destino do interesse na receita
+
+A instância da receita ganha `destino_do_interesse` (`{ pipeline_id, stage_id }`,
+opcional) — a segunda metade da R5 (D6). A tela da receita mostra "Para onde vai
+o interesse do cliente" (funil e etapa); `crm_consultar_receita` devolve, junto
+das linhas, o bloco `interesse` que ensina o agente.
+
+### O que mudou
+- `lib/external-db/receitas/destino-do-interesse.ts` (novo) — o schema fechado
+  dos dois ids e `orientacaoDeInteresse`: com destino válido entrega ids, nomes e o
+  molde `<receita>:<id do item>` para o `crm_create_lead` (R5a); sem destino, ou
+  com o funil arquivado depois, manda o agente NÃO abrir negócio e chamar
+  `crm_request_human_handoff`.
+- `lib/external-db/receitas/destino-no-banco.ts` (novo) — confere no banco, com a
+  organização de quem chama, que funil e etapa existem, estão ativos, a etapa é do
+  funil e não é de ganho nem de perda.
+- `app/api/v1/external-db/connections/[id]/recipes/route.ts` — o PUT recusa (422)
+  destino inválido antes de gravar.
+- `lib/mcp/tools/receitas-externas.ts` — o resultado do `executar` traz `interesse`.
+- `app/app/integracao-dados/[id]/_components/DestinoDoInteresse.tsx` (novo) e
+  `ReceitasProntas.tsx` — os dois seletores, com o aviso do que acontece sem escolha.
+- Sem migration: a instância mora no `jsonb` `receitas`.
+
+### Decisão: o aviso de "sem funil" é o handoff que já existe
+A D6 pedia "aviso na Central em vez de lead". Um tipo novo de aviso exigiria
+migration + baseline + vocabulário (`agent_inbox_items_kind_check`). Em vez disso o
+agente chama `crm_request_human_handoff`, que já abre o item na Central com o
+resumo da conversa pronto (`buildHandoffSummary`). O laço se fecha sem tipo novo.
+
+### NÃO MEDIDO
+- O funil de destino estar entre os funis liberados AO AGENTE
+  (`lib/leads/escopo-de-funil.ts`): se não estiver, o `crm_create_lead` é recusado
+  com a mensagem do escopo e o modelo a recebe; a tela não avisa isso hoje.
+- O agente de verdade, pelo WhatsApp, seguindo a orientação (pergunta → itens →
+  interesse → negócio com a referência): é o caso de aceite do apartamento, medido
+  no espelho depois deste PR.
+- A pré-visualização da receita não mostra o bloco `interesse`.
