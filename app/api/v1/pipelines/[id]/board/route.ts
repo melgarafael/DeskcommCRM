@@ -31,6 +31,7 @@ import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const dynamic = "force-dynamic";
 
@@ -600,7 +601,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const board: BoardData = {
     pipeline: pipeline as Pipeline,
     stages: (stages ?? []) as Stage[],
-    leads: leadsComMarcadores.leads,
+    leads: leadsComMarcadores.leads.map(
+      (lead) =>
+        ocultarProvaMetaNaResposta(lead as unknown as Record<string, unknown>) as unknown as Lead,
+    ),
   };
 
   return ok(board, { requestId });

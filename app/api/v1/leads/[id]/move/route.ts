@@ -25,6 +25,7 @@ import {
 } from "@/lib/leads/motivo-da-perda";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
 import { modoDeReabertura, recusaReabertura } from "@/lib/leads/reabertura";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 import {
   recusaDeCamposObrigatorios,
   recusaDeMotivoDoGanho,
@@ -348,5 +349,5 @@ export async function POST(
     },
   });
 
-  return ok(finalLead, { requestId });
+  return ok(ocultarProvaMetaNaResposta(finalLead as Record<string, unknown>), { requestId });
 }

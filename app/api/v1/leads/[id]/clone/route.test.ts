@@ -259,6 +259,24 @@ describe("GET /api/v1/leads/[id]/clone", () => {
 });
 
 describe("POST /api/v1/leads/[id]/clone", () => {
+  it("não copia a prova causal ao transferir e não a expõe na resposta", async () => {
+    const origem = seed();
+    origem.crm_leads![0]!.source_metadata = {
+      canal: "whatsapp",
+      meta_capi_lead_birth_v1: { platform: "meta_ads", ctwa_clid: "clique-antigo" },
+    };
+    db = fakeDb(origem);
+    vi.mocked(createClient).mockResolvedValue(db.client);
+    const { POST } = await import("./route");
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+    expect(response.status).toBe(201);
+    expect(body.data.lead.source_metadata).not.toHaveProperty("meta_capi_lead_birth_v1");
+    expect(body.data.origem.source_metadata).not.toHaveProperty("meta_capi_lead_birth_v1");
+    const gravada = (db.tables.crm_leads ?? []).find((lead) => lead.id === LEAD_ID);
+    expect(gravada?.source_metadata).toHaveProperty("meta_capi_lead_birth_v1");
+  });
+
   it("cria o negócio no funil destino e fecha a origem como perdida", async () => {
     const { POST } = await import("./route");
 

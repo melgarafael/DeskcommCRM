@@ -421,11 +421,14 @@ async function fecharNegociosAbertosDeQuemPediuParar(
  * bloqueado — por isso o passo 1 vem antes.
  */
 async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  // Sem ID retornado pelo INSERT, ainda tentamos abrir a demanda pelo caminho
+  // legado. A prova CTWA exige um ID persistido e não nasce desta alternativa.
   try {
     const nascimento = await garantirLeadDaConversa(admin, {
       organizationId: entrada.organizationId,
       contactId: entrada.contactId,
       conversationId: entrada.conversationId,
+      messageId: entrada.messageId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
     });

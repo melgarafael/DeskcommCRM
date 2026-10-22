@@ -286,7 +286,7 @@ jobs:
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4, 5, 6]
+        parte: [1, 2, 3, 4, 5, 6, 7]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -1395,6 +1395,31 @@ jobs:
         integracao-dados-fontes-liberadas.spec.ts
         atender-pelo-celular.spec.ts
 
+      # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
+      # processo next start. As demais partes preservam a configuração WAHA.
+      #
+      # ─── PARTE 7 — nasceu em 2026-10-22 (#3128, @oianmaxdev; doc 182 A) ───
+      #
+      # É uma parte COMUM com dois desvios de ambiente, ambos presos à
+      # `meta-lead-submitted-causal` e não ao número 7:
+      #   - o passo "Isolar Graph e assinatura WAHA da parte causal" põe
+      #     `WAHA_WEBHOOK_REQUIRE_SIGNATURE=true`, `META_ADS_GRAPH_BASE_URL` no
+      #     dublê 127.0.0.1:3995 e `META_GRAPH_BASE_URL` numa porta que recusa;
+      #   - o passo "Semear funil de nascimento para a prova causal" roda
+      #     `scripts/seed-e2e-nascimento-do-lead.ts` além dos seeds de sempre.
+      # Os seeds comuns (`!= 4`) rodam aqui também. Um rebalanceamento pode
+      # TRAZER spec para esta parte (ela usa ~1/3 do orçamento) desde que a spec
+      # não poste no webhook do WAHA sem assinatura nem dependa do Graph real —
+      # para listar quem posta: `grep -lE 'webhooks/waha' tests/e2e/*.spec.ts
+      # tests/e2e/helpers/*.ts` (helper conta: `jev.ts` arrasta as jev-*).
+      # Pode também LEVAR a causal para outra parte: o `if: matrix.parte == N`
+      # dos dois passos acompanha a spec, e `tests/unit/e2e-cobertura-completa`
+      # reprova se a spec e os passos ficarem em partes diferentes.
+      # PREVISÃO, não medida (o e2e deste PR mede): ~6 min de preparo, como as
+      # demais, + ~2 min de caso (9 casos, dublês locais) — job de ~8 a 10 min.
+      SPECS_PARTE_7: >-
+        meta-lead-submitted-causal.spec.ts
+
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
       # A `vps-fresh-onboarding` saiu desta lista no PR da issue #179 (a infra
@@ -1837,6 +1862,24 @@ jobs:
       - name: Gerar o .env.e2e (ambiente da suíte)
         run: pnpm e2e:env
 
+      - name: Isolar Graph e assinatura WAHA da parte causal
+        if: matrix.parte == 7
+        run: |
+          set -euo pipefail
+          if grep -Eq '^[[:space:]]*(META_ADS_GRAPH_BASE_URL|META_GRAPH_BASE_URL|WAHA_WEBHOOK_REQUIRE_SIGNATURE)[[:space:]]*=' .env.e2e; then
+            echo '::error::.env.e2e contém configuração que teria precedência no next start causal'
+            exit 1
+          fi
+          grep -qx 'WAHA_API_BASE_URL=http://127.0.0.1:3999' .env.e2e || {
+            echo '::error::WAHA_API_BASE_URL da parte causal não é o dublê local'
+            exit 1
+          }
+          {
+            echo 'META_ADS_GRAPH_BASE_URL=http://127.0.0.1:3995'
+            echo 'META_GRAPH_BASE_URL=http://127.0.0.1:9'
+            echo 'WAHA_WEBHOOK_REQUIRE_SIGNATURE=true'
+          } >> "$GITHUB_ENV"
+
       # E publica o arquivo no ambiente do JOB, para que servidor e testes leiam
       # literalmente a mesma fonte.
       #
@@ -2128,6 +2171,10 @@ jobs:
           cp .env.e2e .env.local
           pnpm exec tsx scripts/seed-e2e-credentials.ts
 
+      - if: matrix.parte == 7
+        name: Semear funil de nascimento para a prova causal
+        run: pnpm exec tsx scripts/seed-e2e-nascimento-do-lead.ts
+
       # `SUPABASE_DB_URL` no `.env.local` (e não só no `env:` do passo de teste):
       # `seed-e2e-escalacao.ts` abre um `pg.Pool` direto, e o `.env.local` é a
       # única fonte que ele lê. Sem a linha, o `pg` cai no default 5432 e morre
@@ -2207,6 +2254,7 @@ jobs:
             4) LISTA="$SPECS_PARTE_4" ;;
             5) LISTA="$SPECS_PARTE_5" ;;
             6) LISTA="$SPECS_PARTE_6" ;;
+            7) LISTA="$SPECS_PARTE_7" ;;
             *) echo "::error::parte ${{ matrix.parte }} sem lista"; exit 1 ;;
           esac
           # Falha alto se a variável vier vazia: sem isto, um typo no nome faria
@@ -2550,7 +2598,7 @@ jobs:
                       dentro { exit }
                     ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
-          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; } | sort -u | wc -l | tr -d " ")
+          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; bloco SPECS_PARTE_7; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
           # E o recorte passa a ter CONTROLE, não só um piso.

@@ -1247,6 +1247,7 @@ export const AUDIT_ACTIONS = [
   "agenda.service_unblock",
   // Reenvio de mensagem que falhou, na mesma linha (POST /api/v1/messages/{id}/retry).
   "message.retried",
+  "conversions.meta_lead_birth_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

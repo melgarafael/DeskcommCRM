@@ -22,6 +22,7 @@
  * `app/api/v1/leads/[id]/clone/route.ts`.
  */
 import type { CreateLeadInput } from "@/lib/schemas";
+import { removerProvaMetaLeadSubmitted } from "@/lib/leads/prova-meta-lead-submitted";
 import { type ModoReabertura } from "@/lib/leads/reabertura";
 
 /** O negócio de origem, como a rota o lê do banco. */
@@ -234,7 +235,7 @@ export function montaPayloadDoClone(
     // O que já estava gravado não é julgado de novo pelo padrão do destino (#2730).
     custom_fields_da_origem: origem.custom_fields ?? {},
     source_metadata: {
-      ...(origem.source_metadata ?? {}),
+      ...removerProvaMetaLeadSubmitted(origem.source_metadata),
       clonado_de: {
         lead_id: origem.id,
         pipeline_id: origem.pipeline_id,
