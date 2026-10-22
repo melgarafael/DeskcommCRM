@@ -1,5 +1,9 @@
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
+import {
+  followupGatilhoMensagemHandler,
+  followupRespostaPadraoHandler,
+} from "@/lib/followup/gatilho-mensagem.handler";
 import { blingPedidoDoGanhoHandler } from "@/lib/integrations/bling/pedido-do-ganho.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
@@ -50,7 +54,12 @@ export function ensureHandlersRegistered(): void {
   // Mesmo critério: o gatilho do cliente que volta é escrita curta no banco e
   // precisa rodar antes do LLM. Depois da reatividade, para o match_reply dos
   // fluxos já vivos ler a mensagem primeiro.
+  // Gatilhos de entrada por mensagem (Automações): o específico (palavra,
+  // link, anúncio) ANTES do retorno, a resposta padrão DEPOIS — a ordem é a
+  // prioridade (`gatilho-mensagem.ts`).
+  registerHandler(followupGatilhoMensagemHandler);
   registerHandler(followupGatilhoRetornoHandler);
+  registerHandler(followupRespostaPadraoHandler);
   registerHandler(aiResponseHandler);
   registerHandler(aiSentimentHandler);
   registerHandler(aiHandoffFromSentimentHandler);

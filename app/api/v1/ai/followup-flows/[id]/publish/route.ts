@@ -97,8 +97,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // `stage_change` (gatilho-etapa), `case_opened` (gatilho-caso),
   // `appointment_no_show` (followup-gatilho-presenca.v1, confirmação humana),
   // `inbound_after_silence` (gatilho-retorno, cliente que voltou) e
-  // `lead_created` (gatilho-lead, negócio que acabou de nascer).
-  const KINDS_COM_MOTOR = new Set(["manual", "webhook", "silence", "stage_change", "case_opened", "appointment_no_show", "inbound_after_silence", "lead_created"]);
+  // `lead_created` (gatilho-lead, negócio que acabou de nascer) e os de
+  // mensagem — `keyword`, `ref_link`, `ad_click`, `default_reply` (gatilho-mensagem).
+  const KINDS_COM_MOTOR = new Set(["manual", "webhook", "silence", "stage_change", "case_opened", "appointment_no_show", "inbound_after_silence", "lead_created", "keyword", "ref_link", "ad_click", "default_reply"]);
   const trigger = (pointer.trigger_config ?? { kind: "manual" }) as {
     kind?: string;
     params?: { stage_id?: string };

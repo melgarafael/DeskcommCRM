@@ -26,6 +26,7 @@ import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/der
 import { haQuemAtendaASessao } from '@/lib/ai/agents/quem-atende-a-sessao';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import { deveCederTurnoAoRetorno } from '@/lib/followup/ceder-turno-ao-retorno';
+import { deveCederTurnoAoGatilhoDeMensagem } from '@/lib/followup/ceder-turno-ao-gatilho-de-mensagem';
 import { ehOperante } from '@/lib/organizacao/operante';
 
 const DRAIN_CONSUMER = 'agent-engine';
@@ -381,6 +382,23 @@ async function processEvent(
     })
   ) {
     log.info('drain: turno cedido ao follow-up de retorno — inbound_turn pulado', {
+      event_id: event.id,
+      contact_id: p.contact_id,
+    });
+    return 'processado';
+  }
+
+  // UMA VOZ: a mensagem disparou um fluxo de Automações (palavra-chave, link ou
+  // QR de entrada, anúncio)? O fluxo fala sozinho. Fail-open, como o de cima.
+  if (
+    await deveCederTurnoAoGatilhoDeMensagem(pool, {
+      organizationId: event.organization_id,
+      contactId: p.contact_id,
+      conversationId: p.conversation_id,
+      messageId: p.inbound_message_id,
+    })
+  ) {
+    log.info('drain: turno cedido ao gatilho de mensagem — inbound_turn pulado', {
       event_id: event.id,
       contact_id: p.contact_id,
     });

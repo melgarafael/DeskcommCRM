@@ -72,7 +72,9 @@ describe("drenarEventosDoInbound — o webhook não drena a fila de todo mundo q
     expect(opts?.escopo?.organizationId).toBe("org-1");
     expect([...(opts?.escopo?.handlers ?? [])].sort()).toEqual([
       "followup-gatilho-lead.v1",
+      "followup-gatilho-mensagem.v1",
       "followup-gatilho-retorno.v1",
+      "followup-resposta-padrao.v1",
     ]);
   });
 

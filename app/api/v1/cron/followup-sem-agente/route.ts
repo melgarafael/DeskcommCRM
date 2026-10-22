@@ -72,6 +72,10 @@ const COMO_DISPARA: Record<string, string> = {
   appointment_no_show: "quando alguém confirma que o contato não compareceu",
   inbound_after_silence: "quando o contato volta a escrever depois de um tempo sem falar",
   lead_created: "quando um negócio nasce",
+  keyword: "quando o contato manda uma palavra-chave",
+  ref_link: "quando o contato chega pelo link ou QR de entrada",
+  ad_click: "quando o contato chega por um anúncio de clique para o WhatsApp",
+  default_reply: "quando nada mais responde a uma mensagem do contato",
 };
 
 interface PonteiroDesarmado {

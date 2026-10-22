@@ -61,6 +61,7 @@ import {
 } from "./graph-schema";
 import type { EnrollmentOutcome, EnrollmentStatus } from "./node-handlers";
 import type { BaseDaPausa } from "./pausa-de-reentrada";
+import type { ModoDaPalavra } from "./gatilho-mensagem-regra";
 
 type ConditionConfig = z.infer<typeof conditionConfigSchema>;
 type Check = ConditionConfig["checks"][number];
@@ -694,6 +695,13 @@ export const DESFECHOS: Record<EnrollmentOutcome, string> = {
  * "Manual" e "Silêncio" são o texto que `TriggerConfigControl.tsx` já mostra e
  * que `followup-builder.spec.ts` seleciona pelo nome — mantidos ao pé da letra.
  */
+/** Como a palavra-chave é comparada (`gatilho-mensagem-regra.ts`). */
+export const MODOS_DA_PALAVRA_CHAVE: Record<ModoDaPalavra, string> = {
+  contem: "A mensagem contém a palavra",
+  exato: "A mensagem é exatamente a palavra",
+  comeca_com: "A mensagem começa com a palavra",
+};
+
 export const GATILHOS: Record<TipoDeGatilho, string> = {
   appointment_no_show:"Falta confirmada pela equipe",
   manual: "Manual",
@@ -707,6 +715,10 @@ export const GATILHOS: Record<TipoDeGatilho, string> = {
   case_opened: "Quando o agente pede ajuda de um humano",
   inbound_after_silence: "Cliente voltou",
   conversation_end: "Fim da conversa",
+  keyword: "Palavra-chave",
+  ref_link: "Link ou QR de entrada",
+  ad_click: "Anúncio de clique para o WhatsApp",
+  default_reply: "Resposta padrão",
 };
 
 /**

@@ -619,6 +619,23 @@ export function descreveEvento(
         detalhe: "depois do tempo de silêncio escolhido no gatilho deste fluxo",
         ...motor,
       };
+    case "enrolled_by_message_trigger": {
+      const gatilho = texto(p.trigger_kind);
+      const titulo =
+        gatilho === "keyword"
+          ? "Começou porque o cliente mandou a palavra-chave"
+          : gatilho === "ref_link"
+            ? "Começou porque o cliente chegou pelo link ou QR de entrada"
+            : gatilho === "ad_click"
+              ? "Começou porque o cliente chegou por um anúncio"
+              : "Começou como resposta padrão";
+      const trecho = texto(p.message_preview);
+      return {
+        titulo,
+        detalhe: trecho ? `mensagem: «${trecho}»` : "a mensagem que o cliente mandou",
+        ...motor,
+      };
+    }
     case "cancelled_by_case_closed":
       return {
         titulo: "Cancelado porque o caso foi resolvido",

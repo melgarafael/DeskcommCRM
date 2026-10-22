@@ -8,6 +8,7 @@ import { z } from "zod";
 import { flowGraphSchema } from "./graph-schema";
 import { MAX_THRESHOLD_MINUTES, MIN_THRESHOLD_MINUTES } from "./gap-de-retorno";
 import { BASES_DA_PAUSA, MAX_PAUSA_DE_REENTRADA_MINUTES } from "./pausa-de-reentrada";
+import { MODOS_DA_PALAVRA, PADRAO_DO_CODIGO } from "./gatilho-mensagem-regra";
 
 /**
  * Vocabulário da coluna `surface` (0167; `atendimento` na 0394 — roteiro de
@@ -87,6 +88,39 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("conversation_end"),
     params: z.strictObject({}),
+    ...CANCEL_ON_REPLY,
+  }),
+  // Gatilhos de entrada por mensagem (Automações, grupo 2). A regra que os
+  // casa mora em `gatilho-mensagem-regra.ts`; o produtor, em `gatilho-mensagem.ts`.
+  z.strictObject({
+    kind: z.literal("keyword"),
+    params: z.strictObject({
+      palavras: z.array(z.string().trim().min(1).max(60)).min(1).max(30),
+      modo: z.enum(MODOS_DA_PALAVRA),
+    }),
+    ...CANCEL_ON_REPLY,
+  }),
+  z.strictObject({
+    kind: z.literal("ref_link"),
+    params: z.strictObject({
+      codigo: z.string().regex(PADRAO_DO_CODIGO, "Use de 3 a 40 letras minúsculas, números ou hífen."),
+      texto: z.string().trim().max(200).optional(),
+    }),
+    ...CANCEL_ON_REPLY,
+  }),
+  z.strictObject({
+    kind: z.literal("ad_click"),
+    params: z.strictObject({
+      // Vazio = qualquer anúncio. Ids do anúncio (Meta), como o Gerenciador mostra.
+      anuncios: z.array(z.string().trim().min(1).max(64)).max(50).optional(),
+    }),
+    ...CANCEL_ON_REPLY,
+  }),
+  z.strictObject({
+    kind: z.literal("default_reply"),
+    params: z.strictObject({
+      intervalo_horas: z.number().int().min(1).max(720),
+    }),
     ...CANCEL_ON_REPLY,
   }),
 ]);

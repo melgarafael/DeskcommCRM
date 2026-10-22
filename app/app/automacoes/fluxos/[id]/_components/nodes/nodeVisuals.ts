@@ -50,7 +50,15 @@ export function regraEmBranco(): RegraDeCondicao {
  * nasceriam se o default fosse `ai_message` + o turno inbound).
  */
 export function configPadraoDaAcao(triggerKind?: string): FlowNode["config"] {
-  if (triggerKind === "inbound_after_silence") {
+  // Gatilhos de mensagem nascem com texto fixo: o fluxo responde sem precisar
+  // de agente de IA (o agente nem fala por cima — `ceder-turno-ao-gatilho-de-mensagem`).
+  if (
+    triggerKind === "inbound_after_silence" ||
+    triggerKind === "keyword" ||
+    triggerKind === "ref_link" ||
+    triggerKind === "ad_click" ||
+    triggerKind === "default_reply"
+  ) {
     return { mode: "text", body: "Configure esta mensagem." };
   }
   return { mode: "ai_message", prompt_hint: "Configure esta etapa." };

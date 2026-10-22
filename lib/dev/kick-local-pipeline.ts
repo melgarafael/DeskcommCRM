@@ -24,6 +24,10 @@ import {
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
 import { FOLLOWUP_GATILHO_LEAD_HANDLER_KEY } from "@/lib/followup/gatilho-lead.handler";
 import { FOLLOWUP_GATILHO_RETORNO_HANDLER_KEY } from "@/lib/followup/gatilho-retorno.handler";
+import {
+  FOLLOWUP_GATILHO_MENSAGEM_HANDLER_KEY,
+  FOLLOWUP_RESPOSTA_PADRAO_HANDLER_KEY,
+} from "@/lib/followup/gatilho-mensagem.handler";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
 import { logger } from "@/lib/logger";
@@ -155,7 +159,9 @@ function workerDrenaOEventLog(): boolean {
  * já aplicou a mesma regra acima.
  */
 const HANDLERS_DO_DRENO_DO_REQUEST = [
+  FOLLOWUP_GATILHO_MENSAGEM_HANDLER_KEY,
   FOLLOWUP_GATILHO_RETORNO_HANDLER_KEY,
+  FOLLOWUP_RESPOSTA_PADRAO_HANDLER_KEY,
   FOLLOWUP_GATILHO_LEAD_HANDLER_KEY,
 ] as const;
 

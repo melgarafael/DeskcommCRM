@@ -31,6 +31,11 @@ import {
   type UnidadeDeLimiar,
 } from "@/lib/followup/gap-de-retorno";
 import { MAX_PAUSA_DE_REENTRADA_MINUTES } from "@/lib/followup/pausa-de-reentrada";
+import { PADRAO_DO_CODIGO, limparPalavras, type ModoDaPalavra } from "@/lib/followup/gatilho-mensagem-regra";
+
+import { MODOS_DA_PALAVRA_CHAVE } from "@/lib/followup/vocabulario";
+
+import { GatilhoLinkDeEntrada } from "./GatilhoLinkDeEntrada";
 
 /**
  * Controle de `trigger_config` do pointer (Task 8.5) — como o fluxo começa.
@@ -72,7 +77,11 @@ type TriggerKind =
   | "case_opened"
   | "webhook"
   | "inbound_after_silence"
-  | "lead_created";
+  | "lead_created"
+  | "keyword"
+  | "ref_link"
+  | "ad_click"
+  | "default_reply";
 
 interface TriggerFormState {
   kind: TriggerKind;
@@ -89,6 +98,14 @@ interface TriggerFormState {
   stageId: string;
   cancelOnReply: boolean;
   eventTypeIds: string[];
+  /** Palavras-chave separadas por vírgula ou linha. */
+  palavras: string;
+  modoPalavra: ModoDaPalavra;
+  codigo: string;
+  fraseDoLink: string;
+  /** Ids de anúncio separados por vírgula; vazio = qualquer anúncio. */
+  anuncios: string;
+  intervaloHoras: number;
 }
 
 const DEFAULT_THRESHOLD_MINUTES = 60;
@@ -112,7 +129,22 @@ const KIND_LABEL: Record<TriggerKind, string> = {
   webhook: "Automação (Webhooks)",
   inbound_after_silence: "Cliente voltou",
   lead_created: "Lead criado",
+  keyword: "Palavra-chave",
+  ref_link: "Link ou QR de entrada",
+  ad_click: "Anúncio de clique para o WhatsApp",
+  default_reply: "Resposta padrão",
 };
+
+const ROTULO_DO_MODO = MODOS_DA_PALAVRA_CHAVE;
+
+const DEFAULT_INTERVALO_HORAS = 24;
+
+function listaDe(texto: string): string[] {
+  return texto
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
   // ⚠️ RECONHECER É DIFERENTE DE ACEITAR. Esta função degradava QUALQUER kind
@@ -136,7 +168,9 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
                 ? "webhook"
                 : raw.kind === "lead_created"
                   ? "lead_created"
-                  : "manual";
+                  : raw.kind === "keyword" || raw.kind === "ref_link" || raw.kind === "ad_click" || raw.kind === "default_reply"
+                    ? raw.kind
+                    : "manual";
   const params =
     (raw.params as {
       threshold_minutes?: number;
@@ -146,6 +180,12 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
       reentry_pause_minutes?: number;
       max_silence_minutes?: number;
       reentry_pause_basis?: string;
+      palavras?: string[];
+      modo?: ModoDaPalavra;
+      codigo?: string;
+      texto?: string;
+      anuncios?: string[];
+      intervalo_horas?: number;
     } | undefined) ?? {};
   const minutosRetorno =
     kind === "inbound_after_silence" && typeof params.threshold_minutes === "number"
@@ -172,6 +212,15 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
     pauseFromLastSend: kind === "silence" && params.reentry_pause_basis === "ultimo_envio",
     stageId: kind === "stage_change" && typeof params.stage_id === "string" ? params.stage_id : "",
     cancelOnReply: raw.cancel_on_reply === true,
+    palavras: kind === "keyword" && Array.isArray(params.palavras) ? params.palavras.join(", ") : "",
+    modoPalavra: kind === "keyword" && params.modo ? params.modo : "contem",
+    codigo: kind === "ref_link" && typeof params.codigo === "string" ? params.codigo : "",
+    fraseDoLink: kind === "ref_link" && typeof params.texto === "string" ? params.texto : "",
+    anuncios: kind === "ad_click" && Array.isArray(params.anuncios) ? params.anuncios.join(", ") : "",
+    intervaloHoras:
+      kind === "default_reply" && typeof params.intervalo_horas === "number"
+        ? params.intervalo_horas
+        : DEFAULT_INTERVALO_HORAS,
   };
 }
 
@@ -189,6 +238,20 @@ function toTriggerConfig(form: TriggerFormState): Record<string, unknown> {
   if (form.kind === "case_opened") return { kind: "case_opened", ...cancelOnReply };
   if (form.kind === "webhook") return { kind: "webhook", ...cancelOnReply };
   if (form.kind === "lead_created") return { kind: "lead_created", ...cancelOnReply };
+  if (form.kind === "keyword") {
+    return { kind: "keyword", params: { palavras: listaDe(form.palavras), modo: form.modoPalavra }, ...cancelOnReply };
+  }
+  if (form.kind === "ref_link") {
+    const frase = form.fraseDoLink.trim();
+    return { kind: "ref_link", params: { codigo: form.codigo.trim(), ...(frase ? { texto: frase } : {}) }, ...cancelOnReply };
+  }
+  if (form.kind === "ad_click") {
+    const anuncios = listaDe(form.anuncios);
+    return { kind: "ad_click", params: anuncios.length > 0 ? { anuncios } : {}, ...cancelOnReply };
+  }
+  if (form.kind === "default_reply") {
+    return { kind: "default_reply", params: { intervalo_horas: Math.round(form.intervaloHoras) }, ...cancelOnReply };
+  }
 
   const segments = form.segments
     .split(",")
@@ -273,6 +336,17 @@ function summaryLabel(
   if (cfg.kind === "case_opened") return `${t("Gatilho")}: ${t("quando o agente pede ajuda")}`;
   if (cfg.kind === "webhook") return t("Disparado por uma automação em Webhooks");
   if (cfg.kind === "lead_created") return `${t("Gatilho")}: ${t("Lead criado")}`;
+  if (cfg.kind === "keyword") {
+    const palavras = (cfg.params as { palavras?: string[] } | undefined)?.palavras ?? [];
+    const lista = palavras.slice(0, 3).map((p) => `«${p}»`).join(", ");
+    return `${t("Gatilho")}: ${t("Palavra-chave")}${lista ? ` ${lista}${palavras.length > 3 ? "…" : ""}` : ""}`;
+  }
+  if (cfg.kind === "ref_link") {
+    const codigo = (cfg.params as { codigo?: string } | undefined)?.codigo;
+    return `${t("Gatilho")}: ${t("Link ou QR de entrada")}${codigo ? ` #${codigo}` : ""}`;
+  }
+  if (cfg.kind === "ad_click") return `${t("Gatilho")}: ${t("Anúncio de clique para o WhatsApp")}`;
+  if (cfg.kind === "default_reply") return `${t("Gatilho")}: ${t("Resposta padrão")}`;
   if (cfg.kind === "manual" || cfg.kind === undefined) return `${t("Gatilho")}: ${t("Manual")}`;
   // conversation_end de dados antigos (API crua) — sem UI própria, mas mostrado
   // com transparência em vez de mentir "Manual".
@@ -328,6 +402,14 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
   // Gatilho de etapa sem etapa escolhida não é rascunho: é um fluxo que ficaria
   // ativo sem nunca disparar. O publish recusa; o Salvar recusa antes.
   const stageInvalid = form.kind === "stage_change" && form.stageId.trim().length === 0;
+  // Gatilhos de mensagem: o que o contrato recusaria, a tela recusa antes.
+  const palavrasInvalid =
+    form.kind === "keyword" && (limparPalavras(listaDe(form.palavras)).length === 0 || listaDe(form.palavras).length > 30);
+  const codigoInvalid = form.kind === "ref_link" && !PADRAO_DO_CODIGO.test(form.codigo.trim());
+  const intervaloInvalid =
+    form.kind === "default_reply" &&
+    (!Number.isFinite(form.intervaloHoras) || form.intervaloHoras < 1 || form.intervaloHoras > 720);
+  const mensagemInvalid = palavrasInvalid || codigoInvalid || intervaloInvalid;
   const dirty =
     form.kind !== saved.kind ||
     (form.kind === "appointment_no_show" && form.eventTypeIds.join() !== saved.eventTypeIds.join()) ||
@@ -342,10 +424,14 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
       (form.thresholdValor !== saved.thresholdValor ||
         form.thresholdUnidade !== saved.thresholdUnidade ||
         form.segments !== saved.segments)) ||
-    (form.kind === "stage_change" && form.stageId !== saved.stageId);
+    (form.kind === "stage_change" && form.stageId !== saved.stageId) ||
+    (form.kind === "keyword" && (form.palavras !== saved.palavras || form.modoPalavra !== saved.modoPalavra)) ||
+    (form.kind === "ref_link" && (form.codigo !== saved.codigo || form.fraseDoLink !== saved.fraseDoLink)) ||
+    (form.kind === "ad_click" && form.anuncios !== saved.anuncios) ||
+    (form.kind === "default_reply" && form.intervaloHoras !== saved.intervaloHoras);
 
   const onSave = () => {
-    if (thresholdInvalid || stageInvalid) return;
+    if (thresholdInvalid || stageInvalid || mensagemInvalid) return;
     update.mutate(toTriggerConfig(form), {
       onSuccess: () => {
         setSaved(form);
@@ -400,6 +486,10 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
                 <SelectItem value="case_opened">{t(KIND_LABEL.case_opened)}</SelectItem>
                 <SelectItem value="inbound_after_silence">{t(KIND_LABEL.inbound_after_silence)}</SelectItem>
                 <SelectItem value="lead_created">{t(KIND_LABEL.lead_created)}</SelectItem>
+                <SelectItem value="keyword">{t(KIND_LABEL.keyword)}</SelectItem>
+                <SelectItem value="ref_link">{t(KIND_LABEL.ref_link)}</SelectItem>
+                <SelectItem value="ad_click">{t(KIND_LABEL.ad_click)}</SelectItem>
+                <SelectItem value="default_reply">{t(KIND_LABEL.default_reply)}</SelectItem>
                 <SelectItem value="webhook">{t(KIND_LABEL.webhook)}</SelectItem>
               </SelectContent>
             </Select>
@@ -491,6 +581,114 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
                 "O fluxo começa quando uma regra em Webhooks usa a ação «Iniciar fluxo de mensagem» apontando para este fluxo publicado.",
               )}
             </p>
+          )}
+
+          {form.kind === "keyword" && (
+            <div className="space-y-2">
+              <Label htmlFor="trigger-palavras">{t("Palavras-chave")}</Label>
+              <Input
+                id="trigger-palavras"
+                placeholder={t("ex: promo, preço, quero comprar")}
+                value={form.palavras}
+                onChange={(e) => setForm((f) => ({ ...f, palavras: e.target.value }))}
+                aria-invalid={palavrasInvalid}
+                data-testid="trigger-palavras"
+              />
+              {palavrasInvalid && (
+                <p className="text-xs text-error-fg">{t("Escreva de 1 a 30 palavras, separadas por vírgula.")}</p>
+              )}
+              <Select
+                value={form.modoPalavra}
+                onValueChange={(v) => setForm((f) => ({ ...f, modoPalavra: v as ModoDaPalavra }))}
+              >
+                <SelectTrigger id="trigger-modo-palavra" aria-label={t("Como comparar")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ROTULO_DO_MODO) as ModoDaPalavra[]).map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {t(ROTULO_DO_MODO[m])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Maiúsculas e acentos não importam. O fluxo começa na hora, e o agente de IA não responde por cima. Quem já está em outro fluxo, falando com um atendente ou em grupo não entra.",
+                )}
+              </p>
+            </div>
+          )}
+
+          {form.kind === "ref_link" && (
+            <div className="space-y-2">
+              <Label htmlFor="trigger-codigo">{t("Código do link")}</Label>
+              <Input
+                id="trigger-codigo"
+                placeholder={t("ex: promo-natal")}
+                value={form.codigo}
+                onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value.toLowerCase().replace(/\s+/g, "-") }))}
+                aria-invalid={codigoInvalid}
+                data-testid="trigger-codigo"
+              />
+              {codigoInvalid && (
+                <p className="text-xs text-error-fg">{t("Use de 3 a 40 letras minúsculas, números ou hífen.")}</p>
+              )}
+              <Label htmlFor="trigger-frase">{t("Frase que já vem escrita (opcional)")}</Label>
+              <Input
+                id="trigger-frase"
+                placeholder={t("ex: Quero o cupom de Natal")}
+                value={form.fraseDoLink}
+                maxLength={200}
+                onChange={(e) => setForm((f) => ({ ...f, fraseDoLink: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Quem abre o link (ou lê o QR) cai no WhatsApp com a mensagem pronta, terminada pelo código. Ao enviar, o fluxo começa. Salve o gatilho para usar o link.",
+                )}
+              </p>
+              <GatilhoLinkDeEntrada codigo={form.codigo.trim()} frase={form.fraseDoLink} />
+            </div>
+          )}
+
+          {form.kind === "ad_click" && (
+            <div className="space-y-2">
+              <Label htmlFor="trigger-anuncios">{t("Ids dos anúncios (opcional)")}</Label>
+              <Input
+                id="trigger-anuncios"
+                placeholder={t("vazio = qualquer anúncio")}
+                value={form.anuncios}
+                onChange={(e) => setForm((f) => ({ ...f, anuncios: e.target.value }))}
+                data-testid="trigger-anuncios"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "O fluxo começa quando um contato novo escreve depois de clicar num anúncio de clique para o WhatsApp (Meta). O id do anúncio aparece no Gerenciador de Anúncios. Contato que já conversava antes do clique não entra.",
+                )}
+              </p>
+            </div>
+          )}
+
+          {form.kind === "default_reply" && (
+            <div className="space-y-2">
+              <Label htmlFor="trigger-intervalo">{t("Responder no máximo 1 vez a cada (horas)")}</Label>
+              <Input
+                id="trigger-intervalo"
+                type="number"
+                min={1}
+                max={720}
+                value={form.intervaloHoras}
+                onChange={(e) => setForm((f) => ({ ...f, intervaloHoras: Number(e.target.value) }))}
+                aria-invalid={intervaloInvalid}
+                data-testid="trigger-intervalo"
+              />
+              {intervaloInvalid && <p className="text-xs text-error-fg">{t("Use de 1 a 720 horas.")}</p>}
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "O fluxo responde quando nada mais respondeu: nenhuma palavra-chave, link ou outro fluxo pegou a mensagem. Num número com agente de IA publicado, quem responde é o agente — a resposta padrão fica quieta.",
+                )}
+              </p>
+            </div>
           )}
 
           {form.kind === "inbound_after_silence" && (
@@ -642,7 +840,7 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
             type="button"
             size="sm"
             className="w-full"
-            disabled={!dirty || thresholdInvalid || stageInvalid || update.isPending}
+            disabled={!dirty || thresholdInvalid || stageInvalid || mensagemInvalid || update.isPending}
             onClick={onSave}
             data-testid="trigger-config-save"
           >
