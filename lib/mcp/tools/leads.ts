@@ -28,6 +28,7 @@ import {
   descricaoComReferencia,
 } from "@/lib/leads/referencia-externa";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
+import { completarDestinoDoNegocio } from "@/lib/external-db/receitas/destino-pela-referencia";
 import { conferirCamposPersonalizados } from "../conferencia-de-campos";
 import { resolveUserNames } from "./_users";
 import type { McpContext, McpToolDefinition } from "../types";
@@ -255,8 +256,19 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
 // ---------------------------------------------------------------------------
 
 const createInputShape = {
-  pipeline_id: z.string().uuid(),
-  stage_id: z.string().uuid(),
+  // Opcionais SÓ por causa da `referencia_externa`: com a referência de um item cuja
+  // receita tem funil de destino, o sistema completa os dois (R5c). Sem ela, a
+  // ausência é recusada com a mensagem de ensino (`completarDestinoDoNegocio`).
+  pipeline_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("O funil do negócio. Pode ser omitido (junto com stage_id) quando passar referencia_externa de um item cuja receita já tem funil de destino."),
+  stage_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("A etapa do negócio. Pode ser omitida (junto com pipeline_id) quando passar referencia_externa de um item cuja receita já tem funil de destino."),
   title: z.string().min(2).max(200),
   description: z.string().max(2000).optional(),
   contact_id: z.string().uuid().optional(),
@@ -282,7 +294,7 @@ const createInputShape = {
     .regex(REFERENCIA_EXTERNA)
     .optional()
     .describe(
-      "Só quando o cliente escolheu UM item de um resultado de receita do banco externo: a referência no formato <receita>:<id> (ex.: wordpress-conteudo:4821), com a receita e o id que vieram no resultado. Nunca invente. Use junto com o contact_id da conversa; o mesmo cliente repetindo o interesse no mesmo item não cria outro negócio.",
+      "Só quando o cliente escolheu UM item de um resultado de receita do banco externo: a referência no formato <receita>:<id> (ex.: wordpress-conteudo:4821), com a receita que veio no resultado e o código (id) do item que está escrito na conversa. Nunca invente. Use junto com o contact_id da conversa; o funil e a etapa saem da receita, então pipeline_id e stage_id podem ser omitidos. O mesmo cliente repetindo o interesse no mesmo item não cria outro negócio.",
     ),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields` (#2297).
@@ -307,6 +319,21 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
+    // Spec 25 (R5c) — funil e etapa podem faltar quando o agente passa só a
+    // referência de um item: o sistema os acha na receita. No turno do agente o
+    // wrapper (`lib/ai/runtime/tools.ts`) já completou ANTES do escopo de funil;
+    // aqui vale para quem chega por outra porta (MCP externo, rota). Sem nada
+    // disso, a ausência é recusada com a mensagem de ensino.
+    const destinoArgs: Record<string, unknown> = {
+      pipeline_id: input.pipeline_id,
+      stage_id: input.stage_id,
+      referencia_externa: input.referencia_externa,
+    };
+    const completo = await completarDestinoDoNegocio(ctx.supabase, ctx.organizationId, destinoArgs);
+    if (!completo.ok) return completo.resposta;
+    const pipelineId = destinoArgs.pipeline_id as string;
+    const stageId = destinoArgs.stage_id as string;
+
     // Spec 25 (R5a) — o MESMO cliente repetindo o interesse no MESMO item não abre
     // outro negócio: acha o que já está aberto no funil e deixa uma nota na
     // timeline. Só com contato (sem ele não há "mesmo cliente") e só entre os
@@ -324,7 +351,7 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
         .select("id, title, pipeline_id, stage_id, status")
         .eq("organization_id", ctx.organizationId)
         .eq("contact_id", input.contact_id)
-        .eq("pipeline_id", input.pipeline_id)
+        .eq("pipeline_id", pipelineId)
         .eq("status", "open")
         .eq(`source_metadata->>${CHAVE_DA_REFERENCIA}`, input.referencia_externa)
         .limit(1)
@@ -346,8 +373,8 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       }
     }
     const parsed = createLeadSchema.parse({
-      pipeline_id: input.pipeline_id,
-      stage_id: input.stage_id,
+      pipeline_id: pipelineId,
+      stage_id: stageId,
       title: input.title,
       description: input.referencia_externa
         ? descricaoComReferencia(input.description, input.referencia_externa)
@@ -369,7 +396,7 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
     // a régua devolve o 422 — coerente: o cliente não disse.
     const conferencia = await conferirCamposPersonalizados(
       ctx,
-      { pipelineId: input.pipeline_id },
+      { pipelineId },
       input.custom_fields,
     );
     const custom_fields = conferencia.custom_fields ?? input.custom_fields;
