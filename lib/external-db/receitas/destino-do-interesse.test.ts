@@ -54,7 +54,7 @@ describe("destinoDoInteresseSchema", () => {
     expect(destinoDoInteresseSchema.safeParse(DESTINO).success).toBe(true);
   });
 
-  it.each([
+  it.each<[unknown, string]>([
     [{ pipeline_id: PIPE }, "sem etapa"],
     [{ stage_id: ETAPA }, "sem funil"],
     [{ pipeline_id: "x", stage_id: ETAPA }, "funil que não é uuid"],
