@@ -204,14 +204,21 @@ function passos(valor: string | number): string {
   return Number.isFinite(n) && Math.abs(n) === 1 ? `${valor} passo` : `${valor} passos`;
 }
 
-/** Os pares (igual/diferente) dos campos novos de escolha — a frase usa o sujeito do campo. */
-function igualOuDiferente(sujeito: string, eh: string, naoEh: string): Record<OperadorDaCondicao, Comparador> {
+/**
+ * Os pares (igual/diferente) dos campos novos de escolha. A frase inteira vem
+ * pronta por campo: "O contato veio de “Site”" não cabe no molde
+ * "<sujeito> é <valor>" ("O contato veio de é…", medido na tela).
+ */
+function igualOuDiferente(
+  sim: (valor: string) => string,
+  nao: (valor: string) => string,
+): Record<OperadorDaCondicao, Comparador> {
   return {
-    eq: { rotulo: eh, frase: (v) => `${sujeito} ${eh} ${aspas(v)}`, oferecido: true },
-    neq: { rotulo: naoEh, frase: (v) => `${sujeito} ${naoEh} ${aspas(v)}`, oferecido: true },
-    contains: { rotulo: "contém", frase: (v) => `${sujeito} contém ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_TEXTO },
-    gte: { rotulo: "é pelo menos", frase: (v) => `${sujeito} é pelo menos ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_NUMERO },
-    lte: { rotulo: "é no máximo", frase: (v) => `${sujeito} é no máximo ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_NUMERO },
+    eq: { rotulo: "é", frase: (v) => sim(aspas(v)), oferecido: true },
+    neq: { rotulo: "não é", frase: (v) => nao(aspas(v)), oferecido: true },
+    contains: { rotulo: "contém", frase: (v) => `${sim(aspas(v))} (contém)`, oferecido: false, aviso: AVISO_SO_TEXTO },
+    gte: { rotulo: "é pelo menos", frase: (v) => `${sim(aspas(v))} (pelo menos)`, oferecido: false, aviso: AVISO_SO_NUMERO },
+    lte: { rotulo: "é no máximo", frase: (v) => `${sim(aspas(v))} (no máximo)`, oferecido: false, aviso: AVISO_SO_NUMERO },
   };
 }
 
@@ -347,11 +354,14 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
     neq: { rotulo: "não é", frase: (v) => `Agora não é a hora ${aspas(v)}`, oferecido: false },
     contains: { rotulo: "contém", frase: (v) => `A hora contém ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_TEXTO },
   },
-  dia_da_semana: igualOuDiferente("Hoje", "é", "não é"),
-  canal: igualOuDiferente("A conversa chegou pelo número", "é", "não é"),
-  origem: igualOuDiferente("O contato veio de", "é", "não é"),
-  cliente_recorrente: igualOuDiferente("Já é cliente:", "é", "não é"),
-  ddd: igualOuDiferente("O DDD do telefone", "é", "não é"),
+  dia_da_semana: igualOuDiferente((v) => `Hoje é ${v}`, (v) => `Hoje não é ${v}`),
+  canal: igualOuDiferente(
+    (v) => `A conversa chegou pelo número ${v}`,
+    (v) => `A conversa não chegou pelo número ${v}`,
+  ),
+  origem: igualOuDiferente((v) => `O contato veio de ${v}`, (v) => `O contato não veio de ${v}`),
+  cliente_recorrente: igualOuDiferente((v) => `Já é cliente: ${v}`, (v) => `Já é cliente: diferente de ${v}`),
+  ddd: igualOuDiferente((v) => `O DDD do telefone é ${v}`, (v) => `O DDD do telefone não é ${v}`),
 };
 
 /** Como se lê o par (campo, operador). Total: todo par salvo tem descrição, mesmo o que não se oferece mais. */

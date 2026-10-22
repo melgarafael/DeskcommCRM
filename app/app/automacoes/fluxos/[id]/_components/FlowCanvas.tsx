@@ -119,6 +119,9 @@ function notaParaNo(nota: NotaDoMapa): RFNode {
     id: nota.id,
     type: TIPO_NOTA,
     position: { x: nota.x, y: nota.y },
+    // Atrás dos blocos: uma nota por cima cobria o "+" das saídas (medido no
+    // teste — o clique caía no texto da nota, não no botão).
+    zIndex: -1,
     data: { label: "Nota", config: { texto: nota.texto } as unknown as RFNode["data"]["config"] },
   };
 }
