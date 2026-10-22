@@ -145,12 +145,12 @@ export async function prepararFotosDoProduto(
  * legenda (uma ou mais bolhas): com teto 3, um produto de 3 fotos e descrição
  * longa mandava 4 mensagens. Sem `restantes`, nenhum teto (quem chama decide).
  */
-export async function enviarComFotos<T extends BubbleOutcome>(
+export async function enviarComFotos<T extends BubbleOutcome, F = FotoParaEnvio>(
   body: string,
-  fotos: readonly FotoParaEnvio[],
+  fotos: readonly F[],
   opts: {
     enviarTexto: (body: string) => Promise<T>;
-    enviarFoto: (foto: FotoParaEnvio, legenda: string) => Promise<T>;
+    enviarFoto: (foto: F, legenda: string) => Promise<T>;
     sleep: (ms: number) => Promise<void>;
     jitter: () => number;
     restantes?: () => number;

@@ -29,6 +29,7 @@ import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
+import { formatoDeImagemPorUrl } from './imagem-por-url';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -319,6 +320,24 @@ export function applyPreviewPolicy(
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
+              // Duas fotos na mesma mensagem não existem (Spec 25 R4): mesma recusa do envio
+              // real, antes de qualquer preparo de mídia.
+              const pediuFotoDoCatalogo =
+                args &&
+                typeof args === 'object' &&
+                'produto_codigo' in args &&
+                typeof args.produto_codigo === 'string' &&
+                args.produto_codigo.trim() !== '';
+              const pediuImagemPorUrl =
+                args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
+                  ? args.imagem_url.trim() !== ''
+                  : false;
+              if (pediuFotoDoCatalogo && pediuImagemPorUrl) {
+                const message =
+                  'Use imagem_url OU produto_codigo, não os dois na mesma mensagem. Mande de novo só com um deles.';
+                p.result.impediments.push({ code: 'imagem_e_produto_juntos', message });
+                return { ok: false, error: { code: 'imagem_e_produto_juntos', message } };
+              }
               // #2490 — A MESMA preparação do envio real, e na MESMA ordem: o
               // `produto_codigo` que `crm_search_products` devolveu resolve o
               // produto no catálogo e prepara as fotos ANTES da cadeia (é o que
@@ -353,6 +372,27 @@ export function applyPreviewPolicy(
                       `O produto ${JSON.stringify(midia.codigo)} não tem fotos cadastradas: ` +
                       'nenhuma imagem seria enviada no envio real — só o texto.',
                   });
+              }
+              // Foto por URL (Spec 25 R4): na prévia NADA é buscado nem enviado, e a guarda de
+              // rede (C6) não roda aqui — só o FORMATO é conferido, sem rede. Quem decide a
+              // foto de verdade é o envio real. O retorno diz o que sairia.
+              const imagemUrl =
+                args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
+                  ? args.imagem_url.trim()
+                  : '';
+              let imagemPrevista: string | undefined;
+              if (imagemUrl !== '') {
+                const formato = formatoDeImagemPorUrl(imagemUrl);
+                if (formato.ok) {
+                  imagemPrevista = 'formato_aceito';
+                } else {
+                  imagemPrevista = `recusada_pelo_formato: ${formato.motivo}`;
+                  p.result.warnings.push({
+                    code: 'imagem_recusada',
+                    message:
+                      `A imagem desta resposta seria recusada (${formato.motivo}): o texto sairia sem foto.`,
+                  });
+                }
               }
               const avisos: Array<{ code: string; message: string }> = [];
               // #2923 — as duas perguntas ao Jev da cadeia (promessa semântica,
@@ -396,6 +436,8 @@ export function applyPreviewPolicy(
                 ok: true,
                 status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',
                 message: 'Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.',
+                // Foto por URL: nada foi buscado nem enviado; `foto_prevista` diz o que o envio real faria.
+                ...(imagemPrevista !== undefined ? { foto_enviada: false, foto_prevista: imagemPrevista } : {}),
               };
             }
             if (catalog?.category === 'read')

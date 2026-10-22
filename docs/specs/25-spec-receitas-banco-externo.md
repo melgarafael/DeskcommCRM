@@ -434,3 +434,44 @@ existe.
 - Runbook do leigo: é a R6.
 
 Destino: núcleo, dentro do módulo de banco externo, que nasce desligado.
+
+## R4 entregue: `imagem_url` no envio do agente
+
+O `send_message` ganha `imagem_url` (URL https de uma imagem jpg, png ou webp
+que veio de um resultado de ferramenta). Ela sai como foto com o texto como
+legenda, pela mesma cadeia `before_send` do texto (pacing, LGPD, opt-out,
+teto de envios do turno). Não há cópia para o Storage: o gateway baixa a URL.
+
+### O que mudou
+- `lib/agent-engine/agent/imagem-por-url.ts` (novo) — `formatoDeImagemPorUrl` (só
+  forma: extensão do caminho em jpg/jpeg/png/webp, sem query), `prepararImagemPorUrl`
+  (forma + `assertUrlDeMidiaSegura`, a guarda canônica de C6/D7), `descreverSemQuery`
+  (o log leva host + caminho, nunca a query), `paraMidiaDoCanal`.
+- `lib/agent-engine/agent/inbound-turn.ts` — schema de `send_message` com `imagem_url`;
+  `produto_codigo` + `imagem_url` juntos devolvem `imagem_e_produto_juntos` e liberam
+  a reserva do `dupTrava`; a guarda roda antes da cadeia e fora da prévia; recusada, a
+  mensagem sai só com texto e o retorno traz `foto_recusada`; o resultado traz
+  `foto_enviada: true|false`.
+- `lib/agent-engine/agent/fotos-do-produto.ts` — `enviarComFotos` passa a aceitar
+  qualquer tipo de foto (genérico, sem mudar o comportamento da foto do catálogo).
+- `lib/agent-engine/agent/preview.ts` — na prévia NADA é buscado nem enviado; só o
+  formato é conferido (sem rede) e o retorno traz `foto_enviada: false` e
+  `foto_prevista` (`formato_aceito` ou `recusada_pelo_formato: <motivo>`).
+- Testes: `lib/agent-engine/agent/imagem-por-url.test.ts`,
+  `lib/agent-engine/agent/preview-imagem-por-url.test.ts`,
+  `tests/unit/send-message-manda-imagem-por-url.test.ts`.
+
+### O que NÃO entra nesta fatia
+- A receita do WordPress ainda não devolve URL de foto. Resolver anexo → URL é
+  fatia à parte; até lá nenhuma receita aciona `imagem_url` sozinha.
+- Foto do catálogo (`produto_codigo`) continua como estava.
+- Nenhuma migration, tela ou variável de ambiente nova.
+
+### NÃO MEDIDO
+- C3: o envio real por WhatsApp (que tipos, tamanhos e tempos o canal aceita por
+  URL). Só o caminho de código foi escrito; nenhum envio real foi feito.
+- C4: volume de itens por turno com fotos (continua na prova com gente).
+- C6: medido só por teste unitário com DNS simulado (host literal interno, domínio
+  que resolve para IP interno, metadado de nuvem misturado com IP público). Não foi
+  medido contra o gateway real. A janela de rebinding entre a checagem e o download
+  do gateway continua aberta, como declara `outbound-ip.ts`.
