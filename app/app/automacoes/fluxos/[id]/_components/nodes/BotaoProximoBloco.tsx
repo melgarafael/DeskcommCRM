@@ -53,7 +53,15 @@ export function BotaoProximoBloco({
           <Plus size={10} aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+      {/* O menu mora num portal, mas evento do React atravessa portal: sem
+          parar aqui, o clique no item chegava ao cartão de ORIGEM e o
+          selecionava por cima do bloco recém-criado (medido no teste). */}
+      <DropdownMenuContent
+        align="start"
+        className="max-h-80 overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <DropdownMenuLabel>{t("Próximo bloco")}</DropdownMenuLabel>
         {acoes.tipos
           .filter((v) => v.type !== "trigger")
