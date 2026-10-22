@@ -125,6 +125,34 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
   },
+  // Canal de chat da OLX (issue #2927, fatia 1). O que a documentação do
+  // vendedor mostra é um chat de TEXTO: sem mídia e sem definição aprovada, o
+  // que dá `requiresTemplates: false` e `canManageTemplates: false`.
+  //
+  // `freeformOutsideWindow: true` é a leitura da doc, não um default herdado: a
+  // OLX não publica janela de 24h para o chat, então não há relógio a respeitar
+  // — o mesmo perfil auto-restrito do canal por QR, sem o anti-ban (a OLX não
+  // documenta risco de banimento por volume). `banRisk: false` mantém as duas
+  // famílias de restrição mutuamente exclusivas, como a doutrina exige.
+  //
+  // `costPerMessage: false` e `groups: "none"` também vêm da doc: não há
+  // cobrança por mensagem nem grupos neste chat. `voiceNote: "server-convert"` é
+  // placeholder honesto — o canal não manda áudio, e a capability existe só
+  // para o tipo; a ausência de mídia é o contrato, não a conversão.
+  olx: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: null,
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
+  },
 };
 
 /**
@@ -149,6 +177,8 @@ export const CHANNEL_PROVIDER_SOCIAL: ChannelProvider = "zernio_social";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
+/** Chat da OLX (issue #2927) — canal de mensagem por thread própria, só texto. */
+export const CHANNEL_PROVIDER_OLX: ChannelProvider = "olx";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
@@ -173,6 +203,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  "olx",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**

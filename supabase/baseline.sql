@@ -9355,14 +9355,21 @@ alter table public.channel_sessions
   add column if not exists datafy_waba_id text,
   add column if not exists datafy_token_encrypted bytea;
 
+-- olx (migration 0727, chat da OLX — issue #2927) — colunas do provider que
+-- endereça por thread/conta de vendedor, nullable e antes das constraints que as
+-- referenciam. Mesma forma do bloco do Datafy logo acima.
+alter table public.channel_sessions
+  add column if not exists olx_seller_id text,
+  add column if not exists olx_token_encrypted bytea;
+
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_check;
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
-  -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'olx' (0727)
+  -- somados AQUI — UM bloco só por constraint (não duplicar drop+add por migration).
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'olx'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9375,7 +9382,10 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    -- 'olx' (migration 0727) endereça pela conta de vendedor: a OLX não
+    -- endereça por telefone, e sim pela thread/conta que o webhook entrega.
+    (provider = 'olx'        and olx_seller_id         is not null)
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -14531,7 +14541,9 @@ alter table public.webhook_events_log
     -- (migration 0601) os provedores de cobrança do revendedor. A linha deles
     -- nasce com organization_id nulo e corpo {id,type}: é ponteiro, nunca o
     -- corpo do provedor, e fica invisível ao tenant pela própria policy.
-    'stripe', 'asaas'
+    'stripe', 'asaas',
+    -- (migration 0727) o chat da OLX — issue #2927, fatia de vocabulário.
+    'olx'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----
@@ -37326,6 +37338,38 @@ comment on column public.channel_sessions.datafy_token_encrypted is
   'Token do Datafy (sk_live_…), cifrado por fn_encrypt_oauth. Nunca volta à tela depois de gravado.';
 
 -- ---- fim canal de WhatsApp Datafy (migration 0387) ----
+
+-- ---- início canal OLX (migration 0727, issue #2927) ----
+-- Espelho idempotente da 0727: o índice único entre sessões ativas de
+-- `olx_seller_id`. Mesmo desenho do bloco do Datafy logo acima — a conta de
+-- vendedor identifica o provider, e duas organizações com o mesmo id fariam
+-- `maybeSingle()` devolver PGRST116.
+with ativos as (
+  select id,
+         row_number() over (
+           partition by olx_seller_id
+           order by created_at desc nulls last, id desc
+         ) as posicao
+    from public.channel_sessions
+   where archived_at is null
+     and olx_seller_id is not null
+)
+update public.channel_sessions s
+   set olx_seller_id = s.olx_seller_id || '-conflito-' || s.id::text
+  from ativos a
+ where a.id = s.id
+   and a.posicao > 1;
+
+create unique index if not exists channel_sessions_olx_seller_id_ativo_unique
+  on public.channel_sessions (olx_seller_id)
+  where archived_at is null and olx_seller_id is not null;
+
+comment on column public.channel_sessions.olx_seller_id is
+  'id da conta de vendedor da OLX (issue #2927). É o sessionRef deste canal: a OLX endereça por thread/conta, não por telefone. Espelhado em lib/channels/session-ref.ts.';
+comment on column public.channel_sessions.olx_token_encrypted is
+  'Token OAuth 2.0 da OLX (scope=chat), cifrado por fn_encrypt_oauth. Nunca volta à tela depois de gravado.';
+
+-- ---- fim canal OLX (migration 0727) ----
 
 -- ---- anonimizar pela tela também redige conversas, mensagens e resumos (migration 0391) ----
 --
