@@ -156,6 +156,42 @@ async function rodarPelaAssinatura() {
 }
 
 describe("o ramo da assinatura (#2657): o modelo responde E o turno fecha", () => {
+  it("mede etapa e ferramenta do turno sem registrar argumentos nem resultado", async () => {
+    streamDuble();
+    const { pool } = poolDaAssinatura();
+    const info = vi.fn();
+    const executar = vi.fn(async () => "conteúdo privado");
+    await runModelCall(
+      pool,
+      { anthropicApiKey: "chave-ant-de-teste", openaiApiKey: "chave-openai-de-teste", cacheTtl: "1h" },
+      {
+        tenantId: ORG,
+        jobId: "11111111-1111-4111-8111-111111111111",
+        purpose: "agent_turn",
+        messages: [{ role: "user", content: "mensagem privada" }],
+        tools: { consultar_horario: { description: "teste", inputSchema: {} as never, execute: executar } },
+      },
+      { registry, log: { info, warn: vi.fn(), error: vi.fn() } },
+    );
+    const opcoes = vi.mocked(streamText).mock.calls[0]?.[0] as unknown as {
+      tools: Record<string, { execute: (...args: unknown[]) => Promise<unknown> }>;
+      onStepFinish: (...args: unknown[]) => void;
+    };
+    expect(await opcoes.tools.consultar_horario?.execute({ segredo: "não registrar" })).toBe("conteúdo privado");
+    opcoes.onStepFinish();
+    expect(executar).toHaveBeenCalledOnce();
+    expect(info).toHaveBeenCalledWith("llm: ferramenta concluída", expect.objectContaining({
+      ferramenta: "consultar_horario", status: "ok", duracao_ms: expect.any(Number),
+    }));
+    expect(info).toHaveBeenCalledWith("llm: etapa concluída", expect.objectContaining({
+      etapa: 1, duracao_ms: expect.any(Number),
+    }));
+    expect(JSON.stringify(info.mock.calls)).not.toMatch(/conteúdo privado|mensagem privada|não registrar/);
+    vi.mocked(streamText).mockClear();
+    vi.mocked(lerLoginCodexRenovandoSeProxima).mockClear();
+    vi.mocked(createAdminClient).mockClear();
+  });
+
   it("⭐ devolve responseMessages — a fita que o motor reenvia no fechamento", async () => {
     const { resultado, inserts } = await rodarPelaAssinatura();
 

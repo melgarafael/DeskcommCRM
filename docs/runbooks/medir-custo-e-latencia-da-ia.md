@@ -194,6 +194,15 @@ trabalho, use a seção 4.
 
 Cada etapa abaixo tem a sua régua escrita. Leia-as lado a lado, nunca somadas.
 
+Para investigar um `agent_turn` lento dentro do worker, filtre os logs pelo `job_id`.
+As linhas `llm: etapa concluída` mostram o tempo de cada passagem pelo modelo
+**incluindo** as ferramentas executadas nela. As linhas `llm: ferramenta concluída`
+mostram o tempo de cada ferramenta; ferramentas podem executar em paralelo, então
+não some essas durações para calcular a espera total. A linha
+`llm: chamada concluída` traz a duração total e a quantidade de etapas. Esses
+logs contêm apenas IDs, nome da ferramenta, status e tempos; não contêm texto
+do cliente, argumentos, resultados ou credenciais.
+
 ```sql
 with despacho as (
   select e.id as evento_id,
