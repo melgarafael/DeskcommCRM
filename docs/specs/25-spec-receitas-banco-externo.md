@@ -492,3 +492,39 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
   CRM então baixa essa URL, e um pixel de rastreio revela o IP do servidor da
   busca. A guarda confere destino e conteúdo, não a origem da URL. Fica como
   dívida até decidir se a URL precisa aparecer em resultado de ferramenta deste turno.
+
+## R5a entregue: o negócio com a referência do item
+
+`crm_create_lead` ganha `referencia_externa` (`<receita>:<id>`, ex.:
+`wordpress-conteudo:4821`, montada pelo modelo a partir do resultado de
+`crm_consultar_receita`). Esta é a primeira metade da R5 (D6); a segunda é a
+escolha do funil/etapa padrão na instância da receita + aviso na Central.
+
+### O que mudou
+- `lib/leads/referencia-externa.ts` (novo) — a forma fechada da referência
+  (`REFERENCIA_EXTERNA`), a chave em `source_metadata` (`referencia_externa`) e
+  `descricaoComReferencia` (a linha vai no fim da descrição; o teto de 2000 corta
+  o texto do agente, nunca a referência).
+- `lib/mcp/tools/leads.ts` — com `referencia_externa` e `contact_id`, a ferramenta
+  procura antes um negócio ABERTO do mesmo contato, no mesmo funil, com a mesma
+  referência (organização filtrada à mão). Achou: não cria, devolve
+  `{ lead, ja_existia: true }` e deixa uma nota (`note`) na timeline. Não achou:
+  cria com a referência na descrição e em `source_metadata`.
+- Teste: `tests/unit/lead-com-referencia-externa.test.ts`.
+
+### Decisões que divergem da proposta da D6 (para o mantenedor confirmar no PR)
+- **`source` continua `ai_agent`** (não `external`): a origem do negócio segue
+  dizendo QUEM criou; QUAL item foi escolhido vai em `source_metadata`. Trocar a
+  origem mudaria os relatórios por origem de quem já usa.
+- **Dedup por consulta, não pelo índice único** `uniq_crm_leads_org_source_external`:
+  o índice é por organização (dois clientes no mesmo item colidiriam), vale para
+  negócio encerrado (bloquearia um interesse novo depois de perdido) e a violação
+  hoje vira 500 no `createLeadHandler`. A consulta é por contato + funil + aberto.
+  Sem migration.
+
+### NÃO MEDIDO
+- A corrida de dois turnos simultâneos do MESMO cliente no mesmo item: hoje o que
+  protege é a fila de um turno por conversa (`one_per_conversation`), sem trava no
+  banco.
+- O agente de verdade chamando a ferramenta com a referência (só testes com
+  Supabase simulado); fica para o e2e do apartamento, na R5b.

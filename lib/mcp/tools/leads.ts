@@ -21,6 +21,12 @@ import {
   moveLeadHandler,
   retomarLeadHandler,
 } from "@/app/api/v1/leads/_handler";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import {
+  CHAVE_DA_REFERENCIA,
+  REFERENCIA_EXTERNA,
+  descricaoComReferencia,
+} from "@/lib/leads/referencia-externa";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
 import { conferirCamposPersonalizados } from "../conferencia-de-campos";
 import { resolveUserNames } from "./_users";
@@ -266,6 +272,19 @@ const createInputShape = {
   tags: z.array(z.string()).optional(),
   source: z.string().optional(),
   /**
+   * O item do banco externo que o cliente escolheu (Spec 25, R5a): `<receita>:<id>`,
+   * montado do resultado de `crm_consultar_receita`. Fica no negócio para o humano
+   * continuar de onde o robô parou, e o mesmo cliente repetindo o interesse no
+   * mesmo item NÃO abre outro negócio.
+   */
+  referencia_externa: z
+    .string()
+    .regex(REFERENCIA_EXTERNA)
+    .optional()
+    .describe(
+      "Só quando o cliente escolheu UM item de um resultado de receita do banco externo: a referência no formato <receita>:<id> (ex.: wordpress-conteudo:4821), com a receita e o id que vieram no resultado. Nunca invente. Use junto com o contact_id da conversa; o mesmo cliente repetindo o interesse no mesmo item não cria outro negócio.",
+    ),
+  /**
    * Os campos que o DONO declarou em `pipeline.settings.fields` (#2297).
    *
    * Sem esta chave a ferramenta não tem como criar um negócio numa etapa
@@ -288,11 +307,43 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
+    // Spec 25 (R5a) — o MESMO cliente repetindo o interesse no MESMO item não abre
+    // outro negócio: acha o que já está aberto no funil e deixa uma nota na
+    // timeline. Só com contato (sem ele não há "mesmo cliente") e só entre os
+    // ABERTOS — um negócio perdido ou ganho não impede o interesse novo. Filtra a
+    // organização à mão: o cliente de serviço ignora a RLS.
+    if (input.referencia_externa && input.contact_id) {
+      const { data: existente } = await ctx.supabase
+        .from("crm_leads")
+        .select("id, title, pipeline_id, stage_id, status")
+        .eq("organization_id", ctx.organizationId)
+        .eq("contact_id", input.contact_id)
+        .eq("pipeline_id", input.pipeline_id)
+        .eq("status", "open")
+        .eq(`source_metadata->>${CHAVE_DA_REFERENCIA}`, input.referencia_externa)
+        .limit(1)
+        .maybeSingle();
+      if (existente) {
+        await emitLeadActivity(ctx.supabase, {
+          organizationId: ctx.organizationId,
+          leadId: (existente as { id: string }).id,
+          contactId: input.contact_id,
+          type: "note",
+          sourceModule: "referencia-externa",
+          actor: ctx.actor,
+          reason: `O cliente voltou a demonstrar interesse em ${input.referencia_externa}`,
+          payload: { [CHAVE_DA_REFERENCIA]: input.referencia_externa },
+        });
+        return { lead: existente, ja_existia: true };
+      }
+    }
     const parsed = createLeadSchema.parse({
       pipeline_id: input.pipeline_id,
       stage_id: input.stage_id,
       title: input.title,
-      description: input.description ?? null,
+      description: input.referencia_externa
+        ? descricaoComReferencia(input.description, input.referencia_externa)
+        : (input.description ?? null),
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
       // Ausente, a moeda é a da organização (`createLeadHandler` a lê): um
@@ -330,6 +381,9 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       {
         ...parsed,
         ...(custom_fields === undefined ? {} : { custom_fields }),
+        ...(input.referencia_externa
+          ? { source_metadata: { [CHAVE_DA_REFERENCIA]: input.referencia_externa } }
+          : {}),
       },
     );
     return {
