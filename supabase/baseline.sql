@@ -60570,3 +60570,73 @@ create view public.external_db_connections_safe
 
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
+
+-- ---- uma vez por contato no motor de automação (migration 0731, #2974) ----
+-- manifest: Execuções de automação ganham `contact_id` (uuid, FK para `contacts` com `on delete set null`) e o índice por regra e contato — é o que deixa a opção "no máximo uma vez por contato" (#2974) decidir pelo ESTADO PERSISTIDO, sobrevivendo a reinício do worker.
+--
+-- O motor dispara toda regra que casa em todo evento que casa: o lead que volta
+-- pelo mesmo anúncio recebe a sequência inteira outra vez. Sem o contato na
+-- linha de execução não havia onde contar execuções por contato.
+--
+-- NULLABLE e SEM BACKFILL: as linhas antigas não têm contato a que pertencer, e
+-- NULL é fail-open no motor (a regra segue como sempre foi). `on delete set
+-- null` pelo mesmo motivo de `event_id`: o registro da execução é auditoria e
+-- sobrevive ao expurgo do contato.
+--
+-- O índice responde "esta regra já rodou para este contato?" com
+-- `organization_id` no filtro (doutrina multi-tenant) e é PARCIAL: a linha
+-- antiga sem contato não entra nele.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+
+alter table public.automation_rule_runs
+  add column if not exists contact_id uuid references public.contacts(id) on delete set null;
+
+create index if not exists idx_automation_rule_runs_org_regra_contato
+  on public.automation_rule_runs (organization_id, rule_id, contact_id)
+  where contact_id is not null;
+
+comment on column public.automation_rule_runs.contact_id is
+  'Contato desta execução, quando o evento deixou resolvê-lo. NULL = não resolvível (linha anterior a esta migration, ou evento sem contato) e NULL é fail-open para a opção "no máximo uma vez por contato" (#2974). on delete set null: o registro da execução sobrevive ao expurgo do contato.';
+
+-- ── a RESERVA da chave (regra, contato) — migration 0740, #2974 ──────────────
+-- manifest: A chave `(regra, contato)` ganha uma tabela de RESERVA com índice único, tomada com `insert ... on conflict do nothing` ANTES de executar as ações — é o que faz o segundo dreno concorrente do mesmo contato perder a corrida em vez de rodar a regra outra vez (#2974).
+--
+-- A linha de execução acima é o ESTADO; ela não é o ÁRBITRO. O motor consulta,
+-- executa e só depois grava: entre a consulta e a gravação cabe outro dreno (o
+-- laço do worker, o cron e o dreno dentro da requisição de captação rodam em
+-- paralelo), os dois leem "nunca rodou", os dois executam, e a sequência sai
+-- duas vezes. A reserva fecha a janela porque a decisão É a escrita: quem
+-- insere a chave executa, quem recebe lista vazia não executa.
+--
+-- Em tabela própria porque `automation_rule_runs` não pode ter restrição única
+-- em `(organization_id, rule_id, contact_id)`: com a opção DESLIGADA, dois
+-- eventos do mesmo contato gravam duas linhas legítimas. E um índice PARCIAL não
+-- serve de árbitro para o `on conflict (<colunas>) do nothing` que o PostgREST
+-- manda (o insert não tem predicado que implique o do índice).
+--
+-- `on delete cascade` nas três pontas: a reserva não é auditoria, é a chave de
+-- uma decisão — apagar regra, contato ou organização apaga a reserva junto. O
+-- registro da execução, esse sim, sobrevive (0733, `on delete set null`).
+
+create table if not exists public.automation_rule_contact_claims (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  rule_id uuid not null references public.automation_rules(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  event_id uuid references public.event_log(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists uq_automation_rule_contact_claims_org_regra_contato
+  on public.automation_rule_contact_claims (organization_id, rule_id, contact_id);
+
+alter table public.automation_rule_contact_claims enable row level security;
+
+comment on table public.automation_rule_contact_claims is
+  'Reserva da chave (organization_id, rule_id, contact_id) para a opção "no máximo uma vez por contato" (#2974). O motor insere aqui ANTES de executar as ações: quem insere executa, quem recebe lista vazia (on conflict do nothing) não executa e só registra o bloqueio em automation_rule_runs. Índice único = o árbitro da corrida entre o laço do worker, o cron e o dreno dentro da requisição.';
+
+comment on column public.automation_rule_contact_claims.event_id is
+  'O evento que TOMOU a chave (auditoria da decisão: quem reservou, quando). on delete set null: o expurgo do evento não é impedido pela reserva.';
+
+notify pgrst, 'reload schema';

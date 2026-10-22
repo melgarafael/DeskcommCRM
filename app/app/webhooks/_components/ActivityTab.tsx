@@ -145,6 +145,11 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   missing_url: "Esta ação de webhook não tem endereço configurado. Abra a automação e preencha.",
   unknown_action:
     "A regra usa um tipo de ação que esta instalação não tem (pode ter saído em uma atualização). Abra a automação e escolha outra ação.",
+  /* #2974 — a decisão do MOTOR (não de uma ação): a regra tem "no máximo uma
+     vez por contato" e este contato já a executou. Nasce em
+     lib/automation/engine.ts, no run que registra a decisão de não rodar. */
+  uma_vez_por_contato:
+    "Esta automação está configurada para rodar no máximo uma vez por contato, e este contato já passou por ela. Nada foi enviado agora e nada será.",
   // #1528 — o motor pula atribuir/mover nos gatilhos do trigger (laço).
   acao_fecharia_laco:
     "Neste gatilho esta ação não roda: atribuir responsável ou mover o lead dispararia a automação de novo, sem fim. Abra a automação e tire a ação.",

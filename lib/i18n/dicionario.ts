@@ -41,6 +41,19 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_AGENDA_SERVICOS,
   ...TEXTOS_AGENDA_CONFIGURACAO,
+  // #2974 — o limite "no máximo uma vez por contato": o controle na gaveta da
+  // automação, a recusa do schema (que a gaveta mostra em toast) e a frase que
+  // a aba Atividade usa para a decisão de pular o contato.
+  "Rodar no máximo uma vez por contato": { es: "Ejecutar como máximo una vez por contacto" },
+  "Ligado, esta automação roda uma única vez para cada contato: se ele voltar pelo mesmo anúncio, a sequência não repete. A execução fica registrada na aba Atividade, e a próxima entrada deste contato só registra que a regra foi pulada.": {
+    es: "Activado, esta automatización se ejecuta una sola vez por contacto: si vuelve por el mismo anuncio, la secuencia no se repite. La ejecución queda registrada en la pestaña Actividad, y la próxima entrada de este contacto solo registra que se omitió la regla.",
+  },
+  "A opção “uma vez por contato” só aceita ligado ou desligado.": {
+    es: "La opción “una vez por contacto” solo acepta activado o desactivado.",
+  },
+  "Esta automação está configurada para rodar no máximo uma vez por contato, e este contato já passou por ela. Nada foi enviado agora e nada será.": {
+    es: "Esta automatización está configurada para ejecutarse como máximo una vez por contacto, y este contacto ya pasó por ella. No se envió nada ahora y nada se enviará.",
+  },
   "Há um ajuste proporcional esperando pagamento. Escolher outro plano cancela esse ajuste.": { es: "Hay un ajuste proporcional esperando el pago. Elegir otro plan cancela ese ajuste." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos e tente novamente.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos e inténtalo de nuevo." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos." },
