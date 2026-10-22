@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useT } from "@/hooks/i18n/useT";
 import { DISTRIBUTE_MODES, distributeConfigSchema, type DistributeMode } from "@/lib/followup/graph-schema";
+import { MODOS_DE_DISTRIBUICAO } from "@/lib/followup/vocabulario";
 
 import type { ConfigOf } from "./shared";
 
@@ -27,12 +28,7 @@ const ROTULO_DO_TIPO: Record<Tipo, string> = {
   carteira: "O vendedor dono do cliente (carteira)",
 };
 
-const ROTULO_DO_MODO: Record<DistributeMode, string> = {
-  rodizio: "Rodízio — quem está há mais tempo sem receber",
-  carga: "Menor carga — quem tem menos conversas abertas",
-  percentual: "Percentual — pelo peso de cada pessoa",
-  aleatorio: "Aleatório",
-};
+const ROTULO_DO_MODO = MODOS_DE_DISTRIBUICAO;
 
 /**
  * O bloco "Distribuir atendimento" (Automações, out/2026). Quem recebe a

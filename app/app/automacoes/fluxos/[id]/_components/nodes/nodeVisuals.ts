@@ -2,7 +2,7 @@ import type { ComponentType } from "react";
 
 import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag, Shuffle, UserSwitch } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
-import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
+import { MODOS_DE_DISTRIBUICAO_CURTOS, RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 import { NOS_DA_SUPERFICIE } from "@/lib/followup/validate-publish";
 
 /**
@@ -325,8 +325,7 @@ export function describeNodeConfig(
       if (d.tipo === "carteira") return t("para o vendedor dono do cliente");
       if (d.tipo === "atendente") return d.usuario_id ? t("para uma pessoa específica") : t("ninguém escolhido");
       if (d.membros.length === 0) return t("ninguém escolhido");
-      const modo: Record<string, string> = { rodizio: "rodízio", carga: "menor carga", percentual: "percentual", aleatorio: "aleatório" };
-      return `${d.membros.length} ${t("pessoa(s)")} · ${t(modo[d.modo] ?? d.modo)}`;
+      return `${d.membros.length} ${t("pessoa(s)")} · ${t(MODOS_DE_DISTRIBUICAO_CURTOS[d.modo])}`;
     }
     case "split": {
       const c = config as ConfigOf<"split">;

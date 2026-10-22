@@ -54,6 +54,7 @@ import {
   type actionConfigSchema,
   type aiClassifyConfigSchema,
   type conditionConfigSchema,
+  type DistributeMode,
   type contactFlowFieldTypeSchema,
   type endConfigSchema,
   type waitConfigSchema,
@@ -108,6 +109,22 @@ export const CAMPOS_DA_CONDICAO: Record<CampoDaCondicao, CampoDeCondicao> = {
   origem: { rotulo: "De onde o contato veio", tipoDeValor: "opcao" },
   cliente_recorrente: { rotulo: "Já é cliente (já comprou)", tipoDeValor: "opcao" },
   ddd: { rotulo: "DDD do telefone", tipoDeValor: "texto" },
+};
+
+/** Como o bloco "Distribuir atendimento" reparte a lista — o que o seletor mostra. */
+export const MODOS_DE_DISTRIBUICAO: Record<DistributeMode, string> = {
+  rodizio: "Rodízio — quem está há mais tempo sem receber",
+  carga: "Menor carga — quem tem menos conversas abertas",
+  percentual: "Percentual — pelo peso de cada pessoa",
+  aleatorio: "Aleatório",
+};
+
+/** O mesmo modo, curto, para o cartão do bloco no mapa. */
+export const MODOS_DE_DISTRIBUICAO_CURTOS: Record<DistributeMode, string> = {
+  rodizio: "rodízio",
+  carga: "menor carga",
+  percentual: "percentual",
+  aleatorio: "aleatório",
 };
 
 /**

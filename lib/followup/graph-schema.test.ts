@@ -42,6 +42,9 @@ describe('graph-schema', () => {
         // #2065 — dois tipos de ação que não falam com o cliente.
         'move_lead',
         'edit_lead_tag',
+        // Automações (out/2026): distribuição e divisor.
+        'distribute',
+        'split',
         'end',
       ]);
     });

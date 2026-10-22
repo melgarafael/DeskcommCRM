@@ -84,17 +84,7 @@ export function ConditionForm({
   ramosLigados?: string[];
 }) {
   const t = useT();
-  const { etapas, carregando: etapasCarregando, falhou: etapasFalharam, nomes: nomesDasEtapas } = useEtapasDoFluxo();
-  // Automações: o campo "Número de WhatsApp" escolhe pelo nome do número, e a
-  // frase da regra mostra o nome — nunca o identificador interno.
-  const { data: canais } = useChannelSessions();
-  const nomes = {
-    ...nomesDasEtapas,
-    canal: (id: string) => {
-      const c = (canais ?? []).find((x) => x.id === id);
-      return c ? channelLabel(c, t) : null;
-    },
-  };
+  const { etapas, carregando: etapasCarregando, falhou: etapasFalharam, nomes } = useEtapasDoFluxo();
   const funis = etapasPorFunil(etapas);
   const [combinator, setCombinator] = useState(config.combinator);
   const [branching, setBranching] = useState<Branching>(config.branching ?? "combined");
@@ -338,18 +328,7 @@ export function ConditionForm({
                 </SelectContent>
               </Select>
             ) : CAMPOS_DA_CONDICAO[check.field].tipoDeValor === "canal" ? (
-              <Select value={String(check.value) || undefined} onValueChange={(v) => trocarValor(idx, v)}>
-                <SelectTrigger aria-label={t("Valor")}>
-                  <SelectValue placeholder={t("Escolha o número")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(canais ?? []).map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {channelLabel(c, t)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ValorDeCanal valor={String(check.value)} onEscolher={(v) => trocarValor(idx, v)} />
             ) : CAMPOS_DA_CONDICAO[check.field].tipoDeValor === "numero" ? (
               <Input
                 aria-label={t("Valor")}
@@ -376,7 +355,11 @@ export function ConditionForm({
             )}
             {/* A frase inteira, para quem não tem certeza do que os três campos
                 acima somam — e o aviso quando o motor nunca satisfaz o par. */}
-            <p className="text-xs text-text-muted">{fraseDaCondicao(check.field, check.op, check.value, nomes)}</p>
+            {check.field === "canal" ? (
+              <FraseDoCanal op={check.op} valor={check.value} />
+            ) : (
+              <p className="text-xs text-text-muted">{fraseDaCondicao(check.field, check.op, check.value, nomes)}</p>
+            )}
             {comparador(check.field, check.op).aviso && (
               <p className="text-xs text-warning-fg">{t(comparador(check.field, check.op).aviso!)}</p>
             )}
@@ -475,4 +458,41 @@ function ValorDeEtapa({
       )}
     </>
   );
+}
+
+/**
+ * Automações: o campo "Número de WhatsApp" escolhe o número pelo NOME — o motor
+ * compara o `channel_session_id`, que nunca deve ser digitado. Componente à
+ * parte para só pedir a lista de números quando a regra usa este campo.
+ */
+function ValorDeCanal({ valor, onEscolher }: { valor: string; onEscolher: (v: string) => void }) {
+  const t = useT();
+  const { data: canais } = useChannelSessions();
+  return (
+    <Select value={valor || undefined} onValueChange={onEscolher}>
+      <SelectTrigger aria-label={t("Valor")}>
+        <SelectValue placeholder={t("Escolha o número")} />
+      </SelectTrigger>
+      <SelectContent>
+        {(canais ?? []).map((c) => (
+          <SelectItem key={c.id} value={c.id}>
+            {channelLabel(c, t)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** A frase da regra de número, com o NOME do número no lugar do identificador. */
+function FraseDoCanal({ op, valor }: { op: Check["op"]; valor: Check["value"] }) {
+  const t = useT();
+  const { data: canais } = useChannelSessions();
+  const nomes = {
+    canal: (id: string) => {
+      const c = (canais ?? []).find((x) => x.id === id);
+      return c ? channelLabel(c, t) : null;
+    },
+  };
+  return <p className="text-xs text-text-muted">{fraseDaCondicao("canal", op, valor, nomes)}</p>;
 }

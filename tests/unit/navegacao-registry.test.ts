@@ -151,7 +151,7 @@ describe("sidebarGroups", () => {
     expect(ids).toContain("atendimento");
   });
 
-  it("a ordem dentro do grupo de IA é a do uso real: agentes, follow-ups, casos", () => {
+  it("a ordem dentro do grupo de IA é a do uso real: agentes, casos", () => {
     // Provedores e Execuções NÃO entram aqui, e a razão é medida: pô-las na
     // sidebar estourou a dobra em 900px (e2e `navegacao.spec.ts`). Elas seguem
     // o padrão das outras nove telas do grupo — alcançáveis pelo hub "Ver tudo
@@ -159,11 +159,13 @@ describe("sidebarGroups", () => {
     const ia = sidebarGroups(true, null).find((g) => g.group.id === "ia");
     // Casos entrou no lugar de Roteadores, um por um: roteador se configura
     // poucas vezes; caso pede resposta no mesmo dia.
-    expect(ia?.items.map((i) => i.href)).toEqual([
-      "/app/ai/agents",
-      "/app/automacoes/fluxos",
-      "/app/ai/cases",
-    ]);
+    // Os Fluxos (antigos Follow-ups) saíram daqui para o grupo Automações (out/2026).
+    expect(ia?.items.map((i) => i.href)).toEqual(["/app/ai/agents", "/app/ai/cases"]);
+  });
+
+  it("o grupo Automações reúne Fluxos e Regras no menu", () => {
+    const automacoes = sidebarGroups(true, null).find((g) => g.group.id === "automacoes");
+    expect(automacoes?.items.map((i) => i.href)).toEqual(["/app/automacoes/fluxos", "/app/automacoes/regras"]);
   });
 });
 
