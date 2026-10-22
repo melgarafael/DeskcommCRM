@@ -50,6 +50,7 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
+  split_messages?: boolean | null;
 }
 
 export interface Destinatario {

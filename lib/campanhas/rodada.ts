@@ -91,11 +91,12 @@ interface CampanhaRow {
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
+  split_messages?: boolean | null;
 }
 
 const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
-  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
+  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, split_messages";
 
 /**
  * O status da organização embutido com `!inner` no `select`, e filtrado na
@@ -494,6 +495,12 @@ async function rodarUmaCampanha(
       .update({ conversation_id: boundary.conversation_id, channel_session_id: sessionEscolhida })
       .eq("id", alvo.id);
 
+    const deveDividir = campanha.split_messages !== false;
+    const partes = deveDividir ? (corpo ?? "").split(/
+{2,}/).map((s) => s.trim()).filter(Boolean) : [corpo];
+    const bolhas = partes.length > 0 ? partes : [corpo];
+    const intervaloMs = (campanha.intervalo_segundos && campanha.intervalo_segundos > 0) ? Math.min(campanha.intervalo_segundos, 30) * 1000 : 2500;
+
     const mensagem = await sendMessageHandler(
       admin,
       {
@@ -507,16 +514,47 @@ async function rodarUmaCampanha(
       {
         conversation_id: boundary.conversation_id,
         type: "text",
-        body: corpo,
+        body: bolhas[0],
         metadata: {
           source: "campaign",
           campaign_id: campanha.id,
           campaign_recipient_id: alvo.id,
           campaign_content_version: campanha.content_version,
           idempotency_key: `campaign:${alvo.id}`,
+          bubble_index: 0,
         },
       } as Parameters<typeof sendMessageHandler>[2],
     );
+
+    for (let bi = 1; bi < bolhas.length; bi++) {
+      if ((mensagem as { status?: string }).status === "failed") break;
+      await new Promise((r) => setTimeout(r, intervaloMs));
+      await sendMessageHandler(
+        admin,
+        {
+          organization_id: campanha.organization_id,
+          serviceBoundary: boundary,
+          proactiveContext: { organizationId: campanha.organization_id, contactId: alvo.contact_id },
+          actor: { type: "webhook_source", id: `campaign:${campanha.id}` },
+          requestId: `campaign:${campanha.id}:${alvo.id}:${bi}`,
+          internalMessageId: randomUUID(),
+        } as Parameters<typeof sendMessageHandler>[1],
+        {
+          conversation_id: boundary.conversation_id,
+          type: "text",
+          body: bolhas[bi],
+          metadata: {
+            source: "campaign",
+            campaign_id: campanha.id,
+            campaign_recipient_id: alvo.id,
+            campaign_content_version: campanha.content_version,
+            idempotency_key: `campaign:${alvo.id}:${bi}`,
+            bubble_index: bi,
+          },
+        } as Parameters<typeof sendMessageHandler>[2],
+      );
+    }
+
     await recordSend(pool, campanha.organization_id, sessionEscolhida, agora);
 
     // O desfecho vem do ESTADO da mensagem, nunca da ausência de exceção — o

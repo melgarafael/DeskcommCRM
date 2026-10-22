@@ -60966,3 +60966,8 @@ do $$ begin
   alter table public.calendar_service_professionals drop constraint if exists calendar_service_professionals_organization_id_fkey;
  end if;
 end $$;
+
+-- ─── 0745: Campanhas — split_messages ─────────────────────────────────────────
+alter table public.campaigns
+  add column if not exists split_messages boolean default true;
+

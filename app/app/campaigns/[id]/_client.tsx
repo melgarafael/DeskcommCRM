@@ -419,6 +419,7 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
   const [tetoHora, setTetoHora] = useState(texto(campanha.teto_horario));
   const [inicio, setInicio] = useState(texto(campanha.janela_inicio_hora));
   const [fim, setFim] = useState(texto(campanha.janela_fim_hora));
+  const [splitMessages, setSplitMessages] = useState<boolean>(campanha.split_messages !== false);
 
   const encerrada = campanha.status === "completed" || campanha.status === "cancelled";
   if (encerrada) return null;
@@ -441,6 +442,18 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
         <CampoDeRitmo id="r-inicio" rotulo={t("Enviar só a partir das (hora)")} valor={inicio} onChange={setInicio} />
         <CampoDeRitmo id="r-fim" rotulo={t("Parar de enviar às (hora)")} valor={fim} onChange={setFim} />
       </div>
+      <div className="flex items-center gap-2 pt-1">
+        <input
+          id="r-split"
+          type="checkbox"
+          className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+          checked={splitMessages}
+          onChange={(e) => setSplitMessages(e.target.checked)}
+        />
+        <label htmlFor="r-split" className="text-sm font-medium cursor-pointer">
+          {t("Dividir mensagem em vários balões (por quebra de parágrafo)")}
+        </label>
+      </div>
       <div className="flex items-center gap-3">
         <Button
           size="sm"
@@ -452,6 +465,7 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
               teto_horario: numero(tetoHora),
               janela_inicio_hora: numero(inicio),
               janela_fim_hora: numero(fim),
+              split_messages: splitMessages,
             })
           }
         >

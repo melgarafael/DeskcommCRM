@@ -21,6 +21,7 @@ export const ritmoSchema = z.object({
   janela_fim_hora: z.number().int().min(1).max(24).nullable().optional(),
   teto_diario: z.number().int().min(1).max(10_000).nullable().optional(),
   teto_horario: z.number().int().min(1).max(10_000).nullable().optional(),
+  split_messages: z.boolean().nullable().optional(),
 });
 
 const baseDaCampanha = {

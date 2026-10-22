@@ -47,6 +47,7 @@ export interface CampanhaCarregada {
   teto_diario: number | null;
   teto_horario: number | null;
   description: string | null;
+  split_messages?: boolean | null;
 }
 
 export type Recusa = { ok: false; codigo: ApiErrorCode; mensagem: string; status: number };
@@ -55,7 +56,7 @@ export type Desfecho<T = unknown> = ({ ok: true } & T) | Recusa;
 const COLUNAS =
   "id, organization_id, name, status, channel_session_id, message_body, base_legal, lia_ref, " +
   "audience_filter, audience_version, content_version, scheduled_at, description, " +
-  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
+  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, split_messages";
 
 export async function carregarCampanha(
   admin: SupabaseClient,
@@ -352,6 +353,7 @@ export async function duplicarAcao(
       janela_fim_hora: c.janela_fim_hora,
       teto_diario: c.teto_diario,
       teto_horario: c.teto_horario,
+      split_messages: c.split_messages,
       created_by: autorId,
       // Nada de destinatário, resultado, agenda ou carimbo de execução: a cópia
       // é uma INTENÇÃO nova, e herdar números faria a tela mostrar entrega de
@@ -455,24 +457,43 @@ export async function testarAcao(
   }
 
   const boundary = await beginServiceAtOrigin(admin, c.organization_id, linha.id, c.channel_session_id);
-  const mensagem = await sendMessageHandler(
-    admin,
-    {
-      organization_id: c.organization_id,
-      serviceBoundary: boundary,
-      proactiveContext: { organizationId: c.organization_id, contactId: linha.id },
-      actor: { type: "webhook_source", id: `campaign-test:${c.id}` },
-      requestId: `campaign-test:${c.id}:${randomUUID()}`,
-    } as Parameters<typeof sendMessageHandler>[1],
-    {
-      conversation_id: boundary.conversation_id,
-      type: "text",
-      body: render.texto,
-      metadata: { source: "campaign_test", campaign_id: c.id },
-    } as Parameters<typeof sendMessageHandler>[2],
-  );
+  const deveDividir = c.split_messages !== false;
+  const partes = deveDividir ? (render.texto ?? "").split(/
+{2,}/).map((s) => s.trim()).filter(Boolean) : [render.texto];
+  const bolhas = partes.length > 0 ? partes : [render.texto];
+  const intervaloMs = (c.intervalo_segundos && c.intervalo_segundos > 0) ? Math.min(c.intervalo_segundos, 30) * 1000 : 2500;
 
-  const status = (mensagem as { status?: string }).status ?? "desconhecido";
+  let status = "desconhecido";
+  for (let i = 0; i < bolhas.length; i++) {
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, intervaloMs));
+    }
+    const mensagem = await sendMessageHandler(
+      admin,
+      {
+        organization_id: c.organization_id,
+        serviceBoundary: boundary,
+        proactiveContext: { organizationId: c.organization_id, contactId: linha.id },
+        actor: { type: "webhook_source", id: `campaign-test:${c.id}` },
+        requestId: `campaign-test:${c.id}:${randomUUID()}:${i}`,
+      } as Parameters<typeof sendMessageHandler>[1],
+      {
+        conversation_id: boundary.conversation_id,
+        type: "text",
+        body: bolhas[i],
+        metadata: { source: "campaign_test", campaign_id: c.id, bubble_index: i },
+      } as Parameters<typeof sendMessageHandler>[2],
+    );
+    status = (mensagem as { status?: string }).status ?? "desconhecido";
+    if (status === "failed") {
+      return {
+        ok: false,
+        codigo: "campanha_canal_indisponivel",
+        mensagem: "O envio de teste falhou no canal. Verifique a conexão antes de iniciar a campanha.",
+        status: 409,
+      };
+    }
+  }
   if (status === "failed") {
     return {
       ok: false,
