@@ -787,8 +787,26 @@ export const flowSettingsSchema = z.strictObject({
    * alguém esquece de conferir antes de publicar.
    */
   somente_interno: z.boolean().optional(),
+  /**
+   * Automações (out/2026) — as NOTAS do mapa, como no ManyChat: texto solto que
+   * explica a lógica para a equipe. Não são nós: o motor nunca as lê, nenhuma
+   * seta chega nelas e a publicação não as confere. Moram aqui, e não em
+   * `nodes`, justamente para nenhum consumidor do grafo precisar ignorá-las.
+   */
+  notas: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).max(64),
+        texto: z.string().max(1000),
+        x: z.number(),
+        y: z.number(),
+      }),
+    )
+    .max(40)
+    .optional(),
 });
 export type FlowSettings = z.infer<typeof flowSettingsSchema>;
+export type NotaDoMapa = NonNullable<FlowSettings['notas']>[number];
 
 /**
  * Complete flow graph schema.

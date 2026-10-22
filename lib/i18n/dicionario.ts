@@ -5680,6 +5680,14 @@ export const DICIONARIO: Traducoes = {
   "rodízio": { es: "rotación" },
   "é a partir de": { es: "es a partir de" },
   "é até": { es: "es hasta" },
+  "Adicionar o próximo bloco em": { es: "Agregar el siguiente bloque en" },
+  "Próximo bloco": { es: "Siguiente bloque" },
+  "Duplicar bloco": { es: "Duplicar bloque" },
+  "cópia": { es: "copia" },
+  "Nota": { es: "Nota" },
+  "Remover nota": { es: "Quitar nota" },
+  "Escreva aqui para explicar este trecho do fluxo": { es: "Escribe aquí para explicar este tramo del flujo" },
+  "Texto da nota": { es: "Texto de la nota" },
   // ─── Webhooks ───
   "Receba contatos de fora (landing pages, formulários) e crie automações que agem sozinhas.": {
     es: "Recibe contactos de afuera (landing pages, formularios) y crea automatizaciones que actúan solas.",

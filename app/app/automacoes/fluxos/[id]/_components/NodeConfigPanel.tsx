@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import type { FlowGraph, FlowNode } from "@/lib/followup/graph-schema";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
-import { Trash } from "@/lib/ui/icons";
+import { Copy, Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 
 import { ActionForm } from "./forms/ActionForm";
@@ -33,6 +33,8 @@ interface Props {
   node: RFNode;
   onChange: (patch: Partial<RFNodeData>) => void;
   onDelete: () => void;
+  /** Automações: copia o bloco (sem as setas) ao lado do original. Ausente = sem botão. */
+  onDuplicate?: () => void;
   /** Ramos deste nó que já têm aresta — quem sabe isso é o canvas, que é dono do grafo. */
   ramosLigados?: string[];
   /** Superfície do fluxo — o roteiro de atendimento tem Início e Fim próprios. */
@@ -57,6 +59,7 @@ export function NodeConfigPanel({
   node,
   onChange,
   onDelete,
+  onDuplicate,
   ramosLigados,
   surface = "followup",
   flowId,
@@ -188,7 +191,13 @@ export function NodeConfigPanel({
         )}
       </div>
 
-      <div className="mt-auto border-t border-border pt-4">
+      <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">
+        {onDuplicate && type !== "trigger" && (
+          <Button type="button" variant="outline" size="sm" className="w-full" data-testid="duplicate-node" onClick={onDuplicate}>
+            <Copy size={14} aria-hidden className="mr-1" />
+            {t("Duplicar bloco")}
+          </Button>
+        )}
         <Button
           type="button"
           variant="outline"

@@ -6,6 +6,7 @@ import {
   ReactFlowProvider,
   Background,
   Controls,
+  MiniMap,
   ConnectionLineType,
   addEdge,
   useNodesState,
@@ -66,6 +67,10 @@ import { EditLeadTagNode } from "./nodes/EditLeadTagNode";
 import { DistributeNode } from "./nodes/DistributeNode";
 import { SplitNode } from "./nodes/SplitNode";
 import { SkillNode } from "./nodes/SkillNode";
+import { NotaNode } from "./nodes/NotaNode";
+import { AcoesDoMapaContext, type AcoesDoMapa } from "./AcoesDoMapa";
+import { NOS_DA_SUPERFICIE } from "@/lib/followup/validate-publish";
+import type { NotaDoMapa } from "@/lib/followup/graph-schema";
 
 const EMPTY_GRAPH: FlowGraph = { nodes: [], edges: [] };
 const DND_MIME = "application/x-followup-node-type";
@@ -96,7 +101,39 @@ const nodeTypes: NodeTypes = {
   end: EndNode,
   collect: CollectNode,
   skill: SkillNode,
+  // Automações: a nota do mapa. Não é tipo do grafo (mora em `settings.notas`).
+  nota: NotaNode,
 };
+
+/**
+ * A nota vive no MESMO estado do React Flow que os blocos (para ser arrastada,
+ * selecionada e enquadrada junto), mas não é um `NodeType` do grafo. O tipo do
+ * estado é o dos blocos, então a marca é convertida aqui, num lugar só, e todo
+ * caminho que monta o grafo filtra por `ehNota` antes de mapear.
+ */
+const TIPO_NOTA = "nota" as unknown as NodeType;
+const ehNota = (n: RFNode): boolean => (n.type as string) === "nota";
+
+function notaParaNo(nota: NotaDoMapa): RFNode {
+  return {
+    id: nota.id,
+    type: TIPO_NOTA,
+    position: { x: nota.x, y: nota.y },
+    data: { label: "Nota", config: { texto: nota.texto } as unknown as RFNode["data"]["config"] },
+  };
+}
+
+function noParaNota(n: RFNode): NotaDoMapa {
+  const texto = (n.data.config as unknown as { texto?: string }).texto ?? "";
+  return { id: n.id, texto, x: n.position.x, y: n.position.y };
+}
+
+/** As configurações sem as notas — as notas vivem como nós no estado do mapa. */
+function semNotas(settings: FlowGraph["settings"]): FlowGraph["settings"] {
+  if (!settings) return settings;
+  const { notas: _notas, ...resto } = settings;
+  return resto as FlowGraph["settings"];
+}
 
 interface Props {
   flowId: string;
@@ -110,7 +147,11 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   // `initial` seeds React Flow state ONCE on mount — it must NOT react to
   // `flow` changing on every refetch (that would clobber in-progress edits).
   const initial = useMemo(
-    () => toReactFlow(initialData.draft_graph ?? EMPTY_GRAPH),
+    () => {
+      const grafo = initialData.draft_graph ?? EMPTY_GRAPH;
+      const rf = toReactFlow(grafo);
+      return { ...rf, nodes: [...rf.nodes, ...(grafo.settings?.notas ?? []).map(notaParaNo)] };
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -120,7 +161,10 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   // As configurações do GRAFO (palavras-gatilho, teto de tentativas, prazo do
   // roteiro) não vivem em nó nenhum: sem este estado, salvar o rascunho as
   // apagava — `fromReactFlow` só conhece nós e arestas.
-  const [settings, setSettings] = useState<FlowGraph["settings"]>(initialData.draft_graph?.settings);
+  const [settings, setSettings] = useState<FlowGraph["settings"]>(semNotas(initialData.draft_graph?.settings));
+  // `settings` começou com alguma chave? Sem isso, um fluxo sem configurações
+  // ganharia `settings: {}` ao abrir e o editor acusaria "alterações não salvas".
+  const tinhaSettings = useRef(initialData.draft_graph?.settings !== undefined);
   const surface = initialData.surface ?? "followup";
   // Continue after the largest persisted suffix. Starting again at 1 makes a
   // newly-created node/edge reuse an existing React Flow key and visually
@@ -133,8 +177,15 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const liveGraph = useMemo(() => {
-    const base = fromReactFlow(nodes, edges);
-    return settings ? { ...base, settings } : base;
+    const base = fromReactFlow(
+      nodes.filter((n) => !ehNota(n)),
+      edges,
+    );
+    const notas = nodes.filter(ehNota).map(noParaNota);
+    const combinadas = { ...(settings ?? {}), ...(notas.length > 0 ? { notas } : {}) };
+    const vazias = Object.keys(combinadas).length === 0;
+    if (vazias && !tinhaSettings.current) return base;
+    return { ...base, settings: combinadas as FlowGraph["settings"] };
   }, [nodes, edges, settings]);
   const dirty = useMemo(() => !graphsEqual(liveGraph, savedGraph), [liveGraph, savedGraph]);
 
@@ -150,6 +201,8 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
 
   // Node and edge selection are mutually exclusive — opening one panel closes the other's.
   const onNodeClick = useCallback<NodeMouseHandler<RFNode>>((_, node) => {
+    // A nota se edita no próprio cartão; não há painel de configuração para ela.
+    if (ehNota(node)) return;
     setSelectedNodeId(node.id);
     setSelectedEdgeId(null);
   }, []);
@@ -272,6 +325,98 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     [nodes.length, addNodeAt],
   );
 
+  // ── Automações (estilo ManyChat) ────────────────────────────────────────
+  // O "+" de uma saída cria o próximo bloco ao lado, já ligado a ela, e abre o
+  // painel dele — o arrasto de seta deixa de ser o único jeito de montar.
+  const adicionarDepois = useCallback(
+    (nodeId: string, ramo: string | null, tipo: NodeType) => {
+      const origem = nodes.find((n) => n.id === nodeId);
+      if (!origem) return;
+      const ramos = nodeBranches(toFlowNode(origem));
+      const indice = ramo === null ? 0 : Math.max(0, ramos.findIndex((b) => b.id === ramo));
+      const altura = origem.measured?.height ?? estimateNodeSize(toFlowNode(origem)).height;
+      const position = {
+        x: origem.position.x + (ramo === null ? 0 : LAYOUT_NODE_WIDTH + 60),
+        y: origem.position.y + (ramo === null ? altura + 60 : indice * 140),
+      };
+      const visual = NODE_VISUALS[tipo];
+      const id = `${tipo}-${nextId.current++}`;
+      const config = tipo === "action" ? configPadraoDaAcao(triggerKind) : visual.defaultConfig();
+      setNodes((nds) => nds.concat({ id, type: tipo, position, data: { label: t(visual.defaultLabel), config } }));
+      const condition =
+        ramo === null
+          ? { type: "always" as const }
+          : (conditionForBranch(toFlowNode(origem), ramo) ?? { type: "always" as const });
+      setEdges((eds) =>
+        addEdge(
+          {
+            id: `edge-${nextEdgeId.current++}`,
+            source: nodeId,
+            target: id,
+            sourceHandle: ramo ?? null,
+            targetHandle: null,
+            data: { priority: 0, condition },
+          },
+          eds,
+        ),
+      );
+      setSelectedNodeId(id);
+      setSelectedEdgeId(null);
+    },
+    [nodes, setNodes, setEdges, t, triggerKind],
+  );
+
+  // Duplicar copia o bloco com a configuração, sem as setas — ligar a cópia é
+  // decisão de quem monta, e copiar setas criaria saídas duplicadas no original.
+  const duplicarBloco = useCallback(
+    (nodeId: string) => {
+      const origem = nodes.find((n) => n.id === nodeId);
+      if (!origem || ehNota(origem) || origem.type === "trigger") return;
+      const id = `${origem.type}-${nextId.current++}`;
+      const copia: RFNode = {
+        id,
+        type: origem.type,
+        position: { x: origem.position.x + 40, y: origem.position.y + 40 },
+        data: {
+          label: `${origem.data.label} (${t("cópia")})`.slice(0, 60),
+          config: structuredClone(origem.data.config),
+        },
+      };
+      setNodes((nds) => nds.concat(copia));
+      setSelectedNodeId(id);
+    },
+    [nodes, setNodes, t],
+  );
+
+  const adicionarNota = useCallback(() => {
+    const id = `nota-${nextId.current++}`;
+    const centro = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    setNodes((nds) => nds.concat(notaParaNo({ id, texto: "", x: centro.x, y: centro.y })));
+  }, [setNodes, screenToFlowPosition]);
+
+  const editarNota = useCallback(
+    (id: string, texto: string) => {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === id ? { ...n, data: { ...n.data, config: { texto } as unknown as RFNode["data"]["config"] } } : n,
+        ),
+      );
+    },
+    [setNodes],
+  );
+
+  const removerNota = useCallback((id: string) => setNodes((nds) => nds.filter((n) => n.id !== id)), [setNodes]);
+
+  const acoesDoMapa = useMemo<AcoesDoMapa>(
+    () => ({
+      adicionarDepois,
+      tipos: NOS_DA_SUPERFICIE[surface].map((tipo) => NODE_VISUALS[tipo]),
+      editarNota,
+      removerNota,
+    }),
+    [adicionarDepois, surface, editarNota, removerNota],
+  );
+
   const deleteNode = useCallback(
     (id: string) => {
       setNodes((nds) => semNo(nds, id));
@@ -298,6 +443,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     if (nodes.length === 0) return;
     const sizes = new Map<string, { width: number; height: number }>();
     for (const n of nodes) {
+      if (ehNota(n)) continue;
       sizes.set(n.id, {
         width: n.measured?.width ?? LAYOUT_NODE_WIDTH,
         height: n.measured?.height ?? estimateNodeSize(toFlowNode(n)).height,
@@ -368,6 +514,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
         </Sheet>
 
         <div className="relative h-full flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
+          <AcoesDoMapaContext.Provider value={acoesDoMapa}>
           <ReactFlow
             nodes={nodes}
             edges={edgesForRender}
@@ -390,7 +537,20 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           >
             <Background />
             <Controls />
+            {/* Minimapa, como no ManyChat: em fluxo grande, mostra onde você está. */}
+            <MiniMap pannable zoomable className="hidden lg:block" />
           </ReactFlow>
+          </AcoesDoMapaContext.Provider>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="absolute right-4 top-4 z-10 shadow-md"
+            onClick={adicionarNota}
+            data-testid="adicionar-nota"
+          >
+            <Plus size={14} aria-hidden /> {t("Nota")}
+          </Button>
           <Button
             type="button"
             variant="secondary"
@@ -436,6 +596,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
                 node={selectedNode}
                 onChange={(patch) => updateNodeData(selectedNode.id, patch)}
                 onDelete={() => deleteNode(selectedNode.id)}
+                onDuplicate={() => duplicarBloco(selectedNode.id)}
                 ramosLigados={ramosLigadosDoSelecionado}
                 surface={surface}
                 flowId={flowId}

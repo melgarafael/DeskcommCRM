@@ -9,6 +9,7 @@ import { Warning } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 import { useEtapasDoFluxo } from "../EtapasDoFluxo";
+import { BotaoProximoBloco } from "./BotaoProximoBloco";
 import type { NodeVisual } from "./nodeVisuals";
 
 /**
@@ -152,7 +153,9 @@ export function NodeCard({
                 {/* Três linhas, não duas: a frase da regra interpola dado do
                     usuário («Etapa · Funil»), e o que estourava era justamente o
                     fim — o nome do funil, que existe para desambiguar. */}
-                <span className="line-clamp-3 break-words text-xs leading-tight">{rotulo}</span>
+                <span className="line-clamp-3 flex-1 break-words text-xs leading-tight">{rotulo}</span>
+                {/* Automações: o "+" do ManyChat cria o próximo bloco já ligado a esta saída. */}
+                <BotaoProximoBloco nodeId={id} ramo={branch.id} rotulo={rotulo} className="mr-1" />
                 <Handle
                   type="source"
                   id={branch.id}
@@ -167,7 +170,14 @@ export function NodeCard({
           })}
         </ul>
       )}
-      {showSource && branchRows === null && <Handle type="source" position={Position.Bottom} />}
+      {showSource && branchRows === null && (
+        <>
+          <div className="flex justify-center pb-1">
+            <BotaoProximoBloco nodeId={id} ramo={null} rotulo={label} />
+          </div>
+          <Handle type="source" position={Position.Bottom} />
+        </>
+      )}
     </div>
   );
 }
