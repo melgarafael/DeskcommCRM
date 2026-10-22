@@ -312,7 +312,13 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
     // timeline. Só com contato (sem ele não há "mesmo cliente") e só entre os
     // ABERTOS — um negócio perdido ou ganho não impede o interesse novo. Filtra a
     // organização à mão: o cliente de serviço ignora a RLS.
-    if (input.referencia_externa && input.contact_id) {
+    // No turno do agente o contato TEM de ser o da conversa (a conferência de escopo
+    // já o exige antes de chegar aqui; repetida como nas ferramentas irmãs), e o
+    // negócio de contato pessoal está fora da operação.
+    const doTurno = ctx.contatoDoTurno;
+    const contatoDeOutraConversa =
+      !!doTurno && !!input.contact_id && input.contact_id.toLowerCase() !== doTurno.toLowerCase();
+    if (input.referencia_externa && input.contact_id && !contatoDeOutraConversa) {
       const { data: existente } = await ctx.supabase
         .from("crm_leads")
         .select("id, title, pipeline_id, stage_id, status")
@@ -324,6 +330,8 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
         .limit(1)
         .maybeSingle();
       if (existente) {
+        const recusaPessoal = await recusaSeLeadDePessoal(ctx, (existente as { id: string }).id);
+        if (recusaPessoal) return recusaPessoal;
         await emitLeadActivity(ctx.supabase, {
           organizationId: ctx.organizationId,
           leadId: (existente as { id: string }).id,

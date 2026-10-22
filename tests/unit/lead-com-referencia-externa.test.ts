@@ -22,6 +22,10 @@
 //     → tirar o `.eq("status", "open")`.
 //  6. A forma da referência é fechada (entrada do modelo)
 //     → afrouxar `REFERENCIA_EXTERNA`.
+//  7. Contato de OUTRA conversa não dispara a busca (defesa em profundidade)
+//     → tirar `&& !contatoDeOutraConversa` da condição.
+//  8. Negócio de contato pessoal é recusado, sem nota
+//     → tirar o `if (recusaPessoal) return recusaPessoal;`.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,7 +59,7 @@ type Filtro = [string, unknown];
  * Supabase de mentira, encadeável, que responde por TABELA. Guarda o que foi
  * inserido e os filtros da busca do negócio existente.
  */
-function supabaseCom(existente: Record<string, unknown> | null) {
+function supabaseCom(existente: Record<string, unknown> | null, pessoal = false) {
   const inseridos: Record<string, unknown>[] = [];
   const atividades: Record<string, unknown>[] = [];
   const filtrosDaBusca: Filtro[] = [];
@@ -68,6 +72,12 @@ function supabaseCom(existente: Record<string, unknown> | null) {
         return { data: { id: ETAPA, pipeline_id: PIPELINE, organization_id: ORG }, error: null };
       }
       if (tabela === "organizations") return { data: { currency: "BRL" }, error: null };
+      // A conferência de contato pessoal (a mesma das ferramentas irmãs): lê o
+      // contato do negócio e depois a marca `is_personal` dele.
+      if (pessoal && tabela === "contacts") return { data: { is_personal: true }, error: null };
+      if (pessoal && tabela === "crm_leads" && filtros.some(([c]) => c === "id")) {
+        return { data: { contact_id: CONTATO }, error: null };
+      }
       return { data: null, error: null };
     };
 
@@ -109,12 +119,13 @@ function supabaseCom(existente: Record<string, unknown> | null) {
   };
 }
 
-const ctxCom = (cliente: never) =>
+const ctxCom = (cliente: never, contatoDoTurno?: string) =>
   ({
     supabase: cliente,
     organizationId: ORG,
     actor: { type: "user", id: "user-1" },
     requestId: "req-1",
+    ...(contatoDoTurno ? { contatoDoTurno } : {}),
   }) as never;
 
 const ENTRADA = {
@@ -199,6 +210,38 @@ describe("crm_create_lead com referencia_externa", () => {
 
     expect(buscou()).toBe(false);
     expect(inseridos).toHaveLength(1);
+  });
+});
+
+describe("crm_create_lead com referencia_externa — as guardas da busca", () => {
+  const ABERTO = { id: "lead-aberto", title: "Apto", pipeline_id: PIPELINE, stage_id: ETAPA, status: "open" };
+
+  it("no turno de OUTRA conversa não procura nem anota (o negócio é de outro cliente)", async () => {
+    const { cliente, buscou, atividades } = supabaseCom(ABERTO);
+    const OUTRO = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+    await crmCreateLead.handler(ENTRADA, ctxCom(cliente, OUTRO));
+
+    expect(buscou()).toBe(false);
+    expect(atividades).toHaveLength(0);
+  });
+
+  it("no turno da MESMA conversa procura normalmente (maiúsculas não importam)", async () => {
+    const { cliente, buscou } = supabaseCom(null);
+
+    await crmCreateLead.handler(ENTRADA, ctxCom(cliente, CONTATO.toUpperCase()));
+
+    expect(buscou()).toBe(true);
+  });
+
+  it("negócio de contato pessoal: recusa e NÃO anota", async () => {
+    const { cliente, inseridos, atividades } = supabaseCom(ABERTO, true);
+
+    const saida = (await crmCreateLead.handler(ENTRADA, ctxCom(cliente))) as { motivo?: string };
+
+    expect(saida.motivo).toBe("contato_pessoal");
+    expect(inseridos).toHaveLength(0);
+    expect(atividades).toHaveLength(0);
   });
 });
 
