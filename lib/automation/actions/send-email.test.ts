@@ -145,12 +145,57 @@ interface Leitura {
   lidas: string[];
 }
 
+/**
+ * `organizations` tem DUAS leituras nesta ação, e o dublê as separa pela FORMA
+ * da consulta — não por um flag:
+ *
+ *   - `select("settings")` → o remetente da organização desta fatia (#3287);
+ *   - `select("locale")`   → o idioma do resumo da equipe (`{{resumo}}`), que só
+ *                            roda quando o modelo usa a variável. É ESTA que
+ *                            entra em `lidas`; a de `settings` não, porque não é
+ *                            resumo — e é isso que mantém honesta a asserção de
+ *                            que o modelo sem `{{resumo}}` não lê tabela de
+ *                            resumo nenhuma.
+ */
+function tabelaDaOrganizacao(marca: Record<string, unknown> | null, leitura: Leitura | null) {
+  const linha: Linha = {
+    id: "org-1",
+    locale: "pt-BR",
+    settings: marca === null ? null : { branding: marca },
+  };
+  let restantes: Linha[] = [linha];
+  let colunas = "";
+  const consulta = {
+    select: (c: string) => {
+      colunas = c;
+      return consulta;
+    },
+    eq: (coluna: string, valor: unknown) => {
+      restantes = restantes.filter((l) => l[coluna] === valor);
+      return consulta;
+    },
+    is: () => consulta,
+    maybeSingle: async () => {
+      if (colunas.includes("locale")) {
+        // A leitura do idioma só existe junto com o resumo: se ela acontecer sem
+        // `{{resumo}}` no modelo, o dublê diz isso em vez de devolver um valor.
+        if (leitura === null) throw new Error("leitura do resumo sem {{resumo}} no modelo");
+        leitura.lidas.push("organizations");
+      }
+      return { data: restantes[0] ?? null, error: null };
+    },
+  };
+  return consulta;
+}
+
 function ctx(
   override: Record<string, unknown> = {},
   vinculos: Vinculo[] = EQUIPE_ATIVA,
   falhaDaConsulta: { message: string } | null = null,
   resumo: Leitura | null = null,
   emailDoAcesso: (id: string) => string | null = () => "dono@estudio.com",
+  /** O `settings.branding` da organização — o remetente da automação (#3287). */
+  marcaDaOrganizacao: Record<string, unknown> | null = null,
 ): ActionCtx {
   return {
     admin: {
@@ -161,6 +206,10 @@ function ctx(
       },
       from: (tabela: string) => {
         if (tabela === "user_organizations") return tabelaDeVinculos(vinculos, falhaDaConsulta);
+        // `organizations` é lida pela AÇÃO (o remetente da automação, #3287) e —
+        // só com `{{resumo}}` — pelo carregador do resumo. O dublê separa as
+        // duas pela forma da consulta; ver `tabelaDaOrganizacao`.
+        if (tabela === "organizations") return tabelaDaOrganizacao(marcaDaOrganizacao, resumo);
         // Sem `resumo`, ler qualquer outra tabela é defeito: o dublê estoura e
         // o teste de `{{resumo}}` que não é usado vira vermelho se a ação
         // passar a carregar o resumo sempre.
@@ -650,5 +699,104 @@ describe("send_email — a variável {{resumo}} (#2642)", () => {
     const pedido = enviar.mock.calls[0]![0];
     expect(pedido.html).toContain("Pontuação: 72%");
     expect(pedido.html).toContain("<p>");
+  });
+});
+
+/**
+ * #3287 (fatia 1) — o REMETENTE DA ORGANIZAÇÃO no e-mail da automação.
+ *
+ * O que este bloco prende, e é o critério de aceite da issue:
+ *
+ *   1. com nome de exibição e "responder para" GRAVADOS na organização, os dois
+ *      chegam ao `sendEmail` — o dublê do cliente de e-mail registra `fromName`
+ *      e `replyTo`, e é por eles que o teste mede;
+ *   2. SEM configuração, o envio sai como sempre saiu: as duas chaves ficam
+ *      AUSENTES do pedido, não `null` nem `undefined`. A diferença importa: o
+ *      caminho SMTP da plataforma usa o `fromName` DELE quando ninguém passa um,
+ *      e um `undefined` explícito não é a mesma coisa que a chave ausente;
+ *   3. o ENDEREÇO do `From` não vem daqui — quem decide o transporte e o
+ *      endereço é `lib/email/roteador.ts`, e esta ação não passa `from`. O SMTP
+ *      próprio da organização é a FATIA 2 e não entra nesta fatia.
+ */
+describe("send_email — o remetente da organização (#3287, fatia 1)", () => {
+  /** A configuração da organização como a tela de marca a grava em `settings.branding`. */
+  const COM_REMETENTE = { email_from_name: "Loja da Ana", email_reply_to: "contato@lojadaana.com" };
+
+  it("com nome e responder-para configurados, os dois chegam ao envio", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-org", via: "resend" });
+
+    const r = await acao()!.execute(
+      ctx({}, EQUIPE_ATIVA, null, null, undefined, COM_REMETENTE),
+      CONFIG,
+    );
+
+    expect(enviar).toHaveBeenCalledTimes(1);
+    const pedido = enviar.mock.calls[0]![0];
+    expect(pedido.fromName).toBe("Loja da Ana");
+    expect(pedido.replyTo).toBe("contato@lojadaana.com");
+    // O endereço do `From` continua sendo decidido pelo roteador: a ação NÃO
+    // manda `from`, então o domínio da plataforma segue no cabeçalho.
+    expect("from" in pedido).toBe(false);
+    expect(r.status).toBe("success");
+  });
+
+  it("sem configuração da organização, o envio sai como hoje: sem fromName e sem replyTo", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-hoje", via: "smtp" });
+
+    await acao()!.execute(ctx(), CONFIG);
+
+    const pedido = enviar.mock.calls[0]![0];
+    // AUSENTES, não `null`: o SMTP da plataforma usa o `fromName` dele quando a
+    // chave não vem, e é esse o comportamento de hoje.
+    expect("fromName" in pedido).toBe(false);
+    expect("replyTo" in pedido).toBe(false);
+    expect(pedido).toEqual({
+      to: "ana@exemplo.com",
+      subject: "Sua viagem para Gramado",
+      html: expect.stringContaining("Ana Souza"),
+      text: expect.stringContaining("Ana Souza"),
+      tags: [{ name: "origem", value: "automacao" }],
+    });
+  });
+
+  it("organização com marca mas SEM o remetente: nada muda no envio", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-marca", via: "smtp" });
+
+    await acao()!.execute(
+      ctx({}, EQUIPE_ATIVA, null, null, undefined, { app_name: "Loja da Ana", accent_hex: "#b3261e" }),
+      CONFIG,
+    );
+
+    const pedido = enviar.mock.calls[0]![0];
+    expect("fromName" in pedido).toBe(false);
+    expect("replyTo" in pedido).toBe(false);
+  });
+
+  it("responder-para torto não vira cabeçalho: só o nome vai", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-torto", via: "smtp" });
+
+    await acao()!.execute(
+      ctx({}, EQUIPE_ATIVA, null, null, undefined, {
+        email_from_name: "Loja da Ana",
+        email_reply_to: "não é endereço",
+      }),
+      CONFIG,
+    );
+
+    const pedido = enviar.mock.calls[0]![0];
+    expect(pedido.fromName).toBe("Loja da Ana");
+    expect("replyTo" in pedido).toBe(false);
+  });
+
+  it("leitura da organização que não volta degrada para o de hoje, e o e-mail sai", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-degradado", via: "smtp" });
+
+    // Sem `organizations` no dublê (marca `null`) a leitura responde linha nula —
+    // o mesmo desfecho de "a organização não configurou nada". O caminho do erro
+    // de banco é o irmão deste caso em `lib/email/remetente-da-organizacao.ts`.
+    const r = await acao()!.execute(ctx(), CONFIG);
+
+    expect(r.status).toBe("success");
+    expect("fromName" in enviar.mock.calls[0]![0]).toBe(false);
   });
 });

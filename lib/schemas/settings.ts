@@ -465,6 +465,29 @@ export const marcaDaOrganizacaoSchema = z.object({
     .trim()
     .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
     .nullable(),
+  /**
+   * O remetente do e-mail de AUTOMAÇÃO da organização (#3287, fatia 1) — o nome
+   * de exibição e o "responder para".
+   *
+   * `email_from_name` é texto livre (limite de 120, o mesmo do nome da empresa:
+   * cabeçalho `From:` longo é o que os clientes de e-mail cortam). Vazio vira
+   * `null` na tela, e `null` é "use o da plataforma".
+   */
+  email_from_name: z.string().trim().max(120).nullable(),
+  /**
+   * `email_reply_to` valida com o MESMO piso de "cara de endereço" do disparo
+   * (`lib/email/remetente-da-organizacao.ts`): recusar aqui é o conserto que a
+   * pessoa vê na tela, em vez de um `Reply-To:` torto que o provedor devolveria
+   * como erro opaco no meio de um envio real.
+   */
+  email_reply_to: z
+    .string()
+    .trim()
+    .max(254)
+    .refine((valor) => valor === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor), {
+      message: "Use um endereço de e-mail como contato@suaempresa.com",
+    })
+    .nullable(),
 });
 export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
 

@@ -7428,6 +7428,23 @@ export const DICIONARIO: Traducoes = {
   "Considerando o que está nos campos acima.": {
     es: "Según lo que hay en los campos de arriba.",
   },
+  "Como seus e-mails saem": { es: "Cómo salen tus correos" },
+  "Vale para os e-mails que as automações enviam ao seu cliente. O endereço de envio continua sendo o do sistema — o que muda é o nome que aparece e para onde vai a resposta.": {
+    es: "Vale para los correos que las automatizaciones envían a tu cliente. La dirección de envío sigue siendo la del sistema — lo que cambia es el nombre que aparece y a dónde va la respuesta.",
+  },
+  "É o que o cliente lê como remetente. Deixe em branco para usar o do sistema.": {
+    es: "Es lo que el cliente lee como remitente. Déjalo en blanco para usar el del sistema.",
+  },
+  "Responder para": { es: "Responder a" },
+  "Use um endereço de e-mail como contato@suaempresa.com": {
+    es: "Usa una dirección de correo como contacto@tuempresa.com",
+  },
+  "Para onde vai a resposta do cliente. Deixe em branco para usar o endereço do sistema.": {
+    es: "A dónde va la respuesta del cliente. Déjalo en blanco para usar la dirección del sistema.",
+  },
+  "O envio continua saindo pelo servidor de e-mail do sistema: o endereço do remetente (o domínio) não muda, e um servidor de e-mail próprio da sua empresa ainda não é configurável por aqui.": {
+    es: "El envío sigue saliendo por el servidor de correo del sistema: la dirección del remitente (el dominio) no cambia, y un servidor de correo propio de tu empresa todavía no es configurable aquí.",
+  },
   "Do jeito que está, esta cor não chegaria à tela: o sistema continuaria com a cor que já usa.": {
     es: "Tal como está, este color no se mostraría en pantalla: el sistema seguiría usando el color que ya tiene.",
   },
