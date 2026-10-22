@@ -21,7 +21,11 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
  * as DUAS telas que oferecem o modo (settings/atendimento e team) derivam desta
  * lista, então acrescentar um modo aqui os atualiza sem tocar em mais nada.
  */
-export const ROUTING_MODES = ["manual", "round_robin", "load"] as const;
+// `fluxos` (Automações, out/2026): quem entrega a conversa é o bloco
+// "Distribuir atendimento" dos fluxos publicados. O rodízio da empresa fica
+// parado para não disputar a mesma conversa com o fluxo — com ele ligado, a
+// conversa ganhava dono na chegada e o bloco do fluxo nunca decidia nada.
+export const ROUTING_MODES = ["manual", "round_robin", "load", "fluxos"] as const;
 export type RoutingMode = (typeof ROUTING_MODES)[number];
 
 /**

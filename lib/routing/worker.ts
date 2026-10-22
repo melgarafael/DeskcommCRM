@@ -27,6 +27,7 @@ const DEFAULT_BATCH_SIZE = 100;
 export type RoutingOutcome =
   | "assigned"
   | "skipped_manual"
+  | "skipped_flows"
   | "skipped_already_assigned"
   | "skipped_unsupported_mode"
   | "requeued_no_eligible"
@@ -56,6 +57,7 @@ interface EventRow {
 const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   assigned: 0,
   skipped_manual: 0,
+  skipped_flows: 0,
   skipped_already_assigned: 0,
   skipped_unsupported_mode: 0,
   requeued_no_eligible: 0,
@@ -239,7 +241,9 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       const outcome: RoutingOutcome =
         action.reason === "manual_mode"
           ? "skipped_manual"
-          : action.reason === "already_assigned"
+          : action.reason === "flows_mode"
+            ? "skipped_flows"
+            : action.reason === "already_assigned"
             ? "skipped_already_assigned"
             : "skipped_unsupported_mode";
       if (action.reason.startsWith("unsupported_mode")) {

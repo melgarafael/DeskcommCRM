@@ -73,6 +73,7 @@ const MODE_LABELS: Record<(typeof ROUTING_MODES)[number], string> = {
   manual: "Manual (atendente puxa da fila)",
   round_robin: "Rodízio (distribui automático)",
   load: "Menor carga (quem tem menos conversas na mão)",
+  fluxos: "Pelos fluxos de Automações (o bloco Distribuir decide)",
 };
 
 interface Attendant {

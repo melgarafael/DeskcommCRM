@@ -7,6 +7,7 @@
  * o que ACONTECE com o cliente e com o atendente, e cada modo tem a sua
  * consequência escrita — inclusive a ruim.
  */
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +20,7 @@ import type { VisibilityMode } from "@/lib/auth/types";
 import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 import { PRAZO_PADRAO_DO_SILENCIO_MINUTOS } from "@/lib/escalacao/atendimento-manual";
 import { ROUTING_MODES, VISIBILITY_MODES, type RoutingMode } from "@/lib/schemas/routing";
+import type { FluxoQueDistribui } from "@/lib/routing/fluxos-que-distribuem";
 import { useT } from "@/hooks/i18n/useT";
 
 export interface AtendimentoConfig {
@@ -55,6 +57,13 @@ const MODO_COPY: Record<RoutingMode, { titulo: string; corpo: string }> = {
       "de empate vale o rodízio — quem está há mais tempo sem receber leva. Entre os que estão " +
       "disponíveis e dentro do horário, como nos outros modos. É o modo para time grande, " +
       "onde deixar uma pessoa com tudo e outra parada custa caro.",
+  },
+  fluxos: {
+    titulo: "Pelos fluxos de Automações",
+    corpo:
+      "Quem decide é o bloco Distribuir atendimento dos seus fluxos: por origem do contato, " +
+      "horário, número, DDD, rodízio, menor carga ou percentual. A distribuição desta tela " +
+      "fica parada para não disputar a conversa com o fluxo.",
   },
 };
 
@@ -121,7 +130,14 @@ function Escolha({
   );
 }
 
-export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
+export function AtendimentoForm({
+  initial,
+  fluxos = [],
+}: {
+  initial: AtendimentoConfig;
+  /** Os fluxos publicados com o bloco "Distribuir atendimento" (`fluxosQueDistribuem`). */
+  fluxos?: FluxoQueDistribui[];
+}) {
   const t = useT();
   const [form, setForm] = useState<AtendimentoConfig>(initial);
   const [salvo, setSalvo] = useState<AtendimentoConfig>(initial);
@@ -134,7 +150,16 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
    * distribuição manual significa que ninguém enxerga a fila para pegar, então
    * nada é atendido — e a tela de todo mundo fica vazia sem explicação.
    */
-  const combinacaoMorta = form.visibility_mode === "own" && form.mode === "manual";
+  const fluxosAtivos = fluxos.filter((f) => f.ativo);
+  const combinacaoMorta =
+    form.visibility_mode === "own" && (form.mode === "manual" || (form.mode === "fluxos" && fluxosAtivos.length === 0));
+  /**
+   * Dois distribuidores na mesma conversa. Com Rodízio ou Menor carga, a
+   * conversa ganha dono no instante em que chega — o fluxo roda depois, acha a
+   * conversa com dono e sai por "Distribuído" sem aplicar a regra dele.
+   */
+  const conflitoComFluxos = (form.mode === "round_robin" || form.mode === "load") && fluxosAtivos.length > 0;
+  const modoFluxosSemFluxo = form.mode === "fluxos" && fluxosAtivos.length === 0;
 
   const devolveSozinho = form.handoff_return_after_minutes !== null;
 
@@ -175,7 +200,60 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
           ))}
         </div>
 
-        {form.mode !== "manual" ? (
+        {conflitoComFluxos ? (
+          <div
+            data-testid="aviso-conflito-fluxos"
+            className="space-y-2 rounded-md border border-warning bg-warning-bg p-3 text-xs text-warning-fg"
+          >
+            <p>
+              {t(
+                "Atenção: você tem fluxo publicado que distribui atendimento, e esta tela também está distribuindo. A conversa ganha dono aqui assim que chega, e o bloco Distribuir do fluxo nunca chega a decidir.",
+              )}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => setForm((f) => ({ ...f, mode: "fluxos" }))}
+              data-testid="usar-modo-fluxos"
+            >
+              {t("Deixar a distribuição com os fluxos")}
+            </Button>
+          </div>
+        ) : null}
+
+        {form.mode === "fluxos" ? (
+          <div className="space-y-2 border-t pt-4" data-testid="fluxos-que-distribuem">
+            <p className="text-xs font-medium">{t("Fluxos que distribuem atendimento")}</p>
+            {fluxos.length === 0 ? null : (
+              <ul className="space-y-1 text-xs">
+                {fluxos.map((f) => (
+                  <li key={f.id} className="flex items-center gap-2">
+                    <span className={f.ativo ? "text-success-fg" : "text-muted-foreground"}>
+                      {f.ativo ? t("Ativo") : t("Desativado")}
+                    </span>
+                    <Link href={`/app/automacoes/fluxos/${f.id}`} className="underline">
+                      {f.nome}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {modoFluxosSemFluxo ? (
+              <p className="rounded-md border border-error bg-error-bg p-2 text-xs text-error-fg" data-testid="aviso-sem-fluxo">
+                {t(
+                  "Nenhum fluxo ativo distribui atendimento. Neste modo, sem um fluxo com o bloco Distribuir atendimento, toda conversa nova fica na fila sem dono.",
+                )}{" "}
+                <Link href="/app/automacoes/fluxos" className="underline">
+                  {t("Abrir Fluxos")}
+                </Link>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {form.mode === "round_robin" || form.mode === "load" ? (
           <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="max_retries">{t("Tentativas antes de desistir")}</Label>

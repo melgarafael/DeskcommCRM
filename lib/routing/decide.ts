@@ -79,6 +79,10 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // Modo manual (acceptance 5): worker não roteia.
   if (input.mode === "manual") return { kind: "skip", reason: "manual_mode" };
 
+  // Modo "Pelos fluxos de Automações": quem distribui é o bloco do fluxo; o
+  // rodízio da empresa não toca na conversa (senão ele chegaria antes).
+  if (input.mode === "fluxos") return { kind: "skip", reason: "flows_mode" };
+
   // Fora da lista de ROUTING_MODES (defensivo): roteia só o que a tela deixa
   // escolher. 'load' deixou de ser no-op e passou a rotear pela issue #1539.
   if (input.mode !== "round_robin" && input.mode !== "load") {

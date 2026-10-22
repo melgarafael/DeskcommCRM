@@ -27,6 +27,8 @@ import { configAssinatura } from "@/lib/messaging/assinatura";
 import { AssinaturaForm } from "./_assinatura-form";
 import { ChannelRoutingForm } from "./_channels-form";
 import { AtendimentoForm } from "./_form";
+import { QuemPodeReceber } from "./_quem-pode-receber";
+import { fluxosQueDistribuem } from "@/lib/routing/fluxos-que-distribuem";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +57,9 @@ export default async function AtendimentoSettingsPage() {
   const routing = routingConfigSchema.catch(routingConfigSchema.parse({})).parse(settings.routing ?? {});
   const idioma = user.idioma;
   const channels = await loadChannelRoutingSettings(supabase, activeOrg.orgId);
+  // Automações: quais fluxos publicados entregam conversa — a tela avisa quando
+  // eles disputam a conversa com o rodízio desta tela.
+  const fluxos = await fluxosQueDistribuem(supabase, activeOrg.orgId);
   const assinatura = configAssinatura(settings);
   const assinaturaInicial = { humanos: assinatura.humanos, ia: assinatura.ia, nome_ia: assinatura.nomeIa };
 
@@ -74,7 +79,9 @@ export default async function AtendimentoSettingsPage() {
 
       <AtendimentoForm
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
+        fluxos={fluxos}
       />
+      <QuemPodeReceber />
       <ChannelRoutingForm initial={channels} />
       <AssinaturaForm initial={assinaturaInicial} />
     </div>

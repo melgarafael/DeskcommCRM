@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { useAttendants, useRoutingConfig } from "@/hooks/team/useAttendants";
+import { ROTULO_DA_SITUACAO, situacaoDoAtendente, type SituacaoDoAtendente } from "@/lib/routing/situacao";
+import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 import { DISTRIBUTE_MODES, distributeConfigSchema, type DistributeMode } from "@/lib/followup/graph-schema";
 import { MODOS_DE_DISTRIBUICAO } from "@/lib/followup/vocabulario";
@@ -29,6 +33,13 @@ const ROTULO_DO_TIPO: Record<Tipo, string> = {
 };
 
 const ROTULO_DO_MODO = MODOS_DE_DISTRIBUICAO;
+
+const COR_DA_SITUACAO: Record<SituacaoDoAtendente, string> = {
+  pode_receber: "text-success-fg",
+  indisponivel: "text-error-fg",
+  fora_do_horario: "text-warning-fg",
+  lotado: "text-warning-fg",
+};
 
 /**
  * O bloco "Distribuir atendimento" (Automações, out/2026). Quem recebe a
@@ -62,7 +73,27 @@ export function DistributeForm({ config, onChange }: { config: Config; onChange:
     gravar({ ...config, destino });
   };
 
-  const nomeDe = (id: string) => members?.find((m) => m.user_id === id)?.full_name ?? id.slice(0, 8);
+  // Automações: o bloco lê o modo da empresa e a disponibilidade da equipe para
+  // dizer, ANTES de publicar, se a distribuição dele vai mesmo acontecer.
+  const { data: routing } = useRoutingConfig();
+  const { data: equipe } = useAttendants();
+  const modoDaEmpresa = routing?.data?.mode;
+  const agora = new Date();
+  const situacaoDe = (id: string): SituacaoDoAtendente | null => {
+    const a = equipe?.data?.find((x) => x.user_id === id);
+    if (!a) return null;
+    if (config.so_disponiveis === false) return "pode_receber";
+    return situacaoDoAtendente(
+      { isAvailable: a.is_available, capacity: a.capacity, currentLoad: a.current_load, schedule: a.schedule },
+      agora,
+      config.limite_por_atendente,
+    );
+  };
+  const equipeDe = equipe?.data ?? [];
+  const nomeDe = (id: string) =>
+    members?.find((m) => m.user_id === id)?.full_name ??
+    equipeDe.find((x) => x.user_id === id)?.email ??
+    id.slice(0, 8);
   const d = config.destino;
 
   return (
@@ -70,6 +101,18 @@ export function DistributeForm({ config, onChange }: { config: Config; onChange:
       <p className="text-xs text-text-muted">
         {t("Entrega a conversa a alguém da equipe — nenhuma mensagem sai para o cliente. Conversa que já tem dono não é trocada.")}
       </p>
+
+      {modoDaEmpresa === "round_robin" || modoDaEmpresa === "load" ? (
+        <p className="rounded-md border border-warning bg-warning-bg p-2 text-xs text-warning-fg" data-testid="aviso-modo-da-empresa">
+          {t(
+            "A empresa está distribuindo sozinha (Rodízio ou Menor carga). A conversa ganha dono assim que chega e este bloco vai só seguir por Distribuído. Para este bloco decidir, troque para Pelos fluxos de Automações em",
+          )}{" "}
+          <Link href="/app/settings/atendimento" className="underline">
+            {t("Distribuição de atendimento")}
+          </Link>
+          .
+        </p>
+      ) : null}
 
       <div className="space-y-1">
         <Label htmlFor="distribute-tipo">{t("Para quem vai")}</Label>
@@ -102,6 +145,11 @@ export function DistributeForm({ config, onChange }: { config: Config; onChange:
               ))}
             </SelectContent>
           </Select>
+          {d.usuario_id && situacaoDe(d.usuario_id) ? (
+            <p className={cn("text-xs", COR_DA_SITUACAO[situacaoDe(d.usuario_id)!])} data-testid={`situacao-${d.usuario_id}`}>
+              {t("Agora:")} {t(ROTULO_DA_SITUACAO[situacaoDe(d.usuario_id)!])}
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -133,6 +181,14 @@ export function DistributeForm({ config, onChange }: { config: Config; onChange:
               {d.membros.map((m, i) => (
                 <li key={m.usuario_id} className="flex items-center gap-2 text-sm">
                   <span className="flex-1 truncate">{nomeDe(m.usuario_id)}</span>
+                  {situacaoDe(m.usuario_id) ? (
+                    <span
+                      className={cn("text-xs", COR_DA_SITUACAO[situacaoDe(m.usuario_id)!])}
+                      data-testid={`situacao-${m.usuario_id}`}
+                    >
+                      {t(ROTULO_DA_SITUACAO[situacaoDe(m.usuario_id)!])}
+                    </span>
+                  ) : null}
                   {d.modo === "percentual" && (
                     <Input
                       aria-label={t("Peso")}
