@@ -582,4 +582,8 @@ conversa). Por isso o R5c: `crm_create_lead` aceita só a `referencia_externa` e
 funil e a etapa na receita da organização (`lib/external-db/receitas/destino-pela-referencia.ts`).
 O escopo de funil do agente continua valendo: ele julga o funil já resolvido. Receita sem destino, ou
 com dois destinos diferentes, recusa e manda passar para a equipe — o sistema não adivinha.
+Com o funil resolvido pelo sistema o agente AINDA escreveu "interesse registrado" sem chamar a ferramenta:
+a orientação mora no resultado da consulta, que não acompanha a conversa. O ensino passou a ser um
+bloco residente do prompt, a cada turno, no molde dos blocos da agenda
+(`blocosDeInteresseExternoResidentes`, só com as duas ferramentas ligadas).
 Medido de novo no espelho com esta mudança: ver o resultado no PR.
