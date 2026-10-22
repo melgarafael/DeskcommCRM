@@ -8,6 +8,134 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.87.0] — 2026-10-21
+
+### ⚠️ Requer atenção
+
+- **O filtro de palavras do agente passa a valer** Se algum agente seu tem esse campo preenchido, ele vai passar a ficar calado em toda mensagem sem uma das palavras, inclusive no meio da conversa. Antes de atualizar, confira o campo na tela de cada agente. Se não quiser o filtro, deixe-o em branco e publique a versão de novo.
+- **As condições das automações ganham "não contém", "está vazio", "está preenchido", comparação por número/data e o grupo "qualquer uma"** Revise as regras que usam "não é" (`neq`) num campo que pode estar AUSENTE (nulo, ou nunca preenchido): elas disparavam quando o campo não estava preenchido e agora não disparam mais. Para voltar a pegar o "não preencheu", troque a condição por "está vazio"; para "não é X e está preenchido", use "está preenchido" junto do "não é X". Em campo cujo valor é texto vazio nada muda — ali o `neq` continua igual.
+
+  Não volte para a versão anterior DEPOIS de gravar uma regra "qualquer uma": a versão antiga não conhece o formato de grupo e a leitura das condições dela estoura ao avaliar, o que derruba as automações daquele gatilho inteiro — não só a regra nova. Se precisar voltar, desfaça antes as regras "qualquer uma" pelo formulário.
+
+  Contribuição de @webtecnica (refs #2727).
+
+### Adicionado
+
+- **Agenda por serviço com turmas, capacidade e calendários compartilhados** Tipos de atendimento podem ter programação própria: individual por profissional, reserva coletiva com capacidade ou sem limite. O painel configura horários, exceções, profissionais, recursos, bloqueios e destino Google. Reservas existentes são preservadas, e tipos que não adotam a programação seguem como antes. Crédito: @vitorlacerdadigital (#3132).
+
+- **O sistema pode ser instalado no celular como app, com uma tela que guia a instalação por sistema e avisa quando o endereço não permite** Em Configurações › Sua conta › App no celular, cada pessoa vê o passo a passo para o seu aparelho (iPhone ou Android). Sem https, a tela avisa que aquela instalação não tem app no celular. O app usa o nome e o ícone da instalação. Nada a fazer na atualização.
+
+- **A tela de Dados externos passa a conectar bancos MySQL** Ao criar uma conexão, escolha PostgreSQL ou MySQL; com MySQL, a janela traz os comandos prontos para criar um usuário só de leitura. O tipo do banco não muda depois de criado. Nada a fazer na atualização.
+
+  Desenho e código de @paulolimajr77 (Spec 23, a tela, #2639).
+
+- **O agente consulta os produtos de uma loja WooCommerce pelo banco externo** Uma conexão MySQL com uma loja WooCommerce ganha a receita pronta "Produtos da loja WooCommerce": o agente responde no WhatsApp com nome, preço, estoque e link, sem ninguém escrever SQL. Fica desligada até alguém adicioná-la à conexão. Crédito: @paulolimajr77 (#3096).
+
+- **As etiquetas em "Editar contato" passam a sugerir as que já existem na empresa** Ao digitar, o campo sugere as etiquetas já usadas, e escolher uma grava a grafia existente em vez de criar outra parecida. Nada a fazer na atualização. Crédito: @webtecnica.
+
+- **As condições das automações ganham "não contém", "está vazio", "está preenchido", comparação por número/data e o grupo "qualquer uma"** A tela oferece novos operadores ("não contém", "está vazio", "está preenchido", maior/menor que) e um seletor por grupo: "todas as condições" ou "qualquer uma". As regras já gravadas continuam sendo lidas como "todas". O que muda nas regras com "não é" está no aviso acima.
+
+- **Campo personalizado pode exigir um formato, com a frase de erro que você escrever** Um campo do funil pode ganhar um formato esperado e a frase que aparece para quem digitar fora dele; o formulário, a API e o assistente de IA passam a conferi-lo. Formulário de captação com valor fora do formato não perde o lead. Sem essas propriedades, nada muda. Nada a fazer na atualização.
+
+  Contribuição de @webtecnica (#2814), a partir da issue #2730.
+
+- **Os avisos com o app fechado passam a funcionar sem configurar nada, porque a instalação e a atualização criam o par de chaves uma única vez** A instalação e a atualização criam sozinhas o par de chaves dos avisos, que nunca é trocado depois.
+
+  - Se o `.env` já tem as duas chaves, nada muda.
+  - Se tem só uma delas, a atualização avisa: apague as duas linhas e rode `bash hostgator-setup-kit/update.sh` para o kit criar um par novo.
+  - Se a criação falhar, a atualização segue normal e avisa; para tentar de novo, rode `bash hostgator-setup-kit/update.sh`.
+  - Instalação sem https continua sem esses avisos.
+  - Servidor montado sem o kit continua gerando o par à mão (`npx web-push generate-vapid-keys`).
+  - O backup não leva o `.env`. Ao restaurar numa VPS nova, leve o `.env` junto para manter o par; sem ele, nasce um par novo e, se os avisos pararem de chegar, basta religá-los em Notificações.
+
+- **Prospecção mostra auditoria do site de cada empresa** Cada empresa da fila mostra a auditoria do site (veredito, o que falta, estratégia de abordagem) e uma prévia da mensagem, geradas em segundo plano. A prévia, inclusive a gerada sozinha sem ninguém revisar, vira o rascunho que o envio usa, se o agente for o mesmo e o veredito do site não tiver mudado; quando a saída fica para a 2ª mensagem, a 1ª só cumprimenta. Cada prévia consome crédito de IA, e há interruptores na busca para desligar a avaliação e a prévia. Nas campanhas que já existiam, a prévia fica desligada: ninguém passa a gastar crédito ao atualizar. Nada a fazer na VPS. Crédito: @paulolimajr77.
+
+- **A prospecção deixa escolher quando oferecer a opção de parar de receber: na 1ª ou na 2ª mensagem** A campanha ganha a opção "Quando oferecer a opção de parar de receber", que nasce em "Na primeira mensagem (recomendado)". O bloqueio por "PARAR" vale desde a primeira mensagem em todos os modos. Nada muda para quem não mexer na opção. Crédito: @paulolimajr77
+
+- **Respostas rápidas viram botões de um clique no Inbox, e podem ser de áudio** O compositor do Inbox ganha um botão por resposta rápida; o clique põe o texto no campo para revisar, sem enviar. Dá para cadastrar respostas de áudio. Nada a fazer na atualização. Crédito: @webtecnica (#2847).
+
+- **Contatos ganham o botão "Sincronizar agenda" que importa os contatos salvos no celular conectado** O botão cria no CRM, até 500 por vez, os contatos com WhatsApp salvos no aparelho conectado por QR code; quem já está no CRM não é duplicado nem alterado. A agenda traz também contatos pessoais: campanha só deve ir a quem autorizou receber. Número da API oficial não tem agenda para ler.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#2776), a partir da issue #2736.
+
+- **O telefone que o cliente informa pode entrar sozinho na ficha sem número** Nova opção em Configurações › Distribuição de atendimento, que vem desligada e só um administrador liga: o telefone dito na conversa é gravado na ficha que está sem número. Ela nunca troca o número de quem já tem um. Na atualização não há nada a fazer. Crédito: @webtecnica (código) e @kristhianlumai-lgtm (#2593).
+
+- **O passo de modelo do fluxo preenche as variáveis do modelo aprovado** O passo "modelo de mensagem" aceita modelo aprovado com variáveis (`{{1}}`, `{{2}}`…), cada uma vinda do contato ou de um campo do negócio. Se faltar o dado, o passo é pulado e o motivo aparece na linha do tempo — nunca sai parâmetro em branco. Crédito: @jmpo (#3121).
+
+### Alterado
+
+- **Configuração de agenda organizada por serviço** A configuração da agenda separa Serviço, Horários, Google e Bloqueios em quatro abas. As reservas existentes e os agentes permanecem iguais. Crédito: @vitorlacerdadigital (#3132).
+
+- **O pedido de exclusão avisa o titular por e-mail depois de apagar, e o rótulo de anonimizado não deriva mais do id** Em organizações fora do Brasil, o pedido de exclusão avisa o titular por e-mail depois de apagar (RGPD). No Brasil não há esse aviso. O rótulo `Cliente Anonimizado #…` passa a usar um sufixo aleatório, com a mesma aparência.
+
+  Quem opera a instalação não precisa fazer nada: sem configuração nova e sem mudança de número de versão esperada além da atualização de sempre.
+
+  Contribuição de @webtecnica (#2819), refs #2342.
+
+- **As telas do CRM abrem mais depressa, com menos esperas pelo banco a cada clique** Leituras ao banco que esperavam umas pelas outras agora saem juntas; a diferença aparece mais com o banco fora da VPS. Nada muda no que a tela mostra. Crédito: @SrPascoa
+
+- **As telas do CRM deixam de consultar o login duas vezes só para conferir a verificação em duas etapas** Uma espera a menos por tela; a regra da verificação em duas etapas não muda. Crédito: @SrPascoa
+
+- **Avisos fora do app deixam a empresa escolher o que aparece, param ao sair e respeitam o plantão** Em Configurações › Notificações, quem administra escolhe o que os avisos mostram fora do app. O padrão passa a ser só quem mandou, sem a mensagem; para voltar a ver a mensagem, escolha a terceira opção nessa tela. Com distribuição automática, o aviso de conversa sem responsável vai só para quem está de plantão e, se ninguém estiver, para gerentes e administradores. Nada a fazer na atualização.
+
+### Corrigido
+
+- **Identifique os responsáveis da agenda pelo nome ou e-mail** Os seletores da agenda mostram o nome do responsável ou, sem nome, o e-mail. Não é preciso editar perfis. Crédito: @vitorlacerdadigital (#3132).
+
+- **Criar modelo com botões no número oficial intermediado funciona** Criar ou editar um modelo com botões no número oficial intermediado era recusado ("Invalid discriminator value"). Agora funciona. Crédito: @jmpo (#3121).
+
+- **Duas campanhas no mesmo número passam a dividir o dia** A campanha parada pelo próprio limite ou intervalo libera o número, e a outra envia no ritmo dela. Nada a fazer na atualização.
+
+  Medido em produção e corrigido por @RenanzitoIA (#3102).
+
+- **As campanhas respeitam o intervalo do número também quando dividem números no rodízio** Cada número manda no máximo uma mensagem de campanha por rodada, e só depois de cumprido o intervalo configurado para ele. Nada a fazer na atualização.
+
+- **O custo de IA bate com a fatura do provedor** O gasto de IA em Uso e orçamento cobrava o cache pelo preço mais caro e mostrava mais do que a fatura. Agora bate. Os meses anteriores ficam como estavam. Crédito: @jmpo.
+
+- **O editor de sequência e as automações deixam de mostrar vários textos em português quando o idioma é espanhol, e o cartão do e-mail deixa de dizer « send_email »** Os textos seguem o idioma de quem usa, e o cartão de e-mail mostra o assunto. Em português nada muda na tela. Crédito: @FabioMundoDigital (#3120).
+
+- **Sequências em espanhol: «Atualizado em», a aba «Fila» e a política de handoff** Os três passam a aparecer em espanhol, sem mudar o valor gravado.
+
+  Contribuição de @Tong-bit-art (#3146), a partir da issue #3104.
+
+- **O filtro de palavras do agente passa a valer** O campo "Só responder quando a mensagem falar de algo específico" era gravado e ignorado. Agora, no modo automático, a IA não responde a mensagem sem nenhuma das palavras, inclusive no meio da conversa. A mensagem barrada não gera aviso na Central; só a vê quem abrir a conversa. Pedido de atendente, pedido para parar e áudio ou imagem ainda sem transcrição continuam passando. No modo assistido, nada muda. Veja o aviso acima.
+
+  Fora do horário do agente, pedido de atendente e pedido para parar passam a ser tratados quando a mensagem chega, se a janela de envio do número estiver aberta (por padrão, 7h às 22h); fora dela, esperam a janela abrir, como antes.
+
+  Corrigido por @webtecnica (#2696), a partir do relato de @FelipeMartini (#2679).
+
+- **A foto de perfil do contato volta a aparecer quando a empresa tem Instagram ou Facebook ligado** Os contatos marcados como "sem foto" por engano são revisitados sozinhos dentro de 7 dias. Crédito: @paulolimajr77.
+
+- **Os interruptores de Push voltam a responder depois de recarregar Configurações › Notificações** Nada a fazer na atualização.
+
+- **Follow-up escrito pela IA fora do horário de envio espera a janela em vez de morrer** O follow-up agora envia quando a janela abre. Nada a fazer na atualização; inscrições já encerradas por isso não voltam sozinhas.
+
+  Medido em produção e corrigido por @RenanzitoIA (#3103).
+
+- **A abertura da campanha de prospecção passou a respeitar o "Estilo de resposta" do agente e a dividir a mensagem fria em várias bolhas** Com o estilo ligado, a abordagem sai em até 3 bolhas curtas; quando a campanha oferece a saída na primeira mensagem, o "responda PARAR" vai na primeira bolha.
+
+  Nada precisa ser feito ao atualizar: quem tem o estilo desligado continua recebendo a abordagem em uma mensagem. Contribuição de @webtecnica, a partir da issue #2665 (PR #2680).
+
+- **Sair da conta encerra os avisos em todos os aparelhos que ela desconecta** Para voltar a receber avisos num aparelho, entre de novo e ligue os avisos em Configurações › Notificações. Corrige a frase "Sair da conta encerra os avisos daquele aparelho" da nota anterior. Nada a fazer na atualização.
+
+- **O push segue o vínculo e o papel de quem recebe** As notificações só vão para quem tem acesso ativo, e revogar um membro apaga as inscrições dele naquela organização. Ativar notificações num navegador com serviço de push desconhecido é recusado. Nada a fazer na atualização.
+
+- **As receitas prontas do banco externo seguem à risca o que o administrador configurou** O assistente só executa receitas ativas na conexão. Nada a fazer na atualização.
+
+- **Seletor de tipo de campo do funil fala em português, não em nome técnico** Cada tipo tem um rótulo traduzido, com o valor técnico preservado na gravação.
+
+  Contribuição de @Tong-bit-art (#3094), a partir da issue #3037.
+
+- **O mesmo tipo de campo tem o mesmo nome na captação e nos funis** As duas telas usam os mesmos nomes, e o valor gravado continua técnico.
+
+  Contribuição de @Tong-bit-art (#3145), a partir da issue #3095.
+
+- **"Sugerir resposta" deixa de culpar a configuração quando o agente termina sem propor resposta** Agora o painel explica que o agente terminou sem propor resposta e sugere gerar de novo. Crédito: @paulolimajr77
+
+- **O cadastro e o login seguem o idioma do navegador, e as telas de sequência deixam de mostrar português em espanhol** Em português nada muda na tela. Crédito: @FabioMundoDigital.
+
 ## [1.86.0] — 2026-10-19
 
 ### ⚠️ Requer atenção
@@ -12390,7 +12518,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.86.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.87.0...HEAD
+[1.87.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.86.0...v1.87.0
 [1.86.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.85.0...v1.86.0
 [1.85.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.84.0...v1.85.0
 [1.84.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.83.0...v1.84.0
