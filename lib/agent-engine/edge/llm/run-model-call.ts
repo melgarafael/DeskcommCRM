@@ -900,6 +900,38 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // `generateText` são duas cópias que um dia divergem — e a divergência seria
   // invisível, porque só uma delas rodaria).
   const chamarCom = async (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) => {
+    const medirTurno = input.jobId != null && purpose === 'agent_turn' && deps.log !== undefined;
+    let inicioDaEtapa = performance.now();
+    let numeroDaEtapa = 0;
+    const ferramentasProtegidas = guardServiceTools(prefix.tools);
+    const ferramentasMedidas: ToolSet | undefined = medirTurno && ferramentasProtegidas
+      ? Object.fromEntries(Object.entries(ferramentasProtegidas).map(([nome, definicao]) => {
+          if (!definicao.execute) return [nome, definicao];
+          const execute = definicao.execute;
+          return [nome, {
+            ...definicao,
+            execute: async (...args: Parameters<typeof execute>) => {
+              const inicio = performance.now();
+              let status = 'ok';
+              try {
+                return await execute(...args);
+              } catch (erro) {
+                status = 'erro';
+                throw erro;
+              } finally {
+                deps.log?.info('llm: ferramenta concluída', {
+                  organization_id: input.tenantId,
+                  job_id: input.jobId,
+                  purpose,
+                  ferramenta: nome,
+                  status,
+                  duracao_ms: Math.round(performance.now() - inicio),
+                });
+              }
+            },
+          }];
+        })) as ToolSet
+      : ferramentasProtegidas;
     const opcoesBase = {
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
@@ -911,7 +943,20 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       system: prefix.system,
       messages: input.messages,
       abortSignal: input.abortSignal,
-      tools: guardServiceTools(prefix.tools),
+      tools: ferramentasMedidas,
+      ...(medirTurno ? {
+        onStepFinish: () => {
+          const agora = performance.now();
+          deps.log?.info('llm: etapa concluída', {
+            organization_id: input.tenantId,
+            job_id: input.jobId,
+            purpose,
+            etapa: ++numeroDaEtapa,
+            duracao_ms: Math.round(agora - inicioDaEtapa),
+          });
+          inicioDaEtapa = agora;
+        },
+      } : {}),
       stopWhen:
         input.maxSteps === undefined
           ? undefined
@@ -1235,6 +1280,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // o `cost_cents: null` acima somado ao aviso de sem-preço é a marca.
     ...(origemDoCusto !== undefined ? { custo_origem: origemDoCusto } : {}),
     latency_ms: latencyMs,
+    ...(input.jobId != null && purpose === 'agent_turn' ? { etapas: result.steps.length } : {}),
   });
   for (const aviso of decisao.avisos) {
     deps.log?.warn('llm: configuração do ponto tem incoerência', {
