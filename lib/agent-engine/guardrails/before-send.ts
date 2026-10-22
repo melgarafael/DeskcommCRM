@@ -79,6 +79,10 @@ import type { ChannelProvider } from '@/lib/channels/capabilities';
 import { aplicarAjustesDeEstilo, lerAjustesDeEstiloDaOrg } from './ajustes-de-estilo-da-org';
 import type { AjusteDeEstilo, LeituraDosAjustes } from './ajustes-de-estilo-da-org';
 import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
+// A régua de contato interno (#2353) na forma SQL — o `stop` deste arquivo é o
+// segundo caminho de envio que não passa pelo gate de elegibilidade, e é ele que
+// barra o texto FIXO do worker e o modelo aprovado.
+import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
@@ -91,6 +95,16 @@ export interface GateContext {
    * OR o sinal lido no `get_lead_context` deste turno.
    */
   optedOut: boolean;
+  /**
+   * POR QUE o `stop` vale, quando `optedOut` é true por leitura da FONTE (#2353):
+   * `contato_bloqueado` (bloqueio/opt-out/força-humano) ou `contato_interno` (o
+   * contato tem uma etiqueta da lista interna da organização — o mesmo veto, e por
+   * isso o mesmo gate, mas o motivo NÃO é opt-out e não pode sair rotulado como se
+   * fosse). `undefined` = o chamador não disse (ctx montado à mão por teste e
+   * preview, ou o opt-out veio de `optedOutThisTurn`): o veto sai com o código e o
+   * texto de sempre.
+   */
+  motivoDoStop?: MotivoDoStop;
   /**
    * Canal desta tentativa. Nenhum gate pergunta QUEM é o provider (invariante 1
    * de `docs/doctrine/restricao-de-canal.md`) — só o entrega a `capabilitiesOf`
@@ -341,18 +355,35 @@ export interface Gate {
   evaluate(ctx: GateContext): GateVerdict;
 }
 
+/**
+ * POR QUE o gate `stop` veta. Duas causas, UM gate: a trava de opt-out/bloqueio
+ * (`contato_bloqueado`, o motivo histórico) e a etiqueta de contato interno
+ * (`contato_interno`, #2353). O código vai para o modelo no veto e para o
+ * `before_send_traces` — o rótulo do motivo é contrato.
+ */
+export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno';
+
 /** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
 const stopGate: Gate = {
   name: 'stop',
   evaluate: (ctx) =>
     ctx.optedOut
-      ? {
-          pass: false,
-          code: 'contato_bloqueado',
-          reason:
-            'o lead optou por sair do atendimento (bloqueio/opt-out irrevogável) — não é ' +
-            'possível enviar nada a ele; encerre o turno sem tentar de novo.',
-        }
+      ? ctx.motivoDoStop === 'contato_interno'
+        ? {
+            pass: false,
+            code: 'contato_interno',
+            reason:
+              'este contato é INTERNO (tem uma etiqueta da lista de contatos internos da ' +
+              'organização) — não recebe atendimento automático, como numa conversa em ' +
+              '"Assumir"; encerre o turno sem tentar de novo.',
+          }
+        : {
+            pass: false,
+            code: 'contato_bloqueado',
+            reason:
+              'o lead optou por sair do atendimento (bloqueio/opt-out irrevogável) — não é ' +
+              'possível enviar nada a ele; encerre o turno sem tentar de novo.',
+          }
       : { pass: true },
 };
 
@@ -1359,14 +1390,15 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     )
       throw new Error('reply_scope_mismatch');
 
-    const optedOut =
-      args.optedOutThisTurn ||
-      (await readStopFlags(
-        client,
-        args.tenantId,
-        args.leadId,
-        meetingPolicy?.humanCommand === true || replyPolicy !== null,
-      ));
+    // O motivo sai da MESMA leitura (uma coluna a mais no mesmo select): quem
+    // veta por etiqueta interna não pode ser anunciado ao modelo como opt-out.
+    const stopDaFonte = await readStopFlags(
+      client,
+      args.tenantId,
+      args.leadId,
+      meetingPolicy?.humanCommand === true || replyPolicy !== null,
+    );
+    const optedOut = args.optedOutThisTurn || stopDaFonte.stopped;
     const pacingCfg = await loadChannelKnobs(
       client,
       args.tenantId,
@@ -1413,6 +1445,9 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       now: args.now,
       body: bodyDoModelo,
       optedOut,
+      ...(args.optedOutThisTurn !== true && stopDaFonte.motivo !== null
+        ? { motivoDoStop: stopDaFonte.motivo }
+        : {}),
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },
       pacing: {
@@ -1566,15 +1601,6 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
 }
 
 /**
- * STOP direto da fonte (pós-fusão, mesmo banco): `contacts.is_blocked` OR
- * `contacts.force_human` OR `contacts.is_personal` OR `contacts.ai_opt_out`,
- * lidos sob o lock — não existe mais cache no harness.
- *
- * `ai_opt_out` é a marca PERMANENTE "sempre atendimento humano" (issue 2379):
- * `force_human` é a trava de handoff, que a devolução limpa; esta é a que ela
- * não alcança, e por isso as duas estão no mesmo predicado.
- */
-/**
  * O canal desta sessão, do banco (migration 0087) — nunca suposto.
  *
  * Sessão ilegível cai no default conservador em vez de estourar: o valor é o
@@ -1601,25 +1627,64 @@ export async function loadChannelProvider(
   return provider === undefined ? DEFAULT_CHANNEL_PROVIDER : (provider as ChannelProvider);
 }
 
-async function readStopFlags(
+/**
+ * STOP direto da fonte (pós-fusão, mesmo banco): `contacts.is_blocked` OR
+ * `contacts.force_human` OR `contacts.is_personal` OR `contacts.ai_opt_out` OR a
+ * etiqueta de contato INTERNO (#2353), lidos sob o lock — não existe mais cache
+ * no harness.
+ *
+ * `ai_opt_out` é a marca PERMANENTE "sempre atendimento humano" (issue 2379):
+ * `force_human` é a trava de handoff, que a devolução limpa; esta é a que ela
+ * não alcança, e por isso as duas estão no mesmo predicado.
+ *
+ * A etiqueta interna entra pela MESMA régua do gate de elegibilidade
+ * (`lib/contacts/tags-internas.ts`), na forma SQL de lá — este é o segundo
+ * caminho de envio que NÃO passa pelo gate de elegibilidade, e era por ele que o
+ * texto FIXO do worker e o modelo aprovado continuavam saindo para quem ganhou a
+ * etiqueta depois de o contato existir. O motivo devolvido separa as duas causas:
+ * contato interno não é opt-out, e o veto não pode sair dizendo que é.
+ *
+ * ⚠️ O ramo do ENCONTRO (`humanMeetingCommand` — o comando de um humano) segue
+ * com `is_blocked or is_personal`: a etiqueta interna NÃO cala o caminho manual,
+ * que é o que a feature promete ("a conversa segue normal na Inbox, inclusive
+ * para envio manual"). É o mesmo desenho do `ai_opt_out`, que também está só no
+ * outro ramo.
+ *
+ * Exportada para a suíte de invariantes poder medir o predicado REAL contra
+ * Postgres de verdade (`tests/invariants/contato-interno-barra-o-envio.test.ts`):
+ * SQL transcrito dentro do teste mediria o teste contra ele mesmo.
+ */
+export async function readStopFlags(
   db: Queryable,
   organizationId: string,
   contactId: string,
   humanMeetingCommand = false,
-): Promise<boolean> {
+): Promise<{ stopped: boolean; motivo: MotivoDoStop | null }> {
   // Pessoal não recebe nem via encontro (spec 21, etapa 11): o `or is_personal`
   // vale nos DOIS ramos — o veto segue o bloqueio até aqui.
-  const { rows } = await db.query<{ stopped: boolean }>(
+  //
+  // O `cross join lateral` avalia a régua da etiqueta UMA vez por linha e a
+  // entrega nos dois lugares em que ela decide: o `stopped` e o motivo do veto.
+  const { rows } = await db.query<{ stopped: boolean; contato_interno: boolean }>(
     humanMeetingCommand
-      ? 'select (is_blocked or is_personal) as stopped from contacts where organization_id = $1 and id = $2'
+      ? 'select (is_blocked or is_personal) as stopped, false as contato_interno from contacts where organization_id = $1 and id = $2'
       // `ai_opt_out` (issue 2379): a marca permanente "sempre atendimento
       // humano" entra no MESMO stop, e não numa nova consulta — o custo é
       // nulo e a garantia é que nenhum escritor futuro de `force_human` consegue
       // devolver a IA para um contato que a operação trancou.
-      : 'select (is_blocked or force_human or is_personal or ai_opt_out) as stopped from contacts where organization_id = $1 and id = $2',
+      : `select (is_blocked or force_human or is_personal or ai_opt_out or i.contato_interno) as stopped,
+                i.contato_interno
+           from contacts
+           cross join lateral (select (${sqlContatoInterno('contacts')}) as contato_interno) i
+          where organization_id = $1 and id = $2`,
     [organizationId, contactId],
   );
-  return rows[0]?.stopped === true;
+  const linha = rows[0];
+  if (linha?.stopped !== true) return { stopped: false, motivo: null };
+  return {
+    stopped: true,
+    motivo: linha.contato_interno === true ? 'contato_interno' : 'contato_bloqueado',
+  };
 }
 
 /**

@@ -85,6 +85,25 @@ describe("alterar mensagem enviada", () => {
     expect(state.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "message.edited", resourceId: id }));
   });
 
+  it("a trilha do apagamento guarda o EVENTO — e nunca o corpo", async () => {
+    const res = await DELETE(new NextRequest(url, { method: "DELETE" }), ctx);
+    expect(res.status).toBe(200);
+    expect(state.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "message.revoked",
+      resourceId: id,
+      metadata: expect.objectContaining({
+        conversation_id: "conversa-1",
+        direction: "outbound",
+        external_id: "ABC",
+        conteudo_preservado: true,
+      }),
+    }));
+    // `api_audit_log` é append-only, com retenção de 5 anos, e sobrevive ao
+    // apagamento da organização: o corpo da mensagem NÃO entra na trilha, senão
+    // vira dado pessoal fora do alcance da cascata de anonimização.
+    expect(JSON.stringify(state.audit.mock.calls)).not.toContain("antes");
+  });
+
   it("não marca como apagada quando o canal recusa", async () => {
     state.remove.mockRejectedValueOnce(new Error("recusado_403"));
     const res = await DELETE(new NextRequest(url, { method: "DELETE" }), ctx);

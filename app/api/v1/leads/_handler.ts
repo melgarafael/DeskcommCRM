@@ -51,6 +51,7 @@ import {
 import { motivosDaCategoria } from "@/lib/leads/motivos-de-perda-do-funil";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
+import { ehRecusaDaVisibilidadeDoFunil } from "@/lib/leads/recusa-da-visibilidade";
 
 type SB = SupabaseClient;
 
@@ -269,14 +270,9 @@ function recusaDaGuardaDoBanco(
       traduzir("Responsável não é um atendente ativo desta organização.", ctx.idioma ?? "pt-BR"),
     );
   }
-  // Só a policy de `crm_leads`: o mesmo 42501 também é GRANT faltando numa
-  // função ou numa tabela que um gatilho alcança — defeito nosso, que tem de
-  // continuar 500 com a mensagem do banco, e não virar "visibilidade". A recusa
-  // de RLS nomeia a tabela entre aspas na mensagem em inglês, que é o
-  // lc_messages do Supabase (en_US); a de GRANT ("permission denied for table
-  // crm_leads") não. Num Postgres com mensagens em de, es ou fr as aspas mudam
-  // e a recusa cai no 500 antigo, que é a direção segura.
-  if (erro?.code === "42501" && erro.message?.includes('"crm_leads"')) {
+  // Só a policy de `crm_leads` (a régua mora no predicado); o 42501 de GRANT
+  // faltando continua 500 com a mensagem do banco.
+  if (ehRecusaDaVisibilidadeDoFunil(erro)) {
     return new ApiError(
       403,
       "forbidden",

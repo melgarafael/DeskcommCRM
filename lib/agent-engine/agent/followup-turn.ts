@@ -1244,7 +1244,14 @@ async function sendFixedOutbound(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
 
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
-    runLog.info('envio fixo pulado — lead silenciado (handoff/opt-out)', { kind: job.kind });
+    // Três causas no MESMO veto (#2353): handoff humano (`force_human`), a marca
+    // permanente "sempre atendimento humano" (`ai_opt_out`) e a etiqueta de
+    // contato interno. O texto nomeia as três — dizer só "opt-out" atribuía a
+    // parada a um motivo que pode não ser o do contato.
+    runLog.info(
+      'envio fixo pulado — contato silenciado para o envio automático (handoff humano, opt-out de IA ou etiqueta de contato interno)',
+      { kind: job.kind },
+    );
     return { kind: "skipped" };
   }
 
