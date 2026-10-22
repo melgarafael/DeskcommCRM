@@ -74,7 +74,9 @@ function supabaseCom(existente: Record<string, unknown> | null, pessoal = false)
       if (tabela === "organizations") return { data: { currency: "BRL" }, error: null };
       // A conferência de contato pessoal (a mesma das ferramentas irmãs): lê o
       // contato do negócio e depois a marca `is_personal` dele.
-      if (pessoal && tabela === "contacts") return { data: { is_personal: true }, error: null };
+      // O contato existe nesta organização (o criador de negócio o confere antes do
+      // INSERT) e, no caso "pessoal", está marcado como tal.
+      if (tabela === "contacts") return { data: { id: CONTATO, is_personal: pessoal }, error: null };
       if (pessoal && tabela === "crm_leads" && filtros.some(([c]) => c === "id")) {
         return { data: { contact_id: CONTATO }, error: null };
       }
