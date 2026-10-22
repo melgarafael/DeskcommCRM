@@ -64,6 +64,26 @@ export const routingConfigSchema = z.object({
     .nullable()
     .default(null),
   /**
+   * Prazo, em minutos, para DEVOLVER AO RODÍZIO a conversa que o rodízio
+   * entregou e ninguém respondeu (issue #2985, fatia 1). `null` = desligado — o
+   * padrão, para quem já instalou não ver o comportamento mudar. Ligado, o cron
+   * `rodizio-devolucao` solta o dono da conversa entregue por `routing` sem
+   * nenhuma mensagem humana (`sent_via` `user` ou `external_device`) e devolve a
+   * conversa à distribuição; a pessoa devolvida fica fora DESTA conversa por
+   * 24 h. A regra pura está em `lib/escalacao/devolucao-ao-rodizio.ts`, e a
+   * faixa (5 min – 24 h) é a MESMA da devolução ao agente.
+   *
+   * A string nova de i18n não existe de propósito: esta fatia não tem tela (é a
+   * fatia 2) nem aviso (fatia 3) — nenhum texto novo chega ao usuário.
+   */
+  unanswered_return_minutes: z
+    .number()
+    .int()
+    .min(PRAZO_MIN_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS)
+    .nullable()
+    .default(null),
+  /**
    * "A conversa fica com quem atendeu" (ideia de @gustavorodcruz96, #1527).
    * Desligado = o comportamento de sempre: a resposta humana cala a IA por
    * alguns minutos e a conversa encerrada que recebe mensagem nova volta para a
@@ -141,6 +161,18 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
     .max(PRAZO_MAX_MINUTOS)
     .nullable()
     .optional(),
+  /**
+   * Opcional pela mesma razão: cliente antigo que só conhece o modo de
+   * roteamento não pode LIGAR a devolução ao rodízio por omissão. Omitido
+   * preserva o que já valia (o padrão é `null`, desligado).
+   */
+  unanswered_return_minutes: z
+    .number()
+    .int()
+    .min(PRAZO_MIN_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS)
+    .nullable()
+    .optional(),
 });
 export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema>;
 
@@ -151,8 +183,8 @@ export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema
  *
  * Merge não-destrutivo em DOIS níveis: preserva as demais chaves de `settings`
  * (o provedor de IA mora nele) e, para o que veio OMITIDO do corpo —
- * `visibility_mode`, `handoff_return_after_minutes`, `conversation_stays_with_attendant`
- * e `manual_reply_silence_minutes` —, preserva o que já
+ * `visibility_mode`, `handoff_return_after_minutes`, `conversation_stays_with_attendant`,
+ * `manual_reply_silence_minutes` e `unanswered_return_minutes` —, preserva o que já
  * valia. Um cliente antigo, que só conhece o modo de roteamento, não pode
  * desligar a restrição de visibilidade nem a devolução automática por omissão.
  */
@@ -165,6 +197,7 @@ export function mesclarSettingsDeAtendimento(
     handoff_return_after_minutes,
     conversation_stays_with_attendant,
     manual_reply_silence_minutes,
+    unanswered_return_minutes,
     ...routingInput
   } = input;
   const routingAtual = routingConfigSchema
@@ -182,6 +215,10 @@ export function mesclarSettingsDeAtendimento(
       manual_reply_silence_minutes !== undefined
         ? manual_reply_silence_minutes
         : routingAtual.manual_reply_silence_minutes,
+    unanswered_return_minutes:
+      unanswered_return_minutes !== undefined
+        ? unanswered_return_minutes
+        : routingAtual.unanswered_return_minutes,
   };
   const settings: Record<string, unknown> = { ...atual, routing };
   if (visibility_mode !== undefined) settings.visibility_mode = visibility_mode;

@@ -1136,6 +1136,7 @@ jobs:
         catalogo-busca-no-catalogo-inteiro.spec.ts
         relatorio-por-etiqueta.spec.ts
         integracao-dados-mysql-na-tela.spec.ts
+        prova-painel-provedores.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
@@ -1370,6 +1371,12 @@ jobs:
       # service role, sobe o dublê em 127.0.0.1:3995 (nenhuma outra spec desta
       # parte o sobe) e devolve as chaves da instalação no `finally`.
       # PREVISÃO, não medida: ~1,5 min de caso.
+      # `prova-painel-provedores` SAIU para o fim da PARTE_3 em 2026-10-22. Medido
+      # no run 39712337810 (main, dc921fa33, verde): a suíte da parte 6 levou
+      # 20,2 min e o job 26,7 min de 30 — o #3133 e o #3191 foram cortados nela
+      # ("a parte cresceu", 1266s e 1286s de suíte, zero vermelho). A parte 3
+      # levou 12,7 min. A spec soma 235s de caso e só depende do seed do
+      # catálogo, que roda em toda parte `!= 4`. PREVISÃO: ~16,5 min nas duas.
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
@@ -1385,7 +1392,6 @@ jobs:
         modulo-de-dados-na-ficha-do-contato.spec.ts
         painel-de-configuracao-da-instalacao.spec.ts
         protecao-de-envio-nao-congela-o-padrao.spec.ts
-        prova-painel-provedores.spec.ts
         qa-l12-inbox.spec.ts
         recursos-opcionais.spec.ts
         redes-sociais-volta-nao-desloga.spec.ts

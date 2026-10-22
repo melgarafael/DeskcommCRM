@@ -122,6 +122,7 @@ import {
   buildHandoffSummary,
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
+  ehRespostaDeRobo,
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
@@ -215,6 +216,11 @@ import {
 } from '@/lib/escalacao/briefing-da-passagem';
 import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
 import { CORRECAO_DO_TURNO_MUDO, turnoMudoPedeCorrecao } from './turno-mudo';
+import {
+  desfechoSemCandidato,
+  previaPedeCorrecaoDoTurnoMudo,
+  tetoDePassosAtingido,
+} from './desfecho-da-previa';
 import { criarTravaDeDuplicata } from './near-dup';
 import { vetoReason } from '@/lib/leads/veto-activity';
 import { corposEnviadosDesdeUltimaInbound } from './memoria-envio';
@@ -1662,6 +1668,10 @@ export async function deteccoesDeterministicasDoAssistido(
   let optedOutThisTurn = false;
   let lgpd: AvisoDeEscalacaoOpts['lgpd'];
   let contextoLido = false;
+  // O histórico lido vive FORA do try: é dele que a guarda do menu de robô
+  // (issue 3106) tira as marcas de automação. Sem contexto lido ele fica vazio,
+  // e a guarda devolve "é de gente" — o lado seguro (a passagem é irrevogável).
+  let historicoDoTurno: readonly LeadContextMessage[] = [];
   try {
     const abertura = await getLeadContext(
       pool,
@@ -1677,6 +1687,7 @@ export async function deteccoesDeterministicasDoAssistido(
     if (abertura.ok) {
       contextoLido = true;
       inboundsPendentes = inboundsNaoRespondidos(abertura.context.messages);
+      historicoDoTurno = abertura.context.messages;
       optedOutThisTurn = abertura.context.contact.is_blocked;
       lgpd = abertura.lgpd;
     } else {
@@ -1750,10 +1761,17 @@ export async function deteccoesDeterministicasDoAssistido(
     'motivo' | 'optedOutThisTurn' | 'lgpd'
   > => resto;
 
+  // A GUARDA DO MENU DE ROBÔ (issue 3106): o casamento determinístico não passa
+  // a conversa quando o que casou é fala de automação — menu numerado, mensagem
+  // que se declara robô, ou a saudação que chega segundos depois do nosso disparo
+  // (ver `ehRespostaDeRobo`). Aqui o turno segue para o rascunho do assistido, que
+  // é o desenho do autor da issue: quem lê a mensagem é o modelo, e ele sabe
+  // reconhecer robô. A palavra-chave CONFIGURADA na tela não passa pela guarda: é
+  // escolha de quem opera o agente, e não a regra que esta issue corrige.
   if (
     inboundsPendentes.some(
       (texto) =>
-        detectHumanHandoffRequest(texto) ||
+        (detectHumanHandoffRequest(texto) && !ehRespostaDeRobo(texto, historicoDoTurno)) ||
         matchesHandoffKeyword(texto, agent.handoffKeywords),
     )
   ) {
@@ -2519,11 +2537,20 @@ async function executarTurnoDoAgente(
   const mensagemDoJob =
     currentInboundText ?? latestInboundSignal(openingContext.context.messages);
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  // A GUARDA DO MENU DE ROBÔ (issue 3106): o casamento determinístico segue
+  // existindo, mas NÃO passa a conversa quando o que casou é fala de automação do
+  // outro lado — menu de opções numeradas ("4 - Falar com um atendente"), mensagem
+  // que se declara robô, ou saudação que chega segundos depois do NOSSO disparo de
+  // Prospecção/campanha (`ehRespostaDeRobo`). Nesses casos o turno segue para o
+  // MODELO, que vê a mensagem e já sabe reconhecer robô — o desenho do autor da
+  // issue. A guarda roda aqui, no mesmo ponto onde a detecção sempre rodou (antes
+  // do modelo e sem gastar token quando ela barra).
   if (
     !preview &&
     inboundsPendentes.some(
       (texto) =>
-        detectHumanHandoffRequest(texto) ||
+        (detectHumanHandoffRequest(texto) &&
+          !ehRespostaDeRobo(texto, openingContext.context.messages)) ||
         (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
     )
   ) {
@@ -5072,20 +5099,46 @@ async function executarTurnoDoAgente(
     // Erro da chamada de correção propaga e o job falha na fila (retry /
     // dead-letter visível). As condições são as do próprio pedido
     // (turno-mudo.ts): razões legítimas de silêncio nem chegam a corrigir.
+    // #3093 — a PRÉVIA DO RASCUNHO pede a MESMA correção quando o modelo deixou
+    // TEXTO SOLTO (escreveu a resposta fora do `send_message` e encerrou). Em
+    // produção essa é a causa nº 3 da issue: o `turno-mudo.ts` pede uma correção
+    // e o cliente acaba atendido. A prévia tinha `!preview` na condição, então o
+    // texto solto morria no `no_candidate` e o painel não podia dizer se houve
+    // decisão ou parada. Aqui a prévia do rascunho roda a MESMA correção, UMA
+    // vez, com a mesma conversa e as mesmas ferramentas — e, sem candidato depois
+    // dela, o que resta é a decisão (o CORRECAO_DO_TURNO_MUDO autoriza o modelo a
+    // encerrar sem chamar nada, doutrina do #2938).
+    //
+    // Só o rascunho ASSISTIDO: a prévia de TESTE (sandbox) mostra o que o agente
+    // produziu e uma segunda chamada esconderia o defeito que ela existe para
+    // revelar. Só com texto solto: silêncio sem texto é decisão já tomada, e
+    // pedir de novo pagaria uma chamada de modelo para ouvir a mesma coisa.
     let correcaoTruncou = false;
+    // A correção também pode gastar o teto dela (3 passos) só em consultas: na
+    // prévia isso é a mesma falha do teto da primeira chamada, não decisão.
+    let tetoNaCorrecao = false;
     const correcaoDoTurnoMudoPedida =
-      !preview &&
-      liveJob().kind === 'inbound_turn' &&
-      turnoMudoPedeCorrecao({
-        tentativasDeEnvio,
-        enviadas: outcomes.length,
-        turnoDescartado,
-        passouParaAEquipe,
-        capDeEnvio: capDeEnvioAtingido(),
-      });
+      preview?.kind === 'assisted'
+        ? previaPedeCorrecaoDoTurnoMudo({
+            textoEscrito: turn.result.text,
+            candidatos: preview.result.candidates.length,
+            tentativasDeEnvio,
+          })
+        : !preview &&
+          liveJob().kind === 'inbound_turn' &&
+          turnoMudoPedeCorrecao({
+            tentativasDeEnvio,
+            enviadas: outcomes.length,
+            turnoDescartado,
+            passouParaAEquipe,
+            capDeEnvio: capDeEnvioAtingido(),
+          });
     if (correcaoDoTurnoMudoPedida) {
       runLog.warn('turno terminou sem mensagem ao cliente — pedindo UMA correção', {
-        job_id: liveJob().id,
+        // `liveJob()` LANÇA na prévia (`preview_operational_job_forbidden`, #2996):
+        // o rascunho vai sem id de job, e o log segue honesto.
+        job_id: job?.id ?? null,
+        previa: preview?.kind ?? null,
       });
       const pedidoDeCorrecao: ModelMessage = { role: 'user', content: CORRECAO_DO_TURNO_MUDO };
       const correcao = await runModelCall(
@@ -5096,7 +5149,7 @@ async function executarTurnoDoAgente(
           leadId: leadId || null,
           jobId: job?.id,
           agentId: agentConfig?.agentId ?? null,
-          purpose: 'agent_turn',
+          purpose: preview ? 'agent_preview' : 'agent_turn',
           system,
           messages: [...openingMessages, ...turn.result.responseMessages, pedidoDeCorrecao],
           tools,
@@ -5116,6 +5169,11 @@ async function executarTurnoDoAgente(
       // Sinal de FALHA da correção: terminou no teto de tokens. Silêncio com
       // finishReason normal (stop/tool-calls) é resposta escolhida, não defeito.
       correcaoTruncou = correcao.result.finishReason === 'length';
+      tetoNaCorrecao = tetoDePassosAtingido({
+        passosUsados: correcao.result.steps?.length ?? 0,
+        maxSteps: Math.min(maxSteps, 3),
+        finishReason: correcao.result.finishReason,
+      });
       mensagensDoTurno = [...mensagensDoTurno, pedidoDeCorrecao, ...correcao.result.responseMessages];
       if (runError !== null) throw runError;
       if (outcomes.some((o) => o.kind === 'failed')) {
@@ -5296,13 +5354,31 @@ async function executarTurnoDoAgente(
     // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
     // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
     // sem nada tendo mudado no meio.
-    // Prévia sem candidato e sem impedimento: quem opera precisa saber que o agente não propôs nada.
+    // Prévia sem candidato e sem impedimento: quem opera precisa saber POR QUE.
+    //
+    // #3093 — o mesmo `no_candidate` cobria decisão e falha da geração, e o
+    // painel não podia dizer ao atendente se o agente decidiu não responder ou se
+    // a geração parou no meio. A decisão mora em `desfecho-da-previa.ts` (pura,
+    // testável) e devolve o código da CAUSA: `output_truncated` (o mesmo nome do
+    // log do turno real), `max_steps_exhausted` (o teto de `max_steps`) ou
+    // `no_candidate` — que depois desta separação significa só a DECISÃO de não
+    // responder. `null` quando há candidato ou quando um impedimento já explica
+    // o desfecho (veto, mídia, ferramenta desconhecida).
     const avisarSemCandidato = (p: NonNullable<typeof preview>): void => {
-      if (p.result.candidates.length === 0 && p.result.impediments.length === 0)
-        p.result.impediments.push({
-          code: 'no_candidate',
-          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
-        });
+      const desfecho = desfechoSemCandidato({
+        candidatos: p.result.candidates.length,
+        impedimentos: p.result.impediments.length,
+        // A correção que termina truncada ou no teto dela é FALHA, não decisão
+        // — a produção trata o mesmo sinal como `correction_truncated_failed`.
+        saidaTruncada: saidaTruncada || correcaoTruncou,
+        tetoDePassosAtingido:
+          tetoDePassosAtingido({
+            passosUsados: turn.result.steps?.length ?? 0,
+            maxSteps,
+            finishReason: turn.result.finishReason,
+          }) || tetoNaCorrecao,
+      });
+      if (desfecho !== null) p.result.impediments.push(desfecho);
     };
     // ⚠️ RASCUNHO (modo assistido) não fecha o turno com checkpoint. O checkpoint
     // da prévia não é gravado (a prévia retorna antes do `insertCheckpoint`, logo

@@ -47,6 +47,11 @@ APP_ORIGIN="http://app:3000"
 # ⚠️ E o comentário fica AQUI, fora da string: dentro de CRONS= ele não seria
 # comentário, seria DADO — e crase em prosa dentro de aspas duplas o shell
 # EXECUTA. Foi o que quebrou o entrypoint na primeira tentativa desta linha.
+#
+# A DEVOLUÇÃO AO RODÍZIO (issue #2985) entra na MESMA cadência do irmão
+# `handoff-devolucao`, 5 em 5 minutos, pelo mesmo motivo: o piso do prazo é
+# 5 min e uma varredura por minuto seriam 60 varreduras/h em toda instalação
+# para um prazo que a maioria deixa em dezenas de minutos.
 CRONS="
 * * * * *|240|api/v1/cron/prospecting
 * * * * *|25|api/v1/cron/agent-dispatcher
@@ -59,6 +64,7 @@ CRONS="
 */5 * * * *|25|api/v1/cron/storage-redaction?limit=50
 */5 * * * *|25|api/v1/cron/snooze-watcher
 */5 * * * *|60|api/v1/cron/handoff-devolucao
+*/5 * * * *|60|api/v1/cron/rodizio-devolucao
 # A CAMPANHA. Minuto a minuto, e a rodada manda no máximo uma mensagem por
 # número: é o cron que dá a cadência base, e o ritmo da campanha e do canal
 # (channel_knobs + pacing_ledger) só sabem torná-la mais lenta.

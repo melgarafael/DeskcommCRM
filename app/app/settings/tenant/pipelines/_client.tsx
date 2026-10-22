@@ -22,7 +22,11 @@ import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
-import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
+import {
+  customFieldSchema,
+  MAX_CAMPOS_DO_NEGOCIO,
+  type CustomFieldDef,
+} from "@/lib/schemas/settings";
 import {
   mostrarQuandoSchema,
   OPERADORES_DE_MOSTRA,
@@ -958,7 +962,8 @@ function PipelineEditor({
             )}
           </div>
         ))}
-        {fields.length < 50 && (
+        {/* A cota é do NEGÓCIO (issue #3111): o campo do contato não esconde o botão. */}
+        {fields.filter((f) => escopoDoCampo(f) === "negocio").length < MAX_CAMPOS_DO_NEGOCIO && (
           <Button
             type="button"
             variant="outline"

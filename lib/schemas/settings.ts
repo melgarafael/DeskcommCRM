@@ -274,6 +274,49 @@ export const customFieldSchema = z.object({
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
+/**
+ * A COTA DE CAMPOS DO NEGÓCIO por funil (issue #3111).
+ *
+ * O teto de 50 nasceu quando TODO campo do funil era do NEGÓCIO. Desde a #2791
+ * os campos do CONTATO também são declarados no funil padrão (`escopo:
+ * "contato"`) e passaram a DISPUTAR a mesma cota: a instalação do autor, com 20
+ * campos do negócio + 20 do contato, chegava a 40 de 50 e travava antes de
+ * cobrir o negócio.
+ *
+ * A cota continua 50, e passa a valer SÓ para o NEGÓCIO. O campo do contato não
+ * aparece no card e o valor dele mora em `contacts.custom_fields`, não em
+ * `crm_leads.custom_fields` — não é um campo do funil na conta que importa.
+ * Não há cota própria do contato: nada no produto limita quantos campos uma
+ * ficha de contato pode declarar.
+ *
+ * A régua do NEGÓCIO NÃO afrouxou: a ausência de `escopo` lê como `negocio`
+ * (mesma leitura de `lib/leads/campos-do-funil.ts`), então toda definição que já
+ * existe continua contando e 51 campos do negócio seguem recusados.
+ */
+export const MAX_CAMPOS_DO_NEGOCIO = 50;
+
+/** A recusa do teto, legível: diz o número e o que não entra na conta. */
+export const MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO = `O funil aceita no máximo ${MAX_CAMPOS_DO_NEGOCIO} campos do negócio. Os campos do contato não entram nesta conta.`;
+
+/**
+ * `fields` do PATCH: a cota conta só os campos do NEGÓCIO.
+ *
+ * O array segue sendo `customFieldSchema[]` (a forma de cada campo não mudou) —
+ * o que mudou é O QUE a cota conta. Quem escreve a mensagem é esta régua, para
+ * a tela do funil e a captação dizerem a mesma frase.
+ */
+export const camposDoFunilPatchSchema = z
+  .array(customFieldSchema)
+  .superRefine((campos, ctx) => {
+    const doNegocio = campos.filter((campo) => campo.escopo !== "contato").length;
+    if (doNegocio > MAX_CAMPOS_DO_NEGOCIO) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO} Recebidos ${doNegocio}.`,
+      });
+    }
+  });
+
 /** Os campos que a retomada de negócio encerrado pode copiar (issue #1538). */
 export const CAMPOS_COPIAVEIS_NA_RETOMADA = [
   "custom_fields",
@@ -295,7 +338,7 @@ export const pipelineConfigPatchSchema = z.object({
       lost: z.string().min(1).max(40).optional(),
     })
     .optional(),
-  fields: z.array(customFieldSchema).max(50).optional(),
+  fields: camposDoFunilPatchSchema.optional(),
   /**
    * Os motivos de perda do funil (issue #1537): texto puro continua valendo —
    * nenhum funil existente precisa migrar dado — e quem quiser agrupar no
