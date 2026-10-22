@@ -3522,6 +3522,13 @@ async function executarTurnoDoAgente(
         const temImagemPorUrl = imagem_url !== undefined && imagem_url.trim() !== '';
         let motivoFotoRecusada: string | null = null;
         let fotoUrlEnviada = false;
+        // Rastro `foto_enviada`: marca quando a foto por URL (já guardada na conversa) de fato saiu.
+        // `fotosDoProduto` leva UMA das duas fontes (exclusivas, ver o bloco abaixo): a foto do
+        // catálogo ou a foto por URL; o teto de envios e a legenda valem para as duas.
+        const marcarFoto = <R extends { kind: string }>(resultado: R): R => {
+          if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
+          return resultado;
+        };
         try {
           dupTrava.reservar(body);
           // RESPOSTA OBSOLETA: o cliente escreveu de novo enquanto este turno pensava.
@@ -3813,18 +3820,11 @@ async function executarTurnoDoAgente(
                   corposEnviados.push(finalBody);
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
                   // medido ANTES DE CADA FOTO, depois do texto.
-                  // `fotosDoProduto` leva UMA das duas fontes (são exclusivas, ver o bloco
-                  // acima): a foto do catálogo ou a foto por URL já guardada na conversa. O
-                  // teto e a legenda valem para as duas.
                   return enviarComFotos(finalBody, fotosDoProduto, {
                     sleep,
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
-                    enviarFoto: async (foto, legenda) => {
-                      const resultado = await enviar(legenda, foto);
-                      if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
-                      return resultado;
-                    },
+                    enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                     enviarTexto: (texto) =>
                       sendInBubbles(texto, {
                         enabled: agentConfig?.splitMessages ?? false,

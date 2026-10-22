@@ -73,7 +73,6 @@ function requisitarDeVerdade(args: {
   timeoutMs: number;
 }): Promise<RespostaDeRede> {
   return new Promise((resolve, reject) => {
-    let prazo: ReturnType<typeof setTimeout> | undefined;
     const req = httpsRequest(
       args.url,
       {
@@ -101,13 +100,13 @@ function requisitarDeVerdade(args: {
           },
         });
         res.on('close', () => {
-          if (prazo) clearTimeout(prazo);
+          clearTimeout(prazo);
         });
       },
     );
-    prazo = setTimeout(() => req.destroy(new Error('timeout_do_download')), args.timeoutMs);
+    const prazo = setTimeout(() => req.destroy(new Error('timeout_do_download')), args.timeoutMs);
     req.on('error', (erro) => {
-      if (prazo) clearTimeout(prazo);
+      clearTimeout(prazo);
       reject(erro);
     });
     req.end();
@@ -272,6 +271,12 @@ export async function guardarImagemNaConversa(
   admin: StorageDaConversa,
   entrada: { tenantId: string; conversationId: string; bytes: Buffer; mime: MimeDeImagem },
 ): Promise<{ ok: true; storagePath: string; mime: MimeDeImagem } | { ok: false; motivo: string }> {
+  // Os dois ids vêm do turno, mas o caminho é montado por texto: um id com barra ou `..`
+  // faria o arquivo cair em outra pasta, e a posse abaixo só confere o que vem DEPOIS do prefixo.
+  const segmentoSimples = (s: string) => s !== '' && s !== '.' && s !== '..' && !/[\\/]/.test(s);
+  if (!segmentoSimples(entrada.tenantId) || !segmentoSimples(entrada.conversationId)) {
+    return { ok: false, motivo: 'caminho_invalido' };
+  }
   const hash = createHash('sha256').update(entrada.bytes).digest('hex').slice(0, 16);
   const storagePath = `${entrada.tenantId}/${entrada.conversationId}/externa-${hash}.${EXTENSAO_DO_MIME[entrada.mime]}`;
   if (!isMediaPathOwnedBy(storagePath, entrada.tenantId, entrada.conversationId)) {

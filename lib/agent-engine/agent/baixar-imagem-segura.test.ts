@@ -63,7 +63,7 @@ describe("baixarImagemSegura — o IP validado é o IP da conexão (sem rebindin
 
     expect(resolver).toHaveBeenCalledTimes(1);
     expect(requisitar).toHaveBeenCalledTimes(1);
-    const args = requisitar.mock.calls[0]![0] as { url: URL; ip: string; family: number; timeoutMs: number };
+    const args = (requisitar.mock.calls[0] as unknown as [unknown])[0] as { url: URL; ip: string; family: number; timeoutMs: number };
     expect(args.ip).toBe(IP_PUBLICO);
     expect(args.family).toBe(4);
     expect(args.url.hostname).toBe("exemplo.test");
