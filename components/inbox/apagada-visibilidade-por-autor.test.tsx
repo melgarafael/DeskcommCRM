@@ -76,7 +76,7 @@ describe("mensagem apagada: quem apagou decide a cor, o marcador e o texto (#327
       <MessageBubble
         message={msg({
           direction: "inbound",
-          sent_via: null,
+          sent_via: "external_device",
           revoked_at: "2026-10-22T12:30:00.000Z",
           body: "combinamos a entrega para sexta",
         })}
@@ -133,7 +133,7 @@ describe("mensagem apagada: quem apagou decide a cor, o marcador e o texto (#327
     expect(bolha().className).not.toContain("ring-1");
 
     rerender(
-      <MessageBubble message={msg({ direction: "inbound", sent_via: null, body: "bom dia" })} />,
+      <MessageBubble message={msg({ direction: "inbound", sent_via: "external_device", body: "bom dia" })} />,
     );
     expect(screen.getByText("bom dia")).toBeInTheDocument();
     expect(marcadorDaApagada()).toBeNull();
@@ -146,7 +146,7 @@ describe("mensagem apagada: quem apagou decide a cor, o marcador e o texto (#327
       <MessageBubble
         message={msg({
           direction: "inbound",
-          sent_via: null,
+          sent_via: "external_device",
           type: "image",
           body: null,
           metadata: { media_status: "expired", media_retention_days: 30 },
