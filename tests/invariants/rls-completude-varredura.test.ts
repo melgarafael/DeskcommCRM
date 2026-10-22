@@ -350,6 +350,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "agent), promovido a admin passa a ler (controle), e UPDATE/INSERT/DELETE " +
       "pela sessão e qualquer leitura por anon dão permission denied. Migration 0510.",
   },
+  {
+    tabela: "conversation_participants",
+    razao:
+      "tests/invariants/atendimento-conjunto-participantes.test.ts — dois tenants " +
+      "por JWT (agent): o convidado LÊ a própria participação e passa a ver a " +
+      "conversa e as mensagens dela, o dono não lê a linha alheia, um membro de " +
+      "outra organização lê 0 nos dois sentidos e INSERT direto de authenticated " +
+      "dá permission denied. Migration 0661 (issue #2542).",
+  },
 ];
 
 /**

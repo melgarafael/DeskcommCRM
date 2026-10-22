@@ -10889,6 +10889,24 @@ export const DICIONARIO: Traducoes = {
   "content é obrigatório.": { es: "content es obligatorio." },
   "Conversa do caso sem contato associado.": { es: "La conversación del caso no tiene contacto asociado." },
   "Conversa não encontrada.": { es: "Conversación no encontrada." },
+  "Só o responsável pela conversa ou um gestor pode convidar colegas.": { es: "Solo el responsable de la conversación o un gestor puede invitar a colegas." },
+  "Só o responsável pela conversa ou um gestor pode remover participantes.": { es: "Solo el responsable de la conversación o un gestor puede quitar participantes." },
+  "Serviço indisponível no momento.": { es: "Servicio no disponible en este momento." },
+  // ── Atendimento conjunto, a TELA (#2542, fatia 4) ──────────────────────────
+  // O botão e o seletor do cabeçalho. As duas frases de erro NÃO moram aqui: elas
+  // nascem na rota, já traduzidas pelo `traduzir(…, user.idioma)` — então o
+  // dicionário só precisa do texto da tela, que é este bloco.
+  "Convidar": { es: "Invitar" },
+  "Convidar colega": { es: "Invitar a un colega" },
+  "Convidar para atender junto": { es: "Invitar a atender en conjunto" },
+  "Convidando…": { es: "Invitando…" },
+  "Carregando colegas…": { es: "Cargando colegas…" },
+  "Escolha o colega": { es: "Elige al colega" },
+  "Já participa": { es: "Ya participa" },
+  "Quem participa desta conversa": { es: "Quién participa en esta conversación" },
+  "Convida um colega para atender junto — o responsável pela conversa não muda.": { es: "Invita a un colega a atender en conjunto — el responsable de la conversación no cambia." },
+  "O convidado passa a ver esta conversa e as mensagens dela, e pode responder junto. O responsável pela conversa continua o mesmo.": { es: "El invitado pasa a ver esta conversación y sus mensajes, y puede responder en conjunto. El responsable de la conversación sigue siendo el mismo." },
+  "Não foi possível convidar agora. Tente de novo.": { es: "No se pudo invitar ahora. Inténtalo de nuevo." },
   "Conversa sem contato/canal.": { es: "Conversación sin contacto/canal." },
   "corpo inválido": { es: "cuerpo inválido" },
   "Corpo inválido.": { es: "Cuerpo inválido." },

@@ -5427,11 +5427,13 @@ revoke execute on function public.fn_can_view_conversation(uuid, uuid) from anon
 grant execute on function public.fn_can_view_conversation(uuid, uuid)
   to authenticated, service_role;
 
-drop policy if exists "conversations_select" on public.conversations;
-create policy "conversations_select" on public.conversations
-  for select using (
-    public.fn_can_view_conversation(organization_id, assigned_to_user_id)
-  );
+-- A policy `conversations_select` saiu daqui: a 0035 a criava só com
+-- `fn_can_view_conversation` e o ramo de PARTICIPANTE da 0661 a redefine adiante.
+-- Deixar as duas reabria uma janela — em todo install/update a versão
+-- intermediária (sem o `or exists`) valia até a final chegar, e o convidado não
+-- via a conversa nesse intervalo. O `drop policy if exists` do bloco da 0661
+-- continua, e é ele que limpa o clone que recebeu a versão antiga. Vigiado por
+-- `tests/unit/baseline-nao-constroi-o-que-derruba.test.ts`.
 
 drop policy if exists "conversations_agent_write" on public.conversations;
 drop policy if exists "conversations_agent_insert" on public.conversations;
@@ -54262,6 +54264,75 @@ $$;
 -- Postgres dá a PUBLIC na criação ficaria de pé — alcançável pela anon key.
 revoke execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) from public, anon;
 grant  execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) to authenticated, service_role;
+
+-- ---- participantes do atendimento conjunto (migration 0661, issue #2542) ----
+-- Conteúdo IDÊNTICO ao da migration 0661 (quem aplica a cadeia de migrations
+-- e quem aplica SÓ o baseline têm de terminar no mesmo schema). Nasce ANTES da
+-- VARREDURA anon por vizinhança, embora não crie função.
+--
+-- A tabela, a RLS de leitura (organização + papel + a PRÓPRIA linha) e — a
+-- linha que faz o convidado VER — o ramo de participante no `conversations_select`
+-- (o `fn_can_view_conversation` continua a régua; aqui só se ACRESCENTA a porta).
+-- `messages` herda o escopo por `exists` na própria policy. O DONO único
+-- (`assigned_to_user_id`) não é tocado por nada disto: entrar não é assumir.
+create table if not exists public.conversation_participants (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.organizations(id) on delete cascade,
+  conversation_id  uuid not null references public.conversations(id) on delete cascade,
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  invited_by       uuid references auth.users(id) on delete set null,
+  joined_at        timestamptz not null default now(),
+  left_at          timestamptz,
+  constraint conversation_participants_unico unique (conversation_id, user_id)
+);
+
+alter table public.conversation_participants add column if not exists invited_by uuid;
+alter table public.conversation_participants add column if not exists joined_at timestamptz not null default now();
+alter table public.conversation_participants add column if not exists left_at timestamptz;
+
+create index if not exists participantes_por_usuario
+  on public.conversation_participants (organization_id, user_id)
+  where left_at is null;
+create index if not exists participantes_por_conversa
+  on public.conversation_participants (organization_id, conversation_id);
+
+alter table public.conversation_participants enable row level security;
+
+revoke all    on public.conversation_participants from anon, authenticated;
+grant  select on public.conversation_participants to authenticated;
+grant  all    on public.conversation_participants to service_role;
+
+drop policy if exists tenant_isolation_conversation_participants_select on public.conversation_participants;
+create policy tenant_isolation_conversation_participants_select
+  on public.conversation_participants
+  for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'agent')
+    and user_id = auth.uid()
+  );
+
+-- O drop e o create vão num ÚNICO bloco DO: o update.sh aplica o baseline sem
+-- ON_ERROR_STOP e em autocommit. Soltos, um create que falhasse depois do drop
+-- deixaria `conversations` com RLS e SEM policy de SELECT — o inbox sumiria
+-- para todos. Dentro do DO, a falha desfaz o drop e a policy anterior fica.
+do $conversations_select$ begin
+  drop policy if exists "conversations_select" on public.conversations;
+  create policy "conversations_select" on public.conversations
+    for select using (
+      public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+      or exists (
+        select 1
+          from public.conversation_participants cp
+         where cp.conversation_id = conversations.id
+           and cp.organization_id = conversations.organization_id
+           and cp.user_id = auth.uid()
+           and cp.left_at is null
+      )
+    );
+end $conversations_select$;
+
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
 -- manifest: **O entregue e o lido da API oficial chegam ao destinatário da campanha (issue #2937).** `fn_campanha_sincroniza_ack` saía cedo quando `new.status is not distinct from old.status` e o gatilho escutava só `after update of status`: na API oficial o webhook de entrega/leitura mantém `messages.status = 'sent'` e grava apenas `delivered_at`/`read_at` (`lib/channels/meta/status-update.ts:23-31`), então o gatilho nem disparava ou saía no primeiro `if` — `campaign_recipients.delivered_at`/`read_at` ficavam nulos para sempre e as taxas de entrega/leitura da campanha, zeradas. A função passa a derivar o "status efetivo" dos carimbos quando o canal não muda o `status`, e o gatilho passa a escutar exatamente as três colunas que aquele ack toca (`status`, `delivered_at`, `read_at`). O caminho do canal não oficial (o `status` chega `delivered`/`read`, `lib/waha/ingest.ts`), a regra de "status analítico nunca retrocede" e o caminho de `failed` seguem idênticos. Gate: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` (vermelho na main, verde aqui).
 
