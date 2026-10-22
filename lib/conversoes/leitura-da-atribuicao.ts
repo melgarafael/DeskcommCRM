@@ -22,7 +22,7 @@ import type { PlataformaDeAnuncio } from "@/lib/plataformas-de-anuncio/types";
 
 export interface AtribuicaoParaEnvio {
   plataforma: PlataformaDeAnuncio;
-  /** `ad_source_id` — o `ctwa_clid`, o clique que abriu a conversa. */
+  /** `ad_source_id` — o clique que abriu a conversa: `ctwa_clid` ou o `fbclid`/`gclid` do formulário. */
   cliqueDeOrigem: string;
   telefone: string | null;
   /**
@@ -87,7 +87,7 @@ export async function lerAtribuicao(
   //    `fbc`/`fbp` do navegador, que segue junto para o transporte.
   //
   // O `cliqueDeOrigem` vazio é o que troca a identidade no transporte — é ele
-  // que faz o evento sair `system_generated` com `ph` em vez de
+  // que faz o evento sair `system_generated` com `fbc`/`fbp` em vez de
   // `business_messaging` com `ctwa_clid`.
   const daPagina =
     meta.ad_click_source === "site" ||

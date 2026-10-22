@@ -478,6 +478,9 @@ export const DICIONARIO: Traducoes = {
     es: "Desactivado, ganar no toca el financiero: la tienda con checkout, el infoproducto y la inmobiliaria no viven de cuentas por cobrar. Activado, arrastrar a la etapa de ganado y el botón Ganar abren una orden de servicio con el valor y el contacto del negocio.",
   },
   "Motivo do ganho": { es: "Motivo del negocio ganado" },
+  "A etapa escolhida exige alguns dados. Preencha para continuar.": {
+    es: "La etapa elegida exige algunos datos. Complétalos para continuar.",
+  },
   // #2642 — o aviso da EQUIPE na virada para ganho. Rótulos do corpo do
   // resumo (WhatsApp) e do formulário da ação notify_team. O e-mail para uma
   // pessoa da equipe (recorte do PR #2834) usa os rótulos do `send_email`.

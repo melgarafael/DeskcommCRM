@@ -132,9 +132,30 @@ async function enviar(
   // Sem clique: a pessoa veio de anúncio para a PÁGINA e a venda fechou no CRM.
   // `business_messaging` sem `ctwa_clid` é recusado, e `website` exige dados do
   // navegador que o CRM não tem — `system_generated` é a origem declarada para
-  // venda registrada em sistema, casada pelo telefone em hash.
+  // venda registrada em sistema, casada pelo `fbc`/`fbp` e/ou pelo telefone em
+  // hash.
   const comClique = conversao.cliqueDeOrigem.trim() !== "";
-  if (!comClique && !conversao.telefone) {
+  // ─── A RÉGUA DA IDENTIDADE MUDOU (issue #3149) ────────────────────────────
+  //
+  // Até aqui valia o que o cabeçalho deste arquivo ainda registrava: no ramo SEM
+  // clique, o TELEFONE era a identidade, e o envio sem ele era recusado aqui
+  // mesmo, sem falar com a rede. O que mudou foi o que EXISTE para casar a
+  // venda: o lead de FORMULÁRIO (#2317) chega com `fbc`/`fbp` — a identidade que
+  // o navegador dele carrega — e `user_data.fbc` é identidade SUFICIENTE para a
+  // plataforma atribuir o evento. Recusar um envio que TEM identificador da Meta
+  // era perder a venda com a resposta na mão, e é exatamente o defeito que esta
+  // issue fecha. A troca é declarada, não silenciosa: o telefone continua
+  // reforçando quando existe.
+  //
+  // A RECUSA CONTINUA quando não há nenhuma das três identidades — sem clique,
+  // sem `fbc`/`fbp` e sem telefone, a Meta não tem como reconhecer o cliente, e
+  // um evento sem identificador nenhum não atribui venda: só ensina ao
+  // otimizador que aquela conversão não tem origem. A frase é a MESMA de antes
+  // (#3149 a preserva de propósito): é o texto que quem opera lê no livro-razão,
+  // e ele descreve exatamente este caso.
+  const identidadeDoNavegador = conversao.identidadeDoNavegador ?? null;
+  const temIdentidadeDaMeta = Boolean(identidadeDoNavegador?.fbc || identidadeDoNavegador?.fbp);
+  if (!comClique && !temIdentidadeDaMeta && !conversao.telefone) {
     return {
       tipo: "permanente",
       detalhe:
@@ -149,10 +170,10 @@ async function enviar(
   // identidade dele não é `ctwa_clid`: é o `fbc`/`fbp` que o pixel escreveu no
   // navegador (o telefone em hash, logo abaixo, reforça). Só no ramo SEM
   // clique — quem tem `ctwa_clid` veio de uma conversa e não tem cookie de
-  // página nosso. Sem estes dois campos o evento sai sem NADA que ligue a venda
-  // ao anúncio, e a resposta pode ser 200 sem atribuir coisa nenhuma.
-  if (!comClique && conversao.identidadeDoNavegador) {
-    const { fbc, fbp } = conversao.identidadeDoNavegador;
+  // página nosso. Sem estes dois campos o evento sai com o telefone e mais
+  // nada, e o lead sem telefone saía recusado (a régua acima).
+  if (!comClique && identidadeDoNavegador) {
+    const { fbc, fbp } = identidadeDoNavegador;
     if (fbc) userData.fbc = fbc;
     if (fbp) userData.fbp = fbp;
   }

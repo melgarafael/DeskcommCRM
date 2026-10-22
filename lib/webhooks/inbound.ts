@@ -67,8 +67,16 @@ export const CHAVES_DE_PLATAFORMA = new Set([
  * deste módulo adivinhar. Só o que é conhecidamente identificador de anúncio cai
  * aqui. Os identificadores só-iOS (`gbraid`/`wbraid`) ficam de fora enquanto um
  * formulário real não os mandar.
+ *
+ * ─── Uma lista só, três mapeadores (issue #3149) ───────────────────────────
+ *
+ * Quem lê esta lista são os TRÊS caminhos de entrada, e não só o genérico: o
+ * genérico (`mapInboundPayload`) e os dedicados de terceiro (`elementor.ts`,
+ * `rdstation.ts`, `respondi.ts`), que só mudam ONDE procurar a chave — cada um
+ * na forma do seu fornecedor — e entregam em `source_metadata` do mesmo jeito.
+ * Fornecedor novo entra por aqui, não com uma lista própria.
  */
-export const CHAVES_DE_ANUNCIO = new Set([
+export const CHAVES_DE_ANUNCIO: ReadonlySet<string> = new Set([
   "fbclid",
   "fbc",
   "fbp",
@@ -84,6 +92,15 @@ export interface MappedLead {
   email: string | null;
   custom_fields: Record<string, string>;
   source_metadata: Record<string, string>;
+}
+
+/**
+ * A chave é de anúncio? Normaliza a chave do payload (é o que os mapeadores
+ * dedicados precisam chamar quando o identificador do campo deles é livre — o
+ * `id` do Elementor, o rótulo da pergunta do Respondi).
+ */
+export function ehChaveDeAnuncio(chave: string): boolean {
+  return CHAVES_DE_ANUNCIO.has(chave.trim().toLowerCase());
 }
 
 // A regra mora em `lib/channels/phone-variants.ts`, que o componente de cliente
@@ -157,9 +174,28 @@ export function fbcAPartirDoFbclid(fbclid: string, capturadoEmMs: number): strin
   return `fb.1.${capturadoEmMs}.${fbclid}`;
 }
 
+/** String não-vazia de um valor de payload (string, número) ou null. */
+function chaveDeAnuncio(valor: unknown): string | null {
+  if (typeof valor === "string") return valor.trim() || null;
+  if (typeof valor === "number") return String(valor);
+  return null;
+}
+
 /**
  * A atribuição de anúncio do webhook de entrada (issue #2317) — a MESMA gravação
  * do clique-pro-WhatsApp, a partir de outro transporte: o formulário.
+ *
+ * ─── UM extrator, TRÊS mapeadores (issue #3149) ─────────────────────────────
+ *
+ * A função recebe um registro CHATO de chave→valor, e é só isso que ela exige:
+ * pode ser o payload CRU do envio genérico (chaves de topo, como um formulário
+ * plano ou o Zapier manda) ou os `source_metadata` que um mapeador dedicado
+ * acabou de montar — do Elementor (campos em colchetes), do RD Station
+ * (envelope `leads[]`) ou do Respondi (respostas por rótulo de pergunta). Os
+ * três entregam o clique no MESMO lugar (`source_metadata`), e é este o único
+ * ponto que decide plataforma e identidade. Um segundo extrator, escrito dentro
+ * de um mapeador, é justamente o que não se faz aqui: divergiria da regra de
+ * `fbclid`/`fbc`/`gclid` na primeira mudança.
  *
  * O payload traz o CLIQUE (`fbclid`/`fbc` da Meta, `gclid` do Google) e, quando
  * o formulário é montado para isso, os ids da peça (`ad_id`, `adset_id`,
@@ -180,19 +216,14 @@ export function fbcAPartirDoFbclid(fbclid: string, capturadoEmMs: number): strin
  * Não há `ctwa_clid` aqui: este caminho é de FORMULÁRIO, não de clique-pro-WhatsApp.
  */
 export function extrairAtribuicaoDoInbound(
-  payload: Record<string, unknown>,
+  origens: Record<string, unknown>,
 ): AtribuicaoDeAnuncio | null {
   const chaves: Record<string, string> = {};
-  for (const [key, value] of Object.entries(payload)) {
-    const k = key.toLowerCase();
+  for (const [key, value] of Object.entries(origens)) {
+    const k = key.trim().toLowerCase();
     if (!CHAVES_DE_ANUNCIO.has(k)) continue;
-    const v =
-      typeof value === "string"
-        ? value.trim()
-        : typeof value === "number"
-          ? String(value)
-          : "";
-    if (v !== "") chaves[k] = v;
+    const v = chaveDeAnuncio(value);
+    if (v !== null) chaves[k] = v;
   }
 
   const fbclid = chaves.fbclid ?? null;

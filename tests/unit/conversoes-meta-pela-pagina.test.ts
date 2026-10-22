@@ -93,8 +93,8 @@ function evento(tipo: string): EventRow {
 interface EventoEnviado {
   action_source: string;
   messaging_channel?: string;
-  user_data: { ctwa_clid?: string; ph?: string[] };
-  custom_data: { value: number; currency: string; content_name?: string };
+  user_data: { ctwa_clid?: string; ph?: string[]; fbc?: string; fbp?: string };
+  custom_data: { value: number; currency: string; contentName?: string; content_name?: string };
 }
 
 function corpoEnviado(spy: ReturnType<typeof vi.spyOn>): EventoEnviado {
@@ -188,6 +188,47 @@ describe("o envio sem clique", () => {
     const spy = vi.spyOn(globalThis, "fetch");
     const r = await transporteMeta.enviar(credencial, conversao({ telefone: null }));
     expect(r.tipo).toBe("permanente");
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A RÉGUA DA IDENTIDADE MUDOU (issue #3149). No ramo sem clique o telefone era
+   * a identidade, e o lead de FORMULÁRIO sem telefone era recusado aqui — mesmo
+   * quando trazia `fbc`/`fbp`, que é o que a Meta casa. O `fbc` passou a ser
+   * identidade suficiente; a recusa continua quando não há nenhuma das três.
+   */
+  it("com `fbc`/`fbp` e SEM telefone o envio passa e leva os dois identificadores", async () => {
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response('{"events_received":1}', { status: 200 }));
+
+    const r = await transporteMeta.enviar(
+      credencial,
+      conversao({
+        telefone: null,
+        identidadeDoNavegador: { fbc: "fb.1.1750000000000.IwAR1abc", fbp: "fb.1.1750000000000.7788" },
+      }),
+    );
+
+    expect(r.tipo).toBe("ok");
+    const ev = corpoEnviado(spy);
+    expect(ev.action_source).toBe("system_generated");
+    expect(ev.user_data.fbc).toBe("fb.1.1750000000000.IwAR1abc");
+    expect(ev.user_data.fbp).toBe("fb.1.1750000000000.7788");
+    expect(ev.user_data.ph).toBeUndefined();
+    expect(ev.user_data.ctwa_clid).toBeUndefined();
+  });
+
+  it("CONTROLE: sem clique, sem `fbc` e sem telefone continua recusada, com a mensagem de sempre", async () => {
+    const spy = vi.spyOn(globalThis, "fetch");
+    const r = await transporteMeta.enviar(
+      credencial,
+      conversao({ telefone: null, identidadeDoNavegador: { fbc: null, fbp: null } }),
+    );
+    expect(r).toEqual({
+      tipo: "permanente",
+      detalhe: "Sem o clique do anúncio e sem telefone no contato, a Meta não tem como reconhecer o cliente.",
+    });
     expect(spy).not.toHaveBeenCalled();
   });
 });

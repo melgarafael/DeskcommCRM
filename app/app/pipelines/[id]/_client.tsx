@@ -249,6 +249,9 @@ export function PipelinePageClient({
           // #1751: o quadro é a lista que o diálogo confere ANTES de criar —
           // é ela que faz o aviso de negócio duplicado existir sem rede.
           leads={data.leads}
+          // #3038: os campos que a etapa exige são preenchidos no PRÓPRIO
+          // formulário — a lista sai do `settings` que o quadro já tem em mãos.
+          settings={data.pipeline.settings}
         />
       )}
       <FilterBar

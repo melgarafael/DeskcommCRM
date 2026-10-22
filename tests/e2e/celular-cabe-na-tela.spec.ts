@@ -121,6 +121,57 @@ async function abrir(page: Page, rota: string): Promise<void> {
   await estabilizar(page);
 }
 
+/**
+ * A reserva publicada no `<html>` e o que o `<main>` desconta de verdade.
+ *
+ * As três leituras juntas, e não só a variável: `--rodape-ocupado` é o número que
+ * o contrato publica, `data-rodape-ocupado` é o mesmo número pelo atributo (o
+ * jsdom não computa `var()`, é por ali que o resto da suíte mede), e
+ * `padding-bottom` calculado é o que a PESSOA vê — `max(24px, env(...), var(...))`.
+ * Uma variável certa com o `padding-bottom` preso continuaria sendo o defeito.
+ */
+async function medirODescontoDoRodape(page: Page) {
+  return page.evaluate(() => {
+    const principal = document.querySelector<HTMLElement>("main");
+    const barra = document.querySelector<HTMLElement>("nav[data-barra-inferior]");
+    return {
+      variavel: document.documentElement.style.getPropertyValue("--rodape-ocupado").trim(),
+      atributo: principal?.dataset.rodapeOcupado ?? null,
+      descontado: principal ? Math.round(parseFloat(getComputedStyle(principal).paddingBottom)) : -1,
+      alturaDaBarra: barra ? Math.round(barra.getBoundingClientRect().height) : -1,
+    };
+  });
+}
+
+/**
+ * Espera o rodapé ACOMODAR — e o valor esperado NÃO entra aqui de propósito.
+ *
+ * Esperar pelo valor que se quer medir seria fé: o `waitForFunction` retornaria
+ * no instante em que o valor aparecesse, e o `expect` seguinte provaria a espera,
+ * não o produto. O que esta espera exige é outra coisa: três leituras iguais e ao
+ * menos 600 ms desde a última mudança. O `ResizeObserver` avisa o hook no quadro
+ * seguinte ao `setViewportSize`, então medir antes disso mediria o estado
+ * ANTERIOR à transição — falso vermelho numa direção e falso verde na outra.
+ */
+async function esperarORodapeAcomodar(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const janela = window as unknown as { __rodape?: string; __quieto?: number; __desde?: number };
+      const agora = document.documentElement.style.getPropertyValue("--rodape-ocupado").trim();
+      if (janela.__rodape !== agora) {
+        janela.__rodape = agora;
+        janela.__quieto = 0;
+        janela.__desde = Date.now();
+      } else {
+        janela.__quieto = (janela.__quieto ?? 0) + 1;
+      }
+      return (janela.__quieto ?? 0) >= 3 && Date.now() - (janela.__desde ?? Date.now()) >= 600;
+    },
+    undefined,
+    { timeout: 15_000, polling: 120 },
+  );
+}
+
 const creds = lerCreds();
 
 test("as quatro superfícies não estouram a tela em 360 nem em 390px", async ({ page }) => {
@@ -246,4 +297,74 @@ test("a barra de abas ocupa rodapé no celular e NADA no desktop", async ({ page
     document.documentElement.style.getPropertyValue("--rodape-ocupado").trim(),
   );
   expect(reserva === "" || reserva === "0px").toBe(true);
+});
+
+/**
+ * A TRANSIÇÃO NA MESMA PÁGINA — o caso que o teste de cima NÃO mede.
+ *
+ * ═══ O buraco do caso anterior, medido ═══════════════════════════════════════
+ *
+ * O caso de `:203` alarga para 1440 e chama `abrir(page, "/app/kanban")`, que é
+ * um `page.goto` (`:119`): recarrega. Mede a PRIMEIRA carga no desktop, que
+ * sempre funcionou — a barra nasce escondida, mede zero e a reserva fica em zero.
+ * A transição estreito → largo na mesma página nunca foi medida, e é justamente
+ * onde o defeito mora: com uma medida positiva já guardada (54 px, a barra à
+ * vista), o `ResizeObserver` entrega o zero do `display: none` e o hook o
+ * descarta. `--rodape-ocupado` fica preso em 54 px e o `<main>` desconta 54 px de
+ * rodapé para uma barra que não está na tela — 30 px vazios, e o Inbox e o funil,
+ * que leem a mesma variável, encolhem junto.
+ *
+ * ═══ Por que a régua é o `padding-bottom` calculado ══════════════════════════
+ *
+ * A variável é o número que o contrato publica; o `padding-bottom` é o que a
+ * pessoa perde. Medir só a variável deixaria passar uma casca que publica `0px` e
+ * continua descontando `54px` por outra via — `max(24px, env(...), var(...))` é a
+ * expressão de verdade, e é ela que este caso calcula no navegador.
+ *
+ * ═══ Sem `goto` e sem `reload` entre as duas medidas ═════════════════════════
+ *
+ * É a condição que faz este caso medir a transição: qualquer recarga zeraria o
+ * `alturaMedida` do hook, que é exatamente o que o defeito precisa que exista.
+ */
+test("ao alargar a janela SEM recarregar, a barra que sai de vista devolve o rodapé ao piso", async ({
+  page,
+}) => {
+  await loginComoAdmin(page, creds);
+
+  // ── ESTREITO: a barra está à vista e a reserva é o que ela mede ────────────
+  await page.setViewportSize({ width: 390, height: 844 });
+  await abrir(page, "/app/kanban");
+  await expect(page.locator("nav[data-barra-inferior]")).toBeVisible();
+  await esperarORodapeAcomodar(page);
+
+  const estreito = await medirODescontoDoRodape(page);
+  expect(estreito.alturaDaBarra, "a barra de abas não está à vista em 390px").toBeGreaterThanOrEqual(
+    PISO_DE_TOQUE,
+  );
+  // CONTROLE (o mesmo do caso de cima): estreito, a reserva continua valendo o
+  // que a barra mede, e o `<main>` desconta pelo menos isso.
+  expect(estreito.variavel).toBe(`${estreito.alturaDaBarra}px`);
+  expect(estreito.descontado).toBeGreaterThanOrEqual(estreito.alturaDaBarra);
+
+  // ── ALARGA A MESMA PÁGINA — sem `abrir`, sem `goto`, sem `reload` ──────────
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator("nav[data-barra-inferior]")).toBeHidden();
+  await esperarORodapeAcomodar(page);
+
+  const largo = await medirODescontoDoRodape(page);
+  // A barra saiu de vista: a medida dela é zero e o hook tem de gravar esse zero.
+  expect(largo.alturaDaBarra).toBe(0);
+  expect(
+    largo.variavel === "" || largo.variavel === "0px",
+    `--rodape-ocupado ficou preso em ${largo.variavel || "(vazio)"} depois de a barra sair de vista`,
+  ).toBe(true);
+  expect(largo.atributo, "o <main> continua descontando a barra que sumiu").toBe("0");
+  // E o que a pessoa vê: o piso do `p-6` da casca, não os 54px da barra.
+  expect(largo.descontado).toBe(24);
+
+  // As quatro medidas das duas larguras no log do run: é o número que o artefato
+  // da issue cita (variável, atributo, `padding-bottom` calculado e a altura da
+  // barra), e sem ele o verde não diria QUANTO foi medido.
+  // eslint-disable-next-line no-console
+  console.log(`[rodape-3061] estreito=${JSON.stringify(estreito)} largo=${JSON.stringify(largo)}`);
 });
