@@ -84,10 +84,18 @@ export function orientacaoDeInteresse(
       etapa: nomes.etapa,
     },
     referencia_do_item: `${receitaId}:<id do item>`,
+    // O resultado desta consulta NÃO acompanha a conversa: no turno em que o cliente
+    // escolhe, o agente só tem o que está escrito nas mensagens. Medido no espelho
+    // (22/10/2026): sem o código no texto mostrado, o agente tentou consultar de
+    // novo com filtro inventado, desistiu, e disse "registrei" sem abrir o negócio.
+    // Por isso o código vai ao cliente junto do item — imóvel e produto têm código.
     instrucao:
-      `Quando o cliente disser que tem interesse em UM item destes resultados, abra o negócio com ` +
-      `crm_create_lead usando pipeline_id e stage_id de "destino", o contact_id desta conversa e ` +
-      `referencia_externa no formato indicado (troque <id do item> pelo id da linha escolhida). ` +
+      `Ao mostrar os itens ao cliente, escreva junto de cada um o código dele no formato "cód. <id>" ` +
+      `(o campo id da linha): é por esse código que você acha o item quando o cliente escolher, sem ` +
+      `consultar de novo. Quando o cliente disser que tem interesse em UM item, abra o negócio com ` +
+      `crm_create_lead usando pipeline_id e stage_id de "destino", o contact_id desta conversa, um title ` +
+      `com o nome do item e referencia_externa no formato indicado (troque <id do item> pelo código). ` +
+      `Só diga ao cliente que registrou o interesse depois que crm_create_lead responder com sucesso. ` +
       `Não abra negócio por item que o cliente apenas viu.`,
   };
 }

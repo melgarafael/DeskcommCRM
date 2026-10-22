@@ -566,3 +566,12 @@ resumo da conversa pronto (`buildHandoffSummary`). O laço se fecha sem tipo nov
   interesse → negócio com a referência): é o caso de aceite do apartamento, medido
   no espelho depois deste PR.
 - A pré-visualização da receita não mostra o bloco `interesse`.
+
+### Medido no espelho (22/10/2026): o código do item precisa ir na conversa
+A LIMA consultou o banco e mostrou 3 imóveis reais pelo WhatsApp, mas quando o cliente disse
+"tenho interesse nesse" ela NÃO abriu o negócio (duas tentativas): o resultado da consulta não
+acompanha a conversa, então no turno seguinte ela não tinha o id do item; consultou de novo com
+filtro inventado, desistiu e escreveu "registrei seu interesse" sem registrar. A orientação do
+bloco `interesse` agora manda escrever "cód. <id>" junto de cada item mostrado (a conversa passa a
+carregar o código) e só afirmar o registro depois que `crm_create_lead` responder com sucesso.
+Medido de novo no espelho depois desta mudança: ver o resultado no PR.

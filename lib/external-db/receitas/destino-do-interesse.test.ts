@@ -10,6 +10,7 @@ const DESTINO = { pipeline_id: PIPE, stage_id: ETAPA };
 //  - sem destino manda para a equipe → trocar o ramo `if (!destino)` por um que devolva um destino
 //  - destino sumido manda para a equipe → tirar o ramo `if (!nomes)`
 //  - com destino entrega os ids e a referência → tirar `referencia_do_item` do retorno
+//  - o código do item vai ao cliente → tirar a frase `cód. <id>` da instrução (o agente perde o id no turno seguinte)
 //  - o schema é fechado → tirar `.strict()`
 
 describe("orientacaoDeInteresse", () => {
@@ -46,6 +47,14 @@ describe("orientacaoDeInteresse", () => {
     });
     expect(o.instrucao).toContain("crm_create_lead");
     expect(o.instrucao).toContain("referencia_externa");
+  });
+
+  it("destino válido: manda mostrar o código do item ao cliente e só afirmar depois do sucesso", () => {
+    const o = orientacaoDeInteresse("wordpress-conteudo", DESTINO, { funil: "Imóveis", etapa: "Interesse" });
+
+    // Sem o código no texto mostrado, o turno em que o cliente escolhe não tem o id do item.
+    expect(o.instrucao).toContain("cód. <id>");
+    expect(o.instrucao).toContain("responder com sucesso");
   });
 });
 
