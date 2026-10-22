@@ -167,10 +167,33 @@ export function MessageBubble({
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   // Apagada pelo autor ("apagar para todos"). A linha continua no histórico —
-  // sumir com ela deixaria a resposta seguinte respondendo ao nada —, mas o
-  // texto não aparece: mostrá-lo seria expor justamente o que o cliente pediu
-  // para tirar do ar.
+  // sumir com ela deixaria a resposta seguinte respondendo ao nada —, e o que
+  // aparece no lugar do texto depende de QUEM apagou (#3277), abaixo.
   const apagada = Boolean(message.revoked_at);
+  // QUEM APAGOU, medido no que a linha tem. Não existe campo de ator: o motor
+  // grava `revoked_at` e mais nada. O que a linha sustenta é a DIREÇÃO, e ela
+  // basta porque o caminho é único de cada lado — o botão "Apagar para todos"
+  // só existe em mensagem NOSSA (`podeApagar`, abaixo), e o apagamento de uma
+  // recebida só chega pelo canal. Logo `outbound` = atendente, `inbound` =
+  // contato, sem inventar um dado que o motor não carimba.
+  const apagadaPeloAtendente = apagada && isOutbound;
+  const apagadaPeloContato = apagada && !isOutbound;
+  const marcadorDaApagada = apagada
+    ? apagadaPeloAtendente
+      ? t("Esta mensagem foi apagada pelo atendente")
+      : t("Esta mensagem foi apagada pelo contato")
+    : null;
+  // O TEXTO DA APAGADA APARECE PARA QUEM ATENDE — e só quando quem apagou foi o
+  // CONTATO. O "apagar para todos" do aplicativo é gesto do titular NO CANAL,
+  // não pedido de eliminação sob LGPD art. 18 / RGPD art. 17: o corpo segue na
+  // linha, e é o registro do que foi combinado no atendimento que sustenta a
+  // defesa do controlador. Quem elimina de verdade é o pedido de LGPD desta
+  // casa, que anonimiza e é ele que zera o corpo (`lib/lgpd/cascata.ts`).
+  const mostraTextoDaApagada = apagadaPeloContato && Boolean(message.body?.trim());
+  // Do outro lado, quem apaga o próprio envio não escolhe o que a equipe lê: o
+  // texto sai da Inbox e a bolha diz onde ele está, em vez de deixar a
+  // impressão de que foi eliminado.
+  const apagadaComTextoGuardado = apagadaPeloAtendente && Boolean(message.body?.trim());
   const ocultaNoCrm = Boolean(message.metadata?.crm_hidden_at);
   const editada = Boolean(message.edited_at) && !apagada;
   const enviadaPeloAtendente = isOutbound && ["user", "crm"].includes(message.sent_via)
@@ -313,7 +336,14 @@ export function MessageBubble({
           // A marca da busca é ANEL, não cor de fundo: o fundo já diz de quem é
           // a mensagem, e trocá-lo apagaria essa leitura justo na bolha achada.
           searchMatch && "ring-2 ring-foreground ring-offset-2 ring-offset-background",
-          apagada && "opacity-70",
+          // A APAGADA SAI DAS CORES DA DIREÇÃO (#3277). Verde de um lado e cinza
+          // do outro diria que a mensagem ainda está no ar de um dos lados; as
+          // duas são cinza, e quem distingue é o marcador. A regra vem DEPOIS
+          // das cores de direção de propósito: `cn` resolve o conflito pelo
+          // último, é o cinza que fica. Antes daqui a única diferença de uma
+          // apagada era `opacity-70` — uma diferença que some para quem não
+          // enxerga contraste e que não diz o que aconteceu.
+          apagada && "bg-muted text-muted-foreground ring-1 ring-border",
           // Espaço para a marca de reação, que fica metade para fora do balão.
           Boolean(reacoes?.length) && "mb-3",
         )}
@@ -452,13 +482,25 @@ export function MessageBubble({
           </div>
         ) : apagada ? (
           <div className="space-y-1">
-            <p className="italic leading-snug opacity-70">{t("Esta mensagem foi apagada")}</p>
-            {/* O WhatsApp revoga o envio; o CRM conserva o corpo para auditoria
-                interna. Não revelamos texto de uma mensagem apagada pelo cliente. */}
-            {isOutbound && message.body && (
+            <p className="italic leading-snug">{marcadorDaApagada}</p>
+            {mostraTextoDaApagada && (
+              // O TITULAR apagou no canal, e o registro fica. Mostrar aqui não é
+              // desfazer o gesto dele: o "apagar para todos" tira do ar no
+              // WhatsApp (e tirou); o CRM guarda o que foi combinado no
+              // atendimento, que é a prova de quem responde — e quem apaga de
+              // verdade é o pedido de LGPD da casa, que zera o corpo.
               <div className="border-t border-current/20 pt-1">
-                <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
+                <p className="text-[10px]">{t("Conteúdo preservado (LGPD)")}</p>
                 <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+              </div>
+            )}
+            {apagadaComTextoGuardado && (
+              // Quem ATENDE apagou: ato interno, e não escolha do que a equipe
+              // lê. O texto sai da Inbox e a bolha diz ONDE ele está — sem
+              // isso, a tela diria "apagada" e não haveria como saber que o
+              // conteúdo segue na linha e alcança a exportação e a trilha.
+              <div className="border-t border-current/20 pt-1">
+                <p className="text-[10px]">{t("O texto continua guardado no registro da empresa.")}</p>
               </div>
             )}
           </div>

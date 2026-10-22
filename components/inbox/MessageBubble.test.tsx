@@ -146,14 +146,21 @@ describe("MessageBubble — ações sobre mensagem própria", () => {
     expect(screen.queryByRole("menuitem", { name: "Apagar para todos" })).not.toBeInTheDocument();
   });
 
-  it("mantém o texto apagado dentro da bolha do CRM sem mostrar o texto revogado pelo cliente", () => {
-    const { rerender } = render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
-    expect(screen.getByText("Esta mensagem foi apagada")).toBeInTheDocument();
-    expect(screen.getByText("valor combinado")).toBeInTheDocument();
-    expect(screen.getByText("Visível só aqui no CRM")).toBeInTheDocument();
-    expect(screen.getByTestId("message-bubble").className).toContain("opacity-70");
-    rerender(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
-    expect(screen.queryByText("texto do cliente")).not.toBeInTheDocument();
+  it("apagada pelo CONTATO mostra o texto preservado; a apagada pelo ATENDENTE não (#3277)", () => {
+    // A régua aqui é a da #3277, e ela INVERTE a que este caso prendia antes: o
+    // "apagar para todos" do aplicativo é gesto do titular no canal, não pedido
+    // de eliminação — o corpo do contato segue na linha e é o registro do que
+    // foi combinado que sustenta a defesa de quem atende. O que o atendente
+    // apaga sai da Inbox (é ato interno) e a bolha diz onde o texto está.
+    const { rerender } = render(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo contato")).toBeInTheDocument();
+    expect(screen.getByText("texto do cliente")).toBeInTheDocument();
+    expect(screen.getByText("Conteúdo preservado (LGPD)")).toBeInTheDocument();
+    expect(screen.getByTestId("message-bubble").className).toContain("bg-muted");
+    rerender(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo atendente")).toBeInTheDocument();
+    expect(screen.queryByText("valor combinado")).not.toBeInTheDocument();
+    expect(screen.getByText("O texto continua guardado no registro da empresa.")).toBeInTheDocument();
   });
 
   it("põe o menu dentro da bolha sem ocupar uma coluna ao lado", () => {
