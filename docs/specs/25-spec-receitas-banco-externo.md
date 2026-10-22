@@ -574,4 +574,12 @@ acompanha a conversa, então no turno seguinte ela não tinha o id do item; cons
 filtro inventado, desistiu e escreveu "registrei seu interesse" sem registrar. A orientação do
 bloco `interesse` agora manda escrever "cód. <id>" junto de cada item mostrado (a conversa passa a
 carregar o código) e só afirmar o registro depois que `crm_create_lead` responder com sucesso.
-Medido de novo no espelho depois desta mudança: ver o resultado no PR.
+Mesmo assim, numa imobiliária montada do zero no espelho (atendente com prompt próprio, funil
+"Interessados", sem as habilidades do estúdio), o agente mostrou o imóvel com o código, o cliente
+disse "tenho interesse" e ele escreveu "registrei" SEM chamar `crm_create_lead`: no turno do
+interesse faltavam também o funil e a etapa (estavam no resultado da consulta, que não acompanha a
+conversa). Por isso o R5c: `crm_create_lead` aceita só a `referencia_externa` e o SISTEMA acha o
+funil e a etapa na receita da organização (`lib/external-db/receitas/destino-pela-referencia.ts`).
+O escopo de funil do agente continua valendo: ele julga o funil já resolvido. Receita sem destino, ou
+com dois destinos diferentes, recusa e manda passar para a equipe — o sistema não adivinha.
+Medido de novo no espelho com esta mudança: ver o resultado no PR.
