@@ -3626,9 +3626,9 @@ async function executarTurnoDoAgente(
         // (nenhuma ferramenta os aceita como argumento). UUID cru na resposta ao
         // cliente foi MEDIDO nesta base; esta era uma fonte silenciosa dele.
         const resultado = turnoProjeta(mcpToolIdsDoTurno) ? projetarRetornoDeTool(out) : out;
-        if (out.ok) {
+        if (out.ok && resultado !== null && typeof resultado === 'object') {
           const permitidas = new Set(fontesQueProvamOferta);
-          const results = out.results.filter(hit => permitidas.has(hit.knowledge_source_id));
+          const results = out.results.filter(hit => typeof hit.knowledge_source_id === 'string' && permitidas.has(hit.knowledge_source_id));
           // Conversas anteriores continuam no retorno do agente. A guarda recebe
           // somente fontes que podem provar oferta e a omissão explícita das demais.
           contextoCompartilhado.compartilharResultado(resultado, {

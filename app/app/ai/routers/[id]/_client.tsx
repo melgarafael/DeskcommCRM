@@ -139,6 +139,7 @@ export function RouterEditorClient({
   const [classifier, setClassifier] = React.useState(() => classifierKeyFrom(router.config));
   const [contextMessageCount, setContextMessageCount] = React.useState(() =>
     quantidadeDeHistoricoSalva(router.config) ?? LEGACY_ROUTER_CONTEXT_MESSAGES);
+  const [contextMessageCountEdited, setContextMessageCountEdited] = React.useState(false);
   const [draftMembers, setDraftMembers] = React.useState<DraftMember[]>(() =>
     members.map((m) => ({ ...m, key: m.id })),
   );
@@ -187,7 +188,7 @@ export function RouterEditorClient({
       isActive: router.is_active,
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
-      contextMessageCount: quantidadeDeHistoricoSalva(router.config) ?? LEGACY_ROUTER_CONTEXT_MESSAGES, LEGACY_ROUTER_CONTEXT_MESSAGES,
+      contextMessageCount: quantidadeDeHistoricoSalva(router.config) ?? LEGACY_ROUTER_CONTEXT_MESSAGES,
       members: members.map(camposDoMembro),
     }),
     [router, members],
@@ -195,12 +196,15 @@ export function RouterEditorClient({
 
   const currentMembers = draftMembers.map(camposDoMembro);
 
+  const contextMessageCountChanged = contextMessageCount !== baseline.contextMessageCount ||
+    (contextMessageCountEdited && quantidadeDeHistoricoSalva(router.config) === null);
+
   const dirty =
     name !== baseline.name ||
     isActive !== baseline.isActive ||
     fallbackAgentId !== baseline.fallbackAgentId ||
     classifier !== baseline.classifier ||
-    contextMessageCount !== baseline.contextMessageCount ||
+    contextMessageCountChanged ||
     JSON.stringify(currentMembers) !== JSON.stringify(baseline.members);
 
   const memberErrors = draftMembers.map((m) => {
@@ -257,7 +261,7 @@ export function RouterEditorClient({
         isActive !== baseline.isActive ||
         fallbackAgentId !== baseline.fallbackAgentId ||
         classifier !== baseline.classifier ||
-        contextMessageCount !== baseline.contextMessageCount
+        contextMessageCountChanged
       ) {
         const [provider, modelId] = classifier.split("::");
         await updateRouter.mutateAsync({
@@ -273,6 +277,7 @@ export function RouterEditorClient({
             context_message_count: contextMessageCount,
           },
         });
+        setContextMessageCountEdited(false);
       }
       if (JSON.stringify(currentMembers) !== JSON.stringify(baseline.members)) {
         await saveMembers.mutateAsync(currentMembers);
@@ -397,7 +402,10 @@ export function RouterEditorClient({
               <Label htmlFor="router-context-count">{t("Mensagens anteriores para o roteamento")}</Label>
               <Input id="router-context-count" type="number" min={0} max={MAX_CLASSIFIER_CONTEXT_MESSAGES} step={1}
                 value={contextMessageCount} disabled={!canManage}
-                onChange={(e) => setContextMessageCount(Math.max(0, Math.min(MAX_CLASSIFIER_CONTEXT_MESSAGES, LEGACY_ROUTER_CONTEXT_MESSAGES, Math.trunc(Number(e.target.value)) || 0)))} />
+                onChange={(e) => {
+                  setContextMessageCountEdited(true);
+                  setContextMessageCount(Math.max(0, Math.min(MAX_CLASSIFIER_CONTEXT_MESSAGES, Math.trunc(Number(e.target.value)) || 0)));
+                }} />
               <p className="text-xs text-muted-foreground">{t("Mensagens anteriores do cliente e do atendimento, além da mensagem atual. Neste canal, a quantidade salva vale para o roteador ativo e a avaliação de sentimento. Zero desativa esse histórico.")}</p>
               {quantidadeDeHistoricoSalva(router.config) === null && <p className="text-xs text-muted-foreground" data-testid="historico-sem-configuracao">{t("Sem quantidade salva: o roteador usa 4 e o sentimento usa 16 mensagens. Ao salvar esta configuração, ambos passam a usar a quantidade escolhida.")}</p>}
               <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Como funciona")}</summary>

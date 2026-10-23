@@ -106,6 +106,7 @@ describe("tamanho do contexto do roteador", () => {
     expect(screen.getByTestId('historico-sem-configuracao')).toHaveTextContent('o roteador usa 4 e o sentimento usa 16');
     expect(screen.getByText(/Neste canal, a quantidade salva vale/)).toBeTruthy();
     expect(screen.getByText(/Este campo não limita evidências/)).toBeTruthy();
+    if (quantidade === 4) fireEvent.change(campo, { target: { value: "0" } });
     fireEvent.change(campo, { target: { value: String(quantidade) } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ context_message_count: quantidade }) }));

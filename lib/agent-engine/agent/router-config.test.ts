@@ -18,8 +18,8 @@ describe('loadActiveRouter', () => {
     expect((await loadActiveRouter(pool, 'org1', 'canal1'))?.contextMessageCount).toBe(quantidade);
     expect(pool.query).toHaveBeenNthCalledWith(1, expect.stringMatching(/organization_id = \$1[\s\S]*channel_session_id = \$2/), ['org1', 'canal1']);
   });
-  it.each([{}, { context_message_count: 17 }, { context_message_count: '4' }])('preserva fallback oito sem valor salvo válido %j', async config => {
-    expect((await loadActiveRouter(poolSeq([{ rows: [{ id: 'r1', name: 'X', config, fallback_agent_id: null }] }, { rows: [] }]), 'org1', 'cs1'))?.contextMessageCount).toBe(8);
+  it.each([{}, { context_message_count: 17 }, { context_message_count: '4' }])('preserva fallback quatro legado sem valor salvo válido %j', async config => {
+    expect((await loadActiveRouter(poolSeq([{ rows: [{ id: 'r1', name: 'X', config, fallback_agent_id: null }] }, { rows: [] }]), 'org1', 'cs1'))?.contextMessageCount).toBe(4);
   });
   it('devolve null quando o canal não tem router ativo', async () => {
     const router = await loadActiveRouter(poolSeq([{ rows: [] }]), 'org1', 'cs1');

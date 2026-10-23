@@ -5,7 +5,8 @@ import { vincularRevisaoHumana } from './vinculo-decisao-humana';
 
 const note = 'A equipe liberou a segunda via do manual de horários para este pedido. Apenas comunicar essa decisão; nenhum agendamento foi realizado.';
 const candidate = 'A equipe liberou a segunda via do manual de horários para este pedido.\n\nNenhum agendamento foi realizado.';
-const context = (): ContextoDeDecisaoHumana => ({ versao: 1, limited: false, fingerprint: 'synthetic',
+type ContextoDeTeste = Omit<ContextoDeDecisaoHumana, 'decisions'> & { decisions: Array<ContextoDeDecisaoHumana['decisions'][number]> };
+const context = (): ContextoDeTeste => ({ versao: 1, limited: false, fingerprint: 'synthetic',
   currentRequest: { id: 'request', text: 'Posso receber a segunda via do manual de horários? Consulte a equipe, por favor.', at: '2026-10-21T15:00:00Z' },
   decisions: [{ eventId: 'event', caseId: 'case', jobId: 'job', action: 'resolved', note, at: '2026-10-21T15:01:00Z',
     title: 'Manual de horários', summary: 'Consulta à equipe', blocker: 'Obter decisão', requestId: 'request',
