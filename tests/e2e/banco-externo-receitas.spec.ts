@@ -222,7 +222,10 @@ test("admin escolhe para onde vai o interesse do cliente, salva e o destino pers
 
   // Controle no banco: o destino gravado é exatamente o escolhido na tela.
   const linha = await lerConexao();
-  const gravada = (linha.receitas as { destino_do_interesse?: { pipeline_id: string; stage_id: string } }[])[0];
+  // A conexão já tem a receita do teste anterior: procura a desta pelo nome, não pela posição.
+  const gravada = (
+    linha.receitas as { rotulo: string; destino_do_interesse?: { pipeline_id: string; stage_id: string } }[]
+  ).find((r) => r.rotulo === "Produtos com destino");
   expect(gravada?.destino_do_interesse).toEqual({ pipeline_id: destino.pipeline_id, stage_id: destino.id });
 
   // E sobrevive ao recarregar: a tela volta mostrando o funil escolhido.
