@@ -38,4 +38,3 @@ Não alegue inexistência ou contradição apenas porque um fato ficou fora de u
 Pergunta de preferência não afirma disponibilidade: citar um dia/período para perguntar se interessa não promete
 vaga nem reserva. Uma oferta factual de horário livre exige consulta pertinente; confirmação exige o recibo próprio.
 `;
-
