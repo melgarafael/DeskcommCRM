@@ -41,7 +41,8 @@ describe("mapearProdutoDaMeta", () => {
       mapearProdutoDaMeta({ ...base, description: "LinhaUmLinhaDois", rich_text_description: "<p>Linha um</p><p>Linha dois</p>" })
         ?.descricao,
     ).toBe("Linha um\n\nLinha dois");
-    expect(mapearProdutoDaMeta({ ...base, description: "só a pura" })?.descricao).toBe("só a pura");
+    // A pura é reformatada (`formatar-descricao.ts`): ganha o emoji do tipo do produto.
+    expect(mapearProdutoDaMeta({ ...base, description: "só a pura" })?.descricao).toBe("🏎️ só a pura");
   });
 
   it("todas as fotos, sem repetir, até 5", () => {

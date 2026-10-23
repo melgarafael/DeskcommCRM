@@ -16,6 +16,7 @@
  * recusar e tenta de novo (`campoRecusadoPelaMeta`).
  */
 import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
+import { formatarDescricao } from "@/lib/catalogo/formatar-descricao";
 import { precoParaCentavos } from "@/lib/schemas/produtos";
 
 /** O que a importação sempre pediu — não falha em catálogo nenhum. */
@@ -203,7 +204,9 @@ export function mapearProdutoDaMeta(item: MetaGraphProduct): ProdutoDaMeta | nul
 
   const rica = texto(item.rich_text_description);
   const pura = texto(item.description);
-  const descricao = rica ? htmlParaTexto(rica) || pura : pura;
+  // A formatada vence; sem ela, a pura (achatada pela Meta) é reformatada
+  // por regras — `lib/catalogo/formatar-descricao.ts`.
+  const descricao = rica ? htmlParaTexto(rica) || pura : formatarDescricao(item.name ?? "", pura);
 
   // "de/por": com preço promocional menor, o promocional é o preço e o cheio
   // vira o "de" — o mesmo par que a tela de produto mostra riscado.
