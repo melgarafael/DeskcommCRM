@@ -61,13 +61,13 @@ Esta etapa é do administrador da **instalação**, não do administrador da emp
 2. Localize o cartão **"Módulos opcionais"**.
 3. Na linha **"Banco de dados externo"**, ligue o interruptor.
 
-Enquanto o módulo estiver desligado, o menu **"Dados externos"** não aparece, a tela da conexão não abre, e o agente não recebe as ferramentas de banco. O texto da própria tela diz: "Ligado, cada empresa pode conectar o banco de outro sistema (um ERP, outro CRM) para o agente consultar."
+Enquanto o módulo estiver desligado, a entrada **"Dados externos"** não aparece em Configurações, a tela da conexão não abre, e o agente não recebe as ferramentas de banco. O texto da própria tela diz: "Ligado, cada empresa pode conectar o banco de outro sistema (um ERP, outro CRM) para o agente consultar."
 
 ---
 
 ## 4. Passo 2 — Conectar o banco do site
 
-1. No menu, abra **"Dados externos"** (grupo **Organização**, seção **Dados e acesso**).
+1. Abra **Configurações** (no rodapé do menu), procure a seção **"Dados e acesso"** e clique em **"Dados externos"**. Ela não aparece no menu lateral.
 2. Clique em **"Conectar banco de dados"** (ou em **"Nova conexão"**, se já houver uma).
 3. Preencha o formulário, campo a campo, na ordem da tela:
    1. **"Tipo de banco"**: MySQL.
@@ -78,7 +78,7 @@ Enquanto o módulo estiver desligado, o menu **"Dados externos"** não aparece, 
    6. **"Segurança da conexão (TLS)"**: deixe "Obrigatório (padrão)".
    7. **"Conexão ativa"**: deixe ligada.
 4. Clique em **"Salvar"**. A tela responde: "Conexão criada. Agora escolha o que o assistente pode ler." e abre a tela da conexão.
-5. Na lista, clique em **"Testar"**. Se der certo, a tela mostra "Conexão bem-sucedida.". Se der errado, mostra "Não foi possível conectar." e o erro aparece no cartão da conexão.
+5. Volte à lista de **"Dados externos"** e clique em **"Testar"** na linha da conexão. Se der certo, a tela mostra "Conexão bem-sucedida.". Se der errado, mostra "Não foi possível conectar." e o erro aparece no cartão da conexão.
 
 Se o teste passar com um aviso amarelo, leia a seção 11. O teste foi aprovado, mas há algo a corrigir no usuário do banco.
 
@@ -134,7 +134,7 @@ As três receitas que existem hoje:
 - **Tabelas que precisam estar liberadas:** `wp_posts` e `wp_postmeta`. Se houver categoria mapeada, também `wp_terms`, `wp_term_taxonomy` e `wp_term_relationships`.
 - **Exemplo fictício:** uma imobiliária de Sorocaba. O cliente pede "apartamento de 3 quartos até 700 mil". O campo "Quartos" tem filtro **Mínimo**, o campo "Preço de venda" tem filtro **Máximo**, e a categoria "Bairro" tem filtro **Contém**. O imóvel vendido some porque o campo de situação esconde o valor "vendido".
 
-**Regras que valem para as três receitas, depois de montar:**
+**Regras da receita de conteúdo WordPress, depois de montar:**
 
 - Um filtro que não está mapeado não é aplicado. Se o dado do imóvel não está mapeado, a busca não filtra por ele.
 - A finalidade por categoria casa por igualdade: o termo tem de se chamar exatamente "Venda" ou "Aluguel" (ou ter esse slug). "Venda e Aluguel" não casa com nenhum dos dois.
@@ -161,7 +161,7 @@ No cartão da receita, a seção **"Para onde vai o interesse do cliente"** tem 
 
 A tela explica: "Quando o cliente se interessar por um item, o agente abre o negócio neste funil e etapa. Sem escolha, ele passa a conversa para a equipe." Se você escolheu o funil mas não a etapa, aparece o aviso: "Falta escolher a etapa: sem ela, o interesse continua indo para a equipe."
 
-Crie o funil antes, em **Configurações › Funis** (o próprio sistema indica esse caminho na tela do agente). Se o funil não existir, a lista fica vazia.
+Crie o funil antes, no menu **"Funis"**, com o botão "Novo funil" (ou "Criar meu primeiro funil"). Se o funil não existir, a lista fica vazia.
 
 **Sem escolha:** o agente não abre negócio sozinho. Ele chama **"Chamar um atendente humano"** e a conversa aparece na **"Central de avisos"** para a sua equipe.
 
@@ -176,9 +176,9 @@ Crie o funil antes, em **Configurações › Funis** (o próprio sistema indica 
 
 ## 8. Passo 6 — Dar ao agente as capacidades certas
 
-Na tela do agente, abra a aba **"Capacidades"**. Cada capacidade aparece pelo nome em português. Marque as que o agente precisa:
+Na tela do agente, abra a aba **"Configuração"**, papel **"Conversa com o cliente"**, card **"O que o agente pode fazer"**. Ali as capacidades vêm agrupadas em pacotes, com um interruptor por pacote, e o agente aceita no máximo 27 capacidades. Todo agente novo já nasce com **"Vender e mover o funil"** ligado. Se você ligar o pacote inteiro **"Organizar a operação"** ou **"Passar para um humano"**, passa desse limite e a tela recusa. Por isso, clique em **"Escolher uma a uma (modo avançado)"** e marque, uma por uma, as capacidades abaixo. A aba **"Capacidades"** só mostra o uso de cada uma depois de ligada.
 
-| Capacidade (nome na tela) | Para que serve | Pacote |
+| Capacidade (nome na tela) | Para que serve | Pacote onde ela mora |
 |---|---|---|
 | "Ver as tabelas do banco conectado" | Descobre o código da conexão, que o agente precisa para listar as receitas. | "Organizar a operação" |
 | "Consultar receitas prontas do banco conectado" | Lista as receitas da conexão e executa a busca. | "Organizar a operação" |
@@ -244,7 +244,7 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 
 | O que você vê | O que significa | O que fazer |
 |---|---|---|
-| O menu "Dados externos" não aparece, ou a tela não abre (página não encontrada). | O módulo está desligado nesta instalação. | Peça ao administrador da instalação para ligar o interruptor "Banco de dados externo" em **Admin › Sistema**, cartão "Módulos opcionais". |
+| A entrada "Dados externos" não aparece em Configurações, ou a tela não abre (página não encontrada). | O módulo está desligado nesta instalação. | Peça ao administrador da instalação para ligar o interruptor "Banco de dados externo" em **Admin › Sistema**, cartão "Módulos opcionais". |
 | O cartão "Receitas prontas" não aparece na conexão. | A conexão não é MySQL. As receitas só existem para MySQL. | Crie a conexão de novo com **"Tipo de banco"** = MySQL. O tipo não muda depois de criado. |
 | "Não foi possível conectar." no teste. | O sistema não conseguiu entrar no banco. | Confira **"Host"**, **"Porta"**, **"Banco de dados"**, **"Usuário"** e **"Senha"**. |
 | Aviso amarelo: "Este usuário do banco pode escrever. Crie um usuário só de leitura (apenas SELECT) para o assistente." | O usuário tem permissão de escrita. | Peça ao administrador do banco um usuário só de leitura e troque a conexão por esse usuário. |
