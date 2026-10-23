@@ -121,8 +121,10 @@ test("admin adiciona a receita woocommerce, salva e persiste após recarregar", 
 
   // Adiciona a receita woocommerce.
   await page.getByRole("button", { name: /adicionar receita/i }).click();
+  // Desde a R2 o botão pergunta qual receita antes de abrir o formulário.
+  await page.getByRole("button", { name: /produtos da loja woocommerce/i }).click();
 
-  await page.getByLabel(/rótulo/i).fill("Produtos da loja");
+  await page.getByLabel(/nome da receita/i).fill("Produtos da loja");
   await page.getByLabel(/descrição/i).fill("Produtos publicados do WooCommerce");
   await page.getByLabel(/prefixo das tabelas/i).fill("wp_");
 
@@ -148,7 +150,9 @@ test("usuário agent não vê o botão de salvar", async ({ page }) => {
   await page.goto(`/app/integracao-dados/${conexaoId}`);
   await expect(page.getByText("Receitas prontas")).toBeVisible({ timeout: ESPERA });
   await page.getByRole("button", { name: /adicionar receita/i }).click();
-  await page.getByLabel(/rótulo/i).fill("Produtos da loja");
+  // Desde a R2 o botão pergunta qual receita antes de abrir o formulário.
+  await page.getByRole("button", { name: /produtos da loja woocommerce/i }).click();
+  await page.getByLabel(/nome da receita/i).fill("Produtos da loja");
   await page.getByLabel(/descrição/i).fill("Produtos publicados do WooCommerce");
   await page.getByLabel(/prefixo das tabelas/i).fill("wp_");
   await page.getByRole("button", { name: /salvar/i }).click();
@@ -179,4 +183,52 @@ test("pré-visualização com banco inalcançável mostra mensagem legível", as
   await expect(
     page.locator("body").filter({ hasText: /não foi possível consultar|banco de origem|conexão/i }),
   ).toBeVisible({ timeout: ESPERA });
+});
+
+test("admin escolhe para onde vai o interesse do cliente, salva e o destino persiste (R5b)", async ({ page }) => {
+  // O funil e a etapa vêm do que a organização de teste JÁ tem: uma etapa aberta de um funil ativo.
+  const org = await db.from("organizations").select("id").eq("slug", "e2e-test-org").single();
+  if (org.error ?? !org.data) throw org.error ?? new Error('organização "e2e-test-org" não encontrada');
+  const orgId = (org.data as { id: string }).id;
+  const etapa = await db
+    .from("crm_stages")
+    .select("id, pipeline_id, name")
+    .eq("organization_id", orgId)
+    .eq("is_archived", false)
+    .eq("is_won", false)
+    .eq("is_lost", false)
+    .limit(1)
+    .maybeSingle();
+  expect(etapa.data, "a organização de teste precisa ter uma etapa aberta de funil ativo").toBeTruthy();
+  const destino = etapa.data as { id: string; pipeline_id: string; name: string };
+
+  await loginComoAdmin(page, creds);
+  await page.goto(`/app/integracao-dados/${conexaoId}`);
+  await expect(page.getByText("Receitas prontas")).toBeVisible({ timeout: ESPERA });
+
+  await page.getByRole("button", { name: /adicionar receita/i }).click();
+  await page.getByRole("button", { name: /produtos da loja woocommerce/i }).click();
+  await page.getByLabel(/nome da receita/i).fill("Produtos com destino");
+  await page.getByLabel(/prefixo das tabelas/i).fill("wp_");
+
+  // Sem escolha, a tela já diz o que acontece: o interesse vai para a equipe.
+  await expect(page.getByTestId("destino-do-interesse")).toContainText(/passa a conversa para a equipe/i);
+
+  await page.getByLabel(/funil do interesse/i).selectOption({ value: destino.pipeline_id });
+  await page.getByLabel(/etapa do interesse/i).selectOption({ value: destino.id });
+
+  await page.getByRole("button", { name: /salvar/i }).click();
+  await expect(page.getByText("Salvo.")).toBeVisible({ timeout: ESPERA });
+
+  // Controle no banco: o destino gravado é exatamente o escolhido na tela.
+  const linha = await lerConexao();
+  // A conexão já tem a receita do teste anterior: procura a desta pelo nome, não pela posição.
+  const gravada = (
+    linha.receitas as { rotulo: string; destino_do_interesse?: { pipeline_id: string; stage_id: string } }[]
+  ).find((r) => r.rotulo === "Produtos com destino");
+  expect(gravada?.destino_do_interesse).toEqual({ pipeline_id: destino.pipeline_id, stage_id: destino.id });
+
+  // E sobrevive ao recarregar: a tela volta mostrando o funil escolhido.
+  await page.reload();
+  await expect(page.getByText("Produtos com destino")).toBeVisible({ timeout: ESPERA });
 });

@@ -40,6 +40,10 @@ vi.mock("@/lib/external-db/receitas/instancias", async (importOriginal) => {
     lerReceitasDoBanco: deps.receitas,
     validarFixosDaReceita: deps.validarFixos,
     atualizarReceitasSchema: actual.atualizarReceitasSchema,
+    // A classe vai DE VERDADE: a rota faz `err instanceof ErroDeFixosInvalidos`
+    // para saber se os motivos são por campo. Sem ela no mock, o `instanceof`
+    // estoura dentro do `catch` e a rota devolve 500 em vez de 422.
+    ErroDeFixosInvalidos: actual.ErroDeFixosInvalidos,
   };
 });
 vi.mock("@/lib/external-db/receitas/registro", async (importOriginal) => {
@@ -54,6 +58,7 @@ vi.mock("../../../_falha", () => ({
 }));
 
 import { GET, PUT } from "./route";
+import { ErroDeFixosInvalidos } from "@/lib/external-db/receitas/instancias";
 import type { receitaDe } from "@/lib/external-db/receitas/registro";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -224,6 +229,31 @@ describe("PUT /connections/:id/recipes", () => {
     expect(deps.admin.mock.calls).toHaveLength(0);
   });
 
+  it("fixos inválidos: o 422 traz o CAMINHO do campo em details.fieldErrors", async () => {
+    // O que `validarFixosDaReceita` lança hoje: o caminho inteiro ("esconder.
+    // meta_key"), não o último pedaço. A tela usa o caminho para mostrar o
+    // rótulo legível.
+    deps.validarFixos.mockImplementation(() => {
+      throw new ErroDeFixosInvalidos("wordpress-conteudo", {
+        "esconder.meta_key": [
+          "Use apenas letras, números, underscore e hífen no nome do campo.",
+        ],
+      });
+    });
+
+    const res = await PUT(put({ receitas: [INSTANCIA] }), ctx);
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as {
+      error: { details: { fieldErrors: Record<string, string[]> } };
+    };
+    expect(corpo.error.details.fieldErrors["esconder.meta_key"]?.[0]).toContain(
+      "nome do campo",
+    );
+    expect(deps.audit).not.toHaveBeenCalled();
+    expect(deps.admin.mock.calls).toHaveLength(0);
+  });
+
   it("a organização vem da sessão (organization_id no corpo é ignorado)", async () => {
     const { visto, client } = banco({
       data: { receitas: [INSTANCIA], db_type: "mysql" },
@@ -280,5 +310,79 @@ describe("PUT /connections/:id/recipes", () => {
     expect(texto).not.toContain("prefixo");
     expect(texto).not.toContain("Produtos da loja");
     expect(texto).not.toContain("Produtos publicados do WooCommerce");
+  });
+});
+
+describe("PUT /connections/:id/recipes — destino do interesse (R5b)", () => {
+  const PIPE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const ETAPA = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const COM_DESTINO = { ...INSTANCIA, destino_do_interesse: { pipeline_id: PIPE, stage_id: ETAPA } };
+
+  /** Cliente por tabela: a conexão existe (mysql); funil e etapa respondem o que o caso mandar. */
+  function clientePorTabela(funil: unknown, etapa: unknown) {
+    const gravado: { payload?: { receitas?: unknown } } = {};
+    const orgs: string[] = [];
+    const client = {
+      from: (tabela: string) => {
+        let atualizou = false;
+        const q: Record<string, unknown> = {};
+        q.select = () => q;
+        q.update = (payload: { receitas?: unknown }) => {
+          gravado.payload = payload;
+          atualizou = true;
+          return q;
+        };
+        q.eq = (c: string, v: unknown) => {
+          if (c === "organization_id") orgs.push(`${tabela}:${String(v)}`);
+          return q;
+        };
+        q.maybeSingle = async () => {
+          if (tabela === "crm_pipelines") return { data: funil, error: null };
+          if (tabela === "crm_stages") return { data: etapa, error: null };
+          return atualizou
+            ? { data: { receitas: gravado.payload?.receitas }, error: null }
+            : { data: { db_type: "mysql", receitas: [] }, error: null };
+        };
+        return q;
+      },
+    };
+    return { client, gravado, orgs };
+  }
+
+  // Linha a reverter para o caso ficar vermelho: tirar a chamada `primeiroDestinoInvalido`
+  // (ou o `if (destinoRuim !== null)`) da rota.
+  it("funil ou etapa que não servem nesta organização: 422 e NADA é gravado", async () => {
+    const { client, gravado } = clientePorTabela(null, null);
+    deps.admin.mockReturnValue(client);
+
+    const res = await PUT(put({ receitas: [COM_DESTINO] }), ctx);
+
+    expect(res.status).toBe(422);
+    expect(gravado.payload).toBeUndefined();
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
+
+  it("destino válido: grava a lista com o destino, conferido com a organização da SESSÃO", async () => {
+    const { client, gravado, orgs } = clientePorTabela(
+      { id: PIPE, name: "Imóveis" },
+      { id: ETAPA, name: "Interesse" },
+    );
+    deps.admin.mockReturnValue(client);
+
+    const res = await PUT(put({ receitas: [COM_DESTINO] }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(gravado.payload?.receitas).toEqual([COM_DESTINO]);
+    expect(orgs).toEqual(expect.arrayContaining([`crm_pipelines:${ORG}`, `crm_stages:${ORG}`]));
+  });
+
+  it("instância sem destino continua gravando, sem consultar funil nem etapa", async () => {
+    const { client, orgs } = clientePorTabela(null, null);
+    deps.admin.mockReturnValue(client);
+
+    const res = await PUT(put({ receitas: [INSTANCIA] }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(orgs.filter((o) => o.startsWith("crm_"))).toEqual([]);
   });
 });
