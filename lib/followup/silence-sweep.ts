@@ -198,6 +198,15 @@ export interface SilenceSweepDb {
    */
   loadContatosComPessoaNoComando(orgId: string, contactIds: string[]): Promise<Set<string>>;
   /**
+   * Dos `contactIds`, os que só têm negócio ENCERRADO (`won` ou `lost`) e
+   * nenhum aberto. Quem não tem negócio nenhum NÃO entra aqui: o fluxo segue
+   * valendo para contato sem funil. Quem já saiu do processo de venda — foi dado
+   * como perdido — é silencioso para sempre, e o gatilho só olha silêncio.
+   * Opcional para os falsos de teste que não exercitam este corte; sem o método
+   * ninguém é cortado (o comportamento de antes).
+   */
+  loadContatosComNegocioEncerrado?(orgId: string, contactIds: string[]): Promise<Set<string>>;
+  /**
    * Dos `contactIds`, os que AINDA NÃO FORAM RESPONDIDOS: na conversa que guarda
    * o inbound mais recente, não há outbound depois dele.
    *
@@ -275,6 +284,8 @@ export interface SilenceSweepSummary {
   skipped_reentry_pause: number;
   /** Silenciosos cuja conversa tem uma pessoa no comando (fluxo sem `handoff_policy='allow'`). */
   skipped_human_owned: number;
+  /** Silenciosos que ficaram de fora porque o único negócio deles já foi encerrado (ganho ou perdido). */
+  skipped_negocio_encerrado: number;
   /** Silenciosos que a equipe ainda não respondeu (só conta com `exige_resposta_da_equipe`). */
   skipped_sem_resposta_da_equipe: number;
   /** Silenciosos que já bateram o teto de repetições deste fluxo. */
@@ -304,6 +315,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     skipped_pending_return: 0,
     skipped_reentry_pause: 0,
     skipped_human_owned: 0,
+    skipped_negocio_encerrado: 0,
     skipped_sem_resposta_da_equipe: 0,
     skipped_teto_de_repeticoes: 0,
     pointers_failed: 0,
@@ -370,6 +382,11 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
         pointer.handoff_policy !== "allow"
           ? await db.loadContatosComPessoaNoComando(pointer.organization_id, contactIds)
           : new Set<string>();
+      // Uma consulta por pointer, não por contato. Falha do banco sobe até o
+      // `catch` do pointer: melhor pular a varredura dele neste tick do que
+      // inscrever quem acabou de ser dado como perdido.
+      const comNegocioEncerrado =
+        (await db.loadContatosComNegocioEncerrado?.(pointer.organization_id, contactIds)) ?? new Set<string>();
       // Falha FECHADA de propósito: sem o método no adapter (falso de teste), o
       // `??` trata todo mundo como não respondido e ninguém é inscrito. Ver o
       // contrato de `loadContatosSemRespostaDaEquipe`.
@@ -395,6 +412,10 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
         }
         if (comPessoa.has(contactId)) {
           summary.skipped_human_owned++;
+          continue;
+        }
+        if (comNegocioEncerrado.has(contactId)) {
+          summary.skipped_negocio_encerrado++;
           continue;
         }
         // Antes do cooldown: não é throttle de tempo, é "este contato nunca
@@ -674,6 +695,32 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
 
     async loadContatosComPessoaNoComando(orgId, contactIds) {
       return new Set(contactIds.filter((id) => pessoaNoComando.has(`${orgId}:${id}`)));
+    },
+
+    async loadContatosComNegocioEncerrado(orgId, contactIds) {
+      const comNegocioVivo = new Set<string>();
+      const comNegocioEncerrado = new Set<string>();
+      for (let i = 0; i < contactIds.length; i += LOTE_DE_CONTATOS) {
+        // PAGINADO como a contagem de inscrições: o PostgREST corta em 1000 linhas sem erro.
+        for (let de = 0; ; de += PAGINA_DE_INSCRICOES) {
+          const { data, error } = await admin
+            .from("crm_leads")
+            .select("contact_id, status")
+            .eq("organization_id", orgId)
+            .in("contact_id", contactIds.slice(i, i + LOTE_DE_CONTATOS))
+            .order("id")
+            .range(de, de + PAGINA_DE_INSCRICOES - 1);
+          if (error) throw new Error(error.message);
+          const linhas = (data ?? []) as Array<{ contact_id: string; status: string }>;
+          for (const row of linhas) {
+            // `won`/`lost` são os desfechos; qualquer outro valor conta como vivo — errar para o lado de NÃO cortar.
+            if (row.status === "won" || row.status === "lost") comNegocioEncerrado.add(row.contact_id);
+            else comNegocioVivo.add(row.contact_id);
+          }
+          if (linhas.length < PAGINA_DE_INSCRICOES) break;
+        }
+      }
+      return new Set([...comNegocioEncerrado].filter((id) => !comNegocioVivo.has(id)));
     },
 
     async loadContatosSemRespostaDaEquipe(orgId, contactIds) {
