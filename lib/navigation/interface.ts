@@ -83,6 +83,19 @@ export function permitidos(
       (!capacidades || !d.capacidade || capacidades.includes(d.capacidade)),
   );
 }
+/**
+ * Telas que MUDARAM de endereço depois que alguém salvou um menu escolhido.
+ * Sem a tradução, a escolha antiga não casa com o catálogo e a porta some em
+ * silêncio — foi o que escondeu o grupo Automações (out/2026) de quem tinha
+ * menu personalizado. `/app/webhooks` também dá as Regras: elas moravam numa
+ * aba de Webhooks, e quem via uma via a outra.
+ */
+const ENDERECOS_QUE_MUDARAM: Readonly<Record<string, readonly string[]>> = {
+  "/app/ai/followups": ["/app/automacoes/fluxos"],
+  "/app/settings/automacoes": ["/app/automacoes/configuracoes"],
+  "/app/webhooks": ["/app/webhooks", "/app/automacoes/regras"],
+};
+
 /** Leitura tolera versões antigas/removidas sem lançar no layout. */
 export function lerInterface(raw: unknown): {
   settings: InterfaceSettings;
@@ -91,9 +104,12 @@ export function lerInterface(raw: unknown): {
   if (raw == null) return { settings: INTERFACE_COMPLETA, needsAdjustment: false };
   if (typeof raw !== "object") return { settings: INTERFACE_COMPLETA, needsAdjustment: true };
   const value = raw as Record<string, unknown>;
-  const destinos = Array.isArray(value.destinos)
-    ? ids.filter((id) => (value.destinos as unknown[]).includes(id))
+  const escolhidos = Array.isArray(value.destinos)
+    ? (value.destinos as unknown[]).flatMap((d): readonly unknown[] =>
+        typeof d === "string" ? (ENDERECOS_QUE_MUDARAM[d] ?? [d]) : [d],
+      )
     : undefined;
+  const destinos = escolhidos ? ids.filter((id) => escolhidos.includes(id)) : undefined;
   const parsed = interfaceSettingsSchema.safeParse({
     preset: value.preset,
     ...(destinos ? { destinos } : {}),
@@ -101,7 +117,7 @@ export function lerInterface(raw: unknown): {
   if (!parsed.success) return { settings: INTERFACE_COMPLETA, needsAdjustment: true };
   return {
     settings: parsed.data,
-    needsAdjustment: !!destinos && destinos.length !== (value.destinos as unknown[]).length,
+    needsAdjustment: !!escolhidos && destinos!.length !== new Set(escolhidos).size,
   };
 }
 export function destinosDaInterface(

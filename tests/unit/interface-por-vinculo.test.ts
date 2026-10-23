@@ -73,6 +73,24 @@ describe("interface por vínculo é apresentação", () => {
       interfaceTemDestino({ preset: "completa", destinos: ["/app/ai/credentials"] }, "agent"),
     ).toBe(false);
   });
+
+  it("menu salvo antes da mudança de endereço segue mostrando a tela (caso Turbo Kids, out/2026)", () => {
+    const lido = lerInterface({
+      preset: "completa",
+      destinos: ["/app/inbox", "/app/ai/followups", "/app/webhooks", "/app/settings/automacoes"],
+    });
+    expect(lido.settings.destinos).toEqual(
+      expect.arrayContaining([
+        "/app/automacoes/fluxos",
+        "/app/automacoes/regras",
+        "/app/automacoes/configuracoes",
+        "/app/webhooks",
+      ]),
+    );
+    expect(lido.needsAdjustment).toBe(false);
+    const grupos = sidebarGroups(false, "admin", lido.settings).map((g) => g.group.id);
+    expect(grupos).toContain("automacoes");
+  });
   it("token novo preserva escolha, token antigo omite e usa default na leitura", () => {
     const payload = {
       invite_id: "f2210000-0000-4000-8000-000000000001",
