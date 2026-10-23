@@ -1,25 +1,49 @@
-# Revisão contextual dependente da agenda
+# Revisão contextual, Casos e continuidade
 
-Esta é a parte de revisão separada da #3069. A agenda independente está na #3132. A integração com JEV e a conferência semântica pré-gravação dependem da definição TypeSafe/LGPD; o código preparado não equivale a liberação jurídica ou aprovação para integrar upstream.
+Uma resposta como “esse horário” depende da oferta que o cliente recebeu. Responder a um Caso depende também da decisão humana vinculada ao pedido. A revisão precisa desses fatos, com origem e limites: consulta não comprova reserva, e registrar um Caso não comprova sua conclusão.
 
-## Papéis e dados
+A agenda independente da PR #3132 já foi integrada. Esta contribuição foi conciliada com a main oficial até `fc30f02213503caf223d52854ae8f86f190d4d11`. A PR #3069 permanece rascunho, aguardando definição TypeSafe/LGPD para integrar JEV e a conferência semântica. Código preparado não equivale a essa liberação.
 
-JEV permanece principal. O modelo de reserva configurado assume falha ou confiança insuficiente; o padrão de confiança da revisão é 70%, sem mudar silenciosamente configurações empresariais persistidas. Contexto, consentimento por finalidade/destino e revogação continuam explícitos. Instruções do agente são dados auxiliares, não autoridade sobre o revisor.
+## Fluxo e limites de autoridade
 
-A ponte comum observa ferramentas do conversador/operador e preserva origem, ordem, pedido, cobertura e recibos. Consulta e disponibilidade não comprovam reserva; confirmação exige recibo pertinente. Um Caso registrado comprova a pendência do pedido, não uma reserva nem sua conclusão humana. Prometer consultar a equipe e retornar pode ser natural quando existe destino real; não promete solução ou prazo garantido.
+A ponte comum observa as ferramentas do conversador/operador, inclusive pré-gravação, depois da política de prévia. O envio espera concluir as ferramentas iniciadas no mesmo passo antes de obter a fotografia factual. O rastreamento e a proteção de circuito nativos continuam presentes. O contrato compartilhado não importa o executor, não grava e não envia.
 
-O envio espera concluir as ferramentas iniciadas no mesmo passo antes de obter a fotografia factual. Falhas não viram prova. As travas e releituras nativas permanecem; nenhuma troca de modelo dispensa contexto. As mensagens de retenção distinguem revisão, proteção do número, janela de envio e falha técnica.
+JEV permanece principal. A reserva configurada assume falha ou confiança insuficiente, com padrão de revisão de 70% e preservação das configurações persistidas. Consentimento continua explícito por finalidade/destino, inclusive para histórico, com releitura e revogação. Instruções do agente são dados auxiliares; não alteram critérios nem autoridade do revisor.
 
-A disponibilidade pode incluir funcionamento presencial recuperado por busca nativa nos materiais autorizados do agente. O texto explica abertura/fechamento somente quando comprovados e oferece alternativas realmente consultadas, respeitando duração/antecedência. Não há horário, empresa ou modalidade fixos no motor.
+Respostas pela interface e pelo WhatsApp convergem para um evento humano autenticado, vinculado ao Caso e ao pedido. O handler relê esse vínculo e sua validade no banco. O canal WhatsApp continua opt-in; a migração não habilita a função. A origem da resposta não amplia a autoridade da pessoa nem transforma texto livre em autorização verificável.
 
-## Validação e limites
+O pacote preserva ordem, pedido, decisões, recibos, cobertura e omissões. Materiais comerciais autorizados podem fundamentar oferta; histórico de conversas não substitui essa fonte. Igualdade de pacotes entre revisores, isoladamente, não comprova o contexto do agente.
 
-As verificações dirigidas cobrem transporte, concorrência/controle negativo, pedido e consulta, registro de solicitação, aceites/revogação, roteador/janela de histórico e sentimento. Tipos de produção, lint dirigido, canais/papéis, traduções e fragmentos de release aprovados. A atualização SQL foi instalada e reaplicada em banco de QA existente, preservando vocabulários canônicos. A sonda de oferta entregue e a integração de fontes usam PostgreSQL real e provedor/canal controlados; não são prova de precisão de modelo real ou entrega externa.
+Reserva, publicação Google e comunicação são estados distintos. A retomada usa a operação existente e sua referência atual, preserva idempotência e não transforma espera técnica em nova aprovação humana obrigatória. Os avisos distinguem veto semântico, revisão inconclusiva, proteção do número e janela de envio. Recusas permanentes mantêm PT409.
 
-A correção privada94d tem três amostras reais entregues sem veto, com JEV principal e conferência da fonte na entrada do agente e do revisor: antes da abertura, após fechamento e Caso com retorno natural. A corrida de ferramentas foi comprovada por teste dirigido e controle negativo; o modelo real chamou Caso/envio em passos separados. Não afirmar reprodução real dessa corrida ou cobertura universal.
+O roteador preserva quatro mensagens quando a configuração legada está ausente; novos roteadores salvam explicitamente oito. Escolhas explícitas de 0 a 16 continuam possíveis. Aceite legado não autoriza silenciosamente a finalidade ampliada de histórico.
 
-Não houve nova prova de modelos reais na árvore pública sobre a main atual. As evidências privadas não estão no repositório e não devem ser copiadas para ele. A captura é opt-in, limitada/auditada, com TTL e sem ampliar consentimento por configuração do painel.
+## Verificação de 23/10/2026
 
-## Dependência do fork
+Foram usadas dependências do lock público e PostgreSQL real no QA existente, com bancos próprios de teste e provedores/canais controlados. Não houve mensagem externa nem chamada a modelos pagos. As medições dirigidas foram feitas em rodadas, reutilizando provas de arquivos cujo conteúdo permaneceu igual; não representam uma execução integral verde do repositório.
 
-A branch está baseada na extração da agenda. Enquanto #3132 não entrar, o diff contra main ainda inclui essa base; a revisão pode ser lida pelo delta entre as branches. Após a integração, rebasear para a base oficial e conferir que o diff contém apenas revisão/continuidade dependente, preservando autoria e correções. Não fechar PRs relacionadas por inferência.
+| Recorte | Resultado |
+| --- | --- |
+| Contratos, ferramentas, roteador, UI, retenção e cercas | 18 arquivos, 197 testes aprovados |
+| Compatibilidade após a última main: ponte, cerca JEV, espanhol e ferramenta nativa de análise de site | 5 arquivos, 66 testes aprovados; há sobreposição com a linha anterior |
+| Banco: Casos/WhatsApp, Google, recuperação, revisão, consentimento e RLS | 9 arquivos, 108 testes aprovados |
+| Varredura RLS importada e não executada | 108 casos skipped, excluídos dos aprovados |
+| Instalação e reaplicação do baseline atual | Ambas aprovadas |
+| Tipos dirigidos | 195 arquivos alterados e dependências transitivas aprovados; checagem adicional do inbound/ferramenta de site aprovada após a última main |
+| Controle negativo pós-commit da cerca JEV | 1 falha prevista em 12; restauração por hash e 12/12 aprovados |
+
+A prova RLS dedicada está em `tests/invariants/google-publication-isolamento.test.ts`: duas organizações, acesso autorizado ao serviço, anon/authenticated sem leitura/escrita e releitura com JWTs distintos. O teste concede leitura apenas dentro de uma transação revertida para exercitar a política; não altera o ACL final. Revogação também é medida.
+
+Os arquivos de banco exercitados foram `google-publication-isolamento`, `caso-whatsapp-contexto-integrado`, `agenda-recupera-comunicacao`, `rls-completude-varredura`, `google-publication-continuation`, `agenda-presenca-recuperacao`, `promessas-conversas-nao-provam-oferta`, `jev-roteador-no-turno` e `revisor-comunicacao-diagnostico`, todos em `tests/invariants/`.
+
+Para reproduzir os recortes, use o lock do repositório, o prelude/baseline de `scripts/test-db.sh` e os arquivos acima. Testes que criam fixtures precisam de banco descartável próprio e de conferir `current_database()` antes da execução; não os aponte a uma base compartilhada com a UI. As cercas JEV e traduções estão em `tests/unit/jev-nunca-cala-bloqueia-nem-responde.test.ts` e `tests/unit/i18n-espanhol-cobre-a-tela.test.ts`.
+
+## O que não foi medido
+
+Não há nova suíte completa, build nem E2E visual da árvore pública final nesta rodada. O typecheck completo com todos os testes esgotou heap de 5 GiB; tipos dirigidos não substituem esse check oficial. A prova visual pública e os checks automáticos precisam ser lidos separadamente na PR.
+
+Provedores/canais controlados não provam precisão de modelos reais, entrega WhatsApp/Google ou cobertura universal. Evidência privada de instalações anteriores não foi transferida para o repositório nem atribuída a esta cabeça pública. Captura de revisão continua opt-in, auditada, com TTL e sem ampliação automática de consentimento.
+
+## Migrações e integração
+
+Os números 0717–0720 permanecem segundo a orientação do mantenedor na PR #3069, comentário de 22/10: colisões serão tratadas na integração. Não interpretar essa pendência como inexistência de colisão. A nova migração `20261023171454_0758_resposta_whatsapp_com_evento_verificavel.sql` foi criada pela CLI nativa depois de medir branches/PRs, com manifest e apêndice no baseline. O vocabulário canônico do Inbox mantém os eventos atuais, inclusive tarefas e parada da captura.
