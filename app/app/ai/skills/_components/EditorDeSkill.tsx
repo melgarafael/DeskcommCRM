@@ -53,6 +53,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
 
   const [descricao, setDescricao] = useState("");
   const [keywords, setKeywords] = useState("");
+  const [etiquetas, setEtiquetas] = useState("");
   const [corpo, setCorpo] = useState("");
   const [probe, setProbe] = useState<string[] | undefined>(undefined);
 
@@ -61,6 +62,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
     if (!aberto || !s) return;
     setDescricao(s.description);
     setKeywords(s.matcher.any_keywords.join(", "));
+    setEtiquetas((s.matcher.any_tags ?? []).join(", "));
     setCorpo(s.body);
     setProbe(s.matcher.probe_keywords);
   }, [aberto, skill.data]);
@@ -76,6 +78,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
       toast.error(t("Informe pelo menos uma palavra-chave de ativação."));
       return;
     }
+    const anyTags = parseKeywords(etiquetas);
     if (descricao.trim() === "") {
       toast.error(t("A descrição é obrigatória."));
       return;
@@ -94,7 +97,11 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
         body: {
           description: descricao.trim(),
           body: corpo,
-          matcher: { any_keywords: anyKeywords, ...(probe ? { probe_keywords: probe } : {}) },
+          matcher: {
+            any_keywords: anyKeywords,
+            ...(probe ? { probe_keywords: probe } : {}),
+            ...(anyTags.length > 0 ? { any_tags: anyTags } : {}),
+          },
         },
       },
       {
@@ -114,7 +121,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
           <DialogTitle>{t("Editar skill")} “{nome}”</DialogTitle>
           <DialogDescription>
             {t(
-              "Salvar cria uma versão nova (a antiga fica no histórico). O corpo só entra na conversa quando uma das palavras-chave aparece na mensagem do cliente.",
+              "Salvar cria uma versão nova (a antiga fica no histórico). O corpo só entra na conversa quando uma das palavras-chave aparece na mensagem do cliente, ou quando a conversa ou o contato tem uma das etiquetas de ativação.",
             )}
           </DialogDescription>
         </DialogHeader>
@@ -172,6 +179,21 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
               />
               <p className="text-xs text-muted-foreground">
                 {t("A skill é carregada quando o cliente escreve uma destas palavras.")}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="skill-tags">{t("Etiquetas que ativam (opcional)")}</Label>
+              <Input
+                id="skill-tags"
+                value={etiquetas}
+                onChange={(e) => setEtiquetas(e.target.value)}
+                placeholder={t("odonto, clínica")}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Se a conversa ou o contato tiver uma destas etiquetas, a skill entra mesmo sem a palavra-chave.",
+                )}
               </p>
             </div>
 

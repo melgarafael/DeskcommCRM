@@ -140,13 +140,18 @@ describe("1. o campo de moeda segue a moeda da organização", () => {
       vocabulary: {},
       settings: { fields: [{ key: "orcamento", label: "Orçamento", type: "currency" }] },
     } as unknown as PipelineRow;
+    // O editor do funil monta sob demanda (#3176): abre-se pelo botão, como quem configura.
+    const abrirEditor = () =>
+      fireEvent.click(screen.getByRole("button", { name: "Editar vocabulário e campos deste funil" }));
     const { unmount } = render(<PipelinesClient pipelines={[funil]} podeEditarConfig />);
+    abrirEditor();
     expect(screen.getAllByText("Moeda (EUR)").length).toBeGreaterThan(0);
     expect(screen.queryByText(/BRL/)).toBeNull();
     unmount();
 
     h.org = { currency: "BRL", country: null };
     render(<PipelinesClient pipelines={[funil]} podeEditarConfig />);
+    abrirEditor();
     expect(screen.getAllByText("Moeda (BRL)").length).toBeGreaterThan(0);
   });
 

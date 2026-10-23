@@ -34,6 +34,7 @@ import { classificarErroDoGoogle, type OperacaoNoGoogle } from "./erros";
 import { deveCriarEspacoAberto } from "./oauth";
 import { meetAbertoLigado } from "@/lib/schemas/settings";
 import { logger } from "@/lib/logger";
+import { emitirMudancaVindaDoGoogle } from "./mudanca-vinda-do-google";
 
 /** A operação do Google que corresponde ao método HTTP usado na publicação. */
 const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
@@ -490,6 +491,7 @@ export async function reconcileAppointment(
           return "processed";
         }
         const next = checkpoint(base, local, remote, [], true);
+        const antes = a;
         const accepted = await commit({
           base: next,
           remote: remote.shared,
@@ -500,6 +502,7 @@ export async function reconcileAppointment(
           ack: groups.every((g) => next.local[g] === local.outbound[g]),
         });
         if (!accepted) await conflict("overlap", remote);
+        else await emitirMudancaVindaDoGoogle(db, org, antes, a);
         return "processed";
       }
       if (resolution.choice === "preserve_remote") {
@@ -578,6 +581,7 @@ export async function reconcileAppointment(
         return "processed";
       }
       const next = checkpoint(base, local, remote, [], true);
+      const antes = a;
       const accepted = await commit({
         base: next,
         remote: remote.shared,
@@ -586,6 +590,9 @@ export async function reconcileAppointment(
         ack: groups.every((g) => next.local[g] === local.outbound[g]),
       });
       if (!accepted) await conflict("overlap", remote);
+      // A remarcação ou o cancelamento feito NO GOOGLE vira o mesmo evento que
+      // a tela emite — sem isto, o aviso e as automações não sabiam dela.
+      else await emitirMudancaVindaDoGoogle(db, org, antes, a);
       return "processed";
     }
     if (

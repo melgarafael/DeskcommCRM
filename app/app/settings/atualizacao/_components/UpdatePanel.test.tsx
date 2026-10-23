@@ -1,6 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 import { UpdatePanel } from "./UpdatePanel";
 import type { SystemVersion } from "@/hooks/system/useSystemVersion";
@@ -20,6 +24,7 @@ vi.mock("@/hooks/system/useSystemVersion", () => ({
   useSystemVersion: () => ({ data: dadosVersao.atual, isError: false }),
 }));
 vi.mock("@/lib/api/client", () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }));
+vi.mock("@/lib/auth/ir-ao-desafio-de-mfa", () => ({ irAoDesafioDeMfa: vi.fn() }));
 
 function renderTela(dados: SystemVersion) {
   dadosVersao.atual = dados;
@@ -340,5 +345,67 @@ describe("tela de atualização — o aviso da volta automática (#2757)", () =>
 
     expect(screen.queryByTestId("volta-automatica")).toBeNull();
     expect(screen.getByText("Voltei o sistema para a versão", { exact: false })).toBeInTheDocument();
+  });
+});
+
+/**
+ * `POST /api/v1/system/update` exige o código provado nesta sessão
+ * (`requirePlatformAdminEscrita`). O dono que entrou pelo dispositivo confiável
+ * — ou cujo código venceu com a tela aberta — recebia 403 `mfa_required` e a
+ * frase "tente de novo", que não resolve: a tela leva ao desafio (#3200).
+ */
+describe("tela de atualização — recusa por falta do código leva ao desafio", () => {
+  const SEM_CODIGO = new ApiError(403, "mfa_required", undefined, "req-1", "Confirme o código.");
+
+  const FALHOU: SystemVersion = {
+    current_version: "1.4.2",
+    is_owner: true,
+    latest_version: "1.5.0",
+    update_available: true,
+    agent_online: true,
+    notes: null,
+    run: {
+      id: "88888888-8888-4888-8888-888888888888",
+      status: "failed_rolled_back",
+      last_step: "app",
+      from_version: "1.4.2",
+      to_version: "1.5.0",
+      log_tail: "",
+      finished_at: null,
+      volta_automatica: false,
+    },
+  };
+
+  function recusar(erro: ApiError) {
+    vi.mocked(irAoDesafioDeMfa).mockReset();
+    vi.mocked(apiClient.post).mockReset();
+    vi.mocked(apiClient.post).mockRejectedValue(erro);
+  }
+
+  it("⭐ 'Atualizar agora' recusado por mfa_required leva ao código", async () => {
+    recusar(SEM_CODIGO);
+    renderTela(CHANGELOG_LONGO);
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar agora" }));
+
+    await waitFor(() => expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Não consegui iniciar a atualização", { exact: false })).toBeNull();
+  });
+
+  it("⭐ 'Voltar para a versão anterior' recusado por mfa_required leva ao código", async () => {
+    recusar(SEM_CODIGO);
+    renderTela(FALHOU);
+    fireEvent.click(screen.getByRole("button", { name: "Voltar para a versão anterior" }));
+
+    await waitFor(() => expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Não consegui pedir a volta", { exact: false })).toBeNull();
+  });
+
+  it("CONTROLE: outra falha mostra a frase e fica na tela", async () => {
+    recusar(new ApiError(500, "internal_error", undefined, "req-2", "boom"));
+    renderTela(CHANGELOG_LONGO);
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar agora" }));
+
+    await screen.findByText("Não consegui iniciar a atualização", { exact: false });
+    expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
   });
 });

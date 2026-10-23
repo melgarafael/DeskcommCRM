@@ -19,7 +19,7 @@
   "nodes": [
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
-    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Dossiê (Sheet)", "sublabel": "cabeçalho > timeline > campos" },
+    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Dossiê (Sheet)", "sublabel": "cabeçalho > contato > campos > tarefas > timeline" },
     { "id": "filtro", "lane": "humano", "col": 3, "type": "frontend", "label": "Filtro Responsável", "sublabel": "user: e agent: no mesmo eixo" },
     { "id": "chat", "lane": "humano", "col": 5, "type": "frontend", "label": "ChatThread ?msg=", "sublabel": "o destino da âncora" },
     { "id": "decisao", "lane": "humano", "col": 3, "type": "frontend", "label": "Aprovar · Editar · Ignorar", "sublabel": "a recusa é sinal" },

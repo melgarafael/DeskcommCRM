@@ -235,11 +235,11 @@ export function GruposSheet({
         </SheetHeader>
 
         <div className="flex flex-col gap-2 pb-2 pt-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button variant="outline" size="sm" onClick={() => void carregar()}>
               {t("Atualizar lista")}
             </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {alvosParaLigar.length > 0 && (
                 <Button
                   variant="outline"

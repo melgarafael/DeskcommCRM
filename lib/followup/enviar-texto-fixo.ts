@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { comercialExigeHumanoViaSupabase, restricaoComercialBarra } from "@/lib/escalacao/assunto-comercial";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
 import { canalDaConversa, decidirAdiamentoPorJanela } from "@/lib/followup/janela-de-disparo";
@@ -173,6 +174,23 @@ export async function enviarTextoFixoPendente(
           motivo: elegib.motivo,
         });
         await settle(job.organization_id,job.id,jobClaim.acquired_at,true);
+        continue;
+      }
+
+      // #2877 — A RESTRIÇÃO COMERCIAL, TAMBÉM AQUI. O worker (`followup-turn.ts`)
+      // manda este mesmo `fixed_body` pela cadeia, e quem pegar o job primeiro
+      // manda: sem esta régua, o atalho entregava o preço que a cadeia barra. A
+      // regra e a falha fechada são as da cadeia (`restricaoComercialBarra`), e o
+      // desfecho é o do veto lá: passo `skipped` com o mesmo motivo, job `done` —
+      // o texto não muda na próxima tentativa, então não re-agenda.
+      const organizacao = job.organization_id as string;
+      if (await restricaoComercialBarra(body, () => comercialExigeHumanoViaSupabase(admin, organizacao), (m, c) => logger.warn(`[followup] ${m}`, { organization_id: organizacao, ...c }))) {
+        logger.info("[followup] texto fixo não enviado — restrição comercial da organização", {
+          organization_id: organizacao,
+          enrollment_id: enrollmentId,
+        });
+        await completeTurnForEnrollment(ponte, organizacao, enrollmentId, nodeId, { kind: "skipped", reason: "O envio foi recusado pelas regras do atendimento." }, undefined, job.id, jobClaim);
+        await settle(organizacao, job.id, jobClaim.acquired_at, true, "commercial_requires_human");
         continue;
       }
 

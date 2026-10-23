@@ -143,11 +143,15 @@ test.describe("Lote 12 — #955 o vocabulário de etiquetas", () => {
     await linha.getByRole("button", { name: "Juntar" }).click();
     await expect(page.getByText(`Juntar ${TAG_C} em outra etiqueta existente:`)).toBeVisible();
 
+    // #2855 — a tela é paginada: o destino é DIGITADO (com sugestões da página
+    // num datalist), porque a etiqueta que fica pode estar em outra página.
     const destino = page.getByLabel("Etiqueta de destino");
-    const opcoes = await destino.locator("option").allInnerTexts();
-    registra(`#955 juntar · opções de destino = ${JSON.stringify(opcoes)}`);
+    const opcoes = await page.locator("#destinos-da-juncao option").evaluateAll((os) =>
+      os.map((o) => (o as HTMLOptionElement).value),
+    );
+    registra(`#955 juntar · sugestões de destino = ${JSON.stringify(opcoes)}`);
     const alvo = `${TAG_A}-renomeada`;
-    await destino.selectOption(alvo);
+    await destino.fill(alvo);
     await captura(page, "955-05-juntar-formulario");
     const resposta = page.waitForResponse(
       (r) => r.url().includes("/api/v1/tags/vocabulario") && r.request().method() === "POST",

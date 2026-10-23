@@ -234,8 +234,8 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
             const rotulo = rotuloDoIndicador(linha.resultado.indicador);
             return (
               <TableRow key={linha.campanhaId}>
-                <TableCell className="sticky left-0 z-10 max-w-[22rem] bg-bg font-medium">
-                  <span className="block truncate" title={linha.nome}>
+                <TableCell className="sticky left-0 z-10 max-w-[9rem] bg-bg font-medium md:max-w-[22rem]">
+                  <span className="block max-w-[9rem] truncate md:max-w-[22rem]" title={linha.nome}>
                     {linha.nome}
                   </span>
                 </TableCell>

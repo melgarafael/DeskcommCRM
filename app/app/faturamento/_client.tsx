@@ -201,7 +201,7 @@ export function Faturamento({
             value={de}
             data-testid="periodo-de"
             onChange={(e) => setDe(e.target.value)}
-            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-text-muted">
@@ -211,7 +211,7 @@ export function Faturamento({
             value={ate}
             data-testid="periodo-ate"
             onChange={(e) => setAte(e.target.value)}
-            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11"
           />
         </label>
       </form>

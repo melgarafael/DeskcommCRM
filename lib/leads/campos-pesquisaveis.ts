@@ -226,3 +226,31 @@ export function importarOpcoesCsv(
 
   return { opcoes: [...opcoesAtuais, ...adicionadas], adicionadas, ignoradas };
 }
+
+/**
+ * EXPORTAR AS OPÇÕES EM CSV (sugestão 3 da issue #3176).
+ *
+ * O INVERSO EXATO da importação acima, e de propósito: `value,label,apelidos`
+ * por linha, apelidos separados por `;`, encabeçado pela linha que o próprio
+ * `importarOpcoesCsv` reconhece e pula. O que sai daqui volta pelo "Importar" —
+ * editar a lista fora do CRM (numa planilha) e reimportar é o ciclo que a issue
+ * pede, e ele só existe se o arquivo exportado for um arquivo que o importador
+ * aceita.
+ *
+ * SEM PERDER O `value` CANÔNICO: o arquivo traz a coluna `value` (não só o
+ * rótulo), então uma lista que passou por aqui e voltou continua gravando o
+ * mesmo valor canônico — os negócios já registrados com ele seguem casando.
+ *
+ * O LIMITE É DO DIALETO DA IMPORTAÇÃO, e está declarado em vez de escondido: o
+ * leitor separa as colunas por VÍRGULA e não entende aspas, então um `value`,
+ * `label` ou apelido que contenha vírgula não sobrevive à ida e volta. Escapar
+ * aqui seria pior — o arquivo deixaria de ser lido pelo importador que já
+ * existe, e o formato da importação não muda nesta correção.
+ */
+export function exportarOpcoesCsv(opcoes: OpcaoPesquisavel[]): string {
+  const linhas = ["value,label,apelidos"];
+  for (const opcao of opcoes) {
+    linhas.push(`${opcao.value},${opcao.label},${(opcao.aliases ?? []).join(";")}`);
+  }
+  return `${linhas.join("\n")}\n`;
+}

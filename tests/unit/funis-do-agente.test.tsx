@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 
 import { FunisDoAgente } from "@/app/app/ai/agents/[id]/_components/FunisDoAgente";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
+import { NAV_DESTINATIONS, NAV_GROUPS } from "@/lib/navigation/registry";
 
 /**
  * A TELA ONDE SE MARCA EM QUE FUNIS O ASSISTENTE MEXE (spec 17 passo 3).
@@ -138,6 +139,23 @@ describe("a lacuna de tradução (passo 4)", () => {
     expect(bloco.textContent).toContain("Comercial - Andrea");
     // Diz a CONSEQUÊNCIA, não o nome da configuração que falta.
     expect(bloco.textContent).toMatch(/deixar os negócios parados/i);
+  });
+
+  it("o aviso aponta o caminho que EXISTE no menu, e leva até ele", () => {
+    // O texto dizia "Configurações › Funis" — um lugar que o menu não tem: a
+    // tela das etapas mora no CRM, atrás de "Ver tudo em CRM". O caminho é
+    // conferido contra o catálogo da navegação, para não divergir de novo
+    // quando alguém renomear o menu.
+    const etapas = NAV_DESTINATIONS.find((d) => d.href === "/app/settings/tenant/pipelines");
+    const grupo = NAV_GROUPS.find((g) => g.id === etapas?.group);
+    expect(etapas && grupo?.hub).toBeTruthy();
+    render(
+      <FunisDoAgente funis={TODOS} value={[ANDREA.id]} onChange={() => {}} cobertura={MUDO} />,
+    );
+    const caminho = screen.getByTestId("agente-funis-mudos-caminho");
+    expect(caminho.textContent).toBe(`${grupo!.label} › ${grupo!.hub!.label} › ${etapas!.label}`);
+    expect(caminho.getAttribute("href")).toBe(etapas!.href);
+    expect(screen.getByTestId("agente-funis-mudos").textContent).not.toContain("Configurações");
   });
 
   it("funil NÃO marcado com a mesma lacuna fica quieto", () => {

@@ -33,6 +33,13 @@ import {
 
 const ALL = "__all__";
 
+/**
+ * Célula de número que, no celular, vira "Rótulo valor" dentro do cartão: o
+ * cabeçalho some abaixo de `md` e o rótulo vem do `data-rotulo` da própria
+ * célula. Só classes `max-md:` — no computador é a tabela de sempre.
+ */
+const CELULA_DE_NUMERO = "text-right tabular-nums max-md:p-0 max-md:text-left max-md:before:mr-1 max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]";
+
 function attendantLabel(a: AttendantMetric, t: (texto: string) => string): string {
   return a.name ?? a.email ?? `${t("Atendente")} ${a.user_id.slice(0, 8)}`;
 }
@@ -108,10 +115,10 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   return (
     <div className="flex flex-col gap-6">
       {canCompare ? (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm text-muted-foreground">{t("Atendente")}</span>
           <Select value={owner} onValueChange={setOwner}>
-            <SelectTrigger className="w-64">
+            <SelectTrigger className="w-full max-w-64">
               <SelectValue placeholder={t("Todos os atendentes")} />
             </SelectTrigger>
             <SelectContent>
@@ -158,7 +165,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           ) : (
             metrics.funnel.map((s) => (
               <div key={s.stage_id} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 truncate text-sm">{s.stage_name}</span>
+                <span className="w-24 shrink-0 truncate text-sm md:w-40">{s.stage_name}</span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full rounded-full bg-primary transition-[width]"
@@ -184,32 +191,43 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
               {t("Sem atividade no período (ganhos/perdidos, conversas ou respostas).")}
             </p>
           ) : (
-            <Table>
-              <TableHeader>
+            <Table className="max-md:block">
+              <TableHeader className="max-md:hidden">
                 <TableRow>
                   <TableHead>{t("Atendente")}</TableHead>
                   <TableHead className="text-right">{t("Ganhos")}</TableHead>
                   <TableHead className="text-right">{t("Perdidos")}</TableHead>
                   <TableHead className="text-right">{t("Conversas")}</TableHead>
-                  <TableHead className="text-right">{t("1ª resposta (média)")}</TableHead>
+                  <TableHead className="text-right">{t("1ª resposta (média / mediana)")}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="max-md:block">
                 {metrics.attendants.map((a) => (
-                  <TableRow key={a.user_id}>
-                    <TableCell className="font-medium">
+                  <TableRow
+                    key={a.user_id}
+                    className="max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:py-2"
+                  >
+                    <TableCell className="font-medium max-md:col-span-2 max-md:p-0">
                       {attendantLabel(a, t)}
                       {a.user_id === currentUserId ? (
                         <span className="text-muted-foreground"> {t("(você)")}</span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{a.won}</TableCell>
-                    <TableCell className="text-right tabular-nums">{a.lost}</TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell data-rotulo={t("Ganhos")} className={CELULA_DE_NUMERO}>
+                      {a.won}
+                    </TableCell>
+                    <TableCell data-rotulo={t("Perdidos")} className={CELULA_DE_NUMERO}>
+                      {a.lost}
+                    </TableCell>
+                    <TableCell data-rotulo={t("Conversas")} className={CELULA_DE_NUMERO}>
                       {a.conversations_handled}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatarDuracao(a.avg_first_response_seconds)}
+                    <TableCell
+                      data-rotulo={t("1ª resposta (média / mediana)")}
+                      className={`${CELULA_DE_NUMERO} max-md:col-span-2`}
+                    >
+                      {formatarDuracao(a.avg_first_response_seconds)} ·{" "}
+                      {formatarDuracao(a.median_first_response_seconds)}
                     </TableCell>
                   </TableRow>
                 ))}

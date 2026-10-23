@@ -7,6 +7,7 @@ import { atualizarBloqueioAteAssumir } from "@/app/actions/settings/atualizarInt
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { lerInterface } from "@/lib/navigation/interface";
 
 interface Props {
@@ -39,6 +40,7 @@ export function InboxDaEmpresaForm({ initial }: Props) {
         toast.success(t("Bloqueio da caixa de mensagem salvo."));
         return;
       }
+      if (resultado.error === "mfa_required") return irAoDesafioDeMfa();
       toast.error(t("Não foi possível salvar o bloqueio da caixa de mensagem."));
     });
   }

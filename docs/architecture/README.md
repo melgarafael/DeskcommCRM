@@ -15,6 +15,7 @@ ser fonte sem ninguém decidir isso.
 ## Mapas
 
 | arquivo | escopo |
+| `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 |---|---|
 | `nomes-internos-das-conexoes.architecture.json` | renomeação interna dos canais — cartões de WhatsApp, parceiro e redes sociais → rota tenant-aware → `channel_sessions.display_name` → cartões e seletores, com auditoria e sem alterar o nome público no provedor |
 | `conversoes-de-anuncios.architecture.json` | venda, entrega, protocolo assíncrono, pendências e reprocessamento |
@@ -40,7 +41,7 @@ ser fonte sem ninguém decidir isso.
 | `marca-propria.architecture.json` | marca própria (white-label) — 37 peças, 54 arestas, 6 faixas; a pilha org → instalação → `.env` → padrão, as saídas SEM DOM (`marcaDaSaida`) e a **não-ligação declarada** do PDF de LGPD, que imprime o CONTROLADOR e nunca a marca de quem revende |
 | `retencao-de-historico.architecture.json` | poda do histórico (issue #261) — 16 peças, 18 arestas, 6 faixas; o que sai (`done`/`failed`/`dead` velho), o que tem dono e **não** sai (`pending`/`running`, e `dead` com aviso ainda aberto), e por que o expurgo do audit é uma `security definer` sem seletor de linha em vez de uma porta |
 | `extensoes-declarativas.architecture.json` | perfil declarativo: catálogo de ensaio, admissão, recibos, arquivo local, ativação por organização, guia no CRM, as trocas de versão (atualizar e desfazer a última troca), a remoção da instalação e a auditoria da organização; o estado das provas fica no `contracts.status` do próprio mapa |
-| `banco-de-dados-externo.architecture.json` | banco externo (migration 0372, recorte do PR #1130 de @vgamkt) — 14 peças, 19 arestas, 4 faixas; o cadastro por admin e a leitura por todos, a view `_safe` como única superfície da tela, a guarda de rede revalidada a CADA abertura de pool, e a **não-ligação declarada**: as tools do agente ficaram no PR de origem e entram num segundo recorte |
+| `banco-de-dados-externo.architecture.json` | banco externo (migration 0372, recorte do PR #1130 de @vgamkt) — 27 peças, 48 arestas, 5 faixas; o cadastro por admin e a leitura por todos, a view `_safe` como única superfície da tela, a guarda de rede revalidada a CADA abertura de pool, e a **não-ligação declarada**: as tools do agente ficaram no PR de origem e entram num segundo recorte |
 | `captacao-por-webhook.architecture.json` | captação por webhook — 17 peças, 26 arestas, 5 faixas; o adaptador por ferramenta (Respondi, RD Station, Elementor, genérico), o cadastro do campo que mora no funil e o laço em que a definição volta como rótulo no painel, no card do lead, nos botões da automação e na entrada da IA; **não-ligação declarada**: o rótulo que o Elementor manda não é guardado |
 | `suspensao-de-organizacao.architecture.json` | suspensão que suspende (PR 1 da cobrança do revendedor): 17 peças, 24 arestas; a régua única de "opera", a escrita do estado só por duas funções definer (e o gatilho que fecha o PostgREST), o hub `/account-suspended` e o laço de retorno pela Central até a Fila; as **não-ligações declaradas** (entrada de mensagens, landings, escrita pela RLS) estão no card do próprio mapa |
 | `cobranca-do-revendedor.architecture.json` | cobrança do revendedor, PR 2 (planos e limites): a chave da instalação acima de uma régua única de limite (`fn_limite_do_plano`), as travas no banco para pessoas e números, o teto de IA numa consulta separada do orçamento da org, o teste grátis na criação e a liberação ao desligar a chave. Cada nó que espelha outro mapa declara `espelho`, e o teste reprova quando a peça espelhada some; a PR 3a acrescenta o caminho do dinheiro (conexão, adaptador, aviso assinado, releitura, régua, cron, hub do suspenso) e o card lista o que ainda não liga; a PR 3b liga o Asaas (Pix e boleto recorrentes) no mesmo encaixe, com o dialeto /v3 no mesmo dublê |
@@ -108,3 +109,4 @@ As três vezes o custo foi o mesmo: descobrir a aresta **durante** a
 implementação, com a peça já meio pronta.
 
 - `carteiras-transferencia.architecture.json`: atribuição respeita o escopo da carteira sob lock.
+- `atendimento-comercial.architecture.json`: entrada, veto, briefing e configuração de atendimento comercial exclusivamente humano.

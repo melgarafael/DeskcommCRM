@@ -35,6 +35,7 @@ vi.mock("@/lib/auth/server", () => ({
     idioma: h.idioma,
   }),
   resolveActiveOrg: async () => ({ orgId: ORG, role: "admin" }),
+  mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({

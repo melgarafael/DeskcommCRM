@@ -33,7 +33,11 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   const [cor, setCor] = useState<string | null>(null);
   const mutation = useUpdateConversationTags();
   const { definirCor } = useDefinirCorDaEtiqueta();
-  const { data: vocabulary } = useConversationTagVocabulary(orgId);
+  const { data: vocabulary, isError: erroNoVocabulario } = useConversationTagVocabulary(orgId);
+  // #2855 — com texto, pergunta também ao vocabulário inteiro (curado + em uso).
+  // Sem texto é a MESMA chave da linha acima: uma requisição só.
+  const { data: encontradas, isError: erroNaBusca } = useConversationTagVocabulary(orgId, draft.trim());
+  const vocabularyError = erroNoVocabulario || erroNaBusca;
   // A cor de quem JÁ está na conversa vem do MESMO mapa que o chip usa (#2771):
   // uma leitura só, e o gatilho abre já com o tom atual marcado.
   const cores = useCoresDasEtiquetas();
@@ -81,7 +85,9 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   // (`GET /api/v1/conversation-tags`) entrega as mais usadas primeiro
   // (`uso_em_conversas`), não as oito primeiras do alfabeto.
   const suggestions = sugestoesDeEtiqueta({
-    conhecidas: vocabulary ?? [],
+    // #2855 — o que a busca no vocabulário inteiro achou entra DEPOIS das mais
+    // usadas, sem repetir: a ordem por uso do #3180 segue valendo.
+    conhecidas: [...new Set([...(vocabulary ?? []), ...(draft.trim() ? (encontradas ?? []) : [])])],
     selecionadas: tags,
     digitado: draft,
   });
@@ -156,6 +162,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
         </Button>
       </div>
 
+      {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
       {suggestions.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {suggestions.map((tag) => (

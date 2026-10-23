@@ -59,6 +59,7 @@ import { lerEstadoDaCaptura } from "@/lib/plataformas-de-anuncio/landing-config"
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { ReprocessarConversao } from "./_reprocessar";
+import { LinkDoNegocio } from "./_linkDoNegocio";
 import { HistoricoDeEnvios } from "./_historico";
 import { DiagnosticoGoogle } from "./_diagnostico";
 import {
@@ -426,12 +427,9 @@ export default async function ConversoesPage({
                     {pendencias.map((p) => (
                       <tr key={`${p.leadId}:${p.evento}`} className="border-t align-top">
                         <td className="p-3">
-                          <a
-                            className="underline underline-offset-2"
-                            href={`/app/kanban?lead=${p.leadId}`}
-                          >
+                          <LinkDoNegocio className="underline underline-offset-2" leadId={p.leadId}>
                             {p.tituloDoLead ?? t("(sem título)")}
-                          </a>
+                          </LinkDoNegocio>
                         </td>
                         <td className="p-3">
                           {t(rotuloDoEvento(p.evento, rotulosDeEtapa))}

@@ -60,7 +60,12 @@ export default async function AtendimentoSettingsPage() {
   const idioma = user.idioma;
   const channels = await loadChannelRoutingSettings(supabase, activeOrg.orgId);
   const assinatura = configAssinatura(settings);
-  const assinaturaInicial = { humanos: assinatura.humanos, ia: assinatura.ia, nome_ia: assinatura.nomeIa };
+  const assinaturaInicial = {
+    humanos: assinatura.humanos,
+    ia: assinatura.ia,
+    nome_ia: assinatura.nomeIa,
+    por_agente: assinatura.porAgente,
+  };
   // #2593 — a opção lida pela MESMA régua que o servidor aplica
   // (`telefoneDeFichaVaziaLigado`): a tela não pode mostrar ligado o que o
   // `proporDadoDoContato` lê como desligado.

@@ -86,7 +86,8 @@ function nomeParaSaudar(nome: string | null): string | null {
   return nome !== null && /\p{L}/u.test(nome) ? nome : null;
 }
 
-function valorDaFonte(fonte: FonteDeVariavel, dados: DadosParaVariaveis): string | null {
+/** O valor bruto de uma origem para este contato — `null` quando ela está vazia. A campanha reusa. */
+export function valorDaFonte(fonte: FonteDeVariavel, dados: DadosParaVariaveis): string | null {
   switch (fonte.kind) {
     case "contact_name":
       return nomeParaSaudar(dados.nomeDoContato);

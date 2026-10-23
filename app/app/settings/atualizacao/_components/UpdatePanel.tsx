@@ -11,6 +11,7 @@ import { ehVersaoPublicada, textoDaRodadaDoBanco } from "@/lib/system/update-run
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 // Sem `cd <pasta>`: o instalador não fixa o nome da pasta do clone
 // (REPO_DIR é configurável, default "deskcommcrm" minúsculo) — quem tem
@@ -123,6 +124,9 @@ export function UpdatePanel() {
       queryClient.invalidateQueries({ queryKey: ["system-version"] });
     },
     onError: (err) => {
+      // O código desta sessão venceu (ou nunca foi provado): "tente de novo"
+      // não resolve, e entrar de novo não o pede a quem confiou no dispositivo.
+      if (err instanceof ApiError && err.code === "mfa_required") return irAoDesafioDeMfa();
       // 409 é estado de negócio ("já tem um run rodando" / "já está em dia"),
       // não falha técnica — mostra a mensagem que a API já escreveu em
       // português em vez de um genérico "tente de novo".
@@ -152,6 +156,7 @@ export function UpdatePanel() {
       queryClient.invalidateQueries({ queryKey: ["system-version"] });
     },
     onError: (err) => {
+      if (err instanceof ApiError && err.code === "mfa_required") return irAoDesafioDeMfa();
       const mensagem =
         err instanceof ApiError && err.status === 409
           ? t(err.message)

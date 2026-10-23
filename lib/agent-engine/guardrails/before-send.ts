@@ -1,5 +1,6 @@
 import { detectHumanCompletion } from "./promise/conclusao-humana";
 import { CODIGO_FALHA_REVISAO_AGENDA, falhaTecnicaDaRevisaoDeAgenda } from '@/lib/agenda/falha-revisao';
+import { comercialExigeHumano, contemAssuntoComercialNaSaida, restricaoComercialBarra } from '@/lib/escalacao/assunto-comercial';
 import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
@@ -99,10 +100,11 @@ export interface GateContext {
   optedOut: boolean;
   /**
    * POR QUE o `stop` vale, quando `optedOut` é true por leitura da FONTE (#2353):
-   * `contato_bloqueado` (bloqueio/opt-out/força-humano) ou `contato_interno` (o
-   * contato tem uma etiqueta da lista interna da organização — o mesmo veto, e por
-   * isso o mesmo gate, mas o motivo NÃO é opt-out e não pode sair rotulado como se
-   * fosse). `undefined` = o chamador não disse (ctx montado à mão por teste e
+   * `contato_bloqueado` (bloqueio/opt-out), `contato_interno` (o contato tem uma
+   * etiqueta da lista interna da organização — o mesmo veto, e por isso o mesmo
+   * gate, mas o motivo NÃO é opt-out e não pode sair rotulado como se fosse) ou
+   * `atendimento_com_humano` (#3310: SÓ o `force_human` — a conversa foi passada
+   * para a equipe, e o contato não pediu para sair). `undefined` = o chamador não disse (ctx montado à mão por teste e
    * preview, ou o opt-out veio de `optedOutThisTurn`): o veto sai com o código e o
    * texto de sempre.
    */
@@ -264,6 +266,11 @@ export interface GateContext {
    */
   clinicalClaimEnforced?: boolean;
   /**
+   * Restrição comercial da organização (#2877). Resolvida em `runBeforeSend` — ver
+   * `RunBeforeSendArgs.enforceCommercialRestriction` —, nunca um default calado.
+   */
+  commercialRestrictionEnforced?: boolean;
+  /**
    * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
    * oposta do `internalVocabularyEnforced` logo acima, e a assimetria é
    * deliberada: aquele protege o CLIENTE de uma palavra feia, este protege o
@@ -370,7 +377,7 @@ export interface Gate {
  * (`contato_interno`, #2353). O código vai para o modelo no veto e para o
  * `before_send_traces` — o rótulo do motivo é contrato.
  */
-export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno';
+export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno' | 'atendimento_com_humano';
 
 /** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
 const stopGate: Gate = {
@@ -385,6 +392,20 @@ const stopGate: Gate = {
               'este contato é INTERNO (tem uma etiqueta da lista de contatos internos da ' +
               'organização) — não recebe atendimento automático, como numa conversa em ' +
               '"Assumir"; encerre o turno sem tentar de novo.',
+          }
+        : ctx.motivoDoStop === 'atendimento_com_humano'
+        ? {
+            // #3310: a conversa foi passada para a EQUIPE. O cliente não pediu
+            // para sair — chamar isto de opt-out faz quem atende tratar um
+            // cliente vivo como descadastrado, e é o oposto do que aconteceu.
+            // ⚠️ A DECISÃO não muda: o veto segue irrevogável (regra dura nº 2);
+            // muda só o NOME do veto.
+            pass: false,
+            code: 'atendimento_com_humano',
+            reason:
+              'o atendimento automático está pausado porque a conversa foi passada para a equipe ' +
+              '(handoff humano/direcionamento manual) — o contato NÃO pediu para sair; a IA volta a ' +
+              'responder com "Devolver ao automático".',
           }
         : {
             pass: false,
@@ -614,6 +635,18 @@ export const clinicalClaimGate: Gate = {
       // nunca o trecho — a frase barrada pode conter o nome da doença do paciente.
       detail: { clinical_kinds: achado.categorias.join(',') },
     };
+  },
+};
+
+/** Valores e negociação são exclusivos da equipe quando a organização assim determina. */
+export const commercialRestrictionGate: Gate = {
+  name: 'commercial_restriction',
+  evaluate: (ctx) => {
+    if (ctx.commercialRestrictionEnforced !== true || !contemAssuntoComercialNaSaida(ctx.body))
+      return { pass: true };
+    return { pass: false, code: 'commercial_requires_human',
+      reason: 'Valores e negociação exigem atendimento humano; não envie esta resposta.',
+      detail: { restricted_kind: 'commercial' } };
   },
 };
 
@@ -978,6 +1011,7 @@ const spinningGate: Gate = {
  * do agente de uma organização que ligou a camada `afirmacao_clinica`, então a v8 não
  * muda o destino de nenhum envio de quem não ligou.
  */
+// v10: restrição comercial explícita da organização, antes de qualquer emenda do corpo.
 export const BEFORE_SEND_CHAIN_VERSION = 10;
 
 /**
@@ -1045,6 +1079,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   casePromiseGate,
   internalVocabularyGate,
   clinicalClaimGate,
+  commercialRestrictionGate,
   agendaStallGate,
   disclosureGate,
 ];
@@ -1174,6 +1209,18 @@ export interface RunBeforeSendArgs {
    * (`camadaLigada(camadas.afirmacao_clinica, false)`).
    */
   enforceClinicalClaim?: boolean;
+  /**
+   * Arma o `commercialRestrictionGate` (#2877). AUSENTE não é "desligado": a
+   * cadeia lê a escolha da organização ela mesma (`comercialExigeHumano`), e a
+   * leitura que falha conta como LIGADA. Esquecer o argumento num caminho novo de
+   * envio, portanto, não abre a trava — foi assim que o template, o roteiro e o
+   * follow-up ficaram de fora na primeira versão.
+   *
+   * Só não lê quem não é texto da IA: resposta aprovada por humano
+   * (`approvedReply`) e o link do Meet (`meetingDelivery`). Texto fixo do
+   * sistema que sabe o que diz (o aviso de escalação) passa `false` explícito.
+   */
+  enforceCommercialRestriction?: boolean;
   /**
    * Desarma o `spinningGate` para ESTA tentativa. Ausente = armado (ver
    * `GateContext.spinningEnforced` para a razão da assimetria e para a conta que
@@ -1318,6 +1365,13 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
  * classificador semântico de promessa (F4-02) e a conferência de fato (#2231), que
  * rodam antes de tomar conexão — ver o porquê no ponto da chamada.
  */
+/** Falha FECHADA — a regra mora em `restricaoComercialBarra`, a mesma do atalho inline do follow-up. */
+async function resolverRestricaoComercial(args: RunBeforeSendArgs, body: string): Promise<boolean> {
+  if (args.enforceCommercialRestriction !== undefined) return args.enforceCommercialRestriction;
+  if (args.approvedReply !== undefined || args.meetingDelivery !== undefined) return false;
+  return restricaoComercialBarra(body, () => comercialExigeHumano(args.pool, args.tenantId), (m, c) => args.log.warn(m, c));
+}
+
 export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSendResult> {
   const result = await runBeforeSendAttempt(args);
   if (result.status === 'vetoed' && (result.code === 'human_decision_context_changed' || falhaTecnicaDaRevisaoDeAgenda(result.code))) {
@@ -1347,6 +1401,11 @@ async function runBeforeSendAttempt(args: RunBeforeSendArgs): Promise<BeforeSend
   // resposta aprovada ou aviso de código passarem por uma preferência de estilo.
   const bodyDoModelo =
     estilo !== null ? aplicarAjustesDeEstilo(args.body, estilo.ajustes) : args.body;
+
+  // Restrição comercial (#2877) — fora do lock pela mesma razão do estilo acima.
+  // Só consulta quando o corpo tem cara de preço: o gate não vetaria nada sem
+  // isso, e todo envio comum não paga o round-trip.
+  const restricaoComercial = await resolverRestricaoComercial(args, bodyDoModelo);
 
   // ═══ A CONFERÊNCIA SEMÂNTICA DE PROMESSA RODA FORA DO LOCK ═══
   //
@@ -1527,6 +1586,7 @@ async function runBeforeSendAttempt(args: RunBeforeSendArgs): Promise<BeforeSend
         : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
+      commercialRestrictionEnforced: restricaoComercial,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
     };
@@ -1722,15 +1782,26 @@ export async function readStopFlags(
   //
   // O `cross join lateral` avalia a régua da etiqueta UMA vez por linha e a
   // entrega nos dois lugares em que ela decide: o `stopped` e o motivo do veto.
-  const { rows } = await db.query<{ stopped: boolean; contato_interno: boolean }>(
+  const { rows } = await db.query<{
+    stopped: boolean;
+    contato_interno: boolean;
+    stop_por_handoff: boolean;
+  }>(
     humanMeetingCommand
-      ? 'select (is_blocked or is_personal) as stopped, false as contato_interno from contacts where organization_id = $1 and id = $2'
+      ? 'select (is_blocked or is_personal) as stopped, false as contato_interno, false as stop_por_handoff from contacts where organization_id = $1 and id = $2'
       // `ai_opt_out` (issue 2379): a marca permanente "sempre atendimento
       // humano" entra no MESMO stop, e não numa nova consulta — o custo é
       // nulo e a garantia é que nenhum escritor futuro de `force_human` consegue
       // devolver a IA para um contato que a operação trancou.
+      //
+      // `stop_por_handoff` (#3310): `force_human` SOZINHO é a conversa passada
+      // para a EQUIPE, não um pedido do contato para sair. `is_blocked`,
+      // `is_personal` e `ai_opt_out` ficam fora dele: sobrevivem a "Devolver ao
+      // automático" e, quando valem junto, vence o opt-out (a mesma ordem de
+      // `lib/inbox/comando-da-conversa.ts`).
       : `select (is_blocked or force_human or is_personal or ai_opt_out or i.contato_interno) as stopped,
-                i.contato_interno
+                i.contato_interno,
+                (force_human and not (is_blocked or is_personal or ai_opt_out)) as stop_por_handoff
            from contacts
            cross join lateral (select (${sqlContatoInterno('contacts')}) as contato_interno) i
           where organization_id = $1 and id = $2`,
@@ -1740,7 +1811,14 @@ export async function readStopFlags(
   if (linha?.stopped !== true) return { stopped: false, motivo: null };
   return {
     stopped: true,
-    motivo: linha.contato_interno === true ? 'contato_interno' : 'contato_bloqueado',
+    // Etiqueta interna vence o handoff: "Devolver ao automático" não a desfaz,
+    // e a tela não pode prometer uma devolução que o gate recusaria.
+    motivo:
+      linha.contato_interno === true
+        ? 'contato_interno'
+        : linha.stop_por_handoff === true
+          ? 'atendimento_com_humano'
+          : 'contato_bloqueado',
   };
 }
 

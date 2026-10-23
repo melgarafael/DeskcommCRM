@@ -24,8 +24,8 @@
  * follow-up) e não pela função auxiliar, porque o defeito é de ORDENÇÃO e uma
  * função testada sozinha não prova ordem nenhuma.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, posix } from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublishedAgentConfig } from '@/lib/agent-engine/agent/agent-config';
@@ -81,6 +81,10 @@ vi.mock('@/lib/agent-engine/edge/crm/get-lead-context', async (importOriginal) =
   ...(await importOriginal<Record<string, unknown>>()),
   getLeadContext: mocks.leadContext,
 }));
+// A restrição comercial (#2877) fica fora do que este arquivo mede: desligada.
+vi.mock('@/lib/escalacao/assunto-comercial', async importOriginal => ({
+  ...await importOriginal<Record<string, unknown>>(), comercialExigeHumano: vi.fn(async () => false),
+}));
 vi.mock('@/lib/agent-engine/guardrails/camadas-da-org', () => ({
   lerCamadasDaOrg: vi.fn(async () => ({})),
   camadaLigada: vi.fn(() => false),
@@ -102,10 +106,20 @@ vi.mock('@/lib/agent-engine/pacing/aviso-de-janela', () => ({
   resolverAvisoDeJanela: vi.fn(async () => 0),
   avisarJanelaFechada: vi.fn(),
 }));
+// O turno AUTOMÁTICO lê o playbook antes de chegar nas detecções; sem este
+// dublê ele morre em "ponteiro da camada plataforma ausente" e o caso #1713 do
+// caminho automático mediria uma exceção em vez do título do aviso.
+vi.mock('@/lib/agent-engine/agent/playbook', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  loadPlaybook: vi.fn(async () => ({ prompt: 'playbook' })),
+  loadOrgMemory: vi.fn(async () => null),
+  loadSkills: vi.fn(async () => []),
+}));
 
 import {
   createInboundTurnHandler,
   runAgentTurn,
+  TITULO_DO_HANDOFF_POR_SUSPEITA_DE_OPT_OUT,
   type InboundTurnDeps,
 } from '@/lib/agent-engine/agent/inbound-turn';
 
@@ -388,5 +402,153 @@ describe('fiação — a detecção vem ANTES do desvio para o rascunho', () => 
     expect(det, 'o ramo assistido do turno não roda as detecções').toBeGreaterThan(-1);
     expect(rascunho).toBeGreaterThan(det);
     expect(t).toMatch(/job\.kind === 'followup_turn'/);
+  });
+});
+
+/**
+ * #1713 — O AVISO DE SUSPEITA DE OPT-OUT NÃO MANDA A EQUIPE FAZER O QUE NÃO EXISTE.
+ *
+ * Quando o cliente pede para parar com uma frase AMBÍGUA ("me deixa em paz"), o
+ * turno para de responder e abre um item na Central. O título desse item dizia
+ * "Suspeita de opt-out" e, em seguida, mandava CONFIRMAR, no CRM, O BLOQUEIO DO
+ * CONTATO.
+ *
+ * E não existe caminho no produto para uma pessoa bloquear um contato: o único
+ * escritor de `contacts.is_blocked` é o STOP da ingestão (`lib/channels/pos-entrada.ts`),
+ * e a ficha do contato só oferece **Desbloquear**. O aviso mandava procurar um
+ * botão que não está na tela — com a IA calada e o cliente esperando.
+ *
+ * O botão de bloquear contato é a DEC-013, declarada FORA desta fatia. Até ela
+ * existir, o título descreve só a ação que existe: assumir a conversa e pedir ao
+ * cliente a palavra que a regra reconhece (STOP/PARAR/SAIR sozinha).
+ *
+ * OS DOIS PONTOS são medidos por COMPORTAMENTO, e não por leitura do fonte — o
+ * caminho assistido pelo handler de produção, o automático por `runAgentTurn`, que
+ * é a porta do turno operacional e o que `executarTurnoDoAgente` roda. Um teste que
+ * só procurasse a string no arquivo ficaria verde com o desvio morto.
+ */
+describe('o aviso de suspeita de opt-out só descreve a ação que existe (#1713)', () => {
+  /** O que o `performHumanHandoff` recebeu — o item da Central nasce daqui. */
+  function opcoesDoHandoff(): {
+    inboxTitle?: string;
+    reason?: string;
+    passagem?: { origem?: string; motivoCodigo?: string };
+  } {
+    expect(mocks.passagem, 'sem passagem não há aviso na Central para medir').toHaveBeenCalledTimes(1);
+    return mocks.passagem.mock.calls[0]?.[2] as never;
+  }
+
+  // PONTO 1 — o ramo ASSISTIDO (`deteccoesDeterministicasDoAssistido`).
+  it('caminho ASSISTIDO: o item da Central sai com o título da ação existente', async () => {
+    mocks.leadContext.mockResolvedValue(contexto([{ direction: 'inbound', body: 'SAIR' }]));
+    const p = pool();
+
+    await createInboundTurnHandler(deps)(inbound as never, p as never, { workerId: 'w' });
+
+    const opts = opcoesDoHandoff();
+    expect(opts.reason, 'este caso só mede o handoff de suspeita de opt-out').toBe(
+      'suspected_optout',
+    );
+    expect(opts.inboxTitle).toBe(TITULO_DO_HANDOFF_POR_SUSPEITA_DE_OPT_OUT);
+    // O RESTO DO HANDOFF fica INTACTO: o motivo e a passagem não mudaram.
+    expect(opts.passagem).toEqual(
+      expect.objectContaining({ origem: 'opt_out_provavel', motivoCodigo: 'suspected_optout' }),
+    );
+  });
+
+  // PONTO 2 — o caminho AUTOMÁTICO (dentro de `executarTurnoDoAgente`). A mesma
+  // frase, e a distância entre os dois pontos é de ~780 linhas: divergir não é
+  // hipótese, é o modo como isto apodrece.
+  it('caminho AUTOMÁTICO: o mesmo título, com o mesmo resto de handoff', async () => {
+    const automatico = {
+      agentId: 'A',
+      versionId: 'version-A',
+      operationRevision: '7',
+      operationMode: 'automatic',
+      pausedAt: null,
+      handoffKeywords: [],
+      historyMessageWindow: 20,
+      historyTokenWindow: 8000,
+      toolIds: [],
+    } as unknown as PublishedAgentConfig;
+    mocks.router.mockResolvedValue(null);
+    mocks.byId.mockResolvedValue(automatico);
+    mocks.bySession.mockResolvedValue(automatico);
+    mocks.conversationAgent.mockResolvedValue(automatico);
+    mocks.classify.mockResolvedValue({ intentName: null, confidence: null, outcome: 'fallback' });
+    mocks.leadContext.mockResolvedValue(contexto([{ direction: 'inbound', body: 'SAIR' }]));
+    const p = pool();
+
+    await runAgentTurn(deps, inbound as never, p as never, { workerId: 'w' }, {
+      resolvedAgent: {
+        config: automatico,
+        routerId: null,
+        intentName: null,
+        confidence: null,
+        outcome: 'fallback',
+      },
+      channelSessionId: ids.channel,
+      conversationId: ids.conversation,
+      buildOpening: () => '',
+    } as never);
+
+    const opts = opcoesDoHandoff();
+    expect(opts.reason).toBe('suspected_optout');
+    expect(opts.inboxTitle, 'os dois caminhos dizem a MESMA coisa').toBe(
+      TITULO_DO_HANDOFF_POR_SUSPEITA_DE_OPT_OUT,
+    );
+    expect(opts.passagem).toEqual(
+      expect.objectContaining({ origem: 'opt_out_provavel', motivoCodigo: 'suspected_optout' }),
+    );
+  });
+
+  /**
+   * A FRASE ANTIGA NÃO SOBRA NA ÁRVORE.
+   *
+   * Os dois casos acima medem os dois pontos que existem HOJE. Este mede a
+   * varredura: um terceiro ponto de handoff (ou uma cópia do texto no corpo de um
+   * aviso, num comentário de tela, num teste antigo) reintroduziria a promessa
+   * pela porta dos fundos. A constante sozinha não impede ninguém de redigitar.
+   */
+  describe('a promessa que o produto não cumpre não sobrou em lugar nenhum', () => {
+    const RAIZ = process.cwd();
+    const RAIZES = ['app', 'components', 'hooks', 'lib', 'workers'] as const;
+    /**
+     * O miolo do título antigo — a parte que mandava fazer o que não dá.
+     *
+     * Em REGEX, e de propósito: escrita inteira e literal, ela seria a última
+     * ocorrência da frase na árvore, e quem a procurasse com `git grep -F`
+     * encontraria a própria guarda em vez de uma promessa viva. Assim a busca
+     * pela frase crua não acha nada além deste padrão.
+     */
+    const PROIBIDO = /confirmar\s+bloqueio\s+do\s+contato/iu;
+
+    function arquivos(dir: string): string[] {
+      const alvos: string[] = [];
+      for (const entrada of readdirSync(join(RAIZ, dir), { withFileTypes: true })) {
+        const rel = posix.join(dir, entrada.name);
+        if (entrada.isDirectory()) alvos.push(...arquivos(rel));
+        else if (rel.endsWith('.ts') || rel.endsWith('.tsx')) alvos.push(rel);
+      }
+      return alvos;
+    }
+
+    const alvos = RAIZES.flatMap((r) => arquivos(r));
+
+    it('nenhum arquivo de produção manda a equipe bloquear o contato à mão', () => {
+      expect(alvos.length, 'guarda de vacuidade: a varredura não achou arquivo').toBeGreaterThan(500);
+      const culpados = alvos.filter((f) => PROIBIDO.test(readFileSync(join(RAIZ, f), 'utf8')));
+      expect(culpados, 'aviso mandando a equipe bloquear um contato à mão (DEC-013, fora)').toEqual([]);
+    });
+
+    it('controle negativo: a varredura enxerga a frase quando ela existe', () => {
+      // Sabotagem do DETECTOR, em memória: sem este caso, um detector quebrado
+      // deixaria o verde acima por não medir nada. A frase é REMONTADA aqui (e
+      // não escrita inteira) pelo mesmo motivo do padrão acima.
+      const restaurado = `inboxTitle: 'Suspeita de opt-out — ${['confirmar', 'bloqueio', 'do', 'contato'].join(' ')} no CRM',`;
+      expect(PROIBIDO.test(restaurado)).toBe(true);
+      // E o detector NÃO acusa o que está vivo hoje.
+      expect(PROIBIDO.test(`inboxTitle: '${TITULO_DO_HANDOFF_POR_SUSPEITA_DE_OPT_OUT}',`)).toBe(false);
+    });
   });
 });

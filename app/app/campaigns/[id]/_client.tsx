@@ -40,6 +40,8 @@ import { ArrowBendUpLeft } from "@/lib/ui/icons";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { TEXTO_DA_EXCLUSAO } from "@/lib/campanhas/tipos";
 
+import { ModeloDaCampanhaNoDetalhe } from "../_components/ModeloDaCampanhaNoDetalhe";
+
 export function DetalheDaCampanha({ id }: { id: string }) {
   const t = useT();
   const campanha = useCampanha(id);
@@ -108,8 +110,11 @@ export function DetalheDaCampanha({ id }: { id: string }) {
             <EstadoDaCampanha status={c.status} />
           </div>
           {c.failure_code && (
-            <p className="mt-1 text-sm text-warning-fg">
-              {t("Último problema")}: {c.failure_code}
+            <p className="mt-1 text-sm text-warning-fg" data-testid="motivo-da-pausa">
+              {t("Último problema")}: {c.failure_detail ? t(c.failure_detail) : c.failure_code}
+              {c.status === "paused" && c.failure_detail
+                ? ` ${t("Corrija a causa e use Retomar.")}`
+                : ""}
             </p>
           )}
         </div>
@@ -145,7 +150,9 @@ export function DetalheDaCampanha({ id }: { id: string }) {
           <p className="text-sm">
             {confirmando === "iniciar"
               ? `${t("Começar a enviar para")} ${c.snapshot_eligible} ${c.snapshot_eligible === 1 ? t("pessoa?") : t("pessoas?")} ${t("O envio segue o ritmo do número e pode levar horas.")}`
-              : t("Cancelar é definitivo: quem ainda não recebeu não recebe mais, e a campanha não volta a rodar.")}
+              : t(
+                  "Cancelar é definitivo: quem ainda não recebeu não recebe mais, e a campanha não volta a rodar.",
+                )}
           </p>
           <div className="flex gap-2">
             <Button
@@ -186,9 +193,7 @@ export function DetalheDaCampanha({ id }: { id: string }) {
         <Card className="space-y-2 p-4">
           <div className="flex items-baseline justify-between">
             <h2 className="font-medium">{t("Progresso")}</h2>
-            <span className="text-sm text-muted-foreground">
-              {Math.round(m.progresso * 100)}%
-            </span>
+            <span className="text-sm text-muted-foreground">{Math.round(m.progresso * 100)}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-surface-elevated">
             <div
@@ -202,8 +207,8 @@ export function DetalheDaCampanha({ id }: { id: string }) {
             />
           </div>
           <p className="text-sm text-muted-foreground">
-            {m.contagem.pendentes} {t("ainda não enviadas")} · {m.contagem.falharam} {t("falharam")} ·{" "}
-            {m.contagem.optOut} {t("pediram para parar")}
+            {m.contagem.pendentes} {t("ainda não enviadas")} · {m.contagem.falharam} {t("falharam")}{" "}
+            · {m.contagem.optOut} {t("pediram para parar")}
           </p>
         </Card>
       )}
@@ -216,9 +221,14 @@ export function DetalheDaCampanha({ id }: { id: string }) {
 
       <Card className="space-y-2 p-4">
         <h2 className="font-medium">{t("Mensagem")}</h2>
-        <p className="whitespace-pre-wrap text-sm">{c.message_body}</p>
+        {c.message_mode === "template" ? (
+          <ModeloDaCampanhaNoDetalhe campanha={c} />
+        ) : (
+          <p className="text-sm whitespace-pre-wrap">{c.message_body}</p>
+        )}
         <p className="text-xs text-muted-foreground">
-          {t("Base legal")}: {c.base_legal === "consent" ? t("consentimento") : t("interesse legítimo")}
+          {t("Base legal")}:{" "}
+          {c.base_legal === "consent" ? t("consentimento") : t("interesse legítimo")}
           {c.lia_ref ? ` (${c.lia_ref})` : ""}
         </p>
       </Card>
@@ -251,13 +261,19 @@ export function DetalheDaCampanha({ id }: { id: string }) {
           <div className="divide-y divide-border">
             {linhas.map((d) => (
               <div key={d.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <span className="min-w-0 truncate">
-                  {rotuloDoContato(d.contacts, t)}
-                </span>
-                <span className="shrink-0 text-muted-foreground">
+                <span className="min-w-0 truncate">{rotuloDoContato(d.contacts, t)}</span>
+                <span className="shrink-0 text-right text-muted-foreground">
                   {d.eligibility_status === "excluded"
                     ? t(d.legenda_da_exclusao ?? rotuloDoMotivo(d.exclusion_reason))
                     : t(ROTULO_DO_DESTINATARIO[d.status] ?? d.status)}
+                  {d.motivo_da_falha && (
+                    <span
+                      className="block max-w-xs text-xs whitespace-normal text-warning-fg"
+                      data-testid="motivo-da-falha"
+                    >
+                      {t(d.motivo_da_falha)}
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -392,7 +408,9 @@ function NumerosDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
     <Card className="space-y-2 p-4">
       <h2 className="font-medium">{t("Números desta campanha")}</h2>
       <p className="text-sm text-muted-foreground">
-        {t("A cada envio, a campanha usa o número com mais folga no teto do dia — e o número que a pessoa já conhece, quando ela já conversou com algum deles.")}
+        {t(
+          "A cada envio, a campanha usa o número com mais folga no teto do dia — e o número que a pessoa já conhece, quando ela já conversou com algum deles.",
+        )}
       </p>
       <ul className="text-sm">
         {[campanha.channel_session_id, ...extras].map((id) => (
@@ -434,12 +452,37 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <CampoDeRitmo id="r-intervalo" rotulo={t("Intervalo mínimo entre mensagens (segundos)")} valor={intervalo} onChange={setIntervalo} />
-        <CampoDeRitmo id="r-dia" rotulo={t("Máximo por dia")} valor={tetoDia} onChange={setTetoDia} />
-        <CampoDeRitmo id="r-hora" rotulo={t("Máximo por hora")} valor={tetoHora} onChange={setTetoHora} />
+        <CampoDeRitmo
+          id="r-intervalo"
+          rotulo={t("Intervalo mínimo entre mensagens (segundos)")}
+          valor={intervalo}
+          onChange={setIntervalo}
+        />
+        <CampoDeRitmo
+          id="r-dia"
+          rotulo={t("Máximo por dia")}
+          valor={tetoDia}
+          onChange={setTetoDia}
+        />
+        <CampoDeRitmo
+          id="r-hora"
+          rotulo={t("Máximo por hora")}
+          valor={tetoHora}
+          onChange={setTetoHora}
+        />
         <div />
-        <CampoDeRitmo id="r-inicio" rotulo={t("Enviar só a partir das (hora)")} valor={inicio} onChange={setInicio} />
-        <CampoDeRitmo id="r-fim" rotulo={t("Parar de enviar às (hora)")} valor={fim} onChange={setFim} />
+        <CampoDeRitmo
+          id="r-inicio"
+          rotulo={t("Enviar só a partir das (hora)")}
+          valor={inicio}
+          onChange={setInicio}
+        />
+        <CampoDeRitmo
+          id="r-fim"
+          rotulo={t("Parar de enviar às (hora)")}
+          valor={fim}
+          onChange={setFim}
+        />
       </div>
       <div className="flex items-center gap-3">
         <Button
@@ -479,7 +522,13 @@ function CampoDeRitmo({
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{rotulo}</Label>
-      <Input id={id} type="number" min={0} value={valor} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        id={id}
+        type="number"
+        min={0}
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }

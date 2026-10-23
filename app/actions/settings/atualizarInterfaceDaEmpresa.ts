@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import {
   interfaceSettingsSchema,
@@ -44,6 +44,7 @@ export async function atualizarInterfaceDaEmpresa(input: InterfaceSettings): Pro
   if (!podeAdministrarEmpresa(authUser, activeOrg)) {
     return { ok: false, error: "forbidden_role" };
   }
+  if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
   // Mesma guarda da escolha por vínculo: recusa a seleção que deixaria a empresa
   // sem NENHUMA área além das essenciais. As essenciais continuariam aparecendo
@@ -85,6 +86,7 @@ export async function atualizarBloqueioAteAssumir(ligado: boolean): Promise<Inte
   if (!podeAdministrarEmpresa(authUser, activeOrg)) {
     return { ok: false, error: "forbidden_role" };
   }
+  if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
   return gravarInterface(activeOrg.orgId, authUser.id, (gravada) => {
     const { bloquearAteAssumir: _anterior, ...menu } = lerInterface(gravada).settings;

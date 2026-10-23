@@ -66,6 +66,12 @@ case " $* " in
       # a checagem do restore.sh conta as tabelas de public antes de pedir a
       # confirmação; a instalação simulada aqui está vazia, então 0
       *" pg_tables"*) printf '0\n' ;;
+      # A CONFERÊNCIA do resultado (#2381, reescrita de 16/10): o restore.sh
+      # identifica as duas consultas dela por estes marcadores no SQL. O banco
+      # simulado TEM a tabela do dump, com as linhas que o COPY declara — é o
+      # restore que entrou mesmo, e a conferência fecha.
+      *"/*conf-tabelas*/"*) printf 'public.contacts\n' ;;
+      *"/*conf-linhas*/"*)  printf 'public.contacts|1\n' ;;
       *" pg_dump "*) echo "-- dump" ;;
       *" tar czf - "*)
         # o snapshot sai pela saída padrão; quem grava o arquivo é o host
@@ -81,6 +87,17 @@ PATH="$WORK/bin:$PATH"
 
 kit() {  # kit <código bash> — roda com o _common.sh carregado, numa subshell
   bash -c 'KIT_DIR="$1"; . "$KIT_DIR/_common.sh"; shift; eval "$1"' _ "$KIT_DIR" "$@"
+}
+
+# O dump de mentira do restore: uma tabela de public com as linhas que o bloco
+# COPY declara. É contra essas contagens que a conferência do resultado do
+# restore.sh mede (#2381, reescrita de 16/10) — um dump sem COPY não tem como
+# ser conferido, e o restore falha fechado.
+dump_de_mentira() {
+  { printf '%s\n' 'CREATE TABLE public.contacts (' '  id uuid NOT NULL PRIMARY KEY' ');' \
+    'COPY public.contacts (id) FROM stdin;' \
+    '11111111-1111-1111-1111-111111111111' \
+    '\.'; } | gzip > "$1"
 }
 
 # Uma instalação single-server falsa, com o que o install-single-server.sh deixa.
@@ -167,7 +184,7 @@ check "pipe do dump que falha reprova o backup" test "$rc" -ne 0
 check "e diz que o dump falhou no meio" contem "$WORK/bk-pipe-falhou.out" "falhou no meio"
 check "e não deixa o arquivo cortado (nem o .parcial) na pasta" \
   bash -c "! ls '$APROJ'/backups/db-*.sql.gz >/dev/null 2>&1 && ! ls '$APROJ'/backups/.db-*.parcial >/dev/null 2>&1"
-printf 'x' | gzip > "$APROJ/backups/db-20260922-030000.sql.gz"
+dump_de_mentira "$APROJ/backups/db-20260922-030000.sql.gz"
 : > "$LOG"
 (cd "$APROJ" && printf 'RESTAURAR\n' | bash "$KIT_DIR/restore.sh" backups/db-20260922-030000.sql.gz) > "$WORK/rs-comum.out" 2>&1; rc=$?
 check "restore.sh comum termina bem" test "$rc" -eq 0
@@ -273,7 +290,7 @@ check "e não imprime 'backup concluído'" bash -c '! grep -q "backup concluído
 check "e não deixa o arquivo cortado dos anexos (nem o .parcial) na pasta" \
   bash -c '! ls "$1"/backups/storage-*.tgz >/dev/null 2>&1 && ! ls "$1"/backups/.storage-*.parcial >/dev/null 2>&1' _ "$PROJ"
 
-printf 'x' | gzip > "$PROJ/backups/db-20260922-030000.sql.gz"
+dump_de_mentira "$PROJ/backups/db-20260922-030000.sql.gz"
 : > "$PROJ/backups/storage-20260922-030000.tgz"
 : > "$LOG"
 (cd "$PROJ" && printf 'RESTAURAR\n' | bash "$KIT_DIR/restore.sh" backups/db-20260922-030000.sql.gz) > "$WORK/rs.out" 2>&1; rc=$?

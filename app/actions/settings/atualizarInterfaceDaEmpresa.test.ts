@@ -18,10 +18,13 @@ vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: mocks.loadAuthUser,
   resolveActiveOrg: mocks.resolveActiveOrg,
+  mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/auth/pode-administrar-empresa", () => ({ podeAdministrarEmpresa: () => true }));
 vi.mock("@/lib/impersonate/support", () => ({ supportWriteError: () => null }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
+
+import { combinarInterfaces } from "@/lib/navigation/interface";
 
 import { atualizarBloqueioAteAssumir, atualizarInterfaceDaEmpresa } from "./atualizarInterfaceDaEmpresa";
 
@@ -92,5 +95,47 @@ describe("atualizarBloqueioAteAssumir (cartão Inbox)", () => {
   it("entrada que não é booleano é recusada antes de qualquer leitura", async () => {
     expect(await atualizarBloqueioAteAssumir("true" as never)).toEqual({ ok: false, error: "validation_failed" });
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `compras_campos` (#3179, cartão Menu) e `bloquearAteAssumir` (#3012, cartão
+ * Inbox) moram no MESMO jsonb e chegaram por PRs paralelos. Salvar um cartão não
+ * pode apagar a chave do outro — nem na gravação, nem na leitura combinada que
+ * alimenta `ActiveOrg.interface_settings`.
+ */
+describe("as duas chaves do mesmo campo (#3012 × #3179)", () => {
+  it("ligar a trava no cartão Inbox não apaga os campos de compra", async () => {
+    const updates = adminCom({ preset: "completa", compras_campos: ["destino"] });
+    await atualizarBloqueioAteAssumir(true);
+    expect(updates).toEqual([
+      { interface_settings: { preset: "completa", compras_campos: ["destino"], bloquearAteAssumir: true } },
+    ]);
+  });
+
+  it("salvar os campos de compra no cartão Menu não apaga a trava", async () => {
+    const updates = adminCom({ preset: "completa", bloquearAteAssumir: true });
+    await atualizarInterfaceDaEmpresa({ preset: "completa", compras_campos: ["destino", "hospedagem"] });
+    expect(updates).toEqual([
+      {
+        interface_settings: {
+          preset: "completa",
+          compras_campos: ["destino", "hospedagem"],
+          bloquearAteAssumir: true,
+        },
+      },
+    ]);
+  });
+
+  it("a interface combinada carrega as duas chaves da empresa", () => {
+    const daEmpresa = { preset: "completa", compras_campos: ["destino"], bloquearAteAssumir: true };
+    expect(combinarInterfaces(daEmpresa, null)).toMatchObject({
+      compras_campos: ["destino"],
+      bloquearAteAssumir: true,
+    });
+    expect(combinarInterfaces(daEmpresa, { preset: "simplificada" })).toMatchObject({
+      compras_campos: ["destino"],
+      bloquearAteAssumir: true,
+    });
   });
 });

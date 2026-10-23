@@ -394,7 +394,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               ? t("Nenhum número conectado ainda.")
               : `${list.length} ${list.length === 1 ? t("número conectado") : t("números conectados")}.`}
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {list.length > 0 && (
             <Button
               variant="outline"
@@ -497,7 +497,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         if (await copyToClipboard(connectionDetail)) toast.success(t("Copiado!"));
         else toast.error(t("Não foi possível copiar. Selecione e copie manualmente."));
       }}>{t("Copiar detalhes")}</Button></details>}
-      <Link href="/app/settings/atendimento" className="text-sm underline">{t("Configurar responsáveis por número")}</Link>
+      <Link href="/app/settings/atendimento" className="text-sm underline max-md:flex max-md:min-h-11 max-md:items-center">{t("Configurar responsáveis por número")}</Link>
       {!wahaConfigured && (
         <div className="rounded-md border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
           <p className="font-medium">{t("O serviço do WhatsApp não está configurado.")}</p>

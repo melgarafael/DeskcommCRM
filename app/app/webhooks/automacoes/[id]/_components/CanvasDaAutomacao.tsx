@@ -512,7 +512,7 @@ export function CanvasDaAutomacao({ regra }: Props) {
         </Sheet>
 
         <div
-          className="relative h-full flex-1"
+          className="relative min-h-0 flex-1 self-stretch"
           data-testid="designer-canvas"
           onDragOver={(e) => {
             e.preventDefault();

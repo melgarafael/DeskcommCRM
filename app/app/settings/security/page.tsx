@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, politicaDaEmpresa, type PapelMinimoDeMfa } from "@/lib/auth/politica-mfa";
+import { listarDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
 import { SecurityClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -30,6 +31,7 @@ export default async function SecurityPage() {
   const user = await requireAuth();
   const org = await resolveActiveOrg(user);
   const enrolled = await isMfaEnrolled();
+  const dispositivos = enrolled ? await listarDispositivosConfiaveis(user.id) : [];
 
   let papelMinimo: PapelMinimoDeMfa = "none";
   let diasDeCarencia = 0;
@@ -77,6 +79,7 @@ export default async function SecurityPage() {
         podeExigirDaEquipe={org?.role === "admin"}
         papelMinimo={papelMinimo}
         diasDeCarencia={diasDeCarencia}
+        dispositivos={dispositivos}
       />
     </div>
   );

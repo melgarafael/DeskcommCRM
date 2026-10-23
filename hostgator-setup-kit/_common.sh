@@ -2213,6 +2213,33 @@ url_do_schema() {
   printf '%s' "${SUPABASE_DB_ADMIN_URL:-${SUPABASE_DB_URL:?sem connection string de banco no .env — rode o install.sh}}"
 }
 
+# ── A conexão de RESTORE é a MESMA da ATUALIZAÇÃO: a conta do dono (#2381) ──
+#
+# O backup sai SEM dono (`pg_dump --no-owner --no-privileges`, backup.sh) e a
+# atualização reaplica o baseline por `url_do_schema` — no single-server, a
+# string de `SUPABASE_DB_URL`, que é a role `postgres`. Restaurar por OUTRA
+# conta deixava os objetos com outro dono: esta função montava, no
+# single-server, um `postgresql://supabase_admin:...` com a senha do `.env` do
+# Supabase, e — como o dump volta sem dono — as tabelas e funções de `public`
+# passavam a pertencer a quem restaurou. A atualização seguinte então não
+# conseguia reaplicar o banco: medição do mantenedor em 22/10
+# (`supabase/postgres` 17.6.1.136, dump do backup.sh, `restore.sh` deste PR e o
+# baseline reaplicado como `postgres`), restaurando por `supabase_admin` deram
+# 2.714 erros `must be owner` (todos em objetos admin_*); pela conta `postgres`,
+# 0.
+#
+# Por isso o restore usa a MESMA conta da atualização — `url_do_schema`, o dono
+# correto —, e os objetos voltam com o dono que a atualização espera.
+# `SUPABASE_DB_ADMIN_URL`, se declarada, já vence nos dois (o `url_do_schema` a
+# prefere a `SUPABASE_DB_URL`): quem a declarou não muda de comportamento.
+#
+# A função continua existindo — em vez de `url_do_schema` direto no restore.sh —
+# para que a razão de a conta do restore ter de ser a mesma da atualização fique
+# num só lugar, ao lado de quem a usa.
+url_do_restore() {
+  url_do_schema
+}
+
 # psql efêmero via container (não exige psql no host). Usa a conexão de schema:
 # os chamadores mexem em `auth.mfa_factors` e `private.app_secrets`, fora do
 # alcance de uma role de app com grants só em `public`.

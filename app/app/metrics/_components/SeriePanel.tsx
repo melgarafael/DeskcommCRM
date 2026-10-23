@@ -97,7 +97,7 @@ export function SeriePanel() {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">
           {t("Ganhos por período")} · {serie.total}
         </CardTitle>
@@ -107,7 +107,7 @@ export function SeriePanel() {
             if (granularidadeValida(v)) setGranularidade(v);
           }}
         >
-          <SelectTrigger className="w-40" aria-label={t("Granularidade")}>
+          <SelectTrigger className="w-32 md:w-40" aria-label={t("Granularidade")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
@@ -75,6 +76,10 @@ export function useCampoDoFunilDaCaptacao(webhookSourceId: string | null): Campo
       }
       const r = await updatePipelineConfig(pipelineId, { fields: novo.fields });
       if (!r.ok) {
+        if (r.error === "mfa_required") {
+          irAoDesafioDeMfa();
+          return false;
+        }
         toast.error(
           t("Não foi possível cadastrar o campo. Só quem administra o funil pode fazer isso."),
         );

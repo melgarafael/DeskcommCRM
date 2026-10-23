@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { generateReplyDraft } from "@/lib/agent-engine/agent/reply-drafts";
+import { listarSugestoesDaConversa } from "@/lib/agent-engine/agent/sugestoes-da-conversa";
 import { motivoDaFalha } from "@/lib/agent-engine/agent/sugestao-de-resposta";
 import { logger } from "@/lib/logger";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -33,11 +34,10 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const requestId = randomUUID(),
     c = await context(ctx, requestId);
   if ("response" in c) return c.response;
-  const { rows } = await getRequestPool().query(
-    `select id,revision::text,original_body,edited_body,approved_body,proposals,feedback,error_code,created_at,
- case when status in ('generating','pending','approved') and not fn_reply_context_current(organization_id,id) then 'stale' else status end as status
- from ai_reply_drafts where organization_id=$1 and conversation_id=$2 order by created_at desc limit 5`,
-    [c.auth.org.orgId, c.conversation.id],
+  const rows = await listarSugestoesDaConversa(
+    getRequestPool(),
+    c.auth.org.orgId,
+    c.conversation.id,
   );
   return ok({ drafts: rows }, { requestId });
 }

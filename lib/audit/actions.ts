@@ -46,6 +46,9 @@ export const AUDIT_ACTIONS = [
   "auth.mfa_enrolled",
   "auth.mfa_success",
   "auth.mfa_failed",
+  /** "Confiar neste dispositivo" marcado depois de um código provado. */
+  "auth.mfa_device_trusted",
+  "auth.mfa_trusted_devices_forgotten",
   "auth.recovery_code_used",
   "nuvemshop.connected",
   "nuvemshop.disconnected",
@@ -673,6 +676,15 @@ export const AUDIT_ACTIONS = [
   // 0648). Risco é parte do desenho — quem tiver o link entra sem pedir —, então
   // "quando foi que ligaram isso?" é a primeira pergunta depois de um incidente.
   "agenda.meet_acesso_aberto_alterado",
+  // O aviso de agendamento no WhatsApp do dono (migration 0753). Quatro códigos
+  // pela mesma razão dos do aviso de caso: "saiu", "não saiu em definitivo",
+  // "mudaram a configuração" e "mandaram o teste" são perguntas diferentes, e o
+  // painel filtra por `action`. SEM o texto e com o destino MASCARADO — o que
+  // entra no `api_audit_log` não sai pela cascata de LGPD.
+  "agenda.aviso_whatsapp_enviado",
+  "agenda.aviso_whatsapp_falhou",
+  "agenda.aviso_whatsapp_configurado",
+  "agenda.aviso_whatsapp_teste",
   // A rodada que AVISOU alguém do próprio compromisso. Mensagem que saiu para o
   // telefone de um cliente é efeito, e efeito audita — mas só a rodada que
   // enviou: a que varreu e não achou ninguém a avisar não é mutação.

@@ -123,7 +123,7 @@ interface BaseProps {
    */
   provedoresOferecidos?: readonly string[];
   channelSessions: ChannelSessionLite[];
-  routerMembership?: { routerId: string; routerName: string } | null;
+  routerMembership?: { routerId: string; routerName: string; channelSessionId: string; channelStatus: string | null } | null;
   readOnly?: boolean;
   organizationTimezone?: string;
 }
@@ -525,7 +525,7 @@ export function AgentForm(props: Props) {
    * chave que tinha acabado de escolher.
    */
   const publishBlockReason = React.useMemo(() => {
-    if (!isEdit) return t("Salve o agent antes de publicar.");
+    if (!isEdit) return t("Salve o agente antes de publicar.");
     const motivo = bloqueioDePublicacao({
       temRascunhoVigente: !!props.draft,
       formularioValido: isValid,
@@ -539,6 +539,9 @@ export function AgentForm(props: Props) {
         estadoDaCredencialDaOrg: credSt,
       },
       numero: { estado: channelSession?.status ?? null },
+      roteador: props.routerMembership
+        ? { estadoDoCanal: props.routerMembership.channelStatus }
+        : null,
     });
     if (!motivo) return null;
     switch (motivo.codigo) {
@@ -614,7 +617,7 @@ export function AgentForm(props: Props) {
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
-        toast.success(t("Agent criado."));
+        toast.success(t("Agente criado."));
         router.push(`/app/ai/agents/${res.data!.agent_id}`);
       }
     } finally {
@@ -969,7 +972,7 @@ export function AgentForm(props: Props) {
                   >
                     «{props.routerMembership.routerName}»
                   </Link>{" "}
-                  {t("— o campo de número abaixo não se aplica.")}
+                  {t("— a publicação usa o canal do roteador, sem número próprio neste especialista.")}
                 </p>
               </div>
             )}
@@ -1011,7 +1014,7 @@ export function AgentForm(props: Props) {
                 travava o botão de salvar — o dono de uma instalação nova escrevia
                 o prompt inteiro e não conseguia guardar nada.
               */}
-              {!form.channel_session_id ? (
+              {!form.channel_session_id && !props.routerMembership ? (
                 <p className="text-xs text-muted-foreground">
                   {props.channelSessions.length === 0 ? (
                     <>

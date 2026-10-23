@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
   mfaEmDivida: vi.fn(async () => false),
+  mfaEmDividaEstrita: vi.fn(async () => false),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 // A escrita da instalação passa por requirePlatformAdminEscrita (scope 'full' +
