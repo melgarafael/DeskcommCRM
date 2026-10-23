@@ -1,5 +1,6 @@
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
+import { catalogoFotosExternasHandler } from "@/lib/catalogo/fotos-externas.handler";
 import {
   followupGatilhoMensagemHandler,
   followupRespostaPadraoHandler,
@@ -77,6 +78,9 @@ export function ensureHandlersRegistered(): void {
   registerHandler(avisoAoDonoDaCarteira);
   registerHandler(followupGatilhoLeadHandler);
   registerHandler(followupGatilhoCasoHandler);
+  // Fotos do catálogo em link externo → bucket (rede de terceiro: fica no fim,
+  // longe dos consumidores que só escrevem no banco).
+  registerHandler(catalogoFotosExternasHandler);
   // O caso aberto na Central, na hora — escrita curta no banco (um item), ao
   // lado do outro consumidor de `ai.case_opened` que só escreve no banco, e
   // longe do aviso ao suporte, que sai por rede de terceiro.

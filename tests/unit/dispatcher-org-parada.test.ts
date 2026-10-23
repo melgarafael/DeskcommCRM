@@ -38,6 +38,8 @@ import { followupGatilhoEtapaHandler } from "@/lib/followup/gatilho-etapa.handle
 import { followupGatilhoLeadHandler } from "@/lib/followup/gatilho-lead.handler";
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
+import { followupGatilhoMensagemHandler, followupRespostaPadraoHandler } from "@/lib/followup/gatilho-mensagem.handler";
+import { catalogoFotosExternasHandler } from "@/lib/catalogo/fotos-externas.handler";
 import { followupReactivityHandler } from "@/lib/followup/reactivity.handler";
 import { avisoDeEtapaHandler } from "@/lib/leads/aviso-de-etapa.handler";
 import { avisoAoDonoDaCarteira } from "@/lib/carteira/aviso-ao-dono";
@@ -75,7 +77,9 @@ const PULA: EventHandler[] = [
   ragIndexerHandler,
   mediaDeriveHandler,
   automationRulesHandler,
+  followupGatilhoMensagemHandler,
   followupGatilhoRetornoHandler,
+  followupRespostaPadraoHandler,
   followupGatilhoEtapaHandler,
   followupGatilhoLeadHandler,
   followupGatilhoCasoHandler,
@@ -87,6 +91,8 @@ const PULA: EventHandler[] = [
   conversaoDeQualificacaoHandler,
   conversaoDeEtapaMetaHandler,
   pinoReintentoHandler,
+  // Baixa foto de um host de terceiro: sai para fora, não roda com a org parada.
+  catalogoFotosExternasHandler,
 ];
 
 const PREFIXO_DE_TESTE = "teste-org-parada";
