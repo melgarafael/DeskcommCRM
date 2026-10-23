@@ -12,7 +12,9 @@ export function nativePublicationBooking() {
 }
 
 export function publicationReceipt(row: Record<string, unknown>, configured = true) {
-  if (row.service_occurrence_id) return reciboDoServico(row);
+  // O recibo legado preserva "failed"; o atendimento precisa distinguir
+  // recuperação automática de intervenção, sempre a partir da linha atual.
+  if (row.service_occurrence_id) return { ...reciboDoServico(row), google_publication: googlePublication(row) };
   return {
     id: row.id, starts_at: row.starts_at, ends_at: row.ends_at, status: row.status,
     time_zone: row.time_zone, revision: row.revision,

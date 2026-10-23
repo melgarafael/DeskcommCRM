@@ -40,7 +40,10 @@ export function reciboDoServico(raw: unknown) {
     google_conflict: z.unknown(), google_sync_error: z.string().nullable().optional(),
     service_confirmed_by_user_id: z.uuid().nullable().default(null), service_confirmed_at: z.string().nullable().default(null),
   }).parse(raw);
-  const publication = googlePublication({ ...row, ...privateRow });
+  const currentPublication = googlePublication({ ...row, ...privateRow });
+  // Contrato nativo do recibo: uma tentativa que falhou continua "failed".
+  // A continuidade projeta seu estado operacional da mesma linha persistida.
+  const publication = currentPublication === "retrying" ? "failed" : currentPublication;
   const human = !row.service_requires_confirmation ? "not_required" : row.status === "pending" ? "pending"
     : row.status !== "confirmed" ? "not_applicable" : privateRow.service_confirmed_by_user_id && privateRow.service_confirmed_at ? "confirmed" : "check_human_record";
   return { ...row, google_publication: publication, communication: "not_proven", human_confirmation: human,
