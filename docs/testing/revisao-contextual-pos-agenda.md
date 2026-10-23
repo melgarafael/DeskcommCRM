@@ -2,7 +2,7 @@
 
 Uma resposta como “esse horário” depende da oferta que o cliente recebeu. Responder a um Caso depende também da decisão humana vinculada ao pedido. A revisão precisa desses fatos, com origem e limites: consulta não comprova reserva, e registrar um Caso não comprova sua conclusão.
 
-A agenda independente da PR #3132 já foi integrada. Esta contribuição foi conciliada com a main oficial até `fc30f02213503caf223d52854ae8f86f190d4d11`. A PR #3069 permanece rascunho, aguardando definição TypeSafe/LGPD para integrar JEV e a conferência semântica. Código preparado não equivale a essa liberação.
+A agenda independente da PR #3132 já foi integrada. Esta contribuição foi conciliada com a main oficial até `ef50e7750ab65e700016f280f4a3df96f440e583`. A PR #3069 permanece rascunho, aguardando definição TypeSafe/LGPD para integrar JEV e a conferência semântica. Código preparado não equivale a essa liberação.
 
 ## Fluxo e limites de autoridade
 
