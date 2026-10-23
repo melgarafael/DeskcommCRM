@@ -31,6 +31,7 @@ import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { ProvedorDaOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
+import { ehMembroAtivoDaAgencia } from "@/lib/agencia/acesso";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await loadAuthUser();
@@ -49,6 +50,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   //
   // A consulta só roda neste ramo, que é o raro: quem tem organização não paga
   // nada por ela.
+  //
+  // Um terceiro caso, do fork: membro da equipe da AGÊNCIA não pertence a
+  // organização nenhuma e o lugar dele é `/agencia` (docs/agencia/SPEC-equipe.md,
+  // critério 5) — nem onboarding, nem "acesso revogado".
+  if (!activeOrg && !user.support && (await ehMembroAtivoDaAgencia(user.id))) {
+    redirect("/agencia");
+  }
   if (!activeOrg && !user.support && (await acessoFoiRevogado(user.id))) {
     redirect("/acesso-revogado");
   }

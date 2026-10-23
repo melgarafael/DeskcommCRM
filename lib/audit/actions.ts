@@ -1158,6 +1158,21 @@ export const AUDIT_ACTIONS = [
   // Configuração e sincronização do Catálogo Meta (Graph API / Feed) diretamente no CRM
   "catalog_product.meta_config_updated",
   "catalog_product.meta_synced",
+
+  // Área da agência (docs/agencia/SPEC-equipe.md › Auditoria). Ações da
+  // instalação: organization_id nulo, como as do admin de plataforma.
+  "agencia.membro_convidado",
+  "agencia.convite_reenviado",
+  "agencia.convite_revogado",
+  "agencia.membro_ativado",
+  "agencia.membro_alterado",
+  "agencia.membro_desativado",
+  "agencia.membro_reativado",
+  "agencia.funcao_criada",
+  "agencia.funcao_alterada",
+  "agencia.whatsapp_configurado",
+  "agencia.whatsapp_teste_enviado",
+  "agencia.avisos_configurados",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

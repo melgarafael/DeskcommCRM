@@ -102,6 +102,11 @@ const PASTAS_IGNORADAS = new Set(["api", "node_modules"]);
 const FORA_DO_PRODUTO: Record<string, string> = {
   "app/design": "vitrine do design system: rota noindex, sem porta na navegação",
   "app/vitrine-agenda": "vitrine do kit visual da Agenda: dado de mentira, noindex",
+  // Fork Em Movimento (docs/agencia/SPEC-equipe.md): a área interna da EQUIPE da
+  // agência. Quem a abre é só a equipe brasileira que opera a instalação, nunca
+  // uma empresa atendida — não há espanhol para servir a ninguém aqui.
+  "app/agencia": "área interna da equipe da agência (fork): só a equipe brasileira entra, nenhuma empresa atendida",
+  "components/agencia": "componentes da área interna da agência (fork), mesma razão de app/agencia",
 };
 
 /**

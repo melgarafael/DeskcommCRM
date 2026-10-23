@@ -32,6 +32,11 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/cobranca\/volta$/,
   /^\/403$/,
   /^\/admin\/forbidden$/,
+  // O aceite do convite da equipe da agência (docs/agencia/SPEC-equipe.md):
+  // quem chega aqui ainda não tem conta, e o link vem do WhatsApp — outro site,
+  // onde o cookie Strict não viaja. O token é a credencial, conferido pelo hash
+  // no servidor. Um segmento só, no formato do token (43 caracteres base64url).
+  /^\/agencia\/convite\/[A-Za-z0-9_-]{43}$/,
   /^\/404$/,
   /^\/500$/,
   /^\/503$/,

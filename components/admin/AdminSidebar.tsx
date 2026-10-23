@@ -23,6 +23,7 @@ import {
   PuzzlePiece,
   Stack,
   Receipt,
+  Briefcase,
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -116,6 +117,9 @@ const NAV_ITEMS: NavItem[] = [
   // chave `cobranca` ligada — desligada, `/admin/cobranca` responde 404 e o
   // menu do dono segue igual.
   { href: "/admin/cobranca", label: "Cobrança", icon: Receipt, modulo: "cobranca" },
+  // A porta da área interna da agência (docs/agencia/SPEC-equipe.md, E1): mora
+  // FORA de /admin para a equipe entrar sem ver o painel; daqui só o dono chega.
+  { href: "/agencia", label: "Agência", icon: Briefcase, modulo: "agencia" },
 ];
 
 interface AdminSidebarProps {

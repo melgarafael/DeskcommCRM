@@ -46,6 +46,7 @@ import { avisoAoDonoDaCarteira } from "@/lib/carteira/aviso-ao-dono";
 import { comandaDoGanhoHandler } from "@/lib/financeiro/comanda-do-ganho.handler";
 import { webPushInboundHandler } from "@/lib/notifications/push.handler";
 import { avisoDePropostaNoWhatsAppHandler } from "@/lib/propostas/aviso-no-whatsapp.handler";
+import { whatsappDaAgenciaHandler } from "@/lib/agencia/whatsapp/handler";
 import { aiHandoffFromSentimentHandler } from "@/workers/ai-handoff-from-sentiment.handler";
 import { aiResponseHandler } from "@/workers/ai-response-worker.handler";
 import { aiSentimentHandler } from "@/workers/ai-sentiment-worker.handler";
@@ -93,6 +94,9 @@ const PULA: EventHandler[] = [
   pinoReintentoHandler,
   // Baixa foto de um host de terceiro: sai para fora, não roda com a org parada.
   catalogoFotosExternasHandler,
+  // WhatsApp da agência (docs/agencia/SPEC-whatsapp-agencia.md): mensagem real
+  // num número real, pelo canal da organização da agência — sai para fora.
+  whatsappDaAgenciaHandler,
 ];
 
 const PREFIXO_DE_TESTE = "teste-org-parada";

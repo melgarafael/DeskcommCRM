@@ -15762,6 +15762,12 @@ export const DICIONARIO: Traducoes = {
   "Você já tem um pagamento em andamento. Use o link para concluir.": { es: "Ya tienes un pago en curso. Usa el enlace para completarlo." },
   "O administrador do sistema ainda não conectou a cobrança.": { es: "El administrador del sistema aún no conectó el cobro." },
   "Sua empresa não tem plano de cobrança.": { es: "Tu empresa no tiene plan de cobro." },
+  // ─── Fork Em Movimento — área da agência (docs/agencia/SPEC-equipe.md) ─────
+  "Área da agência": { es: "Área de la agencia" },
+  "Agência": { es: "Agencia" },
+  "Equipe interna com funções, tarefas e avisos no WhatsApp, separada das empresas atendidas.": { es: "Equipo interno con funciones, tareas y avisos por WhatsApp, separado de las empresas atendidas." },
+  "Ligado, a equipe interna da agência ganha uma área própria, com login, funções e avisos no WhatsApp, separada das empresas atendidas. Desligado, a área e a entrada no menu do Admin somem; nada é apagado.": { es: "Activado, el equipo interno de la agencia gana un área propia, con inicio de sesión, funciones y avisos por WhatsApp, separada de las empresas atendidas. Desactivado, el área y la entrada en el menú del Admin desaparecen; no se borra nada." },
+  "Não cria porta no menu do CRM: a área é Agência, aqui no Admin.": { es: "No crea entrada en el menú del CRM: el área es Agencia, aquí en el Admin." },
   // ─── #1639 — login do Codex por assinatura (fatia do login) ────────────────
   "Login do Codex por assinatura": { es: "Inicio de sesión de Codex por suscripción" },
   "Conecta a assinatura do ChatGPT (o mesmo login do Codex): cada empresa conecta a própria conta, em Credenciais, com a chave de API da mesma empresa como reserva. Desligado por padrão.": { es: "Conecta la suscripción de ChatGPT (el mismo inicio de sesión de Codex): cada empresa conecta su propia cuenta, en Credenciales, con la clave de API de la misma organización como reserva. Desactivado por defecto." },

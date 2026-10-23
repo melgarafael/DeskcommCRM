@@ -27,6 +27,7 @@ export {
   House,
   // admin platform
   Buildings,
+  Briefcase,
   FlowArrow,
   Lightning,
   Shuffle,
@@ -133,6 +134,7 @@ export {
   CaretLeft,
   CaretRight,
   ArrowRight,
+  ArrowLeft,
   SignOut,
   WebhooksLogo,
   PuzzlePiece,

@@ -62,6 +62,7 @@ export const MODULOS_OPCIONAIS = [
   "financeiro",
   "cobranca",
   "login_codex",
+  "agencia",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -83,6 +84,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "crm_b2b",
   "cobranca",
   "login_codex",
+  "agencia",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -110,6 +112,10 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // que o mantenedor pôs (02/10): só quem administra a instalação liga, e
   // ligar libera o painel de conexão em /admin/sistema.
   login_codex: "MODULO_LOGIN_CODEX",
+  // A área interna da agência (`docs/agencia/SPEC-equipe.md`, E3): equipe,
+  // tarefas e avisos de quem opera a instalação. As tabelas `agencia_*` existem
+  // vazias em todo banco; desligada, `/agencia` responde 404 e a porta some.
+  agencia: "MODULO_AGENCIA",
 };
 
 const LIGADO = "ligado";
@@ -256,7 +262,7 @@ export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = [];
  * Desligado por quem administra o servidor" diria à empresa que ela pode pedir
  * para ser cobrada (spec da cobrança §9).
  */
-export const MODULOS_SO_DA_INSTALACAO: readonly ModuloOpcional[] = ["cobranca"];
+export const MODULOS_SO_DA_INSTALACAO: readonly ModuloOpcional[] = ["cobranca", "agencia"];
 
 /**
  * Grava a escolha de quem administra a instalação. `semeado_do_env = false`

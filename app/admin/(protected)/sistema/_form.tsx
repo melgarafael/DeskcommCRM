@@ -319,6 +319,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera um painel em",
     painelEm: "/app/ai/credentials",
   },
+  {
+    modulo: "agencia",
+    id: "modulo-agencia",
+    rotulo: "Área da agência",
+    descricao:
+      "Ligado, a equipe interna da agência ganha uma área própria, com login, funções e avisos no WhatsApp, separada das empresas atendidas. Desligado, a área e a entrada no menu do Admin somem; nada é apagado.",
+    foraDoMenu: "Não cria porta no menu do CRM: a área é Agência, aqui no Admin.",
+  },
 ];
 
 /**

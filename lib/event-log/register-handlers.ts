@@ -39,6 +39,7 @@ import { comandaDoGanhoHandler } from "@/lib/financeiro/comanda-do-ganho.handler
 import { avisoDeCasoAoSuporteHandler } from "@/lib/escalacao/aviso-ao-suporte.handler";
 import { avisoDePropostaNoWhatsAppHandler } from "@/lib/propostas/aviso-no-whatsapp.handler";
 import { cobrancaSinalHandler } from "@/lib/cobranca/sinal.handler";
+import { whatsappDaAgenciaHandler } from "@/lib/agencia/whatsapp/handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 
 let _registered = false;
@@ -107,6 +108,9 @@ export function ensureHandlersRegistered(): void {
   // Mesmo critério do de cima: sai por rede de terceiro, depois de quem só
   // escreve no banco. Consome o MESMO evento que a notificação do navegador.
   registerHandler(avisoDePropostaNoWhatsAppHandler);
+  // O WhatsApp da agência (docs/agencia/SPEC-whatsapp-agencia.md): sai por rede
+  // de terceiro e consome um evento só dele — mesmo critério dos dois de cima.
+  registerHandler(whatsappDaAgenciaHandler);
   // Por último: reportar a venda ao anúncio é o consumidor mais externo do
   // fechamento — depende de rede de terceiro e não pode atrasar quem escreve
   // no banco. Falha dele nunca segura os handlers acima.
