@@ -125,7 +125,8 @@ describe('confirmação operacional e decisão humana são fatos distintos', () 
     const packet = pacoteFactualDaRevisao(args);
     expect(pacoteParaJev(args)).toEqual(packet);
     // O sinal falso inicia uma segunda opinião aqui só para medir o transporte.
-    seam.call.mockResolvedValueOnce({ result: { text: JSON.stringify({ ...automatic, prometeuRetornoHumano: true }) } });
+    seam.call.mockResolvedValueOnce({ result: { text: JSON.stringify({ ...automatic, prometeuRetornoHumano: true }) } })
+      .mockResolvedValueOnce({ result: { text: JSON.stringify({ agendaCompativel: true }) } });
     const v = await classifyPromise({} as pg.Pool, {}, { tenantId: org }, args,
       { log, loadHumanReturnBinding: vi.fn(async () => binding) });
     expect(v).toMatchObject({ afirmouConclusaoHumana: false, repasseConcluidoFiel: false });
@@ -247,7 +248,16 @@ describe('divergência de conclusão humana após operação automática do turn
     }
     if (kind === 'humano_exigido') args.serviceContext.operacoes[0]!.dados.natureza_confirmacao = 'confirmacao_humana_exigida_sem_atestado';
     const v = await review(args, { ...automatic, conclusaoOperacionalDaAgenda });
-    expect(v.afirmouConclusaoHumana).toBe(true);
+    if (['outra_reserva', 'revisao_antiga', 'pedido_ausente', 'pacote_limitado'].includes(kind)) {
+      // O preflight de contexto introduzido depois deste teste fecha antes dos modelos.
+      // Não inventa autoria humana ou negativa semântica a partir da fonte ausente.
+      expect(v).toMatchObject({ agendaCompativel: false, agendaReviewIssue: 'contexto_incompleto', retornoSoDoAssistente: false });
+      expect(seam.call).not.toHaveBeenCalled();
+      expect(semanticPromiseGate.evaluate({ ...gate(args.candidate, v), agendaRequestReviewRequired: true }))
+        .toMatchObject({ pass: false, detail: { agenda_review: 'inconclusive', motivo: 'contexto_incompleto' } });
+    } else {
+      expect(v.afirmouConclusaoHumana).toBe(true);
+    }
   });
   it('afirmação humana adicional não vira automática por haver um recibo', async () => {
     const args = scenario(); args.candidate += ' A equipe aprovou também sua isenção.';

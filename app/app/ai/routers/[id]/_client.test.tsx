@@ -96,14 +96,14 @@ describe("seletor de roteiro na intenção × módulo", () => {
 });
 
 describe("tamanho do contexto do roteador", () => {
-  it.each([4, 12, 16])("roteador sem limite salvo mostra oito mensagens e salva %i pelo painel", async quantidade => {
+  it.each([4, 12, 16])("roteador legado sem limite salvo mantém quatro mensagens e salva %i pelo painel", async quantidade => {
     authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
     flowsMock.mockReturnValue({ data: undefined });
     updateMock.mockClear();
     renderizar();
-    const campo = screen.getByLabelText("Histórico recente dos decisores");
-    expect(campo).toHaveValue(8);
-    expect(screen.getByTestId('historico-sem-configuracao')).toHaveTextContent('o roteador usa 8 e o sentimento usa 16');
+    const campo = screen.getByLabelText("Mensagens anteriores para o roteamento");
+    expect(campo).toHaveValue(4);
+    expect(screen.getByTestId('historico-sem-configuracao')).toHaveTextContent('o roteador usa 4 e o sentimento usa 16');
     expect(screen.getByText(/Neste canal, a quantidade salva vale/)).toBeTruthy();
     expect(screen.getByText(/Este campo não limita evidências/)).toBeTruthy();
     fireEvent.change(campo, { target: { value: String(quantidade) } });

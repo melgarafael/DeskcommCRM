@@ -162,7 +162,7 @@ function soPedeConsentimento(text: string): boolean {
 }
 
 /** A negação vale para a ocorrência, nunca exonera uma promessa vizinha. */
-function temCompromisso(frase: string, patterns: readonly RegExp[]): boolean {
+function temCompromisso(frase: string, patterns: readonly RegExp[], consultaConcluidaValidada = false): boolean {
   const oracoes = frase.split(
     /;|,?\s+\b(?:mas|porem|contudo|entretanto)\b\s+|,\s*|\s+e\s+(?=(?:eu|vou|vamos|a equipe|o time|o responsavel|eles|elas)\b)/,
   );
@@ -172,6 +172,12 @@ function temCompromisso(frase: string, patterns: readonly RegExp[]): boolean {
       for (const match of oracao.matchAll(new RegExp(pattern.source, "g"))) {
         const antes = oracao.slice(0, match.index);
         const trecho = match[0];
+        // Só após fonte nativa elegível + revisão fiel da candidata inteira: consulta
+        // perfeita passada não cria outra consulta. Encaminhamento/registro/análise
+        // e qualquer compromisso vizinho conservam seus padrões e gates.
+        if (consultaConcluidaValidada &&
+            /^(?:verifiquei|falei|conferi|confirmei|consultei|alinhei|validei|chequei)\s+com\b/.test(trecho) &&
+            !/\b(?:vou|vamos|vai|vao|irei|iremos|ira|irao|aguard\w*|pendente|analise|depois|amanha)\b|\b(?:para|pra)\s+(?:que\b|(?:(?:eu|voce|vc|ele|ela|nos|vos|eles|elas)\s+)?[a-z]+(?:ar|er|ir)(?:mos|em)?\b)/.test(oracao)) continue;
         if (
           /\b(?:nao|nunca|jamais)\s+(?:(?:vou|vamos|irei|iremos|pretendo|quero|posso|podemos)\s+)?$/.test(
             antes,
@@ -247,7 +253,7 @@ const RETORNO_COM_ANTECEDENTE: readonly RegExp[] = [
  * ("falar com humano") e as já cobertas por TARGET_WORDS são descartadas —
  * só nomes próprios simples entram no alvo estendido.
  */
-export function detectHumanPromise(body: string, extraHumanNames?: readonly string[]): boolean {
+export function detectHumanPromise(body: string, extraHumanNames?: readonly string[], consultaConcluidaValidada = false): boolean {
   if (body.trim() === "") return false;
   const text = normalize(body);
   // Consentimento só isenta a própria frase. Uma explicação ao lado não cria
@@ -279,5 +285,5 @@ export function detectHumanPromise(body: string, extraHumanNames?: readonly stri
     return true;
   }
   const patterns = names.length === 0 ? PATTERNS : buildPatterns(extendedTarget);
-  return analisadas.some((frase) => temCompromisso(frase, patterns));
+  return analisadas.some((frase) => temCompromisso(frase, patterns, consultaConcluidaValidada));
 }

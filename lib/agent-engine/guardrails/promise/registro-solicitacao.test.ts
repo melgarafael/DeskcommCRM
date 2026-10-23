@@ -1,3 +1,4 @@
+import { INSTRUCAO_CONTEXTO_COMPARTILHADO } from '../../agent/contexto-compartilhado-do-turno';
 import type pg from 'pg';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CRITERIO_ENVIO_AGENDA, INSTRUCAO_CONTINUIDADE_CASO } from '@/lib/agenda/pedido';
@@ -48,6 +49,7 @@ describe('prova de registro de solicitação não é prova de agendamento', () =
     }
     expect(perguntasDaRevisao(false, false, true).agenda?.instrucao).toContain(CRITERIO_ENVIO_AGENDA);
     expect(perguntasDaRevisao(false, false, true).agenda?.instrucao).toContain(INSTRUCAO_CONSULTA_AGENDA);
+    expect(perguntasDaRevisao(false, false, true).agenda?.instrucao).toContain(INSTRUCAO_CONTEXTO_COMPARTILHADO);
     // O modelo foi controlado: esta prova mede a propagação, não a acurácia do classificador.
   });
 

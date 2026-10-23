@@ -5,16 +5,21 @@ import type { Queryable, JobRow } from '../queue/queue';
 import { parseServiceBoundary, assertCurrentServiceBoundary } from '@/lib/atendimento/fronteira';
 import { readCurrentServiceBoundary } from '@/lib/atendimento/fronteira-server';
 
-const proveniencia = z.object({
+const provenienciaDeUsuario = z.object({
   versao: z.literal(1), origem: z.literal('case_reply_authenticated'),
   papel: z.enum(['agent', 'manager', 'admin']), job_id: z.string().uuid(),
   revoked_at: z.string().optional(), expires_at: z.string().datetime().optional(),
 });
+const proveniencia = z.union([provenienciaDeUsuario,z.object({
+  versao:z.literal(1),origem:z.literal('case_reply_internal_whatsapp'),job_id:z.string().uuid(),
+  delivery_id:z.string().uuid(),channel_session_id:z.string().uuid(),consent_revision:z.number(),
+  revoked_at:z.string().optional(),expires_at:z.string().datetime().optional(),
+})]);
 export interface DecisaoHumanaDoCaso {
   eventId: string; caseId: string; jobId: string | null;
   action: string; note: string; at: string; title: string; summary: string; blocker: string;
   requestId: string | null; request: string | null;
-  provenance: 'authenticated' | 'legacy_correlated' | 'unverifiable';
+  provenance: 'authenticated' | 'authorized_internal_whatsapp' | 'legacy_correlated' | 'unverifiable';
   eligible: boolean;
 }
 export interface ContextoDeDecisaoHumana {
@@ -26,7 +31,7 @@ export interface ContextoDeDecisaoHumana {
 }
 interface Linha {
   event_id: string; case_id: string; action: string; note: string; at: string;
-  actor_user_id: string | null; metadata: Record<string, unknown>;
+  actor_user_id: string | null; metadata: Record<string, unknown>; whatsapp_authorized?:boolean;
   status: string; title: string; summary: string; blocker: string;
   snapshot: Record<string, unknown>; request_id: string | null; request: string | null;
 }
@@ -39,7 +44,7 @@ export async function carregarContextoDeDecisaoHumana(
   if (current?.contact_id !== ids.leadId) throw new Error('human_decision_scope_mismatch');
   const { rows } = await db.query<Linha>(
     `select e.id as event_id, ac.id as case_id, e.human_action as action, e.body as note,
-       e.created_at::text as at, e.actor_user_id, e.metadata, ac.status, ac.title, ac.summary,
+       e.created_at::text as at, e.actor_user_id, e.metadata, public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id') as whatsapp_authorized, ac.status, ac.title, ac.summary,
        ac.blocker, ac.context_snapshot as snapshot,
        m.id as request_id, coalesce(m.media_derived_text, m.body) as request
      from agent_cases ac join conversations c on c.id=ac.conversation_id and c.organization_id=ac.organization_id
@@ -49,7 +54,7 @@ export async function carregarContextoDeDecisaoHumana(
        then (ac.context_snapshot->>'request_message_id')::uuid end)
        and m.organization_id=ac.organization_id and m.conversation_id=ac.conversation_id and m.direction='inbound'
      where ac.organization_id=$1 and c.contact_id=$2 and c.id=$3
-       and e.kind='human_replied' and e.actor_kind='human' and e.actor_user_id is not null
+       and e.kind='human_replied' and e.actor_kind='human' and (e.actor_user_id is not null or e.metadata->'review_context_v1'->>'origem'='case_reply_internal_whatsapp')
        and not exists (select 1 from agent_case_events newer where newer.organization_id=e.organization_id
          and newer.case_id=e.case_id and newer.kind in ('human_replied','cancelled','escalated')
          and (newer.created_at,newer.id)>(e.created_at,e.id))
@@ -79,13 +84,13 @@ export async function carregarContextoDeDecisaoHumana(
     try { assertCurrentServiceBoundary(parseServiceBoundary(row.snapshot?.service_boundary), current); }
     catch { boundaryValid = false; }
     const p = proveniencia.safeParse(row.metadata?.review_context_v1);
-    const valid = p.success && !p.data.revoked_at &&
+    const valid = p.success && (p.data.origem==='case_reply_authenticated' || row.whatsapp_authorized===true) && !p.data.revoked_at &&
       (!p.data.expires_at || Date.parse(p.data.expires_at) > (options.now ?? new Date()).getTime());
     decisions.push({
       eventId: row.event_id, caseId: row.case_id, jobId: p.success ? p.data.job_id : null,
       action: row.action, note: row.note, at: row.at, title: row.title, summary: row.summary, blocker: row.blocker,
       requestId: row.request_id, request: row.request,
-      provenance: p.success ? 'authenticated' : boundaryValid ? 'legacy_correlated' : 'unverifiable',
+      provenance: p.success ? p.data.origem==='case_reply_internal_whatsapp' ? row.whatsapp_authorized===true ? 'authorized_internal_whatsapp' : 'unverifiable' : 'authenticated' : boundaryValid ? 'legacy_correlated' : 'unverifiable',
       eligible: !!valid && boundaryValid && row.status === 'resolved' && row.action === 'resolved' &&
         !!row.request_id && !!row.request && !!rawRequest?.text,
     });
@@ -104,13 +109,13 @@ export async function resolverEventoDoJob(db: Queryable, job: JobRow): Promise<{
   const p = job.payload;
   const result = await db.query<{
     id: string; body: string; conversation_id: string; channel_session_id: string;
-    metadata: Record<string, unknown>; context_snapshot: Record<string, unknown>;
+    metadata: Record<string, unknown>; context_snapshot: Record<string, unknown>; whatsapp_authorized?:boolean;
   }>(
-    `select e.id,e.body,c.id as conversation_id,c.channel_session_id,e.metadata,ac.context_snapshot
+    `select e.id,e.body,c.id as conversation_id,c.channel_session_id,e.metadata,ac.context_snapshot,public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id') as whatsapp_authorized
      from agent_case_events e join agent_cases ac on ac.id=e.case_id and ac.organization_id=e.organization_id
      join conversations c on c.id=ac.conversation_id and c.organization_id=ac.organization_id
      where e.organization_id=$1 and e.case_id=$2 and c.contact_id=$3 and c.channel_session_id is not null
-       and e.kind='human_replied' and e.actor_kind='human' and e.actor_user_id is not null
+       and e.kind='human_replied' and e.actor_kind='human' and (e.actor_user_id is not null or public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id'))
        and e.human_action=$4 and ac.status=$5
        and (($6::uuid is not null and e.id=$6) or ($6 is null and e.body=$7))
        and ($6::uuid is null or not exists (select 1 from agent_case_events n where n.organization_id=e.organization_id and n.case_id=e.case_id
@@ -123,7 +128,7 @@ export async function resolverEventoDoJob(db: Queryable, job: JobRow): Promise<{
     await readCurrentServiceBoundary(db, job.organization_id, e.conversation_id)); } catch { return null; }
   const provenance = proveniencia.safeParse(e.metadata.review_context_v1);
   if (p.human_event_id) {
-    if (!provenance.success || provenance.data.job_id !== job.id || provenance.data.revoked_at ||
+    if (!provenance.success || (provenance.data.origem==='case_reply_internal_whatsapp' && !e.whatsapp_authorized) || provenance.data.job_id !== job.id || provenance.data.revoked_at ||
       (provenance.data.expires_at && Date.parse(provenance.data.expires_at) <= Date.now())) return null;
   } else {
     // Legado inequivocamente correlacionado: reservar o evento por CAS, sem inventar autoria histórica.

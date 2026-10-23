@@ -3297,7 +3297,18 @@ async function executarTurnoDoAgente(
         // busca com RAG — dois UUIDs por resultado, sem uso nenhum do lado dele
         // (nenhuma ferramenta os aceita como argumento). UUID cru na resposta ao
         // cliente foi MEDIDO nesta base; esta era uma fonte silenciosa dele.
-        return turnoProjeta(mcpToolIdsDoTurno) ? projetarRetornoDeTool(out) : out;
+        const resultado = turnoProjeta(mcpToolIdsDoTurno) ? projetarRetornoDeTool(out) : out;
+        if (out.ok) {
+          const permitidas = new Set(fontesQueProvamOferta);
+          const results = out.results.filter(hit => permitidas.has(hit.knowledge_source_id));
+          // Conversas anteriores continuam no retorno do agente. A guarda recebe
+          // somente fontes que podem provar oferta e a omissão explícita das demais.
+          contextoCompartilhado.compartilharResultado(resultado, {
+            ...out, results, omitidos_por_origem: out.results.length - results.length,
+            criterio: 'somente_fontes_que_provam_oferta',
+          });
+        }
+        return resultado;
   };
   const funcionamentoNaConsulta = criarConsultaDeFuncionamento(() => consultarConhecimentoDoAgente(
     "Qual é o horário de funcionamento presencial: abertura e fechamento em cada dia da semana, finais de semana e exceções/feriados?",
@@ -4804,15 +4815,13 @@ async function executarTurnoDoAgente(
         ...rawTools.get_lead_note,
         execute: async () => ({ ok: true, notes: preview.notes ?? [] }),
       };
-    // Ponte única para leituras presentes e futuras, compartilhada com o Operador.
-    const ferramentasCompartilhadas = observarFerramentasDoTurno(rawTools, contextoCompartilhado);
     const previewContext = preview
       ? await previewGateContext(pool, preview, runLog, clock())
       : null;
     const previewTools =
       preview && previewContext
         ? applyPreviewPolicy(
-            ferramentasCompartilhadas,
+            rawTools,
             preview,
             {
               ...previewContext,
@@ -4851,8 +4860,10 @@ async function executarTurnoDoAgente(
             // (impedimento no assistido, aviso no Teste) em vez de sair calado.
             conferirAfirmacoes,
           )
-        : ferramentasCompartilhadas;
-    const tools = wrapToolsWithBreaker(previewTools, {
+        : rawTools;
+    // Captura o resultado efetivo, depois de a prévia substituir as escritas.
+    const ferramentasCompartilhadas = observarFerramentasDoTurno(previewTools, contextoCompartilhado);
+    const tools = wrapToolsWithBreaker(ferramentasCompartilhadas, {
       thresholds: deps.knobs.breaker,
       readOnlyTools: READ_ONLY_TOOLS,
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
@@ -5229,7 +5240,13 @@ async function executarTurnoDoAgente(
       runLog.warn('recuperação limitada da comunicação de agenda', { event: 'agenda_communication_recovery' });
       contextoDoAtendimento = await lerContextoDoAtendimento();
       contextoHumano = await lerContextoHumano();
-      const pedidoDeRecuperacao: ModelMessage = { role: 'user', content: CORRECAO_DO_ENVIO_DE_AGENDA + '\n' +
+      // Diagnóstico semântico e falha técnica têm significados diferentes.
+      // O recibo relido é o mesmo; o agente não deve tratar ausência de revisão
+      // válida como se uma afirmação falsa já tivesse sido comprovada.
+      const diagnosticoDaRecuperacao = recuperacaoAgenda.falhaTecnica()
+        ? 'A revisão da mensagem de agenda ficou inconclusiva.'
+        : 'A mensagem de agenda foi vetada.';
+      const pedidoDeRecuperacao: ModelMessage = { role: 'user', content: diagnosticoDaRecuperacao + '\n' + CORRECAO_DO_ENVIO_DE_AGENDA + '\n' +
         JSON.stringify(pacoteFactualDaRevisao({ candidate: '', pendingAgendaCommunication: recuperacaoAgenda.contexto(),
           serviceContext: contextoDoAtendimento, humanDecisionContext: contextoHumano,
           agendaOperationReceipt:operacaoAgendaDoTurno.atual() })) };

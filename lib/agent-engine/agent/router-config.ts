@@ -11,7 +11,7 @@
  *     nunca derruba o turno.
  */
 import type pg from 'pg';
-import { CLASSIFIER_CONTEXT_MESSAGES, quantidadeDeHistoricoSalva } from '@/lib/ai/classifier-context';
+import { LEGACY_ROUTER_CONTEXT_MESSAGES, quantidadeDeHistoricoSalva } from '@/lib/ai/classifier-context';
 
 export interface RouterMember {
   agentId: string;
@@ -124,7 +124,7 @@ export async function loadActiveRouter(
     typeof cfg.min_confidence === 'number' && cfg.min_confidence >= 0 && cfg.min_confidence <= 1
       ? cfg.min_confidence
       : 0.6;
-  const contextMessageCount = quantidadeDeHistoricoSalva(router.config) ?? CLASSIFIER_CONTEXT_MESSAGES;
+  const contextMessageCount = quantidadeDeHistoricoSalva(router.config) ?? LEGACY_ROUTER_CONTEXT_MESSAGES;
 
   return {
     id: router.id,

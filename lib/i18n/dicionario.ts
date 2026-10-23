@@ -4496,6 +4496,15 @@ export const DICIONARIO: Traducoes = {
   "Escolher qual agente atende": {
     es: "Elegir qué agente atiende",
   },
+  "Lê a mensagem atual do cliente e escolhe qual agente deve atender. Com autorização específica, usa também o contexto recente da conversa.": {
+    es: "Lee el mensaje actual del cliente y elige qué agente debe atender. Con autorización específica, usa también el contexto reciente de la conversación.",
+  },
+  "Sem quantidade salva: o roteador usa 4 e o sentimento usa 16 mensagens. Ao salvar esta configuração, ambos passam a usar a quantidade escolhida.": {
+    es: "Sin una cantidad guardada: el enrutador usa 4 mensajes y el sentimiento usa 16. Al guardar esta configuración, ambos pasan a usar la cantidad elegida.",
+  },
+  "Cada função mantém sua autorização própria em Provedores de IA. O histórico do roteador exige um novo aceite específico; o aceite antigo não amplia o envio. O atual permite até 16 mensagens. O sentimento exige aceite próprio e permite até 16, com limite adicional de texto. Autorizações ausentes ou revogadas não são ampliadas por este campo. Principal e reserva usam a mesma fotografia enquanto autorizada. Sem roteador ativo ou quantidade válida neste canal, o sentimento mantém o padrão de 16. Este campo não limita evidências, ferramentas, decisões humanas ou recibos da revisão e não amplia os outros classificadores. Mais mensagens podem aumentar custo e demora.": {
+    es: "Cada función mantiene su propia autorización en Proveedores de IA. El historial del enrutador exige una nueva aceptación específica; la aceptación anterior no amplía el envío. La actual permite hasta 16 mensajes. El sentimiento exige su propia aceptación y permite hasta 16, con un límite adicional de texto. Este campo no amplía las autorizaciones ausentes o revocadas. El principal y la reserva usan la misma fotografía mientras esté autorizada. Sin un enrutador activo o una cantidad válida en este canal, el sentimiento mantiene el valor de 16. Este campo no limita las evidencias, herramientas, decisiones humanas ni recibos de la revisión y no amplía los otros clasificadores. Más mensajes pueden aumentar el costo y la demora.",
+  },
   // A mesma pergunta, como tarefa do Jev (lib/ai/decisao/tarefas.ts).
   "Lê a última mensagem do cliente, sozinha, e escolhe entre as intenções do seu roteador qual agente deve atender.": {
     es: "Lee el último mensaje del cliente, por separado, y elige entre las intenciones de tu enrutador qué agente debe atender.",

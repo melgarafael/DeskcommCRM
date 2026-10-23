@@ -411,7 +411,7 @@ describe("o que se grava", () => {
 
 
 describe("contexto recente do roteador — o que efetivamente sai para o fornecedor", () => {
-  const aceite = { em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 1 };
+  const aceite = { em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 2 };
   const recentMessages = [
     { direction: "inbound" as const, body: "fora da janela" },
     { direction: "inbound" as const, body: "Quero comprar, meu CPF é 123.456.789-00" },
@@ -438,11 +438,11 @@ describe("contexto recente do roteador — o que efetivamente sai para o fornece
     },
   );
 
-  it("aceite antigo limita a quatro; aceite renovado permite as oito configuradas", async () => {
+  it("aceite legado não amplia envio; aceite novo explícito permite as oito configuradas", async () => {
     const mensagens = Array.from({ length: 9 }, (_, i) => ({ direction: "inbound" as const, body: `Mensagem ${i}` }));
-    const antigo = await perguntarCom(aceite, mensagens, 8);
+    const antigo = await perguntarCom({ ...aceite, versao: 1 }, mensagens, 8);
     const novo = await perguntarCom({ ...aceite, versao: 2 }, mensagens, 8);
-    expect(antigo.corpo.state.historico).toHaveLength(4);
+    expect(antigo.corpo.state).toBe("a primeira");
     expect(novo.corpo.state.historico).toHaveLength(8);
   });
 

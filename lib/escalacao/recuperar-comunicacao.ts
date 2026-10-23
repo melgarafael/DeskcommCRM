@@ -18,7 +18,7 @@ export async function recuperarComunicacao(pool:pg.Pool,ids:{org:string;caseId:s
         join conversations c on c.organization_id=ac.organization_id and c.id=ac.conversation_id
         join agent_case_events e on e.organization_id=ac.organization_id and e.case_id=ac.id and e.id=$3
         where ac.organization_id=$1 and ac.id=$2 and ac.status in('resolved','awaiting_lead')
-        and e.kind='human_replied' and e.actor_kind='human' and e.actor_user_id is not null
+        and e.kind='human_replied' and e.actor_kind='human' and (e.actor_user_id is not null or public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id'))
         and e.human_action in('resolved','need_lead_info') for update of ac,e`,[ids.org,ids.caseId,ids.eventId]);
     const row=rows[0];if(!row)throw new ComunicacaoConflict('Decisão indisponível para recuperação.');
     const boundary=parseServiceBoundary(row.context_snapshot.service_boundary);

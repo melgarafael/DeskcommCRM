@@ -195,7 +195,7 @@ export async function sendTurnMessage(
       where e.organization_id=$1 and (e.id::text=j.payload->>'human_event_id' or
         (j.payload->>'human_event_id' is null and e.metadata->>'legacy_reply_job_id'=j.id::text))
       and e.case_id::text=j.payload->>'case_id' and e.kind='human_replied' and e.actor_kind='human'
-      and e.actor_user_id is not null and e.human_action=j.payload->>'action'
+      and (e.actor_user_id is not null or public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id')) and e.human_action=j.payload->>'action'
       and ac.status=case when e.human_action='resolved' then 'resolved' else 'awaiting_lead' end
       and coalesce(e.metadata->'review_context_v1'->>'job_id',e.metadata->>'legacy_reply_job_id')=j.id::text
       and e.metadata->'review_context_v1'->>'revoked_at' is null

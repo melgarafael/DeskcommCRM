@@ -419,7 +419,9 @@ export function consultarJevNoRoteador(
   const resposta: Promise<RespostaDoJev> = config
     .then((c) => {
       const e = estadoEfetivoDaTarefa(c, TAREFA_DO_ROTEADOR);
-      const comContexto = c.contexto_roteador != null && (entrada.recentMessages?.length ?? 0) > 0;
+      // A base oficial não autorizava histórico com o marcador legado v1.
+      // Ampliar o envio exige o novo aceite v2 explícito; nunca migrar o aceite.
+      const comContexto = c.contexto_roteador?.versao === 2 && (entrada.recentMessages?.length ?? 0) > 0;
       const pergunta = e === "desligada" ? null : perguntaDoRoteador(entrada.membros, comContexto);
       return e === "desligada" || pergunta === null ? SEM_OPINIAO : perguntar(pool, entrada, e, pergunta, deps, comContexto,
         c.contexto_roteador?.versao === 1 ? 4 : 16, c.origem);

@@ -58535,7 +58535,7 @@ begin
   perform public.fn_google_calendar_fence(p_org,(p_args->'calendar_fence'->>'id')::uuid,p_args->'calendar_fence'->'claim',p_args->'calendar_fence'->'cursor');
  end if;
  select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
- if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='40001';end if;
+ if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='PT409';end if;
  if contact is not null and exists(select 1 from public.contacts where organization_id=p_org and id=contact and is_anonymized) then
   if p_action='claim' then return jsonb_build_object('terminal','redacted');end if;
   raise exception 'google_contact_redacted' using errcode='42501';end if;
@@ -58561,9 +58561,9 @@ begin
    google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
  else
   if a.google_claim_token is distinct from (claim->>'token')::uuid or a.google_claim_epoch::text is distinct from claim->>'epoch'
-   or a.google_claim_until is null or a.google_claim_until<=clock_timestamp() then raise exception 'google_stale' using errcode='40001';end if;
+   or a.google_claim_until is null or a.google_claim_until<=clock_timestamp() then raise exception 'google_stale' using errcode='PT409';end if;
   if p_action='renew' then
-   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'google_stale' using errcode='40001';end if;
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'google_stale' using errcode='PT409';end if;
    if not exists(select 1 from public.calendar_connections x join public.calendar_connection_calendars k on k.organization_id=x.organization_id and k.connection_id=x.id
     where x.organization_id=p_org and x.id=a.google_connection_id and x.user_id=publication_owner and x.status='healthy' and k.external_calendar_id=a.google_calendar_id and k.available and k.access_role in ('writer','owner')) then raise exception 'google_connection_unavailable' using errcode='42501';end if;
    update public.calendar_appointments set google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
@@ -58572,7 +58572,7 @@ begin
   else
    if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision'
     or a.google_event_id is distinct from p_args->>'event_id' or a.google_connection_id::text is distinct from p_args->>'connection_id'
-    or a.google_calendar_id is distinct from p_args->>'calendar_id' then raise exception 'google_stale' using errcode='40001';end if;
+    or a.google_calendar_id is distinct from p_args->>'calendar_id' then raise exception 'google_stale' using errcode='PT409';end if;
    if p_action='error' then
     update public.calendar_appointments set google_sync_error=left(p_args->>'message',200),google_sync_attempts=google_sync_attempts+1,
      google_sync_failure_kind=case when p_args->>'failure_kind'='human_required' or google_sync_attempts>=19 then 'human_required' else 'transient' end,
@@ -58591,8 +58591,8 @@ begin
     perform public.fn_meet_observe(p_org,p_id,p_args);
     select * into a from public.calendar_appointments where organization_id=p_org and id=p_id;
    elsif p_action='prepare' then
-    if c.access_role not in ('owner','writer') or (a.google_pending_write is not null and a.google_pending_write<>'{"reservation":true}'::jsonb) or a.google_conflict is not null then raise exception 'google_write_unavailable' using errcode='40001';end if;
-    if p_args->'operation'?'conference_request_id' and (a.meeting_request_id is distinct from (p_args->'operation'->>'conference_request_id')::uuid or a.meeting_state<>'pending' or a.meeting_received_at is not null or a.status='cancelled') then raise exception 'meet_stale' using errcode='40001';end if;
+    if c.access_role not in ('owner','writer') or (a.google_pending_write is not null and a.google_pending_write<>'{"reservation":true}'::jsonb) or a.google_conflict is not null then raise exception 'google_write_unavailable' using errcode='PT409';end if;
+    if p_args->'operation'?'conference_request_id' and (a.meeting_request_id is distinct from (p_args->'operation'->>'conference_request_id')::uuid or a.meeting_state<>'pending' or a.meeting_received_at is not null or a.status='cancelled') then raise exception 'meet_stale' using errcode='PT409';end if;
     update public.calendar_appointments set meeting_requested_at=case when p_args->'operation'?'conference_request_id' then coalesce(meeting_requested_at,now()) else meeting_requested_at end,google_pending_write=p_args->'operation' where organization_id=p_org and id=p_id;return 'true';
    elsif p_action='idle' then
    -- idle = convergente sem nada a fazer e sem falha nesta rodada: erro
@@ -58600,9 +58600,9 @@ begin
     update public.calendar_appointments set google_sync_error=null,google_sync_failure_kind=null,google_sync_attempts=0,google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return 'true';
    elsif p_action='commit' then
     result:=p_args->'result'; b:=result->'base';remote:=result->'remote';
-    if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='40001';end if;
+    if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='PT409';end if;
     if result?'apply_remote' then
-     if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='40001';end if;
+     if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='PT409';end if;
      if a.service_occurrence_id is null and not a.service_block and not coalesce((remote->>'cancelled')::boolean,false) and exists(select 1 from public.calendar_appointments other
       where other.organization_id=p_org and other.owner_user_id=a.owner_user_id and other.id<>a.id and other.status in ('pending','confirmed')
       and other.starts_at<(remote->>'ends_at')::timestamptz and other.ends_at>(remote->>'starts_at')::timestamptz) then
@@ -58850,6 +58850,454 @@ END $$;
 REVOKE ALL ON FUNCTION public.fn_review_capture_extend_test_contact(uuid,uuid,uuid,timestamptz,jsonb)
   FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_review_capture_extend_test_contact(uuid,uuid,uuid,timestamptz,jsonb) TO service_role;
+
+
+
+-- Recuperação idempotente: reconhecimento Google, contenção e pedido atual.
+-- manifest: Reconhecer publicação sem esperar nota auxiliar e retomar a mesma reserva com o pedido atual.
+-- Consolida a recuperação já validada na 0718 pública ainda em revisão.
+-- Sem dados empresariais ou inscrição retroativa de compromissos.
+
+create or replace function public.fn_google_continuation_enqueue(p_org uuid,p_id uuid)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare r public.google_publication_continuations;result text;event_id uuid;jid uuid;
+begin
+ select * into r from public.google_publication_continuations where organization_id=p_org and id=p_id;
+ if not found then return false;end if;
+ -- A producer may hold calendar inventory. Never wait on the contact mutex
+ -- here: the durable waiting row is retried by the existing recovery cron.
+ if not pg_try_advisory_xact_lock(hashtextextended(p_org::text||':'||r.contact_id::text,222)) then return false;end if;
+ select * into r from public.google_publication_continuations where organization_id=p_org and id=p_id for update;
+ if r.state<>'waiting' then return false;end if;
+ result:=public.fn_google_continuation_outcome(p_org,p_id);
+ if result='stale' then update public.google_publication_continuations set state='stale',updated_at=now() where organization_id=p_org and id=p_id;return true;end if;
+ if result='waiting' then return false;end if;
+ -- Both the job and timeline have contact FKs. Do not wait with the calendar
+ -- inventory mutex held. Keep the durable waiting receipt for native recovery.
+ begin
+  perform 1 from public.contacts where organization_id=p_org and id=r.contact_id for key share nowait;
+ exception when lock_not_available then return false;
+ end;
+ event_id:=gen_random_uuid();jid:=gen_random_uuid();
+ insert into public.event_log(id,organization_id,event_type,entity_kind,entity_id,payload,status)
+ values(event_id,p_org,'appointment.google_publication_ready','appointment',r.appointment_ids[1],jsonb_build_object('continuation_id',r.id,'outcome',result),'done');
+ insert into public.job_queue(id,organization_id,contact_id,kind,source_event_id,payload,run_after)
+ values(jid,p_org,r.contact_id,'google_publication_turn',event_id,jsonb_build_object('continuation_id',r.id,'service_boundary',r.service_boundary),now());
+ update public.google_publication_continuations set state='queued',outcome=result,job_id=jid,updated_at=now() where organization_id=p_org and id=p_id;
+ -- The event/job is the atomic durable audit. A contact/lead FK for an auxiliary
+ -- timeline note must not undo an already acknowledged remote write or hold
+ -- the calendar inventory mutex. The leased native job writes the note later.
+ return true;
+end $$;
+
+create or replace function public.fn_google_continuation_activity(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare r public.google_publication_continuations;
+begin
+ if public.fn_google_continuation_current(p_org,p_job,p_worker,p_acquired_at) is null then return false;end if;
+ select * into r from public.google_publication_continuations where organization_id=p_org and job_id=p_job and state='queued';
+ if not found then return false;end if;
+ if not pg_try_advisory_xact_lock(hashtextextended(p_org::text||':'||r.contact_id::text,222)) then
+  raise exception 'google_continuation_activity_busy' using errcode='55P03';end if;
+ -- No waiting behind an operator while holding the publication transaction.
+ -- A busy note is retried by the native job; publication is already committed.
+ perform 1 from public.contacts where organization_id=p_org and id=r.contact_id for key share nowait;
+ perform 1 from public.crm_leads l where l.organization_id=p_org and l.id in
+  (select k.lead_id from public.crm_lead_links k where k.organization_id=p_org and k.target_kind='appointment' and k.target_id=r.appointment_ids[1])
+  order by l.id for key share nowait;
+ if public.fn_google_continuation_current(p_org,p_job,p_worker,p_acquired_at) is null then return false;end if;
+ insert into public.crm_lead_activities(organization_id,lead_id,contact_id,type,source_module,source_id,actor_kind,reason,payload)
+ select p_org,k.lead_id,r.contact_id,'note_added','agenda',r.appointment_ids[1],'system',
+  case when r.outcome='synced' then 'Reserva publicada no Google; confirmação automática pendente.' else 'Publicação Google precisa de intervenção; atendimento retomado com a causa.' end,
+  jsonb_build_object('origin','google_publication','continuation_id',r.id,'job_id',p_job,'outcome',r.outcome)
+ from public.crm_lead_links k where k.organization_id=p_org and k.target_kind='appointment' and k.target_id=r.appointment_ids[1]
+  and not exists(select 1 from public.crm_lead_activities a where a.organization_id=p_org and a.lead_id=k.lead_id
+   and a.source_module='agenda' and a.source_id=r.appointment_ids[1] and a.payload->>'continuation_id'=r.id::text)
+ group by k.lead_id;
+ return true;
+end $$;
+
+create or replace function public.fn_google_continuation_resume(p_org uuid,p_ids uuid[],p_execution jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare j public.job_queue;r public.google_publication_continuations;registered jsonb;result jsonb;k uuid;
+begin
+ select * into j from public.job_queue where organization_id=p_org and id=(p_execution->'job'->>'id')::uuid;
+ if not found or j.kind<>'inbound_turn' or not public.fn_calendar_service_execution_current(p_org,j.contact_id,p_execution)
+  then raise exception 'google_continuation_execution_stale' using errcode='42501';end if;
+ perform public.fn_service_lock(p_org,j.contact_id);
+ if not public.fn_calendar_service_execution_current(p_org,j.contact_id,p_execution)
+  then raise exception 'google_continuation_execution_stale' using errcode='42501';end if;
+ if coalesce(cardinality(p_ids),0)=0 or cardinality(p_ids)>20 or
+  cardinality(p_ids)<>(select count(distinct x) from unnest(p_ids) x) then
+  raise exception 'google_continuation_scope_invalid' using errcode='42501';end if;
+ -- Only a prior, unchanged reservation from this conversation/demand. A model
+ -- cannot enroll an unrelated appointment or revive a revoked human handoff.
+ select c.* into r from public.google_publication_continuations c
+ where c.organization_id=p_org and c.contact_id=j.contact_id and c.conversation_id=(p_execution->'boundary'->>'conversation_id')::uuid
+  and c.appointment_ids=p_ids and c.state in ('attempting','waiting','stale')
+  and public.fn_meet_boundary_current(c.service_boundary)
+  and not public.fn_autonomous_turn_revoked(p_org,c.source_job_id)
+  and not exists(select 1 from public.conversation_assignment_events e where e.organization_id=p_org and e.conversation_id=c.conversation_id
+   and e.reason in ('claim','transfer') and e.to_user_id is not null and not(e.id=any(c.assignment_claim_ids)))
+ order by c.created_at desc,c.id desc limit 1;
+ if not found then return jsonb_build_object('resumed',false,'reason','no_current_publication_recovery');end if;
+ foreach k in array p_ids loop
+  if not exists(select 1 from public.calendar_appointments a where a.organization_id=p_org and a.id=k and a.contact_id=j.contact_id
+   and a.conversation_id=r.conversation_id and a.status='confirmed'
+   and a.revision::text=r.revisions->k::text->>'revision' and a.google_local_revision::text=r.revisions->k::text->>'google_local_revision'
+   and (not coalesce(a.service_requires_confirmation,false) or (a.service_confirmed_by_user_id is not null and a.service_confirmed_at is not null)))
+   then return jsonb_build_object('resumed',false,'reason','reservation_changed_or_human_required');end if;
+ end loop;
+ -- Keep the old request stale; register captures the current message, lease,
+ -- boundary, assignments and agent operation. No old authority is reused.
+ update public.google_publication_continuations c set state='stale',updated_at=now()
+ where c.organization_id=p_org and c.contact_id=j.contact_id and c.appointment_ids=p_ids and c.source_job_id<>j.id
+  and c.state in ('attempting','waiting','queued') and public.fn_google_continuation_outcome(p_org,c.id)='stale';
+ registered:=public.fn_google_continuation_register(p_org,p_ids,'resume:'||array_to_string(p_ids,','),p_execution);
+ if registered is null then return jsonb_build_object('resumed',false,'reason','reservation_changed_or_human_required');end if;
+ result:=public.fn_google_continuation_finish(p_org,(registered->>'id')::uuid,j.id);
+ return result||jsonb_build_object('resumed',true);
+end $$;
+
+revoke all on function public.fn_google_continuation_enqueue(uuid,uuid),public.fn_google_continuation_activity(uuid,uuid,text,timestamptz),
+ public.fn_google_continuation_resume(uuid,uuid[],jsonb) from public,anon,authenticated;
+grant execute on function public.fn_google_continuation_enqueue(uuid,uuid),public.fn_google_continuation_activity(uuid,uuid,text,timestamptz),
+ public.fn_google_continuation_resume(uuid,uuid[],jsonb) to service_role;
+
+-- Read-only coordination of a sentiment alert with the current inbound turn.
+-- A pending publication alone cannot suppress a legitimate handoff. Only the
+-- explicit native resume action owns this exception; otherwise defer briefly
+-- for the current turn and fall back to the unchanged sentiment policy.
+create or replace function public.fn_google_publication_sentiment_context(p_org uuid,p_conversation uuid,p_message uuid)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare m public.messages;v public.conversations;r public.google_publication_continuations;j public.job_queue;
+begin
+ select * into v from public.conversations where organization_id=p_org and id=p_conversation;
+ if not found or v.status in ('closed','claimed') or v.assigned_to_user_id is not null
+  or v.bot_silenced_until>now() then return null;end if;
+ select * into m from public.messages where organization_id=p_org and conversation_id=v.id and id=p_message
+  and contact_id=v.contact_id and direction='inbound' and service_revision=v.service_revision
+  and (demanda_id is not distinct from v.current_demanda_id or demanda_id is null);
+ if not found or exists(select 1 from public.messages newer where newer.organization_id=p_org and newer.conversation_id=v.id
+  and newer.contact_id=v.contact_id and newer.direction='inbound' and (newer.created_at,newer.id)>(m.created_at,m.id))
+  or not exists(select 1 from public.contacts c where c.organization_id=p_org and c.id=v.contact_id
+  and not c.is_anonymized and not c.is_blocked and not c.force_human) then return null;end if;
+ select * into j from public.job_queue where organization_id=p_org and contact_id=v.contact_id and kind='inbound_turn'
+  and payload->>'inbound_message_id'=m.id::text and payload->>'conversation_id'=v.id::text
+  order by created_at desc,id desc limit 1;
+ if not found or public.fn_autonomous_turn_revoked(p_org,j.id) then return null;end if;
+ select c.* into r from public.google_publication_continuations c
+ where c.organization_id=p_org and c.contact_id=v.contact_id and c.conversation_id=v.id
+  and public.fn_meet_boundary_current(c.service_boundary)
+  and not public.fn_autonomous_turn_revoked(p_org,c.source_job_id)
+  and not exists(select 1 from public.conversation_assignment_events e where e.organization_id=p_org and e.conversation_id=v.id
+   and e.reason in ('claim','transfer') and e.to_user_id is not null and not(e.id=any(c.assignment_claim_ids)))
+  and not exists(select 1 from unnest(c.appointment_ids) k where not exists(
+   select 1 from public.calendar_appointments a where a.organization_id=p_org and a.id=k and a.contact_id=v.contact_id
+    and a.conversation_id=v.id and a.status='confirmed'
+    and a.revision::text=c.revisions->k::text->>'revision' and a.google_local_revision::text=c.revisions->k::text->>'google_local_revision'
+    and a.google_conflict is null and a.google_sync_failure_kind is distinct from 'human_required' and a.meeting_state<>'failed'
+    and (not coalesce(a.service_requires_confirmation,false) or (a.service_confirmed_by_user_id is not null and a.service_confirmed_at is not null))))
+  and ((c.source_job_id=j.id and c.request_message_id=m.id and c.operation_key like 'resume:%' and c.state in ('attempting','inline','waiting','queued'))
+    or (c.source_job_id<>j.id and c.created_at<=m.created_at and c.state in ('attempting','waiting','stale')))
+ order by (c.source_job_id=j.id) desc,c.created_at desc,c.id desc limit 1;
+ if not found then return null;end if;
+ if r.source_job_id=j.id then return jsonb_build_object('owned',true);end if;
+ -- Finite, database-clock deadline. No new job or LLM poll is introduced.
+ if j.status in ('pending','running') and j.created_at+interval '2 minutes'>now() then
+  return jsonb_build_object('owned',false,'wait_until',j.created_at+interval '2 minutes');end if;
+ return null;
+end $$;
+revoke all on function public.fn_google_publication_sentiment_context(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_google_publication_sentiment_context(uuid,uuid,uuid) to service_role;
+
+create or replace function public.fn_google_continuation_on_publication()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare r record;
+begin
+ -- Acknowledgement may hold calendar inventory; leave waiting recovery on contention.
+ if new.contact_id is null then return new;end if;
+ if not pg_try_advisory_xact_lock(hashtextextended(new.organization_id::text||':'||new.contact_id::text,222)) then return new;end if;
+ for r in select id from public.google_publication_continuations where organization_id=new.organization_id and contact_id=new.contact_id
+  and new.id=any(appointment_ids) and state='waiting' loop
+  perform public.fn_google_continuation_enqueue(new.organization_id,r.id);
+ end loop;
+ return new;
+end $$;
+revoke all on function public.fn_google_continuation_on_publication() from public,anon,authenticated;
+grant execute on function public.fn_google_continuation_on_publication() to service_role;
+
+create or replace function public.fn_meet_delivery_enqueue()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare jid uuid; b jsonb;
+begin
+ -- No delivery action was enrolled: the existing path returns without effects.
+ -- Evaluate that same idle guard BEFORE locking contact while Google ack may
+ -- hold calendar inventory. Enrolled Meet/non-Meet deliveries, failures and
+ -- cancellation keep their original mutex, guards and queue behavior.
+ if new.status<>'cancelled' and new.meeting_state not in ('cancelled','failed')
+  and coalesce(new.meeting_delivery->>'state','') not in ('blocked','stale')
+  and ((new.location_kind='google_meet' and new.meeting_state<>'ready')
+    or new.meeting_delivery->>'state'<>'waiting_for_link') then return new;end if;
+ -- A MESMA ORDEM DE TRAVA das ~20 irmãs: contato PRIMEIRO, job_queue depois.
+ -- Sem esta linha, este gatilho já segurava a linha do compromisso (é BEFORE/
+ -- AFTER na própria calendar_appointments) e ia travar job_queue sem o mutex do
+ -- contato, enquanto fn_meet_redact_contact (0229) pega o mutex do contato e só
+ -- então mexe em job_queue. Duas ordens opostas sobre os mesmos dois recursos =
+ -- deadlock (40P01) sob concorrência, e quem paga é o cliente com anonimização
+ -- LGPD acontecendo enquanto um link de reunião é entregue.
+ perform public.fn_service_lock(new.organization_id,new.contact_id);
+ -- ⚠️ `status` ENTRA AQUI, e a falta dele era um buraco REAL que só apareceu
+ -- ao abrir a entrega para compromisso sem Meet.
+ --
+ -- A guarda olhava só `meeting_state='cancelled'` — o estado do LINK, não do
+ -- compromisso. Enquanto a entrega exigia link pronto isso bastava por
+ -- acidente: cancelar o compromisso cancelava o link junto. Sem Meet não há
+ -- link para cancelar, e um compromisso CANCELADO passava a enfileirar
+ -- entrega. O porteiro do envio recusaria depois (`a.status<>'cancelled'`),
+ -- então o cliente não receberia nada — mas o job nasceria para morrer
+ -- bloqueado, e a tela mostraria uma entrega a caminho que nunca sai.
+ --
+ -- Achado do @paulolimajr77, e foi o teste DELE que o pegou aqui.
+ if new.status='cancelled' or new.meeting_state='cancelled' or new.meeting_delivery->>'state' in ('blocked','stale') then
+  update public.job_queue set status='failed',locked_at=null,locked_by=null,payload='{}',last_error='meet_delivery_stale'
+   where organization_id=new.organization_id and id=new.meeting_delivery_job_id and kind='transactional_delivery' and status in ('pending','running');
+  return new;
+ end if;
+ if new.meeting_state='failed' then perform public.fn_meet_notice(new.organization_id,new.id,'meeting_failed');end if;
+ -- ⛔ ESPERAR O LINK VALE SÓ ONDE O LOCAL É O MEET.
+ --
+ -- Esta é a exigência mais fácil de esquecer e a pior de esquecer: num
+ -- compromisso PRESENCIAL o `meeting_state` é `not_requested` para sempre,
+ -- então a entrega era autorizada, o gatilho passava por aqui, devolvia sem
+ -- enfileirar nada, e a entrega ficava em `waiting_for_link` PARA SEMPRE — em
+ -- silêncio, sem job, sem aviso e sem erro. Foi o teste do autor que a achou.
+ --
+ -- Onde o local É o Meet, nada muda: sem link pronto não sai job, porque
+ -- mandar uma reunião sem como entrar nela é pior que não mandar.
+ if (new.location_kind='google_meet' and new.meeting_state<>'ready')
+  or new.meeting_delivery->>'state'<>'waiting_for_link' then return new;end if;
+ b:=new.meeting_delivery->'service_boundary';
+ if not public.fn_meet_boundary_current(b) then
+  update public.calendar_appointments set meeting_delivery=meeting_delivery||'{"state":"stale","error":"service_boundary_stale"}' where organization_id=new.organization_id and id=new.id;
+  perform public.fn_meet_notice(new.organization_id,new.id,'service_boundary_stale');return new;
+ end if;
+ jid:=gen_random_uuid();
+ insert into public.job_queue(id,organization_id,contact_id,kind,payload,run_after)
+ values(jid,new.organization_id,new.contact_id,'transactional_delivery',jsonb_build_object('appointment_id',new.id,'meeting_request_id',new.meeting_request_id,
+  'delivery_generation',new.meeting_delivery->>'generation','service_boundary',b,
+  -- O MOTIVO decide a FRASE que o cliente lê. Ausente = `primeiro_envio`,
+  -- que é o comportamento de antes desta migration e o certo para toda
+  -- entrega que já estava na fila quando ela foi aplicada.
+  'motivo',coalesce(new.meeting_delivery->>'motivo','primeiro_envio')),
+  -- ANTIRREPETIÇÃO: a correção ESPERA antes de sair, e uma remarcação nova
+  -- dentro da janela substitui esta. Sem a espera, arrastar o compromisso na
+  -- grade viraria uma mensagem por arrasto.
+  coalesce((new.meeting_delivery->>'nao_antes_de')::timestamptz, now()));
+ update public.calendar_appointments set meeting_delivery_job_id=jid,meeting_delivery=meeting_delivery||'{"state":"queued"}'
+  where organization_id=new.organization_id and id=new.id;
+ return new;
+end;$$;
+revoke all on function public.fn_meet_delivery_enqueue() from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_enqueue() to service_role;
+
+
+
+-- ---- resposta WhatsApp com evento verificável (migration 0758) ----
+-- manifest: Integra a resposta WhatsApp interna ao evento e job canônicos com revalidação do opt-in e recibo, sem inventar usuário do CRM.
+-- Revalida a delegação nativa sem inventar um usuário ou papel do CRM.
+create or replace function public.fn_case_whatsapp_event_valid(
+  p_org uuid,p_case uuid,p_event uuid,p_job text
+) returns boolean language sql stable security definer set search_path=public,pg_temp as $$
+ select coalesce(exists(
+  select 1 from public.agent_case_events e
+  join public.agent_cases ac on ac.organization_id=e.organization_id and ac.id=e.case_id
+  join public.conversations c on c.organization_id=ac.organization_id and c.id=ac.conversation_id
+  left join public.demandas d on d.organization_id=c.organization_id and d.contact_id=c.contact_id and d.id=c.current_demanda_id
+  join public.job_queue j on j.organization_id=e.organization_id and j.id::text=p_job
+   and j.contact_id=c.contact_id and j.kind='case_reply_turn'
+   and j.payload->>'case_id'=e.case_id::text and j.payload->>'human_event_id'=e.id::text
+   and j.payload->>'action'=e.human_action
+  join public.entregas_de_aviso_de_caso entrega on entrega.organization_id=e.organization_id
+   and entrega.case_id=e.case_id and entrega.id::text=e.metadata->'review_context_v1'->>'delivery_id'
+   and entrega.status='enviado'
+  join public.config_aviso_de_caso cfg on cfg.organization_id=e.organization_id
+   and cfg.ligado and cfg.resposta_whatsapp_habilitada
+   and cfg.channel_session_id=entrega.channel_session_id and cfg.telefone_destino=entrega.destino
+   and to_jsonb(extract(epoch from cfg.updated_at))=e.metadata->'review_context_v1'->'consent_revision'
+  where e.organization_id=p_org and e.case_id=p_case and e.id=p_event
+   and e.kind='human_replied' and e.actor_kind='human' and e.actor_user_id is null
+   and e.metadata->>'source'='whatsapp' and e.metadata->>'whatsapp_message_key' is not null
+   and e.metadata->'review_context_v1'->>'versao'='1'
+   and e.metadata->'review_context_v1'->>'origem'='case_reply_internal_whatsapp'
+   and e.metadata->'review_context_v1'->>'job_id'=j.id::text
+   and e.metadata->'review_context_v1'->>'channel_session_id'=cfg.channel_session_id::text
+   and e.metadata->'review_context_v1'->>'revoked_at' is null
+   and j.payload->'service_boundary'=ac.context_snapshot->'service_boundary'
+   -- Null→primeira demanda continua o mesmo atendimento, como no contrato comum.
+   and public.fn_meet_boundary_current((ac.context_snapshot->'service_boundary') ||
+    case when ac.context_snapshot->'service_boundary'->>'demanda_id' is null
+     then jsonb_build_object('demanda_id',c.current_demanda_id,'demanda_revision',d.revision)
+     else '{}'::jsonb end)
+   and not exists(select 1 from public.agent_case_events n where n.organization_id=e.organization_id
+    and n.case_id=e.case_id and n.kind in('human_replied','cancelled','escalated')
+    and (n.created_at,n.id)>(e.created_at,e.id))
+ ),false);
+$$;
+revoke all on function public.fn_case_whatsapp_event_valid(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_case_whatsapp_event_valid(uuid,uuid,uuid,text) to service_role;
+
+create or replace function public.fn_responder_caso_por_whatsapp(
+  p_org uuid,
+  p_case uuid,
+  p_session uuid,
+  p_phone_variants text[],
+  p_action text,
+  p_body text,
+  p_message_key text
+)
+returns text
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_contact_id uuid;
+  v_delivery_id uuid;
+  v_event_id uuid := gen_random_uuid();
+  v_job_id uuid := gen_random_uuid();
+  v_consent_revision numeric;
+  v_role text := coalesce(
+    nullif(current_setting('request.jwt.claim.role', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'role'
+  );
+begin
+  if coalesce(v_role, '') <> 'service_role' then
+    raise exception 'service_role_required' using errcode = '42501';
+  end if;
+  if p_action is null or p_action not in ('resolved', 'need_lead_info') then
+    raise exception 'invalid_case_reply_action' using errcode = '22023';
+  end if;
+  if p_body is null or char_length(btrim(p_body)) not between 1 and 4000 then
+    raise exception 'invalid_case_reply_body' using errcode = '22023';
+  end if;
+  if p_message_key is null or char_length(p_message_key) not between 1 and 300 then
+    raise exception 'invalid_case_reply_message_key' using errcode = '22023';
+  end if;
+
+  -- Serializa a reentrega do mesmo webhook. Se o mesmo id chegar depois que o
+  -- caso for reaberto para uma pergunta nova, continua sendo a mesma resposta.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text || ':' || p_message_key, 0));
+  if exists (
+    select 1 from public.agent_case_events e
+     where e.organization_id = p_org
+       and e.kind = 'human_replied'
+       and e.metadata->>'whatsapp_message_key' = p_message_key
+  ) then
+    return 'duplicate';
+  end if;
+
+  -- O telefone e o canal precisam continuar sendo os configurados agora, e o
+  -- caso precisa ter sido efetivamente avisado por essa mesma conexão e destino.
+  -- A entrega enviada é a prova que a pessoa recebeu autorização para responder.
+  if not exists (
+    select 1
+      from public.config_aviso_de_caso cfg
+     where cfg.organization_id = p_org
+       and cfg.ligado = true
+       and cfg.resposta_whatsapp_habilitada = true
+       and cfg.channel_session_id = p_session
+       and cfg.telefone_destino = any(p_phone_variants)
+     for update
+  ) then
+    return 'unauthorized';
+  end if;
+
+  select extract(epoch from updated_at) into v_consent_revision
+    from public.config_aviso_de_caso where organization_id=p_org;
+
+  select conv.contact_id, entrega.id
+    into v_contact_id, v_delivery_id
+    from public.agent_cases caso
+    join public.conversations conv
+      on conv.organization_id = caso.organization_id
+     and conv.id = caso.conversation_id
+    join public.entregas_de_aviso_de_caso entrega
+      on entrega.organization_id = caso.organization_id
+     and entrega.case_id = caso.id
+   where caso.organization_id = p_org
+     and caso.id = p_case
+     and caso.status = 'awaiting_human'
+     and entrega.status = 'enviado'
+     and entrega.channel_session_id = p_session
+     and entrega.destino = any(p_phone_variants)
+   for update of caso;
+
+  if v_delivery_id is null or v_contact_id is null then
+    return 'case_unavailable';
+  end if;
+
+  if p_action = 'resolved' then
+    update public.agent_cases
+       set status = 'resolved', closed_at = now(), updated_at = now()
+     where organization_id = p_org and id = p_case and status = 'awaiting_human';
+    if not found then return 'case_unavailable'; end if;
+
+    insert into public.agent_case_events
+      (id, organization_id, case_id, kind, actor_kind, human_action, body, metadata)
+    values
+      (v_event_id, p_org, p_case, 'human_replied', 'human', 'resolved', p_body,
+       jsonb_build_object('source', 'whatsapp', 'whatsapp_message_key', p_message_key,
+                          'channel_session_id', p_session)),
+      (gen_random_uuid(), p_org, p_case, 'resolved', 'human', null, null,
+       jsonb_build_object('source', 'whatsapp', 'channel_session_id', p_session));
+  else
+    update public.agent_cases
+       set status = 'awaiting_lead', updated_at = now()
+     where organization_id = p_org and id = p_case and status = 'awaiting_human';
+    if not found then return 'case_unavailable'; end if;
+
+    insert into public.agent_case_events
+      (id, organization_id, case_id, kind, actor_kind, human_action, body, metadata)
+    values
+      (v_event_id, p_org, p_case, 'human_replied', 'human', 'need_lead_info', p_body,
+       jsonb_build_object('source', 'whatsapp', 'whatsapp_message_key', p_message_key,
+                          'channel_session_id', p_session)),
+      (gen_random_uuid(), p_org, p_case, 'lead_asked', 'human', null, null,
+       jsonb_build_object('source', 'whatsapp', 'channel_session_id', p_session));
+  end if;
+
+  -- Uma resposta interna autenticada pelo canal não tem login do CRM.
+  -- Guardamos a prova delegada, não atribuímos o ator da configuração à resposta.
+  update public.agent_case_events set metadata=metadata || jsonb_build_object(
+    'review_context_v1',jsonb_build_object('versao',1,'origem','case_reply_internal_whatsapp',
+      'job_id',v_job_id,'delivery_id',v_delivery_id,'channel_session_id',p_session,
+      'consent_revision',v_consent_revision))
+   where organization_id=p_org and case_id=p_case and id=v_event_id;
+
+  -- A transição, os eventos e a retomada entram no mesmo commit. Se a fila não
+  -- aceitar o job, o webhook pode ser reentregue e nenhum caso fica sem retomada.
+  insert into public.job_queue (id, organization_id, contact_id, kind, payload)
+  values (
+    v_job_id,
+    p_org,
+    v_contact_id,
+    'case_reply_turn',
+    jsonb_build_object('case_id', p_case, 'action', p_action, 'body', p_body,'human_event_id',v_event_id)
+  );
+
+  return 'accepted';
+end;
+$$;
+
+revoke all on function public.fn_responder_caso_por_whatsapp(uuid, uuid, uuid, text[], text, text, text)
+  from public, anon, authenticated;
+grant execute on function public.fn_responder_caso_por_whatsapp(uuid, uuid, uuid, text[], text, text, text)
+  to service_role;
+
+
+notify pgrst,'reload schema';
+
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

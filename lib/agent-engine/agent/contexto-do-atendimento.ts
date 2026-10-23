@@ -285,7 +285,7 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       (select coalesce(m.media_derived_text,m.body) from messages m where m.organization_id=ac.organization_id
         and m.conversation_id=ac.conversation_id and m.contact_id=c.contact_id and m.direction='inbound'
         and m.id::text=ac.context_snapshot->>'request_message_id') as original_request,
-      (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='human_replied' and human_action='need_lead_info' and actor_kind='human' and actor_user_id is not null order by created_at desc,id limit 1) as human_ask,
+      (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='human_replied' and human_action='need_lead_info' and actor_kind='human' and (actor_user_id is not null or public.fn_case_whatsapp_event_valid(organization_id,case_id,id,metadata->'review_context_v1'->>'job_id')) order by created_at desc,id limit 1) as human_ask,
       (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='lead_provided' and actor_kind='lead' order by created_at desc,id limit 1) as lead_update,
       ac.created_at,ac.updated_at from agent_cases ac join conversations c on c.id=ac.conversation_id and c.organization_id=ac.organization_id where ac.organization_id=$1 and c.contact_id=$2 and c.id=$3 and ac.status in ('awaiting_lead','awaiting_human') order by ac.updated_at desc,ac.id limit 9) x) as caso,
     (select jsonb_build_object('id',j.id,'organization_id',j.organization_id,'contact_id',j.contact_id,'kind',j.kind,'status',j.status,'created_at',j.created_at,
@@ -299,7 +299,7 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       from job_queue j left join agent_case_events e on j.kind='case_reply_turn'
         and (e.id::text=j.payload->>'human_event_id' or (not j.payload ? 'human_event_id' and e.metadata->>'legacy_reply_job_id'=j.id::text))
         and e.case_id::text=j.payload->>'case_id'
-        and e.organization_id=j.organization_id and e.kind='human_replied' and e.actor_kind='human' and e.actor_user_id is not null
+        and e.organization_id=j.organization_id and e.kind='human_replied' and e.actor_kind='human' and (e.actor_user_id is not null or public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id'))
       left join agent_cases ac on ac.id=e.case_id and ac.organization_id=e.organization_id and ac.conversation_id=$3
       where j.organization_id=$1 and j.contact_id=$2 and j.id=$4::uuid) as job,
     (select to_jsonb(escopo) from escopo) as conversa,

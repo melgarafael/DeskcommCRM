@@ -505,6 +505,8 @@ export const casePromiseGate: Gate = {
     const completion = ctx.semanticPromise?.afirmouConclusaoHumana === true ||
       (ctx.humanDecisionContextPresent === true && ctx.semanticPromise?.afirmouConclusaoHumana === undefined && detectHumanCompletion(ctx.body));
     if (ctx.humanDecisionStale) return { pass:false, code:'human_decision_context_changed', reason:'As fontes ou a decisão mudaram. Releia o contexto antes de comunicar a conclusão.' };
+    if (ctx.semanticPromise?.humanDecisionReviewIssue) return { pass:false, code:'human_decision_review_inconclusive',
+      reason:'A revisão da decisão não vinculou um julgamento conclusivo à mensagem e às fontes deste pedido. O envio permanece pendente; releia o contexto para uma revisão válida. Não retire fatos autorizados nem invente nova promessa para contornar a falha.' };
     if (completion && !(ctx.humanDecisionValidated === true && ctx.semanticPromise?.repasseConcluidoFiel === true &&
         ctx.semanticPromise.prometeuRetornoHumano !== true)) {
       return { pass: false, code: 'human_decision_unfaithful',

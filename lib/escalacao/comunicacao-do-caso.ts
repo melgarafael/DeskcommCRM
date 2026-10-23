@@ -54,8 +54,8 @@ export async function lerComunicacaoDoCaso(db: Queryable, org: string, caseId: s
     `select e.id as event_id,j.id as job_id,
       coalesce(e.metadata->'review_context_v1'->>'origem'='case_reply_authenticated'
         and e.metadata->'review_context_v1'->>'versao'='1'
-        and e.metadata->'review_context_v1'->>'papel' in('agent','manager','admin'),false) as authenticated,
-      (e.metadata->'review_context_v1'->>'revoked_at' is not null or ac.status in('cancelled','escalated')
+        and e.metadata->'review_context_v1'->>'papel' in('agent','manager','admin'),false) or public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id') as authenticated,
+      ((e.metadata->'review_context_v1'->>'origem'='case_reply_internal_whatsapp' and not public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id')) or e.metadata->'review_context_v1'->>'revoked_at' is not null or ac.status in('cancelled','escalated')
        or (e.metadata->'review_context_v1'->>'expires_at' is not null and
          (e.metadata->'review_context_v1'->>'expires_at')::timestamptz<=now())
        or exists(select 1 from agent_case_events n where n.organization_id=e.organization_id and n.case_id=e.case_id
@@ -77,7 +77,7 @@ export async function lerComunicacaoDoCaso(db: Queryable, org: string, caseId: s
       left join lateral(select id,vetoed_code from before_send_traces b where b.organization_id=e.organization_id
         and b.job_id=j.id order by b.created_at desc,b.id desc limit 1)t on true
       where e.organization_id=$1 and e.case_id=$2 and e.kind='human_replied' and e.actor_kind='human'
-        and e.actor_user_id is not null and e.human_action in('resolved','need_lead_info')
+        and (e.actor_user_id is not null or e.metadata->'review_context_v1'->>'origem'='case_reply_internal_whatsapp') and e.human_action in('resolved','need_lead_info')
       order by e.created_at desc,e.id desc limit 20`, [org,caseId]);
   return rows.map(r=>{
     if(r.snapshot)try { assertCurrentServiceBoundary(parseServiceBoundary(r.snapshot.service_boundary),r.current_boundary??null); }

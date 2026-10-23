@@ -1,6 +1,6 @@
 "use client";
 
-import { CLASSIFIER_CONTEXT_MESSAGES, MAX_CLASSIFIER_CONTEXT_MESSAGES, quantidadeDeHistoricoSalva } from "@/lib/ai/classifier-context";
+import { LEGACY_ROUTER_CONTEXT_MESSAGES, MAX_CLASSIFIER_CONTEXT_MESSAGES, quantidadeDeHistoricoSalva } from "@/lib/ai/classifier-context";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter as useNextRouter } from "next/navigation";
@@ -138,7 +138,7 @@ export function RouterEditorClient({
   // manda o id para o provedor da ORG, e a classificação falha sempre.
   const [classifier, setClassifier] = React.useState(() => classifierKeyFrom(router.config));
   const [contextMessageCount, setContextMessageCount] = React.useState(() =>
-    quantidadeDeHistoricoSalva(router.config) ?? CLASSIFIER_CONTEXT_MESSAGES);
+    quantidadeDeHistoricoSalva(router.config) ?? LEGACY_ROUTER_CONTEXT_MESSAGES);
   const [draftMembers, setDraftMembers] = React.useState<DraftMember[]>(() =>
     members.map((m) => ({ ...m, key: m.id })),
   );
@@ -187,7 +187,7 @@ export function RouterEditorClient({
       isActive: router.is_active,
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
-      contextMessageCount: quantidadeDeHistoricoSalva(router.config) ?? CLASSIFIER_CONTEXT_MESSAGES,
+      contextMessageCount: quantidadeDeHistoricoSalva(router.config) ?? LEGACY_ROUTER_CONTEXT_MESSAGES, LEGACY_ROUTER_CONTEXT_MESSAGES,
       members: members.map(camposDoMembro),
     }),
     [router, members],
@@ -394,14 +394,14 @@ export function RouterEditorClient({
               </p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="router-context-count">{t("Histórico recente dos decisores")}</Label>
+              <Label htmlFor="router-context-count">{t("Mensagens anteriores para o roteamento")}</Label>
               <Input id="router-context-count" type="number" min={0} max={MAX_CLASSIFIER_CONTEXT_MESSAGES} step={1}
                 value={contextMessageCount} disabled={!canManage}
-                onChange={(e) => setContextMessageCount(Math.max(0, Math.min(MAX_CLASSIFIER_CONTEXT_MESSAGES, Math.trunc(Number(e.target.value)) || 0)))} />
+                onChange={(e) => setContextMessageCount(Math.max(0, Math.min(MAX_CLASSIFIER_CONTEXT_MESSAGES, LEGACY_ROUTER_CONTEXT_MESSAGES, Math.trunc(Number(e.target.value)) || 0)))} />
               <p className="text-xs text-muted-foreground">{t("Mensagens anteriores do cliente e do atendimento, além da mensagem atual. Neste canal, a quantidade salva vale para o roteador ativo e a avaliação de sentimento. Zero desativa esse histórico.")}</p>
-              {quantidadeDeHistoricoSalva(router.config) === null && <p className="text-xs text-muted-foreground" data-testid="historico-sem-configuracao">{t("Sem quantidade salva: o roteador usa 8 e o sentimento usa 16 mensagens. Ao salvar esta configuração, ambos passam a usar a quantidade escolhida.")}</p>}
+              {quantidadeDeHistoricoSalva(router.config) === null && <p className="text-xs text-muted-foreground" data-testid="historico-sem-configuracao">{t("Sem quantidade salva: o roteador usa 4 e o sentimento usa 16 mensagens. Ao salvar esta configuração, ambos passam a usar a quantidade escolhida.")}</p>}
               <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Como funciona")}</summary>
-                {t("Cada função mantém sua autorização própria em Provedores de IA. O aceite antigo do roteador limita seu histórico a 4 mensagens; o atual permite até 16. O sentimento exige aceite próprio e permite até 16, com limite adicional de texto. Autorizações ausentes ou revogadas não são ampliadas por este campo. Principal e reserva usam a mesma fotografia enquanto autorizada. Sem roteador ativo ou quantidade válida neste canal, o sentimento mantém o padrão de 16. Este campo não limita evidências, ferramentas, decisões humanas ou recibos da revisão e não amplia os outros classificadores. Mais mensagens podem aumentar custo e demora.")}
+                {t("Cada função mantém sua autorização própria em Provedores de IA. O histórico do roteador exige um novo aceite específico; o aceite antigo não amplia o envio. O atual permite até 16 mensagens. O sentimento exige aceite próprio e permite até 16, com limite adicional de texto. Autorizações ausentes ou revogadas não são ampliadas por este campo. Principal e reserva usam a mesma fotografia enquanto autorizada. Sem roteador ativo ou quantidade válida neste canal, o sentimento mantém o padrão de 16. Este campo não limita evidências, ferramentas, decisões humanas ou recibos da revisão e não amplia os outros classificadores. Mais mensagens podem aumentar custo e demora.")}
               </details>
             </div>
           </Card>

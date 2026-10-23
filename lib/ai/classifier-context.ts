@@ -1,6 +1,7 @@
 /** Janela comum dos classificadores; o Jev só recebe histórico com aceite específico.
  * Não é a memória do agente que conversa: serve só para desambiguar a mensagem atual.
  */
+export const LEGACY_ROUTER_CONTEXT_MESSAGES = 4;
 export const CLASSIFIER_CONTEXT_MESSAGES = 8;
 export const NEW_ROUTER_CONTEXT_MESSAGES = CLASSIFIER_CONTEXT_MESSAGES;
 export const MAX_CLASSIFIER_CONTEXT_MESSAGES = 16;

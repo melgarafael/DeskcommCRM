@@ -1,4 +1,4 @@
-import { INSTRUCAO_CONTEXTO_COMPARTILHADO, type ContextoCompartilhadoDoTurno } from '@/lib/agent-engine/agent/contexto-compartilhado-do-turno';
+import { INSTRUCAO_CONTEXTO_COMPARTILHADO, type ContextoCompartilhadoDoTurno } from '@/lib/ai/contexto-observado-do-turno';
 import type { ConsultasAgendaDoTurno } from '@/lib/agenda/consulta-do-turno';
 import type { OperacaoAgendaObservada } from '@/lib/agenda/recibo-do-turno';
 import {capturarRevisao} from '@/lib/ai/diagnostico-revisao/captura';
@@ -14,7 +14,7 @@ import type { EvidenciaComercial, CoberturaComercial } from "@/lib/agent-engine/
 import type { ContextoDaRevisao } from "@/lib/agent-engine/guardrails/promise/contexto-da-revisao";
 import { PERGUNTA_COMERCIAL_COM_EVIDENCIAS, PERGUNTA_COMERCIAL_SEM_EVIDENCIA, PERGUNTA_RETORNO_SEM_FORMATO } from "@/lib/agent-engine/guardrails/promise/instrucoes";
 import { decidirRevisao, SINAIS_DA_REVISAO, type ProbabilidadesDaRevisao, type SinalDaRevisao } from "@/lib/agent-engine/guardrails/promise/decisao-do-jev";
-import { pacoteFactualDaRevisao, INSTRUCAO_REPASSE, precisaRevisarConclusaoHumana } from "@/lib/agent-engine/guardrails/promise/contrato-contexto";
+import { pacoteFactualDaRevisao, CRITERIO_REPASSE, precisaRevisarConclusaoHumana } from "@/lib/agent-engine/guardrails/promise/contrato-contexto";
 import type { ContextoDeDecisaoHumana } from "@/lib/agent-engine/agent/contexto-de-decisao-humana";
 import type { ContextoDoAtendimento } from "@/lib/agent-engine/agent/contexto-do-atendimento";
 import { MODELO_DO_JEV, type Pergunta, type ResultadoDaDecisao } from "./cliente";
@@ -58,20 +58,20 @@ export function perguntasDaRevisao(temEvidencias: boolean, temDecisao = false, t
     ...(temAgenda ? { agenda: { tipo: "noul" as const, instrucao: (proposta ? CRITERIO_PROPOSTA_AGENDA : CRITERIO_ENVIO_AGENDA) + INSTRUCAO_CONTEXTO_COMPARTILHADO,
       criterios: { true: "A proposta corresponde ao pedido autorizado; sem proposta, a candidata não confirma nem promete operação divergente ou sem prova.",
         false: "Divergência ou insuficiência entre pedido, ação, serviço, beneficiário, data/hora/fuso ou comprovação atual." } } } : {}),
-    ...(temDecisao ? { conclusao: { tipo:"noul" as const, instrucao:INSTRUCAO_REPASSE, criterios:{ true:"A candidata afirma decisão/conclusão humana individual, mesmo fora do escopo ou sem fonte suficiente.", false:"Não afirma conclusão humana: comunicação fiel de reserva/publicação operacional comprovada sem atribuir aprovação a pessoa, fala neutra, convite, hipótese, pergunta, descrição ou citação sem endosso." } }, repasse: { tipo:"noul" as const, instrucao:INSTRUCAO_REPASSE, criterios:{ true:"A candidata inteira repassa fielmente a decisão humana elegível, sem nova promessa.", false:"Sem decisão suficiente, fora do escopo, dúvida ou promessa adicional." } } } : {}),
+    ...(temDecisao ? { conclusao: { tipo:"noul" as const, instrucao:CRITERIO_REPASSE, criterios:{ true:"A candidata afirma decisão/conclusão humana individual, mesmo fora do escopo ou sem fonte suficiente.", false:"Não afirma conclusão humana: comunicação fiel de reserva/publicação operacional comprovada sem atribuir aprovação a pessoa, fala neutra, convite, hipótese, pergunta, descrição ou citação sem endosso." } }, repasse: { tipo:"noul" as const, instrucao:CRITERIO_REPASSE, criterios:{ true:"A candidata inteira repassa fielmente a decisão humana elegível, sem nova promessa.", false:"Sem decisão suficiente, fora do escopo, dúvida ou promessa adicional." } } } : {}),
     comercial: {
       tipo: "noul",
-      instrucao: (temEvidencias ? PERGUNTA_COMERCIAL_COM_EVIDENCIAS : PERGUNTA_COMERCIAL_SEM_EVIDENCIA) + (temDecisao ? INSTRUCAO_REPASSE : INSTRUCAO_CONTEXTO_COMPARTILHADO),
+      instrucao: (temEvidencias ? PERGUNTA_COMERCIAL_COM_EVIDENCIAS : PERGUNTA_COMERCIAL_SEM_EVIDENCIA) + (temDecisao ? CRITERIO_REPASSE : INSTRUCAO_CONTEXTO_COMPARTILHADO),
       criterios: {
         true: "A candidata contém compromisso COMERCIAL concreto não autorizado pelas evidências.",
         false: "Não contém compromisso comercial não autorizado; oferta cadastrada e linguagem comercial natural podem passar.",
       },
     },
     retorno: {
-      tipo: "noul", instrucao: PERGUNTA_RETORNO_SEM_FORMATO + INSTRUCAO_CONTEXTO_COMPARTILHADO,
+      tipo: "noul", instrucao: PERGUNTA_RETORNO_SEM_FORMATO + (temDecisao ? CRITERIO_REPASSE : INSTRUCAO_CONTEXTO_COMPARTILHADO),
       criterios: {
-        true: "A candidata assume pendência de retaguarda, transferência/registro em execução ou concluído, ou retorno ao cliente.",
-        false: "A candidata não assume pendência: descreve serviço, cita autores, convida, pede aviso AO CLIENTE ou oferece transferência sujeita a consentimento.",
+        true: "A candidata assume pendência de retaguarda, transferência/registro para análise em execução ou já registrado, ou retorno adicional ao cliente.",
+        false: "A candidata não assume nova pendência: comunica decisão elegível concluída, descreve serviço, cita autores, convida, pede aviso AO CLIENTE ou oferece transferência sujeita a consentimento.",
       },
     },
     so_assistente: {
@@ -105,7 +105,7 @@ async function gravarRevisao(
       probabilidade: probabilidades[s],
       confianca: Math.max(probabilidades[s], 1 - probabilidades[s]),
       rotulo: `${s}:${probabilidades[s] >= 0.5 ? "sim" : "nao"}`,
-      atual: reserva && !(s === 'agenda' && reserva.agendaReviewIssue)
+      atual: reserva && !(s === 'agenda' && reserva.agendaReviewIssue) && !(s === 'repasse' && reserva.humanDecisionReviewIssue)
         ? `${s}:${sinalDoVeredito(reserva, s) ? "sim" : "nao"}` : null,
     })) : [];
     await pool.query(
@@ -165,7 +165,7 @@ export async function revisarRespostaComJev(
     deps.log.info("reserva assume a revisão de resposta", { event: "jev_review_fallback", motivo: r.motivo });
     const v = await reserva();
     // Igual ao roteador: só marca cobertura quando a reserva efetivamente respondeu.
-    if (linhaId && estado === "decidindo") {
+    if (linhaId && estado === "decidindo" && !v.agendaReviewIssue && !v.humanDecisionReviewIssue) {
       try { await pool.query("update public.llm_calls set origem_da_escolha = 'reserva_do_jev' where id = $1 and organization_id = $2", [linhaId, ids.tenantId]); } catch { /* Telemetria não veta atendimento. */ }
     }
     return v;
@@ -187,6 +187,6 @@ export async function revisarRespostaComJev(
     return v ?? (calculo.motivo === "decidiu" ? calculo.veredito : (() => { throw new Error("revisão sem veredito"); })());
   } finally {
     // Também contabiliza a chamada JEV se a reserva falhou; não inventa aprovação/concordância.
-    await gravarRevisao(pool, ids, estado, r, calculo.motivo !== "resposta_ilegivel" ? calculo.probabilidades : null, v, estado === "decidindo" && v !== null && !v.agendaReviewIssue, deps.log);
+    await gravarRevisao(pool, ids, estado, r, calculo.motivo !== "resposta_ilegivel" ? calculo.probabilidades : null, v, estado === "decidindo" && v !== null && !v.agendaReviewIssue && !v.humanDecisionReviewIssue, deps.log);
   }
 }

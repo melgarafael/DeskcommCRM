@@ -1,4 +1,4 @@
-import { INSTRUCAO_CONTEXTO_COMPARTILHADO, type ContextoCompartilhadoDoTurno } from '@/lib/agent-engine/agent/contexto-compartilhado-do-turno';
+import { INSTRUCAO_CONTEXTO_COMPARTILHADO, type ContextoCompartilhadoDoTurno } from '@/lib/ai/contexto-observado-do-turno';
 import type { ConsultasAgendaDoTurno } from '@/lib/agenda/consulta-do-turno';
 import type { FalhaDaRevisaoDeAgenda } from '@/lib/agenda/falha-revisao';
 import type { OperacaoAgendaObservada } from '@/lib/agenda/recibo-do-turno';
@@ -46,11 +46,13 @@ import { revisarRespostaComJev } from "@/lib/ai/decisao/revisao-resposta";
 import { PROMISE_SEMANTIC_INSTRUCTION, INSTRUCAO_COM_EVIDENCIAS, CONFIRMAR_RETORNO_INSTRUCTION } from "./instrucoes";
 export { PROMISE_SEMANTIC_INSTRUCTION } from "./instrucoes";
 import { carregarBinding } from "../../edge/llm/binding-do-ponto";
+import { vincularRevisaoHumana, type FalhaDaRevisaoHumana } from './vinculo-decisao-humana';
 
 /** Veredito binário do classificador. suspectPhrase = null quando isPromise = false. */
 export interface PromiseClassification {
   /** Inconclusivo técnico; mantém o envio fechado sem inventar incompatibilidade semântica. */
   agendaReviewIssue?: FalhaDaRevisaoDeAgenda;
+  humanDecisionReviewIssue?: FalhaDaRevisaoHumana;
   /** Positivo estrito; ausente/ilegível não autoriza execução nem confirmação de agenda. */
   agendaCompativel?: boolean;
   isPromise: boolean;
@@ -349,7 +351,9 @@ export async function classifyPromise(
   );
   // O parser recebe a CANDIDATA para poder degradar `prometeuRetornoHumano` pelo
   // veredito do léxico (a assimetria está documentada no corpo do parser).
-  const initial = parsePromiseClassification(call.result.text, args.candidate, deps.log);
+  const initial = vincularRevisaoHumana(args,
+    parsePromiseClassification(call.result.text, args.candidate, deps.log),
+    extrairObjetoJsonDoTexto(call.result.text));
   if (args.agendaOperation) initial.agendaCompativel = sinalAgendaDoTexto(call.result.text, deps.log);
   if (precisaRevisarAgenda(args) && !args.agendaOperation) {
     // O JEV tem uma pergunta própria de agenda. Sua reserva LLM precisa da mesma
@@ -434,15 +438,16 @@ export async function classifyPromise(
       deps.log.warn("confirmação de retorno inválida — marcação inicial preservada", {
         event: "human_return_confirmation_invalid",
       });
-      return completion ? { ...initial, repasseConcluidoFiel: false } : initial;
+      return completion ? { ...initial, repasseConcluidoFiel: false, humanDecisionReviewIssue: 'negativa_sem_prova' } : initial;
     }
-    const checked = parsePromiseClassification(confirmation.result.text, args.candidate, deps.log);
+    const checked = vincularRevisaoHumana(args,
+      parsePromiseClassification(confirmation.result.text, args.candidate, deps.log), raw);
     // O confirmador também precisa responder à conclusão quando assume esse julgamento.
     // Campo ausente/tipo trocado não transforma falha em autorização da marcação inicial.
     if (completion && (typeof (raw as Record<string, unknown>).afirmouConclusaoHumana !== 'boolean' ||
         typeof (raw as Record<string, unknown>).repasseConcluidoFiel !== 'boolean')) {
       deps.log.warn('confirmação da conclusão ilegível', { event: 'human_completion_confirmation_invalid' });
-      return { ...initial, repasseConcluidoFiel: false };
+      return { ...initial, repasseConcluidoFiel: false, humanDecisionReviewIssue: 'negativa_sem_prova' };
     }
     deps.log.info("confirmação de retorno humano concluída", {
       event: "human_return_confirmed",
@@ -459,6 +464,7 @@ export async function classifyPromise(
     return {
       isPromise: initial.isPromise,
       ...(initial.agendaReviewIssue ? { agendaReviewIssue:initial.agendaReviewIssue } : {}),
+      ...(checked.humanDecisionReviewIssue ? { humanDecisionReviewIssue: checked.humanDecisionReviewIssue } : {}),
       ...(initial.agendaCompativel !== undefined ? { agendaCompativel: initial.agendaCompativel } : {}),
       ...(args.humanDecisionContext ? { repasseConcluidoFiel: checked.repasseConcluidoFiel === true } : {}),
       ...((completion && !operacional && !consulta) || checked.afirmouConclusaoHumana === true
@@ -475,13 +481,14 @@ export async function classifyPromise(
     deps.log.warn("confirmação de retorno falhou — marcação inicial preservada", {
       event: "human_return_confirmation_failed",
     });
-    return confirmationRequired ? { ...initial, repasseConcluidoFiel: false } : initial;
+    return confirmationRequired ? { ...initial, repasseConcluidoFiel: false, humanDecisionReviewIssue: 'negativa_sem_prova' } : initial;
   }
   }, { log: deps.log, conferirOrcamento: conferirOrcamentoDaRevisao });
   // Mesma normalização para JEV, reserva e confirmador; nunca positiva por coerção/ausência.
   if (args.humanDecisionContext || precisaRevisarConclusaoHumana(args) || reviewed.afirmouConclusaoHumana === true) {
-    reviewed.repasseConcluidoFiel = temDecisaoElegivel(args) && reviewed.afirmouConclusaoHumana === true &&
-      reviewed.repasseConcluidoFiel === true && !reviewed.prometeuRetornoHumano && !detectHumanPromise(args.candidate);
+    const fiel = temDecisaoElegivel(args) && reviewed.afirmouConclusaoHumana === true &&
+      reviewed.repasseConcluidoFiel === true && !reviewed.prometeuRetornoHumano && !reviewed.humanDecisionReviewIssue;
+    reviewed.repasseConcluidoFiel = fiel && !detectHumanPromise(args.candidate, undefined, fiel);
   }
   if (precisaRevisarAgenda(args)) {
     const limitado = pacoteFactualDaRevisao(args).limite_contexto === true;
@@ -537,7 +544,7 @@ export function memoizarPorCandidata(
     if (jaPedida !== undefined) return jaPedida;
     const pedida = classificar(candidata);
     pedidas.set(chave, pedida);
-    pedida.then(v => { if (v.agendaReviewIssue) pedidas.delete(chave); }, () => pedidas.delete(chave));
+    pedida.then(v => { if (v.agendaReviewIssue || v.humanDecisionReviewIssue) pedidas.delete(chave); }, () => pedidas.delete(chave));
     return pedida;
   };
 }

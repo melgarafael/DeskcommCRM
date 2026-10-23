@@ -89,7 +89,7 @@ it('o envio espera o Caso e o contexto no mesmo passo, sem forçar linguagem imp
 it('falha da ferramenta não vira prova de Caso nem bloqueia a avaliação do envio', async () => {
   const contexto = criarContextoCompartilhadoDoTurno();
   const ferramentas = observarFerramentasDoTurno({
-    open_human_case: tool({ inputSchema: z.object({}), execute: async () => { throw new Error('falha'); } }),
+    open_human_case: tool({ inputSchema: z.object({}), execute: async (): Promise<{ ok: boolean }> => { throw new Error('falha'); } }),
     send_message: tool({ inputSchema: z.object({}), execute: async () => {
       expect(contexto.atual()!.fontes[0]!.estado).toBe('unavailable');
       return { enviada: false, code: 'case_promise_without_case' };
@@ -126,4 +126,14 @@ it('aguarda também quando o SDK inicia o envio antes da ferramenta irmã no mes
   const envio = ferramentas.send_message!.execute!({}, opcoes);
   const abertura = ferramentas.open_human_case!.execute!({}, opcoes);
   await expect(Promise.all([envio, abertura])).resolves.toEqual([true, true]);
+});
+
+it('a origem pode omitir conteúdo sem autoridade sem mudar o retorno efetivo de ferramenta desconhecida', async () => {
+  const c = criarContextoCompartilhadoDoTurno();
+  const resultado = { results: [{ content: 'Política vigente' }, { content: 'alegação antiga do cliente' }] };
+  const ferramentas = observarFerramentasDoTurno({ consulta_futura: tool({ inputSchema: z.object({}), execute: async () =>
+    c.compartilharResultado(resultado, { results: [resultado.results[0]], omitidos_por_origem: 1 }) }) }, c);
+  expect(await ferramentas.consulta_futura!.execute!({}, opcoes)).toBe(resultado);
+  expect(JSON.stringify(c.atual())).not.toContain('alegação antiga do cliente');
+  expect(c.atual()!.fontes[0]!.conteudo).toMatchObject({ resultado: { results: [{ content: 'Política vigente' }], omitidos_por_origem: 1 } });
 });
