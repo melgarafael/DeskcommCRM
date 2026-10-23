@@ -31,6 +31,7 @@ import { recusaDeCapacidadeParaOModelo } from "@/lib/mcp/recusa-para-o-modelo";
 import { tamanhoDoResultado } from "@/lib/mcp/resultado-bytes";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
+import { completarDestinoDoNegocio } from "@/lib/external-db/receitas/destino-pela-referencia";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
 import { escritaCabeNoTurno } from "./escopo-das-escritas";
 import {
@@ -263,6 +264,30 @@ function wrapMcpTool(
       try {
         ensureScope(input.auth.scopes, def.requiresScope);
         ensureRole(input.auth.role, def.requiresRole);
+
+        // Spec 25 (R5c): o agente pode abrir o negócio de um item do banco externo
+        // passando só a referência — o funil e a etapa saem da receita (sem referência
+        // nada muda: o handler recusa a ausência). Completado
+        // AQUI, antes do escopo de funil logo abaixo: a guarda julga o funil que vai
+        // ser escrito, e com o argumento ausente ela recusaria sempre.
+        if (def.name === "crm_create_lead" && typeof argsRecord.referencia_externa === "string") {
+          const completo = await completarDestinoDoNegocio(
+            input.supabase,
+            input.ctx.organizationId,
+            argsRecord,
+          );
+          if (!completo.ok) {
+            void auditMcpToolCall({
+              ctx: input.ctx,
+              toolName: def.name,
+              args: argsAudit,
+              durationMs: Date.now() - startedAt,
+              success: false,
+              errorMessage: `destino_do_interesse:${String(completo.resposta.erro)}`,
+            });
+            return completo.resposta;
+          }
+        }
 
         // ── DE QUEM É O REGISTRO QUE ESTA ESCRITA ALCANÇA — do contato do turno
         //

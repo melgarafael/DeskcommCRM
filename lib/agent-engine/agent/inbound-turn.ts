@@ -79,6 +79,8 @@ import {
   PASTA_DE_TESTE_DE_MIDIA,
   type FotoParaEnvio,
 } from './fotos-do-produto';
+import { descreverSemQuery } from './imagem-por-url';
+import { baixarImagemSegura, guardarImagemNaConversa } from './baixar-imagem-segura';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
   applyLeadStateUpdate,
@@ -195,7 +197,7 @@ import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { esperarComoHumano, manterDigitando } from './atraso-humano';
-import { instrucaoDeBolhas, sendInBubbles, splitForSend } from './split-message';
+import { instrucaoDeBolhas, OK_KINDS, sendInBubbles, splitForSend } from './split-message';
 import { formatarParaWhatsApp } from './formato-whatsapp';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
@@ -344,6 +346,15 @@ export const AGENT_TOOL_DEFS = {
         .describe(
           'código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: ' +
             'as fotos dele vão junto, e o texto vira a legenda da primeira',
+        ),
+      imagem_url: z
+        .string()
+        .url()
+        .optional()
+        .describe(
+          'URL https de UMA imagem (jpg, png ou webp) que veio de um resultado de ferramenta (ex.: uma ' +
+            'receita do banco externo). Vai como foto, e o texto vira a legenda. Nunca invente URL. ' +
+            'Não use junto com produto_codigo.',
         ),
     }),
   },
@@ -1126,6 +1137,51 @@ export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
     blocos.push(AGENDA_CADEIA_SYSTEM_BLOCK);
   }
   return blocos;
+}
+
+/**
+ * O INTERESSE DO CLIENTE NUM ITEM DO BANCO EXTERNO, residente (Spec 25, R5c).
+ *
+ * ─── O que faltava, medido ──────────────────────────────────────────────────
+ *
+ * Numa imobiliária montada do zero no espelho (22/10/2026), o agente mostrou o
+ * imóvel e, no turno seguinte ("tenho interesse nesse"), escreveu "seu interesse
+ * está registrado" SEM chamar nada — três vezes, em três configurações. A
+ * orientação que `crm_consultar_receita` devolve ("abra o negócio com
+ * crm_create_lead…") vive no RESULTADO daquele turno, e resultado de ferramenta
+ * não acompanha a conversa: no turno em que o cliente escolhe, o agente só tem o
+ * prompt, as `description` das ferramentas e o que está escrito nas mensagens.
+ *
+ * Por isso o ensino mora aqui, no mesmo lugar do da agenda: residente, a cada
+ * turno. E é CONDICIONAL: nomear ferramenta que o agente não tem faz o modelo
+ * tentar chamá-la, então o bloco só entra com as DUAS pontas (consultar o banco
+ * externo e abrir o negócio).
+ *
+ * Ensino, não garantia: o funil e a etapa saem da receita
+ * (`completarDestinoDoNegocio`), e o escopo de funil do agente segue julgando.
+ */
+const INTERESSE_EXTERNO_SYSTEM_BLOCK =
+  '## Banco de dados externo — o cliente escolheu um item\n' +
+  'Quando você mostrar itens vindos de `crm_consultar_receita`, escreva ao lado de cada um o código ' +
+  'dele (cód. = o campo `id` da linha): é por ele que você acha o item no turno seguinte.\n' +
+  'Quando o cliente disser que tem interesse em UM item que você mostrou, chame `crm_create_lead` ' +
+  'NESTE turno, ANTES de responder, com o `contact_id` desta conversa, um `title` com o nome do item e ' +
+  '`referencia_externa` = `<receita>:<código>` (a receita é o campo `receita` da instância que a ' +
+  'consulta devolveu, por exemplo `wordpress-conteudo`; se não estiver à mão, chame `crm_consultar_receita` ' +
+  'com `acao: "listar"` para ver). NÃO informe `pipeline_id` nem `stage_id`: o sistema usa o funil e a ' +
+  'etapa que a empresa configurou para essa receita.\n' +
+  'Só diga ao cliente que o interesse foi registrado DEPOIS de `crm_create_lead` responder com sucesso. ' +
+  'Escrever "registrei" sem ter chamado a ferramenta é o defeito. Se ela responder que a receita não ' +
+  'tem funil configurado, passe a conversa para a equipe e diga ao cliente que a equipe dará continuidade.';
+
+/**
+ * O bloco do interesse num item do banco externo — a decisão num lugar só, testável.
+ * A régua é o que o agente TEM: as duas ferramentas que o texto nomeia.
+ */
+export function blocosDeInteresseExternoResidentes(toolIds: readonly string[]): string[] {
+  return toolIds.includes('crm_consultar_receita') && toolIds.includes('crm_create_lead')
+    ? [INTERESSE_EXTERNO_SYSTEM_BLOCK]
+    : [];
 }
 
 /**
@@ -2425,6 +2481,7 @@ async function executarTurnoDoAgente(
   // testada (o bloco da cadeia nomeia `crm_list_event_types`, e nomear
   // ferramenta ausente faz o modelo tentar chamá-la).
   if (agentConfig !== null) blocosResidentes.push(...blocosDeAgendaResidentes(agentConfig.toolIds));
+  if (agentConfig !== null) blocosResidentes.push(...blocosDeInteresseExternoResidentes(agentConfig.toolIds));
   if (preview)
     blocosResidentes.push(
       'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',
@@ -3383,7 +3440,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: corpoDoModelo, produto_codigo }) => {
+      execute: async ({ body: corpoDoModelo, produto_codigo, imagem_url }) => {
         tentativasDeEnvio += 1;
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
@@ -3533,6 +3590,18 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // Foto por URL (`imagem_url`, Spec 25 R4): só uma das duas formas de foto vale
+        // por mensagem — `produto_codigo` e `imagem_url` juntos são recusados abaixo.
+        const temImagemPorUrl = imagem_url !== undefined && imagem_url.trim() !== '';
+        let motivoFotoRecusada: string | null = null;
+        let fotoUrlEnviada = false;
+        // Rastro `foto_enviada`: marca quando a foto por URL (já guardada na conversa) de fato saiu.
+        // `fotosDoProduto` leva UMA das duas fontes (exclusivas, ver o bloco abaixo): a foto do
+        // catálogo ou a foto por URL; o teto de envios e a legenda valem para as duas.
+        const marcarFoto = <R extends { kind: string }>(resultado: R): R => {
+          if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
+          return resultado;
+        };
         try {
           dupTrava.reservar(body);
           // RESPOSTA OBSOLETA: o cliente escreveu de novo enquanto este turno pensava.
@@ -3568,6 +3637,51 @@ async function executarTurnoDoAgente(
                   'NÃO chame send_message de novo neste turno — encerre agora. O próximo turno lê a conversa inteira e responde a tudo de uma vez.',
               },
             };
+          }
+          // Duas fotos na mesma mensagem não existem: `produto_codigo` (catálogo, copiado
+          // para a conversa) e `imagem_url` (resultado de ferramenta, sem cópia). Erro de
+          // ENSINO — nada sai; a reserva é liberada como nos outros retornos antes da cadeia.
+          const temFotoDoCatalogo = produto_codigo !== undefined && produto_codigo.trim() !== '';
+          if (temFotoDoCatalogo && temImagemPorUrl) {
+            dupTrava.liberar(body);
+            return {
+              ok: false,
+              error: {
+                code: 'imagem_e_produto_juntos',
+                message:
+                  'Use imagem_url OU produto_codigo, não os dois na mesma mensagem. Mande de novo só com um deles.',
+              },
+            };
+          }
+          // Foto por URL (Spec 25 R4, opção A): mesma regra de fora do lock, só fora da
+          // prévia. O CRM baixa a imagem com a própria rede (IP validado, sem redirect,
+          // teto de 5 MB, conteúdo conferido), guarda no Storage da conversa e manda ao
+          // canal só o storagePath. Qualquer falha: a mensagem segue só com texto (D7) e o
+          // motivo volta ao modelo; o log leva host + caminho, nunca a query.
+          if (temImagemPorUrl && !preview) {
+            const url = (imagem_url ?? '').trim();
+            let motivo: string | null = null;
+            const baixada = await baixarImagemSegura(url);
+            if (!baixada.ok) {
+              motivo = baixada.motivo;
+            } else {
+              const guardada = await guardarImagemNaConversa(createAdminClient(), {
+                tenantId,
+                conversationId: input.conversationId,
+                bytes: baixada.bytes,
+                mime: baixada.mime,
+              });
+              if (guardada.ok) fotosDoProduto = [{ storagePath: guardada.storagePath, mime: guardada.mime }];
+              else motivo = guardada.motivo;
+            }
+            if (motivo !== null) {
+              motivoFotoRecusada = motivo;
+              runLog.warn('imagem_url recusada — a mensagem sai só com texto', {
+                job_id: job?.id ?? null,
+                imagem: descreverSemQuery(url),
+                motivo,
+              });
+            }
           }
           // A foto do produto (ideia de @vgamkt, #1130): preparada ANTES da cadeia e
           // fora do lock do número — a cópia no Storage é rede. Código errado volta
@@ -3783,7 +3897,7 @@ async function executarTurnoDoAgente(
                     sleep,
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
-                    enviarFoto: (foto, legenda) => enviar(legenda, foto),
+                    enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                     enviarTexto: (texto) =>
                       sendInBubbles(texto, {
                         enabled: agentConfig?.splitMessages ?? false,
@@ -3980,6 +4094,10 @@ async function executarTurnoDoAgente(
                 status: 'enviada',
                 message_id: outcome.messageId,
                 ...(produto_codigo !== undefined ? { fotos_enviadas: fotosDoProduto.length } : {}),
+                // Rastro da foto por URL (Spec 25 R4): `foto_enviada` diz se a foto saiu;
+                // `foto_recusada` diz por que não foi buscada (formato ou guarda de rede).
+                ...(temImagemPorUrl ? { foto_enviada: fotoUrlEnviada } : {}),
+                ...(motivoFotoRecusada !== null ? { foto_recusada: motivoFotoRecusada } : {}),
                 ...(fotosQueFaltaram > 0
                   ? {
                       aviso: `${fotosQueFaltaram} foto(s) do produto não puderam ser enviadas; o texto foi. Não diga ao cliente que mandou essas fotos.`,

@@ -184,7 +184,7 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
       { termos: ["camisa"], preco_max: 60, so_em_estoque: true, limite: 5 },
       5,
     );
-    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas(WP_PREFIXO);
+    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas({ prefixo: WP_PREFIXO });
     expect(() => validarConsultaDeReceita(sql, tabelas)).not.toThrow();
     expect(valores).toContain("product");
     expect(valores).toContain("publish");
@@ -376,8 +376,8 @@ describe("receita woocommerce-produtos contra MySQL 8 de verdade", () => {
         {
           sql,
           valores,
-          tabelas: RECEITA_WOOCOMMERCE_PRODUTOS.tabelas(WP_PREFIXO),
-          colunasPorTabela: RECEITA_WOOCOMMERCE_PRODUTOS.colunas(WP_PREFIXO),
+          tabelas: RECEITA_WOOCOMMERCE_PRODUTOS.tabelas({ prefixo: WP_PREFIXO }),
+          colunasPorTabela: RECEITA_WOOCOMMERCE_PRODUTOS.colunas({ prefixo: WP_PREFIXO }),
         },
         { limiteMax: 5 },
       ),
