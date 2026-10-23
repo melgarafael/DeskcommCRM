@@ -12,7 +12,8 @@ import { useEffect, useId, useState } from "react";
  * `tests/unit/campo-condicional-nos-pontos-de-renderizacao.test.ts`.
  */
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
-import { parseReaisToCents } from "@/lib/money";
+import { exemploDoCampoDeMoeda, lerCampoDeMoeda, semAMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,7 +115,10 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
   }, [baseId, buscaAberta, destacado, rascunhosDeBusca]);
   // O campo é do mesmo caminho do contato: o exemplo segue o país da
   // organização, e não o DDI brasileiro em duro.
-  const telefoneExemplo = perfilDoPais(useActiveOrg()?.country).telefoneExemplo;
+  const org = useActiveOrg();
+  const telefoneExemplo = perfilDoPais(org?.country).telefoneExemplo;
+  // O campo de moeda na moeda da organização (`lib/leads/campo-de-moeda.ts`).
+  const moedaDoCampo = org?.currency ?? MOEDA_PADRAO;
   function set(key: string, v: unknown) {
     onChange({ ...value, [key]: v });
   }
@@ -198,7 +202,7 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
             const valorNumerico = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : null;
             const formatado =
               valorNumerico !== null && Number.isFinite(valorNumerico)
-                ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valorNumerico)
+                ? valorDoCampoDeMoeda(valorNumerico, moedaDoCampo)
                 : "";
             return (
               <div key={f.key} className="space-y-2">
@@ -212,8 +216,8 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                   onBlur={() => {
                     const draft = rascunhosDeMoeda[f.key];
                     if (draft === undefined) return;
-                    const raw = draft.trim().replace(/^R\$\s*/i, "").replace(/\s/g, "");
-                    const centavos = raw === "" ? null : parseReaisToCents(raw);
+                    const raw = semAMoeda(draft, moedaDoCampo);
+                    const centavos = raw === "" ? null : lerCampoDeMoeda(raw, moedaDoCampo);
                     if (centavos !== null) set(f.key, centavos / 100);
                     else if (raw === "") set(f.key, null);
                     setRascunhosDeMoeda((current) => {
@@ -223,7 +227,7 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                     });
                   }}
                   disabled={disabled}
-                  placeholder="R$ 0,00"
+                  placeholder={exemploDoCampoDeMoeda(moedaDoCampo)}
                 />
               </div>
             );

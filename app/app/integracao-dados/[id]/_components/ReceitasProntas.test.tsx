@@ -3,7 +3,7 @@
  * Prova contra os 5 defeitos de produto:
  *   1. Adicionar aparece na lista (não só em rascunho).
  *   2. Salvar envia a LISTA INTEIRA (existentes + nova), não apaga as outras.
- *   3. Adicionar escolhe a primeira receita disponível (não receita: "").
+ *   3. Adicionar ESCOLHE a receita (não cria sempre a primeira da lista).
  *   4. Pré-visualização envia parâmetros de busca, nunca o objeto fixos.
  *   5. Labels ligados aos inputs (htmlFor/id) — getByLabelText acha o campo.
  */
@@ -27,6 +27,7 @@ const receitasMock = vi.hoisted(() => ({
         familia: "woocommerce",
         motores: ["mysql"],
         rotulo: "Produtos da loja WooCommerce",
+        resumo: "Produtos publicados de uma loja WooCommerce.",
         descricao: "Produtos da loja",
         parametrosFixos: {} as z.ZodTypeAny,
         parametrosDaBusca: {} as z.ZodTypeAny,
@@ -43,6 +44,7 @@ const receitasMock = vi.hoisted(() => ({
         familia: "woocommerce",
         motores: ["mysql"],
         rotulo: "Clientes WooCommerce",
+        resumo: "Clientes cadastrados na loja.",
         descricao: "Clientes da loja",
         parametrosFixos: {} as z.ZodTypeAny,
         parametrosDaBusca: {} as z.ZodTypeAny,
@@ -112,22 +114,29 @@ function renderComQuery(receitas: InstanciaDeReceita[], canWrite = true) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
+/** Abre a escolha da receita e escolhe a que tem o rótulo pedido. */
+async function adicionarReceita(rotulo: RegExp): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Adicionar receita/i }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: rotulo }));
+  });
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
 describe("Receitas prontas — comportamento da lista", () => {
-  it("com 0 salvas: adicionar → aparece na lista → salvar chama o PUT com a nova (não apaga nada)", async () => {
+  it("com 0 salvas: adicionar → escolher → aparece na lista → salvar chama o PUT com a nova (não apaga nada)", async () => {
     renderComQuery([], true);
 
-    const botaoAdicionar = screen.getByRole("button", { name: /Adicionar receita/i })!;
-    await act(async () => {
-      fireEvent.click(botaoAdicionar);
-    });
+    await adicionarReceita(/Produtos da loja WooCommerce/);
 
-    // Após adicionar, o input do rótulo mostra o nome da receita
-    expect(screen.getByLabelText(/Rótulo/i)).toHaveValue("Produtos da loja WooCommerce");
+    // Após escolher, o input do rótulo mostra o nome da receita
+    expect(screen.getByLabelText(/Nome da receita/i)).toHaveValue("Produtos da loja WooCommerce");
 
     // Clicar em Salvar
     const botaoSalvar = screen.getByRole("button", { name: /Salvar/i });
@@ -143,11 +152,21 @@ describe("Receitas prontas — comportamento da lista", () => {
     expect(args[0]!.rotulo).toBe("Produtos da loja WooCommerce");
   });
 
-  it("woocommerce mostra o campo Prefixo das tabelas (regressão da R3: só ACF e JetEngine o tinham)", async () => {
+  it("adicionar NÃO cria a primeira receita da lista sem perguntar (o defeito da tela)", async () => {
     renderComQuery([], true);
+
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Adicionar receita/i }));
     });
+
+    // A escolha está na tela, e nada foi criado ainda.
+    expect(screen.getByText("Qual receita você quer usar?")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Nome da receita/i)).toBeNull();
+  });
+
+  it("woocommerce mostra o campo Prefixo das tabelas (regressão da R3: só ACF e JetEngine o tinham)", async () => {
+    renderComQuery([], true);
+    await adicionarReceita(/Produtos da loja WooCommerce/);
     expect(screen.getByLabelText(/Prefixo das tabelas/i)).toHaveValue("wp_");
   });
 
@@ -187,11 +206,8 @@ describe("Receitas prontas — comportamento da lista", () => {
     // A receita salva agora aparece
     expect(screen.getByText("Produtos salvos")).toBeInTheDocument();
 
-    // Adicionar outra receita (woocommerce-clientes, a segunda opção do registro)
-    const botaoAdicionar = screen.getByRole("button", { name: /Adicionar receita/i })!;
-    await act(async () => {
-      fireEvent.click(botaoAdicionar);
-    });
+    // Adicionar outra receita (a segunda opção do registro)
+    await adicionarReceita(/Clientes WooCommerce/);
 
     // Salvar
     const botaoSalvar = screen.getByRole("button", { name: /Salvar/i });
@@ -207,13 +223,25 @@ describe("Receitas prontas — comportamento da lista", () => {
     expect(args.map((a) => a.receita)).toContain("woocommerce-clientes");
   });
 
+  it("em carregando, não há como adicionar: salvar antes da lista chegar apagaria as receitas salvas", () => {
+    deps.useReceitasDaConexao.mockReturnValue({
+      data: undefined,
+      isError: false,
+      refetch: vi.fn(async () => ({} as { status: number })),
+    });
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ReceitasProntas connectionId="conn-1" motor="mysql" canWrite />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Receitas prontas")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Adicionar receita/i })).toBeNull();
+  });
+
   it("com 1 salva: adicionar outra → salvar chama o PUT com as 2", async () => {
     renderComQuery([INSTANCIA_SALVA], true);
 
-    const botaoAdicionar = screen.getByRole("button", { name: /Adicionar receita/i })!;
-    await act(async () => {
-      fireEvent.click(botaoAdicionar);
-    });
+    await adicionarReceita(/Clientes WooCommerce/);
 
     // SABOTAGEM (i): se salvar enviar só a nova instância, este teste fica vermelho
     // porque o PUT deveria receber as 2 receitas (existente + nova)
@@ -255,15 +283,12 @@ describe("Receitas prontas — comportamento da lista", () => {
     expect(ultima[0]!.id).toBe("inst-salva-2");
   });
 
-  it("adicionar → o rótulo padrão é o da receita e getByLabelText('Rótulo') acha o campo", async () => {
+  it("adicionar → o rótulo padrão é o da receita e getByLabelText acha o campo", async () => {
     renderComQuery([], true);
 
-    const botaoAdicionar = screen.getByRole("button", { name: /Adicionar receita/i })!;
-    await act(async () => {
-      fireEvent.click(botaoAdicionar);
-    });
+    await adicionarReceita(/Produtos da loja WooCommerce/);
 
-    const inputRotulo = screen.getByLabelText(/Rótulo/i);
+    const inputRotulo = screen.getByLabelText(/Nome da receita/i);
     expect(inputRotulo).toHaveValue("Produtos da loja WooCommerce");
   });
 
@@ -290,9 +315,7 @@ describe("Receitas prontas — comportamento da lista", () => {
   it("adicionar e salvar sem editar envia descricao com no máximo 300 caracteres", async () => {
     renderComQuery([], true);
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Adicionar receita/i })!);
-    });
+    await adicionarReceita(/Produtos da loja WooCommerce/);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Salvar/i })!);
@@ -314,9 +337,7 @@ describe("Receitas prontas — comportamento da lista", () => {
       ),
     );
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Adicionar receita/i })!);
-    });
+    await adicionarReceita(/Produtos da loja WooCommerce/);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Salvar/i })!);

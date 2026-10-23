@@ -223,20 +223,23 @@ describe("o pré-voo da definição", () => {
     // A chave do corpo NÃO tem prefixo — `slotKey` só prefixa header, botão e
     // card. Errar isto do lado de quem envia faz o pré-voo recusar um envio
     // completo, então o formato exato importa e está fixado aqui.
-    await expect(conferir({ "1": "Marcela" })).resolves.toBeUndefined();
+    // Passar é devolver o CONTRATO conferido: o transporte lê dele a ordem dos
+    // valores (cabeçalho, corpo, botão) em vez de consultar o banco de novo.
+    const contrato = await conferir({ "1": "Marcela" });
+    expect(contrato?.slots.map((s) => s.key)).toEqual(["1"]);
   });
 
   it("definição NÃO espelhada passa — o provedor é a autoridade, não o espelho", async () => {
     // Um espelho vazio (sync nunca rodou) barraria todo envio de modelo numa
     // instalação que está com tudo certo do lado da plataforma.
     linhaTemplate = null;
-    await expect(conferir()).resolves.toBeUndefined();
+    await expect(conferir()).resolves.toBeNull();
   });
 
   it("falha de LEITURA não vira recusa de envio", async () => {
     // Barrar aqui trocaria um envio que ia dar certo por um erro nosso.
     erroSelect = { message: "banco fora" };
-    await expect(conferir()).resolves.toBeUndefined();
+    await expect(conferir()).resolves.toBeNull();
   });
 
   it("exige nome e idioma", async () => {

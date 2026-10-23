@@ -205,6 +205,10 @@ export async function avisarLeadDaEscalacao(
       const codigo = CODIGO_DO_VETO[chain.code];
       return {
         avisado: false,
+        // O código REAL do gate: `contato_bloqueado` (opt-out) e
+        // `atendimento_com_humano` (a conversa foi passada para a equipe) são
+        // desfechos diferentes, e este campo é lido por quem diagnostica o
+        // aviso que não saiu (#3310).
         porque: chain.code,
         ...(codigo !== undefined ? { motivoCodigo: codigo } : {}),
       };

@@ -98,6 +98,14 @@ export async function enviarAvisoDeTeste(
     telefone: string;
     /** A opção de responder casos por este número, como está SALVA. */
     respostaWhatsappHabilitada?: boolean;
+    /**
+     * O texto de OUTRO aviso que reusa esta mesma fila de condições — hoje, o
+     * aviso de agendamento (`lib/agenda/aviso-de-agendamento.ts`). Esse texto
+     * não leva link, então o passo 9 (endereço público) não se aplica a ele:
+     * recusar por falta de domínio um aviso que não mostra domínio seria um
+     * "não" sem razão.
+     */
+    corpo?: (marca: Awaited<ReturnType<AvisoDb["marcaDaOrganizacao"]>>) => string;
   },
 ): Promise<ResultadoDoAvisoDeTeste> {
   const agora = deps.clock();
@@ -121,7 +129,7 @@ export async function enviarAvisoDeTeste(
   if (canal.status !== "WORKING") return recusa("canal_desconectado");
 
   // ── 9. O link precisa abrir no celular de outra pessoa ───────────────────
-  if (!urlPublicaUsavel(deps.urlPublica)) return recusa("sem_endereco_publico");
+  if (!entrada.corpo && !urlPublicaUsavel(deps.urlPublica)) return recusa("sem_endereco_publico");
 
   // ── 10. O transporte desta instalação está de pé? ────────────────────────
   if (!(await deps.transporte.configurado(orgId, canal))) return recusa("transporte_ausente");
@@ -152,7 +160,7 @@ export async function enviarAvisoDeTeste(
 
   // ── 13. O texto ──────────────────────────────────────────────────────────
   const marca = await deps.db.marcaDaOrganizacao(orgId);
-  const body = montarAvisoDeTeste({
+  const body = entrada.corpo ? entrada.corpo(marca) : montarAvisoDeTeste({
     marca: marca.nome,
     idioma: marca.idioma,
     link: `${deps.urlPublica.replace(/\/+$/, "")}/app/ai/cases`,

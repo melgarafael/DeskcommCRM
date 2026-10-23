@@ -1093,6 +1093,8 @@ async function fecharOLaco(
         compromisso,
         tipo,
         leadIds,
+        // Quem fez ESTA mudança — a mesma régua da coluna `created_by_kind`.
+        autor: autorParaCriacao(ctx.actor),
       }),
       // `request_id` sem o prefixo `rule:` de propósito: ele correlaciona com o
       // audit log e NÃO aciona o anti-loop do motor, que só barra o que uma

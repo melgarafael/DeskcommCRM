@@ -37,7 +37,12 @@ export const ROTULOS_DO_TIPO: Record<CustomFieldDef["type"], string> = {
  *
  * Recebe o `t()` de fora para o mapa continuar puro (sem hook) e para o teste
  * provar que a MESMA chave chega ao dicionário nas duas telas.
+ *
+ * `moeda` é a da organização (`organizations.currency`): o campo de moeda
+ * escreve e lê o valor nela (`lib/leads/campo-de-moeda.ts`), e o tipo diz qual é
+ * — « Moeda (EUR) » numa empresa em euro. Sem ela, o rótulo de antes.
  */
-export function rotuloDoTipo(tipo: CustomFieldDef["type"], t: (texto: string) => string): string {
+export function rotuloDoTipo(tipo: CustomFieldDef["type"], t: (texto: string) => string, moeda?: string): string {
+  if (tipo === "currency" && moeda) return `${t("Moeda")} (${moeda})`;
   return t(ROTULOS_DO_TIPO[tipo]);
 }

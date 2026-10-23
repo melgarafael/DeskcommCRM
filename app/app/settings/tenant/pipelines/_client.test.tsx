@@ -46,7 +46,9 @@ globalThis.ResizeObserver = class {
 };
 
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
+import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
 import { ROTULOS_DO_TIPO } from "@/lib/schemas/rotulos-do-campo";
+import { NAV_DESTINATIONS } from "@/lib/navigation/registry";
 import {
   PipelinesClient,
   TIPOS_DE_CAMPO,
@@ -54,6 +56,65 @@ import {
   type EtapaDoFunil,
   type PipelineRow,
 } from "./_client";
+
+/**
+ * OS DOIS "ABRIR" DA TELA (issue #3176) — o editor do funil e a lista de um campo.
+ *
+ * O editor de um funil só MONTA quando ele é expandido, e as opções de um campo
+ * de lista nascem RECOLHIDAS num resumo. Por isso todo caso que olha para
+ * dentro do editor (ou para as opções) abre o que quer ver antes de medir — e é
+ * só isso: o comportamento testado abaixo é o de sempre.
+ */
+function abrirEditores(): void {
+  const botoes = screen.queryAllByRole("button", {
+    name: /Editar vocabulário e campos deste funil/i,
+  });
+  for (const botao of botoes) fireEvent.click(botao);
+}
+
+/** Abre a lista de opções do campo `posicao` (1-based) do n-ésimo funil. */
+function abrirOpcoes(posicao: number, qualFunil = 0): void {
+  fireEvent.click(screen.getAllByTestId(`abrir-opcoes-${posicao}`)[qualFunil]!);
+}
+
+/**
+ * Uma lista LONGA, com apelidos — o formato que a importação CSV grava e o caso
+ * de controle da issue #3176 (a agência com 297 destinos e 756 hospedagens).
+ */
+function listaLonga(prefixo: string, quantas: number) {
+  return Array.from({ length: quantas }, (_, i) => ({
+    value: `${prefixo}-${i}`,
+    label: `${prefixo} ${i}`,
+    aliases: [`${prefixo}${i}`],
+  }));
+}
+
+/** O caso de controle: listas longas e os MESMOS campos em mais de um funil. */
+function funilDeViagens(n: number, nome: string): PipelineRow {
+  return {
+    id: `00000000-0000-4000-8000-00000000000${n}`,
+    name: nome,
+    slug: `viagens-${n}`,
+    vocabulary: null,
+    settings: {
+      fields: [
+        {
+          key: "destino",
+          label: "Destino",
+          type: "searchable_select",
+          options: listaLonga("destino", 297),
+        },
+        {
+          key: "hospedagem",
+          label: "Hospedagem",
+          type: "searchable_select",
+          options: listaLonga("hotel", 756),
+        },
+        { key: "obs", label: "Observação", type: "text" },
+      ],
+    },
+  };
+}
 
 /** Um funil de clínica: o campo que importa é a lista de procedimentos, e ela é múltipla. */
 const FUNIL: PipelineRow = {
@@ -128,6 +189,7 @@ describe("rótulos dos tipos de campo (#3037)", () => {
       },
     };
     render(<PipelinesClient pipelines={[FUNIL_DE_TIPOS]} podeEditarConfig />);
+    abrirEditores();
 
     expect(screen.getByLabelText(/Tipo do campo 1/i).textContent?.trim()).toBe(
       "Lista de uma escolha",
@@ -145,6 +207,7 @@ describe("rótulos dos tipos de campo (#3037)", () => {
 describe("um campo multiselect já gravado", () => {
   it("abre com o tipo à mostra, e não com o seletor em branco", () => {
     render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
 
     const seletor = screen.getByLabelText(/Tipo do campo 1/i);
     // O texto do gatilho do Radix é o RÓTULO do item casado (issue #3037).
@@ -154,6 +217,8 @@ describe("um campo multiselect já gravado", () => {
 
   it("deixa editar as opções — sem isso o campo fica só de leitura", () => {
     render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
+    abrirOpcoes(1);
 
     const opcoes = screen.getByLabelText(/Opções do campo 1/i);
     expect(opcoes).toHaveValue("Clareamento Dental, Implantes");
@@ -192,6 +257,8 @@ function digitar(input: HTMLInputElement, texto: string): void {
 describe("o input de opções de um campo de lista fechada", () => {
   it("não apaga a vírgula recém-digitada — sem ela não há como criar a segunda opção", () => {
     render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+    abrirEditores();
+    abrirOpcoes(1);
 
     const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
     digitar(opcoes, "Dor,");
@@ -204,6 +271,8 @@ describe("o input de opções de um campo de lista fechada", () => {
 
   it("mantém o separador entre TODAS as opções ao digitar a lista tecla a tecla", () => {
     render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+    abrirEditores();
+    abrirOpcoes(1);
 
     const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
     digitar(opcoes, "Dor, Orçamento, Prazo");
@@ -215,6 +284,8 @@ describe("o input de opções de um campo de lista fechada", () => {
 
   it("não apaga o espaço DENTRO de uma opção de duas palavras ao digitar", () => {
     render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+    abrirEditores();
+    abrirOpcoes(1);
 
     const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
     digitar(opcoes, "Clareamento Dental, Implantes");
@@ -227,6 +298,8 @@ describe("o input de opções de um campo de lista fechada", () => {
   it("grava a lista inteira e descarta só o vazio do fim", async () => {
     vi.mocked(updatePipelineConfig).mockClear();
     render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+    abrirEditores();
+    abrirOpcoes(1);
 
     const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
     // A vírgula final deixa um terceiro item vazio, que o input agora preserva.
@@ -246,6 +319,8 @@ describe("o input de opções de um campo de lista fechada", () => {
   it("grava cada opção aparada, com o espaço de dentro e sem o do fim", async () => {
     vi.mocked(updatePipelineConfig).mockClear();
     render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+    abrirEditores();
+    abrirOpcoes(1);
 
     const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
     // O espaço antes da vírgula sobrevive à digitação (a pessoa ainda pode
@@ -275,6 +350,8 @@ describe("lista pesquisável: editar as opções à mão depois de importar (#25
   it("acrescentar uma opção não troca o `value` nem apaga os apelidos da que veio do CSV", async () => {
     vi.mocked(updatePipelineConfig).mockClear();
     render(<PipelinesClient pipelines={[FUNIL_DESTINO]} podeEditarConfig />);
+    abrirEditores();
+    abrirOpcoes(1);
 
     fireEvent.change(screen.getByLabelText(/Importar opções \(CSV\) 1/i), {
       target: { value: "maceio-al,Maceió (AL),maceio;mcz" },
@@ -345,8 +422,10 @@ describe("editor de obrigatorio_em do funil (#1536)", () => {
     },
   };
 
-  const tela = (p: PipelineRow) =>
+  const tela = (p: PipelineRow) => {
     render(<PipelinesClient pipelines={[p]} etapas={ETAPAS} podeEditarConfig />);
+    abrirEditores();
+  };
   const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
 
   beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
@@ -408,6 +487,7 @@ describe("retomada de negócio encerrado (#1538)", () => {
 
   it("nasce desligada e ligar grava `reabertura: novo_negocio` na porta única de escrita", () => {
     render(<PipelinesClient pipelines={[FUNIL]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
     const caixa = screen.getByLabelText("Negócio encerrado que volta abre um negócio novo");
     expect(caixa).not.toBeChecked();
 
@@ -420,6 +500,7 @@ describe("retomada de negócio encerrado (#1538)", () => {
   it("funil já ligado abre marcado, e desligar volta a `mesmo_registro`", () => {
     const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, reabertura: "novo_negocio" } };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
     const caixa = screen.getByLabelText("Negócio encerrado que volta abre um negócio novo");
     expect(caixa).toBeChecked();
 
@@ -438,6 +519,7 @@ describe("comanda do ganho (#1477)", () => {
 
   it("nasce desligada e ligar grava `comanda_no_ganho: true` na porta única de escrita", () => {
     render(<PipelinesClient pipelines={[FUNIL]} etapas={{}} podeEditarConfig comandaDisponivel />);
+    abrirEditores();
     const caixa = screen.getByLabelText(ROTULO);
     expect(caixa).not.toBeChecked();
 
@@ -450,6 +532,7 @@ describe("comanda do ganho (#1477)", () => {
   it("funil já ligado abre marcado, e desligar grava `false`", () => {
     const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, comanda_no_ganho: true } };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig comandaDisponivel />);
+    abrirEditores();
     const caixa = screen.getByLabelText(ROTULO);
     expect(caixa).toBeChecked();
 
@@ -462,6 +545,7 @@ describe("comanda do ganho (#1477)", () => {
   it("sem o módulo financeiro (#1907) o interruptor some, e salvar não mexe no valor gravado", () => {
     const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, comanda_no_ganho: true } };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
     expect(screen.queryByLabelText(ROTULO)).toBeNull();
 
     salvar();
@@ -505,6 +589,7 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
 
   it("sem nenhum funil marcado, o padrão é o primeiro — o seletor aparece só nele", () => {
     render(<PipelinesClient pipelines={[funil(A, "Vendas"), funil(B, "Pos")]} podeEditarConfig />);
+    abrirEditores();
     expect(screen.getAllByLabelText(/Escopo do campo 1/i)).toHaveLength(1);
     expect(screen.getAllByText("Este campo pertence a:")).toHaveLength(1);
   });
@@ -516,6 +601,7 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
         podeEditarConfig
       />,
     );
+    abrirEditores();
     const cards = container.querySelectorAll("h2");
     expect(cards[0]?.textContent).toBe("Vendas");
     expect(screen.getAllByLabelText(/Escopo do campo 1/i)).toHaveLength(1);
@@ -530,6 +616,7 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
         podeEditarConfig
       />,
     );
+    abrirEditores();
     expect(screen.getAllByLabelText(/Escopo do campo 1/i)).toHaveLength(2);
   });
 });
@@ -558,11 +645,204 @@ describe("o botão de acrescentar campo e a cota do negócio (#3111)", () => {
 
   it("os campos do contato não escondem o botão: 20 do negócio + 30 do contato ainda acrescenta", () => {
     render(<PipelinesClient pipelines={[funilCom(20, 30)]} podeEditarConfig />);
+    abrirEditores();
     expect(screen.getByRole("button", { name: /Adicionar campo/i })).toBeInTheDocument();
   });
 
   it("50 campos do negócio escondem o botão, com ou sem contato junto", () => {
     render(<PipelinesClient pipelines={[funilCom(50, 5)]} podeEditarConfig />);
+    abrirEditores();
     expect(screen.queryByRole("button", { name: /Adicionar campo/i })).toBeNull();
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * O EDITOR DE FUNIS COM LISTAS LONGAS (issue #3176) — opções recolhidas e
+ * editor sob demanda.
+ *
+ * O defeito, do jeito que o autor da issue mediu: numa agência de viagens (297
+ * destinos, 756 hospedagens, os mesmos campos em 3 funis) a página gastava
+ * mais de 45 s num `Runtime.evaluate` sem resposta, logo depois de carregar —
+ * porque montava o editor de TODOS os funis com as opções de TODOS os campos,
+ * apelidos inclusos, de uma vez.
+ *
+ * O que estes casos prendem, e por quê:
+ *
+ *  1. o editor de cada funil só MONTA quando é expandido — e a contagem de nós
+ *     do DOM, antes e depois, é o alvo medido (o relógio do navegador é
+ *     instável; o número de nós não é);
+ *  2. as opções de um campo de lista nascem RECOLHIDAS, com o RESUMO
+ *     ("756 opções · Importar CSV · Exportar CSV") — ninguém monta 756 linhas
+ *     que ninguém pediu;
+ *  3. abrir a lista mostra as opções DAQUELE campo, com busca, e não mais que
+ *     uma página de cada vez;
+ *  4. o resto do editor continua igual: importar CSV, apelidos e `value`
+ *     canônico preservados, e o exportar CSV no MESMO dialeto da importação.
+ */
+describe("Configurações › Funis com listas longas (#3176)", () => {
+  const VIAGENS_1 = funilDeViagens(1, "Viagens 1");
+  const VIAGENS_2 = funilDeViagens(2, "Viagens 2");
+  const telaDeViagens = () =>
+    render(<PipelinesClient pipelines={[VIAGENS_1, VIAGENS_2]} podeEditarConfig />);
+
+  const DESTINOS_VAZIO: PipelineRow = {
+    id: "55555555-5555-4555-8555-555555555555",
+    name: "Destinos",
+    slug: "destinos",
+    vocabulary: null,
+    settings: { fields: [{ key: "destino", label: "Destino", type: "searchable_select" }] },
+  };
+
+  it("o editor de um funil só monta quando expandido — a contagem de nós prova", () => {
+    const { container } = telaDeViagens();
+    const recolhido = container.querySelectorAll("*").length;
+
+    // Recolhido: nem o seletor de tipo dos campos, nem o resumo das listas.
+    expect(screen.queryAllByLabelText(/^Tipo do campo/)).toHaveLength(0);
+    expect(screen.queryAllByTestId(/^resumo-opcoes-/)).toHaveLength(0);
+
+    // Expandir UM funil monta o editor DELE, e só dele.
+    fireEvent.click(screen.getByTestId(`abrir-editor-${VIAGENS_1.id}`));
+    const aberto = container.querySelectorAll("*").length;
+    expect(aberto, `recolhido=${recolhido} aberto=${aberto}`).toBeGreaterThan(recolhido);
+    expect(screen.getAllByLabelText(/^Tipo do campo 1/)).toHaveLength(1);
+
+    // Recolher ESCONDE o editor sem desmontá-lo: desmontar jogaria fora, sem
+    // aviso, o que foi editado e ainda não salvo (caso abaixo).
+    fireEvent.click(screen.getByTestId(`abrir-editor-${VIAGENS_1.id}`));
+    expect(screen.getByTestId(`area-do-editor-${VIAGENS_1.id}`).hidden).toBe(true);
+  });
+
+  it("recolher e reabrir o editor não perde o que foi editado e ainda não salvo", () => {
+    telaDeViagens();
+    const botao = () => screen.getByTestId(`abrir-editor-${VIAGENS_1.id}`);
+    fireEvent.click(botao());
+    const rotulo = () => screen.getByLabelText("Rótulo do campo 1") as HTMLInputElement;
+    const original = rotulo().value;
+    fireEvent.change(rotulo(), { target: { value: `${original} EDITADO` } });
+
+    fireEvent.click(botao()); // Recolher
+    fireEvent.click(botao()); // abrir de novo
+    expect(screen.getByTestId(`area-do-editor-${VIAGENS_1.id}`).hidden).toBe(false);
+    expect(rotulo().value).toBe(`${original} EDITADO`);
+  });
+
+  it("com centenas de opções em mais de um funil, as listas nascem RECOLHIDAS com o resumo", () => {
+    const { container } = telaDeViagens();
+    abrirEditores();
+
+    // O resumo aparece nos DOIS funis, com a contagem do campo.
+    const resumos = screen.getAllByTestId("resumo-opcoes-2");
+    expect(resumos).toHaveLength(2);
+    for (const resumo of resumos) {
+      expect(resumo.textContent).toContain("756 opções");
+      expect(resumo.textContent).toContain("Importar CSV");
+      expect(resumo.textContent).toContain("Exportar CSV");
+    }
+    // O primeiro campo do funil (297 opções, com apelido) também vem resumido.
+    expect(screen.getAllByTestId("resumo-opcoes-1")[0]?.textContent).toContain("297 opções");
+
+    // E NADA das opções está montado: nem o input de edição da lista, nem a
+    // caixa de importação CSV, nem os rótulos das 297+756 opções.
+    expect(screen.queryAllByLabelText(/^Opções do campo/)).toHaveLength(0);
+    expect(container.querySelectorAll("textarea")).toHaveLength(0);
+    expect(container.textContent).not.toContain("hotel 755");
+    expect(container.textContent).not.toContain("destino 296");
+  });
+
+  it("abrir a lista mostra as opções DAQUELE campo, com busca, e não mais que uma página", () => {
+    const { container } = telaDeViagens();
+    abrirEditores();
+    abrirOpcoes(2); // Hospedagem, do primeiro funil
+
+    // Só a lista do campo que a pessoa abriu: a do outro funil continua fechada.
+    const listas = screen.getAllByTestId("lista-opcoes-2");
+    expect(listas).toHaveLength(1);
+    const lista = listas[0]!;
+    expect(lista.querySelectorAll("li")).toHaveLength(20); // uma página, não 756
+    expect(lista.textContent).toContain("hotel 0");
+
+    // A BUSCA corta o que é montado: "hotel 700" deixa só a opção que casa.
+    const busca = screen.getAllByLabelText("Buscar opções 2")[0]!;
+    fireEvent.change(busca, { target: { value: "hotel 700" } });
+    expect(lista.querySelectorAll("li")).toHaveLength(1);
+    expect(lista.textContent).toContain("hotel 700");
+
+    // Limpar a busca volta para uma página, e a página seguinte só existe quando
+    // alguém a pede — nunca as 756 de uma vez.
+    fireEvent.change(busca, { target: { value: "" } });
+    expect(lista.querySelectorAll("li")).toHaveLength(20);
+    fireEvent.click(screen.getAllByTestId("mais-opcoes-2")[0]!);
+    expect(lista.querySelectorAll("li")).toHaveLength(40);
+    expect(container.querySelectorAll("li").length).toBeLessThan(756);
+  });
+
+  it("três funis com listas longas: nenhuma opção montada antes de alguém pedir", () => {
+    const { container } = render(
+      <PipelinesClient
+        pipelines={[funilDeViagens(1, "Um"), funilDeViagens(2, "Dois"), funilDeViagens(3, "Três")]}
+        podeEditarConfig
+      />,
+    );
+    expect(container.querySelectorAll("textarea")).toHaveLength(0);
+    expect(screen.queryAllByLabelText(/^Opções do campo/)).toHaveLength(0);
+    expect(screen.queryAllByTestId(/^lista-opcoes-/)).toHaveLength(0);
+  });
+
+  it("exportar CSV sai ao lado do importar, no MESMO dialeto, e o arquivo volta pelo Importar", () => {
+    // O download de verdade depende de `URL.createObjectURL` (que o jsdom não
+    // implementa): sem ele o arquivo sai por uma URL `data:` — é o que o teste
+    // lê aqui, depois de interceptar o clique da âncora para não navegar.
+    const semObjectURL = (URL as { createObjectURL?: unknown }).createObjectURL;
+    (URL as { createObjectURL?: unknown }).createObjectURL = undefined;
+    const links: string[] = [];
+    const cliqueOriginal = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      links.push(this.getAttribute("href") ?? "");
+    };
+    try {
+      render(<PipelinesClient pipelines={[DESTINOS_VAZIO]} podeEditarConfig />);
+      abrirEditores();
+      // A lista fechada NÃO oferece importar nem exportar: eles nascem dentro da
+      // lista aberta (#3176).
+      expect(screen.queryByTestId("exportar-opcoes-1")).toBeNull();
+      abrirOpcoes(1);
+
+      fireEvent.change(screen.getByLabelText(/Importar opções \(CSV\) 1/i), {
+        target: { value: "maceio-al,Maceió (AL),maceio;mcz" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /Importar opções do campo 1/i }));
+      fireEvent.click(screen.getByTestId("exportar-opcoes-1"));
+
+      expect(links).toHaveLength(1);
+      const csv = decodeURIComponent(links[0]!.replace(/^data:text\/csv;charset=utf-8,/, ""));
+      expect(csv).toBe("value,label,apelidos\nmaceio-al,Maceió (AL),maceio;mcz\n");
+      // O ciclo fecha: o arquivo exportado reimportado devolve as MESMAS opções,
+      // com o `value` canônico e os apelidos que os negócios já usam.
+      expect(importarOpcoesCsv([], csv).opcoes).toEqual([
+        { value: "maceio-al", label: "Maceió (AL)", aliases: ["maceio", "mcz"] },
+      ]);
+    } finally {
+      (URL as { createObjectURL?: unknown }).createObjectURL = semObjectURL;
+      HTMLAnchorElement.prototype.click = cliqueOriginal;
+    }
+  });
+});
+
+describe("organização sem nenhum funil", () => {
+  it("manda criar em Funis, com link — e não para quem instalou o sistema", () => {
+    // O texto dizia que criar funil "é feito por quem instalou o sistema, direto
+    // no banco". Falso desde que a lista de Funis ganhou o botão "Novo funil":
+    // o dono ficava procurando alguém para fazer o que ele mesmo faz num clique.
+    render(<PipelinesClient pipelines={[]} podeEditarConfig />);
+    const vazio = screen.getByTestId("sem-funil-configuracao");
+    expect(vazio.textContent).not.toMatch(/banco|quem instalou/i);
+    const funis = NAV_DESTINATIONS.find((d) => d.href === "/app/kanban");
+    expect(funis).toBeTruthy();
+    const link = screen.getByTestId("link-criar-funil");
+    expect(link.getAttribute("href")).toBe(funis!.href);
+    expect(link.textContent).toContain(funis!.label);
   });
 });

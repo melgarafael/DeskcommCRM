@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -26,9 +27,24 @@ import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
  *   A-7  com o teclado aberto (modelo Android: a janela encolhe) o composer e o
  *        último balão continuam visíveis e a fileira de ações sai.
  *
+ * E o composer de toque (PR B da F2):
+ *
+ *   B-1  todo campo da conversa usa ≥ 16px (o iPhone não amplia a página);
+ *   B-2  a tecla de retorno quebra linha e não envia; quem envia é o botão;
+ *   B-3  os alvos do composer têm 44px, nada flutua por cima do Enviar, e o
+ *        botão de emoji não aparece no toque;
+ *   B-4  anexar uma imagem: a prévia cabe em 390 e o envio vira balão;
+ *   B-5  áudio que o aparelho "não toca" (o `canPlayType` forçado a vazio): o
+ *        toque busca `?formato=aac`, recebe MP4/AAC de verdade (`no-store`) e
+ *        toca por `blob:`. O ogg é gerado pelo ffmpeg do próprio executor;
+ *   B-6  com o teclado aberto o painel de sugestão sai da frente.
+ *
  * O QUE ISTO NÃO PROVA — e só um aparelho prova: o teclado do iOS (que não
  * encolhe a janela; quem mede ali é o `visualViewport.offsetTop`), o gesto de
- * borda do app instalado, e a área segura real do iPhone. Ver a J49 em
+ * borda do app instalado, a área segura real do iPhone, a GRAVAÇÃO de áudio
+ * (o Chromium sem microfone não grava; o que importa é o `MediaRecorder` do
+ * Safari), e se o áudio convertido de fato SOA no iPhone com 1 toque ou 2 — o
+ * B-5 prova o caminho até o `play()`, não o alto-falante. Ver a J49 em
  * `docs/testing/user-journey-map.md`.
  *
  * O dado é DESTE arquivo (conversa e contato criados no `beforeAll`, apagados
@@ -416,6 +432,272 @@ test.describe("atender pelo celular", () => {
         )
         .toBe(true);
       await page.screenshot({ path: path.join(EVIDENCE, "a7-teclado-aberto.png") });
+    } finally {
+      await page.setViewportSize({ width: LARGURA, height: ALTURA });
+    }
+  });
+
+  test("B-1 todo campo da conversa usa 16px ou mais", async ({ page }) => {
+    await entrar(page);
+    await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+    await esperarConversa(page);
+    // A busca nas mensagens só existe aberta: abre antes de varrer, senão o
+    // campo dela passaria sem medida.
+    await page.getByRole("button", { name: "Buscar nesta conversa", exact: true }).tap();
+    await expect(page.getByLabel("Buscar nas mensagens carregadas")).toBeVisible();
+    // Só o que está DENTRO da camada da conversa: a lista e a barra de cima
+    // ficam por baixo dela (invisíveis ou cobertas) e não são alcançáveis.
+    const campos = await fio(page).evaluate((fioEl) => {
+      let camada: HTMLElement | null = fioEl as HTMLElement;
+      while (camada && getComputedStyle(camada).position !== "fixed") camada = camada.parentElement;
+      return Array.from(
+        (camada ?? document.body).querySelectorAll<HTMLElement>(
+          'textarea, select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"])',
+        ),
+      )
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        })
+        .map((el) => ({
+          campo: el.getAttribute("aria-label") ?? el.getAttribute("placeholder") ?? el.tagName,
+          px: parseFloat(getComputedStyle(el).fontSize),
+        }));
+    });
+    // A varredura enxergou os dois campos que se toca no dia a dia.
+    expect(campos.map((c) => c.campo)).toEqual(
+      expect.arrayContaining(["Mensagem", "Buscar nas mensagens carregadas"]),
+    );
+    expect(campos.filter((c) => c.px < 16), "campo com menos de 16px amplia a página no iPhone").toEqual([]);
+  });
+
+  test("B-2 a tecla de retorno quebra linha; quem envia é o botão", async ({ page }) => {
+    await entrar(page);
+    await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+    await esperarConversa(page);
+    const campo = page.getByLabel("Mensagem", { exact: true });
+    const antes = await page.getByTestId("message-bubble").count();
+
+    await campo.tap();
+    await page.keyboard.type("linha 1");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("linha 2");
+    await expect(campo).toHaveValue("linha 1\nlinha 2");
+    // Uma janela curta para um envio indevido aparecer (o otimista é imediato).
+    await page.waitForTimeout(1_000);
+    expect(await page.getByTestId("message-bubble").count(), "o Enter enviou").toBe(antes);
+
+    const enviar = page.getByRole("button", { name: "Enviar", exact: true });
+    const r = await enviar.boundingBox();
+    expect(r, "Enviar não está na tela").not.toBeNull();
+    expect(r!.width).toBeGreaterThanOrEqual(44);
+    expect(r!.height).toBeGreaterThanOrEqual(44);
+    await enviar.tap();
+    await expect(campo).toHaveValue("");
+    await expect.poll(() => page.getByTestId("message-bubble").count()).toBe(antes + 1);
+    await page.screenshot({ path: path.join(EVIDENCE, "b2-retorno-quebra-linha.png") });
+  });
+
+  test("B-3 alvos de 44px, nada por cima do Enviar e sem botão de emoji", async ({ page }) => {
+    await entrar(page);
+    await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+    await esperarConversa(page);
+
+    const medir = async (nome: string, largura: boolean) => {
+      const r = await page.getByRole("button", { name: nome, exact: true }).boundingBox();
+      expect(r, `"${nome}" não está na tela`).not.toBeNull();
+      expect(r!.height, `"${nome}" com ${r!.height}px de altura`).toBeGreaterThanOrEqual(44);
+      if (largura) expect(r!.width, `"${nome}" com ${r!.width}px de largura`).toBeGreaterThanOrEqual(44);
+    };
+    await medir("Anexar", true);
+    await medir("Gravar áudio", true);
+    await medir("Responder", false);
+    await medir("Nota interna", false);
+    await expect(page.getByRole("button", { name: "Emoji", exact: true })).toBeHidden();
+
+    await page.getByLabel("Mensagem", { exact: true }).fill("oi");
+    await medir("Enviar", true);
+    // Cartões flutuantes (proposta em destaque, chamada) têm z-50, acima da
+    // camada da conversa: o centro do Enviar tem de ser o próprio Enviar.
+    const livre = await page.getByRole("button", { name: "Enviar", exact: true }).evaluate((b) => {
+      const r = b.getBoundingClientRect();
+      const alvo = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!alvo && b.contains(alvo);
+    });
+    expect(livre, "algo flutua por cima do botão Enviar").toBe(true);
+    await page.getByLabel("Mensagem", { exact: true }).fill("");
+
+    // A setinha "Opções da mensagem" (a porta do Responder) desenha 20px; a
+    // área de acerto no toque é de 44. A medida é `elementFromPoint` a 20px do
+    // centro nas quatro direções: a caixa do botão não enxerga o `::before`.
+    const opcoes = page.getByTestId("message-bubble").first().getByRole("button", { name: "Opções da mensagem" });
+    await opcoes.evaluate((b) => b.scrollIntoView({ block: "center" }));
+    const acerto = await opcoes.evaluate((b) => {
+      const r = b.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      return [[20, 0], [-20, 0], [0, 20], [0, -20]].map(([dx, dy]) => {
+        const alvo = document.elementFromPoint(cx + dx!, cy + dy!);
+        return { dx, dy, acerta: !!alvo && b.contains(alvo) };
+      });
+    });
+    expect(acerto.filter((p) => !p.acerta), "a setinha das opções tem menos de 44px de área de toque").toEqual([]);
+
+    // O ✕ da citação: responder a uma mensagem pelo menu da bolha.
+    await opcoes.tap();
+    await page.getByRole("menuitem", { name: /Responder a esta mensagem/i }).tap();
+    await medir("Cancelar resposta", true);
+  });
+
+  test("B-4 anexar uma imagem: a prévia cabe em 390 e o envio vira balão", async ({ page }) => {
+    await entrar(page);
+    await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+    await esperarConversa(page);
+    const antes = await page.getByTestId("message-bubble").count();
+
+    // PNG de 1x1: o menor arquivo que o upload aceita como imagem.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    await page
+      .locator('input[type="file"][accept^="image/"]')
+      .setInputFiles({ name: "foto.png", mimeType: "image/png", buffer: png });
+    const dialogo = page.getByRole("dialog");
+    await expect(dialogo).toBeVisible();
+    const r = await dialogo.boundingBox();
+    expect(r!.x, "a prévia sai pela esquerda").toBeGreaterThanOrEqual(0);
+    expect(r!.x + r!.width, "a prévia sai pela direita").toBeLessThanOrEqual(LARGURA);
+    await page.screenshot({ path: path.join(EVIDENCE, "b4-previa-do-anexo.png") });
+
+    await dialogo.getByRole("button", { name: "Enviar", exact: true }).tap();
+    await expect(dialogo).toBeHidden({ timeout: 30_000 });
+    await expect.poll(() => page.getByTestId("message-bubble").count()).toBe(antes + 1);
+    await expect(page.getByTestId("message-bubble").last().locator("img")).toHaveCount(1);
+  });
+
+  test("B-5 áudio que o aparelho não toca vira AAC e toca por blob:", async ({ page }) => {
+    // O ogg/opus é gerado AQUI pelo ffmpeg do executor (o passo do e2e.yml
+    // instala e reprova se faltar encoder): é o formato de toda nota de voz.
+    // 20s, e não 2: o desfecho "tocando" é lido depois do play(), e um áudio
+    // curto já teria acabado e voltado a "Reproduzir".
+    const ogg = execFileSync("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=20",
+      "-c:a", "libopus", "-f", "ogg", "pipe:1",
+    ]);
+    const caminho = `${orgId}/${conversa}/in-f2-${SUFIXO}.ogg`;
+    const { error: erroDoUpload } = await db.storage
+      .from("whatsapp-media")
+      .upload(caminho, ogg, { contentType: "audio/ogg; codecs=opus", upsert: true });
+    if (erroDoUpload) throw new Error(`storage: ${erroDoUpload.message}`);
+    const audio = await insere("messages", {
+      organization_id: orgId,
+      contact_id: contato,
+      conversation_id: conversa,
+      channel_session_id: canal,
+      direction: "inbound",
+      type: "audio",
+      status: "received",
+      media_mime: "audio/ogg; codecs=opus",
+      media_storage_path: caminho,
+      media_size_bytes: ogg.length,
+      sent_at: new Date().toISOString(),
+      external_id: `f2-celular-${SUFIXO}-audio`,
+    });
+    try {
+      // O Safari antigo do iPhone diz "" para ogg; o Chromium do teste toca.
+      // Forçar a resposta é o único jeito de dirigir o caminho do iPhone aqui —
+      // e o `play()` é anotado para provar que foi chamado com o blob.
+      await page.addInitScript(() => {
+        const original = HTMLMediaElement.prototype.canPlayType;
+        HTMLMediaElement.prototype.canPlayType = function (tipo: string) {
+          return /ogg|opus|webm/i.test(tipo) ? "" : original.call(this, tipo);
+        };
+        const tocar = HTMLMediaElement.prototype.play;
+        (window as unknown as { __plays: string[] }).__plays = [];
+        HTMLMediaElement.prototype.play = function () {
+          (window as unknown as { __plays: string[] }).__plays.push(this.src);
+          return tocar.call(this);
+        };
+      });
+      await entrar(page);
+      await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+      await esperarConversa(page);
+
+      const resposta = page.waitForResponse((r) => r.url().includes(`/messages/${audio}/media?formato=aac`));
+      await page.getByRole("button", { name: "Reproduzir áudio" }).tap();
+      const r = await resposta;
+      expect(r.status()).toBe(200);
+      expect(r.headers()["content-type"]).toBe("audio/mp4");
+      expect(r.headers()["cache-control"]).toContain("no-store");
+      // O corpo é lido por um pedido PRÓPRIO, na mesma sessão: o Chromium não
+      // guarda para o Playwright o corpo que a página consome como `blob()`, e
+      // `r.body()` voltava vazio com o player tocando os 20s (medido na prova).
+      const corpo = await (await page.request.get(r.url())).body();
+      // Caixa `ftyp` nos bytes 4..8: é MP4 de verdade, não o ogg devolvido.
+      expect(corpo.subarray(4, 8).toString("latin1"), "a resposta não é MP4").toBe("ftyp");
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __plays: string[] }).__plays))
+        .toContainEqual(expect.stringMatching(/^blob:/));
+
+      // O `__plays` anota o `src` ANTES do `play()` original: sozinho, ele
+      // passaria mesmo com o player caindo em "indisponível" porque o Chromium
+      // do executor não decodifica AAC. O relatório diz qual dos dois houve, e
+      // quando o executor declara AAC o player TEM de estar tocando.
+      const aac = await page.evaluate(() =>
+        document.createElement("audio").canPlayType('audio/mp4; codecs="mp4a.40.2"'),
+      );
+      const pausar = page.getByRole("button", { name: "Pausar áudio" });
+      const indisponivel = page.getByText("Mídia indisponível", { exact: false });
+      await expect(pausar.or(indisponivel).first()).toBeVisible({ timeout: 15_000 });
+      const desfecho = (await pausar.count()) > 0 ? "tocando" : "indisponível";
+      test.info().annotations.push({
+        type: "B-5 desfecho",
+        description: `canPlayType(AAC) do executor = "${aac}"; player ${desfecho}`,
+      });
+      if (aac !== "") expect(desfecho, "o executor toca AAC e o player não tocou").toBe("tocando");
+    } finally {
+      await db.from("messages").delete().eq("id", audio);
+      await db.storage.from("whatsapp-media").remove([caminho]);
+    }
+  });
+
+  test("B-6 teclado aberto: o painel de sugestão sai da frente", async ({ page }) => {
+    // O painel só é montado quando HÁ sugestão (issue #3027). O que este caso
+    // mede é a camada (teclado aberto esconde o painel), não a origem do
+    // rascunho: a leitura da sugestão devolve uma pendente, sem gerar nada.
+    await page.route(`**/api/v1/conversations/${conversa}/draft-reply`, async (rota) => {
+      if (rota.request().method() !== "GET") return rota.fallback();
+      await rota.fulfill({
+        json: {
+          data: {
+            drafts: [
+              {
+                id: "00000000-0000-4000-8000-0000000000b6",
+                revision: "1",
+                status: "pending",
+                original_body: `Sugestão de resposta ${SUFIXO}`,
+                edited_body: null,
+                error_code: null,
+                proposals: [],
+              },
+            ],
+          },
+        },
+      });
+    });
+    await entrar(page);
+    await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+    await esperarConversa(page);
+    const painel = page.getByLabel("Assistência do agente");
+    await expect(painel, "o painel de sugestão não aparece com o teclado fechado").toBeVisible();
+
+    await page.getByLabel("Mensagem", { exact: true }).tap();
+    try {
+      await page.setViewportSize({ width: LARGURA, height: 500 });
+      await expect(page.locator("[data-teclado-aberto]")).toHaveCount(1);
+      await expect(painel).toBeHidden();
+      await page.screenshot({ path: path.join(EVIDENCE, "b6-teclado-sem-painel.png") });
     } finally {
       await page.setViewportSize({ width: LARGURA, height: ALTURA });
     }

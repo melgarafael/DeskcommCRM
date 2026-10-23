@@ -47,6 +47,7 @@ import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
+import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
@@ -513,6 +514,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>
+          {/* AS ÚLTIMAS COMPRAS (issue #3179): a MESMA seção do painel do Inbox,
+              na ficha do contato — negócios ganhos em todos os funis, com data,
+              título, valor, campos escolhidos pela organização e atalho. */}
+          {!contact.is_anonymized && (
+            <div className="mt-4">
+              <UltimasComprasDoContato contactId={contactId} />
+            </div>
+          )}
           {/*
             O que os módulos de dados instalados guardam sobre esta pessoa. A lista vem do servidor e
             é vazia quando não há módulo com ficha de contato — então quem não instalou nada não vê

@@ -55,6 +55,15 @@ vi.mock("@/hooks/inbox/useCreateNote", () => ({
 vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
+// Desde a issue #3027 o painel só é montado quando HÁ sugestão, e a consulta
+// mora no compositor (este arquivo não monta `QueryClientProvider`). Uma
+// sugestão pendente mantém o painel na tela: é ele o controle que mede a trava.
+vi.mock("@/hooks/inbox/useRascunhoAssistido", () => ({
+  useRascunhoAssistido: () => ({ sugestao: { id: "d1", status: "pending" }, invalidar: () => {} }),
+}));
+vi.mock("@/components/inbox/composer/DraftReplyButton", () => ({
+  DraftReplyButton: () => null,
+}));
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ data: [] }),
 }));

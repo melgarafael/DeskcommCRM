@@ -286,7 +286,7 @@ jobs:
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4, 5, 6]
+        parte: [1, 2, 3, 4, 5, 6, 7]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -713,6 +713,52 @@ jobs:
     #     do corte, que conta no ARQUIVO da saída da suíte, não no log do job.
     #   · Controle positivo obrigatório antes de concluir ausência: rodar a sonda
     #     contra um corte conhecido (job 105911210567, do #1294) e ver 1.
+
+    # ── 2026-10-22: uma SÉTIMA parte comum, porque seis não cabem mais ──────
+    #
+    # ESCOPO DA MEDIÇÃO: os 12 runs verdes mais recentes do e2e, com as seis
+    # partes em `success` (72 jobs), do 39782452161 ao 39805877223. Duração
+    # por caso lida das linhas do reporter `list`. O corte efetivo é
+    # TETO − MARGEM = 1680s desde o T0 do job, e o orçamento é 1440s.
+    #
+    # O gatilho (b) acima não disparou, mas a cauda já encosta no corte:
+    #   · parte 5: 1678s de preparo+suíte no run 39800815100, a 2s do corte;
+    #   · parte 3: 1660s no run 39805397917, o do #3275, que leva a
+    #     `prova-painel-provedores` (239s estáveis) da 6 para a 3;
+    #   · partes 1, 2 e 6: acima do orçamento de 1440s em 9 a 12 dos 12 runs.
+    # Com seis partes, as cinco comuns somam 5526s de suíte estimada (listas
+    # com o #3275), média de 1105s. O melhor rearranjo achado entre elas
+    # (busca exaustiva de 1 e 2 movimentos, mais extensão gulosa) ainda deixa
+    # a mais cheia em ~1120s, e a parte 4 não recebe spec comum (bloco de
+    # 2026-09-19).
+    #
+    # Quatro specs vão para a PARTE_7, escolhidas pelo relógio entre as que
+    # não citam WAHA, Graph nem webhook: `prova-painel-provedores` (da 6, 239s),
+    # `agente-novo-e-uso` (da 1, 125s), `capacidades-do-agente` (da 2, 94s) e
+    # `extensoes-versao` (da 5, 51s). Medianas por spec dos 12 runs.
+    #
+    #   parte │ suíte antes (mediana medida) │ suíte depois (estimada) │ total depois (estimado)
+    #     1   │            1158s             │          1023s          │         1395s
+    #     2   │            1129s             │          1042s          │         1419s
+    #     3   │             901s             │           912s          │         1276s
+    #     4   │              47s             │            46s          │          460s
+    #     5   │            1084s             │          1066s          │         1434s
+    #     6   │            1209s             │           975s          │         1312s
+    #     7   │               —              │           539s          │          876s
+    #
+    # "Depois" é estimativa: overhead mediano da parte + soma das medianas das
+    # specs da lista; o total soma o preparo mediano da parte (na 7, o da 6).
+    # Antes e depois são réguas diferentes (mediana da suíte medida × soma de
+    # medianas por spec): os 11s a mais da 3 não são carga que ela ganhou.
+    # No pior caso (soma dos máximos por spec + preparo máximo), nenhuma
+    # parte passa de 1627s, contra 1816s da parte 3 com o #3275 e sem esta
+    # mudança.
+    #
+    # O custo: mais um job por run, ~6 min de preparo de runner a mais.
+    #
+    # NÃO MEDIDO: se as quatro passam na vizinhança da parte 7. Quem responde
+    # é o e2e do PR que criou esta parte. Se uma delas falhar por vizinhança,
+    # a troca mais barata medida é `capacidades-do-agente` → parte 6 (~1069s).
     env:
       # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
       INTERNAL_AGENT_RUN_STUB: "true"
@@ -746,7 +792,6 @@ jobs:
         confirmar-dado-do-contato.spec.ts
         credenciais-de-ia.spec.ts
         risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
-        agente-novo-e-uso.spec.ts
         agente-papeis-operador.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
@@ -759,6 +804,7 @@ jobs:
         j20-elegibilidade-atendimento-manual.spec.ts
         juntar-contatos-duplicados.spec.ts
         lote-no-quadro-do-funil.spec.ts
+        quadro-do-funil-colunas.spec.ts
         motivos-de-perda-do-funil.spec.ts
         importar-leads-planilha.spec.ts
         relatorio-de-atividades.spec.ts
@@ -858,7 +904,6 @@ jobs:
         central-de-avisos-capacidades.spec.ts
         escalacao-ciclo.spec.ts
         distribuicao-atendimento.spec.ts
-        capacidades-do-agente.spec.ts
         cobranca-revendedor.spec.ts
         escopo-de-funil-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
@@ -1136,7 +1181,6 @@ jobs:
         catalogo-busca-no-catalogo-inteiro.spec.ts
         relatorio-por-etiqueta.spec.ts
         integracao-dados-mysql-na-tela.spec.ts
-        prova-painel-provedores.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
@@ -1284,6 +1328,7 @@ jobs:
         funil-arquivado-volta-pela-tela.spec.ts
         inbox-selecionada-no-escuro.spec.ts
         inbox-anuncio-de-origem.spec.ts
+        campanha-com-modelo-aprovado.spec.ts
         followup-builder.spec.ts
         followup-journey.spec.ts
         followup-dossie.spec.ts
@@ -1292,7 +1337,6 @@ jobs:
         qa-l12-funil.spec.ts
         i18n-espanhol-na-tela.spec.ts
         extensoes-declarativas.spec.ts
-        extensoes-versao.spec.ts
         marca-logo.spec.ts
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
@@ -1371,12 +1415,17 @@ jobs:
       # service role, sobe o dublê em 127.0.0.1:3995 (nenhuma outra spec desta
       # parte o sobe) e devolve as chaves da instalação no `finally`.
       # PREVISÃO, não medida: ~1,5 min de caso.
-      # `prova-painel-provedores` SAIU para o fim da PARTE_3 em 2026-10-22. Medido
+      # `prova-painel-provedores` SAIU daqui em 2026-10-22 (o #3275 a levou para a PARTE_3 e, no mesmo dia, ela foi para a PARTE_7 comum). Medido
       # no run 39712337810 (main, dc921fa33, verde): a suíte da parte 6 levou
       # 20,2 min e o job 26,7 min de 30 — o #3133 e o #3191 foram cortados nela
       # ("a parte cresceu", 1266s e 1286s de suíte, zero vermelho). A parte 3
       # levou 12,7 min. A spec soma 235s de caso e só depende do seed do
       # catálogo, que roda em toda parte `!= 4`. PREVISÃO: ~16,5 min nas duas.
+      #
+      # `contatos-em-cartao-no-celular` entrou em 2026-10-21 (F3 da ADR-0006):
+      # a lista de contatos a 390px, com toque emulado e login `agent`. Semeia
+      # dois contatos pelo service role e os apaga no fim; não depende de WAHA
+      # nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
@@ -1385,6 +1434,7 @@ jobs:
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts
         cobranca-suspensao-e-limites.spec.ts
+        contatos-em-cartao-no-celular.spec.ts
         filtro-por-marcador-pela-tela.spec.ts
         fonte-de-captacao-assina-os-envios.spec.ts
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
@@ -1400,6 +1450,29 @@ jobs:
         suspensao-administrativa.spec.ts
         integracao-dados-fontes-liberadas.spec.ts
         atender-pelo-celular.spec.ts
+
+      # ─── PARTE 7 — nasceu em 2026-10-22, uma parte COMUM ───
+      #
+      # O porquê e os números estão no bloco "2026-10-22: uma SÉTIMA parte
+      # comum", no cabeçalho do job. Ela é comum de verdade: recebe os seeds
+      # de passo (`!= 4`) e nenhum passo `if: matrix.parte == 7` muda o
+      # ambiente dela. Spec que exija ambiente próprio (dublê no lugar do
+      # Graph, assinatura do WAHA ligada, seed extra) não entra aqui: ganha
+      # parte própria, com número seguinte.
+      #
+      # As quatro vieram de partes diferentes, e cada uma semeia o que usa ou
+      # só lê os seeds de passo: `agente-novo-e-uso` (da 1) cria o agente pela
+      # tela; `capacidades-do-agente` (da 2) roda os próprios seeds se faltar
+      # algo e devolve o rascunho como achou; `extensoes-versao` (da 5) sobe o
+      # catálogo de extensões dela e o limpa no `afterAll`;
+      # `prova-painel-provedores` (da 6) lê o catálogo da OpenRouter que o
+      # passo `seed-e2e-catalogo-openrouter` semeia em toda parte comum.
+      # Nenhuma cita WAHA, Graph ou webhook.
+      SPECS_PARTE_7: >-
+        agente-novo-e-uso.spec.ts
+        capacidades-do-agente.spec.ts
+        extensoes-versao.spec.ts
+        prova-painel-provedores.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -1958,6 +2031,22 @@ jobs:
           path: ~/.cache/playwright-apt/*.deb
           key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
 
+      # O B-5 de `atender-pelo-celular` (parte 6) gera um ogg/opus com o ffmpeg,
+      # e o app — `next start` NESTE executor, não a imagem — converte com ele
+      # para AAC (`?formato=aac`, F2 da ADR-0006). O executor não traz ffmpeg
+      # garantido: instala, e a sonda reprova ALTO se faltar um dos dois
+      # encoders, em vez de o B-5 cair por um motivo que não é o produto.
+      - name: Instalar o ffmpeg e sondar os encoders (áudio no celular, F2)
+        if: matrix.parte == 6
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          fi
+          ffmpeg -hide_banner -encoders | grep -E ' (aac|libopus) '
+          test "$(ffmpeg -hide_banner -encoders | grep -cE ' (aac|libopus) ')" -ge 2
+
       # `.env.local` é CÓPIA do `.env.e2e`, não uma terceira redação dele.
       #
       # O arquivo precisa existir porque alguns seeds leem `.env.local` do disco,
@@ -2213,6 +2302,7 @@ jobs:
             4) LISTA="$SPECS_PARTE_4" ;;
             5) LISTA="$SPECS_PARTE_5" ;;
             6) LISTA="$SPECS_PARTE_6" ;;
+            7) LISTA="$SPECS_PARTE_7" ;;
             *) echo "::error::parte ${{ matrix.parte }} sem lista"; exit 1 ;;
           esac
           # Falha alto se a variável vier vazia: sem isto, um typo no nome faria
@@ -2556,7 +2646,7 @@ jobs:
                       dentro { exit }
                     ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
-          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; } | sort -u | wc -l | tr -d " ")
+          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; bloco SPECS_PARTE_7; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
           # E o recorte passa a ter CONTROLE, não só um piso.

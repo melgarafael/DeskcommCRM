@@ -23,7 +23,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { atualizarReceitasSchema, validarFixosDaReceita, lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
+import { atualizarReceitasSchema, ErroDeFixosInvalidos, validarFixosDaReceita, lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
 import { receitaDe } from "@/lib/external-db/receitas/registro";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -111,11 +111,23 @@ export async function PUT(req: NextRequest, ctx: Ctx): Promise<Response> {
     try {
       validarFixosDaReceita(inst.receita, inst.fixos);
     } catch (err) {
+      // Os motivos por CAMPO (o Zod da receita escreve em português) vão no
+      // 422: a tela mostra a frase que explica o que falta, em vez de um
+      // "Campos inválidos." genérico.
+      const fieldErrors =
+        err instanceof ErroDeFixosInvalidos ? err.fieldErrors : undefined;
       return fail(
         "validation_failed",
         t("Os parâmetros fixos da receita são inválidos."),
         422,
-        { requestId, details: err instanceof Error ? err.message : String(err) },
+        {
+          requestId,
+          details: fieldErrors
+            ? { fieldErrors }
+            : err instanceof Error
+              ? err.message
+              : String(err),
+        },
       );
     }
   }

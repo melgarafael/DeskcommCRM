@@ -157,11 +157,12 @@ const versionShapeSchema = z
      * em `channel_sessions`, o editor não deixava salvar uma linha do que ele
      * acabou de escrever — a tela exigia escolher de uma lista vazia.
      *
-     * ⚠️ NULO RASCUNHA, NÃO ATENDE. Publicar sem número continua recusado, e em
-     * três camadas independentes: `bloqueioDePublicacao` desabilita o botão,
-     * `fn_publish_ai_agent_version` levanta `channel_session_not_found` (o
-     * `select` por `channel_session_id` nulo não acha linha), e o runtime resolve
-     * o agente por `published_version_id` — sem publicação, ninguém o executa.
+     * ⚠️ NULO RASCUNHA, NÃO ATENDE DIRETAMENTE. Um agente comum precisa escolher
+     * número antes de publicar. Um especialista sem número próprio SÓ pode ser
+     * publicado se for membro comprovado de roteador da mesma organização, cujo
+     * canal está WORKING (validado novamente na RPC). Nesse caso, o runtime
+     * alcança a versão exclusivamente pelo ID selecionado pelo roteador; canal
+     * sem roteador não encontra a versão com channel_session_id NULL.
      */
     channel_session_id: UUID.nullable(),
     max_steps: z.number().int().min(1).max(25).default(10),

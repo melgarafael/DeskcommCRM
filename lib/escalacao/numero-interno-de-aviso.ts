@@ -91,6 +91,57 @@ const _cache = new Map<string, { at: number; valor: NumeroInternoDeAviso }>();
 /** Esvazia o memo. Usado pelos testes e por quem grava a configuração. */
 export function limparCacheDoNumeroInterno(): void {
   _cache.clear();
+  _cacheDaAgenda.clear();
+}
+
+const _cacheDaAgenda = new Map<string, { at: number; valor: string | null }>();
+
+/**
+ * O número PRÓPRIO do aviso de agendamento (0753), quando ele não reusa o do
+ * aviso de caso — memoizado como o outro. Nunca lança.
+ *
+ * Quando o aviso de agendamento usa o número do aviso de caso, o corte acima já
+ * o cobre e aqui não há nada a acrescentar. Quando tem número próprio, ele é
+ * interno pela MESMA razão: o dono responde "ok" ao aviso, e essa resposta não
+ * pode virar lead, conversa nem despacho da IA. `ligado` também é ignorado
+ * aqui, pela mesma razão do cabeçalho.
+ *
+ * Fica de fora das respostas `RESPONDER`/`PERGUNTAR`, que são do aviso de CASO:
+ * por isso o número da agenda não entra em `NumeroInternoDeAviso.destino`.
+ */
+export async function lerNumeroDoAvisoDeAgendamento(
+  db: SupabaseClient,
+  organizationId: string,
+): Promise<string | null> {
+  const agora = Date.now();
+  const emCache = _cacheDaAgenda.get(organizationId);
+  if (emCache && agora - emCache.at < TTL_DO_CACHE_MS) return emCache.valor;
+  try {
+    const r = await db
+      .from("config_aviso_de_agendamento")
+      .select("usa_numero_do_aviso_de_caso, telefone_destino")
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (r.error) throw new Error(r.error.message);
+    const linha = r.data as { usa_numero_do_aviso_de_caso?: boolean | null; telefone_destino?: string | null } | null;
+    const valor = linha && linha.usa_numero_do_aviso_de_caso === false ? (linha.telefone_destino ?? null) : null;
+    _cacheDaAgenda.set(organizationId, { at: agora, valor });
+    return valor;
+  } catch (err) {
+    // Mesma decisão da leitura do aviso de caso: aberta na ação, nomeada no log.
+    logger.warn("[aviso-interno] não foi possível ler o número do aviso de agendamento", {
+      organizationId,
+      causa: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/** O chat é o número próprio do aviso de agendamento? Pura. */
+export function ehOChatDoAvisoDeAgendamento(parsed: ChatIdentidade, destino: string | null): boolean {
+  if (!destino) return false;
+  return (parsed.kind === "phone" || parsed.kind === "lid") && !!parsed.phone &&
+    phoneLookupVariants(destino).includes(parsed.phone);
 }
 
 /**
@@ -194,7 +245,8 @@ export async function ehContatoDoNumeroInterno(
   contactId: string,
 ): Promise<boolean> {
   const cfg = await lerNumeroInternoDeAviso(db, organizationId);
-  if (!cfg.destino && !cfg.jid) return false;
+  const daAgenda = await lerNumeroDoAvisoDeAgendamento(db, organizationId);
+  if (!cfg.destino && !cfg.jid && !daAgenda) return false;
 
   // Mesmo `try` da leitura acima, e pela mesma razão: o CINTO não pode ser o
   // que derruba a cadeia de efeitos que ele existe para proteger.
@@ -218,14 +270,12 @@ export async function ehContatoDoNumeroInterno(
   if (!data) return false;
 
   const linha = data as { phone_number?: string | null; wa_lid?: string | null };
-  return ehOChatDoAviso(
-    {
-      kind: linha.phone_number ? "phone" : "lid",
-      phone: linha.phone_number ?? null,
-      lid: linha.wa_lid ?? null,
-    },
-    cfg,
-  );
+  const chat: ChatIdentidade = {
+    kind: linha.phone_number ? "phone" : "lid",
+    phone: linha.phone_number ?? null,
+    lid: linha.wa_lid ?? null,
+  };
+  return ehOChatDoAviso(chat, cfg) || ehOChatDoAvisoDeAgendamento(chat, daAgenda);
 }
 
 /** A pergunta que os ingestores fazem, com a leitura já resolvida. */
@@ -237,7 +287,8 @@ export async function ehNumeroInternoDeAviso(
   // Atalho barato: grupo e formato desconhecido nunca são o número de aviso, e
   // perguntar ao banco por eles gastaria a consulta quente à toa.
   if (parsed.kind !== "phone" && parsed.kind !== "lid") return false;
-  return ehOChatDoAviso(parsed, await lerNumeroInternoDeAviso(db, organizationId));
+  if (ehOChatDoAviso(parsed, await lerNumeroInternoDeAviso(db, organizationId))) return true;
+  return ehOChatDoAvisoDeAgendamento(parsed, await lerNumeroDoAvisoDeAgendamento(db, organizationId));
 }
 
 /**

@@ -191,7 +191,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
                   <TableHead className="text-right">{t("Ganhos")}</TableHead>
                   <TableHead className="text-right">{t("Perdidos")}</TableHead>
                   <TableHead className="text-right">{t("Conversas")}</TableHead>
-                  <TableHead className="text-right">{t("1ª resposta (média)")}</TableHead>
+                  <TableHead className="text-right">{t("1ª resposta (média / mediana)")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -209,7 +209,8 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
                       {a.conversations_handled}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatarDuracao(a.avg_first_response_seconds)}
+                      {formatarDuracao(a.avg_first_response_seconds)} ·{" "}
+                      {formatarDuracao(a.median_first_response_seconds)}
                     </TableCell>
                   </TableRow>
                 ))}

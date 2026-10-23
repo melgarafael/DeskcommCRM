@@ -218,9 +218,12 @@ export function RiskRadarList() {
 function RadarRow({ lead }: { lead: AtRiskLead }) {
   const t = useT();
   const meta = RISK_META[lead.risk as Exclude<RiskBucket, "em_dia">] ?? RISK_META.em_risco;
+  // Sem conversa não há inbox para abrir: o destino é o QUADRO do funil onde o
+  // negócio está — e com o `?lead=` junto, porque sem ele o board abre no funil
+  // certo mas no card errado (a pessoa tinha de procurá-lo no quadro).
   const href = lead.conversation_id
     ? `/app/inbox?id=${lead.conversation_id}`
-    : `/app/pipelines/${lead.pipeline_id}`;
+    : `/app/pipelines/${lead.pipeline_id}?lead=${lead.id}`;
 
   const claim = useClaimConversation();
   const qc = useQueryClient();

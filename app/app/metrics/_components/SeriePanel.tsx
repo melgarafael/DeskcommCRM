@@ -160,7 +160,7 @@ export function SeriePanel() {
                   <Line
                     type="monotone"
                     dataKey="ganhos"
-                    // `--accent` não existe no globals.css: `hsl(var(--accent))`
+                    // `--accent` não existe no globals.css: o `hsl()` em volta dele
                     // computava `none` e a linha não aparecia. `--color-accent`
                     // segue a marca do revendedor.
                     stroke="var(--color-accent)"

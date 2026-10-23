@@ -18,6 +18,8 @@ import { useT } from "@/hooks/i18n/useT";
 import { usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
+import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
+import { MOEDA_PADRAO } from "@/lib/money";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import {
   TIPOS_CADASTRAVEIS_DA_CAPTACAO,
@@ -124,6 +126,8 @@ export function CadastrarCampo({
   cadastrar: CampoDoFunilDaCaptacao["cadastrar"];
 }) {
   const t = useT();
+  // O tipo moeda diz a moeda da organização (« Moeda (EUR) »), não « (BRL) » em duro.
+  const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
   const [aberto, setAberto] = React.useState(false);
   const [rotulo, setRotulo] = React.useState(() => rotuloSugerido(chave));
   const [tipo, setTipo] = React.useState<TipoCadastravel>(() => tipoInicial ?? tipoSugerido(valor));
@@ -178,7 +182,7 @@ export function CadastrarCampo({
           <SelectContent>
             {TIPOS_CADASTRAVEIS_DA_CAPTACAO.map((t1) => (
               <SelectItem key={t1} value={t1}>
-                {rotuloDoTipo(t1, t)}
+                {rotuloDoTipo(t1, t, moeda)}
               </SelectItem>
             ))}
           </SelectContent>

@@ -797,9 +797,18 @@ export async function applyRequestHumanHandoff(
   // os dois está declarando o mesmo campo duas vezes.
   const declarado = parsed.data;
   const porQue = declarado.por_que ?? declarado.reason ?? null;
-  // Ausente = comportamento legado. O código classifica a passagem, sem
-  // escolher destino nem alterar a autoridade da ferramenta.
-  const motivoCodigo = declarado.motivo_codigo ?? 'requested_human';
+  // ⚠️ **AUSENTE NÃO É "O CLIENTE PEDIU" (#3310).** Era `?? 'requested_human'`,
+  // e o modelo que passava a conversa sem declarar o motivo — escalar por não ter
+  // a informação, ou por regra do próprio prompt, que é o caso da issue — fazia o
+  // cartão de quem assume afirmar um pedido que o cliente nunca fez. O código
+  // default é `low_confidence`, o motivo do vocabulário fechado que descreve o
+  // que houve (o assistente não resolveu sozinho) sem afirmar nada sobre o
+  // cliente; quem de fato pediu uma pessoa vem com `motivo_codigo:
+  // 'requested_human'` e continua recebendo a frase do pedido.
+  //
+  // O código classifica a passagem, sem escolher destino nem alterar a
+  // autoridade da ferramenta: a DECISÃO de passar a conversa é a mesma.
+  const motivoCodigo = declarado.motivo_codigo ?? 'low_confidence';
   const briefing = montarBriefingDaPassagem({
     checkpoint: opts.contextoDoTurno?.checkpoint ?? null,
     declaradoPeloModelo: {

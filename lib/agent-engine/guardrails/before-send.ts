@@ -97,10 +97,11 @@ export interface GateContext {
   optedOut: boolean;
   /**
    * POR QUE o `stop` vale, quando `optedOut` é true por leitura da FONTE (#2353):
-   * `contato_bloqueado` (bloqueio/opt-out/força-humano) ou `contato_interno` (o
-   * contato tem uma etiqueta da lista interna da organização — o mesmo veto, e por
-   * isso o mesmo gate, mas o motivo NÃO é opt-out e não pode sair rotulado como se
-   * fosse). `undefined` = o chamador não disse (ctx montado à mão por teste e
+   * `contato_bloqueado` (bloqueio/opt-out), `contato_interno` (o contato tem uma
+   * etiqueta da lista interna da organização — o mesmo veto, e por isso o mesmo
+   * gate, mas o motivo NÃO é opt-out e não pode sair rotulado como se fosse) ou
+   * `atendimento_com_humano` (#3310: SÓ o `force_human` — a conversa foi passada
+   * para a equipe, e o contato não pediu para sair). `undefined` = o chamador não disse (ctx montado à mão por teste e
    * preview, ou o opt-out veio de `optedOutThisTurn`): o veto sai com o código e o
    * texto de sempre.
    */
@@ -361,7 +362,7 @@ export interface Gate {
  * (`contato_interno`, #2353). O código vai para o modelo no veto e para o
  * `before_send_traces` — o rótulo do motivo é contrato.
  */
-export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno';
+export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno' | 'atendimento_com_humano';
 
 /** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
 const stopGate: Gate = {
@@ -376,6 +377,20 @@ const stopGate: Gate = {
               'este contato é INTERNO (tem uma etiqueta da lista de contatos internos da ' +
               'organização) — não recebe atendimento automático, como numa conversa em ' +
               '"Assumir"; encerre o turno sem tentar de novo.',
+          }
+        : ctx.motivoDoStop === 'atendimento_com_humano'
+        ? {
+            // #3310: a conversa foi passada para a EQUIPE. O cliente não pediu
+            // para sair — chamar isto de opt-out faz quem atende tratar um
+            // cliente vivo como descadastrado, e é o oposto do que aconteceu.
+            // ⚠️ A DECISÃO não muda: o veto segue irrevogável (regra dura nº 2);
+            // muda só o NOME do veto.
+            pass: false,
+            code: 'atendimento_com_humano',
+            reason:
+              'o atendimento automático está pausado porque a conversa foi passada para a equipe ' +
+              '(handoff humano/direcionamento manual) — o contato NÃO pediu para sair; a IA volta a ' +
+              'responder com "Devolver ao automático".',
           }
         : {
             pass: false,
@@ -1665,15 +1680,26 @@ export async function readStopFlags(
   //
   // O `cross join lateral` avalia a régua da etiqueta UMA vez por linha e a
   // entrega nos dois lugares em que ela decide: o `stopped` e o motivo do veto.
-  const { rows } = await db.query<{ stopped: boolean; contato_interno: boolean }>(
+  const { rows } = await db.query<{
+    stopped: boolean;
+    contato_interno: boolean;
+    stop_por_handoff: boolean;
+  }>(
     humanMeetingCommand
-      ? 'select (is_blocked or is_personal) as stopped, false as contato_interno from contacts where organization_id = $1 and id = $2'
+      ? 'select (is_blocked or is_personal) as stopped, false as contato_interno, false as stop_por_handoff from contacts where organization_id = $1 and id = $2'
       // `ai_opt_out` (issue 2379): a marca permanente "sempre atendimento
       // humano" entra no MESMO stop, e não numa nova consulta — o custo é
       // nulo e a garantia é que nenhum escritor futuro de `force_human` consegue
       // devolver a IA para um contato que a operação trancou.
+      //
+      // `stop_por_handoff` (#3310): `force_human` SOZINHO é a conversa passada
+      // para a EQUIPE, não um pedido do contato para sair. `is_blocked`,
+      // `is_personal` e `ai_opt_out` ficam fora dele: sobrevivem a "Devolver ao
+      // automático" e, quando valem junto, vence o opt-out (a mesma ordem de
+      // `lib/inbox/comando-da-conversa.ts`).
       : `select (is_blocked or force_human or is_personal or ai_opt_out or i.contato_interno) as stopped,
-                i.contato_interno
+                i.contato_interno,
+                (force_human and not (is_blocked or is_personal or ai_opt_out)) as stop_por_handoff
            from contacts
            cross join lateral (select (${sqlContatoInterno('contacts')}) as contato_interno) i
           where organization_id = $1 and id = $2`,
@@ -1683,7 +1709,14 @@ export async function readStopFlags(
   if (linha?.stopped !== true) return { stopped: false, motivo: null };
   return {
     stopped: true,
-    motivo: linha.contato_interno === true ? 'contato_interno' : 'contato_bloqueado',
+    // Etiqueta interna vence o handoff: "Devolver ao automático" não a desfaz,
+    // e a tela não pode prometer uma devolução que o gate recusaria.
+    motivo:
+      linha.contato_interno === true
+        ? 'contato_interno'
+        : linha.stop_por_handoff === true
+          ? 'atendimento_com_humano'
+          : 'contato_bloqueado',
   };
 }
 

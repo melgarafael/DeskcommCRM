@@ -156,8 +156,18 @@ export function StageColumn({
       {/* Cabeçalho e total PRESOS no alto do quadro enquanto os cards rolam: com
           uma etapa comprida, é o que diz em que etapa se está olhando. O fundo
           opaco (`bg-background`) é o que impede os cards de aparecerem por baixo;
-          por dentro, a mesma camada translúcida da coluna, para o tom não mudar. */}
-      <div className="sticky top-0 z-10 rounded-t-lg bg-background" data-cabecalho-da-etapa>
+          por dentro, a mesma camada translúcida da coluna, para o tom não mudar.
+
+          A BORDA DE CIMA É DO CABEÇALHO, não da coluna (#3030): a coluna tem
+          `border` e o cabeçalho `sticky top-0`, então ao rolar a borda da coluna
+          saía da tela e o cabeçalho ficava solto, sem contorno em cima. Com
+          `border-x border-t` aqui e `-mx-px -mt-px` (1px para cima e para os
+          lados), o contorno de cima cobre exatamente a borda da coluna e viaja
+          junto com o cabeçalho preso. */}
+      <div
+        className="sticky top-0 z-10 -mx-px -mt-px rounded-t-lg border-x border-t border-border bg-background"
+        data-cabecalho-da-etapa
+      >
         <div className="bg-surface-muted/40 rounded-t-lg">
           <div className="group/etapa flex items-center gap-2 border-b border-border px-3 py-2.5">
             {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a

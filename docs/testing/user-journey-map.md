@@ -520,6 +520,29 @@ diálogo e é asserida na spec.
 
 ---
 
+## J52 — Campanha pelo número oficial, com modelo aprovado `[P1]` (2026-10-15)
+
+Contexto: issue #1330, fatia 4. Número oficial só aceita texto livre dentro das
+24 h da última mensagem do cliente, e a campanha fala com quem não escreveu —
+a campanha de texto num número oficial falhava em cada envio. Agora, no número
+oficial, o formulário oferece os modelos aprovados DAQUELE número
+(`GET /api/v1/campaigns/modelos`), o mapa de onde sai cada variável
+(`lib/campanhas/modelo.ts`) e a prévia (`components/channels/PreviaDoModelo.tsx`,
+a mesma do inbox). Migration 0710.
+
+Spec: `tests/e2e/campanha-com-modelo-aprovado.spec.ts`, na `SPECS_PARTE_5`. Os
+casos 1 e 2 rodam no CI; o 3 precisa do dublê do provedor (ambiente do
+`next start`) e pula sem ele — o comando está no cabeçalho da spec.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J52.1 | Escolher um número oficial na nova campanha | o campo de texto some; aparece o seletor de modelos do número, o pausado desabilitado, a mídia do cabeçalho já com o link salvo, «Falta escolher a origem de» até tudo ter origem, e a prévia com «[Primeiro nome do contato]» e o texto fixo | **PASS pela tela** — Evidência: `evidence/campanha-com-modelo-aprovado/01-modelo-escolhido-com-previa.png` |
+| J52.2 | Contar o público com um contato cujo nome é só telefone | 1 pode receber; o outro fica de fora com «Falta um dado que a mensagem usa» | **PASS pela tela** — `evidence/campanha-com-modelo-aprovado/02-publico-com-quem-fica-de-fora.png` |
+| J52.3 | Salvar e preparar | a campanha grava `message_mode = template` e o mapa; o destinatário guarda os valores em `variables.modelo` e o texto preenchido em `rendered_body` (o que o agente lê) | **PASS pela tela + banco** — `evidence/campanha-com-modelo-aprovado/03-detalhe-do-rascunho.png`, `evidence/campanha-com-modelo-aprovado/04-lista-preparada.png` |
+| J52.4 | Enviar teste (com o dublê do provedor) | o provedor recebe nome, idioma, `templateParams` na ordem do contrato e `headerMedia`; a conversa guarda o modelo com o texto preenchido | **PASS pela tela, local** — `evidence/campanha-com-modelo-aprovado/05-teste-enviado.png`; no CI pula (sem dublê) |
+| J52.5 | Falha da plataforma no envio | da pessoa (131050, 131049, 131026) segue para a próxima com o motivo em frase; do envio inteiro (132015, 131048, 131042…) pausa a campanha com o motivo | **PASS (unit)** — `lib/channels/erro-da-plataforma.test.ts`; rodada **NÃO MEDIDA** pela tela |
+| J52.6 | Entrega e leitura pelo oficial direto | o trigger de ack lê `delivered_at`/`read_at` e o destinatário vira entregue/lido | **PASS (banco)** — do #2937: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` |
+
 ## J9 — Ver o que o follow-up já fez, e intervir sem matá-lo `[P1]`
 
 Contexto do código: o dossiê do enrollment (`/app/ai/followups/enrollments/[id]`,
@@ -1577,6 +1600,17 @@ Spec: `tests/e2e/inbox-selecionada-no-escuro.spec.ts`.
 | J47.2 | A classe da selecionada | `bg-accent-soft`, nenhum degrau fixo `bg-accent-50…950`; a não selecionada não ganha o fundo | **PASS (unit)** — `tests/unit/selecionada-legivel-no-escuro.test.tsx` |
 | J47.3 | Tema escuro, conversa aberta E marcada no lote, com o mouse ou o foco de teclado | a linha fica num tom só (o botão não pinta por cima do fundo da linha), o foco aparece como anel, e o nome e a prévia seguem com contraste ≥ 4,5 contra o fundo efetivo | **PASS pela tela** — Evidência: `evidence/inbox-selecionada-no-escuro/02-aberta-e-marcada-com-foco.png` |
 
+## J51 — Ver os contatos no celular `[P1]` (2026-10-21)
+
+ADR-0006, fase F3. Abaixo de `md` a tabela de Contatos vira um cartão por linha,
+só com classes `max-md:` (o DOM é o mesmo do computador). Spec:
+`tests/e2e/contatos-em-cartao-no-celular.spec.ts` (parte 6), 390×844 com toque
+emulado, login `agent`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J51.1 | Lista a 390px, selecionar e abrir | nem a página nem a caixa da tabela rolam para o lado; cabeçalho `display:none`; cartões entre 15 e 375px; nome, conversa, editar e excluir ≥ 44px; a caixa pega o toque a 20px do centro; «Selecionar todos os contatos visíveis» marca as linhas e abre a barra de lote; o nome abre a ficha; a 1280px volta a tabela sem o botão | a medir (CI) + UNIT `app/app/contacts/_client.test.tsx` |
+
 ## J48 — Instalar o app no celular e ser avisado `[P0]` (2026-10-20)
 
 Contexto: ADR-0006, fase F1 ("Instala e avisa"). O app do atendente no celular é
@@ -1682,6 +1716,41 @@ outras.
 mensagem tinha 14px (zoom do iPhone no foco) e o zoom zerava a régua do
 teclado; a busca podia seguir focada na lista escondida; link direto X
 seguido de troca para Y deixava X para o voltar do sistema reabrir.
+
+### J49 — composer de toque e áudio no iPhone (segunda PR da F2)
+
+O mesmo atendente escreve, anexa e ouve. No toque (`pointer: coarse`, lido no
+keydown) a tecla de retorno do teclado virtual quebra linha e quem envia é o
+botão; Ctrl/Cmd+Enter envia sempre. Todo campo da conversa usa 16px abaixo do
+`md`, os alvos do composer têm 44px e o botão de emoji some (o teclado do
+sistema já tem). Nota de voz gravada no iPhone (`audio/mp4`) sobe com a
+extensão real e marcada `nota_de_voz=1`, e o servidor a reencoda em opus — o
+único formato de nota de voz dos canais oficiais. Áudio que o aparelho não toca
+(`canPlayType` vazio, ou o erro do `<audio>`) é convertido sob demanda em
+`GET /api/v1/messages/{id}/media?formato=aac` e tocado por `blob:` em memória:
+nada no Storage, nada no aparelho (D4).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J49.8 (B-1) | Fonte dos campos | com a busca nas mensagens ABERTA, todo `input`/`textarea`/`select` visível DENTRO da camada da conversa com `fontSize` ≥ 16px; a varredura tem de incluir «Mensagem» e «Buscar nas mensagens carregadas» | E2E (CI) + UNIT `Composer.test` (classes) |
+| J49.9 (B-2) | Retorno quebra linha | «linha 1», Enter, «linha 2»: o valor tem `\n`, nenhum balão novo em 1s; «Enviar» ≥ 44×44 envia e o balão aparece | E2E (CI) + UNIT `Composer.test` (coarse, Ctrl/Cmd+Enter, ponteiro fino) |
+| J49.10 (B-3) | Alvos do composer | «Anexar», «Gravar áudio», «Enviar» ≥ 44×44; «Responder» e «Nota interna» ≥ 44 de altura; ✕ da citação ≥ 44×44; a setinha «Opções da mensagem» (a porta do Responder, 20px desenhados) acerta por `elementFromPoint` a 20px do centro nas quatro direções; o centro do «Enviar» é o próprio botão (nada flutua por cima); «Emoji» escondido | E2E (CI) |
+| J49.11 (B-4) | Anexar imagem | a prévia cabe em 390 (`x ≥ 0`, `x + largura ≤ 390`) e o envio vira balão com `<img>` | E2E (CI) |
+| J49.12 (B-5) `[P0]` | Áudio que o aparelho não toca | `canPlayType` forçado a `""` para ogg; o toque pede `?formato=aac`: 200, `audio/mp4`, `no-store`, caixa `ftyp` nos bytes, e o `play()` é chamado com um `blob:`; o teste anota o `canPlayType` de AAC do executor e o desfecho (tocando ou indisponível), e exige «tocando» quando o executor declara AAC. O ogg é gerado pelo ffmpeg do executor (passo do `e2e.yml` instala e reprova sem os encoders `aac`/`libopus`) | E2E (CI) + UNIT `midia-formato-aac`, `inbox-media-audio`, `voice-transcode` |
+| J49.13 (B-6) | Teclado aberto | janela de 500px: «Assistência do agente» escondida | E2E (CI) |
+
+**NÃO MEDIDO — só o iPhone (e o Android) do dono provam:**
+`new Audio().canPlayType('audio/ogg; codecs=opus')` (decide se a conversão
+dispara); `MediaRecorder.isTypeSupported` de webm e mp4 (decide o caminho do
+upload); uma nota de voz gravada no iPhone chega como nota de voz COM onda,
+numa conversa WAHA e numa de canal oficial; um áudio recebido SOA, e com 1
+toque ou 2 (o `play()` é chamado ainda dentro do gesto para destravar o
+elemento no WebKit, mas só o aparelho confirma); o pedido de microfone
+repetido no app instalado; o ffmpeg da imagem publicada com `libopus` (sem ele
+a nota de voz volta ao comportamento de antes, e o canal oficial também). O
+Chromium do teste não grava (sem microfone) e talvez nem decodifique AAC: por
+isso o B-5 prova o caminho até o `play()`, não o alto-falante. O áudio de nota
+interna (rota própria, sem `?formato`) continua sem conversão.
 
 ## Jornadas exercitadas (instalação final, virgem)
 

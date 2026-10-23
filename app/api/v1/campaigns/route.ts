@@ -17,6 +17,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { FILTRO_VAZIO } from "@/lib/campanhas/audiencia";
+import { decidirConteudo, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
 import { gravarPool } from "@/lib/campanhas/pool-de-numeros";
 import {
   codificarCursor,
@@ -34,7 +35,7 @@ export const dynamic = "force-dynamic";
 const COLUNAS_DA_LISTA =
   "id, name, status, channel_session_id, snapshot_total, snapshot_eligible, snapshot_excluded, " +
   "scheduled_at, started_at, completed_at, cancelled_at, created_at, created_by, " +
-  "pipeline_id, stage_id, agent_id";
+  "pipeline_id, stage_id, agent_id, message_mode, provider_template_name";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -113,19 +114,26 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = createAdminClient();
   // A conexão é conferida CONTRA A ORGANIZAÇÃO: a FK composta da 0375 recusaria
   // o número de outro tenant, mas a recusa do banco chegaria como erro genérico.
-  const { data: canal } = await supabase
-    .from("channel_sessions")
-    .select("id")
-    .eq("organization_id", org.orgId)
-    .eq("id", entrada.channel_session_id)
-    .maybeSingle();
-  if (!canal) {
+  const canal = await lerModoDoCanal(supabase, org.orgId, entrada.channel_session_id);
+  if (!canal.existe) {
     return fail(
       "campanha_canal_indisponivel",
       t("Escolha uma conexão de WhatsApp desta organização."),
       409,
       { requestId },
     );
+  }
+  // O conteúdo segue o que o número aceita: texto livre no QR, modelo aprovado
+  // no oficial (migration 0710). O modelo escolhido é conferido inteiro aqui.
+  const conteudo = await decidirConteudo(supabase, {
+    organizationId: org.orgId,
+    channelSessionId: entrada.channel_session_id,
+    extras: entrada.channel_session_ids ?? [],
+    modoDoCanal: canal.modo,
+    pedido: entrada,
+  });
+  if (!conteudo.ok) {
+    return fail(conteudo.codigo, t(conteudo.mensagem), conteudo.status, { requestId });
   }
 
   const { data, error } = await supabase
@@ -135,7 +143,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       name: entrada.name,
       description: entrada.description ?? null,
       channel_session_id: entrada.channel_session_id,
-      message_body: entrada.message_body ?? null,
+      message_body: conteudo.modo === "template" ? null : (entrada.message_body ?? null),
+      ...conteudo.colunas,
       base_legal: entrada.base_legal,
       lia_ref: entrada.lia_ref ?? null,
       audience_filter: entrada.audience_filter ?? FILTRO_VAZIO,
@@ -182,7 +191,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "campaign",
     resourceId: criada.id,
     requestId,
-    metadata: { base_legal: entrada.base_legal, numeros: 1 + (entrada.channel_session_ids ?? []).length },
+    metadata: {
+      base_legal: entrada.base_legal,
+      numeros: 1 + (entrada.channel_session_ids ?? []).length,
+      modo: conteudo.modo,
+      ...(conteudo.colunas.provider_template_name ? { modelo: conteudo.colunas.provider_template_name } : {}),
+    },
   });
 
   return ok(data, { requestId, status: 201 });

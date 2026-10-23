@@ -343,6 +343,12 @@ export const ApiErrorCodes = {
   campanha_agenda_invalida: "campanha_agenda_invalida", // 422: data no passado
   campanha_conteudo_invalido: "campanha_conteudo_invalido", // 422: texto vazio ou variável que não existe
   campanha_base_legal_invalida: "campanha_base_legal_invalida", // 422: interesse legítimo sem referência da LIA
+  // Migration 0710 (#1330, fatia 4): campanha pelo número oficial com modelo aprovado.
+  campanha_modo_do_canal: "campanha_modo_do_canal", // 422: texto livre em número oficial, ou modelo em número por QR
+  campanha_modelo_um_numero: "campanha_modelo_um_numero", // 422: modelo aprovado sai por um número só
+  campanha_modelo_inexistente: "campanha_modelo_inexistente", // 422: o modelo não existe neste número
+  campanha_modelo_nao_aprovado: "campanha_modelo_nao_aprovado", // 422: modelo pausado, recusado ou em análise
+  campanha_modelo_variaveis: "campanha_modelo_variaveis", // 422: variável sem origem, ou origem que não serve
 
   // 500 / upstream
   internal_error: "internal_error",

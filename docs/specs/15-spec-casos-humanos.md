@@ -166,7 +166,7 @@ Quando o humano clica **"Não consigo → escalar"**, o caso vira `escalated` e 
 A ferramenta nativa `request_human_handoff` aceita `motivo_codigo` opcional:
 `requested_human` para pedido de atendente e `critical_stage` quando a etapa exige
 finalização pela equipe (por exemplo, concluir um agendamento com os dados já
-coletados). Ausente, preserva `requested_human`; mencionar agendamento por si só
+coletados). Ausente, registra `low_confidence` (o assistente não resolveu sozinho, #3310): o pedido do cliente vem com `requested_human` explícito; mencionar agendamento por si só
 não é razão para encaminhar. O código classifica o briefing, a passagem e o aviso
 da Central, sem escolher destino nem alterar as condições do handoff. `por_que`
 continua sendo a justificativa em texto, com `reason` como sinônimo legado.
@@ -269,6 +269,12 @@ Reusa o shell `app/app/ai/inbox/` (assistente), **seção/tab própria "Casos"**
 - Rota API: `POST /api/v1/ai/cases/[id]/reply` — molde `app/api/v1/leads/[id]/win/route.ts`: `requireRole("agent", {requestId, resource})` (valida JWT via `getUser()`, org do cookie validado — nunca do body), Zod no body, `audit(...)`, `ok()`/`fail()`, `X-Request-Id`. **Sem rate-limit** (rota autenticada de staff, não pública — doutrina: rate-limit só em rota pública). `GET /api/v1/ai/cases` e `GET /api/v1/ai/cases/[id]` (detalhe + timeline) seguem o molde de `app/api/v1/ai/inbox/route.ts`.
 
 ---
+
+
+### Detalhes em telas estreitas
+
+No celular, a lista e o detalhe ocupam a largura disponível em etapas distintas. Selecionar um Caso abre o detalhe, inclusive por link direto; “Voltar aos casos” conserva o filtro e devolve o foco à origem, ou à aba ativa quando não há botão de origem. A altura segue o contrato de viewport e rodapé nativo do inbox; o conteúdo do detalhe tem rolagem própria, com a volta fora dessa área. No desktop, lista e detalhe permanecem lado a lado. A decisão continua antes da conversa interna no DOM; abrir, ler e voltar não enviam uma resposta, não chamam a IA e não mudam o estado do Caso.
+
 
 ## 10. Riscos e questões abertas
 1. ~~Qual handoff é o canônico do engine~~ — **RESOLVIDO (§7):** `performHumanHandoff` (`human-handoff.ts:149`).

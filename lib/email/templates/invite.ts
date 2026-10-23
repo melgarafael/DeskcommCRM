@@ -15,6 +15,7 @@
  * arte de ninguém é meia marca; e este é o e-mail que a pessoa abre antes de
  * ter visto qualquer tela do produto.
  */
+import { rotuloDoPapel } from "@/lib/auth/types";
 import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
 
 export interface InviteEmailOptions {
@@ -59,6 +60,10 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
     ? `<p style="margin:0 0 24px"><img src="${escapeHtml(opts.marca.logoUrl)}" alt="${escapeHtml(marca)}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
     : "";
 
+  // O papel pelo NOME (« Atendente »), não pelo código (« agent »): o convite dizia
+  // « convidou você como agent » em toda instalação.
+  const papel = rotuloDoPapel(opts.role);
+
   const html = `<!doctype html>
 <html lang="pt-BR">
 <body style="margin:0;padding:0;background:${NEUTROS_DE_SAIDA.fundo};font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:${NEUTROS_DE_SAIDA.texto}">
@@ -69,7 +74,7 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
     </h1>
     <p style="margin:0 0 16px;font-size:15px;line-height:1.5">
       ${escapeHtml(opts.inviterName)} convidou você como
-      <strong>${escapeHtml(opts.role)}</strong> no ${escapeHtml(marca)}.
+      <strong>${escapeHtml(papel)}</strong> no ${escapeHtml(marca)}.
     </p>
     <p style="margin:24px 0">
       <a href="${opts.acceptUrl}" style="display:inline-block;padding:12px 24px;background:${opts.marca.accent};color:${opts.marca.accentFg};border-radius:6px;text-decoration:none;font-weight:600">
@@ -88,7 +93,7 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
 </html>`;
 
   const text = [
-    `Você foi convidado para a ${opts.orgName} como ${opts.role} no ${marca}.`,
+    `Você foi convidado para a ${opts.orgName} como ${papel} no ${marca}.`,
     "",
     `Aceitar: ${opts.acceptUrl}`,
     "",

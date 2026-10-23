@@ -149,6 +149,17 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
         texto:
           "O contato pediu para não receber mensagens (opt-out): o envio pelo automático fica bloqueado. Nada a enviar.",
       };
+    case "atendimento_com_humano":
+      // #3310: NÃO é opt-out. A conversa foi passada para a equipe (ou alguém a
+      // pausou à mão) e o contato não pediu para sair — dizer "descadastrado"
+      // aqui faz quem atende abandonar um cliente vivo. `acionavel: true`
+      // porque há o que fazer, e o texto diz o quê.
+      return {
+        codigo,
+        acionavel: true,
+        texto:
+          "A conversa está com a equipe: o atendimento automático está pausado. Use “Devolver ao automático” para a IA voltar a responder.",
+      };
     case "lgpd_anonymized":
       return {
         codigo,
@@ -293,6 +304,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
  */
 export const CODIGOS_DE_VETO_CONHECIDOS: readonly string[] = [
   "contato_bloqueado",
+  "atendimento_com_humano",
   "lgpd_anonymized",
   "lgpd_missing_legal_basis",
   "promise_out_of_table",

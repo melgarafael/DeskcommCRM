@@ -76,6 +76,16 @@ export type MotivoDoAviso =
 /**
  * Traduz o `last_handoff_reason` gravado no banco para o motivo que muda a frase.
  * Aceita `string` porque a coluna é vocabulário ABERTO — ver `MotivoDoAviso`.
+ *
+ * ⚠️ **Só `requested_human` vira `pediu_humano`, e isso é a régua (#3310).** Todo
+ * o resto — a escalação que o PRÓPRIO agente decidiu (`low_confidence`,
+ * `critical_stage`, `caso_escalado`…), o teto de gasto, o sentimento, um motivo
+ * novo que ninguém mapeou — cai em `outro`, a frase genérica e honesta
+ * ("Esse caso é melhor resolvido por uma pessoa"). Inventar um pedido do cliente
+ * na abertura é o defeito que a issue mediu: quem só perguntou do check-in
+ * recebia "Sem problema. Acabei de acionar uma pessoa do time", resposta a um
+ * pedido que ele não fez. Por isso o mapeamento NÃO adivinha: ele depende de o
+ * código do pedido chegar de fato até aqui (ver `motivoCodigoDoTexto`).
  */
 export function motivoDoAviso(reason: string): MotivoDoAviso {
   if (reason === "requested_human") return "pediu_humano";

@@ -25,6 +25,10 @@
  * as regras dos agentes. Mesmo gate do roteamento de filas — configuração, não
  * atendimento.
  */
+import Link from "next/link";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -40,7 +44,8 @@ import { TagsInternasForm } from "./_tags-internas-form";
 export const metadata = { title: "Tags" };
 export const dynamic = "force-dynamic";
 
-export default async function TagsPage() {
+export default async function TagsPage({ searchParams }: { searchParams: Promise<{ page?: string; busca?: string }> }) {
+  const query = tagsPageQuerySchema.safeParse(await searchParams);
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
@@ -63,9 +68,16 @@ export default async function TagsPage() {
   // organização vem da RLS e do `p_org` da sessão. Ler com o admin client aqui
   // mostraria o vocabulário de qualquer tenant se alguém trocasse o id.
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("fn_vocabulario_de_tags", {
-    p_org: activeOrg.orgId,
-  });
+  const { data, error } = query.success ? await supabase.rpc("fn_vocabulario_de_tags_pagina", {
+    p_org: activeOrg.orgId, p_busca: query.data.busca,
+    p_offset: (query.data.page - 1) * 100, p_limit: 100,
+  }) : { data: null, error: { message: "invalid_query" } };
+  const result = tagsPageResultSchema.safeParse(data);
+  const pageNumber = query.success ? query.data.page : 1;
+  const search = query.success ? query.data.busca : "";
+  const total = result.success ? result.data.total : 0;
+  const pageCount = Math.max(1, Math.ceil(total / 100));
+  const pageUrl = (page: number) => "/app/settings/tags?" + new URLSearchParams({ page: String(page), busca: search });
 
   // A lista de contato interno (#2353) lê o `settings` da própria organização
   // pela SESSÃO: a policy `orgs_select` isola a linha, e o admin client aqui
@@ -93,14 +105,27 @@ export default async function TagsPage() {
         </p>
       </header>
 
-      {error ? (
+      <form method="get" className="flex max-w-xl items-center gap-2">
+        <Input name="busca" aria-label={t("Buscar etiquetas")} placeholder={t("Buscar etiquetas")}
+          defaultValue={search} maxLength={60}/>
+        <Button type="submit">{t("Buscar")}</Button>
+      </form>
+      {error || !result.success ? (
         // A falha NÃO vira lista vazia: "nenhuma etiqueta" e "não consegui ler"
         // levam o operador a decisões opostas (uma convida a criar tudo de novo).
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
           {t("Não foi possível carregar as etiquetas agora. Recarregue a página.")}
         </div>
       ) : (
-        <PainelDeTags tags={(data ?? []) as LinhaDeVocabulario[]} idioma={idioma} />
+        <>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span>{total} {total === 1 ? t("Etiqueta") : t("etiquetas")} · {t("Página")} {pageNumber} / {pageCount}</span>
+            {pageNumber > 1 && <Link className="underline" href={pageUrl(pageNumber-1)}>{t("Anterior")}</Link>}
+            {pageNumber < pageCount && <Link className="underline" href={pageUrl(pageNumber+1)}>{t("Próxima")}</Link>}
+          </div>
+          {total === 0 ? <p>{t("Nenhuma etiqueta encontrada.")}</p> :
+            <PainelDeTags key={pageNumber+":"+search} tags={result.data.items as LinhaDeVocabulario[]} idioma={idioma} paginado />}
+        </>
       )}
 
       {/* #2353: a lista de contato interno não depende do vocabulário (que pode

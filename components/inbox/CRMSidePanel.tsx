@@ -4,6 +4,7 @@ import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { AcervoSearch } from "./AcervoSearch";
 import { LeadEnrichment } from "./LeadEnrichment";
 import { AnuncioDoContato, type AnuncioDeOrigem, type AnuncioMaisRecente } from "./AnuncioDoContato";
+import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import type { ProspectEnrichment } from "@/lib/prospecting/schema";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -246,7 +247,7 @@ function MarcarProximoPasso({ demandaId, onPronto }: { demandaId: string; onPron
         placeholder={t("O que acontece a seguir?")}
         aria-label={t("Próximo passo desta demanda")}
         data-testid="campo-proximo-passo"
-        className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-hidden focus:ring-1 focus:ring-ring"
+        className="w-full rounded-md border border-input bg-background px-2 py-1 text-base focus:outline-hidden focus:ring-1 focus:ring-ring md:text-xs"
       />
       <div className="flex gap-1.5">
         <Button
@@ -1156,6 +1157,13 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
           <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
         )}
       </section>
+
+      {/* AS ÚLTIMAS COMPRAS (issue #3179): o que este cliente JÁ comprou — negócios
+          ganhos em TODOS os funis, com data, título, valor, os campos escolhidos
+          pela organização e o atalho para abrir o negócio. Em agência de viagens é
+          a pergunta mais comum do atendimento ("para onde esse cliente já foi?"),
+          e ela não tinha resposta no painel onde a equipe atende. */}
+      {contactId && !contact?.is_anonymized && <UltimasComprasDoContato contactId={contactId} />}
 
       <Separator />
 

@@ -8720,6 +8720,7 @@ isOneToOne: false
         Row: {
           agent_setup: Json
           agent_setup_revision: number
+          channel_down_since: string | null
           config: Json | null
           cost_usd: number | null
           created_at: string
@@ -8741,6 +8742,7 @@ isOneToOne: false
         Insert: {
           agent_setup?: Json
           agent_setup_revision?: number
+          channel_down_since?: string | null
           config?: Json | null
           cost_usd?: number | null
           created_at?: string
@@ -8762,6 +8764,7 @@ isOneToOne: false
         Update: {
           agent_setup?: Json
           agent_setup_revision?: number
+          channel_down_since?: string | null
           config?: Json | null
           cost_usd?: number | null
           created_at?: string
@@ -10764,7 +10767,13 @@ isOneToOne: false
         Returns: Json
       }
       fn_attendant_metrics: {
-        Args: { p_from: string; p_org: string; p_owner?: string; p_to: string }
+        Args: {
+          p_excluir_etiqueta?: string
+          p_from: string
+          p_org: string
+          p_owner?: string
+          p_to: string
+        }
         Returns: Json
       }
       fn_buscar_trechos_das_fontes: {
@@ -11152,6 +11161,15 @@ isOneToOne: false
       fn_upsert_wa_conversation: {
         Args: { p_contact: string; p_org: string; p_session: string }
         Returns: string
+      }
+      fn_vocabulario_de_tags_pagina: {
+        Args: {
+          p_busca?: string
+          p_limit?: number
+          p_offset?: number
+          p_org: string
+        }
+        Returns: Json
       }
       fn_user_org_ids: { Args: never; Returns: string[] }
       fn_user_role_in: { Args: { p_org: string }; Returns: number }

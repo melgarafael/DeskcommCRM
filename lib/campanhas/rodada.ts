@@ -41,11 +41,14 @@ import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
+import { canalTemRiscoDeBanimento } from "@/lib/channels/capabilities";
+import { codigoDaPlataforma, falhaDoEnvioInteiro, fraseDaFalha } from "@/lib/channels/erro-da-plataforma";
 import { logger } from "@/lib/logger";
 import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 
 import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
 import { hashDoEndereco } from "./exclusoes";
+import type { ConteudoDoEnvio } from "./modelo";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
 import { podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
@@ -91,11 +94,18 @@ interface CampanhaRow {
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
+  /** Migration 0710: `template` = modelo aprovado pelo número oficial. */
+  message_mode: string;
+  provider_template_name: string | null;
+  provider_template_language: string | null;
+  started_at: string | null;
+  paused_at: string | null;
 }
 
 const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
-  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
+  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
+  "message_mode, provider_template_name, provider_template_language, started_at, paused_at";
 
 /**
  * O status da organização embutido com `!inner` no `select`, e filtrado na
@@ -232,6 +242,8 @@ interface DestinatarioRow {
   contact_id: string;
   recipient_address: string | null;
   rendered_body: string | null;
+  /** `{ nome, modelo? }` — com modelo, os valores congelados na preparação. */
+  variables: unknown;
   contacts: {
     id: string;
     name: string | null;
@@ -271,10 +283,22 @@ async function rodarUmaCampanha(
   agora: Date,
   numerosJaUsados: ReadonlySet<string>,
 ): Promise<{ enviadas: number; pulados: number; concluidas: number; detalhe: string; numero?: string }> {
+  // Campanha com modelo: uma falha que vale para o ENVIO INTEIRO (modelo
+  // pausado, número restringido, pagamento) chega pelo webhook, depois do envio.
+  // Cada envio seguinte seria a mesma falha, e o número perde qualidade a cada
+  // uma — a campanha para aqui, com o motivo, antes do próximo.
+  if (campanha.message_mode === "template") {
+    const parada = await falhaQueParaACampanha(admin, campanha);
+    if (parada) {
+      await pausarPorFalha(admin, campanha.id, parada, agora);
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${parada.codigo}` };
+    }
+  }
+
   const { data: fila } = await admin
     .from("campaign_recipients")
     .select(
-      "id, contact_id, recipient_address, rendered_body, " +
+      "id, contact_id, recipient_address, rendered_body, variables, " +
         "contacts(id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent)",
     )
     .eq("campaign_id", campanha.id)
@@ -411,11 +435,11 @@ async function rodarUmaCampanha(
 
     const { data: canal } = await admin
       .from("channel_sessions")
-      .select("daily_message_limit, status")
+      .select("daily_message_limit, status, provider")
       .eq("organization_id", campanha.organization_id)
       .eq("id", sessionId)
       .maybeSingle();
-    const linha = canal as { daily_message_limit: number | null; status: string } | null;
+    const linha = canal as { daily_message_limit: number | null; status: string; provider: string | null } | null;
     // Número fora do ar não entra no rodízio: mandar por ele seria fabricar uma
     // mensagem presa em `sending` que o recovery depois marca como falha.
     if (!linha || linha.status !== "WORKING") continue;
@@ -430,6 +454,10 @@ async function rodarUmaCampanha(
       knobs: k.knobs,
       state: estadoDoNumero,
       crmDailyLimit: linha.daily_message_limit ?? null,
+      // Aquecimento e teto anti-ban são do número por QR. O oficial não é banido
+      // por volume — quem limita ali é a plataforma (nível de mensagens) —, e o
+      // ritmo próprio da campanha (intervalo, janela, tetos) continua valendo.
+      banRisk: canalTemRiscoDeBanimento(linha.provider),
     });
     disponiveis.push({
       sessionId,
@@ -475,12 +503,32 @@ async function rodarUmaCampanha(
   // de ser a do instante em que a mensagem SAI, no fuso do canal. Montá-la na
   // preparação produziria "bom dia" numa mensagem enviada à tarde — foi o
   // defeito do primeiro piloto.
+  //
+  // Com modelo não há saudação: o texto é o do modelo aprovado com os valores
+  // congelados na preparação, e é ele que fica na conversa para o agente ler.
+  const comModelo = campanha.message_mode === "template";
+  const valoresDoModelo = comModelo ? valoresCongelados(alvo.variables) : null;
+  if (comModelo && valoresDoModelo === null) {
+    await admin
+      .from("campaign_recipients")
+      .update({ status: "failed", last_error_code: "modelo_sem_valores", sending_at: null })
+      .eq("id", alvo.id)
+      .eq("status", "sending");
+    return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "falha:modelo_sem_valores" };
+  }
   const congelado = alvo.rendered_body ?? campanha.message_body ?? "";
-  const corpo = renderizar(
-    congelado,
-    { nome: nomeDoContato(contato) },
-    { agora, fuso: knobs.timezone },
-  ).texto;
+  const corpo = comModelo
+    ? congelado
+    : renderizar(congelado, { nome: nomeDoContato(contato) }, { agora, fuso: knobs.timezone }).texto;
+  const conteudo: ConteudoDoEnvio = comModelo
+    ? {
+        type: "template",
+        template_name: campanha.provider_template_name ?? "",
+        template_language: campanha.provider_template_language ?? "",
+        template_values: valoresDoModelo ?? {},
+        body: corpo,
+      }
+    : { type: "text", body: corpo };
 
   try {
     const boundary = await beginServiceAtOrigin(
@@ -506,8 +554,7 @@ async function rodarUmaCampanha(
       } as Parameters<typeof sendMessageHandler>[1],
       {
         conversation_id: boundary.conversation_id,
-        type: "text",
-        body: corpo,
+        ...conteudo,
         metadata: {
           source: "campaign",
           campaign_id: campanha.id,
@@ -523,6 +570,8 @@ async function rodarUmaCampanha(
     // handler marca `failed` e devolve normalmente.
     const status = (mensagem as { status?: string }).status;
     const falhou = status === "failed";
+    const erro = mensagem as { error_code?: string | null; error_message?: string | null };
+    const codigoDaFalha = falhou ? codigoDaPlataforma(erro.error_code, erro.error_message) : null;
     // `.eq("status","sending")` porque o ack pode ter chegado ANTES desta linha:
     // o trigger já teria avançado o destinatário para `sent`/`delivered`, e
     // escrever por cima o rebaixaria.
@@ -531,7 +580,10 @@ async function rodarUmaCampanha(
       .update({
         status: falhou ? "failed" : "sent",
         sent_at: falhou ? null : agora.toISOString(),
-        last_error_code: falhou ? "send_failed" : null,
+        // O código da PLATAFORMA quando há (131050, 132015…): é ele que a tela
+        // traduz em motivo e que decide se a campanha para.
+        last_error_code: falhou ? (codigoDaFalha ?? "send_failed") : null,
+        last_error_detail: falhou ? (erro.error_message ?? null) : null,
         // O `message_id` só pode ser gravado AQUI: a coluna tem FK para
         // `messages`, e a linha da mensagem só existe depois do envio. Gravá-lo
         // antes — que era o desenho original, para o trigger de ack sempre achar
@@ -540,6 +592,16 @@ async function rodarUmaCampanha(
       })
       .eq("id", alvo.id)
       .eq("status", "sending");
+
+    if (falhou && falhaDoEnvioInteiro(codigoDaFalha)) {
+      await pausarPorFalha(
+        admin,
+        campanha.id,
+        { codigo: codigoDaFalha!, detalhe: fraseDaFalha(codigoDaFalha, erro.error_message) },
+        agora,
+      );
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${codigoDaFalha}` };
+    }
 
     return {
       enviadas: falhou ? 0 : 1,
@@ -713,3 +775,71 @@ export async function estadoDeEnvio(
 
 /** Exportado só para a tela e o teste lerem a mesma frase do motivo. */
 export { TEXTO_DA_EXCLUSAO };
+
+
+/** Os valores do modelo congelados em `variables.modelo`, ou `null` se não há. */
+function valoresCongelados(variables: unknown): Record<string, string> | null {
+  if (!variables || typeof variables !== "object") return null;
+  const modelo = (variables as Record<string, unknown>).modelo;
+  if (!modelo || typeof modelo !== "object" || Array.isArray(modelo)) return null;
+  const saida: Record<string, string> = {};
+  for (const [k, v] of Object.entries(modelo as Record<string, unknown>)) {
+    if (typeof v === "string") saida[k] = v;
+  }
+  return saida;
+}
+
+/**
+ * A falha que vale para o envio inteiro, chegada DEPOIS do envio (webhook), desde
+ * que a campanha começou ou foi retomada. "Desde a retomada" importa: quem
+ * corrigiu o modelo e retomou não pode ver a campanha parar de novo pela falha
+ * velha que causou a primeira pausa.
+ */
+export async function falhaQueParaACampanha(
+  admin: SupabaseClient,
+  campanha: Pick<CampanhaRow, "id" | "started_at" | "paused_at">,
+): Promise<{ codigo: string; detalhe: string | null } | null> {
+  const desde = [campanha.started_at, campanha.paused_at]
+    .filter((d): d is string => typeof d === "string")
+    .sort()
+    .pop();
+  let consulta = admin
+    .from("campaign_recipients")
+    .select("last_error_code, last_error_detail")
+    .eq("campaign_id", campanha.id)
+    .eq("status", "failed")
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  if (desde) consulta = consulta.gt("updated_at", desde);
+  const { data } = await consulta;
+  for (const linha of (data ?? []) as Array<{ last_error_code: string | null; last_error_detail: string | null }>) {
+    const codigo = codigoDaPlataforma(linha.last_error_code, linha.last_error_detail);
+    if (falhaDoEnvioInteiro(codigo)) {
+      return { codigo: codigo!, detalhe: fraseDaFalha(codigo, linha.last_error_detail) };
+    }
+  }
+  return null;
+}
+
+/**
+ * Pausa por falha do envio inteiro, com o motivo em `failure_code`/`failure_detail`
+ * — a tela de detalhe mostra a frase, e retomar é decisão de quem opera, depois
+ * de corrigir (o modelo, o pagamento, a qualidade do número).
+ */
+async function pausarPorFalha(
+  admin: SupabaseClient,
+  campanhaId: string,
+  falha: { codigo: string; detalhe: string | null },
+  agora: Date,
+): Promise<void> {
+  await admin
+    .from("campaigns")
+    .update({
+      status: "paused",
+      paused_at: agora.toISOString(),
+      failure_code: falha.codigo,
+      failure_detail: falha.detalhe,
+    })
+    .eq("id", campanhaId)
+    .eq("status", "running");
+}

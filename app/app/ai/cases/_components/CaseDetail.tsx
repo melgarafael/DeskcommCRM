@@ -37,9 +37,9 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto break-words">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-base font-semibold">{data.contact_name ?? t("Contato sem nome")}</h2>
           <p className="text-xs text-muted-foreground">{data.contact_phone ?? t("Sem telefone")}</p>
           <Link
@@ -49,7 +49,7 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
             {t("Ver conversa")}
           </Link>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {data.source === "guardrail_autofallback" ? (
             <Badge
               variant="neutral"
@@ -64,7 +64,7 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">{t("O que o cliente precisa")}</p>
           <p className="mt-1 text-sm">{data.summary}</p>

@@ -187,3 +187,22 @@ export function usePermission(action: string): boolean {
   if (!required) return false;
   return ROLE_RANK[activeOrg.role] >= ROLE_RANK[required];
 }
+
+/**
+ * O país da organização ativa, SEM exigir o provider: telas que também
+ * renderizam isoladas (testes, prévias) leem `null` — o Brasil, o padrão de
+ * todo leitor de país (`perfilDoPais(null)`) — em vez de lançar como
+ * `useActiveOrg`.
+ */
+export function usePaisDaOrgAtiva(): string | null {
+  return useContext(Ctx)?.activeOrg?.country ?? null;
+}
+
+/**
+ * A moeda da organização ativa (`organizations.currency`) — a do campo
+ * personalizado de moeda. Tolerante como o leitor de país: fora do provider,
+ * `null`, e quem lê cai no `MOEDA_PADRAO`.
+ */
+export function useMoedaDaOrgAtiva(): string | null {
+  return useContext(Ctx)?.activeOrg?.currency ?? null;
+}

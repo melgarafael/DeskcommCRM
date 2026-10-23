@@ -96,7 +96,12 @@ export function ContactTagsEditor(props: Props) {
   const rotuloVazio = noNegocio ? t("Sem tags no negócio.") : t("Sem tags no contato.");
   const rotuloCampo = noNegocio ? t("Adicionar tag ao negócio") : t("Adicionar tag ao contato");
   const { definirCor } = useDefinirCorDaEtiqueta();
-  const { data: vocabulary } = useContactTagVocabulary(orgId);
+  const { data: vocabulary, isError: erroNoVocabulario } = useContactTagVocabulary(orgId);
+  // #2855 — com texto, pergunta também ao vocabulário inteiro (curado + em uso,
+  // sem o teto de contatos lidos). Sem texto é a MESMA chave da linha acima:
+  // uma requisição só.
+  const { data: encontradas, isError: erroNaBusca } = useContactTagVocabulary(orgId, draft.trim());
+  const vocabularyError = erroNoVocabulario || erroNaBusca;
   // A cor de quem JÁ está no contato vem do MESMO mapa que o chip usa (#2771):
   // uma leitura só, sem pergunta por tag, e o gatilho abre já com o tom atual
   // marcado — abrir a paleta de uma etiqueta colorida como se ela não tivesse
@@ -159,7 +164,12 @@ export function ContactTagsEditor(props: Props) {
   // busca (sem caixa, sem acento, casando no meio da palavra) que a ficha do
   // contato já usa (#2732): `sugestoesDeEtiqueta`. Sem texto, a lista sai na
   // ordem da FONTE — as mais usadas primeiro —, nunca reordenada no alfabeto.
-  const conhecidas = normalizarTags(vocabulary ?? []);
+  // #2855 — o que a busca no vocabulário inteiro achou entra DEPOIS das em uso:
+  // a ordem por uso do #3180 continua valendo para o que já estava na lista.
+  const conhecidas = normalizarTags([
+    ...(vocabulary ?? []),
+    ...(draft.trim() ? (encontradas ?? []) : []),
+  ]);
   const suggestions = sugestoesDeEtiqueta({
     conhecidas,
     selecionadas: tags,
@@ -237,6 +247,7 @@ export function ContactTagsEditor(props: Props) {
         </Button>
       </div>
 
+      {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
       {suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {suggestions.map((tag) => (

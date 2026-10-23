@@ -100,6 +100,8 @@ vi.mock("@/lib/api/client", () => ({
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => true,
+  // A escolha de contato do Composer lê o país da organização (o exemplo do telefone); sem organização, o Brasil.
+  usePaisDaOrgAtiva: () => null,
 }));
 
 import { Composer } from "@/components/inbox/Composer";

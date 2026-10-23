@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "@/hooks/i18n/useT";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -18,10 +19,16 @@ import {
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
-import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
+import {
+  buscarOpcoes,
+  exportarOpcoesCsv,
+  importarOpcoesCsv,
+} from "@/lib/leads/campos-pesquisaveis";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
+import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
+import { MOEDA_PADRAO } from "@/lib/money";
 import {
   customFieldSchema,
   MAX_CAMPOS_DO_NEGOCIO,
@@ -32,7 +39,7 @@ import {
   OPERADORES_DE_MOSTRA,
   type OperadorDeMostra,
 } from "@/lib/schemas/mostrar-quando";
-import { Plus, Trash } from "@/lib/ui/icons";
+import { CaretDown, Plus, Trash } from "@/lib/ui/icons";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -263,45 +270,370 @@ export function PipelinesClient({
 }) {
   const t = useT();
   if (pipelines.length === 0) {
-    // ⚠️ NÃO PROMETA UM CAMINHO QUE NÃO EXISTE. Criar funil não é feito por
-    // nenhuma tela, rota ou action deste produto — só por script de instalação;
-    // e como o instalador não provisiona funil, ESTE é o estado de toda
-    // instalação nova. O texto anterior mandava "crie um no quadro", e o quadro
-    // vazio manda "Ir para Configurações": pingue-pongue fechado, com o usuário
-    // procurando um botão que não existe em lugar nenhum.
+    // ⚠️ NÃO PROMETA UM CAMINHO QUE NÃO EXISTE — nem NEGUE um que existe. Este
+    // texto dizia que criar funil "é feito por quem instalou o sistema, direto
+    // no banco", e isso ficou falso quando a lista de Funis (`/app/kanban`)
+    // ganhou o botão "Novo funil" (POST /api/v1/pipelines, que já cria as
+    // etapas iniciais). Mandar o dono procurar quem instalou, quando o botão
+    // está a um clique, é o mesmo beco sem saída de antes, no sentido inverso.
+    // O link NÃO cita o rótulo do botão: com zero funil vivo a lista mostra
+    // "Criar meu primeiro funil", não "Novo funil".
     return (
-      <Card className="p-6 text-sm leading-relaxed text-muted-foreground">
-        {t("Você ainda não tem nenhum funil. Enquanto for assim, o agente atende normalmente, mas não tem para onde levar o card de ninguém — não há etapas para onde mover. Criar o funil é feito por quem instalou o sistema, direto no banco; depois ele aparece aqui para você escolher a etapa de cada passo.")}
+      <Card className="p-6 text-sm leading-relaxed text-muted-foreground" data-testid="sem-funil-configuracao">
+        {t("Você ainda não tem nenhum funil. Enquanto for assim, o agente atende normalmente, mas não tem para onde levar o card de ninguém — não há etapas para onde mover.")}{" "}
+        <Link href="/app/kanban" className="font-medium text-foreground underline underline-offset-2" data-testid="link-criar-funil">
+          {t("Crie o primeiro na tela Funis")}
+        </Link>
+        {t(": ele já nasce com etapas, e depois aparece aqui para você escolher a etapa de cada passo.")}
       </Card>
     );
   }
   return (
     <div className="flex flex-col gap-4">
       {pipelines.map((p) => (
-        <Card key={p.id} className="space-y-6 p-6">
-          <header>
-            <h2 className="text-base font-semibold">{p.name}</h2>
-            <p className="text-xs text-muted-foreground">/{p.slug}</p>
-          </header>
-          {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
-              configura: primeiro o quadro existe do jeito da sua operação,
-              depois se decide o que o assistente faz com ele. Invertido, a
-              primeira coisa que o dono da clínica vê é um mapeamento sobre
-              colunas de e-commerce que ele nem sabia que dava para trocar. */}
-          <StagesSection pipelineId={p.id} ancoraMapeamento={ancoraDoMapeamento(p.id)} />
-          <div className="border-t border-border pt-6">
-            <AgentMappingSection pipelineId={p.id} ancoraEtapas={ancoraDasEtapas(p.id)} />
-          </div>
-          {podeEditarConfig && (
-            <PipelineEditor
-              pipeline={p}
-              etapas={etapas[p.id] ?? []}
-              comandaDisponivel={comandaDisponivel}
-              ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
-            />
-          )}
-        </Card>
+        <CardDoFunil
+          key={p.id}
+          pipeline={p}
+          etapas={etapas[p.id] ?? []}
+          podeEditarConfig={podeEditarConfig}
+          comandaDisponivel={comandaDisponivel}
+          ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
+        />
       ))}
+    </div>
+  );
+}
+
+/**
+ * O CARD DE UM FUNIL — e o editor dele SÓ MONTA QUANDO EXPANDIDO (issue #3176).
+ *
+ * ─── O defeito, medido ────────────────────────────────────────────────────
+ *
+ * A tela montava o editor de TODOS os funis na abertura: vocabulário, motivos,
+ * e o editor de campos com as opções de cada campo de lista — num caso real
+ * (agência de viagens) 3 funis × listas de 13 a 756 opções, tudo de uma vez. O
+ * autor da issue mediu o `Runtime.evaluate` da página passando de 45 s sem
+ * resposta, logo depois de carregar.
+ *
+ * O que muda aqui: o corpo do card (etapas e mapeamento, que o gestor abre a
+ * tela para ver) continua visível, e o EDITOR do funil — que é onde as listas
+ * longas moram — passa a montar sob demanda, um funil por vez. A contagem de
+ * nós do DOM da tela inteira, com o caso de controle da issue, está na
+ * evidência do PR: recolhido × expandido.
+ */
+function CardDoFunil({
+  pipeline,
+  etapas,
+  podeEditarConfig,
+  comandaDisponivel,
+  ehFunilPadrao,
+}: {
+  pipeline: PipelineRow;
+  etapas: EtapaDoFunil[];
+  podeEditarConfig: boolean;
+  comandaDisponivel: boolean;
+  ehFunilPadrao: boolean;
+}) {
+  const t = useT();
+  const [editorAberto, setEditorAberto] = useState(false);
+  // Monta na primeira vez que abre e fica montado: recolher só ESCONDE. Desmontar
+  // apagaria em silêncio o que foi editado e ainda não salvo.
+  const [editorMontado, setEditorMontado] = useState(false);
+  return (
+    <Card className="space-y-6 p-6">
+      <header>
+        <h2 className="text-base font-semibold">{pipeline.name}</h2>
+        <p className="text-xs text-muted-foreground">/{pipeline.slug}</p>
+      </header>
+      {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
+          configura: primeiro o quadro existe do jeito da sua operação,
+          depois se decide o que o assistente faz com ele. Invertido, a
+          primeira coisa que o dono da clínica vê é um mapeamento sobre
+          colunas de e-commerce que ele nem sabia que dava para trocar. */}
+      <StagesSection pipelineId={pipeline.id} ancoraMapeamento={ancoraDoMapeamento(pipeline.id)} />
+      <div className="border-t border-border pt-6">
+        <AgentMappingSection pipelineId={pipeline.id} ancoraEtapas={ancoraDasEtapas(pipeline.id)} />
+      </div>
+      {podeEditarConfig && (
+        <div className="space-y-4 border-t border-border pt-6">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-expanded={editorAberto}
+            data-testid={`abrir-editor-${pipeline.id}`}
+            onClick={() => {
+              setEditorMontado(true);
+              setEditorAberto((aberto) => !aberto);
+            }}
+          >
+            <CaretDown
+              size={14}
+              aria-hidden
+              className={editorAberto ? "mr-1 rotate-180" : "mr-1"}
+            />
+            {editorAberto
+              ? t("Recolher")
+              : t("Editar vocabulário e campos deste funil")}
+          </Button>
+          {editorMontado && (
+            <div hidden={!editorAberto} data-testid={`area-do-editor-${pipeline.id}`}>
+              <PipelineEditor
+                pipeline={pipeline}
+                etapas={etapas}
+                comandaDisponivel={comandaDisponivel}
+                ehFunilPadrao={ehFunilPadrao}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** Quantas opções a lista aberta monta de cada vez (issue #3176). */
+export const OPCOES_POR_PAGINA = 20;
+
+/**
+ * Baixa um texto como arquivo `.csv`.
+ *
+ * `URL.createObjectURL` não existe em todo ambiente (o jsdom dos testes, por
+ * exemplo) — e um botão de download não pode derrubar a tela por causa disso.
+ * Sem ele o arquivo sai por uma URL `data:`, que carrega o mesmo texto.
+ */
+function baixarCsv(nome: string, texto: string): void {
+  const href =
+    typeof URL.createObjectURL === "function"
+      ? URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }))
+      : `data:text/csv;charset=utf-8,${encodeURIComponent(texto)}`;
+  const ancora = document.createElement("a");
+  ancora.href = href;
+  ancora.download = nome;
+  ancora.click();
+  if (href.startsWith("blob:")) URL.revokeObjectURL(href);
+}
+
+/**
+ * AS OPÇÕES DE UM CAMPO DE LISTA — RECOLHIDAS ATÉ ALGUÉM PEDIR (issue #3176).
+ *
+ * ─── O defeito que este componente fecha ──────────────────────────────────
+ *
+ * O editor de Configurações › Funis montava, para CADA campo de lista de CADA
+ * funil, o input de opções com a lista INTEIRA no `value` (`"Destino 0, Destino
+ * 1, …"` — 756 destinos, apelidos inclusos), a caixa de importação CSV e o
+ * botão de importar, tudo de uma vez e para todos os funis na abertura da tela.
+ * Numa agência de viagens isso são milhares de linhas de formulário, e o
+ * navegador travava (§ o número medido está na evidência do PR).
+ *
+ * Aqui isso vira: um RESUMO com a contagem (`756 opções · Importar CSV ·
+ * Exportar CSV`) e um botão. A busca, a lista paginada, a edição e a importação
+ * existem SÓ enquanto a pessoa está olhando aquele campo — e nunca para os
+ * outros campos ao mesmo tempo.
+ *
+ * ─── O que NÃO muda ───────────────────────────────────────────────────────
+ *
+ * - o input de opções continua o MESMO (rótulos separados por vírgula) e
+ *   continua preservando o `value` canônico e os apelidos de todo rótulo que já
+ *   existia — é o que impede uma tecla de trocar `maceio-al` por `Maceió (AL)`
+ *   e apagar os apelidos de negócios já gravados;
+ * - a importação CSV é a MESMA função (`importarOpcoesCsv`) e o MESMO formato
+ *   `value,label,apelidos`, sem duplicar o que já existe;
+ * - a lista ABERTA mostra as opções por página (`OPCOES_POR_PAGINA`) e só as
+ *   que a busca alcança: abrir não é montar as 756 de uma vez.
+ */
+export function OpcoesDaLista({
+  campo,
+  indice,
+  csv,
+  aoMudarCsv,
+  aoMudarOpcoes,
+}: {
+  campo: CustomFieldDef;
+  /** Posição do campo no funil (1-based) — é o que distingue os campos nos testes. */
+  indice: number;
+  /** O texto CSV colado para ESTE campo; "Importar" o transforma em opções e o limpa. */
+  csv: string;
+  aoMudarCsv: (texto: string) => void;
+  aoMudarOpcoes: (options: CustomFieldDef["options"]) => void;
+}) {
+  const t = useT();
+  const [aberta, setAberta] = useState(false);
+  const [termo, setTermo] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const opcoes = campo.options ?? [];
+  const apelidos = opcoes.reduce((soma, o) => soma + (o.aliases?.length ?? 0), 0);
+  const pesquisavel = campo.type === "searchable_select";
+  // A MESMA busca do autocompletar da ficha (`buscarOpcoes`): prefixo primeiro,
+  // depois trecho, sem caixa, acento nem espaço a mais. Termo vazio devolve a
+  // lista inteira — é o que a pessoa quer ver quando abre — e quem corta o que
+  // é MONTADO é a página logo abaixo.
+  const encontradas = aberta ? buscarOpcoes(opcoes, termo, opcoes.length) : [];
+  const visiveis = encontradas.slice(0, pagina * OPCOES_POR_PAGINA);
+
+  function importar() {
+    if (csv.trim() === "") return;
+    const r = importarOpcoesCsv(opcoes, csv);
+    aoMudarOpcoes(r.opcoes);
+    aoMudarCsv("");
+    if (r.adicionadas.length > 0) {
+      toast.success(
+        `${r.adicionadas.length} ${t("opções importadas.")}` +
+          (r.ignoradas.length > 0 ? ` ${r.ignoradas.length} ${t("já existiam.")}` : ""),
+      );
+    } else {
+      toast.info(t("Nenhuma opção nova para importar."));
+    }
+  }
+
+  return (
+    <div className="space-y-2 md:col-span-4" data-testid={`opcoes-campo-${indice + 1}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        {/* O RESUMO é o que a tela mostra no lugar das opções — e a contagem é
+            o número que quem configura precisa ver de relance. */}
+        <span className="text-xs text-muted-foreground" data-testid={`resumo-opcoes-${indice + 1}`}>
+          {`${opcoes.length} ${t("opções")}`}
+          {apelidos > 0 ? ` · ${apelidos} ${t("apelidos")}` : ""}
+          {pesquisavel ? ` · ${t("Importar CSV")} · ${t("Exportar CSV")}` : ""}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-expanded={aberta}
+          aria-label={`${
+            aberta ? t("Recolher a lista do campo") : t("Ver e editar a lista do campo")
+          } ${indice + 1}`}
+          data-testid={`abrir-opcoes-${indice + 1}`}
+          onClick={() => setAberta((v) => !v)}
+        >
+          {aberta ? t("Recolher") : t("Ver opções")}
+        </Button>
+      </div>
+      {aberta && (
+        <div
+          className="space-y-2 rounded-md border border-border p-2"
+          data-testid={`lista-opcoes-${indice + 1}`}
+        >
+          <Input
+            type="search"
+            className="h-8 text-xs"
+            aria-label={`${t("Buscar opções")} ${indice + 1}`}
+            placeholder={t("Buscar")}
+            value={termo}
+            onChange={(e) => {
+              setTermo(e.target.value);
+              // Busca nova é lista nova: voltar para a primeira página é o que
+              // mantém o resultado da busca à vista, e não no fim da anterior.
+              setPagina(1);
+            }}
+          />
+          <ul
+            className="flex flex-col divide-y divide-border text-xs"
+            data-testid={`opcoes-${indice + 1}`}
+          >
+            {visiveis.map((o) => (
+              <li key={o.value} className="flex flex-wrap items-center gap-x-2 py-1">
+                <span>{o.label}</span>
+                <span className="text-muted-foreground">{o.value}</span>
+                {o.aliases && o.aliases.length > 0 && (
+                  <span className="text-muted-foreground">{o.aliases.join(" · ")}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {encontradas.length === 0 && (
+            <p className="text-xs text-muted-foreground">{t("Nenhuma opção casa com a busca.")}</p>
+          )}
+          {encontradas.length > visiveis.length && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid={`mais-opcoes-${indice + 1}`}
+              onClick={() => setPagina((p) => p + 1)}
+            >
+              {t("Mostrar mais opções")}
+            </Button>
+          )}
+          <Input
+            className="h-8 text-xs"
+            aria-label={`${t("Opções do campo")} ${indice + 1}`}
+            placeholder={t("Opções, separadas por vírgula")}
+            value={opcoes.map((o) => o.label).join(", ")}
+            onChange={(e) => {
+              // SEM `.filter(Boolean)` aqui, de propósito. O item vazio do
+              // fim é o que a vírgula acabou de criar, e ele precisa
+              // sobreviver até a pessoa digitar a palavra seguinte.
+              // Descartá-lo no mesmo instante apaga o separador da tela —
+              // digitar "Dor," some com a vírgula — e a tecla seguinte cola
+              // na palavra anterior ("Dor" + "O" vira "DorO"). Com o item
+              // vazio preservado, o `join(", ")` reescreve "Dor, " e o
+              // cursor continua onde a pessoa parou. O vazio só é descartado
+              // no `handleSave`, quando deixa de ser útil. Pelo mesmo
+              // motivo só o INÍCIO é aparado (o espaço que o `join(", ")`
+              // põe): aparar o fim apagaria o espaço recém-digitado, e
+              // "Clareamento" + " " + "D" viraria "ClareamentoD".
+              //
+              // O input só mostra RÓTULOS, mas a opção é mais que isso: o
+              // `value` canônico e os apelidos que a importação CSV trouxe
+              // (#2521). Reconstruir tudo como `{ value: label }` faria uma
+              // tecla qualquer trocar `maceio-al` por `Maceió (AL)` e apagar
+              // os apelidos — e os negócios já gravados com `maceio-al`
+              // deixariam de casar com a lista. Por isso o rótulo que JÁ
+              // existia (comparado aparado) mantém a opção dele; só o rótulo
+              // sem par vira opção nova. O limite: renomear um rótulo
+              // importado gera opção nova, porque o texto do meio da edição
+              // não casa com nada.
+              const options = e.target.value
+                .split(",")
+                .map((s) => s.trimStart())
+                .map((label) => {
+                  const existente = opcoes.find(
+                    (o) => label.trim() !== "" && o.label.trim() === label.trim(),
+                  );
+                  return existente ? { ...existente, label } : { value: label, label };
+                });
+              aoMudarOpcoes(options);
+            }}
+          />
+          {pesquisavel && (
+            /* A IMPORTAÇÃO (#2521) — o CSV que a agência já tem (municípios do
+               IBGE, destinos, IATA): `value,label,apelidos` por linha, apelidos
+               separados por `;`. O que já existe não duplica, e o que foi
+               importado fica junto das opções digitadas à mão. O EXPORTAR ao
+               lado (#3176) escreve o MESMO dialeto, para a lista poder ser
+               editada fora do CRM e reimportada. */
+            <div className="flex items-start gap-2">
+              <textarea
+                aria-label={`${t("Importar opções (CSV)")} ${indice + 1}`}
+                className="min-h-16 w-full rounded-md border border-border bg-transparent p-2 text-xs"
+                placeholder={t("value,label,apelidos — uma opção por linha")}
+                value={csv}
+                onChange={(e) => aoMudarCsv(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-label={`${t("Importar opções do campo")} ${indice + 1}`}
+                onClick={importar}
+              >
+                {t("Importar")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid={`exportar-opcoes-${indice + 1}`}
+                onClick={() => baixarCsv(`${campo.key}.csv`, exportarOpcoesCsv(opcoes))}
+              >
+                {t("Exportar CSV")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -324,6 +656,8 @@ function PipelineEditor({
   ehFunilPadrao: boolean;
 }) {
   const t = useT();
+  // O tipo moeda diz a moeda da organização (« Moeda (EUR) »), não « (BRL) » em duro.
+  const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
   const v = pipeline.vocabulary ?? {};
   const [lead, setLead] = useState(v.lead ?? "Lead");
   const [deal, setDeal] = useState(v.deal ?? "Deal");
@@ -438,7 +772,7 @@ function PipelineEditor({
     .filter((s) => s.length > 0);
 
   return (
-    <div className="space-y-4 border-t border-border pt-6">
+    <div className="space-y-4" data-testid={`editor-${pipeline.id}`}>
       <h3 className="text-sm font-semibold">{t("Vocabulário e campos")}</h3>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -608,7 +942,7 @@ function PipelineEditor({
               <SelectContent>
                 {TIPOS_DE_CAMPO.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
-                    {rotuloDoTipo(tipo, t)}
+                    {rotuloDoTipo(tipo, t, moeda)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -623,44 +957,12 @@ function PipelineEditor({
               <Trash size={14} aria-hidden />
             </Button>
             {tipoTemOpcoes(f.type) && (
-              <Input
-                className="md:col-span-3"
-                aria-label={`${t("Opções do campo")} ${i + 1}`}
-                placeholder={t("Opções, separadas por vírgula")}
-                value={(f.options ?? []).map((o) => o.label).join(", ")}
-                onChange={(e) => {
-                  // SEM `.filter(Boolean)` aqui, de propósito. O item vazio do
-                  // fim é o que a vírgula acabou de criar, e ele precisa
-                  // sobreviver até a pessoa digitar a palavra seguinte.
-                  // Descartá-lo no mesmo instante apaga o separador da tela —
-                  // digitar "Dor," some com a vírgula — e a tecla seguinte cola
-                  // na palavra anterior ("Dor" + "O" vira "DorO"). Com o item
-                  // vazio preservado, o `join(", ")` reescreve "Dor, " e o
-                  // cursor continua onde a pessoa parou. O vazio só é descartado
-                  // no `handleSave`, quando deixa de ser útil. Pelo mesmo
-                  // motivo só o INÍCIO é aparado (o espaço que o `join(", ")`
-                  // põe): aparar o fim apagaria o espaço recém-digitado, e
-                  // "Clareamento" + " " + "D" viraria "ClareamentoD".
-                  //
-                  // O input só mostra RÓTULOS, mas a opção é mais que isso: o
-                  // `value` canônico e os apelidos que a importação CSV trouxe
-                  // (#2521). Reconstruir tudo como `{ value: label }` faria uma
-                  // tecla qualquer trocar `maceio-al` por `Maceió (AL)` e apagar
-                  // os apelidos — e os negócios já gravados com `maceio-al`
-                  // deixariam de casar com a lista. Por isso o rótulo que JÁ
-                  // existia (comparado aparado) mantém a opção dele; só o rótulo
-                  // sem par vira opção nova. O limite: renomear um rótulo
-                  // importado gera opção nova, porque o texto do meio da edição
-                  // não casa com nada.
-                  const options = e.target.value
-                    .split(",")
-                    .map((s) => s.trimStart())
-                    .map((label) => {
-                      const existente = (f.options ?? []).find(
-                        (o) => label.trim() !== "" && o.label.trim() === label.trim(),
-                      );
-                      return existente ? { ...existente, label } : { value: label, label };
-                    });
+              <OpcoesDaLista
+                campo={f}
+                indice={i}
+                csv={csvDeOpcoes[f.key] ?? ""}
+                aoMudarCsv={(texto) => setCsvDeOpcoes((atual) => ({ ...atual, [f.key]: texto }))}
+                aoMudarOpcoes={(options) => {
                   const next = [...fields];
                   next[i] = { ...f, options };
                   setFields(next);
@@ -668,12 +970,11 @@ function PipelineEditor({
               />
             )}
             {/* ── LISTA PESQUISÁVEL (#2521) ────────────────────────────────
-                Duas coisas só deste tipo: a válvula "permitir valor novo" e a
-                importação de opções em lote. A importação usa o CSV que a
-                agência já tem (municípios do IBGE, destinos, IATA) — `value,
-                label, apelidos` por linha, apelidos separados por `;`. O que
-                já existe não duplica, e o que foi importado fica junto das
-                opções digitadas à mão. */}
+                A válvula "permitir valor novo" e, logo abaixo, o RESUMO com a
+                lista recolhida. A caixa de importação CSV e a leitura das
+                opções moraram aqui até o #3176 e agora vivem DENTRO do bloco
+                recolhido: o que a tela monta antes de a pessoa pedir é o
+                resumo, nunca as opções. */}
             {f.type === "searchable_select" && (
               <div className="space-y-1 md:col-span-4">
                 <label className="flex items-center gap-1 text-xs">
@@ -689,48 +990,6 @@ function PipelineEditor({
                   />
                   {t("Permitir valor novo (fora da lista)")}
                 </label>
-                <div className="flex items-start gap-2">
-                  <textarea
-                    aria-label={`${t("Importar opções (CSV)")} ${i + 1}`}
-                    className="min-h-16 w-full rounded-md border border-border bg-transparent p-2 text-xs"
-                    placeholder={t("value,label,apelidos — uma opção por linha")}
-                    value={csvDeOpcoes[f.key] ?? ""}
-                    onChange={(e) =>
-                      setCsvDeOpcoes((current) => ({ ...current, [f.key]: e.target.value }))
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={`${t("Importar opções do campo")} ${i + 1}`}
-                    onClick={() => {
-                      const texto = csvDeOpcoes[f.key] ?? "";
-                      if (texto.trim() === "") return;
-                      const r = importarOpcoesCsv(f.options ?? [], texto);
-                      const next = [...fields];
-                      next[i] = { ...f, options: r.opcoes };
-                      setFields(next);
-                      setCsvDeOpcoes((current) => {
-                        const proximo = { ...current };
-                        delete proximo[f.key];
-                        return proximo;
-                      });
-                      if (r.adicionadas.length > 0) {
-                        toast.success(
-                          `${r.adicionadas.length} ${t("opções importadas.")}` +
-                            (r.ignoradas.length > 0
-                              ? ` ${r.ignoradas.length} ${t("já existiam.")}`
-                              : ""),
-                        );
-                      } else {
-                        toast.info(t("Nenhuma opção nova para importar."));
-                      }
-                    }}
-                  >
-                    {t("Importar")}
-                  </Button>
-                </div>
               </div>
             )}
             {/* ── QUANDO ESTE CAMPO OBRIGA (issue #1536) ────────────────────

@@ -21,6 +21,16 @@ export const STATUS_DA_CAMPANHA = [
 
 export type StatusDaCampanha = (typeof STATUS_DA_CAMPANHA)[number];
 
+/**
+ * O que a campanha manda (migration 0710). `text` = corpo livre em
+ * `message_body`, para número por QR; `template` = modelo aprovado, para número
+ * oficial, que só aceita texto livre dentro das 24 horas da última mensagem do
+ * cliente — e campanha fala justamente com quem não escreveu.
+ */
+export const MODOS_DA_MENSAGEM = ["text", "template"] as const;
+
+export type ModoDaMensagem = (typeof MODOS_DA_MENSAGEM)[number];
+
 export const STATUS_DO_DESTINATARIO = [
   "pending",
   "queued",

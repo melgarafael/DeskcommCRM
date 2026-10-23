@@ -2498,6 +2498,41 @@ else
   [ -n "$health_body" ] && c_dim "$(t "  última resposta: {1}" "$(printf '%s' "$health_body" | head -c 200 || true)")"
 fi
 
+# ── #2945: a PROVA de que a rota pública do Supabase chega ao GoTrue ────────
+#
+# Aqui, e não antes: é o ponto em que o app já respondeu saudável e o domínio já
+# está no ar — a mesma condição que faz a pergunta ter sentido. Antes do #2933
+# quem a respondia era, sem querer, o `v_sb_key()` da fase 2 (que batia em
+# `${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, a URL pública, e morria em
+# "chave inválida" quando o Traefik sem as etiquetas entregava o pedido ao app);
+# o #2933 o mandou perguntar ao gateway INTERNO, que é o certo atrás de
+# Cloudflare laranja, e a instalação ficou SEM nenhuma prova da rota pública. O
+# #2099 é o defeito que a prova pegava: etiqueta do Traefik que não chegou ao
+# Envoy e um login que só falha depois, com a instalação já verde.
+#
+# O `SUPABASE_INTERNAL_URL` no guard não é enfeite: ele só existe quando o
+# Supabase é DESTA VPS (quem o grava é o install-single-server.sh). Num
+# Traefik com o Supabase na NUVEM a URL pública tem as APIs em outro host, e
+# `/auth/v1/settings` no domínio do CRM responderia 404 — o mesmo 404 de
+# "chave inválida" que o #2933 tirou da fase 2. Sem esta condição, a sonda
+# reprovaria uma instalação correta, que é pior que não sondar.
+#
+# A sonda devolve 0 (provado), 1 (a ASSINATURA do app: 404, ou o 3xx para
+# /login — a instalação PARA, com o diagnóstico do #2099) ou 2 (não provei, e
+# o motivo pode ser só o certificado do domínio ainda saindo). O 2 AVISA e
+# SEGUE (#2945): parar uma instalação certa por um `curl` que não provou nada
+# é o defeito que o próprio kit consertou no #2933, do outro lado da moeda.
+if [ "${REVERSE_PROXY:-caddy}" = "traefik" ] && [ -n "${SUPABASE_INTERNAL_URL:-}" ] && [ "${APP_SAUDAVEL:-0}" = 1 ]; then
+  step "$(t "Conferindo a rota pública do Supabase no Traefik")"
+  rota_publica_rc=0
+  rota_publica_msg="$(sondar_rota_publica_do_supabase "https://${DOMAIN}" "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" 10 3)" || rota_publica_rc=$?
+  case "$rota_publica_rc" in
+    0) c_grn "$(t "✓ a rota pública /auth/v1/* chega ao GoTrue do Supabase (o Traefik está publicando as APIs)")" ;;
+    1) die "$rota_publica_msg" ;;
+    *) c_ylw "⚠ $rota_publica_msg" ;;
+  esac
+fi
+
 # O catálogo dos provedores diretos vem no baseline, mas a OpenRouter é grande
 # demais para ser congelada nele: seus ~400 modelos chegam pelo cron diário
 # `api/v1/cron/sync-model-catalog`, que o scheduler bate às 04:15 UTC

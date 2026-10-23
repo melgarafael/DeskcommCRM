@@ -115,6 +115,11 @@ CRONS="
 # no dia errado metade do mundo e de madrugada boa parte do resto. Barato: quem
 # não configurou a automação não chega a ser varrido.
 7 * * * *|60|api/v1/cron/contact-birthdays
+# O RESUMO DAS 7H DO AVISO DE AGENDAMENTO (0707). De dez em dez minutos pelo
+# mesmo motivo do aniversário — a hora é a do relógio de CADA organização —, e
+# mais curto porque a janela é 7h–10h: se o número estiver parado às 7h, o
+# resumo sai assim que ele voltar. Quem não ligou o aviso não chega a ser varrido.
+*/10 * * * *|60|api/v1/cron/agenda-resumo-do-dia
 # A DATA DO FUNIL (#989). Mesma cadência e mesmo motivo do aniversário: de hora
 # em hora, e quem decide o momento é o relógio de parede de CADA organização —
 # a rodada só age naquela que marca a hora da varredura. Minuto diferente do
