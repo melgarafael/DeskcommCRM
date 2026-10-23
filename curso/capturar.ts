@@ -5,7 +5,7 @@
  * Pré-requisito: app de pé (`next start`) sobre um banco com o seed de
  * demonstração (curso/semear-demonstracao.ts), que grava curso/saida/contas.json.
  *
- *   CURSO_URL=http://127.0.0.1:3460 pnpm exec tsx curso/capturar.ts [modulo]
+ *   CURSO_URL=http://127.0.0.1:3460 pnpm exec tsx curso/capturar.ts [modulo] [licao]
  *
  * CURSO_ANTES_DA_LICAO (opcional): comando rodado antes de cada lição — em
  * geral o seed de demonstração, para toda lição partir do mesmo estado.
@@ -65,7 +65,11 @@ async function medir(page: Page, a: Alvo): Promise<Caixa> {
 }
 
 async function executar(page: Page, a: Acao) {
-  if (a.acao === "press") return page.keyboard.press(a.tecla);
+  if (a.acao === "press") {
+    if (a.alvo) await localizar(page, a.alvo).press(a.tecla, { timeout: 8_000 });
+    else await page.keyboard.press(a.tecla);
+    return page.waitForTimeout(600);
+  }
   if (a.acao === "esperar") return page.waitForTimeout(a.ms);
   if (a.acao === "aguardar") return localizar(page, a.alvo).waitFor({ state: "visible", timeout: 15_000 });
   const l = localizar(page, a.alvo);
@@ -73,6 +77,29 @@ async function executar(page: Page, a: Acao) {
   else if (a.acao === "hover") await l.hover({ timeout: 8_000 });
   else await l.fill(a.valor, { timeout: 8_000 });
   await page.waitForTimeout(600); // animação de abertura de menu/diálogo
+}
+
+/** Esqueletos de carregamento (animate-pulse do shadcn) na foto ensinam uma tela que não existe. */
+async function esperarCarregar(page: Page) {
+  await page.waitForLoadState("networkidle");
+  await page
+    .waitForFunction(() => ![...document.querySelectorAll(".animate-pulse")].some((e) => (e as HTMLElement).offsetParent !== null), null, { timeout: 8_000 })
+    .catch(() => console.warn("  aviso: ainda há esqueleto de carregamento na tela"));
+}
+
+/**
+ * O clique deixa um anel de foco no botão, que na foto parece uma caixa sem
+ * explicação. Tira o foco — menos de campo de texto e de menu/diálogo/lista
+ * aberta, que fecham ou mudam de cara sem ele.
+ */
+async function tirarFocoDeClique(page: Page) {
+  await page.evaluate(() => {
+    const el = document.activeElement as HTMLElement | null;
+    if (!el || el === document.body) return;
+    if (el.matches("input, textarea, [contenteditable='true']")) return;
+    if (el.closest("[role=menu], [role=dialog], [role=alertdialog], [role=listbox]")) return;
+    el.blur();
+  });
 }
 
 /** Congela o que muda entre rodadas e atrapalharia a foto. */
@@ -96,6 +123,7 @@ async function entrar(page: Page, papel: string) {
 
 async function main() {
   const filtro = process.argv[2];
+  const soLicao = process.argv[3]; // depuração: uma lição só
   const arquivos = readdirSync(path.join(RAIZ, "licoes")).filter((f) => f.endsWith(".json"));
   const modulos = arquivos
     .map((f) => Modulo.parse(JSON.parse(readFileSync(path.join(RAIZ, "licoes", f), "utf8"))))
@@ -109,7 +137,7 @@ async function main() {
   const sessoes = new Map<string, string>(); // papel -> storageState em disco
 
   for (const modulo of modulos) {
-    for (const licao of modulo.licoes) {
+    for (const licao of modulo.licoes.filter((l) => !soLicao || l.id === soLicao)) {
       // cada lição parte do mesmo estado: assumir, fechar e transferir mudam o banco
       if (process.env.CURSO_ANTES_DA_LICAO) execSync(process.env.CURSO_ANTES_DA_LICAO, { stdio: "inherit" });
       if (!sessoes.has(licao.papel)) {
@@ -141,7 +169,10 @@ async function main() {
           for (const a of passo.antes) await executar(page, a);
           const primeiro = passo.destaques[0]?.alvo ?? passo.clicar;
           if (primeiro) await localizar(page, primeiro).scrollIntoViewIfNeeded({ timeout: 8_000 });
-          await page.mouse.move(0, ALTURA - 1); // tira o hover que sobrou da última ação
+          // tira o hover que sobrou da última ação — menos quando o hover É o que o passo mostra
+          if (passo.antes.at(-1)?.acao !== "hover") await page.mouse.move(0, ALTURA - 1);
+          await esperarCarregar(page);
+          await tirarFocoDeClique(page);
           await page.waitForTimeout(400);
           const destaques = [];
           for (const d of passo.destaques) {

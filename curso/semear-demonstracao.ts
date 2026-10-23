@@ -16,7 +16,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { createClient } from "@supabase/supabase-js";
+import { type User, createClient } from "@supabase/supabase-js";
 
 const URL_SUPABASE = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const CHAVE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
@@ -43,6 +43,16 @@ function exigir<T>(r: { data: T | null; error: { message: string } | null }, ond
   if (r.data === null) throw new Error(`${onde}: sem dados`);
   return r.data;
 }
+/** Respostas do GoTrue: no erro o `user` vem null, então o tipo não cabe no `exigir`. */
+function usuarioDe(r: { data: { user: User | null }; error: { message: string } | null }, onde: string): User {
+  if (r.error || !r.data.user) throw new Error(`${onde}: ${r.error?.message ?? "sem usuário"}`);
+  return r.data.user;
+}
+async function todosOsUsuarios(): Promise<User[]> {
+  const r = await db.auth.admin.listUsers({ perPage: 1000 });
+  if (r.error) throw new Error(`listUsers: ${r.error.message}`);
+  return r.data.users;
+}
 /** Para chamadas que não devolvem linha (RPC void, delete): só o erro importa. */
 function semErro(r: { error: { message: string } | null }, onde: string) {
   if (r.error) throw new Error(`${onde}: ${r.error.message}`);
@@ -51,13 +61,12 @@ function semErro(r: { error: { message: string } | null }, onde: string) {
 const EMAIL = { helena: "helena@clinicabemviver.com.br", ana: "ana@clinicabemviver.com.br", carlos: "carlos@clinicabemviver.com.br" };
 
 async function membro(email: string, nome: string, papel: "manager" | "agent", orgId: string) {
-  const lista = exigir(await db.auth.admin.listUsers({ perPage: 1000 }), "listUsers");
-  let u = lista.users.find((x) => x.email === email);
+  let u = (await todosOsUsuarios()).find((x) => x.email === email);
   if (!u) {
-    u = exigir(await db.auth.admin.createUser({ email, password: SENHA, email_confirm: true, user_metadata: { full_name: nome } }), `createUser ${email}`).user;
+    u = usuarioDe(await db.auth.admin.createUser({ email, password: SENHA, email_confirm: true, user_metadata: { full_name: nome } }), `createUser ${email}`);
   } else {
     // sem senha aqui: trocar a senha encerra as sessões abertas, e o capturador entra uma vez só
-    exigir(await db.auth.admin.updateUserById(u.id, { user_metadata: { full_name: nome } }), `updateUser ${email}`);
+    usuarioDe(await db.auth.admin.updateUserById(u.id, { user_metadata: { full_name: nome } }), `updateUser ${email}`);
   }
   semErro(
     await db.from("user_organizations").upsert(
@@ -196,9 +205,9 @@ async function main() {
     await db.from("user_organizations").select("user_id").eq("organization_id", org).eq("role", "admin").order("created_at").limit(1).single(),
     "dono",
   ) as { user_id: string };
-  const atual = exigir(await db.auth.admin.getUserById(dono.user_id), "dono").user;
+  const atual = usuarioDe(await db.auth.admin.getUserById(dono.user_id), "dono");
   // e-mail e senha só na primeira vez: trocar a senha encerra as sessões abertas do capturador
-  exigir(await db.auth.admin.updateUserById(dono.user_id, {
+  usuarioDe(await db.auth.admin.updateUserById(dono.user_id, {
     user_metadata: { full_name: "Helena Prado" },
     ...(atual.email === EMAIL.helena ? {} : { email: EMAIL.helena, email_confirm: true, password: SENHA }),
   }), "Helena");

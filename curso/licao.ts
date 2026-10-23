@@ -44,7 +44,8 @@ export const Acao = z.discriminatedUnion("acao", [
   z.object({ acao: z.literal("click"), alvo: Alvo }).strict(),
   z.object({ acao: z.literal("hover"), alvo: Alvo }).strict(),
   z.object({ acao: z.literal("fill"), alvo: Alvo, valor: z.string() }).strict(),
-  z.object({ acao: z.literal("press"), tecla: z.string() }).strict(),
+  /** Com `alvo`, a tecla vai para aquele campo; sem, para onde o foco estiver (atalhos da página). */
+  z.object({ acao: z.literal("press"), tecla: z.string(), alvo: Alvo.optional() }).strict(),
   z.object({ acao: z.literal("esperar"), ms: z.number().int().positive().max(10_000) }).strict(),
   /** Espera um elemento aparecer — para o resultado de um clique que demora (rede, diálogo). */
   z.object({ acao: z.literal("aguardar"), alvo: Alvo }).strict(),

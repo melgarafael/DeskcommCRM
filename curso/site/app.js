@@ -35,37 +35,64 @@
   // Coordenadas vêm medidas pelo capturador, em pixels da tela de W×H; o SVG usa o mesmo
   // viewBox, então caixas e setas escalam junto com a foto em qualquer largura.
   var contadorDeMascara = 0;
-  function setaPara(c) {
-    var folga = { esq: c.x, dir: W - (c.x + c.w), cima: c.y, baixo: H - (c.y + c.h) };
-    var lado = Object.keys(folga).sort(function (a, b) { return folga[b] - folga[a]; })[0];
-    var cx = c.x + c.w / 2, cy = c.y + c.h / 2, L = 120, g = 12, fim, ini;
-    if (lado === "esq") { fim = [c.x - g, cy]; ini = [fim[0] - L, cy - 40]; }
-    else if (lado === "dir") { fim = [c.x + c.w + g, cy]; ini = [fim[0] + L, cy - 40]; }
-    else if (lado === "cima") { fim = [cx, c.y - g]; ini = [cx - 40, fim[1] - L]; }
-    else { fim = [cx, c.y + c.h + g]; ini = [cx - 40, fim[1] + L]; }
-    var ang = Math.atan2(fim[1] - ini[1], fim[0] - ini[0]), t = 24, a = 0.45;
-    var p1 = [fim[0] - t * Math.cos(ang - a), fim[1] - t * Math.sin(ang - a)];
-    var p2 = [fim[0] - t * Math.cos(ang + a), fim[1] - t * Math.sin(ang + a)];
-    var meio = [fim[0] - 0.8 * t * Math.cos(ang), fim[1] - 0.8 * t * Math.sin(ang)];
-    return {
-      svg: '<line class="seta-linha" x1="' + ini[0] + '" y1="' + ini[1] + '" x2="' + meio[0] + '" y2="' + meio[1] + '" vector-effect="non-scaling-stroke"/>' +
-        '<polygon class="seta-ponta" points="' + fim.join(",") + " " + p1.join(",") + " " + p2.join(",") + '"/>',
-      selo: ini,
-    };
+  var P = 6, R = 22; // folga da caixa e raio do selo, em pixels da foto
+
+  // Selo nunca cobre um alvo: ele procura, em ordem, um lugar livre FORA de todas as
+  // caixas do passo e longe dos selos já postos. Sem lugar livre, fica no menos ruim.
+  function livre(p, caixas, selos) {
+    if (p[0] < R || p[1] < R || p[0] > W - R || p[1] > H - R) return false;
+    for (var i = 0; i < caixas.length; i++) {
+      var c = caixas[i];
+      if (p[0] > c.x - R && p[0] < c.x + c.w + R && p[1] > c.y - R && p[1] < c.y + c.h + R) return false;
+    }
+    for (var j = 0; j < selos.length; j++) {
+      if (Math.hypot(p[0] - selos[j][0], p[1] - selos[j][1]) < 2 * R + 4) return false;
+    }
+    return true;
+  }
+  function seta(de, ate) {
+    var ang = Math.atan2(ate[1] - de[1], ate[0] - de[0]), t = 24, a = 0.45;
+    var p1 = [ate[0] - t * Math.cos(ang - a), ate[1] - t * Math.sin(ang - a)];
+    var p2 = [ate[0] - t * Math.cos(ang + a), ate[1] - t * Math.sin(ang + a)];
+    var meio = [ate[0] - 0.8 * t * Math.cos(ang), ate[1] - 0.8 * t * Math.sin(ang)];
+    return '<line class="seta-linha" x1="' + de[0] + '" y1="' + de[1] + '" x2="' + meio[0] + '" y2="' + meio[1] + '" vector-effect="non-scaling-stroke"/>' +
+      '<polygon class="seta-ponta" points="' + ate.join(",") + " " + p1.join(",") + " " + p2.join(",") + '"/>';
+  }
+  /** Onde o selo (e, na seta, o rabo) de uma caixa fica: candidatos em volta, o primeiro livre vence. */
+  function posicionar(c, tipo, caixas, selos) {
+    var cx = c.x + c.w / 2, cy = c.y + c.h / 2, cands = [];
+    if (tipo === "seta") {
+      var L = 110, g = 10, d = L * 0.7;
+      [["esq", [c.x - g, cy], [-L, 0]], ["cima", [cx, c.y - g], [0, -L]], ["dir", [c.x + c.w + g, cy], [L, 0]],
+       ["baixo", [cx, c.y + c.h + g], [0, L]], ["ce", [c.x - g, c.y - g], [-d, -d]], ["cd", [c.x + c.w + g, c.y - g], [d, -d]],
+       ["be", [c.x - g, c.y + c.h + g], [-d, d]], ["bd", [c.x + c.w + g, c.y + c.h + g], [d, d]]].forEach(function (k) {
+        cands.push({ selo: [k[1][0] + k[2][0], k[1][1] + k[2][1]], ponta: k[1] });
+      });
+    } else {
+      var f = R + 6;
+      [[c.x - f, cy], [c.x - f, c.y - f + R], [cx, c.y - f], [c.x + c.w + f, cy], [cx, c.y + c.h + f],
+       [c.x - f, c.y - f], [c.x + c.w + f, c.y - f]].forEach(function (p) { cands.push({ selo: p }); });
+    }
+    for (var i = 0; i < cands.length; i++) if (livre(cands[i].selo, caixas, selos)) return cands[i];
+    var reserva = cands[0];
+    reserva.selo = [Math.min(W - R, Math.max(R, reserva.selo[0])), Math.min(H - R, Math.max(R, reserva.selo[1]))];
+    return reserva;
   }
   function figura(cap, opcoes) {
     opcoes = opcoes || {};
-    var id = "m" + (++contadorDeMascara), P = 6;
+    var id = "m" + (++contadorDeMascara);
     var furos = "", contornos = "", setas = "", selos = "";
     if (!opcoes.limpa) {
+      var caixas = cap.destaques.map(function (d) { return { x: d.x - P, y: d.y - P, w: d.w + 2 * P, h: d.h + 2 * P }; });
+      var postos = [];
       cap.destaques.forEach(function (d, i) {
-        var x = d.x - P, y = d.y - P, w = d.w + 2 * P, h = d.h + 2 * P;
-        furos += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="8" fill="#000"/>';
-        if (d.tipo !== "numero") contornos += '<rect class="contorno" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="8" vector-effect="non-scaling-stroke"/>';
-        var ponto = [Math.max(16, x), Math.max(16, y)];
-        if (d.tipo === "seta") { var s = setaPara(d); setas += s.svg; ponto = s.selo; }
-        if (d.tipo === "numero") ponto = [Math.max(16, x - 4), d.y + d.h / 2];
-        selos += '<span class="selo" style="left:' + pct(ponto[0], W) + ";top:" + pct(ponto[1], H) + '">' + (i + 1) + "</span>";
+        var c = caixas[i];
+        furos += '<rect x="' + c.x + '" y="' + c.y + '" width="' + c.w + '" height="' + c.h + '" rx="8" fill="#000"/>';
+        if (d.tipo !== "numero") contornos += '<rect class="contorno" x="' + c.x + '" y="' + c.y + '" width="' + c.w + '" height="' + c.h + '" rx="8" vector-effect="non-scaling-stroke"/>';
+        var lugar = posicionar(c, d.tipo, caixas, postos);
+        if (d.tipo === "seta") setas += seta(lugar.selo, lugar.ponta);
+        postos.push(lugar.selo);
+        selos += '<span class="selo" style="left:' + pct(lugar.selo[0], W) + ";top:" + pct(lugar.selo[1], H) + '">' + (i + 1) + "</span>";
       });
     }
     var veu = cap.destaques.length && !opcoes.limpa
