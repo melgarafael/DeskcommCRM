@@ -150,6 +150,13 @@
       "col": 6,
       "type": "component",
       "label": "Gatilho: mensagem da saída falhou, a reserva volta"
+    },
+    {
+      "id": "site-tool",
+      "lane": "app",
+      "col": 5,
+      "type": "component",
+      "label": "Consulta da análise do site na conversa (só leitura, por contato do turno)"
     }
   ],
   "edges": [
@@ -292,6 +299,21 @@
       "from": "saida-volta-com-a-mensagem",
       "to": "operator",
       "label": "audita prospecting.exit_offer_withdrawn; a tela volta a 'Saída ainda não oferecida'"
+    },
+    {
+      "from": "candidates",
+      "to": "site-tool",
+      "label": "lê data.site, a estratégia e o cadastro do contato da conversa"
+    },
+    {
+      "from": "site-tool",
+      "to": "inbound-turn",
+      "label": "o agente consulta durante qualquer turno, da primeira à última mensagem"
+    },
+    {
+      "from": "site-tool",
+      "to": "operator",
+      "label": "cada consulta sai no registro de ferramentas do agente (laço: a tela mostra se o agente usa)"
     }
   ]
 }

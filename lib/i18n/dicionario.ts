@@ -13071,6 +13071,9 @@ export const DICIONARIO: Traducoes = {
   "Confirmar um horário combinado": { es: "Confirmar un horario acordado" },
   "Consultar as regras da empresa": { es: "Consultar las reglas de la empresa" },
   "Consultar o que a empresa já sabe": { es: "Consultar lo que la empresa ya sabe" },
+  "Consultar a análise do site da empresa": { es: "Consultar el análisis del sitio web de la empresa" },
+  "O agente pode consultar o que o sistema achou no site da empresa prospectada (tem site, está fora do ar, problemas) em qualquer momento da conversa.": { es: "El agente puede consultar lo que el sistema encontró en el sitio web de la empresa prospectada (si tiene sitio, si está fuera del aire, problemas) en cualquier momento de la conversación." },
+  "Análise do site da empresa": { es: "Análisis del sitio web de la empresa" },
   "Cria uma sugestão de retomar o contato com um cliente que esfriou, para uma pessoa aprovar antes de qualquer envio.": {
     es: "Crea una sugerencia de retomar el contacto con un cliente que se enfrió, para que una persona la apruebe antes de cualquier envío.",
   },
