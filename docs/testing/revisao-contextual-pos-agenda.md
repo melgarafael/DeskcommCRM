@@ -40,10 +40,19 @@ Para reproduzir os recortes, use o lock do repositório, o prelude/baseline de `
 
 ## O que não foi medido
 
-Não há nova suíte completa, build nem E2E visual da árvore pública final nesta rodada. O typecheck completo com todos os testes esgotou heap de 5 GiB; tipos dirigidos não substituem esse check oficial. A prova visual pública e os checks automáticos precisam ser lidos separadamente na PR.
+Não executei localmente uma nova suíte completa, build ou E2E visual da árvore pública final. A tentativa local de typecheck completo esgotou heap de 5 GiB. O CI oficial posteriormente aprovou o typecheck completo e o build na cabeça `8d0b6b0762f270a306365230c81e9908bb810045`; os arquivos TypeScript permaneceram iguais na correção SQL seguinte. Isso não equivale a declarar todos os checks ou o E2E público aprovados. Os resultados automáticos precisam ser lidos separadamente na PR.
 
 Provedores/canais controlados não provam precisão de modelos reais, entrega WhatsApp/Google ou cobertura universal. Evidência privada de instalações anteriores não foi transferida para o repositório nem atribuída a esta cabeça pública. Captura de revisão continua opt-in, auditada, com TTL e sem ampliação automática de consentimento.
 
 ## Migrações e integração
 
 Os números 0717–0720 permanecem segundo a orientação do mantenedor na PR #3069, comentário de 22/10: colisões serão tratadas na integração. Não interpretar essa pendência como inexistência de colisão. A nova migração `20261023171454_0758_resposta_whatsapp_com_evento_verificavel.sql` foi criada pela CLI nativa depois de medir branches/PRs, com manifest e apêndice no baseline. O vocabulário canônico do Inbox mantém os eventos atuais, inclusive tarefas e parada da captura.
+
+
+### Correção encontrada pelo CI oficial
+
+Em 23/10, a cerca `check-do-baseline-nao-diverge-da-cadeia` encontrou `google_publication_turn` ausente nos dois blocos canônicos de `job_queue` do baseline. A migration 0718 já continha esse valor. O conserto acrescenta-o nos blocos existentes de `job_queue_kind_check` e `job_queue_turn_needs_contact`, preservando todos os valores nativos, sem criar outro bloco nem editar a cadeia aplicada.
+
+Após o commit, as três cercas dirigidas passaram (8 testes). Retirar o valor de um bloco provocou exatamente 1 falha em 8; a restauração por hash devolveu 8/8. Em uma cópia própria do banco de QA, o baseline corrigido aceitou uma continuação Google com contato, recusou a mesma categoria sem contato pela constraint esperada e foi reaplicado mantendo a linha existente. A cópia descartável foi removida; a base compartilhada da UI e a produção não foram alteradas.
+
+Na rodada oficial anterior, as partes 2–6 de `verify` e o typecheck completo passaram. A parte 1 parou na colisão 0717; a parte 7 apontou essa mesma colisão em duas cercas e a divergência do baseline descrita acima. A colisão continua a cargo do mantenedor na integração; o reparo do baseline foi validado separadamente. Não somar esses resultados a uma alegação de CI integral verde.
