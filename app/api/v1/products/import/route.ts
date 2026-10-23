@@ -14,8 +14,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * identidade estável não há como atualizar.
  *
  * ⚠️ O upsert grava só as colunas que a planilha carrega. `descricao`,
- * `imagem_url` e `ativo` ficam de fora de propósito — quem escreveu a descrição
- * pela tela não pode perdê-la porque alguém reimportou a lista de preços.
+ * `imagem_url` e os campos fiscais e de medida só entram quando a planilha TEM
+ * a coluna, e `ativo` fica sempre de fora — quem escreveu a descrição pela
+ * tela não pode perdê-la porque alguém reimportou a lista de preços.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -24,7 +25,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
-import { chaveDoCodigo, lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
+import { chaveDoCodigo, lerPlanilha, OPCIONAIS_DA_PLANILHA, type ErroDaLinha } from "@/lib/catalogo/planilha";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
@@ -203,6 +204,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   // linha a linha.
   const moeda = await moedaDaOrganizacao(supabase, orgId);
 
+  // Os campos opcionais seguem a mesma regra do shape: a coluna entra em TODAS
+  // as linhas quando a planilha a traz (célula vazia vira null), e em nenhuma
+  // quando não traz. Decidir linha a linha misturaria shapes no lote, e a
+  // chave ausente numa linha viraria `EXCLUDED.col = NULL` — reimportar a lista
+  // de preços apagaria o peso, o GTIN ou o preço "de" do produto.
+  const presentes = OPCIONAIS_DA_PLANILHA.filter((c) => aceitos.some((p) => p[c] !== undefined));
+
   const base = (p: (typeof lido.produtos)[number]) => ({
     linha: p.linha,
     organization_id: orgId,
@@ -215,10 +223,16 @@ export async function POST(req: NextRequest): Promise<Response> {
     controla_estoque: p.controla_estoque,
     quantidade: p.quantidade,
     origem: "planilha",
+    ...Object.fromEntries(presentes.map((c) => [c, p[c] ?? null])),
   });
 
+  // A foto da planilha só vira a galeria do produto NOVO: no que já existe, a
+  // galeria pode ter as fotos do armazenamento, e um link solto não as substitui.
+  const comImagem = presentes.includes("imagem_url");
   const paraGravar = aceitos.map((p) =>
-    antigos.has(p.codigo) ? base(p) : { ...base(p), moeda },
+    antigos.has(p.codigo)
+      ? base(p)
+      : { ...base(p), moeda, ...(comImagem ? { fotos: p.imagem_url ? [p.imagem_url] : [] } : {}) },
   );
 
   /** Grava um grupo de shape uniforme, em lotes, com reteste linha a linha no que falhar. */
@@ -286,23 +300,44 @@ export async function POST(req: NextRequest): Promise<Response> {
   );
 }
 
-/** GET devolve o modelo de planilha, para a pessoa não ter de adivinhar as colunas. */
-export async function GET(): Promise<Response> {
+/** GET devolve o modelo de planilha nos formatos Padrão, Meta Catalog e Bling ERP. */
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
-  const modelo = [
-    "codigo,nome,marca,categoria,preco,custo,estoque",
-    "IP15-128,iPhone 15 128GB,Apple,Celular,5499.00,4100.00,3",
-    "PERF-212,212 VIP Men 100ml,Carolina Herrera,Perfume,449.90,280.00,7",
-  ].join("\n");
+  const formato = req.nextUrl.searchParams.get("formato") ?? "padrao";
+
+  let modelo = "";
+  let filename = "modelo-catalogo.csv";
+
+  if (formato === "meta") {
+    filename = "modelo-catalogo-meta.csv";
+    modelo = [
+      "id,title,description,availability,condition,price,link,image_link,brand,gtin,google_product_category",
+      "IP15-128,iPhone 15 128GB,Smartphone Apple com tela Super Retina XDR e câmera 48MP,in stock,new,5499.00 BRL,https://sualoja.com.br/produto/iphone-15,https://sualoja.com.br/fotos/iphone15.jpg,Apple,0195949038280,Electronics > Communications > Telephony > Mobile Phones",
+      "PERF-212,212 VIP Men 100ml,Perfume masculino sofisticado e marcante,in stock,new,449.90 BRL,https://sualoja.com.br/produto/212-vip,https://sualoja.com.br/fotos/212.jpg,Carolina Herrera,8411061723760,Health & Beauty > Personal Care > Cosmetics > Perfumes",
+    ].join("\n");
+  } else if (formato === "bling") {
+    filename = "modelo-catalogo-bling.csv";
+    modelo = [
+      "codigo,descricao,preco,custo,estoque,gtin,ncm,origem,peso_bruto,largura,altura,profundidade,marca,categoria",
+      "IP15-128,iPhone 15 128GB,5499.00,4100.00,10,0195949038280,8517.13.00,0,171,8,15,1,Apple,Smartphones",
+      "PERF-212,212 VIP Men 100ml,449.90,280.00,15,8411061723760,3303.00.10,2,400,10,18,8,Carolina Herrera,Perfumaria",
+    ].join("\n");
+  } else {
+    filename = "modelo-catalogo.csv";
+    modelo = [
+      "codigo,nome,descricao,marca,categoria,preco,preco_de,custo,estoque,gtin,ncm,link_loja",
+      "IP15-128,iPhone 15 128GB,Smartphone Apple com chip A16 Bionic e câmera de 48MP,Apple,Celular,5499.00,5999.00,4100.00,10,0195949038280,8517.13.00,https://sualoja.com.br/iphone-15",
+      "PERF-212,212 VIP Men 100ml,Fragrância masculina exclusiva e marcante,Carolina Herrera,Perfume,449.90,499.90,280.00,7,8411061723760,3303.00.10,https://sualoja.com.br/212-vip",
+    ].join("\n");
+  }
 
   return new Response(`﻿${modelo}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
-      "content-disposition": 'attachment; filename="modelo-catalogo.csv"',
+      "content-disposition": `attachment; filename="${filename}"`,
       "x-request-id": requestId,
     },
   });

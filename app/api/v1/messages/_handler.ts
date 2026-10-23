@@ -784,23 +784,84 @@ export async function sendMessageHandler(
       );
     }
     // Enriquecimento automático a partir do catálogo da organização:
-    // garante que o balão da inbox desenha foto, nome e preço sem join posterior.
-    if (!outboundMetadata.product_name) {
-      const { data: prod } = await supabase
-        .from("catalog_products")
-        .select("nome, preco_cents, imagem_url")
-        .eq("organization_id", ctx.organization_id)
-        .eq("codigo", retailerId)
-        .maybeSingle();
-      if (prod) {
-        outboundMetadata = {
-          ...outboundMetadata,
-          product_name: prod.nome,
-          product_price_cents: prod.preco_cents,
-          product_image_url: prod.imagem_url,
-        };
-        if (!outboundBody) {
-          outboundBody = prod.nome;
+    // Garante que o balão da inbox e o adapter do WhatsApp (WAHA) recebam todos os dados,
+    // incluindo todas as fotos assinadas (product_images_urls) e o vídeo do produto assinado (product_video_file_url).
+    const admin = createAdminClient();
+    const { data: prod } = await admin
+      .from("catalog_products")
+      .select("id, nome, descricao, preco_cents, preco_de_cents, imagem_url, fotos, video_url, video_file_path")
+      .eq("organization_id", ctx.organization_id)
+      .eq("codigo", retailerId)
+      .maybeSingle();
+
+    if (prod) {
+      const prodRecord = prod as {
+        id: string;
+        nome: string;
+        descricao?: string | null;
+        preco_cents: number;
+        preco_de_cents?: number | null;
+        imagem_url?: string | null;
+        fotos?: string[] | null;
+        video_url?: string | null;
+        video_file_path?: string | null;
+      };
+
+      if (!outboundMetadata.product_name) {
+        outboundMetadata.product_name = prodRecord.nome;
+      }
+      if (outboundMetadata.product_price_cents === undefined && prodRecord.preco_cents !== undefined) {
+        outboundMetadata.product_price_cents = prodRecord.preco_cents;
+      }
+      if (outboundMetadata.product_price_de_cents === undefined && prodRecord.preco_de_cents !== undefined) {
+        outboundMetadata.product_price_de_cents = prodRecord.preco_de_cents;
+      }
+      if (!outboundMetadata.product_description && prodRecord.descricao) {
+        outboundMetadata.product_description = prodRecord.descricao;
+      }
+      if (!outboundMetadata.product_video_url && prodRecord.video_url) {
+        outboundMetadata.product_video_url = prodRecord.video_url;
+      }
+      if (!outboundBody) {
+        outboundBody = prodRecord.nome;
+      }
+
+      // 1. Fotos: garante lista completa de URLs assinadas para o WhatsApp e Inbox
+      const currentImages = Array.isArray(outboundMetadata.product_images_urls)
+        ? (outboundMetadata.product_images_urls as string[]).filter(Boolean)
+        : [];
+
+      if (currentImages.length === 0 && prodRecord.fotos && prodRecord.fotos.length > 0) {
+        const { data: assinadas } = await admin.storage
+          .from("catalog-photos")
+          .createSignedUrls(prodRecord.fotos, 86400 * 7);
+        const signedList = (assinadas ?? [])
+          .map((a) => a.signedUrl || (a as unknown as { signedURL?: string }).signedURL)
+          .filter(Boolean) as string[];
+
+        if (signedList.length > 0) {
+          outboundMetadata.product_images_urls = signedList;
+          if (!outboundMetadata.product_image_url) {
+            outboundMetadata.product_image_url = signedList[0];
+          }
+        }
+      } else if (currentImages.length > 0) {
+        outboundMetadata.product_images_urls = currentImages;
+        if (!outboundMetadata.product_image_url) {
+          outboundMetadata.product_image_url = currentImages[0];
+        }
+      } else if (prodRecord.imagem_url && !outboundMetadata.product_image_url) {
+        outboundMetadata.product_image_url = prodRecord.imagem_url;
+        outboundMetadata.product_images_urls = [prodRecord.imagem_url];
+      }
+
+      // 2. Vídeo nativo do WhatsApp: se o produto possui video_file_path e ainda não foi assinado
+      if (!outboundMetadata.product_video_file_url && prodRecord.video_file_path) {
+        const { data: signedVideo } = await admin.storage
+          .from("catalog-videos")
+          .createSignedUrl(prodRecord.video_file_path, 86400 * 7);
+        if (signedVideo?.signedUrl) {
+          outboundMetadata.product_video_file_url = signedVideo.signedUrl;
         }
       }
     }

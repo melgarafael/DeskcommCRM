@@ -23,6 +23,7 @@ import {
 } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
+import { logger } from "@/lib/logger";
 import { DETALHE_CREDENCIAL_RECUSADA } from "../health";
 import type { ChannelAdapter, ChannelHealth, OutboundEnvelope, RecipientInput } from "../types";
 
@@ -286,9 +287,15 @@ function legendaDoProduto(envelope: OutboundEnvelope): string {
   const sku = (meta.product_retailer_id as string) || (meta.retailer_id as string) || "";
   const precoCents = typeof meta.product_price_cents === "number" ? meta.product_price_cents : null;
   const precoDeCents = typeof meta.product_price_de_cents === "number" ? meta.product_price_de_cents : null;
+  const videoFileUrl = (meta.product_video_file_url as string) || null;
   const videoUrl = (meta.product_video_url as string) || null;
+  const descricao = (meta.product_description as string) || null;
 
   const partes: string[] = [`🛍️ *${nome}*`];
+
+  if (descricao?.trim()) {
+    partes.push(`\n📝 ${descricao.trim()}`);
+  }
 
   if (precoCents !== null) {
     if (precoDeCents !== null && precoDeCents > precoCents) {
@@ -303,7 +310,8 @@ function legendaDoProduto(envelope: OutboundEnvelope): string {
     partes.push(`📦 Código (SKU): ${sku}`);
   }
 
-  if (videoUrl) {
+  // Só exibe a URL de vídeo se o vídeo não estiver sendo enviado diretamente como arquivo nativo
+  if (videoUrl && !videoFileUrl) {
     partes.push(`🎬 Vídeo demonstrativo: ${videoUrl}`);
   }
 
@@ -331,15 +339,93 @@ function legendaDoProduto(envelope: OutboundEnvelope): string {
     } else if (envelope.kind === "product") {
       await envelope.beforeSend?.();
       const meta = (envelope.metadata ?? {}) as Record<string, unknown>;
-      const imagemUrl = (meta.product_image_url as string) || null;
+      const videoFileUrl = (meta.product_video_file_url as string) || null;
+      const rawImages = (meta.product_images_urls as string[]) || [];
+      const singleImage = (meta.product_image_url as string) || null;
+      const imagesUrls = Array.isArray(rawImages) && rawImages.length > 0
+        ? rawImages.filter(Boolean)
+        : (singleImage ? [singleImage] : []);
       const texto = legendaDoProduto(envelope);
 
-      if (imagemUrl) {
+      if (videoFileUrl) {
+        const plan: WahaSendPlan = {
+          endpoint: "sendVideo",
+          payload: {
+            file: {
+              url: videoFileUrl,
+              mimetype: "video/mp4",
+            },
+            caption: texto,
+          },
+        };
+        try {
+          res = await client.sendMedia(envelope.sessionRef, to, plan);
+          // Vídeo enviado com a legenda completa. Em seguida, envia todas as fotos do produto em sequência:
+          for (const imgUrl of imagesUrls) {
+            try {
+              await new Promise((r) => setTimeout(r, 400));
+              await client.sendMedia(envelope.sessionRef, to, {
+                endpoint: "sendImage",
+                payload: {
+                  file: { url: imgUrl, mimetype: "image/jpeg" },
+                },
+              });
+            } catch (errFoto) {
+              logger.warn("[waha/product] falha ao enviar foto adicional do produto (com video)", {
+                erro: errFoto instanceof Error ? errFoto.message : String(errFoto),
+                imgUrl,
+              });
+            }
+          }
+        } catch {
+          // Fallback se envio do vídeo falhar: tenta enviar primeira imagem com legenda e o restante sem legenda
+          if (imagesUrls.length > 0) {
+            const planImg: WahaSendPlan = {
+              endpoint: "sendImage",
+              payload: {
+                file: { url: imagesUrls[0]!, mimetype: "image/jpeg" },
+                caption: texto,
+              },
+            };
+            try {
+              res = await client.sendMedia(envelope.sessionRef, to, planImg);
+              for (let i = 1; i < imagesUrls.length; i++) {
+                try {
+                  await new Promise((r) => setTimeout(r, 400));
+                  await client.sendMedia(envelope.sessionRef, to, {
+                    endpoint: "sendImage",
+                    payload: {
+                      file: { url: imagesUrls[i]!, mimetype: "image/jpeg" },
+                    },
+                  });
+                } catch {
+                  // silencia fotos subsequentes no fallback
+                }
+              }
+            } catch {
+              res = await client.sendMessage(
+                envelope.sessionRef,
+                to,
+                texto,
+                envelope.replyToExternalId ? idCompletoDaMensagem(envelope.replyToExternalId, to) : null,
+              );
+            }
+          } else {
+            res = await client.sendMessage(
+              envelope.sessionRef,
+              to,
+              texto,
+              envelope.replyToExternalId ? idCompletoDaMensagem(envelope.replyToExternalId, to) : null,
+            );
+          }
+        }
+      } else if (imagesUrls.length > 0) {
+        // Envia primeira foto com o card/legenda do produto
         const plan: WahaSendPlan = {
           endpoint: "sendImage",
           payload: {
             file: {
-              url: imagemUrl,
+              url: imagesUrls[0]!,
               mimetype: "image/jpeg",
             },
             caption: texto,
@@ -347,6 +433,23 @@ function legendaDoProduto(envelope: OutboundEnvelope): string {
         };
         try {
           res = await client.sendMedia(envelope.sessionRef, to, plan);
+          // Envia todas as fotos subsequentes (foto 2, foto 3, etc.)
+          for (let i = 1; i < imagesUrls.length; i++) {
+            try {
+              await new Promise((r) => setTimeout(r, 400));
+              await client.sendMedia(envelope.sessionRef, to, {
+                endpoint: "sendImage",
+                payload: {
+                  file: { url: imagesUrls[i]!, mimetype: "image/jpeg" },
+                },
+              });
+            } catch (errFoto) {
+              logger.warn("[waha/product] falha ao enviar foto adicional do produto", {
+                erro: errFoto instanceof Error ? errFoto.message : String(errFoto),
+                imgUrl: imagesUrls[i],
+              });
+            }
+          }
         } catch {
           res = await client.sendMessage(
             envelope.sessionRef,

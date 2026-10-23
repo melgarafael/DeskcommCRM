@@ -16,8 +16,8 @@ import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentP
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { ProductPickerDialog } from "@/components/inbox/composer/ProductPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
-import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
+import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import {
   MentionMenu,
   opcoesDeMencao,
@@ -631,9 +631,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
-        {mode === "reply" && (
-          <ReplyReviewPanel conversationId={conversationId} disabled={isDisabled} />
-        )}
         <TemplateMenu
           open={menuOpen}
           query={slash.query}
@@ -688,15 +685,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </p>
           </div>
         )}
-        <div className="mb-1.5 flex gap-1">
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setMode("reply")}
             className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              "rounded-full px-3 py-1 text-xs font-medium transition-all shadow-xs",
               mode === "reply"
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted",
+                ? "bg-[#00c853] text-white font-semibold shadow-xs"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
             {t("Responder")}
@@ -705,14 +702,30 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             type="button"
             onClick={() => setMode("note")}
             className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              "rounded-full px-3 py-1 text-xs font-medium transition-all shadow-xs",
               mode === "note"
-                ? "bg-warning text-warning-fg"
-                : "text-muted-foreground hover:bg-muted",
+                ? "bg-amber-500 text-white font-semibold shadow-xs"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
             {t("Nota interna")}
           </button>
+          {conversationId && (
+            <DraftReplyButton
+              conversationId={conversationId}
+              disabled={respostaBarrada}
+              onDraft={(sugestao) => {
+                setText(sugestao);
+                onDraftChange?.(sugestao, "reply");
+                setMode("reply");
+                setRascunhoUsado(false);
+                toast.success(t("Sugestão de resposta inserida!"));
+                setTimeout(() => {
+                  taRef.current?.focus();
+                }, 50);
+              }}
+            />
+          )}
         </div>
         {/*
           A FAIXA DA CITAÇÃO — o que o atendente escolheu responder.
@@ -830,8 +843,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 : t("Enter envia · Shift+Enter quebra linha")
             }
             className={cn(
-              "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
+              "max-h-40 min-h-9 flex-1 resize-none rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 text-sm shadow-xs",
+              "placeholder:text-muted-foreground focus:border-[#00c853] focus:ring-2 focus:ring-[#00c853]/25 focus:outline-hidden transition-all",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
@@ -840,7 +853,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             <Button
               type="button"
               size="icon"
-              className="h-10 w-10 shrink-0 sm:h-9 sm:w-9"
+              className="h-10 w-10 shrink-0 sm:h-9 sm:w-9 rounded-full bg-[#00c853] hover:bg-[#00b34a] text-white shadow-sm shadow-[#00c853]/25"
               onClick={handleSubmit}
               disabled={(mode === "note" ? isDisabled : envioBarrado) || !text.trim()}
               aria-label={t("Enviar")}
@@ -964,10 +977,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               metadata: {
                 product_retailer_id: payload.codigo,
                 product_name: payload.nome,
+                product_description: payload.descricao,
                 product_price_cents: payload.preco_cents,
                 product_price_de_cents: payload.preco_de_cents,
                 product_video_url: payload.video_url,
+                product_video_file_url: payload.video_file_url,
                 product_image_url: payload.imagem_url,
+                product_images_urls: payload.imagens_urls,
               },
             },
             { onSuccess: () => setProductPickerOpen(false) },

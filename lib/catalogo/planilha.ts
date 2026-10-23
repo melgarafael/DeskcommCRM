@@ -27,13 +27,25 @@ import { precoParaCentavos } from "@/lib/schemas/produtos";
  * lados, então as formas novas entram sem acento.
  */
 const COLUNAS: Record<string, readonly string[]> = {
-  codigo: ["codigo", "código", "sku", "ref", "referencia", "referência", "cod"],
-  nome: ["nome", "produto", "descricao", "descrição", "titulo", "título", "item", "nombre", "producto", "descripcion", "articulo"],
-  preco: ["preco", "preço", "valor", "preco de venda", "preço de venda", "venda", "precio", "precio de venta", "venta"],
-  custo: ["custo", "preco de custo", "preço de custo", "compra", "costo", "coste", "precio de costo", "precio de coste"],
-  marca: ["marca", "fabricante"],
-  categoria: ["categoria", "tipo", "departamento"],
-  quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock"],
+  codigo: ["codigo", "código", "sku", "ref", "referencia", "referência", "cod", "id", "mpn"],
+  nome: ["nome", "produto", "titulo", "título", "title", "item", "nombre", "producto", "articulo"],
+  descricao: ["descricao", "descrição", "description", "detalhes", "detalhe", "descripcion", "descricao_curta", "descricao curta"],
+  preco: ["preco", "preço", "valor", "preco de venda", "preço de venda", "venda", "precio", "precio de venta", "venta", "price", "sale_price"],
+  preco_de: ["preco_de", "preco de", "preço de", "preco original", "preço original", "regular_price", "compare_at_price"],
+  custo: ["custo", "preco de custo", "preço de custo", "compra", "costo", "coste", "precio de costo", "precio de coste", "cost"],
+  marca: ["marca", "fabricante", "brand"],
+  categoria: ["categoria", "tipo", "departamento", "category", "google_product_category", "product_type"],
+  quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock", "availability"],
+  gtin: ["gtin", "ean", "ean13", "gtin/ean", "barcode", "codigo de barras", "código de barras"],
+  ncm: ["ncm", "classificacao fiscal", "classificação fiscal"],
+  origem_fiscal: ["origem", "origem fiscal", "origem_fiscal"],
+  peso_gramas: ["peso", "peso_gramas", "peso bruto", "peso liquido", "peso líquido", "peso (g)", "peso (kg)", "weight"],
+  altura_cm: ["altura", "altura_cm", "altura (cm)", "height"],
+  largura_cm: ["largura", "largura_cm", "largura (cm)", "width"],
+  comprimento_cm: ["comprimento", "profundidade", "comprimento_cm", "profundidade_cm", "length"],
+  condicao: ["condicao", "condição", "condition"],
+  link_loja: ["link", "url", "link_loja", "link da loja", "link do produto", "product_link"],
+  imagem_url: ["imagem", "imagem_url", "image_link", "image_url", "foto", "url imagem", "imagens"],
 };
 
 function normalizarCabecalho(texto: string): string {
@@ -112,13 +124,41 @@ export interface LinhaImportada {
   linha: number;
   codigo: string;
   nome: string;
+  descricao?: string;
   preco_cents: number;
+  preco_de_cents?: number;
   custo_cents: number | null;
   marca?: string;
   categoria?: string;
   quantidade: number;
   controla_estoque: boolean;
+  gtin?: string;
+  ncm?: string;
+  origem_fiscal?: string;
+  peso_gramas?: number;
+  altura_cm?: number;
+  largura_cm?: number;
+  comprimento_cm?: number;
+  condicao?: string;
+  link_loja?: string;
+  imagem_url?: string;
 }
+
+/** Os campos de `LinhaImportada` que só existem quando a planilha tem a coluna. */
+export const OPCIONAIS_DA_PLANILHA = [
+  "descricao",
+  "preco_de_cents",
+  "gtin",
+  "ncm",
+  "origem_fiscal",
+  "peso_gramas",
+  "altura_cm",
+  "largura_cm",
+  "comprimento_cm",
+  "condicao",
+  "link_loja",
+  "imagem_url",
+] as const satisfies readonly (keyof LinhaImportada)[];
 
 export interface ErroDaLinha {
   /** A linha como a pessoa a vê na planilha: 1 é o cabeçalho. */
@@ -152,8 +192,10 @@ export function lerPlanilha(
 
   const campos = new Set(mapa.values());
   // Sem nome ou sem preço não há catálogo — e dizer isso ANTES de processar 300
-  // linhas é o que evita um relatório com 300 erros iguais.
-  const faltando = ["nome", "preco"].filter((c) => !campos.has(c));
+  // linhas é o que evita um relatório com 300 erros iguais. A planilha do Bling
+  // nomeia o produto na coluna `descricao`, então ela também conta como nome.
+  const temNome = campos.has("nome") || campos.has("descricao");
+  const faltando = ["nome", "preco"].filter((c) => (c === "nome" ? !temNome : !campos.has(c)));
   if (faltando.length > 0) {
     // A recusa NOMEIA a coluna que falta, uma frase por combinação. Quem tem
     // `nome` e não tem preço, se ler "precisa de uma coluna de nome e de
@@ -186,7 +228,8 @@ export function lerPlanilha(
       return "";
     };
 
-    const nome = valor("nome").replace(/\s+/g, " ");
+    const nomeBruto = valor("nome") || valor("descricao");
+    const nome = nomeBruto.replace(/\s+/g, " ");
     if (nome === "") {
       erros.push({ linha: numeroNaPlanilha, motivo: _t("sem nome do produto") });
       continue;
@@ -194,7 +237,6 @@ export function lerPlanilha(
 
     const preco_cents = precoParaCentavos(valor("preco"));
     if (preco_cents === null) {
-      // O valor cru entra na mensagem: quem vai corrigir precisa achar a célula.
       erros.push({
         linha: numeroNaPlanilha,
         motivo:
@@ -202,6 +244,9 @@ export function lerPlanilha(
       });
       continue;
     }
+
+    const precoDeTexto = valor("preco_de");
+    const preco_de_cents = precoDeTexto === "" ? null : precoParaCentavos(precoDeTexto);
 
     const custoTexto = valor("custo");
     const custo_cents = custoTexto === "" ? null : precoParaCentavos(custoTexto);
@@ -236,11 +281,9 @@ export function lerPlanilha(
         linha: String(anterior.linha),
         anterior: anterior.codigo,
       };
-      // Uma passada só, com função: o código vem da planilha e um "$&" ou um
-      // "{linha}" dentro dele não pode virar outra coisa.
       erros.push({
         linha: numeroNaPlanilha,
-        motivo: frase.replace(/\{(codigo|linha|anterior)\}/g, (_, nome: string) => valores[nome]!),
+        motivo: frase.replace(/\{(codigo|linha|anterior)\}/g, (_, n: string) => valores[n]!),
       });
       continue;
     }
@@ -250,19 +293,67 @@ export function lerPlanilha(
     // diferente de estoque zero. Sem essa distinção, uma planilha sem a coluna
     // deixaria o catálogo inteiro invisível para o agente.
     const temColunaEstoque = campos.has("quantidade");
-    const qtdTexto = valor("quantidade");
-    const quantidade = temColunaEstoque ? Number(qtdTexto.replace(/\D/g, "")) || 0 : 0;
+    const qtdTexto = valor("quantidade").toLowerCase();
+    let quantidade = 0;
+    if (temColunaEstoque) {
+      if (qtdTexto.includes("in stock") || qtdTexto === "disponivel" || qtdTexto === "disponível") {
+        quantidade = 10;
+      } else if (qtdTexto.includes("out of stock") || qtdTexto === "esgotado") {
+        quantidade = 0;
+      } else {
+        quantidade = Number(qtdTexto.replace(/\D/g, "")) || 0;
+      }
+    }
 
+    // Processamento de peso (converte kg para g se contiver decimal ou 'kg')
+    let peso_gramas: number | null = null;
+    const pesoTexto = valor("peso_gramas");
+    if (pesoTexto) {
+      if (pesoTexto.toLowerCase().includes("kg") || /[.,]/.test(pesoTexto)) {
+        const pesoKg = parseFloat(pesoTexto.replace(",", "."));
+        if (!isNaN(pesoKg)) peso_gramas = Math.round(pesoKg * 1000);
+      } else {
+        const p = parseInt(pesoTexto.replace(/\D/g, ""), 10);
+        if (!isNaN(p)) peso_gramas = p;
+      }
+    }
+
+    const medida = (campo: string): number | null => {
+      const n = parseInt(valor(campo).replace(/\D/g, ""), 10);
+      return Number.isNaN(n) ? null : n;
+    };
+    const altura_cm = medida("altura_cm");
+    const largura_cm = medida("largura_cm");
+    const comprimento_cm = medida("comprimento_cm");
+
+    const descRaw = valor("descricao");
+    const descricao = descRaw && descRaw !== nome ? descRaw : "";
+
+    // Campo opcional só entra quando a célula tem valor. A importação faz
+    // upsert pelo código: um `null` aqui, numa planilha que nem tem a coluna,
+    // apagaria o peso, as medidas ou o preço "de" que o produto já tinha.
     produtos.push({
       linha: numeroNaPlanilha,
       codigo,
       nome,
+      ...(descricao ? { descricao } : {}),
       preco_cents,
+      ...(preco_de_cents !== null ? { preco_de_cents } : {}),
       custo_cents,
       ...(valor("marca") ? { marca: valor("marca") } : {}),
       ...(valor("categoria") ? { categoria: valor("categoria") } : {}),
       quantidade,
       controla_estoque: temColunaEstoque,
+      ...(valor("gtin") ? { gtin: valor("gtin") } : {}),
+      ...(valor("ncm") ? { ncm: valor("ncm") } : {}),
+      ...(valor("origem_fiscal") ? { origem_fiscal: valor("origem_fiscal") } : {}),
+      ...(peso_gramas !== null ? { peso_gramas } : {}),
+      ...(altura_cm !== null ? { altura_cm } : {}),
+      ...(largura_cm !== null ? { largura_cm } : {}),
+      ...(comprimento_cm !== null ? { comprimento_cm } : {}),
+      ...(valor("condicao") ? { condicao: valor("condicao") } : {}),
+      ...(valor("link_loja") ? { link_loja: valor("link_loja") } : {}),
+      ...(valor("imagem_url") ? { imagem_url: valor("imagem_url") } : {}),
     });
   }
 

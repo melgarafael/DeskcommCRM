@@ -27,7 +27,6 @@ import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
  *     origem — e as fotos continuam livres, porque a integração não as toca.
  */
 
-/** O formulário: texto na tela, centavos e booleanos no PATCH. */
 export interface RascunhoDaEdicao {
   codigo: string;
   nome: string;
@@ -40,6 +39,15 @@ export interface RascunhoDaEdicao {
   quantidade: string;
   controla_estoque: boolean;
   video_url: string;
+  gtin: string;
+  ncm: string;
+  origem_fiscal: string;
+  peso_gramas: string;
+  altura_cm: string;
+  largura_cm: string;
+  comprimento_cm: string;
+  condicao: string;
+  link_loja: string;
 }
 
 /** Origens que ESTE CRM escreve. Todo o resto veio de fora. */
@@ -84,6 +92,15 @@ export function rascunhoDaEdicao(produto: Produto): RascunhoDaEdicao {
     quantidade: String(produto.quantidade),
     controla_estoque: produto.controla_estoque,
     video_url: produto.video_url ?? "",
+    gtin: produto.gtin ?? "",
+    ncm: produto.ncm ?? "",
+    origem_fiscal: produto.origem_fiscal ?? "",
+    peso_gramas: produto.peso_gramas !== null ? String(produto.peso_gramas) : "",
+    altura_cm: produto.altura_cm !== null ? String(produto.altura_cm) : "",
+    largura_cm: produto.largura_cm !== null ? String(produto.largura_cm) : "",
+    comprimento_cm: produto.comprimento_cm !== null ? String(produto.comprimento_cm) : "",
+    condicao: produto.condicao ?? "new",
+    link_loja: produto.link_loja ?? "",
   };
 }
 
@@ -131,6 +148,16 @@ export function corpoDaEdicao(
   const video_url = rascunho.video_url.trim();
   const quantidade = Math.max(0, Math.trunc(Number(rascunho.quantidade.replace(",", ".")) || 0));
 
+  const gtin = rascunho.gtin.trim();
+  const ncm = rascunho.ncm.trim();
+  const origem_fiscal = rascunho.origem_fiscal.trim();
+  const peso = rascunho.peso_gramas.trim() ? Number(rascunho.peso_gramas) : null;
+  const altura = rascunho.altura_cm.trim() ? Number(rascunho.altura_cm) : null;
+  const largura = rascunho.largura_cm.trim() ? Number(rascunho.largura_cm) : null;
+  const comprimento = rascunho.comprimento_cm.trim() ? Number(rascunho.comprimento_cm) : null;
+  const condicao = rascunho.condicao.trim();
+  const link_loja = rascunho.link_loja.trim();
+
   const corpo: Record<string, unknown> = {};
   if (codigo !== produto.codigo) corpo.codigo = codigo;
   if (nome !== produto.nome) corpo.nome = nome;
@@ -145,6 +172,16 @@ export function corpoDaEdicao(
     corpo.controla_estoque = rascunho.controla_estoque;
   }
   if (quantidade !== produto.quantidade) corpo.quantidade = quantidade;
+
+  if (gtin !== (produto.gtin ?? "")) corpo.gtin = gtin || null;
+  if (ncm !== (produto.ncm ?? "")) corpo.ncm = ncm || null;
+  if (origem_fiscal !== (produto.origem_fiscal ?? "")) corpo.origem_fiscal = origem_fiscal || null;
+  if (peso !== produto.peso_gramas) corpo.peso_gramas = peso;
+  if (altura !== produto.altura_cm) corpo.altura_cm = altura;
+  if (largura !== produto.largura_cm) corpo.largura_cm = largura;
+  if (comprimento !== produto.comprimento_cm) corpo.comprimento_cm = comprimento;
+  if (condicao !== (produto.condicao ?? "new")) corpo.condicao = condicao || "new";
+  if (link_loja !== (produto.link_loja ?? "")) corpo.link_loja = link_loja || null;
 
   return { corpo };
 }

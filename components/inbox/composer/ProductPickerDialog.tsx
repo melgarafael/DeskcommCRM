@@ -25,11 +25,14 @@ import type { Produto } from "@/lib/schemas/produtos";
 export interface ProductPickPayload {
   codigo: string;
   nome: string;
+  descricao?: string | null;
   body?: string;
   preco_cents?: number;
   preco_de_cents?: number | null;
   video_url?: string | null;
+  video_file_url?: string | null;
   imagem_url?: string | null;
+  imagens_urls?: string[];
 }
 
 interface Props {
@@ -71,14 +74,21 @@ export function ProductPickerDialog({ open, onOpenChange, sending, onPick }: Pro
 
   const handleConfirm = () => {
     if (!selectedProduct) return;
+    const fotos = Array.isArray(selectedProduct.fotos_urls) && selectedProduct.fotos_urls.length > 0
+      ? selectedProduct.fotos_urls
+      : selectedProduct.imagem_url ? [selectedProduct.imagem_url] : [];
+
     onPick({
       codigo: selectedProduct.codigo,
       nome: selectedProduct.nome,
+      descricao: selectedProduct.descricao,
       body: customText.trim() || undefined,
       preco_cents: Number(selectedProduct.preco_cents),
       preco_de_cents: selectedProduct.preco_de_cents ? Number(selectedProduct.preco_de_cents) : null,
       video_url: selectedProduct.video_url,
+      video_file_url: (selectedProduct as unknown as { video_file_url?: string | null })?.video_file_url ?? null,
       imagem_url: selectedProduct.imagem_url,
+      imagens_urls: fotos,
     });
   };
 
@@ -155,9 +165,18 @@ export function ProductPickerDialog({ open, onOpenChange, sending, onPick }: Pro
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <h4 className="text-sm font-medium truncate text-foreground">{prod.nome}</h4>
-                        {prod.video_url ? (
-                          <span className="shrink-0 rounded bg-sky-500/10 px-1 py-0.2 text-[9px] font-semibold text-sky-600 dark:text-sky-400">
-                            Vídeo
+                        {prod.fotos && prod.fotos.length > 1 ? (
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+                            {prod.fotos.length} fotos
+                          </span>
+                        ) : null}
+                        {prod.video_file_path || (prod as unknown as { video_file_url?: string }).video_file_url ? (
+                          <span className="shrink-0 rounded bg-emerald-500/15 px-1 py-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">
+                            Vídeo WhatsApp
+                          </span>
+                        ) : prod.video_url ? (
+                          <span className="shrink-0 rounded bg-sky-500/10 px-1 py-0.5 text-[9px] font-semibold text-sky-600 dark:text-sky-400">
+                            Vídeo Link
                           </span>
                         ) : null}
                       </div>
@@ -196,6 +215,11 @@ export function ProductPickerDialog({ open, onOpenChange, sending, onPick }: Pro
                         <span>{t("Disponível")}</span>
                       )}
                     </div>
+                    {prod.descricao ? (
+                      <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground/80 italic">
+                        {prod.descricao}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               );

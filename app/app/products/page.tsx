@@ -113,6 +113,19 @@ export default async function ProdutosPage({
     }
   }
 
+  const caminhosDeVideos = produtos
+    .map((p) => p.video_file_path)
+    .filter((v): v is string => Boolean(v));
+  const urlsDosVideos: Record<string, string> = {};
+  if (caminhosDeVideos.length > 0) {
+    const { data: assinadasVideos } = await createAdminClient()
+      .storage.from("catalog-videos")
+      .createSignedUrls(caminhosDeVideos, 3600);
+    for (const a of assinadasVideos ?? []) {
+      if (a.path && a.signedUrl) urlsDosVideos[a.path] = a.signedUrl;
+    }
+  }
+
   return (
     <ProdutosClient
       inicial={produtos}
@@ -121,6 +134,7 @@ export default async function ProdutosPage({
       porPagina={PRODUTOS_POR_PAGINA}
       buscaInicial={busca}
       urlsDasFotos={urlsDasFotos}
+      urlsDosVideos={urlsDosVideos}
       podeEditar={podeEditar}
       textos={{
         titulo: t("Produtos"),

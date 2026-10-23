@@ -1154,6 +1154,10 @@ export const AUDIT_ACTIONS = [
   // `removidas` no metadata) ou dentro do `template.deleted`, que são os atos
   // em que a imagem sai de fato.
   "template.media_added",
+
+  // Configuração e sincronização do Catálogo Meta (Graph API / Feed) diretamente no CRM
+  "catalog_product.meta_config_updated",
+  "catalog_product.meta_synced",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

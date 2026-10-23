@@ -12,7 +12,6 @@ import {
   useConnectOfficialChannel,
   useOfficialChannel,
   useRegistrarWebhookOficial,
-  useUpdateOfficialCatalog,
 } from "@/hooks/channels/useOfficialChannel";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
@@ -69,8 +68,6 @@ export function CanalOficialClient() {
   const { data, isPending } = useOfficialChannel();
   const conectar = useConnectOfficialChannel();
   const registrarWebhook = useRegistrarWebhookOficial();
-  const atualizarCatalogo = useUpdateOfficialCatalog();
-  const [catalogInput, setCatalogInput] = useState("");
   const [form, setForm] = useState({
     phone_number_id: "",
     waba_id: "",
@@ -127,72 +124,28 @@ export function CanalOficialClient() {
       ) : null}
 
       {estado?.connected ? (
-        <Card className="flex flex-col gap-3 p-4 border-primary/20 shadow-sm" data-testid="card-catalogo-meta">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <ShoppingBag className="size-5 text-primary" />
-              <div>
-                <h2 className="font-medium text-base leading-none">
+        <Card className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 border-primary/20 shadow-sm" data-testid="card-catalogo-meta">
+          <div className="flex items-center gap-3">
+            <ShoppingBag className="size-5 text-primary shrink-0" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-medium text-sm leading-none">
                   {t("Catálogo de Produtos Meta (Commerce Manager)")}
                 </h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("Vincule o catálogo para envio de produtos pelo Inbox e recomendação pelos Agentes de IA.")}
-                </p>
+                {estado.catalogId ? (
+                  <Badge variant="secondary" className="font-mono text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40">
+                    {estado.catalogId}
+                  </Badge>
+                ) : null}
               </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("O gerenciamento, credenciais e sincronização de produtos da Meta agora moram diretamente na página de Produtos.")}
+              </p>
             </div>
-            {estado.catalogId ? (
-              <Badge variant="secondary" className="font-mono text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40">
-                {t("Catálogo Ativo:")} {estado.catalogId}
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400">
-                {t("Nenhum catálogo vinculado")}
-              </Badge>
-            )}
           </div>
-
-          <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <div className="relative flex-1 max-w-md">
-              <Input
-                id="input-catalogo-id"
-                value={catalogInput}
-                onChange={(e) => setCatalogInput(e.target.value)}
-                placeholder={estado.catalogId ?? t("Cole aqui o ID do Catálogo (ex: 28651441394507856)")}
-                className="font-mono text-sm"
-              />
-            </div>
-            <Button
-              type="button"
-              variant="default"
-              onClick={async () => {
-                const val = catalogInput.trim();
-                if (!val) {
-                  toast.error(t("Informe o ID do Catálogo"));
-                  return;
-                }
-                await atualizarCatalogo.mutateAsync(val);
-                toast.success(t("Catálogo Meta salvo com sucesso!"));
-                setCatalogInput("");
-              }}
-              disabled={atualizarCatalogo.isPending}
-            >
-              {atualizarCatalogo.isPending ? t("Salvando…") : t("Salvar Catálogo")}
-            </Button>
-            {estado.catalogId ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={async () => {
-                  await atualizarCatalogo.mutateAsync(null);
-                  toast.success(t("Catálogo Meta desvinculado!"));
-                  setCatalogInput("");
-                }}
-                disabled={atualizarCatalogo.isPending}
-              >
-                {t("Desvincular")}
-              </Button>
-            ) : null}
-          </div>
+          <Button variant="outline" size="sm" asChild className="shrink-0">
+            <a href="/app/products">{t("Acessar Produtos & Catálogo")}</a>
+          </Button>
         </Card>
       ) : null}
 

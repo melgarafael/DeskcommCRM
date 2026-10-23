@@ -118,6 +118,16 @@ export const produtoCreateSchema = z.object({
   ativo: z.boolean().default(true),
   imagem_url: z.string().trim().url().max(2000).optional(),
   video_url: z.string().trim().url().max(2000).nullable().optional(),
+  video_file_path: z.string().trim().max(500).nullable().optional(),
+  gtin: z.string().trim().max(50).nullable().optional(),
+  ncm: z.string().trim().max(20).nullable().optional(),
+  origem_fiscal: z.string().trim().max(10).nullable().optional(),
+  peso_gramas: z.number().int().min(0).nullable().optional(),
+  altura_cm: z.number().int().min(0).nullable().optional(),
+  largura_cm: z.number().int().min(0).nullable().optional(),
+  comprimento_cm: z.number().int().min(0).nullable().optional(),
+  condicao: z.string().trim().max(30).nullable().optional(),
+  link_loja: z.string().trim().url().max(2000).nullable().optional(),
 });
 
 /** Tudo opcional: o PATCH muda o que veio e não encosta no resto. */
@@ -143,13 +153,27 @@ export interface Produto {
   origem: string;
   imagem_url: string | null;
   video_url: string | null;
+  video_file_path: string | null;
+  gtin: string | null;
+  ncm: string | null;
+  origem_fiscal: string | null;
+  peso_gramas: number | null;
+  altura_cm: number | null;
+  largura_cm: number | null;
+  comprimento_cm: number | null;
+  condicao: string | null;
+  link_loja: string | null;
   /** Caminhos em `catalog-photos`, na ordem da tela (migration 0390). */
   fotos: string[];
+  fotos_urls?: string[];
+  video_file_url?: string | null;
   updated_at: string;
 }
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
   "id, codigo, nome, descricao, marca, categoria, preco_cents, preco_de_cents, moeda, custo_cents, " +
-  "controla_estoque, quantidade, ativo, origem, imagem_url, video_url, fotos, updated_at";
+  "controla_estoque, quantidade, ativo, origem, imagem_url, video_url, video_file_path, " +
+  "gtin, ncm, origem_fiscal, peso_gramas, altura_cm, largura_cm, comprimento_cm, condicao, link_loja, " +
+  "fotos, updated_at";
 

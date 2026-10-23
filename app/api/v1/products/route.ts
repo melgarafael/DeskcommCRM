@@ -86,24 +86,61 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (error) return fail("internal_error", "Erro ao listar os produtos.", 500, { requestId });
 
   const lista = (data ?? []) as unknown as Produto[];
-  const capasPrecisamAssinar: string[] = [];
+  const fotosPrecisamAssinar: string[] = [];
   for (const p of lista) {
-    if (!p.imagem_url && p.fotos?.[0] && fotoPertenceAoProduto(p.fotos[0], authz.org.orgId, p.id)) {
-      capasPrecisamAssinar.push(p.fotos[0]);
+    if (p.fotos && Array.isArray(p.fotos)) {
+      for (const f of p.fotos) {
+        if (fotoPertenceAoProduto(f, authz.org.orgId, p.id)) {
+          fotosPrecisamAssinar.push(f);
+        }
+      }
+    } else if (!p.imagem_url && p.fotos?.[0] && fotoPertenceAoProduto(p.fotos[0], authz.org.orgId, p.id)) {
+      fotosPrecisamAssinar.push(p.fotos[0]);
     }
   }
 
-  if (capasPrecisamAssinar.length > 0) {
+  if (fotosPrecisamAssinar.length > 0) {
     const { data: assinadas } = await createAdminClient()
       .storage.from(BUCKET_DAS_FOTOS)
-      .createSignedUrls(capasPrecisamAssinar, 86400 * 7);
+      .createSignedUrls(fotosPrecisamAssinar, 86400 * 7);
     const mapaUrl: Record<string, string> = {};
     for (const a of assinadas ?? []) {
-      if (a.path && a.signedUrl) mapaUrl[a.path] = a.signedUrl;
+      const url = a.signedUrl || (a as unknown as { signedURL?: string }).signedURL;
+      if (a.path && url) mapaUrl[a.path] = url;
     }
     for (const p of lista) {
-      if (!p.imagem_url && p.fotos?.[0] && mapaUrl[p.fotos[0]]) {
-        p.imagem_url = mapaUrl[p.fotos[0]]!;
+      const urls: string[] = [];
+      if (p.fotos && Array.isArray(p.fotos)) {
+        for (const f of p.fotos) {
+          if (mapaUrl[f]) urls.push(mapaUrl[f]!);
+        }
+      }
+      p.fotos_urls = urls;
+      if (!p.imagem_url && urls[0]) {
+        p.imagem_url = urls[0];
+      }
+    }
+  }
+
+  const videosPrecisamAssinar: string[] = [];
+  for (const p of lista) {
+    if (p.video_file_path) {
+      videosPrecisamAssinar.push(p.video_file_path);
+    }
+  }
+
+  if (videosPrecisamAssinar.length > 0) {
+    const { data: assinadasVideos } = await createAdminClient()
+      .storage.from("catalog-videos")
+      .createSignedUrls(videosPrecisamAssinar, 86400 * 7);
+    const mapaVideoUrl: Record<string, string> = {};
+    for (const a of assinadasVideos ?? []) {
+      const url = a.signedUrl || (a as unknown as { signedURL?: string }).signedURL;
+      if (a.path && url) mapaVideoUrl[a.path] = url;
+    }
+    for (const p of lista) {
+      if (p.video_file_path && mapaVideoUrl[p.video_file_path]) {
+        p.video_file_url = mapaVideoUrl[p.video_file_path]!;
       }
     }
   }
