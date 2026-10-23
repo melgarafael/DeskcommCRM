@@ -17,6 +17,9 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
+import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
+import { MOEDA_PADRAO } from "@/lib/money";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import {
   TIPOS_CADASTRAVEIS_DA_CAPTACAO,
@@ -28,30 +31,6 @@ import {
 } from "@/lib/webhooks/campo-da-captacao";
 
 type Traduz = (texto: string) => string;
-
-/** O rótulo de cada tipo na tela. Cada texto é literal dentro de `t()` para o guarda de tradução enxergá-lo. */
-function rotuloDoTipo(tipo: TipoCadastravel, t: Traduz): string {
-  switch (tipo) {
-    case "text":
-      return t("Texto");
-    case "textarea":
-      return t("Texto longo");
-    case "number":
-      return t("Número");
-    case "currency":
-      return t("Moeda (BRL)");
-    case "date":
-      return t("Data");
-    case "email":
-      return t("E-mail");
-    case "phone":
-      return t("Telefone");
-    case "url":
-      return t("Link");
-    case "boolean":
-      return t("Sim/Não");
-  }
-}
 
 export interface CampoDoFunilDaCaptacao {
   /** Só é `true` quando há funil legível e a fonte ainda existe — sem isso não se oferece o botão. */
@@ -147,6 +126,8 @@ export function CadastrarCampo({
   cadastrar: CampoDoFunilDaCaptacao["cadastrar"];
 }) {
   const t = useT();
+  // O tipo moeda diz a moeda da organização (« Moeda (EUR) »), não « (BRL) » em duro.
+  const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
   const [aberto, setAberto] = React.useState(false);
   const [rotulo, setRotulo] = React.useState(() => rotuloSugerido(chave));
   const [tipo, setTipo] = React.useState<TipoCadastravel>(() => tipoInicial ?? tipoSugerido(valor));
@@ -201,7 +182,7 @@ export function CadastrarCampo({
           <SelectContent>
             {TIPOS_CADASTRAVEIS_DA_CAPTACAO.map((t1) => (
               <SelectItem key={t1} value={t1}>
-                {rotuloDoTipo(t1, t)}
+                {rotuloDoTipo(t1, t, moeda)}
               </SelectItem>
             ))}
           </SelectContent>

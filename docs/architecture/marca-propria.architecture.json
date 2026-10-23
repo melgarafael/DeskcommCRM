@@ -106,8 +106,10 @@
     { "id": "resend", "lane": "saida", "col": 7, "type": "service", "label": "lib/email/resend.ts", "sublabel": "nome de exibição = marca; endereço = do OPERADOR (domínio verificado). Vazio = not_configured" },
     { "id": "lgpdworker", "lane": "saida", "col": 6, "type": "service", "label": "workers/lgpd-export-worker.ts + export-collector", "sublabel": "monta o ExportPayload; roda pelo scheduler (event-log-drain), nunca no contêiner worker" },
     { "id": "pdf", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/pdf-renderer.tsx", "sublabel": "DESLIGADO da marca de propósito — ver o card vermelho" },
-    {"id": "iconeapp", "lane": "saida", "col": 9, "type": "service", "label": "/app-icon/192 e /app-icon/512", "sublabel": "arquivo platform/favicon_path limitado; falha retorna desenho e log"},
-    {"id": "manifestapp", "lane": "saida", "col": 10, "type": "frontend", "label": "manifest → aplicativo instalado", "sublabel": "marca pública da instalação; 192/512 PNG; leitura em runtime"}
+    {"id": "iconeapp", "lane": "saida", "col": 9, "type": "service", "label": "/app-icon/{180,192,512,maskable}", "sublabel": "arquivo platform/favicon_path limitado; 180 (iPhone) e maskable com o desenho na zona segura; falha retorna desenho e log"},
+    {"id": "manifestapp", "lane": "saida", "col": 10, "type": "frontend", "label": "manifest → aplicativo instalado", "sublabel": "marca pública da instalação; id /app, cores da régua, 192/512 + maskable; apple-touch-icon 180 no layout; leitura em runtime"},
+    {"id": "telaapp", "lane": "humano", "col": 10, "type": "frontend", "label": "/app/settings/aplicativo (App no celular)", "sublabel": "passo a passo por aparelho, lido no cliente; sem https diz que não há app, sem botão (ADR-0006, decisão c)"},
+    {"id": "swapp", "lane": "saida", "col": 11, "type": "frontend", "label": "public/notify-sw.js", "sublabel": "todo push vira notificação; navegação sem rede → página neutra SEM marca nem dado (D4); nenhum cache"}
   ],
   "edges": [
     { "id": "e1", "from": "installsh", "to": "env", "label": "grava a marca no .env — e o arquivo é escrito com truncamento: chave que o script não grava some no update seguinte" },
@@ -180,7 +182,11 @@
     { "id": "e63", "from": "layout", "to": "marcacliente", "label": "a MESMA marcaResolvida() do título e do CSS desce por prop, no payload do RSC — mesma rota de user/activeOrg" },
     { "id": "e64", "from": "marcacliente", "to": "interface", "label": "useMarcaDaInstalacao(): SSR e hidratação leem o mesmo objeto, então o logo do revendedor não troca de elemento no meio do caminho" },
     {"id": "e-icon-app-a", "from": "platformbranding", "to": "iconeapp", "label": "favicon_path validado; Storage da instalação; fallback limitado"},
-    {"id": "e-icon-app-b", "from": "iconeapp", "to": "manifestapp", "label": "PNG 192/512 públicos, sem cookie de organização"}
+    {"id": "e-icon-app-b", "from": "iconeapp", "to": "manifestapp", "label": "PNG 180/192/512/maskable públicos, sem cookie de organização"},
+    {"id": "e-tela-app-a", "from": "registry", "to": "telaapp", "label": "porta em Sua conta, ao lado de Notificações"},
+    {"id": "e-tela-app-b", "from": "telaapp", "to": "manifestapp", "label": "instalar = o navegador lê este manifest: nome e ícone da INSTALAÇÃO, nunca da organização"},
+    {"id": "e-sw-app-a", "from": "telaapp", "to": "swapp", "label": "registrar o SW é também a prova: https que o recusa fica sem app"},
+    {"id": "e-sw-app-b", "from": "manifestapp", "to": "swapp", "label": "o app instalado abre em /app, onde a casca registra o SW sem depender da permissão de avisos"}
   ],
   "cards": [
     {

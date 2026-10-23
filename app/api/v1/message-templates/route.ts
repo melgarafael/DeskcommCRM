@@ -18,10 +18,11 @@ import { roleAtLeast } from "@/lib/auth/types";
 import { createTemplateSchema } from "@/lib/schemas/templates";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { posicaoEntre } from "@/lib/templates/ordem";
 
 export const dynamic = "force-dynamic";
 const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, midias, created_by_user_id, created_at, updated_at";
+  "id, organization_id, owner_user_id, title, body, shortcut, midias, created_by_user_id, created_at, updated_at, ordem";
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
@@ -33,11 +34,19 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
   // RLS já limita a compartilhados + próprios da org ativa.
+  //
+  // A ordem é a que o OPERADOR escolheu (`ordem`, #3244), não a de edição: era
+  // `updated_at desc`, então editar o corpo de uma resposta a empurrava para o
+  // topo desta lista e do slash-menu do Inbox. Virou `ordem asc` + dois
+  // desempates (a resposta nova nasce ACIMA da primeira, ver o POST; duas que
+  // empatem — criadas ao mesmo tempo — saem mais recente primeiro).
   const { data, error } = await supabase
     .from("message_templates")
     .select(COLS)
     .eq("organization_id", org.orgId)
-    .order("updated_at", { ascending: false });
+    .order("ordem", { ascending: true })
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: true });
   if (error) return fail("internal_error", "Erro ao listar templates.", 500, { requestId });
   return ok(data ?? [], { requestId });
 }
@@ -83,6 +92,22 @@ export async function POST(req: NextRequest): Promise<Response> {
    * — o cliente retentaria e receberia o replay de uma criação inexistente.
    */
   async function criar() {
+    // A resposta nova nasce no TOPO e sem empate: um passo acima da primeira da
+    // lista visível. Com todas nascendo na mesma posição, o desempate passava a
+    // ser `updated_at` — e editar uma resposta nova voltava a reordenar a lista
+    // (o defeito da #3244 pela porta da criação).
+    const { data: primeira, error: erroPrimeira } = await supabase
+      .from("message_templates")
+      .select("ordem")
+      .eq("organization_id", org.orgId)
+      .order("ordem", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (erroPrimeira) throw new Error("Erro ao criar template.");
+    const menor = (primeira as { ordem: number } | null)?.ordem ?? null;
+    // `posicaoEntre(null, x)` nunca é `null`: só o empate entre DUAS vizinhas é.
+    const ordem = posicaoEntre(null, menor)!;
+
     const { data, error } = await supabase
       .from("message_templates")
       .insert({
@@ -91,11 +116,13 @@ export async function POST(req: NextRequest): Promise<Response> {
         title,
         body,
         shortcut: shortcut ?? null,
-        // `midias` nasce vazia: a imagem nova é gravada pela rota de upload,
-        // que gera o caminho sabendo o id do template (#2526). Aceitar caminho
-        // aqui seria aceitar um arquivo que ninguém conferiu.
+        // `midias` nasce vazia: a mídia nova (a imagem da #2526 ou o áudio do
+        // recurso, #2833) é gravada pela rota de upload, que gera o caminho
+        // sabendo o id do template. Aceitar caminho aqui seria aceitar um
+        // arquivo que ninguém conferiu.
         midias: [],
         created_by_user_id: user.id,
+        ordem,
       })
       .select(COLS)
       .single();

@@ -7,7 +7,7 @@
  * imagem saía DE NOVO, com a legenda — dois envios com o mesmo texto, o que a
  * issue proíbe ("falha no envio da mídia não causa duplicação do texto").
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -46,7 +46,11 @@ vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
     ],
   }),
 }));
-vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  usePermission: () => true,
+  // A escolha de contato do Composer lê o país da organização (o exemplo do telefone); sem organização, o Brasil.
+  usePaisDaOrgAtiva: () => null,
+}));
 
 import { Composer } from "@/components/inbox/Composer";
 
@@ -57,7 +61,9 @@ async function escolherTemplate() {
     </QueryClientProvider>,
   );
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "/cat" } });
-  fireEvent.click(await screen.findByText("Catalogo"));
+  // O título aparece duas vezes desde a barra de recursos (#2833): no menu do `/`
+  // e no botão da barra. Este teste é sobre o `/`, então procura só no menu.
+  fireEvent.click(await within(await screen.findByRole("listbox")).findByText("Catalogo"));
   await screen.findByRole("dialog");
 }
 

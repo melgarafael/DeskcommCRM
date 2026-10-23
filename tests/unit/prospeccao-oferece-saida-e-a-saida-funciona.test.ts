@@ -82,14 +82,36 @@ describe("e a saída oferecida realmente funciona (a volta)", () => {
 });
 
 describe("o caminho de envio usa o rodapé — e não o texto cru do modelo", () => {
-  it("o worker manda `comSaida(...)`, não `generated.texto`", () => {
-    // Sem esta asserção, o módulo poderia estar perfeito e desligado: o defeito
+  it("o worker manda a 1ª bolha com `comSaida(...)`, não `generated.texto`", () => {
+    // Sem estas asserções, o módulo poderia estar perfeito e desligado: o defeito
     // original era exatamente um caminho de envio que mandava o texto cru.
+    // O corte vem ANTES do rodapé (o texto do modelo é que é fatiado no estilo
+    // configurado) e o rodapé entra na PRIMEIRA bolha — a saída não pode depender
+    // de uma bolha posterior ter dado certo (revisão do PR #2680). A cerca
+    // procura as quatro pernas, não só a chamada.
     const worker = fs.readFileSync(path.join(RAIZ, "lib/prospecting/worker.ts"), "utf8");
-    expect(worker).toMatch(/body:\s*comSaida\(/);
+    expect(worker).toMatch(/splitForSend\(\s*generated\.texto/);
+    // A saída continua entrando na 1ª bolha — mas CONDICIONADA à configuração da
+    // campanha (`exit_offer`, migration 0705): só no modo `first_message` ela é
+    // oferecida já na primeira mensagem. No modo `second_message` quem reserva e
+    // serve a saída é a 2ª mensagem (`saida-configuravel.ts`/`context.ts`), e um
+    // rodapé incondicional aqui a ofereceria duas vezes — e na mensagem errada.
+    expect(
+      worker,
+      "o envio precisa mandar comSaida(...) na primeira bolha, e só quando exit_offer === \"first_message\"",
+    ).toMatch(/cfg\.exit_offer\s*===\s*"first_message"\)\s*baloes\[0\]\s*=\s*comSaida\(/);
+    expect(worker).toMatch(/body:\s*baloes\[i\]/);
     expect(
       worker.includes("body: generated.texto"),
       "o envio voltou a mandar o texto do modelo sem a saída",
+    ).toBe(false);
+    expect(
+      worker.includes("body: corpo"),
+      "o envio voltou a mandar o corpo inteiro, ignorando o fatiamento",
+    ).toBe(false);
+    expect(
+      worker.includes("body: comSaida"),
+      "o envio voltou a montar o rodapé no corpo inteiro (a saída como última bolha)",
     ).toBe(false);
   });
 });

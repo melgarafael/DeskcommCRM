@@ -1771,6 +1771,14 @@ esac
   # ele era compilado aqui na VPS e nenhum update jamais o alcançava.
   envq WORKER_IMAGE "${IMG_WORKER}:${TAG_ALVO}"
   envq WORKER_PULL_POLICY "$PULL_POLICY_ALVO"
+  # O par de prazos do desligamento (#2823) — os dois GRAVADOS juntos porque um
+  # sem o outro é o defeito que a issue mediu: `WORKER_STOP_GRACE_PERIOD` é o que
+  # o compose passa ao `docker stop` (sem ele, o padrão de 10 s do Docker mata o
+  # contêiner antes dos 30 s que o worker se dá) e `SHUTDOWN_GRACE_MS` é o prazo
+  # INTERNO, contado do sinal. O de fora tem de ser maior; 40 s para 30 s dá 10 s
+  # de folga para fechar pool e healthz. Mexeu num, mexa no outro.
+  envq WORKER_STOP_GRACE_PERIOD "${WORKER_STOP_GRACE_PERIOD:-40s}"
+  envq SHUTDOWN_GRACE_MS "${SHUTDOWN_GRACE_MS:-30000}"
   envq SCHEDULER_IMAGE "${IMG_SCHEDULER}:${TAG_ALVO}"
   envq SCHEDULER_PULL_POLICY "$PULL_POLICY_ALVO"
   # A telefonia por SIP (profile `telefonia`, desligado por padrão) também segue
@@ -1913,10 +1921,8 @@ esac
   printf '# Opcional — sem ela a IA responde sem a base e pede o áudio em texto.\n'
   envq OPENAI_API_KEY "${OPENAI_API_KEY:-}"
   printf '# Web Push: aviso na bandeja do sistema com a aba do CRM fechada.\n'
-  printf '# Opcional e VAZIO por padrão — sem o par, os avisos aparecem só com o\n'
-  printf '# site aberto, que é exatamente o que acontecia antes. Para ligar:\n'
-  printf '#   npx web-push generate-vapid-keys\n'
-  printf '# e cole as duas chaves aqui (depois: docker compose up -d app).\n'
+  printf '# Gerado pelo install/update uma única vez. NÃO troque: trocar desliga\n'
+  printf '# os avisos de todo aparelho já inscrito.\n'
   envq VAPID_PUBLIC_KEY "${VAPID_PUBLIC_KEY:-}"
   envq VAPID_PRIVATE_KEY "${VAPID_PRIVATE_KEY:-}"
   printf '# Provisionamento por sistema externo (POST /api/v1/tenants/provision):\n'
@@ -1981,6 +1987,10 @@ esac
   fi
 } > .env
 chmod 600 .env
+# O par dos avisos com o app fechado (Web Push): gerado aqui uma única vez, pela
+# MESMA função que a atualização usa (`gravar_imagens`). Reexecutar o install
+# não troca nada: o `load_env` lá em cima trouxe o par, e o `envq` o regravou.
+completar_par_vapid .env
 # O .env definitivo existe: o rascunho cumpriu o papel e some — deixá-lo no
 # disco seria uma segunda cópia dos segredos, e desatualizada na primeira
 # correção que alguém fizer no .env.
@@ -2486,6 +2496,41 @@ else
   # "|| true": mesma família do pipe que matava o supabase-provision.sh — o
   # corpo passa de 200 bytes, o head fecha o pipe e o printf leva SIGPIPE.
   [ -n "$health_body" ] && c_dim "$(t "  última resposta: {1}" "$(printf '%s' "$health_body" | head -c 200 || true)")"
+fi
+
+# ── #2945: a PROVA de que a rota pública do Supabase chega ao GoTrue ────────
+#
+# Aqui, e não antes: é o ponto em que o app já respondeu saudável e o domínio já
+# está no ar — a mesma condição que faz a pergunta ter sentido. Antes do #2933
+# quem a respondia era, sem querer, o `v_sb_key()` da fase 2 (que batia em
+# `${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, a URL pública, e morria em
+# "chave inválida" quando o Traefik sem as etiquetas entregava o pedido ao app);
+# o #2933 o mandou perguntar ao gateway INTERNO, que é o certo atrás de
+# Cloudflare laranja, e a instalação ficou SEM nenhuma prova da rota pública. O
+# #2099 é o defeito que a prova pegava: etiqueta do Traefik que não chegou ao
+# Envoy e um login que só falha depois, com a instalação já verde.
+#
+# O `SUPABASE_INTERNAL_URL` no guard não é enfeite: ele só existe quando o
+# Supabase é DESTA VPS (quem o grava é o install-single-server.sh). Num
+# Traefik com o Supabase na NUVEM a URL pública tem as APIs em outro host, e
+# `/auth/v1/settings` no domínio do CRM responderia 404 — o mesmo 404 de
+# "chave inválida" que o #2933 tirou da fase 2. Sem esta condição, a sonda
+# reprovaria uma instalação correta, que é pior que não sondar.
+#
+# A sonda devolve 0 (provado), 1 (a ASSINATURA do app: 404, ou o 3xx para
+# /login — a instalação PARA, com o diagnóstico do #2099) ou 2 (não provei, e
+# o motivo pode ser só o certificado do domínio ainda saindo). O 2 AVISA e
+# SEGUE (#2945): parar uma instalação certa por um `curl` que não provou nada
+# é o defeito que o próprio kit consertou no #2933, do outro lado da moeda.
+if [ "${REVERSE_PROXY:-caddy}" = "traefik" ] && [ -n "${SUPABASE_INTERNAL_URL:-}" ] && [ "${APP_SAUDAVEL:-0}" = 1 ]; then
+  step "$(t "Conferindo a rota pública do Supabase no Traefik")"
+  rota_publica_rc=0
+  rota_publica_msg="$(sondar_rota_publica_do_supabase "https://${DOMAIN}" "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" 10 3)" || rota_publica_rc=$?
+  case "$rota_publica_rc" in
+    0) c_grn "$(t "✓ a rota pública /auth/v1/* chega ao GoTrue do Supabase (o Traefik está publicando as APIs)")" ;;
+    1) die "$rota_publica_msg" ;;
+    *) c_ylw "⚠ $rota_publica_msg" ;;
+  esac
 fi
 
 # O catálogo dos provedores diretos vem no baseline, mas a OpenRouter é grande

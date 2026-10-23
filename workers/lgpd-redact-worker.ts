@@ -27,7 +27,9 @@ import { createHash } from "node:crypto";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import { perfilDaOrganizacao, PAIS_PADRAO } from "@/lib/legal/perfil-do-pais";
 import { findContactByExternalId, findLgpdRequest } from "@/lib/lgpd/repository";
+import { avisarTitularAposApagamento } from "@/lib/lgpd/aviso-apos-apagar";
 import { cascadeRedactContact } from "@/lib/lgpd/redact-cascade";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -210,6 +212,48 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
         };
       }
 
+      // ─── O AVISO DO ART. 12.º SÓ EXISTE FORA DO BRASIL ──────────────────
+      //
+      // Decisão de produto de 2026-10-16: os avisos novos valem só para
+      // organizações de FORA do Brasil (Portugal, por exemplo). No Brasil nada
+      // muda por enquanto — a promessa feita quando Portugal entrou foi "o
+      // Brasil fica exatamente igual", e texto jurídico com o artigo errado
+      // chegando a titular real é pior que nenhum texto.
+      //
+      // O país é lido AQUI, antes da cascata, porque é AQUI que o envio é
+      // decidido: organização brasileira não lê o endereço do titular, não
+      // avisa e não grava `art12_notice` no pedido nem na auditoria — o pedido
+      // fica como na main (#2342). A rota `/art12` tem a guarda dela.
+      //
+      // A ordem, para quem PODE avisar, continua a de sempre: o endereço é lido
+      // ANTES da cascata (o passo 1 zera `contacts.email` — é o dado que está
+      // sendo apagado) e o aviso sai DEPOIS do apagamento (art. 12.º, n.º 3 do
+      // RGPD). O payload do pedido serve de fallback para o pedido que veio de
+      // plataforma, onde o contato pode nem ter e-mail.
+      const perfil = await perfilDaOrganizacao(admin, orgId);
+      const avisaTitular = perfil.codigo !== PAIS_PADRAO;
+
+      let emailTitular: string | null = null;
+      if (avisaTitular) {
+        const { data: contatoAntes } = await admin
+          .from("contacts")
+          .select("email")
+          .eq("organization_id", orgId)
+          .eq("id", contactId)
+          .maybeSingle();
+        const emailNoPayload = req.request_payload?.["email"];
+        // Duas checagens `typeof` em vez de uma pilha de `??`: o endereço vem do
+        // contato (lido antes do apagamento) ou do payload, e o tipo de cada um
+        // é tratado de forma explícita — mesma ordem de preferência de antes.
+        const contato = contatoAntes as { email?: string | null } | null;
+        const emailDoContato = contato?.email;
+        if (typeof emailDoContato === "string") {
+          emailTitular = emailDoContato;
+        } else if (typeof emailNoPayload === "string") {
+          emailTitular = emailNoPayload;
+        }
+      }
+
       const cascade = await cascadeRedactContact({
         organizationId: orgId,
         contactId,
@@ -248,6 +292,24 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
       // Best-effort callback to upstream platform.
       const callback = await tryNuvemshopCallback(orgId, req.request_payload ?? {});
 
+      // O art. 12.º, n.º 3 (RGPD): avisar o titular DEPOIS de apagar — e só
+      // fora do Brasil (ver a guarda do país acima). Best-effort de propósito:
+      // o pedido já está cumprido quando aqui, e derrubar `completed` por causa
+      // de um e-mail trocaria um direito exercido por uma falha que o SLA
+      // registraria como atraso (#2342).
+      const aviso = avisaTitular
+        ? await avisarTitularAposApagamento(admin, {
+            organizationId: orgId,
+            requestId,
+            emailTitular,
+            recebidoEm: new Date(req.received_at),
+          })
+        : null;
+      // `null` = o aviso não é do país: a chave `art12_notice` não entra nem no
+      // pedido nem na auditoria, e é essa ausência que mantém o Brasil igual à
+      // main.
+      const art12Notice = aviso ? (aviso.enviado ? "sent" : aviso.motivo) : null;
+
       await admin
         .from("lgpd_requests")
         .update({
@@ -258,6 +320,9 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
             cascaded_to: cascade.counts,
             media_queued: cascade.mediaPaths.length,
             callback_status: callback.status,
+            // O aviso do art. 12.º é prova do cumprimento, não enfeite: a razão
+            // fica no resultado (`result.art12_notice`), com o POR QUÊ quando não saiu.
+            ...(art12Notice ? { art12_notice: art12Notice } : {}),
           },
           cascaded_to: cascade.counts,
           error_message: null,
@@ -292,6 +357,7 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
           media_queued: cascade.mediaPaths.length,
           callback_status: callback.status,
           attempts: nextAttempts,
+          ...(art12Notice ? { art12_notice: art12Notice } : {}),
         },
         bypassedRls: true,
       });

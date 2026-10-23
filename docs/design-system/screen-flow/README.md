@@ -30,7 +30,7 @@ owner: Rafael Melgaço
 1. **Inbox 3 colunas é a "home" do produto** — pós-login, todo operador BPO e atendente cai em `/app/inbox`. Dashboard é secundário.
 2. **Super-admin BPO tem UI separada (`/admin`)** com inbox cross-tenant como default — ele opera atendendo, não monitorando passivamente.
 3. **Realtime é invariante visual** — toda surface tem banner de reconexão; nenhuma UI assume canal estável.
-4. **Mobile não é foco MVP** mas degrada graciosamente — atendente em deslocamento abre `/chat` e responde.
+4. **O celular é o app instalado (PWA do mesmo Next)** — o atendente instala o próprio sistema no aparelho e recebe os avisos com ele fechado; decisão e fases em [ADR-0006](../../adr/0006-app-no-celular-e-a-pwa-do-mesmo-next.md). As telas continuam degradando com graça em largura pequena.
 5. **Vocabulary é injetado via hook** — nenhuma tela hardcoda "Pedido", "Cliente", "Pago"; tudo passa por `usePipelineVocabulary()`.
 6. **LGPD é cidadã de primeira classe** — pedido vira tela acionável (`/app/lgpd/requests/[id]`), não fluxo escondido.
 

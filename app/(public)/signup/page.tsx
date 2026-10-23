@@ -11,8 +11,10 @@ import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lerCadastroNaTela, planoInicialDoSeletor } from "@/lib/cobranca/cadastro";
+import { tituloDaTelaPublica } from "@/lib/i18n/titulo-da-tela-publica";
 
-export const metadata = { title: "Criar conta" };
+// A aba no idioma do visitante, como o corpo (`lib/i18n/titulo-da-tela-publica.ts`).
+export const generateMetadata = () => tituloDaTelaPublica((t) => t("Criar conta"));
 
 /**
  * Aceita `?invite=<token>`: é o caminho de quem foi convidado e ainda não tem

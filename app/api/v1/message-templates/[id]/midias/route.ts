@@ -1,7 +1,8 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * POST /api/v1/message-templates/:id/midias — sobe UMA imagem (multipart
- * `file`) e a LIGA ao template (#2526).
+ * POST /api/v1/message-templates/:id/midias — sobe UMA mídia (multipart
+ * `file`): uma imagem (#2526) ou o áudio de um recurso (#2833), e a LIGA ao
+ * template.
  *
  * O desenho é o de `POST /products/:id/fotos`, que a issue aponta como
  * referência técnica de armazenamento, validação e envio — só que o bucket é o
@@ -9,9 +10,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * serve), e o prefixo é `<org>/templates/<template>/`.
  *
  * O caminho é gerado AQUI, nunca aceito do cliente. O formato é decidido pela
- * ASSINATURA dos bytes (`farejarTipo`, JPEG e PNG), não pelo `content-type` que
- * o navegador declarou: esse é do cliente, e o arquivo vai ser servido ao
- * WhatsApp de outra pessoa.
+ * ASSINATURA dos bytes (`farejarTipoDeMidia`: JPEG/PNG, OGG/MP3/AAC/AMR/WAV),
+ * não pelo `content-type` que o navegador declarou: esse é do cliente, e o
+ * arquivo vai ser servido ao WhatsApp de outra pessoa.
+ *
+ * O ÁUDIO entra por aqui e não por rota paralela (#2833): mesma coluna
+ * `midias`, mesmo bucket, mesmo prefixo — um vocabulário só. O que muda entre
+ * os dois tipos é o farejador e o TETO, que é do tipo já farejado.
  *
  * Quem grava é a própria linha, via RLS `message_templates_write` — o mesmo
  * gate do PATCH: dono do pessoal, manager+ no compartilhado. O upload
@@ -31,11 +36,12 @@ import { createClient } from "@/lib/supabase/server";
 import {
   BUCKET_DAS_MIDIAS,
   MAXIMO_DE_MIDIAS,
-  TAMANHO_MAXIMO_DA_MIDIA,
-  extensaoDe,
-  farejarTipo,
-  prefixoDoTemplate,
+  TAMANHO_MAXIMO_DO_AUDIO,
   type MidiaDeTemplate,
+  extensaoDaMidia,
+  farejarTipoDeMidia,
+  prefixoDoTemplate,
+  tetoDaMidia,
 } from "@/lib/templates/midias";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +73,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       detalhe: erroLeitura.message,
       requestId,
     });
-    return fail("internal_error", "Erro ao subir a imagem.", 500, { requestId });
+    return fail("internal_error", "Erro ao ler o template.", 500, { requestId });
   }
   if (!linha) return fail("not_found", t("Template não encontrado."), 404, { requestId });
 
@@ -82,17 +88,20 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     return fail("forbidden", t("Só manager+ altera template compartilhado."), 403, { requestId });
   }
   if (atuais.length >= MAXIMO_DE_MIDIAS) {
-    return fail("validation_failed", t("Cada resposta rápida tem no máximo 5 imagens."), 422, {
+    return fail("validation_failed", t("Cada resposta rápida tem no máximo 5 mídias."), 422, {
       requestId,
     });
   }
 
   // Recusa pelo Content-Length declarado ANTES de bufferizar o corpo (como a
-  // rota de mídia da conversa); o `file.size` abaixo continua o check
-  // autoritativo.
+  // rota de mídia da conversa). O teto daqui é o MAIOR dos dois (áudio, 16 MB)
+  // mais a folga do multipart: o tipo ainda não foi farejado, e o teto por tipo
+  // é conferido abaixo, sobre os bytes.
   const declarado = Number(req.headers.get("content-length") ?? 0);
-  if (declarado > TAMANHO_MAXIMO_DA_MIDIA + 1_048_576) {
-    return fail("payload_too_large", t("A imagem precisa ter até 5 MB."), 413, { requestId });
+  if (declarado > TAMANHO_MAXIMO_DO_AUDIO + 1_048_576) {
+    return fail("payload_too_large", t("A mídia passou do tamanho máximo aceito."), 413, {
+      requestId,
+    });
   }
 
   const form = await req.formData().catch(() => null);
@@ -100,26 +109,40 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });
   }
-  if (file.size > TAMANHO_MAXIMO_DA_MIDIA) {
-    return fail("payload_too_large", t("A imagem precisa ter até 5 MB."), 413, { requestId });
-  }
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const tipo = farejarTipo(bytes);
+  const tipo = farejarTipoDeMidia(bytes);
   if (!tipo) {
-    return fail("unsupported_media_type", t("A imagem precisa ser JPG ou PNG."), 415, {
-      requestId,
-      details: { content_type_declarado: file.type || null },
-    });
+    return fail(
+      "unsupported_media_type",
+      t("A mídia precisa ser JPG, PNG ou áudio (OGG, MP3, AAC, AMR ou WAV)."),
+      415,
+      {
+        requestId,
+        details: { content_type_declarado: file.type || null },
+      },
+    );
+  }
+  // O teto é do TIPO já farejado: 5 MB para imagem, 16 MB para áudio — o teto de
+  // imagem não serve para áudio, e é aqui que a diferença morde.
+  if (file.size > tetoDaMidia(tipo)) {
+    return fail(
+      "payload_too_large",
+      tipo.startsWith("audio/")
+        ? t("O áudio precisa ter até 16 MB.")
+        : t("A imagem precisa ter até 5 MB."),
+      413,
+      { requestId },
+    );
   }
 
-  const caminho = `${prefixoDoTemplate(org.orgId, id)}${randomUUID()}.${extensaoDe(tipo)}`;
+  const caminho = `${prefixoDoTemplate(org.orgId, id)}${randomUUID()}.${extensaoDaMidia(tipo)}`;
   const admin = createAdminClient();
   const { error: erroUp } = await admin.storage
     .from(BUCKET_DAS_MIDIAS)
     .upload(caminho, bytes, { contentType: tipo, upsert: false });
   if (erroUp) {
     logger.error("[message-templates/midias] upload falhou", { detalhe: erroUp.message, requestId });
-    return fail("internal_error", "Erro ao subir a imagem.", 500, { requestId });
+    return fail("internal_error", "Erro ao subir a mídia.", 500, { requestId });
   }
 
   const nova: MidiaDeTemplate = {
@@ -150,7 +173,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
         requestId,
       });
     }
-    return fail("internal_error", "Erro ao salvar a imagem.", 500, { requestId });
+    return fail("internal_error", "Erro ao salvar a mídia.", 500, { requestId });
   }
 
   void audit({

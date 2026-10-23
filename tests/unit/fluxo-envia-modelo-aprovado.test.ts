@@ -19,8 +19,11 @@
  *
  * - modelo aprovado sai COMO MODELO: a cadeia recebe `isTemplate` (só o gate da
  *   janela o deixa passar) e o canal recebe nome e idioma;
- * - modelo que não pode sair (pendente, com variável) pula o passo com o motivo,
- *   sem tocar na cadeia — em vez de a fila re-tentar até matar a inscrição;
+ * - modelo que não pode sair (pendente, variável sem origem ou vazia) pula o
+ *   passo com o motivo, sem tocar na cadeia — em vez de a fila re-tentar até
+ *   matar a inscrição;
+ * - modelo com variável e o mapa do passo: cada `{{n}}` sai com o nome do
+ *   contato ou o campo do negócio, lidos na hora, no corpo E no que o canal recebe;
  * - o plano B da IA sai com a janela FECHADA e só com ela: aberta, a IA escreve;
  * - controle: texto pronto continua saindo como texto.
  *
@@ -29,7 +32,7 @@
  * Nada com Postgres real nem com a plataforma: que o canal aceita o modelo é do
  * adapter (`sendTemplate`), não deste turno.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
 
@@ -93,7 +96,7 @@ function job(payload: Record<string, unknown>): JobRow {
   } as JobRow;
 }
 
-const CORPO = "¡Hola! ¿Seguís pensando en el Pico? Sale ₲125.000. ¿Te lo reservamos?";
+const CORPO = "Olá! Ainda pensando na cafeteira? Sai por R$ 169,90. Quer que a gente reserve?";
 
 interface Cenario {
   /** corpo em `message_templates` (texto pronto) */
@@ -102,6 +105,10 @@ interface Cenario {
   modelo?: { status: string; texto?: string };
   /** último inbound da conversa, em horas atrás (`null` = nunca escreveu) */
   ultimoInboundHa?: number | null;
+  /** o contato, para as variáveis de nome */
+  contato?: { name: string | null; display_name?: string | null };
+  /** `custom_fields` do negócio mais recente */
+  negocio?: Record<string, unknown>;
 }
 
 function fakePool(c: Cenario) {
@@ -114,7 +121,7 @@ function fakePool(c: Cenario) {
         : { rows: [] };
     }
     if (/select name, language from meta_templates/.test(sql)) {
-      return c.modelo ? { rows: [{ name: "recordatorio_pico", language: "es" }] } : { rows: [] };
+      return c.modelo ? { rows: [{ name: "lembrete_cafeteira", language: "es" }] } : { rows: [] };
     }
     if (/from message_templates/.test(sql)) return { rows: c.texto ? [{ body: c.texto }] : [] };
     if (/from channel_sessions s/.test(sql)) {
@@ -124,6 +131,10 @@ function fakePool(c: Cenario) {
       };
     }
     if (/from conversations/.test(sql)) return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
+    if (/select name, display_name from contacts/.test(sql)) {
+      return { rows: c.contato ? [{ display_name: null, ...c.contato }] : [] };
+    }
+    if (/select custom_fields from crm_leads/.test(sql)) return { rows: c.negocio ? [{ custom_fields: c.negocio }] : [] };
     // A inscrição viva que o handler consulta ANTES do envio (guard da #1913).
     if (sql.includes("select current_node_id, status from followup_enrollments")) {
       return { rows: [{ current_node_id: "passo", status: "active" }] };
@@ -158,6 +169,18 @@ beforeAll(async () => {
   ({ createFollowupTurnHandler: criarHandler } = await import("@/lib/agent-engine/agent/followup-turn"));
 }, 60_000);
 
+// Relógio fixo DENTRO da janela anti-ban de disparo: desde a #3108 o passo de IA
+// lê essa janela antes do turno, e com o relógio real os casos de "a IA
+// escreve" viravam adiamento depois das 22h. Só o `Date` é falso, para a
+// janela de 24 h (medida contra `Date.now()`) andar junto.
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-20T15:00:00.000Z")); // terça, 12h em São Paulo
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
   runBeforeSend.mockClear();
   runAgentTurn.mockClear();
@@ -172,7 +195,7 @@ describe("passo `template` apontado para um modelo aprovado do canal", () => {
     const cadeia = runBeforeSend.mock.calls[0]![0];
     expect(cadeia.isTemplate).toBe(true);
     expect(cadeia.body).toBe(CORPO);
-    expect(send.mock.calls[0]![0].template).toEqual({ name: "recordatorio_pico", language: "es", values: {} });
+    expect(send.mock.calls[0]![0].template).toEqual({ name: "lembrete_cafeteira", language: "es", values: {} });
     expect(resultado(completeFollowupTurn).kind).toBe("sent");
   });
 
@@ -186,7 +209,7 @@ describe("passo `template` apontado para um modelo aprovado do canal", () => {
     expect(r.reason).toContain("PENDING");
   });
 
-  it("modelo com variável: pulado — o fluxo não tem de onde tirar o {{1}}", async () => {
+  it("modelo com variável e SEM origem escolhida no passo: pulado, e o motivo diz qual", async () => {
     const { d, completeFollowupTurn } = deps();
     await criarHandler(d)(
       job({ template_id: MODELO_ID }),
@@ -195,7 +218,9 @@ describe("passo `template` apontado para um modelo aprovado do canal", () => {
     );
 
     expect(runBeforeSend).not.toHaveBeenCalled();
-    expect(resultado(completeFollowupTurn).kind).toBe("skipped");
+    const r = resultado(completeFollowupTurn);
+    expect(r.kind).toBe("skipped");
+    expect(r.reason).toContain("{{1}} sem origem");
   });
 
   it("controle: texto pronto de Ajustes → Modelos continua saindo como TEXTO", async () => {
@@ -217,7 +242,7 @@ describe("plano B da mensagem por IA (`fallback_template_id`)", () => {
 
     expect(runAgentTurn).not.toHaveBeenCalled();
     expect(runBeforeSend.mock.calls[0]![0].isTemplate).toBe(true);
-    expect(send.mock.calls[0]![0].template).toEqual({ name: "recordatorio_pico", language: "es", values: {} });
+    expect(send.mock.calls[0]![0].template).toEqual({ name: "lembrete_cafeteira", language: "es", values: {} });
     expect(resultado(completeFollowupTurn).kind).toBe("sent");
   });
 
@@ -236,6 +261,95 @@ describe("plano B da mensagem por IA (`fallback_template_id`)", () => {
     await criarHandler(d)(job(PASSO_IA), fakePool({ texto: "oi", ultimoInboundHa: 30 }), { workerId: "w1" });
 
     expect(runAgentTurn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("passo `template` com variáveis, preenchidas pelo contato e pelo negócio", () => {
+  const PEDIDO = "Olá {{1}}! Recebemos seu pedido: {{2}} por {{3}}.";
+  const MAPA = {
+    "1": { kind: "contact_first_name" },
+    "2": { kind: "lead_custom", key: "produto_nome" },
+    "3": { kind: "lead_custom", key: "preco_texto" },
+  };
+  const NEGOCIO = { produto_nome: "Cafeteira Elétrica", preco_texto: "R$ 189,90", produto: "cafeteira-eletrica" };
+
+  it("⭐ cada {{n}} sai com o dado do contato e do negócio — no corpo e no que o canal recebe", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ template_id: MODELO_ID, template_values: MAPA }),
+      fakePool({ modelo: { status: "APPROVED", texto: PEDIDO }, contato: { name: "Maria José Pereira" }, negocio: NEGOCIO }),
+      { workerId: "w1" },
+    );
+
+    expect(runBeforeSend).toHaveBeenCalledTimes(1);
+    const cadeia = runBeforeSend.mock.calls[0]![0];
+    expect(cadeia.isTemplate).toBe(true);
+    // Os gates de conteúdo avaliam o texto que o cliente lê, não o marcador.
+    expect(cadeia.body).toBe("Olá Maria! Recebemos seu pedido: Cafeteira Elétrica por R$ 189,90.");
+    expect(send.mock.calls[0]![0].template).toEqual({
+      name: "lembrete_cafeteira",
+      language: "es",
+      values: { "1": "Maria", "2": "Cafeteira Elétrica", "3": "R$ 189,90" },
+    });
+    expect(resultado(completeFollowupTurn).kind).toBe("sent");
+  });
+
+  it("campo vazio no negócio deste contato: pulado, sem parâmetro em branco, e o motivo nomeia o campo", async () => {
+    const { d, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ template_id: MODELO_ID, template_values: MAPA }),
+      fakePool({
+        modelo: { status: "APPROVED", texto: PEDIDO },
+        contato: { name: "Maria" },
+        negocio: { preco_texto: "R$ 189,90" },
+      }),
+      { workerId: "w1" },
+    );
+
+    expect(runBeforeSend).not.toHaveBeenCalled();
+    const r = resultado(completeFollowupTurn);
+    expect(r.kind).toBe("skipped");
+    expect(r.reason).toContain('campo "produto_nome" do negócio');
+  });
+
+  it("contato sem nome de gente (só o número): o {{1}} do nome não sai em branco", async () => {
+    const { d, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ template_id: MODELO_ID, template_values: MAPA }),
+      fakePool({ modelo: { status: "APPROVED", texto: PEDIDO }, contato: { name: "+5511987654321" }, negocio: NEGOCIO }),
+      { workerId: "w1" },
+    );
+
+    expect(runBeforeSend).not.toHaveBeenCalled();
+    expect(resultado(completeFollowupTurn).reason).toContain("primeiro nome do contato");
+  });
+
+  it("valor com quebra de linha vira uma linha só — a plataforma recusa parâmetro com \\n", async () => {
+    const { d, send } = deps();
+    await criarHandler(d)(
+      job({ template_id: MODELO_ID, template_values: MAPA }),
+      fakePool({
+        modelo: { status: "APPROVED", texto: PEDIDO },
+        contato: { name: "Ana" },
+        negocio: { ...NEGOCIO, produto_nome: "Cafeteira\n   elétrica   inox" },
+      }),
+      { workerId: "w1" },
+    );
+
+    const enviado = send.mock.calls[0]![0].template as { values: Record<string, string> };
+    expect(enviado.values["2"]).toBe("Cafeteira elétrica inox");
+  });
+
+  it("o plano B da IA não tem mapa: modelo com variável segue recusado ali", async () => {
+    const { d, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ prompt_hint: "Retomá la charla", fallback_template_id: MODELO_ID }),
+      fakePool({ modelo: { status: "APPROVED", texto: PEDIDO }, ultimoInboundHa: 30, contato: { name: "Ana" }, negocio: NEGOCIO }),
+      { workerId: "w1" },
+    );
+
+    expect(runBeforeSend).not.toHaveBeenCalled();
+    expect(resultado(completeFollowupTurn).kind).toBe("skipped");
   });
 });
 

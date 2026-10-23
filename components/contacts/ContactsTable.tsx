@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useDeleteContact, mensagemDeBloqueioPorVinculo } from "@/hooks/contacts/useDeleteContact";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 import type { Contact } from "@/lib/types/contacts";
@@ -130,7 +131,14 @@ export function ContactsTable({
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
-  const clientesLigado = useActiveOrg()?.cliente_pela_agenda === true;
+  const orgAtiva = useActiveOrg();
+  const clientesLigado = orgAtiva?.cliente_pela_agenda === true;
+  // O autocompletar de etiquetas do diálogo de edição (issue #2732): o mesmo
+  // vocabulário da ficha. O caminho rápido NÃO traz as `canonical_tags` do funil
+  // — ele já abre sem os campos do funil (ver o comentário de `contatoEmEdicao`),
+  // e o diálogo segue contando com o vocabulário da organização para sugerir o
+  // que já existe.
+  const vocabularioDeEtiquetas = useContactTagVocabulary(orgAtiva?.orgId ?? null);
   const del = useDeleteContact();
   const [alvo, setAlvo] = useState<Contact | null>(null);
   // Issue #2715 — editar pela linha, sem abrir a ficha. Sem customFieldDefs:
@@ -430,6 +438,7 @@ export function ContactsTable({
         contact={contatoEmEdicao}
         open
         onOpenChange={(v) => { if (!v) setContatoEmEdicao(null); }}
+        vocabulario={vocabularioDeEtiquetas.data}
       />
     )}
     {/* Issue #2382 — o seletor de canal, quando há mais de um elegível. */}

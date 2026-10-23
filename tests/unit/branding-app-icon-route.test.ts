@@ -24,7 +24,12 @@ beforeEach(() => {
   mocks.render.mockResolvedValue(new ArrayBuffer(32));
 });
 describe("ícone do app público, sem escolher tenant", () => {
-  it.each(["192", "512"])("%s é público antes do login e retorna imagem limitada", async (size) => {
+  it.each([
+    ["192", 192, 1],
+    ["512", 512, 1],
+    ["180", 180, 0.8],
+    ["maskable", 512, 0.56],
+  ] as const)("%s é público antes do login e retorna imagem limitada", async (size, lado, conteudo) => {
     expect(isPublicPath(`/app-icon/${size}`)).toBe(true);
     const resposta = await GET(new Request(`https://crm.example/app-icon/${size}`), {
       params: Promise.resolve({ size }),
@@ -33,14 +38,17 @@ describe("ícone do app público, sem escolher tenant", () => {
     expect(resposta.headers.get("content-type")).toBe("image/png");
     expect(mocks.marca).toHaveBeenCalledWith(null);
     expect(mocks.render).toHaveBeenCalledWith(
-      Number(size),
+      lado,
       { nome: "Central" },
       "data:image/png;base64,imagem",
+      conteudo,
     );
   });
   it("outros tamanhos e subcaminhos não recebem dispensa de autenticação", () => {
     expect(isPublicPath("/app-icon/64")).toBe(false);
     expect(isPublicPath("/app-icon/192/outro")).toBe(false);
+    expect(isPublicPath("/app-icon/maskable/outro")).toBe(false);
+    expect(isPublicPath("/app-icon/180x")).toBe(false);
   });
   it("valida o tamanho antes de ler marca/Storage", async () => {
     const resposta = await GET(new Request("https://crm.example/app-icon/999"), {

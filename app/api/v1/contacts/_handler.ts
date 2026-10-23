@@ -18,6 +18,13 @@ import type { Idioma } from "@/lib/i18n/idiomas";
 import { roleAtLeast } from "@/lib/auth/types";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
+import {
+  INDICE_CPF,
+  INDICE_EMAIL,
+  encontrarContatoPorCpfHash,
+  encontrarContatoPorEmail,
+  nomeDoIndiceUnico,
+} from "@/lib/contacts/conflito-unico";
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
@@ -31,6 +38,13 @@ import { contactListQuerySchema } from "@/lib/schemas";
 import { arrayDeUmValorParaOr } from "@/lib/inbox/marcador-da-conversa";
 import { buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
 import { padraoRegexDeBusca } from "@/lib/contacts/busca-regex";
+import {
+  camposQueMudaram,
+  defsDoPadraoDaOrg,
+  erroDePadrao,
+  recusasDePadrao,
+} from "@/lib/leads/padrao-do-campo";
+import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 
 type SB = SupabaseClient;
 
@@ -463,6 +477,100 @@ export async function getContactHandler(
 }
 
 // ---------------------------------------------------------------------------
+// conflito de dado único (#3084)
+// ---------------------------------------------------------------------------
+
+/**
+ * Traduz um 23505 do INSERT/UPDATE de `contacts` no 409 `contact_exists` certo —
+ * ou devolve `null` para deixá-lo seguir no 500 de sempre.
+ *
+ * ─── O telefone continua decidindo pela RELEITURA, não pelo texto ──────────
+ *
+ * O 23505 sozinho nomeia UM índice; o estado (contato vivo com o mesmo telefone
+ * na mesma organização) já implica a trava de telefone de qualquer jeito. Por
+ * isso o caminho do telefone é o de antes — a releitura por `organization_id`
+ * decide, sem olhar o nome do índice. Mudar isso seria trocar um desenho que já
+ * estava certo.
+ *
+ * ─── CPF e e-mail precisam do NOME do índice ───────────────────────────────
+ *
+ * Aqui não há como inferir pelo estado: o erro diz qual índice bateu (o driver
+ * escreve o nome na `message`). Só o índice conhecido vira 409, e só depois de a
+ * releitura — sempre repetindo `organization_id` e `is_merged_into IS NULL` —
+ * achar o contato vivo que já tem o dado. Sem o contato, ou com o índice
+ * trocado, o 23505 continua no 500: não se inventa 409 sobre um conflito que
+ * não se sabe qual é.
+ *
+ * O `contact_id` devolvido vem SEMPRE da releitura, nunca do corpo.
+ */
+async function erroDeConflitoUnico(
+  supabase: SB,
+  ctx: HandlerCtx,
+  campos: { phone_number?: unknown; email?: unknown; cpf_hash?: unknown },
+  erro: { code?: string; message?: string; details?: string | null; constraint?: string | null },
+  excluirId?: string,
+): Promise<ApiError | null> {
+  if (erro.code !== "23505") return null;
+  const idioma = ctx.idioma ?? "pt-BR";
+
+  // 1) CPF e e-mail — só quando o erro NOMEIA o índice (#3084). Vem ANTES do
+  //    telefone: o PATCH da tela reenvia o telefone do PRÓPRIO contato, e a
+  //    releitura por telefone o acharia — 409 de telefone apontando para si mesmo.
+  const indice = nomeDoIndiceUnico(erro);
+  if (indice === INDICE_CPF) {
+    const hash = typeof campos.cpf_hash === "string" ? campos.cpf_hash : null;
+    if (hash) {
+      const existente = await encontrarContatoPorCpfHash(supabase, ctx.organization_id, hash);
+      if (existente) {
+        return new ApiError(
+          409,
+          "contact_exists",
+          { contact_id: existente.id },
+          ctx.requestId,
+          traduzir("Já existe um contato com este CPF.", idioma),
+        );
+      }
+    }
+  }
+  if (indice === INDICE_EMAIL) {
+    const email = typeof campos.email === "string" ? campos.email : null;
+    if (email) {
+      const existente = await encontrarContatoPorEmail(supabase, ctx.organization_id, email);
+      if (existente) {
+        return new ApiError(
+          409,
+          "contact_exists",
+          { contact_id: existente.id },
+          ctx.requestId,
+          traduzir("Já existe um contato com este e-mail.", idioma),
+        );
+      }
+    }
+  }
+
+  // 2) Telefone — o desenho de sempre (fatia S1 da #852): a releitura decide,
+  //    salvo quando o erro já nomeou CPF ou e-mail. No PATCH, `excluirId` é o
+  //    contato editado: achar a si mesmo pelo telefone não explica conflito
+  //    nenhum, e o 23505 segue no 500.
+  if (indice === INDICE_CPF || indice === INDICE_EMAIL) return null;
+  const telefone = typeof campos.phone_number === "string" ? campos.phone_number : null;
+  if (telefone) {
+    const existente = await encontrarContatoPorTelefone(supabase, ctx.organization_id, telefone);
+    if (existente && existente.id !== excluirId) {
+      return new ApiError(
+        409,
+        "contact_exists",
+        { contact_id: existente.id },
+        ctx.requestId,
+        traduzir("Já existe um contato com este telefone.", idioma),
+      );
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // create
 // ---------------------------------------------------------------------------
 
@@ -476,6 +584,26 @@ export async function createContactHandler(
   ctx: HandlerCtx,
   input: ContactCreate,
 ): Promise<CreateContactResult> {
+  // ── O PADRÃO (#2730) — a MESMA régua do formulário, aqui no SERVIDOR ──────
+  //
+  // O form é a primeira porta, não a garantia: dá para POSTar direto na API.
+  // As definições vêm de TODOS os funis da organização, porque o CONTATO não
+  // tem funil próprio — a tela lê o padrão (`useDefaultPipeline`) e o servidor,
+  // que não sabe qual é, pergunta a todos.
+  //
+  // Falha de leitura devolve lista vazia e a escrita segue: fail-open da casa
+  // (`settingsDoFunil` faz igual). Cair a rota por um `settings` torto seria
+  // trocar "grava torto" por "não grava nada" — e a régua só tem poder sobre
+  // o que ela consegue LER.
+  if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
+    // Escopo `contato` (#2852): a ficha do contato só recebe os campos do
+    // CONTATO, e são só esses que ela pode gravar. Sem o filtro, o padrão de um
+    // campo do NEGÓCIO — que o diálogo nem conhece — recusava a criação.
+    const defs = await defsDoPadraoDaOrg(supabase, ctx.organization_id, "contato");
+    const recusas = recusasDePadrao(defs, input.custom_fields, testaComPrazo);
+    if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
+  }
+
   const a = actorAuditPayload(ctx.actor);
   const insertRow: Record<string, unknown> = {
     organization_id: ctx.organization_id,
@@ -506,30 +634,17 @@ export async function createContactHandler(
     .single();
 
   if (insErr) {
-    // 409 quando o telefone já é de um contato vivo desta organização: o índice
-    // parcial `uniq_contacts_org_phone` (organization_id, phone_number) barra o
-    // insert com 23505. E-mail e CPF também têm trava única na tabela, então o
-    // 23505 sozinho não diz qual índice bateu: só vira `contact_exists` se a
-    // releitura do telefone achar um contato vivo. A releitura repete o filtro
-    // por `organization_id` — o id devolvido no `details` nunca vem do corpo da
+    // 409 quando o dado já pertence a um contato vivo desta organização (#3084).
+    //
+    // O índice parcial `uniq_contacts_org_phone` (organization_id, phone_number)
+    // barra o telefone repetido com 23505; o CPF (`uniq_contacts_org_cpf`) e o
+    // e-mail (`uniq_contacts_org_email`) têm a mesma trava. O telefone decide
+    // pela RELEITURA (não pelo texto do erro); CPF e e-mail usam o nome do
+    // índice que o driver nomeia. A releitura repete o filtro por
+    // `organization_id` — o id devolvido no `details` nunca vem do corpo da
     // requisição — e qualquer outro conflito continua no 500 de sempre.
-    const telefoneDoInsert = insertRow.phone_number as string | null;
-    if (insErr.code === "23505" && telefoneDoInsert) {
-      const existente = await encontrarContatoPorTelefone(
-        supabase,
-        ctx.organization_id,
-        telefoneDoInsert,
-      );
-      if (existente) {
-        throw new ApiError(
-          409,
-          "contact_exists",
-          { contact_id: existente.id },
-          ctx.requestId,
-          traduzir("Já existe um contato com este telefone.", ctx.idioma ?? "pt-BR"),
-        );
-      }
-    }
+    const conflito = await erroDeConflitoUnico(supabase, ctx, insertRow, insErr);
+    if (conflito) throw conflito;
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
@@ -624,6 +739,31 @@ export async function patchContactHandler(
     );
   }
 
+  // ── O PADRÃO (#2730) — DEPOIS do select, e só sobre o que MUDOU ──────────
+  //
+  // A MESMA régua da criação, com a MESMA leitura (todos os funis, escopo
+  // `contato`: o contato não tem funil próprio), mas agora JULGANDO O DIFF.
+  //
+  // Antes isto rodava no começo e julgava o `custom_fields` INTEIRO, na
+  // suposição de que "PATCH manda só o que mudou" — suposição falsa para este
+  // mapa: o `EditContactDialog` grava o objeto completo (o PATCH SUBSTITUI),
+  // e a edição pela lista de contatos manda o mapa que nem renderizou. Efeito
+  // medido no #2814: a pessoa troca só o nome e recebe 422 por um campo
+  // escondido (`mostrar_quando`) — ou por um campo de outro funil — que ela
+  // nem tocou. O estado anterior está aqui do lado (`existing.custom_fields`),
+  // então o que se julga é o valor que vai ser DIFERENTE do gravado.
+  if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
+    const alterados = camposQueMudaram(
+      input.custom_fields,
+      (existing as { custom_fields?: unknown }).custom_fields,
+    );
+    if (Object.keys(alterados).length > 0) {
+      const defs = await defsDoPadraoDaOrg(supabase, ctx.organization_id, "contato");
+      const recusas = recusasDePadrao(defs, alterados, testaComPrazo);
+      if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
+    }
+  }
+
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.display_name !== undefined) patch.display_name = input.display_name;
@@ -696,6 +836,12 @@ export async function patchContactHandler(
     .maybeSingle();
 
   if (updErr) {
+    // #3084: o PATCH grava pela MESMA tabela e cai nas MESMAS travas únicas —
+    // `uniq_contacts_org_email` é o caso medido na issue (trocar o e-mail por um
+    // que já é de outro contato). O 409 sai com o `contact_id` de quem já tem o
+    // dado; qualquer outro conflito segue no 500 de sempre.
+    const conflito = await erroDeConflitoUnico(supabase, ctx, patch, updErr, contactId);
+    if (conflito) throw conflito;
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
   if (!updated) {

@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { z } from "zod";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -52,8 +52,8 @@ export async function GET(req: NextRequest) {
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
-    return fail("forbidden", "Platform admin required", 403, { requestId });
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId);
   }
 
   const parsed = querySchema.safeParse(
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       role,
       accepted_at,
       revoked_at,
-      organizations!inner(display_name, slug)
+      organizations!user_organizations_organization_id_fkey!inner(display_name, slug)
     `,
     )
     .order("user_id", { ascending: false });

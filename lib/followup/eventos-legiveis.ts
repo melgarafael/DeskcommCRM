@@ -505,6 +505,25 @@ export function descreveEvento(
         detalhe: texto(p.error) ?? texto(p.codigo),
         ...motor,
       };
+    case "waiting_for_taken_slot":
+      // A espera "imune à resposta" libera a vaga do contato; outro fluxo entrou
+      // nela enquanto esta dormia. Adiar NÃO é falhar — sem esta linha a trilha
+      // mostrava um silêncio sem dizer que a espera era por causa de outro
+      // acompanhamento.
+      return {
+        titulo: "Esperando o outro acompanhamento deste contato terminar",
+        detalhe: "tenta de novo a cada hora, por até 7 dias",
+        ...motor,
+      };
+    case "gave_up_taken_slot":
+      // A espera pela vaga estourou o limite: o retorno foi cancelado, e o
+      // cancelamento saiu na Central com aviso. A trilha repete a mesma
+      // história para quem não viu o aviso.
+      return {
+        titulo: "Cancelado: outro acompanhamento ocupou o contato por 7 dias",
+        detalhe: "esperou 7 dias pelo outro acompanhamento deste contato terminar",
+        ...motor,
+      };
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
     case "reactivity_replied":

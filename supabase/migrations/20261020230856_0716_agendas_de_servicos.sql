@@ -179,9 +179,9 @@ alter table public.calendar_service_blocks drop constraint if exists calendar_se
 alter table public.calendar_service_blocks drop constraint if exists calendar_service_blocks_publication_appointment_id_fkey;
 do $$ begin
  if not exists(select 1 from pg_constraint where conname='calendar_service_professional_member_fk' and conrelid='public.calendar_service_professionals'::regclass) then
-  alter table public.calendar_service_professionals add constraint calendar_service_professional_member_fk foreign key(organization_id,user_id) references public.user_organizations(organization_id,user_id);end if;
+  alter table public.calendar_service_professionals add constraint calendar_service_professional_member_fk foreign key(organization_id,user_id) references public.user_organizations(organization_id,user_id) on delete cascade;end if;
  if not exists(select 1 from pg_constraint where conname='calendar_service_block_owner_member_fk' and conrelid='public.calendar_service_blocks'::regclass) then
-  alter table public.calendar_service_blocks add constraint calendar_service_block_owner_member_fk foreign key(organization_id,owner_user_id) references public.user_organizations(organization_id,user_id);end if;
+  alter table public.calendar_service_blocks add constraint calendar_service_block_owner_member_fk foreign key(organization_id,owner_user_id) references public.user_organizations(organization_id,user_id) on delete cascade;end if;
  if not exists(select 1 from pg_constraint where conname='calendar_service_block_publication_org_fk' and conrelid='public.calendar_service_blocks'::regclass) then
   alter table public.calendar_service_blocks add constraint calendar_service_block_publication_org_fk foreign key(organization_id,publication_appointment_id) references public.calendar_appointments(organization_id,id);end if;
 end $$;
@@ -769,7 +769,7 @@ begin
  if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;
  if contact is not null then perform public.fn_service_lock(p_org,contact); end if;
  select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
- if a.contact_id is distinct from contact or a.revision is distinct from p_revision then raise exception 'appointment_stale' using errcode='40001'; end if;
+ if a.contact_id is distinct from contact or a.revision is distinct from p_revision then raise exception 'appointment_stale' using errcode='PT409'; end if;
  -- A AGENDA DO COLEGA É UMA OPÇÃO DA ORGANIZAÇÃO (migration 0343, issue #978).
  if auth.uid() is not null and not public.fn_role_at_least(p_org,'manager')
     and not public.fn_colegas_podem_mexer_na_agenda(p_org)
@@ -777,7 +777,7 @@ begin
     and not (a.service_occurrence_id is not null and a.owner_user_id is null) then
   raise exception 'appointment_do_colega' using errcode='42501';
  end if;
- if p_remote and a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='40001';end if;
+ if p_remote and a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='PT409';end if;
  if a.status='cancelled' then raise exception 'appointment_cancelled' using errcode='22023'; end if;
  if contact is not null then origin:=jsonb_build_object('kind','command','observed',public.fn_service_observe_command(p_org,contact)); end if;
  -- A reserva de serviço usa a mesma transição nativa, com destino revalidado antes de soltar a origem.
@@ -869,7 +869,7 @@ begin
   perform public.fn_google_calendar_fence(p_org,(p_args->'calendar_fence'->>'id')::uuid,p_args->'calendar_fence'->'claim',p_args->'calendar_fence'->'cursor');
  end if;
  select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
- if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='40001';end if;
+ if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='PT409';end if;
  if contact is not null and exists(select 1 from public.contacts where organization_id=p_org and id=contact and is_anonymized) then
   if p_action='claim' then return jsonb_build_object('terminal','redacted');end if;
   raise exception 'google_contact_redacted' using errcode='42501';end if;
@@ -894,9 +894,9 @@ begin
    google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
  else
   if a.google_claim_token is distinct from (claim->>'token')::uuid or a.google_claim_epoch::text is distinct from claim->>'epoch'
-   or a.google_claim_until is null or a.google_claim_until<=clock_timestamp() then raise exception 'google_stale' using errcode='40001';end if;
+   or a.google_claim_until is null or a.google_claim_until<=clock_timestamp() then raise exception 'google_stale' using errcode='PT409';end if;
   if p_action='renew' then
-   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'google_stale' using errcode='40001';end if;
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'google_stale' using errcode='PT409';end if;
    if not exists(select 1 from public.calendar_connections x join public.calendar_connection_calendars k on k.organization_id=x.organization_id and k.connection_id=x.id
     where x.organization_id=p_org and x.id=a.google_connection_id and x.user_id=publication_owner and x.status='healthy' and k.external_calendar_id=a.google_calendar_id and k.available and k.access_role in ('writer','owner')) then raise exception 'google_connection_unavailable' using errcode='42501';end if;
    update public.calendar_appointments set google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
@@ -905,7 +905,7 @@ begin
   else
    if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision'
     or a.google_event_id is distinct from p_args->>'event_id' or a.google_connection_id::text is distinct from p_args->>'connection_id'
-    or a.google_calendar_id is distinct from p_args->>'calendar_id' then raise exception 'google_stale' using errcode='40001';end if;
+    or a.google_calendar_id is distinct from p_args->>'calendar_id' then raise exception 'google_stale' using errcode='PT409';end if;
    if p_action='error' then
     update public.calendar_appointments set google_sync_error=left(p_args->>'message',200),google_next_attempt_at=now()+interval '15 minutes',
      meeting_state=case when meeting_state='pending' and meeting_attempts>=19 then 'failed' else meeting_state end,
@@ -922,8 +922,8 @@ begin
     perform public.fn_meet_observe(p_org,p_id,p_args);
     select * into a from public.calendar_appointments where organization_id=p_org and id=p_id;
    elsif p_action='prepare' then
-    if c.access_role not in ('owner','writer') or (a.google_pending_write is not null and a.google_pending_write<>'{"reservation":true}'::jsonb) or a.google_conflict is not null then raise exception 'google_write_unavailable' using errcode='40001';end if;
-    if p_args->'operation'?'conference_request_id' and (a.meeting_request_id is distinct from (p_args->'operation'->>'conference_request_id')::uuid or a.meeting_state<>'pending' or a.meeting_received_at is not null or a.status='cancelled') then raise exception 'meet_stale' using errcode='40001';end if;
+    if c.access_role not in ('owner','writer') or (a.google_pending_write is not null and a.google_pending_write<>'{"reservation":true}'::jsonb) or a.google_conflict is not null then raise exception 'google_write_unavailable' using errcode='PT409';end if;
+    if p_args->'operation'?'conference_request_id' and (a.meeting_request_id is distinct from (p_args->'operation'->>'conference_request_id')::uuid or a.meeting_state<>'pending' or a.meeting_received_at is not null or a.status='cancelled') then raise exception 'meet_stale' using errcode='PT409';end if;
     update public.calendar_appointments set meeting_requested_at=case when p_args->'operation'?'conference_request_id' then coalesce(meeting_requested_at,now()) else meeting_requested_at end,google_pending_write=p_args->'operation' where organization_id=p_org and id=p_id;return 'true';
    elsif p_action='idle' then
    -- idle = convergente sem nada a fazer e sem falha nesta rodada: erro
@@ -931,9 +931,9 @@ begin
     update public.calendar_appointments set google_sync_error=null,google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return 'true';
    elsif p_action='commit' then
     result:=p_args->'result'; b:=result->'base';remote:=result->'remote';
-    if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='40001';end if;
+    if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='PT409';end if;
     if result?'apply_remote' then
-     if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='40001';end if;
+     if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='PT409';end if;
      if a.service_occurrence_id is null and not a.service_block and not coalesce((remote->>'cancelled')::boolean,false) and exists(select 1 from public.calendar_appointments other
       where other.organization_id=p_org and other.owner_user_id=a.owner_user_id and other.id<>a.id and other.status in ('pending','confirmed')
       and other.starts_at<(remote->>'ends_at')::timestamptz and other.ends_at>(remote->>'starts_at')::timestamptz) then
@@ -1165,9 +1165,9 @@ begin
  select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
  if not found or not public.fn_calendar_service_can_resolve(p_org,p_id) then raise exception 'google_resolution_forbidden' using errcode='42501';end if;
  if a.revision::text is distinct from p_revision or a.google_local_revision::text is distinct from p_local_revision
-  or a.google_etag is distinct from p_etag then raise exception 'google_stale' using errcode='40001';end if;
+  or a.google_etag is distinct from p_etag then raise exception 'google_stale' using errcode='PT409';end if;
  if p_choice='retry' then
-  if a.google_conflict is not null then raise exception 'google_conflict_requires_choice' using errcode='40001';end if;
+  if a.google_conflict is not null then raise exception 'google_conflict_requires_choice' using errcode='PT409';end if;
   update public.calendar_appointments set google_next_attempt_at=now() where organization_id=p_org and id=p_id;
  else
   if p_choice not in ('google','local','preserve_remote') or a.google_conflict is null then raise exception 'google_choice_invalid' using errcode='22023';end if;

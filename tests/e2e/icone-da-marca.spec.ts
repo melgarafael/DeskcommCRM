@@ -34,8 +34,11 @@ test.describe("o ícone e o título carregam a marca da instalação", () => {
     expect(manifest.icons.map((icone: { sizes: string }) => icone.sizes)).toEqual([
       "192x192",
       "512x512",
+      "512x512",
     ]);
-    for (const [indice, lado] of [192, 512].entries()) {
+    // O terceiro é o que o Android recorta: o desenho fica na zona segura.
+    expect(manifest.icons[2].purpose).toBe("maskable");
+    for (const [indice, lado] of [192, 512, 512].entries()) {
       const resposta = await page.request.get(manifest.icons[indice].src, { maxRedirects: 0 });
       expect(resposta.status()).toBe(200);
       expect(resposta.headers()["content-type"]).toMatch(/^image\/png/);

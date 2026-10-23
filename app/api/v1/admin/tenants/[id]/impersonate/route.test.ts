@@ -16,7 +16,10 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ set: vi.fn() }) }));
-vi.mock("@/lib/auth/requirePlatformAdmin", () => ({ requirePlatformAdmin: async () => ({ user: { id: h.ator } }) }));
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
+  requirePlatformAdmin: async () => ({ user: { id: h.ator } }),
+}));
 vi.mock("@/lib/auth/server", async () => {
   const { redirect } = await import("next/navigation");
   const orgAtivaSemPortao = async () => ({ orgId: h.orgDoAdmin, name: "Empresa do admin", role: "admin", org_status: h.statusDaOrgDoAdmin });

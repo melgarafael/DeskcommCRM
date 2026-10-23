@@ -25,10 +25,19 @@ export interface AgentInboxData {
   open_count: number;
 }
 
-/** Central de avisos do runtime (F1). Polling 30s — avisos nascem no worker. */
+/**
+ * Central de avisos do runtime (F1). Polling 30s — avisos nascem no worker.
+ *
+ * `podeConsultar` sai JUNTO do resultado, e de propósito: é o MESMO booleano que
+ * habilita a consulta (`enabled`) e é ele que a tela usa para decidir o que
+ * escrever quando os dados não vêm. Devolvê-lo separado — a tela perguntando a
+ * permissão por conta própria — permitiria os dois discordarem, e a contradição
+ * é o defeito da #3147: consulta desabilitada, lista sem dado e a tela
+ * imprimindo "Nenhum aviso em aberto" para quem não pode ver aviso nenhum.
+ */
 export function useAgentInbox(status: "open" | "resolved" = "open") {
   const podeConsultar = usePermission("ai.inbox.view");
-  return useQuery({
+  const consulta = useQuery({
     enabled: podeConsultar,
     queryKey: ["agent-inbox", status],
     // 30 s: é esta leitura que toca o som da etapa que avisa e do pedido de
@@ -39,6 +48,7 @@ export function useAgentInbox(status: "open" | "resolved" = "open") {
         .get<{ data: AgentInboxData }>(`/api/v1/ai/inbox?status=${status}`)
         .then((r) => r.data),
   });
+  return { ...consulta, podeConsultar };
 }
 
 export function useUpdateInboxItem() {

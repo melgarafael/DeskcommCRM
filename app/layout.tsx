@@ -5,7 +5,7 @@ import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 import { cssDaMarca } from "@/lib/branding/css";
-import { iconeDaAba } from "@/lib/branding/icone";
+import { iconeDaAba, sufixoDoIcone } from "@/lib/branding/icone";
 import { folhaPersonalizadaDaInstalacao } from "@/lib/branding/folha-personalizada";
 import { CABECALHO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
 import {
@@ -115,7 +115,16 @@ export async function generateMetadata(): Promise<Metadata> {
     // não pode ser um arquivo estático em `public/`.
     // Com um ícone subido em `/admin/marca` (migration 0443), o link aponta para
     // o arquivo no storage da instalação — ver `iconeDaAba`.
-    icons: { icon: iconeDaAba(linha?.favicon_path) },
+    //
+    // O iPhone não lê o ícone nem o nome do manifest: pede `apple-touch-icon`
+    // (o PNG de 180, com margem para o canto que ele arredonda) e
+    // `apple-mobile-web-app-title` — sem este, a tela de início ganharia o
+    // título longo acima.
+    icons: {
+      icon: iconeDaAba(linha?.favicon_path),
+      apple: `/app-icon/180${sufixoDoIcone(linha?.favicon_path)}`,
+    },
+    appleWebApp: { capable: true, title: name, statusBarStyle: "default" },
   };
 }
 

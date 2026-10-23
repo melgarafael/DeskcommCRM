@@ -16,7 +16,12 @@ import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { chaveDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { normalizarTag, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
+import { sugestoesDeEtiqueta } from "@/lib/contacts/etiquetas";
+import {
+  normalizarTag,
+  normalizarTags,
+  TAMANHO_MAXIMO_DA_TAG,
+} from "@/lib/contacts/tag-normalizada";
 
 /**
  * O alvo do editor — e ele é a ÚNICA coisa que decide para onde a etiqueta vai.
@@ -149,10 +154,17 @@ export function ContactTagsEditor(props: Props) {
   // E o chip MOSTRA a forma normalizada, não a que a fonte mandou: o rótulo
   // precisa ser o que o clique grava mesmo que a lista chegue crua (a rota a
   // normaliza hoje, mas a fonte está marcada para trocar).
-  const jaTem = new Set(tags.map(normalizarTag));
-  const suggestions = [...new Set((vocabulary ?? []).map(normalizarTag))]
-    .filter((v) => v && !jaTem.has(v))
-    .slice(0, 8);
+  //
+  // #3180 — e o texto digitado ENTRA no filtro, com a MESMA chave larga da
+  // busca (sem caixa, sem acento, casando no meio da palavra) que a ficha do
+  // contato já usa (#2732): `sugestoesDeEtiqueta`. Sem texto, a lista sai na
+  // ordem da FONTE — as mais usadas primeiro —, nunca reordenada no alfabeto.
+  const conhecidas = normalizarTags(vocabulary ?? []);
+  const suggestions = sugestoesDeEtiqueta({
+    conhecidas,
+    selecionadas: tags,
+    digitado: draft,
+  });
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-border p-2">

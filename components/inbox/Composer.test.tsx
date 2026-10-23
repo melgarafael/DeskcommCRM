@@ -309,3 +309,18 @@ describe("o que o conserto NÃO muda (preservado, medido)", () => {
     expect(sendMutate.mock.calls[0]![0]).toMatchObject({ conversation_id: "conv-2", body: "Oi Ana" });
   });
 });
+
+/**
+ * Campo com menos de 16px faz o Safari do iPhone AMPLIAR a página ao focar —
+ * e o zoom muda a largura do `visualViewport`, o que confundia a detecção do
+ * teclado da conversa em tela cheia. jsdom não aplica CSS: a medida em px vive
+ * no e2e `atender-pelo-celular.spec.ts`; aqui fica a guarda da classe.
+ */
+describe("campo de mensagem com 16px no celular (F2)", () => {
+  it("usa text-base abaixo do md e text-sm a partir dele", () => {
+    renderComposer({ contactName: "Rafael Melgaço" });
+    const campo = screen.getByRole("textbox");
+    expect(campo.className).toMatch(/(^|\s)text-base(\s|$)/);
+    expect(campo.className).toContain("md:text-sm");
+  });
+});

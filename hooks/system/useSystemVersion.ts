@@ -50,6 +50,14 @@ export interface SystemVersion {
     to_version: string;
     /** Últimas linhas da saída do update.sh — o diagnóstico da falha. */
     log_tail: string;
+    /** Quando o run fechou (ISO). `null` enquanto ele ainda está em curso. */
+    finished_at?: string | null;
+    /**
+     * A volta foi feita pelo agente, sem ninguém pedir pela tela (#2757). É a
+     * diferença entre "voltei" e "voltou sozinho", e ela é o assunto do aviso
+     * que a tela mostra no desfecho `failed_rolled_back`.
+     */
+    volta_automatica?: boolean;
     /**
      * A falha deste run já foi superada por um deploy posterior (o host reporta
      * uma versão que o run não descreve). A tela deixa de mostrar o aviso dela.

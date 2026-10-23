@@ -34,13 +34,37 @@ const CONV_A = "aaaaaaaa-1111-4000-8000-000000000001";
 const CONV_A2 = "aaaaaaaa-1111-4000-8000-000000000005";
 const CONV_B = "bbbbbbbb-1111-4000-8000-000000000002";
 const CONV_FANTASMA = "cccccccc-1111-4000-8000-000000000003";
+const OUTRO_CONTATO = "aaaaaaaa-5555-4000-8000-000000000010";
+const LEAD_DA_CONV_A = "aaaaaaaa-7777-4000-8000-000000000001";
+const LEAD_DA_CONV_A2 = "aaaaaaaa-7777-4000-8000-000000000002";
+const LEAD_DE_TERCEIRO = "aaaaaaaa-7777-4000-8000-000000000003";
 
 type Linha = Record<string, unknown>;
+
+/**
+ * A linha do dublê por id — `linhas[0]` é opcional para o compilador
+ * (`noUncheckedIndexedAccess`) e um `?.` transformaria linha ausente em asserção
+ * fraca. Aqui, linha que falta estoura.
+ */
+function linhaDe(linhas: Linha[], id: string): Linha {
+  const achada = linhas.find((l) => l.id === id);
+  if (!achada) throw new Error(`dublê sem a linha ${id}`);
+  return achada;
+}
+
 
 /** Estado mutável do dublê, recriado a cada teste. */
 interface Estado {
   conversas: Linha[];
   membros: Linha[];
+  /**
+   * Os negócios do funil (#3177). Vazio por padrão: os testes que NÃO falam do
+   * funil medem o lote sem negócio aberto nenhum — a sincronia da conversa é
+   * um no-op neles, como seria num tenant sem card.
+   */
+  leads: Linha[];
+  /** Os patches que chegaram ao `crm_leads` — a conta exata do #3177. */
+  escritasDeLead: Linha[];
   rpcs: Array<{ nome: string; params: Linha }>;
   /** Id cuja escrita no banco ESTOURA — simula o handler que morre sem responder. */
   explodirEm: string | null;
@@ -64,6 +88,23 @@ function conversa(id: string, organizationId: string, extra: Linha = {}): Linha 
 }
 
 /**
+ * Um negócio do funil (#3177) — o mínimo que a régua lê: contato, status e dono.
+ * `contact_id` é o que decide QUAL card cada conversa do lote leva.
+ */
+function negocioDoFunil(id: string, contactId: string, owner: string | null): Linha {
+  return {
+    id,
+    organization_id: ORG_A,
+    contact_id: contactId,
+    status: "open",
+    owner_user_id: owner,
+    owner_agent_id: null,
+    owner_kind: owner ? "user" : null,
+    assigned_at: null,
+  };
+}
+
+/**
  * O dublê de client `.from(...).eq(...).maybeSingle()` com PREDICADO: só casa a
  * linha quando TODO filtro bate, `organization_id` inclusive. `rpc` grava as
  * chamadas em `estado.rpcs` — é assim que o teste prova que `to_user_id` chegou
@@ -78,7 +119,9 @@ function clienteFalso(estado: Estado) {
         ? estado.conversas
         : tabela === "user_organizations"
           ? estado.membros
-          : [];
+          : tabela === "crm_leads"
+            ? estado.leads
+            : [];
     const casa = (l: Linha) => filtros.every(([c, v]) => l[c] === v);
     const q = {
       select: () => q,
@@ -96,9 +139,11 @@ function clienteFalso(estado: Estado) {
       },
       is: () => q,
       in: () => q,
+      limit: () => q,
       maybeSingle: async () => {
         if (patch) {
           const alvos = linhas().filter(casa);
+          if (alvos.length > 0) estado.escritasDeLead.push({ ...patch });
           for (const l of alvos) Object.assign(l, patch);
           patch = null;
           return { data: alvos[0] ?? null, error: null };
@@ -193,6 +238,8 @@ beforeEach(() => {
         revoked_at: null,
       },
     ],
+    leads: [],
+    escritasDeLead: [],
     rpcs: [],
     explodirEm: null,
   };
@@ -412,6 +459,51 @@ describe("POST /api/v1/conversations/bulk", () => {
         metadata: expect.objectContaining({ to_user_id: DESTINATARIO, note: "plantão da noite" }),
       }),
     );
+  });
+
+  it("transfer em lote: cada conversa leva o negócio aberto do SEU contato — e só o dele (#3177)", async () => {
+    // A2 é de OUTRO contato: o lote transfere duas conversas, mas o funil só
+    // recebe o dono em quem é daquele contato. O negócio de terceiro (nem da
+    // conversa, nem do contato) fica intacto — "sem transferir a mais".
+    estado.conversas = [conversa(CONV_A, ORG_A), conversa(CONV_A2, ORG_A, { contact_id: OUTRO_CONTATO })];
+    estado.leads = [
+      negocioDoFunil(LEAD_DA_CONV_A, "aaaaaaaa-5555-4000-8000-000000000009", USER),
+      negocioDoFunil(LEAD_DA_CONV_A2, OUTRO_CONTATO, USER),
+      negocioDoFunil(LEAD_DE_TERCEIRO, "aaaaaaaa-5555-4000-8000-000000000011", null),
+    ];
+
+    const res = await POST(
+      req({ action: "transfer", ids: [CONV_A, CONV_A2], to_user_id: DESTINATARIO }),
+    );
+
+    expect(res.status).toBe(200);
+    const corpo = await corpoDe(res);
+    expect(corpo.data.feitos).toBe(2);
+    expect(estado.leads.map((l) => l.owner_user_id)).toEqual([
+      DESTINATARIO,
+      DESTINATARIO,
+      null,
+    ]);
+    expect(estado.escritasDeLead).toHaveLength(2);
+    // A sincronia é da ROTA de uma; o lote não a repete por conta própria.
+    expect(estado.rpcs.filter((r) => r.nome === "fn_conversation_assign")).toHaveLength(2);
+  });
+
+  it("duas conversas do MESMO contato: o card é escrito UMA vez (#3177)", async () => {
+    // Idempotência medida: o segundo item já encontra o responsável certo e não
+    // regrava (regravar emitiria um `lead.assigned` que não houve).
+    estado.leads = [
+      negocioDoFunil(LEAD_DA_CONV_A, "aaaaaaaa-5555-4000-8000-000000000009", USER),
+    ];
+
+    const res = await POST(
+      req({ action: "transfer", ids: [CONV_A, CONV_A2], to_user_id: DESTINATARIO }),
+    );
+
+    const corpo = await corpoDe(res);
+    expect(corpo.data.feitos).toBe(2);
+    expect(estado.escritasDeLead).toHaveLength(1);
+    expect(linhaDe(estado.leads, LEAD_DA_CONV_A).owner_user_id).toBe(DESTINATARIO);
   });
 
   it("archive vai pelo PATCH de status (#923) e audita conversation.archived", async () => {

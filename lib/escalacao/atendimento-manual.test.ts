@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { PRAZO_DO_SILENCIO_MS, pausarIaPorAtendimentoManual } from "./atendimento-manual";
 import { decidirElegibilidade, normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { logger } from "@/lib/logger";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONV = "22222222-2222-4222-8222-222222222222";
@@ -23,6 +24,7 @@ const T0 = new Date("2026-09-03T14:00:00.000Z");
 function adminStub(
   silencedUntil: string | null,
   falhas: { leitura?: string; escrita?: string } = {},
+  linhasAfetadas = 1,
 ) {
   const updates: Array<Record<string, unknown>> = [];
   const chain = {
@@ -38,8 +40,16 @@ function adminStub(
           ? { data: null, error: { message: falhas.leitura } }
           : { data: { bot_silenced_until: silencedUntil }, error: null },
       ),
+    // O UPDATE termina com `select("id")`: a resposta traz as LINHAS afetadas.
+    // `linhasAfetadas: 0` simula o `error: null` que não tocou em nada — o caso
+    // que fazia a função mentir.
     then: (r: (v: unknown) => unknown) =>
-      Promise.resolve({ error: falhas.escrita ? { message: falhas.escrita } : null }).then(r),
+      Promise.resolve({
+        data: falhas.escrita
+          ? null
+          : Array.from({ length: linhasAfetadas }, (_, i) => ({ id: `linha-${i}` })),
+        error: falhas.escrita ? { message: falhas.escrita } : null,
+      }).then(r),
   };
   return { admin: { from: vi.fn(() => chain) } as never, updates };
 }
@@ -64,6 +74,7 @@ function iaCaladaEm(ate: Date, quando: Date): boolean {
     canalDesativado: false,
     modo: "open",
     forceHuman: false,
+    contatoInterno: false,
     aiOptOut: false,
     botSilencedUntil: normalizarInstante(ate.toISOString()),
     assigneeKind: null,
@@ -250,6 +261,50 @@ describe("pausarIaPorAtendimentoManual — o que NÃO grava, e o que não derrub
 });
 
 /**
+ * A pausa tem que ser OBSERVÁVEL (#534). O supabase-js devolve `error: null`
+ * quando o UPDATE não casa com linha nenhuma (RLS, corrida com um DELETE). Sem
+ * conferir as linhas afetadas, a função dizia "pausei" sem ter gravado.
+ * A metade "não gravou": zero linhas → warn com rows 0 e `false`. A metade
+ * "gravou", logo ao lado, garante que o caminho feliz segue devolvendo `true`.
+ */
+describe("pausarIaPorAtendimentoManual — a pausa precisa ser OBSERVÁVEL (#534)", () => {
+  it("update sem linha afetada NÃO é pausa: warn com rows 0 e devolve false", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      const { admin, updates } = adminStub(null, {}, 0);
+      const pausou = await pausarIaPorAtendimentoManual(admin, {
+        organizationId: ORG,
+        conversationId: CONV,
+        agora: T0,
+      });
+
+      expect(pausou).toBe(false);
+      // A tentativa de UPDATE aconteceu: a mentira nunca foi "não tentou", era
+      // "não conferiu o que voltou".
+      expect(updates).toHaveLength(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("nenhuma linha afetada"),
+        expect.objectContaining({ rows: 0 }),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("uma linha afetada é pausa de verdade: grava e devolve true", async () => {
+    const { admin, updates } = adminStub(null, {}, 1);
+    const pausou = await pausarIaPorAtendimentoManual(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      agora: T0,
+    });
+
+    expect(pausou).toBe(true);
+    expect(updates).toHaveLength(1);
+  });
+});
+
+/**
  * Dublê que separa as duas tabelas: `organizations` devolve o `settings` (ou
  * falha), `conversations` devolve a conversa sem silêncio e registra o UPDATE.
  */
@@ -263,7 +318,9 @@ function adminComAjuste(org: { settings?: unknown; erro?: string; lanca?: boolea
     },
     eq: () => conversa,
     maybeSingle: () => Promise.resolve({ data: { bot_silenced_until: null }, error: null }),
-    then: (r: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(r),
+    // O UPDATE termina com `select("id")`: uma linha afetada é a pausa gravada.
+    then: (r: (v: unknown) => unknown) =>
+      Promise.resolve({ data: [{ id: CONV }], error: null }).then(r),
   };
   const organizacao = {
     select: () => organizacao,

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { ROTULO_DO_TIPO } from "@/lib/messaging/previa-da-mensagem";
 
+import { NOTIFY_KINDS } from "./kinds";
+
 export const PUSH_PAYLOAD_MAX = 140;
 
 /**
@@ -36,7 +38,8 @@ export function montarPayloadDeInbound(input: {
   const title = input.contactName?.trim() || "Nova mensagem";
   void input.brand;
   const body = truncar(input.preview);
-  const tag = input.conversationId ? `msg:${input.conversationId}` : "msg";
+  const prefixo = NOTIFY_KINDS.message_inbound.tagPrefix;
+  const tag = input.conversationId ? `${prefixo}:${input.conversationId}` : prefixo;
   const href = input.conversationId ? `/app/inbox?id=${input.conversationId}` : "/app/inbox";
   const icon = input.icon?.trim() || undefined;
   return { title, body, tag, href, icon, corpoSemPrevia: input.corpoSemPrevia };
@@ -62,9 +65,4 @@ export function truncar(text: string): string {
   const t = text.trim().replace(/\s+/g, " ");
   if (t.length <= PUSH_PAYLOAD_MAX) return t;
   return `${t.slice(0, PUSH_PAYLOAD_MAX - 1)}…`;
-}
-
-/** Sem cliente visível o SW mostra a bandeja; aba visível o emit da página cobre. */
-export function pushDeveMostrarBandeja(clientesVisiveis: number): boolean {
-  return clientesVisiveis === 0;
 }

@@ -35,9 +35,11 @@ import {
   useUnmarkAlwaysHumanContact,
 } from "@/hooks/contacts/useAlwaysHumanContact";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
+import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { canonicalTagsDoFunil } from "@/lib/contacts/etiquetas";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
@@ -47,7 +49,7 @@ import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
-import { origemDoContato } from "@/lib/leads/origem-do-contato";
+import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
 
@@ -84,6 +86,11 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   // As DEFINIÇÕES continuam no funil (`crm_pipelines.settings.fields[]`) — só o
   // VALOR mora no contato. `camposDoFunil` é o mesmo leitor que o Kanban usa.
   const pipelineQuery = useDefaultPipeline(Boolean(activeOrg));
+  // As duas fontes do autocompletar de etiquetas (issue #2732). Os dois hooks
+  // ficam ANTES dos early returns pelo mesmo motivo do `desbloquear` abaixo:
+  // chamá-los depois mudaria a ordem dos hooks entre renderizações.
+  const vocabularioDeEtiquetas = useContactTagVocabulary(activeOrg?.orgId ?? null);
+  const canonicalTags = canonicalTagsDoFunil(pipelineQuery.data?.pipeline.settings ?? null);
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
   // Desfazer o descadastro é o override da regra W-02 — só admin, e auditado.
@@ -428,7 +435,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
               */}
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">{t("Origem")}</dt>
-                <dd className="mt-1">{origem.origem}</dd>
+                <dd className="mt-1">
+                  {origem.origem === ORIGEM_AGENDA_DO_CELULAR ? t("Agenda do celular") : origem.origem}
+                </dd>
               </div>
               <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
               <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
@@ -560,6 +569,8 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null),
           "contato",
         )}
+        vocabulario={vocabularioDeEtiquetas.data}
+        canonicalTags={canonicalTags}
       />
       <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
     </div>

@@ -122,11 +122,15 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {/* Cada cartão LINKAR para a leitura do material: era o que faltava
+              para a equipe não precisar de um sistema externo para consultar o
+              que já está guardado aqui. */}
           {lista.map((s) => (
             <KnowledgeSourceCard
               key={s.id}
               source={s}
               usadoPor={usadoPor(s.id)}
+              href={`/app/ai/knowledge/sources/${s.id}`}
               isReindexing={reindex.isPending && reindex.variables === s.id}
               onReindex={() => reindex.mutate(s.id)}
               onArquivar={() => arquivar.mutate(s.id)}

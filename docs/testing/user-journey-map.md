@@ -627,12 +627,13 @@ divide o servidor. Só aparece exercitando o produto pela tela.
 
 ## J12 — A tela diz o que ESTA instalação consegue fazer `[P0]`
 
-**Por que P0:** é primeira impressão pura. **Nenhuma instalação nasce com o par
-VAPID** — o `.env.hostgator.example` grava as duas linhas vazias e gerar o par é
-um passo opcional que ninguém é obrigado a dar. Ou seja, o estado testado aqui é
-o estado em que 100% das instalações começam, e a tela de Notificações tem porta
-na navegação (`lib/navigation/registry.ts:470`), então qualquer pessoa chega nela
-no primeiro dia.
+**Por que P0:** é primeira impressão pura. Pelo kit, o install e a atualização
+geram o par VAPID sozinhos (`completar_par_vapid`, em
+`hostgator-setup-kit/_common.sh`); o estado testado aqui é o de quem montou o
+servidor FORA do kit (como o CI) ou cujo kit não conseguiu gerar o par — e a tela
+de Notificações tem porta na navegação (confira com
+`grep -n settings/notifications lib/navigation/catalogo.ts`), então qualquer
+pessoa chega nela no primeiro dia.
 
 **O defeito era de tela, e o backend estava certo o tempo todo.**
 `GET /api/v1/notifications/push` já devolvia `enabled:false` sem as chaves, e o
@@ -653,8 +654,8 @@ informação ausente.
 
 **O conserto exagerado, recusado de propósito:** desabilitar o interruptor sem
 VAPID. Sem as chaves o aviso na bandeja **ainda funciona com a aba aberta** —
-é `new Notification()` em `lib/notifications/emit.ts`, que não depende de
-inscrição nenhuma. Desabilitar trocaria prometer demais por entregar de menos, e
+é `lib/notifications/emit.ts` (pelo service worker, ou `new Notification()`
+sem ele), que não depende de inscrição nenhuma. Desabilitar trocaria prometer demais por entregar de menos, e
 o segundo não deixa rastro. **J12.5** existe para impedir esse conserto (era
 J12.3, no `e2e`, até a medição mostrar que ali ela não era observável — ver
 abaixo).
@@ -670,14 +671,15 @@ num job que já leva meia hora.
 | # | Caso | Expectativa | Resultado |
 |---|------|-------------|-----------|
 | J12.1 | Sem VAPID, a tela não fica muda | aviso `push-status-faltando-chaves` visível, e o de «pronto» ausente | PASS |
-| J12.2 | Ela diz o que FAZER, não só o que falta | o comando `npx web-push generate-vapid-keys` e as duas chaves, nominalmente | PASS |
+| J12.2 | Ela diz o que FAZER, não só o que falta | rodar a atualização (`update.sh` sem `--force`: o par nasce mesmo sem versão nova) e, fora do kit, o comando `npx web-push generate-vapid-keys` e as duas chaves, nominalmente | PASS (e2e: comando manual e chaves; unit: atualizar sem `--force`; shell: `update-guard` §14) |
 | J12.3 | O controle de Push não some, e a tela diz por que está travado | interruptor visível + «o navegador bloqueou as notificações» | PASS |
 | J12.5 | VAPID ausente NÃO desabilita o Push | com `granted` e sem chaves, nasce habilitado | PASS (unit) |
 | J12.4 | Com VAPID, anuncia a aba fechada | e para de mandar gerar o par que já existe | PASS (unit) |
 | J12.6 | O admin escolhe o que os avisos mostram fora do app (celular bloqueado e computador), e o padrão é só o nome | `tela-bloqueada-nome` marcado; trocar para «Esconder tudo» grava e sobrevive ao recarregar (e2e `notificacoes-tela-bloqueada`) | aguardando o CI |
 | J12.7 | Quem não é admin vê a escolha e não muda | as três opções desabilitadas + «Quem decide é um administrador.» (e2e `notificacoes-tela-bloqueada`) | aguardando o CI |
 | J12.8 | O push sai pelo funil, e no modo oculto sem corpo nem ícone | `lib/notifications/web_push.test.ts`, `tests/unit/push-sai-so-pelo-funil.test.ts` | PASS (unit) |
-| J12.9 | Sair, desligar os alertas e «Sair de todos os dispositivos» encerram o push; com o push de mensagem desligado, os outros pushes aparecem desligados e travados, e o aparelho não volta a se inscrever | `lib/notifications/push_client.test.ts`, `app/app/settings/notifications/_client.test.tsx`, `hooks/auth/AuthProvider.signOut.test.tsx`, `app/actions/settings/signOutEverywhere.test.ts`; sem e2e (o CI não tem VAPID, não há inscrição) | PASS (unit) |
+| J12.9 | Sair, desligar os alertas e «Sair de todos os dispositivos» encerram o push; «Sair» desconecta TODOS os aparelhos (o `signOut()` do auth-js é `global`) e por isso apaga as inscrições de todos eles — achado da prova pela tela do #3113: só a do aparelho que saiu era apagada; com o push de mensagem desligado, os outros pushes aparecem desligados e travados, e o aparelho não volta a se inscrever | `lib/notifications/push_client.test.ts`, `app/app/settings/notifications/_client.test.tsx`, `hooks/auth/AuthProvider.signOut.test.tsx`, `app/actions/settings/signOutEverywhere.test.ts`, `app/actions/auth/signOut.test.ts`; sem e2e (o CI não tem VAPID, não há inscrição) | PASS (unit) |
+| J12.10 | Recarregar Configurações › Notificações com a permissão do navegador concedida deixa os interruptores de Push usáveis; com ela negada, o aviso de bloqueio aparece sem erro de hidratação — achado da prova pela tela do #3113: o snapshot de servidor da permissão era o valor real, e os seis ficavam `disabled` para sempre (e #418 a cada carga com permissão negada) | `app/app/settings/notifications/_client.hidratacao.test.tsx` (HTML do servidor + `hydrateRoot`) | PASS (unit) |
 
 **Por que J12.5 não é `e2e`, medido e não suposto.** Ela nasceu como asserção
 `toBeEnabled()` na spec, e não podia viver lá. Medido no Chromium do Playwright,
@@ -1575,6 +1577,112 @@ Spec: `tests/e2e/inbox-selecionada-no-escuro.spec.ts`.
 | J47.2 | A classe da selecionada | `bg-accent-soft`, nenhum degrau fixo `bg-accent-50…950`; a não selecionada não ganha o fundo | **PASS (unit)** — `tests/unit/selecionada-legivel-no-escuro.test.tsx` |
 | J47.3 | Tema escuro, conversa aberta E marcada no lote, com o mouse ou o foco de teclado | a linha fica num tom só (o botão não pinta por cima do fundo da linha), o foco aparece como anel, e o nome e a prévia seguem com contraste ≥ 4,5 contra o fundo efetivo | **PASS pela tela** — Evidência: `evidence/inbox-selecionada-no-escuro/02-aberta-e-marcada-com-foco.png` |
 
+## J48 — Instalar o app no celular e ser avisado `[P0]` (2026-10-20)
+
+Contexto: ADR-0006, fase F1 ("Instala e avisa"). O app do atendente no celular é
+a PWA do mesmo Next: manifest com `id`, cores e ícone `maskable`; ícone e título
+do iPhone; um service worker escrito à mão que mostra TODO push e responde uma
+página neutra quando a navegação cai sem rede; e a tela **Configurações › Sua
+conta › App no celular** (`app/app/settings/aplicativo/`), que guia a instalação
+por aparelho. Por que P0: é a primeira coisa que o atendente faz no celular, e a
+decisão (c) do dono manda a tela dizer a verdade em `http://IP` em vez de
+oferecer botão que não funciona.
+
+Spec: `tests/e2e/app-no-celular.spec.ts` (parte 6). Aparelho, pedido de
+instalação do Android, contexto inseguro e "aberto pelo ícone" são EMULADOS, e a
+spec declara isso no cabeçalho. A regra da tela por aparelho está em
+`lib/pwa/estado-da-instalacao.test.ts`; o SW, em `tests/unit/notify-sw.test.ts`.
+Evidência: `evidence/app-no-celular-20261020/` (gravada pelo CI).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J48.1 | Manifest e ícones antes do login | `id: /app`, `standalone`, cores, terceiro ícone `maskable`; PNG de 192, 512, maskable e 180 com o lado medido no cabeçalho; `/login` declara `apple-touch-icon` → `/app-icon/180` | E2E (CI) + UNIT `branding-app-manifest`, `branding-icone-do-app`, `metadata-do-iphone` |
+| J48.2 | SW nasce em todo /app sem permissão de avisos | `navigator.serviceWorker.ready` com `notify-sw.js`, com `Notification.permission` ≠ `granted` | E2E (CI) + UNIT `sw-registrado-em-todo-app` |
+| J48.3 | Navegação sem rede | 503 com «Sem conexão», nada da casca do app; «Tentar de novo» devolve o app com a rede de volta | E2E (CI) + UNIT `notify-sw` (503, `no-store`, 3xx/5xx intactos, POST e não-navegação passam direto) |
+| J48.4 `[P0]` | A tela diz a verdade em endereço sem https | `app-sem-https`, «Esta instalação não tem app no celular.» e nenhum botão de instalar | E2E (CI, emulado) + UNIT |
+| J48.5 | Android sem pedido do navegador | passo a passo pelo menu (⋮) | E2E (CI, emulado) |
+| J48.6 | Android com pedido do navegador | botão «Instalar app» ≥ 44 px, o dedo no centro acerta o botão, o clique abre o diálogo uma vez | E2E (CI, evento sintético) + UNIT `pedido-de-instalacao` |
+| J48.7 | iPhone | passo a passo pelo Compartilhar, com «entre de novo» e o aviso do iOS 16.4 | E2E (CI, emulado) |
+| J48.8 | Aberto pelo ícone | «Você já está usando o app.» | E2E (CI, emulado) |
+| J48.9 | Navegador de dentro de outro app, https que recusa o SW, Chrome em modo computador | manda abrir no Safari/Chrome; fica sem app; conta como celular | UNIT `estado-da-instalacao` |
+| J48.10 | Push com o app à vista | AINDA vira notificação, calada (a página já tocou o som); fora do app ou tipo sem aviso local, com som | UNIT `notify-sw` |
+| J48.11 | A porta | o link «Receber no celular: instalar o app» em Notificações leva à tela | E2E (CI) |
+
+**NÃO COBERTO, declarado:** aparelho real. Instalar pelo caminho guiado num
+Android e num iPhone de verdade, numa instalação HTTPS fresca; o ícone com a
+marca da instalação na tela de início; o aviso chegando com o app fechado e a
+tela bloqueada seguindo a decisão (a); o toque no aviso caindo na conversa. É
+critério de pronto da F1 na ADR, e o CI não alcança — vai para
+`evidence/<data>-f1/`.
+
+## J49 — Atender pelo celular `[P0]` (2026-10-21)
+
+Contexto: ADR-0006, fase F2 ("Atende pelo celular"), primeira PR. O atendente
+(papel `agent`), no telefone e com uma mão, abre uma conversa da lista: ela
+ocupa a tela inteira (camada `fixed` abaixo do `md`, em `colunasDoCelular`),
+cobre a barra de cima e a de abas, respeita a faixa de WhatsApp desconectado
+(`components/shell/FaixasDeCima.tsx` publica `--faixas-de-cima`) e cola na área
+visível quando o teclado abre (`lib/ui/altura-visivel.ts`, `data-teclado-aberto`).
+O voltar da tela desfaz o passo (`navegarNoInbox`) em vez de empilhar. Por que
+P0: é o caminho de trabalho do atendente no celular, e a primeira impressão de
+quem instalou a PWA da F1.
+
+Spec: `tests/e2e/atender-pelo-celular.spec.ts` (parte 6), 390×844 com
+`isMobile` + `hasTouch`, login `agent`, conversa semeada pelo próprio arquivo.
+O arquivo reprova se o navegador não casar `(pointer: coarse)`. Evidência:
+`evidence/atender-pelo-celular-20261021/` (gravada pelo CI).
+
+Resultado: **PENDENTE** em todas as linhas até o primeiro verde da parte 6 no
+CI — a coluna abaixo diz QUEM mede, não o que foi medido.
+
+| # | Caso | Expectativa | Quem mede |
+|---|------|-------------|-----------|
+| J49.1 (A-1) | Tela cheia | coluna `fixed` com topo = `--faixas-de-cima` e base = 844 (±1); `elementFromPoint` sobre o TopBar e sobre a barra de abas cai DENTRO da conversa; `body.scrollWidth ≤ 390` e, como a camada é `fixed` e não aumenta o documento, `scrollWidth − clientWidth` da própria coluna ≤ 1 e a borda direita da fileira do composer ≤ 390; fio ≥ 300px (o valor real vai como anotação do teste); busca da lista e campo de mensagem com fonte ≥ 16px; o foco não fica num elemento da lista escondida | E2E (CI) + UNIT `citada-apagada-e-tela-em-branco` (classes da camada, só `max-md:`) |
+| J49.2 (A-2) | Alvos tocáveis | «‹ Conversas» e «Ficha» ≥ 44×44; todo botão da fileira de ações ≥ 44 de altura; «Assumir» dentro da tela e com o menor `left` da fileira | E2E (CI) + UNIT `inbox-header-nao-trava` |
+| J49.3 (A-3) | Voltar pela tela, depois o voltar do navegador | a lista aparece sem `id=`; o voltar do navegador vai para a entrada ANTERIOR à lista (`?filter=mine`), não reabre a conversa | E2E (CI) + UNIT `voltar-do-inbox-no-celular` |
+| J49.4 (A-4) | Link direto (o clique no aviso) e voltar | a lista aparece e `history.length` não muda | E2E (CI) + UNIT |
+| J49.5 (A-5) | Gesto de voltar do sistema | devolve a lista, sem `id=` | E2E (CI) |
+| J49.6 (A-6) `[P0]` | WhatsApp desconectado | com a faixa na tela o documento não rola (`scrollY` ≤ 1 depois de `scrollTo` ao fim); aberta a conversa, topo da camada = base das faixas (±1), a faixa continua por cima (`elementFromPoint`), o composer termina ≤ 844 e a barra de voltar fica abaixo da faixa; de volta à lista e com a página rolada (espaçador de 3000px no `<main>`), o topo do `<header>` sticky = base das faixas (±1) e `elementFromPoint` no topo dele cai no header | E2E (CI, conexão `FAILED` semeada e apagada no `finally`, com a remoção conferida) + UNIT `faixas-de-cima` |
+| J49.7 (A-7) | Teclado aberto, modelo Android | janela de 500px: `data-teclado-aberto`, fileira de ações escondida, último balão dentro do fio e composer ≤ 500 | E2E (CI) + UNIT `altura-visivel` |
+
+**NÃO MEDIDO — só o aparelho prova:** o teclado do iOS (que NÃO encolhe a
+janela: ali quem mede é o `visualViewport.offsetTop`, e a fórmula da camada com
+`--vv-topo` nunca rodou num Safari de verdade); o gesto de borda do app
+instalado, da conversa e da lista, e o toque no aviso com o app fechado seguido
+de «‹ Conversas»; a área segura real (o composer não encostar no indicador de
+home, `env(safe-area-inset-*)` vale 0 no Chromium); a reancoragem do fio com o
+teclado do Android de verdade, e não só a janela encolhida do modelo; o zoom
+do Safari (a detecção do teclado compara `height × scale` e lê rotação em
+`documentElement.clientWidth`, provado só em unidade); o elástico de rolagem
+no fim do fio repassando movimento ao `visualViewport` (a camada pode tremer;
+candidato: `overscroll-y-contain` no rolador do `ChatThread`, só se a sonda
+no iPhone mostrar o tremor); a folga `pr-8` da fileira de ações rolável num
+Safari antigo; o voltar do Android instalado aberto a frio pelo aviso, que
+sai do app direto da conversa (já era assim antes desta entrega).
+
+**Limite aceito (acessibilidade):** com a conversa aberta no celular, o
+`TopBar` e a barra de abas ficam cobertos pela camada mas seguem na árvore de
+acessibilidade e na ordem de foco — o VoiceOver e o TalkBack alcançam
+controles escondidos atrás da conversa. A lista fica `invisible` (fora da
+árvore); as barras da casca não, porque ficam no `AppShell` e tirá-las exige
+um sinal da casca que esta entrega não criou.
+
+**Achados do mapa de código, consertados nesta entrega:** o documento media a
+tela MAIS a faixa de canal caído (o composer nascia abaixo da borda justo com o
+WhatsApp desconectado); o «‹ Conversas» empilhava a lista e o voltar do sistema
+reabria a conversa; a busca da lista sobrescrevia o `text-base` do `Input` com
+`text-sm` (zoom do iPhone ao tocar); os botões da barra de voltar tinham 36px; o
+esqueleto de carregamento desenhava duas colunas em 390px. Efeito colateral
+declarado: a faixa da cobrança passou a ficar fixa no topo, empilhada com as
+outras.
+
+**Achados da revisão, consertados:** o `TopBar` e a `Sidebar` grudavam em
+`top-0` e passavam por baixo das faixas ao rolar (agora grudam em
+`--faixas-de-cima`, e a `Sidebar` desconta a faixa da altura); o campo de
+mensagem tinha 14px (zoom do iPhone no foco) e o zoom zerava a régua do
+teclado; a busca podia seguir focada na lista escondida; link direto X
+seguido de troca para Y deixava X para o voltar do sistema reabrir.
+
 ## Jornadas exercitadas (instalação final, virgem)
 
 | Jornada | Resultado |
@@ -1998,7 +2106,7 @@ primeira tela é a primeira impressão.
 |---|---|---|
 | Em 390×844, o sidebar de desktop sai da árvore acessível e a navegação vira gaveta | `[P1]` | **PASS**, medido por ferramenta em `tests/e2e/navegacao.spec.ts` (bloco `mobile`): `documentElement.scrollWidth <= clientWidth + 1` depois do login, com a gaveta aberta, e depois de navegar por ela. Evidência em `.superpowers/evidence/nav-mobile-390-drawer-aberta.png` — a captura é apoio, quem afirma é a medida |
 | `/admin` em 390px | — | **NÃO COBERTO.** `components/admin/AdminSidebar.tsx:58` é `w-60` sem prefixo responsivo: o mesmo defeito da #203, instância não consertada. Público é só platform admin, por isso ficou como issue e não como bloqueio |
-| Estouro DENTRO do `<main>` | — | **NÃO COBERTO.** `AppShell.tsx` dá `overflow-auto` ao `<main>`, que é contêiner de rolagem próprio: conteúdo largo rola lá dentro sem aumentar `documentElement.scrollWidth`. A sonda é fiel ao sintoma da #203 e não prova que as telas densas (Kanban, Inbox) são usáveis em 390px |
+| Estouro DENTRO do `<main>` | — | **NÃO COBERTO.** `AppShell.tsx` dá `overflow-auto` ao `<main>`, que é contêiner de rolagem próprio: conteúdo largo rola lá dentro sem aumentar `documentElement.scrollWidth`. A sonda é fiel ao sintoma da #203 e não prova que as telas densas (Kanban, Inbox) são usáveis em 390px. **O Inbox em 390px tem a J49 escrita** (2026-10-21: tela cheia, estouro dentro da camada, alvos, voltar, faixa de canal caído e teclado, medidos por ferramenta) — vira PASS só no primeiro verde do CI; o Kanban continua NÃO COBERTO |
 
 **Armadilha que custou dois testes verdes:** `loginComoAdmin` espera a virada da
 janela TOTP entre logins consecutivos (o servidor recusa código repetido), e
@@ -3133,6 +3241,10 @@ fontes externas HTTP(S); superfície/porta = conversa existente no Inbox; config
 Leitura pura: não emite mutação/auditoria, não agenda ação nem altera o agente.
 Retorno de erro = estado explícito e nova leitura. Mapa: prospeccao-nativa.
 Cobertura: inbox-enrichment-route.test.ts e inbox-demandas-abertas.test.tsx.
+
+### Auditoria do site na fila (spec 24) `[P1]`
+
+Candidatos com `data.site` exibem veredito, raio-X, estratégia e score na fila de Prospecção e no painel do Inbox; a fila ordena por score; reanálise e prévia por candidato. Cobertura: `tests/e2e/prospeccao-auditoria-do-site.spec.ts` (valores exatos: veredito, motivo, KPI médio, reordenação) + unit de classificação/estratégia/score com sabotagem. Reanálise (fetch real) e prévia (LLM) fora do e2e de propósito. Evidência: `evidence/prospeccao-auditoria-do-site/fila-com-auditoria.png`.
 ## J28 — Uma pessoa assume uma conversa que a IA passou `[P0]` (2026-09-18)
 
 **Por que P0:** é a jornada em que o cliente mais sente a diferença entre um CRM com IA e
@@ -3572,3 +3684,39 @@ do commit (resposta perdida, processo reiniciado) e retomada pela segunda tentat
 partir da lápide, com o 500 que não diz "nada foi apagado": medida por unidade em
 `lib/tenants/exclusao.test.ts` e `…/delete/route.test.ts`, e o inventário da lápide em
 `tests/invariants/gestao-de-tenants.test.ts`.
+
+## J50 — Reenviar uma mensagem que falhou `[P0]` (2026-10-21)
+
+Contexto: ADR-0006, fase F2 ("Atende pelo celular"), PR C. Antes, a bolha que
+falhava mostrava só «Falhou», com o motivo num Tooltip que o dedo não abre, e não
+havia como enviar de novo sem redigitar (e arriscar mandar em dobro). Agora a bolha
+diz o motivo em frase de tela e, quando a regra permite, oferece «Tentar de novo».
+Por que P0: o atendente no celular, com uma mão, não tem outra saída; e mandar em
+dobro ao cliente é o pior erro que a tela pode induzir.
+
+Regra única em `lib/messaging/reenvio.ts` (lida pela rota e pela bolha): `seguro`
+quando nada saiu, `confirmar` quando pode ter saído (o desconhecido cai aqui),
+`nenhum` em voo, já saída, IA/automação, ou quando reenviar não resolve. A rota
+`POST /api/v1/messages/{id}/retry` reenvia na MESMA linha, travada pelo
+`updated_at` lido (dois toques = um envio), e audita `message.retried`.
+
+Spec: `tests/e2e/reenvio-pelo-celular.spec.ts` (parte 5), 390x844 com toque, login
+`agent`. Evidência: `evidence/reenvio-pelo-celular-20261021/` (gravada pelo CI).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J50.1 `[P0]` | A bolha que falhou diz o motivo | falha produzida pelo envio do composer em canal desativado; «Este número está desativado. Reative em Conexões para enviar.» à vista, sem código do canal nem endereço; «Tentar de novo» ≥ 44×44 e dentro dos 390px; a setinha de opções pega o dedo 10px além do desenho | a medir (CI) + UNIT `MessageBubble.test` |
+| J50.2 `[P0]` | Tentar de novo muda a MESMA bolha | canal reativado em `STARTING`; o toque leva a bolha a «Não enviada — sem conexão» (nunca «Aguardando conexão»: ninguém reenvia sozinho a mensagem do atendente), sem «Falhou», com o botão ainda lá; a contagem de bolhas não muda; como nada saiu, a bolha fica antes da mensagem que o cliente mandou depois da falha (só o envio aceito vai para o fim do fio) | a medir (CI) + UNIT `mensagem-retry-rota` |
+| J50.3 | Pode ter chegado: pede confirmação | `sending` posto à mão com 10 min, `failed/send_timeout` gravado pelo cron `recover-stuck-messages`; o toque abre o aviso «Confira no WhatsApp do cliente…» dentro da tela; «Cancelar» mantém «Falhou»; «Enviar de novo» reenvia | a medir (CI) + UNIT |
+| J50.4 | Mensagem da IA que falhou | motivo à vista, sem botão (o motor da IA tem quem tente de novo) | a medir (CI) + UNIT `reenvio.test` |
+| J50.5 | Dois toques ao mesmo tempo | a trava pelo `updated_at` deixa passar um só (409 `reenvio_em_curso` no outro) | UNIT `mensagem-retry-rota` |
+| J50.6 | Recusa antes do envio (contato bloqueado, pessoal) | a linha volta ao estado lido e o erro chega à tela | UNIT `mensagem-retry-rota` |
+| J50.7 | O mesmo texto depois de erro de rede | o composer reaproveita a chave de idempotência por até 2 min depois do erro; o servidor devolve o recibo em vez de mandar de novo. Mais tarde, ou com o primeiro ainda em voo, o mesmo texto é mensagem nova | UNIT `use-send-message-idempotencia` |
+
+**Laço de retorno (sistema vivo):** falhar de novo devolve a bolha a «Falhou» com o
+motivo novo; cada tentativa fica no audit (`message.retried`, com o status, o
+código e a hora anteriores e se houve confirmação).
+
+**NÃO COBERTO, declarado:** que o canal de verdade entrega o reenvio (o CI não tem
+WhatsApp; o caminho termina em «Não enviada — sem conexão»); o toque num iPhone e num
+Android reais; o reenvio de mídia pela tela (coberto só pela regra e pela rota).

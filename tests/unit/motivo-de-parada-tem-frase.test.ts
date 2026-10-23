@@ -132,6 +132,20 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
     produtor: { arquivo: "lib/automation/decider.ts" },
   },
   {
+    arquivo: "lib/automation/actions/notify-team.ts",
+    expressao: "motivo",
+    porque:
+      "o resumo vazio devolve o motivo por `resumoVazio(motivo)`, e ele chega à tela como `reason` do resultado; os códigos possíveis são os literais do próprio arquivo, varridos no produtor declarado ao lado",
+    produtor: { arquivo: "lib/automation/actions/notify-team.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/notify-team.ts",
+    expressao: "bloqueio",
+    porque:
+      "o bloqueio vem de `motivoDeBloqueioDoCanal(canal)` (arquivado, pausado, desligado, sem provedor, sem texto livre) e é devolvido como `reason` do resultado",
+    produtor: { arquivo: "lib/automation/actions/notify-team.ts" },
+  },
+  {
     arquivo: "lib/automation/actions/send-email.ts",
     expressao: "para.motivo",
     porque:

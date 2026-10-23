@@ -195,12 +195,24 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
     expect(motivo.texto).toMatch(/gere de novo/);
     expect(motivo.texto).not.toMatch(/configura|falhou|erro/i);
     // O código é contrato do motor: é o impedimento que a prévia grava quando o
-    // agente não propôs resposta. Se o nome mudar lá, este caso deixa de valer.
+    // agente não propôs resposta. Ele deixou de nascer no closure do turno
+    // (#3093): a decisão do desfecho saiu para o módulo puro
+    // `desfecho-da-previa.ts`, e é lá que o nome passa a valer. O motor continua
+    // sendo quem pergunta — sem a chamada, o código não chega à prévia.
     const motor = fs.readFileSync(
       path.join(__dirname, "../../lib/agent-engine/agent/inbound-turn.ts"),
       "utf8",
     );
-    expect(motor).toMatch(/code: 'no_candidate'/);
+    const desfecho = fs.readFileSync(
+      path.join(__dirname, "../../lib/agent-engine/agent/desfecho-da-previa.ts"),
+      "utf8",
+    );
+    expect(motor).toMatch(/desfechoSemCandidato\(\{/);
+    expect(desfecho).toMatch(/code: 'no_candidate'/);
+    // #3093: truncamento e teto de passos NÃO podem voltar a cair aqui — é o
+    // defeito que esta suíte existe para não deixar renascer.
+    expect(desfecho).toMatch(/code: 'output_truncated'/);
+    expect(desfecho).toMatch(/code: 'max_steps_exhausted'/);
   });
 
   it("CONTROLE: código desconhecido e ausente devolvem null — o genérico fica", () => {

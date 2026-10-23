@@ -134,6 +134,7 @@ import {
   buildHandoffSummary,
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
+  ehRespostaDeRobo,
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
@@ -169,7 +170,9 @@ import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDo
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
+import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
+import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
@@ -225,6 +228,11 @@ import {
 } from '@/lib/escalacao/briefing-da-passagem';
 import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
 import { CORRECAO_DO_TURNO_MUDO, turnoMudoPedeCorrecao } from './turno-mudo';
+import {
+  desfechoSemCandidato,
+  previaPedeCorrecaoDoTurnoMudo,
+  tetoDePassosAtingido,
+} from './desfecho-da-previa';
 import { criarTravaDeDuplicata } from './near-dup';
 import { vetoReason } from '@/lib/leads/veto-activity';
 import { corposEnviadosDesdeUltimaInbound } from './memoria-envio';
@@ -1682,6 +1690,10 @@ export async function deteccoesDeterministicasDoAssistido(
   let optedOutThisTurn = false;
   let lgpd: AvisoDeEscalacaoOpts['lgpd'];
   let contextoLido = false;
+  // O histórico lido vive FORA do try: é dele que a guarda do menu de robô
+  // (issue 3106) tira as marcas de automação. Sem contexto lido ele fica vazio,
+  // e a guarda devolve "é de gente" — o lado seguro (a passagem é irrevogável).
+  let historicoDoTurno: readonly LeadContextMessage[] = [];
   try {
     const abertura = await getLeadContext(
       pool,
@@ -1697,6 +1709,7 @@ export async function deteccoesDeterministicasDoAssistido(
     if (abertura.ok) {
       contextoLido = true;
       inboundsPendentes = inboundsNaoRespondidos(abertura.context.messages);
+      historicoDoTurno = abertura.context.messages;
       optedOutThisTurn = abertura.context.contact.is_blocked;
       lgpd = abertura.lgpd;
     } else {
@@ -1770,10 +1783,17 @@ export async function deteccoesDeterministicasDoAssistido(
     'motivo' | 'optedOutThisTurn' | 'lgpd'
   > => resto;
 
+  // A GUARDA DO MENU DE ROBÔ (issue 3106): o casamento determinístico não passa
+  // a conversa quando o que casou é fala de automação — menu numerado, mensagem
+  // que se declara robô, ou a saudação que chega segundos depois do nosso disparo
+  // (ver `ehRespostaDeRobo`). Aqui o turno segue para o rascunho do assistido, que
+  // é o desenho do autor da issue: quem lê a mensagem é o modelo, e ele sabe
+  // reconhecer robô. A palavra-chave CONFIGURADA na tela não passa pela guarda: é
+  // escolha de quem opera o agente, e não a regra que esta issue corrige.
   if (
     inboundsPendentes.some(
       (texto) =>
-        detectHumanHandoffRequest(texto) ||
+        (detectHumanHandoffRequest(texto) && !ehRespostaDeRobo(texto, historicoDoTurno)) ||
         matchesHandoffKeyword(texto, agent.handoffKeywords),
     )
   ) {
@@ -2239,69 +2259,6 @@ async function executarTurnoDoAgente(
       intent: routed.intentName,
     });
   }
-  // Horário de funcionamento da versão publicada (spec da tela: TriggerEditor).
-  // Vale SÓ para o turno inbound: a janela do lojista é sobre QUANDO ele atende
-  // quem chega, e adiar por ela um follow-up já prometido ao lead atrasaria uma
-  // promessa que não é dele. O que segura o follow-up é a janela anti-ban logo
-  // acima (`pacing/engine.ts`), que vale para os dois.
-  //
-  // Adia, não descarta: o job volta a 'pending' na abertura, SEM consumir
-  // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
-  // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
-  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
-    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
-    if (esperaMs !== null) {
-      // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
-      // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
-      // pacing lê a janela `resposta*` e o aviso CONTA no ledger); as réguas de
-      // opt-out, teto de envio e LGPD continuam valendo — a ordem e os vetores
-      // moram em `aviso-fora-do-horario.ts`. Qualquer erro aqui só PERDE um
-      // aviso: o turno é adiado de qualquer forma, e a resposta não pode morrer
-      // por causa de um recado.
-      try {
-        const aviso = await enviaAvisoForaDoHorario(
-          portasDeProducao(pool, deps.crmCfg.supabase, runLog),
-          {
-            organizationId: tenantId,
-            conversationId: input.conversationId,
-            contactId: leadId,
-            channelSessionId: input.channelSessionId,
-            texto: agentConfig.avisoForaDoHorario ?? null,
-            janela: agentConfig.janelaDeAtendimento,
-            agora: clock(),
-          },
-        );
-        runLog.info(
-          aviso.enviar
-            ? 'aviso de fora do horário enviado'
-            : 'aviso de fora do horário não enviado',
-          { motivo: aviso.enviar ? 'enviado' : aviso.motivo },
-        );
-      } catch (err) {
-        runLog.warn('aviso de fora do horário falhou — o turno segue adiado para a abertura', {
-          error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
-        });
-      }
-      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
-        acquiredAt: claimOfJob(liveJob())?.acquired_at,
-        delayMs: esperaMs,
-        reason:
-          'fora do horário de funcionamento do agente — turno adiado para a abertura da janela',
-      });
-      runLog.info(
-        'turno adiado — fora do horário de funcionamento configurado na versão publicada',
-        {
-          agent_id: agentConfig.agentId,
-          espera_ms: esperaMs,
-          janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
-        },
-      );
-      throw new JobSettledError(
-        'fora do horário de funcionamento — job reagendado para a abertura da janela',
-      );
-    }
-  }
-
   // Fase 3: grava a decisão de roteamento e a aderência da conversa ao agente.
   // Fire-and-forget — falha de telemetria nunca derruba a resposta ao lead.
   if (!preview && routed.routerId !== null) {
@@ -2602,11 +2559,20 @@ async function executarTurnoDoAgente(
   const mensagemDoJob =
     currentInboundText ?? latestInboundSignal(openingContext.context.messages);
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  // A GUARDA DO MENU DE ROBÔ (issue 3106): o casamento determinístico segue
+  // existindo, mas NÃO passa a conversa quando o que casou é fala de automação do
+  // outro lado — menu de opções numeradas ("4 - Falar com um atendente"), mensagem
+  // que se declara robô, ou saudação que chega segundos depois do NOSSO disparo de
+  // Prospecção/campanha (`ehRespostaDeRobo`). Nesses casos o turno segue para o
+  // MODELO, que vê a mensagem e já sabe reconhecer robô — o desenho do autor da
+  // issue. A guarda roda aqui, no mesmo ponto onde a detecção sempre rodou (antes
+  // do modelo e sem gastar token quando ela barra).
   if (
     !preview &&
     inboundsPendentes.some(
       (texto) =>
-        detectHumanHandoffRequest(texto) ||
+        (detectHumanHandoffRequest(texto) &&
+          !ehRespostaDeRobo(texto, openingContext.context.messages)) ||
         (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
     )
   ) {
@@ -2678,6 +2644,128 @@ async function executarTurnoDoAgente(
       lead_avisado: aviso.avisado,
     });
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
+  }
+
+  // O FILTRO DE PALAVRA-CHAVE da versão publicada (#2679) — DEPOIS das duas
+  // detecções determinísticas acima (pedido de humano e opt-out ambíguo) e
+  // ANTES do gate da janela logo abaixo: a mesma ordem do modo assistido, onde
+  // elas também vêm primeiro (#1648). A tela promete "só entra quando a
+  // mensagem contiver uma dessas palavras" (TriggerEditor) e, até este PR, a
+  // promessa era decorativa: o único leitor do campo era o dispatcher legado,
+  // NO-OP desde a Fase 0 (`palavra-chave-do-gatilho.ts` documenta o defeito e
+  // a régua de falha aberta).
+  //
+  // A ORDEM É O CONSERTO do CR do #2696 (ponto 1): quem escreve "quero falar
+  // com um atendente" ou "me deixa em paz" numa conversa cujo filtro não cobre
+  // essas palavras continua tendo a passagem para humano, o item na Central e
+  // o aviso ao lead — o filtro decide se o MODELO entra, nunca se a pessoa é
+  // ouvida.
+  //
+  // O QUE É JULGADO é `inboundsPendentes` — o que o cliente disse e ainda não
+  // foi respondido, a MESMA lista que o handoff usa —, e não a mensagem fixada
+  // no job: o drain coalesce a segunda mensagem de uma rajada no job da
+  // primeira, e "oi" seguido de "quero um orçamento" tem de entrar pelo
+  // segundo (ponto 3). Cada mensagem é julgada sozinha
+  // (`turnoDisparaNasMensagens`).
+  //
+  // "SEM TEXTO" é a régua do roteador (`resolve-turn-agent.ts`): sem `body` e
+  // sem `media_derived_text`. O corpo composto por `corpoDaMensagem` devolve
+  // `[audio]`/`[image]` — nunca `null` — para mídia ainda não transcrita, e é
+  // `corpoTemTexto` que faz a falha aberta da mídia rodar de verdade
+  // (ponto 2).
+  //
+  // Diferente da JANELA logo abaixo, um miss NÃO adia: não há "depois" em que
+  // a mesma mensagem venha a casar. O turno é encerrado sem resposta (`return`,
+  // o mesmo consumo do job de todo outro veto do início do turno — lead em
+  // handoff, conversa não elegível) e a mensagem continua visível na linha do
+  // tempo da Central: o operador vê, responde à mão ou corrige o filtro na
+  // tela. Regex quebrada, corpo sem texto ou nada a julgar ⇒ o turno SEGUE —
+  // entrar de menos cala o cliente, e esta porta é a única que este gate
+  // existe para não criar.
+  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.filtroDePalavraChave != null) {
+    const corposDoTurno =
+      inboundsPendentes.length > 0
+        ? inboundsPendentes
+        : mensagemDoJob.trim() === ''
+          ? []
+          : [mensagemDoJob];
+    if (!turnoDisparaNasMensagens(agentConfig.filtroDePalavraChave, corposDoTurno)) {
+      runLog.info('turno pulado — mensagem fora do filtro de palavra-chave da versão publicada', {
+        agent_id: agentConfig.agentId,
+        agent_version_id: agentConfig.versionId,
+        mensagens_pendentes: corposDoTurno.length,
+      });
+      return;
+    }
+  }
+
+  // Horário de funcionamento da versão publicada (spec da tela: TriggerEditor).
+  // Vale SÓ para o turno inbound: a janela do lojista é sobre QUANDO ele atende
+  // quem chega, e adiar por ela um follow-up já prometido ao lead atrasaria uma
+  // promessa que não é dele. O que segura o follow-up é a janela anti-ban
+  // acima (`pacing/engine.ts`), que vale para os dois.
+  //
+  // ⚠️ ORDEM: ela vem DEPOIS das detecções determinísticas e do filtro de
+  // palavra-chave. Um pedido de humano ou um opt-out fora do horário é
+  // tratado AGORA (aviso + passagem na Central), não às 8h — e uma mensagem
+  // fora do filtro não recebe aviso de fora do horário nenhum: quem não entra
+  // no agente não fala por ele.
+  //
+  // Adia, não descarta: o job volta a 'pending' na abertura, SEM consumir
+  // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
+  // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
+  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
+    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    if (esperaMs !== null) {
+      // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
+      // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
+      // pacing lê a janela `resposta*` e o aviso CONTA no ledger); as réguas de
+      // opt-out, teto de envio e LGPD continuam valendo — a ordem e os vetores
+      // moram em `aviso-fora-do-horario.ts`. Qualquer erro aqui só PERDE um
+      // aviso: o turno é adiado de qualquer forma, e a resposta não pode morrer
+      // por causa de um recado.
+      try {
+        const aviso = await enviaAvisoForaDoHorario(
+          portasDeProducao(pool, deps.crmCfg.supabase, runLog),
+          {
+            organizationId: tenantId,
+            conversationId: input.conversationId,
+            contactId: leadId,
+            channelSessionId: input.channelSessionId,
+            texto: agentConfig.avisoForaDoHorario ?? null,
+            janela: agentConfig.janelaDeAtendimento,
+            agora: clock(),
+          },
+        );
+        runLog.info(
+          aviso.enviar
+            ? 'aviso de fora do horário enviado'
+            : 'aviso de fora do horário não enviado',
+          { motivo: aviso.enviar ? 'enviado' : aviso.motivo },
+        );
+      } catch (err) {
+        runLog.warn('aviso de fora do horário falhou — o turno segue adiado para a abertura', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+        });
+      }
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
+        delayMs: esperaMs,
+        reason:
+          'fora do horário de funcionamento do agente — turno adiado para a abertura da janela',
+      });
+      runLog.info(
+        'turno adiado — fora do horário de funcionamento configurado na versão publicada',
+        {
+          agent_id: agentConfig.agentId,
+          espera_ms: esperaMs,
+          janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
+        },
+      );
+      throw new JobSettledError(
+        'fora do horário de funcionamento — job reagendado para a abertura da janela',
+      );
+    }
   }
 
   // ROTEIRO DE ATENDIMENTO (módulo opcional `fluxos_atendimento`, #1130). Entra
@@ -3775,7 +3863,6 @@ async function executarTurnoDoAgente(
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
             send: (finalBody: string) => {
               pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
-              corposEnviados.push(finalBody);
               const sleep =
                 deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
               const jitter = () =>
@@ -3802,28 +3889,33 @@ async function executarTurnoDoAgente(
                   ...(media ? { media } : {}),
                 });
               };
-              // Cada foto é uma mensagem física: só vão as que cabem no que resta do teto
-              // do turno (a checagem de `max_sends_per_turn` acima roda uma vez, antes).
-              // O resto é medido ANTES DE CADA FOTO, depois do texto: o texto acima do
-              // teto de legenda sai à parte e também gasta o teto.
-              return enviarComFotos(finalBody, fotosDoProduto, {
-                sleep,
-                jitter,
-                restantes: () => maxSendsPerTurn - seq,
-                enviarFoto: (foto, legenda) => enviar(legenda, foto),
-                enviarTexto: (texto) =>
-                  sendInBubbles(texto, {
-                    enabled: agentConfig?.splitMessages ?? false,
-                    maxChars: agentConfig?.splitMaxChars ?? 600,
-                    // O teto do turno vale para as bolhas: o que passa dele vai junto na última.
-                    maxBubbles: Math.max(1, maxSendsPerTurn - seq),
+              // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
+              const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
+              return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
+                  corposEnviados.push(finalBody);
+                  // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
+                  // medido ANTES DE CADA FOTO, depois do texto.
+                  return enviarComFotos(finalBody, fotosDoProduto, {
                     sleep,
                     jitter,
-                    // A pausa humana do turno NÃO mora mais aqui: ela subiu para
-                    // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do número) —
-                    // issue #654. Neste ponto fica só o jitter anti-ban entre bolhas.
-                    send: (bubble) => enviar(bubble),
-                  }),
+                    restantes: () => maxSendsPerTurn - seq,
+                    enviarFoto: (foto, legenda) => enviar(legenda, foto),
+                    enviarTexto: (texto) =>
+                      sendInBubbles(texto, {
+                        enabled: agentConfig?.splitMessages ?? false,
+                        maxChars: agentConfig?.splitMaxChars ?? 600,
+                        // O teto do turno vale para as bolhas: o que passa dele vai
+                        // junto na última.
+                        maxBubbles: Math.max(1, maxSendsPerTurn - seq),
+                        sleep,
+                        jitter,
+                        // A pausa humana do turno NÃO mora mais aqui: ela subiu para
+                        // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do
+                        // número) — issue #654. Neste ponto fica só o jitter anti-ban
+                        // entre bolhas.
+                        send: (bubble) => enviar(bubble),
+                      }),
+                  });
               });
             },
           };
@@ -4132,7 +4224,9 @@ async function executarTurnoDoAgente(
               // `insertInboxItem` à mão neste ponto é o que deixava o `dedupe`
               // sem guarda.
               await abreAvisoDoEspelhoRecusado(pool, tenantId, {
-                leadId,
+                // O NEGÓCIO resolvido pelo espelho, não `leadId` (que aqui é o
+                // contact_id): a Central abre o aviso por `crm_leads.id`.
+                ...(mirror.negocioId !== undefined ? { negocioId: mirror.negocioId } : {}),
                 motivo: mirror.reason,
                 detalhe: mirror.detail,
                 etapaDeDestino: update.transition.to,
@@ -5163,20 +5257,46 @@ async function executarTurnoDoAgente(
     // Erro da chamada de correção propaga e o job falha na fila (retry /
     // dead-letter visível). As condições são as do próprio pedido
     // (turno-mudo.ts): razões legítimas de silêncio nem chegam a corrigir.
+    // #3093 — a PRÉVIA DO RASCUNHO pede a MESMA correção quando o modelo deixou
+    // TEXTO SOLTO (escreveu a resposta fora do `send_message` e encerrou). Em
+    // produção essa é a causa nº 3 da issue: o `turno-mudo.ts` pede uma correção
+    // e o cliente acaba atendido. A prévia tinha `!preview` na condição, então o
+    // texto solto morria no `no_candidate` e o painel não podia dizer se houve
+    // decisão ou parada. Aqui a prévia do rascunho roda a MESMA correção, UMA
+    // vez, com a mesma conversa e as mesmas ferramentas — e, sem candidato depois
+    // dela, o que resta é a decisão (o CORRECAO_DO_TURNO_MUDO autoriza o modelo a
+    // encerrar sem chamar nada, doutrina do #2938).
+    //
+    // Só o rascunho ASSISTIDO: a prévia de TESTE (sandbox) mostra o que o agente
+    // produziu e uma segunda chamada esconderia o defeito que ela existe para
+    // revelar. Só com texto solto: silêncio sem texto é decisão já tomada, e
+    // pedir de novo pagaria uma chamada de modelo para ouvir a mesma coisa.
     let correcaoTruncou = false;
+    // A correção também pode gastar o teto dela (3 passos) só em consultas: na
+    // prévia isso é a mesma falha do teto da primeira chamada, não decisão.
+    let tetoNaCorrecao = false;
     const correcaoDoTurnoMudoPedida =
-      !preview &&
-      liveJob().kind === 'inbound_turn' &&
-      turnoMudoPedeCorrecao({
-        tentativasDeEnvio,
-        enviadas: outcomes.length,
-        turnoDescartado,
-        passouParaAEquipe,
-        capDeEnvio: capDeEnvioAtingido(),
-      });
+      preview?.kind === 'assisted'
+        ? previaPedeCorrecaoDoTurnoMudo({
+            textoEscrito: turn.result.text,
+            candidatos: preview.result.candidates.length,
+            tentativasDeEnvio,
+          })
+        : !preview &&
+          liveJob().kind === 'inbound_turn' &&
+          turnoMudoPedeCorrecao({
+            tentativasDeEnvio,
+            enviadas: outcomes.length,
+            turnoDescartado,
+            passouParaAEquipe,
+            capDeEnvio: capDeEnvioAtingido(),
+          });
     if (correcaoDoTurnoMudoPedida) {
       runLog.warn('turno terminou sem mensagem ao cliente — pedindo UMA correção', {
-        job_id: liveJob().id,
+        // `liveJob()` LANÇA na prévia (`preview_operational_job_forbidden`, #2996):
+        // o rascunho vai sem id de job, e o log segue honesto.
+        job_id: job?.id ?? null,
+        previa: preview?.kind ?? null,
       });
       const pedidoDeCorrecao: ModelMessage = { role: 'user', content: CORRECAO_DO_TURNO_MUDO };
       const correcao = await runModelCall(
@@ -5187,7 +5307,7 @@ async function executarTurnoDoAgente(
           leadId: leadId || null,
           jobId: job?.id,
           agentId: agentConfig?.agentId ?? null,
-          purpose: 'agent_turn',
+          purpose: preview ? 'agent_preview' : 'agent_turn',
           system,
           messages: [...openingMessages, ...turn.result.responseMessages, pedidoDeCorrecao],
           tools,
@@ -5207,6 +5327,11 @@ async function executarTurnoDoAgente(
       // Sinal de FALHA da correção: terminou no teto de tokens. Silêncio com
       // finishReason normal (stop/tool-calls) é resposta escolhida, não defeito.
       correcaoTruncou = correcao.result.finishReason === 'length';
+      tetoNaCorrecao = tetoDePassosAtingido({
+        passosUsados: correcao.result.steps?.length ?? 0,
+        maxSteps: Math.min(maxSteps, 3),
+        finishReason: correcao.result.finishReason,
+      });
       mensagensDoTurno = [...mensagensDoTurno, pedidoDeCorrecao, ...correcao.result.responseMessages];
       if (runError !== null) throw runError;
       if (outcomes.some((o) => o.kind === 'failed')) {
@@ -5436,13 +5561,31 @@ async function executarTurnoDoAgente(
     // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
     // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
     // sem nada tendo mudado no meio.
-    // Prévia sem candidato e sem impedimento: quem opera precisa saber que o agente não propôs nada.
+    // Prévia sem candidato e sem impedimento: quem opera precisa saber POR QUE.
+    //
+    // #3093 — o mesmo `no_candidate` cobria decisão e falha da geração, e o
+    // painel não podia dizer ao atendente se o agente decidiu não responder ou se
+    // a geração parou no meio. A decisão mora em `desfecho-da-previa.ts` (pura,
+    // testável) e devolve o código da CAUSA: `output_truncated` (o mesmo nome do
+    // log do turno real), `max_steps_exhausted` (o teto de `max_steps`) ou
+    // `no_candidate` — que depois desta separação significa só a DECISÃO de não
+    // responder. `null` quando há candidato ou quando um impedimento já explica
+    // o desfecho (veto, mídia, ferramenta desconhecida).
     const avisarSemCandidato = (p: NonNullable<typeof preview>): void => {
-      if (p.result.candidates.length === 0 && p.result.impediments.length === 0)
-        p.result.impediments.push({
-          code: 'no_candidate',
-          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
-        });
+      const desfecho = desfechoSemCandidato({
+        candidatos: p.result.candidates.length,
+        impedimentos: p.result.impediments.length,
+        // A correção que termina truncada ou no teto dela é FALHA, não decisão
+        // — a produção trata o mesmo sinal como `correction_truncated_failed`.
+        saidaTruncada: saidaTruncada || correcaoTruncou,
+        tetoDePassosAtingido:
+          tetoDePassosAtingido({
+            passosUsados: turn.result.steps?.length ?? 0,
+            maxSteps,
+            finishReason: turn.result.finishReason,
+          }) || tetoNaCorrecao,
+      });
+      if (desfecho !== null) p.result.impediments.push(desfecho);
     };
     // ⚠️ RASCUNHO (modo assistido) não fecha o turno com checkpoint. O checkpoint
     // da prévia não é gravado (a prévia retorna antes do `insertCheckpoint`, logo

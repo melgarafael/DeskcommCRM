@@ -321,12 +321,13 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
         actor: ctx.actor,
         requestId: ctx.requestId,
       },
-      // `custom_fields` entra POR FORA do `createLeadSchema.parse`, que é o
-      // mesmo lugar de onde ele sairia: o schema de criação não declara a chave
-      // (server-managed no REST) e o `parse` descarta o que não declara. É a
-      // interseção que o webhook de captação também monta. Sem isto o argumento
-      // do agente morria aqui dentro, antes da régua que ele precisa satisfazer
-      // (#2297, caminho 2).
+      // `custom_fields` entra POR FORA do `createLeadSchema.parse`, de
+      // propósito: o schema de criação aceita a chave desde #3038, mas o parse
+      // acima não a repassa, porque o valor que vale é o que sai de
+      // `conferirCamposPersonalizados` (sem os campos recusados). É a interseção
+      // que o webhook de captação também monta. Sem isto o argumento do agente
+      // morria aqui dentro, antes da régua que ele precisa satisfazer (#2297,
+      // caminho 2).
       {
         ...parsed,
         ...(custom_fields === undefined ? {} : { custom_fields }),

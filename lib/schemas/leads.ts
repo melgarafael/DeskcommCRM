@@ -181,7 +181,7 @@ export type LoseLeadInput = z.infer<typeof loseLeadSchema>;
 
 /**
  * createLeadSchema → POST /api/v1/leads
- * Status, source_metadata, custom_fields, position_in_stage are server-managed.
+ * Status, source_metadata, position_in_stage are server-managed.
  */
 export const createLeadSchema = z.object({
   pipeline_id: z.string().uuid(),
@@ -211,6 +211,23 @@ export const createLeadSchema = z.object({
     .optional(),
   tags: z.array(z.string()).default([]),
   source: z.string().min(1).default("manual"),
+  /**
+   * Os campos personalizados JÁ PREENCHIDOS no formulário de criação (issue
+   * #3038).
+   *
+   * O `createLeadHandler` valida e grava `custom_fields` desde a criação — a
+   * régua da etapa em que o negócio NASCE (#1710) lê exatamente este campo —,
+   * mas a ROTA não aceitava a chave: `z.object` a descartava em silêncio, e a
+   * recusa chegava como "Preencha os campos obrigatórios antes de continuar" para
+   * um valor que o cliente tinha acabado de mandar. Com o `NewLeadDialog`
+   * exibindo os campos exigidos da etapa, sem esta linha o formulário coletaria
+   * e o servidor recusaria do mesmo jeito.
+   *
+   * Espelho do `updateLeadSchema` (mesmo `Record<string, unknown>`): o formato
+   * do valor é do funil, e quem o julga é `obrigatorio_em`/`padrao` do campo,
+   * nunca o schema.
+   */
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;
 

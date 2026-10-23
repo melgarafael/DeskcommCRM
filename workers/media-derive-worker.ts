@@ -8,6 +8,7 @@ import { generateText } from "ai";
 import type pg from "pg";
 
 import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";
+import { provedorDaChamada } from "@/lib/ai/log-invocation";
 import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
 import { costCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
@@ -963,6 +964,13 @@ function linhaDeFalha(
  * de `ai_invocations` (invariante de vocabulário), e `llm_calls.purpose` não
  * tem CHECK. Fire-and-forget: a linha de custo nunca derruba a derivação — e
  * por isso a montagem também fica dentro do try.
+ *
+ * O provedor EFETIVO do binding já vinha informado por quem chama (a visão
+ * passa `llm.provider`) e continua vindo — o que muda é que ele atravessa a
+ * MESMA régua dos outros dois escritores (`provedorDaChamada`, #3098), para a
+ * coluna não voltar a ser preenchida por caminhos diferentes: o ponto de visão
+ * de imagem era o outro citado na issue como atribuído à OpenRouter por causa
+ * da barra no id do modelo.
  */
 function registrarChamadaDeMidia(
   admin: ReturnType<typeof createAdminClient>,
@@ -972,7 +980,12 @@ function registrarChamadaDeMidia(
   try {
     const linha = montar();
     void Promise.resolve(
-      admin.from("llm_calls").insert({ organization_id: orgId, status: "ok", ...linha }),
+      admin.from("llm_calls").insert({
+        organization_id: orgId,
+        status: "ok",
+        ...linha,
+        provider: provedorDaChamada(linha.provider, linha.model),
+      }),
     ).then(
       ({ error }) => {
         if (error) {

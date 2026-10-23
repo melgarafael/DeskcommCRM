@@ -33,10 +33,13 @@ import { cn } from "@/lib/utils";
  * calcular a própria altura, encolheriam junto.
  *
  * Com zero, quem decide é só a medição: `getBoundingClientRect()` devolve altura
- * 0 para elemento `display: none`, e o hook só grava medida maior que zero — no
+ * 0 para elemento `display: none`, e o hook grava esse zero — porque a peça saiu
+ * de vista (ver `saiuDeVista` em `lib/ui/rodape-ocupado.tsx`, #3061) —, então no
  * desktop a reserva fica em 0 e nada encolhe; no celular ela passa a valer o que
  * a barra mede de verdade, incluindo a área segura do iOS, que nenhuma constante
- * aqui saberia prever.
+ * aqui saberia prever. E vale nas DUAS direções: quem estreita e volta a alargar
+ * a mesma janela (giro do celular, painel do navegador, modo responsivo) não
+ * fica com a última medida presa.
  *
  * O custo é um quadro: na primeira pintura do celular a reserva ainda é 0, e o
  * `ResizeObserver` a corrige em seguida. Trocado por reservar espaço errado em

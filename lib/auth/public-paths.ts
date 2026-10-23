@@ -180,8 +180,9 @@ export const PUBLIC_PATHS: RegExp[] = [
   // antes desta linha: `GET /icon` → 307 para `/login?next=%2Ficon`, enquanto
   // `/icon.png` (inexistente) devolvia 404 — a diferença é só a extensão.
   /^\/icon$/,
-  // PNGs públicos do app instalado, apenas dois tamanhos e somente marca da instalação.
-  /^\/app-icon\/(192|512)$/,
+  // PNGs públicos do app instalado, só os tamanhos que o manifest e o iPhone
+  // pedem, e somente com a marca da instalação.
+  /^\/app-icon\/(180|192|512|maskable)$/,
   /^\/manifest\.webmanifest$/,
   /^\/team\/accept-invite\/.+$/,
   // OS MOLDES DE E-MAIL DO GoTrue. Quem busca é o GoTrue, um processo de

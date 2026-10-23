@@ -64,7 +64,27 @@ const runResult = z.object({
   passada_do_banco: z.number().int().min(1).optional(),
 });
 
-const body = z.discriminatedUnion("kind", [heartbeat, runProgress, runResult]);
+/**
+ * A volta que ninguém pediu (#2757).
+ *
+ * Quando o app não responde duas vezes seguidas nas 2 h depois de uma
+ * atualização, o `agent.sh` volta a versão sozinho e manda este recado. Sem
+ * ele, a volta ficava registrada só no `.update-agent.log` do servidor: quem
+ * abre o painel vê a versão mudar e não tem como saber o que houve — o defeito
+ * que o mantenedor apontou como o terceiro ajuste.
+ *
+ * `returned_to` é a versão em que o sistema ESTÁ agora; `failed_version` é a
+ * que não respondeu. Os dois nomes são explícitos de propósito: "de/para" é
+ * ambíguo numa volta (de qual lado?), e foi assim que esta rota já errou antes.
+ */
+const rollback = z.object({
+  kind: z.literal("rollback"),
+  returned_to: z.string().min(1).max(64),
+  failed_version: z.string().min(1).max(64),
+  reason: z.string().max(2_000),
+});
+
+const body = z.discriminatedUnion("kind", [heartbeat, runProgress, runResult, rollback]);
 
 /**
  * As três colunas da rodada do banco, numa escrita própria e best-effort.
@@ -161,15 +181,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     // passos por 15 minutos e o agente nunca ver o pedido. Um estado só, o que
     // o agente executa, não pode divergir do que a tela mostra.
     //
+    // O `to_version` sai junto (#2757): a ordem não é sempre "instale a
+    // última release" — o botão de voltar cria um run cujo alvo é a versão
+    // ANTERIOR, e o agente que instalasse a última publicada estaria
+    // reinstalando justamente a release que quebrou. O agente aplica o `--force`
+    // sozinho, quando o git mostrar que o alvo pedido é mais antigo que o que
+    // já roda aqui; daqui só viaja o alvo.
+    //
     // O índice único parcial `uniq_system_update_runs_dispatched` (migration
     // 0090) garante no máximo 1 linha "dispatched" — mas o `postgrest-js` NÃO
     // lança se, apesar disso, o SELECT achar mais de uma linha: devolve
     // `{ data: null, error: PGRST116 }`. Ler isso como "ninguém pediu" faria o
-    // pedido sumir em silêncio — por isso o erro é checado e vira 500, nunca
-    // um `update_requested: false` otimista.
+    // pedido sumir em silêncio — por isso o erro é checado e vira 500, nunca um
+    // `update_requested: false` otimista.
     const { data: run, error: runLookupError } = await db
       .from("system_update_runs")
-      .select("id, status")
+      .select("id, status, to_version")
       .eq("status", "dispatched")
       .order("dispatched_at", { ascending: false })
       .limit(1)
@@ -182,7 +209,57 @@ export async function POST(req: NextRequest): Promise<Response> {
       return fail("internal_error", "Não consegui checar o pedido de atualização.", 500);
     }
 
-    return ok({ update_requested: Boolean(run), run_id: run?.id ?? null });
+    return ok({
+      update_requested: Boolean(run),
+      run_id: run?.id ?? null,
+      // Vazio = sem alvo nomeado no run (rota anterior a #2757, ou run sem
+      // `to_version`): o agente cai no de sempre, a última release publicada.
+      to_version: run?.to_version ?? "",
+    });
+  }
+
+  // ── A volta automática (#2757) ────────────────────────────────────────────
+  // Ela não tem `run_id`: ninguém pediu pela tela, então não existe run em
+  // `dispatched` para fechar. O recado VIRA uma linha de run já fechada, com o
+  // mesmo vocabulário das outras (`failed_rolled_back`, `from_version` = onde
+  // o sistema ficou, `to_version` = a versão que falhou), porque é isso que a
+  // tela de Atualização já sabe ler — e `requested_by` fica NULO, que é a
+  // marca de "ninguém pediu isto" usada pela tela para dizer "sozinho".
+  //
+  // Antes do lookup de run pendente de propósito: esta mensagem não pergunta
+  // nada, só conta um fato.
+  if (payload.kind === "rollback") {
+    const agora = new Date().toISOString();
+    const { error } = await db.from("system_update_runs").insert({
+      from_version: payload.returned_to,
+      to_version: payload.failed_version,
+      status: "failed_rolled_back",
+      requested_by: null,
+      dispatched_at: agora,
+      finished_at: agora,
+      log_tail: payload.reason,
+    });
+    if (error) {
+      // Fatal para ESTA mensagem, e só para ela: sem a linha, a volta some do
+      // painel e o agente não tem como saber (recebe 500 e anota no log dele).
+      logger.error("[system/agent] a volta automática não foi registrada", {
+        error: error.message,
+      });
+      return fail("internal_error", "Não consegui registrar a volta automática.", 500);
+    }
+    await audit({
+      action: "system.update_finished",
+      resourceType: "system_update_run",
+      // Sem id: a linha não foi pedida por ninguém e o insert não a devolve.
+      metadata: {
+        status: "failed_rolled_back",
+        volta_automatica: true,
+        de: payload.failed_version,
+        para: payload.returned_to,
+      },
+      actingAsPlatformAdmin: true,
+    });
+    return ok({ update_requested: false });
   }
 
   // Erro de leitura ≠ "não existe": sem checar, uma falha de banco viraria 404

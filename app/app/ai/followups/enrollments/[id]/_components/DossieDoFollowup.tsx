@@ -258,7 +258,10 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
           )}
           {data.cancel_reason && (
             <p className="text-sm text-text-muted">
-              {t("Motivo")}: {data.cancel_reason}
+              {/* `t()` devolve o próprio texto quando não há tradução: motivo gravado
+                  como código cru continua aparecendo como antes, e o que tem entrada no
+                  dicionário (ex.: MOTIVO_DA_VAGA_OCUPADA_DEMAIS) sai no idioma da tela. */}
+              {t("Motivo")}: {t(data.cancel_reason)}
             </p>
           )}
           {data.last_error && (

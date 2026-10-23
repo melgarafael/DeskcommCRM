@@ -9737,6 +9737,7 @@ isOneToOne: false
           organization_id: string
           path_token: string
           redirect_to: string | null
+          reuse_open_lead_on_capture: boolean
           secret_encrypted: string | null
           update_existing_lead_on_capture: boolean
           updated_at: string
@@ -9759,6 +9760,7 @@ isOneToOne: false
           organization_id: string
           path_token: string
           redirect_to?: string | null
+          reuse_open_lead_on_capture?: boolean
           secret_encrypted?: string | null
           update_existing_lead_on_capture?: boolean
           updated_at?: string
@@ -9781,6 +9783,7 @@ isOneToOne: false
           organization_id?: string
           path_token?: string
           redirect_to?: string | null
+          reuse_open_lead_on_capture?: boolean
           secret_encrypted?: string | null
           update_existing_lead_on_capture?: boolean
           updated_at?: string
@@ -10237,12 +10240,6 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "calendar_event_types"
       referencedColumns: ["organization_id","id"]
-    },{
-      foreignKeyName: "calendar_service_professionals_organization_id_fkey"
-      columns: ["organization_id"]
-isOneToOne: false
-      referencedRelation: "organizations"
-      referencedColumns: ["id"]
     }
                   ]
                 }
@@ -11011,6 +11008,14 @@ isOneToOne: false
       fn_can_view_task: {
         Args: { p_assigned_to: string; p_created_by: string; p_org: string }
         Returns: boolean
+      }
+      fn_conversation_scope: {
+        Args: never
+        Returns: {
+          organization_id: string
+          org_wide_read: boolean
+          sees_unassigned: boolean
+        }[]
       }
       fn_claim_due_followup_enrollments: {
         Args: { p_lease_seconds: number; p_limit: number }

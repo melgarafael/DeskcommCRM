@@ -85,6 +85,12 @@ services:
       # o comportamento de sempre para um `.env` que nunca passou por aqui.
       GOTRUE_MAILER_TEMPLATES_CONFIRMATION: "${GOTRUE_MAILER_TEMPLATES_CONFIRMATION:-}"
       GOTRUE_MAILER_TEMPLATES_RECOVERY: "${GOTRUE_MAILER_TEMPLATES_RECOVERY:-}"
+      # O ASSUNTO dos mesmos dois e-mails: o GoTrue não o tira do molde, e sem
+      # estas chaves manda o padrão dele, em inglês. Escritas pelo
+      # `gravar_modelos_do_gotrue` (_common.sh), pelo mesmo caminho dos moldes.
+      # Default vazio = o assunto padrão do GoTrue, o de sempre.
+      GOTRUE_MAILER_SUBJECTS_CONFIRMATION: "${GOTRUE_MAILER_SUBJECTS_CONFIRMATION:-}"
+      GOTRUE_MAILER_SUBJECTS_RECOVERY: "${GOTRUE_MAILER_SUBJECTS_RECOVERY:-}"
 
     # O Auth busca os modelos no app. No modo single-server, o app está na
     # rede privada `deskcomm_private`; sem esta ligação, a URL pública pode

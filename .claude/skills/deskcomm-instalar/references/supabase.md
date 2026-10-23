@@ -46,8 +46,18 @@ não conecta de uma VPS IPv4 — o instalador reconhece e recusa. O pooler tem h
 - Projeto grátis parado por muito tempo pode ser **pausado** pela Supabase; o CRM em uso não para.
 - Cota de saída de rede: o worker do CRM é econômico por padrão; um pico vem de mídia, não de
   consultas.
+- Cota de **leitura e escrita em disco** (Disk IO): a máquina do plano grátis é a menor, e uma
+  importação grande (histórico de WhatsApp, milhares de contatos) pode esgotar a cota. O painel
+  avisa "Your project is about to deplete its Disk IO Budget"; esgotada, o banco fica lento a ponto
+  de o worker registrar `ECHECKOUTTIMEOUT` e `Query read timeout`, e o CRM para de responder. A cota
+  se recarrega com o uso baixo — parar worker e scheduler acelera. Uso real pede máquina maior
+  (plano pago) ou o single-server (`supabase-local.md`).
 
 ## Supabase próprio (instalado pela pessoa, com Docker)
+
+O kit já instala um Supabase no mesmo servidor do CRM, sem a pessoa montar nada: é o modo
+single-server, em `supabase-local.md`. O que segue vale para um Supabase que a pessoa instalou por
+conta própria, fora do kit.
 
 Funciona: o CRM só precisa da URL da API, das duas chaves e de uma connection string que aceite
 conexão da VPS. Aponte `SUPABASE_DB_URL` para o pooler ou para o Postgres da sua pilha; o instalador

@@ -6,6 +6,7 @@ import { getLeadContext } from "../edge/crm/get-lead-context";
 import { fusoDaOrganizacao } from "./fuso-da-org";
 import { latestCheckpoint, runAgentPreview, type InboundTurnDeps } from "./inbound-turn";
 import { newPreviewResult } from "./preview";
+import { temOfertaAoAtendente } from "./sugestao-de-resposta";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import { parseServiceBoundary, assertCurrentServiceBoundary } from "@/lib/atendimento/fronteira";
 import {
@@ -102,14 +103,22 @@ export async function generateReplyDraft(
         result,
       });
       const body = result.candidates.map((c) => c.body).join("\n\n");
+      // #3093, caso 2 — o rascunho ia para `failed` sempre que o corpo ficava
+      // vazio, mesmo com PROPOSTA registrada (a prévia do agente que só propõe
+      // uma ação e não escreve). O painel dizia "Não foi possível concluir a
+      // sugestão" para um desfecho que deu certo. A oferta é o corpo OU as
+      // propostas; sem nenhum dos dois, `failed` continua certo.
+      // Com veto/truncamento/teto, a proposta não basta: o motivo só aparece em `failed`.
+      const temOferta = temOfertaAoAtendente(body, result.proposals, result.impediments[0]?.code);
       const { rows: finished } = await pool.query(
-        `update ai_reply_drafts set status=case when not fn_reply_context_current($1,id) then 'stale' when $4='' then 'failed' else 'pending' end,
- original_body=$4,edited_body=$4,proposals=$5,trace=$6,error_code=$7,updated_at=now()
+        `update ai_reply_drafts set status=case when not fn_reply_context_current($1,id) then 'stale' when $4::boolean then 'pending' else 'failed' end,
+ original_body=$5,edited_body=$5,proposals=$6,trace=$7,error_code=$8,updated_at=now()
  where organization_id=$1 and id=$2 and generation_token=$3 and status='generating' returning *`,
         [
           input.organizationId,
           draft.id,
           token,
+          temOferta,
           body,
           JSON.stringify(result.proposals),
           JSON.stringify(result.candidates.flatMap((c) => c.trace)),

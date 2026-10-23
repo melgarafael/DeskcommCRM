@@ -2,6 +2,7 @@ import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/disp
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { canalDoEventoDesativado } from "@/lib/channels/desativado";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { NOTIFY_KINDS } from "./kinds";
 import { corpoDoAvisoDeMensagem, montarPayloadDeInbound, truncar } from "./push_payload";
 import { enviarPushAoUsuario, enviarPushAQuemVeAConversa, enviarPushDaOrg } from "./web_push";
 import { carregarDestinatariosDaMensagem, type DestinatariosDaMensagem } from "./destinatarios-da-mensagem";
@@ -161,7 +162,7 @@ async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
     title: "Nova mensagem no grupo",
     body,
     corpoSemPrevia,
-    tag: `msg:${conversationId}`,
+    tag: `${NOTIFY_KINDS.message_inbound.tagPrefix}:${conversationId}`,
     href: `/app/inbox?id=${conversationId}`,
   };
   const { sent } = await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload);
@@ -264,7 +265,7 @@ export const webPushInboundHandler: EventHandler = {
         {
           title: "Você foi mencionado",
           body: truncar(preview),
-          tag: `mention:${conversationId}`,
+          tag: `${NOTIFY_KINDS.mention.tagPrefix}:${conversationId}`,
           href: `/app/inbox/${conversationId}`,
         },
         [toUserId],
@@ -287,7 +288,7 @@ export const webPushInboundHandler: EventHandler = {
         title: "Lead atribuído a você",
         body: truncar(lead.title),
         corpoSemPrevia: truncar(lead.title),
-        tag: `lead-assigned:${leadId}`,
+        tag: `${NOTIFY_KINDS.lead_assigned.tagPrefix}:${leadId}`,
         href,
       });
     }
@@ -296,7 +297,7 @@ export const webPushInboundHandler: EventHandler = {
         title: "Lead ganho",
         body: truncar(lead.title),
         corpoSemPrevia: truncar(lead.title),
-        tag: `lead-won:${leadId}`,
+        tag: `${NOTIFY_KINDS.lead_won.tagPrefix}:${leadId}`,
         href,
       });
     }
@@ -304,7 +305,7 @@ export const webPushInboundHandler: EventHandler = {
       title: "Lead perdido",
       body: truncar(lead.title),
       corpoSemPrevia: truncar(lead.title),
-      tag: `lead-lost:${leadId}`,
+      tag: `${NOTIFY_KINDS.lead_lost.tagPrefix}:${leadId}`,
       href,
     });
   },

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   audit: vi.fn(),
   guard: vi.fn(),
+  continuation: vi.fn(),
   boundary: vi.fn(),
   preflight: vi.fn(),
   authorize: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   pacing: vi.fn(),
   paradas: vi.fn(),
   prepare: vi.fn(),
+  preparo: vi.fn(),
 }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.send }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
@@ -29,7 +31,15 @@ vi.mock("@/lib/ai/elegibilidade/autorizacao", () => ({ autorizarContatoParaIA: m
 vi.mock("@/lib/ai/elegibilidade/consulta-pre-go-live", () => ({
   decidirPreGoLiveDoCanalViaSupabase: mocks.preflight,
 }));
-vi.mock("@/lib/prospecting/guard", () => ({ assertProspectingDelivery: mocks.guard }));
+vi.mock("@/lib/prospecting/guard", () => ({
+  assertProspectingDelivery: mocks.guard,
+  // A conferência LEVE entre bolhas (`guard.ts`): a guarda cheia recusa conversa
+  // com `last_outbound_at` — carimbo do NOSSO próprio envio —, então quem checa
+  // as bolhas seguintes é esta. Ela vem da mesma `@/lib/prospecting/guard`, e o
+  // cenário de verdade (guarda REAL + handler carimbando) mora em
+  // `lib/prospecting/prospeccao-bolhas-com-guarda-real.test.ts`.
+  assertProspectingContinuation: mocks.continuation,
+}));
 vi.mock("@/lib/agent-engine/pacing/store", () => ({
   loadChannelKnobs: mocks.knobs,
   loadPacingState: vi.fn().mockResolvedValue({ sentToday: 0 }),
@@ -67,7 +77,12 @@ vi.mock("@/lib/prospecting/store", () => ({
   validateConfig: vi.fn().mockResolvedValue(undefined),
   prepararCandidatoNoEnvio: mocks.prepare,
 }));
+// O preparo automático (B2) tem a suíte própria em lib/prospecting/preparo.test.ts;
+// aqui só se mede QUANDO o tick o chama (ordem, fora do bloqueio, fail-open).
+vi.mock("@/lib/prospecting/preparo", () => ({ prepararCandidatos: mocks.preparo }));
 import { sendNextCandidate, tickProspecting } from "@/lib/prospecting/worker";
+import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
+import { ProspectingError } from "@/lib/prospecting/provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { withProspectingLock } from "@/lib/prospecting/store";
 import type { Campaign } from "@/lib/prospecting/store";
@@ -106,15 +121,26 @@ function database(
     last_attempt: null as Date | null,
   },
   row: Record<string, unknown> = candidate,
+  // A VERSÃO PUBLICADA do agente. `split_messages`/`split_max_chars` moram em
+  // `ai_agent_versions` (é onde a tela "Estilo de resposta" grava), então a
+  // linha vem do JOIN que o worker faz — sem os campos = agente sem estilo
+  // configurado = balão único (o comportamento de antes).
+  agente: Record<string, unknown> = { published_version_id: id, operation_revision: 1 },
 ) {
   return {
-    query: vi.fn(async (sql: string) => {
+    // O 2º parâmetro existe porque as queries mutantes do envio levam os params —
+    // sem ele a tupla de `mock.calls` tem comprimento 1 e `calls[i][1]` reprova o
+    // typecheck (TS2493) mesmo com o teste passando no vitest.
+    query: vi.fn(async (sql: string, _params?: unknown[]) => {
       if (sql.startsWith("select daily_message_limit"))
         return { rows: [{ daily_message_limit: 50 }] };
       if (sql.includes("count(*) filter")) return { rows: [counts] };
       if (sql.startsWith("select * from prospecting_candidates")) return { rows: [row] };
-      if (sql.startsWith("select published_version_id"))
-        return { rows: [{ published_version_id: id, operation_revision: 1 }] };
+      // Aceita as DUAS formas: a da main (`select published_version_id,operation_revision
+      // from ai_agents`) e a do fix (mesmas colunas, com o JOIN em `ai_agent_versions`
+      // para trazer o estilo). É fixture de leitura — a falha que interessa é a do
+      // comportamento, não a da forma da query.
+      if (/^select (a\.)?published_version_id/.test(sql)) return { rows: [agente] };
       return { rows: [] };
     }),
   };
@@ -127,6 +153,7 @@ beforeEach(() => {
   mocks.pacing.mockReturnValue({ allow: true, waitMs: 0 });
   mocks.preflight.mockResolvedValue({ permite: true });
   mocks.guard.mockResolvedValue(undefined);
+  mocks.continuation.mockResolvedValue(undefined);
   mocks.boundary.mockResolvedValue(undefined);
   mocks.generate.mockResolvedValue({
     ok: true,
@@ -260,6 +287,422 @@ describe("gradual outreach", () => {
       db.query.mock.calls.some(([q]) => q.startsWith("update messages set status='failed'")),
     ).toBe(true);
   });
+
+  it("envio não confirmado não marca contagem nem reserva", async () => {
+    mocks.send.mockResolvedValue({ status: "failed" });
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    const updates = db.query.mock.calls
+      .map(([q]) => q)
+      .filter((q) => q.includes("automatic_sends = case when"));
+    expect(updates.length).toBe(1);
+    // O status enviado é 'failed' (não 'sent'), então o case when não grava 1 nem now().
+    const params = (db.query.mock.calls.find(([q]) => q.includes("automatic_sends = case when")) as [string, unknown[]] | undefined)?.[1];
+    expect(params?.[2]).toBe("failed");
+    // Sanidade: o ramo antigo (incondicional) usaria automatic_sends=1 direto.
+    expect(updates[0]!).not.toContain("automatic_sends=1");
+    expect(updates[0]!).not.toContain("exit_offered_at=now()");
+  });
+
+  it("modo first_message (padrão): corpo leva a saída", async () => {
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    const body = mocks.send.mock.calls[0]?.[2]?.body as string;
+    expect(body).toContain("PARAR");
+  });
+
+  it("modo second_message: corpo é o texto cru (sem PARAR) e a instrução traz a frase sem oferta", async () => {
+    const atrasada = {
+      ...campaign,
+      config: { ...campaign.config, exit_offer: "second_message" },
+    } as Campaign;
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, atrasada);
+    const body = mocks.send.mock.calls[0]?.[2]?.body as string;
+    expect(body).not.toContain("PARAR");
+    const instrucao = mocks.generate.mock.calls[0]?.[2]?.instrucao as string;
+    expect(instrucao).toContain("NÃO apresenta serviço");
+  });
+
+  it("config sem exit_offer comporta-se como first_message", async () => {
+    const semChave = {
+      ...campaign,
+      config: { ...campaign.config },
+    } as Campaign;
+    delete (semChave.config as Record<string, unknown>).exit_offer;
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, semChave);
+    const body = mocks.send.mock.calls[0]?.[2]?.body as string;
+    expect(body).toContain("PARAR");
+    const instrucao = mocks.generate.mock.calls[0]?.[2]?.instrucao as string;
+    expect(instrucao).not.toContain("NÃO apresenta serviço");
+  });
+
+  it("modo second_message: os dados da 1ª mensagem não levam Auditoria, Detalhe nem Rascunho", async () => {
+    // Auditoria definitiva + prévia válida do MESMO agente: no modo da 1ª, as três
+    // chaves entram (controle); no da 2ª, a 1ª mensagem só cumprimenta e nenhuma
+    // entra — o prompt frio deixa citar a Auditoria "como o motivo do contato".
+    const verificadoEm = new Date().toISOString();
+    const auditado = {
+      ...candidate,
+      data: {
+        name: "Example",
+        socials: [],
+        website: "https://example.test/",
+        site: {
+          ver: 1,
+          classe: "fora-do-ar",
+          problemas: ["http-503"],
+          checklist: { tem: [], falta: [] },
+          final_url: "https://example.test/",
+          http_status: 503,
+          tempo_ms: 300,
+          conteudo_resumo: "Página de erro do servidor",
+          pagespeed: null,
+          verificado_em: verificadoEm,
+          provisorio: false,
+          tentativas: 0,
+        },
+        previa: {
+          texto: "RASCUNHO-COM-OFERTA",
+          baseada_em: `fora-do-ar@${verificadoEm}`,
+          gerada_em: verificadoEm,
+          agente_id: id,
+        },
+      },
+    };
+    const dadosDoModo = async (modo: "first_message" | "second_message") => {
+      vi.clearAllMocks();
+      mocks.generate.mockResolvedValue({ ok: true, texto: "Olá. Falo com a Example?" });
+      const comModo = { ...campaign, config: { ...campaign.config, exit_offer: modo } } as Campaign;
+      await sendNextCandidate({} as never, database(undefined, auditado) as never, {} as never, comModo);
+      return mocks.generate.mock.calls[0]?.[2]?.dados as Record<string, string>;
+    };
+    const primeira = await dadosDoModo("first_message");
+    expect(Object.keys(primeira)).toEqual(expect.arrayContaining(["Auditoria", "Detalhe", "Rascunho de abordagem"]));
+    const segunda = await dadosDoModo("second_message");
+    expect(segunda["Empresa"]).toBe("Example");
+    for (const chave of ["Auditoria", "Detalhe", "Rascunho de abordagem"]) expect(segunda).not.toHaveProperty(chave);
+  });
+});
+
+/*
+ * A ABERTURA DA CAMPANHA TAMBÉM É "ESTILO DE RESPOSTA" (issue #2665).
+ *
+ * A opção "Responder em várias mensagens curtas" da tela do agente vale para o
+ * turno de resposta, mas a PRIMEIRA mensagem de uma campanha de Prospecção
+ * saía inteira, numa bolha só, acima do tamanho máximo configurado. Medido numa
+ * VPS em produção: 79 aberturas de campanha, 79 em uma única mensagem (média
+ * 265 caracteres, máximo 428), enquanto 18 de 30 turnos de resposta saíram em
+ * 2+ bolhas como configurado.
+ *
+ * A causa: o divisor (`splitForSend`, a fonte única da decisão) só era chamado
+ * no `inbound-turn.ts`. O worker da prospecção mandava o texto do modelo direto
+ * para o canal.
+ */
+describe("abordagem fria obedece o Estilo de resposta do agente (issue #2665)", () => {
+  const textoDoModelo =
+    "Olá! Somos a Acme e ajudamos lojas como a de vocês a vender mais.\n\n" +
+    "Queria entender como vocês atendem hoje.";
+  /** Teto escolhido para forçar o corte: o 1º parágrafo sozinho passa dele. */
+  const MAX = 60;
+  const versaoComEstilo = {
+    published_version_id: id,
+    operation_revision: 1,
+    split_messages: true,
+    split_max_chars: MAX,
+  };
+  const dormir = vi.fn().mockResolvedValue(undefined);
+
+  it("sai em VÁRIAS bolhas curtas, com a saída na PRIMEIRA e o recibo na PRIMEIRA", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    const corpos = mocks.send.mock.calls.map(([, , input]) => String(input?.body));
+    expect(corpos.length, "a abordagem saiu em uma mensagem só").toBeGreaterThan(1);
+    // A 1ª bolha é a ÚNICA que pode passar do teto: ela leva o rodapé de saída,
+    // que não é estilo — é a saída da mensagem fria (ver worker.ts). As demais
+    // obedecem ao "Estilo de resposta" do agente.
+    for (const corpo of corpos.slice(1))
+      expect(
+        corpo.length,
+        `bolha acima do teto configurado (${MAX}): ${corpo}`,
+      ).toBeLessThanOrEqual(MAX);
+    expect(corpos[0]!.length).toBeLessThanOrEqual(MAX + rodapeDeSaida(null).length + 2);
+
+    // Nada do texto se perde no corte — as bolhas somadas são o texto inteiro.
+    const somado = corpos.join(" ");
+    expect(somado).toContain("vender mais.");
+    expect(somado).toContain("atendem hoje.");
+
+    // A SAÍDA ("responda PARAR") chega JUNTO DA PRIMEIRA bolha. Se ela viesse na
+    // última — como no head anterior —, qualquer bolha que falhasse no meio
+    // deixaria a pessoa sem caminho de volta numa mensagem fria.
+    expect(corpos[0], "a saída não está na 1ª bolha").toContain("responda PARAR");
+    expect(
+      corpos.at(-1),
+      "a saída voltou a depender da ÚLTIMA bolha — o defeito medido na revisão do PR",
+    ).not.toContain("responda PARAR");
+
+    // Recibo e idempotência do candidato ficam na PRIMEIRA bolha; as demais são
+    // mensagens próprias, sem o id estável (repetir o id faria o handler
+    // devolver a linha de antes sem enviar).
+    expect(mocks.send.mock.calls[0]?.[1]).toMatchObject({
+      internalMessageId: "stable-message",
+      prospectingDelivery: { candidateId: "candidate" },
+    });
+    for (const [, ctx] of mocks.send.mock.calls.slice(1))
+      expect(ctx, "bolha seguinte reusando o id estável da primeira").not.toHaveProperty(
+        "internalMessageId",
+      );
+
+    // A GUARDA DE PRIMEIRO CONTATO vai só na PRIMEIRA bolha. Ela recusa conversa
+    // com `last_outbound_at` — carimbo que o próprio handler grava ao enviar a 1ª
+    // —, e repetida numa bolha seguinte ela pausava a campanha no primeiro
+    // contato. Entre as seguintes vale a conferência leve.
+    for (const [, ctx] of mocks.send.mock.calls.slice(1))
+      expect(
+        ctx,
+        "guarda de primeiro contato de novo numa bolha seguinte: pausa a campanha no 1º contato",
+      ).not.toHaveProperty("prospectingDelivery");
+    expect(mocks.continuation).toHaveBeenCalledTimes(corpos.length - 1);
+    for (const chamada of mocks.continuation.mock.calls)
+      expect(chamada[1]).toMatchObject({ candidateId: "candidate", conversationId: id });
+
+    // Bolhas são mensagens físicas: entre uma e outra vai o ritmo do número
+    // (throttle + jitter), nunca o envio costado.
+    expect(dormir, "bolhas seguidas sem pausa é cadência de robô").toHaveBeenCalledTimes(
+      corpos.length - 1,
+    );
+  });
+
+  /**
+   * A CONFIGURAÇÃO DECIDE ONDE A SAÍDA É OFERECIDA (migration 0705).
+   *
+   * `exit_offer` tem dois valores, e o worker respeita os dois: em
+   * `first_message` a saída vai junto da PRIMEIRA bolha; em `second_message` a
+   * saída é RESERVADA por `saida-configuravel.ts` (`exit_offered_at`) e servida
+   * na SEGUNDA mensagem (`context.ts` manda o agente só cumprimentar na
+   * primeira). Pôr o rodapé aqui incondicionalmente ofereceria a saída duas
+   * vezes — e na mensagem que o operador não escolheu.
+   */
+  async function bolhasComExitOffer(modo: "first_message" | "second_message") {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    const escolhida = {
+      ...campaign,
+      config: { ...campaign.config, exit_offer: modo },
+    } as Campaign;
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, escolhida, dormir);
+    return {
+      corpos: mocks.send.mock.calls.map(([, , input]) => String(input?.body)),
+      db,
+    };
+  }
+
+  it("exit_offer=first_message: o rodapé sai na 1ª bolha e a reserva é gravada neste envio", async () => {
+    const { corpos, db } = await bolhasComExitOffer("first_message");
+    expect(corpos.length, "a abordagem saiu em uma mensagem só").toBeGreaterThan(1);
+    expect(corpos[0], "a saída não está na 1ª bolha").toContain("responda PARAR");
+    // Oferecida na PRIMEIRA mensagem, é neste envio que a saída fica reservada —
+    // é isso que impede a 2ª mensagem de oferecê-la de novo.
+    const reserva = db.query.mock.calls.find(([q]) => q.includes("exit_offered_at"));
+    expect(String(reserva?.[0])).toContain("and true then now()");
+  });
+
+  it("exit_offer=second_message: a 1ª bolha sai SEM o rodapé — a saída é da 2ª mensagem", async () => {
+    const { corpos, db } = await bolhasComExitOffer("second_message");
+    expect(corpos.length, "a abordagem saiu em uma mensagem só").toBeGreaterThan(1);
+    for (const corpo of corpos)
+      expect(
+        corpo,
+        "o rodapé saiu sem a configuração mandar: a saída seria oferecida duas vezes",
+      ).not.toContain("responda PARAR");
+    // O texto do modelo chega inteiro e fatiado: o que a configuração muda é ONDE
+    // a saída é oferecida, não o estilo de resposta.
+    const somado = corpos.join(" ");
+    expect(somado).toContain("vender mais.");
+    expect(somado).toContain("atendem hoje.");
+    // A GUARDA LEVE entre as bolhas seguintes continua valendo — a pessoa
+    // responder no meio PARA a abordagem (sem pausar a campanha).
+    expect(mocks.continuation).toHaveBeenCalledTimes(corpos.length - 1);
+    expect(dormir).toHaveBeenCalledTimes(corpos.length - 1);
+    // E este envio NÃO reserva a saída: quem reserva é a 2ª mensagem.
+    const reserva = db.query.mock.calls.find(([q]) => q.includes("exit_offered_at"));
+    expect(String(reserva?.[0])).toContain("and false then now()");
+  });
+
+  it("sem o estilo ligado, a abordagem continua saindo em UMA mensagem (não regredir)", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    await sendNextCandidate(
+      {} as never,
+      database(undefined, candidate, {
+        published_version_id: id,
+        operation_revision: 1,
+        split_messages: false,
+      }) as never,
+      {} as never,
+      campaign,
+      dormir,
+    );
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    const corpo = String(mocks.send.mock.calls[0]?.[2]?.body);
+    expect(corpo.startsWith(textoDoModelo)).toBe(true);
+    expect(corpo).toContain("responda PARAR");
+    expect(mocks.send.mock.calls[0]?.[1]).toMatchObject({ internalMessageId: "stable-message" });
+    expect(dormir).not.toHaveBeenCalled();
+  });
+
+  it("agente cuja linha não traz os campos (clone antigo) segue em balão único", async () => {
+    await sendNextCandidate(
+      {} as never,
+      database(undefined, candidate, { published_version_id: id, operation_revision: 1 }) as never,
+      {} as never,
+      campaign,
+      dormir,
+    );
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("a abordagem sai em no MÁXIMO 3 mensagens: o que passa segue junto na última (#1724)", async () => {
+    // Cinco parágrafos curtos, cada um cabe sozinho numa bolha: sem o teto, são
+    // cinco mensagens seguidas para quem nunca falou com a empresa.
+    const paragrafos = ["Um.", "Dois.", "Três.", "Quatro.", "Cinco."];
+    mocks.generate.mockResolvedValue({ ok: true, texto: paragrafos.join("\n\n") });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    const db = database(undefined, candidate, { ...versaoComEstilo, split_max_chars: 600 });
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    expect(mocks.send, "passou do teto de mensagens do turno").toHaveBeenCalledTimes(3);
+    const ultima = String(mocks.send.mock.calls[2]?.[2]?.body);
+    for (const resto of ["Três.", "Quatro.", "Cinco."])
+      expect(ultima, "o que passou do teto se perdeu").toContain(resto);
+  });
+
+  it("a 2ª bolha não confirmada PARA o envio, e a candidatura conta como abordada (a 1ª chegou)", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    // `mockImplementation` e não `mockResolvedValueOnce`: o fila de "once" sobrevive
+    // ao `clearAllMocks` (que só limpa as chamadas) e vaza para os testes seguintes.
+    let balao = 0;
+    mocks.send.mockImplementation(async () => ({
+      status: balao++ === 0 ? "sent" : "queued",
+      id: `balao-${balao}`,
+    }));
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    expect(mocks.send, "seguiu mandando bolha após o envio não confirmado").toHaveBeenCalledTimes(2);
+    const falha = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update messages set status='failed'"),
+    );
+    expect(falha?.[1]).toContain("balao-2");
+    // A pessoa recebeu a 1ª bolha: `failed` a tiraria da reserva da saída e do
+    // contexto da campanha, que só enxergam `sending`/`sent`.
+    const candidatura = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    );
+    expect(candidatura?.[1], "quem recebeu a 1ª bolha ficou como falha").toEqual([
+      id,
+      "candidate",
+      "sent",
+      null,
+    ]);
+    // A falha não escapou como erro: o candidato é marcado e o tick SEGUE com a
+    // campanha (nada foi lançado). E a trilha registra O QUE SAIU — uma bolha de
+    // três —, porque uma mensagem foi de fato entregue.
+    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
+      action: "prospecting.approach_sent",
+      metadata: { sent: false, bubbles_sent: 1, bubbles_total: 3 },
+    });
+  });
+
+  it("second_message com a 2ª bolha não confirmada: a candidatura fica `sent` e a saída da 2ª mensagem continua garantida", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    let balao = 0;
+    mocks.send.mockImplementation(async () => ({
+      status: balao++ === 0 ? "sent" : "queued",
+      id: `balao-${balao}`,
+    }));
+    const segunda = {
+      ...campaign,
+      config: { ...campaign.config, exit_offer: "second_message" },
+    } as Campaign;
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, segunda, dormir);
+
+    const [sql, params] = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    ) as [string, unknown[]];
+    // `sent` é o que grava automatic_sends=1 e mantém o candidato visível para
+    // `SQL_CONTAR_ENVIO_AUTOMATICO`, que é quem serve a saída na 2ª mensagem.
+    expect(params, "a apresentação chegou e a saída nunca viria").toEqual([
+      id,
+      "candidate",
+      "sent",
+      null,
+    ]);
+    expect(sql).toContain("automatic_sends = case when $3 = 'sent' then 1");
+    expect(sql, "reservou a saída que este modo serve na 2ª mensagem").toContain(
+      "and false then now()",
+    );
+  });
+
+  it("uma bolha seguinte que LANÇA no envio para só este candidato: não pausa a campanha nem perde a trilha", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    let balao = 0;
+    mocks.send.mockImplementation(async () => {
+      if (balao++ > 0) throw new Error("agente pausado entre as bolhas");
+      return { status: "sent", id: "balao-1" };
+    });
+    const db = database(undefined, candidate, versaoComEstilo);
+    // Lançar daqui faria o tick pausar a campanha inteira.
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    const candidatura = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    );
+    expect(candidatura?.[1]).toEqual([id, "candidate", "sent", null]);
+    expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
+      action: "prospecting.approach_sent",
+      metadata: { sent: false, bubbles_sent: 1, bubbles_total: 3 },
+    });
+  });
+
+  it("a pessoa responde entre bolhas: PARA sem pausar a campanha e registra o que saiu", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    // A conferência leve entre bolhas recusa: a pessoa respondeu (ou mandou STOP).
+    // Escopo `candidato` — é o que impede o tick de pausar a campanha inteira.
+    mocks.continuation.mockRejectedValueOnce(
+      new ProspectingError(
+        "A pessoa respondeu ou o atendimento foi assumido; a abordagem parou aqui.",
+        409,
+        "candidato",
+      ),
+    );
+    const db = database(undefined, candidate, versaoComEstilo);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign, dormir);
+
+    // Só a 1ª bolha saiu — e a abordagem SAIU (a pessoa foi abordada; o que é
+    // falha é a conversa ter continuado fria, não a pessoa ter respondido).
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    const candidatura = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status=$3"),
+    );
+    expect(candidatura?.[1]).toEqual([id, "candidate", "sent", null]);
+    expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
+      metadata: {
+        sent: false,
+        bubbles_sent: 1,
+        bubbles_total: 3,
+        stopped_reason: "A pessoa respondeu ou o atendimento foi assumido; a abordagem parou aqui.",
+      },
+    });
+  });
 });
 
 describe("tick da prospecção × organização parada", () => {
@@ -273,6 +716,17 @@ describe("tick da prospecção × organização parada", () => {
     // régua SQL decide no banco, e a query não cortaria em `max_rows`.
     expect(sql).not.toMatch(/organization_id <> all/);
     expect(params ?? []).toEqual([]);
+  });
+
+  it("a consulta de organizações do tick (a de campanhas rodando) não mexe em data->'site'", async () => {
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    await tickProspecting({ query } as never, {} as never);
+    const [sql] = query.mock.calls[0]!;
+    // O portão do BLOCO COM BLOQUEIO continua só com quem roda busca/campanha. A
+    // verificação de site e a prévia (B2) saem por `prepararCandidatos`, fora do
+    // bloqueio, e as organizações só-rascunho vêm de uma SEGUNDA consulta.
+    expect(sql).not.toMatch(/data->'site'/);
+    expect(sql).toMatch(/status='running'/);
   });
 });
 
@@ -411,5 +865,200 @@ describe("funil só no envio: a checagem do canal vem ANTES de criar qualquer co
     });
     const checagem = mocks.preflight.mock.invocationCallOrder[0] ?? Infinity;
     expect(checagem).toBeLessThan(mocks.prepare.mock.invocationCallOrder[0] ?? 0);
+  });
+});
+
+/**
+ * A PROVA EM PAR DA PRÉVIA (B1, `docs/doctrine/prova-em-par.md`).
+ *
+ * A tela gera a prévia com a estratégia e a guarda no candidato. Se o ENVIO não
+ * levar a MESMA estratégia e o MESMO rascunho, o par se rompe: a pessoa revisa
+ * um texto e o tick manda outro, e nenhum dos dois lados acusa sozinho. Aqui
+ * mede-se o lado da ferramenta (o worker) com o mesmo candidato que a tela
+ * (caso C, `route.test.ts`) mede do outro lado.
+ */
+describe("a abordagem fria leva a estratégia e a prévia guardada (par com a tela)", () => {
+  const comPrevia = {
+    ...candidate,
+    data: {
+      name: "Example",
+      website: null,
+      site: null,
+      socials: [],
+      previa: {
+        texto: "Rascunho guardado pela tela",
+        baseada_em: "sem-site@derivado",
+        gerada_em: "2026-10-11T09:00:00.000Z",
+        // O MESMO agente da campanha: a prévia de outro agente não é aproveitada.
+        agente_id: id,
+      },
+    },
+  };
+
+  it("F) a prévia escrita por OUTRO agente (o padrão) não vai: o envio escreve do zero", async () => {
+    const deOutro = {
+      ...comPrevia,
+      data: {
+        ...comPrevia.data,
+        previa: { ...comPrevia.data.previa, agente_id: "11111111-1111-4111-8111-111111111111" },
+      },
+    };
+    await sendNextCandidate({} as never, database(undefined, deOutro) as never, {} as never, campaign);
+    const args = mocks.generate.mock.calls[0]![2] as { dados: Record<string, string> };
+    expect(args.dados["Rascunho de abordagem"]).toBeUndefined();
+  });
+
+  it("F) passa a estratégia na instrução e o rascunho nos dados", async () => {
+    await sendNextCandidate({} as never, database(undefined, comPrevia) as never, {} as never, campaign);
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+    const args = mocks.generate.mock.calls[0]![2] as {
+      instrucao: string;
+      dados: Record<string, string>;
+    };
+    expect(args.dados["Rascunho de abordagem"]).toBe("Rascunho guardado pela tela");
+    // A mesma estratégia que a tela mostra ("Sem site", sem-site derivado).
+    expect(args.instrucao).toContain("Sem site");
+    expect(args.instrucao).toContain("Estratégia");
+  });
+
+  it("F) sem prévia guardada o rascunho não vai — mas a estratégia continua indo", async () => {
+    await sendNextCandidate({} as never, database() as never, {} as never, campaign);
+    const args = mocks.generate.mock.calls[0]![2] as {
+      instrucao: string;
+      dados: Record<string, string>;
+    };
+    expect(args.dados["Rascunho de abordagem"]).toBeUndefined();
+    expect(args.instrucao).toContain("Sem site");
+  });
+});
+
+describe("tick × preparo automático (B2)", () => {
+  const ORG_A = "10000000-0000-4000-8000-00000000000a";
+  const ORG_B = "10000000-0000-4000-8000-00000000000b";
+  type Corpo = (d: unknown) => Promise<unknown>;
+
+  function montar(opts: { segundaConsulta?: string[]; preparoFalhaEm?: string } = {}) {
+    mocks.paradas.mockResolvedValue([]);
+    const ordem: string[] = [];
+    const base = database();
+    const db = {
+      query: vi.fn(async (sql: string) =>
+        sql.startsWith("select * from prospecting_campaigns where organization_id=$1 and status='running'")
+          ? { rows: [campaign] }
+          : base.query(sql),
+      ),
+    };
+    (withProspectingLock as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_pool: unknown, org: string, fn: Corpo) => {
+        ordem.push(`bloqueio:${org}`);
+        const r = await fn(db);
+        ordem.push(`fim-bloqueio:${org}`);
+        return r;
+      },
+    );
+    mocks.preparo.mockImplementation(async (_p: unknown, _a: unknown, org: string) => {
+      ordem.push(`preparo:${org}`);
+      if (org === opts.preparoFalhaEm) throw new Error("preparo caiu");
+      return { sites: 0, previas: 0, pulou: false };
+    });
+    const sqls: string[] = [];
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        sqls.push(sql);
+        if (sql.includes("'draft'"))
+          return { rows: (opts.segundaConsulta ?? []).map((organization_id) => ({ organization_id })) };
+        return { rows: [{ organization_id: ORG_A }] };
+      }),
+    };
+    return { pool, ordem, sqls, db };
+  }
+
+  it("organização só com campanha em rascunho/pausada e pendência entra na rodada (só no preparo)", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    expect(ordem).toContain(`preparo:${ORG_B}`);
+    // Nada do bloco com bloqueio (busca, abordagem) para quem não roda campanha.
+    expect(ordem).not.toContain(`bloqueio:${ORG_B}`);
+  });
+
+  it("a segunda consulta é barata, filtra operante e limita 20, e a primeira ficou como era", async () => {
+    const { pool, sqls } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    expect(sqls).toHaveLength(2);
+    expect(sqls[0]).toMatch(/pc\.status='running' or pc\.search_status in \('starting','running'\)/);
+    expect(sqls[0]).not.toContain("'draft'");
+    const segunda = sqls[1]!;
+    expect(segunda).toContain("'draft','paused'");
+    expect(segunda).toContain("fn_org_operante");
+    expect(segunda).toMatch(/limit 20/);
+    expect(segunda).toContain("exists");
+    expect(segunda).toContain("selected is not false");
+    expect(segunda).toContain("data->'previa' is null");
+  });
+
+  it("espelho SQL de `opcoesDoPreparo` (doc 163, B): sem a chave, a prévia NÃO entra; a verificação do site, sim", async () => {
+    const { pool, sqls } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    const segunda = sqls[1]!;
+    // Prévia: só `true` gravado liga — chave ausente (campanha antiga) cai no 'false'.
+    expect(segunda).toContain("coalesce(pc.search->>'gerar_previa','false') = 'true'");
+    expect(segunda).not.toContain("coalesce(pc.search->>'gerar_previa','true')");
+    // Verificação do site: só `false` gravado desliga — chave ausente segue verificando.
+    expect(segunda).toContain("coalesce(pc.search->>'avaliar_site','true') <> 'false'");
+  });
+
+  it("une as duas listas sem duplicar: a mesma organização é preparada uma vez", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_A, ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    expect(ordem.filter((x) => x === `preparo:${ORG_A}`)).toHaveLength(1);
+    expect(ordem.filter((x) => x === `bloqueio:${ORG_A}`)).toHaveLength(1);
+  });
+
+  it("o preparo roda DEPOIS e FORA do bloqueio da organização", async () => {
+    const { pool, ordem } = montar();
+    await tickProspecting(pool as never, {} as never);
+    const fim = ordem.indexOf(`fim-bloqueio:${ORG_A}`);
+    const preparo = ordem.indexOf(`preparo:${ORG_A}`);
+    expect(fim).toBeGreaterThanOrEqual(0);
+    expect(preparo).toBeGreaterThan(fim);
+  });
+
+  it("o preparo nunca atrasa o envio de ninguém: todos os blocos com bloqueio rodam antes dos preparos", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(pool as never, {} as never);
+    const ultimoBloqueio = ordem.lastIndexOf(`fim-bloqueio:${ORG_A}`);
+    const primeiroPreparo = ordem.findIndex((x) => x.startsWith("preparo:"));
+    expect(ultimoBloqueio).toBeLessThan(primeiroPreparo);
+  });
+
+  it("recebe o resto do prazo, no máximo 100 s por organização, e um requestId", async () => {
+    const { pool } = montar();
+    const antes = Date.now();
+    await tickProspecting(pool as never, {} as never);
+    const [, , org, requestId, deadline] = mocks.preparo.mock.calls[0]!;
+    expect(org).toBe(ORG_A);
+    expect(typeof requestId).toBe("string");
+    expect(deadline).toBeGreaterThan(antes);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 100_000);
+  });
+
+  it("falha do preparo não impede o envio nem as outras organizações", async () => {
+    const { pool, ordem } = montar({ segundaConsulta: [ORG_B], preparoFalhaEm: ORG_A });
+    mocks.send.mockResolvedValue({ status: "sent" });
+    await expect(tickProspecting(pool as never, {} as never)).resolves.toBeDefined();
+    expect(mocks.send).toHaveBeenCalledTimes(1); // sendNextCandidate rodou
+    expect(ordem).toContain(`preparo:${ORG_B}`); // e a outra organização seguiu
+  });
+
+  it("falha da SEGUNDA consulta não derruba a rodada das organizações que já rodam", async () => {
+    const { pool, ordem } = montar();
+    const original = pool.query.getMockImplementation()!;
+    pool.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("'draft'")) throw new Error("consulta caiu");
+      return original(sql);
+    });
+    await expect(tickProspecting(pool as never, {} as never)).resolves.toBeDefined();
+    expect(ordem).toContain(`bloqueio:${ORG_A}`);
+    expect(ordem).toContain(`preparo:${ORG_A}`);
   });
 });

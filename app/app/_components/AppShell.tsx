@@ -1,5 +1,5 @@
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { BarraInferior } from "@/components/shell/BarraInferior";
@@ -9,6 +9,7 @@ import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessage
 import { useInboundCallAlerts } from "@/hooks/calls/useInboundCallAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
+import { ensureNotifyServiceWorker } from "@/lib/notifications/service_worker";
 import { estiloDaReserva, useOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
 
 interface AppShellProps {
@@ -30,6 +31,13 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
   useInboundCallAlerts();
   useCrmAlerts();
   useNotifyOpenFromServiceWorker();
+  // O SW em todo /app, e não só depois da permissão de avisos: é ele que
+  // responde a página neutra quando a navegação cai sem rede (ADR-0006, D4),
+  // e é aqui que a versão nova dele substitui a antiga depois de um deploy.
+  // Sem contexto seguro (http://IP) a função devolve null e nada acontece.
+  useEffect(() => {
+    void ensureNotifyServiceWorker();
+  }, []);
   // O SINAL DE PRESENÇA (issue #996) sai daqui porque presença é "esta aba
   // está aberta" — não "a pessoa está na tela Equipe". Quem atende passa o dia
   // no Inbox e na Agenda; um emissor amarrado à tela de gestão diria que só o
@@ -50,8 +58,12 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
       rolar. `dvh` é a altura dinâmica, que acompanha a barra aparecendo e
       sumindo. Princípio 2 de `docs/design-system/screen-flow/07-responsive-strategy.md`,
       escrito em abril de 2026 e aplicado em 6 lugares de 33 até aqui.
+
+      Menos `--faixas-de-cima` (publicada por `FaixasDeCima`): as faixas do
+      topo ficam ACIMA da casca, e sem o desconto o documento media a tela
+      mais a faixa — rolável justo quando o WhatsApp está desconectado.
     */
-    <div className="flex min-h-dvh w-full bg-background">
+    <div className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] w-full bg-background">
       <BarraDeProgressoNavegacao />
       <div className="hidden md:block">
         <Sidebar collapsed={sidebarCollapsed} />
@@ -75,7 +87,7 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
         SEGUNDA medida da mesma coisa — a que discordava e deixava a barra por
         cima da lista.
       */}
-      <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
+      <div className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] min-w-0 flex-1 flex-col">
         <TopBar />
         {/*
           O RODAPÉ DESCONTA O QUE AS PEÇAS FIXAS OCUPAM (issue #1305).

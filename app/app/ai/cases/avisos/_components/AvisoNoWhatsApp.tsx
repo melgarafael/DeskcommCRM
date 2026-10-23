@@ -45,6 +45,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
+import { usePaisDaOrgAtiva } from "@/hooks/auth/AuthProvider";
+import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import {
   useAvisoDeCaso,
   useSalvarAvisoDeCaso,
@@ -144,6 +147,8 @@ export function AvisoNoWhatsApp() {
  */
 function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
   const t = useT();
+  const telefoneExemplo = useTelefoneExemplo();
+  const noBrasil = perfilDoPais(usePaisDaOrgAtiva()).codigo === "BR";
   const salvar = useSalvarAvisoDeCaso();
   const testar = useTestarAvisoDeCaso();
 
@@ -251,7 +256,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           id="telefone"
           inputMode="tel"
           className="w-full sm:w-72"
-          placeholder="+5531999998888"
+          placeholder={telefoneExemplo}
           value={rascunho.telefone}
           onChange={(e) =>
             setRascunho((r) => ({ ...r, telefone: normalizarTelefoneDeAviso(e.target.value) }))
@@ -259,7 +264,10 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           aria-invalid={rascunho.telefone !== "" && !telefoneOk}
         />
         <p className="text-xs text-muted-foreground">
-          {t("Comece pelo código do país. Um celular do Brasil fica assim: +55, DDD e o número.")}
+          {/* A explicação brasileira fica para o Brasil; fora dele, o exemplo do país da organização. */}
+          {noBrasil
+            ? t("Comece pelo código do país. Um celular do Brasil fica assim: +55, DDD e o número.")
+            : t("Comece pelo código do país, por exemplo {exemplo}.").replace("{exemplo}", () => telefoneExemplo)}
         </p>
         {rascunho.telefone !== "" && !telefoneOk ? (
           <p className="text-xs text-destructive" data-testid="telefone-invalido">

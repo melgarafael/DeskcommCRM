@@ -83,8 +83,21 @@ function paraEscrita(components: unknown[]): unknown[] {
   return components.map((c) => {
     if (!c || typeof c !== "object") return c;
     const obj = c as Record<string, unknown>;
-    return typeof obj.type === "string" ? { ...obj, type: obj.type.toLowerCase() } : obj;
+    const normalizado = typeof obj.type === "string" ? { ...obj, type: obj.type.toLowerCase() } : obj;
+    // O botão tem o MESMO discriminador, um nível abaixo: `QUICK_REPLY` volta
+    // `400 Invalid discriminator value. Expected 'quick_reply' | 'url' | …`.
+    // Medido em 02/10/2026 criando um modelo com botões pela mesma função da
+    // tela (`montarComponents`, que escreve o tipo em maiúscula).
+    return Array.isArray(normalizado.buttons)
+      ? { ...normalizado, buttons: normalizado.buttons.map(botaoParaEscrita) }
+      : normalizado;
   });
+}
+
+function botaoParaEscrita(b: unknown): unknown {
+  if (!b || typeof b !== "object") return b;
+  const obj = b as Record<string, unknown>;
+  return typeof obj.type === "string" ? { ...obj, type: obj.type.toLowerCase() } : obj;
 }
 
 /** Organização + conta: as DUAS pontas que identificam uma sessão (issue #236). */

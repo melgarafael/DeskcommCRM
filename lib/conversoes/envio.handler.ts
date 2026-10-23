@@ -149,6 +149,11 @@ export async function processarConversao(
   if (!leitura.temAtribuicao) return ok("skipped", leitura.motivo);
 
   const { plataforma, cliqueDeOrigem, telefone } = leitura.atribuicao;
+  // Presente só na captura de PÁGINA (formulário): o ramo do protocolo
+  // pendente monta a atribuição sem identidade de navegador, e o `in` cobre o
+  // tipo sem inventar campo.
+  const identidadeDoNavegador =
+    "identidadeDoNavegador" in leitura.atribuicao ? leitura.atribuicao.identidadeDoNavegador : undefined;
   const identificadoresGoogle =
     "identificadoresGoogle" in leitura.atribuicao
       ? leitura.atribuicao.identificadoresGoogle
@@ -423,6 +428,7 @@ export async function processarConversao(
         : (lead.closed_at ?? row.created_at ?? Date.now()),
     ),
     cliqueDeOrigem,
+    identidadeDoNavegador,
     identificadoresGoogle,
     telefone,
     // A coluna tem `DEFAULT 'BRL'` e um CHECK de ISO-4217; o fallback só cobre a

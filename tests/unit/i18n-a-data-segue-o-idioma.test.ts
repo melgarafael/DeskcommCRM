@@ -79,6 +79,8 @@ const FORA_DE_INTERFACE: Record<string, string> = {
   "lib/email/templates/invite.ts": "e-mail: renderizado fora do React; quem recebe convite ainda não tem conta",
   "lib/lgpd/email-delivery.ts": "e-mail de LGPD: mesma fronteira do convite",
   "lib/lgpd/sla-alarm.ts": "alarme por e-mail: mesma fronteira",
+  "lib/lgpd/avisos-do-artigo-12.ts":
+    "e-mail do art. 12.º: mesma fronteira — a data segue o país do titular (BR/PT), não a interface",
 
   // ─── O PDF de LGPD é documento LEGAL, e fica em português por decisão ───
   //

@@ -26,7 +26,7 @@ import {
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
-import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
@@ -49,6 +49,8 @@ import { mimeDaMidia, type MidiaDeTemplate } from "@/lib/templates/midias";
 import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
 import { cn } from "@/lib/utils";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
+import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
+import { type Recurso } from "@/lib/inbox/recursos";
 import type { Message } from "@/lib/types/messaging";
 
 export interface ComposerHandle {
@@ -97,6 +99,21 @@ interface Props {
    */
   janelaFechada?: string | null;
   /**
+   * A caixa travada até alguém ASSUMIR a conversa (#3012).
+   *
+   * Entra pela MESMA porta do bloqueio de canal (`isDisabled`), e não por um
+   * segundo caminho: o que trava o campo, o envio, o anexo, o emoji, o áudio e
+   * a resposta rápida é o de sempre. A diferença é a origem — não é o canal nem
+   * o contato, é uma regra da organização que já vem resolvida de fora
+   * (`composerBloqueadoAteAssumir`).
+   *
+   * Trava a caixa INTEIRA, nota interna inclusive. O corte da janela de 24h
+   * separa a nota porque aquela regra é sobre o que CHEGA ao cliente; esta é
+   * sobre começar o atendimento sem responsável, e uma nota escrita antes de
+   * assumir organiza um atendimento que ainda não é de ninguém.
+   */
+  aguardandoAssumir?: boolean;
+  /**
    * A mensagem que esta resposta CITA, quando o atendente escolheu responder
    * "em cima" de uma. `null` = envio solto, o caso comum.
    *
@@ -134,6 +151,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     disabled,
     blockedReason,
     janelaFechada,
+    aguardandoAssumir = false,
     contactName,
     contactDisplayName,
     currentContactId,
@@ -152,6 +170,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * A FILA de anexos (#2526): o "+" escolhe uma, a resposta rápida traz as
    * várias que o operador carregou no template. Uma lista e não um arquivo é o
    * que permite o preview das duas antes de qualquer byte sair.
+   *
+   * É a MESMA fila que recebe a mídia de um recurso da barra (#2833): o clique
+   * do recurso passa pelo `applyTemplate`, e imagem e áudio entram aqui — com
+   * prévia e retry — em vez de um caminho próprio que perdia a imagem.
    */
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   /**
@@ -204,6 +226,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const createNote = useCreateNote();
   const templates = useMessageTemplates();
   const slash = resolveSlash(text);
+  // O Esc/escolha vale só para o `/` em curso: saiu do `/` por QUALQUER caminho
+  // (digitado ou escrito pelo `applyTemplate`, inclusive o clique da barra com o
+  // campo vazio), o próximo `/` volta a abrir o menu.
+  if (menuDismissed && !slash.open) setMenuDismissed(false);
   const menuOpen = mode === "reply" && slash.open && !menuDismissed;
 
   /**
@@ -231,7 +257,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   // send/createNote fora do disable: o texto some na hora do envio; travar o campo
   // até a API voltar impedia digitar a próxima mensagem com o campo ainda cheio.
-  const isDisabled = disabled || !!blockedReason || upload.isPending;
+  // `aguardandoAssumir` (#3012) entra AQUI, no mesmo lugar: um termo a mais na
+  // trava de sempre, nunca um desabilitar paralelo que pudesse divergir dela.
+  const isDisabled = disabled || !!blockedReason || upload.isPending || aguardandoAssumir;
   // A janela só alcança o que SAI. Em modo nota o composer segue liberado: a
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
@@ -408,6 +436,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   /**
+   * A escolha de um recurso na barra (#2833) — o MESMO caminho do `/`.
+   *
+   * Não existe plano próprio da barra: o recurso é entregue ao `applyTemplate`,
+   * que já separa as duas naturezas — texto cai no campo editável, e mídia
+   * (imagem OU áudio) entra na fila de anexos com o corpo como legenda. Era o
+   * caminho próprio que perdia a imagem do recurso. Nada é enviado aqui: é o
+   * critério central da issue, e o teste o cobre.
+   */
+  function escolherRecurso(recurso: Recurso) {
+    void applyTemplate(recurso);
+  }
+
+  /**
    * Baixa os BYTES de uma imagem do template (#2526).
    *
    * Pela própria origem (`/midias/:indice` devolve o corpo, não um 302): o
@@ -430,7 +471,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   /**
-   * Escolhe a resposta rápida (#2526).
+   * Escolhe a resposta rápida (#2526) — e é o MESMO caminho da barra de recursos
+   * (#2833): o `/` e a barra entregam o recurso AQUI, um caminho só.
    *
    * SÓ TEXTO continua sendo o de sempre, byte por byte: o corpo interpolado
    * vai para o campo. Com IMAGEM, o texto sai como legenda da primeira imagem
@@ -444,7 +486,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * preview: sem o Blob não há o que mostrar, e o operador só poderia aprovar
    * às cegas.
    */
-  async function applyTemplate(template: MessageTemplate) {
+  async function applyTemplate(template: Recurso) {
     const payload = payloadDeUso(template, contato);
     setMenuDismissed(true);
 
@@ -689,6 +731,20 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </p>
           </div>
         )}
+        {/* O AVISO DO BLOQUEIO ATÉ ASSUMIR (#3012) — a caixa está travada e o
+            motivo precisa estar junto dela, não só no botão lá em cima. A saída
+            da regra é o "Assumir" do cabeçalho, que continua visível em todos os
+            estados; esta faixa só diz o que fazer para voltar a escrever. */}
+        {aguardandoAssumir && (
+          <div
+            data-testid="aviso-assumir"
+            className="mb-1.5 flex items-start gap-2 rounded-md border-l-2 border-primary bg-muted/60 px-2 py-1.5 text-xs"
+          >
+            <p className="min-w-0 flex-1 text-muted-foreground">
+              {t("Assuma esta conversa para responder.")}
+            </p>
+          </div>
+        )}
         <div className="mb-1.5 flex gap-1">
           <button
             type="button"
@@ -747,6 +803,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </button>
           </div>
         )}
+        {/* A BARRA DE RECURSOS (#2833) — um botão por título cadastrado. O clique
+            NÃO envia: entrega o recurso ao MESMO `applyTemplate` que o `/` usa.
+            Texto cai no campo editável; mídia (imagem OU áudio) entra na fila de
+            anexos, com prévia e legenda — não há barra de anexo própria. */}
+        {mode === "reply" && (
+          <BarraDeRecursos
+            recursos={templates.data ?? []}
+            disabled={respostaBarrada}
+            onEscolher={escolherRecurso}
+          />
+        )}
         <div className="flex items-end gap-2">
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
@@ -796,7 +863,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               // retry depois de uma falha. Quem digita DURANTE o envio poda as
               // escolhas aqui — o `onError` da nota devolve as que foram enviadas.
               setMencoes((atual) => podarMencoes(e.target.value, atual));
-              if (!resolveSlash(e.target.value).open) setMenuDismissed(false);
               // Sumiu o `@` (apagou, ou o Enter escolheu): o Esc de uma vez
               // não pode travar a lista da PRÓXIMA menção.
               if (!resolverMencao(e.target.value, pos)) setMencaoDispensada(false);
@@ -829,7 +895,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 : t("Enter envia · Shift+Enter quebra linha")
             }
             className={cn(
-              "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
+              "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm",
               "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}

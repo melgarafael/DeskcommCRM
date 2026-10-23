@@ -70,5 +70,46 @@ describe("emitNotification", () => {
     expect(opts.icon).toBe("https://cdn.example/foto.jpg");
     expect(opts.silent).toBe(false);
     expect(opts.data.href).toContain("/app/inbox?id=conv-1");
+    expect(opts).not.toHaveProperty("badge");
+  });
+
+  /**
+   * Com o SW controlando a página, o aviso local sai pelo MESMO registro que
+   * mostra o push. Só assim a mesma tag substitui de um lado para o outro: no
+   * Chrome do computador, `new Notification` e o aviso do SW não se substituem.
+   */
+  it("com o SW no controle, mostra pelo registro dele e não pelo construtor", async () => {
+    const ctor = vi.fn();
+    vi.stubGlobal("Notification", Object.assign(ctor, { permission: "granted" }));
+    const showNotification = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      serviceWorker: { controller: {}, ready: Promise.resolve({ showNotification }) },
+    });
+    window.localStorage.setItem("alerts.enabled", "1");
+
+    emitNotification({ kind: "message_inbound", title: "Maria", body: "oi", tag: "conv-1" });
+    await vi.waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1));
+
+    expect(ctor).not.toHaveBeenCalled();
+    expect(showNotification.mock.calls[0]?.[1]).toMatchObject({
+      tag: `${NOTIFY_KINDS.message_inbound.tagPrefix}:conv-1`,
+    });
+  });
+
+  it("se o registro recusar, cai no construtor", async () => {
+    const ctor = vi.fn();
+    vi.stubGlobal("Notification", Object.assign(ctor, { permission: "granted" }));
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      serviceWorker: {
+        controller: {},
+        ready: Promise.resolve({ showNotification: vi.fn().mockRejectedValue(new Error("x")) }),
+      },
+    });
+    window.localStorage.setItem("alerts.enabled", "1");
+
+    emitNotification({ kind: "message_inbound", title: "Maria", body: "oi", tag: "conv-1" });
+    await vi.waitFor(() => expect(ctor).toHaveBeenCalledTimes(1));
   });
 });

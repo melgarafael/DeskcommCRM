@@ -357,4 +357,17 @@ describe("serviços opt-in e disponibilidade factual", () => {
     await expect(pool.query("insert into calendar_appointments(organization_id,owner_user_id,title,starts_at,ends_at,status) values($1,$2,'Legado fictício',$3,$4,'confirmed')", [tenants[0].org, owner, at, em("17:40:00Z")])).rejects.toMatchObject({ code: "PT409" });
     expect(await check(id)).toMatchObject({ available: false, reason: "professional_unavailable" });
   });
+  it("o dono assume a empresa mesmo quando o provisório era profissional e dono de bloqueio", async () => {
+    // fn_accept_team_invite apaga o vínculo provisório; com a FK composta em NO ACTION, o aceite do dono caía em 23503.
+    const org = randomUUID(), provisorio = randomUUID(), dono = randomUUID(), id = randomUUID();
+    await pool.query("insert into organizations(id,slug,legal_name,display_name,status) values($1::uuid,$1::text,'Passagem fictícia','Passagem fictícia','active')", [org]);
+    for (const u of [provisorio, dono]) await pool.query("insert into auth.users(id,email) values($1,$2)", [u, `${u}@example.test`]);
+    await pool.query("insert into user_organizations(organization_id,user_id,role,accepted_at,provisional_until_handover) values($1,$2,'admin',now(),true)", [org, provisorio]);
+    await pool.query("insert into calendar_event_types(id,organization_id,name,slug,duration_minutes,minimum_notice_minutes,service_enabled,booking_mode) values($1::uuid,$2,'Atividade fictícia',$1::text,40,0,false,'individual')", [id, org]);
+    await pool.query("insert into calendar_service_professionals(organization_id,event_type_id,user_id) values($1,$2,$3)", [org, id, provisorio]);
+    await pool.query("insert into calendar_service_blocks(organization_id,scope_kind,owner_user_id,starts_at,ends_at,reason,operation_key) values($1,'professional',$2,$3,$4,'Bloqueio fictício',$5)", [org, provisorio, at, em("17:40:00Z"), randomUUID()]);
+    await pool.query("select fn_accept_team_invite($1,$2,'admin',null,null,now())", [dono, org]);
+    const sobra = await pool.query("select (select count(*) from user_organizations where organization_id=$1 and user_id=$2)::int vinculo, (select count(*) from calendar_service_professionals where organization_id=$1 and user_id=$2)::int profissional, (select count(*) from calendar_service_blocks where organization_id=$1 and owner_user_id=$2)::int bloqueio", [org, provisorio]);
+    expect(sobra.rows[0]).toEqual({ vinculo: 0, profissional: 0, bloqueio: 0 });
+  });
 });

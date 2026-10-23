@@ -272,3 +272,73 @@ describe("tela de atualização — a rodada conta a disputa do banco", () => {
     expect(screen.getByText(/\.update\.log/)).toBeInTheDocument();
   });
 });
+
+/**
+ * #2757 (ajuste 3): a volta que o agente fez SOZINHO aparece na tela.
+ *
+ * Antes disto o painel mostrava a versão mudar sem explicação — o registro da
+ * volta automática ficava só no `.update-agent.log` da VPS. O aviso nomeia as
+ * três coisas que o dono precisa saber: para onde voltou, a hora e o porquê, em
+ * linguagem de gente (nada de `healthcheck`, código de saída ou nome de campo).
+ *
+ * CONTROLE: uma volta PEDIDA pela tela não é "sozinho" e não ganha o aviso — o
+ * texto de sempre ("Voltei o sistema...") continua sendo o certo ali.
+ */
+describe("tela de atualização — o aviso da volta automática (#2757)", () => {
+  const QUANDO = "2026-10-16T17:10:00.000Z";
+
+  function volta(overrides: Partial<NonNullable<SystemVersion["run"]>> = {}): SystemVersion {
+    return {
+      current_version: "1.4.2",
+      is_owner: true,
+      latest_version: "1.5.0",
+      update_available: true,
+      agent_online: true,
+      notes: null,
+      run: {
+        id: "77777777-7777-4777-8777-777777777777",
+        status: "failed_rolled_back",
+        last_step: "app",
+        from_version: "1.4.2",
+        to_version: "1.5.0",
+        log_tail: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
+        finished_at: QUANDO,
+        volta_automatica: true,
+        ...overrides,
+      },
+    };
+  }
+
+  it("⭐ diz para onde voltou, a hora e o porquê — em linguagem de gente", () => {
+    renderTela(volta());
+
+    const aviso = screen.getByTestId("volta-automatica");
+    const texto = aviso.textContent ?? "";
+    // A hora é a do navegador de quem lê; o teste calcula a mesma, sem fixar fuso.
+    const d = new Date(QUANDO);
+    const hora = `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`;
+
+    expect(texto).toContain("voltou sozinho");
+    expect(texto).toContain("1.4.2");
+    expect(texto).toContain("1.5.0");
+    expect(texto).toContain(hora);
+    expect(texto).toMatch(/site não respondeu/);
+    // O que a tela NÃO pode fazer: despejar o jargão do log em quem só quer saber o que houve.
+    expect(texto).not.toMatch(/healthcheck|update\.sh|exit|rc=/);
+  });
+
+  it("sem a hora (run antigo, sem finished_at): o aviso sai sem inventar horário", () => {
+    renderTela(volta({ finished_at: null }));
+
+    const texto = screen.getByTestId("volta-automatica").textContent ?? "";
+    expect(texto).toMatch(/voltou sozinho/);
+    expect(texto).not.toMatch(/\d{2}h\d{2}/);
+  });
+
+  it("CONTROLE — volta pedida pela tela: nenhum aviso de 'sozinho'", () => {
+    renderTela(volta({ volta_automatica: false }));
+
+    expect(screen.queryByTestId("volta-automatica")).toBeNull();
+    expect(screen.getByText("Voltei o sistema para a versão", { exact: false })).toBeInTheDocument();
+  });
+});

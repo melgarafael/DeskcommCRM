@@ -330,6 +330,7 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
   }
 
   await fecharNegociosAbertosDeQuemPediuParar(admin, entrada);
+  await encerrarDemandasAbertasDeQuemPediuParar(admin, entrada);
 }
 
 /**
@@ -338,6 +339,25 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
  * cancelamento") — pedir silêncio não é cancelar (decisão do dono, doc 85).
  */
 const MOTIVO_DA_PERDA_POR_OPT_OUT = "opted_out_of_messages" satisfies CanonicalLostReason;
+
+/**
+ * O DESFECHO do opt-out nas DEMANDAS (issue #3288): `encerrada_pelo_cliente`.
+ *
+ * Já é vocabulário fechado do banco (`demandas.desfecho`, migration 0222), ao
+ * lado de `perdida` e `expirada_sem_resposta` — não pede schema novo. Antes
+ * disto o opt-out fechava os CARDS (`opted_out_of_messages`), mas a demanda
+ * aberta do contato seguia no Radar acumulando: em 21/10 a prospecção abriu 26
+ * demandas num dia, as "derivada" sem card que ninguém vai tratar.
+ */
+const DESFECHO_DA_DEMANDA_POR_OPT_OUT = "encerrada_pelo_cliente" as const;
+
+/**
+ * O ATOR de todo o caminho de opt-out: a mensagem chegou pelo canal e o produto
+ * agiu — não foi uma pessoa. Nomeado para que o fechamento do CARD e o da
+ * DEMANDA usem a MESMA origem: duas cópias divergem na primeira vez que alguém
+ * trocar o id de um lado só.
+ */
+const ATOR_DO_OPT_OUT = { type: "webhook_source", id: "canal-inbound" } as const;
 
 /**
  * Quem pediu para parar não é mais uma oportunidade: o negócio aberto dele vira
@@ -385,7 +405,7 @@ async function fecharNegociosAbertosDeQuemPediuParar(
             // `webhook_source`, como o nascimento do lead: a mensagem chegou pelo
             // canal e o produto agiu — não foi uma pessoa. A timeline traduz para
             // "sistema".
-            actor: { type: "webhook_source", id: "canal-inbound" },
+            actor: ATOR_DO_OPT_OUT,
             requestId: entrada.requestId ?? `opt-out:${entrada.conversationId}`,
           },
           {
@@ -407,6 +427,103 @@ async function fecharNegociosAbertosDeQuemPediuParar(
     }
   } catch (err) {
     logger.warn("pos-entrada: fechamento dos negócios de quem pediu para parar falhou", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}
+
+/**
+ * O opt-out TAMBÉM encerra as DEMANDAS ABERTAS do contato (issue #3288).
+ *
+ * Fechar a conversa ou o caso só preenche o próximo passo; a demanda continuava
+ * aberta. É o outro lado do mesmo buraco que o fechamento dos cards acima fecha:
+ * quem pediu para parar sai do funil, mas seguia contando como demanda viva no
+ * Radar e empurrando o operador a resgatar o que já acabou.
+ *
+ * O desfecho é `encerrada_pelo_cliente` — pedir silêncio diz que AQUELE
+ * atendimento não anda mais. Passa pela MESMA porta do botão "encerrar" da tela
+ * (`fn_demanda_encerrar`, `app/api/v1/demandas/[id]/route.ts:89`): o CAS de
+ * revisão, a timeline e o `encerrada_por` são do banco — não se escreve
+ * `fechada_em` à mão aqui, senão passa a haver duas verdades sobre o que
+ * "encerrada" significa.
+ *
+ * Só as ABERTAS (`fechada_em is null`): demanda já encerrada não é tocada nem
+ * recebe rpc — encerrar de novo pela porta dos fundos seria efeito que ninguém
+ * pediu.
+ *
+ * `p_actor` vai `null`: a coluna referencia `auth.users` e o ator daqui é o
+ * SISTEMA, não uma pessoa. A origem do encerramento fica registrada na auditoria
+ * (`demanda.encerrada`, com o MESMO `ATOR_DO_OPT_OUT` do fechamento do card).
+ *
+ * NUNCA lança: a mensagem já entrou e o bloqueio já foi gravado; uma falha aqui
+ * (demanda que mudou de revisão entre a leitura e o rpc, por exemplo) fica no
+ * log e não derruba a ingestão.
+ */
+async function encerrarDemandasAbertasDeQuemPediuParar(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<void> {
+  try {
+    const { data, error } = await admin
+      .from("demandas")
+      .select("id, revision")
+      .eq("organization_id", entrada.organizationId)
+      .eq("contact_id", entrada.contactId)
+      .is("fechada_em", null);
+    if (error) {
+      logger.warn("pos-entrada: demandas do contato que pediu para parar não lidas", {
+        organization_id: entrada.organizationId,
+        contact_id: entrada.contactId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    for (const demanda of (data ?? []) as Array<{ id: string; revision: number }>) {
+      try {
+        const { error: encerraErro } = await admin.rpc("fn_demanda_encerrar", {
+          p_org: entrada.organizationId,
+          p_demanda: demanda.id,
+          p_expected: demanda.revision,
+          p_desfecho: DESFECHO_DA_DEMANDA_POR_OPT_OUT,
+          // `null` = não foi uma pessoa: `encerrada_por` referencia `auth.users`;
+          // o ator de sistema fica no audit abaixo.
+          p_actor: null as unknown as string,
+        });
+        if (encerraErro) {
+          logger.warn("pos-entrada: demanda de quem pediu para parar não encerrada", {
+            organization_id: entrada.organizationId,
+            contact_id: entrada.contactId,
+            demanda_id: demanda.id,
+            detail: encerraErro.message.slice(0, 160),
+          });
+          continue;
+        }
+        await audit({
+          action: "demanda.encerrada",
+          organizationId: entrada.organizationId,
+          resourceType: "demanda",
+          resourceId: demanda.id,
+          requestId: entrada.requestId ?? `opt-out:${entrada.conversationId}`,
+          metadata: {
+            desfecho: DESFECHO_DA_DEMANDA_POR_OPT_OUT,
+            contact_id: entrada.contactId,
+            actor_type: ATOR_DO_OPT_OUT.type,
+            actor_id: ATOR_DO_OPT_OUT.id,
+          },
+        });
+      } catch (err) {
+        logger.warn("pos-entrada: demanda de quem pediu para parar não encerrada", {
+          organization_id: entrada.organizationId,
+          contact_id: entrada.contactId,
+          demanda_id: demanda.id,
+          detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: encerramento das demandas de quem pediu para parar falhou", {
       organization_id: entrada.organizationId,
       contact_id: entrada.contactId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",

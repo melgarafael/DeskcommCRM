@@ -52,6 +52,25 @@ caminho único e vira o modo avançado; o padrão passa a ser a receita pronta
 | D7 | Foto por URL | Guarda canônica de fetch externo: `assertUrlDeMidiaSegura` (`lib/messaging/media/url-de-midia-externa.ts:34`, CONFIRMADO — textual + destino resolvido, com exceção do Storage assinado) + teto de tamanho + timeout do C3; C6 é o gate. Sem igualdade de host (banco `localhost`/contêiner vs. fotos no domínio/CDN — igualdade mataria o caso do leigo); sem a guarda canônica, sem envio. Falha de mídia nunca derruba o texto (manda sem foto e registra). Legenda herda `LIMITE_DA_LEGENDA = 1024` (`lib/agent-engine/agent/fotos-do-produto.ts:23-24`, CONFIRMADO): estouro sai como texto antes da foto. WhatsApp não tem "card": foto com legenda é o formato. |
 | D8 | LGPD/rastro | O resultado da receita passa pelo rastro da execução (`ai_agent_runs.tool_calls`, redação por chave + corte — ponto levantado na triagem da #2527). A spec fixa: o que é redigido, o corte por campo e a retenção — explícitos antes da primeira fatia. |
 
+## Regra de escopo da D8 (escrita na R1)
+
+O que foi medido antes de escrever o código:
+
+- `lib/ai/runtime/serialize.ts:16-29` (`redactValue`): redige só pelas chaves `authorization`, `api_key`, `token`, `password`, `cpf` e corta string longa em 500 + `...[truncated]`. **Não cobre** `email`, `telefone`, `endereço`, `hash` — e **não cobre** o campo `linhas` de uma consulta de banco externo. Uma linha de produto com preço, SKU, estoque e título passaria inteira para `ai_agent_runs.tool_calls`.
+- `lib/ai/runtime/serialize.ts:53-76` (`serializeSteps`): grava `result: redactValue(result)` de cada tool. Se a tool `crm_consultar_receita` devolver as linhas, elas iriam para o rastro.
+- `lib/retencao/politica.ts`: não há expurgo por tempo de `ai_agent_runs` (a migration 0587 purga sete outras tabelas sem tocar `ai_agent_runs`, conferido no arquivo dela). O que existe é a redação por contato (`fn_lgpd_redigir_tool_calls`, baseline :43935-43960), que deixa o esqueleto (`{step, tool_name, redacted}`) e tira o conteúdo.
+
+A regra, escrita na R1:
+
+> O rastro de `crm_consultar_receita` guarda os argumentos **sem os valores dos parâmetros de busca** (só os nomes) e o resultado **SÓ como contagem de linhas + colunas + `truncado`. Nenhuma linha da origem vai para o rastro.**
+
+Como é implementado (não só no texto):
+
+- `lib/ai/runtime/serialize.ts` ganhou o conjunto `RESULTADO_RESUMIDO` com a chave `linhas` (`serialize.ts:16-17`). Qualquer resultado de tool com uma chave nesse conjunto tem o array substituído por `[N itens resumidos pelo rastro]` (`serialize.ts:23-27`), nunca o conteúdo. Isso vale para `crm_consultar_receita` e para qualquer outra tool que devolva `linhas`.
+- A tool `crm_consultar_receita` (`lib/mcp/tools/receitas-externas.ts`) devolve ao modelo as linhas já serializadas e truncadas pelo dialeto, mas no rastro (`serializeSteps`) o campo `linhas` é substituído pelo resumo — então o JSON serializado de `ai_agent_runs.tool_calls` **não contém nenhum valor de linha**.
+
+Teste: `lib/ai/runtime/serialize.test.ts` usa um valor sentinela único (`__SENTINELA_WOOCOMMERCE_42__`) numa linha e prova que ele **não** aparece no JSON serializado de `serializeSteps`.
+
 ## Revisões à Spec 23 (aceitas pelo mantenedor em 16/10/2026)
 
 Duas, explícitas — no precedente do bloco "Revisão da D6 da Spec 20" da própria
@@ -118,3 +137,37 @@ Spec 23:
 5. Informação com propósito: teto de itens/bytes do C2 — o modelo recebe o que cabe na decisão, não o banco.
 6. Configuração com superfície: parâmetros em português na tela; nada de SQL à vista do leigo.
 7. Todo laço se fecha: foto que não carrega, receita sem resultado e funil indisponível têm resposta e registro — os três.
+
+## R1 entregue: o que mudou
+
+A fatia R1 (receita `woocommerce` + instância + tool) entrega:
+
+- `lib/external-db/receitas/tipos.ts` — `DefinicaoDeReceita` e `InstanciaDeReceita`
+- `lib/external-db/receitas/woocommerce.ts` — receita `woocommerce-produtos` (JOIN posts+postmeta, parâmetros `termos`/`preco_max`/`so_em_estoque`/`limite`/`ordem`; cada termo aceita plural e busca também no resumo `post_excerpt`; teto = limite × termos, até 20)
+- parâmetro `ordem` da receita `woocommerce-produtos`: `antigos` é o padrão; `recentes` vira `order by ID desc` e o `desc` é fixo no código, nunca vem do agente
+- `lib/external-db/receitas/sql-mysql.ts` — `quotarIdentificadorMysql` e `escaparLikeMysql` em um só arquivo (crases e LIKE), reutilizado por todas as famílias de receitas; R2/R3 importam daqui
+- `lib/external-db/receitas/registro.ts` — mapa `RECEITAS` e `receitaDe(id)`
+- `lib/external-db/receitas/validador.ts` — `validarConsultaDeReceita` (SELECT-only, sem `;`/`--`/`INTO`/`SLEEP(`/etc., tabelas permitidas)
+- `lib/external-db/receitas/instancias.ts` — `instanciaDeReceitaSchema`, `lerReceitasDoBanco`, `validarFixosDaReceita`
+- `lib/external-db/dialeto.ts` — `Dialeto.executarReceita` + checagem `tabelaLiberada` no `criarDialetoDeLeitura`
+- `lib/external-db/dialetos/mysql/dialeto.ts` + `leitura.ts` — `executarReceitaMysql` (armadura `consultarMysql`, serialização `0x`, corte por itens e bytes)
+- `supabase/migrations/20261022120000_0706_banco_externo_receitas.sql` — coluna `receitas jsonb`, CHECK de forma, view `_safe` com `receitas_count`
+- `supabase/baseline.sql` — apêndice idempotente da 0706 antes do fim
+- `lib/external-db/receitas/instancias.ts` + rotas `PUT /recipes` e `POST /recipes/preview` (admin, audit só contagens)
+- `lib/audit/actions.ts` — `external_db_recipes.updated` e `external_db_recipes.previewed`
+- `lib/mcp/tools/receitas-externas.ts` — tool `crm_consultar_receita` (listar/executar, organização do `ctx`)
+- `lib/mcp/tools/catalogo/receitas-externas.ts` + `index.ts` — entrada no catálogo com `modulo: "banco_externo"`
+- `lib/mcp/tools/index.ts` — `crmConsultarReceita` em `allTools`
+- `lib/ai/runtime/serialize.ts` — `RESULTADO_RESUMIDO` com `linhas` (regra D8)
+- `app/app/integracao-dados/[id]/_components/ReceitasProntas.tsx` — seção "Receitas prontas" (só MySQL)
+- `app/app/integracao-dados/[id]/page.tsx` — passa `db_type` e renderiza `ReceitasProntas`
+- `lib/i18n/dicionario.ts` — entradas em espanhol dos textos novos
+- `lib/hooks/external-db/useReceitasDaConexao.ts` — hook de leitura/salva/preview
+- `docs/architecture/banco-de-dados-externo.architecture.json` — peças novas com ≥2 arestas
+- `docs/threat-model.md` — entrada da superfície nova (preview + tool)
+- `.changes/banco-externo-receitas-woocommerce.md` — `impacto: capacidade_nova`, `secao: adicionado`
+- Testes: `validador.test.ts`, `woocommerce.test.ts`, `serialize.test.ts`, `receitas-externas.test.ts`, `dialeto.test.ts` (executarReceita não liberada), `apendice-0706-banco-externo-receitas.test.ts`
+- Spec 25: seção D8 escrita e esta lista
+- e2e: `tests/e2e/banco-externo-receitas.spec.ts` registrada em `SPECS_PARTE_1` do `.github/workflows/e2e.yml` (não rodada aqui — veredito do CI)
+
+Destino: núcleo, dentro do módulo de banco externo, que nasce desligado (revisão 1 da Spec 25, aceita pelo mantenedor).

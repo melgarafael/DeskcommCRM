@@ -195,7 +195,7 @@ describe("abrir o aviso na Central", () => {
     const { db, chamadas } = bancoQueRegistra();
 
     await abreAvisoDoEspelhoRecusado(db, "org-1", {
-      leadId: "lead-1",
+      negocioId: "negocio-1",
       motivo: "perda_sem_motivo",
       detalhe: "d",
       etapaDeDestino: ETAPA,
@@ -213,14 +213,14 @@ describe("abrir o aviso na Central", () => {
     // ref_kind, ref_id, "casa a ref?", "casa o título?".
     expect(params.slice(0, 2)).toEqual(["org-1", "other"]);
     expect(params[3]).toBe(titulo);
-    expect(params.slice(5)).toEqual(["lead", "lead-1", true, true]);
+    expect(params.slice(5)).toEqual(["lead", "negocio-1", true, true]);
   });
 
   it("warn-only não chega ao banco", async () => {
     const { db, chamadas } = bancoQueRegistra();
 
     await abreAvisoDoEspelhoRecusado(db, "org-1", {
-      leadId: "lead-1",
+      negocioId: "negocio-1",
       motivo: "human_conflict",
       detalhe: "d",
       etapaDeDestino: ETAPA,

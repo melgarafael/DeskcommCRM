@@ -16,6 +16,7 @@ import {
   MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR,
   createAutomationRuleSchema,
 } from "@/lib/schemas/webhooks";
+import { evaluateConditions } from "@/lib/automation/conditions";
 
 import {
   AVISO_LIGACAO_TROCADA,
@@ -334,5 +335,120 @@ describe("cada problema aparece na caixa que o causou", () => {
     d.caixas.push({ id: ID_DAS_CONDICOES, type: "condicoes", position: { x: 0, y: 0 }, data: { kind: "condicoes", linhas: [] } });
     d.ligacoes.push({ id: "ligacao-9", source: "acao-1", target: ID_DAS_CONDICOES });
     expect(percorrer(d).problemas).toContainEqual({ caixa: ID_DAS_CONDICOES, mensagem: PROBLEMAS.condicoesForaDoLugar });
+  });
+});
+
+/**
+ * A CAUSA DO CR DO #2727: o desenho DESTRUÍA a regra que não sabe representar.
+ *
+ * O `salvar` do designer manda o `corpo.conditions` INTEIRO (PATCH), então o que
+ * a caixa de condições achar na hora de salvar é o que fica no banco. No head
+ * `bea2021ac` a ida e volta perdia as duas formas que a caixa não representa:
+ *
+ *   - `{any:[a eq 1, b gte 5]}` voltava como a LISTA `[a, b]`, que vale "todas":
+ *     com `{a:"1", b:"2"}` a mesma regra avaliava `true` antes e `false` depois;
+ *   - `[x is_empty ""]` voltava `[]` (o filtro `c.value.trim()` da linha 397):
+ *     a regra ficava SEM condição e passava a disparar para todo mundo.
+ *
+ * Os testes abaixo caem se alguém reintroduzir o achatamento ou tirar o
+ * `grupoPreservado`. Eles não olham o byte: comparam o corpo salvo com o que a
+ * própria API gravaria, e onde dá, com o que o AVALIADOR decide.
+ */
+describe("o desenho não destrói a regra que não representa (#2727)", () => {
+  const QUALQUER_UMA: RegraGravada = {
+    trigger_event: "lead.created",
+    trigger_config: {},
+    conditions: {
+      any: [
+        { field: "lead.custom_fields.a", op: "eq", value: "1" },
+        { field: "lead.custom_fields.b", op: "gte", value: "5" },
+      ],
+    },
+    actions: [ACOES_FIXAS[2]!],
+  };
+
+  it("`{any:[…]}` volta com o MESMO combinador — nunca achatado na lista", () => {
+    const desenho = desenhoDaRegra(QUALQUER_UMA);
+    const caixa = desenho.caixas.find((c) => c.id === ID_DAS_CONDICOES)!;
+    if (caixa.data.kind !== "condicoes") throw new Error("a caixa de condições");
+    // A caixa GUARDA o grupo: é ele que o salvar devolve, e a tela sabe que não
+    // o edita (mostra o aviso e manda para o formulário).
+    expect(caixa.data.grupoPreservado).toEqual(QUALQUER_UMA.conditions);
+
+    const corpo = corpoDoDesenho({ nome: "Qualquer uma", desenho, regraGravada: QUALQUER_UMA });
+    expect(corpo.conditions).toEqual(QUALQUER_UMA.conditions);
+
+    const r = validarDesenho({ nome: "Qualquer uma", desenho, regraGravada: QUALQUER_UMA });
+    expect(r.problemas).toEqual([]);
+    expect(r.ok).toBe(true);
+    expect(r.corpo.conditions).toEqual(QUALQUER_UMA.conditions);
+  });
+
+  it("a lista achatada NÃO é o mesmo: `[a,b]` é \"todas\"", () => {
+    // Prova que o defeito era de COMPORTAMENTO, não de bytes: o mesmo contexto
+    // que o mantenedor mediu decide diferente no grupo e na lista achatada.
+    const contexto = { lead: { custom_fields: { a: "1", b: "2" } } };
+    const grupo = QUALQUER_UMA.conditions;
+    const achatado = Array.isArray(grupo) ? grupo : grupo.any!;
+    expect(evaluateConditions(grupo, contexto)).toBe(true);
+    expect(evaluateConditions(achatado, contexto)).toBe(false);
+  });
+
+  it("`is_empty` volta como condição — o filtro do `value.trim()` não a engole", () => {
+    const regra: RegraGravada = {
+      trigger_event: "message.received",
+      trigger_config: {},
+      conditions: [{ field: "contact.name", op: "is_empty", value: "" }],
+      actions: [ACOES_FIXAS[2]!],
+    };
+    const corpo = corpoDoDesenho({ nome: "Sem nome", desenho: desenhoDaRegra(regra), regraGravada: regra });
+    expect(corpo.conditions).toEqual([{ field: "contact.name", op: "is_empty", value: "" }]);
+  });
+
+  it("`is_not_empty` também volta — e o valor é gravado vazio, como o formulário faz", () => {
+    const regra: RegraGravada = {
+      trigger_event: "message.received",
+      trigger_config: {},
+      conditions: [{ field: "contact.name", op: "is_not_empty", value: "lixo" }],
+      actions: [ACOES_FIXAS[2]!],
+    };
+    const desenho = desenhoDaRegra(regra);
+    const caixa = desenho.caixas.find((c) => c.id === ID_DAS_CONDICOES)!;
+    if (caixa.data.kind !== "condicoes") throw new Error("a caixa de condições");
+    caixa.data.linhas[0] = { ...caixa.data.linhas[0]!, value: "  lixo  " };
+    expect(corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).conditions).toEqual([
+      { field: "contact.name", op: "is_not_empty", value: "" },
+    ]);
+  });
+
+  it("o CONTROLE: `[x eq 1]` continua voltando com a condição", () => {
+    const regra: RegraGravada = {
+      trigger_event: "message.received",
+      trigger_config: {},
+      conditions: [{ field: "contact.name", op: "eq", value: "1" }],
+      actions: [ACOES_FIXAS[2]!],
+    };
+    expect(corpoDoDesenho({ nome: "x", desenho: desenhoDaRegra(regra), regraGravada: regra }).conditions).toEqual([
+      { field: "contact.name", op: "eq", value: "1" },
+    ]);
+  });
+
+  it("um grupo VAZIO (`{any:[]}`, sempre falso) continua tendo a sua caixa: nunca vira `[]`", () => {
+    // Sem caixa, o salvar mandaria `[]`, que vale "todas" — o OPOSTO de um
+    // `any` vazio. A regra passaria a disparar para todo mundo.
+    const regra: RegraGravada = { ...QUALQUER_UMA, conditions: { any: [] } };
+    const desenho = desenhoDaRegra(regra);
+    expect(desenho.caixas.some((c) => c.id === ID_DAS_CONDICOES)).toBe(true);
+    const corpo = corpoDoDesenho({ nome: "x", desenho, regraGravada: regra });
+    expect(corpo.conditions).toEqual({ any: [] });
+    expect(validarDesenho({ nome: "x", desenho, regraGravada: regra }).problemas).toEqual([]);
+  });
+
+  it("o que o desenho grava para um grupo é o que a API grava — o schema aceita", () => {
+    const desenho = desenhoDaRegra(QUALQUER_UMA);
+    const r = validarDesenho({ nome: "Qualquer uma", desenho, regraGravada: QUALQUER_UMA });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(createAutomationRuleSchema.parse(r.corpo).conditions).toEqual(QUALQUER_UMA.conditions);
   });
 });

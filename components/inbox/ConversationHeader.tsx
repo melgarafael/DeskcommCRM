@@ -305,7 +305,9 @@ export function ConversationHeader({
           )}
         </div>
         {phone && (
-          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
+          // No celular o telefone sai: cada linha do cabeçalho é altura tirada
+          // do fio, e o número continua na Ficha.
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground max-md:hidden">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
           </p>
         )}
@@ -318,8 +320,13 @@ export function ConversationHeader({
           (#1625): na linha do nome ele alargava a identidade e empurrava a
           barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
           motivo da barra. */}
-      <div className="flex min-w-0 flex-col items-end gap-1 max-md:w-full max-md:items-stretch">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:[&>*]:shrink-0">
+      {/* NO CELULAR (F2 da ADR-0006): com o teclado aberto a coluna sai e o fio
+          fica com a altura (`data-teclado-aberto`, de `useAlturaVisivel`); a
+          máscara apaga a borda direita para dizer que a fileira rola, e o `pr-8`
+          deixa o último botão fora da máscara quando rolado até o fim. Tudo
+          `max-md:` — no computador encolher a janela não é teclado. */}
+      <div className="flex min-w-0 flex-col items-end gap-1 max-md:w-full max-md:items-stretch max-md:group-data-[teclado-aberto]/conversa:hidden">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:pr-8 max-md:[&>*]:shrink-0 max-md:[mask-image:linear-gradient(to_right,black_calc(100%_-_2rem),transparent)]">
         {/* Primeira da barra e sem rótulo escrito: é ferramenta de LEITURA, não
             ação de atendimento, e não muda de lugar com o estado da conversa.
             Só o ícone porque a barra já quebrou a caixa útil em 1280px uma vez
@@ -369,6 +376,9 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="default"
+            // No celular, a ação que a pessoa veio fazer abre a fileira — sem
+            // rolar para achá-la. Só CSS: a ordem do DOM não muda.
+            className="max-md:order-first"
             disabled={claim.isPending}
             // O rótulo NÃO muda (é contrato: `inbox-header-nao-trava` e o
             // dicionário de espanhol o citam). O que faltava era a consequência
@@ -389,6 +399,7 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
+            className="max-md:order-first"
             disabled={release.isPending}
             // GUIA CURTA (#3003): o rótulo diz o GESTO, não a consequência. "Liberar"
             // não conta para onde a conversa vai — de volta ao automático ou para a

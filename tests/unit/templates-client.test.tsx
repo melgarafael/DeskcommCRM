@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
@@ -12,11 +12,31 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // A chave é exportada pelo módulo real e usada pela tela e pela mutação de
+  // ordem (#3244): sem ela aqui, o import da tela quebra antes de renderizar.
+  CHAVE_DOS_TEMPLATES: ["message-templates"],
+  useMoverTemplate: () => ({ mutate: vi.fn(), isPending: false }),
   useMessageTemplates: () => ({
     data: [
       { id: "1", title: "Meu Pessoal", body: "Oi {{primeiro_nome}}", shortcut: "oi", owner_user_id: "u1" },
       { id: "2", title: "Política da Equipe", body: "Política de troca", shortcut: null, owner_user_id: null },
       { id: "3", title: "Pessoal do Outro", body: "Segredo do colega", shortcut: null, owner_user_id: "u2" },
+      {
+        id: "4",
+        title: "Áudio Boas-vindas",
+        body: "",
+        shortcut: null,
+        owner_user_id: null,
+        midias: [{ storage_path: "org/templates/4/a.ogg", media_mime: "audio/ogg", media_size_bytes: 10 }],
+      },
+      {
+        id: "5",
+        title: "Tabela",
+        body: "Olha a tabela",
+        shortcut: null,
+        owner_user_id: null,
+        midias: [{ storage_path: "org/templates/5/b.png", media_mime: "image/png", media_size_bytes: 10 }],
+      },
     ],
     isLoading: false,
   }),
@@ -33,7 +53,7 @@ describe("TemplatesClient", () => {
     busca = "";
     render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
     expect(screen.getByText("Meu Pessoal")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /novo template/i }));
+    fireEvent.click(screen.getByRole("button", { name: /nova resposta rápida/i }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
@@ -77,19 +97,29 @@ describe("TemplatesClient", () => {
   it("agent (não-manager) só vê ações no próprio pessoal, não no compartilhado nem no de outro", () => {
     busca = "";
     render(wrap(<TemplatesClient canShare={false} currentUserId="u1" />));
-    // 3 templates listados, mas só 1 editável → 1 par de ações editar/excluir.
+    // 5 templates listados, mas só 1 editável → 1 par de ações editar/excluir.
     expect(screen.getByText("Meu Pessoal")).toBeInTheDocument();
     expect(screen.getByText("Política da Equipe")).toBeInTheDocument();
     expect(screen.getByText("Pessoal do Outro")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Editar template" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Excluir template" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Editar resposta rápida" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Excluir resposta rápida" })).toHaveLength(1);
   });
 
   it("manager vê ações no próprio E no compartilhado, mas não no pessoal de outro", () => {
     busca = "";
     render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
-    // próprio (u1) + compartilhado (null) editáveis; pessoal de u2 não → 2 pares.
-    expect(screen.getAllByRole("button", { name: "Editar template" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "Excluir template" })).toHaveLength(2);
+    // próprio (u1) + 3 compartilhados (null) editáveis; pessoal de u2 não → 4 pares.
+    expect(screen.getAllByRole("button", { name: "Editar resposta rápida" })).toHaveLength(4);
+    expect(screen.getAllByRole("button", { name: "Excluir resposta rápida" })).toHaveLength(4);
+  });
+
+  it("recurso de áudio leva o selo 🎧 e NÃO o de imagens; o de imagem leva o de imagens", () => {
+    busca = "";
+    render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
+    const itemDe = (titulo: string) => screen.getByText(titulo).closest("li") as HTMLElement;
+
+    expect(within(itemDe("Áudio Boas-vindas")).getByText(/Áudio$/)).toBeInTheDocument();
+    expect(within(itemDe("Áudio Boas-vindas")).queryByText(/Imagens/)).toBeNull();
+    expect(within(itemDe("Tabela")).getByText(/Imagens/)).toBeInTheDocument();
   });
 });

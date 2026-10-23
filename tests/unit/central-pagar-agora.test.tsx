@@ -8,7 +8,7 @@ const ITEM = {
 };
 const h = vi.hoisted(() => ({ itens: [] as unknown[] }));
 vi.mock("@/hooks/ai/useAgentInbox", () => ({
-  useAgentInbox: () => ({ data: { items: h.itens, open_count: h.itens.length }, error: null, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false }),
+  useAgentInbox: () => ({ data: { items: h.itens, open_count: h.itens.length }, error: null, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false, podeConsultar: true }),
   useUpdateInboxItem: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
   useResolveAllInboxItems: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
 }));

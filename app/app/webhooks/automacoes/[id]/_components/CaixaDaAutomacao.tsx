@@ -6,6 +6,7 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { apiClient } from "@/lib/api/client";
 import { GATILHO_DE_DATA_DO_FUNIL } from "@/lib/automation/gatilho-de-data-do-funil";
 import { GATILHO_ETAPA_PARADA, GATILHO_SILENCIO } from "@/lib/automation/gatilhos-de-tempo";
+import { OPERADORES_SEM_VALOR } from "@/lib/automation/conditions";
 import type { DadosDaCaixa, ExtrasDaTela, TipoDeCaixa } from "@/lib/automation/desenho-da-regra";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { cn } from "@/lib/utils";
@@ -109,6 +110,14 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
       const texto = cfg(config, "template").trim();
       return <>{texto ? `“${texto}”` : t("Escreva a mensagem")}</>;
     }
+    // O e-mail de saída não tinha caso: o cartão caía no `tipo` cru e dizia « send_email » em todo idioma.
+    case "send_email": {
+      const assunto = cfg(config, "assunto").trim();
+      return <>{assunto ? `“${assunto}”` : t("Escreva o e-mail")}</>;
+    }
+    // #2642 — mesmo defeito do e-mail: sem caso, o cartão dizia « notify_team » cru.
+    case "notify_team":
+      return <>{t("WhatsApp da equipe")}</>;
     case "add_tag": {
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
       return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;
@@ -150,7 +159,13 @@ function DescricaoDasCondicoes({ dados, evento }: { dados: Extract<DadosDaCaixa,
   const { data: funis } = usePipelines();
   const padrao = funis?.data?.find((p) => p.is_default) ?? funis?.data?.[0] ?? null;
   const { data: quadro } = usePipelineStages(padrao?.id ?? null);
-  const completas = dados.linhas.filter((l) => l.field.trim() && l.value.trim());
+  // `is_empty`/`is_not_empty` não pedem valor: contá-los por `value.trim()`
+  // dizia "nenhuma condição completa" para uma caixa que TEM condição — e a
+  // caixa passava a prometer "roda em todo evento" para a regra que só dispara
+  // quando o campo está vazio (#2727).
+  const completas = dados.linhas.filter((l) => l.field.trim() && (OPERADORES_SEM_VALOR.has(l.op) || l.value.trim()));
+  // O grupo do topo não é desenhável: a caixa diz o que é, em vez de mentir.
+  if (dados.grupoPreservado) return <>{t("Grupo de condições que este desenho não edita")}</>;
   if (completas.length === 0) return <>{t("Nenhuma condição completa: roda em todo evento")}</>;
   const campos = CURATED_FIELDS[evento as TriggerEvent] ?? [];
   const primeira = completas[0]!;
@@ -158,7 +173,10 @@ function DescricaoDasCondicoes({ dados, evento }: { dados: Extract<DadosDaCaixa,
   const op = t(campo?.lista && primeira.op === "contains" ? "tem a tag" : OP_LABELS[primeira.op as Op]);
   const valor =
     campo?.kind === "stage" ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value) : primeira.value;
-  const frase = `${campo ? t(campo.label) : primeira.field} ${op} “${valor}”`;
+  // `esta vazio`/`esta preenchido` não pedem valor: a frase termina no operador,
+  // sem o trecho do valor — montá-lo dizia « Nome do lead está vazio “” » (#2727).
+  const alvo = `${campo ? t(campo.label) : primeira.field} ${op}`;
+  const frase = OPERADORES_SEM_VALOR.has(primeira.op) ? alvo : `${alvo} “${valor}”`;
   return <>{completas.length > 1 ? `${frase} (+${completas.length - 1})` : frase}</>;
 }
 

@@ -45,8 +45,9 @@ projeto** e preenche as quatro sozinho (`hostgator-setup-kit/supabase-provision.
 
 `INTERNAL_SECRET`, `INTERNAL_CRON_SECRET`, chaves de cifra (CPF, credenciais de IA, WAHA próprio,
 Nuvemshop), `IMPERSONATE_COOKIE_SECRET`, `LGPD_SIGNING_KEY`, segredo e chave do WAHA (com o hash
-SHA-512 que o contêiner exige), token do Redis. Vazios mas preservados: Google Calendar, VAPID (push),
-`APP_LOGO_URL`, gateway de IA.
+SHA-512 que o contêiner exige), token do Redis e o par VAPID dos avisos com o app fechado (uma vez só;
+nunca troque — trocar desliga os avisos de todo aparelho inscrito). Vazios mas preservados: Google
+Calendar, `APP_LOGO_URL`, gateway de IA.
 
 ## Google Calendar e o "Meet com acesso aberto" (issue #2063)
 

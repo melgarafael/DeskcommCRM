@@ -84,6 +84,11 @@ let leadsAbertos: Array<{ id: string }> = [];
 let leadsErro: { message: string } | null = null;
 /** Os `.eq()` da leitura de `crm_leads` — provam organização, contato e "só os abertos". */
 let filtrosDeLeads: Array<[string, unknown]> = [];
+/** As DEMANDAS ABERTAS do contato, como a leitura de `demandas` as devolve (#3288). */
+let demandasAbertas: Array<{ id: string; revision: number }> = [];
+let demandasErro: { message: string } | null = null;
+/** Os `.eq()`/`.is()` da leitura de `demandas` — provam org, contato e "só as abertas". */
+let filtrosDeDemandas: Array<[string, unknown]> = [];
 
 /** Imita o builder do PostgREST: encadeável, o efeito acontece no `await`. */
 function cadeia(rotulo: string): Record<string, unknown> {
@@ -140,6 +145,7 @@ const admin = {
           eq(coluna: string, valor: unknown) {
             if (tabela === "messages") filtrosDeMessages.push([coluna, valor]);
             if (tabela === "crm_leads") filtrosDeLeads.push([coluna, valor]);
+            if (tabela === "demandas") filtrosDeDemandas.push([coluna, valor]);
             return consulta;
           },
           order(_coluna: string, _opcoes?: unknown) {
@@ -165,6 +171,21 @@ const admin = {
             then(resolve: (v: unknown) => void) {
               sequencia.push("select:crm_leads");
               return Promise.resolve({ data: leadsAbertos, error: leadsErro }).then(resolve);
+            },
+          });
+        }
+        // A leitura de `demandas` (#3288) filtra por `fechada_em is null` e é
+        // aguardada direto — então devolve o `then`, e registra o `.is()` para
+        // provar que só as ABERTAS são encerradas.
+        if (tabela === "demandas") {
+          return Object.assign(consulta, {
+            is(coluna: string, valor: unknown) {
+              filtrosDeDemandas.push([coluna, valor]);
+              return consulta;
+            },
+            then(resolve: (v: unknown) => void) {
+              sequencia.push("select:demandas");
+              return Promise.resolve({ data: demandasAbertas, error: demandasErro }).then(resolve);
             },
           });
         }
@@ -212,6 +233,9 @@ beforeEach(() => {
   leadsAbertos = [];
   leadsErro = null;
   filtrosDeLeads = [];
+  demandasAbertas = [];
+  demandasErro = null;
+  filtrosDeDemandas = [];
   encerraDemanda.mockReset();
   encerraDemanda.mockResolvedValue({ lead: {}, jaEstava: false } as never);
   audit.mockClear();
@@ -446,6 +470,91 @@ describe("opt-out fecha o negócio aberto como perdido", () => {
 
     expect(encerraDemanda).not.toHaveBeenCalled();
     expect(sequencia).toContain("rpc:ai_agent.dispatch_requested");
+  });
+});
+
+describe("opt-out encerra as demandas abertas do contato (#3288)", () => {
+  const encerramentos = () => rpcChamadas.filter((c) => c.nome === "fn_demanda_encerrar");
+
+  it("cada demanda aberta é encerrada como encerrada_pelo_cliente, com a revisão lida", async () => {
+    // A demanda do contato abria e ficava: fechar a conversa/caso só preenche o
+    // próximo passo. Com o opt-out encerrando, ela sai do Radar no mesmo ato.
+    demandasAbertas = [
+      { id: "dem-1", revision: 3 },
+      { id: "dem-2", revision: 7 },
+    ];
+
+    await rodar({ texto: "PARAR" });
+
+    const chamadas = encerramentos();
+    expect(chamadas).toHaveLength(2);
+    expect(chamadas[0]?.args).toMatchObject({
+      p_org: "org-1",
+      p_demanda: "dem-1",
+      p_expected: 3,
+      p_desfecho: "encerrada_pelo_cliente",
+    });
+    expect(chamadas[1]?.args).toMatchObject({ p_demanda: "dem-2", p_expected: 7 });
+    // A origem do encerramento fica registrada — o MESMO ator do fechamento do
+    // card (o sistema que agiu pela mensagem), não uma pessoa.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "demanda.encerrada",
+        organizationId: "org-1",
+        resourceType: "demanda",
+        resourceId: "dem-1",
+        metadata: expect.objectContaining({
+          actor_id: "canal-inbound",
+          desfecho: "encerrada_pelo_cliente",
+        }),
+      }),
+    );
+  });
+
+  it("lê só as ABERTAS do contato, na organização certa", async () => {
+    // O filtro `fechada_em is null` é o que garante que demanda JÁ encerrada não
+    // é tocada: sem ele, o rpc devolveria conflito e reencerraria pela porta dos
+    // fundos algo que já tinha desfecho. Nenhum rpc a mais.
+    await rodar({ texto: "PARAR" });
+
+    expect(filtrosDeDemandas).toEqual(
+      expect.arrayContaining([
+        ["organization_id", "org-1"],
+        ["contact_id", "contato-1"],
+        ["fechada_em", null],
+      ]),
+    );
+    expect(encerramentos()).toHaveLength(0);
+  });
+
+  it("contato sem demanda aberta percorre o caminho sem erro e sem rpc", async () => {
+    await expect(rodar({ texto: "PARAR" })).resolves.toBeUndefined();
+    expect(encerramentos()).toHaveLength(0);
+    // O resto da ingestão segue: o agente ainda é despachado.
+    expect(sequencia).toContain("rpc:ai_agent.dispatch_requested");
+  });
+
+  it("mensagem que não pede para sair não lê nem encerra demanda", async () => {
+    demandasAbertas = [{ id: "dem-1", revision: 1 }];
+
+    await rodar({ texto: "oi, tudo bem?" });
+
+    expect(sequencia).not.toContain("select:demandas");
+    expect(encerramentos()).toHaveLength(0);
+  });
+
+  it("falha ao encerrar uma demanda não derruba a ingestão", async () => {
+    demandasAbertas = [{ id: "dem-1", revision: 1 }];
+    rpcErro = { message: "demanda_stale" };
+
+    await expect(rodar({ texto: "PARAR" })).resolves.toBeUndefined();
+
+    // Tentou encerrar; o erro do banco ficou no log e a ingestão seguiu.
+    expect(encerramentos()).toHaveLength(1);
+    expect(sequencia).toContain("rpc:ai_agent.dispatch_requested");
+    expect(audit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "demanda.encerrada" }),
+    );
   });
 });
 

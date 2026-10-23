@@ -12,7 +12,8 @@ import { useEffect, useId, useState } from "react";
  * `tests/unit/campo-condicional-nos-pontos-de-renderizacao.test.ts`.
  */
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
-import { parseReaisToCents } from "@/lib/money";
+import { exemploDoCampoDeMoeda, lerCampoDeMoeda, semAMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +30,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { buscarOpcoes, valorCanonico } from "@/lib/leads/campos-pesquisaveis";
 import { cn } from "@/lib/utils";
 import { camposVisiveis, type MostrarQuando } from "@/lib/schemas/mostrar-quando";
+import { mensagemDoCampo } from "@/lib/leads/padrao-do-campo";
 
 export type CustomFieldType =
   | "text"
@@ -59,6 +61,10 @@ export interface CustomFieldDef {
    * e viaja no save — esconder não é limpar.
    */
   mostrar_quando?: MostrarQuando;
+  /** O FORMATO do valor (#2730) — ver `lib/leads/padrao-do-campo`. */
+  padrao?: string;
+  /** A frase do dono para quem digitar fora do formato (#2730). */
+  mensagem_padrao?: string;
   /** Só no `searchable_select`: aceita valor fora da lista (issue #2521). */
   allow_new?: boolean;
 }
@@ -109,7 +115,10 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
   }, [baseId, buscaAberta, destacado, rascunhosDeBusca]);
   // O campo é do mesmo caminho do contato: o exemplo segue o país da
   // organização, e não o DDI brasileiro em duro.
-  const telefoneExemplo = perfilDoPais(useActiveOrg()?.country).telefoneExemplo;
+  const org = useActiveOrg();
+  const telefoneExemplo = perfilDoPais(org?.country).telefoneExemplo;
+  // O campo de moeda na moeda da organização (`lib/leads/campo-de-moeda.ts`).
+  const moedaDoCampo = org?.currency ?? MOEDA_PADRAO;
   function set(key: string, v: unknown) {
     onChange({ ...value, [key]: v });
   }
@@ -129,11 +138,36 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
         const v = value[f.key];
         const id = `cf-${f.key}`;
 
+        // ── O PADRÃO DO CAMPO (#2730) ──────────────────────────────────────
+        //
+        // A MESMA régua da API (`422`) e da gravação pela IA (erro de ensino),
+        // decidida em `lib/leads/padrao-do-campo`. Sem `padrao` o veredito é
+        // sempre `ok`: o campo livre continua livre e nada abaixo aparece —
+        // a régua nova só enxerga quem a configurou.
+        //
+        // A frase é a DO CAMPO (`mensagem_padrao`), não uma genérica: quem
+        // digita "dois" em "Idades das crianças" vê a instrução do dono do
+        // funil. Só quando não há instrução é que a genérica (ou a de
+        // CONFIGURAÇÃO quebrada, quando o regex nem compila) entra no lugar.
+        //
+        // Ela fica entre o rótulo e o input — o mesmo lugar do padrão GOV.UK,
+        // onde a mensagem de erro pertence ao rótulo e não ao fim do bloco: em
+        // `md:grid-cols-2` um elemento irmão DEPOIS do input cairia na célula
+        // do campo vizinho.
+        const textoDoErro = mensagemDoCampo(f, v, t);
+
         const labelEl = (
-          <Label htmlFor={id}>
-            {f.label}
-            {f.required && <span className="ml-1 text-error-fg">*</span>}
-          </Label>
+          <>
+            <Label htmlFor={id}>
+              {f.label}
+              {f.required && <span className="ml-1 text-error-fg">*</span>}
+            </Label>
+            {textoDoErro && (
+              <p id={`${id}-erro`} role="alert" className="text-sm text-error-fg">
+                {textoDoErro}
+              </p>
+            )}
+          </>
         );
 
         switch (f.type) {
@@ -168,7 +202,7 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
             const valorNumerico = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : null;
             const formatado =
               valorNumerico !== null && Number.isFinite(valorNumerico)
-                ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valorNumerico)
+                ? valorDoCampoDeMoeda(valorNumerico, moedaDoCampo)
                 : "";
             return (
               <div key={f.key} className="space-y-2">
@@ -182,8 +216,8 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                   onBlur={() => {
                     const draft = rascunhosDeMoeda[f.key];
                     if (draft === undefined) return;
-                    const raw = draft.trim().replace(/^R\$\s*/i, "").replace(/\s/g, "");
-                    const centavos = raw === "" ? null : parseReaisToCents(raw);
+                    const raw = semAMoeda(draft, moedaDoCampo);
+                    const centavos = raw === "" ? null : lerCampoDeMoeda(raw, moedaDoCampo);
                     if (centavos !== null) set(f.key, centavos / 100);
                     else if (raw === "") set(f.key, null);
                     setRascunhosDeMoeda((current) => {
@@ -193,7 +227,7 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                     });
                   }}
                   disabled={disabled}
-                  placeholder="R$ 0,00"
+                  placeholder={exemploDoCampoDeMoeda(moedaDoCampo)}
                 />
               </div>
             );

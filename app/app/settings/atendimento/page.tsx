@@ -24,9 +24,12 @@ import { routingConfigSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { configAssinatura } from "@/lib/messaging/assinatura";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
+import { telefoneDeFichaVaziaLigado } from "@/lib/schemas/settings";
 import { AssinaturaForm } from "./_assinatura-form";
 import { ChannelRoutingForm } from "./_channels-form";
 import { AtendimentoForm } from "./_form";
+import { TelefoneDeFichaVazia } from "./_telefoneDeFichaVazia";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +52,7 @@ export default async function AtendimentoSettingsPage() {
   const settings = ((data?.settings as Record<string, unknown> | null) ?? {}) as {
     routing?: unknown;
     visibility_mode?: VisibilityMode;
+    crm?: unknown;
   };
   // `.catch(...)`: config antiga ou corrompida no jsonb não pode derrubar a
   // tela que serve justamente para consertá-la.
@@ -57,6 +61,10 @@ export default async function AtendimentoSettingsPage() {
   const channels = await loadChannelRoutingSettings(supabase, activeOrg.orgId);
   const assinatura = configAssinatura(settings);
   const assinaturaInicial = { humanos: assinatura.humanos, ia: assinatura.ia, nome_ia: assinatura.nomeIa };
+  // #2593 — a opção lida pela MESMA régua que o servidor aplica
+  // (`telefoneDeFichaVaziaLigado`): a tela não pode mostrar ligado o que o
+  // `proporDadoDoContato` lê como desligado.
+  const telefoneDeFichaVazia = telefoneDeFichaVaziaLigado({ crm: settings.crm });
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -77,6 +85,11 @@ export default async function AtendimentoSettingsPage() {
       />
       <ChannelRoutingForm initial={channels} />
       <AssinaturaForm initial={assinaturaInicial} />
+      <TelefoneDeFichaVazia
+        ligada={telefoneDeFichaVazia}
+        idioma={idioma}
+        podeMudar={podeAdministrarEmpresa(user, activeOrg)}
+      />
     </div>
   );
 }

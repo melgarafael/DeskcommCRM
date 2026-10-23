@@ -9,8 +9,9 @@ import { combinarInterfaces } from "@/lib/navigation/interface";
  * and then filter by `user_id` (a trusted source).
  */
 import { readSupportContext } from "@/lib/impersonate/support";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/auth/safe-next";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -134,12 +135,33 @@ export function ehSessaoAusente(error: { name?: string } | null | undefined): bo
   return error?.name === "AuthSessionMissingError";
 }
 
-export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
+/**
+ * O `getUser()` da requisição: UMA ida ao servidor de autenticação, partilhada
+ * por `loadAuthUser` e `isMfaEnrolled`.
+ *
+ * Cada tela de `/app` pedia o usuário ao GoTrue duas vezes — uma aqui, outra
+ * dentro do `listFactors()` do auth-js, que chama `getUser()` pela rede e só
+ * filtra `user.factors`. A resposta é a mesma; a segunda ida era uma espera a
+ * mais (e uma linha a mais no log do Supabase) em toda tela.
+ *
+ * O CLIENTE vai junto com a resposta, e não por enfeite: se o `getUser`
+ * renovou o token, é este cliente que tem o token novo — as consultas de
+ * `loadAuthUser` precisam sair dele, como sempre saíram.
+ */
+const sessaoDaRequisicao = cache(async () => {
   const supabase = await createClient();
+  const resposta = await supabase.auth.getUser();
+  return { supabase, resposta };
+});
+
+export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+    supabase,
+    resposta: {
+      data: { user },
+      error,
+    },
+  } = await sessaoDaRequisicao();
   // ⚠️ O `error` era DESCARTADO — nem chegava a ser desestruturado —, e aqui
   // `user: null` é tão ambíguo quanto o `data: null` que a query logo abaixo
   // trata com todo o cuidado: significa "não está logado" (estado normal) E
@@ -395,18 +417,23 @@ export async function requireAuth(): Promise<AuthUser> {
  * Returns true if the current session has at least one verified TOTP factor.
  * Use only in Server Components / Server Actions (cookie session).
  *
- * LANÇA quando não conseguiu ler os fatores. O `listFactors()` do auth-js não
- * lança: ele chama `getUser()` pela rede e, se falhar, DEVOLVE
- * `{ data: null, error }`. Ler só `data` transformava essa falha em "não tem
- * fator" — e `mfaEmDivida` liberava a sessão `aal1` de quem TEM fator. Uma
- * leitura que não aconteceu não pode virar resposta: quem decide acesso falha
- * fechado (a exceção vira 500 na rota, nunca 200).
+ * LANÇA quando não conseguiu ler os fatores. O `getUser()` do auth-js não
+ * lança: se falhar, ele DEVOLVE `{ data: { user: null }, error }`. Ler só
+ * `data` transformava essa falha em "não tem fator" — e `mfaEmDivida` liberava
+ * a sessão `aal1` de quem TEM fator. Uma leitura que não aconteceu não pode
+ * virar resposta: quem decide acesso falha fechado (a exceção vira 500 na rota,
+ * nunca 200).
+ *
+ * Lê `user.factors` da MESMA ida ao GoTrue que `loadAuthUser` já fez
+ * (`sessaoDaRequisicao`), com a regra do `listFactors()` do auth-js 2.117:
+ * fator `totp` com `status === "verified"`.
  */
 export const isMfaEnrolled = cache(async (): Promise<boolean> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.mfa.listFactors();
+  const {
+    resposta: { data, error },
+  } = await sessaoDaRequisicao();
   if (error) throw error;
-  return !!data?.totp?.some((f) => f.status === "verified");
+  return !!data.user?.factors?.some((f) => f.factor_type === "totp" && f.status === "verified");
 });
 
 /**
@@ -554,4 +581,21 @@ export async function mfaEmDivida(): Promise<boolean> {
   // Cadastrar e provar são perguntas diferentes. Quem TEM fator prova, sempre.
   if (!(await isMfaEnrolled())) return false;
   return (await sessionAal()) !== "aal2";
+}
+
+/**
+ * O portão de SESSÃO das telas: quem tem fator e não o provou nesta sessão vai
+ * ao desafio, de volta para onde estava. É a mesma pergunta das rotas
+ * (`mfaEmDivida`), para que a tela e as rotas por trás dela respondam igual.
+ *
+ * Não custa leitura nova no `/app`: `isMfaEnrolled` é `cache` da requisição e o
+ * layout já a pediu; `sessionAal` lê o token da própria sessão. Falha ao ler os
+ * fatores LANÇA (o `isMfaEnrolled`), como nas rotas — nenhuma tela renderiza.
+ */
+export async function exigirProvaDeMfa(): Promise<void> {
+  if (!(await mfaEmDivida())) return;
+  // `x-pathname` vem do `proxy.ts`, gravado ANTES do `NextResponse.next` — só o
+  // que existe ali chega aqui (tests/unit/proxy-encaminha-o-caminho.test.ts).
+  const caminho = safeNext((await headers()).get("x-pathname"), "/app");
+  redirect(`/login/mfa?next=${encodeURIComponent(caminho)}`);
 }

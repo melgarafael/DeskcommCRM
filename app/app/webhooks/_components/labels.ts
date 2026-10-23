@@ -15,7 +15,9 @@ export type ActionType =
   | "call_webhook"
   | "start_message_flow"
   | "create_task"
-  | "apply_task_plan";
+  | "apply_task_plan"
+  // #2642 — o único destino que não é o lead: a EQUIPE.
+  | "notify_team";
 
 export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "lead.created": "Quando entrar um contato novo (webhook)",
@@ -80,4 +82,8 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   // #1752 — a SEQUÊNCIA em vez do lembrete único: aplica um plano salvo em
   // Tarefas › Planos ao negócio, criando as N tarefas de uma vez e na ordem.
   apply_task_plan: "Aplicar um plano de tarefas ao negócio",
+  // #2642 — o único destino que não é o lead. A frase diz "equipe" e não
+  // "WhatsApp" porque quem recebe é o WhatsApp cadastrado em Avisos, e quem
+  // lê a lista precisa saber que quem recebe é GENTE DA CASA, não o cliente.
+  notify_team: "Mensagem para a equipe (resumo do negócio ganho)",
 };

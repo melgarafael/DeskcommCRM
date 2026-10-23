@@ -6,6 +6,7 @@ import {
   updateAutomationRuleSchema,
   conditionSchema,
 } from "./webhooks";
+import { conditionsSchema } from "@/lib/automation/conditions";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
@@ -121,14 +122,65 @@ describe("createAutomationRuleSchema", () => {
 });
 
 describe("conditionSchema", () => {
-  it("rejects op outside eq/neq/contains", () => {
-    const r = conditionSchema.safeParse({ field: "status", op: "gt", value: "won" });
+  it("rejects op outside the known set (#2727 ampliou o conjunto)", () => {
+    const r = conditionSchema.safeParse({ field: "status", op: "regex", value: "won" });
     expect(r.success).toBe(false);
+  });
+
+  it("aceita os operadores novos de #2727", () => {
+    for (const op of ["not_contains", "is_empty", "is_not_empty", "gt", "gte", "lt", "lte"]) {
+      expect(conditionSchema.safeParse({ field: "status", op, value: "won" }).success).toBe(true);
+    }
   });
 
   it("accepts a valid condition", () => {
     const r = conditionSchema.safeParse({ field: "status", op: "eq", value: "won" });
     expect(r.success).toBe(true);
+  });
+});
+
+/**
+ * #2727 — as condições de uma regra: a lista simples (formato antigo) e o grupo
+ * do TOPO (`{all}` / `{any}`). Aninhar grupo em grupo NÃO entra: nenhuma tela o
+ * edita e o formulário o perderia silenciosamente (o CR do #2727 escolheu
+ * fechar na porta da API em vez de deixar a regra encolher ao ser salva).
+ */
+describe("conditionsSchema (#2727)", () => {
+  const linha = { field: "status", op: "eq", value: "won" };
+
+  it("aceita a lista simples — o formato guardado antes desta mudança", () => {
+    expect(conditionsSchema.safeParse([linha]).success).toBe(true);
+    expect(conditionsSchema.safeParse([]).success).toBe(true);
+  });
+
+  it("aceita {all:…} e {any:…}", () => {
+    expect(conditionsSchema.safeParse({ all: [linha] }).success).toBe(true);
+    expect(conditionsSchema.safeParse({ any: [linha] }).success).toBe(true);
+  });
+
+  it("RECUSA grupo dentro de grupo — só o grupo do TOPO", () => {
+    expect(conditionsSchema.safeParse({ all: [linha, { any: [linha] }] }).success).toBe(false);
+    expect(conditionsSchema.safeParse({ any: [{ all: [linha] }] }).success).toBe(false);
+    // O mesmo conteúdo, sem aninhar, passa: o que se recusa é o grupo interior.
+    expect(conditionsSchema.safeParse({ any: [linha, linha] }).success).toBe(true);
+  });
+
+  it("recusa {all:…} e {any:…} no MESMO grupo (o combinador é um só)", () => {
+    expect(conditionsSchema.safeParse({ all: [linha], any: [linha] }).success).toBe(false);
+  });
+
+  it("recusa operador desconhecido DENTRO de um grupo", () => {
+    const r = conditionsSchema.safeParse({ any: [{ field: "a", op: "regex", value: "x" }] });
+    expect(r.success).toBe(false);
+  });
+
+  it("o teto é 10 no TOPO, nos dois formatos (não 50 por nível)", () => {
+    const n = (quantos: number) => Array.from({ length: quantos }, () => linha);
+    expect(conditionsSchema.safeParse(n(10)).success).toBe(true);
+    expect(conditionsSchema.safeParse(n(11)).success).toBe(false);
+    expect(conditionsSchema.safeParse({ any: n(10) }).success).toBe(true);
+    expect(conditionsSchema.safeParse({ any: n(11) }).success).toBe(false);
+    expect(conditionsSchema.safeParse({ all: n(11) }).success).toBe(false);
   });
 });
 

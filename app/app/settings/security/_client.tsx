@@ -81,7 +81,15 @@ export function SecurityClient({
         setCodes(r.recovery_codes);
         toast.success(t("Novos códigos gerados."));
       } else {
-        toast.error(`${t("Erro:")} ${r.error}`);
+        // O `error` é código (`mfa_not_enrolled`) ou a mensagem crua do banco, em inglês — a tela
+        // mostrava « Erro: mfa_not_enrolled » em todo idioma.
+        toast.error(
+          r.error === "unauthenticated"
+            ? t("Sua sessão expirou. Entre de novo.")
+            : r.error === "mfa_not_enrolled"
+              ? t("Habilite MFA antes de gerar códigos.")
+              : t("Não consegui salvar essa mudança agora."),
+        );
       }
     });
   }

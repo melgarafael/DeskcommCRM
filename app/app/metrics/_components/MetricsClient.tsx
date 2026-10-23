@@ -12,6 +12,7 @@ import { AtritoPanel } from "./AtritoPanel";
 import { CanaisPanel } from "./CanaisPanel";
 import { PerdasPanel } from "./PerdasPanel";
 import { PrevisaoPanel } from "./PrevisaoPanel";
+import { SeriePanel } from "./SeriePanel";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -223,6 +224,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
           escopa: agent vê as próprias conversas, manager+ a organização. */}
       <CanaisPanel owner={selectedOwner} />
+      <SeriePanel />
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import { contarCondicoes, OPERADORES_SEM_VALOR } from "@/lib/automation/conditions";
 import { DIAS_MAX, DIAS_MIN, GATILHO_DE_DATA_DO_FUNIL } from "@/lib/automation/gatilho-de-data-do-funil";
 import {
   DIRECOES_DO_SILENCIO,
@@ -34,6 +37,8 @@ import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } fro
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao, type VisualDaCaixa } from "./visual";
 
 const QUALQUER_FONTE = "__qualquer_fonte__";
+/** O formulário em gaveta vive na aba de automações — o "editar pelo formulário". */
+const VOLTAR = "/app/webhooks?aba=automacoes";
 
 function Cabecalho({ visual, titulo, etapa }: { visual: VisualDaCaixa; titulo: string; etapa?: string }) {
   const Icone = visual.icon;
@@ -292,8 +297,54 @@ export function PainelDasCondicoes({
   const etapas = quadro?.data?.stages ?? [];
   const campos = evento ? (CURATED_FIELDS[evento as TriggerEvent] ?? []) : [];
   const linhas = dados.linhas;
+  const grupoPreservado = dados.grupoPreservado;
   const mudar = (i: number, patch: Partial<LinhaDeCondicao>) =>
     onLinhas(linhas.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+
+  /**
+   * #2727 — o desenho NÃO edita a regra que não sabe representar.
+   *
+   * A caixa de condições é uma fila combinada por E. Quando a regra gravada
+   * combina por "qualquer uma" (um grupo `{any}`), achatá-la aqui trocaria a
+   * regra inteira: quem disparava para alguns passaria a disparar para todos.
+   * Em vez de achar que o operador edita e gravar outra coisa, o painel MOSTRA o
+   * grupo, explica e manda para o formulário — e o salvar do desenho grava o
+   * grupo como está (`corpoDoDesenho`).
+   */
+  if (grupoPreservado) {
+    return (
+      <div className="space-y-4" data-testid="condicoes-preservadas">
+        <Cabecalho visual={VISUAL_DAS_CONDICOES} titulo={t("Condições")} etapa={etapa} />
+        <Problemas lista={dados.problemas} />
+        <p role="note" className="rounded-md border border-border bg-muted p-3 text-sm text-text-muted">
+          {t(
+            "Esta automação combina as condições por um grupo (qualquer uma, ou um grupo dentro de outro). Este desenho não edita esse grupo: ele é gravado como está.",
+          )}
+        </p>
+        <ul className="space-y-1 text-sm">
+          {linhas.map((linha, i) => {
+            // O mesmo rótulo do formulário e do cartão — nunca a chave técnica do campo.
+            const curado = campos.find((c) => c.value === linha.field);
+            const operador = t(curado?.lista && linha.op === "contains" ? "tem a tag" : OP_LABELS[linha.op]);
+            return (
+              <li key={i} className="rounded-md border border-border px-3 py-2 text-text" data-testid={`condicao-${i}`}>
+                <span className="font-medium">{curado ? t(curado.label) : linha.field}</span>
+                <span className="text-text-muted">
+                  {` ${operador} ${OPERADORES_SEM_VALOR.has(linha.op) ? "" : linha.value}`.trimEnd()}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="text-xs text-text-muted">
+          {`${contarCondicoes(grupoPreservado)} ${contarCondicoes(grupoPreservado) === 1 ? t("condição") : t("condições")}`}
+        </p>
+        <Button asChild type="button" variant="secondary" size="sm">
+          <Link href={VOLTAR}>{t("Editar pelo formulário")}</Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -361,7 +412,10 @@ export function PainelDasCondicoes({
                   ))}
                 </SelectContent>
               </Select>
-              {curado?.kind === "stage" && !avancado ? (
+              {/* `esta vazio`/`esta preenchido` perguntam pelo CAMPO, não por um
+                  texto: sem valor a pedir, o campo de valor não é desenhado — a
+                  mesma decisão do formulário em `RuleEditor` (#2727). */}
+              {OPERADORES_SEM_VALOR.has(linha.op) ? null : curado?.kind === "stage" && !avancado ? (
                 <Select value={linha.value} onValueChange={(v) => mudar(i, { value: v })}>
                   <SelectTrigger className="flex-1" aria-label={t("Etapa")}>
                     <SelectValue placeholder={t("Etapa")} />
@@ -404,7 +458,7 @@ export function PainelDasCondicoes({
         <Plus size={14} aria-hidden /> {t("Adicionar condição")}
       </Button>
       <p className="text-xs text-text-muted">
-        {t("Linhas sem campo ou sem valor são descartadas ao salvar, como no editor em lista. No máximo 10.")}
+        {t("Linhas sem campo, ou sem valor quando o operador pede um, são descartadas ao salvar. No máximo 10.")}
       </p>
     </div>
   );
@@ -525,10 +579,17 @@ export function ResumoDaAutomacao({
   tituloDaAcao: (acao: AcaoDaRegra) => string;
 }) {
   const t = useT();
-  const condicoes =
-    percurso.condicoes?.data.kind === "condicoes"
-      ? percurso.condicoes.data.linhas.filter((l) => l.field.trim() && l.value.trim()).length
-      : 0;
+  const caixaDeCondicoes = percurso.condicoes?.data.kind === "condicoes" ? percurso.condicoes.data : null;
+  // A contagem tem de espelhar o que salva: `is_empty`/`is_not_empty` não pedem
+  // valor (contá-los por `value.trim()` devolvia 0 para uma regra que tem
+  // condição), e um grupo preservado conta as folhas dele.
+  const condicoes = caixaDeCondicoes
+    ? caixaDeCondicoes.grupoPreservado
+      ? contarCondicoes(caixaDeCondicoes.grupoPreservado)
+      : caixaDeCondicoes.linhas.filter((l) => l.field.trim() && (OPERADORES_SEM_VALOR.has(l.op) || l.value.trim()))
+          .length
+    : 0;
+  const emGrupo = Boolean(caixaDeCondicoes?.grupoPreservado);
   return (
     <div className="space-y-4">
       <h2 className="text-base font-semibold text-text">{t("Como esta automação roda")}</h2>
@@ -543,7 +604,9 @@ export function ResumoDaAutomacao({
           <dd className="text-text">
             {condicoes === 0
               ? t("Sem condições: roda em todo evento.")
-              : `${condicoes} ${condicoes === 1 ? t("condição") : t("condições")}, ${t("todas precisam valer")}`}
+              : emGrupo
+                ? `${condicoes} ${condicoes === 1 ? t("condição") : t("condições")}, ${t("definidas por um grupo que este desenho não edita")}`
+                : `${condicoes} ${condicoes === 1 ? t("condição") : t("condições")}, ${t("todas precisam valer")}`}
           </dd>
         </div>
         <div>

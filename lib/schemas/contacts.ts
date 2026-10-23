@@ -14,9 +14,9 @@ import {
   MAXIMO_DE_ETIQUETAS_NO_FILTRO,
   MODOS_DE_ETIQUETA,
 } from "@/lib/inbox/marcador-da-conversa";
-import { isValidCpf, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
+import { isValidCpf, PAIS_PADRAO, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
 
-const PHONE_REGEX = /^\+\d{8,15}$/;
+export const PHONE_REGEX = /^\+\d{8,15}$/;
 
 /**
  * Teto de 32 KB no jsonb inteiro. O CHECK do banco só garante que é OBJETO —
@@ -95,15 +95,100 @@ export function contactCreateSchemaDoPais(perfil: PerfilDoPais) {
 }
 
 /**
+ * O TELEFONE NACIONAL DA ORGANIZAÇÃO BRASILEIRA (#3301).
+ *
+ * O E.164 é universal, mas obrigar quem está no Brasil a digitar o `+55` do
+ * próprio país é pedir o código de um lugar onde a pessoa já está. A
+ * organização brasileira passa a aceitar o que o brasileiro digita —
+ * `(11) 99999-8888`, `11 99999-8888`, `11 3322-4455`, `11999998888` — e a API
+ * grava a forma canônica (`+5511999998888`), que é a que o resto do produto
+ * espera (`lib/channels/phone-variants.ts`).
+ *
+ * ─── Por que a régua do DDD é a do produto, e não uma nova ────────────────
+ *
+ * Dois dígitos, o primeiro de 1 a 9: EXATAMENTE a régua de
+ * `phoneLookupVariants`. Duas réguas de DDD divergiriam no dia em que uma
+ * delas aprendesse um caso novo, e a divergência apareceria longe da causa —
+ * um número que o cadastro aceita e a busca por duplicados não casa.
+ *
+ * ─── O que estas duas funções NÃO fazem ──────────────────────────────────
+ *
+ * Não inventam o nono dígito do celular: local de 8 dígitos é fixo, e quem
+ * completa o nono é `canonicalPhoneBR`, no caminho do canal. Inventá-lo aqui
+ * fundiria o fixo de uma pessoa com o celular de outra.
+ */
+const DDD_BR = /^[1-9][0-9]$/;
+
+/** DDD + número (8 ou 9 dígitos, com ou sem máscara) → E.164 com `+55`; `null` fora disso. */
+function telefoneNacionalE164(valor: string): string | null {
+  const digitos = valor.replace(/\D/g, "");
+  // 12 ou 13 dígitos COM o DDI na frente é o caso de quem colou o número
+  // completo e esqueceu o `+` (a issue #3301 pede os dois formatos). O DDI sai,
+  // e o resto é julgado pela régua nacional — o `55` colado não dispensa a
+  // conferência do DDD.
+  const nacional =
+    (digitos.length === 12 || digitos.length === 13) && digitos.startsWith("55")
+      ? digitos.slice(2)
+      : digitos;
+  if (nacional.length !== 10 && nacional.length !== 11) return null;
+  if (!DDD_BR.test(nacional.slice(0, 2))) return null;
+  return `+55${nacional}`;
+}
+
+/**
+ * A régua do telefone DA ORGANIZAÇÃO.
+ *
  * O E.164 é universal; o EXEMPLO não. A mensagem de erro cravava
  * `+5511999998888`, então a tela mostrava o exemplo do país no campo e ensinava
  * o DDI brasileiro assim que a pessoa errava — dentro do mesmo formulário.
+ *
+ * No Brasil entra também o formato nacional, e a NORMALIZAÇÃO mora no schema,
+ * e não na tela, porque a tela não é a única porta: a API v1 de contatos
+ * (POST e PATCH /api/v1/contacts) e a importação por planilha chamam esta
+ * mesma fábrica. Os demais países seguem como estavam —
+ * o formato internacional completo é o único aceito.
+ *
+ * `.transform()` ANTES do `.refine()`: o `refine` julga o valor já
+ * normalizado, então `(11) 99999-8888` e `+5511999998888` passam pela mesma
+ * régua E.164, e o que ele recusa é o valor que, depois de normalizado,
+ * continua não sendo E.164.
  */
 function telefoneDoPais(perfil: PerfilDoPais) {
+  const brasileiro = perfil.codigo === PAIS_PADRAO;
   return z
     .string()
-    .regex(PHONE_REGEX, `Telefone deve estar em formato E.164 (${perfil.telefoneExemplo})`)
+    .transform((valor) => (brasileiro ? normalizarTelefoneBR(valor) : valor))
+    .refine((valor) => PHONE_REGEX.test(valor), { message: mensagemDoTelefone(perfil) })
     .optional();
+}
+
+/** O que já é E.164 passa intacto; o nacional brasileiro ganha o `+55`. O resto segue para o `refine` recusar. */
+function normalizarTelefoneBR(valor: string): string {
+  if (PHONE_REGEX.test(valor)) return valor;
+  // Quem escreveu o `+` declarou o DDI: `+1 (415) 555-1234` é os Estados
+  // Unidos, e a régua nacional o leria como DDD 14 + celular — `+5514155551234`,
+  // o número de outra pessoa. É a mesma leitura de `normalizePhoneBR`
+  // (lib/channels/phone-variants.ts): quem vem com `+` é respeitado. Só a
+  // máscara (espaço, parêntese, ponto, traço) sai; letra e ramal ficam, e o
+  // `refine` os recusa.
+  if (valor.trim().startsWith("+")) return `+${valor.trim().slice(1).replace(/[\s().-]/g, "")}`;
+  return telefoneNacionalE164(valor) ?? valor;
+}
+
+/**
+ * A frase que ensina o formato, por país.
+ *
+ * O exemplo vem do PERFIL — é o `placeholder` do formulário, e a frase abaixo
+ * do campo não pode discordar dele. No Brasil o exemplo nacional é DERIVADO
+ * do E.164 do perfil (sem o `+55`), em vez de escrito à mão: um exemplo
+ * cravado envelhece calado no dia em que o perfil mudar.
+ */
+function mensagemDoTelefone(perfil: PerfilDoPais): string {
+  if (perfil.codigo !== PAIS_PADRAO) {
+    return `Telefone deve estar em formato E.164 (${perfil.telefoneExemplo})`;
+  }
+  const exemploNacional = perfil.telefoneExemplo.replace(/^\+55/, "");
+  return `Telefone deve ter DDD + número (ex.: ${exemploNacional}) ou o formato E.164 (${perfil.telefoneExemplo})`;
 }
 
 /** O mesmo, para o PATCH (`app/api/v1/contacts/[id]/route.ts`). */

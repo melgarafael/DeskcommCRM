@@ -166,6 +166,33 @@ function campoExigidoNoDestino(
 }
 
 /**
+ * OS CAMPOS QUE ESTE DESTINO EXIGE — a lista, não o veredito.
+ *
+ * É o recorte que a régua de baixo percorre, e é a MESMA pergunta que a TELA
+ * precisa fazer para saber o que desenhar (issue #3038): o `NewLeadDialog`
+ * monta o formulário com esta lista em vez de reimplementar `obrigatorio_em`
+ * — duas cópias da regra divergiriam, e a tela voltaria a esconder um campo
+ * que o servidor cobra.
+ *
+ * Campo do CONTATO (issue #2791) fica de fora: ele nem aparece no card, e o
+ * valor mora em `contacts.custom_fields` — exigi-lo numa etapa do funil
+ * barraria o negócio por um campo que a tela do funil não mostra. Marcas de
+ * `obrigatorio_em` num campo `contato` são inertes.
+ *
+ * A VISIBILIDADE (`mostrar_quando`, #2728) NÃO é decidida aqui: ela depende dos
+ * valores, e quem os tem em mãos é a régua (a lista de `faltando`) e o
+ * `CustomFieldsEditor` no formulário.
+ */
+export function camposExigidosNoDestino(
+  settingsDoFunil: unknown,
+  destino: DestinoDaEscrita,
+): CustomFieldDef[] {
+  return camposDoFunil(settingsComoRecord(settingsDoFunil)).filter(
+    (campo) => escopoDoCampo(campo) === "negocio" && campoExigidoNoDestino(campo, destino),
+  );
+}
+
+/**
  * Devolve o que FALTA para esta escrita poder acontecer — nunca decide se a
  * escrita acontece (quem escreve é quem chama, e a recusa é 422 com esta lista
  * em `details.faltando`).
@@ -185,13 +212,9 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
   const campos = camposDoFunil(settings);
   const visiveis = new Set(camposVisiveis(campos, valores).map((campo) => campo.key));
 
-  for (const campo of campos) {
-    // Campo do CONTATO (issue #2791) não entra na régua do NEGÓCIO: ele nem
-    // aparece no card, e o valor mora em `contacts.custom_fields` — exigi-lo
-    // numa etapa do funil barraria o negócio por um campo que a tela do funil
-    // não mostra. Marcas de `obrigatorio_em` num campo `contato` são inertes.
-    if (escopoDoCampo(campo) !== "negocio") continue;
-    if (!campoExigidoNoDestino(campo, entrada.destino)) continue;
+  // Escopo (só campo do NEGÓCIO) e destino (`obrigatorio_em`) são filtrados
+  // pelo recorte compartilhado com a tela — ver `camposExigidosNoDestino`.
+  for (const campo of camposExigidosNoDestino(settings, entrada.destino)) {
     // O campo OCULTO pela condição não é cobrado (issue #2728): quem não o
     // vê na ficha não tem como preenchê-lo, e barar a escrita por um campo
     // que a tela escondeu transformaria "esconder" em "travar". O valor que
