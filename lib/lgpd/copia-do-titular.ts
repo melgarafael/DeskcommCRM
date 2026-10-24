@@ -121,6 +121,7 @@ export const O_QUE_FICA = {
   group_messages_authored: "o que ele escreveu em grupos",
   conversation_drafts: "o texto escrito PARA ele por outro sistema",
   contact_field_proposals: "o dado dele que a IA ouviu na conversa e propôs gravar, e o que se decidiu",
+  lead_field_proposals: "o que a IA leu num documento e propôs gravar no CARD dele, e o que a equipe decidiu (o texto do documento sobre ele já sai redigido)",
   lead_attachments: "os documentos anexados aos negócios dele: nome, tipo, tamanho e data (o arquivo não vai no relatório)",
   lead_notes: "a memória que a IA guarda sobre ele (LGPD art. 20)",
   ai_agent_runs:

@@ -46,6 +46,7 @@ import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import { confereCampoLido } from "@/lib/leads/proposta-de-campos-por-documento";
@@ -110,6 +111,9 @@ function valorConfirmado(
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id: leadId, pid } = await ctx.params;
 

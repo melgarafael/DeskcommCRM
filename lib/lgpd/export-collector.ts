@@ -315,6 +315,18 @@ export interface CaptureRow {
  * por isso deriva dos ids de `leads` já coletados acima, e não de uma consulta
  * própria por contato.
  */
+/** Uma proposta de campo do card (`lead_field_proposals`, #3316). */
+export interface LeadFieldProposalRow {
+  id: string;
+  lead_id: string;
+  campo: string;
+  status: string;
+  proposed_at: string;
+  expires_at: string;
+  decided_at: string | null;
+  motivo_recusa: string | null;
+}
+
 export interface HonorariosContratoRow {
   id: string;
   lead_id: string | null;
@@ -662,6 +674,13 @@ export interface ExportPayload {
    * campo obrigatório é o que faz um caminho de export novo não compilar se
    * esquecer, a mesma razão de `case_chat_messages`.
    */
+  /**
+   * #3316 — proposta de campo lida num documento. É dado do NEGÓCIO (vem de
+   * `lead_id`), e o passo 5b da cascata já redigiu `trecho`/`valor_proposto`/
+   * `valor_anterior`: o titular vê a proposta, o campo e o que aconteceu com ela,
+   * sem o texto do documento sobre ele.
+   */
+  lead_field_proposals: LeadFieldProposalRow[];
   honorarios_contratos: HonorariosContratoRow[];
   honorarios_parcelas: HonorariosParcelaRow[];
   orders: OrderRow[];
@@ -1377,6 +1396,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // inteiro por causa de um módulo que a organização nem ligou.
   let honorarios_contratos: HonorariosContratoRow[] = [];
   let honorarios_parcelas: HonorariosParcelaRow[] = [];
+  let lead_field_proposals: LeadFieldProposalRow[] = [];
+  if (leads.length > 0) {
+    const { data: propostas, error: erroPropostas } = await admin
+      .from("lead_field_proposals")
+      .select(
+        "id, lead_id, campo, status, proposed_at, expires_at, decided_at, motivo_recusa",
+      )
+      .eq("organization_id", organizationId)
+      .in("lead_id", leads.map((l) => l.id))
+      .order("proposed_at", { ascending: true });
+    if (erroPropostas) {
+      if (erroPropostas.code !== "42P01") {
+        throw new Error(`lead_field_proposals_load_failed: ${erroPropostas.message}`);
+      }
+    } else if (propostas) {
+      lead_field_proposals = propostas;
+    }
+  }
+
   const leadIds = leads.map((l) => l.id);
   if (leadIds.length > 0) {
     const { data, error } = await admin
@@ -2309,6 +2347,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     messages_count_total,
     messages_recent,
     leads,
+    lead_field_proposals,
     honorarios_contratos,
     honorarios_parcelas,
     orders,
@@ -2481,6 +2520,7 @@ function emptyPayload(
 ): ExportPayload {
   return {
     request_id: requestId,
+    lead_field_proposals: [],
     organization_id: organizationId,
     organization_legal_name: controlador.legal_name,
     organization_display_name: controlador.display_name,
