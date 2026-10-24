@@ -54,6 +54,7 @@ import {
   type aiClassifyConfigSchema,
   type conditionConfigSchema,
   type contactFlowFieldTypeSchema,
+  type DestinoDaResposta,
   type endConfigSchema,
   type waitConfigSchema,
 } from "./graph-schema";
@@ -739,4 +740,20 @@ export const GATILHOS: Record<TipoDeGatilho, string> = {
 export const BASES_DA_PAUSA_DE_REENTRADA: Record<BaseDaPausa, string> = {
   ultima_mensagem: "Da última mensagem do cliente",
   ultimo_envio: "Do último envio deste fluxo",
+};
+
+
+// --- onde a resposta é gravada (#3363) --------------------------------------
+
+/**
+ * `collect.destino` — os rótulos do seletor "Onde a resposta é guardada".
+ *
+ * A AUSÊNCIA da chave no grafo é `contato` (o default de todo grafo que já
+ * existe), então quem lê sem a chave encontra o mesmo rótulo da tela. Sem este
+ * mapa a varredura de enums achava `flowNode|6.config.destino` sem tradução:
+ * vocabulário de wire que a tela nunca deveria mostrar cru.
+ */
+export const DESTINOS_DA_RESPOSTA: Record<DestinoDaResposta, string> = {
+  contato: "Ficha do contato",
+  negocio: "Card do negócio",
 };
