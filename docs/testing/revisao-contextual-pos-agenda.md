@@ -2,7 +2,7 @@
 
 Uma resposta como “esse horário” depende da oferta que o cliente recebeu. Responder a um Caso depende também da decisão humana vinculada ao pedido. A revisão precisa desses fatos, com origem e limites: consulta não comprova reserva, e registrar um Caso não comprova sua conclusão.
 
-A agenda independente da PR #3132 já foi integrada. Esta contribuição foi conciliada com a main oficial até `ef50e7750ab65e700016f280f4a3df96f440e583`. A PR #3069 permanece rascunho, aguardando definição TypeSafe/LGPD para integrar JEV e a conferência semântica. Código preparado não equivale a essa liberação.
+A agenda independente da PR #3132 já foi integrada. Esta contribuição foi conciliada com a main oficial até `2b34aba9b09492c808162c010b2ffcfe88377195`. A PR #3069 permanece rascunho, aguardando definição TypeSafe/LGPD para integrar JEV e a conferência semântica. Código preparado não equivale a essa liberação.
 
 ## Fluxo e limites de autoridade
 
@@ -56,3 +56,29 @@ Em 23/10, a cerca `check-do-baseline-nao-diverge-da-cadeia` encontrou `google_pu
 Após o commit, as três cercas dirigidas passaram (8 testes). Retirar o valor de um bloco provocou exatamente 1 falha em 8; a restauração por hash devolveu 8/8. Em uma cópia própria do banco de QA, o baseline corrigido aceitou uma continuação Google com contato, recusou a mesma categoria sem contato pela constraint esperada e foi reaplicado mantendo a linha existente. A cópia descartável foi removida; a base compartilhada da UI e a produção não foram alteradas.
 
 Na rodada oficial anterior, as partes 2–6 de `verify` e o typecheck completo passaram. A parte 1 parou na colisão 0717; a parte 7 apontou essa mesma colisão em duas cercas e a divergência do baseline descrita acima. A colisão continua a cargo do mantenedor na integração; o reparo do baseline foi validado separadamente. Não somar esses resultados a uma alegação de CI integral verde.
+
+
+## Retomada pública: RLS, recibo e decisão de contrato
+
+A conciliação com a main `2b34aba9b09492c808162c010b2ffcfe88377195` preservou o baseline oficial inteiro, os blocos públicos e os três acréscimos de vocabulário canônico. Não levou essa atualização às instalações privadas. O arquivo `contexto-do-atendimento.ts` consulta a capacidade do papel efetivo antes de construir a leitura; a função interna de resposta WhatsApp só aparece no SQL quando o papel já dispõe de EXECUTE. Não há GRANT, troca de papel, SECURITY DEFINER novo ou cache de capacidade. Um membro continua sujeito a RLS e recebe um limite explícito quando não pode validar a pergunta interna; o worker conserva o caminho completo e verificado.
+
+São **duas consultas por fotografia**: capacidade do papel e leitura agrupada. O rótulo fixo `queries_per_snapshot:1` do benchmark antigo não mede esse novo total. A rodada de 30 leituras mediu p95 de 4,81 ms no QA isolado; não é promessa de latência de produção.
+
+Provas da fonte `8371c80f402c7a1b558852325d2ef524a12cb576`, com lock exato e PostgreSQL real no QA existente:
+
+- 90 testes em seis arquivos, lint dirigido e tipos dos reparos com importações transitivas aprovados.
+- Baseline atual instalado e reaplicado em banco próprio. Recortes de continuidade Google, RLS Google, fontes de atendimento, resposta WhatsApp e a nova prova de capacidade do papel passaram. O conjunto de seis arquivos ficou com **54 testes aprovados e uma falha conhecida de contrato**, descrita abaixo; não é uma suíte integral verde.
+- O recibo nativo de serviço conserva `failed` após uma tentativa malsucedida. `publicationReceipt` projeta `retrying` da mesma linha persistida para a recuperação automática. Identidade, revisão e ausência de prova de comunicação permanecem. Controle negativo pós-commit: 1 falha prevista em 7; restauração por hash e 7/7 aprovados.
+- A prova de RLS verifica membro, outra organização, worker e troca de papel na mesma conexão, sem ampliar ACL. Controle negativo pós-commit: 2 falhas previstas em 3; restauração por hash e 3/3 aprovados.
+
+### Decisão de contrato pendente da triagem
+
+O invariante congelado `tests/invariants/revisor-conclusao-caso-encerrado.test.ts`, no caso negativo `fiel=false`, devolve `repasseConcluidoFiel:false` **sem** `verificacao_decisao` e espera `human_decision_unfaithful`. O contrato desta PR exige que uma acusação de divergência tenha vínculo com a candidata completa, a decisão elegível e um trecho/natureza concretos. Sem essa demonstração, o resultado é `human_decision_review_inconclusive`. **O envio permanece bloqueado nos dois estados**; o positivo fiel e os demais critérios não foram relaxados.
+
+O recorte atual reproduziu exatamente uma falha em dois casos desse arquivo: envio fiel aprovado e envio infiel bloqueado; a diferença é o código persistido no cenário sem diagnóstico. A asserção e o arquivo congelado foram preservados. Conforme `CONTRIBUTING.md`, seção “tests/invariants/ é congelado”, a razão da regra concorrente fica explícita para a triagem escolher o contrato. Não foi acrescentada exceção para testes nem relaxada a regra de evidência para pintar o CI de verde. A unidade `repasse-concluido-sem-nova-pendencia.test.ts` comprova tanto a negativa sem prova/inconclusiva quanto a divergência demonstrada/veto semântico.
+
+### Limites da rodada oficial anterior
+
+Na cabeça pública `8d0b6b07`, as seis partes E2E 1/2/4/5/6/7 passaram; a parte 3 teve 94 aprovados, um skipped e a falha de recibo tratada acima. As duas majors de PostgreSQL tiveram 3987 aprovados, 17 falhas, um expected fail e sete skipped cada: as causas estavam nos CHECKs canônicos da fila, na chamada do validador sob authenticated e na classificação congelada do Caso. Esses resultados não foram reatribuídos à candidata atual. Os reparos têm suas provas dirigidas; novos resultados oficiais precisam ser conferidos pela cabeça a que pertencem.
+
+A colisão 0717 e a definição TypeSafe/LGPD continuam explicitamente pendentes do mantenedor. A PR permanece rascunho. Não houve mensagem externa, chamada a modelos pagos, alteração de captura/TTL empresarial nem novo deploy nesta retomada.
