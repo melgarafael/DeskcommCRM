@@ -17225,6 +17225,15 @@ export const DICIONARIO: Traducoes = {
   "Sem contato vinculado, a etiqueta não é aplicada.": {
     es: "Sin contacto vinculado, la etiqueta no se aplica.",
   },
+  // Ação remove_tag (Tirar tag), no editor de automações.
+  "Tirar tag": { es: "Quitar etiqueta" },
+  "Tags para tirar (separadas por vírgula)": { es: "Etiquetas para quitar (separadas por coma)" },
+  "De onde tirar": { es: "De dónde quitar" },
+  "Do card": { es: "Del card" },
+  "Do contato do lead": { es: "Del contacto del lead" },
+  "Sem contato vinculado, nenhuma etiqueta é tirada.": {
+    es: "Sin contacto vinculado, no se quita ninguna etiqueta.",
+  },
   // #2744 — compositor: template escolhido sem nome para interpolar.
   "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.": {
     es: "Contacto sin nombre en el CRM: {{nome}}/{{primeiro_nome}} quedaron como texto literal en el mensaje. Edítalo antes de enviar.",

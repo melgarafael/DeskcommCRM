@@ -407,6 +407,15 @@ const acoesFixas = [
       destino: z.enum(["card", "contato"]).optional(),
     }),
   }),
+  // A irmã da `add_tag`: TIRA as etiquetas, do card ou do contato, com a mesma
+  // forma de config e o mesmo destino padrão (`card`).
+  z.object({
+    type: z.literal("remove_tag"),
+    config: z.object({
+      tags: z.array(z.string().min(1).max(60)).min(1).max(10),
+      destino: z.enum(["card", "contato"]).optional(),
+    }),
+  }),
   z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
   z.object({
     type: z.literal("send_ai_message"),
