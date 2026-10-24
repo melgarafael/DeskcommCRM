@@ -118,7 +118,8 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
     // #2642 — mesmo defeito do e-mail: sem caso, o cartão dizia « notify_team » cru.
     case "notify_team":
       return <>{t("WhatsApp da equipe")}</>;
-    case "add_tag": {
+    case "add_tag":
+    case "remove_tag": {
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
       return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;
     }
