@@ -148,15 +148,19 @@
       "<div><strong>O menu é o do sistema</strong><span>À esquerda estão os mesmos grupos e nomes que você vê no DeskComm. Clique numa tela para aprender sobre ela.</span></div>" +
       "<div><strong>Ler ou simular</strong><span>No modo Ler, cada passo tem a foto da tela e a explicação. No Simulador, você clica no lugar certo para avançar.</span></div>" +
       "<div><strong>Busque qualquer dúvida</strong><span>Digite na busca o que você quer fazer, como “transferir conversa” ou “nota interna”.</span></div></section>" +
-      '<section style="display:flex;flex-direction:column;gap:14px"><h2 class="secao-titulo">Módulos prontos</h2><div class="cartoes">' +
+      '<section style="display:flex;flex-direction:column;gap:14px"><h2 class="secao-titulo">Módulos</h2><div class="cartoes">' +
       D.modulos.map(function (m) {
         var n = m.licoes.reduce(function (a, l) { return a + l.passos.length; }, 0);
         return '<a class="cartao" href="#m.' + m.id + '"><span class="rotulo-mono">' + esc(grupoDaTela(m.tela)) + "</span><h3>" + esc(m.titulo) + "</h3><p>" + esc(m.resumo) + '</p><div class="rodape-cartao"><span>' + plural(m.licoes.length, "lição", "lições") + "</span><span>" + plural(n, "passo ilustrado", "passos ilustrados") + "</span></div></a>";
       }).join("") + "</div></section>" +
-      '<section style="display:flex;flex-direction:column;gap:14px"><h2 class="secao-titulo">Próximos módulos</h2>' +
-      '<p class="subtitulo">Estas telas ainda não têm lições. Por enquanto, veja para que cada uma serve.</p><ul class="em-breve">' +
-      semCurso.map(function (it) { return "<li><strong>" + esc(it.rotulo) + "</strong><span>" + esc(it.descricao) + "</span></li>"; }).join("") +
-      "</ul></section></div>";
+      // quando toda tela do menu já tem módulo, a seção some: título sobre lista vazia promete o que não há
+      (semCurso.length
+        ? '<section style="display:flex;flex-direction:column;gap:14px"><h2 class="secao-titulo">Próximos módulos</h2>' +
+          '<p class="subtitulo">Estas telas ainda não têm lições. Por enquanto, veja para que cada uma serve.</p><ul class="em-breve">' +
+          semCurso.map(function (it) { return "<li><strong>" + esc(it.rotulo) + "</strong><span>" + esc(it.descricao) + "</span></li>"; }).join("") +
+          "</ul></section>"
+        : "") +
+      "</div>";
   }
   function grupoDaTela(href) {
     var g = D.menu.filter(function (g) { return g.itens.some(function (it) { return it.href === href; }); })[0];

@@ -157,7 +157,8 @@ async function main() {
       // contexto novo por lição: estado de UI de uma lição não vaza para a seguinte
       const ctx = await browser.newContext({
         viewport: { width: LARGURA, height: ALTURA },
-        deviceScaleFactor: 2,
+        // 1,5×: nítido na foto ampliada e ~100 KB por foto (2× com JPEG 82 dava 97 MB para 408 fotos)
+        deviceScaleFactor: 1.5,
         storageState: sessoes.get(licao.papel),
         locale: "pt-BR",
         timezoneId: "America/Sao_Paulo",
@@ -185,7 +186,7 @@ async function main() {
           }
           const clicar = passo.clicar ? await medir(page, passo.clicar) : null;
           const foto = `capturas/${chave}.jpg`;
-          await page.screenshot({ path: path.join(SAIDA, foto), type: "jpeg", quality: 82 });
+          await page.screenshot({ path: path.join(SAIDA, foto), type: "jpeg", quality: 72 });
           capturas[chave] = { foto, destaques, clicar };
           console.info(`ok   ${modulo.id}/${chave}`);
         } catch (e) {
