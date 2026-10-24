@@ -217,13 +217,62 @@ const FECHOS_ES = {
   ],
 } as const;
 
+/**
+ * OS MESMOS avisos em turco, pela mesma razão do espanhol: o cliente de uma
+ * organização em `tr` conversa em turco, e o aviso em português no meio da
+ * conversa denuncia o robô.
+ *
+ * Tratamento por "siz" (o formal), que é o de uma empresa com o cliente. Frases
+ * curtas, sem prazo: o fecho promete o mesmo que o português, e nada além.
+ */
+const ABERTURAS_TR: Record<MotivoDoAviso, readonly string[]> = {
+  suspeita_de_opt_out: [
+    "Anladım. Buradan size otomatik mesaj göndermeyi bırakıyorum.",
+    "Tamam, not ettim: bu numaraya artık otomatik mesaj gönderilmeyecek.",
+    "Peki! Bu kanaldaki otomatik gönderimleri hemen durduruyorum.",
+  ],
+  pediu_humano: [
+    "Tabii! Sizinle görüşmesi için ekibimizden birini çağırıyorum.",
+    "Sorun değil. Buradan devam etmesi için ekipten birine haber verdim.",
+    "Elbette. Konuşmanızı şimdi ekibimizden bir çalışana aktardım.",
+  ],
+  orcamento_de_ia: [
+    "Görüşmenizi ekibimizden birine aktarıyorum.",
+    "Bundan sonra sizinle ekibimizden biri ilgilenecek.",
+    "Bu konuşmayı ekibimizden bir çalışana aktarıyorum.",
+  ],
+  outro: [
+    "Bu konuyu bir çalışanımız daha iyi çözer. Ekibe haber verdim.",
+    "Burada risk almak istemem: talebinizi ekibimizden bir çalışana ilettim.",
+    "Bu konuda sizinle ilgilenmesi için ekipten birinden yardım istiyorum.",
+  ],
+};
+
+const FECHOS_TR = {
+  sem_equipe: [
+    "Talebiniz kaydedildi, ekibimiz en kısa sürede yanıt verecek.",
+    "Her şeyi not ettim; size en kısa zamanda dönüş yapacağız.",
+    "Kaydınızı aldım, ilk fırsatta biri size yanıt verecek.",
+  ],
+  fora_de_expediente: [
+    "Şu anda müsait kimse yok, ancak talebiniz kaydedildi.",
+    "Şu an boşta kimse yok; talebinizi ekip için not ettim.",
+    "Şu anda müsait bir çalışan yok; konuşmanız sıraya alındı.",
+  ],
+  com_equipe: [
+    "Konuşmada kısa bir süre beklemeniz yeterli.",
+    "Burada kalın, birazdan size yanıt verilecek.",
+    "Lütfen bu konuşmada biraz bekleyin.",
+  ],
+} as const;
+
 interface TextosDoAviso {
   aberturas: Record<MotivoDoAviso, readonly string[]>;
   fechos: { sem_equipe: readonly string[]; fora_de_expediente: readonly string[]; com_equipe: readonly string[] };
   fechoDoOptOut: string;
 }
 
-const TEXTOS: Record<"pt" | "es", TextosDoAviso> = {
+const TEXTOS: Record<"pt" | "es" | "tr", TextosDoAviso> = {
   pt: {
     aberturas: ABERTURAS,
     fechos: FECHOS,
@@ -234,6 +283,11 @@ const TEXTOS: Record<"pt" | "es", TextosDoAviso> = {
     fechos: FECHOS_ES,
     fechoDoOptOut: "Le pasé tu pedido a una persona del equipo para que lo confirme.",
   },
+  tr: {
+    aberturas: ABERTURAS_TR,
+    fechos: FECHOS_TR,
+    fechoDoOptOut: "Talebinizi onaylaması için ekibimizden birine ilettim.",
+  },
 };
 
 /**
@@ -241,7 +295,10 @@ const TEXTOS: Record<"pt" | "es", TextosDoAviso> = {
  * ausente) segue em português, que é o comportamento de antes desta tabela.
  */
 function textosDoIdioma(idioma: string | null | undefined): TextosDoAviso {
-  return (idioma ?? "").trim().toLowerCase().startsWith("es") ? TEXTOS.es : TEXTOS.pt;
+  const codigo = (idioma ?? "").trim().toLowerCase();
+  if (codigo.startsWith("es")) return TEXTOS.es;
+  if (codigo.startsWith("tr")) return TEXTOS.tr;
+  return TEXTOS.pt;
 }
 
 /**

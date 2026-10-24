@@ -100,6 +100,23 @@ export default function GlobalError({
             >
               PT
             </button>
+            <button
+              type="button"
+              onClick={() => setIdioma("tr")}
+              style={{
+                padding: "0.2rem 0.5rem",
+                fontSize: "0.75rem",
+                borderRadius: 4,
+                border: "1px solid",
+                borderColor: idioma === "tr" ? "#1c1917" : "#e7e5e4",
+                background: idioma === "tr" ? "#1c1917" : "white",
+                color: idioma === "tr" ? "white" : "#57534e",
+                cursor: "pointer",
+                fontWeight: idioma === "tr" ? 600 : 400,
+              }}
+            >
+              TR
+            </button>
           </div>
           <h1 style={{ fontSize: "1.5rem", margin: "0 0 0.5rem", fontWeight: 600 }}>
             {traduzir("Algo deu errado", idioma)}
