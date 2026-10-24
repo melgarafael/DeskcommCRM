@@ -31,11 +31,8 @@
  * resposta que faz quem chamou consertar o pedido.
  */
 import { ApiError } from "@/lib/api/types";
-import { marcacaoDoCrm, renderTemplate } from "@/lib/automation/template";
+import { MARCACAO, marcacaoDoCrm, renderTemplate } from "@/lib/automation/template";
 import type { DepsDaOperacao } from "@/lib/operacao/entradas-automaticas";
-
-/** A varredura de marcação, a MESMA do render (`lib/automation/template.ts`). */
-const MARCACAO = /\{\{\s*([\w.]+)\s*\}\}/g;
 
 /** Teto do nome de uma variável do integrador. Curto de propósito: é identificador. */
 export const CHAVE_DE_VALOR_MAX = 40;
@@ -334,6 +331,8 @@ function lacunasDe(template: string, contexto: Record<string, unknown>): string[
   const vazias = new Set<string>();
   for (const m of template.matchAll(MARCACAO)) {
     const marcacao = m[1]!;
+    // Com texto de reserva (`{{x|"aluno"}}`) o render nunca deixa a frase vazia: não é lacuna.
+    if (m[2] !== undefined) continue;
     // Comparar o render de UMA marcação isolada é o que garante a mesma régua
     // do texto final: alias, caminho aninhado e ausência passam pelo mesmo código.
     if (renderTemplate(`{{${marcacao}}}`, contexto) === "") vazias.add(marcacao);

@@ -21,10 +21,7 @@
  */
 import type pg from "pg";
 
-import { renderTemplate } from "./template";
-
-/** Só palavra e ponto, como no renderizador das automações — o destino de todo o resto é ficar como está. */
-const MARCA = /\{\{\s*([\w.]+)\s*\}\}/g;
+import { MARCACAO, renderTemplate } from "./template";
 
 /**
  * O corpo da mensagem com as marcações de CRM resolvidas.
@@ -38,7 +35,7 @@ export function renderizarTextoDeFollowup(texto: string, contexto: Record<string
   let saida = "";
   let cursor = 0;
   let algumaFicouVazia = false;
-  for (const marca of texto.matchAll(MARCA)) {
+  for (const marca of texto.matchAll(MARCACAO)) {
     const inicio = marca.index ?? cursor;
     saida += texto.slice(cursor, inicio);
     const valor = renderTemplate(marca[0], contexto);
