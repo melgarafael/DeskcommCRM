@@ -76,6 +76,14 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     await expect(interruptor).toHaveAttribute("aria-checked", "false");
     await interruptor.click();
     await expect(interruptor).toHaveAttribute("aria-checked", "true");
+    // O estado visual é otimista. Navegar antes do fim da action aborta o POST
+    // e chega ao dashboard ainda sem a chave (trace do CI da PR #3069).
+    await expect(interruptor).toBeEnabled();
+    await expect.poll(async () => {
+      const salva = await db.from("platform_config").select("valor").eq("chave", "MODULO_COBRANCA").maybeSingle();
+      if (salva.error) throw salva.error;
+      return salva.data?.valor;
+    }).toBe("ligado");
     await expect(page.getByText(/Empresas que já existem ficam isentas/)).toBeVisible();
     await page.screenshot({ path: `${EVIDENCIA}/sistema-cobranca-ligada.png`, fullPage: true });
     await page.goto("/admin/dashboard");
