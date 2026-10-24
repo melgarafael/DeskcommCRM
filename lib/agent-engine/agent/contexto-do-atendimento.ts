@@ -244,7 +244,7 @@ export function normalizarFontesDoAtendimento(f: FontesDoAtendimento, tenantId: 
       confirmacao_equipe_atestada: a.service_human_confirmed, confirmada_pela_equipe_em: a.service_confirmed_at,
       significado_servico: 'consulta_nao_reserva_reserva_nao_publicacao_nem_comunicacao' } : {}), significado: 'registro_da_agenda_nao_presenca' });
   for (const c of f.retornos.filter(pertence)) adicionar('operacoes', c, 'callback_ia', 'contato', 'verified', { agendado_para: c.next_run_at, habilitado: c.enabled, cancelado_em: c.cancelled_at, promessa: c.promise, motivo: c.reason, significado: 'retorno_da_ia_nao_telefonema_humano' });
-  for (const c of f.caso.filter(pertence)) adicionar('continuidade', c, 'caso_humano', 'contato', 'recorded', { estado: c.status, titulo: c.title, resumo: c.summary, bloqueio: c.blocker, natureza: 'pendencia_operacional_do_pedido_original', autoridade: 'nao_atesta_decisao_humana_nem_veto_global', pedido_original: c.original_request, pergunta_humana: c.human_ask, resposta_cliente: c.lead_update, significado: 'resposta_do_cliente_nao_verificacao', alcance: 'pendencia_do_pedido_original_nao_aprovacao_de_outro_pedido' });
+  for (const c of f.caso.filter(pertence)) adicionar('continuidade', c, 'caso_humano', 'contato', 'recorded', { estado: c.status, titulo: c.title, resumo: c.summary, bloqueio: c.blocker, natureza: 'pendencia_operacional_do_pedido_original', autoridade: 'nao_atesta_decisao_humana_nem_veto_global', pedido_original: c.original_request, pergunta_humana: c.human_ask, ...(c.internal_reply_validation_unavailable === true ? { limite_pergunta_humana: 'validacao_da_resposta_interna_indisponivel_neste_papel' } : {}), resposta_cliente: c.lead_update, significado: 'resposta_do_cliente_nao_verificacao', alcance: 'pendencia_do_pedido_original_nao_aprovacao_de_outro_pedido' });
   if (f.job && pertence(f.job)) adicionar('continuidade', f.job, 'gatilho_persistido', 'contato', 'verified', { tipo_turno: f.job.kind, modo: f.job.mode, proposito: f.job.purpose, motivo: f.job.reason, promessa_anterior: f.job.promise, prometido_em: f.job.promised_at, fluxo: f.job.flow_kind, significado: 'gatilho_nao_nova_promessa' });
   if (f.conversa && pertence(f.conversa)) adicionar('continuidade', f.conversa, 'estado_atual', 'contato', 'verified', { atendimento: f.conversa.service_revision, em_comando_humano: f.conversa.force_human, significado: 'nao_autoriza_envio_durante_takeover' });
   out.cobertura = (Object.keys(encontrados) as CategoriaDoContexto[]).map(categoria => ({ categoria,
@@ -260,8 +260,19 @@ export function normalizarFontesDoAtendimento(f: FontesDoAtendimento, tenantId: 
   return out;
 }
 
-/** Um read agrupado, sem rede/LLM; não consulta contas, credenciais, tokens ou conteúdo de outra pessoa. */
+/** Capacidade do papel + read agrupado, sem rede/LLM nem mudança de papel. */
 export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenantId: string; leadId: string; conversationId: string; jobId?: string; knowledgeSourceIds?: readonly string[]; skillVersionIds?: readonly string[]; productCodes?: readonly string[] }): Promise<ContextoDoAtendimento> {
+  // CASE não evita o ACL check de uma função presente na expressão: o
+  // PostgreSQL verifica EXECUTE ao preparar a chamada, mesmo no ramo falso.
+  // Medimos o papel efetivo em cada leitura (sem cache entre SET ROLE) e só
+  // incluímos a chamada interna no SQL quando esse papel já tem permissão.
+  const { rows: capabilities } = await db.query<{ can_validate_internal_reply: boolean }>(
+    "select has_function_privilege(current_user, 'public.fn_case_whatsapp_event_valid(uuid,uuid,uuid,text)', 'EXECUTE') as can_validate_internal_reply",
+  );
+  const canValidateInternalReply = capabilities[0]?.can_validate_internal_reply === true;
+  const validateInternalReply = (alias: string) => canValidateInternalReply
+    ? `public.fn_case_whatsapp_event_valid(${alias}organization_id,${alias}case_id,${alias}id,${alias}metadata->'review_context_v1'->>'job_id')`
+    : 'false';
   const { rows } = await db.query<FontesDoAtendimento>(`with escopo as (
     select c.id,c.contact_id,c.organization_id,c.service_revision,c.current_demanda_id,ct.force_human from conversations c
     join contacts ct on ct.id=c.contact_id and ct.organization_id=c.organization_id
@@ -285,8 +296,11 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       (select coalesce(m.media_derived_text,m.body) from messages m where m.organization_id=ac.organization_id
         and m.conversation_id=ac.conversation_id and m.contact_id=c.contact_id and m.direction='inbound'
         and m.id::text=ac.context_snapshot->>'request_message_id') as original_request,
-      (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='human_replied' and human_action='need_lead_info' and actor_kind='human' and (actor_user_id is not null or public.fn_case_whatsapp_event_valid(organization_id,case_id,id,metadata->'review_context_v1'->>'job_id')) order by created_at desc,id limit 1) as human_ask,
+      (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='human_replied' and human_action='need_lead_info' and actor_kind='human' and (actor_user_id is not null or ${validateInternalReply('')}) order by created_at desc,id limit 1) as human_ask,
       (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='lead_provided' and actor_kind='lead' order by created_at desc,id limit 1) as lead_update,
+      (not $8::boolean and exists(select 1 from agent_case_events ue where ue.organization_id=ac.organization_id
+        and ue.case_id=ac.id and ue.kind='human_replied' and ue.human_action='need_lead_info'
+        and ue.actor_user_id is null and ue.metadata->>'source'='whatsapp')) as internal_reply_validation_unavailable,
       ac.created_at,ac.updated_at from agent_cases ac join conversations c on c.id=ac.conversation_id and c.organization_id=ac.organization_id where ac.organization_id=$1 and c.contact_id=$2 and c.id=$3 and ac.status in ('awaiting_lead','awaiting_human') order by ac.updated_at desc,ac.id limit 9) x) as caso,
     (select jsonb_build_object('id',j.id,'organization_id',j.organization_id,'contact_id',j.contact_id,'kind',j.kind,'status',j.status,'created_at',j.created_at,
       'trigger_at',coalesce(e.created_at,j.created_at),'mode',j.payload->>'mode','purpose',j.payload->>'purpose','reason',j.payload->>'reason','promise',j.payload->>'promise','promised_at',j.payload->>'promised_at',
@@ -299,7 +313,7 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       from job_queue j left join agent_case_events e on j.kind='case_reply_turn'
         and (e.id::text=j.payload->>'human_event_id' or (not j.payload ? 'human_event_id' and e.metadata->>'legacy_reply_job_id'=j.id::text))
         and e.case_id::text=j.payload->>'case_id'
-        and e.organization_id=j.organization_id and e.kind='human_replied' and e.actor_kind='human' and (e.actor_user_id is not null or public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id'))
+        and e.organization_id=j.organization_id and e.kind='human_replied' and e.actor_kind='human' and (e.actor_user_id is not null or ${validateInternalReply('e.')})
       left join agent_cases ac on ac.id=e.case_id and ac.organization_id=e.organization_id and ac.conversation_id=$3
       where j.organization_id=$1 and j.contact_id=$2 and j.id=$4::uuid) as job,
     (select to_jsonb(escopo) from escopo) as conversa,
@@ -313,7 +327,7 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       'bindings',(select jsonb_agg(jsonb_build_object('purpose',purpose,'provider',provider,'model',model_id,'credential',credential_id,'enabled',is_enabled,'base',base_url) order by purpose) from ai_purpose_bindings where organization_id=$1 and purpose in ('promise_semantic','human_return_confirmation')),
       'sources',(select jsonb_agg(jsonb_build_object('id',id,'active',is_active,'version',active_kb_version_id,'content_hash',content_hash) order by id) from ai_knowledge_sources where organization_id=$1 and id=any($5::uuid[])),
       'skills',(select jsonb_agg(jsonb_build_object('name',name,'version',version_id) order by name) from skill_pointers where organization_id=$1 and version_id=any($6::uuid[]))) from organizations where id=$1) as policy
-    from escopo`, [ids.tenantId, ids.leadId, ids.conversationId, ids.jobId ?? null, ids.knowledgeSourceIds ?? [], ids.skillVersionIds ?? [], ids.productCodes ?? []]);
+    from escopo`, [ids.tenantId, ids.leadId, ids.conversationId, ids.jobId ?? null, ids.knowledgeSourceIds ?? [], ids.skillVersionIds ?? [], ids.productCodes ?? [], canValidateInternalReply]);
   if (!rows[0]) return contextoDoAtendimentoIndisponivel();
   return normalizarFontesDoAtendimento(rows[0], ids.tenantId);
 }
