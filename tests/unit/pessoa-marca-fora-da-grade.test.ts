@@ -49,6 +49,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 
+// The publication reader uses the server transport after the authenticated write.
+// It must read the same persisted fixture, never a real QA/prod client.
+const publicationDb = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => publicationDb.client }));
+
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
   isServiceRoleConfigured: vi.fn(() => true),
@@ -119,6 +124,7 @@ function bancoEmMemoria(tabelas: Record<string, Linha[]>, olhar: Olhar = "tudo")
     const linhas = () => visiveis().filter((linha) => filtros.every((f) => f(linha)));
     const cadeia = {
       eq: (c: string, v: unknown) => (filtros.push((l) => lerCampo(l, c) === v), cadeia),
+      in: (c: string, values: unknown[]) => (filtros.push((l) => values.includes(lerCampo(l, c))), cadeia),
       neq: (c: string, v: unknown) => (filtros.push((l) => lerCampo(l, c) !== v), cadeia),
       lt: (c: string, v: unknown) => (filtros.push((l) => instante(lerCampo(l, c)) < instante(v)), cadeia),
       gt: (c: string, v: unknown) => (filtros.push((l) => instante(lerCampo(l, c)) > instante(v)), cadeia),
@@ -145,6 +151,7 @@ function bancoEmMemoria(tabelas: Record<string, Linha[]>, olhar: Olhar = "tudo")
       },
     }),
     rpc: async (fn: string, args: Linha) => {
+      if (fn === "fn_google_appointment") return {data:{terminal:"not_configured"},error:null};
       if (fn === "fn_google_coverage") return { data: false, error: null };
       // As duas da migration 0260 leem a tabela INTEIRA — independem do olhar —
       // e aplicam o que o corpo SQL aplica: organização, dono e cruzamento estrito.
@@ -192,6 +199,7 @@ function bancoEmMemoria(tabelas: Record<string, Linha[]>, olhar: Olhar = "tudo")
     },
   } as unknown as SupabaseClient;
 
+  publicationDb.client=client;
   return { tabelas, client };
 }
 
@@ -679,7 +687,8 @@ describe("tomada durante consulta da agenda", () => {
         claim_acquired_at: "2026-10-05T12:00:00Z",
         payload: { service_boundary: fronteira },
       } as unknown as JobRow;
-      const entrada = { event_type_id: TIPO, starts_at: NA_GRADE };
+      banco.tabelas.contacts=[{id:fronteira.contact_id,organization_id:ORG,is_blocked:false}];
+      const entrada = { event_type_id: TIPO, starts_at: NA_GRADE, contact_id:fronteira.contact_id };
       await withServiceJob(db, trabalho, async () => {
         const efeito = async () => marcarAgendamentoHandler(banco.client, ctx(AGENTE), entrada);
         const tools = guardServiceTools({

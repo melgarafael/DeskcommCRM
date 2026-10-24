@@ -1,3 +1,4 @@
+import { publicationSentimentPolicy } from "@/lib/agenda/google/publication-sentiment";
 import { serviceFromMessage } from "@/lib/atendimento/origem-mensagem";
 /**
  * Handler: ai-handoff-from-sentiment.v1
@@ -48,6 +49,17 @@ export const aiHandoffFromSentimentHandler: EventHandler = {
     }
     const conversationId = boundary.conversation_id;
     const contactId = boundary.contact_id;
+
+    // Let the current inbound decide whether this is the SAME reservation.
+    // Only its validated native resume suppresses this one sentiment alert.
+    // Missing/expired recovery and genuine human requests use the usual policy.
+    if (messageId) {
+      const recovery = await publicationSentimentPolicy(admin, row.organization_id, conversationId, messageId);
+      if (recovery.kind === "owned")
+        return { consumer_key: AI_HANDOFF_FROM_SENTIMENT_KEY, status: "skipped", detail: "native_publication_recovery" };
+      if (recovery.kind === "retry")
+        return { consumer_key: AI_HANDOFF_FROM_SENTIMENT_KEY, status: "retry", retry_at: recovery.retryAt, detail: "publication_waiting_current_turn" };
+    }
 
     // Best-effort: resolve the most recent open lead for this contact so the
     // orchestrator can write a timeline activity. If unavailable we still

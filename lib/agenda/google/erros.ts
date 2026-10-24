@@ -124,23 +124,29 @@ function comoObjeto(v: unknown): Record<string, unknown> | null {
  * fria, e o comentário anterior deste bloco JÁ prometia ler `error.code`: a
  * promessa estava aqui e a implementação não.
  */
+// DOMException.code (AbortError=20, TimeoutError=23) is not an HTTP status.
+// Only the HTTP range can establish that the Google server returned a status.
+function ehStatusHttp(value: unknown): value is number {
+  return ehNumero(value) && value >= 100 && value <= 599;
+}
+
 function extrairStatus(erro: unknown): number | null {
   const e = comoObjeto(erro);
   if (!e) return null;
-  if (ehNumero(e.code)) return e.code;
-  if (ehNumero(e.status)) return e.status;
-  if (ehNumero(e.statusCode)) return e.statusCode;
+  if (ehStatusHttp(e.code)) return e.code;
+  if (ehStatusHttp(e.status)) return e.status;
+  if (ehStatusHttp(e.statusCode)) return e.statusCode;
 
   // O corpo CRU do Google, entregue direto por `await res.json()`.
   const erroNoTopo = comoObjeto(e.error);
-  if (erroNoTopo && ehNumero(erroNoTopo.code)) return erroNoTopo.code;
+  if (erroNoTopo && ehStatusHttp(erroNoTopo.code)) return erroNoTopo.code;
 
   const resposta = comoObjeto(e.response);
-  if (resposta && ehNumero(resposta.status)) return resposta.status;
+  if (resposta && ehStatusHttp(resposta.status)) return resposta.status;
 
   const dados = resposta ? comoObjeto(resposta.data) : null;
   const erroDoCorpo = dados ? comoObjeto(dados.error) : null;
-  if (erroDoCorpo && ehNumero(erroDoCorpo.code)) return erroDoCorpo.code;
+  if (erroDoCorpo && ehStatusHttp(erroDoCorpo.code)) return erroDoCorpo.code;
 
   return null;
 }

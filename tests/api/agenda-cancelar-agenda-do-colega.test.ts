@@ -1,6 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 const deps = vi.hoisted(() => ({ audit: vi.fn() }));
+// The publication reader uses the server transport after the authenticated write.
+// It must read the same persisted fixture, never a real QA/prod client.
+const publicationDb = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => publicationDb.client }));
+
 vi.mock("@/lib/audit", () => ({ audit: deps.audit }));
 
 import {
@@ -70,12 +75,14 @@ function sbDeTeste(linha: Record<string, unknown>, opcaoLigada: boolean | null, 
         select: () => q,
         eq: () => q,
         is: () => q,
+        in: () => q,
         order: () => q,
         limit: () => q,
         maybeSingle: async () => ({
           data: tabela === "calendar_appointments" ? linha : { name: "Consulta" },
           error: null,
         }),
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve({data:tabela === "calendar_appointments" ? [linha] : [],error:null}).then(resolve),
         single: async () => ({ data: linha, error: null }),
         insert: () => q,
         update: () => q,
@@ -87,11 +94,13 @@ function sbDeTeste(linha: Record<string, unknown>, opcaoLigada: boolean | null, 
       chamadas.push(`rpc:${nome}`);
       if (nome === "fn_colegas_podem_mexer_na_agenda") return { data: opcaoLigada, error: null };
       if (nome === "fn_appointment_change") {
-        return { data: { ...linha, status: args?.p_patch?.status ?? linha.status }, error: null };
+        Object.assign(linha, {status:args?.p_patch?.status ?? linha.status});
+        return { data: linha, error: null };
       }
       return { data: null, error: null };
     },
   };
+  publicationDb.client=api;
   return api as unknown as SupabaseClient;
 }
 

@@ -1706,4 +1706,3 @@ describe("chave construída em runtime: t() não recebe o que o código não esc
     expect(COMO_CONSERTAR_DE_RUNTIME).toContain("pnpm test:unit");
   });
 });
-

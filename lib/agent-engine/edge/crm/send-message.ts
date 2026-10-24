@@ -190,7 +190,25 @@ export async function sendTurnMessage(
     if (policy.body !== input.body || policy.conversation_id !== input.conversationId)
       throw new StaleServiceBoundaryError();
   }
-  return sendWithLedger(pgSendLedger(db), input, async (idempotencyKey, messageId) => {
+  let humanEventId:string|undefined;
+  if(sourceJobs[0]?.kind==='case_reply_turn') {
+    const {rows:events}=await db.query<{id:string}>(`select e.id from agent_case_events e
+      join agent_cases ac on ac.organization_id=e.organization_id and ac.id=e.case_id
+      join job_queue j on j.organization_id=e.organization_id and j.id=$2 and j.contact_id=$3 and j.status='running'
+      where e.organization_id=$1 and (e.id::text=j.payload->>'human_event_id' or
+        (j.payload->>'human_event_id' is null and e.metadata->>'legacy_reply_job_id'=j.id::text))
+      and e.case_id::text=j.payload->>'case_id' and e.kind='human_replied' and e.actor_kind='human'
+      and (e.actor_user_id is not null or public.fn_case_whatsapp_event_valid(e.organization_id,e.case_id,e.id,e.metadata->'review_context_v1'->>'job_id')) and e.human_action=j.payload->>'action'
+      and ac.status=case when e.human_action='resolved' then 'resolved' else 'awaiting_lead' end
+      and coalesce(e.metadata->'review_context_v1'->>'job_id',e.metadata->>'legacy_reply_job_id')=j.id::text
+      and e.metadata->'review_context_v1'->>'revoked_at' is null
+      and (e.metadata->'review_context_v1'->>'expires_at' is null or (e.metadata->'review_context_v1'->>'expires_at')::timestamptz>now())
+      and not exists(select 1 from agent_case_events n where n.organization_id=e.organization_id and n.case_id=e.case_id
+        and n.kind='human_replied' and (n.created_at,n.id)>(e.created_at,e.id))`,[input.tenantId,input.jobId,input.leadId]);
+    if(!events[0])throw new StaleServiceBoundaryError();
+    humanEventId=events[0].id;
+  }
+  return sendWithLedger(pgSendLedger(db), {...input,...(humanEventId?{humanEventId}:{})}, async (idempotencyKey, messageId) => {
     let message: Message;
     try {
       message = await sendMessageHandler(

@@ -842,6 +842,13 @@ export async function sendMessageHandler(
     conversation_id: c.id,
     channel_session_id: c.channel_session_id,
     contact_id: c.contact_id,
+    // A mesma fronteira que autoriza o envio identifica o antecedente da revisão.
+    // O gatilho do banco confere/carimba também os caminhos sem ctx (manual/eco).
+    ...(ctx.serviceBoundary ? {
+      service_revision: ctx.serviceBoundary.service_revision,
+      demanda_id: ctx.serviceBoundary.demanda_id,
+      demanda_revision: ctx.serviceBoundary.demanda_revision,
+    } : {}),
     type: input.type,
     direction: "outbound" as const,
     status: "queued",

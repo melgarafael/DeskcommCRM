@@ -39,6 +39,12 @@ const CONTATO = "22222222-2222-4222-8222-222222222222";
  * `user_metadata.full_name`. Aqui se reproduz só essa superfície: o resto da
  * lista está mockado.
  */
+function publicationReadFixture() {
+  const chain = { select: () => chain, eq: () => chain,
+    in: async () => ({ data: [], error: null }) };
+  return chain;
+}
+
 const ctx: McpContext = {
   organizationId: "org-1",
   role: "agent",
@@ -46,6 +52,7 @@ const ctx: McpContext = {
   apiTokenId: "tok-1",
   requestId: "req-1",
   supabase: {
+    from: publicationReadFixture,
     auth: {
       admin: {
         getUserById: async () => ({
@@ -252,5 +259,27 @@ describe("as recusas saem como RESPOSTA, na face do cliente (DECISÃO 20)", () =
     expect(r.motivo).toBeUndefined();
     expect(r.mensagem).toBeUndefined();
     expect(r.compromissos).toEqual([]);
+  });
+});
+
+
+describe("a publicação vem do recibo atual, não de situacao confirmed",()=>{
+  it("retorna prova sincronizada com o mesmo escopo e sem expor campos privados",async()=>{
+    vi.mocked(listaAgendamentos).mockResolvedValue({ok:true,agendamentos:[ITEM]});
+    const eq=vi.fn();const ids=vi.fn();
+    const row={id:ITEM.id,owner_user_id:DONO,status:"confirmed",location_kind:"in_person",google_event_id:"fictitious-event",google_local_revision:"1",google_synced_local_revision:"1",needs_google_push:false,google_conflict:null,google_sync_error:null,google_sync_failure_kind:null};
+    const chain={select:()=>chain,eq:(...args:unknown[])=>{eq(...args);return chain;},in:async(...args:unknown[])=>{ids(...args);return {data:[row],error:null};}};
+    const scoped={...ctx,supabase:{...ctx.supabase,from:()=>chain} as unknown as SupabaseClient};
+    const result=await crmListAppointments.handler({contact_id:CONTATO},scoped) as {compromissos:Array<Record<string,unknown>>};
+    expect(result.compromissos[0]).toMatchObject({situacao:"confirmed",google_publication:"synced",google_failure_kind:null});
+    expect(eq).toHaveBeenCalledWith("organization_id",ctx.organizationId);expect(ids).toHaveBeenCalledWith("id",[ITEM.id]);
+    expect(JSON.stringify(result)).not.toContain("fictitious-event");
+  });
+  it("falha na leitura não fabrica publicação a partir da reserva confirmada",async()=>{
+    vi.mocked(listaAgendamentos).mockResolvedValue({ok:true,agendamentos:[ITEM]});
+    const chain={select:()=>chain,eq:()=>chain,in:async()=>({data:null,error:{code:"57014"}})};
+    const scoped={...ctx,supabase:{...ctx.supabase,from:()=>chain} as unknown as SupabaseClient};
+    const result=await crmListAppointments.handler({contact_id:CONTATO},scoped) as {compromissos:Array<Record<string,unknown>>};
+    expect(result.compromissos[0]).toMatchObject({situacao:"confirmed",google_publication:"unknown"});
   });
 });

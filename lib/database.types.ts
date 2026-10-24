@@ -3334,14 +3334,23 @@ export type Database = {
       }
       "calendar_appointments": {
                   Row: {
-                    "cancellation_reason": string | null,"cancelled_at": string | null,"confirmation_next_at": string | null,"contact_id": string | null,"conversation_id": string | null,"created_at": string,"created_by_agent_id": string | null,"created_by_kind": string,"created_by_user_id": string | null,"description": string | null,"ends_at": string,"event_type_id": string | null,"google_base_projection": Json | null,"google_calendar_id": string | null,"google_claim_epoch": number,"google_claim_token": string | null,"google_claim_until": string | null,"google_conflict": Json | null,"google_connection_id": string | null,"google_etag": string | null,"google_event_id": string | null,"google_ical_uid": string | null,"google_local_revision": number,"google_next_attempt_at": string,"google_pending_write": Json | null,"google_sequence": number,"google_sync_error": string | null,"google_synced_at": string | null,"google_synced_local_revision": number,"guest_email": string | null,"id": string,"location_details": string | null,"location_kind": string,"meeting_attempts": number,"meeting_delivery": NonNullable<Json>,"meeting_delivery_job_id": string | null,"meeting_last_error": string | null,"meeting_next_attempt_at": string | null,"meeting_ready_at": string | null,"meeting_received_at": string | null,"meeting_request_id": string | null,"meeting_requested_at": string | null,"meeting_state": string,"meeting_url": string | null,"needs_google_push": boolean | null,"notes": string | null,"organization_id": string,"outcome_message_id": string | null,"outcome_recorded_at": string | null,"outcome_source_kind": string | null,"outcome_user_id": string | null,"owner_user_id": string | null,"participant_key": string | null,"participant_name": string | null,"reminder_sent_at": string | null,"reminder_sent_offsets_minutes": (number)[],"rescheduled_from_id": string | null,"revision": number,"revision_started_at": string,"service_block": boolean,"service_booking_mode": string | null,"service_capacity_limit": number | null,"service_capacity_rule": string | null,"service_confirmed_at": string | null,"service_confirmed_by_user_id": string | null,"service_destination_calendar_id": string | null,"service_occurrence_id": string | null,"service_operation_key": string | null,"service_operation_request": Json | null,"service_publication_mode": string | null,"service_requires_confirmation": boolean | null,"service_rule_revision": number | null,"source": string,"starts_at": string,"starts_at_marked_at": string | null,"status": string,"time_zone": string,"title": string,"updated_at": string
+          google_sync_attempts: number
+          google_sync_failure_kind: string | null
+
+                    "cancellation_reason": string | null,"cancelled_at": string | null,"confirmation_next_at": string | null,"contact_id": string | null,"conversation_id": string | null,"created_at": string,"created_by_agent_id": string | null,"created_by_kind": string,"created_by_user_id": string | null,"description": string | null,"ends_at": string,"event_type_id": string | null,"google_base_projection": Json | null,"google_calendar_id": string | null,"google_claim_epoch": number,"google_claim_token": string | null,"google_claim_until": string | null,"google_conflict": Json | null,"google_connection_id": string | null,"google_etag": string | null,"google_event_id": string | null,"google_ical_uid": string | null,"google_local_revision": number,"google_next_attempt_at": string | null,"google_pending_write": Json | null,"google_sequence": number,"google_sync_error": string | null,"google_synced_at": string | null,"google_synced_local_revision": number,"guest_email": string | null,"id": string,"location_details": string | null,"location_kind": string,"meeting_attempts": number,"meeting_delivery": NonNullable<Json>,"meeting_delivery_job_id": string | null,"meeting_last_error": string | null,"meeting_next_attempt_at": string | null,"meeting_ready_at": string | null,"meeting_received_at": string | null,"meeting_request_id": string | null,"meeting_requested_at": string | null,"meeting_state": string,"meeting_url": string | null,"needs_google_push": boolean | null,"notes": string | null,"organization_id": string,"outcome_message_id": string | null,"outcome_recorded_at": string | null,"outcome_source_kind": string | null,"outcome_user_id": string | null,"owner_user_id": string | null,"participant_key": string | null,"participant_name": string | null,"reminder_sent_at": string | null,"reminder_sent_offsets_minutes": (number)[],"rescheduled_from_id": string | null,"revision": number,"revision_started_at": string,"service_block": boolean,"service_booking_mode": string | null,"service_capacity_limit": number | null,"service_capacity_rule": string | null,"service_confirmed_at": string | null,"service_confirmed_by_user_id": string | null,"service_destination_calendar_id": string | null,"service_occurrence_id": string | null,"service_operation_key": string | null,"service_operation_request": Json | null,"service_publication_mode": string | null,"service_requires_confirmation": boolean | null,"service_rule_revision": number | null,"source": string,"starts_at": string,"starts_at_marked_at": string | null,"status": string,"time_zone": string,"title": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"confirmation_next_at"?: string | null,"contact_id"?: string | null,"conversation_id"?: string | null,"created_at"?: string,"created_by_agent_id"?: string | null,"created_by_kind"?: string,"created_by_user_id"?: string | null,"description"?: string | null,"ends_at": string,"event_type_id"?: string | null,"google_base_projection"?: Json | null,"google_calendar_id"?: string | null,"google_claim_epoch"?: number,"google_claim_token"?: string | null,"google_claim_until"?: string | null,"google_conflict"?: Json | null,"google_connection_id"?: string | null,"google_etag"?: string | null,"google_event_id"?: string | null,"google_ical_uid"?: string | null,"google_local_revision"?: number,"google_next_attempt_at"?: string,"google_pending_write"?: Json | null,"google_sequence"?: number,"google_sync_error"?: string | null,"google_synced_at"?: string | null,"google_synced_local_revision"?: number,"guest_email"?: string | null,"id"?: string,"location_details"?: string | null,"location_kind"?: string,"meeting_attempts"?: number,"meeting_delivery"?: NonNullable<Json>,"meeting_delivery_job_id"?: string | null,"meeting_last_error"?: string | null,"meeting_next_attempt_at"?: string | null,"meeting_ready_at"?: string | null,"meeting_received_at"?: string | null,"meeting_request_id"?: string | null,"meeting_requested_at"?: string | null,"meeting_state"?: string,"meeting_url"?: string | null,"needs_google_push"?: never,"notes"?: string | null,"organization_id": string,"outcome_message_id"?: string | null,"outcome_recorded_at"?: string | null,"outcome_source_kind"?: string | null,"outcome_user_id"?: string | null,"owner_user_id"?: string | null,"participant_key"?: string | null,"participant_name"?: string | null,"reminder_sent_at"?: string | null,"reminder_sent_offsets_minutes"?: (number)[],"rescheduled_from_id"?: string | null,"revision"?: number,"revision_started_at"?: string,"service_block"?: boolean,"service_booking_mode"?: string | null,"service_capacity_limit"?: number | null,"service_capacity_rule"?: string | null,"service_confirmed_at"?: string | null,"service_confirmed_by_user_id"?: string | null,"service_destination_calendar_id"?: string | null,"service_occurrence_id"?: string | null,"service_operation_key"?: string | null,"service_operation_request"?: Json | null,"service_publication_mode"?: string | null,"service_requires_confirmation"?: boolean | null,"service_rule_revision"?: number | null,"source"?: string,"starts_at": string,"starts_at_marked_at"?: string | null,"status"?: string,"time_zone"?: string,"title": string,"updated_at"?: string
+          google_sync_attempts?: number
+          google_sync_failure_kind?: string | null
+
+                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"confirmation_next_at"?: string | null,"contact_id"?: string | null,"conversation_id"?: string | null,"created_at"?: string,"created_by_agent_id"?: string | null,"created_by_kind"?: string,"created_by_user_id"?: string | null,"description"?: string | null,"ends_at": string,"event_type_id"?: string | null,"google_base_projection"?: Json | null,"google_calendar_id"?: string | null,"google_claim_epoch"?: number,"google_claim_token"?: string | null,"google_claim_until"?: string | null,"google_conflict"?: Json | null,"google_connection_id"?: string | null,"google_etag"?: string | null,"google_event_id"?: string | null,"google_ical_uid"?: string | null,"google_local_revision"?: number,"google_next_attempt_at"?: string | null,"google_pending_write"?: Json | null,"google_sequence"?: number,"google_sync_error"?: string | null,"google_synced_at"?: string | null,"google_synced_local_revision"?: number,"guest_email"?: string | null,"id"?: string,"location_details"?: string | null,"location_kind"?: string,"meeting_attempts"?: number,"meeting_delivery"?: NonNullable<Json>,"meeting_delivery_job_id"?: string | null,"meeting_last_error"?: string | null,"meeting_next_attempt_at"?: string | null,"meeting_ready_at"?: string | null,"meeting_received_at"?: string | null,"meeting_request_id"?: string | null,"meeting_requested_at"?: string | null,"meeting_state"?: string,"meeting_url"?: string | null,"needs_google_push"?: never,"notes"?: string | null,"organization_id": string,"outcome_message_id"?: string | null,"outcome_recorded_at"?: string | null,"outcome_source_kind"?: string | null,"outcome_user_id"?: string | null,"owner_user_id"?: string | null,"participant_key"?: string | null,"participant_name"?: string | null,"reminder_sent_at"?: string | null,"reminder_sent_offsets_minutes"?: (number)[],"rescheduled_from_id"?: string | null,"revision"?: number,"revision_started_at"?: string,"service_block"?: boolean,"service_booking_mode"?: string | null,"service_capacity_limit"?: number | null,"service_capacity_rule"?: string | null,"service_confirmed_at"?: string | null,"service_confirmed_by_user_id"?: string | null,"service_destination_calendar_id"?: string | null,"service_occurrence_id"?: string | null,"service_operation_key"?: string | null,"service_operation_request"?: Json | null,"service_publication_mode"?: string | null,"service_requires_confirmation"?: boolean | null,"service_rule_revision"?: number | null,"source"?: string,"starts_at": string,"starts_at_marked_at"?: string | null,"status"?: string,"time_zone"?: string,"title": string,"updated_at"?: string
                   }
                   Update: {
-                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"confirmation_next_at"?: string | null,"contact_id"?: string | null,"conversation_id"?: string | null,"created_at"?: string,"created_by_agent_id"?: string | null,"created_by_kind"?: string,"created_by_user_id"?: string | null,"description"?: string | null,"ends_at"?: string,"event_type_id"?: string | null,"google_base_projection"?: Json | null,"google_calendar_id"?: string | null,"google_claim_epoch"?: number,"google_claim_token"?: string | null,"google_claim_until"?: string | null,"google_conflict"?: Json | null,"google_connection_id"?: string | null,"google_etag"?: string | null,"google_event_id"?: string | null,"google_ical_uid"?: string | null,"google_local_revision"?: number,"google_next_attempt_at"?: string,"google_pending_write"?: Json | null,"google_sequence"?: number,"google_sync_error"?: string | null,"google_synced_at"?: string | null,"google_synced_local_revision"?: number,"guest_email"?: string | null,"id"?: string,"location_details"?: string | null,"location_kind"?: string,"meeting_attempts"?: number,"meeting_delivery"?: NonNullable<Json>,"meeting_delivery_job_id"?: string | null,"meeting_last_error"?: string | null,"meeting_next_attempt_at"?: string | null,"meeting_ready_at"?: string | null,"meeting_received_at"?: string | null,"meeting_request_id"?: string | null,"meeting_requested_at"?: string | null,"meeting_state"?: string,"meeting_url"?: string | null,"needs_google_push"?: never,"notes"?: string | null,"organization_id"?: string,"outcome_message_id"?: string | null,"outcome_recorded_at"?: string | null,"outcome_source_kind"?: string | null,"outcome_user_id"?: string | null,"owner_user_id"?: string | null,"participant_key"?: string | null,"participant_name"?: string | null,"reminder_sent_at"?: string | null,"reminder_sent_offsets_minutes"?: (number)[],"rescheduled_from_id"?: string | null,"revision"?: number,"revision_started_at"?: string,"service_block"?: boolean,"service_booking_mode"?: string | null,"service_capacity_limit"?: number | null,"service_capacity_rule"?: string | null,"service_confirmed_at"?: string | null,"service_confirmed_by_user_id"?: string | null,"service_destination_calendar_id"?: string | null,"service_occurrence_id"?: string | null,"service_operation_key"?: string | null,"service_operation_request"?: Json | null,"service_publication_mode"?: string | null,"service_requires_confirmation"?: boolean | null,"service_rule_revision"?: number | null,"source"?: string,"starts_at"?: string,"starts_at_marked_at"?: string | null,"status"?: string,"time_zone"?: string,"title"?: string,"updated_at"?: string
+          google_sync_attempts?: number
+          google_sync_failure_kind?: string | null
+
+                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"confirmation_next_at"?: string | null,"contact_id"?: string | null,"conversation_id"?: string | null,"created_at"?: string,"created_by_agent_id"?: string | null,"created_by_kind"?: string,"created_by_user_id"?: string | null,"description"?: string | null,"ends_at"?: string,"event_type_id"?: string | null,"google_base_projection"?: Json | null,"google_calendar_id"?: string | null,"google_claim_epoch"?: number,"google_claim_token"?: string | null,"google_claim_until"?: string | null,"google_conflict"?: Json | null,"google_connection_id"?: string | null,"google_etag"?: string | null,"google_event_id"?: string | null,"google_ical_uid"?: string | null,"google_local_revision"?: number,"google_next_attempt_at"?: string | null,"google_pending_write"?: Json | null,"google_sequence"?: number,"google_sync_error"?: string | null,"google_synced_at"?: string | null,"google_synced_local_revision"?: number,"guest_email"?: string | null,"id"?: string,"location_details"?: string | null,"location_kind"?: string,"meeting_attempts"?: number,"meeting_delivery"?: NonNullable<Json>,"meeting_delivery_job_id"?: string | null,"meeting_last_error"?: string | null,"meeting_next_attempt_at"?: string | null,"meeting_ready_at"?: string | null,"meeting_received_at"?: string | null,"meeting_request_id"?: string | null,"meeting_requested_at"?: string | null,"meeting_state"?: string,"meeting_url"?: string | null,"needs_google_push"?: never,"notes"?: string | null,"organization_id"?: string,"outcome_message_id"?: string | null,"outcome_recorded_at"?: string | null,"outcome_source_kind"?: string | null,"outcome_user_id"?: string | null,"owner_user_id"?: string | null,"participant_key"?: string | null,"participant_name"?: string | null,"reminder_sent_at"?: string | null,"reminder_sent_offsets_minutes"?: (number)[],"rescheduled_from_id"?: string | null,"revision"?: number,"revision_started_at"?: string,"service_block"?: boolean,"service_booking_mode"?: string | null,"service_capacity_limit"?: number | null,"service_capacity_rule"?: string | null,"service_confirmed_at"?: string | null,"service_confirmed_by_user_id"?: string | null,"service_destination_calendar_id"?: string | null,"service_occurrence_id"?: string | null,"service_operation_key"?: string | null,"service_operation_request"?: Json | null,"service_publication_mode"?: string | null,"service_requires_confirmation"?: boolean | null,"service_rule_revision"?: number | null,"source"?: string,"starts_at"?: string,"starts_at_marked_at"?: string | null,"status"?: string,"time_zone"?: string,"title"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -10090,7 +10099,7 @@ isOneToOne: false
           }
         ]
       }
-    
+
       "calendar_resources": {
                   Row: {
                     "capacity": number,"created_at": string,"id": string,"is_active": boolean,"name": string,"organization_id": string,"revision": number
@@ -10112,7 +10121,7 @@ isOneToOne: false
     }
                   ]
                 }
-    
+
       "calendar_service_blocks": {
                   Row: {
                     "archived_at": string | null,"created_at": string,"ends_at": string,"event_type_id": string | null,"id": string,"operation_key": string,"organization_id": string,"owner_user_id": string | null,"publication_appointment_id": string | null,"reason": string,"resource_id": string | null,"revision": number,"scope_kind": string,"starts_at": string
@@ -10170,7 +10179,7 @@ isOneToOne: false
     }
                   ]
                 }
-    
+
       "calendar_service_calendar_sources": {
                   Row: {
                     "calendar_id": string,"event_type_id": string,"organization_id": string
@@ -10204,7 +10213,7 @@ isOneToOne: false
     }
                   ]
                 }
-    
+
       "calendar_service_occurrence_resources": {
                   Row: {
                     "occurrence_id": string,"organization_id": string,"resource_id": string,"units": number
@@ -10238,7 +10247,7 @@ isOneToOne: false
     }
                   ]
                 }
-    
+
       "calendar_service_occurrences": {
                   Row: {
                     "allocation_key": string,"booking_mode": string,"created_at": string,"ends_at": string,"event_type_id": string,"id": string,"organization_id": string,"starts_at": string
@@ -10266,7 +10275,7 @@ isOneToOne: false
     }
                   ]
                 }
-    
+
       "calendar_service_professionals": {
                   Row: {
                     "event_type_id": string,"organization_id": string,"user_id": string
@@ -10294,7 +10303,7 @@ isOneToOne: false
     }
                   ]
                 }
-    
+
       "calendar_service_resources": {
                   Row: {
                     "event_type_id": string,"organization_id": string,"resource_id": string,"units": number
@@ -10328,7 +10337,7 @@ isOneToOne: false
     }
                   ]
                 }
-    
+
       "calendar_service_schedule": {
                   Row: {
                     "capacity_limit": number | null,"capacity_rule": string,"created_at": string,"duration_minutes": number | null,"end_minute": number | null,"event_type_id": string,"id": string,"on_date": string | null,"organization_id": string,"start_minute": number,"timing_kind": string,"weekday": number | null
@@ -10356,6 +10365,196 @@ isOneToOne: false
     }
                   ]
                 }
+
+      review_capture_sessions: {
+        Row: {
+          id: string
+          organization_id: string
+          actor_user_id: string
+          job_id: string | null
+          contact_id: string | null
+          created_at: string
+          collect_until: string
+          enabled: boolean
+          reviews: number
+          bytes: number
+          last_purged_at: string | null
+          stopped_reason: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          actor_user_id: string
+          job_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          collect_until: string
+          enabled?: boolean
+          reviews?: number
+          bytes?: number
+          last_purged_at?: string | null
+          stopped_reason?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          actor_user_id?: string
+          job_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          collect_until?: string
+          enabled?: boolean
+          reviews?: number
+          bytes?: number
+          last_purged_at?: string | null
+          stopped_reason?: string | null
+        }
+        Relationships: []
+      }
+
+      review_capture_records: {
+        Row: {
+          id: string
+          organization_id: string
+          session_id: string
+          job_id: string
+          contact_id: string
+          caminho: string
+          captured_at: string
+          expires_at: string
+          payload: Json
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          session_id: string
+          job_id?: string
+          contact_id?: string
+          caminho: string
+          captured_at?: string
+          expires_at: string
+          payload: Json
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          session_id?: string
+          job_id?: string
+          contact_id?: string
+          caminho?: string
+          captured_at?: string
+          expires_at?: string
+          payload?: Json
+        }
+        Relationships: []
+      }
+
+      google_publication_continuations: {
+        Row: {
+          inbound_message_ids: string[]
+          agent_operation: Json | null
+          appointment_ids: string[]
+          assignment_claim_ids: string[]
+          contact_id: string
+          conversation_id: string
+          created_at: string
+          id: string
+          job_id: string | null
+          operation_key: string
+          organization_id: string
+          outcome: string | null
+          request_message_id: string | null
+          revisions: Json
+          service_boundary: Json
+          source_job_id: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          inbound_message_ids?: string[]
+          agent_operation?: Json | null
+          appointment_ids: string[]
+          assignment_claim_ids?: string[]
+          contact_id: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          operation_key: string
+          organization_id: string
+          outcome?: string | null
+          request_message_id?: string | null
+          revisions: Json
+          service_boundary: Json
+          source_job_id: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          inbound_message_ids?: string[]
+          agent_operation?: Json | null
+          appointment_ids?: string[]
+          assignment_claim_ids?: string[]
+          contact_id?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          operation_key?: string
+          organization_id?: string
+          outcome?: string | null
+          request_message_id?: string | null
+          revisions?: Json
+          service_boundary?: Json
+          source_job_id?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_publication_continuations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_publication_continuations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_publication_continuations_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "job_queue"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_publication_continuations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_publication_continuations_request_message_id_fkey"
+            columns: ["request_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_publication_continuations_source_job_id_fkey"
+            columns: ["source_job_id"]
+            isOneToOne: false
+            referencedRelation: "job_queue"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       calendar_google_reconcilable_appointments: {
@@ -10420,7 +10619,7 @@ isOneToOne: false
           },
         ]
       }
-    
+
       "calendar_service_google_candidates": {
                   Row: {
                     "google_conflict": Json | null,"google_event_id": string | null,"google_next_attempt_at": string | null,"id": string | null,"needs_google_push": boolean | null,"organization_id": string | null,"owner_user_id": string | null
@@ -11271,6 +11470,65 @@ isOneToOne: false
           contacts: number
           leads: number
         }[]
+      }
+
+      fn_review_capture_enabled: { Args: { p_org: string; p_job: string }; Returns: boolean }
+
+      fn_review_capture_append: { Args: { p_org: string; p_job: string; p_path: string; p_payload: Json }; Returns: string | null }
+
+      fn_review_capture_purge: { Args: { p_org?: string | null }; Returns: { deleted: number; lag_ms: number }[] }
+
+      fn_review_capture_stop_for_purge_error: { Args: { p_org?: string | null; p_only_late?: boolean }; Returns: number }
+
+      fn_review_capture_manage: { Args: { p_org: string; p_actor: string; p_action: string; p_scope?: string | null; p_kind?: string | null; p_session?: string | null; p_support?: Json | null }; Returns: Json }
+
+      fn_google_continuation_request_message: { Args: { p_org: string; p_contact: string; p_conversation: string; p_job: string }; Returns: string }
+
+      fn_google_continuation_activity: {
+        Args: { p_org: string; p_job: string; p_worker: string; p_acquired_at: string }
+        Returns: boolean
+      }
+
+      fn_google_continuation_resume: {
+        Args: { p_org: string; p_ids: string[]; p_execution: Json }
+        Returns: Json
+      }
+
+      fn_google_continuation_current: {
+        Args: {
+          p_acquired_at: string
+          p_job: string
+          p_org: string
+          p_worker: string
+        }
+        Returns: Json
+      }
+
+      fn_google_continuation_enqueue: {
+        Args: { p_id: string; p_org: string }
+        Returns: boolean
+      }
+
+      fn_google_continuation_finish: {
+        Args: { p_id: string; p_org: string; p_source_job: string }
+        Returns: Json
+      }
+
+      fn_google_continuation_outcome: {
+        Args: { p_id: string; p_org: string }
+        Returns: string
+      }
+
+      fn_google_continuation_recover: { Args: never; Returns: number }
+
+      fn_google_continuation_register: {
+        Args: {
+          p_execution: Json
+          p_ids: string[]
+          p_operation: string
+          p_org: string
+        }
+        Returns: Json
       }
     }
     Enums: {

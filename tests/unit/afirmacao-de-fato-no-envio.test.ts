@@ -371,6 +371,7 @@ describe("controles da issue: sem veto onde não há afirmação", () => {
     expect(factualClaimGate.evaluate(gateContexto(r))).toEqual({
       pass: true,
       skipped: "nao_conferido",
+      detail: { motivo: "sem_frases" },
     });
   });
 
@@ -386,6 +387,21 @@ describe("controles da issue: sem veto onde não há afirmação", () => {
 });
 
 describe("uma única requisição por turno", () => {
+  it('mudança da fotografia invalida o cache sem ampliar a catraca de custo', async () => {
+    const f = fetchCom({ claim_0: 0.1, supported_0: 0.1, contradicts_0: 0.1 });
+    let fingerprint = 'v1';
+    const conferir = criarConferidorDeAfirmacoes(
+      adminFalso(banco({ jev: { ligado: true, aceite: { em: '2026-09-01T00:00:00.000Z', por: ORG } } })),
+      { organizationId:ORG,conversationId:null,contactId:CONTATO,agentId:null,lerEvidencias:()=>EVIDENCIAS,fingerprintContexto:()=>fingerprint },
+      { ...DEPS,fetchImpl:f.fetchImpl },
+    );
+    const primeira = await conferir('Abrimos às 8h.');
+    expect(await conferir('Abrimos às 8h.')).toBe(primeira);
+    fingerprint = 'v2_revogada';
+    const nova = await conferir('Abrimos às 8h.');
+    expect(nova).not.toBe(primeira);expect(nova.motivo).toBe('outra_por_turno');expect(nova.pediu).toBe(false);
+    expect(f.fetchImpl).toHaveBeenCalledTimes(1);
+  });
   it("a segunda candidata do mesmo turno não vai mais para a rede", async () => {
     const f = fetchCom({ claim_0: 0.1, supported_0: 0.1, contradicts_0: 0.1 });
     const conferir = criarConferidorDeAfirmacoes(
@@ -408,6 +424,7 @@ describe("uma única requisição por turno", () => {
     expect(factualClaimGate.evaluate(gateContexto(segunda))).toEqual({
       pass: true,
       skipped: "nao_conferido",
+      detail: { motivo: "outra_por_turno" },
     });
   });
 });

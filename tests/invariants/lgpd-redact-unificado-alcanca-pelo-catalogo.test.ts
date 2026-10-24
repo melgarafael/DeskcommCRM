@@ -146,6 +146,19 @@ type Decisao =
  * existe mais também reprova (dívida morta cobre o futuro por acidente).
  */
 const DECISOES: Record<string, Decisao> = {
+  google_publication_continuations: {
+    decidida: "manter",
+    razao: "0659: apenas IDs, revisões, fronteira e estado técnico, sem texto/credencial. A execução revalida is_anonymized e é revogada; mensagens/payload são redigidos pelas portas canônicas. Nenhum papel de browser lê a tabela. A FK source_job_id ON DELETE CASCADE acompanha a retenção nativa de jobs; não perpetua conteúdo pessoal nem retoma contato anonimizado. Prova em google-publication-rls.test.ts.",
+  },
+  review_capture_records: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "0648: fn_review_capture_anonymized APAGA o conteúdo temporário na virada de is_anonymized, nos dois caminhos; o mesmo gatilho encerra a coleta sem renovar retenção.",
+  },
+  review_capture_sessions: {
+    decidida: "manter",
+    razao: "Metadados de auditoria da captura: IDs, instantes, contadores e motivo em vocabulário fechado, sem prompt/resposta ou texto da pessoa. O gatilho desliga a sessão por anonimização; a FK aponta para o contato já anonimizado. Corpo temporário é apagado de review_capture_records.",
+  },
   // ── redigir na função única ───────────────────────────────────────────────
   contacts: {
     decidida: "redigir",

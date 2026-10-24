@@ -26,7 +26,7 @@ umask 077
 mkdir -p "$DIR"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 OUT="$DIR/deskcomm-$STAMP.dump"
-pg_dump "$URL" --format=custom --schema=public --no-owner --no-privileges --file="$OUT"
+pg_dump "$URL" --format=custom --schema=public --no-owner --no-privileges --exclude-table-data=public.review_capture_records --file="$OUT"
 echo "backup ok: $OUT ($(du -h "$OUT" | cut -f1))"
 
 # retenção: apaga dumps mais velhos que RETENTION_DAYS

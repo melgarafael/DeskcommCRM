@@ -2,6 +2,7 @@ import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { currentExecutionBoundary } from "@/lib/atendimento/fronteira-server";
 import { atualizarFontesDoServico } from "@/lib/agenda/servicos/consulta";
 import { execucaoDoServico, reciboDoServico, rpcDoServico } from "@/lib/agenda/servicos/escrita";
+import { publishBookingNow, nativePublicationBooking } from "@/lib/agenda/google/publication-flow";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "node:crypto";
 import type { Json } from "@/lib/database.types";
@@ -263,10 +264,16 @@ export async function marcarAgendamentoHandler(
   ctx: HandlerCtx,
   input: MarcarInput,
 ): Promise<Record<string, unknown>> {
+  const boundary = currentExecutionBoundary();
+  if (nativePublicationBooking() && boundary && input.contact_id !== boundary.contact_id)
+    throw new ApiError(403, "forbidden", undefined, ctx.requestId, "A reserva pertence a outro atendimento.");
   const chave =
     ctx.idempotencyKey ??
     (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
-  if (chave === null) return executarCriacaoDeAgendamento(supabase, ctx, input);
+  if (chave === null) {
+    const receipt = await executarCriacaoDeAgendamento(supabase, ctx, input);
+    return publishBookingNow(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id, receipt, `booking:${receipt.id}`);
+  }
 
   const desfecho = await comIdempotencia({
     db: supabase,
@@ -304,9 +311,10 @@ export async function marcarAgendamentoHandler(
       .eq("organization_id", ctx.organization_id).in("id", receipts.map((r) => String(r.id)));
     if (error || !rows || rows.length !== receipts.length) throw new ApiError(409, "conflict", undefined, ctx.requestId, "O recibo mudou. Consulte as reservas atuais antes de continuar.");
     const current = rows.map((row) => reciboDoServico({ ...row, deduplicated: true }));
-    return { ...current[0], ...(Array.isArray(desfecho.resposta.appointments) ? { appointments: current } : {}) };
+    return publishBookingNow(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id,
+      { ...current[0], ...(Array.isArray(desfecho.resposta.appointments) ? { appointments: current } : {}) }, chave);
   }
-  return desfecho.resposta;
+  return publishBookingNow(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id, desfecho.resposta, chave);
 }
 
 async function executarCriacaoDeAgendamento(
@@ -342,7 +350,7 @@ async function executarCriacaoDeAgendamento(
     const serviceInput = { ...input, expected_revision: input.expected_service_revision,
         operation_key: ctx.idempotencyKey ?? (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : randomUUID()),
         conversation_id: currentExecutionBoundary()?.conversation_id ?? input.conversation_id ?? null,
-        meeting_delivery: booking ? { state: "waiting_for_link", generation: randomUUID(), service_boundary: booking.boundary,
+        meeting_delivery: booking && (!nativePublicationBooking() || tipo.requires_confirmation) ? { state: "waiting_for_link", generation: randomUUID(), service_boundary: booking.boundary,
           source_operation_id: booking.sourceJobId, booking_claim: booking.claim, authorized_by: { kind: ctx.actor.type, id: ctx.actor.id } } : { state: "none" } };
     const raw = ctx.actor.type === "user"
       ? await rpcDoServico(supabase, ctx, "fn_appointment_change", { p_id: null, p_revision: null, p_patch: { create_service_booking: serviceInput } }, false)
@@ -442,7 +450,7 @@ async function executarCriacaoDeAgendamento(
   if (booking && (booking.boundary.organization_id !== ctx.organization_id || booking.boundary.contact_id !== input.contact_id || ctx.actor.type !== "ai_agent")) {
     throw new ApiError(403,"forbidden",undefined,ctx.requestId,"A conversa deste atendimento mudou.");
   }
-  const delivery = booking ? { state:"waiting_for_link",generation:randomUUID(),service_boundary:booking.boundary,source_operation_id:booking.sourceJobId,
+  const delivery = booking && (!nativePublicationBooking() || tipo.requires_confirmation) ? { state:"waiting_for_link",generation:randomUUID(),service_boundary:booking.boundary,source_operation_id:booking.sourceJobId,
     booking_claim:booking.claim,authorized_by:{kind:ctx.actor.type,id:ctx.actor.id} } : {state:"none"};
   // A consulta pode esperar rede. Revalidar o turno depois dela, antes da escrita.
   await guardServiceEffect();
@@ -460,7 +468,7 @@ async function executarCriacaoDeAgendamento(
       status: tipo.requires_confirmation ? "pending" : "confirmed",
       owner_user_id: donoId,
       contact_id: input.contact_id ?? null,
-      conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
+      conversation_id: currentExecutionBoundary()?.conversation_id ?? booking?.boundary.conversation_id ?? input.conversation_id ?? null,
       meeting_delivery: delivery as unknown as Json,
       location_kind: tipo.location_kind,
       location_details:
@@ -672,6 +680,10 @@ export async function alterarAgendamentoHandler(
   if (!transicao) void audit({action:"agenda.appointment_updated",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
     organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
     metadata:{revision:salvo.revision,confirmation_next_at:salvo.confirmation_next_at}});
+  if (transicao === "rescheduled" || input.status === "confirmed") {
+    return publishBookingNow(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id,
+      salvo as Record<string, unknown>, `change:${input.id}:${salvo.revision}`);
+  }
   return salvo as Record<string, unknown>;
 }
 
@@ -736,7 +748,8 @@ export async function cancelarAgendamentoHandler(
     metadata: { reason: input.reason },
   });
 
-  return salvo as Record<string, unknown>;
+  return publishBookingNow(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id,
+    salvo as Record<string, unknown>, `cancel:${input.id}:${salvo.revision}`);
 }
 
 /** O compromisso, ou 404 — sempre com o filtro de organização. */
@@ -1288,7 +1301,7 @@ async function alteraComRevisao(supabase:SB,ctx:HandlerCtx,id:string,revision:nu
   await guardServiceEffect();
   const execution = execucaoDoServico();
   const {data,error}=await supabase.rpc("fn_appointment_change",{p_org:ctx.organization_id,p_id:id,p_revision:revision,p_patch:{...patch,...(execution ? {_service_execution:execution} : {})}});
-  // Preserve upstream PT409 and the backward-compatible 40001 conflict mapping.
+  // PT409: compromisso obsoleto (migration 0654). 40001: banco anterior à 0654.
   const conflito=error?.code === "PT409" || error?.code === "40001";
   if(error) throw new ApiError(conflito ? 409 : error.code === "42501" ? 403 : error.code === "P0002" ? 404 : 422,
     conflito ? "conflict" : error.code === "42501" ? "forbidden" : error.code === "P0002" ? "not_found" : "validation_failed",undefined,ctx.requestId,

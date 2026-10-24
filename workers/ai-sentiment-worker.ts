@@ -31,6 +31,9 @@ import { avisarNaCentral, fecharAvisoDoJev } from "@/lib/ai/decisao/aviso";
 import { MODELO_DO_JEV } from "@/lib/ai/decisao/cliente";
 import { medirClima, type ClimaMedido } from "@/lib/ai/decisao/clima";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
+import { resolverJanelaDoClima } from "@/lib/ai/decisao/janela-do-historico";
+import { carregarContextoDoClima, entradaDoClima, INSTRUCAO_HISTORICO_DO_CLIMA, metadadosDoContexto, type ContextoDoClima } from "@/lib/ai/decisao/contexto-do-clima";
+import { contextoDoClimaAutorizado } from "@/lib/ai/decisao/ponto";
 import { falhasSeguidas } from "@/lib/ai/decisao/disjuntor";
 import { CHAVES_DO_CLIMA, type MotorDoClima } from "@/lib/ai/decisao/metadados-do-clima";
 import { avisarAEquipe, TAREFAS_DOS_PEDIDOS, type PedidosObservados } from "@/lib/ai/decisao/pedidos";
@@ -114,7 +117,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // ── Load message (programmatic org filter) ────────────────────────────
     const { data: message, error: msgErr } = await admin
       .from("messages")
-      .select("id, body, direction, conversation_id, organization_id, metadata, created_at")
+      .select("id, body, direction, conversation_id, organization_id, metadata, created_at, service_revision")
       .eq("id", messageId)
       .eq("organization_id", event.organization_id)
       .maybeSingle();
@@ -313,6 +316,18 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // dreno não segue com ela ainda no ar. Nunca rejeita. O aviso de "Avisar a
     // equipe" sai no `finally`, depois de se saber o que o clima fez e de reler
     // a conversa (`aConversaAgora`).
+    let contextoDoClima: ContextoDoClima | undefined;
+    if (configDoJev.contexto_clima != null && message.conversation_id && convIdParaGate === message.conversation_id) {
+      const janela = await resolverJanelaDoClima(admin, {
+        organizationId: event.organization_id,
+        channelSessionId: (conversa?.channel_session_id as string | null | undefined) ?? null,
+      });
+      contextoDoClima = await carregarContextoDoClima(admin, {
+        organizationId: event.organization_id, conversationId: message.conversation_id as string, messageId,
+        createdAt: message.created_at as string, serviceRevision: message.service_revision, janela,
+      });
+    }
+    const contextoDoJev = contextoDoClima;
     const pedidos: Promise<PedidosObservados | null> = pedidosRodam
       ? perguntarOsPedidosDoCliente(admin, {
           organizationId: event.organization_id,
@@ -361,7 +376,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       // se a reserva mediu, porque é isso que o aviso afirma. O aviso se fecha
       // sozinho quando o Jev volta a medir.
       const clima: ClimaMedido | null = climaDoJev !== "desligada"
-        ? await medirClima({ organizationId: event.organization_id, mensagem: body })
+        ? await medirClima({ organizationId: event.organization_id, mensagem: body, contexto: contextoDoClima, origemDoContexto: configDoJev.origem })
         : null;
 
       if (clima?.ok) {
@@ -465,7 +480,9 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
         let medido: Awaited<ReturnType<typeof classificarComLlm>> | null = null;
         let erroDaIa: unknown = null;
         try {
-          medido = await classificarComLlm(resolvido.model, body);
+          // Revogação durante a leitura/decisão não permite enviar o histórico à reserva.
+          if (contextoDoClima && !(await contextoDoClimaAutorizado(event.organization_id, configDoJev.origem))) contextoDoClima = undefined;
+          medido = await classificarComLlm(resolvido.model, body, contextoDoClima);
         } catch (err) {
           erroDaIa = err;
           // A FALHA também vira linha em `llm_calls`. A 0128 fez isso para o seam do
@@ -539,6 +556,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
         ...existingMetadata,
         [CHAVES_DO_CLIMA.nota]: decisao.score,
         sentiment_latency_ms: decisao.latenciaMs,
+        sentiment_context: metadadosDoContexto(body, decisao.engine === "jev" ? contextoDoJev : contextoDoClima),
         [CHAVES_DO_CLIMA.motor]: decisao.engine,
         // O limiar COM O QUAL esta nota foi cortada (#2219): é o do agente da
         // conversa, e não o default. A concordância do cartão do Jev lê daqui —
@@ -637,6 +655,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
 async function classificarComLlm(
   model: LanguageModel,
   body: string,
+  contexto?: ContextoDoClima,
 ): Promise<{ score: number; promptTokens: number; completionTokens: number }> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), CLASSIFY_TIMEOUT_MS);
@@ -644,8 +663,8 @@ async function classificarComLlm(
     const generated = await generateObject({
       model,
       schema: sentimentSchema,
-      system: SENTIMENT_SYSTEM_PROMPT,
-      prompt: body,
+      system: contexto ? `${SENTIMENT_SYSTEM_PROMPT}\n${INSTRUCAO_HISTORICO_DO_CLIMA}` : SENTIMENT_SYSTEM_PROMPT,
+      prompt: contexto ? JSON.stringify(entradaDoClima(body, contexto)) : body,
       temperature: 0,
       // 80 era pequeno demais e nunca tinha sido exercitado (o worker morria
       // antes, na autenticação). `generateObject` com Anthropic usa modo

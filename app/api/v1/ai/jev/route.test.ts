@@ -273,13 +273,14 @@ describe("GET /api/v1/ai/jev", () => {
       rotulo: null,
       erro_de_validacao: null,
     });
-    expect(d.config).toEqual({ ligado: false, modo: "observacao", modo_roteador: "comparacao", aceite: null });
+    expect(d.config).toEqual({ ligado: false, modo: "observacao", modo_roteador: "comparacao", aceite: null, contexto_roteador: null, contexto_revisao: null, contexto_clima: null });
     expect(d.tarefas.map((t: { id: string }) => t.id)).toEqual([
       "sentiment_classify",
       "jailbreak_detect",
       "intent_router",
       "followup_classify",
       "afirmacao_de_fato",
+      "promise_semantic",
     ]);
     expect(d.tem_ia_de_sempre).toBe(true);
     expect(d.numeros).toEqual({
@@ -767,6 +768,7 @@ describe("o Jev por tarefa na rota", () => {
       expect.objectContaining({ id: "sinal_de_urgencia", ponto: null, estado: "desligada", novo: false }),
       // A conferência de fato (#2231) cabe no aceite de cada mensagem, mas com o Jev desligado nada roda.
       expect.objectContaining({ id: "afirmacao_de_fato", ponto: "afirmacao_de_fato", estado: "desligada", novo: false }),
+      expect.objectContaining({ id: "revisao_resposta", ponto: "promise_semantic", estado: "desligada", novo: false }),
     ]);
 
     estado.settings = { jev: { ligado: true, modo: "decide", aceite: ACEITE_ANTIGO } };
@@ -791,6 +793,7 @@ describe("o Jev por tarefa na rota", () => {
       expect.objectContaining({ id: "intent_router", rotulo: "Escolher qual agente atende" }),
       expect.objectContaining({ id: "followup_classify", rotulo: "Ler a resposta ao follow-up" }),
       expect.objectContaining({ id: "afirmacao_de_fato", rotulo: "Conferir afirmações de fato na resposta" }),
+      expect.objectContaining({ id: "promise_semantic", rotulo: "Revisar ofertas e compromissos de retorno" }),
     ]);
   });
 
@@ -869,6 +872,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["revisao_resposta", true],
     ]);
     estado.camadas = [
       { organization_id: ORG, layer: "jailbreak", enabled: false },
@@ -884,6 +888,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["revisao_resposta", true],
     ]);
   });
 
@@ -901,6 +906,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["revisao_resposta", false],
     ]);
     // O ativo de OUTRA empresa não conta — o filtro é o da sessão.
     const intencoes = (n: number) => [{ count: n }];
@@ -915,6 +921,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["revisao_resposta", false],
     ]);
     // Ativo, mas sem intenção nenhuma (o estado logo depois de criar um) ou com
     // mais do que cabe numa pergunta: o Jev nunca é perguntado, e "Só observa"
@@ -934,6 +941,7 @@ describe("o Jev por tarefa na rota", () => {
       ["campo_do_negocio", false],
       ["sinal_de_urgencia", false],
       ["afirmacao_de_fato", false],
+      ["revisao_resposta", false],
     ]);
     // E o cartão segue dizendo que a tarefa observa: é o que ela faz quando há roteador.
     const roteador = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "roteador");
@@ -1076,7 +1084,7 @@ describe("o Jev por tarefa na rota", () => {
     expect(optOut.percebidos).toMatchObject({ mensagens: 1, conversas: [{ href: "/app/inbox/c-8" }] });
     // As outras tarefas não têm pedidos percebidos.
     expect(d.por_tarefa.find((t: { id: string }) => t.id === "manipulacao").percebidos).toBeNull();
-    const lidas = estado.consultas.filter((c) => c.tabela === "jev_observacoes" && !c.head);
+    const lidas = estado.consultas.filter((c) => c.tabela === "jev_observacoes" && !c.head && !c.eq.some(([col,v]) => col === "tarefa" && v === "revisao_resposta"));
     expect(lidas.length, "a leitura dos pedidos percebidos (controle positivo)").toBe(3);
     expect(
       lidas.every(
@@ -1116,6 +1124,7 @@ describe("o Jev por tarefa na rota", () => {
       campo_do_negocio: null,
       sinal_de_urgencia: motivo,
       afirmacao_de_fato: null,
+      revisao_resposta: null,
     });
     // A organização é a da sessão, e a pergunta é a do portão do worker.
     expect(vi.mocked(haQuemAtendaAOrganizacao).mock.calls.map(([, org]) => org)).toEqual([ORG]);
@@ -1325,5 +1334,100 @@ describe("modo Jev com reserva sob demanda", () => {
     papel = "admin";
     expect((await mudar({ modo_roteador: "mais_rapido" })).status).toBe(422);
     expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("contexto específico da revisão de resposta", () => {
+  it("v1 não se amplia ao ativar tarefa ou repetir o aceite antigo; upgrade explícito v2 é auditado",async()=>{
+    estado.settings.jev={ligado:true,aceite:ACEITE_ANTIGO,contexto_revisao:{...ACEITE_ANTIGO,versao:1}};
+    expect((await mudar({tarefa:"revisao_resposta",estado:"decidindo"})).status).toBe(200);
+    expect((estado.settings.jev as Linha).contexto_revisao).toMatchObject({versao:1});
+    expect((await mudar({contexto_revisao:true,aceite_contexto_revisao:true})).status).toBe(200);
+    expect((estado.settings.jev as Linha).contexto_revisao).toMatchObject({versao:1});
+    expect((await mudar({contexto_revisao:true,versao_contexto_revisao:2})).status).toBe(422);
+    expect((await mudar({versao_contexto_revisao:2,aceite_contexto_revisao:true})).status).toBe(422);
+    expect((await mudar({contexto_revisao:true,versao_contexto_revisao:2,aceite_contexto_revisao:true})).status).toBe(200);
+    expect((estado.settings.jev as Linha).contexto_revisao).toMatchObject({versao:2,por:USUARIO});
+    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({organizationId:ORG,metadata:expect.objectContaining({contexto_revisao_versao:2,contexto_revisao_versao_anterior:1})}));
+  });
+  it.each(["viewer","agent","manager"] as const)("%s não autoriza categorias ampliadas",async role=>{
+    papel=role;
+    expect((await mudar({contexto_revisao:true,versao_contexto_revisao:2,aceite_contexto_revisao:true})).status).toBe(403);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("revoga v2 sem afetar o roteador, outras tarefas ou dados próprios",async()=>{
+    estado.settings.jev={ligado:true,aceite:ACEITE_ANTIGO,contexto_revisao:{...ACEITE_ANTIGO,versao:2},modo_roteador:"sob_demanda",tarefas:{humano:{estado:"observando"}}};
+    estado.settings.dado_proprio="preservar";
+    expect((await mudar({contexto_revisao:false})).status).toBe(200);
+    expect((estado.settings.jev as Linha).contexto_revisao).toBeNull();
+    expect((estado.settings.jev as Linha).modo_roteador).toBe("sob_demanda");
+    expect((estado.settings.jev as Linha).tarefas).toMatchObject({humano:{estado:"observando"}});
+    expect(estado.settings.dado_proprio).toBe("preservar");
+  });
+  it("não herda aceite do roteador nem aceita autorização desacompanhada", async () => {
+    estado.settings.jev = { ligado:true, aceite:ACEITE_ANTIGO, contexto_roteador:{...ACEITE_ANTIGO,versao:2} };
+    expect((await mudar({tarefa:"revisao_resposta",estado:"decidindo"})).status).toBe(422);
+    expect((await mudar({contexto_revisao:true})).status).toBe(422);
+    expect((await mudar({aceite_contexto_revisao:true})).status).toBe(422);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("autoriza, ativa, revoga e conserva outras tarefas e settings", async () => {
+    estado.settings.jev={ligado:true,aceite:ACEITE_ANTIGO,tarefas:{roteador:{estado:"observando"}}};
+    estado.settings.marca_preservada="teste";
+    const r=await mudar({contexto_revisao:true,aceite_contexto_revisao:true});
+    expect(r.status).toBe(200);expect(r.corpo.data.config.contexto_revisao).toMatchObject({por:USUARIO,versao:1});
+    expect((await mudar({tarefa:"revisao_resposta",estado:"decidindo"})).status).toBe(200);
+    expect((await ler()).corpo.data.por_tarefa.find((t:{id:string})=>t.id==="revisao_resposta").estado).toBe("decidindo");
+    expect((await mudar({contexto_revisao:false})).status).toBe(200);
+    const d=(await ler()).corpo.data;expect(d.por_tarefa.find((t:{id:string})=>t.id==="revisao_resposta").estado).toBe("desligada");
+    expect((estado.settings.jev as Linha).tarefas).toMatchObject({roteador:{estado:"observando"},revisao_resposta:{estado:"decidindo"}});
+    expect(estado.settings.marca_preservada).toBe("teste");
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({organizationId:ORG,metadata:expect.objectContaining({contexto_revisao:false})}));
+  });
+  it("sem reserva não ativa nem em observação; revogar continua possível",async()=>{
+    estado.settings.jev={ligado:true,aceite:ACEITE_ANTIGO,contexto_revisao:{...ACEITE_ANTIGO,versao:1}};
+    temIaDeSempre.mockResolvedValue(false);
+    try {
+      expect((await mudar({tarefa:"revisao_resposta",estado:"decidindo"})).status).toBe(422);
+      expect((await mudar({contexto_revisao:false})).status).toBe(200);
+    } finally {temIaDeSempre.mockResolvedValue(true);}
+  });
+  it("papel/tenant não podem ser trocados no corpo",async()=>{
+    papel="manager";expect((await mudar({contexto_revisao:true,aceite_contexto_revisao:true})).status).toBe(403);
+    papel="admin";expect((await mudar({contexto_revisao:true,aceite_contexto_revisao:true,organization_id:OUTRA_ORG})).status).toBe(422);
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+
+it('trocar a origem revoga os contextos anteriores e exige aceite próprio no novo destino',async()=>{
+ estado.settings.jev={ligado:true,aceite:ACEITE_ANTIGO,contexto_revisao:{...ACEITE_ANTIGO,versao:2},contexto_roteador:{...ACEITE_ANTIGO,versao:2}};
+ estado.credenciais=[credencial({provider:'openrouter',label:'Conversa'})];
+ expect((await mudar({origem:'openrouter',aceite_lgpd:true})).status).toBe(200);
+ expect(estado.settings.jev).toMatchObject({origem:'openrouter',contexto_revisao:null,contexto_roteador:null});
+ expect((await mudar({contexto_revisao:true,versao_contexto_revisao:2})).status).toBe(422);
+ expect((await mudar({contexto_revisao:true,aceite_contexto_revisao:true,versao_contexto_revisao:2,contexto_roteador:true,aceite_contexto_roteador:true})).status).toBe(200);
+ expect(estado.settings.jev).toMatchObject({contexto_revisao:{origem:'openrouter',versao:2,por:USUARIO},contexto_roteador:{origem:'openrouter',versao:2,por:USUARIO}});
+});
+
+
+describe('aceite independente do contexto de sentimento', () => {
+  it('exige aceite explícito, grava admin da sessão, preserva outros aceites e permite revogar', async () => {
+    estado.settings.jev = { ligado: true, aceite: ACEITE_ANTIGO, contexto_revisao: { ...ACEITE_ANTIGO, versao: 2 } };
+    expect((await mudar({ contexto_clima: true })).status).toBe(422);
+    const r = await mudar({ contexto_clima: true, aceite_contexto_clima: true });
+    expect(r.status).toBe(200);
+    expect(r.corpo.data.config.contexto_clima).toMatchObject({ por: USUARIO, versao: 1 });
+    expect((estado.settings.jev as Linha).contexto_revisao).toMatchObject({ versao: 2 });
+    expect((await mudar({ contexto_clima: false })).corpo.data.config.contexto_clima).toBeNull();
+    expect((await mudar({ contexto_clima: true })).status).toBe(422);
+  });
+
+  it('recusa papel sem administração e organização indicada pelo corpo', async () => {
+    papel = 'agent';
+    expect((await mudar({ contexto_clima: true, aceite_contexto_clima: true })).status).toBe(403);
+    papel = 'admin';
+    expect((await mudar({ contexto_clima: true, aceite_contexto_clima: true, organization_id: OUTRA_ORG })).status).toBe(422);
   });
 });

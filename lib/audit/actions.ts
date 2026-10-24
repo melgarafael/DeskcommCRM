@@ -29,6 +29,13 @@
  * `tests/unit/audit-lista-do-painel-e-derivada.test.tsx` reprova quem tentar.
  */
 export const AUDIT_ACTIONS = [
+  "ai.case_communication_retried",
+  "ai.case_decision_rectified",
+  "ai.review_capture_enabled",
+  "ai.review_capture_read",
+  "ai.review_capture_purged",
+  "ai.review_capture_stopped",
+
   "settings.agenda_presentation_updated",
   "ad_tracking_link.saved",
   "auth.login_success",

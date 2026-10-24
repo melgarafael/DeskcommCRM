@@ -153,6 +153,23 @@ describe("leitura paginada sob claim original", () => {
     expect(actions.some((a) => a.action === "error")).toBe(true);
     expect(batches).toHaveLength(0);
   });
+  it.each([false, true])("cancelamento do produto sem tupla avança o cursor, com horários=%s", async (comHorarios) => {
+    const tombstone = { ...(comHorarios ? event : {}), id: idDeEventoDoGoogle(id), status: "cancelled" };
+    transport.mockResolvedValue(new Response(JSON.stringify({ items: [tombstone], nextSyncToken: "new" })));
+    expect(await syncCalendar(db(), org, id, transport)).toBe("complete");
+    expect(item()).toMatchObject({ external_event_id: tombstone.id, status: "cancelled" });
+    expect(reconcileAppointment).not.toHaveBeenCalled();
+    // A página e a lápide agora são gravadas no mesmo lote atômico oficial.
+    expect(actions.map((a) => a.action)).toEqual(["claim", "release"]);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({
+      claim,
+      cursor,
+      prune_ids: [],
+      next_page_token: null,
+      next_sync_token: "new",
+    });
+  });
   it("cancelamento de terceiro preserva lápide sem horários", async () => {
     transport.mockResolvedValue(
       new Response(

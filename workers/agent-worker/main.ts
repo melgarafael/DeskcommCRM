@@ -80,6 +80,7 @@ import {
   createFollowupTurnHandler,
   type FollowupTurnDeps,
 } from "@/lib/agent-engine/agent/followup-turn";
+import { createGooglePublicationTurnHandler } from "@/lib/agent-engine/agent/google-publication-turn";
 import { createCaseReplyTurnHandler } from "@/lib/agent-engine/agent/case-reply-turn";
 import { createOperatorTurnHandler } from "@/lib/agent-engine/agent/operator-turn";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
@@ -669,6 +670,7 @@ export async function main(): Promise<void> {
   handlers.set("inbound_turn", createInboundTurnHandler(turnDeps));
   handlers.set("followup_turn", createFollowupTurnHandler(turnDeps));
   handlers.set("case_reply_turn", createCaseReplyTurnHandler(turnDeps));
+  handlers.set("google_publication_turn", createGooglePublicationTurnHandler(turnDeps));
   // Spec 16 §3.2 — o papel OPERADOR. Registrado sempre; quem decide se ele age é
   // `operator_enabled` na versão publicada (default false), lido a cada job. Um
   // worker que não conhecesse o kind faria os jobs morrerem em 'dead' sem que

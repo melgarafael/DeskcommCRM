@@ -47,6 +47,12 @@ interface EntradaComum {
   organizationId: string;
   estado: string | Record<string, unknown> | ReadonlyArray<unknown>;
   tetoMs?: number;
+  capturarRevisao?: (pacote:unknown)=>Promise<void>;
+  /** Exigência da projeção ampliada; nunca inferida do aceite do roteador. */
+  versaoContextoRevisao?: 2;
+  contextoDoClima?: true;
+  /** Destino nomeado no aceite do contexto já montado por este turno. */
+  origemDoContexto?: OrigemDoJev;
 }
 
 /**
@@ -68,6 +74,8 @@ export type EntradaDoPonto = EntradaComum &
 export interface DependenciasDoPonto {
   /** Resolve a chave do fornecedor PARA AQUELA organização. `null` = não configurado. */
   buscarChave?: (organizationId: string) => Promise<string | null>;
+  conferirContextoRevisao?: typeof contextoAmpliadoAutorizado;
+  conferirContextoClima?: typeof contextoDoClimaAutorizado;
   /**
    * Como `buscarChave`, mas com a ORIGEM junto (`./origem`). Quem TEM a tarefa em
    * mãos usa esta (`./campo-do-negocio`, `./urgencia`) e recebe base, modelo e
@@ -121,6 +129,8 @@ export interface DestinoDaChave {
 export async function destinoDasTarefas(
   organizationId: string,
   tarefas: readonly TarefaDoJev[],
+  versaoContextoRevisao?: 2,
+  contextoDoClima = false,
 ): Promise<DestinoDaChave | null> {
   if (tarefas.length === 0) return null;
   try {
@@ -134,6 +144,8 @@ export async function destinoDasTarefas(
       .maybeSingle();
     if (orgErr) throw orgErr;
     const config = lerConfigDoJev(org?.settings);
+    if (versaoContextoRevisao === 2 && config.contexto_revisao?.versao !== 2) return null;
+    if (contextoDoClima && config.contexto_clima?.versao !== 1) return null;
     if (tarefas.some((t) => estadoEfetivoDaTarefa(config, t) === "desligada")) return null;
     const origem = config.origem;
 
@@ -173,8 +185,9 @@ export async function destinoDasTarefas(
 export async function chaveDasTarefas(
   organizationId: string,
   tarefas: readonly TarefaDoJev[],
+  versaoContextoRevisao?: 2,
 ): Promise<string | null> {
-  return (await destinoDasTarefas(organizationId, tarefas))?.chave ?? null;
+  return (await destinoDasTarefas(organizationId, tarefas, versaoContextoRevisao))?.chave ?? null;
 }
 
 /** A chave para a tarefa daquele ponto — `chaveDasTarefas` com ela só. */
@@ -231,10 +244,11 @@ export async function decidirNoPonto(
       return destinoDasTarefas(
         org,
         TAREFAS_DO_JEV.filter((t) => t.ponto === ponto || Object.hasOwn(perguntas, t.id)),
+        entrada.versaoContextoRevisao, entrada.contextoDoClima,
       );
     }
     const tarefas = tarefasDasPerguntas(perguntas);
-    return tarefas === null ? Promise.resolve(null) : destinoDasTarefas(org, tarefas);
+    return tarefas === null ? Promise.resolve(null) : destinoDasTarefas(org, tarefas, entrada.versaoContextoRevisao, entrada.contextoDoClima);
   };
   // A chave injetada é do caminho de sempre a menos que quem a injetou diga a
   // origem; `buscarDestino` traz as duas coisas e vence.
@@ -263,14 +277,33 @@ export async function decidirNoPonto(
     return { ok: false, motivo: "sem_credencial", exigeAcao: false, defeitoNosso: false, status: null };
   }
 
+  if (entrada.origemDoContexto && entrada.origemDoContexto!==destino.origem) {
+    logger.warn("destino do contexto mudou antes da rede", {event:"context_consent_origin_insufficient"});
+    return {ok:false,motivo:"sem_credencial",exigeAcao:false,defeitoNosso:false,status:null};
+  }
   const base = deps.baseUrl ?? baseDaApiDoJev(destino.origem);
   const allowlist = buildAllowlist([...(deps.hostsPermitidos ?? [base])]);
-  const fetchContido: typeof fetch = (input, init) =>
-    allowlistedFetch(
+  const fetchContido: typeof fetch = async (input, init) => {
+    if (entrada.contextoDoClima &&
+        !(await (deps.conferirContextoClima ?? contextoDoClimaAutorizado)(entrada.organizationId, entrada.origemDoContexto))) {
+      throw new Error("context_consent_climate_insufficient");
+    }
+    if (entrada.versaoContextoRevisao === 2 &&
+      !(await (deps.conferirContextoRevisao ?? contextoAmpliadoAutorizado)(entrada.organizationId))) {
+      logger.warn("contexto ampliado da revisão não autorizado", { event: "context_consent_version_insufficient" });
+      throw new Error("context_consent_version_insufficient");
+    }
+    return allowlistedFetch(
       typeof input === "string" || input instanceof URL ? input : input.url,
       init,
-      { allowlist, fetchImpl: deps.fetchImpl, log: logger },
+      { allowlist, fetchImpl:async(allowedInput,allowedInit)=>{
+        if(entrada.ponto==='promise_semantic'&&entrada.capturarRevisao&&typeof allowedInit?.body==='string'){
+          try{await entrada.capturarRevisao(JSON.parse(allowedInit.body));}catch{/* Coleta não altera a revisão. */}
+        }
+        return (deps.fetchImpl??fetch)(allowedInput,allowedInit);
+      },log:logger },
     );
+  };
 
   return decidir(
     {
@@ -283,4 +316,25 @@ export async function decidirNoPonto(
     },
     { fetchImpl: fetchContido, baseUrl: base },
   );
+}
+
+/** Última checagem antes da rede: cobre revogação durante a busca da chave. */
+async function contextoAmpliadoAutorizado(organizationId: string): Promise<boolean> {
+  try {
+    const { data, error } = await createAdminClient().from("organizations").select("settings").eq("id",organizationId).maybeSingle();
+    if (error) return false;
+    const c=lerConfigDoJev(data?.settings);
+    const task=TAREFAS_DO_JEV.find(t=>t.id==="revisao_resposta");
+    return !!task && c.contexto_revisao?.versao===2 && estadoEfetivoDaTarefa(c,task)!=="desligada";
+  } catch { return false; }
+}
+
+/** Revalida o aceite próprio antes da rede; nunca herda roteador/revisão. */
+export async function contextoDoClimaAutorizado(organizationId: string, origem?: OrigemDoJev): Promise<boolean> {
+  try {
+    const { data, error } = await createAdminClient().from("organizations").select("settings").eq("id", organizationId).maybeSingle();
+    if (error) return false;
+    const c = lerConfigDoJev(data?.settings);
+    return c.contexto_clima?.versao === 1 && (!origem || c.origem === origem);
+  } catch { return false; }
 }

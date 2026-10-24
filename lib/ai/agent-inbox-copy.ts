@@ -114,6 +114,7 @@ export const KIND_LABEL = {
   // Régua de cobrança ou teto de IA do plano: quem resolve é o admin, em Plano e cobrança.
   cobranca: "Plano e cobrança da empresa precisam de atenção",
   email_de_login_trocado: "O e-mail de login de uma pessoa da equipe foi trocado",
+  review_capture_stopped: "O diagnóstico privado da revisão foi interrompido",
   // Diz QUANDO o prazo está, não que "a tarefa vence": os dois avisos da mesma
   // família (#2529) têm de se ler diferentes num relance, e o que muda é se
   // ainda dá tempo de concluir ou se já é o vencimento que aconteceu.

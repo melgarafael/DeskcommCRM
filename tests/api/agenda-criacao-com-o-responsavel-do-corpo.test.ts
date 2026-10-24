@@ -1,6 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 const deps = vi.hoisted(() => ({ audit: vi.fn() }));
+// The publication reader uses the server transport after the authenticated write.
+// It must read the same persisted fixture, never a real QA/prod client.
+const publicationDb = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => publicationDb.client }));
+
 vi.mock("@/lib/audit", () => ({ audit: deps.audit }));
 
 /**
@@ -110,12 +115,14 @@ function sbDeTeste(
         select: () => q,
         eq: () => q,
         is: () => q,
+        in: () => q,
         order: () => q,
         limit: () => q,
         maybeSingle: async () => ({
           data: tabela === "calendar_event_types" ? tipo : null,
           error: null,
         }),
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve({data:tabela === "calendar_appointments" ? [criado] : [],error:null}).then(resolve),
         single: async () => ({ data: criado, error: null }),
         insert: (linha: Record<string, unknown>) => {
           chamadas.push(`inserir:${tabela}`);
@@ -136,6 +143,7 @@ function sbDeTeste(
       return { data: null, error: null };
     },
   };
+  publicationDb.client=api;
   return api as unknown as SupabaseClient;
 }
 

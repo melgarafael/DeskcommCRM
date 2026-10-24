@@ -42,6 +42,11 @@ import type { HandlerCtx } from "@/lib/api/handlers/types";
  * datas fixas. Uma data fixa vira passado sozinha com o calendário, e o caso do
  * futuro deixaria de medir o futuro sem ninguém tocar em nada.
  */
+// The publication reader uses the server transport after the authenticated write.
+// It must read the same persisted fixture, never a real QA/prod client.
+const publicationDb = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => publicationDb.client }));
+
 vi.mock("@/lib/agenda/consulta", async (original) => {
   const real = await original<typeof import("@/lib/agenda/consulta")>();
   return { ...real, horariosLivresDaOrg: vi.fn() };
@@ -74,16 +79,17 @@ function clienteCom(startsAt: string, status: string): SupabaseClient {
     status,
     time_zone: "America/Sao_Paulo",
   };
-  const leitura = () => {
+  const leitura = (table: string) => {
     const cadeia: Record<string, unknown> = {};
     for (const m of ["eq", "order", "limit", "in", "is", "not"]) cadeia[m] = () => cadeia;
+    cadeia.then = (resolve: (value: unknown) => unknown) => Promise.resolve({data:table === "calendar_appointments" ? [{...linha,...atualizado}] : [],error:null}).then(resolve);
     cadeia.maybeSingle = async () => ({ data: linha, error: null });
     cadeia.single = async () => ({ data: linha, error: null });
     return cadeia;
   };
-  return {
-    from: () => ({
-      select: () => leitura(),
+  const client = {
+    from: (table: string) => ({
+      select: () => leitura(table),
       update: (mudanca: Record<string, unknown>) => {
         atualizado = mudanca;
         const cadeia: Record<string, unknown> = {};
@@ -101,6 +107,8 @@ function clienteCom(startsAt: string, status: string): SupabaseClient {
       return {data:{...linha,...atualizado,revision:2},error:null};
     },
   } as unknown as SupabaseClient;
+  publicationDb.client=client;
+  return client;
 }
 
 beforeEach(() => {

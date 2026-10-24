@@ -12,6 +12,9 @@ const KIND_ICON: Record<RetentionKind, typeof ShieldCheck> = {
   protection: ShieldCheck,
   compliance: Scales,
   quality: ArrowsClockwise,
+  review: Scales,
+  window: ArrowsClockwise,
+  neutral: ArrowsClockwise,
   // #3310: a conversa está com a EQUIPE — ícone de gente, não de trava. Nada
   // aqui é conformidade nem correção, e o desenho não pode dizer o contrário.
   handoff: UsersThree,
@@ -21,6 +24,9 @@ const KIND_CLASS: Record<RetentionKind, string> = {
   protection: "border-warning bg-warning-bg text-warning-fg",
   compliance: "border-destructive/40 bg-destructive/10 text-destructive",
   quality: "border-border bg-muted/40 text-muted-foreground",
+  review: "border-warning bg-warning-bg text-warning-fg",
+  window: "border-border bg-muted/40 text-muted-foreground",
+  neutral: "border-border bg-muted/40 text-muted-foreground",
   handoff: "border-border bg-muted/40 text-muted-foreground",
 };
 
@@ -36,7 +42,7 @@ export function RetentionNotice({ conversationId }: { conversationId: string }) 
   const latest = data?.retentions[0];
   if (!latest || !data) return null;
 
-  const copy = retentionCopy(latest.vetoed_code, data.context, t);
+  const copy = retentionCopy(latest.vetoed_code, data.context, t, latest.vetoed_gate);
   const Icon = KIND_ICON[copy.kind];
   const when = formatDistanceToNowStrict(new Date(latest.created_at), {
     addSuffix: true,
@@ -55,6 +61,10 @@ export function RetentionNotice({ conversationId }: { conversationId: string }) 
           <span className="ml-2 font-normal opacity-70">{when}</span>
         </p>
         <p className="mt-0.5 opacity-90">{copy.description}</p>
+        <details className="mt-1 opacity-80">
+          <summary className="cursor-pointer">{t("Detalhes para suporte")}</summary>
+          <p>{latest.vetoed_gate ?? t("Origem não identificada")} / {latest.vetoed_code ?? t("Código não informado")}</p>
+        </details>
       </div>
     </div>
   );

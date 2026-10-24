@@ -33,6 +33,26 @@ let seq = 0;
 const novaOrg = () => `org-clima-${++seq}`;
 
 describe("medirClima", () => {
+  it('envia contexto autorizado e não transforma histórico em instrução', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(respostaComScore(2));
+    const contexto = { historico: [{ autor: 'atendimento' as const, texto: 'Ficou cancelado. Algo mais?', em: '2026-10-20T14:29:00Z' }], cobertura: 'present' as const, omitidas: 0 };
+    await medirClima({ organizationId: novaOrg(), mensagem: 'Pode dx', contexto }, {
+      buscarChave: async () => 'tsk_x', conferirContextoClima: async () => true, fetchImpl,
+    });
+    const payload = JSON.parse(String(fetchImpl.mock.calls[0]![1].body));
+    expect(payload.state).toMatchObject({ mensagem_atual: 'Pode dx', historico: contexto.historico });
+    expect(payload.questions.clima.instructions).toMatch(/histórico|histórico/i);
+  });
+
+  it('revogação antes da rede impede o envio do histórico, mesmo com chave', async () => {
+    const fetchImpl = vi.fn();
+    const r = await medirClima({ organizationId: novaOrg(), mensagem: 'Pode dx',
+      contexto: { historico: [], cobertura: 'present', omitidas: 0 } }, {
+      buscarChave: async () => 'tsk_x', conferirContextoClima: async () => false, fetchImpl,
+    });
+    expect(r.ok).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
   it.each([
     [0, 0],
     [NIVEIS_DE_CLIMA.length - 1, 1],

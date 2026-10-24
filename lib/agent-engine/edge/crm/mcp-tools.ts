@@ -71,7 +71,7 @@ export async function buildMcpTurnTools(
   },
   agentConfig: PublishedAgentConfig,
   log: Logger,
-  options?: { readOnly: boolean },
+  options?: { readOnly?: boolean; conferirPedidoAgenda?: McpContext["conferirPedidoAgenda"] },
 ): Promise<McpTurnTools | null> {
   const callbackFiltered = filtrarToolsComCallbackDesabilitado(
     agentConfig.toolIds,
@@ -107,6 +107,7 @@ export async function buildMcpTurnTools(
   const claim = originJob ? claimOfJob(originJob) : undefined;
   const ctx: McpContext = {
     sourceJobId: ids.jobId,
+    conferirPedidoAgenda: options?.conferirPedidoAgenda,
     ...(originJob?.id === ids.jobId && boundary && claim
       ? { meetingBooking: { sourceJobId: originJob.id, claim, boundary } }
       : {}),

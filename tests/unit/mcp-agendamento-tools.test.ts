@@ -50,6 +50,12 @@ const { ApiError } = await import("@/lib/api/types");
 // mockada, então nada aqui toca banco. `as never` NÃO servia — `never` não é atribuível
 // a `SupabaseClient`, e esse erro ficou ESCONDIDO atrás do erro de input enquanto o
 // primeiro parâmetro não compilava. Dois defeitos, um mascarando o outro.
+function publicationReadFixture() {
+  const chain = { select: () => chain, eq: () => chain,
+    in: async () => ({ data: [], error: null }) };
+  return chain;
+}
+
 const ctx: McpContext = {
   organizationId: "org-1",
   role: "agent",
@@ -58,7 +64,7 @@ const ctx: McpContext = {
   actor: { type: "ai_agent", id: "ag-1", role: "ai_operator" },
   apiTokenId: "tok-1",
   requestId: "req-1",
-  supabase: {} as unknown as SupabaseClient,
+  supabase: { from: publicationReadFixture } as unknown as SupabaseClient,
 };
 
 function respondeCom(r: ResultadoDaConsulta) {

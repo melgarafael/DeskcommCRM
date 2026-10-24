@@ -174,6 +174,8 @@ export const POLITICAS_DE_AVISO = {
     orientacao: "Confirme com a pessoa que ela reconhece a troca. Se não reconhece, fale com quem administra o servidor.",
     geral: { papel: "admin", href: "/app/team", rotulo: "Abrir a equipe" },
   },
+  review_capture_stopped: {refs:[],orientacao:"Confira o motivo da interrupção e o último expurgo antes de autorizar uma nova coleta.",
+    geral:{papel:"admin",href:"/app/ai/runs",rotulo:"Revisar diagnóstico privado"}},
   // Os dois avisos de prazo de tarefa (#2529) levam à tarefa, e a orientação
   // diz as DUAS saídas possíveis — concluir ou reagendar — porque as duas são
   // conclusões legítimas do aviso: ele não pede que a pessoa se desculpe pelo

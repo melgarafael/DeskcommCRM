@@ -317,6 +317,7 @@ describe("PRÉVIA do modo assistido #2923", () => {
       gate: "factual_claim",
       verdict: "skipped",
       code: "nao_conferido",
+      detail: { motivo: "sem_evidencia" },
     });
   });
 
@@ -348,6 +349,7 @@ describe("PRÉVIA do modo assistido #2923", () => {
       gate: "factual_claim",
       verdict: "skipped",
       code: "nao_conferido",
+      detail: { motivo: "desligada" },
     });
   });
 });

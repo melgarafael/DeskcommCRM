@@ -373,7 +373,7 @@ describe('#2506 · cases/[id]/reply/route.ts (transição + enqueue)', () => {
   });
 
   it('caminho feliz: transiciona, enfileira, commita e solta o cliente SEM erro', async () => {
-    const cliente = clienteFalso(undefined, [['insert into job_queue', [{ id: 'job-1' }]]]);
+    const cliente = clienteFalso(undefined, [['insert into job_queue', [{ id: '66666666-6666-4666-8666-666666666666' }]]]);
     rotaComCliente(cliente);
     vi.mocked(markAwaitingLead).mockResolvedValue(true);
 
@@ -384,6 +384,7 @@ describe('#2506 · cases/[id]/reply/route.ts (transição + enqueue)', () => {
     expect(comandosDaTransacao(cliente)).toEqual([
       'begin',
       expect.stringContaining('insert into job_queue'),
+      expect.stringContaining('update agent_case_events set metadata'),
       'commit',
     ]);
     liberouSemErro(cliente);

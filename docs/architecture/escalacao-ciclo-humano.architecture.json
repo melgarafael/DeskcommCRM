@@ -88,7 +88,7 @@
       "col": 2,
       "type": "api",
       "label": "POST /ai/cases/:id/reply",
-      "sublabel": "a decisão da PESSOA (actor_kind='human')"
+      "sublabel": "decisão autenticada da pessoa; transição + human_replied + job + proveniência no mesmo commit"
     },
     {
       "id": "reactivate",
@@ -633,6 +633,38 @@
       "type": "service",
       "label": "followup-turn: o passo 'Classificar (IA)' do follow-up (lib/ai/decisao/followup.ts)",
       "sublabel": "só com resposta ao envio do fluxo: a mesma pergunta da IA de sempre (followup_classify), em paralelo — as saídas do passo como opções, sem 'nenhuma', só o texto digitado pelo cliente por scrubMessage (mídia não sai); SÓ OBSERVA nesta versão: a saída que move o fluxo é sempre a da IA de sempre, e ninguém espera por ele"
+    },
+    {
+      "id": "fontes_atendimento_db",
+      "lane": "dados",
+      "col": 8,
+      "type": "database",
+      "label": "Cadastros, timeline, notas, agenda, propostas e fila",
+      "sublabel": "fontes canônicas scoped; contato e negócio distintos"
+    },
+    {
+      "id": "fontes_atendimento",
+      "lane": "motor",
+      "col": 8,
+      "type": "service",
+      "label": "contexto-do-atendimento.ts",
+      "sublabel": "montador tipado, procedência, cobertura, limites, fotografia"
+    },
+    {
+      "id": "comunicacao_caso",
+      "lane": "regra",
+      "col": 9,
+      "type": "service",
+      "label": "Comunicação do Caso",
+      "sublabel": "evento → job → trace → ledger → mensagem; retry/retificação auditados"
+    },
+    {
+      "id": "captura_revisao",
+      "lane": "dados",
+      "col": 10,
+      "type": "service",
+      "label": "Diagnóstico privado opt-in",
+      "sublabel": "admin scoped; conteúdo temporário UNLOGGED; quotas/TTL/expurgo"
     }
   ],
   "edges": [
@@ -1471,6 +1503,78 @@
       "from": "prazoConfig",
       "to": "atendimentoManual",
       "label": "manual_reply_silence_minutes (5 min a 24 h; null = 60): quanto a IA fica calada depois de uma resposta pelo celular — lido a cada pausa por lerPrazoDoSilencioManualMinutos (diagnóstico de @gaberaldo-svg, #2005)"
+    },
+    {
+      "id": "ctx135",
+      "from": "fontes_atendimento_db",
+      "to": "fontes_atendimento",
+      "label": "uma consulta agrupada por org/contato/conversa/job"
+    },
+    {
+      "id": "ctx136",
+      "from": "fontes_atendimento",
+      "to": "ritual",
+      "label": "mesmos fatos na abertura do agente, sem inferir autoridade"
+    },
+    {
+      "id": "ctx137",
+      "from": "fontes_atendimento",
+      "to": "jev",
+      "label": "mesma fonte humana encerrada e candidata nos três revisores; conclusão e fidelidade independentes; v2 ou reserva"
+    },
+    {
+      "id": "ctx138",
+      "from": "fontes_atendimento",
+      "to": "guarda",
+      "label": "releitura até o efeito; conclusão infiel vetada mesmo com Caso aberto/Casos desligado; uma revisão fora do lock"
+    },
+    {
+      "id": "ctx139",
+      "from": "modelo",
+      "to": "jev",
+      "label": "pedido canônico, autoria/datas e cobertura comercial no pacote comum"
+    },
+    {
+      "id": "ctx140",
+      "from": "evento",
+      "to": "comunicacao_caso",
+      "label": "decisão autenticada; fila dona das tentativas"
+    },
+    {
+      "id": "ctx141",
+      "from": "comunicacao_caso",
+      "to": "painel",
+      "label": "estado e recuperação no mesmo Caso"
+    },
+    {
+      "id": "ctx142",
+      "from": "comunicacao_caso",
+      "to": "central",
+      "label": "pendência deduplicada; fecha após envio comprovado"
+    },
+    {
+      "id": "ctx143",
+      "from": "modelo",
+      "to": "captura_revisao",
+      "label": "envelope sanitizado realmente invocado, somente opt-in"
+    },
+    {
+      "id": "ctx144",
+      "from": "jev",
+      "to": "captura_revisao",
+      "label": "JSON autorizado após guarda de egress"
+    },
+    {
+      "id": "ctx145",
+      "from": "captura_revisao",
+      "to": "jevExecucoes",
+      "label": "ativar/ler/revogar; leitura auditada; quotas e último expurgo"
+    },
+    {
+      "id": "ctx146",
+      "from": "captura_revisao",
+      "to": "central",
+      "label": "expurgo falho/atrasado interrompe coleta e abre aviso admin"
     }
   ],
   "cards": [

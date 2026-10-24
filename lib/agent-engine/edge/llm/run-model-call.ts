@@ -1,3 +1,5 @@
+import {capturarRevisao, capturaRevisaoHabilitada} from '@/lib/ai/diagnostico-revisao/captura';
+import { randomUUID } from 'node:crypto';
 import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
 /**
  * SEAM ÚNICO de chamada de modelo: TODA chamada de LLM do harness passa por
@@ -16,7 +18,7 @@ import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai';
+import { generateText, stepCountIs, streamText, type ModelMessage, type StepResult, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
@@ -900,6 +902,20 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // `generateText` são duas cópias que um dia divergem — e a divergência seria
   // invisível, porque só uma delas rodaria).
   const chamarCom = async (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) => {
+    // O bucket nativo existente inclui o agente que originou a revisão. Papel/etapa
+    // distinguem os registros; opt-in, escopo, quotas e expurgo são os mesmos.
+    const caminho = purpose === 'human_return_confirmation' ? 'confirmador' :
+      purpose === 'promise_semantic' || purpose === 'agent_turn' ? 'reserva' : null;
+    const callId = randomUUID();
+    let passo = 0;
+    const idsCaptura = { tenantId:input.tenantId, jobId:input.jobId };
+    const coletarContexto = caminho !== null && await capturaRevisaoHabilitada(db, idsCaptura);
+    const capturarEtapa = async (etapa: string, conteudo: Record<string, unknown>) => {
+      if (coletarContexto && caminho) await capturarRevisao(db, idsCaptura, caminho,
+        { versao:3, etapa, papel:purpose === 'agent_turn' ? 'agente' : 'revisor',
+          purpose, call_id:callId, provider:cfgUsada.provider, model, ...conteudo },
+        { textosLongos:'segmentados' });
+    };
     const opcoesBase = {
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
@@ -919,7 +935,21 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
             ? stepCountIs(input.maxSteps)
             : [stepCountIs(input.maxSteps), input.pararQuando],
       ...cacheDaCauda(cfgUsada.provider, input.maxSteps),
+      // ai@7 descarta corpo/mensagens por padrão. Retenção só no opt-in scoped;
+      // cada append revalida revogação/TTL/quotas, sem response body ou headers.
+      include: { requestBody:coletarContexto, requestMessages:coletarContexto, responseBody:false },
+      onStepFinish: async (step: StepResult<ToolSet>) => {
+        // Somente corpo, nunca request/response inteiros (headers/credenciais).
+        // O SDK devolve o request realmente usado em CADA passo, inclusive após ferramenta.
+        await capturarEtapa('passo_modelo', { passo:++passo,
+          request_body:step.request.body ?? null, request_body_available:step.request.body != null,
+          request_messages:step.request.messages ?? null, request_messages_available:step.request.messages != null,
+          texto:step.text, chamadas_ferramentas:step.toolCalls, resultados_ferramentas:step.toolResults,
+          finish_reason:step.finishReason });
+      },
     };
+
+    await capturarEtapa('entrada_sdk', {system:opcoesBase.system,messages:opcoesBase.messages});
 
     if (cfgUsada.provider === PROVEDOR_POR_ASSINATURA) {
       // SIWC exige Responses API em streaming e store:false. A assinatura

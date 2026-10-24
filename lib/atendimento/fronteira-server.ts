@@ -3,6 +3,7 @@ import { assertApprovedReplyPg } from "@/lib/ai/replies/delivery";
 import { assertMeetingDeliveryPg } from "@/lib/agenda/meet-delivery";
 import { claimOfJob } from "@/lib/agent-engine/queue/claim";
 import { withAgendaEffect, guardAgendaEffect } from "@/lib/agenda/efeito";
+import { assertGoogleContinuation } from "@/lib/agenda/google/continuation-policy";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Queryable, JobRow } from "@/lib/agent-engine/queue/queue";
 import type { ToolSet } from "@/lib/agent-engine/edge/llm/run-model-call";
@@ -19,6 +20,7 @@ const execution = new AsyncLocalStorage<{
   boundary: ServiceBoundary | null;
   job?: JobRow;
   agentOperation?: AgentOperationContext;
+  googlePublicationDeferred?: boolean;
 }>();
 export const SERVICE_BOUNDARY_SQL = `select c.organization_id, c.contact_id, c.id as conversation_id,
  c.service_revision::float8 as service_revision, c.current_demanda_id as demanda_id,
@@ -47,6 +49,12 @@ export async function requireCurrentServiceBoundary(
       : null,
   );
 }
+/** Volatile stop signal only; the owner and continuation are already committed in PostgreSQL. */
+export function deferForGooglePublication(): void {
+  const scope = execution.getStore();
+  if (scope) scope.googlePublicationDeferred = true;
+}
+export function googlePublicationDeferred(): boolean { return execution.getStore()?.googlePublicationDeferred === true; }
 export function currentExecutionBoundary(): ServiceBoundary | null {
   return execution.getStore()?.boundary ?? null;
 }
@@ -71,7 +79,7 @@ export async function requireCurrentAutonomousTurn(
     "id" | "organization_id" | "contact_id" | "kind" | "locked_by" | "claim_acquired_at"
   >,
 ): Promise<void> {
-  if (!["inbound_turn", "followup_turn", "case_reply_turn"].includes(job.kind)) return;
+  if (!["inbound_turn", "followup_turn", "case_reply_turn", "google_publication_turn"].includes(job.kind)) return;
   const claim = claimOfJob(job);
   if (!claim) throw new StaleServiceBoundaryError();
   const { rows } = await db.query<{ current: boolean }>(
@@ -88,6 +96,7 @@ export async function guardServiceEffect(): Promise<void> {
   if (scope?.job) await requireCurrentAutonomousTurn(scope.db, scope.job);
   if (scope?.agentOperation) await assertAgentOperationPg(scope.db, scope.agentOperation);
   if (scope) await requireCurrentServiceBoundary(scope.db, scope.boundary);
+  if (scope?.job?.kind === "google_publication_turn") await assertGoogleContinuation(scope.db, scope.job);
   if (scope?.job?.kind === "transactional_delivery") {
     const claim = claimOfJob(scope.job);
     if (!claim) assertCurrentServiceBoundary(null, null);
@@ -131,6 +140,7 @@ export async function withServiceJob<T>(
       "operator_turn",
       "transactional_delivery",
       "approved_reply",
+      "google_publication_turn",
     ].includes(job.kind)
   )
     return action();
@@ -186,6 +196,10 @@ export function guardServiceTools(tools: ToolSet | undefined): ToolSet | undefin
         {
           ...definition,
           execute: async (...args: Parameters<typeof execute>) => {
+            if (currentExecutionJob()?.kind === "google_publication_turn" &&
+                ["crm_book_appointment", "crm_find_and_book_appointment", "crm_reschedule_appointment", "crm_cancel_appointment", "crm_confirm_appointment"].includes(name))
+              return { status: "refused", reason: "publication_continuation_cannot_change_booking" };
+            if (googlePublicationDeferred()) return { status: "deferred", reason: "google_publication_pending" };
             await guardServiceEffect();
             return execute(...args);
           },

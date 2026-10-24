@@ -324,7 +324,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     decisaoRapida: {
       primitiva: "choice",
       oQueOJevFaz:
-        "Lê a última mensagem do cliente, sozinha, e escolhe entre as intenções do seu roteador qual agente deve atender.",
+        "Lê a mensagem atual do cliente e escolhe qual agente deve atender. Com autorização específica, usa também o contexto recente da conversa.",
     },
   },
   {
@@ -459,6 +459,23 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/guardrails/promise/semantic.ts",
     sintomaDeFalha:
       "O agente promete ao cliente coisas que a operação não entrega, e a cobrança chega depois.",
+    registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "noul",
+      oQueOJevFaz: "Confere a resposta, as evidências consultadas e o contexto da conversa: oferta comercial, compromisso de retorno e retorno só da IA.",
+    },
+  },
+
+  {
+    id: "human_return_confirmation",
+    rotulo: "Confirmar compromisso de retorno humano",
+    oQueFaz:
+      "Segunda opinião somente quando a revisão marcou retorno ou ação humana. Distingue convite, avaliação durante o serviço e pedido ao cliente de um compromisso real. Só atua com escolha explícita habilitada neste ponto; sem ela, vale a revisão anterior. Não altera a decisão comercial.",
+    papel: "proteger",
+    exige: {},
+    emissor: "lib/agent-engine/guardrails/promise/semantic.ts",
+    sintomaDeFalha:
+      "A marcação da primeira revisão é preservada; descrições de serviço podem continuar exigindo um caso indevidamente. A falha da segunda opinião aparece nas Execuções.",
     registraEm: "llm_calls",
   },
 

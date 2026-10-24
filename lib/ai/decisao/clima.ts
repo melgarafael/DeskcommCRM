@@ -31,13 +31,14 @@
  * respostas que o `null` apagava: se vale uma linha em Execuções (`tentouRede`),
  * se alguém precisa agir (`exigeAcao`) e por quê (`motivo`).
  *
- * ═══ SÓ A ÚLTIMA MENSAGEM, E LIMPA ═══
+ * ═══ MENSAGEM ATUAL; HISTÓRICO SOMENTE COM ACEITE PRÓPRIO ═══
  *
- * O texto sai para um fornecedor estrangeiro (LGPD, D6): vai só a mensagem que
- * está sendo medida, passada pelo mesmo redator do Sentry — CPF, telefone,
- * e-mail e chave do Jev não saem. O clima não depende deles.
+ * Sem o aceite contexto_clima, permanece a mensagem isolada. Com ele, o worker
+ * acrescenta histórico recente delimitado do mesmo atendimento; ambos passam
+ * pelo redator do Sentry. O histórico desambigua a mensagem atual, não é ordem.
  */
-import { scrubMessage } from "@/lib/sentry/scrub";
+import { entradaDoClima, INSTRUCAO_HISTORICO_DO_CLIMA, type ContextoDoClima } from "./contexto-do-clima";
+import type { OrigemDoJev } from "./origem";
 
 import type { MotivoComRede } from "./cliente";
 import { podeTentar, registrarFalha, registrarSucesso } from "./disjuntor";
@@ -87,6 +88,8 @@ const INSTRUCAO =
 export interface EntradaDoClima {
   organizationId: string;
   mensagem: string;
+  contexto?: ContextoDoClima;
+  origemDoContexto?: OrigemDoJev;
 }
 
 export type ClimaMedido =
@@ -135,9 +138,10 @@ export async function medirClima(
     {
       ponto: "sentiment_classify",
       organizationId: entrada.organizationId,
-      estado: scrubMessage(entrada.mensagem),
+      estado: entradaDoClima(entrada.mensagem, entrada.contexto),
+      ...(entrada.contexto ? { contextoDoClima: true as const, origemDoContexto: entrada.origemDoContexto } : {}),
       perguntas: {
-        clima: { tipo: "score", instrucao: INSTRUCAO, criterios: NIVEIS_DE_CLIMA },
+        clima: { tipo: "score", instrucao: entrada.contexto ? `${INSTRUCAO} ${INSTRUCAO_HISTORICO_DO_CLIMA}` : INSTRUCAO, criterios: NIVEIS_DE_CLIMA },
       },
     },
     deps,

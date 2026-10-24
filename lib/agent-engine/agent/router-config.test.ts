@@ -10,6 +10,17 @@ function poolSeq(responses: Array<{ rows: unknown[] }>): pg.Pool {
 }
 
 describe('loadActiveRouter', () => {
+  it('não escolhe o primeiro se houver vínculo ativo ambíguo', async () => {
+    expect(await loadActiveRouter(poolSeq([{ rows: [{ id: 'r1' }, { id: 'r2' }] }]), 'org1', 'cs1')).toBeNull();
+  });
+  it.each([0, 4, 12, 16])('lê %i do mesmo campo salvo pelo painel, com empresa e canal', async quantidade => {
+    const pool = poolSeq([{ rows: [{ id: 'r1', name: 'X', config: { context_message_count: quantidade }, fallback_agent_id: null }] }, { rows: [] }]);
+    expect((await loadActiveRouter(pool, 'org1', 'canal1'))?.contextMessageCount).toBe(quantidade);
+    expect(pool.query).toHaveBeenNthCalledWith(1, expect.stringMatching(/organization_id = \$1[\s\S]*channel_session_id = \$2/), ['org1', 'canal1']);
+  });
+  it.each([{}, { context_message_count: 17 }, { context_message_count: '4' }])('preserva fallback quatro legado sem valor salvo válido %j', async config => {
+    expect((await loadActiveRouter(poolSeq([{ rows: [{ id: 'r1', name: 'X', config, fallback_agent_id: null }] }, { rows: [] }]), 'org1', 'cs1'))?.contextMessageCount).toBe(4);
+  });
   it('devolve null quando o canal não tem router ativo', async () => {
     const router = await loadActiveRouter(poolSeq([{ rows: [] }]), 'org1', 'cs1');
     expect(router).toBeNull();
