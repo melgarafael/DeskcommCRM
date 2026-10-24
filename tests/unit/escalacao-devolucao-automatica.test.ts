@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PRAZO_MAX_MINUTOS_DEVOLUCAO,
   avaliarDevolucao,
   lerPrazoDeDevolucaoMinutos,
   selecionarVencidas,
@@ -65,6 +66,33 @@ describe("lerPrazoDeDevolucaoMinutos — o knob no jsonb", () => {
     expect(lerPrazoDeDevolucaoMinutos({ routing: { handoff_return_after_minutes: 60 } })).toBe(60);
     expect(lerPrazoDeDevolucaoMinutos({ routing: { handoff_return_after_minutes: 5 } })).toBe(5);
     expect(lerPrazoDeDevolucaoMinutos({ routing: { handoff_return_after_minutes: 1440 } })).toBe(1440);
+  });
+
+  /**
+   * O TETO DE 24 HORAS SAIU DESTE LEITOR (#3313, item 3).
+   *
+   * O cron só conhece o prazo por aqui: descartar 5.000 no leitor apagaria a
+   * organização da varredura SEM log, SEM auditoria e com a rodada respondendo
+   * `organizacoes: 0` — a pior falha possível, porque não parece falha. É o
+   * caso medido na issue: cotação internacional, mais de três dias de espera.
+   *
+   * ─── SABOTAGEM ────────────────────────────────────────────────────────────
+   *   - voltar `> PRAZO_MAX_MINUTOS` (24 h): os dois casos abaixo acusam com
+   *     `null`, e a prova irmã em `cron-handoff-devolucao.test.ts` (a conversa
+   *     parada há 5 dias com prazo de 5.000) acusa junto.
+   */
+  it("aceita prazo longo, até 30 dias — e ainda recusa acima do teto", () => {
+    expect(lerPrazoDeDevolucaoMinutos({ routing: { handoff_return_after_minutes: 5000 } })).toBe(5000);
+    expect(
+      lerPrazoDeDevolucaoMinutos({
+        routing: { handoff_return_after_minutes: PRAZO_MAX_MINUTOS_DEVOLUCAO },
+      }),
+    ).toBe(PRAZO_MAX_MINUTOS_DEVOLUCAO);
+    expect(
+      lerPrazoDeDevolucaoMinutos({
+        routing: { handoff_return_after_minutes: PRAZO_MAX_MINUTOS_DEVOLUCAO + 1 },
+      }),
+    ).toBeNull();
   });
 });
 

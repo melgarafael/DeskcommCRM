@@ -9,7 +9,7 @@
  */
 import { z } from "zod";
 
-import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
+import { PRAZO_MAX_MINUTOS, PRAZO_MAX_MINUTOS_DEVOLUCAO, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 import { fusoValido } from "@/lib/tempo/fusos";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -38,13 +38,19 @@ export const routingConfigSchema = z.object({
    * IA-06 de sempre (o bot não reassume até alguém clicar "Devolver"), que é o
    * padrão para não mudar o comportamento de quem já instalou. Quem devolve é
    * o cron `handoff-devolucao`; a regra pura está em
-   * `lib/escalacao/devolucao-automatica.ts`, e a faixa (5 min – 24 h) também.
+   * `lib/escalacao/devolucao-automatica.ts`, e a faixa (5 min – 30 dias)
+   * também.
+   *
+   * SEM teto de 24 h (#3313): o teto antigo recusava, na borda, o prazo que a
+   * operação pediu (dias de cotação com fornecedor). O teto largo vive em
+   * `PRAZO_MAX_MINUTOS_DEVOLUCAO` e NÃO é o mesmo do silêncio do celular nem
+   * o da devolução ao rodízio.
    */
   handoff_return_after_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
-    .max(PRAZO_MAX_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS_DEVOLUCAO)
     .nullable()
     .default(null),
   /**
@@ -142,13 +148,16 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
   /**
    * Opcional pela MESMA razão de `visibility_mode`: a rota preserva o prazo em
    * vigor quando a chave não vem — um cliente antigo, que só conhece o modo de
-   * roteamento, não pode desligar a devolução automática por omissão.
+   * roteamento, não pode desligar a devolução automática por omissão. O teto é
+   * o LARGO (`PRAZO_MAX_MINUTOS_DEVOLUCAO`, 30 dias), o mesmo do leitor do cron
+   * (#3313): schema e leitor divergindo fariam a tela salvar um prazo que o cron
+   * descartaria em silêncio.
    */
   handoff_return_after_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
-    .max(PRAZO_MAX_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS_DEVOLUCAO)
     .nullable()
     .optional(),
   /** Opcional pela mesma razão: cliente antigo não desliga o ajuste por omissão. */
