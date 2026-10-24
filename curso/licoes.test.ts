@@ -3,6 +3,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+import { describe, expect, it } from "vitest";
+
 import { NAV_CATALOG } from "@/lib/navigation/catalogo";
 
 import { Modulo, chaveDoPasso } from "./licao";

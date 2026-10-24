@@ -12,20 +12,20 @@ Estes achados saíram da produção do curso em imagens. 70 agentes, divididos e
 |---|---:|---:|---:|---:|
 | Radar | 1 | 3 | 0 | 2 |
 | Agenda | 2 | 3 | 6 | 1 |
-| Respostas rápidas | 2 | 2 | 2 | 1 |
+| Respostas rápidas | 1 | 2 | 2 | 1 |
 | Inbox | 0 | 4 | 1 | 0 |
 | Funis | 1 | 2 | 2 | 4 |
-| Contatos | 1 | 9 | 2 | 5 |
+| Contatos | 1 | 8 | 2 | 5 |
 | Tarefas | 1 | 2 | 3 | 1 |
 | Agentes | 3 | 4 | 6 | 3 |
 | Follow-ups | 3 | 1 | 2 | 2 |
 | Casos | 1 | 1 | 4 | 2 |
 | Conexões | 1 | 6 | 0 | 4 |
 | Webhooks | 2 | 4 | 2 | 5 |
-| Desempenho | 0 | 3 | 2 | 5 |
+| Desempenho | 0 | 2 | 2 | 5 |
 | Meta Ads | 1 | 1 | 1 | 0 |
 | Atividades | 0 | 1 | 2 | 0 |
-| **Total** | **19** | **46** | **35** | **35** |
+| **Total** | **18** | **44** | **35** | **35** |
 
 Grupo C: 16 itens (último parágrafo).
 
@@ -81,67 +81,61 @@ Grupo C: 16 itens (último parágrafo).
 - Conserto: o texto passa a dizer que só fluxos com passo de IA precisam de agente e, na galeria, indica por modelo.
 - Conferência: confirmado no código.
 
-**A9. Respostas rápidas: o dono da instalação vê as respostas PESSOAIS de todos os atendentes.**
-- Vê: as respostas pessoais dos colegas aparecem na lista `/app/templates` e na barra da Inbox do dono, com o selo "Pessoal", ao contrário do que o selo promete. O dono pode usá-las na conversa.
-- Causa: a policy `message_templates_select` tem `or fn_is_platform_admin()` (`supabase/baseline.sql:7550`), e o GET (`app/api/v1/message-templates/route.ts:43-49`) filtra só por organização. O `bootstrap-owner` cria todo dono como platform admin.
-- Conserto: filtrar no GET por `owner_user_id is null or owner_user_id = user.id`, ou tirar o atalho de platform admin da policy de SELECT (com migration + apêndice no baseline).
-- Conferência: confirmado no código.
-
-**A10. Contatos: um cliente que já teve qualquer compromisso na Agenda nunca pode ser excluído, e o aviso manda fazer algo impossível.**
+**A9. Contatos: um cliente que já teve qualquer compromisso na Agenda nunca pode ser excluído, e o aviso manda fazer algo impossível.**
 - Vê: "Cancele ou apague o compromisso antes de excluir". Cancelar não resolve, e a Agenda não tem como apagar um compromisso.
 - Causa: `app/api/v1/contacts/_handler.ts:1011-1013` e `:1064-1069` contam toda linha de `calendar_appointments`, sem olhar o status. O DELETE da Agenda é cancelamento (`app/api/v1/agenda/agendamentos/route.ts:321-325`). O texto está em `hooks/contacts/useDeleteContact.ts:25-28`.
 - Conserto: contar só compromissos não cancelados, ou desvincular os cancelados, e corrigir o texto.
 - Conferência: confirmado no código.
 
-**A11. Tarefas: a confirmação de apagar fica armada indefinidamente.**
+**A10. Tarefas: a confirmação de apagar fica armada indefinidamente.**
 - Vê: o atendente clica na lixeira e desiste. O botão "Confirmar" fica invisível (opacidade) e armado, e na próxima passada do mouse um único clique apaga a tarefa. Isso vale também na ficha do negócio.
 - Causa: `app/app/tasks/_components/ListaDeTarefas.tsx:178-199` (o `onBlur` só está na lixeira, que sai da tela; o "Confirmar" não tem `onBlur` nem tempo limite); mesma lista em `components/kanban/TarefasDoNegocio.tsx:113`.
 - Conserto: desarmar no `onBlur`/`onMouseLeave` do "Confirmar" ou após alguns segundos.
 - Conferência: confirmado no código.
 
-**A12. Agenda: "Remarcar" usa o tipo e a pessoa escolhidos na tela, e não os do compromisso.**
+**A11. Agenda: "Remarcar" usa o tipo e a pessoa escolhidos na tela, e não os do compromisso.**
 - Vê: com "Horários livres de" em "Sessão de fisioterapia" (Ana), remarcar uma consulta do Carlos mostra "Ana · 50 min" e os horários da Ana. Ao confirmar, a consulta do Carlos vai para um desses horários, mesmo fora do expediente dele, sem aviso. O arraste na grade tem o mesmo efeito.
 - Causa: `app/app/agenda/_client.tsx:352-356` (horários consultados com `tipo.id` da página), `:862-880` (painel com o tipo da página) e `:1116-1119` (`onRemarcar` só guarda o id). Para usuário, o servidor só confere sobreposição com o tipo e o dono originais (`app/api/v1/agenda/agendamentos/_handler.ts:571-597`, `:819-821`).
 - Conserto: abrir a remarcação com o `event_type_id` e o dono do próprio compromisso.
 - Conferência: confirmado no código.
 
-**A13. Agenda: a ajuda do campo de convidado promete um convite que só existe com o Google conectado.**
+**A12. Agenda: a ajuda do campo de convidado promete um convite que só existe com o Google conectado.**
 - Vê: "O cliente com e-mail na ficha já recebe o convite." Sem Google, ninguém recebe nada, e o cliente pode faltar porque nunca foi avisado.
 - Causa: `app/app/agenda/_client.tsx:829-834`. Os e-mails do cliente e do convidado só são usados em `lib/agenda/google/sync-executor.ts:522-524` e `:692-694`.
 - Conserto: mostrar a frase e o campo só quando a agenda do responsável estiver conectada ao Google.
 - Conferência: confirmado no código.
 
-**A14. Radar: lista propostas mesmo com o recurso Propostas desligado, e o link dá 404.**
+**A13. Radar: lista propostas mesmo com o recurso Propostas desligado, e o link dá 404.**
 - Vê: o quadro "proposta vencida sem retomada" aparece com o link `0007/2026`, e o link abre "404 — Página não encontrada". O caso real é a empresa que usou Propostas e depois desligou.
 - Causa: `lib/leads/radar-de-risco.ts:456-461` consulta `crm_proposals` sem olhar a capacidade. `app/app/radar/_components/RiskRadarList.tsx:153` e `:185` sempre mostram o link, e `app/app/proposals/layout.tsx:20` responde `notFound()`.
 - Conserto: com "propostas" fora de `capacidadesDaOrganizacao`, não consultar nem desenhar os dois quadros.
 - Conferência: confirmado no código.
 
-**A15. Funis: o aviso "Sem resposta há X" mostra o tempo na etapa, mas o que decide "esfriando" é o tempo desde a última atividade.**
+**A14. Funis: o aviso "Sem resposta há X" mostra o tempo na etapa, mas o que decide "esfriando" é o tempo desde a última atividade.**
 - Vê: um negócio sem atividade há 29h, que entrou na etapa há 5h, mostra "Sem resposta há 5h" com a borda laranja. O número diminui a urgência real.
 - Causa: o rótulo usa `hoursInStage` (`lib/kanban/card-state.ts:111` e `:225`; a linha `:834` citada pelo agente não é o ponto), e o risco vem de `classifyRisk` sobre `last_activity_at` (`lib/leads/risk-radar.ts:70`).
 - Conserto: o rótulo de esfriando passa a usar horas desde a última atividade (o radar já devolve `hours_since_activity`).
 - Conferência: confirmado no código.
 
-**A16. Webhooks: "Últimos recebimentos" pinta de verde envios que o CRM recusou.**
+**A15. Webhooks: "Últimos recebimentos" pinta de verde envios que o CRM recusou.**
 - Vê: um envio sem nome, telefone nem e-mail aparece como "Não entrou" em Leads recebidos e com bolinha verde no painel da fonte.
 - Causa: `app/api/v1/webhooks/in/[token]/route.ts:268-282` grava o log com `valid_signature: true, status: 'received'` antes de mapear e criar o lead. `SourceDetail.tsx:681` só pinta de vermelho quando `valid_signature === false`.
 - Conserto: atualizar o status do log com o desfecho (criado/recusado + motivo) e colorir pelo desfecho.
 - Conferência: confirmado no código.
 
-**A17. Meta Ads: salvar a conexão não testa o token.**
+**A16. Meta Ads: salvar a conexão não testa o token.**
 - Vê: um token vencido, curto demais ou sem `ads_read` mostra "Conexão salva." e só falha depois, na tela de Meta Ads.
 - Causa: `app/actions/settings/updateAdInsightsConnection.ts:148-161` só cifra e grava. O próprio código chama isso de "erro nº 1" (`app/app/settings/meta-ads/page.tsx:70-73`).
 - Conserto: chamar `/me/adaccounts` antes de gravar e devolver o erro da Meta traduzido.
 - Conferência: confirmado no código.
 
-**A18. Conexões: a aba Telefone deixa cadastrar números sem avisar que a telefonia é um módulo opcional e desligado por padrão.**
+**A17. Conexões: a aba Telefone deixa cadastrar números sem avisar que a telefonia é um módulo opcional e desligado por padrão.**
 - Vê: o número fica cadastrado e nunca toca, e a tela não explica por quê. A aba "Chamada de voz" tem esse aviso.
 - Causa: `components/connections/TelefoniaClient.tsx:104-120` não tem aviso de módulo (depende de `COMPOSE_PROFILES=telefonia` e de tronco SIP, segundo `.env.example:156-172`, que não foi aberto nesta conferência).
 - Conserto: detectar o módulo desligado e mostrar o mesmo aviso de `CanalVozClient.tsx:145`, bloqueando o cadastro.
 - Conferência: confirmado no código (falta de aviso).
 
-**A19. Casos: a linha do tempo atribui a "Você" toda decisão humana, seja quem for o autor.**
+**A18. Casos: a linha do tempo atribui a "Você" toda decisão humana, seja quem for o autor.**
 - Vê: o Carlos abre um caso que a Helena concluiu e lê "Você concluiu o caso". Não há como saber quem decidiu.
 - Causa: `lib/ai/case-copy.ts:133-137` e `:151-152` (`HUMAN_ACTION_LABEL` sem olhar `actor_user_id`). Só a origem WhatsApp é tratada (`:146-150`).
 - Conserto: o GET do caso devolve o nome do autor; "Você" só quando `actor_user_id` é o usuário logado.
@@ -151,97 +145,93 @@ Grupo C: 16 itens (último parágrafo).
 
 ## A · Gravidade média
 
-**A20. Radar: continua mostrando a demanda depois que o próximo passo é anotado na Inbox.** Vê: voltar ao Radar pelo menu em menos de 30s ainda mostra o cliente em "sem próximo passo". Causa: o `salvar()` de `components/inbox/CRMSidePanel.tsx:204-212` não invalida `["leads-at-risk"]` (`hooks/leads/useAtRiskLeads.ts:33`), e o `staleTime` é 30s (`lib/query/client.ts:9`). Conserto: invalidar `["leads-at-risk"]` no sucesso do PATCH de demanda. Conferência: confirmado no código.
+**A19. Radar: continua mostrando a demanda depois que o próximo passo é anotado na Inbox.** Vê: voltar ao Radar pelo menu em menos de 30s ainda mostra o cliente em "sem próximo passo". Causa: o `salvar()` de `components/inbox/CRMSidePanel.tsx:204-212` não invalida `["leads-at-risk"]` (`hooks/leads/useAtRiskLeads.ts:33`), e o `staleTime` é 30s (`lib/query/client.ts:9`). Conserto: invalidar `["leads-at-risk"]` no sucesso do PATCH de demanda. Conferência: confirmado no código.
 
-**A21. Radar: há dois "próximo passo" diferentes, e anotar um não apaga o aviso do outro.** Vê: a linha do Radar diz "Sem próximo passo agendado"; o atendente anota o próximo passo da demanda e o aviso continua. Causa: `RiskRadarList.tsx:295` (sem agendamento nem retorno) contra `CRMSidePanel.tsx:1079` (`demandas.proximo_passo`). Conserto: renomear o aviso da linha ("Sem retorno agendado") ou contar o `proximo_passo` da demanda. Conferência: confirmado no código.
+**A20. Radar: há dois "próximo passo" diferentes, e anotar um não apaga o aviso do outro.** Vê: a linha do Radar diz "Sem próximo passo agendado"; o atendente anota o próximo passo da demanda e o aviso continua. Causa: `RiskRadarList.tsx:295` (sem agendamento nem retorno) contra `CRMSidePanel.tsx:1079` (`demandas.proximo_passo`). Conserto: renomear o aviso da linha ("Sem retorno agendado") ou contar o `proximo_passo` da demanda. Conferência: confirmado no código.
 
-**A22. Radar: assumir pelo Radar um negócio que está com um agente de IA não muda o que a linha mostra.** Vê: a conversa passa para a pessoa, o botão some e a linha continua "Agente: <nome>". Causa: `owner_kind === "ai"` tem precedência sobre `assignee_kind` em `RiskRadarList.tsx:236-240`. Conserto: quando `assignee_kind === "user"`, mostrar "Agente: X · com atendente". Conferência: confirmado no código.
+**A21. Radar: assumir pelo Radar um negócio que está com um agente de IA não muda o que a linha mostra.** Vê: a conversa passa para a pessoa, o botão some e a linha continua "Agente: <nome>". Causa: `owner_kind === "ai"` tem precedência sobre `assignee_kind` em `RiskRadarList.tsx:236-240`. Conserto: quando `assignee_kind === "user"`, mostrar "Agente: X · com atendente". Conferência: confirmado no código.
 
-**A23. Funis: um cartão marcado como ganho ou perdido mantém a borda laranja e o "Sem resposta" por até 60s.** Causa: a marcação de esfriando vem de `useAtRiskLeads` (`components/kanban/KanbanBoard.tsx:121-139`, polling de 60s), e ganhar/perder só invalida o quadro (`hooks/kanban/useUpdateLead.ts`, `onSettled`). Conserto: invalidar `["leads-at-risk"]` em ganhar, perder e mover. Conferência: confirmado no código.
+**A22. Funis: um cartão marcado como ganho ou perdido mantém a borda laranja e o "Sem resposta" por até 60s.** Causa: a marcação de esfriando vem de `useAtRiskLeads` (`components/kanban/KanbanBoard.tsx:121-139`, polling de 60s), e ganhar/perder só invalida o quadro (`hooks/kanban/useUpdateLead.ts`, `onSettled`). Conserto: invalidar `["leads-at-risk"]` em ganhar, perder e mover. Conferência: confirmado no código.
 
-**A24. Funis: a janela "Marcar como perdido" manda cadastrar motivos em "Configurações › Funis", e esse caminho não existe.** Os motivos ficam em "Etapas do funil", no grupo CRM. Causa: `components/kanban/LoseLeadDialog.tsx:212`; rótulo real em `lib/navigation/catalogo.ts:519-520`. Conserto: apontar "CRM › Etapas do funil", com link. Conferência: confirmado no código.
+**A23. Funis: a janela "Marcar como perdido" manda cadastrar motivos em "Configurações › Funis", e esse caminho não existe.** Os motivos ficam em "Etapas do funil", no grupo CRM. Causa: `components/kanban/LoseLeadDialog.tsx:212`; rótulo real em `lib/navigation/catalogo.ts:519-520`. Conserto: apontar "CRM › Etapas do funil", com link. Conferência: confirmado no código.
 
-**A25. Agenda: o quadro "Sincronização Google" acusa pendência numa instalação sem Google.** Vê: todo compromisso mostra "Há alterações aguardando sincronização." e, para o dono, "Tentar sincronizar novamente". Causa: `app/api/v1/agenda/agendamentos/[id]/route.ts:87` calcula `configured` pela forma de publicação do tipo, sem olhar se existe Google configurado ou conectado; `components/agenda/SincronizacaoDoCompromisso.tsx:66-75` e `:158-160`; desenho incondicional em `DetalheDoCompromisso.tsx:140-147`. Conserto: `configured = false` quando não há credenciais nem conexão do responsável, o que leva ao estado "Somente no CRM". Conferência: confirmado no código.
+**A24. Agenda: o quadro "Sincronização Google" acusa pendência numa instalação sem Google.** Vê: todo compromisso mostra "Há alterações aguardando sincronização." e, para o dono, "Tentar sincronizar novamente". Causa: `app/api/v1/agenda/agendamentos/[id]/route.ts:87` calcula `configured` pela forma de publicação do tipo, sem olhar se existe Google configurado ou conectado; `components/agenda/SincronizacaoDoCompromisso.tsx:66-75` e `:158-160`; desenho incondicional em `DetalheDoCompromisso.tsx:140-147`. Conserto: `configured = false` quando não há credenciais nem conexão do responsável, o que leva ao estado "Somente no CRM". Conferência: confirmado no código.
 
-**A26. Agenda: no painel de detalhes, o botão de cancelar acende com 1 caractere, mas a API exige 3.** Vê: digitar "ok" e clicar dá erro. Causa: `components/agenda/DetalheDoCompromisso.tsx:366` (`!reason.trim()`) contra `app/api/v1/agenda/agendamentos/route.ts:136` (`min(3)`); a lista já usa 3 (`_client.tsx:1051`). Conserto: `reason.trim().length < 3`. Conferência: confirmado no código.
+**A25. Agenda: no painel de detalhes, o botão de cancelar acende com 1 caractere, mas a API exige 3.** Vê: digitar "ok" e clicar dá erro. Causa: `components/agenda/DetalheDoCompromisso.tsx:366` (`!reason.trim()`) contra `app/api/v1/agenda/agendamentos/route.ts:136` (`min(3)`); a lista já usa 3 (`_client.tsx:1051`). Conserto: `reason.trim().length < 3`. Conferência: confirmado no código.
 
-**A27. Agenda: na visão de mês, as setas andam 30 dias, não um mês.** Vê: partindo de 31/01, um clique leva a 02/03 e fevereiro some. Causa: `app/app/agenda/_client.tsx:452` (`passo = 30`, usado em `:570` e `:579`). Conserto: `addMonths` na visão de mês. Conferência: confirmado no código.
+**A26. Agenda: na visão de mês, as setas andam 30 dias, não um mês.** Vê: partindo de 31/01, um clique leva a 02/03 e fevereiro some. Causa: `app/app/agenda/_client.tsx:452` (`passo = 30`, usado em `:570` e `:579`). Conserto: `addMonths` na visão de mês. Conferência: confirmado no código.
 
-**A28. Respostas rápidas: o menu "/" vazio diz "Nenhum template. Crie em Configurações."** A tela se chama "Respostas rápidas" e fica em Atendimento. Causa: `components/inbox/composer/TemplateMenu.tsx:35`. Conserto: "Nenhuma resposta rápida. Crie em Atendimento › Respostas rápidas", com link. Conferência: confirmado no código.
+**A27. Respostas rápidas: o menu "/" vazio diz "Nenhum template. Crie em Configurações."** A tela se chama "Respostas rápidas" e fica em Atendimento. Causa: `components/inbox/composer/TemplateMenu.tsx:35`. Conserto: "Nenhuma resposta rápida. Crie em Atendimento › Respostas rápidas", com link. Conferência: confirmado no código.
 
-**A29. Respostas rápidas: uma resposta excluída continua por até 60s na Inbox dos colegas, e a imagem dela falha ao ser usada.** Causa: `hooks/inbox/useMessageTemplates.ts:38` (`staleTime: 60_000`, sem tempo real). Conserto: reconsultar ao abrir a barra ou o "/", ou tratar o 404 do anexo com um aviso claro. Conferência: confirmado no código.
+**A28. Respostas rápidas: uma resposta excluída continua por até 60s na Inbox dos colegas, e a imagem dela falha ao ser usada.** Causa: `hooks/inbox/useMessageTemplates.ts:38` (`staleTime: 60_000`, sem tempo real). Conserto: reconsultar ao abrir a barra ou o "/", ou tratar o 404 do anexo com um aviso claro. Conferência: confirmado no código.
 
-**A30. Contatos: ordenar por "Nome" não ordena pelo nome que aparece na lista.** Vê: Mariana, Roberto, Juliana… em vez de A–Z; quem não tem `display_name` vai para o fim. Causa: `components/contacts/ContactsTable.tsx:242` (`column="display_name"`) com `app/api/v1/contacts/_handler.ts:174`, enquanto a coluna exibe `rotuloParaAEquipe` (que prioriza `name`). Conserto: ordenar pela mesma cadeia do rótulo (coluna gerada ou `coalesce`). Conferência: confirmado no código.
+**A29. Contatos: ordenar por "Nome" não ordena pelo nome que aparece na lista.** Vê: Mariana, Roberto, Juliana… em vez de A–Z; quem não tem `display_name` vai para o fim. Causa: `components/contacts/ContactsTable.tsx:242` (`column="display_name"`) com `app/api/v1/contacts/_handler.ts:174`, enquanto a coluna exibe `rotuloParaAEquipe` (que prioriza `name`). Conserto: ordenar pela mesma cadeia do rótulo (coluna gerada ou `coalesce`). Conferência: confirmado no código.
 
-**A31. Contatos: as opções do filtro de etiquetas vêm só dos contatos já filtrados.** Vê: depois de marcar uma etiqueta, as outras somem do menu; "Qualquer uma (OU)" não consegue juntar etiquetas, e quando o filtro zera a lista o botão "Tag" fica desabilitado e só sai por "Limpar filtros". Causa: `app/app/contacts/_client.tsx:133-145` (opções a partir de `allContacts`) e `:283` (`disabled={tagOptions.length === 0}`). Conserto: buscar as etiquetas da organização inteira e manter sempre as já marcadas. Conferência: confirmado no código.
+**A30. Contatos: as opções do filtro de etiquetas vêm só dos contatos já filtrados.** Vê: depois de marcar uma etiqueta, as outras somem do menu; "Qualquer uma (OU)" não consegue juntar etiquetas, e quando o filtro zera a lista o botão "Tag" fica desabilitado e só sai por "Limpar filtros". Causa: `app/app/contacts/_client.tsx:133-145` (opções a partir de `allContacts`) e `:283` (`disabled={tagOptions.length === 0}`). Conserto: buscar as etiquetas da organização inteira e manter sempre as já marcadas. Conferência: confirmado no código.
 
-**A32. Contatos: uma busca ou filtro sem resultado mostra "Nenhum contato ainda — Contatos chegam automaticamente via WhatsApp ou Nuvemshop".** Isso também acontece ao digitar só 1 letra, e dá a entender que a base está vazia. Causa: `app/app/contacts/_client.tsx:447-450` usa `EmptyContacts` (`components/empty/variants.tsx:61-62`) sem distinguir filtro de base vazia. Conserto: estado "Nenhum contato para este filtro" com "Limpar filtros". Conferência: confirmado no código.
+**A31. Contatos: uma busca ou filtro sem resultado mostra "Nenhum contato ainda — Contatos chegam automaticamente via WhatsApp ou Nuvemshop".** Isso também acontece ao digitar só 1 letra, e dá a entender que a base está vazia. Causa: `app/app/contacts/_client.tsx:447-450` usa `EmptyContacts` (`components/empty/variants.tsx:61-62`) sem distinguir filtro de base vazia. Conserto: estado "Nenhum contato para este filtro" com "Limpar filtros". Conferência: confirmado no código.
 
-**A33. Contatos: o botão "Iniciar conversa" aparece sem número de WhatsApp conectado e devolve "Sessão de canal não encontrada."** Causa: `components/contacts/ContactsTable.tsx:369-380` (só olha `phone_number`) e `app/api/v1/conversations/open-with-contact/route.ts:67-68`. Conserto: esconder ou desabilitar o botão sem sessão ativa, com um aviso que leve a Conexões. Conferência: confirmado no código.
+**A32. Contatos: o botão "Iniciar conversa" aparece sem número de WhatsApp conectado e devolve "Sessão de canal não encontrada."** Causa: `components/contacts/ContactsTable.tsx:369-380` (só olha `phone_number`) e `app/api/v1/conversations/open-with-contact/route.ts:67-68`. Conserto: esconder ou desabilitar o botão sem sessão ativa, com um aviso que leve a Conexões. Conferência: confirmado no código.
 
-**A34. Contatos: "Duplicados" e "Juntar" aparecem para qualquer papel, mas a rota exige gerente.** Vê: o atendente confirma a junção e recebe 403. Causa: `app/app/contacts/_client.tsx:214-217` (sem portão) contra `app/api/v1/contacts/merge/route.ts:85`. Conserto: esconder para papel abaixo de manager. Conferência: confirmado no código (rota).
+**A33. Contatos: "Duplicados" e "Juntar" aparecem para qualquer papel, mas a rota exige gerente.** Vê: o atendente confirma a junção e recebe 403. Causa: `app/app/contacts/_client.tsx:214-217` (sem portão) contra `app/api/v1/contacts/merge/route.ts:85`. Conserto: esconder para papel abaixo de manager. Conferência: confirmado no código (rota).
 
-**A35. Contatos: o lápis e a lixeira aparecem para quem só lê, e há duas regras de permissão para excluir.** Causa: `ContactsTable.tsx:384-405` (sem portão); a API exige `agent` (`app/api/v1/contacts/[id]/route.ts:84`, `:137`), e o mapa de permissões diz `contact.delete: "manager"` (`hooks/auth/AuthProvider.tsx:135`). Conserto: decidir uma regra só, aplicá-la na API e esconder os botões por ela. Conferência: confirmado no código.
+**A34. Contatos: "Preencher campo personalizado" em lote pede o nome interno do campo em texto livre, e o servidor grava qualquer chave.** Vê: um erro de digitação cria um campo que nenhuma tela mostra, e a ação parece ter dado certo. Causa: `components/contacts/BarraDeContatosEmLote.tsx:290-297` e `app/api/v1/contacts/bulk/route.ts:187-198`. Conserto: um seletor com os campos definidos no funil, e o servidor recusa a chave desconhecida. Conferência: confirmado no código.
 
-**A36. Contatos: "Preencher campo personalizado" em lote pede o nome interno do campo em texto livre, e o servidor grava qualquer chave.** Vê: um erro de digitação cria um campo que nenhuma tela mostra, e a ação parece ter dado certo. Causa: `components/contacts/BarraDeContatosEmLote.tsx:290-297` e `app/api/v1/contacts/bulk/route.ts:187-198`. Conserto: um seletor com os campos definidos no funil, e o servidor recusa a chave desconhecida. Conferência: confirmado no código.
+**A35. Contatos: a caixa "selecionar todos" marca, mas não desmarca.** Causa: `ContactsTable.tsx:222-236` chama `selecionarTodos`, que só soma (`hooks/contacts/useSelecaoEmLote.ts:32-38`). Conserto: alternar (limpar os visíveis quando todos já estão marcados). Conferência: confirmado no código.
 
-**A37. Contatos: a caixa "selecionar todos" marca, mas não desmarca.** Causa: `ContactsTable.tsx:222-236` chama `selecionarTodos`, que só soma (`hooks/contacts/useSelecaoEmLote.ts:32-38`). Conserto: alternar (limpar os visíveis quando todos já estão marcados). Conferência: confirmado no código.
+**A36. Contatos: a janela de exclusão diz só "remove X e a conversa associada".** Não avisa que os negócios do cliente ficam sem cliente (`crm_leads ON DELETE SET NULL`) nem que as mensagens somem com a conversa. Causa: `ContactsTable.tsx:419`. Conserto: listar o que será apagado e o que ficará órfão, como já se faz com compromissos. Conferência: confirmado no código (texto). O efeito em `crm_leads` não foi conferido no schema.
 
-**A38. Contatos: a janela de exclusão diz só "remove X e a conversa associada".** Não avisa que os negócios do cliente ficam sem cliente (`crm_leads ON DELETE SET NULL`) nem que as mensagens somem com a conversa. Causa: `ContactsTable.tsx:419`. Conserto: listar o que será apagado e o que ficará órfão, como já se faz com compromissos. Conferência: confirmado no código (texto). O efeito em `crm_leads` não foi conferido no schema.
+**A37. Tarefas: os botões Editar e Apagar ficam invisíveis em tela de toque.** Causa: `app/app/tasks/_components/ListaDeTarefas.tsx:162` (`opacity-0` + `group-hover`/`focus-within`). Conserto: visíveis por padrão em `@media (hover: none)`. Conferência: confirmado no código.
 
-**A39. Tarefas: os botões Editar e Apagar ficam invisíveis em tela de toque.** Causa: `app/app/tasks/_components/ListaDeTarefas.tsx:162` (`opacity-0` + `group-hover`/`focus-within`). Conserto: visíveis por padrão em `@media (hover: none)`. Conferência: confirmado no código.
+**A38. Tarefas: há duas réguas de "atrasada".** Vê: uma tarefa de hoje às 8h, vista às 14h, fica no grupo "Hoje" e ao mesmo tempo conta como "1 atrasada" no card e na ficha. Causa: `lib/tarefas/tipos.ts:179-180` (grupo pelo início do dia) contra `:113-120`/`:136-148` (hora exata). O comentário de `:131-134` afirma que é a mesma régua. Conserto: uma função só para as duas. Conferência: confirmado no código.
 
-**A40. Tarefas: há duas réguas de "atrasada".** Vê: uma tarefa de hoje às 8h, vista às 14h, fica no grupo "Hoje" e ao mesmo tempo conta como "1 atrasada" no card e na ficha. Causa: `lib/tarefas/tipos.ts:179-180` (grupo pelo início do dia) contra `:113-120`/`:136-148` (hora exata). O comentário de `:131-134` afirma que é a mesma régua. Conserto: uma função só para as duas. Conferência: confirmado no código.
+**A39. Agentes: um agente pausado aparece com o selo "Rascunho", e o filtro "Pausado" nunca encontra nada.** Também não existe a opção "Rascunho" no filtro. Causa: `app/app/ai/agents/_components/AgentStatusBadge.tsx:44-45` converte "parado" em `draft`; o filtro oferece `paused` (`AgentsListFilters.tsx:49`). Conserto: distinguir `paused` (com `paused_at`) de `draft` (nunca publicado) e alinhar o filtro. Conferência: confirmado no código.
 
-**A41. Agentes: um agente pausado aparece com o selo "Rascunho", e o filtro "Pausado" nunca encontra nada.** Também não existe a opção "Rascunho" no filtro. Causa: `app/app/ai/agents/_components/AgentStatusBadge.tsx:44-45` converte "parado" em `draft`; o filtro oferece `paused` (`AgentsListFilters.tsx:49`). Conserto: distinguir `paused` (com `paused_at`) de `draft` (nunca publicado) e alinhar o filtro. Conferência: confirmado no código.
+**A40. Agentes: em Execuções, o detalhe mostra "Steps 0" e "Sem trace disponível." em todo atendimento, e "Ver conversa" nunca aparece.** Causa: a rota devolve `steps_count`, `tool_calls` e `conversation_id` como `null` de propósito (`app/api/v1/ai/agents/[id]/runs/route.ts:106`, `:121-122`), e `app/app/ai/agents/[id]/_components/RunDetailDrawer.tsx:87` (e `RunsTable.tsx:141`) troca `null` por 0. Conserto: mostrar "—" para null e esconder o trace quando não existe essa informação. Conferência: confirmado no código.
 
-**A42. Agentes: em Execuções, o detalhe mostra "Steps 0" e "Sem trace disponível." em todo atendimento, e "Ver conversa" nunca aparece.** Causa: a rota devolve `steps_count`, `tool_calls` e `conversation_id` como `null` de propósito (`app/api/v1/ai/agents/[id]/runs/route.ts:106`, `:121-122`), e `app/app/ai/agents/[id]/_components/RunDetailDrawer.tsx:87` (e `RunsTable.tsx:141`) troca `null` por 0. Conserto: mostrar "—" para null e esconder o trace quando não existe essa informação. Conferência: confirmado no código.
+**A41. Agentes: "Aplicar como versão nova" publica na hora, sem rascunho e sem a confirmação que o botão Publicar tem.** Causa: `app/api/v1/ai/agents/[id]/proposals/[pid]/apply/route.ts` (o cabeçalho diz que "o clique É o gate humano") e `ProposalsPanel.tsx:101` chama direto. Conserto: abrir o mesmo `PublishConfirmDialog` antes de aplicar. Conferência: confirmado no código.
 
-**A43. Agentes: "Aplicar como versão nova" publica na hora, sem rascunho e sem a confirmação que o botão Publicar tem.** Causa: `app/api/v1/ai/agents/[id]/proposals/[pid]/apply/route.ts` (o cabeçalho diz que "o clique É o gate humano") e `ProposalsPanel.tsx:101` chama direto. Conserto: abrir o mesmo `PublishConfirmDialog` antes de aplicar. Conferência: confirmado no código.
+**A42. Agentes: o selo "Publicado" não avisa quando o agente não pode responder por falta de chave.** Causa: `deriveAgentStatus` e `AgentCard.tsx` não olham credencial. Só acontece se a chave sumir depois da publicação (publicar já exige chave). Conserto: um selo "Sem chave" quando `credential_id` é nulo e a instalação não tem chave do provedor. Conferência: confirmado no código (o selo não considera chave).
 
-**A44. Agentes: o selo "Publicado" não avisa quando o agente não pode responder por falta de chave.** Causa: `deriveAgentStatus` e `AgentCard.tsx` não olham credencial. Só acontece se a chave sumir depois da publicação (publicar já exige chave). Conserto: um selo "Sem chave" quando `credential_id` é nulo e a instalação não tem chave do provedor. Conferência: confirmado no código (o selo não considera chave).
+**A43. Follow-ups (plausível): no WhatsApp oficial, a mensagem de texto fixo fora da janela de 24h sai sem conferência.** Os modelos de clínica disparam depois de 24h ou mais de silêncio, então nesse canal a Meta tende a recusar. Causa: `lib/followup/enviar-texto-fixo.ts:293-299` (só o caminho com mídia é conferido). Conserto: aplicar a mesma régua ao texto e avisar no construtor e na galeria. Conferência: confirmado que o texto não é conferido; a recusa da Meta não foi reproduzida.
 
-**A45. Follow-ups (plausível): no WhatsApp oficial, a mensagem de texto fixo fora da janela de 24h sai sem conferência.** Os modelos de clínica disparam depois de 24h ou mais de silêncio, então nesse canal a Meta tende a recusar. Causa: `lib/followup/enviar-texto-fixo.ts:293-299` (só o caminho com mídia é conferido). Conserto: aplicar a mesma régua ao texto e avisar no construtor e na galeria. Conferência: confirmado que o texto não é conferido; a recusa da Meta não foi reproduzida.
+**A44. Casos: um caso "Aguardando o cliente" nunca expira.** O evento `lead_unresponsive` existe no CHECK e tem rótulo, mas ninguém o emite, e o vigia de casos parados só olha `awaiting_human`. Causa: `lib/ai/case-copy.ts:122`, `app/api/v1/cron/case-stale-watcher/route.ts:123`, `:196`. Conserto: o vigia também expira `awaiting_lead` após um prazo e emite `lead_unresponsive`. Conferência: confirmado no código.
 
-**A46. Casos: um caso "Aguardando o cliente" nunca expira.** O evento `lead_unresponsive` existe no CHECK e tem rótulo, mas ninguém o emite, e o vigia de casos parados só olha `awaiting_human`. Causa: `lib/ai/case-copy.ts:122`, `app/api/v1/cron/case-stale-watcher/route.ts:123`, `:196`. Conserto: o vigia também expira `awaiting_lead` após um prazo e emite `lead_unresponsive`. Conferência: confirmado no código.
+**A45. Conexões: excluir um número que caiu não mostra o que está ligado a ele.** Vê: "Não foi possível verificar o que está ligado a este número", justamente quando o serviço do WhatsApp não responde. Causa: `app/api/v1/channel-sessions/[id]/route.ts:178` calcula o impacto e `:211-213` devolve 502 antes de entregá-lo. Conserto: com `impact=1`, devolver o impacto mesmo com falha na conferência ao vivo. Conferência: confirmado no código.
 
-**A47. Conexões: excluir um número que caiu não mostra o que está ligado a ele.** Vê: "Não foi possível verificar o que está ligado a este número", justamente quando o serviço do WhatsApp não responde. Causa: `app/api/v1/channel-sessions/[id]/route.ts:178` calcula o impacto e `:211-213` devolve 502 antes de entregá-lo. Conserto: com `impact=1`, devolver o impacto mesmo com falha na conferência ao vivo. Conferência: confirmado no código.
+**A46. Conexões: a frase "N números conectados" conta todos os números, inclusive os que caíram.** Causa: `components/connections/ConnectionsClient.tsx:395` (`list.length`). Conserto: contar só os de status `WORKING`, ou trocar por "N números na lista". Conferência: confirmado no código.
 
-**A48. Conexões: a frase "N números conectados" conta todos os números, inclusive os que caíram.** Causa: `components/connections/ConnectionsClient.tsx:395` (`list.length`). Conserto: contar só os de status `WORKING`, ou trocar por "N números na lista". Conferência: confirmado no código.
+**A47. Conexões: sem canal oficial, "Templates da Meta" manda conectar em "Conexões WhatsApp", um lugar que não existe.** O certo é a sub-aba "Conexão" de "API Oficial (Meta)". Causa: `components/connections/TemplatesClient.tsx:168-169`. Conserto: corrigir o texto e pôr link para a sub-aba. Conferência: confirmado no código.
 
-**A49. Conexões: sem canal oficial, "Templates da Meta" manda conectar em "Conexões WhatsApp", um lugar que não existe.** O certo é a sub-aba "Conexão" de "API Oficial (Meta)". Causa: `components/connections/TemplatesClient.tsx:168-169`. Conserto: corrigir o texto e pôr link para a sub-aba. Conferência: confirmado no código.
+**A48. Conexões: apagar o "Teto diário de envios" e salvar não remove o teto.** O campo vazio sugere "sem teto definido", mas o 300 continua. Causa: placeholder em `components/connections/AntiBanSheet.tsx:522`; o campo vazio é omitido do envio (`:206-208`); a coluna é `NOT NULL DEFAULT 300` (`supabase/baseline.sql:1340`). Conserto: placeholder "300 (padrão)" e validação de campo obrigatório. Conferência: confirmado no código.
 
-**A50. Conexões: apagar o "Teto diário de envios" e salvar não remove o teto.** O campo vazio sugere "sem teto definido", mas o 300 continua. Causa: placeholder em `components/connections/AntiBanSheet.tsx:522`; o campo vazio é omitido do envio (`:206-208`); a coluna é `NOT NULL DEFAULT 300` (`supabase/baseline.sql:1340`). Conserto: placeholder "300 (padrão)" e validação de campo obrigatório. Conferência: confirmado no código.
+**A49. Conexões (provável): fechar a janela "Conectar novo WhatsApp" sem parear deixa um número órfão, e a faixa vermelha de desconectado aparece em todas as telas.** Causa: a sessão é criada no clique (`ConnectionsClient.tsx:274-282`), e `SCAN_QR_CODE` está em `STATUS_QUE_AVISAM` (`lib/channels/health.ts:53`). Conserto: não avisar sobre sessão que nunca chegou a `WORKING`, e limpar pareamentos abandonados. Conferência: criação no clique e status de aviso confirmados; a falta de limpeza não foi conferida.
 
-**A51. Conexões (provável): fechar a janela "Conectar novo WhatsApp" sem parear deixa um número órfão, e a faixa vermelha de desconectado aparece em todas as telas.** Causa: a sessão é criada no clique (`ConnectionsClient.tsx:274-282`), e `SCAN_QR_CODE` está em `STATUS_QUE_AVISAM` (`lib/channels/health.ts:53`). Conserto: não avisar sobre sessão que nunca chegou a `WORKING`, e limpar pareamentos abandonados. Conferência: criação no clique e status de aviso confirmados; a falta de limpeza não foi conferida.
+**A50. Conexões (provável): a faixa de conexão caída não acompanha a navegação.** Ela não aparece quando o número cai nem some quando ele volta, até a página ser recarregada. Causa: `components/app/ConexaoCaidaBanner.tsx:43` recebe a lista do layout de servidor (`app/app/layout.tsx:144`, `:321`) e não consulta nem faz `refresh` sozinha. Conserto: consulta própria com polling ou tempo real. Conferência: confirmado no código (sem refresh); o efeito não foi reproduzido.
 
-**A52. Conexões (provável): a faixa de conexão caída não acompanha a navegação.** Ela não aparece quando o número cai nem some quando ele volta, até a página ser recarregada. Causa: `components/app/ConexaoCaidaBanner.tsx:43` recebe a lista do layout de servidor (`app/app/layout.tsx:144`, `:321`) e não consulta nem faz `refresh` sozinha. Conserto: consulta própria com polling ou tempo real. Conferência: confirmado no código (sem refresh); o efeito não foi reproduzido.
+**A51. Webhooks: a chave "Fonte ativa" volta à posição antiga depois de pausar ou ativar.** Vê: aparece "Fonte pausada.", mas a chave e o selo "Ativa" continuam até o painel ser fechado. Causa: `app/app/webhooks/_components/SourceDetail.tsx:705` lê o retrato `source.is_active`, e o `onSuccess` (`:711-712`) só mostra o aviso. Conserto: guardar a resposta do PATCH em estado local, como as outras chaves do painel. Conferência: confirmado no código.
 
-**A53. Webhooks: a chave "Fonte ativa" volta à posição antiga depois de pausar ou ativar.** Vê: aparece "Fonte pausada.", mas a chave e o selo "Ativa" continuam até o painel ser fechado. Causa: `app/app/webhooks/_components/SourceDetail.tsx:705` lê o retrato `source.is_active`, e o `onSuccess` (`:711-712`) só mostra o aviso. Conserto: guardar a resposta do PATCH em estado local, como as outras chaves do painel. Conferência: confirmado no código.
+**A52. Webhooks: o "Formulário pronto" sem "URL de obrigado" mostra JSON cru ao visitante.** Vê: o visitante vê `{"data":{"lead_id":…}}` ou o JSON de erro. Causa: `app/api/v1/webhooks/in/[token]/route.ts:337-341`. Conserto: para envio de formulário, responder com uma página HTML de agradecimento (e uma de erro). Conferência: confirmado no código.
 
-**A54. Webhooks: o "Formulário pronto" sem "URL de obrigado" mostra JSON cru ao visitante.** Vê: o visitante vê `{"data":{"lead_id":…}}` ou o JSON de erro. Causa: `app/api/v1/webhooks/in/[token]/route.ts:337-341`. Conserto: para envio de formulário, responder com uma página HTML de agradecimento (e uma de erro). Conferência: confirmado no código.
+**A53. Webhooks: depois de criada a fonte, não dá para ver nem editar a "URL de obrigado", o funil ou a etapa de entrada.** Causa: os campos só existem em `CreateSourceDialog.tsx`; `SourceDetail.tsx` não usa `redirect_to`, `pipeline_id` nem `stage_id`. Conserto: levar os três campos ao painel da fonte. Conferência: confirmado no código.
 
-**A55. Webhooks: depois de criada a fonte, não dá para ver nem editar a "URL de obrigado", o funil ou a etapa de entrada.** Causa: os campos só existem em `CreateSourceDialog.tsx`; `SourceDetail.tsx` não usa `redirect_to`, `pipeline_id` nem `stage_id`. Conserto: levar os três campos ao painel da fonte. Conferência: confirmado no código.
+**A54. Webhooks (plausível): a orientação para WordPress não funciona com o Contact Form 7.** Os campos `your-name` e `your-email` caem em `sem_campo_mapeavel`; a própria semente mostra a recusa. Causa: o texto de `SourceDetail.tsx:502-506`. Conserto: mapear os nomes do CF7 ou orientar o mapeamento. Conferência: o texto está confirmado; o mapeamento não foi conferido.
 
-**A56. Webhooks (plausível): a orientação para WordPress não funciona com o Contact Form 7.** Os campos `your-name` e `your-email` caem em `sem_campo_mapeavel`; a própria semente mostra a recusa. Causa: o texto de `SourceDetail.tsx:502-506`. Conserto: mapear os nomes do CF7 ou orientar o mapeamento. Conferência: o texto está confirmado; o mapeamento não foi conferido.
+**A55. Desempenho: o papel "viewer" vê "Desempenho" no menu e cai numa tela de erro que culpa a rede ou o plano.** Causa: `lib/navigation/catalogo.ts:845-852` não tem `minRole`, todas as rotas exigem `agent` (`app/api/v1/metrics/atrito/route.ts:99`, `attendants/route.ts:60`, `serie/route.ts:66`), e o texto do erro está em `app/app/metrics/_components/MetricsClient.tsx:104-105`. Conserto: `minRole: "agent"` no catálogo. Conferência: confirmado no código.
 
-**A57. Desempenho: o papel "viewer" vê "Desempenho" no menu e cai numa tela de erro que culpa a rede ou o plano.** Causa: `lib/navigation/catalogo.ts:845-852` não tem `minRole`, todas as rotas exigem `agent` (`app/api/v1/metrics/atrito/route.ts:99`, `attendants/route.ts:60`, `serie/route.ts:66`), e o texto do erro está em `app/app/metrics/_components/MetricsClient.tsx:104-105`. Conserto: `minRole: "agent"` no catálogo. Conferência: confirmado no código.
+**A56. Desempenho: "Passagens para humano" só conta passagens com negócio ligado.** Causa: `supabase/baseline.sql:32139` conta `crm_lead_activities type='handoff_triggered'`, gravada só quando há lead (`lib/mcp/tools/handoff.ts:6`). Conserto: contar pelo `event_log` `ai.handoff_triggered`. Conferência: confirmado no código.
 
-**A58. Desempenho (plausível): no Atrito visto por um atendente, os números misturam escalas.** As demandas são da clínica toda (RLS só por organização), e mensagens e negócios seguem a visibilidade do atendente: "Turnos até o desfecho" puxa a mediana para baixo, e a frase-base é idêntica para atendente e admin. Causa: `supabase/baseline.sql:10540` (policy de `demandas`) e o CTE de turnos (por volta de `:32006`). Conserto: filtrar as demandas pela mesma visibilidade ou dizer na tela que a base é da clínica. Conferência: a policy foi conferida; a conta não foi reproduzida.
+**A57. Meta Ads: a tela diz que os números vêm "no momento em que você clica em Atualizar", mas a busca dispara sozinha.** Vê: a busca roda ao abrir a tela e a cada troca de conta ou de período, e cada uma gasta 2 chamadas da cota da Meta. Sem conta ligada, o botão citado nem existe. Causa: `app/app/ads/meta/page.tsx:67`; `hooks/ads/useMetaAds.ts:74-93` (`enabled: Boolean(contaId)`, a `queryKey` inclui o período). Conserto: buscar só no clique (`enabled: false` + `refetch`) ou corrigir a frase. Conferência: confirmado no código.
 
-**A59. Desempenho: "Passagens para humano" só conta passagens com negócio ligado.** Causa: `supabase/baseline.sql:32139` conta `crm_lead_activities type='handoff_triggered'`, gravada só quando há lead (`lib/mcp/tools/handoff.ts:6`). Conserto: contar pelo `event_log` `ai.handoff_triggered`. Conferência: confirmado no código.
+**A58. Atividades: o número da aba "Por etiqueta" não bate com a lista que o link abre.** Vê: a linha mostra "2" e a Inbox abre com 4. Causa: a tabela conta só a etiqueta da conversa, no período (`app/api/v1/reports/tags/route.ts:350`); o link (`TagReportClient.tsx:155`) não leva o período, e o filtro da Inbox inclui a etiqueta da ficha (`lib/inbox/marcador-da-conversa.ts:85`). Conserto: a mesma régua nos dois lados (o link leva período e modo "só conversa", ou a tabela conta também a ficha). Conferência: confirmado no código.
 
-**A60. Meta Ads: a tela diz que os números vêm "no momento em que você clica em Atualizar", mas a busca dispara sozinha.** Vê: a busca roda ao abrir a tela e a cada troca de conta ou de período, e cada uma gasta 2 chamadas da cota da Meta. Sem conta ligada, o botão citado nem existe. Causa: `app/app/ads/meta/page.tsx:67`; `hooks/ads/useMetaAds.ts:74-93` (`enabled: Boolean(contaId)`, a `queryKey` inclui o período). Conserto: buscar só no clique (`enabled: false` + `refetch`) ou corrigir a frase. Conferência: confirmado no código.
+**A59. Inbox: o atalho "?" (Shift+/) não abre "Atalhos de teclado", que é a única porta para essa ajuda.** Reproduzido: Shift+/, "?" e Shift+Slash não abrem nada; "j" funciona. Causa: `components/inbox/InboxKeyboardShortcuts.tsx:71` registra `"shift+/"`, combinação que a biblioteca de atalhos não casa quando o teclado produz "?". Conserto: registrar pela tecla produzida (`"?"` com `useKey`) e cobrir com teste de tela. Conferência: a linha foi confirmada e o defeito reproduzido.
 
-**A61. Atividades: o número da aba "Por etiqueta" não bate com a lista que o link abre.** Vê: a linha mostra "2" e a Inbox abre com 4. Causa: a tabela conta só a etiqueta da conversa, no período (`app/api/v1/reports/tags/route.ts:350`); o link (`TagReportClient.tsx:155`) não leva o período, e o filtro da Inbox inclui a etiqueta da ficha (`lib/inbox/marcador-da-conversa.ts:85`). Conserto: a mesma régua nos dois lados (o link leva período e modo "só conversa", ou a tabela conta também a ficha). Conferência: confirmado no código.
+**A60. Inbox: a etiqueta adicionada ao contato não aparece na ficha quando a conversa aberta não está na aba atual da lista.** Reproduzido 2x: na aba Fila, com `?id=` de uma conversa que está em Minhas, o PATCH devolve 200 e o banco tem a tag, mas a ficha não a mostra; com `?filter=all` ela aparece. Causa: não localizada nesta conferência (provável leitura da ficha a partir do cache da lista da aba). Conserto: a ficha passa a ler o contato da query própria da conversa, não da lista. Conferência: reproduzido; causa não apurada.
 
-**A62. Inbox: o atalho "?" (Shift+/) não abre "Atalhos de teclado", que é a única porta para essa ajuda.** Reproduzido: Shift+/, "?" e Shift+Slash não abrem nada; "j" funciona. Causa: `components/inbox/InboxKeyboardShortcuts.tsx:71` registra `"shift+/"`, combinação que a biblioteca de atalhos não casa quando o teclado produz "?". Conserto: registrar pela tecla produzida (`"?"` com `useKey`) e cobrir com teste de tela. Conferência: a linha foi confirmada e o defeito reproduzido.
+**A61. Inbox: depois de "Assumir e responder" no cartão de passagem, a linha "Assumida por <nome>" demora ou só aparece ao recarregar.** Causa: `hooks/inbox/useClaimConversation.ts:22-23` e `:27-28` invalidam `["conversations"]` e `["conversation", id]`, mas não `["passagens", id]` (`hooks/inbox/usePassagensDaConversa.ts:37`). Conserto: invalidar `["passagens", conversation_id]` no sucesso. Conferência: confirmado no código e reproduzido.
 
-**A63. Inbox: a etiqueta adicionada ao contato não aparece na ficha quando a conversa aberta não está na aba atual da lista.** Reproduzido 2x: na aba Fila, com `?id=` de uma conversa que está em Minhas, o PATCH devolve 200 e o banco tem a tag, mas a ficha não a mostra; com `?filter=all` ela aparece. Causa: não localizada nesta conferência (provável leitura da ficha a partir do cache da lista da aba). Conserto: a ficha passa a ler o contato da query própria da conversa, não da lista. Conferência: reproduzido; causa não apurada.
-
-**A64. Inbox: depois de "Assumir e responder" no cartão de passagem, a linha "Assumida por <nome>" demora ou só aparece ao recarregar.** Causa: `hooks/inbox/useClaimConversation.ts:22-23` e `:27-28` invalidam `["conversations"]` e `["conversation", id]`, mas não `["passagens", id]` (`hooks/inbox/usePassagensDaConversa.ts:37`). Conserto: invalidar `["passagens", conversation_id]` no sucesso. Conferência: confirmado no código e reproduzido.
-
-**A65. Inbox: a linha da lista mostra só as etiquetas da ficha do contato, nunca as da conversa.** Vê: quem chega pelo link da aba Por etiqueta vê conversas sem nenhuma etiqueta à vista, o que parece filtro quebrado. Causa: `components/inbox/ConversationListItem.tsx:172` (`c.tags`). Conserto: unir as etiquetas da conversa e da ficha na linha. Conferência: confirmado no código.
+**A62. Inbox: a linha da lista mostra só as etiquetas da ficha do contato, nunca as da conversa.** Vê: quem chega pelo link da aba Por etiqueta vê conversas sem nenhuma etiqueta à vista, o que parece filtro quebrado. Causa: `components/inbox/ConversationListItem.tsx:172` (`c.tags`). Conserto: unir as etiquetas da conversa e da ficha na linha. Conferência: confirmado no código.
 
 ---
 
@@ -249,41 +239,41 @@ Grupo C: 16 itens (último parágrafo).
 
 | # | Tela | O que o usuário vê | Causa | Conserto | Conferência |
 |---|---|---|---|---|---|
-| A66 | Agenda | Toda linha da lista diz "Agendamento", nunca o tipo ("Sessão de fisioterapia") | `app/app/agenda/page.tsx:301-321` não monta `tipo`; `components/agenda/HistoricoDaAgenda.tsx:241` cai no fallback | Incluir o nome do tipo (join em `calendar_event_types`) | Confirmado |
-| A67 | Agenda | "Mensagem do cliente usada como evidência" aparece em compromisso sem cliente, sempre vazia | `components/agenda/DetalheDoCompromisso.tsx:273-293`; a rota só busca mensagens com `contact_id` (`[id]/route.ts:48`) | Esconder sem `contact_id`; trocar "evidência" | Confirmado |
-| A68 | Agenda | O cartão do Google mostra `GOOGLE_CALENDAR_CLIENT_ID/SECRET` e manda "registrar no console" a qualquer membro | `lib/agenda/google/config.ts:271-272`; `CartaoDaConexaoGoogle.tsx:96-110`; `page.tsx:272` passa sempre | Detalhe técnico só para admin | Confirmado |
-| A69 | Agenda | Abrir pelo nome na lista perde o `?tipo=`, e o F5 volta ao primeiro tipo | `HistoricoDaAgenda.tsx:236` | Preservar `tipo` no link | Confirmado |
-| A70 | Agenda | Compromisso sem tipo oferece Remarcar e responde "O tipo deste agendamento não existe mais." | `_handler.ts:572-579` | Esconder Remarcar sem tipo ou mensagem verdadeira | Confirmado |
-| A71 | Agenda | O painel "Remarcar" não diz qual compromisso está sendo movido | sem arquivo citado | Cabeçalho com cliente, dia e hora, como no de cancelar | Visto em captura |
-| A72 | Resp. rápidas | Áudio no "Enviar anexo" sem prévia; mostra `uuid.wav`, "Legenda" e "Remover imagem" | `components/inbox/composer/AttachmentPreviewDialog.tsx:62-66`, `:88` | Player de áudio, nome legível, rótulo genérico | Confirmado |
-| A73 | Resp. rápidas | No menu "/", a resposta de áudio aparece sem o 🎧 e com a linha vazia | `TemplateMenu.tsx:44-45` (a barra tem: `BarraDeRecursos.tsx:42`) | Mesmo marcador da barra | Confirmado |
-| A74 | Inbox | O separador "Ontem" cobre o cabeçalho do cartão "Por que a IA passou para você" | sem arquivo citado | Ajustar empilhamento (z-index/sticky) | Visto em captura |
-| A75 | Funis | A aba Calendário diz "não tem campo de data" mesmo com "Fechamento previsto" | `components/kanban/CalendarioDoFunil.tsx:168-174` | Oferecer o fechamento previsto como campo padrão | Confirmado |
-| A76 | Funis | Organização nova nasce com o funil de e-commerce "Pedidos" e motivos de perda de loja | `supabase/baseline.sql:716-729` | Rever o padrão de quem pula a etapa de funil do onboarding | Parcial: o onboarding já oferece funis por nicho (`lib/onboarding/pacotes-de-funil.ts`); o de e-commerce fica para quem pula |
-| A77 | Contatos | A ficha não oferece "Iniciar conversa" para contato com telefone e sem conversa | `app/app/contacts/[id]/_client.tsx:362`; `components/kanban/ConversaNoDossie.tsx:37-41` | Passar `contactId`/`phone` | Confirmado |
-| A78 | Contatos | CSV exportado com vírgula e cabeçalhos em inglês; no Excel pt-BR cai numa coluna só (plausível) | `lib/contacts/exportar.ts:111-113` | `;` + cabeçalhos em pt, ou opção | Confirmado (formato); o efeito no Excel não foi testado |
-| A79 | Tarefas | No card, o selo de tarefas encavala com "agora em <etapa>" | `components/kanban/KanbanCard.tsx:304-316` | Deixar o selo encolher/quebrar | Estrutura confirmada; sobreposição vista em captura |
-| A80 | Tarefas | O calendário abre "Editar tarefa" para quem só lê, e Salvar dá 403 | `CalendarioDeTarefas.tsx:141-144` ignora `podeEditar` | Abrir só leitura sem permissão | Confirmado |
-| A81 | Tarefas | "+N mais" no calendário não é clicável | `CalendarioDeTarefas.tsx:159-163` | Abrir a lista do dia | Confirmado |
-| A82 | Agentes | O filtro "Arquivado" devolve vazio sem "Incluir arquivados" | `AgentsList.tsx:33-34` | Escolher "Arquivado" implica incluir | Confirmado |
-| A83 | Agentes | "Despausar" aparece para agente nunca publicado e sempre falha | `AgentRowMenu.tsx:49`; `_actions.ts:103-108` | Mostrar só com `paused_at` | Confirmado |
-| A84 | Agentes | "Reverter" aparece na própria versão publicada e cria uma cópia idêntica | `VersionHistory.tsx:140-141` | Excluir a versão vigente | Confirmado |
-| A85 | Agentes | Dois cartões "Estilo de resposta"; o segundo diz "Desligada por você" sem ninguém ter escolhido | `AjustesDeEstilo.tsx:29`, `:45-47` | Renomear e dizer "Desligada (padrão)" | Confirmado |
-| A86 | Agentes | "Fuso horário" é texto livre esperando `America/Sao_Paulo` | `TriggerEditor.tsx:200-206` | Seletor de fusos (`Intl.supportedValuesOf`) | Confirmado |
-| A87 | Agentes | Com alteração não salva num agente publicado, o aviso diz "Sem rascunho para publicar." | `lib/ai/agents/bloqueio-de-publicacao.ts:102-104` (ordem) | Conferir `alteracoesNaoSalvas` antes | Confirmado |
-| A88 | Follow-ups | O construtor abre um modelo instalado com "Início" e fim fora da tela | `lib/followup/modelos/escada.ts:44`; `FlowCanvas.tsx:384` sem `minZoom` | `minZoom` menor ou layout em mais de uma linha | Confirmado (sem `minZoom`) |
-| A89 | Follow-ups | No editor do agente, rolado até Follow-up, a metade esquerda fica vazia | sem arquivo citado | Investigar o layout | Não confirmado (visto em captura) |
-| A90 | Casos | Título longo nunca pode ser lido: cortado na lista e ausente no detalhe | `CaseList.tsx:134`; `CaseDetail.tsx` não usa `title` | Mostrar o título no detalhe e um `title=` na lista | Confirmado |
-| A91 | Casos | "Abrir IA › Provedores" aparece para qualquer papel e leva a /403 | `CaseChatPanel.tsx:265-267`; `app/app/ai/providers/page.tsx:27` | Esconder abaixo de manager | Confirmado |
-| A92 | Casos | Caso encerrado ainda mostra "Conversar sobre o caso — Pergunte antes de decidir." | sem linha citada (`CaseChatPanel.tsx`) | Trocar a frase ou ocultar quando fechado | Visto em captura |
-| A93 | Casos | Em instalação nova, "Modelo padrão" aparece selecionado com a chave ainda não cadastrada | sem arquivo citado | Indicar "sem chave" no seletor | Visto em captura |
-| A94 | Webhooks | Botões de copiar endereço e segredo sem `aria-label` | `SourceDetail.tsx:377-384`, `:581-588` | `aria-label` | Confirmado |
-| A95 | Webhooks | A chave "Fonte ativa" não respeita `webhooks.manage` | `SourceDetail.tsx:704-716` (só `isPending`) | `disabled={!podeGerirWebhooks}` | Confirmado |
-| A96 | Desempenho | "Ganhos por período" em "Mês" sobre 30 dias dá 1 ponto, invisível sem marcador | `app/api/v1/metrics/serie/route.ts:87`; `SeriePanel.tsx:168` (`dot={false}`) | Marcador quando há 1 ponto, ou janela por mês | Confirmado (código); não reproduzido |
-| A97 | Desempenho | A nota de "Insistência" diz "demandas que passaram por atendimento humano", mas N conta demandas com caso do agente (plausível) | `lib/metrics/atrito.ts:219`; CTE `insistencia` no baseline | Alinhar o texto ao que é medido | Não conferido o CTE |
-| A98 | Atividades | "Últimos 7 dias" desenha 8 barras (30 → 31), e a aba Por etiqueta usa outra régua | `lib/reports/atividades.ts:206-210` contra `lib/reports/etiquetas.ts:61-65` | Uma janela de dias inteiros para as duas | Confirmado |
-| A99 | Atividades | Latente: ação de `actor_kind='contact'` teria bolinha cheia mas contaria em "Automático" | `lib/leads/activity-vocabulary.ts:368` contra `lib/reports/atividades.ts:188-192` | Alinhar os dois mapas | Confirmado (hoje ninguém grava `contact`) |
-| A100 | Meta Ads | Nenhum passo a passo para gerar o token no Meta for Developers | `app/app/settings/meta-ads/page.tsx:76` | Guia curto com link e aviso de validade | Confirmado (texto) |
+| A63 | Agenda | Toda linha da lista diz "Agendamento", nunca o tipo ("Sessão de fisioterapia") | `app/app/agenda/page.tsx:301-321` não monta `tipo`; `components/agenda/HistoricoDaAgenda.tsx:241` cai no fallback | Incluir o nome do tipo (join em `calendar_event_types`) | Confirmado |
+| A64 | Agenda | "Mensagem do cliente usada como evidência" aparece em compromisso sem cliente, sempre vazia | `components/agenda/DetalheDoCompromisso.tsx:273-293`; a rota só busca mensagens com `contact_id` (`[id]/route.ts:48`) | Esconder sem `contact_id`; trocar "evidência" | Confirmado |
+| A65 | Agenda | O cartão do Google mostra `GOOGLE_CALENDAR_CLIENT_ID/SECRET` e manda "registrar no console" a qualquer membro | `lib/agenda/google/config.ts:271-272`; `CartaoDaConexaoGoogle.tsx:96-110`; `page.tsx:272` passa sempre | Detalhe técnico só para admin | Confirmado |
+| A66 | Agenda | Abrir pelo nome na lista perde o `?tipo=`, e o F5 volta ao primeiro tipo | `HistoricoDaAgenda.tsx:236` | Preservar `tipo` no link | Confirmado |
+| A67 | Agenda | Compromisso sem tipo oferece Remarcar e responde "O tipo deste agendamento não existe mais." | `_handler.ts:572-579` | Esconder Remarcar sem tipo ou mensagem verdadeira | Confirmado |
+| A68 | Agenda | O painel "Remarcar" não diz qual compromisso está sendo movido | sem arquivo citado | Cabeçalho com cliente, dia e hora, como no de cancelar | Visto em captura |
+| A69 | Resp. rápidas | Áudio no "Enviar anexo" sem prévia; mostra `uuid.wav`, "Legenda" e "Remover imagem" | `components/inbox/composer/AttachmentPreviewDialog.tsx:62-66`, `:88` | Player de áudio, nome legível, rótulo genérico | Confirmado |
+| A70 | Resp. rápidas | No menu "/", a resposta de áudio aparece sem o 🎧 e com a linha vazia | `TemplateMenu.tsx:44-45` (a barra tem: `BarraDeRecursos.tsx:42`) | Mesmo marcador da barra | Confirmado |
+| A71 | Inbox | O separador "Ontem" cobre o cabeçalho do cartão "Por que a IA passou para você" | sem arquivo citado | Ajustar empilhamento (z-index/sticky) | Visto em captura |
+| A72 | Funis | A aba Calendário diz "não tem campo de data" mesmo com "Fechamento previsto" | `components/kanban/CalendarioDoFunil.tsx:168-174` | Oferecer o fechamento previsto como campo padrão | Confirmado |
+| A73 | Funis | Organização nova nasce com o funil de e-commerce "Pedidos" e motivos de perda de loja | `supabase/baseline.sql:716-729` | Rever o padrão de quem pula a etapa de funil do onboarding | Parcial: o onboarding já oferece funis por nicho (`lib/onboarding/pacotes-de-funil.ts`); o de e-commerce fica para quem pula |
+| A74 | Contatos | A ficha não oferece "Iniciar conversa" para contato com telefone e sem conversa | `app/app/contacts/[id]/_client.tsx:362`; `components/kanban/ConversaNoDossie.tsx:37-41` | Passar `contactId`/`phone` | Confirmado |
+| A75 | Contatos | CSV exportado com vírgula e cabeçalhos em inglês; no Excel pt-BR cai numa coluna só (plausível) | `lib/contacts/exportar.ts:111-113` | `;` + cabeçalhos em pt, ou opção | Confirmado (formato); o efeito no Excel não foi testado |
+| A76 | Tarefas | No card, o selo de tarefas encavala com "agora em <etapa>" | `components/kanban/KanbanCard.tsx:304-316` | Deixar o selo encolher/quebrar | Estrutura confirmada; sobreposição vista em captura |
+| A77 | Tarefas | O calendário abre "Editar tarefa" para quem só lê, e Salvar dá 403 | `CalendarioDeTarefas.tsx:141-144` ignora `podeEditar` | Abrir só leitura sem permissão | Confirmado |
+| A78 | Tarefas | "+N mais" no calendário não é clicável | `CalendarioDeTarefas.tsx:159-163` | Abrir a lista do dia | Confirmado |
+| A79 | Agentes | O filtro "Arquivado" devolve vazio sem "Incluir arquivados" | `AgentsList.tsx:33-34` | Escolher "Arquivado" implica incluir | Confirmado |
+| A80 | Agentes | "Despausar" aparece para agente nunca publicado e sempre falha | `AgentRowMenu.tsx:49`; `_actions.ts:103-108` | Mostrar só com `paused_at` | Confirmado |
+| A81 | Agentes | "Reverter" aparece na própria versão publicada e cria uma cópia idêntica | `VersionHistory.tsx:140-141` | Excluir a versão vigente | Confirmado |
+| A82 | Agentes | Dois cartões "Estilo de resposta"; o segundo diz "Desligada por você" sem ninguém ter escolhido | `AjustesDeEstilo.tsx:29`, `:45-47` | Renomear e dizer "Desligada (padrão)" | Confirmado |
+| A83 | Agentes | "Fuso horário" é texto livre esperando `America/Sao_Paulo` | `TriggerEditor.tsx:200-206` | Seletor de fusos (`Intl.supportedValuesOf`) | Confirmado |
+| A84 | Agentes | Com alteração não salva num agente publicado, o aviso diz "Sem rascunho para publicar." | `lib/ai/agents/bloqueio-de-publicacao.ts:102-104` (ordem) | Conferir `alteracoesNaoSalvas` antes | Confirmado |
+| A85 | Follow-ups | O construtor abre um modelo instalado com "Início" e fim fora da tela | `lib/followup/modelos/escada.ts:44`; `FlowCanvas.tsx:384` sem `minZoom` | `minZoom` menor ou layout em mais de uma linha | Confirmado (sem `minZoom`) |
+| A86 | Follow-ups | No editor do agente, rolado até Follow-up, a metade esquerda fica vazia | sem arquivo citado | Investigar o layout | Não confirmado (visto em captura) |
+| A87 | Casos | Título longo nunca pode ser lido: cortado na lista e ausente no detalhe | `CaseList.tsx:134`; `CaseDetail.tsx` não usa `title` | Mostrar o título no detalhe e um `title=` na lista | Confirmado |
+| A88 | Casos | "Abrir IA › Provedores" aparece para qualquer papel e leva a /403 | `CaseChatPanel.tsx:265-267`; `app/app/ai/providers/page.tsx:27` | Esconder abaixo de manager | Confirmado |
+| A89 | Casos | Caso encerrado ainda mostra "Conversar sobre o caso — Pergunte antes de decidir." | sem linha citada (`CaseChatPanel.tsx`) | Trocar a frase ou ocultar quando fechado | Visto em captura |
+| A90 | Casos | Em instalação nova, "Modelo padrão" aparece selecionado com a chave ainda não cadastrada | sem arquivo citado | Indicar "sem chave" no seletor | Visto em captura |
+| A91 | Webhooks | Botões de copiar endereço e segredo sem `aria-label` | `SourceDetail.tsx:377-384`, `:581-588` | `aria-label` | Confirmado |
+| A92 | Webhooks | A chave "Fonte ativa" não respeita `webhooks.manage` | `SourceDetail.tsx:704-716` (só `isPending`) | `disabled={!podeGerirWebhooks}` | Confirmado |
+| A93 | Desempenho | "Ganhos por período" em "Mês" sobre 30 dias dá 1 ponto, invisível sem marcador | `app/api/v1/metrics/serie/route.ts:87`; `SeriePanel.tsx:168` (`dot={false}`) | Marcador quando há 1 ponto, ou janela por mês | Confirmado (código); não reproduzido |
+| A94 | Desempenho | A nota de "Insistência" diz "demandas que passaram por atendimento humano", mas N conta demandas com caso do agente (plausível) | `lib/metrics/atrito.ts:219`; CTE `insistencia` no baseline | Alinhar o texto ao que é medido | Não conferido o CTE |
+| A95 | Atividades | "Últimos 7 dias" desenha 8 barras (30 → 31), e a aba Por etiqueta usa outra régua | `lib/reports/atividades.ts:206-210` contra `lib/reports/etiquetas.ts:61-65` | Uma janela de dias inteiros para as duas | Confirmado |
+| A96 | Atividades | Latente: ação de `actor_kind='contact'` teria bolinha cheia mas contaria em "Automático" | `lib/leads/activity-vocabulary.ts:368` contra `lib/reports/atividades.ts:188-192` | Alinhar os dois mapas | Confirmado (hoje ninguém grava `contact`) |
+| A97 | Meta Ads | Nenhum passo a passo para gerar o token no Meta for Developers | `app/app/settings/meta-ads/page.tsx:76` | Guia curto com link e aviso de validade | Confirmado (texto) |
 
 ---
 
