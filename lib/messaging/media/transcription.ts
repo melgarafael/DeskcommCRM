@@ -10,7 +10,7 @@ export interface TranscriptionProvider {
   transcribe(audio: Buffer, mime: string): Promise<string>;
   /**
    * Só quem é cobrado por TOKEN implementa: o modelo de conversa da
-   * organização (degrau 3 da escada, `escada-de-transcricao.ts`). Sem o uso
+   * organização (degrau 4 da escada, `escada-de-transcricao.ts`). Sem o uso
    * devolvido, a linha em `llm_calls` sairia sem tokens e com custo nulo —
    * uma chamada de LLM paga, com preço na tabela, contada como "preço
    * desconhecido" e fora do teto de gasto.
@@ -23,10 +23,18 @@ export interface TranscriptionProvider {
  * serviço tem tabela de preço própria, que o sistema não conhece, e a chamada
  * não lê tokens de volta: a linha deles em `llm_calls` tem custo nulo por
  * construção, e é por esta lista — gravada em `origem_da_escolha` — que o
- * aviso de "preço desconhecido" os separa do degrau 3, que é LLM cobrado por
+ * aviso de "preço desconhecido" os separa do degrau 4, que é LLM cobrado por
  * token (`lib/ai/budget/check.ts`).
+ *
+ * `padrao_openrouter` (#3382) é o degrau 3: a própria OpenRouter transcreve em
+ * `/audio/transcriptions` com a MESMA chave da conversa — mesmo serviço, mesmo
+ * tipo de chamada, mesmo custo nulo por construção.
  */
-export const ORIGENS_DA_TRANSCRICAO_POR_SERVICO = ["servico_da_instalacao", "padrao_openai_compativel"] as const;
+export const ORIGENS_DA_TRANSCRICAO_POR_SERVICO = [
+  "servico_da_instalacao",
+  "padrao_openai_compativel",
+  "padrao_openrouter",
+] as const;
 
 export interface TranscriptionCreds {
   apiKey: string;
@@ -45,6 +53,13 @@ export interface TranscriptionCreds {
    * acertou os três e devolveu vazio para o áudio sem fala.
    */
   languages?: readonly string[];
+  /**
+   * Cabeçalhos EXTRA da chamada, por cima do `Authorization` (#3382: os de
+   * atribuição da OpenRouter, `HTTP-Referer`/`X-Title`, que a própria
+   * OpenRouter documenta como opcionais). Nulo/ausente = só o Authorization de
+   * sempre; o Authorization NUNCA é sobrescrevível por aqui.
+   */
+  headers?: Record<string, string> | undefined;
 }
 
 const DEFAULT_BASE = "https://api.openai.com";
@@ -126,7 +141,7 @@ export function apiTranscriptionProvider(
       for (const [campo, valor] of camposDeIdioma(model, creds.languages ?? [])) form.append(campo, valor);
       const res = await fetchImpl(`${base}/v1/audio/transcriptions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${creds.apiKey}` },
+        headers: { ...creds.headers, Authorization: `Bearer ${creds.apiKey}` },
         body: form,
       });
       if (!res.ok) throw new Error(`transcription_${res.status}`);

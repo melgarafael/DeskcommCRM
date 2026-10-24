@@ -74,7 +74,7 @@ const credencial = vi.hoisted(() => ({
   /**
    * `null` = a conversa é a Anthropic de sempre e há chave OpenAI (degrau 2).
    * Preenchido = a conversa é este modelo Google, que declara `audio`, e não há
-   * chave OpenAI nenhuma — a escada desce ao degrau 3.
+   * chave OpenAI nenhuma — a escada desce ao degrau 4.
    */
   conversaGoogle: null as string | null,
 }));
@@ -101,6 +101,10 @@ vi.mock("@/lib/agent-engine/edge/llm/providers", () => ({
     openrouter: factoryMock,
     google: factoryMock,
   }),
+  // A escada lê estes dois para o degrau OpenRouter (#3382); o mock tem de
+  // exportá-los, senão o import do worker morre antes de qualquer caso.
+  OPENROUTER_ENDPOINT: "https://openrouter.ai/api/v1",
+  cabecalhosDeAtribuicaoOpenRouter: () => undefined,
 }));
 
 vi.mock("@/lib/ai/pontos/capacidade-em-vigor", () => ({
@@ -264,7 +268,7 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
     expect(llmCallsInsertMock.mock.calls[0]![0]).toMatchObject({ origem_da_escolha: "padrao_openai_compativel" });
   });
 
-  it("transcrição pelo modelo da organização (degrau 3) grava tokens e o custo da tabela de preços", async () => {
+  it("transcrição pelo modelo da organização (degrau 4) grava tokens e o custo da tabela de preços", async () => {
     comAudio();
     credencial.conversaGoogle = "gemini-2.5-flash";
     bindingDaVez = null;
@@ -291,7 +295,7 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
     expect(linha.cost_cents).toBeCloseTo(((1200 * 0.3 + 40 * 2.5) / 1_000_000) * 100, 10);
   });
 
-  it("degrau 3 com modelo fora da tabela de preços grava os tokens e custo null — nunca 0", async () => {
+  it("degrau 4 com modelo fora da tabela de preços grava os tokens e custo null — nunca 0", async () => {
     comAudio();
     credencial.conversaGoogle = "gemini-modelo-que-ninguem-precificou";
     bindingDaVez = null;

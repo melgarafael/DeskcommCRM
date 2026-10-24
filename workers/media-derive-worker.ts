@@ -593,8 +593,8 @@ function buildDeriveDeps(
   // O gate de orçamento do seam, não uma cópia: mesmo veredito, mesmo item
   // `budget_exceeded` na Central, mesma linha `orcamento_esgotado` em
   // Execuções. Vale para toda chamada de LLM cobrada por token que este
-  // worker faz — a visão e o degrau 3 da transcrição (o modelo de conversa da
-  // organização). Os degraus 1 e 2 da transcrição ficam fora: o custo deles é
+  // worker faz — a visão e o degrau 4 da transcrição (o modelo de conversa da
+  // organização). Os degraus 1 a 3 da transcrição ficam fora: o custo deles é
   // nulo (o serviço tem preço próprio, que o sistema não conhece), então
   // nunca entram na soma que o teto compara, e o degrau 1 pode ser o serviço
   // da própria instalação, que não é gasto da organização.
@@ -842,10 +842,10 @@ function buildDeriveDeps(
   //
   // Só o degrau 1 (o serviço de transcrição do `.env`) aponta para um
   // endereço configurado à mão — por isso é o único que ainda passa pela
-  // recusa de destino interno antes da chave sair. Os degraus 2 e 3 vão para
+  // recusa de destino interno antes da chave sair. Os degraus 2, 3 e 4 vão para
   // o endereço público do provedor com a chave da própria organização.
   // `semTranscricao` continua sendo o fallback de quem não é áudio (vídeo e
-  // imagem têm o caminho deles), porque o degrau 4 `nada` já foi tratado no
+  // imagem têm o caminho deles), porque o degrau 5 `nada` já foi tratado no
   // corpo do handler — lá em cima, com `failed` + motivo.
   //
   // Todo degrau que transcreve passa por `comCustoRegistrado`: a chamada paga
@@ -862,7 +862,7 @@ function buildDeriveDeps(
       model: decisao.anuncio.modelId ?? "desconhecido",
       origem: decisao.origem,
     });
-  // O degrau 3 é o modelo de conversa da organização: chamada de LLM cobrada
+  // O degrau 4 é o modelo de conversa da organização: chamada de LLM cobrada
   // por token, então passa pelo teto antes de o áudio sair, como a visão.
   const transcriberDoModelo = (servico: TranscriptionProvider): TranscriptionProvider => ({
     transcribe: async (audio, mime) => {
@@ -911,8 +911,8 @@ interface ChamadaDeMidia {
   latency_ms: number;
   /**
    * Na transcrição, o degrau da escada que ouviu o áudio. É o que separa a
-   * linha de custo nulo por construção (degraus 1 e 2, serviço sem tokens) da
-   * linha de LLM sem preço conhecido (degrau 3), que acende o aviso.
+   * linha de custo nulo por construção (degraus 1 a 3, serviço sem tokens) da
+   * linha de LLM sem preço conhecido (degrau 4), que acende o aviso.
    */
   origem_da_escolha?: OrigemDaTranscricao;
   /** Ausente = `ok`. */
@@ -1017,10 +1017,10 @@ function registrarChamadaDeMidia(
  * destino não aceito, teto de gasto) ficam FORA deste embrulho, então não
  * gravam linha de custo.
  *
- * Dois tipos de cobrança passam aqui. O modelo de conversa (degrau 3) é LLM
+ * Dois tipos de cobrança passam aqui. O modelo de conversa (degrau 4) é LLM
  * cobrado por token e devolve o uso (`transcribeMedindo`): a linha leva tokens
  * e o custo da tabela de preços, nulo só quando o modelo não está nela. O
- * serviço `/v1/audio/transcriptions` (degraus 1 e 2) tem preço próprio, que o
+ * serviço `/v1/audio/transcriptions` (degraus 1 a 3) tem preço próprio, que o
  * sistema não conhece, e não devolve tokens que se leiam aqui: custo nulo,
  * nunca 0.
  */
