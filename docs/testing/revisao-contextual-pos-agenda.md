@@ -2,7 +2,7 @@
 
 Uma resposta como “esse horário” depende da oferta que o cliente recebeu. Responder a um Caso depende também da decisão humana vinculada ao pedido. A revisão precisa desses fatos, com origem e limites: consulta não comprova reserva, e registrar um Caso não comprova sua conclusão.
 
-A agenda independente da PR #3132 já foi integrada. Esta contribuição foi conciliada com a main oficial até `2b34aba9b09492c808162c010b2ffcfe88377195`. A PR #3069 permanece rascunho, aguardando definição TypeSafe/LGPD para integrar JEV e a conferência semântica. Código preparado não equivale a essa liberação.
+A agenda independente da PR #3132 já foi integrada. Esta contribuição foi conciliada com a main oficial até `3c5bc749653699ef90f93b9c32a95ba0befb6042`. A PR #3069 permanece rascunho, aguardando definição TypeSafe/LGPD para integrar JEV e a conferência semântica. Código preparado não equivale a essa liberação.
 
 ## Fluxo e limites de autoridade
 
@@ -92,3 +92,8 @@ A parte unitária 2 encontrou duas expectativas antigas do contexto que ainda co
 A parte E2E 2 ficou com 100 aprovados, seis skipped e uma falha em `cobranca-revendedor.spec.ts:82`: o menu ainda não exibia Cobrança. O trace mostrou POST de `/admin/sistema` iniciado às 01:22:52.239 UTC e navegação para `/admin/dashboard` às 01:22:52.550, antes da conclusão da gravação. A UI já tinha marcado o estado otimista e o POST ficou sem resposta concluída (status -1). O teste agora aguarda o interruptor sair de pendente e confere `MODULO_COBRANCA=ligado` no banco antes de navegar, mantendo a mesma busca do menu e todas as assertivas seguintes. Não força a chave nem acrescenta espera fixa. Lint e tipos desse arquivo passaram; **o fluxo completo após esse ajuste ainda depende do próximo CI**, sem alegação de verde antecipado. Os arquivos de runtime de cobrança e administração permaneceram iguais à main de referência, cuja parte E2E 2 passou; isso não transforma a falha observada em prova de defeito universal do upstream.
 
 Depois da cabeça 756, os reparos adicionais alteraram somente três testes e este documento. As provas de runtime dessa cabeça permanecem atribuídas a ela. As falhas de classificação e numeração continuam explícitas à triagem, TypeSafe/LGPD continua condição de integração, e a PR permanece rascunho. Nenhuma suite integral local, novo ambiente ou chamada paga foi acrescentada para repetir os resultados já válidos.
+
+
+### Avanço concorrente da main no teste de relógio
+
+Enquanto o CI da cabeça `7700b6e` rodava, a main avançou de `2b34aba9` para `3c5bc749` alterando somente o mesmo teste de opt-out. As duas correções já usavam o relógio injetável; o conflito era a data fixa e o comentário. A conciliação adota o arquivo oficial inteiro, conserva as assertivas e não altera runtime. Os quatro casos desse arquivo passaram com seu hash exato. A parte unitária 2 da cabeça7700 também passou integralmente: 394 arquivos e4.035testes, sem falhas; o typecheck integral passou novamente. Os recortes de runtime e de cobrança daquela cabeça continuam aplicáveis porque seus arquivos não mudaram nessa conciliação. Os resultados integrais e a liberação de contrato/numeração/TypeSafe continuam sujeitos aos limites registrados acima e ao CI por cabeça.
