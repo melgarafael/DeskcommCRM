@@ -434,3 +434,61 @@ existe.
 - Runbook do leigo: é a R6.
 
 Destino: núcleo, dentro do módulo de banco externo, que nasce desligado.
+
+## R4 entregue: `imagem_url` no envio do agente
+
+O `send_message` ganha `imagem_url` (URL https de uma imagem jpg, png ou webp
+que veio de um resultado de ferramenta). Decisão do dono (opção A): o CRM
+baixa a imagem com a própria rede, confere, guarda no Storage da conversa e
+manda ao canal só o `storagePath`, como a foto do catálogo. O gateway de
+mensageria nunca recebe a URL da fonte. Sai pela mesma cadeia `before_send`
+do texto (pacing, LGPD, opt-out, teto de envios do turno).
+
+### O que mudou
+- `lib/agent-engine/agent/baixar-imagem-segura.ts` (novo) — `baixarImagemSegura`:
+  forma e extensão (`formatoDeImagemPorUrl`), guarda textual de saída
+  (`assertSafeOutboundUrl`), DNS resolvido UMA vez e recusa se qualquer endereço
+  for especial (`ipEhEspecial`), conexão SOMENTE ao IP validado pela opção
+  `lookup` do `node:https` (hostname da URL segue sendo o do SNI e do Host),
+  nunca segue redirect (qualquer 3xx é `redirect_recusado`), só status 200,
+  teto de 5 MB lido em pedaços (para ao passar, `imagem_grande_demais`),
+  timeout total de 8 s, content-type igual ao MIME da extensão e bytes mágicos
+  conferidos (`conteudo_nao_e_imagem`). `guardarImagemNaConversa` grava em
+  `whatsapp-media/<tenant>/<conversa>/externa-<hash>.<ext>` (nome pelo conteúdo;
+  409 é sucesso) e recusa caminho fora da conversa (`isMediaPathOwnedBy`).
+- `lib/agent-engine/agent/imagem-por-url.ts` — só `formatoDeImagemPorUrl` (também
+  usado pela prévia) e `descreverSemQuery` (o log leva host + caminho, nunca a query).
+- `lib/agent-engine/agent/inbound-turn.ts` — schema de `send_message` com
+  `imagem_url`; `produto_codigo` + `imagem_url` juntos devolvem
+  `imagem_e_produto_juntos` e liberam a reserva do `dupTrava`; download e guarda
+  rodam antes da cadeia e fora da prévia; qualquer falha deixa a mensagem só com
+  texto e o retorno traz `foto_recusada`; o resultado traz `foto_enviada`.
+  O `tenantId` que vai ao caminho é o do turno.
+- `lib/agent-engine/agent/preview.ts` — na prévia NADA é buscado, baixado nem
+  guardado; só o formato é conferido (sem rede) e o retorno traz `foto_enviada:
+  false` e `foto_prevista`.
+- `lib/agent-engine/agent/fotos-do-produto.ts` — sem mudança (volta ao original).
+- Testes: `lib/agent-engine/agent/baixar-imagem-segura.test.ts`,
+  `lib/agent-engine/agent/imagem-por-url.test.ts`,
+  `lib/agent-engine/agent/preview-imagem-por-url.test.ts`,
+  `tests/unit/send-message-manda-imagem-por-url.test.ts`.
+
+### O que NÃO entra nesta fatia
+- A receita do WordPress ainda não devolve URL de foto. Resolver anexo → URL é
+  fatia à parte; até lá nenhuma receita aciona `imagem_url` sozinha.
+- Foto do catálogo (`produto_codigo`) continua como estava.
+- Nenhuma migration, tela ou variável de ambiente nova.
+
+### NÃO MEDIDO
+- C3: envio real por WhatsApp (tipos, tamanhos e tempos aceitos). Nenhum envio real foi feito.
+- C4: volume de itens por turno com fotos (continua na prova com gente).
+- Que o `lookup` fixado funciona com os CDNs reais (TLS e SNI): só medido por
+  teste com dependências simuladas, sem rede.
+- Se o gateway bloqueia algo que o CRM já baixou: não sabemos, porque o gateway
+  não recebe mais a URL.
+
+### Dívida declarada (não coberta)
+- Proveniência: o modelo pode escolher uma URL pública que ele mesmo inventou. O
+  CRM então baixa essa URL, e um pixel de rastreio revela o IP do servidor da
+  busca. A guarda confere destino e conteúdo, não a origem da URL. Fica como
+  dívida até decidir se a URL precisa aparecer em resultado de ferramenta deste turno.
