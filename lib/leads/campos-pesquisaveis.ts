@@ -143,31 +143,66 @@ function vazio(valor: unknown): boolean {
 }
 
 /**
+ * O veredito de UM item de uma escrita — a mesma régua do valor único, aplicada
+ * item a item no modo múltiplo. Casa? `value` canônico. Não casa e `allow_new`?
+ * o texto aparado. Não casa e sem `allow_new`? recusa.
+ */
+function valorDeUmItem(
+  campo: Pick<CustomFieldDef, "options" | "allow_new">,
+  item: unknown,
+): ResultadoDoValor {
+  if (typeof item !== "string") {
+    // A lista é de STRINGS; um número/booleano/objeto não tem como casar com
+    // opção nenhuma, então cai na mesma régua de "não casou".
+    return campo.allow_new === true ? { ok: true, valor: item } : { ok: false, motivo: "fora_da_lista" };
+  }
+  const canonico = valorCanonico(opcoesDoCampo(campo), item);
+  if (canonico !== null) return { ok: true, valor: canonico };
+  return campo.allow_new === true
+    ? { ok: true, valor: item.trim() }
+    : { ok: false, motivo: "fora_da_lista" };
+}
+
+/**
  * A RÉGUA de uma escrita num campo do funil (critério "b").
  *
  * Para QUALQUER tipo que não seja `searchable_select` é um passe direto — este
  * módulo não muda o comportamento dos tipos que já existem, byte a byte. Só o
  * tipo novo decide: normaliza o que casa, aceita cru o que `allow_new` libera,
  * recusa o resto.
+ *
+ * Com `multiple: true` (issue #3182) a escrita é uma LISTA e a régua é a MESMA,
+ * aplicada ITEM A ITEM: cada item que casa vira o `value` canônico da sua opção,
+ * o que não casa é recusado só se `allow_new` estiver desligado, e o resultado é
+ * a lista de canônicos — sem repetição, porque duas grafias da mesma opção
+ * ("Maceió (AL)" e "maceio") são a MESMA escolha. Um item ruim recusa a escrita
+ * inteira: gravar metade da lista silenciosamente repetiria, do outro lado, o
+ * defeito que este tipo existe para fechar.
  */
 export function validarValorPesquisavel(
-  campo: Pick<CustomFieldDef, "type" | "options" | "allow_new">,
+  campo: Pick<CustomFieldDef, "type" | "options" | "allow_new" | "multiple">,
   valor: unknown,
 ): ResultadoDoValor {
   if (campo.type !== TIPO_DA_LISTA_PESQUISAVEL) return { ok: true, valor };
-  if (vazio(valor)) return { ok: true, valor };
 
-  if (typeof valor !== "string") {
-    // A lista é de STRINGS; um número/booleano/array não tem como casar com
-    // opção nenhuma, então cai na mesma régua de "não casou".
-    return campo.allow_new === true ? { ok: true, valor } : { ok: false, motivo: "fora_da_lista" };
+  if (campo.multiple === true) {
+    // Ausente/`null` e a lista vazia são "limpar": nunca recusados.
+    if (valor === undefined || valor === null) return { ok: true, valor };
+    if (Array.isArray(valor) && valor.length === 0) return { ok: true, valor: [] };
+    // Um escalar num campo múltiplo é uma lista de UM — o mesmo valor único que
+    // a ficha gravava antes de a pessoa escolher o segundo, normalizado.
+    const itens = Array.isArray(valor) ? valor : [valor];
+    const canonicos: unknown[] = [];
+    for (const item of itens) {
+      const r = valorDeUmItem(campo, item);
+      if (!r.ok) return r;
+      if (!canonicos.includes(r.valor)) canonicos.push(r.valor);
+    }
+    return { ok: true, valor: canonicos };
   }
 
-  const canonico = valorCanonico(opcoesDoCampo(campo), valor);
-  if (canonico !== null) return { ok: true, valor: canonico };
-  return campo.allow_new === true
-    ? { ok: true, valor: valor.trim() }
-    : { ok: false, motivo: "fora_da_lista" };
+  if (vazio(valor)) return { ok: true, valor };
+  return valorDeUmItem(campo, valor);
 }
 
 /**
@@ -225,4 +260,32 @@ export function importarOpcoesCsv(
   }
 
   return { opcoes: [...opcoesAtuais, ...adicionadas], adicionadas, ignoradas };
+}
+
+/**
+ * EXPORTAR AS OPÇÕES EM CSV (sugestão 3 da issue #3176).
+ *
+ * O INVERSO EXATO da importação acima, e de propósito: `value,label,apelidos`
+ * por linha, apelidos separados por `;`, encabeçado pela linha que o próprio
+ * `importarOpcoesCsv` reconhece e pula. O que sai daqui volta pelo "Importar" —
+ * editar a lista fora do CRM (numa planilha) e reimportar é o ciclo que a issue
+ * pede, e ele só existe se o arquivo exportado for um arquivo que o importador
+ * aceita.
+ *
+ * SEM PERDER O `value` CANÔNICO: o arquivo traz a coluna `value` (não só o
+ * rótulo), então uma lista que passou por aqui e voltou continua gravando o
+ * mesmo valor canônico — os negócios já registrados com ele seguem casando.
+ *
+ * O LIMITE É DO DIALETO DA IMPORTAÇÃO, e está declarado em vez de escondido: o
+ * leitor separa as colunas por VÍRGULA e não entende aspas, então um `value`,
+ * `label` ou apelido que contenha vírgula não sobrevive à ida e volta. Escapar
+ * aqui seria pior — o arquivo deixaria de ser lido pelo importador que já
+ * existe, e o formato da importação não muda nesta correção.
+ */
+export function exportarOpcoesCsv(opcoes: OpcaoPesquisavel[]): string {
+  const linhas = ["value,label,apelidos"];
+  for (const opcao of opcoes) {
+    linhas.push(`${opcao.value},${opcao.label},${(opcao.aliases ?? []).join(";")}`);
+  }
+  return `${linhas.join("\n")}\n`;
 }

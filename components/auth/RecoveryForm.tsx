@@ -22,13 +22,9 @@ export function RecoveryForm({ next }: RecoveryFormProps) {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const normalizedCode = code.trim().toUpperCase();
-    if (!/^[A-Z0-9]{8}$/.test(normalizedCode)) {
-      setError(t("Código inválido ou já utilizado."));
-      return;
-    }
+    // Quem normaliza (espaços, hífen, minúsculas) é o servidor, com a mesma regra da gravação.
     startTransition(async () => {
-      const res = await submitRecoveryCode({ email, code: normalizedCode }, next);
+      const res = await submitRecoveryCode({ email, code }, next);
       if (!res) return; // server-side redirect on success
       if (res.error === "service_unavailable") {
         setError(t("Serviço de recuperação indisponível. Contate o administrador."));
@@ -58,7 +54,7 @@ export function RecoveryForm({ next }: RecoveryFormProps) {
           id="recovery-code"
           inputMode="text"
           autoComplete="one-time-code"
-          maxLength={8}
+          maxLength={12}
           required
           placeholder="ABCD2345"
           className="font-mono uppercase tracking-widest"

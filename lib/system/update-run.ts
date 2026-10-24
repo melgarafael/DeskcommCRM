@@ -270,6 +270,20 @@ function semPrefixoV(versao: string): string {
 }
 
 /**
+ * O nome aponta para uma VERSÃO PUBLICADA — `1.33.0` e `v1.33.0` valem; uma
+ * marca de desenvolvimento (SHA, `dev-...`) não.
+ *
+ * É o critério do `--force` com alvo: só existe imagem publicada para uma
+ * versão publicada, então só ela admite "voltar para a versão anterior" com
+ * nome. Quem decide isso em duas pontas — a tela que oferece o botão de voltar
+ * e a rota que registra o pedido (#2757) — usa ESTA função, para as duas
+ * nunca discordarem sobre o que é uma versão.
+ */
+export function ehVersaoPublicada(versao: string | null | undefined): boolean {
+  return /^\d+\.\d+\.\d+/.test(semPrefixoV(versao ?? ""));
+}
+
+/**
  * O app EM EXECUÇÃO desmente o rollback deste run?
  *
  * ## O caso que `rollbackFoiSuperado` não alcança, medido em produção

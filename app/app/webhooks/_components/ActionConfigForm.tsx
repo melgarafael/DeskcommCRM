@@ -300,7 +300,7 @@ function SendWhatsappForm({
         </p>
       </div>
       <div className="space-y-1">
-        <Label htmlFor={midiaId}>{t("Imagem ou PDF (opcional)")}</Label>
+        <Label htmlFor={midiaId}>{t("Imagem, vídeo, áudio ou documento (opcional)")}</Label>
         <Input
           id={midiaId}
           type="url"
@@ -309,7 +309,7 @@ function SendWhatsappForm({
           placeholder="https://…/oferta.pdf"
         />
         <p className="text-xs text-muted-foreground">
-          {t("Com uma imagem ou PDF, a mensagem acima vira a legenda do arquivo. Outros tipos de arquivo são recusados. Em número oficial, fora da janela de 24h a mídia não sai — só um modelo aprovado.")}
+          {t("Com uma imagem, um vídeo, um áudio ou um documento, a mensagem acima vira a legenda do arquivo (o áudio sai como mensagem de voz, sem legenda — o texto não vai junto). Em número oficial, fora da janela de 24h a mídia não sai — só um modelo aprovado.")}
         </p>
       </div>
     </div>

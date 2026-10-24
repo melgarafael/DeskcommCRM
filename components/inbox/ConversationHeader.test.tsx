@@ -16,12 +16,13 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
+const claimMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
 }));
 vi.mock("@/hooks/inbox/useClaimConversation", () => ({
-  useClaimConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useClaimConversation: () => ({ mutate: claimMutate, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
   useReleaseConversation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -95,6 +96,40 @@ beforeEach(() => {
   closeMutate.mockReset();
   arquivarMutate.mockReset();
   startCall.mockReset();
+  claimMutate.mockReset();
+});
+
+/**
+ * O BOTÃO "ASSUMIR" NUNCA SOME (#3012).
+ *
+ * Ele é a SAÍDA da regra que trava a caixa de mensagem até alguém assumir: se
+ * ele desaparecesse em algum estado, a conversa ficaria sem caminho de volta. O
+ * cabeçalho não conhece a preferência da organização de propósito — quem lê a
+ * opção é o compositor —, então estes casos medem o que não pode depender dela:
+ * o botão existe e funciona com a conversa SEM dono, e continua existindo com a
+ * conversa já assumida por outra pessoa (onde ele é o gesto de reatribuir).
+ */
+describe("ConversationHeader — 'Assumir' é a saída da trava (#3012)", () => {
+  it("aparece e assume numa conversa SEM dono", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={conversa("open")} />);
+
+    const botao = screen.getByRole("button", { name: "Assumir" });
+    await user.click(botao);
+
+    expect(claimMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_assignee: null,
+    });
+  });
+
+  it("continua visível com a conversa já assumida por OUTRO atendente", () => {
+    const atual = conversa("open");
+    atual.assigned_to_user_id = "u2";
+    render(<ConversationHeader conversation={atual} />);
+
+    expect(screen.getByRole("button", { name: "Assumir" })).toBeInTheDocument();
+  });
 });
 
 describe("ConversationHeader — chamada de voz na Inbox", () => {

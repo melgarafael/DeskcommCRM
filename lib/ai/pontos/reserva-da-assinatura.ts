@@ -45,6 +45,24 @@
  * agente, e ele entra quando as perguntas abertas da issue forem respondidas —
  * até lá este arquivo é a metade decidida, e não uma configuração que promete o
  * que ainda não existe.
+ *
+ * ## O 400 que não é erro nosso (#3371, fatias 1 e 2)
+ *
+ * O ChatGPT por assinatura devolve a janela de uso estourada como HTTP 400 com
+ * `The ChatGPT user has reached their Subscription Sharing usage limit` — o
+ * MESMO status de um payload malformado. Classificar só pelo status tratava
+ * este caso como erro nosso: a reserva não era tentada e, sem reserva, o turno
+ * morria em silêncio (o agente ficou ~30 minutos sem responder, em 23/10/2026).
+ * Duas decisões fecham o buraco, e só elas: o CORPO da recusa é lido quando o
+ * status não basta (um 400 que diz "usage limit" é `limite_de_uso`), e toda
+ * falha da assinatura sem reserva vira `passar_para_humano` — inclusive o
+ * `erro_de_pedido`, que continua NÃO caindo para a reserva (o mesmo corpo seria
+ * recusado de novo lá). Reserva para outro provedor, aviso na tela e
+ * auto-renovação da janela continuam fora deste módulo.
+ *
+ * `passar_para_humano` é a DECISÃO; quem a executa ainda não existe:
+ * `run-model-call` só age em `tentar_reserva` e relança o resto (#3371 segue
+ * aberta para essa fiação).
  */
 
 /**
@@ -82,15 +100,18 @@ export function provedorDeReserva(provider: string): string | null {
 /**
  * O que aconteceu, na linguagem do produto — não o status cru.
  *
- * São cinco porque os cinco levam a lugares diferentes: os quatro primeiros
+ * São seis porque os seis levam a lugares diferentes: os quatro primeiros
  * justificam a queda (a credencial da assinatura é o problema, não a chamada); o
  * quinto diz que o pedido está errado, e nele cair para a outra credencial
  * mandaria o MESMO corpo recusado para a chave da empresa — gastando duas
  * chamadas para colher dois erros, e escondendo de quem opera a informação de que
- * o defeito é nosso.
+ * o defeito é nosso. O sexto é a rede: ninguém chegou a julgar nada.
  */
 export type MotivoDaQueda =
-  /** Janela de uso da assinatura estourada (429, ou 402 de crédito esgotado). */
+  /**
+   * Janela de uso da assinatura estourada (429, ou 402 de crédito esgotado — e
+   * o 400 do ChatGPT que diz "Subscription Sharing usage limit", #3371).
+   */
   | "limite_de_uso"
   /** O token do login venceu e precisa ser renovado (401/403 com sinal de expiração). */
   | "token_expirado"
@@ -98,6 +119,8 @@ export type MotivoDaQueda =
   | "sem_autorizacao"
   /** A assinatura respondeu 5xx: a reserva existe para não deixar o cliente sem resposta. */
   | "falha_do_provedor"
+  /** O pedido está errado (400 de payload, 404 de rota, 422 de parâmetro): o defeito é nosso. */
+  | "erro_de_pedido"
   /** Não houve resposta (rede, DNS, timeout): a assinatura não chegou a julgar a credencial. */
   | "rede";
 
@@ -109,17 +132,35 @@ const SINAIS_DE_EXPIRACAO: readonly RegExp[] = [
 ];
 
 /**
+ * Sinais de janela de uso estourada NO CORPO da recusa. Existe porque o ChatGPT
+ * por assinatura devolve a cota esgotada como HTTP 400 (#3371: "The ChatGPT
+ * user has reached their Subscription Sharing usage limit") — o mesmo status de
+ * um payload malformado —, e só a frase distingue os dois. A frase completa
+ * casa por "usage limit"; não se casa "subscription sharing" sozinho, que
+ * apareceria igual num 400 de configuração da conta. Comparados em caixa baixa.
+ */
+const SINAIS_DE_LIMITE_DE_USO: readonly RegExp[] = [
+  /usage[\s_-]*limits?/, // usage limit / usage_limit / Usage Limits
+  /limite[s]? de uso/,
+];
+
+/**
  * Traduz o desfecho de uma chamada da assinatura em motivo de queda.
  *
  * `status` é o HTTP; `null` significa que não houve resposta (exceção de rede,
  * timeout, endereço inalcançável) — o caso em que o token não foi julgado por
- * ninguém. `detalhe` é o texto que o provedor devolveu, usado SÓ para separar
- * "expirado" de "não autorizado": os dois chegam como 401, e o tratamento é
- * diferente (um pede renovação do login, o outro pede reconexão/assinatura ativa).
+ * ninguém. `detalhe` é o texto que o provedor devolveu, usado SÓ onde o status
+ * não basta: separar "expirado" de "não autorizado" (os dois chegam como 401, e
+ * o tratamento é diferente — um pede renovação do login, o outro pede
+ * reconexão/assinatura ativa) e separar o limite de uso do payload errado (os
+ * dois chegam como 400, e tratar o primeiro como nosso calou o agente por ~30
+ * minutos em 23/10/2026 — #3371).
  *
- * Devolve `null` quando não há queda a decidir — status 4xx que não é de
- * credencial (400 de payload, 404 de rota, 422 de parâmetro). O detalhe nunca é
- * guardado nem devolvido: pode carregar material da credencial.
+ * Devolve `null` SÓ quando não houve falha — status 2xx/3xx, e quem chamou
+ * segue com o desfecho normal. Todo o resto vira motivo: o 4xx que não é
+ * de credencial vira `erro_de_pedido` (a recusa é do nosso pedido), e a falta de
+ * resposta vira `rede`. O detalhe nunca é guardado nem devolvido: pode carregar
+ * material da credencial.
  */
 export function classificarFalhaDaAssinatura(
   status: number | null,
@@ -134,6 +175,14 @@ export function classificarFalhaDaAssinatura(
       : "sem_autorizacao";
   }
   if (status >= 500) return "falha_do_provedor";
+  if (status >= 400) {
+    // O 4xx que não é de credencial: o corpo decide entre "cota estourada"
+    // (#3371) e "o pedido está errado". Sem o corpo, vale o defeito nosso.
+    const texto = (detalhe ?? "").toLowerCase();
+    return SINAIS_DE_LIMITE_DE_USO.some((sinal) => sinal.test(texto))
+      ? "limite_de_uso"
+      : "erro_de_pedido";
+  }
   return null;
 }
 
@@ -158,6 +207,14 @@ export type DecisaoDaQueda = QuedaParaAReserva | PassarParaHumano;
  * (`temChaveDeReserva`) → cai; aconteceu e não existe → humano; não aconteceu
  * (`motivo === null`) → `null`, e quem chamou segue com o desfecho normal.
  *
+ * A ÚNICA queda que a excepciona é `erro_de_pedido` com reserva: o corpo
+ * recusado seria recusado de novo pela outra credencial, gastando duas chamadas
+ * para colher dois erros. SEM reserva, porém, o erro de pedido passa para o
+ * humano como os demais (#3371, item 3): a falha — nossa ou da assinatura — não
+ * pode virar silêncio. (É a DECISÃO; hoje `run-model-call` só executa
+ * `tentar_reserva` e relança o resto: a passagem para humano sem reserva segue
+ * pendente na #3371.)
+ *
  * "Passar para um humano" é decisão de produto já tomada na issue: sem chave de
  * reserva o agente não pode ficar calado. O TEXTO que o atendente lê não mora
  * aqui (é tela, e tela tem i18n) — o que sai daqui é o motivo, e é ele que o
@@ -170,6 +227,7 @@ export function decidirQuedaDaAssinatura(entrada: {
   const { motivo } = entrada;
   if (motivo === null) return null;
   if (entrada.temChaveDeReserva) {
+    if (motivo === "erro_de_pedido") return null;
     return {
       acao: "tentar_reserva",
       provedorDeReserva: PROVEDOR_DE_RESERVA_DA_ASSINATURA,

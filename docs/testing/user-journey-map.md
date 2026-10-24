@@ -263,6 +263,7 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 | J4.38 | **Excluir um card pelo menu do próprio card, inclusive no toque** (#910) | o botão de ações é visível sem hover em aparelho de toque (opacidade COMPUTADA, não a string do `className`) e o menu traz "Excluir", que abre o `AlertDialog` da doutrina destrutiva · `tests/e2e/lote-no-quadro-do-funil.spec.ts` (bloco de toque) + `tests/unit/kanban-card-excluir.test.tsx` (5 casos). Evidência: `evidence/excluir-card-no-toque/` |
 | J4.42 | **O funil arquivado tem porta de volta** (#979) | a gaveta "Funis arquivados (N)" nasce FECHADA na tela de Funis, abre com um clique, e de lá o funil volta para a lista viva (sobrevivendo ao reload) ou é excluído de vez com painel de confirmação. As duas asserções que impedem a regressão: o arquivado **não** aparece na lista de trabalho **nem no seletor de destino da importação** (o vazamento que os PRs #941/#944 tiraram de outras telas), e quem é `agent` não vê a gaveta nem o nome do funil arquivado. `tests/e2e/funil-arquivado-volta-pela-tela.spec.ts` (SPECS_PARTE_4) + `tests/unit/funil-arquivado-caminho-de-volta.test.ts` (4 casos, a regra da rota). A spec grava medidas (`getBoundingClientRect`) e capturas em `.superpowers/evidence/funil-arquivado-volta/`. ⚠️ **ESCRITA NESTA ENTREGA E AINDA NÃO EXECUTADA** — nenhum job a invocou até aqui, e verde local também não existe; quem decide é a primeira rodada do `e2e`. Se reprovar por ambiente, o lugar dela é o `FORA_DO_CI` COM o motivo medido, nunca uma exclusão preventiva |
 | J4.41 | **Arrastar o mesmo card duas vezes seguidas** (#916, PR #919) | o segundo arrasto, feito logo depois do primeiro e com o refetch do quadro segurado (a rede lenta de uma VPS distante), responde `200` e o card chega à terceira etapa, sem o aviso "modificado por outro usuário" e sem recarregar a página; o banco guarda a etapa final. `tests/e2e/kanban-owner-filter.spec.ts`, funil próprio, arrasto pelo teclado do `@hello-pangea/dnd` (executado 2026-09-16, ambiente fresco do `baseline.sql`). Evidência: `evidence/arrastar-duas-vezes/01-depois-do-primeiro.png` (o card na segunda etapa, depois do primeiro arrasto) e `evidence/arrastar-duas-vezes/02-depois-do-segundo.png` (na terceira, depois do segundo) |
+| J4.43 | **Mover de etapa pelo menu do card, no celular** ("Mover para…") | a spec cobra, a 390px: o botão "⋯" acerta a 21px do centro (44px de área, por `elementFromPoint`), cada etapa do menu tem ≥44px, o card entra no FIM da etapa inteira e a etapa de perda abre a janela do motivo antes de qualquer `POST /move`; arrastar para a perda também abre a janela, e o negócio reaberto não reaproveita o motivo da perda anterior. Spec: `tests/e2e/qa-l12-funil.spec.ts` (bloco do toque e #935 caminho 2), unit `tests/unit/mover-etapa-pelo-menu.test.tsx` |
 
 ## J5 — Time: convites e atuação de atendentes `[P0]` (convite) / `[P1]` (rotina)
 
@@ -519,6 +520,38 @@ diálogo e é asserida na spec.
 | J31.12 | Rodada do cron que não mudou nada | não audita (CLAUDE.md §Audit log) | **PASS (unit)** |
 
 ---
+
+## J52 — Campanha pelo número oficial, com modelo aprovado `[P1]` (2026-10-15)
+
+Contexto: issue #1330, fatia 4. Número oficial só aceita texto livre dentro das
+24 h da última mensagem do cliente, e a campanha fala com quem não escreveu —
+a campanha de texto num número oficial falhava em cada envio. Agora, no número
+oficial, o formulário oferece os modelos aprovados DAQUELE número
+(`GET /api/v1/campaigns/modelos`), o mapa de onde sai cada variável
+(`lib/campanhas/modelo.ts`) e a prévia (`components/channels/PreviaDoModelo.tsx`,
+a mesma do inbox). Migration 0710.
+
+Spec: `tests/e2e/campanha-com-modelo-aprovado.spec.ts`, na `SPECS_PARTE_5`. Os
+casos 1, 2 e o da escolha do envio rápido rodam no CI; o envio de teste e a
+rodada rápida precisam do dublê do provedor (ambiente do `next start`) e pulam
+sem ele — o comando está no cabeçalho da spec.
+
+Envio rápido (migration 0711, 2026-10-16): `campaigns.velocidade` (`gradual` |
+`rapida`, só com modelo). Na rápida, a rodada do cron manda em rajada
+(`lib/campanhas/rajada.ts`: 6 inícios por segundo, 4 em voo, até 38 s por
+rodada) em vez de uma mensagem por rodada; o 429 do provedor e o 130429 da
+plataforma devolvem a pessoa à fila em vez de falhá-la.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J52.1 | Escolher um número oficial na nova campanha | o campo de texto some; aparece o seletor de modelos do número, o pausado desabilitado, a mídia do cabeçalho já com o link salvo, «Falta escolher a origem de» até tudo ter origem, e a prévia com «[Primeiro nome do contato]» e o texto fixo | **PASS pela tela** — Evidência: `evidence/campanha-com-modelo-aprovado/01-modelo-escolhido-com-previa.png` |
+| J52.2 | Contar o público com um contato cujo nome é só telefone | 1 pode receber; o outro fica de fora com «Falta um dado que a mensagem usa» | **PASS pela tela** — `evidence/campanha-com-modelo-aprovado/02-publico-com-quem-fica-de-fora.png` |
+| J52.3 | Salvar e preparar | a campanha grava `message_mode = template` e o mapa; o destinatário guarda os valores em `variables.modelo` e o texto preenchido em `rendered_body` (o que o agente lê) | **PASS pela tela + banco** — `evidence/campanha-com-modelo-aprovado/03-detalhe-do-rascunho.png`, `evidence/campanha-com-modelo-aprovado/04-lista-preparada.png` |
+| J52.4 | Enviar teste (com o dublê do provedor) | o provedor recebe nome, idioma, `templateParams` na ordem do contrato e `headerMedia`; a conversa guarda o modelo com o texto preenchido | **PASS pela tela, local** — `evidence/campanha-com-modelo-aprovado/05-teste-enviado.png`; no CI pula (sem dublê) |
+| J52.5 | Falha da plataforma no envio | da pessoa (131050, 131049, 131026) segue para a próxima com o motivo em frase; do envio inteiro (132015, 131048, 131042…) pausa a campanha com o motivo | **PASS (unit)** — `lib/channels/erro-da-plataforma.test.ts`; rodada **NÃO MEDIDA** pela tela |
+| J52.6 | Entrega e leitura pelo oficial direto | o trigger de ack lê `delivered_at`/`read_at` e o destinatário vira entregue/lido | **PASS (banco)** — do #2937: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` |
+| J52.7 | Escolher «Rápido» no ritmo de uma campanha do número oficial (migration 0711) | a campanha que já existia vem «Gradual»; «Rápido» grava `velocidade = rapida`, some o campo de intervalo, e a confirmação de «Iniciar envio» diz «Envio rápido: sai tudo em cerca de 1 min.» | **PASS pela tela + banco** (2026-10-16) — `evidence/campanha-com-modelo-aprovado/06-envio-rapido-escolhido.png` |
+| J52.8 | Campanha rápida de 3 pessoas, uma rodada do cron (com o dublê do provedor) | o provedor recebe os 3 modelos, cada um com o primeiro nome da pessoa; os 3 destinatários ficam `sent`, a campanha `completed`, e a tela mostra «Enviadas 3» | **PASS pela tela, local** (2026-10-16) — `evidence/campanha-com-modelo-aprovado/07-rapida-lista-inteira-numa-rodada.png`; no CI pula (sem dublê) |
 
 ## J9 — Ver o que o follow-up já fez, e intervir sem matá-lo `[P1]`
 
@@ -1482,6 +1515,32 @@ real, não pela tela).
 - `evidence/cobranca-revendedor/sistema-cobranca-ligada.png`
 - `evidence/cobranca-revendedor/visao-geral-checklist.png`
 
+## J53 — Tocar os controles da casca no celular `[P1]` (2026-10-23)
+
+ADR-0006, fase F4. Os primitivos que o app inteiro usa (`Switch`, itens de menu e
+de seleção, `TabsList`, `AlertDialog`) e a casca (gaveta "Mais", busca, aviso de
+proposta, faixa de conexão caída) passam a ter alvo de dedo com ponteiro grosso
+(`pointer-coarse:`) ou pela largura da janela: abaixo de `md` (aviso de proposta,
+faixa de conexão, rótulo da lupa) e abaixo de `lg` (a fila de abas, que cresce
+também com mouse). Valem também no computador largo: o «Limpar» da busca, que
+saía com a ponta direita embaixo do X, e a janela de confirmação, que passa a
+rolar por dentro. O `Switch` ganha `pointer-coarse:my-3`, para o `::before` de
+um não invadir o do vizinho numa pilha densa. Spec:
+`tests/e2e/celular-toque-nos-controles.spec.ts` (parte 7), 390×844 com toque
+emulado, login `admin`, nada semeado. Catraca de classe em
+`tests/unit/toque-nos-primitivos.test.tsx`. Evidência:
+`evidence/celular-f4-casca/` (gravada pelo CI).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J53.1 | Interruptor «Lead ganho via in_app» em Configurações › Notificações | `elementFromPoint` 21 px abaixo do centro cai no interruptor; a 24 px não cai (controle: a área deste não passa de 24 px; pode cair no vizinho) | classe conferida (unit); geometria a medir (CI) |
+| J53.1b | Pilha densa: dois clones do interruptor real na geometria da lista de grupos (um a cada 28 px sem a margem) | passo ≥ 44 px; o toque 21 px abaixo do centro do de cima cai no de cima, não no de baixo. Desvio declarado na spec: a lista de grupos real exige canal com grupos | classe conferida (unit); geometria a medir (CI) |
+| J53.2 | Menu do usuário | todo `[role=menuitem]` ≥ 44 px de altura | classe conferida (unit); geometria a medir (CI) |
+| J53.3 | Gaveta «Mais» | todo link e cabeçalho de grupo ≥ 44 px | a medir (CI) |
+| J53.4 | Aba «Atendimento» em Equipe | ≥ 44 px, e o toque 2 px dentro da borda de cima e da de baixo cai na aba (antes a fila `h-9` cortava 4 px de cada lado) | classe conferida (unit); geometria a medir (CI) |
+| J53.5 | Busca: digitar «x» e tocar no centro de «Limpar» | o campo esvazia e a busca continua aberta | a medir (CI) |
+| J53.6 | Controle a 1280 px, mouse, sem toque | o item «Sair» do menu continua abaixo de 44 px | a medir (CI) |
+
 ## J44 — O revendedor cobra pelo Asaas: Pix e boleto recorrentes, com CPF/CNPJ no checkout `[P0]` (2026-10-06)
 
 **Origem:** PR 3b da cobrança do revendedor (`docs/superpowers/specs/2026-09-29-cobranca-do-revendedor-design.md`, §6.2, §7(a), §7(b), §7(f), §13, §15 riscos 5 e 11).
@@ -1517,6 +1576,38 @@ real, não pela tela).
 - `evidence/cobranca-asaas/billing-asaas-cancelada.png`
 - `evidence/cobranca-asaas/smoke-asaas.txt`
 
+## J54 — Acompanhar os números no celular `[P1]` (2026-10-23)
+
+ADR-0006, fase F4. O gestor abre Desempenho (`/app/metrics`) e Atividades
+(`/app/activities`) no celular. Os quadros "Performance por atendente" e "Por
+canal" e a aba "Por etiqueta" viram um cartão por linha, só com classes
+`max-md:`, e cada número leva o nome da coluna no `data-rotulo`. O quadro
+Previsão rola dentro dele mesmo.
+Spec: `tests/e2e/celular-cabe-na-tela.spec.ts` (parte 6), 360 e 390px com toque
+emulado, login admin. A spec semeia pelo service role:
+- um negócio aberto com valor e data no mês seguinte, numa etapa com chance de
+  fechamento criada para isso;
+- um ganho do admin;
+- uma conversa atribuída ao admin num canal, para "Por canal" existir.
+
+O `afterAll` apaga tudo, filhos antes de pais, e lança erro se algum delete
+falhar. A régua de estouro passou a medir também o `<main>`, que tem
+`overflow-auto`: a do `body` sozinha dava zero com a tela estourada.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J54.1 | A régua mede o `<main>` | `Math.max(body − janela, main.scrollWidth − main.clientWidth) ≤ 1` nas cinco superfícies (Inbox, Funis, Agenda, Desempenho, Atividades), a 360 e a 390px | a medir (CI) |
+| J54.2 | Previsão com dados | a tabela de meses da Previsão não alarga o `<main>` (rola dentro do próprio quadro) | a medir (CI) |
+| J54.3 | Performance por atendente e Por canal em cartão | a 390px o cabeçalho dos dois quadros (ambos semeados, presença cobrada) tem `display:none`, e a caixa de nenhuma tabela de Desempenho ou de Atividades rola para o lado | classe e rótulos conferidos (unit `graficos-do-desempenho`, em pt e es; `relatorio-por-etiqueta-tela`); geometria a medir (CI) |
+| J54.4 | "Salvar" ao lado de "Contar como perdida no silêncio após" ≥ 44px | com o campo alterado, nenhum controle do Desempenho fica abaixo de 44px de altura a 360px | a medir (CI) |
+| J54.5 | Número do dia visível | cada dia do quadro "Quando" de Atividades escreve a quantidade embaixo da barra, escondida só onde há hover | classe conferida (unit `serie-diaria-mostra-o-numero`); geometria a medir (CI) |
+| J54.6 | Linha do tempo de Atividades | o link do negócio tem `max-md:min-h-11` e o motivo quebra palavra longa (`max-md:wrap-anywhere`) | classe conferida (unit `serie-diaria-mostra-o-numero`); geometria a medir (CI) — o caso de 44px da spec pula `<a>` de fundo transparente e não mede este link |
+
+**NÃO COBERTO, declarado:** "Por etiqueta" em cartão pela tela (a aba precisa
+de conversas etiquetadas, que o CI não semeia aqui; o contrato está no unit);
+a altura real do link do negócio em Atividades (só a classe, no unit); a
+quebra do motivo de perda em Desempenho (`PerdasPanel`, sem unit); aparelho real.
+
 ## J45 — O dono gera o link de pagamento pela empresa e manda pelo WhatsApp `[P0]` (2026-10-14)
 
 **Origem:** link de pagamento pelo dono (`docs/superpowers/specs/2026-09-29-cobranca-do-revendedor-design.md`, D-15, §7(b), §7(g), §9).
@@ -1540,6 +1631,26 @@ real, não pela tela).
 
 **Evidência:** ainda não versionada. A spec grava as duas fotos (o card com o link gerado e o painel da empresa com o mesmo link) na pasta `evidence/cobranca-link-pelo-dono/` quando roda; elas entram aqui, citadas, depois da primeira rodada verde do `e2e`.
 
+## J55 — Cuidar da equipe pelo celular `[P1]` (2026-10-23)
+
+ADR-0006, fase F4. O gestor cuida do time pelo celular: Equipe (membros e
+convites), a aba Atendimento (plantão e horários), os pedidos de LGPD e as
+Tags. Abaixo de `md` as tabelas viram cartão só com classes `max-md:`; nas
+Tags, o `Card` com `overflow-hidden` cortava Renomear, Juntar e Excluir.
+Spec: `tests/e2e/equipe-no-celular.spec.ts` (parte 7), 390×844 com toque
+emulado, login `admin`. A área de toque do interruptor de Disponibilidade fica
+fora: depende do `Switch` de outro PR da F4.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J55.1 | Membros a 390px | o `<main>` não rola para o lado; cabeçalho `display:none`; o invólucro da tabela não rola; o ⋯ do agente ≥ 44px e entre 0 e 390px | classe conferida (unit) `TeamMembersClient.test.tsx`; geometria a medir (CI) |
+| J55.2 | Convites a 390px | cabeçalho `display:none`; invólucro sem rolagem; «Copiar link» e ⋯ ≥ 44px e dentro da tela | geometria a medir (CI) |
+| J55.3 | Atendimento a 390px | cabeçalho `display:none`; invólucro sem rolagem; o interruptor «Disponibilidade de …» dentro da tela; «Editar horário de …» ≥ 44px | geometria a medir (CI) |
+| J55.4 | Horário de um atendente | a linha `janela` não rola para o lado (`scrollWidth`) e «Remover janela» não passa da borda dela; Cancelar fecha sem gravar. **Não medido:** se o horário aparece inteiro dentro do campo — o `scrollWidth` de um `input[type="time"]` é igual ao `clientWidth` mesmo cortado (Chrome 155, 2026-10-23) | classe conferida (unit) `editor-da-jornada-copia-e-resumo.test.tsx`; geometria a medir (CI) |
+| J55.5 | Pedidos de LGPD a 390px | cabeçalho `display:none`; invólucro sem rolagem; «Ver» ≥ 44×44px e dentro da tela | classe conferida (unit) `RequestsTable.test.tsx`; geometria a medir (CI) |
+| J55.6 `[P1]` | Tags a 390px | Cor, Renomear, Juntar e Excluir com `right ≤ 390` e 44px de altura; a 1280px as colunas Leads e Regras voltam. A página perde o `p-6` abaixo de `md` (folga estimada de ~14px para ~62px) | classe conferida (unit) `tags-acoes-alcancaveis.test.tsx`; geometria a medir (CI) |
+| J55.7 | Segurança e Interface de um membro | seletor, «Personalizar áreas visíveis», cada área marcável, «Nível mínimo» e «Dias de carência» com 44px abaixo de `md` | classe conferida (unit) `InterfaceEditor.test.tsx` e `settings/security/_client.test.tsx`; geometria não medida (nenhuma spec abre essas telas) |
+
 ## J46 — O anúncio que trouxe a pessoa aparece na conversa e no painel `[P1]` (2026-10-12)
 
 Contexto: pedido de uma operação real (loja com vários produtos anunciados). O
@@ -1561,6 +1672,27 @@ Spec: `tests/e2e/inbox-anuncio-de-origem.spec.ts`.
 | J46.2 | Mensagem recebida de um clique, nos três transportes (intermediado, oficial direto, QR) | `metadata.anuncio` com título, texto, id, link e miniatura; sem `ctwa_clid` nem payload cru; sem anúncio, a chave nem aparece; o primeiro toque do contato segue estampado como antes | **PASS (unit)** — `tests/unit/mensagem-guarda-o-seu-anuncio.test.ts` |
 | J46.3 | Endereço do anúncio que não é `https:` (`javascript:`, `data:`, `http:`) | não chega a `href` nem a `src` | **PASS (unit)** — `tests/unit/anuncio-visivel-na-inbox.test.tsx` |
 
+## J56 — Acompanhar a IA pelo celular `[P1]` (2026-10-23)
+
+ADR-0006, fase F4. O gestor pausa um agente, abre o aviso da Central de avisos e
+acompanha execuções, «O que o agente sabe», a fila e o editor de fluxo de
+Follow-ups com o celular na mão. Spec: `tests/e2e/ia-no-celular.spec.ts` (parte 7),
+390×844 com toque emulado, login `admin` de uma organização própria semeada pelo
+service role (as execuções vão em `llm_calls`, que é o que a aba lê). As alças de
+ligação do editor ficaram de fora (ver o comentário em `app/globals.css`).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J56.1 | Lista de agentes | o ⋯ do cartão tem ≥ 44×44px e fica dentro da tela; o `<main>` não rola para o lado | classe conferida (unit) `app/app/ai/agents/_components/AgentRowMenu.test.tsx`; geometria a medir (CI) |
+| J56.2 | Tela do agente, «Operação do agente» | a caixa não rola para o lado; o seletor tem ≥ 44px e cabe; «Pausar automático» cabe e o toque pausa (vira «Retomar automático») | a medir (CI) |
+| J56.3 | Aba «Execuções» | cabeçalho `display:none`; a caixa da tabela sem rolagem lateral; «Detalhes» dentro da tela; Custo e Latência rotulados no cartão; o `<main>` não rola | a medir (CI) |
+| J56.4 | Central de avisos | o link do destino tem ≥ 44px de altura e cabe; o `<main>` não rola | classe conferida (unit) `tests/unit/central-avisos-destino.test.tsx`; geometria a medir (CI) |
+| J56.5 | «O que o agente sabe», com um material | «Preparar tudo de novo» e «Adicionar material» entre 15px e a borda direita; o `<main>` não rola | a medir (CI) |
+| J56.6 | Follow-ups, aba «Fila» | cabeçalho `display:none`; a caixa da tabela sem rolagem lateral; o cartão e «Cancelar» dentro da tela | a medir (CI) |
+| J56.7 | Editor de fluxo de Follow-ups | zoom +, zoom − e encaixe com ≥ 44×44px e o centro livre; tocar num passo abre o painel com o fundo acima do topo da barra de abas | classe conferida (unit) `tests/unit/followup-canvas-controles.test.ts`, `tests/unit/painel-do-no-acima-da-barra.test.ts`; geometria a medir (CI) |
+| J56.8 | «Ver conversa» de um caso | o `::before` mede ≥ 44px de altura; o toque a 21px acima e abaixo do centro cai no link, e a 24px não (controle) | classe conferida (unit) `tests/unit/case-detail.test.tsx`; geometria a medir (CI) |
+| J56.9 | Editor de Automações (`CanvasDaAutomacao`) | a mesma regra de `globals.css` vale para todo `.react-flow`: zoom +, zoom − e encaixe com 44px com o dedo | classe conferida (unit) `tests/unit/followup-canvas-controles.test.ts`; geometria **não medida** (nenhuma spec abre este editor no celular). O painel de baixo deste editor (`fixed bottom-0`) segue atrás da barra de abas: fora da F4 |
+
 ## J47 — Ler a conversa selecionada no tema escuro `[P1]` (2026-10-12)
 
 Contexto: relatado por uma operação real, com a captura — no tema escuro, a linha
@@ -1576,6 +1708,17 @@ Spec: `tests/e2e/inbox-selecionada-no-escuro.spec.ts`.
 | J47.1 | Tema escuro, conversa aberta pela lista | o nome do contato na linha selecionada tem contraste ≥ 4,5 contra o fundo EFETIVO (cor computada, camadas translúcidas compostas) | **PASS pela tela** — Evidência: `evidence/inbox-selecionada-no-escuro/01-selecionada-no-escuro.png` |
 | J47.2 | A classe da selecionada | `bg-accent-soft`, nenhum degrau fixo `bg-accent-50…950`; a não selecionada não ganha o fundo | **PASS (unit)** — `tests/unit/selecionada-legivel-no-escuro.test.tsx` |
 | J47.3 | Tema escuro, conversa aberta E marcada no lote, com o mouse ou o foco de teclado | a linha fica num tom só (o botão não pinta por cima do fundo da linha), o foco aparece como anel, e o nome e a prévia seguem com contraste ≥ 4,5 contra o fundo efetivo | **PASS pela tela** — Evidência: `evidence/inbox-selecionada-no-escuro/02-aberta-e-marcada-com-foco.png` |
+
+## J51 — Ver os contatos no celular `[P1]` (2026-10-21)
+
+ADR-0006, fase F3. Abaixo de `md` a tabela de Contatos vira um cartão por linha,
+só com classes `max-md:` (o DOM é o mesmo do computador). Spec:
+`tests/e2e/contatos-em-cartao-no-celular.spec.ts` (parte 6), 390×844 com toque
+emulado, login `agent`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J51.1 | Lista a 390px, selecionar e abrir | nem a página nem a caixa da tabela rolam para o lado; cabeçalho `display:none`; cartões entre 15 e 375px; nome, conversa, editar e excluir ≥ 44px; a caixa pega o toque a 20px do centro; «Selecionar todos os contatos visíveis» marca as linhas e abre a barra de lote; o nome abre a ficha; a 1280px volta a tabela sem o botão | a medir (CI) + UNIT `app/app/contacts/_client.test.tsx` |
 
 ## J48 — Instalar o app no celular e ser avisado `[P0]` (2026-10-20)
 
@@ -1607,6 +1750,7 @@ Evidência: `evidence/app-no-celular-20261020/` (gravada pelo CI).
 | J48.9 | Navegador de dentro de outro app, https que recusa o SW, Chrome em modo computador | manda abrir no Safari/Chrome; fica sem app; conta como celular | UNIT `estado-da-instalacao` |
 | J48.10 | Push com o app à vista | AINDA vira notificação, calada (a página já tocou o som); fora do app ou tipo sem aviso local, com som | UNIT `notify-sw` |
 | J48.11 | A porta | o link «Receber no celular: instalar o app» em Notificações leva à tela | E2E (CI) |
+| J48.12 | O toque no lembrete de tarefa (F3) | abre `/app/tasks?assigned_to=me`: só as tarefas da pessoa, «Todas» traz as outras; a 390px, controles ≥ 44 px, caixa de concluir alcançável a 20 px do centro, lápis visível sem hover, sem rolagem lateral nem no `<main>`, tocar conclui no banco; tarefa nova criada em «Minhas» nasce da pessoa; calendário escolhido no tablet não prende o celular | E2E `minhas-tarefas-no-celular` (navega pela constante do push) (CI, parte 3) + UNIT `TarefasClient.test`, `tarefas-rota-nao-tem-porta-dos-fundos` |
 
 **NÃO COBERTO, declarado:** aparelho real. Instalar pelo caminho guiado num
 Android e num iPhone de verdade, numa instalação HTTPS fresca; o ícone com a
@@ -1682,6 +1826,41 @@ outras.
 mensagem tinha 14px (zoom do iPhone no foco) e o zoom zerava a régua do
 teclado; a busca podia seguir focada na lista escondida; link direto X
 seguido de troca para Y deixava X para o voltar do sistema reabrir.
+
+### J49 — composer de toque e áudio no iPhone (segunda PR da F2)
+
+O mesmo atendente escreve, anexa e ouve. No toque (`pointer: coarse`, lido no
+keydown) a tecla de retorno do teclado virtual quebra linha e quem envia é o
+botão; Ctrl/Cmd+Enter envia sempre. Todo campo da conversa usa 16px abaixo do
+`md`, os alvos do composer têm 44px e o botão de emoji some (o teclado do
+sistema já tem). Nota de voz gravada no iPhone (`audio/mp4`) sobe com a
+extensão real e marcada `nota_de_voz=1`, e o servidor a reencoda em opus — o
+único formato de nota de voz dos canais oficiais. Áudio que o aparelho não toca
+(`canPlayType` vazio, ou o erro do `<audio>`) é convertido sob demanda em
+`GET /api/v1/messages/{id}/media?formato=aac` e tocado por `blob:` em memória:
+nada no Storage, nada no aparelho (D4).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J49.8 (B-1) | Fonte dos campos | com a busca nas mensagens ABERTA, todo `input`/`textarea`/`select` visível DENTRO da camada da conversa com `fontSize` ≥ 16px; a varredura tem de incluir «Mensagem» e «Buscar nas mensagens carregadas» | E2E (CI) + UNIT `Composer.test` (classes) |
+| J49.9 (B-2) | Retorno quebra linha | «linha 1», Enter, «linha 2»: o valor tem `\n`, nenhum balão novo em 1s; «Enviar» ≥ 44×44 envia e o balão aparece | E2E (CI) + UNIT `Composer.test` (coarse, Ctrl/Cmd+Enter, ponteiro fino) |
+| J49.10 (B-3) | Alvos do composer | «Anexar», «Gravar áudio», «Enviar» ≥ 44×44; «Responder» e «Nota interna» ≥ 44 de altura; ✕ da citação ≥ 44×44; a setinha «Opções da mensagem» (a porta do Responder, 20px desenhados) acerta por `elementFromPoint` a 20px do centro nas quatro direções; o centro do «Enviar» é o próprio botão (nada flutua por cima); «Emoji» escondido | E2E (CI) |
+| J49.11 (B-4) | Anexar imagem | a prévia cabe em 390 (`x ≥ 0`, `x + largura ≤ 390`) e o envio vira balão com `<img>` | E2E (CI) |
+| J49.12 (B-5) `[P0]` | Áudio que o aparelho não toca | `canPlayType` forçado a `""` para ogg; o toque pede `?formato=aac`: 200, `audio/mp4`, `no-store`, caixa `ftyp` nos bytes, e o `play()` é chamado com um `blob:`; o teste anota o `canPlayType` de AAC do executor e o desfecho (tocando ou indisponível), e exige «tocando» quando o executor declara AAC. O ogg é gerado pelo ffmpeg do executor (passo do `e2e.yml` instala e reprova sem os encoders `aac`/`libopus`) | E2E (CI) + UNIT `midia-formato-aac`, `inbox-media-audio`, `voice-transcode` |
+| J49.13 (B-6) | Teclado aberto | janela de 500px: «Assistência do agente» escondida | E2E (CI) |
+
+**NÃO MEDIDO — só o iPhone (e o Android) do dono provam:**
+`new Audio().canPlayType('audio/ogg; codecs=opus')` (decide se a conversão
+dispara); `MediaRecorder.isTypeSupported` de webm e mp4 (decide o caminho do
+upload); uma nota de voz gravada no iPhone chega como nota de voz COM onda,
+numa conversa WAHA e numa de canal oficial; um áudio recebido SOA, e com 1
+toque ou 2 (o `play()` é chamado ainda dentro do gesto para destravar o
+elemento no WebKit, mas só o aparelho confirma); o pedido de microfone
+repetido no app instalado; o ffmpeg da imagem publicada com `libopus` (sem ele
+a nota de voz volta ao comportamento de antes, e o canal oficial também). O
+Chromium do teste não grava (sem microfone) e talvez nem decodifique AAC: por
+isso o B-5 prova o caminho até o `play()`, não o alto-falante. O áudio de nota
+interna (rota própria, sem `?formato`) continua sem conversão.
 
 ## Jornadas exercitadas (instalação final, virgem)
 
@@ -2006,6 +2185,26 @@ fresca ponta a ponta com a marca de um revendedor — `install.sh` numa VPS, res
 `vps-fresh-onboarding`: os testes provam que cada peça faz o que diz, não que a jornada de
 quem compra funciona inteira. Os defeitos de marca que mais custam caro moram exatamente aí,
 porque são vistos primeiro por um terceiro. **A receita para fechá-la está em J10, abaixo.**
+
+## J57 — Vendas e dinheiro no celular `[P1]` (2026-10-23)
+
+ADR-0006, fase F4. Telas do gestor que, a 390px, deixavam ação fora da tela ou
+alvo pequeno para o dedo: Conexões, Webhooks, Radar, Propostas, Faturamento e
+Meta Ads. Conserto só de classes `max-md:`/`sm:` (o DOM é o mesmo do
+computador). Spec: `tests/e2e/comercial-no-celular.spec.ts` (parte 7), 390×844
+com toque emulado, login `admin` (Conexões é só admin). Sem WAHA: Conexões mede
+só o que aparece sem canal conectado de verdade.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J57.1 | Conexões a 390px | o `<main>` não rola para o lado; «Conectar novo WhatsApp» e «Agendar pausa» entre 15 e 375px; «Configurar responsáveis por número» ≥ 44px | a medir (CI) |
+| J57.2 | Webhooks a 390px | as 4 abas entre 15 e 375px, a fila não rola por dentro, e a borda de cima de cada aba (3px) recebe o toque, com controle: 1px acima da aba não a acerta | a medir (CI) |
+| J57.3 | Radar a 390px | «Assumir» dentro da tela; o título do item com ≥ 150px; o link da lista «sem próximo passo» ≥ 44px | a medir (CI) |
+| J57.4 | Lista de propostas a 390px | cabeçalho `display:none`; a caixa da tabela não rola para o lado; a primeira caixa do link do título ≥ 44px (o retângulo inteiro somaria as linhas do título quebrado e passaria sem o conserto) | a medir (CI) |
+| J57.5 | Proposta enviada a 390px | «Marcar como aceita», «Marcar como recusada» e «Revisar esta proposta» entre 15 e 375px | a medir (CI) |
+| J57.6 | Meta Ads sem conta a 390px | o `<main>` não rola para o lado (o `-m-6` acompanha o `p-4` do `<main>`) | a medir (CI) |
+| J57.7 | Faturamento a 390px e a 1280px | a linha do lançamento vira cartão; «Pagar» e «×» com ≥ 44×44px, dentro da tela, sem um cobrir o outro; a 1280px a linha volta a `table-row` e «Pagar» volta a texto | classe conferida (unit) `tests/unit/pagar-e-remover-sao-alvos-separados.test.tsx`; geometria a medir (CI) |
+| J57.8 | Nome da campanha no Meta Ads | a 1ª coluna e o nome dentro dela param em 9rem abaixo de `md` e voltam a 22rem acima | classe conferida (unit) `tests/unit/meta-ads-connect-rate-na-tela.test.tsx`; geometria a medir (CI) — a spec de hoje não chega à tabela: sem conta Meta no CI ela não aparece |
 
 ## J10 — Instalação fresca com a marca do revendedor `[P0]` (receita manual)
 

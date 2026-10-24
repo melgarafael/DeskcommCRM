@@ -49,6 +49,7 @@ import {
   type ContatoDoPedido,
   type LeadDoPedido,
 } from "@/lib/tarefas/criar-tarefa";
+import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
 /** Um passo, já normalizado: `ordem` SEMPRE preenchida com a posição final. */
@@ -80,9 +81,9 @@ export interface PlanoDeTarefas {
  */
 const passoSchema = z.object({
   ordem: z.number().int().min(1).max(500).optional(),
-  titulo: z.string().trim().min(1).max(200),
-  descricao: z.string().max(1000).nullish(),
-  vence_em_dias: z.number().int().min(0).max(365),
+  titulo: z.string().trim().min(1).max(LIMITES_DO_PLANO.tituloDoPasso),
+  descricao: z.string().max(LIMITES_DO_PLANO.descricaoDoPasso).nullish(),
+  vence_em_dias: z.number().int().min(0).max(LIMITES_DO_PLANO.venceEmDias),
   prioridade: z.enum(PRIORIDADES_DA_TAREFA).default("medium"),
   atribuir_a: z
     .union([z.literal("dono_do_lead"), z.object({ usuario_id: z.string().uuid() })])
@@ -91,9 +92,9 @@ const passoSchema = z.object({
 
 export const planoSchema = z.object({
   id: z.string().trim().min(1).max(64),
-  nome: z.string().trim().min(1).max(120),
-  descricao: z.string().max(300).nullish(),
-  passos: z.array(passoSchema).min(1).max(30),
+  nome: z.string().trim().min(1).max(LIMITES_DO_PLANO.nome),
+  descricao: z.string().max(LIMITES_DO_PLANO.descricao).nullish(),
+  passos: z.array(passoSchema).min(1).max(LIMITES_DO_PLANO.passos),
 });
 
 /**
@@ -106,7 +107,7 @@ export const planoSchema = z.object({
  * seria invisível — os dois "validam o plano", só que um deixa passar o que o
  * outro ignora.
  */
-export const planosSchema = z.array(planoSchema).max(50);
+export const planosSchema = z.array(planoSchema).max(LIMITES_DO_PLANO.planos);
 
 /**
  * Lê `organizations.settings` e devolve SÓ os planos válidos, na ordem em que

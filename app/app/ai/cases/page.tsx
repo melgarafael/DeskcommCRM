@@ -16,17 +16,18 @@ export default async function CasesPage() {
   const idioma = user.idioma;
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Casos", idioma)}</h1>
-        <p className="text-sm text-muted-foreground">
-          {traduzir(
-            "Quando a IA trava em algo que só um humano resolve, ela abre um caso aqui — e continua conversando com o cliente enquanto espera sua resposta.",
-            idioma,
-          )}
-        </p>
-      </header>
-      <CaseList />
+    <div className="flex h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] min-h-0 flex-col sm:p-6">
+      <CaseList heading={
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Casos", idioma)}</h1>
+          <p className="text-sm text-muted-foreground">
+            {traduzir(
+              "Quando a IA trava em algo que só um humano resolve, ela abre um caso aqui — e continua conversando com o cliente enquanto espera sua resposta.",
+              idioma,
+            )}
+          </p>
+        </header>
+      } />
     </div>
   );
 }

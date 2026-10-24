@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, politicaDaEmpresa, type PapelMinimoDeMfa } from "@/lib/auth/politica-mfa";
+import { listarDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
 import { SecurityClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -30,6 +31,20 @@ export default async function SecurityPage() {
   const user = await requireAuth();
   const org = await resolveActiveOrg(user);
   const enrolled = await isMfaEnrolled();
+  const dispositivos = enrolled ? await listarDispositivosConfiaveis(user.id) : [];
+  // Quem tem a verificação ligada e nenhum código de recuperação por usar fica
+  // sem saída se perder o celular — e é o estado de todo mundo depois da 0759,
+  // que apagou os códigos da forma antiga. Só o servidor lê a tabela (0755).
+  // Erro na leitura não mostra o aviso: "não sei" não vira "você não tem".
+  let semCodigos = false;
+  if (enrolled) {
+    const { count, error } = await createAdminClient()
+      .from("user_recovery_codes")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .is("used_at", null);
+    semCodigos = !error && count === 0;
+  }
 
   let papelMinimo: PapelMinimoDeMfa = "none";
   let diasDeCarencia = 0;
@@ -77,6 +92,8 @@ export default async function SecurityPage() {
         podeExigirDaEquipe={org?.role === "admin"}
         papelMinimo={papelMinimo}
         diasDeCarencia={diasDeCarencia}
+        dispositivos={dispositivos}
+        semCodigos={semCodigos}
       />
     </div>
   );

@@ -113,10 +113,10 @@ export function RiskRadarList() {
           </p>
           <ul className="flex flex-col gap-1">
             {semPasso.slice(0, 8).map((d) => (
-              <li key={d.id} className="flex items-baseline justify-between gap-3 text-xs">
+              <li key={d.id} className="flex items-baseline justify-between gap-3 text-xs max-md:items-center">
                 <Link
                   href={destinoDaDemandaSemPasso(d)}
-                  className="truncate hover:underline"
+                  className="truncate hover:underline max-md:block max-md:min-w-0 max-md:flex-1 max-md:py-3.5"
                   data-testid="radar-sem-passo-link"
                 >
                   {d.contact_name ?? t("Contato sem nome")}
@@ -149,8 +149,8 @@ export function RiskRadarList() {
           </p>
           <ul className="flex flex-col gap-1">
             {vencidas.slice(0, 8).map((p) => (
-              <li key={p.proposal_id} className="flex items-baseline justify-between gap-3 text-xs">
-                <Link href={`/app/proposals/${p.proposal_id}`} className="truncate hover:underline">
+              <li key={p.proposal_id} className="flex items-baseline justify-between gap-3 text-xs max-md:items-center">
+                <Link href={`/app/proposals/${p.proposal_id}`} className="truncate hover:underline max-md:block max-md:min-w-0 max-md:flex-1 max-md:py-3.5">
                   {p.numero != null && p.ano != null ? `${String(p.numero).padStart(4, "0")}/${p.ano}` : t("Proposta sem número")}
                 </Link>
                 <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -181,8 +181,8 @@ export function RiskRadarList() {
           </p>
           <ul className="flex flex-col gap-1">
             {esperandoRevisao.slice(0, 8).map((p) => (
-              <li key={p.proposal_id} className="flex items-baseline justify-between gap-3 text-xs">
-                <Link href={`/app/proposals/${p.proposal_id}`} className="truncate hover:underline">
+              <li key={p.proposal_id} className="flex items-baseline justify-between gap-3 text-xs max-md:items-center">
+                <Link href={`/app/proposals/${p.proposal_id}`} className="truncate hover:underline max-md:block max-md:min-w-0 max-md:flex-1 max-md:py-3.5">
                   {p.titulo ?? t("Proposta sem título")}
                 </Link>
                 <span className="shrink-0 truncate text-muted-foreground">
@@ -218,9 +218,12 @@ export function RiskRadarList() {
 function RadarRow({ lead }: { lead: AtRiskLead }) {
   const t = useT();
   const meta = RISK_META[lead.risk as Exclude<RiskBucket, "em_dia">] ?? RISK_META.em_risco;
+  // Sem conversa não há inbox para abrir: o destino é o QUADRO do funil onde o
+  // negócio está — e com o `?lead=` junto, porque sem ele o board abre no funil
+  // certo mas no card errado (a pessoa tinha de procurá-lo no quadro).
   const href = lead.conversation_id
     ? `/app/inbox?id=${lead.conversation_id}`
-    : `/app/pipelines/${lead.pipeline_id}`;
+    : `/app/pipelines/${lead.pipeline_id}?lead=${lead.id}`;
 
   const claim = useClaimConversation();
   const qc = useQueryClient();
@@ -261,7 +264,7 @@ function RadarRow({ lead }: { lead: AtRiskLead }) {
     <li
       data-testid="radar-item"
       data-risk={lead.risk}
-      className="flex items-start gap-2 pr-3 transition-colors hover:bg-accent/50"
+      className="flex items-start gap-2 pr-3 transition-colors hover:bg-accent/50 max-md:flex-wrap"
     >
       <Link href={href} className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3">
         <Badge variant={meta.variant} className="mt-0.5 shrink-0">
@@ -294,8 +297,17 @@ function RadarRow({ lead }: { lead: AtRiskLead }) {
           )}
         </div>
       </Link>
-      <div className="flex shrink-0 items-center gap-2 self-center">
-        {lead.agenda?.appointment_id ? <Link className="text-xs underline" href={`/app/agenda?compromisso=${lead.agenda.appointment_id}`}>{t("Ver compromisso")}</Link> : null}
+      {/* No celular a seta some, então sem compromisso nem "Assumir" a faixa de
+          ações ficaria vazia e ainda somaria o `pb-3`: ela some junto. As
+          classes de computador são as mesmas nos dois casos. */}
+      <div
+        className={`flex shrink-0 items-center gap-2 self-center ${
+          lead.agenda?.appointment_id || canClaim
+            ? "max-md:w-full max-md:justify-end max-md:self-auto max-md:px-4 max-md:pb-3"
+            : "max-md:hidden"
+        }`}
+      >
+        {lead.agenda?.appointment_id ? <Link className="text-xs underline max-md:inline-flex max-md:min-h-11 max-md:items-center" href={`/app/agenda?compromisso=${lead.agenda.appointment_id}`}>{t("Ver compromisso")}</Link> : null}
         {canClaim ? (
           <Button
             size="sm"
@@ -307,7 +319,7 @@ function RadarRow({ lead }: { lead: AtRiskLead }) {
             {t("Assumir")}
           </Button>
         ) : null}
-        <ArrowRight size={16} className="text-muted-foreground" aria-hidden />
+        <ArrowRight size={16} className="text-muted-foreground max-md:hidden" aria-hidden />
       </div>
     </li>
   );

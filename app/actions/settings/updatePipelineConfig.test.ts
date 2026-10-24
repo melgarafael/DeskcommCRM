@@ -35,6 +35,7 @@ vi.mock("@/lib/auth/server", () => ({
     idioma: h.idioma,
   }),
   resolveActiveOrg: async () => ({ orgId: ORG, role: "admin" }),
+  mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -176,5 +177,46 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
     h.regras = [regra("Antiga", "nascimento")];
 
     expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({ ok: true });
+  });
+});
+
+/**
+ * O RECORTE DE ENCERRADOS ANTIGOS DO QUADRO (#2995) — a GRAVAÇÃO.
+ *
+ * A opção mora no `settings` que o funil já tem, e a action faz MERGE com o que
+ * está no banco: é aqui que se prova que a chave nova é gravada (o payload da
+ * tela sair certo e a action ignorá-la deixaria a tela mentindo) e que o
+ * DESLIGAR grava `0` em vez de sumir do patch — omitir a chave manteria o
+ * número antigo na linha e os cards continuariam sumindo do quadro.
+ */
+describe("updatePipelineConfig — o recorte de encerrados antigos do quadro (#2995)", () => {
+  it("grava os dias no settings do funil, preservando o que já estava lá", async () => {
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 15 })).toEqual({ ok: true });
+
+    expect(h.gravou).toMatchObject({
+      settings: { ...h.settings, ocultar_encerrados_dias: 15 },
+    });
+  });
+
+  it("desligar grava 0 — não pode deixar o número antigo na linha", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], ocultar_encerrados_dias: 45 };
+
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 0 })).toEqual({ ok: true });
+
+    expect(h.gravou).toMatchObject({ settings: { ocultar_encerrados_dias: 0 } });
+  });
+
+  it("dias fora da faixa são recusados pelo schema, sem gravar nada", async () => {
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: -1 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+    // O teto do domínio: dez anos. Acima disso é linha editada à mão, não tela.
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 3651 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+
+    expect(h.gravou).toBeNull();
   });
 });

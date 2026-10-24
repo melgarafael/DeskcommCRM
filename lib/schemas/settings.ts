@@ -11,6 +11,7 @@ import { z } from "zod";
 import { ehHexValido } from "@/lib/branding/rampa";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
+import { DIAS_MAXIMO_DO_RECORTE } from "@/lib/kanban/recorte-de-encerrados";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -175,6 +176,7 @@ export const customFieldSchema = z.object({
     "email",
     "phone",
     "url",
+    "file",
   ]),
   required: z.boolean().optional(),
   /**
@@ -272,6 +274,23 @@ export const customFieldSchema = z.object({
    * existe pronta para as escritas do servidor, ainda não plugada (#2521).
    */
   allow_new: z.boolean().optional(),
+  /**
+   * MÚLTIPLA ESCOLHA (issue #3182) — só faz sentido no `searchable_select`.
+   *
+   * LIGADO, o campo grava uma LISTA de valores canônicos em vez de um só: numa
+   * venda "forfait" o mesmo negócio tem vários fornecedores (aéreo pela
+   * consolidadora A, hotel pela operadora B), dois hotéis, duas companhias — e
+   * com um valor só o relatório "quanto vendemos com cada fornecedor" sai
+   * incompleto. A busca com apelidos e a canonicalização continuam as mesmas,
+   * por item (`lib/leads/campos-pesquisaveis`).
+   *
+   * DESLIGADO (o padrão, e a chave ausente em toda definição que já existe), o
+   * campo segue de valor único, byte a byte: nada do que está gravado hoje muda
+   * de forma. É a chave `multiple: true` do item 1 da issue, escolhida em vez de
+   * um tipo novo no enum — o tipo `searchable_select` já é o que a tela, o
+   * schema e a API conhecem, e o modo é uma propriedade dele.
+   */
+  multiple: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
@@ -390,6 +409,20 @@ export const pipelineConfigPatchSchema = z.object({
   reabertura: z.enum(["mesmo_registro", "novo_negocio"]).optional(),
   /** O que a retomada copia da origem; ausente é o piso (`custom_fields` e tags). */
   reabertura_campos: z.array(z.enum(CAMPOS_COPIAVEIS_NA_RETOMADA)).max(8).optional(),
+  /**
+   * O RECORTE DE ENCERRADOS ANTIGOS do quadro (#2995) — a opção POR FUNIL que
+   * deixa fora da tela os negócios encerrados há mais de N dias. Ausente ou `0`
+   * é DESLIGADO: o quadro continua trazendo tudo, como sempre trouxe.
+   *
+   * `0` E NÃO `null` PARA O "DESLIGUEI", e essa é a parte que importa: a action
+   * faz merge com o settings que está no banco gravando só as chaves que vêm no
+   * patch, então um `undefined` deixaria o valor antigo na linha — a pessoa
+   * desligaria a opção, salvaria, e os cards continuariam sumindo. O teto
+   * (`DIAS_MAXIMO_DO_RECORTE`, dez anos) vem do domínio
+   * (`lib/kanban/recorte-de-encerrados`), que é quem decide o que é um recorte
+   * válido: um número escrito aqui e outro lá divergiriam no primeiro ajuste.
+   */
+  ocultar_encerrados_dias: z.number().int().min(0).max(DIAS_MAXIMO_DO_RECORTE).optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 
@@ -464,6 +497,29 @@ export const marcaDaOrganizacaoSchema = z.object({
     .string()
     .trim()
     .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
+    .nullable(),
+  /**
+   * O remetente do e-mail de AUTOMAÇÃO da organização (#3287, fatia 1) — o nome
+   * de exibição e o "responder para".
+   *
+   * `email_from_name` é texto livre (limite de 120, o mesmo do nome da empresa:
+   * cabeçalho `From:` longo é o que os clientes de e-mail cortam). Vazio vira
+   * `null` na tela, e `null` é "use o da plataforma".
+   */
+  email_from_name: z.string().trim().max(120).nullable(),
+  /**
+   * `email_reply_to` valida com o MESMO piso de "cara de endereço" do disparo
+   * (`lib/email/remetente-da-organizacao.ts`): recusar aqui é o conserto que a
+   * pessoa vê na tela, em vez de um `Reply-To:` torto que o provedor devolveria
+   * como erro opaco no meio de um envio real.
+   */
+  email_reply_to: z
+    .string()
+    .trim()
+    .max(254)
+    .refine((valor) => valor === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor), {
+      message: "Use um endereço de e-mail como contato@suaempresa.com",
+    })
     .nullable(),
 });
 export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;

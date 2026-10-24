@@ -57,6 +57,7 @@ import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-se
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
+import { nomeDoAgenteDeIA } from "@/lib/messaging/nome-do-agente-de-ia";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -657,7 +658,15 @@ export async function sendMessageHandler(
       if (origemDoEmissor === "user" && ctx.actor.type === "user") {
         nomeDoAtendente = (await nomesDosAtendentes([ctx.actor.id])).get(ctx.actor.id) ?? null;
       }
-      assinatura = linhaDeAssinatura(configAss, origemDoEmissor, nomeDoAtendente);
+      // #3310: com `por_agente` ligado, a IA assina com o nome do AGENTE QUE
+      // ENVIOU (`ai_agents.name`) — com dois agentes no mesmo número, o cliente
+      // lia o nome de um e a conversa seguia com outro. `nome_ia` fica como
+      // reserva (mensagem sem agente, leitura que falhou). Desligado, nem lê.
+      const nomeDoAgente =
+        origemDoEmissor === "ai" && configAss.porAgente && ctx.actor.type === "ai_agent"
+          ? await nomeDoAgenteDeIA(supabase, ctx.organization_id, ctx.actor.id)
+          : null;
+      assinatura = linhaDeAssinatura(configAss, origemDoEmissor, nomeDoAtendente, nomeDoAgente);
     }
   }
 
@@ -1053,7 +1062,7 @@ export async function sendMessageHandler(
         // característica do transporte. O caminho de baixo já conferia; o
         // adapter postava direto, e um parâmetro a mais virava `400` cru em vez
         // de "falta o valor {{2}}".
-        await conferirDefinicao(supabase, {
+        const contrato = await conferirDefinicao(supabase, {
           organizationId: ctx.organization_id,
           // A conexão dona da definição: dois números têm modelos diferentes, e
           // conferir a do número errado aprovaria um envio que a plataforma
@@ -1076,6 +1085,7 @@ export async function sendMessageHandler(
                 name: input.template_name ?? "",
                 language: input.template_language ?? "",
                 values: input.template_values ?? {},
+                contrato,
               })
             ).externalId
           : await sendTemplateForSession(supabase, {

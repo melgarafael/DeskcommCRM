@@ -249,7 +249,10 @@ export function NewLeadDialog({
     const reais = values.valueReais.trim();
     let valueCents: number | null = null;
     if (reais.length > 0) {
-      valueCents = parseReaisToCents(reais);
+      // Negócio NOVO nasce na moeda da organização (é ela que o servidor grava
+      // e é ela que o rótulo do campo mostra) — e é ela que diz se a vírgula é
+      // decimal ou separador de milhar (#3331).
+      valueCents = parseReaisToCents(reais, moedaDoValor);
       if (valueCents === null) {
         form.setError("valueReais", { message: t("Valor inválido") });
         return;

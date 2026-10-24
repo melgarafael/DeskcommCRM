@@ -10,8 +10,12 @@ import { formatarDuracao } from "@/lib/metrics/canais";
 import { WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
 import { CanaisPanel } from "./CanaisPanel";
+import { MetaDoMesPanel, type EstadoDaMeta } from "./MetaDoMesPanel";
 import { PerdasPanel } from "./PerdasPanel";
 import { PrevisaoPanel } from "./PrevisaoPanel";
+import { SeriePanel } from "./SeriePanel";
+import { useMetasDoMes } from "@/hooks/metrics/useMetasDoMes";
+import { janelaDoMes, mesLocal } from "@/lib/metas/periodo";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -32,6 +36,13 @@ import {
 
 const ALL = "__all__";
 
+/**
+ * Célula de número que, no celular, vira "Rótulo valor" dentro do cartão: o
+ * cabeçalho some abaixo de `md` e o rótulo vem do `data-rotulo` da própria
+ * célula. Só classes `max-md:` — no computador é a tabela de sempre.
+ */
+const CELULA_DE_NUMERO = "text-right tabular-nums max-md:p-0 max-md:text-left max-md:before:mr-1 max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]";
+
 function attendantLabel(a: AttendantMetric, t: (texto: string) => string): string {
   return a.name ?? a.email ?? `${t("Atendente")} ${a.user_id.slice(0, 8)}`;
 }
@@ -48,6 +59,20 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   const { data, isLoading, isError, refetch } = useAttendantMetrics(selectedOwner);
   // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
+
+  // A meta é MENSAL e a janela é o mês corrente de quem está olhando a tela
+  // (o mês é o dele, não um instante UTC — ver `lib/metas/periodo.ts`). Fixada
+  // uma vez por montagem: remontar a cada render refaria o pedido sem mudança
+  // nenhuma de dado.
+  const [janelaDaMeta] = useState(() => janelaDoMes(mesLocal()));
+  const metasDoMes = useMetasDoMes(janelaDaMeta);
+  const estadoDaMeta: EstadoDaMeta = metasDoMes.isLoading
+    ? "carregando"
+    : metasDoMes.isError || !metasDoMes.data
+      ? "erro"
+      : metasDoMes.data.data.motivo === "sem_meta"
+        ? "vazio"
+        : "ok";
 
   // ─── CARREGANDO: a SILHUETA da tela, não a palavra "Carregando…" ──────────
   //
@@ -107,10 +132,10 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   return (
     <div className="flex flex-col gap-6">
       {canCompare ? (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm text-muted-foreground">{t("Atendente")}</span>
           <Select value={owner} onValueChange={setOwner}>
-            <SelectTrigger className="w-64">
+            <SelectTrigger className="w-full max-w-64">
               <SelectValue placeholder={t("Todos os atendentes")} />
             </SelectTrigger>
             <SelectContent>
@@ -144,6 +169,19 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           sistema inteiro acima. */}
       <PrevisaoPanel />
 
+      {/* A meta do mês (issue #3025, fatia 1) logo acima do funil: é o ALVO, e
+          as barras do funil abaixo são o caminho até ele. O denominador é da
+          empresa (não do atendente filtrado), então este painel não segue o
+          `Select` — o alvo é um só, e o realizado é o que a empresa fechou.
+          `canCompare` (manager+) abre a porta do cadastro, a mesma régua da
+          action. */}
+      <MetaDoMesPanel
+        estado={estadoDaMeta}
+        periodo={metasDoMes.data?.data.periodo ?? null}
+        metas={metasDoMes.data?.data.metas ?? []}
+        podeConfigurar={canCompare}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -157,7 +195,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           ) : (
             metrics.funnel.map((s) => (
               <div key={s.stage_id} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 truncate text-sm">{s.stage_name}</span>
+                <span className="w-24 shrink-0 truncate text-sm md:w-40">{s.stage_name}</span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full rounded-full bg-primary transition-[width]"
@@ -183,32 +221,43 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
               {t("Sem atividade no período (ganhos/perdidos, conversas ou respostas).")}
             </p>
           ) : (
-            <Table>
-              <TableHeader>
+            <Table className="max-md:block">
+              <TableHeader className="max-md:hidden">
                 <TableRow>
                   <TableHead>{t("Atendente")}</TableHead>
                   <TableHead className="text-right">{t("Ganhos")}</TableHead>
                   <TableHead className="text-right">{t("Perdidos")}</TableHead>
                   <TableHead className="text-right">{t("Conversas")}</TableHead>
-                  <TableHead className="text-right">{t("1ª resposta (média)")}</TableHead>
+                  <TableHead className="text-right">{t("1ª resposta (média / mediana)")}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="max-md:block">
                 {metrics.attendants.map((a) => (
-                  <TableRow key={a.user_id}>
-                    <TableCell className="font-medium">
+                  <TableRow
+                    key={a.user_id}
+                    className="max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:py-2"
+                  >
+                    <TableCell className="font-medium max-md:col-span-2 max-md:p-0">
                       {attendantLabel(a, t)}
                       {a.user_id === currentUserId ? (
                         <span className="text-muted-foreground"> {t("(você)")}</span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{a.won}</TableCell>
-                    <TableCell className="text-right tabular-nums">{a.lost}</TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell data-rotulo={t("Ganhos")} className={CELULA_DE_NUMERO}>
+                      {a.won}
+                    </TableCell>
+                    <TableCell data-rotulo={t("Perdidos")} className={CELULA_DE_NUMERO}>
+                      {a.lost}
+                    </TableCell>
+                    <TableCell data-rotulo={t("Conversas")} className={CELULA_DE_NUMERO}>
                       {a.conversations_handled}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatarDuracao(a.avg_first_response_seconds)}
+                    <TableCell
+                      data-rotulo={t("1ª resposta (média / mediana)")}
+                      className={`${CELULA_DE_NUMERO} max-md:col-span-2`}
+                    >
+                      {formatarDuracao(a.avg_first_response_seconds)} ·{" "}
+                      {formatarDuracao(a.median_first_response_seconds)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -223,6 +272,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
           escopa: agent vê as próprias conversas, manager+ a organização. */}
       <CanaisPanel owner={selectedOwner} />
+      <SeriePanel />
     </div>
   );
 }

@@ -41,6 +41,7 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 const TEXTO_ID = "aaaaaaaa-1111-4111-8111-111111111111";
 const AUDIO_ID = "bbbbbbbb-2222-4222-8222-222222222222";
 const IMAGEM_ID = "cccccccc-3333-4333-8333-333333333333";
+const ATALHO_ID = "dddddddd-4444-4444-8444-444444444444";
 /** Os caminhos que a rota de upload gera: `<org>/templates/<template>/<uuid>.<ext>`. */
 const AUDIO_PATH = `${ORG}/templates/${AUDIO_ID}/0a0b0c0d-0000-4000-8000-000000000001.ogg`;
 const IMAGEM_PATH = `${ORG}/templates/${IMAGEM_ID}/0a0b0c0d-0000-4000-8000-000000000002.jpg`;
@@ -75,6 +76,17 @@ const RECURSOS = [
     owner_user_id: null,
     midias: [{ storage_path: IMAGEM_PATH, media_mime: "image/jpeg", media_size_bytes: 48213 }],
   },
+  {
+    // A MARCAÇÃO DESLIGADA (#3282): este NÃO sai na barra do Inbox, mas continua
+    // no atalho `/`. É o caso que a sabotagem do filtro da barra deixa vermelho.
+    id: ATALHO_ID,
+    title: "Só por atalho",
+    body: "Modelo que ninguém escolhe à mão",
+    shortcut: null,
+    owner_user_id: null,
+    midias: [],
+    mostrar_na_barra: false,
+  },
 ];
 
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
@@ -100,11 +112,20 @@ vi.mock("@/lib/api/client", () => ({
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => true,
+  // A escolha de contato do Composer lê o país da organização (o exemplo do telefone); sem organização, o Brasil.
+  usePaisDaOrgAtiva: () => null,
 }));
 
 import { Composer } from "@/components/inbox/Composer";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
-import { ehRecursoDeAudio, type Recurso } from "@/lib/inbox/recursos";
+import { ehRecursoDeAudio, recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import {
+  RECURSOS_VISIVEIS_RECOLHIDA,
+  chaveDaBarra,
+  gravarBarraAberta,
+  lerBarraAberta,
+  recursosVisiveis,
+} from "@/lib/inbox/barra-de-respostas";
 
 const CONV = "aaaaaaaa-3333-4000-8000-000000000001";
 const texto = RECURSOS[0] as unknown as Recurso;
@@ -122,6 +143,9 @@ function renderComposer(props: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // O recolhimento da barra lembra por usuário no `localStorage` (#3282): cada
+  // caso começa sem memória, senão um abriria a barra do outro.
+  window.localStorage.clear();
   // O compositor sempre monta o seletor de contato (`ContactPickerDialog`), e
   // ele chama a lista de contatos mesmo fechado: sem uma página válida, o
   // `getNextPageParam` estoura e leva a árvore renderizada junto.
@@ -237,5 +261,124 @@ describe("Composer + recursos pré-prontos", () => {
 
     fireEvent.change(screen.getByLabelText(/mensagem/i), { target: { value: "/boas" } });
     expect(within(screen.getByRole("listbox")).getByText("Boas vindas")).toBeInTheDocument();
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * A MARCAÇÃO "Mostrar na barra do Inbox" E O RECOLHIMENTO (#3282).
+ *
+ * Dois critérios da issue, e cada um prende uma coisa diferente:
+ *
+ *   MARCAÇÃO — a resposta desmarcada SAI da barra e CONTINUA no `/`. A régua é
+ *   `recursosDaBarra`, e o caso prova o que não pode passar: desmarcar não é
+ *   apagar a resposta. O caso do PADRÃO (marcação AUSENTE = aparece) está junto:
+ *   é ele que garante que a organização que nunca mexeu continua vendo tudo.
+ *
+ *   RECOLHIMENTO — recolhida a barra mostra uma linha e conta o resto em
+ *   "mais (N)"; o estado ABERTO sobrevive ao recarregar PARA O MESMO USUÁRIO.
+ *   O caso é pela BARRA de verdade (clique no "mais"), não só pela função pura.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/** Oito respostas: duas a mais que a linha recolhida. */
+const MUITAS = Array.from({ length: 8 }, (_, i) => ({
+  id: `rrrrrrrr-0000-4000-8000-00000000000${i}`,
+  title: `Resposta ${i + 1}`,
+  body: "",
+  shortcut: null,
+  owner_user_id: null,
+  midias: [],
+})) as unknown as Recurso[];
+
+describe("recursosDaBarra — a marcação desligada sai da barra, não da resposta", () => {
+  const comChave = (mostrar_na_barra: boolean | null | undefined, id: string): Recurso =>
+    ({ id, title: id, body: "", midias: [], mostrar_na_barra }) as unknown as Recurso;
+
+  it("desmarcada (`false` EXPLÍCITO) sai da barra", () => {
+    const daBarra = recursosDaBarra([
+      comChave(true, "ligada"),
+      comChave(false, "desligada"),
+      comChave(null, "sem-valor"),
+      comChave(undefined, "sem-chave"),
+    ]);
+    expect(daBarra.map((r) => r.id)).toEqual(["ligada", "sem-valor", "sem-chave"]);
+  });
+
+  it("marcação AUSENTE ou null aparece: padrão ligado para quem nunca mexeu", () => {
+    // O caso da organização anterior à migration 0742: a linha chega SEM a
+    // coluna, e a barra tem de mostrar TUDO, como antes da issue.
+    const antigas = [
+      { id: "a", title: "a", body: "" },
+      { id: "b", title: "b", body: "", mostrar_na_barra: null },
+    ] as unknown as Recurso[];
+    expect(recursosDaBarra(antigas)).toHaveLength(2);
+  });
+});
+
+describe("recursosVisiveis — a contagem do recolhimento", () => {
+  it("recolhida com mais que uma linha: mostra a linha e conta o resto", () => {
+    const { visiveis, restantes } = recursosVisiveis(MUITAS, false);
+    expect(visiveis).toHaveLength(RECURSOS_VISIVEIS_RECOLHIDA);
+    expect(restantes).toBe(MUITAS.length - RECURSOS_VISIVEIS_RECOLHIDA);
+  });
+
+  it("aberta mostra todas e não sobra nada a contar", () => {
+    const { visiveis, restantes } = recursosVisiveis(MUITAS, true);
+    expect(visiveis).toHaveLength(MUITAS.length);
+    expect(restantes).toBe(0);
+  });
+
+  it("cabe na linha: nada a abrir — evita o 'mais (0)'", () => {
+    const { visiveis, restantes } = recursosVisiveis(MUITAS.slice(0, 3), false);
+    expect(visiveis).toHaveLength(3);
+    expect(restantes).toBe(0);
+  });
+});
+
+describe("BarraDeRecursos — marcação e recolhimento na tela (#3282)", () => {
+  it("desmarcada some da barra e CONTINUA no atalho /", () => {
+    renderComposer();
+
+    const barra = screen.getByTestId("barra-de-recursos");
+    // Some da barra...
+    expect(within(barra).queryByRole("button", { name: /só por atalho/i })).toBeNull();
+    // ...e as marcadas seguem ali.
+    expect(within(barra).getByRole("button", { name: /boas vindas/i })).toBeInTheDocument();
+
+    // ...mas o `/` continua listando TODAS — inclusive a desmarcada.
+    fireEvent.change(screen.getByLabelText(/mensagem/i), { target: { value: "/" } });
+    const menu = screen.getByRole("listbox");
+    expect(within(menu).getByText("Só por atalho")).toBeInTheDocument();
+    expect(within(menu).getByText("Boas vindas")).toBeInTheDocument();
+  });
+
+  it("recolhida mostra uma linha com 'mais (N)', e o aberto sobrevive ao recarregar para o MESMO usuário", () => {
+    const { unmount } = render(
+      <BarraDeRecursos recursos={MUITAS} onEscolher={vi.fn()} usuarioId="u-1" />,
+    );
+    const barra = screen.getByTestId("barra-de-recursos");
+    // Uma linha: RECURSOS_VISIVEIS_RECOLHIDA botões + o "mais (N)".
+    expect(within(barra).getAllByRole("button")).toHaveLength(RECURSOS_VISIVEIS_RECOLHIDA + 1);
+    const mais = within(barra).getByRole("button", { name: "mais (2)" });
+    expect(within(barra).queryByRole("button", { name: /resposta 8/i })).toBeNull();
+
+    // Abrir mostra o resto.
+    fireEvent.click(mais);
+    const aberta = screen.getByTestId("barra-de-recursos");
+    expect(within(aberta).getByRole("button", { name: /resposta 8/i })).toBeInTheDocument();
+    expect(within(aberta).queryByRole("button", { name: /mais \(/i })).toBeNull();
+
+    // "Recarregar a página" do mesmo usuário: a barra volta ABERTA.
+    unmount();
+    render(<BarraDeRecursos recursos={MUITAS} onEscolher={vi.fn()} usuarioId="u-1" />);
+    const recarregada = screen.getByTestId("barra-de-recursos");
+    expect(within(recarregada).getByRole("button", { name: /resposta 8/i })).toBeInTheDocument();
+    expect(within(recarregada).queryByRole("button", { name: /mais \(/i })).toBeNull();
+  });
+
+  it("a memória do recolhimento é POR usuário", () => {
+    // O colega que entra no MESMO navegador não herda o aberto do outro.
+    gravarBarraAberta(window.localStorage, chaveDaBarra("u-1"), true);
+    expect(lerBarraAberta(window.localStorage, chaveDaBarra("u-1"))).toBe(true);
+    expect(lerBarraAberta(window.localStorage, chaveDaBarra("u-2"))).toBe(false);
   });
 });

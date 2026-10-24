@@ -8,9 +8,12 @@
  * falta o intervalo, e a rodada lia só o `allow`. Hoje o espaçamento real virava
  * "um por principal por rodada" × cadência do cron — não o throttle do número.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PACING_DEFAULTS, type PacingKnobs } from "@/lib/agent-engine/pacing/defaults";
+import type * as Capabilities from "@/lib/channels/capabilities";
+
+const { OFICIAL_DO_TESTE } = vi.hoisted(() => ({ OFICIAL_DO_TESTE: "oficial-do-teste" }));
 
 const mundo = vi.hoisted(() => ({
   knobs: null as unknown as PacingKnobs,
@@ -31,6 +34,17 @@ vi.mock("@/lib/agent-engine/pacing/store", () => ({
     mundo.ledger.set(sessionId, [...(mundo.ledger.get(sessionId) ?? []), quando]);
   },
 }));
+// O número oficial do teste: sem risco de banimento (quem limita é a plataforma),
+// como a capability dos canais oficiais declara. Sem nomear provider fora de
+// `lib/channels/` — a cerca `lint:channels` não deixa.
+vi.mock("@/lib/channels/capabilities", async (original) => {
+  const real = await original<typeof Capabilities>();
+  return {
+    ...real,
+    canalTemRiscoDeBanimento: (provider: string | null | undefined) =>
+      provider === OFICIAL_DO_TESTE ? false : real.canalTemRiscoDeBanimento(provider),
+  };
+});
 vi.mock("@/lib/atendimento/origem", () => ({
   beginServiceAtOrigin: async (_admin: unknown, _org: string, contato: string, sessionId: string) => ({
     conversation_id: `conv:${contato}:${sessionId}`,
@@ -331,4 +345,75 @@ describe("rodada: o teto de números por rodada conta campanhas, não a união c
       });
     });
   }
+});
+
+describe("rodada: a campanha RÁPIDA fala em rajada, e o número dela sai do rodízio das seguintes", () => {
+  /**
+   * A rajada manda vários envios na mesma rodada pelo mesmo número — é o ponto
+   * dela. Duas coisas têm de valer juntas: os números que ELA usa não a barram
+   * no meio (senão parava no segundo envio), e voltam no desfecho, para a
+   * campanha seguinte da rodada não falar de novo pelo mesmo número (#3112).
+   */
+  beforeEach(() => {
+    mundo.knobs = { ...PACING_DEFAULTS, throttleMs: 0, jitterMaxMs: 0 };
+    // Cada envio da rajada lê o relógio de verdade (`new Date()`), não o `agora`
+    // da rodada. Sem fixar só o `Date`, à noite a janela anti-ban barra a rajada
+    // e o caso reprova por horário, sem defeito nenhum (medido às 01h de Assunção).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(AGORA);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const comModelo = (id: string, campanhaId: string, contato: string): Linha => ({
+    ...pendente(id, campanhaId, contato),
+    variables: { modelo: { "1": contato } },
+  });
+
+  function cenario(vinculadoDaGradual: string) {
+    return fakeAdmin({
+      campaigns: [
+        {
+          ...campanha("camp-r", "pr", "2026-10-20T11:00:00.000Z"),
+          message_mode: "template",
+          provider_template_name: "promo",
+          provider_template_language: "pt_BR",
+          velocidade: "rapida",
+        },
+        campanha("camp-g", "pg", "2026-10-20T11:00:05.000Z"),
+      ],
+      campaign_recipients: [
+        comModelo("r-r1", "camp-r", "rui"),
+        comModelo("r-r2", "camp-r", "rui2"),
+        comModelo("r-r3", "camp-r", "rui3"),
+        pendente("r-g1", "camp-g", "gil"),
+      ],
+      // Os dois principais fora do ar: a rápida fala pelo vinculado V. V e X são
+      // oficiais — a rajada só existe com modelo —, então o aquecimento do número
+      // por QR não barra nada aqui: quem decide é a rodada.
+      campaign_channel_sessions: [
+        { organization_id: "org-1", campaign_id: "camp-r", channel_session_id: "V" },
+        { organization_id: "org-1", campaign_id: "camp-g", channel_session_id: vinculadoDaGradual },
+      ],
+      channel_sessions: [
+        canal("pr", "STOPPED"),
+        canal("pg", "STOPPED"),
+        { ...canal("V", "WORKING"), provider: OFICIAL_DO_TESTE },
+        { ...canal("X", "WORKING"), provider: OFICIAL_DO_TESTE },
+      ],
+    });
+  }
+
+  it("⭐ a rápida manda as 3 por V na mesma rodada, e a gradual que divide V espera", async () => {
+    const r = await rodarUmaRodadaDeCampanha(cenario("V"), AGORA);
+    expect(mundo.envios).toEqual(["conv:rui:V", "conv:rui2:V", "conv:rui3:V"]);
+    expect(r.detalhe).toContain("camp-g:canal:sem_numero_livre");
+  });
+
+  it("controle: com outro vinculado livre, a gradual sai na mesma rodada", async () => {
+    const r = await rodarUmaRodadaDeCampanha(cenario("X"), AGORA);
+    expect(mundo.envios).toEqual(["conv:rui:V", "conv:rui2:V", "conv:rui3:V", "conv:gil:X"]);
+    expect(r.enviadas).toBe(4);
+  });
 });

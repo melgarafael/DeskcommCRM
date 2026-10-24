@@ -1,0 +1,7 @@
+ERROR:  schema "auth" already exists
+ERROR:  extension "pg_net" is not available
+ERROR:  multiple primary keys for table "users" are not allowed
+ERROR:  multiple primary keys for table "mfa_factors" are not allowed
+ERROR:  duplicate key value violates unique constraint "schema_migrations_pkey"
+DETAIL:  Key (version)=(20240101000000) already exists.
+ERROR:  role "supabase_admin" already exists

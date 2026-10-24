@@ -89,7 +89,12 @@ export async function listarModelosDeMensagem(
     incluirPessoais ? dono : null,
   );
 
-  const { data, error } = await consulta.order("updated_at", { ascending: false });
+  // A mesma ordem da listagem (`app/api/v1/message-templates/route.ts`): a que o
+  // operador escolheu na tela (#3244), não a de edição.
+  const { data, error } = await consulta
+    .order("ordem", { ascending: true })
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: true });
   if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
 
   return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((t) => {

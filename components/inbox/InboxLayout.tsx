@@ -8,6 +8,7 @@ import { useBulkConversations, type AcaoEmLote } from "@/hooks/inbox/useBulkConv
 import { useSelecaoEmLote } from "@/hooks/inbox/useSelecaoEmLote";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { motivoDaJanelaFechada, motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
+import { composerBloqueadoAteAssumir } from "@/lib/inbox/bloqueio-ate-assumir";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { NumeroForaDoAr } from "@/components/inbox/NumeroForaDoAr";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -32,6 +33,8 @@ import type { Message as ConversationMensagem } from "@/lib/types/messaging";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 
 import { ShortcutsHelpDialog } from "./ShortcutsHelpDialog";
+import { EncaminharDialog } from "./EncaminharDialog";
+import { useEncaminharMensagem } from "@/hooks/inbox/useEncaminharMensagem";
 import { OpenConversationProvider } from "@/hooks/notifications/OpenConversationContext";
 // ADR-05: ícone de feature sai do mapa canônico, nunca do pacote direto.
 import { CaretLeft, ChatCircle, IdentificationCard, MagnifyingGlass, X } from "@/lib/ui/icons";
@@ -368,6 +371,12 @@ export function InboxLayout({
    */
   const [respondendo, setRespondendo] = useState<ConversationMensagem | null>(null);
   /**
+   * A mensagem escolhida para ENCAMINHAR (#2835). Irmã do `respondendo`: mora
+   * aqui porque quem escolhe é o fio e quem mostra o destino é o diálogo — o
+   * estado comum é do pai. `null` = diálogo fechado.
+   */
+  const [encaminhando, setEncaminhando] = useState<ConversationMensagem | null>(null);
+  /**
    * O rascunho sugerido (#1611) vale para a conversa da URL e só enquanto ela
    * está aberta: sair dela — clique, atalho ou voltar do navegador — o descarta
    * de vez. Sem isto o texto escrito para um cliente ficava no campo do próximo,
@@ -383,6 +392,7 @@ export function InboxLayout({
     // O histórico do navegador também troca a conversa, sem carregar a página inteira.
     setSelectedId(idNaUrl);
     setRespondendo(null);
+    setEncaminhando(null);
   }, [idNaUrl]);
 
   /**
@@ -512,6 +522,14 @@ export function InboxLayout({
 
   const claim = useClaimConversation();
   const close = useCloseConversation();
+  // Encaminhar (#2835): o gesto que abre a escolha do destino. A execução vira
+  // um POST que reusa o caminho de envio do Inbox (ver o hook).
+  const encaminhar = useEncaminharMensagem();
+  // As conversas já carregadas são o universo de destinos — sem busca nova.
+  const conversasDaLista = useMemo(
+    () => listQ.data?.pages.flatMap((p) => p.data) ?? [],
+    [listQ.data],
+  );
 
   // LOTE (#2484, F1): a seleção múltipla e a barra de ações da Inbox. A
   // permissão de ESCRITA continua sendo a do `usePermission` — quem tem
@@ -559,6 +577,9 @@ export function InboxLayout({
     // Sem isto, escolher "responder" numa conversa e trocar para outra levaria
     // a citação junto — e a resposta sairia citando mensagem de outro cliente.
     setRespondendo(null);
+    // O mesmo vale para o encaminhamento: o destino não pode sobreviver à
+    // troca de conversa.
+    setEncaminhando(null);
     // ?id= é o formato já usado pelos atalhos do CRM. A History API mantém a
     // seleção instantânea sem pedir um novo Server Component a cada clique.
     const params = new URLSearchParams(searchParams.toString());
@@ -648,6 +669,33 @@ export function InboxLayout({
     setLarguras(proximas);
   }, []);
 
+  /**
+   * A FICHA OCUPA ESPAÇO AGORA? (issue #3046)
+   *
+   * A GRADE já distingue os dois estados — recolhida, a terceira trilha vira o
+   * TRILHO de 44px (`LARGURA_DO_TRILHO_DO_PAINEL`), não a largura da ficha. A
+   * regra de larguras, porém, não sabia disso: `resolverLarguras` recebia
+   * `temFicha: faixa.temFicha` e continuava apertando o teto da lista como se a
+   * ficha estivesse ABERTA. Com o painel recolhido a conversa ganhava largura,
+   * mas o arrasto da lista não aproveitava NADA do espaço liberado.
+   *
+   * Aqui a ficha só "ocupa" quando existe coluna de ficha E ela não está
+   * recolhida. É a escolha (a) do caminho medido: o divisor passa a consultar o
+   * estado REAL do painel. Com o painel ABERTO o valor é exatamente o de hoje
+   * (`faixa.temFicha`), então nada muda; recolhido, o teto da lista sobe — e
+   * quem continua limitando é o piso da conversa (`CONVERSA_MINIMA`), nunca a
+   * invasão da conversa.
+   *
+   * Medição que sustenta não contabilizar o trilho: na faixa `xl`/`2xl` (onde a
+   * ficha existe) o container tem no mínimo ~992px (1280 da viewport menos a
+   * navegação e o padding). Sem ficha o teto da lista vira
+   * `min(520, container - 420)` = 520, e a conversa real fica
+   * `992 - 520 - 44 (trilho) = 428px`, acima do piso de 420. Ou seja, nos dois
+   * extremos possíveis da faixa o trilho NÃO chega a apertar a conversa abaixo
+   * do piso — o teto próprio da lista (520) morde antes.
+   */
+  const fichaOcupaEspaco = faixa?.temFicha === true && !painelRecolhido;
+
   useEffect(() => {
     const medir = () => setFaixa(faixaDaLargura(window.innerWidth));
     medir();
@@ -659,6 +707,12 @@ export function InboxLayout({
   // resolve contra a largura real da grade: a mesma chave `xl` cobre 1280–1535
   // e o piso da conversa tem de caber nos dois extremos. Sem nada salvo,
   // `null` = padrão do CSS, e a grade nem fica sabendo disto.
+  //
+  // `fichaOcupaEspaco` entra nas deps porque recolher/abrir o painel (#3046)
+  // muda o teto da lista: a largura salva pode ter sido esticada com o painel
+  // RECOLHIDO e, ao reabrir, o teto volta a valer — quem limita é o
+  // `resolverLarguras`, nunca a chave de storage. Sem re-resolver aqui, o valor
+  // grande salvo seria aplicado cru ao reabrir e roubaria a conversa.
   useEffect(() => {
     if (!faixa) {
       aplicarLarguras(null);
@@ -669,10 +723,10 @@ export function InboxLayout({
     const salvas = lerLarguras(armazenamentoDoNavegador(), faixa.id);
     aplicarLarguras(
       salvas
-        ? resolverLarguras({ ...salvas, larguraContainer: largura, temFicha: faixa.temFicha })
+        ? resolverLarguras({ ...salvas, larguraContainer: largura, temFicha: fichaOcupaEspaco })
         : null,
     );
-  }, [faixa, aplicarLarguras]);
+  }, [faixa, fichaOcupaEspaco, aplicarLarguras]);
 
   /** O que vale AGORA na tela: o ajuste salvo, ou o padrão da faixa. */
   const efetivas: LargurasDoInbox | null = larguras ?? (faixa ? largurasPadrao(faixa) : null);
@@ -708,7 +762,9 @@ export function InboxLayout({
     evento.stopPropagation();
     evento.currentTarget.setPointerCapture?.(evento.pointerId);
     const base = largurasRef.current ?? efetivas;
-    const temFicha = faixa.temFicha;
+    // O recolhido do painel entra AQUI também (#3046): é o mesmo teto da lista
+    // que a resolução inicial usa, e o arrasto não pode discordar da tela.
+    const temFicha = fichaOcupaEspaco;
     const faixaAtual = faixa;
 
     const aoMover = (movimento: PointerEvent) => {
@@ -739,7 +795,7 @@ export function InboxLayout({
     evento.preventDefault();
     const base = { ...(largurasRef.current ?? efetivas), [coluna]: proximo };
     aplicarLarguras(
-      resolverLarguras({ ...base, larguraContainer: larguraDaGrade(), temFicha: faixa.temFicha }),
+      resolverLarguras({ ...base, larguraContainer: larguraDaGrade(), temFicha: fichaOcupaEspaco }),
     );
     gravarLarguras(armazenamentoDoNavegador(), faixa.id, largurasRef.current);
   };
@@ -990,6 +1046,7 @@ export function InboxLayout({
                 searchTerm={buscaAberta ? busca.termo : ""}
                 provider={selectedConversation.channel_sessions?.provider ?? null}
                 onResponder={setRespondendo}
+                onEncaminhar={setEncaminhando}
                 // O cartão da passagem escolhe o gesto a partir de quem é o dono
                 // da conversa: sem dono convida a assumir, com outro dono diz
                 // quem atende. Sem estes dois campos ele cairia no estado mais
@@ -1029,11 +1086,25 @@ export function InboxLayout({
               blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
               janelaFechada={motivoDaJanela}
               disabled={selectedConversation.status === "closed"}
+              // A CAIXA TRAVADA ATÉ ASSUMIR (#3012) — a opção é da ORGANIZAÇÃO e
+              // chega pela mesma preferência que o menu (`interface_settings` em
+              // `useAuth`). Desligada (o padrão) ninguém vê diferença: com ela
+              // fora, a expressão é `false` em todo estado. Assumir a conversa
+              // muda `assigned_to_user_id` e o compositor libera sozinho, porque
+              // a decisão é recalculada a cada render sobre a conversa atual.
+              aguardandoAssumir={composerBloqueadoAteAssumir({
+                ligada: activeOrg?.interface_settings?.bloquearAteAssumir === true,
+                donoDaConversa: selectedConversation.assigned_to_user_id,
+                atendenteId: user.id,
+              })}
               contactName={selectedConversation.contacts?.name ?? null}
               contactDisplayName={selectedConversation.contacts?.display_name}
               respondendo={respondendo}
               onCancelarResposta={() => setRespondendo(null)}
               currentContactId={selectedConversation.contact_id}
+              // A barra de recursos lembra o recolhimento POR usuário (#3282);
+              // o id vem do `AuthProvider` daqui, não de dentro do compositor.
+              usuarioId={user.id}
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}
@@ -1133,6 +1204,27 @@ export function InboxLayout({
         onToggleHelp={() => setHelpOpen((v) => !v)}
       />
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <EncaminharDialog
+        open={encaminhando !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) {
+            setEncaminhando(null);
+            // Diálogo fechado, intenção zerada: reabrir depois — outra mensagem
+            // ou até a mesma — tem de poder encaminhar de novo, com chave nova.
+            encaminhar.limparIntencao();
+          }
+        }}
+        conversas={conversasDaLista}
+        conversationIdAtual={selectedConversation?.id ?? null}
+        enviando={encaminhar.isPending}
+        onEscolher={(destino) => {
+          if (!encaminhando) return;
+          encaminhar.mutate(
+            { id: encaminhando.id, conversationIdDestino: destino },
+            { onSuccess: () => setEncaminhando(null) },
+          );
+        }}
+      />
     </div>
     </OpenConversationProvider>
   );

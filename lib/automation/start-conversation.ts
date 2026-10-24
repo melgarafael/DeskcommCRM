@@ -13,34 +13,95 @@ import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
-import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
+import {
+  PROVIDERS_DE_MENSAGEM,
+  PROVIDERS_DE_TELEFONE,
+  type ProviderDeMensagem,
+} from "@/lib/channels/capabilities";
 
 
-/** Sessão viva da org: WORKING primeiro; senão qualquer uma não arquivada. */
+/** O que o CHAMADOR sabe sobre o destino e esta porta não pode adivinhar. */
+export interface PreferenciaDeSessao {
+  /**
+   * O destino é um TELEFONE — o número que a pessoa deixou ou o `phone_number`
+   * do contato. Só quem resolveu o telefone sabe disso; a organização pode ter
+   * Instagram e WhatsApp ao mesmo tempo.
+   */
+  preferirTelefone?: boolean;
+}
+
+/**
+ * Sessão viva da org: WORKING primeiro; senão qualquer uma não arquivada.
+ *
+ * ─── A PREFERÊNCIA DO CHAMADOR (#3358) ───────────────────────────────────────
+ * A regra sozinha escolhe a sessão de MENSAGEM `WORKING` mais ANTIGA da
+ * organização. Isso está errado quando o destino é um TELEFONE: numa
+ * organização que conectou o Instagram/Facebook antes do WhatsApp — a ordem em
+ * que as conexões costumam ser feitas — a escolhida era a social, e a rede
+ * social não tem telefone (o contato de lá é outro endereço, e o envio fora da
+ * janela de 24h é recusado). O lembrete de tarefa saía pelo Instagram e não
+ * chegava.
+ *
+ * Com `preferirTelefone`, os degraus passam a ser:
+ *
+ *   telefone WORKING → telefone qualquer → mensagem WORKING → mensagem qualquer
+ *
+ * A preferência vem ANTES do degrau de vivacidade de propósito: um canal social
+ * `WORKING` continua sem alcançar telefone nenhum, então preferi-lo ali não é
+ * escolher o melhor dos dois — é escolher o único que não pode funcionar, e
+ * quem recebe a falha lê "confira a conexão" sem haver conexão a conferir.
+ *
+ * Sem sessão de WhatsApp na organização, a cadeia termina na regra de sempre (a
+ * de mensagem mais antiga) — a preferência reordena, nunca inventa canal. E
+ * quem não passa a opção continua escolhendo exatamente como antes: o `create`
+ * de contato e a conversa compartilhada (inclusive pelo MCP) ainda chamam sem a
+ * opção, embora também tenham o telefone na mão (continuação do #3358).
+ */
 export async function sessaoProntaParaEnvio(
   supabase: SupabaseClient,
   organizationId: string,
+  preferencia: PreferenciaDeSessao = {},
 ): Promise<string | null> {
-  const listar = (soWorking: boolean, ignorarArquivadas: boolean) => {
+  const listar = (
+    providers: readonly ProviderDeMensagem[],
+    soWorking: boolean,
+    ignorarArquivadas: boolean,
+  ) => {
     let q = supabase
       .from("channel_sessions")
       .select("id")
       .eq("organization_id", organizationId);
     // Voz não manda texto: escolher a linha de chamada aqui faria a automação
     // "enviar" por um canal sem transporte de mensagem (spec 18).
-    q = q.in("provider", [...PROVIDERS_DE_MENSAGEM]);
+    q = q.in("provider", [...providers]);
     if (soWorking) q = q.eq("status", "WORKING");
     if (ignorarArquivadas) q = q.is(ARCHIVED_AT, null);
     return q.order("created_at", { ascending: true }).limit(1);
   };
-  const tentar = async (soWorking: boolean) => {
+  const tentar = async (
+    providers: readonly ProviderDeMensagem[],
+    soWorking: boolean,
+  ) => {
     const { data } = await queryTolerantToMissingArchived(
-      () => listar(soWorking, true),
-      () => listar(soWorking, false),
+      () => listar(providers, soWorking, true),
+      () => listar(providers, soWorking, false),
     );
     return (data as Array<{ id: string }> | null)?.[0]?.id ?? null;
   };
-  return (await tentar(true)) ?? (await tentar(false));
+
+  // Sem a preferência a lista tem UMA entrada e os degraus são os mesmos de
+  // antes desta issue: WORKING, senão qualquer uma não arquivada.
+  const filtros: ReadonlyArray<readonly ProviderDeMensagem[]> = preferencia.preferirTelefone
+    ? [PROVIDERS_DE_TELEFONE, PROVIDERS_DE_MENSAGEM]
+    : [PROVIDERS_DE_MENSAGEM];
+
+  for (const providers of filtros) {
+    for (const soWorking of [true, false]) {
+      const id = await tentar(providers, soWorking);
+      if (id) return id;
+    }
+  }
+  return null;
 }
 
 export async function ensureConversation(

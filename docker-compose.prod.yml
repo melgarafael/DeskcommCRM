@@ -122,6 +122,33 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+    # ═══ O PRAZO QUE FALTAVA (#2823) ═══
+    #
+    # No `docker stop` o Docker manda SIGTERM e espera ESTE prazo; passado ele,
+    # manda SIGKILL. Sem a chave, o prazo é o PADRÃO DE 10 s — e o worker se dá
+    # 30 s (`SHUTDOWN_GRACE_MS`) para fechar laços + drain + pool. O SIGKILL
+    # chegava, portanto, na METADE do prazo que o próprio worker pediu, e o job
+    # em voo voltava `running` até o reaper (10 min de invisibilidade a cada
+    # `docker stop` — o defeito da issue, medido em 19,6 s de parada ociosa com
+    # o laço do `event_log` preso numa chamada de rede).
+    #
+    # ═══ POR QUE O NÚMERO NÃO RESOLVE A ISSUE SOZINHO ═══
+    #
+    # Aumentar o prazo do supervisor é o remédio que a issue #2823 PROÍBE como
+    # conserto único (o comentário do `Dockerfile.worker` registra isso): com o
+    # prazo armado depois de esperar os laços, o `stop_grace_period` que faltava
+    # cobriria uma janela que começava tarde — os 19,6 s do laço preso ficavam
+    # por fora de qualquer prazo, interno ou externo. O par só funciona junto:
+    # o worker conta o prazo DO SINAL (`workers/agent-worker/desligamento-no-prazo.ts`)
+    # e este número é o teto de fora.
+    #
+    # ═══ A REGRA DO PAR ═══
+    #
+    # `stop_grace_period` > `SHUTDOWN_GRACE_MS`/1000, com folga para o fecho do
+    # pool e do healthz. O default de 40 s para os 30 s internos dá 10 s de
+    # folga. Os dois são gravados juntos pelo `install.sh` (kit) e o par que não
+    # fecha é reprovado por `workers/agent-worker/prazo-do-shutdown-comeca-no-sinal.test.ts`.
+    stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-40s}
     restart: unless-stopped
     env_file: .env
     environment:

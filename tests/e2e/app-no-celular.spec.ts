@@ -68,9 +68,19 @@ test.beforeAll(async ({ browser }, testInfo) => {
   await contexto.close();
 });
 
-/** `body.scrollWidth` contra a janela — a régua de `celular-cabe-na-tela.spec.ts`. */
+/**
+ * A régua de `celular-cabe-na-tela.spec.ts`: o `body` contra a janela OU o
+ * `<main>` contra a própria caixa. Desde 2026-10-23 o `<main>` entra porque ele
+ * tem `overflow-auto` — o que estoura rola dentro dele e o `body` nunca vê.
+ */
 async function estouroHorizontal(page: Page): Promise<number> {
-  return page.evaluate(() => document.body.scrollWidth - document.documentElement.clientWidth);
+  return page.evaluate(() => {
+    const principal = document.querySelector<HTMLElement>("main");
+    return Math.max(
+      document.body.scrollWidth - document.documentElement.clientWidth,
+      principal ? principal.scrollWidth - principal.clientWidth : 0,
+    );
+  });
 }
 
 async function abrirATela(page: Page): Promise<void> {

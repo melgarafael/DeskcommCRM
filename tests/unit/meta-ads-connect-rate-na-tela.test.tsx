@@ -93,3 +93,27 @@ describe("Connect rate na tela", () => {
     expect(within(corpo).queryByText("0,00%")).toBeNull();
   });
 });
+
+/**
+ * A COLUNA DO NOME NO CELULAR (ADR-0006, F4). A 1ª coluna é `sticky` e tinha
+ * `max-w-[22rem]` (352px): a 390px ela cobria a tela inteira e os números rolavam
+ * por baixo dela. Abaixo de `md` o teto cai para 9rem. O teto vai também no
+ * `<span>`, porque `max-width` em célula de tabela automática não tem efeito
+ * definido pelo CSS — quem segura o `truncate` é o bloco de dentro.
+ */
+describe("o nome da campanha no celular", () => {
+  it("a 1ª célula e o nome dentro dela param em 9rem abaixo de md e voltam a 22rem acima", () => {
+    render(<TabelaDeCampanhas linhas={[linha()]} moeda="BRL" />);
+
+    const nome = screen.getByTitle("Cadastro: Agenda Cheia");
+    const celula = nome.closest("td");
+    if (!celula) throw new Error("esperava o nome dentro de uma célula");
+
+    for (const el of [celula, nome]) {
+      expect(el.classList.contains("max-w-[9rem]")).toBe(true);
+      expect(el.classList.contains("md:max-w-[22rem]")).toBe(true);
+      expect(el.classList.contains("max-w-[22rem]")).toBe(false);
+    }
+    expect(nome.classList.contains("truncate")).toBe(true);
+  });
+});

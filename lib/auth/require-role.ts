@@ -29,7 +29,7 @@ import type { NextResponse } from "next/server";
 import { fail, type ApiError } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA } from "@/lib/auth/org-da-aba";
-import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, mfaEmDividaEstrita, orgAtivaSemPortao } from "@/lib/auth/server";
 import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { STATUS_OPERANTE, ehOperante } from "@/lib/organizacao/operante";
@@ -40,7 +40,7 @@ export type RoleCheck =
   | { ok: false; response: NextResponse<ApiError> };
 
 const MENSAGEM_DE_MFA =
-  "Esta sessão precisa da verificação em duas etapas. Entre novamente com o código do aplicativo.";
+  "Confirme o código do aplicativo de verificação para continuar.";
 
 interface RequireRoleOpts {
   /** Correlaciona a resposta e o audit com o X-Request-Id da rota. */
@@ -218,7 +218,11 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   if (user.is_platform_admin && !user.support && allowPlatformAdmin !== false) {
     if (allowPlatformAdmin === "leitura") return { ok: true, user, org };
     if (user.platform_admin_scope === "full") {
-      if (await mfaEmDivida()) {
+      // O alvo pode vir do path (`organizationId`), não do cookie: onde quem
+      // pede não é admin, é o poder de plataforma que autoriza, e dispositivo
+      // confiável não o abre — só o código provado nesta sessão.
+      const peloPoderDePlataforma = ROLE_RANK[org.role] < ROLE_RANK.admin;
+      if (peloPoderDePlataforma ? await mfaEmDividaEstrita() : await mfaEmDivida()) {
         void audit({
           action: "authz.denied",
           actorUserId: user.id,

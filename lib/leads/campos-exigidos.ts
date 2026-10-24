@@ -46,6 +46,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
+import { logger } from "@/lib/logger";
 import { camposVisiveis } from "@/lib/schemas/mostrar-quando";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 
@@ -128,6 +129,14 @@ interface EntradaDeCampos {
    * cairia na mesma recusa da primeira: o lead ainda não foi gravado.
    */
   customFieldsPropostos?: Record<string, unknown> | null;
+  /**
+   * As chaves de campo `file` que TÊM anexo em `crm_lead_attachments` (#3229) —
+   * de `camposComAnexo()`. Campo de arquivo não se lê de `custom_fields`: a
+   * lista lá seria uma segunda fonte, e um `custom_fields` forjado passaria a
+   * régua sem arquivo nenhum. Ausente = nenhum anexo (o negócio que ainda vai
+   * nascer, na criação e no clone, não tem como ter).
+   */
+  camposComAnexo?: ReadonlySet<string> | null;
 }
 
 /** `undefined`/`null`/branco/array vazio são ausência; `false` e `0` são resposta. */
@@ -136,6 +145,42 @@ function valorPreenchido(valor: unknown): boolean {
   if (typeof valor === "string") return valor.trim().length > 0;
   if (Array.isArray(valor)) return valor.length > 0;
   return true;
+}
+
+/**
+ * Quais campos `file` exigíveis deste funil têm anexo neste negócio (#3229).
+ *
+ * Só consulta quando o funil TEM campo de arquivo com `obrigatorio_em`: todo
+ * funil sem ele (o caso comum) não paga a ida ao banco. `organization_id` vai
+ * explícito porque metade dos chamadores usa o cliente admin.
+ *
+ * Falha FECHADA: sem a leitura, o campo conta como vazio e a escrita é
+ * recusada com a lista do que falta — melhor pedir o anexo de novo do que
+ * mover o negócio sem o documento que o funil exige.
+ */
+export async function camposComAnexo(
+  supabase: SupabaseClient,
+  settings: unknown,
+  organizationId: string,
+  leadId: string,
+): Promise<ReadonlySet<string>> {
+  const exigiveis = camposDoFunil(settingsComoRecord(settings)).some(
+    (campo) => campo.type === "file" && campo.obrigatorio_em,
+  );
+  if (!exigiveis) return new Set();
+  const { data, error } = await supabase
+    .from("crm_lead_attachments")
+    .select("field_key")
+    .eq("organization_id", organizationId)
+    .eq("lead_id", leadId);
+  if (error) {
+    logger.warn("[campos-exigidos] anexos não lidos; o campo de arquivo conta como vazio", {
+      leadId,
+      erro: error.message,
+    });
+    return new Set();
+  }
+  return new Set(((data ?? []) as { field_key: string }[]).map((linha) => linha.field_key));
 }
 
 /** O `settings` do funil como record tolerante — lixo vira objeto vazio. */
@@ -220,7 +265,11 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
     // que a tela escondeu transformaria "esconder" em "travar". O valor que
     // ele já tinha continua no lead — esta função só decide se PERGUNTA.
     if (!visiveis.has(campo.key)) continue;
-    if (valorPreenchido(valores[campo.key])) continue;
+    const preenchido =
+      campo.type === "file"
+        ? (entrada.camposComAnexo?.has(campo.key) ?? false)
+        : valorPreenchido(valores[campo.key]);
+    if (preenchido) continue;
     faltando.push({
       chave: campo.key,
       rotulo: campo.label,

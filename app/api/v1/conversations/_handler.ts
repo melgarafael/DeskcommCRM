@@ -93,7 +93,7 @@ const SELECT_COLS = `
   bot_silenced_until, last_handoff_at, last_handoff_reason,
   comando_da_conversa,
   usable_for_rag,
-  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, avatar_storage_path, force_human),
+  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, contact_type, avatar_storage_path, force_human),
   channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)
 `;
 

@@ -9,7 +9,7 @@ import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-do-envio";
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
-import { classificarMidiaComLegenda } from "@/lib/messaging/media/midia-com-legenda";
+import { classificarMidiaComLegenda, type TipoDeMidiaComLegenda } from "@/lib/messaging/media/midia-com-legenda";
 import { recusaDeMidiaForaDaJanela } from "@/lib/messaging/media/recusa-de-midia-fora-da-janela";
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 
@@ -38,13 +38,15 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   if (!sessionId || !template) {
     return { type: "send_whatsapp_message", status: "failed", error: "missing_config" };
   }
-  // MÍDIA OPCIONAL (#2734): quando vier, o texto atual é a LEGENDA, e o que sai é
-  // uma mensagem de mídia — imagem ou PDF — pelo MESMO caminho do Inbox e das
-  // campanhas (`sendMessageHandler`), nunca por um segundo envio. O que não for
-  // imagem nem PDF é recusado AQUI, antes de nascer linha nenhuma.
+  // MÍDIA OPCIONAL (#2734, ampliada pelo #2972): quando vier, o texto atual é a
+  // LEGENDA, e o que sai é uma mensagem de mídia — imagem, vídeo, áudio (como
+  // nota de voz) ou documento — pelo MESMO caminho do Inbox e das campanhas
+  // (`sendMessageHandler`), nunca por um segundo envio. O que não for um arquivo
+  // identificável (sem MIME declarado e sem extensão conhecida) é recusado AQUI,
+  // antes de nascer linha nenhuma.
   const mediaUrl =
     typeof config.media_url === "string" && config.media_url.trim() ? config.media_url.trim() : null;
-  let midia: { type: "image" | "document"; mime: string } | null = null;
+  let midia: { type: TipoDeMidiaComLegenda; mime: string } | null = null;
   if (mediaUrl) {
     const classificada = classificarMidiaComLegenda(mediaUrl);
     if (!classificada.ok) {

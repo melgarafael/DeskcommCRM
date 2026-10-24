@@ -44,6 +44,10 @@ let rodadaWriteError: { message: string } | null;
  * realmente aconteceu quando a ordem entre elas importa).
  */
 let updates: Array<{ table: string } & Record<string, unknown>>;
+/** Toda linha que a rota INSERE — hoje só a da volta automática (#2757). */
+let inserts: Array<{ table: string } & Record<string, unknown>>;
+/** Erro a devolver no INSERT deste caso. */
+let insertError: { message: string } | null;
 
 function lastUpdate(table: string) {
   return [...updates].reverse().find((u) => u.table === table) ?? null;
@@ -58,6 +62,8 @@ beforeEach(() => {
   updateErrorByTable = {};
   rodadaWriteError = null;
   updates = [];
+  inserts = [];
+  insertError = null;
 
   vi.mocked(createAdminClient).mockReturnValue({
     from: (table: string) => {
@@ -74,6 +80,12 @@ beforeEach(() => {
             order: () => ({ limit: () => ({ maybeSingle }) }),
           }),
         }),
+        // A volta automática (#2757) é a única escrita da rota que não é
+        // `update`: ela CRIA a linha do run, porque ninguém pediu nada.
+        insert: (patch: Record<string, unknown>) => {
+          if (!insertError) inserts.push({ table, ...patch });
+          return { error: insertError };
+        },
         update: (patch: Record<string, unknown>) => ({
           eq: async () => {
             // A escrita da RODADA DO BANCO é reconhecível pelas próprias colunas:
@@ -129,11 +141,42 @@ describe("POST /api/v1/system/agent", () => {
   });
 
   it("heartbeat responde a ordem pendente e devolve o run", async () => {
-    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    runRow = {
+      id: RUN_ID,
+      status: "dispatched",
+      dispatched_at: new Date().toISOString(),
+      to_version: "v1.1.0",
+    };
     const { POST } = await import("./route");
     const body = await (await POST(req(HEARTBEAT))).json();
     expect(body.data.update_requested).toBe(true);
     expect(body.data.run_id).toBe(RUN_ID);
+  });
+
+  it("o heartbeat entrega o ALVO do run — um 'voltar' não é a última release (#2757)", async () => {
+    // O agente instala o `to_version` do run, e não a última publicada: num
+    // pedido de volta (#2757) o alvo é a versão ANTERIOR, e quem seguisse a
+    // última release estaria reinstalando a release que acabou de quebrar.
+    // Sem este campo na resposta, o agente não tem como saber qual é o alvo.
+    runRow = {
+      id: RUN_ID,
+      status: "dispatched",
+      dispatched_at: new Date().toISOString(),
+      to_version: "v1.0.0",
+    };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.to_version).toBe("v1.0.0");
+  });
+
+  it("run sem to_version (rota anterior a #2757) devolve alvo vazio, nunca a última release", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.update_requested).toBe(true);
+    // Vazio é o sinal para o agente cair no de sempre (`--to <última release>`),
+    // e não uma tentativa de adivinhar o alvo a partir do ambiente.
+    expect(body.data.to_version).toBe("");
   });
 
   it("o run em 'dispatched' basta como pedido — nenhum flag em system_version porteia", async () => {
@@ -331,5 +374,147 @@ describe("POST /api/v1/system/agent", () => {
   it("recusa corpo com kind desconhecido", async () => {
     const { POST } = await import("./route");
     expect((await POST(req({ kind: "sei-la" }))).status).toBe(422);
+  });
+});
+
+/**
+ * #2757 (ajuste 3): a volta que o AGENTE fez sozinho tem de chegar ao painel.
+ *
+ * Até aqui ela só existia no `.update-agent.log` da VPS: quem abria a tela via
+ * a versão mudar e não tinha como saber o que houve. O agente manda o fato por
+ * esta rota — o mesmo canal do heartbeat e do run_result — e a rota grava uma
+ * linha de run JÁ FECHADA (`failed_rolled_back`), com as duas versões, a hora e
+ * o motivo. `requested_by` fica NULO de propósito: é a marca de "ninguém pediu
+ * isto" que a tela usa para dizer "voltou sozinho".
+ *
+ * #3271 acrescenta o DESFECHO: o mesmo recado passa a dizer se a volta
+ * TERMINOU (`ok`), e a rota escreve `failed` quando não terminou. Sem isso a
+ * tela tratava os dois desfechos como um só — afirmava "é a que está no ar
+ * agora" e escondia a saída de um clique justamente na volta que falhou.
+ */
+describe("POST /api/v1/system/agent — a volta automática (#2757)", () => {
+  /** O recado do agente: o desfecho vai no CAMPO `ok`, medido do `update.sh`. */
+  const VOLTA = {
+    kind: "rollback",
+    returned_to: "1.4.2",
+    failed_version: "1.5.0",
+    ok: true,
+    reason: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
+  };
+
+  it("⭐ grava a volta como run fechado: para onde voltou, de onde, a hora e o motivo", async () => {
+    const { POST } = await import("./route");
+    const res = await POST(req(VOLTA));
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      table: "system_update_runs",
+      status: "failed_rolled_back",
+      // `from_version` = onde o sistema ESTÁ (a volta); `to_version` = a que falhou.
+      from_version: "1.4.2",
+      to_version: "1.5.0",
+      log_tail: VOLTA.reason,
+      // A marca de "ninguém pediu": sem ela a tela diria "Voltei", e não "voltou sozinho".
+      requested_by: null,
+    });
+    // A hora é do servidor (a mesma máquina do host) e sai nos DOIS carimbos:
+    // `dispatched_at` põe esta linha como a mais recente no que a tela lê, e
+    // `finished_at` é a hora que o aviso mostra.
+    // `noUncheckedIndexedAccess`: `inserts[0]` é `Linha | undefined` para o TS. O guarda
+    // transforma o `toHaveLength(1)` acima em estreitamento de tipo de verdade (e não em
+    // `as any`): se a rota não gravou nada, o teste falha aqui, com nome.
+    const linhaDaVolta = inserts[0];
+    if (!linhaDaVolta) throw new Error("a rota não gravou a linha do run da volta automática");
+    expect(linhaDaVolta.finished_at).toBeTruthy();
+    expect(linhaDaVolta.dispatched_at).toEqual(linhaDaVolta.finished_at);
+    // Nada de fechar run alheio nem de sujar o estado da versão.
+    expect(updates).toEqual([]);
+  });
+
+  it("audita a volta como fim de atualização, dizendo que foi automática", async () => {
+    const { audit } = await import("@/lib/audit");
+    const { POST } = await import("./route");
+    await POST(req(VOLTA));
+
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "system.update_finished",
+        metadata: expect.objectContaining({
+          volta_automatica: true,
+          de: "1.5.0",
+          para: "1.4.2",
+        }),
+      }),
+    );
+  });
+
+  it("⭐ volta que NÃO terminou (ok:false) fecha como `failed` — e a auditoria conta o mesmo desfecho", async () => {
+    // O desfecho é lido do CAMPO, e não do texto do `reason`: o motivo termina
+    // com o código da volta ("… código 7"), mas parsear frase não é contrato —
+    // e foi justamente por o código existir só no texto que a tela tratava
+    // igual a volta que terminou e a que falhou (#3271). `failed` é o
+    // vocabulário que ela já sabe ler como "não sei em que versão o sistema
+    // está": é ele que a faz parar de afirmar "é a que está no ar agora" e
+    // manter o botão de voltar.
+    const { audit } = await import("@/lib/audit");
+    const { POST } = await import("./route");
+    const res = await POST(
+      req({ ...VOLTA, ok: false, reason: `${VOLTA.reason} (a volta terminou com código 7)` }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      status: "failed",
+      // As duas versões continuam nomeando o MESMO fato: de onde se tentou
+      // sair e para onde a volta foi.
+      from_version: "1.4.2",
+      to_version: "1.5.0",
+      requested_by: null,
+    });
+    expect(inserts[0]?.status).not.toBe("failed_rolled_back");
+    // A auditoria não pode contar a história antiga enquanto a linha do run
+    // conta a nova.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ status: "failed", volta_automatica: true }),
+      }),
+    );
+  });
+
+  it("volta de agente ANTERIOR a este contrato (sem `ok`) fecha como `failed`: sem prova de que terminou, a tela não afirma", async () => {
+    // O container do app atualiza antes do script do host — o mesmo bootstrap
+    // que faz o `compare_failed` ser opcional. Então o recado velho chega à
+    // rota nova. Ausente é "ninguém mediu o desfecho", e o lado conservador é
+    // NÃO afirmar que a versão anterior está no ar: afirmar sem prova é o
+    // defeito medido na issue, e a leitura pessimista erra para o lado em que a
+    // tela oferece a saída (o botão de voltar), nunca para o de tranquilizar.
+    const recadoAntigo = {
+      kind: "rollback",
+      returned_to: "1.4.2",
+      failed_version: "1.5.0",
+      reason: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
+    };
+    const { POST } = await import("./route");
+    const res = await POST(req(recadoAntigo));
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({ status: "failed" });
+  });
+
+  it("recusa volta sem a versão de origem (o aviso diria 'voltou para a undefined')", async () => {
+    const { POST } = await import("./route");
+    const res = await POST(req({ ...VOLTA, returned_to: "" }));
+    expect(res.status).toBe(422);
+    expect(inserts).toEqual([]);
+  });
+
+  it("quando o banco recusa a linha → 500, e o agente fica sabendo (nada de 200 otimista)", async () => {
+    insertError = { message: "conexão caiu" };
+    const { POST } = await import("./route");
+    const res = await POST(req(VOLTA));
+    expect(res.status).toBe(500);
   });
 });

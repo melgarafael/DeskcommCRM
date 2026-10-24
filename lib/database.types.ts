@@ -40,6 +40,63 @@ export type Database = {
         Update: { organization_id?: string; profile_id?: string; credential_encrypted?: string; created_at?: string; updated_at?: string }
         Relationships: [{ foreignKeyName: "channel_integrations_organization_id_fkey"; columns: ["organization_id"]; isOneToOne: true; referencedRelation: "organizations"; referencedColumns: ["id"] }]
       }
+      crm_lead_attachments: {
+        Row: {
+          id: string;
+          organization_id: string;
+          lead_id: string;
+          field_key: string;
+          file_name: string;
+          file_size: number;
+          mime_type: string;
+          storage_path: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          lead_id: string;
+          field_key: string;
+          file_name: string;
+          file_size?: number;
+          mime_type?: string;
+          storage_path: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          lead_id?: string;
+          field_key?: string;
+          file_name?: string;
+          file_size?: number;
+          mime_type?: string;
+          storage_path?: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "crm_lead_attachments_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "crm_lead_attachments_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       ai_reply_drafts: {
         Row: {
           id: string;
@@ -4391,6 +4448,7 @@ isOneToOne: false
           client_recognized_at: string | null
           client_tag_by_system: string | null
           consent: Json
+          contact_type: string
           cpf_encrypted: string | null
           custom_fields: Json
           cpf_hash: string | null
@@ -4437,6 +4495,7 @@ isOneToOne: false
           client_recognized_at?: string | null
           client_tag_by_system?: string | null
           consent?: Json
+          contact_type?: string
           cpf_encrypted?: string | null
           custom_fields?: Json
           cpf_hash?: string | null
@@ -4483,6 +4542,7 @@ isOneToOne: false
           client_recognized_at?: string | null
           client_tag_by_system?: string | null
           consent?: Json
+          contact_type?: string
           cpf_encrypted?: string | null
           custom_fields?: Json
           cpf_hash?: string | null
@@ -8720,6 +8780,7 @@ isOneToOne: false
         Row: {
           agent_setup: Json
           agent_setup_revision: number
+          channel_down_since: string | null
           config: Json | null
           cost_usd: number | null
           created_at: string
@@ -8741,6 +8802,7 @@ isOneToOne: false
         Insert: {
           agent_setup?: Json
           agent_setup_revision?: number
+          channel_down_since?: string | null
           config?: Json | null
           cost_usd?: number | null
           created_at?: string
@@ -8762,6 +8824,7 @@ isOneToOne: false
         Update: {
           agent_setup?: Json
           agent_setup_revision?: number
+          channel_down_since?: string | null
           config?: Json | null
           cost_usd?: number | null
           created_at?: string
@@ -9728,6 +9791,7 @@ isOneToOne: false
           organization_id: string
           path_token: string
           redirect_to: string | null
+          reuse_open_lead_on_capture: boolean
           secret_encrypted: string | null
           update_existing_lead_on_capture: boolean
           updated_at: string
@@ -9750,6 +9814,7 @@ isOneToOne: false
           organization_id: string
           path_token: string
           redirect_to?: string | null
+          reuse_open_lead_on_capture?: boolean
           secret_encrypted?: string | null
           update_existing_lead_on_capture?: boolean
           updated_at?: string
@@ -9772,6 +9837,7 @@ isOneToOne: false
           organization_id?: string
           path_token?: string
           redirect_to?: string | null
+          reuse_open_lead_on_capture?: boolean
           secret_encrypted?: string | null
           update_existing_lead_on_capture?: boolean
           updated_at?: string
@@ -10761,7 +10827,13 @@ isOneToOne: false
         Returns: Json
       }
       fn_attendant_metrics: {
-        Args: { p_from: string; p_org: string; p_owner?: string; p_to: string }
+        Args: {
+          p_excluir_etiqueta?: string
+          p_from: string
+          p_org: string
+          p_owner?: string
+          p_to: string
+        }
         Returns: Json
       }
       fn_buscar_trechos_das_fontes: {
@@ -11149,6 +11221,15 @@ isOneToOne: false
       fn_upsert_wa_conversation: {
         Args: { p_contact: string; p_org: string; p_session: string }
         Returns: string
+      }
+      fn_vocabulario_de_tags_pagina: {
+        Args: {
+          p_busca?: string
+          p_limit?: number
+          p_offset?: number
+          p_org: string
+        }
+        Returns: Json
       }
       fn_user_org_ids: { Args: never; Returns: string[] }
       fn_user_role_in: { Args: { p_org: string }; Returns: number }

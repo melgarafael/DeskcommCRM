@@ -107,6 +107,16 @@ export function chaveDoCodigo(codigo: string): string {
   return codigo.toLowerCase();
 }
 
+/** Inteiro não negativo, no alcance de `catalog_products.quantidade` (Postgres integer). */
+function quantidadeDaPlanilha(texto: string): number | null {
+  if (texto === "") return 0;
+  // Preserva milhares bem formados, mas não apaga sinal, fração ou texto:
+  // `-5` e `2,5` não podem virar 5 e 25 unidades disponíveis para o agente.
+  if (!/^(?:\d+|\d{1,3}([., \u00a0])\d{3}(?:\1\d{3})*)$/.test(texto)) return null;
+  const quantidade = Number(texto.replace(/[., \u00a0]/g, ""));
+  return Number.isInteger(quantidade) && quantidade <= 2_147_483_647 ? quantidade : null;
+}
+
 export interface LinhaImportada {
   /** A linha como a pessoa a vê na planilha: 1 é o cabeçalho. */
   linha: number;
@@ -213,6 +223,19 @@ export function lerPlanilha(
       continue;
     }
 
+    // Sem coluna, a loja não controla estoque; célula vazia continua sendo zero.
+    const temColunaEstoque = campos.has("quantidade");
+    const qtdTexto = valor("quantidade");
+    const quantidade = quantidadeDaPlanilha(qtdTexto);
+    if (quantidade === null) {
+      erros.push({
+        linha: numeroNaPlanilha,
+        motivo: _t('quantidade inválida ("{valor}") — use um inteiro de 0 a 2147483647')
+          .replace("{valor}", () => qtdTexto),
+      });
+      continue;
+    }
+
     // Sem código na planilha, o nome vira a identidade. É o que permite reimportar
     // a mesma planilha atualizando em vez de duplicar — que é o gesto real da
     // loja quando o preço muda. O corte em 60 caracteres fica em
@@ -245,13 +268,6 @@ export function lerPlanilha(
       continue;
     }
     codigosVistos.set(chaveDoCodigo(codigo), { linha: numeroNaPlanilha, codigo });
-
-    // Coluna de estoque AUSENTE significa "esta loja não conta estoque" — e é
-    // diferente de estoque zero. Sem essa distinção, uma planilha sem a coluna
-    // deixaria o catálogo inteiro invisível para o agente.
-    const temColunaEstoque = campos.has("quantidade");
-    const qtdTexto = valor("quantidade");
-    const quantidade = temColunaEstoque ? Number(qtdTexto.replace(/\D/g, "")) || 0 : 0;
 
     produtos.push({
       linha: numeroNaPlanilha,

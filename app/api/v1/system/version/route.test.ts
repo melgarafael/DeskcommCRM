@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
   mfaEmDivida: vi.fn(async () => false),
+  mfaEmDividaEstrita: vi.fn(async () => false),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 // A escrita da instalação passa por requirePlatformAdminEscrita (scope 'full' +
@@ -612,6 +613,44 @@ describe("GET /api/v1/system/version", () => {
     expect(body.data.run.superseded).toBe(false);
     expect(body.data.current_version).toBe("v1.32.1");
     vi.unstubAllEnvs();
+  });
+
+  it("volta automática (#2757): sem autor e fechada no instante em que nasceu", async () => {
+    const agora = "2026-10-16T17:10:00.000Z";
+    runRow = {
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      status: "failed_rolled_back",
+      last_step: null,
+      dispatched_at: agora,
+      finished_at: agora,
+      from_version: "1.0.0",
+      to_version: "1.1.0",
+      log_tail: "o site não respondeu",
+      requested_by: null,
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("../version/route");
+    const body = await (await GET(get())).json();
+    expect(body.data.run.volta_automatica).toBe(true);
+    expect(body.data.run.finished_at).toBe(agora);
+  });
+
+  it("CONTROLE — run pedido por alguém que saiu (requested_by nulo pela FK) não vira 'voltou sozinho'", async () => {
+    runRow = {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      status: "failed_rolled_back",
+      last_step: "app",
+      dispatched_at: "2026-10-16T17:00:00.000Z",
+      finished_at: "2026-10-16T17:08:00.000Z",
+      from_version: "1.0.0",
+      to_version: "1.1.0",
+      log_tail: "",
+      requested_by: null,
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("../version/route");
+    const body = await (await GET(get())).json();
+    expect(body.data.run.volta_automatica).toBe(false);
   });
 
   it("terminou BEM e o host ainda não bateu: a tela diz que o pedido terminou — sem afirmar a versão nova", async () => {

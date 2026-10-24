@@ -15,7 +15,7 @@ export default async function AgentInboxPage() {
   const idioma = user.idioma;
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 md:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Central de avisos", idioma)}</h1>
         <p className="text-sm text-muted-foreground">

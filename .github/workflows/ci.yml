@@ -86,9 +86,9 @@ permissions:
 # segue no grupo do PR, e o push novo continua cancelando o velho.
 
 jobs:
-  # A suíte de unit em TRÊS partes paralelas (duas até 22/09/2026), mais uma
-  # QUARTA parte sem unit, só com cercas e kit bash (desde 08/10/2026) — ver o
-  # fim deste bloco. O check obrigatório `verify` é o
+  # A suíte de unit em SEIS partes paralelas (duas até 22/09/2026, três até
+  # 23/10/2026), mais uma SÉTIMA parte sem unit, só com cercas e kit bash
+  # (desde 08/10/2026, como parte 4 até 23/10) — ver o fim deste bloco. O check obrigatório `verify` é o
   # agregador lá embaixo — mesmo padrão do `invariants`.
   #
   # Medido em 18/09/2026: o `verify` inteiro levava 712 s de mediana nos verdes e
@@ -99,7 +99,7 @@ jobs:
   # arquivo: cada parte roda metade (`--shard`) e paga metade do jsdom.
   #
   # Os passos de arquivo inteiro rodam cada um numa parte só: typecheck e as
-  # três auditorias na 1; lint na 2; cercas e kit bash na 4 (na 3 até
+  # três auditorias na 1; lint na 2; cercas e kit bash na última (na 3 até
   # 08/10/2026) — é o que equilibra as partes (a conta está no fim deste bloco). O `--shard` corta por CONTAGEM de
   # arquivos, não por tempo; quem
   # equilibra o relógio é onde moram estes passos. A divisão em partes é o
@@ -140,6 +140,19 @@ jobs:
   # Com eles numa parte própria, a 3 volta a ser só `Unit tests`, e o kit pode
   # crescer até o orçamento sem levar a suíte junto. Previsão, não medição: a
   # parte 4 fica em ~6 min (preâmbulo + cercas + kit) e a 3 em ~8.
+  #
+  # DE TRÊS PARA SEIS PARTES DE UNIT EM 23/10/2026; cercas+kit viram a parte 7.
+  # Medido nos jobs `verify-parte` que executaram em 52 rodadas de ci.yml de
+  # 23/10 (n≈43 por parte): parte 1 mediana 12,7 min (máx 13,2), parte 2 12,4
+  # (máx 13,1) — 26 e 27 delas no orçamento de 12 —, parte 3 10,2 (máx 11,7),
+  # parte 4 8,3 (máx 8,8). O relógio é `Unit tests`: ~600 s de mediana por
+  # terço, soma por rodada até 1850 s, desequilíbrio entre terços até 1,37× (a
+  # 1,02× nas rodadas mais longas). Os fixos não mudaram de peso: typecheck
+  # ~120 s na 1, lint ~105 s na 2, preâmbulo ~30 s. Com cinco terços de unit a
+  # parte 1 ficaria em ~9,5 min no pior caso; com seis, 1850/6 × 1,1 + 128 + 35
+  # ≈ 8,4 min — PREVISÃO, não medição. A parte 7 (cercas 128 + kit 379 no máx)
+  # segue em ~8,8. Custo: três jobs a mais por rodada na fila de runners e
+  # ~2 min de runner a mais (preâmbulo + partida do vitest por parte).
   verify-parte:
     # Guarda de travamento. O DETECTOR de crescimento é o passo `Orçamento de
     # tempo` no fim de cada parte; a medição que justifica o número está em
@@ -155,7 +168,7 @@ jobs:
       # Sem fail-fast: um vermelho numa parte não esconde o da outra.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4]
+        parte: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v7
 
@@ -237,9 +250,9 @@ jobs:
       # em segundos; dentro da suíte longa, o mesmo vermelho chegava aos 7–12
       # minutos. Rodam UMA vez: o passo de unit abaixo pula o projeto `cercas`.
       # Seleção e medições: o bloco `projects` de vitest.config.ts.
-      # Na parte 4, junto do kit bash: o porquê e a conta estão no cabeçalho do job.
+      # Na parte 7, junto do kit bash: o porquê e a conta estão no cabeçalho do job.
       - name: Cercas estruturais
-        if: matrix.parte == 4
+        if: matrix.parte == 7
         run: pnpm cercas
 
       - name: Typecheck
@@ -339,13 +352,13 @@ jobs:
           echo "OK — ${total} migrations na árvore, nenhum NNNN nem timestamp repetido."
 
       # `--project produto` é o `pnpm test:unit` MENOS as cercas, que já
-      # rodaram acima; `--shard` divide os arquivos entre as partes 1 a 3. Juntos
-      # são a suíte inteira, uma vez só. A parte 4 não roda unit: é cercas e kit
+      # rodaram acima; `--shard` divide os arquivos entre as partes 1 a 6. Juntos
+      # são a suíte inteira, uma vez só. A parte 7 não roda unit: é cercas e kit
       # bash (cabeçalho do job). Localmente o comando continua sendo
       # `pnpm test:unit`, sem recorte.
-      - name: Unit tests (parte ${{ matrix.parte }}/3)
-        if: matrix.parte != 4
-        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/3
+      - name: Unit tests (parte ${{ matrix.parte }}/6)
+        if: matrix.parte != 7
+        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/6
 
       # O MAPA DA SKILL COBRE O MENU? — aviso, nunca reprova.
       #
@@ -403,7 +416,7 @@ jobs:
       # escolher OpenRouter travava o instalador num laço, escolher OpenAI
       # deixava o .env pela metade — passaram por todos os checks verdes. 15s.
       - name: Kit self-host (bash)
-        if: matrix.parte == 4
+        if: matrix.parte == 7
         run: pnpm test:shell
 
       - name: Orçamento de tempo do verify-parte
@@ -441,6 +454,10 @@ jobs:
           # 08/10/2026: a parte 3 chegou a 12–13 min com cercas+kit bash
           # crescendo, e o conserto foi a QUARTA parte (cercas+kit, sem unit),
           # de novo sem subir este número. Mesma regra para recalibrar.
+          #
+          # 23/10/2026: as partes 1 e 2 passaram de 12 em mais da metade das
+          # rodadas, e o conserto foram SEIS partes de unit (cercas+kit na 7),
+          # de novo sem subir este número.
           #
           # ── OS 100 CANCELADOS, E POR QUE ELES NÃO CENSURAM ESTA CONTA ────
           #

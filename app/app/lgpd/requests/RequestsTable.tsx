@@ -219,8 +219,8 @@ export function RequestsTable({
 
       {/* Table */}
       <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
+        <Table className="max-md:block">
+          <TableHeader className="max-md:hidden">
             <TableRow>
               <TableHead className="w-[90px]">ID</TableHead>
               <TableHead>{t("Tipo")}</TableHead>
@@ -232,7 +232,7 @@ export function RequestsTable({
               <TableHead className="w-[60px]" />
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="max-md:block">
             {q.isLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
@@ -277,32 +277,36 @@ export function RequestsTable({
                     : "—";
 
                 return (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
+                  <TableRow
+                    key={r.id}
+                    className="max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-1 max-md:px-4 max-md:py-2"
+                  >
+                    <TableCell className="font-mono text-xs text-muted-foreground max-md:hidden">
                       {r.id.slice(0, 8)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:p-0">
                       <Badge variant="secondary" className="whitespace-nowrap text-xs">
                         {t(TYPE_LABELS[r.request_type] ?? r.request_type)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-[140px] truncate font-mono text-xs">
+                    <TableCell className="max-w-[140px] truncate font-mono text-xs max-md:order-first max-md:max-w-none max-md:basis-full max-md:p-0">
                       {subject}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground max-md:hidden">
                       {fmtRelative(r.received_at, t)}
                     </TableCell>
                     <TableCell
-                      className={`whitespace-nowrap text-xs font-medium ${due.urgent ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}
+                      data-rotulo={t("Vence")}
+                      className={`whitespace-nowrap text-xs font-medium max-md:p-0 max-md:before:mr-1.5 max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)] ${due.urgent ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}
                     >
                       {due.label}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:hidden">
                       <Badge variant={SLA_VARIANT[r.sla_bucket]} className="text-xs">
                         {t(SLA_LABELS[r.sla_bucket])}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:p-0">
                       <Badge
                         variant={STATUS_VARIANT[r.status]}
                         className="whitespace-nowrap text-xs"
@@ -310,8 +314,8 @@ export function RequestsTable({
                         {t(STATUS_LABELS[r.status] ?? r.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
+                    <TableCell className="max-md:ml-auto max-md:p-0">
+                      <Button asChild size="sm" variant="ghost" className="px-2 text-xs max-md:min-w-11 md:h-7">
                         <Link href={`${baseDoPedido}${r.id}`}>{t("Ver")}</Link>
                       </Button>
                     </TableCell>

@@ -1,0 +1,1268 @@
+{
+  "id": "conexoes",
+  "titulo": "Conexões",
+  "tela": "/app/connections",
+  "resumo": "Onde você liga e acompanha os números de WhatsApp e os outros canais da empresa: se cada um está funcionando, para quem a IA responde, pausas e proteção contra bloqueio.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Conexões",
+      "objetivo": "Saber onde ficam os seus números de WhatsApp e ler, em cada um, se ele está funcionando.",
+      "papel": "admin",
+      "busca": [
+        "conexões",
+        "meu whatsapp",
+        "números conectados",
+        "ver se o whatsapp está conectado",
+        "canais",
+        "whatsapp caiu",
+        "status do número"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde ficam os seus canais",
+          "texto": "Conexões é a tela dos canais por onde a clínica fala com os clientes. Só quem é administrador abre esta tela. No alto ficam as abas, uma por tipo de canal. A tela abre em \"Números por QR\", que são os números de WhatsApp conectados lendo um QR Code com o celular. As outras abas (\"API Oficial (Meta)\", \"Provedor parceiro\", \"Telefone\", \"Redes sociais\" e \"Chamada de voz\") aparecem na última lição. A faixa vermelha no alto aparece quando algum número cai. Ela é explicada no passo 5.",
+          "rota": "/app/connections",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Números por QR"
+              },
+              "rotulo": "Aberta agora",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "Um tipo de canal por aba",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A barra de cima",
+          "texto": "A frase da esquerda diz quantos números estão na lista. Ela conta todos, inclusive os que estão desconectados. À direita ficam os botões que valem para todos os números de uma vez. \"Atualizar saúde\" confere de novo se cada número está funcionando. \"Pausar todas\" e \"Agendar pausa\" você aprende na lição sobre pausas. \"Conectar novo WhatsApp\" abre a janela para ligar mais um número. O quadro \"Para integrar\" só interessa a quem liga outro sistema ao mesmo número. Se não for o seu caso, pode ignorar.",
+          "dica": "Ao abrir a tela, o sistema já confere cada número uma vez, sem você clicar em nada.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "números conectados",
+                "regex": false
+              },
+              "rotulo": "Quantos números há na lista",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Atualizar saúde",
+                "exato": true
+              },
+              "rotulo": "Conferir todos agora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Conectar novo WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Ligar mais um número",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Conectar um número novo",
+          "texto": "Ao clicar em \"Conectar novo WhatsApp\", abre uma janela com duas formas de ligar o número. Em \"QR Code\", você abre o WhatsApp do celular, vai em Aparelhos conectados → Conectar um aparelho e lê o código da tela. Em \"Conectar por código\", você digita o telefone com código do país e DDD, clica em \"Gerar código\" e digita no celular o código que aparece. Quando o celular confirma, aparece o aviso \"WhatsApp conectado!\" e o selo do cartão do número fica verde, em \"Conectado\". Todo número novo começa em modo de teste: a IA não responde ninguém até você autorizar.",
+          "dica": "O QR Code muda sozinho a cada 15 segundos. Se ele vencer antes de você ler, é só esperar o próximo. Se fechar a janela sem conectar, o número fica na lista como \"Escaneie o QR\": use \"Reconectar\" para tentar de novo ou a lixeira para tirá-lo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Conectar novo WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Abre a janela do QR Code",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Novos canais começam em modo de teste",
+                "regex": false
+              },
+              "rotulo": "Número novo começa em teste",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O cartão de um número",
+          "texto": "Cada número tem um cartão. No alto aparecem o nome que a equipe deu ao número e o telefone. O selo verde \"Conectado\" diz que ele está recebendo e enviando mensagens. Logo abaixo, depois de \"Verificado\", fica a data e a hora da última vez que o sistema conferiu o número. \"Ainda não verificado\" quer dizer que o sistema ainda não conseguiu conferir este número nenhuma vez. Mais embaixo, o cartão diz quem da equipe recebe as conversas deste número. Para escolher essas pessoas, use o link \"Configurar responsáveis por número\". A chave \"Guardar o histórico anterior à vinculação\" vem desligada, e assim só entram as mensagens novas. Mexer nela reinicia o número por alguns segundos, e desligá-la num número já conectado pode apagar o que ele já guardou.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Conectado",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                }
+              },
+              "rotulo": "Situação do número",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Ainda não verificado",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                }
+              },
+              "rotulo": "Última conferência",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Usa todos os atendentes elegíveis da organização.",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                }
+              },
+              "rotulo": "Quem recebe as conversas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Configurar responsáveis por número"
+              },
+              "rotulo": "Escolher responsáveis",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Quando um número cai",
+          "texto": "Quando um número cai, o selo do cartão muda. Em vermelho, \"Caiu\" e \"Parado\" querem dizer que o número não está funcionando. Em amarelo, \"Escaneie o QR\" pede que você leia o código de novo, e \"Conectando…\" aparece enquanto ele volta. Uma faixa vermelha também aparece no alto de todas as telas do sistema, avisando que nenhuma mensagem entra nem sai por ele. O botão \"Reconectar\", que existe em todo cartão, tenta religar o número sem você pegar o celular. Se não der, a janela que abre mostra um QR para ler ou, se o número foi desvinculado do celular, o botão \"Gerar novo QR\".",
+          "dica": "Depois que o número volta a funcionar, a faixa vermelha some na próxima vez que a página carregar.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Grupos",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div[role=alert]:has-text('está desconectado')"
+              },
+              "rotulo": "Aviso em todas as telas",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Caiu",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              },
+              "rotulo": "Número caído",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reconectar",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              },
+              "rotulo": "Tentar religar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "acesso-da-ia",
+      "titulo": "Liberar a IA aos poucos",
+      "objetivo": "Testar o atendimento automático com números de confiança antes de liberar a IA para todos os clientes.",
+      "papel": "admin",
+      "busca": [
+        "ia não responde",
+        "liberar ia para clientes",
+        "modo de teste",
+        "testar robô com meu número",
+        "ia aberta ao público",
+        "números autorizados"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os dois jeitos da IA",
+          "texto": "Cada número diz, no próprio cartão, para quem a IA responde. Na Recepção aparece \"IA aberta ao público\": a IA pode atender qualquer pessoa que escrever. Na Fisioterapia aparece \"IA em modo de teste\": ela só responde aos números de teste que você autorizar. Como a lista ainda está vazia, o cartão avisa que a IA não responde ninguém neste número.",
+          "rota": "/app/connections",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "IA aberta ao público",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                }
+              },
+              "rotulo": "Responde a todos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "IA em modo de teste",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              },
+              "rotulo": "Responde só aos de teste",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Nenhum número autorizado",
+                "regex": false,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              },
+              "rotulo": "Lista vazia",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Abrir o acesso da IA",
+          "texto": "Clique em \"Configurar acesso da IA\", no cartão da Fisioterapia. Abre um painel do lado direito. Na caixa \"Números autorizados para teste\" você escreve os telefones que vão poder conversar com a IA, um por linha, com o código do país (+55) e o DDD. Use números da sua equipe ou de pessoas de confiança. O número cinza que aparece na caixa vazia é só um exemplo.",
+          "dica": "Para a IA responder, o agente também precisa estar publicado e ligado a este número. As mensagens continuam chegando à Inbox, e os testes são mensagens de verdade no WhatsApp.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Configurar acesso da IA",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Números autorizados para teste"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Números autorizados para teste"
+              },
+              "rotulo": "Um telefone por linha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar lista de teste",
+                "exato": true
+              },
+              "rotulo": "Guardar a lista",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Autorizar um número de teste",
+          "texto": "Escreva o telefone e clique em \"Salvar lista de teste\". O painel fecha e o cartão passa a mostrar quantos números estão autorizados. A partir daí, só esses números recebem respostas automáticas neste número da clínica, desde que um agente de IA esteja publicado e ligado a este número. Para os outros clientes, a conversa chega à Inbox e a equipe responde.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Números autorizados para teste"
+              },
+              "valor": "+5511912345678"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar lista de teste",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "1 número de teste autorizado",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "1 número de teste autorizado",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              },
+              "rotulo": "Lista salva",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Liberar para todos os clientes",
+          "texto": "Quando os testes derem certo, abra o painel de novo e clique em \"Liberar atendimento ao público\". O sistema pede confirmação: a lista de teste deixa de limitar as respostas e a IA, com o agente ligado a este número, pode atender qualquer pessoa que escrever. \"Confirmar liberação\" libera. \"Continuar em teste\" fecha a pergunta sem mudar nada.",
+          "dica": "Contatos bloqueados e conversas que estão com uma pessoa da equipe continuam sem resposta automática, mesmo com a IA liberada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Configurar acesso da IA",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Liberar atendimento ao público",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Liberar atendimento ao público",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Pede confirmação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar liberação",
+                "exato": true
+              },
+              "rotulo": "Libera a IA",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "renomear-pausar-excluir",
+      "titulo": "Renomear, pausar e excluir um número",
+      "objetivo": "Dar um nome fácil a cada número, pausar um número por um tempo e saber o que acontece ao excluí-lo.",
+      "papel": "admin",
+      "busca": [
+        "renomear número whatsapp",
+        "mudar nome da conexão",
+        "pausar número",
+        "desligar whatsapp por um tempo",
+        "excluir número",
+        "grupos do whatsapp"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Dar um nome ao número",
+          "texto": "Clique em \"Renomear\" no cartão do número. Abre a janela \"Nome interno da conexão\". Esse nome é o que a equipe vê no sistema, por exemplo na Inbox, para saber por qual número o cliente chegou. O cliente não vê este nome, e o nome do perfil no WhatsApp não muda.",
+          "rota": "/app/connections",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Renomear",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia Bem Viver'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Nome interno",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome interno",
+                "exato": true
+              },
+              "rotulo": "Nome que a equipe vê",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Guardar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome salvo",
+          "texto": "Escreva o novo nome e clique em \"Salvar\". O cartão já aparece com o nome novo. Use nomes que digam para que serve cada número, como a unidade ou o setor.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome interno",
+                "exato": true
+              },
+              "valor": "Fisioterapia — Unidade Centro"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Fisioterapia — Unidade Centro",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia — Unidade Centro'])"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Fisioterapia — Unidade Centro",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia — Unidade Centro'])"
+                }
+              },
+              "rotulo": "Nome novo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Pausar um número",
+          "texto": "O botão \"Pausar\" desliga o número sem desconectá-lo. Enquanto ele está pausado, as mensagens que chegam ficam guardadas, mas não aparecem na Inbox, a IA não responde e nada é enviado por ele. O cartão ganha o selo \"Pausado\", e o botão vira \"Retomar\". Pausar não religa o número: este continua com o selo \"Caiu\". Ao retomar, as mensagens guardadas aparecem na Inbox, sem perder nenhuma.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Pausar Fisioterapia — Unidade Centro",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Pausado",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia — Unidade Centro'])"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.justify-between:has(> div.min-w-0)",
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia — Unidade Centro'])"
+                }
+              },
+              "rotulo": "\"Caiu\" e \"Pausado\"",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Retomar Fisioterapia — Unidade Centro",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia — Unidade Centro'])"
+                }
+              },
+              "rotulo": "Tirar da pausa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Pausar ou retomar todos de uma vez",
+          "texto": "Na barra de cima, \"Pausar todas\" pausa todos os números que ainda não estão pausados, inclusive os que caíram, e \"Retomar todas\" tira da pausa todos os pausados. O número entre parênteses diz quantos números o clique vai mudar. Cada botão só aparece quando tem algum número para mudar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Pausar todas \\(\\d+\\)",
+                "exato": false,
+                "regex": true
+              },
+              "rotulo": "Pausa os que não estão pausados",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Retomar todas \\(\\d+\\)",
+                "exato": false,
+                "regex": true
+              },
+              "rotulo": "Tira todos da pausa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Grupos do número",
+          "texto": "O botão \"Grupos\" abre a lista dos grupos de WhatsApp de que o número participa. Cada grupo tem uma chave: grupo ligado aparece na Inbox para a equipe responder. A IA nunca responde em grupo. Como este número caiu, a lista não carrega e aparece o aviso para conferir a conexão.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Grupos",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Fisioterapia — Unidade Centro'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "O WhatsApp deste número não respondeu",
+                "regex": false
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Grupos",
+                "exato": true
+              },
+              "rotulo": "Grupos do número",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O WhatsApp deste número não respondeu",
+                "regex": false
+              },
+              "rotulo": "Aparece quando o número caiu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Atualizar lista",
+                "exato": true
+              },
+              "rotulo": "Tentar de novo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Excluir um número",
+          "texto": "A lixeira, no fim do cartão, exclui o número. Antes, uma janela pede confirmação. Ao confirmar, o número é desconectado do WhatsApp e sai desta lista, e as conversas que ele já teve continuam na Inbox. Para usar o mesmo número de novo, é preciso conectá-lo outra vez. Se você só quer parar por um tempo, use \"Pausar\".",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Retomar Fisioterapia — Unidade Centro",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Pausar Fisioterapia — Unidade Centro",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir Fisioterapia — Unidade Centro",
+                "exato": true
+              },
+              "rotulo": "Excluir o número",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "protecao-de-envio",
+      "titulo": "Proteger o número contra bloqueio",
+      "objetivo": "Entender e ajustar os limites que evitam que o WhatsApp bloqueie o número por excesso de mensagens.",
+      "papel": "admin",
+      "busca": [
+        "evitar bloqueio do whatsapp",
+        "número bloqueado",
+        "limite de mensagens por dia",
+        "horário de envio",
+        "aquecimento do número",
+        "enviar no domingo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a proteção de envio",
+          "texto": "Clique em \"Proteção de envio\" no cartão do número. Abre um painel com os limites que protegem o número contra bloqueio do WhatsApp. Campo vazio usa o padrão seguro do sistema, que aparece escrito em cinza dentro do campo. No começo vem a idade do número: preencha \"Este número é usado desde\" com o dia em que o número começou a ser usado. Número novo começa enviando pouco por dia e vai subindo aos poucos, e é isso que o texto logo abaixo explica.",
+          "dica": "Só ligue \"pular o aquecimento\" se o número já envia mensagens há semanas. Num número novo, é o caminho mais rápido para o bloqueio.",
+          "rota": "/app/connections",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Proteção de envio",
+                "exato": true,
+                "dentro": {
+                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Este número é usado desde"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Este número é usado desde"
+              },
+              "rotulo": "Idade do número",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Este número já está aquecido — pular o aquecimento"
+              },
+              "rotulo": "Pular o aquecimento",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Os horários",
+          "texto": "\"Janela de resposta\" é o horário em que a IA responde a quem escreveu. \"Janela de disparo\" é o horário dos envios em massa e das mensagens que retomam uma conversa parada. Fora da janela, o envio fica guardado para o próximo horário permitido. Os horários seguem o fuso escolhido mais abaixo no painel.",
+          "dica": "Para a IA responder a qualquer hora, use 0 e 24 na janela de resposta.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "Hora de início da janela de resposta"
+              },
+              "rotulo": "Janela de resposta: de … até",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "Hora de início da janela",
+                "exato": true
+              },
+              "rotulo": "Janela de disparo: de … até",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Dias e domingo",
+          "texto": "Em \"Dias da prospecção\" você marca os dias em que sai a primeira mensagem da prospecção, quando é a clínica que procura o cliente. A chave \"Enviar aos domingos\" vem ligada: quem escreve no domingo recebe resposta no domingo. Desligada, o número não responde nem faz envios em massa no domingo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Enviar aos domingos"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Prospecção no dia Dom"
+              },
+              "rotulo": "Domingo marcado: prospecção sai no domingo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Enviar aos domingos"
+              },
+              "rotulo": "Ligada: funciona no domingo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Ritmo e teto do dia",
+          "texto": "\"Ritmo entre envios\" é o tempo mínimo entre uma mensagem e outra do mesmo número, mais uma variação que muda a cada envio, porque um ritmo sempre igual parece robô. O \"Atraso humano\" é quanto a IA espera antes da primeira resposta, como alguém que viu a notificação e digitou. Ele é contado em milésimos de segundo: 3000 são 3 segundos. O \"Teto diário de envios\" é o máximo de mensagens que o número manda por dia. Ele vem em 300. Num número novo, vale o que for menor: o teto ou o limite do aquecimento.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "Teto diário de mensagens"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "Intervalo mínimo entre envios em segundos"
+              },
+              "rotulo": "Intervalo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "Tempo para ver a notificação em ms"
+              },
+              "rotulo": "Atraso humano",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "Teto diário de mensagens"
+              },
+              "rotulo": "Máximo por dia",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Fuso, aquecimento e salvar",
+          "texto": "Em \"Fuso horário da janela\" você escolhe o fuso dos horários acima. O quadro \"Aquecimento automático de número novo\" mostra quantas mensagens por dia um número pode mandar conforme a idade dele. Para guardar o que mudou, clique em \"Salvar proteção\". \"Cancelar\" fecha sem salvar.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "anti-ban-save"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Fuso horário IANA"
+              },
+              "rotulo": "Fuso dos horários",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div:has(> p:text-is('Aquecimento automático de número novo'))"
+              },
+              "rotulo": "Limite pela idade",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "anti-ban-save"
+              },
+              "rotulo": "Guardar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "janela-de-manutencao",
+      "titulo": "Agendar uma pausa",
+      "objetivo": "Marcar um horário para os números pausarem e voltarem sozinhos, como numa troca de aparelho ou numa folga.",
+      "papel": "admin",
+      "busca": [
+        "agendar pausa",
+        "pausar whatsapp à noite",
+        "janela de manutenção",
+        "desligar número no feriado",
+        "pausa automática",
+        "retomar sozinho"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o agendamento",
+          "texto": "Clique em \"Agendar pausa\", na barra de cima. Abre a janela \"Janela de manutenção\". Nela você marca quando a pausa começa e quando termina. No horário marcado, o sistema pausa os números e depois os tira da pausa sozinho. As mensagens que chegarem durante a pausa ficam guardadas e aparecem na Inbox na volta.",
+          "dica": "Os horários seguem o fuso da organização, mostrado logo abaixo dos campos, e não o do seu computador.",
+          "rota": "/app/connections",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Agendar pausa",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "A pausa começa (hora local)"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "A pausa começa (hora local)"
+              },
+              "rotulo": "Início",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "A pausa termina (hora local)"
+              },
+              "rotulo": "Fim",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Fuso da organização",
+                "regex": false
+              },
+              "rotulo": "Horário da clínica",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher os números",
+          "texto": "Em \"Escopo\" você escolhe se a pausa vale para todas as conexões ou para um número só. Depois é só clicar em \"Agendar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Para todas as conexões"
+              },
+              "rotulo": "Todos os números",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Fisioterapia Bem Viver"
+              },
+              "rotulo": "Só um número",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Pausas já agendadas",
+          "texto": "Abaixo dos campos aparece \"Janelas agendadas\", com o começo, o fim e o número de cada pausa marcada. Aqui há uma pausa da Fisioterapia, de noite. \"Cancelar janela\" desmarca a pausa. Se ela já tiver começado, o que foi pausado continua pausado até você retomar.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 400
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has(button:text-is('Cancelar janela'))"
+              },
+              "rotulo": "Pausa marcada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar janela",
+                "exato": true
+              },
+              "rotulo": "Desmarcar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "outros-canais",
+      "titulo": "Os outros tipos de canal",
+      "objetivo": "Conhecer as abas da API Oficial da Meta, do provedor parceiro, do telefone, das redes sociais e da chamada de voz, e o que cada uma pede para funcionar.",
+      "papel": "admin",
+      "busca": [
+        "api oficial do whatsapp",
+        "conectar meta business",
+        "templates da meta",
+        "instagram e facebook no atendimento",
+        "número de telefone para ligações",
+        "chamada de voz"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "API Oficial (Meta)",
+          "texto": "A aba \"API Oficial (Meta)\" liga o número oficial do WhatsApp Business, sem QR Code. Para isso você precisa ter um app criado na Meta. Os três dados vêm desse app, na parte WhatsApp → Configuração da API: o ID do número de telefone, o ID da conta do WhatsApp Business e o token de acesso. Ao clicar em \"Validar e conectar\", o sistema confere os dados com a Meta antes de guardar. Se o número não responder, nada é salvo. Depois de conectar, olhe o quadro logo abaixo: se ele disser \"Cole isto no painel da Meta\", copie os valores para o painel da Meta, senão as respostas dos clientes não chegam.",
+          "dica": "O token fica guardado de forma protegida e nunca mais aparece na tela.",
+          "rota": "/app/connections?aba=oficial",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "ID do número de telefone"
+              },
+              "rotulo": "ID do número de telefone",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "ID da conta do WhatsApp Business"
+              },
+              "rotulo": "Conta do WhatsApp Business",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Token de acesso"
+              },
+              "rotulo": "Chave da Meta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Validar e conectar",
+                "exato": true
+              },
+              "rotulo": "Conferir e ligar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Templates da Meta",
+          "texto": "Na sub-aba \"Templates da Meta\" ficam os modelos de mensagem aprovados pela Meta. Eles são criados na sua conta do WhatsApp Business, e esta tela só mostra uma cópia deles. Sem o canal oficial conectado, aparece \"Canal oficial não conectado\": conecte primeiro na sub-aba \"Conexão\". Depois de conectar, o botão \"Sincronizar com a Meta\" traz os modelos. Passadas 24 horas da última mensagem do cliente, só um modelo aprovado pode ser enviado. O aviso fala em \"Conexões WhatsApp\": é a sub-aba \"Conexão\", ao lado.",
+          "dica": "Não confunda com \"Respostas rápidas\", do menu: aquelas são textos prontos da sua equipe.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Templates da Meta"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Canal oficial não conectado",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[role=tablist]:has(> [role=tab]:text-is('Templates da Meta'))"
+              },
+              "rotulo": "Conexão e Templates da Meta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Canal oficial não conectado",
+                "exato": true
+              },
+              "rotulo": "Falta conectar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Provedor parceiro",
+          "texto": "A aba \"Provedor parceiro\" liga um número oficial do WhatsApp Business por meio de uma empresa parceira, cujo nome aparece no título do cartão. Você precisa ter conta com essa empresa. Cole a \"Conta\" (o identificador do número no painel do parceiro) e a \"Chave de API\" e clique em \"Conectar\". A chave é testada com o parceiro antes de ser guardada, e o selo \"Não conectado\" muda quando der certo. Logo depois, a tela mostra dois valores para colar no painel do parceiro. Copie na hora: o segredo só aparece uma vez, e sem esse passo as respostas dos clientes não chegam.",
+          "rota": "/app/connections?aba=parceiro",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Conta",
+                "exato": true
+              },
+              "rotulo": "Identificador no parceiro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Chave de API",
+                "exato": true
+              },
+              "rotulo": "Chave do parceiro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não conectado",
+                "exato": true
+              },
+              "rotulo": "Situação",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Telefone",
+          "texto": "A aba \"Telefone\" lista os números que recebem ligações. Cada número aponta para um agente de voz e um modo de atendimento. Para cadastrar, clique em \"Novo número\". As ligações só chegam se quem cuida da instalação tiver contratado e ligado a linha telefônica: cadastrar aqui, sozinho, não faz o telefone tocar. A clínica de exemplo ainda não tem nenhum.",
+          "rota": "/app/connections?aba=telefonia",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo número",
+                "exato": true
+              },
+              "rotulo": "Cadastrar um número",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Nenhum número cadastrado ainda.",
+                "exato": true
+              },
+              "rotulo": "Lista vazia",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Redes sociais",
+          "texto": "A aba \"Redes sociais\" traz as mensagens das suas contas em redes sociais para o atendimento. Ela usa um provedor externo que você precisa contratar. Primeiro cole a \"Chave de API\" desse provedor e clique em \"Buscar perfis\". Escolha o perfil da empresa e clique em \"Salvar conexão\". Depois autorize cada rede em \"Autorizar conta\" e, no cartão da conta, clique em \"Receber no atendimento\" para as mensagens entrarem na Inbox.",
+          "rota": "/app/connections?aba=sociais",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Chave de API",
+                "exato": true
+              },
+              "rotulo": "Chave do provedor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Buscar perfis",
+                "exato": true
+              },
+              "rotulo": "Achar o perfil da empresa",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Chamada de voz",
+          "texto": "A aba \"Chamada de voz\" liga as chamadas de voz pelo WhatsApp. Ela depende de um serviço que quem cuida da instalação do sistema precisa configurar. Enquanto isso não acontece, a aba mostra o aviso \"A chamada de voz não está configurada.\" A linha de baixo do aviso é um recado técnico para quem cuida da instalação. Você não precisa entendê-la, só repassá-la.",
+          "rota": "/app/connections?aba=voz",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "A chamada de voz não está configurada.",
+                "exato": true
+              },
+              "rotulo": "Falta configurar o serviço",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

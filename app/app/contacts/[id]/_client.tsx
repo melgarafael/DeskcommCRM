@@ -47,6 +47,7 @@ import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
+import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
@@ -207,6 +208,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
             {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
                 etiquetas não apaga o selo — mesma regra do "Bloqueado" acima. */}
             {contact.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
+            {/* O TIPO DO CONTATO (issue 3005, fatia 1): selo lido da COLUNA
+                (`contacts.contact_type`), mesma regra dos de cima — a etiqueta
+                `fornecedor` é de trabalho e removível; o selo não. Só o
+                fornecedor aparece: cliente é o padrão da coluna. */}
+            {contact.contact_type === "fornecedor" && (
+              <Badge variant="secondary">{t("Fornecedor")}</Badge>
+            )}
             {/* A marca PERMANENTE (issue 2379): lida da COLUNA, mesma régua do
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}
@@ -513,6 +521,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>
+          {/* AS ÚLTIMAS COMPRAS (issue #3179): a MESMA seção do painel do Inbox,
+              na ficha do contato — negócios ganhos em todos os funis, com data,
+              título, valor, campos escolhidos pela organização e atalho. */}
+          {!contact.is_anonymized && (
+            <div className="mt-4">
+              <UltimasComprasDoContato contactId={contactId} />
+            </div>
+          )}
           {/*
             O que os módulos de dados instalados guardam sobre esta pessoa. A lista vem do servidor e
             é vazia quando não há módulo com ficha de contato — então quem não instalou nada não vê

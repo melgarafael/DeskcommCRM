@@ -17,7 +17,7 @@ const FONTE = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-t
 describe("janela do matcher de skill", () => {
   it("o matcher lê a janela", () => {
     expect(FONTE).toMatch(/const sinalDoMatcher = recentInboundSignal\(effectiveContext\.messages\);/);
-    expect(FONTE).toMatch(/matchSkills\(skills, sinalDoMatcher\)/);
+    expect(FONTE).toMatch(/matchSkills\(skills, sinalDoMatcher, etiquetasDoTurno\)/);
   });
 
   it("o resto do turno segue lendo a ÚLTIMA inbound", () => {

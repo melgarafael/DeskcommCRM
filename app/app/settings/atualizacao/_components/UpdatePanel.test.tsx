@@ -1,6 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 import { UpdatePanel } from "./UpdatePanel";
 import type { SystemVersion } from "@/hooks/system/useSystemVersion";
@@ -20,6 +24,7 @@ vi.mock("@/hooks/system/useSystemVersion", () => ({
   useSystemVersion: () => ({ data: dadosVersao.atual, isError: false }),
 }));
 vi.mock("@/lib/api/client", () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }));
+vi.mock("@/lib/auth/ir-ao-desafio-de-mfa", () => ({ irAoDesafioDeMfa: vi.fn() }));
 
 function renderTela(dados: SystemVersion) {
   dadosVersao.atual = dados;
@@ -270,5 +275,165 @@ describe("tela de atualização — a rodada conta a disputa do banco", () => {
 
     expect(screen.getByText(/foram 3 passadas e 2 retentativas/)).toBeInTheDocument();
     expect(screen.getByText(/\.update\.log/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * #2757 (ajuste 3): a volta que o agente fez SOZINHO aparece na tela.
+ *
+ * Antes disto o painel mostrava a versão mudar sem explicação — o registro da
+ * volta automática ficava só no `.update-agent.log` da VPS. O aviso nomeia as
+ * três coisas que o dono precisa saber: para onde voltou, a hora e o porquê, em
+ * linguagem de gente (nada de `healthcheck`, código de saída ou nome de campo).
+ *
+ * CONTROLE: uma volta PEDIDA pela tela não é "sozinho" e não ganha o aviso — o
+ * texto de sempre ("Voltei o sistema...") continua sendo o certo ali.
+ */
+describe("tela de atualização — o aviso da volta automática (#2757)", () => {
+  const QUANDO = "2026-10-16T17:10:00.000Z";
+
+  function volta(overrides: Partial<NonNullable<SystemVersion["run"]>> = {}): SystemVersion {
+    return {
+      current_version: "1.4.2",
+      is_owner: true,
+      latest_version: "1.5.0",
+      update_available: true,
+      agent_online: true,
+      notes: null,
+      run: {
+        id: "77777777-7777-4777-8777-777777777777",
+        status: "failed_rolled_back",
+        last_step: "app",
+        from_version: "1.4.2",
+        to_version: "1.5.0",
+        log_tail: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
+        finished_at: QUANDO,
+        volta_automatica: true,
+        ...overrides,
+      },
+    };
+  }
+
+  it("⭐ diz para onde voltou, a hora e o porquê — em linguagem de gente", () => {
+    renderTela(volta());
+
+    const aviso = screen.getByTestId("volta-automatica");
+    const texto = aviso.textContent ?? "";
+    // A hora é a do navegador de quem lê; o teste calcula a mesma, sem fixar fuso.
+    const d = new Date(QUANDO);
+    const hora = `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`;
+
+    expect(texto).toContain("voltou sozinho");
+    expect(texto).toContain("1.4.2");
+    expect(texto).toContain("1.5.0");
+    expect(texto).toContain(hora);
+    expect(texto).toMatch(/site não respondeu/);
+    // O que a tela NÃO pode fazer: despejar o jargão do log em quem só quer saber o que houve.
+    expect(texto).not.toMatch(/healthcheck|update\.sh|exit|rc=/);
+  });
+
+  it("sem a hora (run antigo, sem finished_at): o aviso sai sem inventar horário", () => {
+    renderTela(volta({ finished_at: null }));
+
+    const texto = screen.getByTestId("volta-automatica").textContent ?? "";
+    expect(texto).toMatch(/voltou sozinho/);
+    expect(texto).not.toMatch(/\d{2}h\d{2}/);
+  });
+
+  it("CONTROLE — volta pedida pela tela: nenhum aviso de 'sozinho'", () => {
+    renderTela(volta({ volta_automatica: false }));
+
+    expect(screen.queryByTestId("volta-automatica")).toBeNull();
+    expect(screen.getByText("Voltei o sistema para a versão", { exact: false })).toBeInTheDocument();
+  });
+
+  it("⭐ a volta que TERMINOU não oferece o botão de voltar — o alvo dele já é a versão no ar", () => {
+    // #3271: com o desfecho no próprio recado, a volta que terminou bem (chega
+    // como `failed_rolled_back`) sabe que a versão anterior É a que está no ar.
+    // O botão ali aponta para essa mesma versão: clicar só derrubaria o sistema
+    // por ~2 min para reinstalar o que já roda. A frase de "está no ar agora"
+    // CONTINUA, porque neste desfecho ela tem base — quem a perde é o caso
+    // abaixo.
+    renderTela(volta());
+
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+    expect(screen.getByText(/que é a que está no ar agora/)).toBeInTheDocument();
+  });
+
+  it("⭐ a volta que NÃO terminou mantém o botão e para de afirmar que a versão está no ar", () => {
+    // O outro lado do mesmo campo: com `ok:false` a rota grava `failed`, e é
+    // por este ramo que a tela passa — o desfecho em que ela NÃO sabe em que
+    // versão o sistema ficou. A frase "é a que está no ar agora" some (não se
+    // sustenta) e a saída de um clique fica: é exatamente o caso em que
+    // esconder o botão tiraria a saída de quem precisa. `volta_automatica`
+    // segue verdadeiro (a volta não foi pedida pela tela) — quem decide o ramo
+    // é o status, nunca a marca de autoria.
+    renderTela(volta({ status: "failed" }));
+
+    expect(screen.getByRole("button", { name: "Voltar para a versão anterior" })).toBeInTheDocument();
+    expect(screen.queryByText(/que é a que está no ar agora/)).toBeNull();
+    expect(screen.getByText(/o sistema pode estar rodando a versão/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * `POST /api/v1/system/update` exige o código provado nesta sessão
+ * (`requirePlatformAdminEscrita`). O dono que entrou pelo dispositivo confiável
+ * — ou cujo código venceu com a tela aberta — recebia 403 `mfa_required` e a
+ * frase "tente de novo", que não resolve: a tela leva ao desafio (#3200).
+ */
+describe("tela de atualização — recusa por falta do código leva ao desafio", () => {
+  const SEM_CODIGO = new ApiError(403, "mfa_required", undefined, "req-1", "Confirme o código.");
+
+  const FALHOU: SystemVersion = {
+    current_version: "1.4.2",
+    is_owner: true,
+    latest_version: "1.5.0",
+    update_available: true,
+    agent_online: true,
+    notes: null,
+    run: {
+      id: "88888888-8888-4888-8888-888888888888",
+      status: "failed_rolled_back",
+      last_step: "app",
+      from_version: "1.4.2",
+      to_version: "1.5.0",
+      log_tail: "",
+      finished_at: null,
+      volta_automatica: false,
+    },
+  };
+
+  function recusar(erro: ApiError) {
+    vi.mocked(irAoDesafioDeMfa).mockReset();
+    vi.mocked(apiClient.post).mockReset();
+    vi.mocked(apiClient.post).mockRejectedValue(erro);
+  }
+
+  it("⭐ 'Atualizar agora' recusado por mfa_required leva ao código", async () => {
+    recusar(SEM_CODIGO);
+    renderTela(CHANGELOG_LONGO);
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar agora" }));
+
+    await waitFor(() => expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Não consegui iniciar a atualização", { exact: false })).toBeNull();
+  });
+
+  it("⭐ 'Voltar para a versão anterior' recusado por mfa_required leva ao código", async () => {
+    recusar(SEM_CODIGO);
+    renderTela(FALHOU);
+    fireEvent.click(screen.getByRole("button", { name: "Voltar para a versão anterior" }));
+
+    await waitFor(() => expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Não consegui pedir a volta", { exact: false })).toBeNull();
+  });
+
+  it("CONTROLE: outra falha mostra a frase e fica na tela", async () => {
+    recusar(new ApiError(500, "internal_error", undefined, "req-2", "boom"));
+    renderTela(CHANGELOG_LONGO);
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar agora" }));
+
+    await screen.findByText("Não consegui iniciar a atualização", { exact: false });
+    expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
   });
 });

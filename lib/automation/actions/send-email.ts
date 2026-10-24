@@ -52,12 +52,26 @@
  * O consentimento segue o gate FIXO de `guarda-do-contato.ts` (lê
  * `declined_at`, não a ausência de `granted_at` — ver o cabeçalho daquele
  * arquivo): sem isso, TODO contato que nunca perguntado não receberia nada.
+ *
+ * ═══ DE QUEM o e-mail sai (#3287, fatia 1) ═══
+ *
+ * O remetente é da ORG quando ela configurou nome de exibição e/ou "responder
+ * para" (`lib/email/remetente-da-organizacao.ts`), e da PLATAFORMA quando não.
+ * O ENDEREÇO do `From` NUNCA vem daqui: trocar o transporte é a fatia 2 desta
+ * mesma issue (o SMTP próprio da organização), e o e-mail de SISTEMA — convite,
+ * recuperação de senha, LGPD — segue intocado, com o remetente da plataforma.
  */
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { carregarResumoParaAEquipe } from "@/lib/automation/resumo-do-evento";
 import { renderTemplate } from "@/lib/automation/template";
+import {
+  remetenteDaOrganizacaoDeSettings,
+  SEM_REMETENTE_DA_ORGANIZACAO,
+  type RemetenteDaOrganizacao,
+} from "@/lib/email/remetente-da-organizacao";
 import { sendEmail, type EmailDeliveryError } from "@/lib/email/roteador";
+import { logger } from "@/lib/logger";
 import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 
 /**
@@ -221,6 +235,44 @@ function codigoDaFalha(erro: EmailDeliveryError | undefined): string {
   }
 }
 
+/** Códigos de falha já registrados neste processo — sem isto, um banco fora do ar enche o log. */
+const avisosDeRemetenteRegistrados = new Set<string>();
+
+/**
+ * O REMETENTE com que este e-mail sai (#3287, fatia 1).
+ *
+ * Lê `organizations.settings` — a MESMA linha onde a marca da organização já
+ * vive — e devolve o nome de exibição e o "responder para" que ela configurou,
+ * quando configurou. Sem configuração, ou com a leitura falhando, devolve o
+ * vazio: o envio sai exatamente como sempre saiu.
+ *
+ * `ctx.admin` e não um cliente novo: a ação já recebe este client para as
+ * outras leituras (vínculo de equipe, resumo), e uma segunda conexão aqui
+ * esconderia de quem testa que este caminho também vai ao banco.
+ */
+async function remetenteDaAutomacao(ctx: ActionCtx): Promise<RemetenteDaOrganizacao> {
+  const { data, error } = await ctx.admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", ctx.organizationId)
+    .maybeSingle();
+  if (error) {
+    // Recusa que NÃO derruba o envio: o e-mail sai como sempre saiu, e o motivo
+    // fica no log — mesma disciplina de `lib/branding/saida.ts`, onde a leitura
+    // da marca degrada em vez de trocar um problema de estética por um e-mail
+    // que não sai. Um aviso por código evita encher o log a cada disparo.
+    if (!avisosDeRemetenteRegistrados.has(error.code ?? "?")) {
+      avisosDeRemetenteRegistrados.add(error.code ?? "?");
+      logger.warn("remetente da automação: não deu para ler a organização; vale o remetente da plataforma", {
+        codigo: error.code,
+        detalhe: error.message,
+      });
+    }
+    return SEM_REMETENTE_DA_ORGANIZACAO;
+  }
+  return remetenteDaOrganizacaoDeSettings((data as { settings?: unknown } | null)?.settings ?? null);
+}
+
 function escaparHtml(texto: string): string {
   return texto
     .replace(/&/g, "&amp;")
@@ -331,11 +383,24 @@ async function execute(
   if (!teto.allowed) {
     return { type: "send_email", status: "skipped", detail: { reason: "email_limite_atingido", destinatario } };
   }
+  // Depois do teto, de propósito: recusa por limite não paga a leitura do
+  // `settings` da organização. Quem não vai enviar não precisa saber o remetente.
+  const remetente = await remetenteDaAutomacao(ctx);
   const resultado = await sendEmail({
     to: para.endereco,
     subject: assuntoPronto,
     html: corpoParaHtml(corpoHtml, formato),
     text: corpoParaTexto(corpoPronto, formato),
+    // O remetente da ORGANIZAÇÃO (#3287, fatia 1): quando ela configurou um
+    // nome de exibição e/ou um "responder para", o e-mail da automação sai com
+    // eles. O ENDEREÇO do `From` continua sendo o da PLATAFORMA — quem entrega
+    // não muda nesta fatia (o SMTP próprio é a fatia 2). Sem configuração, as
+    // duas chaves ficam AUSENTES e o envio sai byte a byte como sempre saiu:
+    // `fromName: undefined` não é o mesmo que a chave ausente para quem monta o
+    // cabeçalho (o SMTP da plataforma usa o `fromName` DELE quando ninguém
+    // passa um).
+    ...(remetente.fromName ? { fromName: remetente.fromName } : {}),
+    ...(remetente.replyTo ? { replyTo: remetente.replyTo } : {}),
     // Mesma tag da cobrança, com o valor que diz de ONDE veio: no painel da
     // Resend dá para separar o envio de automação do convite de equipe.
     tags: [{ name: "origem", value: "automacao" }],

@@ -2,7 +2,7 @@
  * Cost computation for ai_agent_runs (S-13.08).
  *
  * Looks up the curated `ai_models` catalog (Spec 10 §2.2) and converts token
- * usage into cents, rounded up. Cached in-memory for 5 min — stale catalog data
+ * usage into cents, FRACIONADO (sem arredondar). Cached in-memory for 5 min — stale catalog data
  * never crashes.
  *
  * Custo DESCONHECIDO nunca é contado como grátis: quando o modelo não é
@@ -144,7 +144,7 @@ function avisarSemPreco(provider: string, modelo: string): void {
 }
 
 /**
- * Returns cost in cents (rounded up), or `null` when the model has no known
+ * Returns cost in cents (fracionado), or `null` when the model has no known
  * price — nunca 0. Unknown é diferente de free: inventar 0 faria um modelo
  * caro entrar no teto como gratuito (defeito do #1880, agora calado em null).
  */
@@ -168,7 +168,14 @@ export async function computeCostCents(input: ComputeCostInput): Promise<number 
   const cents =
     ((input.inputTokens ?? 0) * inputRate) / 1_000_000 +
     ((input.outputTokens ?? 0) * outputRate) / 1_000_000;
-  return Math.ceil(cents);
+  // FRACIONADO, nunca `Math.ceil` por chamada — o mesmo contrato de
+  // `computeCost` (`lib/ai/cost.ts`), que já deixou de arredondar. O ceil
+  // "errava cobrando a mais" e, numa chamada de ~600 tokens num modelo barato
+  // (≈0,08¢), gravava 1¢: 12× o real em cada turno. Medido numa instalação
+  // real em 14 dias: 1.122¢ registrados contra ~103¢ de custo. E o teto de
+  // gasto (`cost_budget_cents`, em agent.ts) compara com ESTE número. A
+  // coluna `ai_agent_runs.cost_cents` é `numeric(10,4)`.
+  return cents;
 }
 
 /** Test-only: drop the in-memory pricing cache. */

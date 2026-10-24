@@ -35,13 +35,16 @@ import { previaDoAgente } from "./previa";
 import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
 import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
-import { ProspectingError } from "./provider";
+import { CanalReconectandoError, ProspectingError } from "./provider";
+// O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
+import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import {
   withProspectingLock,
   synchronizeSearch,
   validateConfig,
   prepararCandidatoNoEnvio,
+  MSG_CANAL_DESCONECTADO,
   type Campaign,
   type Candidate,
 } from "./store";
@@ -55,6 +58,40 @@ import {
  * ponytail: não lê o env; se o operador mexer em MAX_SENDS_PER_TURN, a fria segue em 3.
  */
 const TETO_DE_BOLHAS_DA_ABORDAGEM = 3;
+
+/**
+ * TETO DO ADIAMENTO DA RECONEXÃO (issue #3073) — quanto tempo a campanha pode
+ * esperar o canal voltar ao `WORKING` antes de a espera virar PAUSA.
+ *
+ * A régua é `prospecting_campaigns.channel_down_since`: gravado a partir da
+ * PRIMEIRA vez que a campanha viu o canal fora (`coalesce(channel_down_since,
+ * now())`) e zerado quando ela o vê em `WORKING`. Conta, portanto, desde o
+ * PRIMEIRO adiamento desta espera (até um tick depois do último `WORKING` que o
+ * tick observou). O relógio do PRÓPRIO canal
+ * (`channel_sessions.last_status_change_at`) NÃO serve: a ingestão o regrava a
+ * cada evento de status, então um canal que alterna `STARTING`↔`STOPPED`
+ * reiniciaria a contagem a cada volta.
+ *
+ * 30 minutos, e o número sai da cadência MEDIDA da campanha, não do gosto:
+ * - o tick roda a cada minuto (`docs/features/prospeccao-nativa.md`) e o passo do
+ *   adiamento é de 1 minuto (`CanalReconectandoError.retomarEmMs`), então 30 é o
+ *   30º adiamento;
+ * - é 2× o intervalo padrão entre envios (`interval_minutes`, default 15): duas
+ *   vagas perdidas já é a campanha "Ativa" sem fazer o trabalho dela;
+ * - é ~180× a queda de SEGUNDOS que abriu a issue — uma reconexão normal não
+ *   chega perto, e o teto não regride ao defeito de pausar por um soluço;
+ * - o vigia religa `STOPPED` em ≤60 s (`WATCHDOG_INTERVAL_MS`, default em
+ *   `lib/agent-engine/env.ts`), então 30 min fora do ar é a sessão GENUINAMENTE
+ *   presa — e `STARTING` preso não gera aviso de saúde nenhum
+ *   (`lib/channels/health.ts`): a pausa, com o motivo no cartão da campanha, é o
+ *   único sinal que sobra;
+ * - e é 1/4 das 2h dos dois casos de teste do mantenedor, então os dois pausam
+ *   com folga.
+ *
+ * Pausar é reversível num clique ("Retomar fila") e a campanha pausada diz o
+ * motivo; seguir "Ativa" sem enviar não diz nada a ninguém.
+ */
+export const TETO_DO_ADIAMENTO_MS = 30 * 60_000;
 
 export async function sendNextCandidate(
   pool: pg.Pool,
@@ -73,6 +110,16 @@ export async function sendNextCandidate(
 ) {
   const cfg = campaignConfigSchema.parse(c.config);
   await validateConfig(db, c.organization_id, cfg);
+  // O CANAL ESTÁ `WORKING` — a validação passou, e a espera da reconexão acabou.
+  // Limpa a marca do adiamento para a PRÓXIMA espera começar a contar do zero
+  // (issue #3073): sem isto, uma espera antiga envelheceria junto com o canal já
+  // recuperado e pausaria a campanha no adiamento seguinte. Só escreve quando há
+  // o que limpar — o caminho feliz comum não paga uma query a mais.
+  if (c.channel_down_since != null)
+    await db.query(
+      "update prospecting_campaigns set channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
+      [c.organization_id, c.id],
+    );
   if (new Date(c.next_send_at).getTime() > Date.now()) return;
   const { knobs, numberActivatedAt } = await loadChannelKnobs(
     db,
@@ -409,7 +456,7 @@ export async function sendNextCandidate(
           {
             organization_id: c.organization_id,
             actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
-            requestId: `prospecting:${p.id}`,
+            requestId: pedidoDaProspeccao(p.id),
             serviceBoundary: boundary,
             // O RECIBO E A IDEMPOTÊNCIA do candidato moram na PRIMEIRA bolha: é a
             // linha `messages` de id estável (`p.message_id`) que o `sending`
@@ -552,7 +599,7 @@ export async function sendNextCandidate(
         // Por que as seguintes não saíram, quando a conversa deixou de ser fria.
         ...(parouEm || lancouEm ? { stopped_reason: parouEm ?? lancouEm } : {}),
       },
-      requestId: `prospecting:${p.id}`,
+      requestId: pedidoDaProspeccao(p.id),
     });
   } catch (error) {
     // Organização parada: a porta de saída lança ANTES de qualquer envio, então
@@ -719,7 +766,54 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
                 ? error.message
                 : "Falha inesperada no envio. Confira o histórico antes de retomar.";
 
-            if (doCandidato) {
+            // TERCEIRO CASO, e o único dos três que NÃO é falha: a conexão saiu
+            // de `WORKING` por instantes (reconexão). Antes ele caía no MESMO
+            // `else` da pausa, e a campanha ia para `paused` no instante exato
+            // da queda — a sessão voltava a `WORKING` em segundos e a lista
+            // seguia parada esperando alguém retomar à mão (issue #3073).
+            //
+            // Aqui a fila ESPERA, pelo mesmo mecanismo que ela já usa para
+            // janela fechada, teto diário e ritmo: `next_send_at`. Nenhum
+            // candidato foi tentado (a checagem do canal vem antes de
+            // `attempted_at`), então não há quota queimada, nem candidato a
+            // marcar, nem erro a gravar na campanha — a lista não perdeu nada.
+            if (error instanceof CanalReconectandoError) {
+              // O TETO (issue #3073): esperar o canal voltar TEM LIMITE. Passado
+              // `TETO_DO_ADIAMENTO_MS` desde o primeiro adiamento desta espera
+              // (`c.channel_down_since`), a "reconexão" já não é um
+              // soluço: a campanha PAUSA com a recusa de canal DESCONECTADO — a
+              // mesma frase do `FAILED` —, em vez de seguir "Ativa" sem enviar e
+              // sem aviso para sempre. Pausar deixa o motivo no cartão e volta
+              // num clique; seguir ativa não diz nada a ninguém.
+              const desde = c.channel_down_since
+                ? new Date(c.channel_down_since).getTime()
+                : null;
+              if (desde !== null && Date.now() - desde >= TETO_DO_ADIAMENTO_MS) {
+                await db.query(
+                  "update prospecting_campaigns set status='paused',error=$3,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
+                  [org, c.id, MSG_CANAL_DESCONECTADO],
+                );
+                logger.warn("[prospecting] reconexão além do teto; a campanha foi pausada", {
+                  organization_id: org,
+                  campaign_id: c.id,
+                  esperando_desde: c.channel_down_since,
+                  teto_ms: TETO_DO_ADIAMENTO_MS,
+                });
+              } else {
+                await db.query(
+                  // `greatest`, como a retomada: a vaga já agendada (com o jitter da
+                  // esteira fria) não é ANTECIPADA para o passo curto do adiamento.
+                  "update prospecting_campaigns set next_send_at=greatest(next_send_at,$3),channel_down_since=coalesce(channel_down_since,now()),updated_at=now() where organization_id=$1 and id=$2",
+                  [org, c.id, new Date(Date.now() + error.retomarEmMs)],
+                );
+                logger.info("[prospecting] conexão reconectando; o envio foi adiado e a campanha segue", {
+                  organization_id: org,
+                  campaign_id: c.id,
+                  error: error.message,
+                  retomar_em_ms: error.retomarEmMs,
+                });
+              }
+            } else if (doCandidato) {
               // Marca o candidato e SEGUE: a próxima rodada pega o próximo.
               // `attempted_at` já foi gravado antes do envio, então ele não
               // volta para a fila sozinho.

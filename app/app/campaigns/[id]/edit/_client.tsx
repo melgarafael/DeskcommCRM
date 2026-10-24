@@ -26,11 +26,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { useCampanha, useEditarCampanha, usePreviaDaAudiencia } from "@/hooks/campanhas/useCampanhas";
+import {
+  useCampanha,
+  useEditarCampanha,
+  useModelosDaCampanha,
+  usePreviaDaAudiencia,
+} from "@/hooks/campanhas/useCampanhas";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useT } from "@/hooks/i18n/useT";
 import { useAgentesPublicados, useEtapas, useFunis } from "@/hooks/campanhas/useDestinoDaCampanha";
 import { DESCRICAO_DA_VARIAVEL, VARIAVEIS_DA_CAMPANHA } from "@/lib/campanhas/renderizador";
+
+import {
+  ModeloDaCampanha,
+  variaveisIncompletas,
+  type EscolhaDoModelo,
+} from "../../_components/ModeloDaCampanha";
 
 export function EditarCampanha({ id }: { id: string }) {
   const t = useT();
@@ -53,6 +64,7 @@ export function EditarCampanha({ id }: { id: string }) {
   const [etapa, setEtapa] = useState("");
   const [agente, setAgente] = useState("");
   const [carregado, setCarregado] = useState(false);
+  const [modelo, setModelo] = useState<EscolhaDoModelo | null>(null);
 
   const funis = useFunis();
   const etapas = useEtapas(funil || null);
@@ -73,6 +85,15 @@ export function EditarCampanha({ id }: { id: string }) {
     setSemInteracao(f.sem_interacao_ha_dias == null ? "" : String(f.sem_interacao_ha_dias));
     setLimite(f.limite == null ? "100" : String(f.limite));
     setTexto(c.message_body ?? "");
+    setModelo(
+      c.provider_template_name && c.provider_template_language
+        ? {
+            name: c.provider_template_name,
+            language: c.provider_template_language,
+            variables: c.provider_template_variables ?? {},
+          }
+        : null,
+    );
     setFunil(c.pipeline_id ?? "");
     setEtapa(c.stage_id ?? "");
     setAgente(c.agent_id ?? "");
@@ -93,6 +114,10 @@ export function EditarCampanha({ id }: { id: string }) {
     filtro.com_alguma_tag.length > 0 ||
     filtro.sem_tags.length > 0 ||
     filtro.sem_interacao_ha_dias !== null;
+
+  // O que o número escolhido aceita: texto livre (QR) ou modelo aprovado (oficial).
+  // Antes dos retornos de carregamento: hook não pode ser condicional.
+  const doCanal = useModelosDaCampanha(canal);
 
   if (campanha.isLoading || !carregado) {
     return (
@@ -135,10 +160,23 @@ export function EditarCampanha({ id }: { id: string }) {
     );
   }
 
+  const ehOficial = doCanal.data?.modo === "template";
+  const providerDoCanal = (canais.data ?? []).find((c) => c.id === canal)?.provider ?? null;
+  const modeloEscolhido =
+    modelo && doCanal.data
+      ? (doCanal.data.modelos.find(
+          (m) => m.name === modelo.name && m.language === modelo.language,
+        ) ?? null)
+      : null;
+  const modeloPronto =
+    modelo !== null &&
+    modeloEscolhido !== null &&
+    variaveisIncompletas(modeloEscolhido, modelo.variables).length === 0;
+
   const podeSalvar =
     nome.trim() !== "" &&
     canal !== "" &&
-    texto.trim() !== "" &&
+    (ehOficial ? modeloPronto : texto.trim() !== "") &&
     temCriterio &&
     (baseLegal !== "legitimate_interest" || liaRef.trim() !== "");
 
@@ -163,7 +201,11 @@ export function EditarCampanha({ id }: { id: string }) {
             id="e-canal"
             className="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm"
             value={canal}
-            onChange={(e) => setCanal(e.target.value)}
+            onChange={(e) => {
+              setCanal(e.target.value);
+              // Cada número tem os próprios modelos: o escolhido no outro não vale aqui.
+              setModelo(null);
+            }}
           >
             {(canais.data ?? []).map((s) => (
               <option key={s.id} value={s.id}>
@@ -248,7 +290,23 @@ export function EditarCampanha({ id }: { id: string }) {
             type="button"
             variant="outline"
             disabled={!temCriterio || previa.isPending}
-            onClick={() => previa.mutate({ audience_filter: filtro, message_body: texto, campaign_id: id })}
+            onClick={() =>
+              previa.mutate({
+                audience_filter: filtro,
+                message_body: ehOficial ? "" : texto,
+                campaign_id: id,
+                ...(ehOficial && modelo
+                  ? {
+                      modelo: {
+                        channel_session_id: canal,
+                        name: modelo.name,
+                        language: modelo.language,
+                        variables: modelo.variables,
+                      },
+                    }
+                  : {}),
+              })
+            }
           >
             {previa.isPending ? t("Contando…") : t("Ver quantas pessoas")}
           </Button>
@@ -271,7 +329,9 @@ export function EditarCampanha({ id }: { id: string }) {
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Quem responder")}</h2>
         <p className="text-sm text-muted-foreground">
-          {t("Em branco, tudo segue como hoje: o card nasce no funil do número e quem atende é o agente publicado nele.")}
+          {t(
+            "Em branco, tudo segue como hoje: o card nasce no funil do número e quem atende é o agente publicado nele.",
+          )}
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
@@ -333,26 +393,37 @@ export function EditarCampanha({ id }: { id: string }) {
 
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Mensagem")}</h2>
-        <Textarea
-          rows={6}
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          aria-label={t("Texto da mensagem")}
-        />
-        <ul className="space-y-1 text-sm text-muted-foreground">
-          {VARIAVEIS_DA_CAMPANHA.map((v) => (
-            <li key={v}>
-              <button
-                type="button"
-                className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
-                onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
-              >
-                {`{{${v}}}`}
-              </button>{" "}
-              — {t(DESCRICAO_DA_VARIAVEL[v])}
-            </li>
-          ))}
-        </ul>
+        {ehOficial ? (
+          <ModeloDaCampanha
+            channelSessionId={canal}
+            provider={providerDoCanal}
+            valor={modelo}
+            onChange={setModelo}
+          />
+        ) : (
+          <>
+            <Textarea
+              rows={6}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              aria-label={t("Texto da mensagem")}
+            />
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              {VARIAVEIS_DA_CAMPANHA.map((v) => (
+                <li key={v}>
+                  <button
+                    type="button"
+                    className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
+                    onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
+                  >
+                    {`{{${v}}}`}
+                  </button>{" "}
+                  — {t(DESCRICAO_DA_VARIAVEL[v])}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </Card>
 
       <div className="flex items-center justify-end gap-2">
@@ -365,7 +436,14 @@ export function EditarCampanha({ id }: { id: string }) {
             await salvar.mutateAsync({
               name: nome.trim(),
               channel_session_id: canal,
-              message_body: texto.trim(),
+              ...(ehOficial && modelo
+                ? {
+                    message_mode: "template",
+                    provider_template_name: modelo.name,
+                    provider_template_language: modelo.language,
+                    provider_template_variables: modelo.variables,
+                  }
+                : { message_body: texto.trim() }),
               base_legal: baseLegal,
               lia_ref: liaRef.trim() || null,
               audience_filter: filtro,

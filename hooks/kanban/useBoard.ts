@@ -15,9 +15,12 @@ import type { BoardData } from "@/lib/kanban/types";
  * and PostgREST returns PGRST116. Routing through /api/v1/pipelines/[id]/board
  * uses the server-side cookie reader, identical to every other authed query.
  */
-async function fetchBoard(pipelineId: string): Promise<BoardData> {
+async function fetchBoard(pipelineId: string, leadPedido: string | null): Promise<BoardData> {
+  // `?lead=` faz o recorte de encerrados antigos (#2995) manter o negócio que o
+  // link pediu, para o dossiê dele abrir mesmo com a opção ligada.
+  const qs = leadPedido ? `?lead=${encodeURIComponent(leadPedido)}` : "";
   const res = await apiClient.get<{ data: BoardData }>(
-    `/api/v1/pipelines/${pipelineId}/board`,
+    `/api/v1/pipelines/${pipelineId}/board${qs}`,
   );
   // apiClient unwraps { data, meta } envelope already in some helpers;
   // ours returns the parsed JSON literally. Handle both shapes safely.
@@ -60,7 +63,7 @@ export function chaveDoQuadro(pipelineId: string | null) {
   return ["board", pipelineId] as const;
 }
 
-export function useBoard(pipelineId: string | null) {
+export function useBoard(pipelineId: string | null, leadPedido: string | null = null) {
   const qc = useQueryClient();
   const queryKey = chaveDoQuadro(pipelineId);
 
@@ -77,8 +80,13 @@ export function useBoard(pipelineId: string | null) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => fetchBoard(pipelineId as string),
+    queryFn: () => fetchBoard(pipelineId as string, leadPedido),
     enabled: !!pipelineId,
+    // Com o staleTime global de 30 s (lib/query/client.ts), um quadro fresco no
+    // cache seria entregue sem buscar, e o `?lead=` não chegaria à rota. A chave
+    // NÃO leva o lead: useMoveCard, KanbanBoard e useMotivosDePerdaDoFunil
+    // leem e escrevem a chave exata.
+    refetchOnMount: leadPedido ? "always" : true,
   });
 
   const onChange = useCallback(

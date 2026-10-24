@@ -31,6 +31,8 @@ interface Props {
   provider?: string | null;
   /** Escolher uma mensagem para responder. Sobe até o composer. */
   onResponder?: (m: Message) => void;
+  /** Escolher uma mensagem para encaminhar a outra conversa (#2835). */
+  onEncaminhar?: (m: Message) => void;
   /**
    * Quem é o dono da conversa HOJE, e quem é o contato.
    *
@@ -86,6 +88,7 @@ export function ChatThread({
   conversationId,
   provider,
   onResponder,
+  onEncaminhar,
   dono,
   contatoId,
   searchTerm = "",
@@ -440,6 +443,7 @@ export function ChatThread({
                   searchMatch={resultados.has(item.data.id)}
                   debugCitations={debugCitations}
                   onResponder={onResponder}
+                  onEncaminhar={onEncaminhar}
                   // A citada sai da MESMA lista já carregada: buscar no servidor
                   // por cada citação faria uma consulta por bolha. Quando a
                   // citada é antiga demais e ficou fora da página, o fio some —

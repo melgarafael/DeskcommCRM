@@ -18,8 +18,10 @@
 #     e o psql do restore nem é chamado (só a checagem da contagem).
 #  2. banco vazio (o caso que as flags quebravam) → o dublê emite os erros
 #     reais do dump, o psql SEGUE porque não há ON_ERROR_STOP, e o script
-#     sai 0 anunciando o ✓. É esta prova que fica vermelha de volta se as
-#     flags voltarem.
+#     sai 0 anunciando o ✓ — com a conferência do resultado fechando (as
+#     contagens dos COPY do dump batendo, #2381: a reescrita de 16/10 trocou
+#     o veredito dos erros impressos pela conferência). É esta prova que fica
+#     vermelha de volta se as flags voltarem.
 #
 # Nada aqui toca a máquina de quem roda: `docker` é um dublê que registra o
 # que recebeu, e o dump é um .sql.gz de mentira com um CREATE TABLE dentro.
@@ -56,6 +58,15 @@ mkdir -p "$WORK/bin"
   cat <<'STUB'
 printf '%s\n' "$*" >> "$DUBLE_LOG"
 case " $* " in *" psql "*) ;; *) exit 0 ;; esac
+
+# A CONFERÊNCIA do resultado (#2381, reescrita de 16/10): o restore.sh
+# identifica as duas consultas dela por estes marcadores no SQL. Aqui o banco
+# falso TEM a tabela do dump com as linhas que o COPY declara — é o restore
+# que entrou mesmo, e a conferência fecha.
+case " $* " in
+  *"/*conf-tabelas*/"*) printf 'public.contacts\n'; exit 0 ;;
+  *"/*conf-linhas*/"*)  printf 'public.contacts|1\n'; exit 0 ;;
+esac
 
 for a in "$@"; do
   case "$a" in
@@ -99,9 +110,13 @@ mkdir -p "$PROJ/backups"
 : > "$PROJ/docker-compose.prod.yml"
 printf '%s\n' 'SUPABASE_DB_URL="postgresql://postgres:***@db.exemplo.supabase.co:5432/postgres"' \
   'NEXT_PUBLIC_SUPABASE_URL="https://exemplo.supabase.co"' > "$PROJ/.env"
-# O dump sem --clean: um CREATE TABLE que, num banco populado, é um "already exists".
+# O dump sem --clean: um CREATE TABLE que, num banco populado, é um "already
+# exists", mais um bloco COPY — é contra ele que a conferência do resultado mede.
 { printf '%s\n' '-- dump do backup.sh (sem --clean)' \
-  'CREATE TABLE public.contacts (' '  id uuid NOT NULL PRIMARY KEY' ');'; } \
+  'CREATE TABLE public.contacts (' '  id uuid NOT NULL PRIMARY KEY' ');' \
+  'COPY public.contacts (id) FROM stdin;' \
+  '11111111-1111-1111-1111-111111111111' \
+  '\.'; } \
   | gzip > "$PROJ/backups/db-20261002-030000.sql.gz"
 
 rodar_restore() {  # rodar_restore <arquivo-de-saída> <DUBLE_BANCO_EXISTE> → rc
@@ -131,7 +146,10 @@ check "imprime '✓ banco restaurado'" contem "$WORK/vazio.txt" "✓ banco resta
 check "o dublê emitiu o erro de schema do dump real" contem "$WORK/vazio.txt" 'schema "auth" already exists'
 check "o dublê emitiu o erro de extensão do dump real" contem "$WORK/vazio.txt" 'extension "pg_net" is not available'
 check "o psql não recebe ON_ERROR_STOP=1 (sem ela ele segue e sai 0)" nao_contem "$DUBLE_LOG" "ON_ERROR_STOP"
-check "o psql do restore foi chamado (2 chamadas: checagem + restore)" igual "$(grep -c 'psql' "$DUBLE_LOG")" 2
+check "o psql do restore foi chamado (4 chamadas: checagem + restore + as 2 da conferência)" \
+  igual "$(grep -c 'psql' "$DUBLE_LOG")" 4
+check "a conferência do resultado fechou e nomeia o que foi medido" \
+  contem "$WORK/vazio.txt" "1 tabela(s) de public/auth.users conferidas contra os COPY do dump (1 linha(s))"
 
 echo "contagem com rc 0 mas sem número (vazia ou lixo): falha fechada, o restore não roda:"
 for resposta in "" "NOTICE:  algo no stdout"; do

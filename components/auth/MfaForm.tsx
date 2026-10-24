@@ -15,6 +15,7 @@ interface MfaFormProps {
 export function MfaForm({ next }: MfaFormProps) {
   const t = useT();
   const [code, setCode] = useState("");
+  const [confiar, setConfiar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -40,7 +41,7 @@ export function MfaForm({ next }: MfaFormProps) {
     if (finalCode.length !== 6 || locked) return;
     setError(null);
     startTransition(async () => {
-      const res = await verifyMfa(finalCode, next);
+      const res = await verifyMfa(finalCode, next, confiar);
       if (!res) return; // server-side redirect on success
       if (res.error === "mfa_locked") {
         setLocked(true);
@@ -81,6 +82,16 @@ export function MfaForm({ next }: MfaFormProps) {
         autoFocus
         hasError={!!error}
       />
+
+      <label className="flex cursor-pointer items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={confiar}
+          onChange={(e) => setConfiar(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded-md border-border"
+        />
+        <span>{t("Confiar neste dispositivo por 30 dias")}</span>
+      </label>
 
       {error && (
         <div

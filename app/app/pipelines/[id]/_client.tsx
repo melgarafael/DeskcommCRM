@@ -57,10 +57,13 @@ export function PipelinePageClient({
   funis: Array<{ id: string; name: string }>;
 }) {
   const t = useT();
-  const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(
+    pipelineId,
+    searchParams.get("lead"),
+  );
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
   const setFilters = useCallback(
     (next: LeadFilters) => {

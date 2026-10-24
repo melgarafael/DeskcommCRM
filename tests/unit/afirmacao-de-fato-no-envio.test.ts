@@ -508,7 +508,7 @@ describe("a forma da cadeia", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("factual_claim")).toBe(nomes.indexOf("semantic_promise") + 1);
     expect(nomes.indexOf("factual_claim")).toBeGreaterThan(nomes.indexOf("promise"));
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(9);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(10);
   });
 });
 

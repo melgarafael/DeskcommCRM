@@ -49,7 +49,7 @@ import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+  "id, organization_id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
 
 interface CursorPayload {
   sort: string | null;
@@ -276,6 +276,9 @@ export async function listContactsHandler(
     query = query.contains("tags", q.tag);
   }
   if (q.source) query = query.eq("source", q.source);
+  // `yes` responde "quem pediu para não ser incomodado"; `no`, quem não pediu
+  // opt-out. Só o opt-out: exclusão de campanha e anonimizados não entram aqui.
+  if (q.blocked) query = query.eq("is_blocked", q.blocked === "yes");
   if (soContato) query = query.eq("id", soContato);
   // Pessoal fora da lista por padrão; `?pessoais=true` lista SÓ pessoais
   // (spec 21, etapa 13 — a tela do filtro e o desmarcar). Sem esta linha a
@@ -613,6 +616,10 @@ export async function createContactHandler(
     email: input.email ?? null,
     phone_number: input.phone_number ? canonicalPhoneBR(input.phone_number) : null,
     birthdate: input.birthdate ?? null,
+    // Só quando INFORMADO: sem a chave, quem grava o default é o banco
+    // ('cliente', migration 0763) — e é isso que o invariante de coluna prova
+    // ("contato novo nasce cliente sem ninguém informar").
+    ...(input.contact_type !== undefined ? { contact_type: input.contact_type } : {}),
     tags: input.tags ?? [],
     source: input.source,
     source_metadata: input.source_metadata ?? {},
@@ -779,6 +786,10 @@ export async function patchContactHandler(
     patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
   }
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
+  // O TIPO DO CONTATO (issue 3005): o PATCH troca cliente ↔ fornecedor. Ausente
+  // NÃO entra no patch — quem não fala de tipo não reescreve a coluna, e é por
+  // isso que o schema não tem default aqui (o default 'cliente' é do BANCO).
+  if (input.contact_type !== undefined) patch.contact_type = input.contact_type;
   if (input.tags !== undefined) patch.tags = input.tags;
   if (input.source !== undefined) patch.source = input.source;
   if (input.source_metadata !== undefined) patch.source_metadata = input.source_metadata;

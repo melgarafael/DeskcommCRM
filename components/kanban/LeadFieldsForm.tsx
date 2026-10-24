@@ -97,7 +97,9 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     const reais = values.valueReais.trim();
     let valueCents: number | null = null;
     if (reais.length > 0) {
-      valueCents = parseReaisToCents(reais);
+      // A MESMA moeda que o rótulo do campo mostra ao lado («Valor ($)»): é ela
+      // que decide se a vírgula é decimal ou separador de milhar (#3331).
+      valueCents = parseReaisToCents(reais, moedaDoValor);
       if (valueCents === null) {
         form.setError("valueReais", { message: t("Valor inválido") });
         return;
@@ -204,6 +206,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
               value={customFields}
               onChange={setCustomFields}
               mode="lead"
+              leadId={lead.id}
             />
           </div>
         )}

@@ -121,8 +121,10 @@ test("admin adiciona a receita woocommerce, salva e persiste após recarregar", 
 
   // Adiciona a receita woocommerce.
   await page.getByRole("button", { name: /adicionar receita/i }).click();
+  // Desde a R2 o botão pergunta qual receita antes de abrir o formulário.
+  await page.getByRole("button", { name: /produtos da loja woocommerce/i }).click();
 
-  await page.getByLabel(/rótulo/i).fill("Produtos da loja");
+  await page.getByLabel(/nome da receita/i).fill("Produtos da loja");
   await page.getByLabel(/descrição/i).fill("Produtos publicados do WooCommerce");
   await page.getByLabel(/prefixo das tabelas/i).fill("wp_");
 
@@ -148,7 +150,9 @@ test("usuário agent não vê o botão de salvar", async ({ page }) => {
   await page.goto(`/app/integracao-dados/${conexaoId}`);
   await expect(page.getByText("Receitas prontas")).toBeVisible({ timeout: ESPERA });
   await page.getByRole("button", { name: /adicionar receita/i }).click();
-  await page.getByLabel(/rótulo/i).fill("Produtos da loja");
+  // Desde a R2 o botão pergunta qual receita antes de abrir o formulário.
+  await page.getByRole("button", { name: /produtos da loja woocommerce/i }).click();
+  await page.getByLabel(/nome da receita/i).fill("Produtos da loja");
   await page.getByLabel(/descrição/i).fill("Produtos publicados do WooCommerce");
   await page.getByLabel(/prefixo das tabelas/i).fill("wp_");
   await page.getByRole("button", { name: /salvar/i }).click();
@@ -172,7 +176,9 @@ test("pré-visualização com banco inalcançável mostra mensagem legível", as
   await expect(page.getByText("Receitas prontas")).toBeVisible({ timeout: ESPERA });
 
   // Pré-visualiza (o banco é inalcançável; deve mostrar mensagem, não quebrar a tela).
-  await page.getByRole("button", { name: /pré-visualizar/i }).click();
+  // O caso anterior grava uma SEGUNDA instância WooCommerce (desde a R2 a mesma receita pode ter
+  // várias), então há dois "Pré-visualizar" idênticos; os dois apontam para o mesmo banco inalcançável.
+  await page.getByRole("button", { name: /pré-visualizar/i }).first().click();
   await page.waitForTimeout(2_000);
 
   // A tela não fica em branco nem exibe erro de SQL; mostra aviso legível.

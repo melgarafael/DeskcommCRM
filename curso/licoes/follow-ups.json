@@ -1,0 +1,1477 @@
+{
+  "id": "follow-ups",
+  "titulo": "Follow-ups",
+  "tela": "/app/ai/followups",
+  "resumo": "Mensagens de retorno que saem sozinhas para o paciente que parou de responder: os fluxos prontos, o construtor e a fila de quem está sendo acompanhado.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo os Follow-ups",
+      "objetivo": "Saber o que é um fluxo de follow-up, ler o cartão de cada fluxo e reconhecer os três estados: Ativo, Rascunho e Desativado.",
+      "papel": "admin",
+      "busca": [
+        "follow-up",
+        "retorno automático",
+        "paciente sumiu",
+        "parou de responder",
+        "fluxos",
+        "mensagem automática",
+        "reengajar cliente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Fluxos e Fila",
+          "texto": "Um follow-up é uma sequência de mensagens que sai sozinha para o paciente que parou de responder. A aba \"Fluxos\" mostra os fluxos da clínica. A aba \"Fila\" mostra quem está ou já passou por um fluxo, quando sai a próxima mensagem e os retornos que a IA combinou com o paciente. Para criar um fluxo, use \"Começar de um modelo\" (textos prontos para clínica), \"Novo fluxo\" (desenhar do zero) ou \"Importar fluxo\" (trazer um arquivo exportado).",
+          "dica": "Só quem é gerente ou administrador vê os botões de criar, mexer e cancelar. As outras pessoas da equipe veem os fluxos e a Fila, mas não mudam nada.",
+          "rota": "/app/ai/followups",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "Fluxos e Fila",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Começar de um modelo",
+                "exato": true
+              },
+              "rotulo": "Fluxos prontos para clínica",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo fluxo",
+                "exato": true
+              },
+              "rotulo": "Desenhar do zero",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "import-followup-flow"
+              },
+              "rotulo": "Trazer um arquivo de fluxo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O cartão de um fluxo",
+          "texto": "Cada fluxo é um cartão. No alto ficam o nome e a situação. \"Versão: publicada\" quer dizer que o fluxo já foi publicado ao menos uma vez. \"Handoff\" diz o que o fluxo faz quando uma pessoa da equipe assume a conversa do paciente: \"Pausar\" (espera a pessoa), \"Cancelar\" (encerra o fluxo) ou \"Permitir\" (continua mandando). Embaixo aparece a data da última alteração.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"]) h3"
+              },
+              "rotulo": "Nome do fluxo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "publicada",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"])"
+                }
+              },
+              "rotulo": "Já foi publicado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Pausar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"])"
+                }
+              },
+              "rotulo": "Quando uma pessoa assume",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Atualizado em",
+                "dentro": {
+                  "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"])"
+                }
+              },
+              "rotulo": "Última alteração",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Ativo, Rascunho e Desativado",
+          "texto": "O selo no canto do cartão diz a situação do fluxo. \"Ativo\": publicado e pronto para receber pacientes. \"Rascunho\": ainda não foi publicado e não manda mensagem para ninguém. \"Desativado\": foi publicado, mas alguém o desligou. Ele não recebe pacientes novos, mas quem já estava dentro segue até o fim. Para parar alguém, cancele o fluxo dessa pessoa na Fila.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Ativo\"]"
+              },
+              "rotulo": "Ativo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Rascunho\"]"
+              },
+              "rotulo": "Rascunho",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Desativado\"]"
+              },
+              "rotulo": "Desativado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Os botões do cartão",
+          "texto": "\"Renomear\" troca o nome do fluxo. \"Duplicar\" cria uma cópia com \"(cópia)\" no nome, sempre como rascunho. \"Exportar\" baixa o fluxo num arquivo que o botão \"Importar fluxo\" aceita, aqui ou em outra conta. \"Excluir\" pede confirmação e apaga o fluxo junto com o histórico de quem passou por ele; não dá para desfazer. Para abrir o fluxo, clique no nome dele.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "rename-followup-flow",
+                "dentro": {
+                  "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"])"
+                }
+              },
+              "rotulo": "Trocar o nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "duplicate-followup-flow",
+                "dentro": {
+                  "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"])"
+                }
+              },
+              "rotulo": "Fazer uma cópia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "export-followup-flow",
+                "dentro": {
+                  "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"])"
+                }
+              },
+              "rotulo": "Baixar o arquivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "delete-followup-flow",
+                "dentro": {
+                  "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"])"
+                }
+              },
+              "rotulo": "Apagar de vez",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "li:has(h3[title=\"Consulta · retomar quem sumiu na marcação\"]) h3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "instalar-um-modelo",
+      "titulo": "Começar por um modelo pronto",
+      "objetivo": "Instalar um fluxo de modelo, com os textos já escritos, sem mandar mensagem para ninguém.",
+      "papel": "admin",
+      "busca": [
+        "modelo pronto",
+        "começar de um modelo",
+        "instalar fluxo",
+        "follow-up pronto",
+        "exame",
+        "consulta",
+        "falta",
+        "cirurgia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os modelos prontos",
+          "texto": "Clique em \"Começar de um modelo\". Abre a lista de modelos prontos, com os textos já escritos para as quatro vezes em que um paciente costuma sumir: consulta, exame, cirurgia e falta. Instalar não manda mensagem para ninguém: o fluxo nasce como rascunho para você revisar. O selo \"Já instalado\" marca os modelos que a clínica já tem.",
+          "rota": "/app/ai/followups",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Começar de um modelo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "modelo-clinica-consulta-retomada"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Modelos prontos",
+                "exato": true
+              },
+              "rotulo": "Modelos prontos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Já instalado",
+                "exato": true,
+                "dentro": {
+                  "testid": "modelo-clinica-consulta-retomada"
+                }
+              },
+              "rotulo": "A clínica já tem este",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada modelo diz",
+          "texto": "Cada modelo mostra a etapa do paciente (aqui, \"Exame\"), o nome, para que serve, quantas mensagens o paciente recebe se nunca responder, por quanto tempo o fluxo acompanha e o que faz o fluxo começar (\"Dispara quando\"). Este começa quando o negócio do paciente entra numa etapa do funil, por isso pede que você escolha a etapa.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "modelo-clinica-exame-marcar"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "modelo-clinica-exame-marcar"
+              },
+              "rotulo": "Modelo do exame",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Etapa do funil que dispara",
+                "dentro": {
+                  "testid": "modelo-clinica-exame-marcar"
+                }
+              },
+              "rotulo": "Escolha a etapa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "combobox",
+            "nome": "Etapa do funil que dispara",
+            "dentro": {
+              "testid": "modelo-clinica-exame-marcar"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher a etapa do funil",
+          "texto": "A lista mostra as etapas dos seus funis, com o nome do funil depois do ponto. Escolha a etapa em que o paciente fica quando o exame foi pedido. Aqui escolhemos \"Em tratamento\", do funil \"Pacientes\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Etapa do funil que dispara",
+                "dentro": {
+                  "testid": "modelo-clinica-exame-marcar"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "option",
+                "nome": "Em tratamento · Pacientes",
+                "exato": true
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "option",
+                "nome": "Em tratamento · Pacientes",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Em tratamento · Pacientes",
+                "exato": true
+              },
+              "rotulo": "Etapa escolhida",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Em tratamento · Pacientes",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Instalar",
+          "texto": "Com a etapa escolhida, o botão \"Instalar\" fica liberado. Sem a etapa, ele continua apagado. Ao clicar, o fluxo é criado como rascunho e o construtor abre em seguida.",
+          "dica": "No fim da lista há um lembrete: revisar os textos no construtor, clicar em \"Publicar\" e ligar o fluxo num agente. A lição \"Publicar e ligar no agente\" mostra quando ligar no agente é mesmo necessário.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Em tratamento · Pacientes",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Instalar",
+                "exato": true,
+                "dentro": {
+                  "testid": "modelo-clinica-exame-marcar"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Etapa do funil que dispara",
+                "dentro": {
+                  "testid": "modelo-clinica-exame-marcar"
+                }
+              },
+              "rotulo": "Etapa escolhida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Instalar",
+                "exato": true,
+                "dentro": {
+                  "testid": "modelo-clinica-exame-marcar"
+                }
+              },
+              "rotulo": "Criar o rascunho",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Instalar",
+            "exato": true,
+            "dentro": {
+              "testid": "modelo-clinica-exame-marcar"
+            }
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "O rascunho no construtor",
+          "texto": "O fluxo foi criado com o nome do modelo e o selo \"Rascunho\", e o construtor já abriu nele. Ali você lê as mensagens, ajusta para o jeito da sua clínica e publica. Enquanto for rascunho, ele não manda mensagem para ninguém.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Instalar",
+                "exato": true,
+                "dentro": {
+                  "testid": "modelo-clinica-exame-marcar"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "node-card-inicio"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Exame · marcar o exame que foi pedido",
+                "exato": true
+              },
+              "rotulo": "O fluxo instalado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Rascunho\"]"
+              },
+              "rotulo": "Ainda não manda nada",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "o-construtor",
+      "titulo": "Lendo um fluxo no construtor",
+      "objetivo": "Entender o desenho de um fluxo: as peças, a ordem em que acontecem e onde fica o texto de cada mensagem.",
+      "papel": "admin",
+      "busca": [
+        "construtor",
+        "editar fluxo",
+        "desenho do fluxo",
+        "mensagem do follow-up",
+        "mudar texto",
+        "peças",
+        "aguardar resposta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O construtor",
+          "texto": "Ao abrir um fluxo, aparece o construtor. À esquerda, em \"Adicionar nó\", ficam as peças que você pode pôr no fluxo, como \"Aguardar\", \"Ação\" (mandar uma mensagem) e \"Fim\". Clique numa peça para adicioná-la. No meio fica o desenho do fluxo, que começa no \"Início\" e segue pelas linhas.",
+          "rota": "/app/ai/followups/be300000-0000-4000-8000-000000000001",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "node-card-inicio"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            },
+            {
+              "acao": "press",
+              "tecla": "Alt",
+              "alvo": {
+                "css": ".react-flow__node[data-id=\"inicio\"]"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "node-palette"
+              },
+              "rotulo": "Peças para adicionar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "flow-canvas"
+              },
+              "rotulo": "O desenho do fluxo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A ordem das mensagens",
+          "texto": "Este fluxo segue da esquerda para a direita. Do \"Início\" ele manda a primeira mensagem (\"Retoma a marcação\") e espera a resposta. Se o paciente não responde no prazo, ele aguarda mais um pouco e manda a próxima mensagem. O desenho continua para a direita, com mais esperas e mensagens; para ver o resto, arraste o fundo do desenho para o lado.",
+          "dica": "Use os botões de mais e menos, no canto de baixo do desenho, para aproximar ou afastar. O botão \"Organizar\", no alto, alinha as peças.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "node-card-inicio"
+              },
+              "rotulo": "Começa aqui",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "node-card-msg-1"
+              },
+              "rotulo": "1ª mensagem",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "node-card-resposta-1"
+              },
+              "rotulo": "Espera a resposta",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "node-card-espera-2"
+              },
+              "rotulo": "Aguarda mais um pouco",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "testid": "node-card-msg-1"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "O texto da mensagem",
+          "texto": "Clique numa peça para abrir os detalhes dela à direita. Nesta, \"Como escrever a mensagem\" está em \"Texto fixo\": o paciente recebe exatamente o texto do campo \"Texto enviado ao contato\", sem IA. As outras opções são \"Mensagem escrita pela IA\" e \"Modelo de mensagem pronto\". O que você muda vale para o rascunho; para guardar, use \"Salvar\" na barra de cima.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "node-card-msg-1"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "node-config-panel"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Como escrever a mensagem"
+              },
+              "rotulo": "Texto fixo, IA ou modelo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Texto enviado ao contato",
+                "exato": true
+              },
+              "rotulo": "O que o paciente lê",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "node-card-resposta-1"
+          },
+          "dica": "No WhatsApp conectado por QR code, o texto fixo sai a qualquer hora. No WhatsApp oficial (API da Meta), depois de 24 horas sem o paciente escrever, só chega um \"Modelo de mensagem pronto\" aprovado."
+        },
+        {
+          "id": "p4",
+          "titulo": "Esperar a resposta",
+          "texto": "A peça \"Espera a resposta\" segura o fluxo até o paciente responder ou o prazo acabar. Em \"Esperar a resposta por (minutos)\" fica o prazo: aqui, 2880 minutos, ou dois dias. Se o prazo acaba sem resposta, o fluxo segue pelo caminho \"Sem resposta\", até a próxima mensagem. Em \"Regras de texto\" fica uma palavra (aqui, \"quero\") que leva a um caminho próprio, mas ela só é usada quando \"Cancelar se o lead responder\", no gatilho do fluxo, está desligado.",
+          "dica": "Nos modelos prontos, \"Cancelar se o lead responder\" vem ligado: qualquer resposta do paciente encerra o fluxo dele, e quem continua a conversa é o atendimento.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "node-card-resposta-1"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "#match-reply-grace"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#match-reply-grace"
+              },
+              "rotulo": "O prazo para responder",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Regras de texto",
+                "exato": true
+              },
+              "rotulo": "Palavra com caminho próprio",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quando-comeca",
+      "titulo": "Quando o fluxo começa e quando ele pausa",
+      "objetivo": "Ler e ajustar o gatilho que coloca o paciente no fluxo, e escolher o que acontece quando uma pessoa da equipe assume a conversa.",
+      "papel": "admin",
+      "busca": [
+        "gatilho",
+        "quando começa",
+        "silêncio",
+        "minutos sem responder",
+        "etapa do funil",
+        "cancelar se responder",
+        "pausar handoff"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A barra do fluxo",
+          "texto": "No alto do construtor ficam o nome do fluxo, a situação e os botões. O botão do gatilho diz o que coloca o paciente no fluxo. Aqui é \"Gatilho: Silêncio (1440 min)\": o paciente entra 1440 minutos (um dia inteiro) depois da última mensagem que ele mandou, mesmo que a clínica não tenha respondido. Ao lado fica a escolha do que fazer quando uma pessoa assume a conversa.",
+          "rota": "/app/ai/followups/be300000-0000-4000-8000-000000000001",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "trigger-config-button"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "trigger-config-button"
+              },
+              "rotulo": "O que faz o fluxo começar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Política de handoff",
+                "exato": true
+              },
+              "rotulo": "Quando uma pessoa assume",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "trigger-config-button"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Ajustar o gatilho",
+          "texto": "Clique no botão do gatilho para ver os detalhes. \"Tipo de gatilho\" escolhe o que faz o fluxo começar. Em \"Minutos de silêncio\" fica quanto tempo depois da última mensagem do paciente conta como sumiço (aqui, 1440). Os campos de baixo limitam quem entra e quantas vezes. Preencha \"Silêncio máximo\" e \"Quantas vezes no máximo, por contato\", e ligue \"Só começar se a equipe já respondeu a última mensagem do cliente\". Sem isso, o fluxo pode chegar a pacientes sumidos há meses e se repetir sem fim.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "trigger-config-button"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "trigger-config-panel"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Tipo de gatilho",
+                "exato": true
+              },
+              "rotulo": "O que faz começar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Minutos de silêncio",
+                "exato": true
+              },
+              "rotulo": "Tempo desde a última mensagem",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#trigger-max-silence"
+              },
+              "rotulo": "Silêncio máximo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#trigger-max-enrollments"
+              },
+              "rotulo": "Quantas vezes, no máximo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "combobox",
+            "nome": "Tipo de gatilho",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Os tipos de gatilho",
+          "texto": "Além de \"Silêncio\", o fluxo pode começar por \"Etapa do funil\" (o negócio entra numa etapa), \"Falta confirmada pela equipe\" (a equipe marca na agenda que o paciente faltou), \"Agente pediu ajuda\", \"Cliente voltou\" (volta a falar depois de um tempo), \"Lead criado\" (um negócio novo é criado), \"Automação (Webhooks)\" ou só à mão (\"Manual\").",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Tipo de gatilho",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Os tipos de gatilho",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Quem entra, quem sai e salvar",
+          "texto": "Mais abaixo, com \"Só começar se a equipe já respondeu a última mensagem do cliente\" ligado, quem está esperando a clínica não entra no fluxo. Com \"Cancelar se o lead responder\" ligado, qualquer resposta do paciente tira ele do fluxo. Mudou algo no gatilho? Clique em \"Salvar gatilho\". O botão só fica liberado quando há alguma mudança.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "trigger-config-save"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "trigger-exige-resposta"
+              },
+              "rotulo": "Só quem já foi atendido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Cancelar se o lead responder",
+                "exato": true
+              },
+              "rotulo": "Resposta tira do fluxo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "trigger-config-save"
+              },
+              "rotulo": "Guardar o gatilho",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Quando uma pessoa assume a conversa",
+          "texto": "Esta lista escolhe o que o fluxo faz quando alguém da equipe assume a conversa do paciente. \"Pausar durante handoff\" para o fluxo enquanto a pessoa atende. \"Cancelar durante handoff\" encerra o fluxo. \"Permitir durante handoff\" deixa as mensagens continuarem. A escolha vale assim que você clica, sem precisar salvar.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Política de handoff",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Pausar, cancelar ou continuar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "publicar",
+      "titulo": "Publicar e ligar no agente",
+      "objetivo": "Publicar um rascunho, saber para que servem Desativar e Rollback, e ligar o fluxo no agente para as mensagens saírem sozinhas.",
+      "papel": "admin",
+      "busca": [
+        "publicar fluxo",
+        "ativar follow-up",
+        "desativar",
+        "rollback",
+        "voltar versão",
+        "ligar no agente",
+        "fluxo não dispara"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Um rascunho pronto para publicar",
+          "texto": "Este fluxo, \"Falta · remarcar quem não veio\", está como \"Rascunho\". Depois de revisar as mensagens, clique em \"Publicar\". O \"Salvar\" só guarda o rascunho, e fica liberado quando há alterações não salvas.",
+          "rota": "/app/ai/followups/be300000-0000-4000-8000-000000000002",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "publish-button"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Rascunho\"]"
+              },
+              "rotulo": "Ainda é rascunho",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Guardar o rascunho",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "publish-button"
+              },
+              "rotulo": "Colocar no ar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "publish-button"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Publicado",
+          "texto": "Ao publicar, o sistema confere o fluxo inteiro. Se faltar algo, a peça com problema fica com borda vermelha e o fluxo não é publicado. Deu certo: o selo vira \"Ativo\". Num fluxo de silêncio, podem aparecer avisos amarelos sobre limites que faltam preencher no gatilho. Leia e ajuste. \"Desativar\" para de receber pacientes novos, e quem já estava dentro segue até o fim. \"Rollback\" volta para a versão publicada anterior; por isso só fica liberado depois da segunda publicação.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "publish-button"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[aria-label=\"status: Ativo\"]"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Ativo\"]"
+              },
+              "rotulo": "Agora está no ar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Desativar",
+                "exato": true
+              },
+              "rotulo": "Desligar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "rollback-button"
+              },
+              "rotulo": "Voltar à versão anterior",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quando é preciso ligar no agente",
+          "texto": "Alguns fluxos só colocam pacientes sozinhos se estiverem ligados num agente publicado: os que usam a IA (\"Mensagem escrita pela IA\", \"Classificar (IA)\" ou uma espera em que a IA escolhe a hora) e os que começam por \"Falta confirmada pela equipe\", como o \"Falta · remarcar quem não veio\". Para ligar, abra Agentes, clique em \"Editar\" e role até o bloco \"Follow-up\". Ligue \"Habilitar gatilhos automáticos de follow-up\" e marque o fluxo em \"Fluxos publicados\".",
+          "dica": "Fluxos só com texto fixo e outros gatilhos, como o de silêncio, começam sozinhos mesmo sem agente. Só fluxos com o selo \"Ativo\" aparecem na lista do agente.",
+          "rota": "/app/ai/agents",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "papel-conversa"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Habilitar gatilhos automáticos de follow-up",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Habilitar gatilhos automáticos de follow-up",
+                "exato": true
+              },
+              "rotulo": "Ligar os gatilhos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Fluxos publicados"
+              },
+              "rotulo": "Marque o fluxo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar e publicar o agente",
+          "texto": "Ligou e marcou? Volte ao alto da tela do agente. Enquanto a mudança não for salva, aparece \"Sem rascunho para publicar.\" e o \"Publicar\" fica apagado. Clique em \"Salvar rascunho\" e depois em \"Publicar\". Enquanto o agente não for publicado de novo, a mudança não vale para os pacientes.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Habilitar gatilhos automáticos de follow-up",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Falta · remarcar quem não veio",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar rascunho",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 600
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar rascunho",
+                "exato": true
+              },
+              "rotulo": "Guardar a mudança",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Publicar",
+                "regex": true
+              },
+              "rotulo": "Colocar no ar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Sem rascunho para publicar.",
+                "exato": true
+              },
+              "rotulo": "Falta salvar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-fila",
+      "titulo": "A Fila: quem está sendo acompanhado",
+      "objetivo": "Ler a Fila, entender cada situação, achar um paciente e cancelar um retorno quando ele não faz mais sentido.",
+      "papel": "admin",
+      "busca": [
+        "fila de follow-up",
+        "quem vai receber mensagem",
+        "próximo disparo",
+        "retorno agendado",
+        "promessa da IA",
+        "cancelar follow-up",
+        "pausado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem está ou passou por um fluxo",
+          "texto": "A aba \"Fila\" lista cada paciente que está ou passou por um fluxo, e os retornos que a IA combinou. Cada linha mostra o paciente, o fluxo (e o agente que cuida dele), o passo em que ele está (ou o motivo do retorno), quando sai a próxima mensagem e a situação. O passo aparece como um código curto, como \"resposta-2\"; o nome completo aparece quando você abre o histórico do paciente. Quem tem a próxima mensagem mais cedo aparece primeiro.",
+          "rota": "/app/ai/followups",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Fila",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "queue-row",
+                "n": 0
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Antônio Ferreira",
+                "regex": true
+              },
+              "rotulo": "Um paciente no fluxo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Próximo disparo",
+                "exato": true
+              },
+              "rotulo": "Quando sai a próxima",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "As situações",
+          "texto": "\"Aguardando resposta\": a mensagem já saiu e o fluxo espera o paciente. \"Pausado (atendimento humano)\": alguém da equipe assumiu a conversa. \"Pausado por uma pessoa\": alguém segurou o fluxo de propósito. \"Cancelado\": o fluxo terminou antes do fim, por exemplo, quando o paciente responde. Na linha do Pedro aparece \"Promessa\" e \"Agendada\": é um retorno que a IA combinou com ele na conversa.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Aguardando resposta\"]"
+              },
+              "rotulo": "Esperando o paciente",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Pausado (atendimento humano)\"]"
+              },
+              "rotulo": "Uma pessoa assumiu",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Pausado por uma pessoa\"]"
+              },
+              "rotulo": "Segurado de propósito",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Cancelado\"]"
+              },
+              "rotulo": "Saiu do fluxo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label=\"status: Agendada\"]"
+              },
+              "rotulo": "Retorno combinado pela IA",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Achar um paciente",
+          "texto": "Digite o nome ou o telefone em \"Buscar contato…\" para achar alguém na Fila. Aqui digitamos \"Lucas\". Os dois filtros ao lado mostram só uma situação (\"Todos os status\") ou só um fluxo (\"Todos os fluxos\").",
+          "dica": "Com um filtro de situação ou de fluxo escolhido, os retornos combinados pela IA saem da lista, porque eles não pertencem a nenhum fluxo.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar contato",
+                "exato": true
+              },
+              "valor": "Lucas"
+            },
+            {
+              "acao": "esperar",
+              "ms": 1200
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar contato",
+                "exato": true
+              },
+              "rotulo": "Nome ou telefone",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por status",
+                "exato": true
+              },
+              "rotulo": "Só uma situação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por fluxo",
+                "exato": true
+              },
+              "rotulo": "Só um fluxo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Cancelar um retorno",
+          "texto": "O botão \"Cancelar\" aparece, para gerente e administrador, nas linhas que ainda não terminaram, inclusive as pausadas. Ele sempre pede confirmação. Num retorno combinado pela IA, a pergunta é \"Cancelar este retorno?\": o agente não volta a falar com a pessoa no horário combinado. Num fluxo, a pergunta é \"Cancelar este follow-up?\" e não dá para desfazer. \"Voltar\" fecha a pergunta sem cancelar nada.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar contato",
+                "exato": true
+              },
+              "valor": ""
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar retorno",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar retorno",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Pede confirmação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Voltar",
+                "exato": true
+              },
+              "rotulo": "Desistir",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "o-dossie",
+      "titulo": "O histórico de um paciente no fluxo",
+      "objetivo": "Abrir o histórico de um paciente no fluxo, ver onde ele está e o que já aconteceu, e pausar, adiar ou pular um passo.",
+      "papel": "admin",
+      "busca": [
+        "histórico do follow-up",
+        "o que aconteceu",
+        "pausar follow-up",
+        "adiar mensagem",
+        "pular passo",
+        "onde está o paciente",
+        "dossiê"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir pelo nome",
+          "texto": "Na Fila, o nome do paciente é um link. Clique nele para abrir o histórico daquele paciente no fluxo. Os retornos combinados pela IA não têm link, porque são um aviso só, com dia e motivo.",
+          "rota": "/app/ai/followups",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Fila",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "link",
+                "nome": "Antônio Ferreira",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Antônio Ferreira",
+                "exato": true
+              },
+              "rotulo": "Abre o histórico",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Antônio Ferreira",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Onde ele está agora",
+          "texto": "No alto aparecem o nome, a situação, o fluxo, o agente, quando começou e quantos passos já deu. O quadro \"Onde está agora\" diz o passo atual e quando o fluxo volta a andar. O Antônio já recebeu duas mensagens e o fluxo espera a resposta da segunda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Antônio Ferreira",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "dossie-status"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "dossie-status"
+              },
+              "rotulo": "Situação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "dossie-onde-esta"
+              },
+              "rotulo": "Passo atual",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "dossie-proximo-passo"
+              },
+              "rotulo": "Quando volta a andar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Mexer no fluxo de um paciente",
+          "texto": "\"Pausar\" segura o fluxo até alguém clicar em \"Retomar\". \"Adiar\" escolhe um novo dia e hora para o próximo passo. \"Pular este passo\" segue em frente sem esperar. \"Cancelar follow-up\" tira o paciente do fluxo de vez e não dá para desfazer.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "dossie-pausar"
+              },
+              "rotulo": "Segurar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "dossie-adiar"
+              },
+              "rotulo": "Mudar o dia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "dossie-pular"
+              },
+              "rotulo": "Seguir em frente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "dossie-cancelar"
+              },
+              "rotulo": "Tirar do fluxo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "dossie-pular"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Pular para qual caminho",
+          "texto": "Quando o passo tem mais de um caminho, o sistema pergunta \"Por onde seguir?\" em vez de escolher sozinho. Cada opção mostra para onde o fluxo vai e em que caso esse caminho é usado. Para desistir sem mudar nada, feche no X.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "dossie-pular"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "Escolha o caminho",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O que já aconteceu",
+          "texto": "Mais abaixo, \"O que já aconteceu\" conta, em ordem, cada passo do fluxo: as mensagens enviadas, as esperas e quando o paciente não respondeu no prazo. Cada linha mostra também o passo e a hora.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "dossie-timeline"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "dossie-timeline"
+              },
+              "rotulo": "Linha do tempo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

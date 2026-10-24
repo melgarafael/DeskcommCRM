@@ -3,6 +3,7 @@
  *
  * Cobre, pela TELA, num banco montado só do `supabase/baseline.sql`:
  *  · #935/#938 — os TRÊS caminhos para a etapa de perda (menu, arrasto, lote)
+ *  · "Mover para…" no menu do card, no TOQUE: área de 44px, fim da etapa, janela do motivo
  *  · "Outro" com e sem detalhe
  *  · #911 — excluir pelo menu do próprio card, no desktop e no TOQUE
  *  · #948 — tag em lote oferecendo as tags que já existem
@@ -178,7 +179,7 @@ test.describe("Lote 12 — quadro do funil", () => {
     const confirmar = page.getByRole("button", { name: "Confirmar" });
     registra(`#938 outro · vazio, Confirmar habilitado = ${await confirmar.isEnabled()}`);
     expect(await confirmar.isEnabled()).toBe(true);
-    await expect(page.getByText(/cadastre em Configurações/)).toBeVisible();
+    await expect(page.getByText(/cadastre em CRM › Ver tudo em CRM › Etapas do funil/)).toBeVisible();
 
     await page.getByLabel(/Detalhe \(opcional\)/).fill("Mudou de ideia");
     await expect(page.getByRole("alert")).toBeVisible();
@@ -209,14 +210,19 @@ test.describe("Lote 12 — quadro do funil", () => {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
-  test("#935 caminho 2 — ARRASTO até a etapa de perda: recusa 422 e o card volta", async ({ page }) => {
+  test("#935 caminho 2 — ARRASTO até a etapa de perda: a janela pede o motivo, e o move grava com ele", async ({
+    page,
+  }) => {
     await login(page, c.users.manager!.email, c.password);
     await abreQuadro(page, pipelineId, `Arrasto ${SUFIXO}`);
     const card = page.getByRole("group", { name: `Lead: Arrasto ${SUFIXO}` });
 
-    const resposta = page.waitForResponse(
-      (r) => r.url().includes(`/leads/${leads.arrasto}/move`) && r.request().method() === "POST",
-    );
+    const moves: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes(`/leads/${leads.arrasto}/move`) && req.method() === "POST") {
+        moves.push(req.postData() ?? "");
+      }
+    });
     // Teclado do @hello-pangea/dnd — o MESMO onDragEnd do mouse.
     await card.focus();
     await page.keyboard.press("Space");
@@ -224,23 +230,35 @@ test.describe("Lote 12 — quadro do funil", () => {
     await page.keyboard.press("ArrowRight");
     await page.waitForTimeout(500);
     await page.keyboard.press("Space");
-    const r = await resposta;
-    registra(`#935 arrasto · POST /move = ${r.status()} · corpo = ${await r.text()}`);
-    expect(r.status()).toBe(422);
-    expect(await r.text()).toContain("lost_reason_required");
 
-    // A recusa diz a SAÍDA — o L12.QA.4 falhou exatamente por a tela mostrar só a falta.
-    await expect(page.getByText("use “Marcar como perdido” no menu do card")).toBeVisible({ timeout: 10_000 });
-    await captura(page, "935-05-arrasto-recusado-com-aviso");
+    // Antes, o move saía sem motivo e voltava 422 com um aviso; agora a janela
+    // pede o motivo ANTES de o move sair.
+    const dialogo = page.getByRole("dialog", { name: "Marcar como perdido" });
+    await expect(dialogo).toBeVisible({ timeout: 10_000 });
+    registra(`#935 arrasto · janela aberta · POSTs /move antes do motivo = ${moves.length}`);
+    expect(moves).toEqual([]);
+    await captura(page, "935-05-arrasto-pede-o-motivo");
+
+    await page.locator('input[name="lost-reason"][value="Fora do perfil"]').check();
+    const resposta = page.waitForResponse(
+      (r) => r.url().includes(`/leads/${leads.arrasto}/move`) && r.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Confirmar" }).click();
+    const r = await resposta;
+    registra(`#935 arrasto · POST /move = ${r.status()} · enviado = ${r.request().postData()}`);
+    expect(r.status()).toBe(200);
+    expect(JSON.parse(r.request().postData() ?? "{}")).toMatchObject({
+      stage_id: etapas.Perdido,
+      lost_reason: "Fora do perfil",
+    });
 
     const { data } = await admin
       .from("crm_leads")
       .select("status, stage_id, lost_reason")
       .eq("id", leads.arrasto)
       .single();
-    registra(`#935 arrasto · banco INTACTO = ${JSON.stringify(data)}`);
-    expect((data as { stage_id: string }).stage_id).toBe(etapas.Entrada);
-    expect((data as { status: string }).status).toBe("open");
+    registra(`#935 arrasto · banco = ${JSON.stringify(data)}`);
+    expect(data).toMatchObject({ status: "lost", stage_id: etapas.Perdido, lost_reason: "Fora do perfil" });
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -460,6 +478,165 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
 
     const pagina = await transbordoDaPagina(page);
     registra(`#911 toque · documento 390px: scrollWidth=${pagina.scrollWidth} clientWidth=${pagina.clientWidth} transborda=${pagina.transborda}`);
+  });
+
+  test("Mover para… pelo menu do card: área de 44px, fim da etapa inteira e janela do motivo", async ({ page }) => {
+    // Funil próprio, semeado e limpo aqui: os vizinhos do bloco usam o deles.
+    const { data: funil, error } = await admin
+      .from("crm_pipelines")
+      .insert({
+        organization_id: cc.org_id,
+        name: `QA L12 mover ${ST}`,
+        slug: `qa-l12-mover-${ST}`,
+        settings: { lost_reasons: [] },
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(`funil mover: ${error.message}`);
+    const fid = (funil as { id: string }).id;
+    try {
+      const et: Record<string, string> = {};
+      for (const [nome, pos, perda] of [
+        ["Entrada", 1000, false],
+        ["Contato", 2000, false],
+        ["Perdido", 3000, true],
+      ] as [string, number, boolean][]) {
+        const { data, error: e } = await admin
+          .from("crm_stages")
+          .insert({
+            organization_id: cc.org_id,
+            pipeline_id: fid,
+            name: nome,
+            slug: `${nome.toLowerCase()}-mover-${ST}`,
+            position: pos,
+            is_lost: perda,
+          })
+          .select("id")
+          .single();
+        if (e) throw new Error(`etapa mover ${nome}: ${e.message}`);
+        et[nome] = (data as { id: string }).id;
+      }
+      const ids: Record<string, string> = {};
+      for (const [chave, etapa, pos] of [
+        ["movido", et.Entrada, 1000],
+        ["ancora", et.Contato, 5000],
+      ] as [string, string, number][]) {
+        const { data, error: e } = await admin
+          .from("crm_leads")
+          .insert({
+            organization_id: cc.org_id,
+            pipeline_id: fid,
+            stage_id: etapa,
+            title: chave === "movido" ? `Mover ${ST}` : `Âncora ${ST}`,
+            position_in_stage: pos,
+            source: "manual",
+          })
+          .select("id")
+          .single();
+        if (e) throw new Error(`lead mover ${chave}: ${e.message}`);
+        ids[chave] = (data as { id: string }).id;
+      }
+
+      await login(page, cc.users.agent!.email, cc.password);
+      await abreQuadro(page, fid, `Mover ${ST}`);
+      const card = page.getByRole("group", { name: `Lead: Mover ${ST}` });
+      const botao = card.getByRole("button", { name: "Ações do lead" });
+
+      // O botão continua com 28px no desenho, mas o dedo acerta a 21px do
+      // centro nos quatro sentidos (44px de área) — medido por elementFromPoint.
+      const alvo = await botao.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const acerta = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("button") === el;
+        return {
+          largura: r.width,
+          altura: r.height,
+          acertos: [acerta(cx - 21, cy), acerta(cx + 21, cy), acerta(cx, cy - 21), acerta(cx, cy + 21)],
+        };
+      });
+      registra(`mover toque · botão ${alvo.largura}x${alvo.altura} · acerta a ±21px (esq, dir, cima, baixo) = ${JSON.stringify(alvo.acertos)}`);
+      expect(alvo.acertos).toEqual([true, true, true, true]);
+      await captura(page, "mover-01-card-no-celular");
+
+      await botao.click();
+      await expect(page.getByText("Mover para…", { exact: true })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Entrada", exact: true })).toHaveCount(0);
+      for (const nome of ["Contato", "Perdido"]) {
+        const r = await page.getByRole("menuitem", { name: nome, exact: true }).evaluate((el) => {
+          const b = el.getBoundingClientRect();
+          return { altura: b.height, direita: b.right };
+        });
+        registra(`mover toque · item "${nome}" altura=${r.altura} direita=${r.direita}`);
+        expect(r.altura).toBeGreaterThanOrEqual(44);
+        expect(r.direita).toBeLessThanOrEqual(390);
+      }
+      const largura = await page.evaluate(() => ({
+        // `body`, não `documentElement`: o `overflow-x: clip` do html grampeia o
+        // do documentElement (ver navegacao.spec.ts).
+        scrollWidth: document.body.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      registra(`mover toque · menu aberto: body.scrollWidth=${largura.scrollWidth} clientWidth=${largura.clientWidth}`);
+      expect(largura.scrollWidth).toBeLessThanOrEqual(largura.clientWidth + 1);
+      await captura(page, "mover-02-menu-com-etapas");
+
+      const resposta = page.waitForResponse(
+        (r) => r.url().includes(`/leads/${ids.movido}/move`) && r.request().method() === "POST",
+      );
+      await page.getByRole("menuitem", { name: "Contato", exact: true }).click();
+      const r = await resposta;
+      registra(`mover toque · Contato → POST /move = ${r.status()} · enviado = ${r.request().postData()}`);
+      expect(r.status()).toBe(200);
+      // O card entra no FIM da etapa, depois da âncora.
+      await expect(
+        page.locator(`[data-rfd-droppable-id="${et.Contato}"] [role="group"][aria-label^="Lead:"]`).last(),
+      ).toHaveAttribute("aria-label", `Lead: Mover ${ST}`, { timeout: 15_000 });
+      const { data: noContato } = await admin
+        .from("crm_leads")
+        .select("stage_id, position_in_stage")
+        .eq("id", ids.movido)
+        .single();
+      registra(`mover toque · banco depois de Contato = ${JSON.stringify(noContato)}`);
+      expect((noContato as { stage_id: string }).stage_id).toBe(et.Contato);
+      expect((noContato as { position_in_stage: number }).position_in_stage).toBeGreaterThan(5000);
+      await captura(page, "mover-03-no-fim-do-contato");
+
+      const moves: string[] = [];
+      page.on("request", (req) => {
+        if (req.url().includes(`/leads/${ids.movido}/move`) && req.method() === "POST") moves.push(req.postData() ?? "");
+      });
+      await card.getByRole("button", { name: "Ações do lead" }).click();
+      await page.getByRole("menuitem", { name: "Perdido", exact: true }).click();
+      const dialogo = page.getByRole("dialog", { name: "Marcar como perdido" });
+      await expect(dialogo).toBeVisible();
+      registra(`mover toque · Perdido → janela aberta · POSTs /move antes do motivo = ${moves.length}`);
+      expect(moves).toEqual([]);
+      await captura(page, "mover-04-janela-do-motivo");
+
+      await page.locator('input[name="lost-reason"]').first().check();
+      const perda = page.waitForResponse(
+        (r) => r.url().includes(`/leads/${ids.movido}/move`) && r.request().method() === "POST",
+      );
+      await page.getByRole("button", { name: "Confirmar" }).click();
+      const rp = await perda;
+      registra(`mover toque · Confirmar → POST /move = ${rp.status()} · enviado = ${rp.request().postData()}`);
+      expect(rp.status()).toBe(200);
+      const { data: perdido } = await admin
+        .from("crm_leads")
+        .select("status, stage_id, lost_reason")
+        .eq("id", ids.movido)
+        .single();
+      registra(`mover toque · banco depois de Perdido = ${JSON.stringify(perdido)}`);
+      expect((perdido as { stage_id: string }).stage_id).toBe(et.Perdido);
+      expect((perdido as { lost_reason: string | null }).lost_reason).not.toBeNull();
+      await captura(page, "mover-05-perdido-com-motivo");
+    } finally {
+      await admin.from("crm_lead_activities").delete().eq("pipeline_id", fid);
+      await admin.from("crm_leads").delete().eq("pipeline_id", fid);
+      await admin.from("crm_stages").delete().eq("pipeline_id", fid);
+      await admin.from("crm_pipelines").delete().eq("id", fid);
+    }
   });
 
   test("no tema ESCURO, em 400 px, o quadro não rola na horizontal", async ({ page }) => {

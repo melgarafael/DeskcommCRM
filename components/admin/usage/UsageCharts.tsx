@@ -74,8 +74,8 @@ export function UsageCharts({ series }: UsageChartsProps) {
             >
               <defs>
                 <linearGradient id="colorMsg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
@@ -100,13 +100,14 @@ export function UsageCharts({ series }: UsageChartsProps) {
                 contentStyle={{
                   borderRadius: "8px",
                   fontSize: "12px",
-                  border: "1px solid hsl(var(--border))",
+                  border: "1px solid var(--color-border)",
+                  background: "var(--color-surface)",
                 }}
               />
               <Area
                 type="monotone"
                 dataKey="count"
-                stroke="hsl(var(--accent))"
+                stroke="var(--color-accent)"
                 strokeWidth={2}
                 fill="url(#colorMsg)"
               />
@@ -155,7 +156,8 @@ export function UsageCharts({ series }: UsageChartsProps) {
                 contentStyle={{
                   borderRadius: "8px",
                   fontSize: "12px",
-                  border: "1px solid hsl(var(--border))",
+                  border: "1px solid var(--color-border)",
+                  background: "var(--color-surface)",
                 }}
               />
               <Area
@@ -213,7 +215,8 @@ export function UsageCharts({ series }: UsageChartsProps) {
                   contentStyle={{
                     borderRadius: "8px",
                     fontSize: "12px",
-                    border: "1px solid hsl(var(--border))",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-surface)",
                   }}
                 />
                 <Area

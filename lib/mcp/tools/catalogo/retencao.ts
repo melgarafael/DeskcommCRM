@@ -112,4 +112,18 @@ export const TOOLS_RETENCAO = declararTools([
     risco: "atencao",
     pacotes: ["reter"],
   },
+  {
+    // Fica em "reter" e não em "evoluir" de propósito: o pacote "Aprender e
+    // evoluir" já cabe no teto só com as 27 vagas que tem, e uma capacidade a
+    // mais nele tiraria todas as jornadas da lista de "cabem depois do agente
+    // nascer". O pacote "reter" já não cabe no teto, então a conta dos demais não muda.
+    name: "crm_get_prospecting_site_audit",
+    category: "read",
+    rotulo: "Consultar a análise do site da empresa",
+    explicacao:
+      "O agente pode consultar o que o sistema achou no site da empresa prospectada (tem site, está fora do ar, problemas) em qualquer momento da conversa.",
+    oQueToca: "Análise do site da empresa",
+    risco: "seguro",
+    pacotes: ["reter"],
+  },
 ]);
