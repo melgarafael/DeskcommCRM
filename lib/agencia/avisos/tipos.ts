@@ -11,6 +11,8 @@ export const TIPOS_DE_AVISO = [
   "prazo_hoje",
   "prazo_atrasado",
   "reuniao_marcada",
+  "reuniao_alterada",
+  "reuniao_lembrete",
   "etapa_liberada",
   "aprovacao_respondida",
 ] as const;
@@ -26,6 +28,8 @@ export const PLURAL_DO_TIPO: Record<TipoDeAviso, string> = {
   prazo_hoje: "prazos que vencem hoje",
   prazo_atrasado: "tarefas atrasadas",
   reuniao_marcada: "reuniões marcadas",
+  reuniao_alterada: "reuniões alteradas",
+  reuniao_lembrete: "reuniões chegando",
   etapa_liberada: "etapas liberadas",
   aprovacao_respondida: "aprovações respondidas",
 };

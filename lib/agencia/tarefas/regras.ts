@@ -134,7 +134,7 @@ function partesLocais(instante: Date, fuso: string) {
 }
 
 /** O instante UTC de "AAAA-MM-DD HH:MM" no fuso informado (o Brasil não tem horário de verão desde 2019). */
-function instanteLocal(ano: number, mes: number, dia: number, hora: string, fuso: string): Date {
+export function instanteLocal(ano: number, mes: number, dia: number, hora: string, fuso: string): Date {
   const [h, m] = hora.split(":").map((x) => Number(x));
   const palpite = new Date(Date.UTC(ano, mes - 1, dia, h ?? 0, m ?? 0));
   // Ajusta pelo deslocamento do fuso naquele instante.

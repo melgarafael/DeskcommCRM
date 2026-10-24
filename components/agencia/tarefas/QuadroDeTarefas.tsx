@@ -145,13 +145,13 @@ export function QuadroDeTarefas({
           {t.etiquetas.map((id) => {
             const e = porEtiqueta.get(id);
             return e ? (
-              <span key={id} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-white" style={{ background: e.cor }}>
+              <span key={id} className="rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-white" style={{ background: e.cor }}>
                 {e.nome}
               </span>
             ) : null;
           })}
           {t.prioridade === "alta" || t.prioridade === "urgente" ? (
-            <span className="rounded border border-destructive px-1.5 py-0.5 text-[11px] text-destructive">
+            <span className="rounded-sm border border-destructive px-1.5 py-0.5 text-[11px] text-destructive">
               {ROTULO_DA_PRIORIDADE[t.prioridade]}
             </span>
           ) : null}
@@ -234,7 +234,7 @@ export function QuadroDeTarefas({
               role="tab"
               aria-selected={visao === v}
               onClick={() => setVisao(v)}
-              className={cn("min-h-9 rounded px-3 text-sm", visao === v ? "bg-foreground text-background" : "text-muted-foreground")}
+              className={cn("min-h-9 rounded-sm px-3 text-sm", visao === v ? "bg-foreground text-background" : "text-muted-foreground")}
             >
               {v === "quadro" ? "Quadro" : v === "lista" ? "Lista" : "Ranking"}
             </button>
@@ -381,7 +381,7 @@ export function QuadroDeTarefas({
                   type="button"
                   onClick={() => setModal({ id: t.id })}
                   className={cn(
-                    "block w-full truncate rounded border px-2 py-1.5 text-left text-xs hover:bg-accent/50",
+                    "block w-full truncate rounded-sm border px-2 py-1.5 text-left text-xs hover:bg-accent/50",
                     estaAtrasada(t, agora) && "border-destructive text-destructive",
                   )}
                 >

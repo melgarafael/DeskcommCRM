@@ -11,6 +11,7 @@ import type { PermissaoDaAgencia } from "./permissoes";
 export const MENU_DA_AGENCIA: ReadonlyArray<EntradaDaCasca & { exige?: PermissaoDaAgencia }> = [
   { href: "/agencia", rotulo: "Início", icone: "inicio" },
   { href: "/agencia/tarefas", rotulo: "Tarefas", icone: "tarefas" },
+  { href: "/agencia/calendario", rotulo: "Calendário", icone: "calendario" },
   { href: "/agencia/clientes", rotulo: "Clientes", icone: "clientes" },
   { href: "/agencia/equipe", rotulo: "Equipe", icone: "equipe", exige: "equipe.gerenciar" },
   { href: "/agencia/configuracoes", rotulo: "Configurações", icone: "configuracoes", exige: "configuracoes.gerenciar" },

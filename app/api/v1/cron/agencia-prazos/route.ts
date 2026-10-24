@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { avisarLembretesDeReuniao } from "@/lib/agencia/calendario/lembretes";
 import { avisarPrazos } from "@/lib/agencia/tarefas/relogios";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -14,6 +15,9 @@ export const maxDuration = 120;
  * Avisa os prazos das tarefas da agência (docs/agencia/SPEC-tarefas.md, T8): nos
  * dias de antecedência configurados, no dia e no atraso, cada marco uma vez.
  * A cada 15 min, pelo `scheduler`. Rodada que não avisou ninguém não audita.
+ *
+ * O mesmo relógio manda os lembretes das reuniões (SPEC-calendario, K7) — sem
+ * cron novo, para o agendador não precisar ser reconstruído.
  */
 async function handle(req: NextRequest) {
   const requestId = randomUUID();
@@ -23,7 +27,11 @@ async function handle(req: NextRequest) {
     if (r.avisados > 0) {
       void audit({ action: "agencia.avisos_de_prazo_enviados", organizationId: null, metadata: { avisados: r.avisados }, requestId });
     }
-    return ok(r, { requestId });
+    const l = await avisarLembretesDeReuniao();
+    if (l.lembrados > 0) {
+      void audit({ action: "agencia.lembretes_de_reuniao_enviados", organizationId: null, metadata: { lembrados: l.lembrados }, requestId });
+    }
+    return ok({ ...r, ...l }, { requestId });
   } catch (err) {
     const detalhe = err instanceof Error ? err.message : String(err);
     logger.error("[agencia-prazos.cron] falhou", { error: detalhe, requestId });

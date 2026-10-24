@@ -12,14 +12,15 @@
  * handler. Senão toda instalação sem WhatsApp configurado acumularia eventos
  * mortos.
  *
- * ## A janela de horário vale só para AVISO
+ * ## A janela de horário vale para AVISO e para a mensagem de REUNIÃO
  * Convite e teste são disparados por uma pessoa naquele instante, olhando a
  * tela: segurá-los até as 7h faria o botão parecer quebrado. Aviso é que não
- * pode acordar ninguém (W2).
+ * pode acordar ninguém (W2) — nem o cliente, que recebe a mensagem da reunião
+ * marcada tarde da noite só às 7h (SPEC-calendario, K4).
  */
 import type { CanalDoAviso, PacingDoAviso, TransporteDoAviso } from "@/lib/escalacao/aviso-ao-suporte";
 
-export type MotivoDoEnvio = "convite" | "aviso" | "teste";
+export type MotivoDoEnvio = "convite" | "aviso" | "teste" | "reuniao";
 export type SituacaoDoEnvio = "pendente" | "enviado" | "falhou" | "descartado";
 
 export interface EnvioDaAgencia {
@@ -156,8 +157,8 @@ export async function aplicaEnvioDaAgencia(deps: DepsDoWhatsapp, envioId: string
     return skipped("sem_configuracao");
   }
 
-  // 3. Janela de horário — só para aviso.
-  if (envio.motivo === "aviso" && !dentroDaJanela(agora, cfg.janelaInicio, cfg.janelaFim, fuso)) {
+  // 3. Janela de horário — aviso e reunião.
+  if ((envio.motivo === "aviso" || envio.motivo === "reuniao") && !dentroDaJanela(agora, cfg.janelaInicio, cfg.janelaFim, fuso)) {
     return retry(proximaAbertura(agora, cfg.janelaInicio, fuso), "fora_da_janela");
   }
 

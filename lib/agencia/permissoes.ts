@@ -51,6 +51,7 @@ export const PERMISSOES_EM_USO: readonly PermissaoDaAgencia[] = [
   "tarefas.criar",
   "tarefas.atribuir",
   "tarefas.ver_todas",
+  "calendario.gerenciar",
 ];
 
 export function ehPermissaoDaAgencia(valor: string): valor is PermissaoDaAgencia {

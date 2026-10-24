@@ -7,7 +7,7 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { signOut } from "@/app/actions/auth/signOut";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
-import { ArrowLeft, Buildings, Gear, House, List, ListChecks, SignOut, UserCircle, UsersThree } from "@/lib/ui/icons";
+import { ArrowLeft, Buildings, CalendarBlank, Gear, House, List, ListChecks, SignOut, UserCircle, UsersThree } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -21,7 +21,7 @@ import { Sininho } from "./Sininho";
  * Quais entradas aparecem é decisão do SERVIDOR (`entradas`), lida das
  * permissões: o componente não conhece a regra, só desenha o que recebeu.
  */
-export type IconeDaEntrada = "inicio" | "tarefas" | "clientes" | "equipe" | "configuracoes" | "perfil";
+export type IconeDaEntrada = "inicio" | "tarefas" | "calendario" | "clientes" | "equipe" | "configuracoes" | "perfil";
 
 export interface EntradaDaCasca {
   href: string;
@@ -32,6 +32,7 @@ export interface EntradaDaCasca {
 const ICONES: Record<IconeDaEntrada, PhosphorIcon> = {
   inicio: House,
   tarefas: ListChecks,
+  calendario: CalendarBlank,
   clientes: Buildings,
   equipe: UsersThree,
   configuracoes: Gear,

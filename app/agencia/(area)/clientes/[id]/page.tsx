@@ -5,6 +5,8 @@ import { Suspense } from "react";
 import { FichaDoCliente } from "@/components/agencia/clientes/FichaDoCliente";
 import { requireAreaDaAgencia } from "@/lib/agencia/acesso";
 import { estadoDoDrive } from "@/lib/agencia/acervo/drive";
+import { apoioDaAgenda } from "@/lib/agencia/calendario/apoio";
+import { carregarQuemOlhaAgenda, listarReunioes } from "@/lib/agencia/calendario/consultas";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { lerQuantidades, type SituacaoDoCliente } from "@/lib/agencia/clientes/vocabulario";
 import { idSchema } from "@/lib/agencia/schemas";
@@ -29,7 +31,8 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
   if (!c) notFound();
 
   const quem = await carregarQuemOlha(ctx);
-  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio] = await Promise.all([
+  const quemAgenda = await carregarQuemOlhaAgenda(ctx);
+  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda] = await Promise.all([
     db.from("agencia_clientes_empresas").select("nome, documento").eq("cliente_id", id).order("ordem"),
     db.from("agencia_contratacoes").select("*").eq("cliente_id", id).order("criado_em", { ascending: false }),
     db.from("agencia_clientes_membros").select("membro_id").eq("cliente_id", id),
@@ -41,6 +44,8 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
     estadoDoDrive(),
     listarTarefas(quem, { clienteId: id }),
     apoioDoQuadro(quem),
+    listarReunioes(quemAgenda, { clienteId: id }),
+    apoioDaAgenda(quemAgenda),
   ]);
 
   const subpastas = (c.drive_subpastas as Record<string, string> | null) ?? {};
@@ -105,6 +110,10 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
           meuMembroId={ctx.membro?.id ?? null}
           podeCriarTarefa={ctx.permissoes.has("tarefas.criar")}
           podeAtribuir={ctx.permissoes.has("tarefas.atribuir")}
+          reunioes={reunioes}
+          apoioDaAgenda={apoioAgenda}
+          podeGerenciarCalendario={ctx.permissoes.has("calendario.gerenciar")}
+          agendaLiberada={drive.agendaLiberada}
         />
       </Suspense>
     </div>

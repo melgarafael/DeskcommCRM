@@ -75,7 +75,7 @@ export async function confirmarEnvioDeArquivo(entrada: {
   tarefaId: string | null;
   subpasta: string;
   driveFileId: string;
-}): Promise<ResultadoDaAcao> {
+}): Promise<ResultadoDaAcao<{ link: string }>> {
   return seguro(async () => {
     const p = z
       .object({
@@ -109,7 +109,7 @@ export async function confirmarEnvioDeArquivo(entrada: {
       tarefa_id: p.data.tarefaId,
     });
     revalidatePath(`/agencia/clientes/${p.data.clienteId}`);
-    return { ok: true as const };
+    return { ok: true as const, dados: { link: arq.valor.webViewLink } };
   });
 }
 

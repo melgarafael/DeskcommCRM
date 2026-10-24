@@ -1195,6 +1195,12 @@ export const AUDIT_ACTIONS = [
   "agencia.recorrente_alterada",
   "agencia.recorrentes_geradas",
   "agencia.avisos_de_prazo_enviados",
+  "agencia.reuniao_marcada",
+  "agencia.reuniao_alterada",
+  "agencia.reuniao_cancelada",
+  "agencia.reuniao_realizada",
+  "agencia.lembretes_de_reuniao_enviados",
+  "agencia.lembretes_de_reuniao_configurados",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -936,6 +936,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint das APIs do Google que a agenda usa (calendar/v3, oauth2/v4, userinfo). O projeto é do cliente; o domínio é do fornecedor.",
   },
+  "openidconnect.googleapis.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint `userinfo` do OpenID do Google: a conexão Google da área da agência (fork, `lib/agencia/acervo/drive.ts`) lê o e-mail da conta conectada para mostrar em Configurações. Contrato do Google.",
+  },
+  "drive.google.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "link para abrir a pasta do cliente no Google Drive da agência (fork, ficha do cliente em `app/agencia`). É onde o arquivo mora; o domínio é do fornecedor.",
+  },
   "oauth2.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:

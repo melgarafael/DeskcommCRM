@@ -46,7 +46,7 @@ const MOTIVO_DA_FALHA: Record<string, string> = {
   evento_nao_gravado: "não entrou na fila",
 };
 
-const MOTIVO: Record<string, string> = { convite: "Convite", aviso: "Aviso", teste: "Teste" };
+const MOTIVO: Record<string, string> = { convite: "Convite", aviso: "Aviso", teste: "Teste", reuniao: "Reunião (cliente)" };
 
 function dataCurta(iso: string): string {
   return formatarDataHora(iso);

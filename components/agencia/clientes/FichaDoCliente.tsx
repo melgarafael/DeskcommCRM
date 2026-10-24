@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { ligarOrganizacao, salvarContratacao, salvarEquipeDoCliente } from "@/app/actions/agencia/clientes";
+import { ReunioesDoCliente } from "@/components/agencia/calendario/ReunioesDoCliente";
 import { EnvioParaODrive } from "@/components/agencia/EnvioParaODrive";
 import { QuadroDeTarefas } from "@/components/agencia/tarefas/QuadroDeTarefas";
 import type { ApoioDoQuadro } from "@/components/agencia/tarefas/ModalDaTarefa";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { ApoioDaAgenda } from "@/lib/agencia/calendario/apoio";
+import type { ReuniaoDaAgenda } from "@/lib/agencia/calendario/consultas";
 import {
   QUANTIDADES,
   ROTULO_DA_QUANTIDADE,
@@ -23,7 +26,7 @@ import { cn } from "@/lib/utils";
 
 import { FormularioDoCliente, type DadosDoCliente } from "./FormularioDoCliente";
 
-type Aba = "dados" | "contratacoes" | "equipe" | "tarefas" | "arquivos";
+type Aba = "dados" | "contratacoes" | "equipe" | "tarefas" | "reunioes" | "arquivos";
 
 export interface ContratacaoDaFicha {
   id?: string;
@@ -62,6 +65,10 @@ export function FichaDoCliente(p: {
   meuMembroId: string | null;
   podeCriarTarefa: boolean;
   podeAtribuir: boolean;
+  reunioes: ReuniaoDaAgenda[];
+  apoioDaAgenda: ApoioDaAgenda;
+  podeGerenciarCalendario: boolean;
+  agendaLiberada: boolean;
 }) {
   const router = useRouter();
   const [aba, setAba] = useState<Aba>("dados");
@@ -81,6 +88,7 @@ export function FichaDoCliente(p: {
     ["contratacoes", "Contratações"],
     ["equipe", "Equipe"],
     ["tarefas", `Tarefas (${p.tarefas.filter((t) => t.coluna !== "concluido").length})`],
+    ["reunioes", `Reuniões (${p.reunioes.filter((r) => r.situacao === "marcada").length})`],
     ["arquivos", "Arquivos"],
   ];
 
@@ -241,6 +249,17 @@ export function FichaDoCliente(p: {
           podeCriar={p.podeCriarTarefa}
           podeAtribuir={p.podeAtribuir}
           clienteFixo={p.id}
+        />
+      )}
+
+      {aba === "reunioes" && (
+        <ReunioesDoCliente
+          clienteId={p.id}
+          reunioes={p.reunioes}
+          apoio={p.apoioDaAgenda}
+          meuMembroId={p.meuMembroId}
+          podeGerenciar={p.podeGerenciarCalendario}
+          agendaLiberada={p.agendaLiberada}
         />
       )}
 

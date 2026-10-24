@@ -5,6 +5,10 @@
  * endereço de retorno próprio e o escopo `drive.file` — a central só enxerga o
  * que ela mesma criou no Drive. O refresh token fica cifrado em `agencia_drive`.
  *
+ * É a ÚNICA conexão Google da agência (SPEC-calendario, K1): a mesma conta
+ * autoriza também `calendar.events`, para as reuniões. O que o Google concedeu
+ * fica em `agencia_drive.escopos`; a Agenda só é usada quando o escopo veio.
+ *
  * Nada aqui lança para quem chama a partir de tela ou de cadastro: falha do
  * Google vira `{ ok: false, erro }` e o motivo fica em `agencia_drive.ultimo_erro`
  * (A6 — sem Drive, as telas seguem funcionando).
@@ -17,7 +21,9 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export const ESCOPOS_DO_DRIVE = ["openid", "email", "https://www.googleapis.com/auth/drive.file"] as const;
+export const ESCOPO_DO_DRIVE = "https://www.googleapis.com/auth/drive.file";
+export const ESCOPO_DA_AGENDA = "https://www.googleapis.com/auth/calendar.events";
+export const ESCOPOS_DO_DRIVE = ["openid", "email", ESCOPO_DO_DRIVE, ESCOPO_DA_AGENDA] as const;
 const API = "https://www.googleapis.com/drive/v3";
 const UPLOAD = "https://www.googleapis.com/upload/drive/v3";
 const PASTA = "application/vnd.google-apps.folder";
@@ -64,7 +70,7 @@ export async function conectarComCodigo(code: string, userId: string): Promise<R
   if (!app) return { ok: false, erro: "O app do Google não está configurado em Admin › Google Agenda." };
   const t = await trocarCodigoPorToken(app, code, { agora: new Date() });
   if (!t.ok) return { ok: false, erro: `O Google recusou a conexão (${t.detalhe}).` };
-  if (!t.token.scope.includes("https://www.googleapis.com/auth/drive.file")) {
+  if (!t.token.scope.includes(ESCOPO_DO_DRIVE)) {
     return { ok: false, erro: "A permissão do Drive não foi concedida. Marque a caixa do Google Drive na tela do Google." };
   }
   if (!t.token.refresh_token) return { ok: false, erro: "O Google não devolveu o acesso permanente. Tente conectar de novo." };
@@ -87,6 +93,7 @@ export async function conectarComCodigo(code: string, userId: string): Promise<R
       refresh_token_ct: bufToBytea(cifrado.ciphertext),
       refresh_token_iv: bufToBytea(cifrado.iv),
       refresh_token_tag: bufToBytea(cifrado.tag),
+      escopos: [...t.token.scope],
       conectado_em: new Date().toISOString(),
       conectado_por: userId,
       ultimo_erro: null,
@@ -106,6 +113,7 @@ export async function desconectarDrive(): Promise<void> {
       refresh_token_ct: null,
       refresh_token_iv: null,
       refresh_token_tag: null,
+      escopos: [],
       conectado_em: null,
       ultimo_erro: null,
       atualizado_em: new Date().toISOString(),
@@ -119,20 +127,29 @@ export interface EstadoDoDrive {
   contaEmail: string | null;
   pastaRaizId: string | null;
   ultimoErro: string | null;
+  /** A conta também liberou a Agenda (as reuniões vão para o Google). */
+  agendaLiberada: boolean;
 }
 
 export async function estadoDoDrive(): Promise<EstadoDoDrive> {
   const { data } = await createAdminClient()
     .from("agencia_drive")
-    .select("conta_email, refresh_token_ct, pasta_raiz_id, ultimo_erro")
+    .select("conta_email, refresh_token_ct, pasta_raiz_id, ultimo_erro, escopos")
     .eq("id", true)
     .maybeSingle();
-  const d = data as { conta_email: string | null; refresh_token_ct: unknown; pasta_raiz_id: string | null; ultimo_erro: string | null } | null;
+  const d = data as {
+    conta_email: string | null;
+    refresh_token_ct: unknown;
+    pasta_raiz_id: string | null;
+    ultimo_erro: string | null;
+    escopos: string[] | null;
+  } | null;
   return {
     conectado: !!d?.refresh_token_ct,
     contaEmail: d?.conta_email ?? null,
     pastaRaizId: d?.pasta_raiz_id ?? null,
     ultimoErro: d?.ultimo_erro ?? null,
+    agendaLiberada: !!d?.refresh_token_ct && (d.escopos ?? []).includes(ESCOPO_DA_AGENDA),
   };
 }
 

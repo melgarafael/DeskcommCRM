@@ -52,7 +52,8 @@ export function EnvioParaODrive({
   clienteId: string;
   tarefaId: string | null;
   subpastaInicial?: (typeof SUBPASTAS)[number];
-  aoTerminar?: () => void;
+  /** Recebe os links dos arquivos enviados, na ordem. */
+  aoTerminar?: (links: string[]) => void;
 }) {
   const entrada = useRef<HTMLInputElement>(null);
   const [subpasta, setSubpasta] = useState<string>(subpastaInicial);
@@ -62,6 +63,7 @@ export function EnvioParaODrive({
 
   async function enviar(arquivos: FileList | null) {
     if (!arquivos || arquivos.length === 0) return;
+    const links: string[] = [];
     for (const arquivo of Array.from(arquivos)) {
       setEstado({ tipo: "enviando", nome: arquivo.name, pct: 0 });
       const sessao = await iniciarEnvioDeArquivo({
@@ -85,6 +87,7 @@ export function EnvioParaODrive({
           setEstado({ tipo: "erro", texto: conf.erro });
           return;
         }
+        links.push(conf.dados.link);
       } catch (e) {
         setEstado({ tipo: "erro", texto: `O envio de ${arquivo.name} falhou: ${e instanceof Error ? e.message : "erro"}.` });
         return;
@@ -92,7 +95,7 @@ export function EnvioParaODrive({
     }
     setEstado({ tipo: "ok", texto: "Enviado para o Google Drive." });
     if (entrada.current) entrada.current.value = "";
-    aoTerminar?.();
+    aoTerminar?.(links);
   }
 
   return (

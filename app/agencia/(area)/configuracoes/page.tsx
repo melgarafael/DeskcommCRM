@@ -1,4 +1,5 @@
 import { ConfiguracoesCliente, type CanalDaLista, type EnvioDaLista } from "@/components/agencia/ConfiguracoesCliente";
+import { LembretesDeReuniao } from "@/components/agencia/calendario/LembretesDeReuniao";
 import { SecaoDoDrive } from "@/components/agencia/SecaoDoDrive";
 import { estadoDoDrive, retornoDoDrive } from "@/lib/agencia/acervo/drive";
 import { requirePermissaoNaPagina } from "@/lib/agencia/acesso";
@@ -8,7 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const metadata = { title: "Configurações · Agência" };
 export const dynamic = "force-dynamic";
 
-/** WhatsApp da agência, horário e antecedência dos avisos, e o Google Drive. */
+/** WhatsApp da agência, horário e antecedência dos avisos, lembretes de reunião e a conexão Google. */
 export default async function PaginaDeConfiguracoes({ searchParams }: { searchParams: Promise<{ drive?: string }> }) {
   await requirePermissaoNaPagina("configuracoes.gerenciar");
   const db = createAdminClient();
@@ -17,7 +18,7 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
   const [config, canais, envios] = await Promise.all([
     db
       .from("agencia_config")
-      .select("canal_session_id, janela_inicio, janela_fim, avisos_antecedencia")
+      .select("canal_session_id, janela_inicio, janela_fim, avisos_antecedencia, reunioes_lembretes")
       .eq("id", true)
       .maybeSingle(),
     db
@@ -37,6 +38,7 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
     janela_inicio: string;
     janela_fim: string;
     avisos_antecedencia: number[];
+    reunioes_lembretes: number[] | null;
   } | null;
 
   const listaDeCanais: CanalDaLista[] = (
@@ -84,6 +86,7 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
         }}
         envios={ultimos}
       />
+      <LembretesDeReuniao inicial={c?.reunioes_lembretes ?? [1440, 60]} />
       <SecaoDoDrive estado={estadoDrive} enderecoDeRetorno={retornoDoDrive()} resultado={resultadoDoDrive ?? null} />
     </div>
   );
