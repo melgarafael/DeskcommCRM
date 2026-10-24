@@ -164,7 +164,7 @@ async function main() {
       });
       const page = await ctx.newPage();
       for (const passo of licao.passos) {
-        const chave = chaveDoPasso(licao.id, passo.id);
+        const chave = chaveDoPasso(modulo.id, licao.id, passo.id);
         try {
           if (passo.rota) {
             await page.goto(URL_BASE + passo.rota);

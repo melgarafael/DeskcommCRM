@@ -28,7 +28,8 @@
   }
   function modulo(id) { return D.modulos.filter(function (m) { return m.id === id; })[0]; }
   function licaoDe(m, id) { return m && m.licoes.filter(function (l) { return l.id === id; })[0]; }
-  function captura(licao, passo) { return D.capturas[licao.id + "--" + passo.id]; }
+  // a chave leva o módulo: ids de lição se repetem entre módulos (curso/licao.ts, chaveDoPasso)
+  function captura(m, licao, passo) { return D.capturas[m.id + "--" + licao.id + "--" + passo.id]; }
   function tokenDaTela(href) { return "t." + href.slice(1).split("/").join("~"); }
 
   // ---------- a foto anotada ----------
@@ -132,7 +133,7 @@
 
   // ---------- vistas ----------
   function vistaInicio() {
-    var m0 = D.modulos[0], l0 = m0.licoes[0], cap0 = captura(l0, l0.passos[0]);
+    var m0 = D.modulos[0], l0 = m0.licoes[0], cap0 = captura(m0, l0, l0.passos[0]);
     var semCurso = [];
     D.menu.forEach(function (g) { g.itens.forEach(function (it) { if (!it.modulo) semCurso.push(it); }); });
     return '<div class="coluna">' +
@@ -198,7 +199,7 @@
     var prox = proximaLicao(m, l);
     return '<div class="coluna">' + cabecalhoLicao(m, l, "ler") +
       l.passos.map(function (p, i) {
-        var cap = captura(l, p);
+        var cap = captura(m, l, p);
         return '<section class="passo" id="passo-' + esc(p.id) + '"><div class="passo-num" aria-hidden="true">' + String(i + 1).padStart(2, "0") + "</div>" +
           '<div class="passo-corpo"><span class="rotulo-mono">Passo ' + (i + 1) + " de " + l.passos.length + "</span><h2>" + esc(p.titulo) + "</h2>" +
           '<p class="texto">' + esc(p.texto) + "</p>" + figura(cap, { alt: p.titulo, ansioso: i === 0 }) + '<div class="sob-figura">' + legenda(cap) + '<span class="ampliar-dica">Clique na foto para ampliar</span></div>' +
@@ -223,14 +224,14 @@
     if (sim.i >= l.passos.length) {
       marcarFeito(m.id + "/" + l.id);
       var prox = proximaLicao(m, l);
-      alvo.innerHTML = figura(captura(l, l.passos[l.passos.length - 1]), { limpa: true, alt: "Fim da lição" }) +
+      alvo.innerHTML = figura(captura(m, l, l.passos[l.passos.length - 1]), { limpa: true, alt: "Fim da lição" }) +
         '<div class="painel"><span class="rotulo-mono">Lição concluída</span><h2>Você fez todos os passos.</h2><p>Agora é com você no sistema de verdade. Se esquecer algo, volte aqui ou use a busca.</p>' +
         '<div class="acoes">' + (prox ? '<a class="botao botao-primario" href="#s.' + m.id + "." + prox.id + '">Próxima lição</a>' : "") +
         '<button class="botao botao-secundario" type="button" data-sim="reiniciar">Repetir</button></div></div>';
       desenharMenu(rotaAtual());
       return;
     }
-    var p = l.passos[sim.i], cap = captura(l, p);
+    var p = l.passos[sim.i], cap = captura(m, l, p);
     var botaoAlvo = cap.clicar
       ? '<button class="alvo-clique" type="button" data-sim="acertou" aria-label="Clique aqui para continuar" style="left:' + pct(cap.clicar.x - 4, W) + ";top:" + pct(cap.clicar.y - 4, H) + ";width:" + pct(cap.clicar.w + 8, W) + ";height:" + pct(cap.clicar.h + 8, H) + '"></button>'
       : "";
@@ -261,7 +262,7 @@
       return;
     }
     var tela = e.target.closest("#simulador .tela");
-    if (tela && sim && captura(sim.l, sim.l.passos[sim.i] || {})?.clicar) {
+    if (tela && sim && captura(sim.m, sim.l, sim.l.passos[sim.i] || {})?.clicar) {
       tela.classList.remove("errou"); void tela.offsetWidth; tela.classList.add("errou");
       var r = document.getElementById("recado");
       if (r) r.textContent = "Ainda não é aí. Procure o ponto piscando na tela.";
@@ -282,7 +283,7 @@
       indice.push({ onde: m.titulo, titulo: l.titulo, trecho: l.objetivo, href: "#l." + m.id + "." + l.id,
         campos: [[l.titulo, 6], [l.busca.join(" "), 5], [l.objetivo, 2]] });
       l.passos.forEach(function (p) {
-        var cap = captura(l, p);
+        var cap = captura(m, l, p);
         indice.push({ onde: m.titulo + " › " + l.titulo, titulo: p.titulo, trecho: p.texto, href: "#l." + m.id + "." + l.id + "." + p.id,
           campos: [[p.titulo, 4], [p.texto + " " + (p.dica || ""), 1], [cap ? cap.destaques.map(function (d) { return d.rotulo; }).join(" ") : "", 2]] });
       });

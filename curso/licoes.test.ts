@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { NAV_CATALOG } from "@/lib/navigation/catalogo";
 
-import { Modulo } from "./licao";
+import { Modulo, chaveDoPasso } from "./licao";
 
 const PASTA = path.join(__dirname, "licoes");
 const arquivos = readdirSync(PASTA).filter((f) => f.endsWith(".json"));
@@ -19,6 +19,14 @@ describe("lições do curso ilustrado", () => {
     const modulo = Modulo.parse(JSON.parse(readFileSync(path.join(PASTA, arquivo), "utf8")));
     expect(NAV_CATALOG.map((d) => d.href)).toContain(modulo.tela);
     expect(`${modulo.id}.json`).toBe(arquivo);
+  });
+
+  it("nenhuma foto de um módulo tem o nome da foto de outro (ids de lição se repetem entre módulos)", () => {
+    const chaves = arquivos.flatMap((arquivo) => {
+      const m = Modulo.parse(JSON.parse(readFileSync(path.join(PASTA, arquivo), "utf8")));
+      return m.licoes.flatMap((l) => l.passos.map((p) => chaveDoPasso(m.id, l.id, p.id)));
+    });
+    expect(new Set(chaves).size).toBe(chaves.length);
   });
 
   it("recusa alvo com duas estratégias (seria ambíguo qual o capturador usa)", () => {

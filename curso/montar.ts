@@ -18,7 +18,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { NAV_CATALOG, NAV_GROUPS } from "../lib/navigation/catalogo";
-import { Modulo } from "./licao";
+import { Modulo, chaveDoPasso } from "./licao";
 
 const RAIZ = path.dirname(new URL(import.meta.url).pathname);
 const SAIDA = path.join(RAIZ, "saida");
@@ -42,7 +42,7 @@ if (!existsSync(arquivoCapturas)) throw new Error("falta curso/saida/capturas.js
 const { largura, altura, capturas } = JSON.parse(readFileSync(arquivoCapturas, "utf8"));
 
 const faltando = modulos.flatMap((m) =>
-  m.licoes.flatMap((l) => l.passos.map((p) => `${l.id}--${p.id}`).filter((k) => !capturas[k])),
+  m.licoes.flatMap((l) => l.passos.map((p) => chaveDoPasso(m.id, l.id, p.id)).filter((k) => !capturas[k])),
 );
 if (faltando.length) throw new Error(`passos sem foto (o capturar falhou neles?): ${faltando.join(", ")}`);
 

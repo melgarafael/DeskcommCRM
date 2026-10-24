@@ -107,5 +107,9 @@ export const Modulo = z
   .refine((m) => new Set(m.licoes.map((l) => l.id)).size === m.licoes.length, { message: "ids de lição repetidos" });
 export type Modulo = z.infer<typeof Modulo>;
 
-/** Chave estável de um passo — nome da foto e âncora da página. */
-export const chaveDoPasso = (licao: string, passo: string) => `${licao}--${passo}`;
+/**
+ * Chave estável de um passo — nome da foto. Leva o MÓDULO: ids de lição se
+ * repetem entre módulos ("conhecendo-a-tela" existe em vários), e sem ele a foto
+ * de um módulo sobrescrevia a de outro.
+ */
+export const chaveDoPasso = (modulo: string, licao: string, passo: string) => `${modulo}--${licao}--${passo}`;

@@ -255,6 +255,8 @@ async function main(): Promise<Contexto> {
 
   // ---------- agente de IA publicado (liga a aba Automático; nunca é chamado) ----------
   const PROMPT = "Você é a Bia, recepcionista virtual da Clínica Bem Viver.";
+  // o formato que a tela do agente conhece; com o prefixo do gateway, o campo "Modelo" aparecia vazio
+  const MODELO = "claude-sonnet-4-6";
   const agentes = exigir(await db.from("ai_agents").select("id, published_version_id").eq("organization_id", org), "ai_agents") as Array<{ id: string; published_version_id: string | null }>;
   const agenteId = agentes[0]?.id ?? (exigir(
     await db.from("ai_agents").insert({ organization_id: org, name: "Bia — Recepção virtual", system_prompt: PROMPT, is_default: true, is_active: true }).select("id").single(),
@@ -264,7 +266,7 @@ async function main(): Promise<Contexto> {
   if (!agentes[0]?.published_version_id) {
     const versao = exigir(
       await db.from("ai_agent_versions").insert({
-        organization_id: org, agent_id: agenteId, version_number: 1, system_prompt: PROMPT, provider: "anthropic", model: "anthropic/claude-sonnet-4-6",
+        organization_id: org, agent_id: agenteId, version_number: 1, system_prompt: PROMPT, provider: "anthropic", model: MODELO,
         credential_id: null, channel_session_id: sessao, status: "published", published_at: new Date().toISOString(),
       }).select("id").single(),
       "versão do agente",
