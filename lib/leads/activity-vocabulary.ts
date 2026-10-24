@@ -216,7 +216,23 @@ export type ActivityType =
    * UPDATE do telefone, porque a linha é rastro: falhar nela não pode desfazer
    * a escrita que ela descreve.
    */
-  | "contact_field_auto_applied";
+  | "contact_field_auto_applied"
+  /**
+   * O DOCUMENTO ENTROU NO CARD (#3316) — o anexo (PDF, imagem) registrado em
+   * `crm_lead_attachments` pela rota de anexos do negócio, com o campo de
+   * arquivo do funil onde ele mora.
+   *
+   * Sem esta linha, o documento apareceria no card mas sumiria da linha do
+   * tempo: quem abre o negócio dias depois não vê QUANDO o voucher chegou, nem
+   * que era aquele arquivo que sustentaria depois a proposta de campo lida por
+   * IA — e a revisão humana (#3316) perde a memória do porquê daquela fila.
+   *
+   * A LEITURA da IA (`lead_fields_proposed`) está fora do vocabulário por
+   * ora — a fila de propostas é a própria memória dessa etapa, com trecho e
+   * decisão por proposta. Esta linha é o FATO do anexo, e ela sozinha cumpre
+   * o "o documento fica na linha do tempo do negócio".
+   */
+  | "document_attached";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou no funil",
@@ -333,6 +349,10 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // digitação de alguém) e de onde veio. Só assim quem lê a linha do tempo não
   // vai procurar quem foi que digitou o número.
   contact_field_auto_applied: "Telefone informado pelo cliente aplicado automaticamente",
+  // Rótulo com objeto, como o resto ("Documento anexado", não "Anexou"): o que
+  // quem lê a timeline do negócio precisa saber é que um documento entrou, e
+  // qual campo é sai do payload (`field_key`/`file_name`).
+  document_attached: "Documento anexado ao negócio",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

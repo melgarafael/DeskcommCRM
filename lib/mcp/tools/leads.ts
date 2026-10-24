@@ -23,6 +23,8 @@ import {
 } from "@/app/api/v1/leads/_handler";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
 import { conferirCamposPersonalizados } from "../conferencia-de-campos";
+import { proporCamposDoNegocio } from "@/lib/leads/proposta-de-campos-por-documento";
+import { audit } from "@/lib/audit";
 import { resolveUserNames } from "./_users";
 import type { McpContext, McpToolDefinition } from "../types";
 import { ApiError } from "@/lib/api/types";
@@ -526,5 +528,115 @@ export const crmRetomarLead: McpToolDefinition<typeof retomarInputShape> = {
       { stage_id: input.stage_id },
     );
     return { lead };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// crm_propose_lead_fields_from_document — o voucher lido vira proposta (issue #3316)
+// ---------------------------------------------------------------------------
+
+const camposDoDocumentoShape = {
+  lead_id: z.string().uuid(),
+  /**
+   * O documento ANEXADO AO NEGÓCIO de onde vieram os valores, quando houver —
+   * `crm_lead_attachments.id` (a rota de anexos do card). Opcional porque o
+   * documento pode ainda estar só na conversa; o `attachment_id` é a ponte que
+   * a revisão usa para abrir o arquivo ao lado do trecho.
+   */
+  attachment_id: z.string().uuid().optional(),
+  campos: z
+    .array(
+      z.object({
+        campo: z.string().min(1).max(40).describe("A chave do campo NO FUNIL do negócio (pipeline.settings.fields)."),
+        valor: z.string().min(1).max(2000).describe("O valor lido no documento, como texto."),
+        trecho: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("O trecho do documento de onde o valor veio. SEM trecho a proposta é recusada."),
+      }),
+    )
+    .min(1)
+    .max(25),
+};
+
+/**
+ * ⚠️ Esta ferramenta NÃO grava o card — com UMA exceção: NENHUMA.
+ *
+ * Ela cria LINHAS EM `lead_field_proposals`, que uma PESSOA confirma campo a
+ * campo pela tela de revisão (`GET/POST /api/v1/leads/[id]/field-proposals`).
+ * O `description` diz isso EM PRIMEIRO LUGAR, de propósito: um modelo que
+ * acredite ter gravado responderia "pronto, já anotei o localizador no seu
+ * cadastro" ao cliente, prometendo o que não aconteceu. O que ele PODE dizer é
+ * que os dados do documento foram separados para alguém conferir.
+ *
+ * A leitura do documento é a que o agente JÁ faz na conversa (partes de mídia,
+ * transcrição) — nenhum cliente de mídia novo nasce aqui. O que esta tool
+ * recebe é o resultado dessa leitura, campo a campo, com o trecho de origem.
+ *
+ * A RÉGUA (`lib/leads/proposta-de-campos-por-documento.ts`) recusa cedo o que
+ * não pode virar proposta, com o motivo em texto para o modelo aprender:
+ * campo fora do funil (a proposta é SÓ para `pipeline.settings.fields`), campo
+ * de escopo `contato` (o valor mora na ficha, não no card), sem trecho, fora
+ * da lista de opções, fora do `padrao` (#2730), igual ao que já está no card e
+ * proposta repetida (idempotência do índice único parcial).
+ */
+export const crmProposeLeadFieldsFromDocument: McpToolDefinition<typeof camposDoDocumentoShape> = {
+  name: "crm_propose_lead_fields_from_document",
+  description:
+    "Registra, a partir de um DOCUMENTO que você leu (voucher, bilhete, apólice, confirmação de hotel), valores " +
+    "PROPOSTOS para os campos do card de um negócio — a proposta espera que uma PESSOA confira e confirme campo a " +
+    "campo numa tela de revisão, com o valor atual, o proposto e o trecho do documento à vista. NADA é gravado no " +
+    "card por esta chamada: nunca diga ao cliente que o cadastro foi atualizado — diga que os dados do documento " +
+    "foram separados para a equipe conferir. Passe SÓ campos que existem no funil do negócio (pipeline.settings.fields, " +
+    "os campos do CARD), cada valor COM o trecho de onde veio (sem trecho a proposta é recusada). Recusa campo fora " +
+    "do funil, campo de ficha de contato, valor igual ao que já está no card, valor fora da lista de opções ou fora do " +
+    "padrão do campo, e proposta repetida do mesmo campo enquanto outra aguarda decisão.",
+  inputSchema: camposDoDocumentoShape,
+  category: "write",
+  requiresRole: "agent",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    // Contato pessoal está fora da operação (spec 21, decisão 3) — a MESMA
+    // recusa das leituras de negócio: nada se escreve para ele, nem proposta.
+    const pessoal = await recusaSeLeadDePessoal(ctx, input.lead_id);
+    if (pessoal) return pessoal;
+
+    const r = await proporCamposDoNegocio(ctx.supabase, {
+      organizationId: ctx.organizationId,
+      leadId: input.lead_id,
+      campos: input.campos.map((c) => ({ campo: c.campo, valor: c.valor, trecho: c.trecho ?? null })),
+      attachmentId: input.attachment_id ?? null,
+      // ⚠️ `agent_id`, NUNCA `actor.id` — a coluna tem FK para `ai_agents`, e o
+      // id do run/token quebraria o INSERT (a mesma decisão da proposta de
+      // contato em `lib/mcp/tools/contacts.ts`).
+      agentId: ctx.actor.type === "ai_agent" ? (ctx.actor.agent_id ?? null) : null,
+    });
+
+    if (r.criadas.length > 0) {
+      // O audit leva IDs e CAMPOS, nunca os valores lidos do documento: o valor
+      // já vive na linha da proposta, que é dado — e log é metadado, não conteúdo.
+      await audit({
+        action: "lead.field_proposed",
+        actorUserId: ctx.actor.type === "user" ? (ctx.actor.id as string) : null,
+        organizationId: ctx.organizationId,
+        resourceType: "crm_lead",
+        resourceId: input.lead_id,
+        requestId: ctx.requestId,
+        metadata: {
+          proposal_ids: r.criadas.map((c) => c.id),
+          campos: r.criadas.map((c) => c.campo),
+          attachment_id: input.attachment_id ?? null,
+        },
+      });
+    }
+
+    return {
+      propostas_criadas: r.criadas,
+      recusadas: r.recusadas,
+      mensagem:
+        "As propostas entraram na FILA de revisão do negócio; ninguém gravou o card ainda. Diga ao cliente que os " +
+        "dados do documento foram separados para a equipe conferir — não diga que o cadastro foi atualizado.",
+    };
   },
 };

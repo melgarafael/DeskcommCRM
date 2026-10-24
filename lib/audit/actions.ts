@@ -140,6 +140,15 @@ export const AUDIT_ACTIONS = [
   "contact.field_proposed",
   "contact.field_confirmed",
   "contact.field_rejected",
+  // O MESMO par de fila, no CARD do negócio (issue #3316): a IA lê um documento
+  // (voucher, bilhete, apólice) e propõe os campos de `pipeline.settings.fields`;
+  // ninguém grava `crm_leads.custom_fields` sem confirmação humana. As três
+  // entram pelo mesmo motivo das de contato: proposta é intenção auditável mesmo
+  // quando nunca vira escrita, e "ninguém confirmou" é informação, não ausência
+  // dela.
+  "lead.field_proposed",
+  "lead.field_confirmed",
+  "lead.field_rejected",
   "lead.tags_changed",
   "message.sent",
   "message.received",
