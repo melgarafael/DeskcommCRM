@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { collectConfigSchema, type ContactFlowFieldType } from "@/lib/followup/graph-schema";
+import {
+  collectConfigSchema,
+  type ContactFlowFieldType,
+  type DestinoDaResposta,
+} from "@/lib/followup/graph-schema";
 import { TIPOS_DE_CAMPO, opcoes } from "@/lib/followup/vocabulario";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -21,9 +25,11 @@ import type { ConfigOf } from "./shared";
 
 /**
  * Pergunta de um fluxo de ATENDIMENTO (nó `collect`). O nó não envia nada: ele
- * declara o CAMPO que precisa ser preenchido. O valor entra em
- * `contact_flow_data` (chave = `key`) e, quando todos os obrigatórios estão
- * preenchidos, o fluxo conclui.
+ * declara o CAMPO que precisa ser preenchido. Por padrão o valor entra em
+ * `contacts.custom_fields` (chave = `key`) e, quando todos os obrigatórios estão
+ * preenchidos, o fluxo conclui; com o destino no NEGÓCIO (#3363) ele entra em
+ * `crm_leads.custom_fields` do card aberto — o que o card da tela e os campos
+ * obrigatórios da etapa do funil leem — e cada negócio responde por si.
  *
  * Mesma regra dos demais formulários: o campo só grava no nó vivo quando o
  * candidato passa no schema — senão erro inline e o canvas mantém o último
@@ -44,6 +50,8 @@ export function CollectForm({
   const [permiteCorrecao, setPermiteCorrecao] = useState(config.permite_correcao);
   const [question, setQuestion] = useState(config.question ?? "");
   const [options, setOptions] = useState((config.options ?? []).join(", "));
+  // Ausência da chave = `contato`, o default de todo grafo que já existe.
+  const [destino, setDestino] = useState<DestinoDaResposta>(config.destino ?? "contato");
   const [error, setError] = useState<string | null>(null);
 
   const commit = (next: {
@@ -54,6 +62,7 @@ export function CollectForm({
     permiteCorrecao: boolean;
     question: string;
     options: string;
+    destino: DestinoDaResposta;
   }) => {
     const listaDeOpcoes = next.options
       .split(",")
@@ -67,6 +76,9 @@ export function CollectForm({
       permite_correcao: next.permiteCorrecao,
       ...(next.question.trim() ? { question: next.question } : {}),
       ...(next.type === "select" ? { options: listaDeOpcoes } : {}),
+      // `contato` é a AUSÊNCIA da chave: gravar o default em cima do nó
+      // reescreveria o JSON de toda pergunta existente na primeira edição (#3363).
+      ...(next.destino === "negocio" ? { destino: next.destino } : {}),
     };
     const parsed = collectConfigSchema.safeParse(candidate);
     if (!parsed.success) {
@@ -77,7 +89,16 @@ export function CollectForm({
     onChange(parsed.data);
   };
 
-  const state = { label, key, type, required, permiteCorrecao, question, options };
+  const state = {
+    label,
+    key,
+    type,
+    required,
+    permiteCorrecao,
+    question,
+    options,
+    destino,
+  };
 
   return (
     <div className="space-y-3">
@@ -107,6 +128,33 @@ export function CollectForm({
         />
         <p className="text-xs text-text-muted">
           {t("Minúsculas, sem espaço (ex.: cidade, cnh, moto_interesse).")}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="collect-destino">{t("Onde a resposta é guardada")}</Label>
+        <Select
+          value={destino}
+          onValueChange={(v) => {
+            const next = v as DestinoDaResposta;
+            setDestino(next);
+            commit({ ...state, destino: next });
+          }}
+        >
+          <SelectTrigger id="collect-destino">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="contato">{t("Ficha do contato")}</SelectItem>
+            <SelectItem value="negocio">
+              {t("Card do negócio (cada negócio responde por si)")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-text-muted">
+          {t(
+            "No card, o valor é deste negócio: é o que a tela, os campos obrigatórios da etapa e as automações por data leem — e um negócio novo pergunta de novo.",
+          )}
         </p>
       </div>
 
