@@ -59,6 +59,10 @@
 }
 
 * { box-sizing: border-box; }
+/* o que o esqueleto do Artifact já dava, e o site precisa declarar */
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   background: var(--papel);

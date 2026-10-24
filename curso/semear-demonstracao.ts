@@ -4,7 +4,11 @@
  * de WhatsApp, agente de IA publicado, respostas rápidas e 12 conversas nos
  * estados que as lições fotografam. Grava curso/saida/contas.json.
  *
- *   set -a; . ./.env.e2e; set +a; pnpm exec tsx curso/semear-demonstracao.ts
+ *   set -a; . ./.env.e2e; set +a; pnpm exec tsx curso/semear-demonstracao.ts [modulo]
+ *
+ * Com [modulo], depois da base roda curso/semear/<modulo>.ts — os dados que só
+ * aquela tela precisa (agenda, tarefas, casos…). Ela recebe o Contexto abaixo,
+ * limpa SÓ as próprias linhas e recria: um módulo nunca apaga o dado de outro.
  *
  * Idempotente: apaga as conversas e os contatos da organização e recria tudo
  * com os mesmos ids — as lições mudam o estado (assumir, fechar, transferir),
@@ -13,7 +17,7 @@
  * Recusa qualquer Supabase que não seja local. Rode com o worker PARADO: com ele
  * de pé, as mensagens semeadas acordam a IA. Horários são relativos ao seed.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { type User, createClient } from "@supabase/supabase-js";
@@ -29,16 +33,16 @@ if (!CHAVE) throw new Error("defina SUPABASE_SERVICE_ROLE_KEY (o .env.e2e tem)")
 const db = createClient(URL_SUPABASE, CHAVE, { auth: { autoRefreshToken: false, persistSession: false } });
 const MIN = 60_000;
 const agora = Date.now();
-const ha = (minutos: number) => new Date(agora - minutos * MIN).toISOString();
+export const ha = (minutos: number) => new Date(agora - minutos * MIN).toISOString();
 /** "Ontem às HH:MM" no fuso de São Paulo (UTC-3, sem horário de verão). */
-function ontemAs(h: number, m: number) {
+export function ontemAs(h: number, m: number) {
   const sp = new Date(agora - 3 * 60 * MIN);
   return new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate() - 1, h + 3, m)).toISOString();
 }
-const conversaId = (n: number) => `be100000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const contatoId = (n: number) => `be200000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+export const conversaId = (n: number) => `be100000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+export const contatoId = (n: number) => `be200000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
-function exigir<T>(r: { data: T | null; error: { message: string } | null }, onde: string): T {
+export function exigir<T>(r: { data: T | null; error: { message: string } | null }, onde: string): T {
   if (r.error) throw new Error(`${onde}: ${r.error.message}`);
   if (r.data === null) throw new Error(`${onde}: sem dados`);
   return r.data;
@@ -54,7 +58,7 @@ async function todosOsUsuarios(): Promise<User[]> {
   return r.data.users;
 }
 /** Para chamadas que não devolvem linha (RPC void, delete): só o erro importa. */
-function semErro(r: { error: { message: string } | null }, onde: string) {
+export function semErro(r: { error: { message: string } | null }, onde: string) {
   if (r.error) throw new Error(`${onde}: ${r.error.message}`);
 }
 
@@ -191,7 +195,17 @@ const CONVERSAS: Conversa[] = [
   },
 ];
 
-async function main() {
+/** O que a base deixa pronto para a semente de um módulo. */
+export type Contexto = {
+  db: typeof db;
+  org: string;
+  pessoa: { helena: string; ana: string; carlos: string };
+  sessao: string;
+  agenteId: string;
+  funil: { id: string; etapas: string[] };
+};
+
+async function main(): Promise<Contexto> {
   // ---------- organização: a única da instalação fresca ----------
   const orgs = exigir(await db.from("organizations").select("id"), "organizations") as Array<{ id: string }>;
   if (orgs.length !== 1) throw new Error(`esperava 1 organização (instalação fresca), achei ${orgs.length}`);
@@ -356,9 +370,25 @@ async function main() {
     agent: { email: EMAIL.ana, senha: SENHA },
   }, null, 2));
   console.info(`demonstração semeada: ${CONVERSAS.length} conversas na org ${org}`);
+  return { db, org, pessoa, sessao, agenteId, funil: { id: funil.id, etapas: etapas.map((e) => e.id) } };
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+async function rodar() {
+  const ctx = await main();
+  const modulo = process.argv[2];
+  if (!modulo || modulo === "inbox") return;
+  if (!/^[a-z0-9-]+$/.test(modulo)) throw new Error(`módulo inválido: ${modulo}`);
+  const arquivo = path.join(path.dirname(new URL(import.meta.url).pathname), "semear", `${modulo}.ts`);
+  if (!existsSync(arquivo)) return;
+  const semente = (await import(arquivo)) as { semear: (c: Contexto) => Promise<void> };
+  await semente.semear(ctx);
+  console.info(`semente do módulo ${modulo} aplicada`);
+}
+
+// só roda quando chamado direto; as sementes de módulo importam os ajudantes daqui
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
+  rodar().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

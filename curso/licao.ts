@@ -47,6 +47,10 @@ export const Acao = z.discriminatedUnion("acao", [
   /** Com `alvo`, a tecla vai para aquele campo; sem, para onde o foco estiver (atalhos da página). */
   z.object({ acao: z.literal("press"), tecla: z.string(), alvo: Alvo.optional() }).strict(),
   z.object({ acao: z.literal("esperar"), ms: z.number().int().positive().max(10_000) }).strict(),
+  /** Escolhe uma opção de um <select> nativo, pelo texto visível da opção. */
+  z.object({ acao: z.literal("selecionar"), alvo: Alvo, opcao: z.string() }).strict(),
+  /** Traz o elemento para dentro da janela (listas e painéis com rolagem própria). */
+  z.object({ acao: z.literal("rolar"), alvo: Alvo }).strict(),
   /** Espera um elemento aparecer — para o resultado de um clique que demora (rede, diálogo). */
   z.object({ acao: z.literal("aguardar"), alvo: Alvo }).strict(),
 ]);

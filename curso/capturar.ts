@@ -72,6 +72,11 @@ async function executar(page: Page, a: Acao) {
   }
   if (a.acao === "esperar") return page.waitForTimeout(a.ms);
   if (a.acao === "aguardar") return localizar(page, a.alvo).waitFor({ state: "visible", timeout: 15_000 });
+  if (a.acao === "rolar") return localizar(page, a.alvo).scrollIntoViewIfNeeded({ timeout: 8_000 });
+  if (a.acao === "selecionar") {
+    await localizar(page, a.alvo).selectOption({ label: a.opcao }, { timeout: 8_000 });
+    return page.waitForTimeout(600);
+  }
   const l = localizar(page, a.alvo);
   if (a.acao === "click") await l.click({ timeout: 8_000 });
   else if (a.acao === "hover") await l.hover({ timeout: 8_000 });
@@ -124,13 +129,13 @@ async function entrar(page: Page, papel: string) {
 async function main() {
   const filtro = process.argv[2];
   const soLicao = process.argv[3]; // depuração: uma lição só
-  const arquivos = readdirSync(path.join(RAIZ, "licoes")).filter((f) => f.endsWith(".json"));
-  const modulos = arquivos
-    .map((f) => Modulo.parse(JSON.parse(readFileSync(path.join(RAIZ, "licoes", f), "utf8"))))
-    .filter((m) => !filtro || m.id === filtro);
+  // filtra ANTES de ler: a lição quebrada de um módulo não derruba a captura de outro
+  const arquivos = readdirSync(path.join(RAIZ, "licoes")).filter((f) => f.endsWith(".json") && (!filtro || f === `${filtro}.json`));
+  const modulos = arquivos.map((f) => Modulo.parse(JSON.parse(readFileSync(path.join(RAIZ, "licoes", f), "utf8"))));
   mkdirSync(FOTOS, { recursive: true });
 
-  const browser = await chromium.launch();
+  // locale do contexto muda a página, não os controles nativos: sem --lang, data e arquivo saem em inglês
+  const browser = await chromium.launch({ args: ["--lang=pt-BR"], env: { ...process.env, LANG: "pt_BR.UTF-8", LANGUAGE: "pt_BR" } });
   const arquivoCapturas = path.join(SAIDA, "capturas.json");
   const capturas: Record<string, Captura> = existsSync(arquivoCapturas) ? JSON.parse(readFileSync(arquivoCapturas, "utf8")).capturas : {};
   const falhas: string[] = [];

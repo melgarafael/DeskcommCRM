@@ -4,6 +4,10 @@
  *
  *   pnpm exec tsx curso/montar.ts
  *
+ * Por padrão sai o corpo da página (o Artifact do claude.ai põe o esqueleto).
+ * Para servir de um site — deskcomm.com.br/curso —, CURSO_BASE="/curso/" prefixa
+ * o caminho das fotos e o arquivo sai como documento HTML completo.
+ *
  * O menu lateral do curso é projetado de lib/navigation/catalogo.ts — o mesmo
  * array que desenha o sidebar do app —, então o aluno navega pelos mesmos
  * grupos e nomes que vai encontrar no sistema, e tela nova do produto aparece
@@ -20,9 +24,13 @@ const RAIZ = path.dirname(new URL(import.meta.url).pathname);
 const SAIDA = path.join(RAIZ, "saida");
 const ler = (f: string) => readFileSync(path.join(RAIZ, f), "utf8");
 
+// `montar.ts inbox radar` monta só esses; sem argumento, todos
+const soEstes = process.argv.slice(2);
 const modulos = readdirSync(path.join(RAIZ, "licoes"))
-  .filter((f) => f.endsWith(".json"))
-  .map((f) => Modulo.parse(JSON.parse(ler(path.join("licoes", f)))));
+  .filter((f) => f.endsWith(".json") && (soEstes.length === 0 || soEstes.includes(f.replace(/\.json$/, ""))))
+  .map((f) => Modulo.parse(JSON.parse(ler(path.join("licoes", f)))))
+  // ordem do menu do produto, para o curso seguir a ordem da tela
+  .sort((a, b) => NAV_CATALOG.findIndex((d) => d.href === a.tela) - NAV_CATALOG.findIndex((d) => d.href === b.tela));
 
 const telas = new Set<string>(NAV_CATALOG.map((d) => d.href));
 for (const m of modulos) {
@@ -56,6 +64,11 @@ const versao = (() => {
   }
 })();
 
+// com base, a foto é absoluta: em /curso (sem barra final) um caminho relativo cairia na raiz do site
+const BASE = process.env.CURSO_BASE ?? "";
+if (BASE && !/^\/.*\/$/.test(BASE)) throw new Error(`CURSO_BASE precisa começar e terminar com "/" (veio "${BASE}")`);
+for (const c of Object.values(capturas) as Array<{ foto: string }>) c.foto = BASE + c.foto;
+
 const dados = {
   versao,
   gerado: new Date().toISOString().slice(0, 10),
@@ -72,5 +85,11 @@ const html = ler("site/pagina.html")
   .replace("/*ESTILO*/", () => ler("site/estilo.css"))
   .replace("/*DADOS*/", () => json)
   .replace("/*APP*/", () => ler("site/app.js"));
-writeFileSync(path.join(SAIDA, "index.html"), html);
+const DOCUMENTO = `<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Curso em imagens do DeskComm: cada tela do sistema com fotos reais, setas e um simulador para treinar.">
+`;
+writeFileSync(path.join(SAIDA, "index.html"), BASE ? DOCUMENTO + html : html);
 console.info(`curso/saida/index.html — ${modulos.length} módulo(s), ${Object.keys(capturas).length} fotos, versão ${versao}`);

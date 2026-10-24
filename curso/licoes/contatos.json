@@ -1,0 +1,1479 @@
+{
+ "id": "contatos",
+ "titulo": "Contatos",
+ "tela": "/app/contacts",
+ "resumo": "A lista de todos os clientes da empresa: achar, cadastrar, corrigir, juntar repetidos e trazer contatos de planilha ou do celular.",
+ "licoes": [
+  {
+   "id": "conhecendo-a-lista",
+   "titulo": "Conhecendo a lista de contatos",
+   "objetivo": "Reconhecer as partes da tela de Contatos e ler o que cada linha da lista conta sobre o cliente.",
+   "papel": "admin",
+   "busca": [
+    "contatos",
+    "lista de clientes",
+    "cadastro de clientes",
+    "pacientes",
+    "telefone do cliente",
+    "status do contato",
+    "bloqueado",
+    "última atividade"
+   ],
+   "passos": [
+    {
+     "id": "p1",
+     "titulo": "As três partes da tela",
+     "texto": "Em Contatos ficam todas as pessoas que a sua empresa atende, mesmo as que ainda não mandaram mensagem. No alto ficam os botões para cadastrar, juntar repetidos, trazer e levar contatos. Logo abaixo fica a barra de busca e filtros. Embaixo fica a lista, com um cliente por linha.",
+     "dica": "Quem escreve para o número de WhatsApp conectado em \"Conexões\" entra aqui sozinho. Você só cadastra à mão quem ainda não falou com a empresa.",
+     "rota": "/app/contacts",
+     "destaques": [
+      {
+       "alvo": {
+        "css": "header:has(h1) > div:last-child"
+       },
+       "rotulo": "Botões da tela",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "css": "div.rounded-lg.p-2:has(input[type='search'])"
+       },
+       "rotulo": "Busca e filtros",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "role": "table"
+       },
+       "rotulo": "Lista de contatos",
+       "tipo": "caixa"
+      }
+     ],
+     "antes": []
+    },
+    {
+     "id": "p2",
+     "titulo": "O que cada coluna mostra",
+     "texto": "Cada linha mostra o nome, o e-mail, o telefone e as etiquetas do cliente (aqui chamadas de \"Tags\"). \"Última atividade\" diz quando houve o último movimento com ele, como uma mensagem: hoje e ontem aparecem com a hora, os dias mais antigos com a data. A coluna \"Status\" usa selos: \"Ativo\" é o cliente normal e \"Bloqueado\" é quem pediu para não receber mais mensagens.",
+     "dica": "Outros selos que podem aparecer: \"Anonimizado\" (dados apagados a pedido do cliente, pela LGPD), \"Cliente\" (quando a empresa usa a regra de clientes pela agenda) e \"Pessoal\" (contato da vida pessoal, que só aparece com o filtro \"Pessoais\" ligado).",
+     "destaques": [
+      {
+       "alvo": {
+        "css": "table thead"
+       },
+       "rotulo": "Colunas",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "css": "tr:has(a[href='/app/contacts/be200000-0000-4000-8000-000000000005']) td:nth-child(5)"
+       },
+       "rotulo": "Etiquetas do cliente",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "texto": "Ativo",
+        "exato": true,
+        "dentro": {
+         "css": "tr:has(a[href='/app/contacts/be200000-0000-4000-8000-000000000001'])"
+        }
+       },
+       "rotulo": "Cliente normal",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "texto": "Bloqueado",
+        "exato": true
+       },
+       "rotulo": "Pediu para não receber mensagens",
+       "tipo": "caixa"
+      }
+     ],
+     "antes": []
+    },
+    {
+     "id": "p3",
+     "titulo": "Os atalhos no fim da linha",
+     "texto": "No fim de cada linha ficam até três atalhos. O balão abre a conversa desse cliente na Inbox. Quando o cliente tem telefone mas nunca conversou, o balão começa uma conversa nova na Inbox, para você escrever primeiro. Isso precisa de um número de WhatsApp conectado em \"Conexões\". Sem telefone e sem conversa, o balão não aparece. O lápis edita o cadastro sem sair da lista, e a lixeira exclui o contato. Clicar no nome abre a ficha completa do cliente.",
+     "destaques": [
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Iniciar conversa com Gabriela Duarte no Inbox",
+        "exato": true
+       },
+       "rotulo": "Começar uma conversa",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "css": "tr:has(a[href='/app/contacts/be200000-0000-4000-8000-000000000001']) td:last-child"
+       },
+       "rotulo": "Conversa, editar e excluir",
+       "tipo": "caixa"
+      }
+     ],
+     "antes": []
+    },
+    {
+     "id": "p4",
+     "titulo": "Quantos contatos há",
+     "texto": "No pé da lista aparece quantos contatos estão na tela. A lista mostra 25 de cada vez. Quando há mais, aparece \"carregados — há mais resultados\" e o botão \"Carregar mais\", que traz os próximos.",
+     "dica": "Você pode mostrar 25, 50 ou 100 de cada vez no botão \"25 por página\", na barra de filtros.",
+     "destaques": [
+      {
+       "alvo": {
+        "texto": "^\\d+ contatos$",
+        "regex": true
+       },
+       "rotulo": "Total na tela",
+       "tipo": "caixa"
+      }
+     ],
+     "antes": []
+    }
+   ]
+  },
+  {
+   "id": "achando-um-contato",
+   "titulo": "Achando um contato",
+   "objetivo": "Encontrar um cliente pela busca e pelos filtros de etiqueta, origem e pessoais, e colocar a lista na ordem que você quiser.",
+   "papel": "admin",
+   "busca": [
+    "buscar contato",
+    "procurar cliente",
+    "pesquisar telefone",
+    "filtro",
+    "etiqueta",
+    "tag",
+    "origem do contato",
+    "pessoais",
+    "ordenar por nome",
+    "limpar filtros"
+   ],
+   "passos": [
+    {
+     "id": "p1",
+     "titulo": "Buscar pelo nome",
+     "texto": "Digite parte do nome, do e-mail ou do telefone na busca. Aqui digitamos \"Fern\" e a lista já mostra a Fernanda Oliveira. A lista filtra logo depois que você para de digitar.",
+     "dica": "Digite pelo menos 2 letras. Não precisa acertar o acento: \"Joao\" também acha \"João\".",
+     "rota": "/app/contacts",
+     "antes": [
+      {
+       "acao": "fill",
+       "alvo": {
+        "placeholder": "Buscar por nome, email ou telefone…"
+       },
+       "valor": "Fern"
+      },
+      {
+       "acao": "esperar",
+       "ms": 1000
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "placeholder": "Buscar por nome, email ou telefone…"
+       },
+       "rotulo": "Nome, e-mail ou telefone",
+       "tipo": "seta"
+      },
+      {
+       "alvo": {
+        "css": "tr:has(a[href='/app/contacts/be200000-0000-4000-8000-000000000005'])"
+       },
+       "rotulo": "Contato encontrado",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Limpar filtros",
+      "exato": true
+     }
+    },
+    {
+     "id": "p2",
+     "titulo": "Filtrar por etiqueta",
+     "texto": "Clique em \"Limpar filtros\" para apagar a busca. Depois clique no botão \"Tag: todas\" e marque uma etiqueta, como \"convenio\", para ver só os clientes marcados com ela. O menu fica aberto enquanto você marca.",
+     "dica": "As etiquetas do menu são as dos contatos que já estão na lista.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Limpar filtros",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 800
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Tag: todas",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "menuitemcheckbox",
+        "nome": "convenio",
+        "exato": true
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "menuitemcheckbox",
+        "nome": "convenio",
+        "exato": true
+       },
+       "rotulo": "Marque a etiqueta",
+       "tipo": "seta"
+      }
+     ],
+     "clicar": {
+      "role": "menuitemcheckbox",
+      "nome": "convenio",
+      "exato": true
+     }
+    },
+    {
+     "id": "p3",
+     "titulo": "Duas etiquetas: todas ou qualquer uma",
+     "texto": "Marcamos \"convenio\" e \"retorno\". Com duas ou mais etiquetas marcadas, aparecem duas opções: \"Todas (E)\" mostra só quem tem todas as etiquetas, e \"Qualquer uma (OU)\" mostra quem tem pelo menos uma.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "menuitemcheckbox",
+        "nome": "convenio",
+        "exato": true
+       }
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "menuitemcheckbox",
+        "nome": "retorno",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 800
+      }
+     ],
+     "dica": "Depois que você marca uma etiqueta, o menu passa a mostrar só as etiquetas dos contatos que sobraram na lista.",
+     "destaques": [
+      {
+       "alvo": {
+        "role": "group",
+        "dentro": {
+         "role": "menu"
+        }
+       },
+       "rotulo": "Todas ou qualquer uma",
+       "tipo": "caixa"
+      }
+     ]
+    },
+    {
+     "id": "p4",
+     "titulo": "O resultado do filtro",
+     "texto": "Fechamos o menu. O botão agora diz \"Tag: convenio +1\": a primeira etiqueta escolhida e quantas mais. Com \"Todas (E)\", só a Fernanda Oliveira tem as duas etiquetas.",
+     "antes": [
+      {
+       "acao": "press",
+       "tecla": "Escape"
+      },
+      {
+       "acao": "esperar",
+       "ms": 1000
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "^Tag: convenio",
+        "regex": true
+       },
+       "rotulo": "Etiquetas escolhidas",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "css": "tr:has(a[href='/app/contacts/be200000-0000-4000-8000-000000000005'])"
+       },
+       "rotulo": "Tem as duas etiquetas",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Limpar filtros",
+      "exato": true
+     }
+    },
+    {
+     "id": "p5",
+     "titulo": "Filtrar pela origem",
+     "texto": "O botão \"Todas as origens\" mostra de onde o contato veio: cadastro à mão (\"Manual\"), WhatsApp, site, planilha (\"Importado (CSV)\"), agenda do celular ou anúncio. Aqui escolhemos \"Importado (CSV)\" e a lista mostra só quem entrou por planilha.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Limpar filtros",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 800
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Todas as origens",
+        "exato": true
+       }
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "menuitem",
+        "nome": "Importado (CSV)",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 1000
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Importado (CSV)",
+        "exato": true
+       },
+       "rotulo": "Origem escolhida",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "css": "table tbody"
+       },
+       "rotulo": "Só quem veio de planilha",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "testid": "filtro-pessoais"
+     }
+    },
+    {
+     "id": "p6",
+     "titulo": "Os contatos pessoais",
+     "texto": "Contatos marcados como pessoais, como um parente, ficam fora da lista normal. Ligue o botão \"Pessoais\" para ver só eles. Ligado, ele fica colorido.",
+     "dica": "Para tirar a marca de pessoal, abra a ficha do contato e clique em \"Desmarcar pessoal\". Só gerentes e administradores veem esse botão.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Limpar filtros",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 800
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "filtro-pessoais"
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 1000
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "testid": "filtro-pessoais"
+       },
+       "rotulo": "Ligado: só pessoais",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "texto": "Pessoal",
+        "exato": true,
+        "dentro": {
+         "css": "tr:has(a[href='/app/contacts/be2c0000-0000-4000-8000-000000000004'])"
+        }
+       },
+       "rotulo": "Contato pessoal",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "testid": "filtro-pessoais"
+     }
+    },
+    {
+     "id": "p7",
+     "titulo": "Quem está parado há mais tempo",
+     "texto": "A lista começa pelos contatos com movimento mais recente. Os títulos de coluna com setinhas mudam a ordem: clicando de novo no mesmo título, a ordem inverte. Aqui desligamos \"Pessoais\" e clicamos em \"Última atividade\": agora quem está há mais tempo sem movimento aparece primeiro, bom para lembrar de chamar de volta.",
+     "dica": "Contatos sem nenhuma atividade ficam sempre no fim, em qualquer ordem.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "filtro-pessoais"
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 800
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Última atividade",
+        "exato": true,
+        "dentro": {
+         "css": "table thead"
+        }
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 1000
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Última atividade",
+        "exato": true,
+        "dentro": {
+         "css": "table thead"
+        }
+       },
+       "rotulo": "Ordem invertida",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "css": "table tbody tr:first-child"
+       },
+       "rotulo": "Mais tempo parado",
+       "tipo": "caixa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cadastrando-um-contato",
+   "titulo": "Cadastrando um contato",
+   "objetivo": "Cadastrar à mão um cliente que ainda não falou com a empresa.",
+   "papel": "admin",
+   "busca": [
+    "novo contato",
+    "cadastrar cliente",
+    "adicionar paciente",
+    "criar contato",
+    "incluir telefone",
+    "cadastro manual"
+   ],
+   "passos": [
+    {
+     "id": "p1",
+     "titulo": "O botão Novo contato",
+     "texto": "Para cadastrar alguém que ainda não escreveu para a empresa, clique em \"Novo contato\", no canto de cima.",
+     "rota": "/app/contacts",
+     "destaques": [
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Novo contato",
+        "exato": true
+       },
+       "rotulo": "Cadastrar um cliente",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Novo contato",
+      "exato": true
+     },
+     "antes": []
+    },
+    {
+     "id": "p2",
+     "titulo": "Preencher o cadastro",
+     "texto": "Preencha o nome e pelo menos o e-mail ou o telefone. O telefone vai com DDD; não precisa digitar o +55. Em \"Tags\", separe as etiquetas por vírgula. O CPF é opcional.",
+     "dica": "Se o telefone, o e-mail ou o CPF já pertencer a outro contato, o cadastro é recusado com um aviso.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Novo contato",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "dialog"
+       }
+      },
+      {
+       "acao": "fill",
+       "alvo": {
+        "rotulo": "Nome",
+        "exato": true,
+        "dentro": {
+         "role": "dialog"
+        }
+       },
+       "valor": "Carolina Mendes"
+      },
+      {
+       "acao": "fill",
+       "alvo": {
+        "rotulo": "Email",
+        "exato": true,
+        "dentro": {
+         "role": "dialog"
+        }
+       },
+       "valor": "carolina.mendes@email.com"
+      },
+      {
+       "acao": "fill",
+       "alvo": {
+        "rotulo": "Telefone (DDD + número)",
+        "exato": true
+       },
+       "valor": "(11) 98765-0030"
+      },
+      {
+       "acao": "fill",
+       "alvo": {
+        "rotulo": "Tags (separadas por vírgula)",
+        "exato": true
+       },
+       "valor": "primeira-consulta, nutricao"
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "dialog"
+       },
+       "rotulo": "Novo contato",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "texto": "Preencha pelo menos um identificador (email ou telefone).",
+        "exato": true
+       },
+       "rotulo": "E-mail ou telefone é obrigatório",
+       "tipo": "seta"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Criar contato",
+      "exato": true
+     }
+    },
+    {
+     "id": "p3",
+     "titulo": "O contato na lista",
+     "texto": "Clicamos em \"Criar contato\". A janela fecha e o contato entra na lista, com as etiquetas que você digitou. Ele fica registrado com a origem \"Manual\", e dá para achá-lo no filtro de origem. Aqui buscamos \"Carolina\" para encontrá-la.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Criar contato",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "link",
+        "nome": "Carolina Mendes",
+        "exato": true
+       }
+      },
+      {
+       "acao": "fill",
+       "alvo": {
+        "placeholder": "Buscar por nome, email ou telefone…"
+       },
+       "valor": "Carolina"
+      },
+      {
+       "acao": "esperar",
+       "ms": 1000
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "css": "tr:has(a:text-is('Carolina Mendes'))"
+       },
+       "rotulo": "Contato cadastrado",
+       "tipo": "caixa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "editar-e-excluir",
+   "titulo": "Editando e excluindo pela lista",
+   "objetivo": "Corrigir o cadastro de um cliente e saber o que acontece ao excluir, sem sair da lista.",
+   "papel": "admin",
+   "busca": [
+    "editar contato",
+    "corrigir telefone",
+    "mudar nome do cliente",
+    "data de nascimento",
+    "adicionar etiqueta",
+    "excluir contato",
+    "apagar cliente"
+   ],
+   "passos": [
+    {
+     "id": "p1",
+     "titulo": "O lápis da linha",
+     "texto": "O lápis no fim da linha abre o cadastro para editar, sem sair da lista. Vamos completar o cadastro da Gabriela Duarte.",
+     "rota": "/app/contacts",
+     "destaques": [
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Editar contato Gabriela Duarte",
+        "exato": true
+       },
+       "rotulo": "Editar este contato",
+       "tipo": "seta"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Editar contato Gabriela Duarte",
+      "exato": true
+     },
+     "antes": []
+    },
+    {
+     "id": "p2",
+     "titulo": "Mudar os dados",
+     "texto": "Na janela \"Editar contato\" você muda nome, e-mail, telefone e data de nascimento. Para pôr uma etiqueta, digite no campo de baixo e aperte Enter. Se ela já existir, aparece como sugestão para clicar. Para tirar uma etiqueta, clique no X dela. Aqui pusemos a etiqueta \"nutricao\". No fim, clique em \"Salvar\".",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Editar contato Gabriela Duarte",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "dialog"
+       }
+      },
+      {
+       "acao": "fill",
+       "alvo": {
+        "role": "textbox",
+        "nome": "Adicionar etiqueta",
+        "exato": true
+       },
+       "valor": "nutricao"
+      },
+      {
+       "acao": "press",
+       "tecla": "Enter",
+       "alvo": {
+        "role": "textbox",
+        "nome": "Adicionar etiqueta",
+        "exato": true
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "css": "div.flex.flex-wrap.gap-1:has(button[aria-label='Remover etiqueta nutricao'])"
+       },
+       "rotulo": "Etiquetas (o X tira)",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Salvar",
+      "exato": true
+     }
+    },
+    {
+     "id": "p3",
+     "titulo": "O cadastro atualizado",
+     "texto": "Clicamos em \"Salvar\". A janela fecha e a linha já mostra a etiqueta nova.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Salvar",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 1500
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "css": "tr:has(a[href='/app/contacts/be2c0000-0000-4000-8000-000000000001']) td:nth-child(5)"
+       },
+       "rotulo": "Etiquetas atualizadas",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Excluir contato Gabriela Duarte",
+      "exato": true
+     }
+    },
+    {
+     "id": "p4",
+     "titulo": "Excluir pede confirmação",
+     "texto": "A lixeira pergunta antes de apagar. Excluir apaga o contato, as conversas e as mensagens dele, e não tem como desfazer. Os negócios dele no funil continuam, mas ficam sem cliente. Se o cliente tem ou já teve compromisso na Agenda, mesmo cancelado, a janela avisa e a exclusão não acontece. Aqui clicamos em \"Cancelar\".",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Excluir contato Gabriela Duarte",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "alertdialog"
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "alertdialog"
+       },
+       "rotulo": "Confirmação",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Excluir",
+        "exato": true,
+        "dentro": {
+         "role": "alertdialog"
+        }
+       },
+       "rotulo": "Apaga de vez",
+       "tipo": "seta"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Cancelar",
+      "exato": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "a-ficha-do-contato",
+   "titulo": "A ficha do contato",
+   "objetivo": "Abrir a ficha de um cliente, achar a conversa e os dados dele, escolher o vendedor dono e ver o histórico.",
+   "papel": "admin",
+   "busca": [
+    "ficha do cliente",
+    "detalhes do contato",
+    "histórico do cliente",
+    "timeline",
+    "carteira",
+    "vendedor dono",
+    "marcar como pessoal",
+    "sempre humano",
+    "LGPD",
+    "anonimizar"
+   ],
+   "passos": [
+    {
+     "id": "p1",
+     "titulo": "Abrir a ficha",
+     "texto": "Clique no nome de um cliente na lista para abrir a ficha completa dele. Vamos abrir a da Fernanda Oliveira.",
+     "rota": "/app/contacts",
+     "destaques": [
+      {
+       "alvo": {
+        "role": "link",
+        "nome": "Fernanda Oliveira",
+        "exato": true
+       },
+       "rotulo": "Abre a ficha",
+       "tipo": "seta"
+      }
+     ],
+     "clicar": {
+      "role": "link",
+      "nome": "Fernanda Oliveira",
+      "exato": true
+     },
+     "antes": []
+    },
+    {
+     "id": "p2",
+     "titulo": "O topo da ficha",
+     "texto": "No topo ficam o nome, o e-mail, o telefone e as etiquetas. \"Marcar como pessoal\" tira o contato do atendimento: as conversas fecham e param a IA, as mensagens automáticas de retomada, as campanhas e os envios. \"Marcar como sempre humano\" faz a IA parar de responder este cliente até alguém clicar em \"Remover marca de humano\". Os dois pedem confirmação antes. \"Editar\" abre a janela de edição, com os campos personalizados a mais.",
+     "dica": "Só gerentes e administradores veem os dois botões de marcar.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "link",
+        "nome": "Fernanda Oliveira",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "heading",
+        "nome": "Fernanda Oliveira",
+        "exato": true
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "heading",
+        "nome": "Fernanda Oliveira",
+        "exato": true
+       },
+       "rotulo": "Nome do cliente",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "testid": "marcar-pessoal"
+       },
+       "rotulo": "Tirar do atendimento",
+       "tipo": "seta"
+      },
+      {
+       "alvo": {
+        "testid": "marcar-sempre-humano"
+       },
+       "rotulo": "IA para de responder",
+       "tipo": "seta"
+      },
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Editar",
+        "exato": true
+       },
+       "rotulo": "Editar o cadastro",
+       "tipo": "seta"
+      }
+     ]
+    },
+    {
+     "id": "p3",
+     "titulo": "A conversa e os dados",
+     "texto": "Se o cliente já conversou com a empresa, logo abaixo aparece a última mensagem. Clique ali para abrir a conversa na Inbox. A aba \"Visão geral\" mostra os dados do cadastro: nome, nome no WhatsApp, e-mail, telefone, data de nascimento, origem, última atividade, data do cadastro e etiquetas.",
+     "destaques": [
+      {
+       "alvo": {
+        "role": "link",
+        "nome": "^Abrir conversa no Inbox",
+        "regex": true
+       },
+       "rotulo": "Abrir a conversa",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "css": "dl"
+       },
+       "rotulo": "Dados do cadastro",
+       "tipo": "caixa"
+      }
+     ],
+     "antes": []
+    },
+    {
+     "id": "p4",
+     "titulo": "O vendedor dono",
+     "texto": "O quadro \"Carteira\" diz qual pessoa da equipe é dona deste cliente. Com um dono, os negócios novos do cliente já nascem no nome dessa pessoa. Se o cliente escrever numa conversa que está com outra pessoa, o dono recebe uma tarefa avisando. Escolha o nome na lista e clique em \"Salvar carteira\". Sem dono, o atendimento segue como sempre.",
+     "dica": "Só gerentes e administradores escolhem o dono.",
+     "antes": [
+      {
+       "acao": "rolar",
+       "alvo": {
+        "testid": "carteira-do-contato"
+       }
+      },
+      {
+       "acao": "selecionar",
+       "alvo": {
+        "testid": "carteira-seletor"
+       },
+       "opcao": "Ana Ribeiro"
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "testid": "carteira-do-contato"
+       },
+       "rotulo": "Carteira do cliente",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "testid": "carteira-salvar"
+       },
+       "rotulo": "Gravar o dono",
+       "tipo": "seta"
+      }
+     ]
+    },
+    {
+     "id": "p5",
+     "titulo": "O histórico do cliente",
+     "texto": "A aba \"Timeline\" conta o que aconteceu com este cliente, do mais novo para o mais antigo, separado por dia. Entram aqui os movimentos dos negócios dele, como a entrada no funil (\"Entrou no funil\") e a troca de etapa (\"Mudou de estágio\"), e as anotações da equipe. Ao lado de cada linha aparece quem fez.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "tab",
+        "nome": "Timeline",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 1200
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "tablist"
+       },
+       "rotulo": "Aba \"Timeline\" aberta",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "role": "tabpanel"
+       },
+       "rotulo": "O que aconteceu",
+       "tipo": "caixa"
+      }
+     ]
+    },
+    {
+     "id": "p6",
+     "titulo": "Apagar os dados a pedido do cliente",
+     "texto": "A aba \"LGPD\" serve para quando o cliente pede que a empresa apague os dados dele. \"Anonimizar contato\" troca o nome por \"Cliente Anonimizado\" seguido de um número e apaga e-mail, telefone e documento. Antes, a janela pede o motivo e que você digite ANONIMIZAR. Não tem como desfazer: use só com o pedido formal do cliente ou ordem judicial.",
+     "dica": "Só administradores veem a aba LGPD.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "tab",
+        "nome": "LGPD",
+        "exato": true
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 800
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "tablist"
+       },
+       "rotulo": "Aba \"LGPD\" aberta",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Anonimizar contato",
+        "exato": true
+       },
+       "rotulo": "Não tem volta",
+       "tipo": "seta"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "varios-de-uma-vez",
+   "titulo": "Mexendo em vários contatos de uma vez",
+   "objetivo": "Marcar vários contatos e pôr uma etiqueta em todos com um clique só.",
+   "papel": "admin",
+   "busca": [
+    "vários contatos",
+    "em massa",
+    "selecionar todos",
+    "etiqueta em lote",
+    "mudar responsável",
+    "marcar contatos",
+    "ação em lote"
+   ],
+   "passos": [
+    {
+     "id": "p1",
+     "titulo": "Marcar os contatos",
+     "texto": "A caixinha no começo de cada linha marca o contato. Marcamos a Mariana Souza e a Gabriela Duarte. Assim que um contato é marcado, aparece uma barra acima da lista dizendo quantos estão marcados.",
+     "dica": "A caixinha do título da lista marca de uma vez todos os contatos que estão na tela. Para desmarcar todos, use o X no fim da barra.",
+     "rota": "/app/contacts",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "selecionar-contato-be200000-0000-4000-8000-000000000001"
+       }
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "selecionar-contato-be2c0000-0000-4000-8000-000000000001"
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "testid": "barra-de-contatos-em-lote"
+       },
+       "rotulo": "Contatos marcados",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "testid": "selecionar-contato-be200000-0000-4000-8000-000000000001"
+       },
+       "rotulo": "Marcar",
+       "tipo": "seta"
+      },
+      {
+       "alvo": {
+        "testid": "selecionar-todos-contatos"
+       },
+       "rotulo": "Marcar todos da tela",
+       "tipo": "seta"
+      }
+     ],
+     "clicar": {
+      "testid": "lote-mais-acoes"
+     }
+    },
+    {
+     "id": "p2",
+     "titulo": "O que dá para fazer",
+     "texto": "Clique em \"Mais ações\". Dá para adicionar ou remover uma etiqueta, mudar o vendedor dono de todos (\"Mudar responsável\") e preencher um campo personalizado. O X no fim da barra desmarca todos.",
+     "dica": "\"Mudar responsável\" só aparece para gerentes e administradores.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "lote-mais-acoes"
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "testid": "lote-adicionar-etiqueta"
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "menu"
+       },
+       "rotulo": "Ações para os marcados",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "testid": "lote-limpar"
+       },
+       "rotulo": "Desmarca todos",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "testid": "lote-adicionar-etiqueta"
+     }
+    },
+    {
+     "id": "p3",
+     "titulo": "Escolher a etiqueta",
+     "texto": "Em \"Adicionar etiqueta\", digite a etiqueta e clique em \"Adicionar\". Aqui digitamos \"nutricao\". Ela entra em todos os contatos marcados, e a etiqueta que eles já tinham continua.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "lote-adicionar-etiqueta"
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "testid": "lote-tag-input"
+       }
+      },
+      {
+       "acao": "fill",
+       "alvo": {
+        "testid": "lote-tag-input"
+       },
+       "valor": "nutricao"
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "testid": "lote-tag-input"
+       },
+       "rotulo": "Digite a etiqueta",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "testid": "lote-tag-confirmar"
+     }
+    },
+    {
+     "id": "p4",
+     "titulo": "Pronto para todos",
+     "texto": "Clicamos em \"Adicionar\". A etiqueta \"nutricao\" já aparece nas duas linhas, e a marcação some sozinha.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "lote-tag-confirmar"
+       }
+      },
+      {
+       "acao": "esperar",
+       "ms": 2000
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "texto": "nutricao",
+        "exato": true,
+        "dentro": {
+         "css": "tr:has(a[href='/app/contacts/be2c0000-0000-4000-8000-000000000001'])"
+        }
+       },
+       "rotulo": "Gabriela: etiqueta nova",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "texto": "nutricao",
+        "exato": true,
+        "dentro": {
+         "css": "tr:has(a[href='/app/contacts/be200000-0000-4000-8000-000000000001'])"
+        }
+       },
+       "rotulo": "Mariana: etiqueta nova",
+       "tipo": "caixa"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "trazer-e-levar",
+   "titulo": "Repetidos, planilhas e agenda do celular",
+   "objetivo": "Juntar contatos repetidos, trazer clientes de uma planilha ou da agenda do celular e baixar a lista.",
+   "papel": "admin",
+   "busca": [
+    "contato duplicado",
+    "juntar contatos",
+    "importar planilha",
+    "importar csv",
+    "excel",
+    "agenda do celular",
+    "sincronizar contatos",
+    "exportar contatos",
+    "baixar lista"
+   ],
+   "passos": [
+    {
+     "id": "p1",
+     "titulo": "Contatos repetidos",
+     "texto": "O botão \"Duplicados\" procura a mesma pessoa cadastrada duas vezes, pelo mesmo telefone ou e-mail. Aqui a Juliana Castro foi cadastrada de novo por uma planilha, com o mesmo celular. Escolha qual cadastro fica: o outro é absorvido por ele. O sistema já deixa marcado o cadastro com movimento mais recente.",
+     "rota": "/app/contacts",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Duplicados",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "texto": "Este fica",
+        "exato": true
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "texto": "^Agrupados por",
+        "regex": true
+       },
+       "rotulo": "Por que parecem a mesma pessoa",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "texto": "Este fica",
+        "exato": true
+       },
+       "rotulo": "Cadastro que fica",
+       "tipo": "seta"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Juntar",
+      "exato": true
+     }
+    },
+    {
+     "id": "p2",
+     "titulo": "Juntar não tem volta",
+     "texto": "\"Juntar\" pede confirmação e diz quem fica e quem é absorvido. Conversas, mensagens, negócios e histórico passam para o cadastro que fica, e o outro sai da lista. Não tem como desfazer. Aqui clicamos em \"Cancelar\".",
+     "dica": "Só gerentes e administradores conseguem juntar contatos.",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Juntar",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "alertdialog"
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "alertdialog"
+       },
+       "rotulo": "Confira quem fica",
+       "tipo": "caixa"
+      }
+     ],
+     "clicar": {
+      "role": "button",
+      "nome": "Cancelar",
+      "exato": true
+     }
+    },
+    {
+     "id": "p3",
+     "titulo": "Trazer de uma planilha",
+     "texto": "\"Importar CSV\" traz contatos de uma planilha. O arquivo precisa ter uma linha de títulos com colunas como nome, telefone, email, cpf, nascimento e tags. No Excel, use \"Salvar como\" e escolha \"CSV UTF-8\". Cabem até 500 linhas por arquivo. No fim, a janela mostra quantos entraram, quantos já existiam e quais linhas deram problema.",
+     "rota": "/app/contacts",
+     "antes": [
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Importar CSV",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "dialog"
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "texto": "^Envie um arquivo",
+        "regex": true,
+        "dentro": {
+         "role": "dialog"
+        }
+       },
+       "rotulo": "Colunas aceitas e limite",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "rotulo": "Arquivo CSV",
+        "exato": true
+       },
+       "rotulo": "Escolha o arquivo",
+       "tipo": "seta"
+      }
+     ]
+    },
+    {
+     "id": "p4",
+     "titulo": "Trazer da agenda do celular",
+     "texto": "\"Sincronizar agenda\" traz os contatos salvos na agenda do celular conectado ao número da empresa, só os que têm WhatsApp. Quem já está cadastrado não é repetido. No fim, a janela mostra quantos entraram e quantos foram deixados de fora. Atenção ao aviso com o triângulo: vêm também os contatos pessoais do celular, e só pode receber campanha quem autorizou.",
+     "dica": "Sem um número de WhatsApp conectado em \"Conexões\", a janela avisa e o botão \"Sincronizar\" fica desligado. Se o celular tiver muitos contatos, clique em \"Continuar de onde parou\" para seguir do próximo.",
+     "antes": [
+      {
+       "acao": "press",
+       "tecla": "Escape"
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Sincronizar agenda",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "note"
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "texto": "^Número",
+        "regex": true,
+        "dentro": {
+         "role": "dialog"
+        }
+       },
+       "rotulo": "Número conectado",
+       "tipo": "caixa"
+      },
+      {
+       "alvo": {
+        "role": "note"
+       },
+       "rotulo": "Leia antes",
+       "tipo": "caixa"
+      }
+     ]
+    },
+    {
+     "id": "p5",
+     "titulo": "Baixar a lista",
+     "texto": "\"Exportar\" baixa os contatos num arquivo. \"Exportar CSV\" é uma planilha, que pode ser aberta no Excel ou no Google Planilhas. \"Exportar vCard\" é o formato que o celular importa. Sai a lista inteira com os filtros que estiverem ligados na tela, não só a página que você está vendo, até 10.000 contatos.",
+     "dica": "Só gerentes e administradores veem o botão \"Exportar\".",
+     "antes": [
+      {
+       "acao": "press",
+       "tecla": "Escape"
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Exportar",
+        "exato": true
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "menuitem",
+        "nome": "Exportar CSV",
+        "exato": true
+       }
+      }
+     ],
+     "destaques": [
+      {
+       "alvo": {
+        "role": "menu"
+       },
+       "rotulo": "Dois formatos",
+       "tipo": "caixa"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
