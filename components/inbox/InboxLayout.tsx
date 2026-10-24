@@ -14,6 +14,7 @@ import { NumeroForaDoAr } from "@/components/inbox/NumeroForaDoAr";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import { useMarkAsRead } from "@/hooks/inbox/useMarkAsRead";
+import { gravarFiltrosLembrados, lerFiltrosLembrados } from "@/lib/inbox/filtros-lembrados";
 import {
   useConversationsRealtime,
   type ConversationsFilters,
@@ -296,13 +297,33 @@ export function InboxLayout({
   const tagNaUrl = searchParams.get("tag");
 
   // tab vive na URL (?filter=); os demais filtros são estado local de sessão —
-  // exceto a etiqueta, que entra UMA vez, na abertura, pela URL.
+  // exceto a etiqueta, que entra UMA vez, na abertura, pela URL, e o número e o
+  // "Não lidos", lembrados por organização (lib/inbox/filtros-lembrados).
   const [aux, setAux] = useState<Omit<InboxFiltersValue, "tab">>({
     search: "",
     onlyUnread: false,
     onlyGroups: false,
     ...(tagNaUrl ? { tag: tagNaUrl } : {}),
   });
+  // Lidos depois da hidratação: o servidor não enxerga o localStorage.
+  const filtrosRestaurados = useRef<string | null>(null);
+  useEffect(() => {
+    if (!orgId || filtrosRestaurados.current === orgId) return;
+    filtrosRestaurados.current = orgId;
+    const lembrados = lerFiltrosLembrados(armazenamentoDoNavegador(), orgId);
+    setAux((atual) => ({
+      ...atual,
+      channel_session_id: lembrados.channel_session_id,
+      onlyUnread: lembrados.onlyUnread ?? false,
+    }));
+  }, [orgId]);
+  useEffect(() => {
+    if (!orgId || filtrosRestaurados.current !== orgId) return;
+    gravarFiltrosLembrados(armazenamentoDoNavegador(), orgId, {
+      channel_session_id: aux.channel_session_id,
+      onlyUnread: aux.onlyUnread,
+    });
+  }, [orgId, aux.channel_session_id, aux.onlyUnread]);
   const filterValue: InboxFiltersValue = { tab, ...aux };
   const setFilterValue = useCallback(
     (next: InboxFiltersValue) => {
