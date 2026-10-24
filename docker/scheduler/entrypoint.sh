@@ -128,6 +128,12 @@ CRONS="
 # pagar, e a diferença entre nascer às 5h ou às 17h não muda nada para quem paga.
 # Barato: uma consulta por instalação, e quem não tem molde nenhum sai na hora.
 50 5 * * *|60|api/v1/cron/recurring-entries
+# A ÁREA DA AGÊNCIA (fork, docs/agencia/SPEC-tarefas.md). Prazos a cada 15
+# minutos: o aviso de vencer hoje não pode chegar à tarde. Recorrentes de hora
+# em hora, no minuto 1, para a tarefa das 8h nascer às 8h01. Com o módulo
+# desligado as duas saem na primeira consulta.
+*/15 * * * *|60|api/v1/cron/agencia-prazos
+1 * * * *|60|api/v1/cron/agencia-recorrentes
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).

@@ -1173,6 +1173,28 @@ export const AUDIT_ACTIONS = [
   "agencia.whatsapp_configurado",
   "agencia.whatsapp_teste_enviado",
   "agencia.avisos_configurados",
+  // Fase 2 (docs/agencia/SPEC-clientes.md, SPEC-acervo.md, SPEC-tarefas.md).
+  "agencia.cliente_criado",
+  "agencia.cliente_alterado",
+  "agencia.cliente_situacao_alterada",
+  "agencia.cliente_importado",
+  "agencia.cliente_organizacao_ligada",
+  "agencia.cliente_equipe_alterada",
+  "agencia.contratacao_criada",
+  "agencia.contratacao_alterada",
+  "agencia.drive_conectado",
+  "agencia.drive_desconectado",
+  "agencia.arquivo_enviado",
+  "agencia.tarefa_criada",
+  "agencia.tarefa_alterada",
+  "agencia.tarefa_movida",
+  "agencia.tarefa_atribuida",
+  "agencia.tarefa_concluida",
+  "agencia.tarefas_em_lote",
+  "agencia.recorrente_criada",
+  "agencia.recorrente_alterada",
+  "agencia.recorrentes_geradas",
+  "agencia.avisos_de_prazo_enviados",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

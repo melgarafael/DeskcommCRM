@@ -13,6 +13,7 @@ export const PERMISSOES_DA_AGENCIA = [
   "equipe.gerenciar",
   "configuracoes.gerenciar",
   "avisos.gerais",
+  "clientes.gerenciar",
   "tarefas.criar",
   "tarefas.atribuir",
   "tarefas.ver_todas",
@@ -30,6 +31,7 @@ export const DESCRICAO_DA_PERMISSAO: Record<PermissaoDaAgencia, string> = {
   "equipe.gerenciar": "Cadastrar, editar e desativar membros e funções",
   "configuracoes.gerenciar": "WhatsApp da agência e horário dos avisos",
   "avisos.gerais": "Receber os avisos gerais da agência, além dos próprios",
+  "clientes.gerenciar": "Cadastrar e editar clientes, contratações e quem atende cada um",
   "tarefas.criar": "Criar tarefas",
   "tarefas.atribuir": "Mandar tarefas para outras pessoas ou funções",
   "tarefas.ver_todas": "Ver as tarefas de todos, não só as próprias",
@@ -45,7 +47,10 @@ export const PERMISSOES_EM_USO: readonly PermissaoDaAgencia[] = [
   "equipe.gerenciar",
   "configuracoes.gerenciar",
   "avisos.gerais",
+  "clientes.gerenciar",
   "tarefas.criar",
+  "tarefas.atribuir",
+  "tarefas.ver_todas",
 ];
 
 export function ehPermissaoDaAgencia(valor: string): valor is PermissaoDaAgencia {

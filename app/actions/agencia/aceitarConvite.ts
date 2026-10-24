@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { fecharConvite, lerConvite, type ConviteAberto } from "@/lib/agencia/aceite";
+import { sincronizarCompartilhamento } from "@/lib/agencia/acervo/pastas";
 import { auditarAgencia } from "@/lib/agencia/auditoria";
 import { criarAviso } from "@/lib/agencia/avisos/criar";
 import { FRASE_DA_SITUACAO, mesmoEmail } from "@/lib/agencia/convite";
@@ -48,6 +49,8 @@ async function concluir(convite: ConviteAberto, userId: string): Promise<Resulta
   } catch (e) {
     logger.warn("agência: convite aceito, aviso ao dono falhou", { detalhe: e instanceof Error ? e.message : String(e) });
   }
+  // Membro novo ganha acesso à pasta "Clientes" do Drive (SPEC-acervo, A4).
+  await sincronizarCompartilhamento().catch(() => undefined);
   redirect("/agencia");
 }
 

@@ -1,4 +1,6 @@
 import { ConfiguracoesCliente, type CanalDaLista, type EnvioDaLista } from "@/components/agencia/ConfiguracoesCliente";
+import { SecaoDoDrive } from "@/components/agencia/SecaoDoDrive";
+import { estadoDoDrive, retornoDoDrive } from "@/lib/agencia/acervo/drive";
 import { requirePermissaoNaPagina } from "@/lib/agencia/acesso";
 import { mascararTelefone } from "@/lib/agencia/whatsapp/regra";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -6,10 +8,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const metadata = { title: "Configurações · Agência" };
 export const dynamic = "force-dynamic";
 
-/** WhatsApp da agência, horário e antecedência dos avisos. */
-export default async function PaginaDeConfiguracoes() {
+/** WhatsApp da agência, horário e antecedência dos avisos, e o Google Drive. */
+export default async function PaginaDeConfiguracoes({ searchParams }: { searchParams: Promise<{ drive?: string }> }) {
   await requirePermissaoNaPagina("configuracoes.gerenciar");
   const db = createAdminClient();
+  const [{ drive: resultadoDoDrive }, estadoDrive] = await Promise.all([searchParams, estadoDoDrive()]);
 
   const [config, canais, envios] = await Promise.all([
     db
@@ -81,6 +84,7 @@ export default async function PaginaDeConfiguracoes() {
         }}
         envios={ultimos}
       />
+      <SecaoDoDrive estado={estadoDrive} enderecoDeRetorno={retornoDoDrive()} resultado={resultadoDoDrive ?? null} />
     </div>
   );
 }

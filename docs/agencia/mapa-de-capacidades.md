@@ -1,6 +1,8 @@
 # Módulo da Agência — Mapa de capacidades
 
-> Estado: **aprovado** pelo dono em 23/10/2026. Nada foi construído.
+> Estado: **aprovado** pelo dono em 23/10/2026.
+> - **Fase 1** (equipe, WhatsApp da agência, avisos): construída e publicada no teste em 23/10/2026 — ver [plano-fase-1.md](plano-fase-1.md).
+> - **Fase 2** (clientes, acervo, tarefas): specs em rascunho desde 24/10/2026 — [SPEC-clientes](SPEC-clientes.md), [SPEC-acervo](SPEC-acervo.md), [SPEC-tarefas](SPEC-tarefas.md).
 > Este arquivo é o índice da iniciativa: cada módulo abaixo ganha a sua própria
 > especificação (`docs/agencia/SPEC-<id>.md`) só depois que este mapa for aprovado.
 

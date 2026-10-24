@@ -7,8 +7,9 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { signOut } from "@/app/actions/auth/signOut";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
-import { ArrowLeft, Gear, House, SignOut, UserCircle, UsersThree } from "@/lib/ui/icons";
+import { ArrowLeft, Buildings, Gear, House, List, ListChecks, SignOut, UserCircle, UsersThree } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 import { Sininho } from "./Sininho";
 
@@ -20,7 +21,7 @@ import { Sininho } from "./Sininho";
  * Quais entradas aparecem é decisão do SERVIDOR (`entradas`), lida das
  * permissões: o componente não conhece a regra, só desenha o que recebeu.
  */
-export type IconeDaEntrada = "inicio" | "equipe" | "configuracoes" | "perfil";
+export type IconeDaEntrada = "inicio" | "tarefas" | "clientes" | "equipe" | "configuracoes" | "perfil";
 
 export interface EntradaDaCasca {
   href: string;
@@ -30,6 +31,8 @@ export interface EntradaDaCasca {
 
 const ICONES: Record<IconeDaEntrada, PhosphorIcon> = {
   inicio: House,
+  tarefas: ListChecks,
+  clientes: Buildings,
   equipe: UsersThree,
   configuracoes: Gear,
   perfil: UserCircle,
@@ -146,7 +149,8 @@ export function CascaDaAgencia({ entradas, nomeDoUsuario, ehDono, membroId, chil
           aria-label="Navegação da agência"
           className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
         >
-          {entradas.slice(0, 4).map((e) => {
+          {/* Cabem 4 abas: com mais entradas, as 3 primeiras ficam e o resto vai para "Mais". */}
+          {(entradas.length > 4 ? entradas.slice(0, 3) : entradas).map((e) => {
             const Icone = ICONES[e.icone];
             const atual = ativa(pathname, e.href);
             return (
@@ -164,6 +168,33 @@ export function CascaDaAgencia({ entradas, nomeDoUsuario, ehDono, membroId, chil
               </Link>
             );
           })}
+          {entradas.length > 4 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px]",
+                    entradas.slice(3).some((e) => ativa(pathname, e.href)) ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  <List size={22} aria-hidden />
+                  <span>Mais</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="end" className="w-56 p-1">
+                {entradas.slice(3).map((e) => {
+                  const Icone = ICONES[e.icone];
+                  return (
+                    <Link key={e.href} href={e.href} className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm hover:bg-accent/50">
+                      <Icone size={18} aria-hidden />
+                      {e.rotulo}
+                    </Link>
+                  );
+                })}
+              </PopoverContent>
+            </Popover>
+          )}
         </nav>
       </div>
     </div>

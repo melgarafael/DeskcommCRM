@@ -178,6 +178,13 @@ export async function exigirPermissao(permissao: PermissaoDaAgencia): Promise<Co
   return { user, ehDono: decisao.ehDono, membro, permissoes: decisao.permissoes };
 }
 
+/** O contexto de quem está liberado na área, sem exigir permissão — para leituras. `null` = sem acesso. */
+export async function contextoLiberado(): Promise<ContextoDaAgencia | null> {
+  const { decisao, user, membro } = await contextoDaAgencia();
+  if (decisao.tipo !== "liberado" || !user) return null;
+  return { user, ehDono: decisao.ehDono, membro, permissoes: decisao.permissoes };
+}
+
 /**
  * Para o layout de `/app`: quem é membro ativo da agência e não tem organização
  * vai para `/agencia`. Módulo desligado ou falha de leitura = não é (falha

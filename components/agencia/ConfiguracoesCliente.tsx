@@ -8,6 +8,7 @@ import { enviarTesteDoWhatsapp, salvarWhatsappDaAgencia } from "@/app/actions/ag
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatarDataHora } from "@/lib/agencia/tarefas/regras";
 import { cn } from "@/lib/utils";
 
 export interface CanalDaLista {
@@ -48,7 +49,7 @@ const MOTIVO_DA_FALHA: Record<string, string> = {
 const MOTIVO: Record<string, string> = { convite: "Convite", aviso: "Aviso", teste: "Teste" };
 
 function dataCurta(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return formatarDataHora(iso);
 }
 
 export function ConfiguracoesCliente({

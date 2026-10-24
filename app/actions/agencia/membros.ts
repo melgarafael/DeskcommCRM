@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { exigirPermissao } from "@/lib/agencia/acesso";
+import { sincronizarCompartilhamento } from "@/lib/agencia/acervo/pastas";
 import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agencia/auditoria";
 import { gerarTokenDeConvite, linkDoConvite, VALIDADE_DO_CONVITE_MS } from "@/lib/agencia/convite";
 import { enviarConvitePeloWhatsapp } from "@/lib/agencia/whatsapp/convite";
@@ -120,6 +121,7 @@ export async function editarMembro(entrada: EntradaDaEdicaoDeMembro): Promise<Re
       funcoes,
       ve_todos_clientes: veTodosClientes,
     });
+    await sincronizarCompartilhamento().catch(() => undefined);
     revalidatePath("/agencia/equipe");
     return { ok: true };
   } catch (e) {
@@ -172,6 +174,8 @@ async function mudarSituacao(id: string, situacao: "ativo" | "desativado"): Prom
       ctx.user.id,
       { tipo: "agencia_membro", id },
     );
+    // A pasta "Clientes" do Drive acompanha a situação do membro (SPEC-acervo, A4).
+    await sincronizarCompartilhamento().catch(() => undefined);
     revalidatePath("/agencia/equipe");
     return { ok: true };
   } catch (e) {
