@@ -64099,7 +64099,7 @@ begin
 end;
 $$;
 
--- ---- a conversa fechada reabre com mensagem fora de ordem (migration 0762, issue #3015) ----
+-- ---- a conversa fechada reabre com mensagem fora de ordem (migration 0767, issue #3015) ----
 -- O guard `m.sent_at <= c.service_closed_at` decidia a REABERTURA pela ordem do
 -- `sent_at` do payload do canal: mensagem entregue depois do fechamento mas
 -- enviada antes dele (entrega atrasada, lote do provider, relógio do aparelho
