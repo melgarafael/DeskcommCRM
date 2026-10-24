@@ -17,7 +17,7 @@
  *
  * Mocar o componente esconderia a peça do único teste que monta esta árvore.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
@@ -28,6 +28,7 @@ vi.mock("@/hooks/ai/useAvisoDeCaso", () => ({
   CHAVE_DO_AVISO: ["ai-aviso-de-caso"],
   useAvisoDeCaso: () => consulta(),
   useSalvarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoverAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTestarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false, data: undefined }),
 }));
 
@@ -273,6 +274,40 @@ describe("o que a tela diz sem ninguém perguntar", () => {
     const laco = screen.getByTestId("laco-do-aviso");
     expect(laco.textContent).toContain("12 min");
     expect(laco.textContent).toContain("190 min");
+  });
+});
+
+describe("a remoção do destinatário (issue #3338)", () => {
+  it("só aparece com configuração SALVA — antes disso não há o que remover", () => {
+    montar(estado({ config: null }));
+    expect(screen.queryByRole("button", { name: /remover destinatário/i })).toBeNull();
+
+    montar(estado());
+    expect(
+      screen.getAllByRole("button", { name: /remover destinatário/i }).at(-1),
+    ).toBeInTheDocument();
+  });
+
+  it("a confirmação diz a consequência ANTES de apagar, e dá como voltar atrás", () => {
+    montar(estado());
+    fireEvent.click(screen.getByRole("button", { name: "Remover destinatário" }));
+
+    const bloco = screen.getByTestId("confirmar-remocao");
+    expect(bloco.textContent).toContain("volta a ser um número comum");
+    // A configuração apagada também é lida pela Agenda e pela ação "Mensagem
+    // para a equipe": a confirmação tem de dizer que esses envios param junto.
+    expect(bloco.textContent).toContain("Agenda");
+    expect(bloco.textContent).toContain("Mensagem para a equipe");
+    expect(screen.getByRole("button", { name: "Manter" })).toBeInTheDocument();
+
+    // Desistir fecha a pergunta e não é remoção nenhuma.
+    fireEvent.click(screen.getByRole("button", { name: "Manter" }));
+    expect(screen.queryByTestId("confirmar-remocao")).toBeNull();
+  });
+
+  it("a remoção é OUTRA coisa que o switch: a tela diz isso", () => {
+    montar(estado());
+    expect(screen.getByText(/sai da configuração e volta a entrar no Inbox/i)).toBeInTheDocument();
   });
 });
 

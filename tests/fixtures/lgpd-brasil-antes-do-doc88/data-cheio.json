@@ -43,6 +43,7 @@
   "conversation_drafts": [],
   "conversation_notes": [],
   "contact_field_proposals": [],
+  "lead_attachments": [],
   "lead_notes": [],
   "ai_agent_runs": [],
   "lead_state": []

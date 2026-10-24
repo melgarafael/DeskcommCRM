@@ -248,7 +248,12 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   }
   const isGroup = Boolean((conv as { is_group?: boolean | null } | null)?.is_group);
 
-  if (!isGroup) {
+  // Histórico importado (#999) é guardado para análise de atendimento depois:
+  // sem transcrição nem visão automática, que são pagas e responderiam a conversa
+  // de meses atrás. A chave é texto 'true' (contrato da 0760).
+  const historicoImportado = msg.metadata?.historico_importado === "true";
+
+  if (!isGroup && !historicoImportado) {
     // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
     // resto do repo: falha de emit não reverte a persistência já concluída.
     const { error: emitErr } = await admin.rpc("emit_event" as never, {

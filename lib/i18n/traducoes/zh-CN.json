@@ -2713,6 +2713,8 @@
   "Use se perder acesso ao autenticador. Cada código é de uso único.": "如果无法访问身份验证器，请使用。每个代码只能使用一次。",
   "Gerando…": "正在生成…",
   "Regenerar códigos de recuperação": "重新生成恢复代码",
+  "Você está sem códigos de recuperação válidos: os gerados antes da última atualização deixaram de valer, e cada código só vale uma vez. Sem eles, perder o celular tira o seu acesso.": "你没有有效的恢复代码：上次更新之前生成的代码已失效，且每个代码只能使用一次。没有它们，丢失手机将导致你无法访问账户。",
+  "Gere novos códigos de recuperação": "生成新的恢复代码",
   "Habilite MFA antes de gerar códigos.": "生成代码前请先启用 MFA。",
   "Sessões ativas": "活跃会话",
   "Chamada de voz pelo WhatsApp": "WhatsApp 语音通话",

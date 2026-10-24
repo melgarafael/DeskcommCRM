@@ -27,6 +27,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   recusaDeMotivoDoGanho,
   settingsDoFunil,
@@ -197,6 +198,12 @@ export async function encerraDemanda(
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as Record<string, unknown>,
     settingsDoFunil: settings,
+    camposComAnexo: await camposComAnexo(
+      supabase,
+      settings,
+      ctx.organization_id,
+      (lead as { id: string }).id,
+    ),
     destino: { stageId: stage.id, desfecho: input.desfecho },
     motivoDeGanho: input.desfecho === "won" ? input.motivo ?? null : null,
   });

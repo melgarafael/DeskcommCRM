@@ -39,6 +39,7 @@ describe("pagar e remover no celular", () => {
       <ListaDeLancamentos
         lancamentos={[PENDENTE]}
         contas={[]}
+        moeda="BRL"
         podeLancar
         onCriar={vi.fn()}
         onPagar={vi.fn()}

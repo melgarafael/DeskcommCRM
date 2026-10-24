@@ -47,6 +47,20 @@ describe("POST /api/v1/ai/followups/enrollments/:id/cancel", () => {
     expect(atualizados[0]).toMatchObject({ status: "cancelled", cancel_reason: "manual" });
   });
 
+  it("espera longa ('dormente') é encerrada de verdade, não recusada com 409", async () => {
+    const { atualizados, c } = client("dormente");
+    deps.client.mockResolvedValue(c);
+    const res = await POST(new NextRequest(`http://localhost/x/${ID}/cancel`, { method: "POST" }), {
+      params: Promise.resolve({ id: ID }),
+    } as never);
+    expect(res.status).toBe(200);
+    expect(atualizados[0]).toMatchObject({
+      status: "cancelled",
+      cancel_reason: "manual",
+      next_eval_at: null,
+    });
+  });
+
   it("o que já acabou continua 409", async () => {
     const { c } = client("completed");
     deps.client.mockResolvedValue(c);

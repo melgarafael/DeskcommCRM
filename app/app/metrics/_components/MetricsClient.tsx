@@ -10,9 +10,12 @@ import { formatarDuracao } from "@/lib/metrics/canais";
 import { WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
 import { CanaisPanel } from "./CanaisPanel";
+import { MetaDoMesPanel, type EstadoDaMeta } from "./MetaDoMesPanel";
 import { PerdasPanel } from "./PerdasPanel";
 import { PrevisaoPanel } from "./PrevisaoPanel";
 import { SeriePanel } from "./SeriePanel";
+import { useMetasDoMes } from "@/hooks/metrics/useMetasDoMes";
+import { janelaDoMes, mesLocal } from "@/lib/metas/periodo";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -56,6 +59,20 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   const { data, isLoading, isError, refetch } = useAttendantMetrics(selectedOwner);
   // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
+
+  // A meta é MENSAL e a janela é o mês corrente de quem está olhando a tela
+  // (o mês é o dele, não um instante UTC — ver `lib/metas/periodo.ts`). Fixada
+  // uma vez por montagem: remontar a cada render refaria o pedido sem mudança
+  // nenhuma de dado.
+  const [janelaDaMeta] = useState(() => janelaDoMes(mesLocal()));
+  const metasDoMes = useMetasDoMes(janelaDaMeta);
+  const estadoDaMeta: EstadoDaMeta = metasDoMes.isLoading
+    ? "carregando"
+    : metasDoMes.isError || !metasDoMes.data
+      ? "erro"
+      : metasDoMes.data.data.motivo === "sem_meta"
+        ? "vazio"
+        : "ok";
 
   // ─── CARREGANDO: a SILHUETA da tela, não a palavra "Carregando…" ──────────
   //
@@ -151,6 +168,19 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           propósito — é o número da EQUIPE comercial, que se subordina ao do
           sistema inteiro acima. */}
       <PrevisaoPanel />
+
+      {/* A meta do mês (issue #3025, fatia 1) logo acima do funil: é o ALVO, e
+          as barras do funil abaixo são o caminho até ele. O denominador é da
+          empresa (não do atendente filtrado), então este painel não segue o
+          `Select` — o alvo é um só, e o realizado é o que a empresa fechou.
+          `canCompare` (manager+) abre a porta do cadastro, a mesma régua da
+          action. */}
+      <MetaDoMesPanel
+        estado={estadoDaMeta}
+        periodo={metasDoMes.data?.data.periodo ?? null}
+        metas={metasDoMes.data?.data.metas ?? []}
+        podeConfigurar={canCompare}
+      />
 
       <Card>
         <CardHeader>

@@ -18,6 +18,7 @@ import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
+import { anexoLevaLegenda, indiceDaLegenda } from "@/components/inbox/media/legenda-do-anexo";
 import {
   MentionMenu,
   opcoesDeMencao,
@@ -450,14 +451,22 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       });
   }
 
-  /** Escreve no campo e poe o cursor no fim — o de sempre, isolado para reuso. */
-  function escreverNoCampo(conteudo: string) {
+  /**
+   * Escreve no campo e poe o cursor no fim — o de sempre, isolado para reuso.
+   *
+   * `focar: false` existe para quem devolve texto com o diálogo de anexos
+   * ABERTO (#3151): o foco pertence ao diálogo, e puxá-lo para o textarea que
+   * está atrás dele tiraria do operador o Esc e o Enter da prévia.
+   */
+  function escreverNoCampo(conteudo: string, focar = true) {
     setText(conteudo);
     const ta = taRef.current;
     if (!ta) return;
     requestAnimationFrame(() => {
-      ta.focus();
-      ta.selectionStart = ta.selectionEnd = conteudo.length;
+      if (focar) {
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = conteudo.length;
+      }
       autoresize();
     });
   }
@@ -540,9 +549,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         payload.midias.map((midia, indice) => arquivoDaMidia(template.id, midia, indice)),
       );
       setPendingEm("reply");
-      setLegendaInicial(payload.texto);
       setPendingFiles(arquivos);
-      setText("");
+      // Áudio NÃO leva legenda em nenhum adaptador de canal
+      // (#3151): sem anexo na fila que a
+      // leve, o corpo volta para o CAMPO em vez de virar legenda de um áudio
+      // que a descarta — o texto continua na tela, para o operador mandar como
+      // mensagem. Com anexo que a leve (imagem, vídeo, documento), o texto sai
+      // do campo e vira a legenda dele, como sempre.
+      if (arquivos.some(anexoLevaLegenda)) {
+        setLegendaInicial(payload.texto);
+        setText("");
+      } else {
+        setLegendaInicial(null);
+        // Sem foco: o diálogo de prévia está abrindo POR CIMA do campo.
+        escreverNoCampo(payload.texto, false);
+      }
     } catch (erro) {
       // Sem os bytes não há prévia nem envio. O caminho honesto é o de texto,
       // com o aviso de que a imagem não veio — sumir em silêncio seria entregar
@@ -556,8 +577,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * A FILA de anexos (#2526) — e ela é um laço, não um tiro.
    *
    * Cada arquivo sobe pelo `useUploadMedia` e sai pelo `useSendMessage` /
-   * `useCreateNote` de sempre; só a PRIMEIRA imagem leva a legenda, o mesmo
-   * contrato de "texto + mídia numa mensagem" que o envio de mídia já pratica.
+   * `useCreateNote` de sempre; só o PRIMEIRO anexo que ACEITA legenda leva o
+   * texto — o mesmo contrato de "texto + mídia numa mensagem" que o envio de
+   * mídia já pratica. Não é sempre o índice 0 (#3151): numa fila [áudio,
+   * imagem] o texto iria com o áudio e o canal o descartaria em silêncio.
    * A recursão entra pelo `onSuccess`, então uma falha INTERROMPE a fila e o
    * diálogo fica aberto para o retry — como já ficava no caminho de um arquivo.
    */
@@ -569,8 +592,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       return;
     }
     const destino: DestinoDoUpload = pendingEm === "note" ? "nota" : "mensagem";
+    // `-1` (fila só de áudio) não casa com índice nenhum: a legenda não sai com
+    // anexo algum, em vez de sair com um áudio que a descarta.
+    const indiceLegenda = indiceDaLegenda(pendingFiles);
     const legenda =
-      destino === "nota" ? caption : indice === 0 ? caption || undefined : undefined;
+      destino === "nota" ? caption : indice === indiceLegenda ? caption || undefined : undefined;
     void upload
       .mutateAsync({ conversationId, file: arquivo, destino })
       .then((uploaded) => {
@@ -995,6 +1021,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       <AttachmentPreviewDialog
         files={pendingFiles}
         legendaInicial={legendaInicial}
+        notaInterna={pendingEm === "note"}
         sending={upload.isPending || send.isPending || createNote.isPending}
         onCancel={() => {
           const devolver = legendaInicial;
@@ -1008,12 +1035,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         }}
         onRemove={(indice, caption) => {
           const resto = pendingFiles.filter((_, i) => i !== indice);
-          // Fila vazia = nada a enviar: a legenda volta para o campo, como no
-          // cancelar, para o texto escolhido não sumir junto com a última imagem.
-          if (resto.length === 0) {
-            setPendingFiles([]);
+          // Sobra SEM anexo que leve legenda — fila vazia ou só de áudio — é
+          // nada a legendar: o texto volta para o campo, como no cancelar, para
+          // o que o operador escreveu não sumir junto com o último anexo que o
+          // levaria (#3151). Tirar a imagem de uma fila [imagem, áudio] é
+          // exatamente este caminho. Na NOTA o texto é o corpo dela e vale com
+          // áudio também: só a fila vazia o devolve.
+          if (resto.length === 0 || (pendingEm !== "note" && indiceDaLegenda(resto) === -1)) {
+            setPendingFiles(resto);
             setLegendaInicial(null);
-            if (caption) escreverNoCampo(caption);
+            // Sem foco: o diálogo continua ABERTO com o áudio que sobrou.
+            if (caption) escreverNoCampo(caption, false);
             return;
           }
           // A legenda editada sobrevive à troca da fila (o diálogo a repõe a

@@ -142,6 +142,19 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "Este número está fora da lista de teste do canal, então a mensagem escrita pela IA não sai por ele.",
   elegibilidade_indeterminada:
     "Não deu para saber se este número pode receber a mensagem da IA: a consulta falhou na hora (rede ou banco), e não é erro de configuração. Tente de novo em alguns minutos.",
+  /*
+   * #3274 — o veto da camada "valores e negociação só com a equipe" (#2877) na
+   * MENSAGEM ESCRITA PELA IA. Nasce literal em
+   * lib/automation/actions/send-ai-message.ts como `detail.reason`, o mesmo
+   * código que a cadeia `before_send` usa; a conversa passa para a equipe.
+   */
+  commercial_requires_human:
+    "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada e a conversa passou para o atendimento humano.",
+  // A mesma parada quando o orquestrador RECUSOU a passagem
+  // (`passagem_para_a_equipe: false`): a frase acima afirmaria um handoff que
+  // não houve.
+  commercial_requires_human_sem_passagem:
+    "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada. A conversa não foi passada para a equipe nesta execução — abra a conversa e confira quem vai responder ao cliente.",
   missing_url: "Esta ação de webhook não tem endereço configurado. Abra a automação e preencha.",
   unknown_action:
     "A regra usa um tipo de ação que esta instalação não tem (pode ter saído em uma atualização). Abra a automação e escolha outra ação.",

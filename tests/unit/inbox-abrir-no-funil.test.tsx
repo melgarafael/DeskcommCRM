@@ -50,6 +50,9 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
   }),
 }));
 vi.mock("@/components/contacts/RoteirosDoContato", () => ({ RoteirosDoContato: () => null }));
+// O bloco Carteira (#3026) busca a própria rota; o dublê de `get` deste arquivo
+// devolve o resumo do painel para TODA URL, então o cartão sai da cena aqui.
+vi.mock("@/components/contacts/CartaoDaCarteira", () => ({ CartaoDaCarteira: () => null }));
 
 import { CRMSidePanel } from "@/components/inbox/CRMSidePanel";
 

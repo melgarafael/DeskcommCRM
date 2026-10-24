@@ -621,6 +621,79 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
   });
 });
 
+/**
+ * A LISTA PESQUISÁVEL COM MÚLTIPLA ESCOLHA — O CONTROLE NO EDITOR DO FUNIL
+ * (#3182).
+ *
+ * Sem uma TELA para ligar o modo múltiplo, a chave nasceria no schema e ninguém
+ * conseguiria marcá-la — o mesmo defeito de `obrigatorio_em` no #1536. O
+ * controle é do `searchable_select`, grava pela porta única de escrita
+ * (`updatePipelineConfig`) e desmarcar APAGA a chave, para o funil intocado
+ * continuar idêntico ao de antes.
+ */
+describe("lista pesquisável: o controle de múltipla escolha no funil (#3182)", () => {
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+  const CAMPO_FORNECEDORES = {
+    key: "fornecedores",
+    label: "Fornecedores",
+    type: "searchable_select" as const,
+    options: [{ value: "consolidadora-a", label: "Consolidadora A" }],
+  };
+  const FUNIL_FORNECEDORES: PipelineRow = {
+    id: "55555555-5555-4555-8555-555555555555",
+    name: "Fornecedores",
+    slug: "fornecedores",
+    vocabulary: null,
+    settings: { fields: [CAMPO_FORNECEDORES] },
+  };
+
+  it("nasce desligado e ligar grava `multiple: true` no patch salvo", () => {
+    render(<PipelinesClient pipelines={[FUNIL_FORNECEDORES]} podeEditarConfig />);
+    abrirEditores();
+    const caixa = screen.getByLabelText(/Permitir várias escolhas 1/i);
+    expect(caixa).not.toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].fields?.[0]?.multiple).toBe(true);
+    // O resto do campo (a lista e o `value` canônico) fica como estava.
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].fields?.[0]?.options).toEqual([
+      { value: "consolidadora-a", label: "Consolidadora A" },
+    ]);
+  });
+
+  it("campo JÁ múltiplo abre marcado, e desmarcar apaga a chave", () => {
+    const jaMultiplo: PipelineRow = {
+      ...FUNIL_FORNECEDORES,
+      // O campo JÁ gravado como múltiplo: é o estado de quem abre para desligar.
+      settings: { fields: [{ ...CAMPO_FORNECEDORES, multiple: true }] },
+    };
+    render(<PipelinesClient pipelines={[jaMultiplo]} podeEditarConfig />);
+    abrirEditores();
+    const caixa = screen.getByLabelText(/Permitir várias escolhas 1/i);
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].fields?.[0]).not.toHaveProperty(
+      "multiple",
+    );
+  });
+
+  it("o controle é só do `searchable_select` — num `select` comum ele não existe", () => {
+    render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+    abrirEditores();
+    // controle: o editor ABRIU — sem isto o `toBeNull` abaixo passa com a tela fechada.
+    expect(screen.getByLabelText(/Escopo do campo 1/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Permitir várias escolhas 1/i)).toBeNull();
+  });
+});
+
 describe("o botão de acrescentar campo e a cota do negócio (#3111)", () => {
   function funilCom(negocio: number, contato: number): PipelineRow {
     return {

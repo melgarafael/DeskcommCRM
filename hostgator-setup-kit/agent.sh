@@ -94,14 +94,26 @@ post() {  # post <json> → corpo da resposta em 2xx; VAZIO em qualquer falha
 # só o fato (de qual versão para qual, por quê) —, pela mesma regra do resto da
 # rota: o que atravessa a fronteira é informação, nunca instrução.
 #
+# O recado leva o DESFECHO da volta (#3271), num campo próprio (`ok`). Sem ele
+# o painel tratava igual a volta que terminou bem e a que falhou: a tela
+# afirmava "está no ar agora" nos dois casos e ainda oferecia o botão de voltar
+# apontando para a versão que já estava rodando. O motivo continua no `reason`
+# (é o texto que quem lê entende), mas quem decide o desfecho é o campo: código
+# 0 = a volta terminou; qualquer outro = não terminou.
+#
 # Falha aqui NÃO derruba nada: a volta já aconteceu, e o pior desfecho de um
 # aviso que não passa é o `.update-agent.log` de sempre.
 avisar_volta_no_painel() {  # avisar_volta_no_painel <para onde voltou> <versão que não respondeu> <falhas> <rc da volta>
-  local para="${1:-}" falhou="${2:-}" falhas="${3:-}" rc="${4:-0}" motivo corpo
+  local para="${1:-}" falhou="${2:-}" falhas="${3:-}" rc="${4:-0}" ok motivo corpo
   [ -n "$para" ] || return 0
   motivo="o site não respondeu em ${falhas:-2} healthchecks seguidos logo depois da atualização"
-  [ "${rc:-0}" = "0" ] || motivo="$motivo (a volta terminou com código $rc)"
-  corpo="{\"kind\":\"rollback\",\"returned_to\":\"$(esc "$para")\",\"failed_version\":\"$(esc "$falhou")\",\"reason\":\"$(esc "$motivo")\"}"
+  if [ "${rc:-0}" = "0" ]; then
+    ok="true"
+  else
+    ok="false"
+    motivo="$motivo (a volta terminou com código $rc)"
+  fi
+  corpo="{\"kind\":\"rollback\",\"returned_to\":\"$(esc "$para")\",\"failed_version\":\"$(esc "$falhou")\",\"ok\":$ok,\"reason\":\"$(esc "$motivo")\"}"
   post "$corpo" >/dev/null 2>&1 || true
   return 0
 }

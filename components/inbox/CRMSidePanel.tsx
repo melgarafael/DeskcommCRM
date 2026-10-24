@@ -1,5 +1,6 @@
 "use client";
 
+import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { AcervoSearch } from "./AcervoSearch";
 import { LeadEnrichment } from "./LeadEnrichment";
@@ -31,6 +32,7 @@ import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
+import { FollowupDoContato } from "./FollowupDoContato";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
@@ -638,6 +640,7 @@ function CamposDoFunil({
         value={customFields}
         onChange={setCustomFields}
         mode="lead"
+        leadId={leadId}
         className="gap-3 md:grid-cols-1"
       />
       <Button
@@ -714,6 +717,12 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
   // pelo mesmo motivo de `podeCriarTarefa` acima — os dublês de `useAuth` dos
   // testes deste painel não expõem `usePermission`, e a semântica é a mesma.
   const podeLevarParaOutroFunil = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
+  // O MESMO piso da ficha do contato para o bloco da carteira (#2591): `agent`+
+  // é quem LÊ a carteira (o GET da rota cobra `requireRole("agent")`), e o
+  // `viewer` receberia 403. Escrever é outra régua (`manager`+) e mora dentro do
+  // `CartaoDaCarteira`, que só desenha o seletor para `manager`+. Aqui só se
+  // decide se o bloco existe — nunca se oferece um botão que o servidor recusaria.
+  const podeVerCarteira = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -1001,6 +1010,35 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
         </Card>
       </section>
 
+      {/* O BLOCO CARTEIRA NO PAINEL DO INBOX (#3026) — de quem é este cliente,
+          respondido onde quem atende está. Antes a carteira só aparecia nesta
+          tela como faixa de aviso (`FaixaDaCarteira`, no cabeçalho) e só quando
+          o dono era OUTRA pessoa; pôr o cliente na própria carteira exigia sair
+          da conversa, abrir o contato e voltar.
+
+          O componente é o MESMO da ficha (`CartaoDaCarteira`) e a gravação sai
+          pela MESMA porta (`PATCH /api/v1/contacts/[id]/carteira` ->
+          `fn_definir_carteira_do_cliente`): nada de segunda regra, nada de
+          segunda porta, nada de componente duplicado. Duas garantias vêm de
+          graça, e é por isso que reusar importa: leitura que FALHA não vira
+          "Sem carteira" (o cartão se abstém em vez de afirmar ausência) e o
+          seletor só é desenhado para `manager`+.
+
+          O `<section>` não tem título próprio de propósito: a manchete
+          "Carteira" mora DENTRO do cartão, então um erro de leitura não deixa
+          uma seção vazia anunciando conteúdo que não veio.
+
+          O piso do BLOCO é `agent`+ (`podeVerCarteira`), o mesmo da ficha e o
+          mesmo do `GET` da rota — `viewer` não vê o bloco em vez de levar 403.
+
+          Ordenação/escolha dos blocos do painel é o #3008; aqui a Carteira entra
+          no lugar certo (logo abaixo do contato), e a ordem fica com ele. */}
+      {contactId && podeVerCarteira && (
+        <section data-testid="inbox-bloco-carteira">
+          <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg?.role ?? null} />
+        </section>
+      )}
+
       {contactId && summaryContactId === contactId && !erro && (
         <AnuncioDoContato contactId={contactId} origem={anuncios.origem} recente={anuncios.recente} />
       )}
@@ -1122,6 +1160,24 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
         leadId={negocioAtivoId}
         podeEditar={podeCriarTarefa}
       />
+
+      {/* O FOLLOW-UP NA CONVERSA (#3178): qual fluxo está rodando neste contato,
+          a porta para iniciar um e parar o que está de pé — sem sair do painel.
+          Fica ao lado da demanda porque é dela que o follow-up é o outro lado:
+          o próximo passo que a demanda não carrega. A seção se AUTO-OCULTA
+          quando não há enrollment vivo nem fluxo ativo (contrato de
+          `RoteirosDoContato`). Iniciar e parar são `manager`+ no servidor
+          (`requireRole("manager")` no POST e no cancel): a régua aqui é a
+          mesma, mais o modo suporte de leitura. `readonly` sozinho deixava o
+          `agent` ver os botões e levar 403. */}
+      {contactId && !contact?.is_anonymized && (
+        <FollowupDoContato
+          contactId={contactId}
+          podeEscrever={
+            !readonly && ((user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager"))
+          }
+        />
+      )}
 
       <Separator />
 

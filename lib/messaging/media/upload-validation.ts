@@ -24,6 +24,17 @@ export function isMediaPathOwnedBy(path: string, orgId: string, conversationId: 
   return resto.split("/").every((s) => s !== "" && s !== "." && s !== "..");
 }
 
+/**
+ * A mesma régua para o anexo do negócio (#3229): o objeto mora sob
+ * `{org}/leads/{lead}/…` no `internal-media`. Quem assina ou remove com o
+ * cliente admin confere isto antes — o banco também prende o caminho
+ * (`crm_lead_attachments_storage_path_check`), e as duas camadas não se
+ * substituem.
+ */
+export function isLeadAttachmentPathOwnedBy(path: string, orgId: string, leadId: string): boolean {
+  return isMediaPathOwnedBy(path, orgId, `leads/${leadId}`);
+}
+
 const DOCUMENT_MIMES = new Set([
   "application/pdf",
   "application/msword",

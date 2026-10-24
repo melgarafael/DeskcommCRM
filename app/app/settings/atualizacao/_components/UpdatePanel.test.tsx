@@ -346,6 +346,34 @@ describe("tela de atualização — o aviso da volta automática (#2757)", () =>
     expect(screen.queryByTestId("volta-automatica")).toBeNull();
     expect(screen.getByText("Voltei o sistema para a versão", { exact: false })).toBeInTheDocument();
   });
+
+  it("⭐ a volta que TERMINOU não oferece o botão de voltar — o alvo dele já é a versão no ar", () => {
+    // #3271: com o desfecho no próprio recado, a volta que terminou bem (chega
+    // como `failed_rolled_back`) sabe que a versão anterior É a que está no ar.
+    // O botão ali aponta para essa mesma versão: clicar só derrubaria o sistema
+    // por ~2 min para reinstalar o que já roda. A frase de "está no ar agora"
+    // CONTINUA, porque neste desfecho ela tem base — quem a perde é o caso
+    // abaixo.
+    renderTela(volta());
+
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+    expect(screen.getByText(/que é a que está no ar agora/)).toBeInTheDocument();
+  });
+
+  it("⭐ a volta que NÃO terminou mantém o botão e para de afirmar que a versão está no ar", () => {
+    // O outro lado do mesmo campo: com `ok:false` a rota grava `failed`, e é
+    // por este ramo que a tela passa — o desfecho em que ela NÃO sabe em que
+    // versão o sistema ficou. A frase "é a que está no ar agora" some (não se
+    // sustenta) e a saída de um clique fica: é exatamente o caso em que
+    // esconder o botão tiraria a saída de quem precisa. `volta_automatica`
+    // segue verdadeiro (a volta não foi pedida pela tela) — quem decide o ramo
+    // é o status, nunca a marca de autoria.
+    renderTela(volta({ status: "failed" }));
+
+    expect(screen.getByRole("button", { name: "Voltar para a versão anterior" })).toBeInTheDocument();
+    expect(screen.queryByText(/que é a que está no ar agora/)).toBeNull();
+    expect(screen.getByText(/o sistema pode estar rodando a versão/)).toBeInTheDocument();
+  });
 });
 
 /**

@@ -30,6 +30,7 @@ export const ROTULOS_DO_TIPO: Record<CustomFieldDef["type"], string> = {
   email: "E-mail",
   phone: "Telefone",
   url: "Link (URL)",
+  file: "Arquivo",
 };
 
 /**

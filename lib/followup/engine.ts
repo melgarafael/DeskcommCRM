@@ -111,7 +111,8 @@ export interface FollowupJobRequest {
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
     /**
-     * action (mode 'text') — #2734: mídia OPCIONAL (imagem ou PDF) por URL. Presente,
+     * action (mode 'text') — #2734/#2972: mídia OPCIONAL (imagem, vídeo, áudio ou
+     * documento) por URL. Presente,
      * o `fixed_body` vira a LEGENDA. O envio reusa o caminho de mídia do Inbox e das
      * campanhas (`sendMessageHandler`), nos dois caminhos que mandam o texto fixo.
      */

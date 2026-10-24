@@ -4,11 +4,12 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useEffect, useRef, useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
-import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
+import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
+import type { Stage } from "@/lib/kanban/types";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { ConversaNoDossie } from "./ConversaNoDossie";
 import { LeadFieldsForm } from "./LeadFieldsForm";
@@ -17,6 +18,7 @@ import { LeadTimeline } from "./LeadTimeline";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
 import { OwnerBadge } from "./OwnerBadge";
+import { EtapaNoDossie } from "./EtapaNoDossie";
 import { SecaoDoDossie, useSecoesRecolhidas } from "./SecaoDoDossie";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
@@ -30,6 +32,13 @@ interface Props {
   fieldDefs?: CustomFieldDef[];
   stageName: string;
   ownerNames?: Map<string, string | null>;
+  /**
+   * As etapas do funil e quem move. Presentes (o quadro passa), o cabeçalho
+   * troca o nome da etapa por um seletor — ver `EtapaNoDossie`. Ausentes (o
+   * calendário, por enquanto), fica o texto de antes.
+   */
+  etapas?: Pick<Stage, "id" | "name">[];
+  onMudarEtapa?: (stageId: string) => void;
 }
 
 function formatValor(cents: number | null, currency: string | null): string {
@@ -85,6 +94,8 @@ export function LeadDossier({
   fieldDefs = [],
   stageName,
   ownerNames,
+  etapas,
+  onMudarEtapa,
 }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -114,6 +125,8 @@ export function LeadDossier({
   const activeOrg = useActiveOrg();
   const podeCriarProposta =
     user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager) || false;
+  // A MESMA régua do arrasto e do "Mover para…" do card (`KanbanCardActions`).
+  const podeMoverCard = usePermission("pipeline.move_card");
   // Tarefas são `agent`+, a mesma régua da tela de Tarefas e da rota — e o
   // suporte temporário só lê, como lá (`requireSupportWrite`).
   const podeEditarTarefas =
@@ -161,7 +174,16 @@ export function LeadDossier({
           <span className="font-medium tabular-nums text-text">
             {formatValor(lead.value_cents, lead.currency)}
           </span>
-          <span className="text-text-muted">{stageName}</span>
+          {etapas && onMudarEtapa ? (
+            <EtapaNoDossie
+              etapaAtual={lead.stage_id}
+              etapas={etapas}
+              podeMover={podeMoverCard}
+              onMudar={onMudarEtapa}
+            />
+          ) : (
+            <span className="text-text-muted">{stageName}</span>
+          )}
           <OwnerBadge
             ownerKind={owner.kind}
             ownerName={owner.name}

@@ -70,6 +70,8 @@ const listaSchema = z.object({
   due_to: z.string().datetime({ offset: true }).optional(),
   /** "abertas" = o que ainda pede ação. É o default da tela. */
   aberto: z.enum(["true", "false"]).optional(),
+  /** Só "me": o id sai da sessão, nunca do navegador. */
+  assigned_to: z.literal("me").optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -108,6 +110,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.due_from) query = query.gte("due_date", filtros.due_from);
   if (filtros.due_to) query = query.lte("due_date", filtros.due_to);
   if (filtros.aberto === "true") query = query.in("status", ["pending", "in_progress"]);
+  if (filtros.assigned_to === "me") query = query.eq("assigned_to", authz.user.id);
 
   const { data, error } = await query;
   if (error) {

@@ -21,6 +21,10 @@
 #      antes de voltar": sem isso a volta poderia se repetir a cada 5 minutos);
 #   5. fora da janela de 2 h NADA acontece (marca velha é apagada, sem volta);
 #   6. uma volta (`--to` mais antigo) NÃO re-arma a marca.
+#   7. o aviso da volta leva o DESFECHO num CAMPO (`ok`): `true` quando o
+#      `update.sh --to` da volta termina com código 0, `false` quando não. É o
+#      campo — não o texto do motivo — que o painel lê para não tratar igual a
+#      volta que terminou e a que falhou (#3271).
 #
 # ## Sabotagem (a prova de que cada caso guarda a linha certa)
 #
@@ -356,6 +360,17 @@ if grep -q '"returned_to":"v0.8.0"' "$POSTS_LOG" 2>/dev/null \
 else
   nao "aviso com a versão de volta" 'returned_to 0.8.0' "$(tail -1 "$POSTS_LOG" 2>/dev/null | cut -c1-160)"
 fi
+# O DESFECHO desta volta (ela terminou: o dublê do update.sh sai com 0). Sem
+# este campo o painel tinha de adivinhar pelo texto do motivo, e tratava igual
+# a volta que voltou o sistema e a que o deixou fora do ar (#3271).
+VOLTA_BOA="$(grep -F '"kind":"rollback"' "$POSTS_LOG" 2>/dev/null | tail -1)"
+case "$VOLTA_BOA" in
+  *'"ok":true'*)
+    ok 'e o aviso leva o desfecho da volta: "ok":true (o update.sh da volta deu 0)' ;;
+  *)
+    nao "desfecho da volta que terminou" '"ok":true no corpo do aviso' \
+        "${VOLTA_BOA:-<nenhum POST de rollback>}" ;;
+esac
 
 echo "── 6. fora da janela de 2 h NADA acontece"
 preparar_vps
@@ -375,9 +390,43 @@ else
   nao "contagem apagada" "sem .update-vigia-falhas" "contagem órfã: $(cat "$AG/.update-vigia-falhas")"
 fi
 
+echo "── 7. o aviso da volta leva o DESFECHO — e a que não terminou não se disfarça"
+# O caso 5 mediu a volta que TERMINOU. Aqui o update.sh da volta falha (código
+# 7): o recado é o MESMO, e o que muda é o campo. É esta a diferença que o
+# painel precisa para não afirmar "é a que está no ar agora" quando ninguém
+# sabe em que versão o sistema ficou (#3271).
+cat > "$AG/hostgator-setup-kit/update.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'chamada: %s\n' "$*" >> "${CHAMADAS_LOG:?}"
+exit 7
+STUB
+chmod +x "$AG/hostgator-setup-kit/update.sh"
+preparar_vps
+armar_marca 60 v0.8.0
+printf '1\n' > "$AG/.update-vigia-falhas"
+rodar_agente proxy
+
+VOLTA_RUIM="$(grep -F '"kind":"rollback"' "$POSTS_LOG" 2>/dev/null | tail -1)"
+case "$VOLTA_RUIM" in
+  *'"ok":false'*)
+    ok 'a volta que falhou vai ao painel com "ok":false' ;;
+  *)
+    nao "desfecho da volta que não terminou" '"ok":false no corpo do aviso' \
+        "${VOLTA_RUIM:-<nenhum POST de rollback>}" ;;
+esac
+case "$VOLTA_RUIM" in
+  *'"returned_to":'*)
+    # O recado continua o mesmo de antes (o formato não mudou: só ganhou o
+    # campo), e é isso que faz o desfecho viajar junto do fato.
+    ok 'e o resto do recado segue igual: para onde voltou continua no corpo' ;;
+  *)
+    nao "recado com a versão de volta" 'returned_to no corpo do aviso' \
+        "${VOLTA_RUIM:-<nenhum POST de rollback>}" ;;
+esac
+
 echo
 if [ "$falhas" -eq 0 ]; then
-  echo "vigia-da-volta: os seis pontos da vigília estão de acordo."
+  echo "vigia-da-volta: os sete pontos da vigília estão de acordo."
   exit 0
 fi
 echo "vigia-da-volta: $falhas caso(s) em desacordo."

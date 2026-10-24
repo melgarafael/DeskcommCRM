@@ -4092,6 +4092,8 @@
   "Use se perder acesso ao autenticador. Cada código é de uso único.": "Use these if you lose access to your authenticator. Each code can only be used once.",
   "Gerando…": "Generating…",
   "Regenerar códigos de recuperação": "Regenerate recovery codes",
+  "Você está sem códigos de recuperação válidos: os gerados antes da última atualização deixaram de valer, e cada código só vale uma vez. Sem eles, perder o celular tira o seu acesso.": "You have no valid recovery codes: codes generated before the latest update no longer work, and each code works only once. Without them, losing your phone locks you out.",
+  "Gere novos códigos de recuperação": "Generate new recovery codes",
   "Habilite MFA antes de gerar códigos.": "Enable MFA before generating codes.",
   "Sessões ativas": "Active sessions",
   "Chamada de voz pelo WhatsApp": "WhatsApp voice calling",
