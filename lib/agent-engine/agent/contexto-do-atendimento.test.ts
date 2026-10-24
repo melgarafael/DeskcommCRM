@@ -88,7 +88,9 @@ describe('T05/T07 fontes com autoridade limitada',()=>{
   it('read agrupado é scoped por org/contato/conversa/job e ausência explícita',async()=>{
     const query=vi.fn(async()=>({rows:[]}));
     const c=await carregarContextoDoAtendimento({query} as never,{tenantId:org,leadId:contact,conversationId:'conversa',jobId:'job'});
-    expect(query).toHaveBeenCalledOnce();expect(query.mock.calls[0]).toEqual([expect.stringContaining('c.contact_id=$2'),[org,contact,'conversa','job',[],[],[]]]);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]).toEqual([expect.stringContaining('has_function_privilege(current_user')]);
+    expect(query.mock.calls[1]).toEqual([expect.stringContaining('c.contact_id=$2'),[org,contact,'conversa','job',[],[],[],false]]);
     expect(c.cobertura.every(x=>x.estado==='unavailable')).toBe(true);
   });
   it('corpo de nota antiga, skill/reference e memória consultadas chegam ao revisor sem virar aprovação',()=>{
@@ -118,7 +120,8 @@ describe('T05/T07 fontes com autoridade limitada',()=>{
 it('seleção SQL de reservas antecede o limite e não usa atualização técnica como operação do cliente',async()=>{
  const query=vi.fn(async(_sql:string,_params:unknown[])=>({rows:[]}));
  await carregarContextoDoAtendimento({query} as never,{tenantId:org,leadId:contact,conversationId:'conversa',jobId:'job'});
- const sql=String(query.mock.calls[0]![0]);
+ expect(query).toHaveBeenCalledTimes(2);
+ const sql=String(query.mock.calls.find(([statement])=>statement.startsWith('with escopo as'))?.[0]);
  expect(sql).toContain("not a.service_block order by (a.status='cancelled'),case when a.status='cancelled' then coalesce(a.cancelled_at,a.created_at) else a.created_at end desc,a.created_at desc,a.id limit 9");
  expect(sql).toContain('a.organization_id=$1 and a.contact_id=$2 and a.conversation_id=$3');
 });

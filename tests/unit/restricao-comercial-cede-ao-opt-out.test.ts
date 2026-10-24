@@ -83,6 +83,8 @@ const job = {
 const deps = {
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   llmCfg: {}, crmCfg: {}, knobs: {},
+  // Mede o opt-out dentro da janela; a hora do runner não escolhe o ramo.
+  clock: () => new Date('2026-10-23T12:00:00Z'),
   channel: () => ({ send: vi.fn(async () => ({ kind: 'sent' })) }),
 } as unknown as InboundTurnDeps;
 const assistido = {
