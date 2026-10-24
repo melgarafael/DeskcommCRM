@@ -559,9 +559,9 @@ describe("enviarTextoFixoPendente · mídia com legenda (#2734)", () => {
     });
   });
 
-  it(".docx: recusado com o motivo, nada sai, e o passo volta como `skipped`", async () => {
+  it("URL sem tipo identificável: recusada com o motivo, nada sai, e o passo volta como `skipped`", async () => {
     decidir.mockResolvedValue({ permite: true });
-    comMidia("https://cdn.exemplo.com/contrato.docx");
+    comMidia("https://cdn.exemplo.com/arquivo-sem-tipo");
 
     expect(await enviarTextoFixoPendente(admin())).toBe(0);
     expect(sendMessageHandler).not.toHaveBeenCalled();

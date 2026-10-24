@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FileUploadCustomField } from "@/components/kanban/FileUploadCustomField";
 import type { RecusaDeCampos } from "@/hooks/kanban/useMoveCard";
 
 /**
@@ -103,6 +104,8 @@ export function CamposObrigatoriosDialog({
 
   const valido = campos.every((campo) => {
     if (campo.tipo === "boolean") return true;
+    // Campo `file`: o valor aqui é só a CONTAGEM de anexos, para liberar o botão.
+    if (campo.tipo === "file") return Number(valores[campo.chave] ?? 0) > 0;
     const valor = (valores[campo.chave] ?? "").trim();
     if (valor.length === 0) return false;
     if (campo.tipo === "number" && Number.isNaN(Number(valor))) return false;
@@ -125,6 +128,9 @@ export function CamposObrigatoriosDialog({
     for (const campo of campos) {
       const bruto = valores[campo.chave] ?? "";
       const valor = bruto.trim();
+      // O anexo já foi gravado em `crm_lead_attachments` pelo upload, e é lá que
+      // o servidor confere; ele nunca vai em `custom_fields`.
+      if (campo.tipo === "file") continue;
       if (campo.tipo === "boolean") {
         customFields[campo.chave] = bruto === "true";
         continue;
@@ -181,6 +187,20 @@ export function CamposObrigatoriosDialog({
                     {rotuloCampo}
                   </Label>
                 </div>
+              );
+            }
+            if (campo.tipo === "file") {
+              return (
+                <FileUploadCustomField
+                  key={campo.chave}
+                  fieldKey={campo.chave}
+                  label={nome}
+                  required
+                  leadId={recusa.args.leadId}
+                  onChange={(files) =>
+                    setValores((v) => ({ ...v, [campo.chave]: String(files.length) }))
+                  }
+                />
               );
             }
             if (

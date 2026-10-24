@@ -250,7 +250,8 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
     mode: z.literal('text'),
     body: z.string().min(1).max(4000),
     /**
-     * #2734 — MÍDIA OPCIONAL (imagem ou PDF) por URL. Presente, o `body` vira a
+     * #2734 — MÍDIA OPCIONAL (imagem, vídeo, áudio ou documento, #2972) por URL.
+     * Presente, o `body` vira a
      * LEGENDA. Opcional de propósito: os grafos publicados não têm a chave e
      * continuam válidos byte a byte (o `strictObject` só recusa o que ELE não
      * conhece; um campo novo e opcional é aceito pelos antigos).

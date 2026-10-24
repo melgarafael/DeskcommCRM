@@ -405,8 +405,16 @@ export function UpdatePanel() {
           // O MESMO alvo do comando logo abaixo, entregue como run (#2757) —
           // e só quando ele existe de verdade: uma versão publicada para onde
           // voltar. `ehVersaoPublicada` é a régua das duas coisas.
+          //
+          // Na volta automática que TERMINOU o botão não entra (#3271): o alvo
+          // dele é a versão que já está no ar, e clicar ali só derrubaria o
+          // sistema por ~2 min para reinstalar o que já roda. Ele continua no
+          // desfecho em que a volta NÃO terminou — que é outro ramo desta tela
+          // (`failed`), porque a rota grava `failed` quando o `update.sh --to`
+          // da volta sai com código diferente de zero. É por isso que os dois
+          // desfechos não podem continuar chegando aqui como um só.
           voltar={
-            ehVersaoPublicada(data.run.from_version)
+            !data.run.volta_automatica && ehVersaoPublicada(data.run.from_version)
               ? {
                   destino: anterior,
                   mutate: () => voltar.mutate(),

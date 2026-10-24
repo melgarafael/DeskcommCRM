@@ -18,6 +18,12 @@ export interface MessageTemplate {
    */
   midias?: MidiaDeTemplate[] | null;
   /**
+   * "Mostrar na barra do Inbox" (#3282) — `message_templates.mostrar_na_barra`.
+   * Opcional/lido como ligado por ausência: linha anterior à migration 0742 e
+   * fixture sem a chave aparecem na barra, como sempre.
+   */
+  mostrar_na_barra?: boolean | null;
+  /**
    * A POSIÇÃO da resposta rápida na lista (#3244), a que o arrastar e soltar da
    * tela grava. Opcional pelo mesmo motivo das mídias: linha anterior à migration
    * 0729 e fixture de teste vêm sem a chave, e quem só lê não pode quebrar.

@@ -1,4 +1,5 @@
 import type { Lead } from "@/lib/types/leads";
+import { midpoint } from "./fractional-indexing";
 
 /** O que a conta precisa de um card: identidade e posição na etapa. */
 type CardNaEtapa = Pick<Lead, "id" | "position_in_stage">;
@@ -43,4 +44,17 @@ export function proximoNaEtapaInteira<C extends CardNaEtapa>(
   if (i < 0) return abaixoVisivel;
   const empatado = (l: C) => l.position_in_stage === acima.position_in_stage;
   return todos.slice(i + 1).find((l) => l.id === abaixoVisivel?.id || !empatado(l)) ?? null;
+}
+
+/**
+ * A posição de quem entra no FIM da etapa sem ter sido solto em lugar nenhum (o
+ * "Mover para…" do menu do card). Pela etapa INTEIRA, pela mesma razão da #2545:
+ * o último visível não é o último da etapa quando há filtro.
+ */
+export function posicaoNoFimDaEtapa(etapa: readonly CardNaEtapa[], leadId: string): number {
+  const ultima = etapa.reduce<number | null>(
+    (max, l) => (l.id === leadId || (max !== null && max >= l.position_in_stage) ? max : l.position_in_stage),
+    null,
+  );
+  return midpoint(ultima, null);
 }

@@ -107,6 +107,14 @@ CRONS="
 # de conectar o número está olhando a inbox agora. Lote de 5 e prazo de 45 s
 # dentro da rota: o pior caso cabe nos 60 s com folga.
 */10 * * * *|60|api/v1/cron/contact-names
+# O HISTÓRICO DO WHATSAPP (#999). A cada minuto: a importação anda em rodadas
+# curtas (3 conversas OU 300 mensagens OU 20 chamadas ao canal) e quem pediu
+# está olhando o andamento. Barato quando não há importação rodando: uma
+# leitura e nada mais. A rota trava cada importação antes de rodar, então uma
+# rodada lenta que passe do minuto não roda em dobro. O -m (60) fica acima do
+# prazo da chamada (45 s, lib/channels/historico/prazo.ts) com folga para o
+# banco; tests/unit/historico-cron.test.ts recusa se os dois se aproximarem.
+* * * * *|60|api/v1/cron/historico-import
 17 * * * *|60|api/v1/cron/contact-proposals-watcher
 23 * * * *|60|api/v1/cron/followup-sem-agente
 # O ANIVERSÁRIO. De hora em hora, e não uma vez ao dia, porque quem decide o

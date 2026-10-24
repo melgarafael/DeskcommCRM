@@ -176,6 +176,27 @@ export const PROVIDERS_DE_MENSAGEM = [
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
+ * Os providers que alcançam um APARELHO: o endereço é o TELEFONE.
+ *
+ * É um recorte de `PROVIDERS_DE_MENSAGEM`, e a diferença é a das REDES SOCIAIS
+ * (`zernio_social`): o Instagram e o Facebook só falam com quem já escreveu, o
+ * contato de lá é outro endereço (handle) e não existe telefone a discar. Quem
+ * tem um número na mão e escolhe a sessão social escolheu um canal que NÃO
+ * alcança o destino — e o envio fora da janela de 24h é recusado (#3358,
+ * medido: "O canal recusou o envio. Confira a conexão em Conexões.").
+ *
+ * `satisfies` sobre o recorte declara a relação entre as duas listas: um
+ * provider que não seja de mensagem não pode entrar aqui, e um provider social
+ * que apareça nesta lista reprova em compilação, não em produção.
+ */
+export const PROVIDERS_DE_TELEFONE = [
+  "waha",
+  "meta_cloud",
+  "zernio",
+  "datafy",
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
+
+/**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.
  *
  * Aceita `string | null | undefined` de propósito: quem chama está lendo uma

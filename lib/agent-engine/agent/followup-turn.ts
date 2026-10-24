@@ -38,7 +38,7 @@ import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { estadoDaJanela } from '@/lib/channels/janela';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { contextoDoContato, renderizarTextoDeFollowup } from '@/lib/automation/texto-do-followup';
-import { classificarMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
+import { classificarMidiaComLegenda, type TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
 import { isStatusSendable } from '@/lib/channels/meta/template-binding';
 import { deriveTemplateContract } from '@/lib/channels/meta/template-contract';
 import {
@@ -108,8 +108,9 @@ export const followupTurnPayloadSchema = z
     /** action mode `text` — enviado pela cadeia de guardrails, sem LLM. */
     fixed_body: z.string().min(1).max(4000).optional(),
     /**
-     * #2734 — mídia OPCIONAL (imagem ou PDF) por URL do passo `action`/`text`; o
-     * `fixed_body` vira a LEGENDA. Opcional: payloads antigos seguem válidos.
+     * #2734 — mídia OPCIONAL (imagem, vídeo, áudio ou documento, #2972) por URL
+     * do passo `action`/`text`; o `fixed_body` vira a LEGENDA. Opcional: payloads
+     * antigos seguem válidos.
      */
     fixed_media_url: z.string().url().max(2000).optional(),
     /** action mode `template` — `message_templates` (texto) ou `meta_templates` (modelo aprovado do canal). */
@@ -686,7 +687,7 @@ async function runFlowDrivenTurn(
     purpose: 'send_message' | 'classify' | 'plan_timing' | undefined;
     promptHint: string | undefined;
     fixedBody: string | undefined;
-    /** #2734 — mídia opcional (imagem ou PDF) do passo `action`/`text`. */
+    /** #2734 — mídia opcional (imagem, vídeo, áudio ou documento) do passo `action`/`text`. */
     fixedMediaUrl: string | undefined;
     templateId: string | undefined;
     templateValues: VariaveisDoModelo | undefined;
@@ -1007,8 +1008,8 @@ type PassoSemIa =
     }
   | { tipo: 'recusado'; motivo: string };
 
-/** #2734 — mídia do passo: imagem ou PDF, por URL, com o `body` como LEGENDA. */
-export type MidiaComLegenda = { url: string; type: 'image' | 'document'; mime: string };
+/** #2734 — mídia do passo: imagem, vídeo, áudio ou documento, por URL, com o `body` como LEGENDA. */
+export type MidiaComLegenda = { url: string; type: TipoDeMidiaComLegenda; mime: string };
 
 async function resolveFlowSendBody(
   pool: pg.Pool,
@@ -1031,11 +1032,11 @@ async function resolveFlowSendBody(
   // do cadastro como modelo — por isso aqui ele só ganha a volta, nunca o contexto.
   if (input.fixedBody !== undefined) {
     const body = interpolarVoltaDoPayload(input.fixedBody, input.voltaIndex, input.voltaTotal);
-    // #2734 — MÍDIA DO PASSO. O que não é imagem nem PDF é recusa de CONFIGURAÇÃO:
-    // o passo é pulado com o motivo (mesmo desfecho do modelo que não pode sair) em
-    // vez de a fila re-tentar algo que tempo não conserta — e em vez de mandar o
-    // texto solto, que era o comportamento equivalente a prometer uma imagem que
-    // não vem.
+    // #2734 — MÍDIA DO PASSO. O que não é um arquivo identificável é recusa de
+    // CONFIGURAÇÃO: o passo é pulado com o motivo (mesmo desfecho do modelo que
+    // não pode sair) em vez de a fila re-tentar algo que tempo não conserta — e
+    // em vez de mandar o texto solto, que era o comportamento equivalente a
+    // prometer uma imagem que não vem.
     if (input.fixedMediaUrl !== undefined) {
       const url = input.fixedMediaUrl.trim();
       if (url.length === 0) return { tipo: 'texto', body };
@@ -1233,7 +1234,8 @@ async function sendFixedOutbound(
    */
   modelo?: { name: string; language: string; values: Record<string, string> },
   /**
-   * #2734 — presente = o envio sai como MÍDIA (imagem ou PDF) e o `body` é a LEGENDA.
+   * #2734 — presente = o envio sai como MÍDIA (imagem, vídeo, áudio ou documento,
+   * #2972) e o `body` é a LEGENDA.
    * O caminho é o de sempre: `channel.send` → `sendTurnMessage` → `sendMessageHandler`,
    * o MESMO que o Inbox e as campanhas usam. `storagePath` (foto de produto) e `url`
    * (mídia do passo) convivem no mesmo campo — ver `ChannelSendInput`.

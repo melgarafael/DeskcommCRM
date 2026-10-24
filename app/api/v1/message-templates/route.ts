@@ -22,7 +22,7 @@ import { posicaoEntre } from "@/lib/templates/ordem";
 
 export const dynamic = "force-dynamic";
 const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, midias, created_by_user_id, created_at, updated_at, ordem";
+  "id, organization_id, owner_user_id, title, body, shortcut, midias, mostrar_na_barra, created_by_user_id, created_at, updated_at, ordem";
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
   }
-  const { title, body, shortcut, shared } = parsed.data;
+  const { title, body, shortcut, shared, mostrar_na_barra } = parsed.data;
   // Compartilhado exige manager+. requireRole já resolveu o role efetivo do
   // banco em org.role — reusar em vez de uma 2ª chamada/RPC. A RLS with_check
   // barra de qualquer forma; isto só dá um erro claro antes do insert.
@@ -116,6 +116,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         title,
         body,
         shortcut: shortcut ?? null,
+        // "Mostrar na barra do Inbox" (#3282): só vai quando a tela escolheu.
+        // Ausente, a coluna assume o default dela (`true`) — a resposta nasce
+        // aparecendo na barra, que é o comportamento de sempre.
+        ...(mostrar_na_barra === undefined ? {} : { mostrar_na_barra }),
         // `midias` nasce vazia: a mídia nova (a imagem da #2526 ou o áudio do
         // recurso, #2833) é gravada pela rota de upload, que gera o caminho
         // sabendo o id do template. Aceitar caminho aqui seria aceitar um

@@ -83,6 +83,9 @@ const job = {
 const deps = {
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   llmCfg: {}, crmCfg: {}, knobs: {},
+  // Relógio fixo DENTRO da janela anti-ban: com o relógio real, o turno do
+  // automático é adiado à noite (antes das detecções) e o teste só passava de dia.
+  clock: () => new Date('2026-10-21T15:00:00Z'),
   channel: () => ({ send: vi.fn(async () => ({ kind: 'sent' })) }),
 } as unknown as InboundTurnDeps;
 const assistido = {

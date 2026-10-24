@@ -21,6 +21,9 @@
  * por um `Record` de objetos deixaria o par cego.
  */
 
+/** Onde o aviso de tarefa leva: quem recebe é sempre o responsável. */
+export const HREF_MINHAS_TAREFAS = "/app/tasks?assigned_to=me";
+
 export const PRIORIDADES_DA_TAREFA = ["low", "medium", "high", "urgent"] as const;
 export type PrioridadeDaTarefa = (typeof PRIORIDADES_DA_TAREFA)[number];
 

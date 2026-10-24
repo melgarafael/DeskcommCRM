@@ -289,6 +289,11 @@ export function Comandas({
             {comanda.status === "open" && podeLancar ? (
               <FormularioDeItem
                 tipos={tipos.data ?? []}
+                // A régua do preço digitado é a da COMANDA aberta, que é a mesma
+                // com que a tela escreve o total ao lado (#3367). Comanda nova
+                // nasce na moeda da organização (#2160), então as duas coincidem;
+                // uma comanda de antes da troca de moeda continua lida na dela.
+                moeda={moeda}
                 onIncluir={(corpo) => incluirItem.mutate(corpo)}
                 pendente={incluirItem.isPending}
               />
@@ -316,10 +321,13 @@ export function Comandas({
 
 function FormularioDeItem({
   tipos,
+  moeda,
   onIncluir,
   pendente,
 }: {
   tipos: Tipo[];
+  /** A moeda em que o preço é digitado (#3367) — a da comanda aberta. */
+  moeda: string;
   onIncluir: (corpo: Record<string, unknown>) => void;
   pendente: boolean;
 }) {
@@ -328,10 +336,11 @@ function FormularioDeItem({
   const [preco, setPreco] = useState("");
   const [tipoId, setTipoId] = useState("");
 
-  // O preço é digitado em reais e convertido AQUI. `parseReaisToCents` devolve
-  // null no que não é dinheiro, e o botão fica desabilitado — em vez de mandar
-  // `NaN` para uma rota que lança venda.
-  const cents = parseReaisToCents(preco);
+  // O preço é digitado na moeda da comanda e convertido AQUI. `parseReaisToCents`
+  // lê o separador pela régua dessa moeda (#3367) e devolve null no que não é
+  // dinheiro, e o botão fica desabilitado — em vez de mandar `NaN` para uma rota
+  // que lança venda.
+  const cents = parseReaisToCents(preco, moeda);
   const podeIncluir = descricao.trim().length > 0 && cents !== null && !pendente;
 
   return (

@@ -24,7 +24,7 @@ import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { truncar } from "@/lib/notifications/push_payload";
 import { enviarPushAoUsuario } from "@/lib/notifications/web_push";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
-import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
+import { HREF_MINHAS_TAREFAS, PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
 /**
  * Quem fica com a tarefa: o dono do negócio, ou uma pessoa escolhida na regra.
@@ -241,7 +241,7 @@ export async function criarTarefaInterna(
         title: "Nova tarefa",
         body: truncar(titulo),
         tag: `task:${tarefaId}`,
-        href: "/app/tasks",
+        href: HREF_MINHAS_TAREFAS,
       });
     } catch (err) {
       logger.warn("task_push_failed", {

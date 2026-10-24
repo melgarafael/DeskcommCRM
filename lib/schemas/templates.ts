@@ -36,6 +36,12 @@ export const createTemplateSchema = z.object({
   shortcut: z.string().trim().min(1).max(40).optional(),
   /** true = compartilhado da org (owner null, exige manager+); false = pessoal. */
   shared: z.boolean().default(false),
+  /**
+   * "Mostrar na barra do Inbox" (#3282). Ausente = LIGADO: a resposta nasce
+   * aparecendo na barra, como o produto sempre fez. A tela manda `false` só
+   * quando o operador desmarca.
+   */
+  mostrar_na_barra: z.boolean().optional(),
 });
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 
@@ -51,6 +57,8 @@ export const updateTemplateSchema = z
     body: z.string().trim().max(4096),
     shortcut: z.string().trim().min(1).max(40).nullable(),
     midias: z.array(midiaDoTemplateSchema).max(MAXIMO_DE_MIDIAS).optional(),
+    /** "Mostrar na barra do Inbox" (#3282) — o liga/desliga da tela. */
+    mostrar_na_barra: z.boolean().optional(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "Informe ao menos um campo." });

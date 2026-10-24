@@ -4,6 +4,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
+import { roleAtLeast } from "@/lib/auth/types";
 import { PAIS_PADRAO, perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import {
   Dialog,
@@ -22,6 +23,7 @@ import { contactPatchSchemaDoPais, type ContactPatch } from "@/lib/schemas/conta
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
+import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import type { Contact } from "@/lib/types/contacts";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
@@ -57,8 +59,15 @@ export function EditContactDialog({
   canonicalTags,
 }: Props) {
   const t = useT();
-  const perfil = perfilDoPais(useActiveOrg()?.country);
+  const org = useActiveOrg();
+  const perfil = perfilDoPais(org?.country);
   const update = useUpdateContact(contact.id);
+  const { definirCor } = useDefinirCorDaEtiqueta();
+  // A cor da etiqueta é VOCABULÁRIO, não da linha: quem a escreve passa por
+  // `POST /api/v1/tags/vocabulario`, que exige manager + MFA. Para os outros
+  // papéis a paleta nem chega ao campo — a régua é "a tela não oferece o que a
+  // escrita recusa" (#2718), a MESMA do `SeletorDeCorDaEtiqueta`.
+  const podeDefinirCor = roleAtLeast(org?.role, "manager");
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
@@ -208,6 +217,9 @@ export function EditContactDialog({
               vocabulario={vocabulario}
               canonicalTags={canonicalTags}
               disabled={update.isPending}
+              onDefinirCor={
+                podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
+              }
             />
           </div>
           {customFieldDefs.length > 0 && (

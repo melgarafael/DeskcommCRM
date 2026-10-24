@@ -175,6 +175,7 @@ export const customFieldSchema = z.object({
     "email",
     "phone",
     "url",
+    "file",
   ]),
   required: z.boolean().optional(),
   /**
@@ -272,6 +273,23 @@ export const customFieldSchema = z.object({
    * existe pronta para as escritas do servidor, ainda não plugada (#2521).
    */
   allow_new: z.boolean().optional(),
+  /**
+   * MÚLTIPLA ESCOLHA (issue #3182) — só faz sentido no `searchable_select`.
+   *
+   * LIGADO, o campo grava uma LISTA de valores canônicos em vez de um só: numa
+   * venda "forfait" o mesmo negócio tem vários fornecedores (aéreo pela
+   * consolidadora A, hotel pela operadora B), dois hotéis, duas companhias — e
+   * com um valor só o relatório "quanto vendemos com cada fornecedor" sai
+   * incompleto. A busca com apelidos e a canonicalização continuam as mesmas,
+   * por item (`lib/leads/campos-pesquisaveis`).
+   *
+   * DESLIGADO (o padrão, e a chave ausente em toda definição que já existe), o
+   * campo segue de valor único, byte a byte: nada do que está gravado hoje muda
+   * de forma. É a chave `multiple: true` do item 1 da issue, escolhida em vez de
+   * um tipo novo no enum — o tipo `searchable_select` já é o que a tela, o
+   * schema e a API conhecem, e o modo é uma propriedade dele.
+   */
+  multiple: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 

@@ -34,6 +34,9 @@ interface StageColumnProps {
   onSelectMany?: (leadIds: string[], marcar: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
+  /** "Mover para…" do menu do card — atravessa a coluna como `onOpen`. */
+  etapas?: Stage[];
+  onMoverPara?: (lead: Lead, stageId: string) => void;
   /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
   podeRenomear?: boolean;
   onRenomear?: (nome: string) => void;
@@ -51,6 +54,8 @@ export function StageColumn({
   pulses,
   onSelectMany,
   onOpen,
+  etapas,
+  onMoverPara,
   podeRenomear = false,
   onRenomear,
 }: StageColumnProps) {
@@ -268,6 +273,8 @@ export function StageColumn({
                 pulseCount={pulses?.get(lead.id) ?? 0}
                 onSelect={aoSelecionar}
                 onOpen={onOpen}
+                etapas={etapas}
+                onMoverPara={onMoverPara}
               />
             ))}
             {provided.placeholder}

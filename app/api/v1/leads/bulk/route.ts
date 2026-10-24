@@ -30,6 +30,7 @@ import {
   recusaReabertura,
 } from "@/lib/leads/reabertura";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   settingsDoFunil,
   validaCamposExigidos,
@@ -256,9 +257,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       const faltandoPorCard: Record<string, { chave: string; rotulo: string }[]> = {};
       for (const linha of visible) {
         const funilId = (linha as { pipeline_id?: string | null }).pipeline_id ?? null;
+        const settingsDaLinha = settingsPorFunil.get(funilId ?? "") ?? null;
         const veredito = validaCamposExigidos({
           lead: linha as unknown as Record<string, unknown>,
-          settingsDoFunil: settingsPorFunil.get(funilId ?? "") ?? null,
+          settingsDoFunil: settingsDaLinha,
+          // ponytail: uma ida ao banco por card, e só em funil com campo de arquivo exigível.
+          camposComAnexo: await camposComAnexo(supabase, settingsDaLinha, organizationId, linha.id),
           destino: {
             stageId: etapaDeDestino.id,
             desfecho: etapaDeDestino.is_won

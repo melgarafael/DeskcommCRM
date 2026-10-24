@@ -386,12 +386,19 @@ describe("POST /api/v1/system/agent", () => {
  * linha de run JÁ FECHADA (`failed_rolled_back`), com as duas versões, a hora e
  * o motivo. `requested_by` fica NULO de propósito: é a marca de "ninguém pediu
  * isto" que a tela usa para dizer "voltou sozinho".
+ *
+ * #3271 acrescenta o DESFECHO: o mesmo recado passa a dizer se a volta
+ * TERMINOU (`ok`), e a rota escreve `failed` quando não terminou. Sem isso a
+ * tela tratava os dois desfechos como um só — afirmava "é a que está no ar
+ * agora" e escondia a saída de um clique justamente na volta que falhou.
  */
 describe("POST /api/v1/system/agent — a volta automática (#2757)", () => {
+  /** O recado do agente: o desfecho vai no CAMPO `ok`, medido do `update.sh`. */
   const VOLTA = {
     kind: "rollback",
     returned_to: "1.4.2",
     failed_version: "1.5.0",
+    ok: true,
     reason: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
   };
 
@@ -440,6 +447,61 @@ describe("POST /api/v1/system/agent — a volta automática (#2757)", () => {
         }),
       }),
     );
+  });
+
+  it("⭐ volta que NÃO terminou (ok:false) fecha como `failed` — e a auditoria conta o mesmo desfecho", async () => {
+    // O desfecho é lido do CAMPO, e não do texto do `reason`: o motivo termina
+    // com o código da volta ("… código 7"), mas parsear frase não é contrato —
+    // e foi justamente por o código existir só no texto que a tela tratava
+    // igual a volta que terminou e a que falhou (#3271). `failed` é o
+    // vocabulário que ela já sabe ler como "não sei em que versão o sistema
+    // está": é ele que a faz parar de afirmar "é a que está no ar agora" e
+    // manter o botão de voltar.
+    const { audit } = await import("@/lib/audit");
+    const { POST } = await import("./route");
+    const res = await POST(
+      req({ ...VOLTA, ok: false, reason: `${VOLTA.reason} (a volta terminou com código 7)` }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      status: "failed",
+      // As duas versões continuam nomeando o MESMO fato: de onde se tentou
+      // sair e para onde a volta foi.
+      from_version: "1.4.2",
+      to_version: "1.5.0",
+      requested_by: null,
+    });
+    expect(inserts[0]?.status).not.toBe("failed_rolled_back");
+    // A auditoria não pode contar a história antiga enquanto a linha do run
+    // conta a nova.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ status: "failed", volta_automatica: true }),
+      }),
+    );
+  });
+
+  it("volta de agente ANTERIOR a este contrato (sem `ok`) fecha como `failed`: sem prova de que terminou, a tela não afirma", async () => {
+    // O container do app atualiza antes do script do host — o mesmo bootstrap
+    // que faz o `compare_failed` ser opcional. Então o recado velho chega à
+    // rota nova. Ausente é "ninguém mediu o desfecho", e o lado conservador é
+    // NÃO afirmar que a versão anterior está no ar: afirmar sem prova é o
+    // defeito medido na issue, e a leitura pessimista erra para o lado em que a
+    // tela oferece a saída (o botão de voltar), nunca para o de tranquilizar.
+    const recadoAntigo = {
+      kind: "rollback",
+      returned_to: "1.4.2",
+      failed_version: "1.5.0",
+      reason: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
+    };
+    const { POST } = await import("./route");
+    const res = await POST(req(recadoAntigo));
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({ status: "failed" });
   });
 
   it("recusa volta sem a versão de origem (o aviso diria 'voltou para a undefined')", async () => {

@@ -1,6 +1,7 @@
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { RiskBucket } from "@/lib/leads/risk-radar";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   settingsDoFunil,
   validaCamposExigidos,
@@ -349,6 +350,7 @@ export async function sincronizaEstagioDoAgente(
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as unknown as Record<string, unknown>,
     settingsDoFunil: settings,
+    camposComAnexo: await camposComAnexo(admin, settings, input.organizationId, lead.id),
     destino: {
       stageId: destino.stageId,
       desfecho: etapaDeDestino?.is_won ? "won" : etapaDeDestino?.is_lost ? "lost" : null,

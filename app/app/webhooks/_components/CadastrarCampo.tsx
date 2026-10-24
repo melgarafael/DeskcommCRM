@@ -104,7 +104,7 @@ function mensagemDoMotivo(
   switch (motivo) {
     case "chave_invalida":
       return t(
-        "Este nome de campo não pode ser cadastrado aqui. Cadastre em Configurações › Funis.",
+        "Este nome de campo não pode ser cadastrado aqui. Cadastre em CRM › Ver tudo em CRM › Etapas do funil.",
       );
     case "ja_cadastrado":
       return t("Esse campo já está cadastrado.");

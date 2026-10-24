@@ -239,3 +239,85 @@ describe("(e) o exportar CSV fecha o ciclo com a importação", () => {
     expect(exportarOpcoesCsv([])).toBe("value,label,apelidos\n");
   });
 });
+
+/**
+ * (f) O MODO MÚLTIPLO DA LISTA PESQUISÁVEL (#3182).
+ *
+ * O defeito: um negócio "forfait" tem vários fornecedores e vários hotéis, e a
+ * lista pesquisável só guardava UM valor canônico — a régua aceitava apenas
+ * string e RECUSAVA array (`fora_da_lista`), então quem escolhia o segundo
+ * fornecedor perdia o primeiro. O conserto é o campo declarar `multiple: true`
+ * e a escrita virar uma LISTA de valores canônicos, canonicalizada ITEM A ITEM
+ * pela mesma `valorCanonico` — recusando só o item que não casa sem `allow_new`.
+ */
+describe("(f) o modo múltiplo grava uma LISTA de valores canônicos (#3182)", () => {
+  const FORNECEDORES = customFieldSchema.parse({
+    key: "fornecedores",
+    label: "Fornecedores",
+    type: "searchable_select",
+    multiple: true,
+    options: [
+      { value: "consolidadora-a", label: "Consolidadora A", aliases: ["consol a"] },
+      { value: "operadora-b", label: "Operadora B", aliases: ["B"] },
+      { value: "seguradora-c", label: "Seguradora C" },
+    ],
+  });
+
+  it("o schema e a leitura do funil NÃO descartam `multiple`", () => {
+    expect(FORNECEDORES.multiple).toBe(true);
+    const lidos = camposDoFunil({ fields: [FORNECEDORES] });
+    expect(lidos[0]?.multiple).toBe(true);
+  });
+
+  it("canonicaliza ITEM A ITEM e devolve a lista de `value` canônicos", () => {
+    // Duas grafias escolhidas na tela: o rótulo e um apelido de caixa trocada.
+    expect(validarValorPesquisavel(FORNECEDORES, ["Consolidadora A", "b"])).toEqual({
+      ok: true,
+      valor: ["consolidadora-a", "operadora-b"],
+    });
+  });
+
+  it("recusa a escrita por UM item que não casa, sem `allow_new`", () => {
+    const r = validarValorPesquisavel(FORNECEDORES, ["consolidadora-a", "Fornecedor X"]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.motivo).toBe("fora_da_lista");
+  });
+
+  it("com `allow_new`, o item novo passa aparado — e só ele", () => {
+    const comNovo = { ...FORNECEDORES, allow_new: true };
+    expect(validarValorPesquisavel(comNovo, ["Consolidadora A", "  Fornecedor X  "])).toEqual({
+      ok: true,
+      valor: ["consolidadora-a", "Fornecedor X"],
+    });
+  });
+
+  it("duas grafias da MESMA opção viram um item só (a lista é canônica)", () => {
+    expect(validarValorPesquisavel(FORNECEDORES, ["Consolidadora A", "consolidadora-a"])).toEqual({
+      ok: true,
+      valor: ["consolidadora-a"],
+    });
+  });
+
+  it("lista vazia e `null` nunca são recusados — limpar é escrita válida", () => {
+    expect(validarValorPesquisavel(FORNECEDORES, [])).toEqual({ ok: true, valor: [] });
+    expect(validarValorPesquisavel(FORNECEDORES, null)).toEqual({ ok: true, valor: null });
+    expect(validarValorPesquisavel(FORNECEDORES, undefined)).toEqual({
+      ok: true,
+      valor: undefined,
+    });
+  });
+
+  it("sem `multiple`, o tipo segue de valor único: array continua recusado", () => {
+    const unico = customFieldSchema.parse({
+      key: "fornecedor",
+      label: "Fornecedor",
+      type: "searchable_select",
+      options: [{ value: "consolidadora-a", label: "Consolidadora A" }],
+    });
+    const r = validarValorPesquisavel(unico, ["consolidadora-a"]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.motivo).toBe("fora_da_lista");
+  });
+});

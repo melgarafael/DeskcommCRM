@@ -159,6 +159,50 @@ describe("GET /api/v1/tasks", () => {
     expect(res.status).toBe(500);
     expect(espiao.tabelas).toEqual(["crm_tasks"]);
   });
+
+  it('"minhas" filtra pelo id da SESSÃO', async () => {
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    const res = await GET(new NextRequest("http://x/api/v1/tasks?assigned_to=me"));
+
+    expect(res.status).toBe(200);
+    expect(espiao.filtros).toContainEqual(["assigned_to", ANA]);
+  });
+
+  it("o id de um membro só ESTREITA a lista da org da sessão — nunca abre outra", async () => {
+    // O #3254 aceitava só `me`. O filtro por responsável (#3280) passou a aceitar
+    // o id de um colega: ele só estreita uma lista que viewer+ já vê inteira, e a
+    // organização continua saindo da sessão. Se o `.eq(organization_id)` sair,
+    // este caso reprova.
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    const res = await GET(new NextRequest(`http://x/api/v1/tasks?assigned_to=${LEAD}`));
+
+    expect(res.status).toBe(200);
+    expect(espiao.filtros).toContainEqual(["assigned_to", LEAD]);
+    expect(espiao.filtros).toContainEqual(["organization_id", ORG]);
+  });
+
+  it("assigned_to que não é `me`, `ninguem` nem um id é 422 — e não toca o banco", async () => {
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    const res = await GET(new NextRequest("http://x/api/v1/tasks?assigned_to=mariana"));
+
+    expect(res.status).toBe(422);
+    expect(espiao.tabelas).toEqual([]);
+  });
+
+  it("sem o parâmetro, não filtra por responsável", async () => {
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    await GET(new NextRequest("http://x/api/v1/tasks"));
+
+    expect(espiao.filtros.map(([coluna]) => coluna)).not.toContain("assigned_to");
+  });
 });
 
 describe("POST /api/v1/tasks", () => {

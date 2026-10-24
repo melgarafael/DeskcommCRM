@@ -253,6 +253,10 @@ export function Faturamento({
       <ListaDeLancamentos
         lancamentos={lancamentos.data ?? []}
         contas={contas.data ?? []}
+        // A moeda da organização é a régua do valor digitado (#3367) — mesma
+        // moeda que ordena os blocos acima. A `currency` gravada na linha ainda
+        // nasce no padrão do banco, BRL (ver #3379).
+        moeda={moedaDaOrg}
         podeLancar={podeLancar}
         onCriar={(corpo) => criar.mutate(corpo)}
         onPagar={(id) => pagar.mutate(id)}

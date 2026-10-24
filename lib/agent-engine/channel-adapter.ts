@@ -1,5 +1,9 @@
 import type { AgentOperationContext } from '@/lib/ai/agents/operation';
 import type { JobClaim } from './queue/claim';
+// Tipo SÓ (erased no build): o vocabulário de mídia do passo automático vem da
+// régua única (`lib/messaging/media/midia-com-legenda.ts`) — e é `import type`
+// para este contrato continuar puro, sem dependência de runtime.
+import type { TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
 /**
  * Contrato agnóstico de canal (F2-25; blueprint risco nº 1 + veredito executivo).
  *
@@ -50,7 +54,7 @@ export interface ChannelSendInput {
    */
   media?:
     | { storagePath: string; mime: string }
-    | { url: string; mime: string; type: 'image' | 'document' };
+    | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 
 /**

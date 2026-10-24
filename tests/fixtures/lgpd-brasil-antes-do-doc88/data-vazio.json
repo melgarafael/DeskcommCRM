@@ -39,6 +39,7 @@
   "campaign_suppressions": [],
   "channel_session_groups": [],
   "group_messages_authored": [],
+  "lead_attachments": [],
   "lead_notes": [],
   "ai_agent_runs": [],
   "lead_state": []
