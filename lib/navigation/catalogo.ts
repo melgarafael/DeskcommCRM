@@ -178,6 +178,15 @@ export const NAV_CATALOG = [
     contador: "fila",
   },
   {
+    // Sem `sidebar`: o menu lateral está no teto medido (ver a nota da Prospecção,
+    // acima, e `tests/e2e/navegacao.spec.ts`). A porta é o ⌘K.
+    href: "/app/painel",
+    label: "Painel do setor",
+    description: "Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número.",
+    icon: "ListChecks",
+    group: "atendimento",
+  },
+  {
     href: "/app/radar",
     label: "Radar",
     description: "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.",
