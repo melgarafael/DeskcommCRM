@@ -2520,7 +2520,6 @@ function emptyPayload(
 ): ExportPayload {
   return {
     request_id: requestId,
-    lead_field_proposals: [],
     organization_id: organizationId,
     organization_legal_name: controlador.legal_name,
     organization_display_name: controlador.display_name,
@@ -2544,6 +2543,7 @@ function emptyPayload(
     messages_count_total: 0,
     messages_recent: [],
     leads: [],
+    lead_field_proposals: [],
     honorarios_contratos: [],
     honorarios_parcelas: [],
     orders: [],
