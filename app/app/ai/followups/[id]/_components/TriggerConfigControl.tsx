@@ -188,7 +188,21 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
 
 function toTriggerConfig(form: TriggerFormState): Record<string, unknown> {
   const cancelOnReply = form.cancelOnReply ? { cancel_on_reply: true } : {};
-  if (form.kind === "appointment_no_show") return {kind:"appointment_no_show",params:{event_type_ids:form.eventTypeIds}};
+  // `appointment_no_show` era o ÚNICO kind que o gravador descartava o
+  // `cancelOnReply` (#3400): a tela mostrava o switch «ligado» (forçado em
+  // `checked` + `disabled` lá embaixo) e o PATCH saía sem `cancel_on_reply` —
+  // o motor lê `cancel_on_reply ?? false` (`lib/followup/reactivity.ts`) e o
+  // fluxo nunca cancelava na resposta do paciente. O schema já aceitava o campo
+  // nesse kind (`lib/followup/api-schemas.ts`) e o modelo da clínica já grava
+  // `{ kind: "appointment_no_show", cancel_on_reply: true }`
+  // (`lib/followup/modelos/clinica.ts`) — o valor era válido, só a tela não
+  // conseguia gravá-lo. Agora ele segue o mesmo caminho dos demais kinds.
+  if (form.kind === "appointment_no_show")
+    return {
+      kind: "appointment_no_show",
+      params: { event_type_ids: form.eventTypeIds },
+      ...cancelOnReply,
+    };
   if (form.kind === "manual") return { kind: "manual", ...cancelOnReply };
 
   if (form.kind === "stage_change") {
@@ -687,10 +701,16 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
 
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor="trigger-cancel-on-reply">{t("Cancelar se o lead responder")}</Label>
+            {/* #3400: aqui o `checked` era `form.kind === "appointment_no_show" ||
+                form.cancelOnReply` e o switch vinha `disabled` nesse kind — um
+                «ligado» que o motor nunca via, porque o gravador descartava o
+                valor. O switch agora mostra e grava o MESMO `cancel_on_reply` que
+                `lib/followup/reactivity.ts` lê, nos dois sentidos: sem o campo
+                salvo ele abre desligado (o motor não cancela); com
+                `cancel_on_reply: true` salvo, ligado (cancela na 1ª resposta). */}
             <Switch
               id="trigger-cancel-on-reply"
-              checked={form.kind === "appointment_no_show" || form.cancelOnReply}
-              disabled={form.kind === "appointment_no_show"}
+              checked={form.cancelOnReply}
               onCheckedChange={(checked) => setForm((f) => ({ ...f, cancelOnReply: checked }))}
             />
           </div>
