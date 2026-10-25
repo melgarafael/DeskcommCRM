@@ -64132,7 +64132,28 @@ begin
     or c.channel_session_id is distinct from m.channel_session_id
     or not exists(select 1 from public.channel_sessions where id=m.channel_session_id and organization_id=m.organization_id)
  then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
- if c.is_group or coalesce(c.group_chat_id,'') like '%@g.us' then return; end if;
+-- #2729 — GRUPO: sem demanda (grupo não tem funil, como no desenho aprovado),
+ -- mas COM o carimbo do episódio, que faltava e esvaziava o histórico do turno:
+ -- `getLeadContext` só inclui recebida com `messages.service_revision =
+ -- c.service_revision`, e a saída cedo daqui deixava TODA recebida de grupo com
+ -- revisão nula.
+ --
+ -- A conversa ENCERRADA continua saindo cedo: quem reabre grupo é o ingest
+ -- (`reabrirSeFechada`, em lib/grupos/ingest.ts), DEPOIS do insert, e carimbar
+ -- aqui poria a mensagem no episódio VELHO — a revisão sobe na reabertura.
+ if c.is_group or coalesce(c.group_chat_id,'') like '%@g.us' then
+   if c.status in ('closed','resolved','archived') then return; end if;
+   -- Conversa de grupo anterior a este carimbo nasce sem `service_started_at`, e
+   -- `messages.sent_at >= NULL` nunca é verdade: toda enviada sairia do
+   -- histórico. O campo passa a valer a partir da primeira mensagem que chega.
+   if c.service_started_at is null then
+     update public.conversations set service_started_at=m.sent_at
+      where id=c.id and organization_id=c.organization_id returning * into c;
+   end if;
+   update public.messages set service_revision=c.service_revision
+    where id=m.id and organization_id=c.organization_id;
+   return;
+ end if;
  if c.contact_id is distinct from m.contact_id
     or not exists(select 1 from public.contacts where id=m.contact_id and organization_id=m.organization_id)
  then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
