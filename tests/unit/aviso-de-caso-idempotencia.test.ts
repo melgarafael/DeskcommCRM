@@ -222,3 +222,72 @@ describe("idempotência do aviso", () => {
     expect(central).toHaveLength(1);
   });
 });
+
+
+describe("retorno solicitado no mesmo Caso", () => {
+  const atualizado = (id = "88888888-8888-4888-8888-888888888888"): EventRow => ({
+    ...ROW, event_type: "ai.case_updated", payload: { ...ROW.payload, case_event_id: id, config_revision: "r1" },
+  });
+  it("a abertura enviada não bloqueia a atualização; replay não duplica e segundo ciclo avisa", async () => {
+    const { deps, enviados } = monta(null);
+    const salvas = new Map<string, ReturnType<typeof entrega>>();
+    salvas.set("abertura", entrega({ status: "enviado" }));
+    deps.db.carregaAtualizacao = async () => ({ info: "Resposta de teste", ask: "Pergunta de teste", contactId: "d", conversationId: "c" });
+    deps.db.reivindicaEntrega = async e => {
+      const key = e.caseEventId ?? "abertura";
+      if (salvas.has(key)) return { criada: false, entrega: salvas.get(key)! };
+      const nova = entrega({ id: key }); salvas.set(key, nova); return { criada: true, entrega: nova };
+    };
+    deps.db.atualizaEntrega = async (_org,id,patch) => { Object.assign(salvas.get(id)!, patch); };
+    expect((await aplicaAvisoDeCaso(deps, ROW)).detail).toBe("ja_resolvido:enviado");
+    expect((await aplicaAvisoDeCaso(deps, atualizado())).status).toBe("ok");
+    expect((await aplicaAvisoDeCaso(deps, atualizado())).detail).toBe("ja_resolvido:enviado");
+    expect((await aplicaAvisoDeCaso(deps, atualizado("99999999-9999-4999-8999-999999999999"))).status).toBe("ok");
+    expect(enviados).toHaveLength(2);
+    expect(salvas.get("abertura")?.status).toBe("enviado");
+  });
+  it("ciclo superado não reivindica nem envia", async () => {
+    const { deps, enviados } = monta(null);
+    deps.db.carregaAtualizacao = async () => null;
+    deps.db.reivindicaEntrega = async () => { throw new Error("não deve reivindicar"); };
+    expect((await aplicaAvisoDeCaso(deps, atualizado())).detail).toBe("atualizacao_superada");
+    expect(enviados).toHaveLength(0);
+  });
+  it("mudança durante o preparo cancela a entrega antes do transporte", async () => {
+    const { deps, enviados, patches } = monta(null);
+    let leituras = 0;
+    deps.db.carregaAtualizacao = async () => ++leituras === 1 ? { info: "Resposta", ask: "Pergunta", contactId: "d", conversationId: "c" } : null;
+    expect((await aplicaAvisoDeCaso(deps, atualizado())).detail).toBe("envio_superado");
+    expect(enviados).toHaveLength(0);
+    expect(patches.at(-1)).toMatchObject({status:"cancelado"});
+  });
+  it("retorno sem identidade factual não produz aviso", async () => {
+    const { deps, enviados } = monta(null);
+    expect((await aplicaAvisoDeCaso(deps, { ...ROW, event_type: "ai.case_updated" })).detail).toBe("atualizacao_sem_vinculo");
+    expect(enviados).toHaveLength(0);
+  });
+});
+
+
+it("retomar o lease não zera o teto de tentativas da entrega", async () => {
+  const { deps, enviados, patches } = monta(null);
+  deps.db.reivindicaEntrega = async () => ({ criada: false, reivindicada: true, entrega: entrega({ tentativas: TETO_ABSOLUTO_DE_TENTATIVAS, updated_at: AGORA.toISOString() }) });
+  expect((await aplicaAvisoDeCaso(deps, ROW)).detail).toContain("indeterminado");
+  expect(enviados).toHaveLength(0);
+  expect(patches.at(-1)).toMatchObject({ status: "falhou" });
+});
+it("a atualização vencida cancela sua própria entrega com motivo visível", async () => {
+  const { deps, enviados } = monta(null);
+  const canceladas: unknown[][] = [];
+  deps.db.cancelaAtualizacao = async (...args) => { canceladas.push(args); };
+  const id="88888888-8888-4888-8888-888888888888";
+  expect((await aplicaAvisoDeCaso(deps, { ...ROW, event_type:"ai.case_updated", created_at:"2000-01-01T00:00:00.000Z",payload:{...ROW.payload,case_event_id:id,config_revision:"r1"} })).detail).toBe("evento_velho");
+  expect(canceladas).toEqual([[ORG,CASO,id,"expirou"]]);
+  expect(enviados).toHaveLength(0);
+});
+it("a identidade factual não pode ser trocada pela carga do evento", async () => {
+  const { deps, enviados } = monta(null);
+  deps.db.carregaAtualizacao = async () => ({info:"Resposta",ask:"Pergunta",contactId:"outro",conversationId:"c"});
+  expect((await aplicaAvisoDeCaso(deps,{...ROW,event_type:"ai.case_updated",payload:{...ROW.payload,case_event_id:"88888888-8888-4888-8888-888888888888",config_revision:"r1"}})).detail).toBe("atualizacao_superada");
+  expect(enviados).toHaveLength(0);
+});

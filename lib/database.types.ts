@@ -10456,6 +10456,11 @@ isOneToOne: false
                 }
     }
     Functions: {
+      fn_ler_retorno_de_caso: {
+        Args: { p_org: string; p_case: string; p_event: string; p_config_revision: string };
+        Returns: Json;
+      };
+
       fn_authorize_ai_form_capture: {
         Args: { p_organization_id: string; p_source_id: string; p_lead_id: string; p_contact_id: string; p_request_id: string; p_ttl_ms: number }
         Returns: boolean
