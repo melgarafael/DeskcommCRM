@@ -18,6 +18,7 @@ vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: mocks.loadAuthUser,
   resolveActiveOrg: mocks.resolveActiveOrg,
+  mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/auth/pode-administrar-empresa", () => ({ podeAdministrarEmpresa: () => true }));
 vi.mock("@/lib/impersonate/support", () => ({ supportWriteError: () => null }));

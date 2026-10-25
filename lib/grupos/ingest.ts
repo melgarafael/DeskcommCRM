@@ -6,12 +6,21 @@
  * `message.group_received` para conversa de grupo (migration 0482), e nenhum
  * consumidor de `message.received` — IA, follow-up, campanhas, automações — a vê.
  *
+ * #2729 abriu UMA exceção, e ela é estreita de propósito: quando o operador
+ * liga a chave por grupo "Permitir que a IA responda neste grupo"
+ * (`channel_session_groups.ia_responde`), esta entrada pede o turno do agente
+ * para aquela mensagem — o mesmo evento `ai_agent.dispatch_requested` da
+ * conversa individual. A porta continua fechada para todo o resto: sem a chave
+ * (o default de todo mundo) nada muda, e `message.group_received` continua
+ * sendo o evento que os outros consumidores veem.
+ *
  * Quem chama é a entrada do canal (o ingest do transporte, em `lib/`): ela lê o payload do
  * provedor, monta a `EntradaDeGrupo` e não sabe mais nada de grupo daqui para baixo.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
+import { grupoLiberaIa } from "@/lib/grupos/ia-no-grupo";
 import { logger } from "@/lib/logger";
 import { remetenteDeGrupoSchema, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
@@ -42,18 +51,57 @@ export interface IngestDeGrupoDb {
     org: string,
     session: string,
     chatId: string,
-  ): Promise<{ id: string; subject: string | null; contactId: string | null; conversationId: string | null } | null>;
+  ): Promise<
+    {
+      id: string;
+      subject: string | null;
+      contactId: string | null;
+      conversationId: string | null;
+      /**
+       * #2729 — a chave POR GRUPO "Permitir que a IA responda neste grupo".
+       * `false` (o default da coluna) mantém a IA calada no grupo, como sempre.
+       */
+      iaResponde: boolean;
+    } | null
+  >;
   criarContatoDoGrupo(org: string, chatId: string, subject: string | null): Promise<string>;
-  criarConversaDoGrupo(org: string, session: string, contactId: string, chatId: string): Promise<string>;
+  /**
+   * `service_started_at` vai junto (#2729): a conversa de grupo nasce ABERTA e,
+   * sem ele, `getLeadContext` descarta toda mensagem enviada — a régua do
+   * histórico é `messages.sent_at >= c.service_started_at`. O instante é o da
+   * mensagem que criou a conversa, não o `now()` do ingest: um webhook atrasado
+   * não pode fazer o histórico começar depois da mensagem que o gerou.
+   */
+  criarConversaDoGrupo(
+    org: string,
+    session: string,
+    contactId: string,
+    chatId: string,
+    iniciadoEm: string,
+  ): Promise<string>;
   vincular(org: string, grupoId: string, contactId: string, conversationId: string): Promise<void>;
-  inserirMensagem(row: Record<string, unknown>): Promise<"ok" | "duplicada">;
+  /**
+   * O id volta porque é ele que o pedido de turno do agente aponta
+   * (`entity_id` do evento). `duplicada` vem sem id: não há mensagem nova,
+   * logo não há turno a pedir.
+   */
+  inserirMensagem(row: Record<string, unknown>): Promise<{ status: "ok" | "duplicada"; messageId: string | null }>;
   /**
    * Conversa de grupo FECHADA (closed/resolved/archived) volta a `open` quando chega
    * mensagem nova — o que a conversa individual faz em `fn_service_inbound`, que pula grupos.
    * Sem isto, um "resolver" num grupo esconde para sempre as mensagens seguintes em
    * "Fechadas". Não aciona roteamento: `fn_request_channel_routing` pula `is_group`.
+   *
+   * #2729 — `messageId`/`quando`: a reabertura começa um episódio NOVO, e a
+   * mensagem que a causou foi inserida ANTES dela (o insert é o que dispara o
+   * ingest). `fn_service_inbound` não carimba recebida de grupo em conversa
+   * encerrada — carimbaria no episódio velho —, então o carimbo com a revisão
+   * nova é feito aqui, junto com `service_started_at` no instante da mensagem
+   * (a 1:1 faz as duas coisas dentro da própria função, sob o mesmo lock).
+   * Sem isto, o primeiro turno depois de reabrir um grupo veria só a mensagem
+   * atual, e não o que veio antes no episódio novo.
    */
-  reabrirSeFechada(org: string, conversationId: string): Promise<void>;
+  reabrirSeFechada(org: string, conversationId: string, messageId?: string, quando?: string): Promise<void>;
   /**
    * `direction` vai no fim porque o carimbo compartilhado
    * (`fn_mark_conversation_message`) move `last_inbound_at` OU `last_outbound_at`
@@ -66,6 +114,21 @@ export interface IngestDeGrupoDb {
     quando: string,
     direction: "inbound" | "outbound",
   ): Promise<void>;
+  /**
+   * #2729 — o turno do agente para o grupo que liberou a IA. É o MESMO evento
+   * (`ai_agent.dispatch_requested`) e o MESMO payload da conversa individual,
+   * para o MESMO consumidor (`lib/agent-engine/edge/crm/drain.ts`): o grupo
+   * entra na fila comum pelo caminho que a conversa individual entra, sem
+   * segunda esteira. Só que aqui ele nasce de uma mensagem de grupo — é o
+   * ingest que decide, pela chave por grupo, e mais ninguém.
+   */
+  pedirDespachoDeIa(e: {
+    organizationId: string;
+    conversationId: string;
+    contactId: string;
+    channelSessionId: string;
+    messageId: string;
+  }): Promise<void>;
 }
 
 export async function gravarMensagemDeGrupo(
@@ -80,7 +143,13 @@ export async function gravarMensagemDeGrupo(
   let conversationId = grupo.conversationId;
   if (!contactId || !conversationId) {
     contactId ??= await db.criarContatoDoGrupo(e.organizationId, e.groupChatId, grupo.subject);
-    conversationId ??= await db.criarConversaDoGrupo(e.organizationId, e.channelSessionId, contactId, e.groupChatId);
+    conversationId ??= await db.criarConversaDoGrupo(
+      e.organizationId,
+      e.channelSessionId,
+      contactId,
+      e.groupChatId,
+      e.sentAt,
+    );
     await db.vincular(e.organizationId, grupo.id, contactId, conversationId);
   }
 
@@ -108,13 +177,36 @@ export async function gravarMensagemDeGrupo(
       ...(remetente?.success ? { group_sender: remetente.data } : {}),
     },
   });
-  if (resultado === "duplicada") return "duplicada";
-  if (e.direction === "inbound") await db.reabrirSeFechada(e.organizationId, conversationId);
+  if (resultado.status === "duplicada") return "duplicada";
+  if (e.direction === "inbound")
+    await db.reabrirSeFechada(e.organizationId, conversationId, resultado.messageId ?? undefined, e.sentAt);
+
   // Mesma prévia da conversa individual (`previewFromMessage`): a RÉGUA mora em
   // `lib/messaging/previa-da-mensagem.ts` — texto até 280, `[tipo]` sem texto, e
   // o vCard vira `Contato: <nome>` em vez do literal ou do cartão cru (#2742).
   const preview = previaDaMensagem(e.body, e.type);
   await db.marcarConversa(e.organizationId, conversationId, preview, e.sentAt, e.direction);
+  // ── #2729 — a chave POR GRUPO, por último ────────────────────────────────
+  //
+  // Só para mensagem RECEBIDA (eco do celular é a própria operação humana) e
+  // SÓ quando o operador ligou a chave naquele grupo. Depois do carimbo, de
+  // propósito: o turno lê a conversa já com `last_inbound_at` novo, e uma
+  // corrida de dois eventos do mesmo grupo (o provedor manda `message` e
+  // `message.any`) não muda o resultado — os dois pedidos apontam para a mesma
+  // mensagem e a fila deduplica pelo event_log.
+  //
+  // Daqui para baixo nada mais acontece: este pedido é o ÚNICO efeito novo do
+  // grupo liberado, e ele não substitui o `message.group_received` — nenhum
+  // outro consumidor passa a enxergar mensagem de grupo.
+  if (e.direction === "inbound" && grupoLiberaIa(grupo.iaResponde) && resultado.messageId) {
+    await db.pedirDespachoDeIa({
+      organizationId: e.organizationId,
+      conversationId,
+      contactId,
+      channelSessionId: e.channelSessionId,
+      messageId: resultado.messageId,
+    });
+  }
   return "gravada";
 }
 
@@ -124,7 +216,7 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
     async grupoLigado(org, session, chatId) {
       const { data, error } = await admin
         .from("channel_session_groups")
-        .select("id, subject, contact_id, conversation_id")
+        .select("id, subject, contact_id, conversation_id, ia_responde")
         .eq("organization_id", org)
         .eq("channel_session_id", session)
         .eq("group_chat_id", chatId)
@@ -139,8 +231,27 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
         });
         return null;
       }
-      const r = data as { id: string; subject: string | null; contact_id: string | null; conversation_id: string | null } | null;
-      return r ? { id: r.id, subject: r.subject, contactId: r.contact_id, conversationId: r.conversation_id } : null;
+      const r =
+        data as
+          | {
+              id: string;
+              subject: string | null;
+              contact_id: string | null;
+              conversation_id: string | null;
+              ia_responde: boolean | null;
+            }
+          | null;
+      return r
+        ? {
+            id: r.id,
+            subject: r.subject,
+            contactId: r.contact_id,
+            conversationId: r.conversation_id,
+            // Coluna nula (linha anterior à 0653) é a mesma coisa que
+            // desligada: não sei se liberaram, e não sei não responde.
+            iaResponde: r.ia_responde === true,
+          }
+        : null;
     },
 
     async criarContatoDoGrupo(org, chatId, subject) {
@@ -174,7 +285,7 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
       return (existente as { id: string }).id;
     },
 
-    async criarConversaDoGrupo(org, session, contactId, chatId) {
+    async criarConversaDoGrupo(org, session, contactId, chatId, iniciadoEm) {
       const { data, error } = await admin
         .from("conversations")
         .insert({
@@ -185,6 +296,11 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
           status: "open",
           is_group: true,
           group_chat_id: chatId,
+          // #2729 — o episódio de serviço começa com a mensagem que abriu a
+          // conversa. Sem isto o grupo nascia com `service_started_at` nulo e a
+          // régua do histórico (`messages.sent_at >= c.service_started_at`)
+          // descartava TODA mensagem enviada, porque compara com NULL.
+          service_started_at: iniciadoEm,
         })
         .select("id")
         .single();
@@ -224,13 +340,16 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
     async inserirMensagem(row) {
       const { data, error } = await admin.from("messages").insert(row).select("id").maybeSingle();
       if (error) {
-        if ((error as { code?: string }).code === "23505") return "duplicada";
+        // `duplicada` vem SEM id: não há mensagem nova, logo não há turno a
+        // pedir (#2729) — e o pedido apontaria para uma mensagem que não é deste
+        // webhook.
+        if ((error as { code?: string }).code === "23505") return { status: "duplicada", messageId: null };
         throw error;
       }
       // "Mídia pelo mesmo caminho das conversas individuais" (spec): a URL do
       // provedor é temporária, e quem a copia para o Storage é o worker de
       // `media.persist_requested`. Sem isto a foto do grupo some em horas.
-      const id = (data as { id: string } | null)?.id;
+      const id = (data as { id: string } | null)?.id ?? null;
       if (id && row.media_url) {
         const org = row.organization_id as string;
         const { error: erroEvento } = await admin.rpc("emit_event" as never, {
@@ -249,25 +368,55 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
           });
         }
       }
-      return "ok";
+      return { status: "ok", messageId: id };
     },
 
-    async reabrirSeFechada(org, conversationId) {
+    async reabrirSeFechada(org, conversationId, messageId, quando) {
       // `trg_service_stamp_status` carimba a revisão de serviço e limpa o dono,
       // como na reabertura da conversa individual. O filtro `is_group` garante
       // que este caminho nunca reabre uma conversa 1:1.
-      const { error } = await admin
+      const { data, error } = await admin
         .from("conversations")
-        .update({ status: "open", status_changed_at: new Date().toISOString() })
+        .update({
+          status: "open",
+          status_changed_at: new Date().toISOString(),
+          // #2729 — o episódio novo começa na mensagem que o reabriu, como na
+          // 1:1 (que usa `m.sent_at`). O gatilho respeita o valor: só troca por
+          // `clock_timestamp()` quando o campo não mudou.
+          ...(quando !== undefined ? { service_started_at: quando } : {}),
+        })
         .eq("organization_id", org)
         .eq("id", conversationId)
         .eq("is_group", true)
-        .in("status", ["closed", "resolved", "archived"]);
+        .in("status", ["closed", "resolved", "archived"])
+        .select("service_revision")
+        .maybeSingle();
       if (error) {
         logger.warn("[grupos.ingest] conversa de grupo fechada não reaberta", {
           organization_id: org,
           conversation_id: conversationId,
           causa: error.message,
+        });
+        return;
+      }
+      // Não reabriu (a conversa já estava aberta, ou outra corrida reabriu
+      // antes): não há episódio novo para carimbar.
+      const revisao = (data as { service_revision: number } | null)?.service_revision;
+      if (revisao === undefined || revisao === null || messageId === undefined) return;
+      const { error: erroCarimbo } = await admin
+        .from("messages")
+        .update({ service_revision: revisao })
+        .eq("organization_id", org)
+        .eq("conversation_id", conversationId)
+        .eq("id", messageId)
+        .eq("direction", "inbound")
+        .is("service_revision", null);
+      if (erroCarimbo) {
+        logger.warn("[grupos.ingest] recebida que reabriu o grupo ficou sem revisão", {
+          organization_id: org,
+          conversation_id: conversationId,
+          message_id: messageId,
+          causa: erroCarimbo.message,
         });
       }
     },
@@ -281,6 +430,42 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
         at: quando,
         canal: "grupo",
       });
+    },
+
+    async pedirDespachoDeIa(e) {
+      // MESMO evento, MESMO payload e MESMO consumidor do turno da conversa
+      // individual (`pedirDespachoDoAgente`, em `lib/channels/pos-entrada.ts`):
+      // o grupo que liberou a IA entra na fila comum do engine, sem segunda
+      // esteira — o drain é quem abre (ou não) o turno, e lá a régua
+      // `grupoLiberaIa` é reaplicada por conta própria (defesa em profundidade).
+      //
+      // Falha para dentro, como lá: a mensagem JÁ está gravada (o pedido vem
+      // depois do insert, e não o contrário), e um throw aqui viraria 500 para
+      // o provedor do canal, que reenviaria o webhook inteiro — mensagem
+      // duplicada em troca de um turno que a fila deduplicaria de qualquer
+      // forma. Log estruturado é o rastro de "o grupo liberado não virou turno".
+      const { error } = await admin.rpc("emit_event" as never, {
+        p_event_type: "ai_agent.dispatch_requested",
+        p_entity_kind: "message",
+        p_entity_id: e.messageId,
+        p_payload: {
+          organization_id: e.organizationId,
+          conversation_id: e.conversationId,
+          contact_id: e.contactId,
+          channel_session_id: e.channelSessionId,
+          inbound_message_id: e.messageId,
+        },
+        p_metadata: { source: "grupo_ingest" },
+        p_organization_id: e.organizationId,
+      } as never);
+      if (error) {
+        logger.warn("[grupos.ingest] pedido de turno da IA não emitido", {
+          organization_id: e.organizationId,
+          conversation_id: e.conversationId,
+          message_id: e.messageId,
+          causa: error.message,
+        });
+      }
     },
   };
 }

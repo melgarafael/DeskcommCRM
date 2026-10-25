@@ -376,7 +376,8 @@ describe("o assistente move pela MESMA régua dos outros caminhos (#1536)", () =
     const aviso = avisoDoEspelhoRecusado({
       motivo: "campos_obrigatorios",
       detalhe: "Preencha os campos obrigatórios antes de continuar: Concorrente.",
-      etapaDeDestino: "Proposta enviada",
+      etapaDeDestino: "negotiating",
+      etapaDoFunil: "Proposta enviada",
     });
 
     expect(aviso).not.toBeNull();

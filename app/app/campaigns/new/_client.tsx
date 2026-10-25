@@ -38,6 +38,7 @@ import {
   variaveisIncompletas,
   type EscolhaDoModelo,
 } from "../_components/ModeloDaCampanha";
+import { VelocidadeDaCampanha, type Velocidade } from "../_components/VelocidadeDaCampanha";
 
 export function NovaCampanha() {
   const t = useT();
@@ -67,11 +68,14 @@ export function NovaCampanha() {
   const [funilDoPublico, setFunilDoPublico] = useState("");
   const [etapaDoPublico, setEtapaDoPublico] = useState("");
   const [modelo, setModelo] = useState<EscolhaDoModelo | null>(null);
+  const [velocidade, setVelocidade] = useState<Velocidade>("gradual");
 
   // O que o número escolhido aceita: texto livre (QR) ou modelo aprovado
   // (oficial). Quem decide é o servidor, pela capability do canal.
   const doCanal = useModelosDaCampanha(canal);
   const ehOficial = doCanal.data?.modo === "template";
+  // Rápida só no número oficial: trocar para um número por QR volta a gradual.
+  const rapida = ehOficial && velocidade === "rapida";
   const providerDoCanal = (canais.data ?? []).find((c) => c.id === canal)?.provider ?? null;
   const modeloEscolhido =
     modelo && doCanal.data
@@ -130,7 +134,9 @@ export function NovaCampanha() {
       base_legal: baseLegal,
       lia_ref: liaRef.trim() || null,
       audience_filter: filtro,
-      intervalo_segundos: intervalo ? Number(intervalo) : null,
+      // Na rápida o intervalo não vale (a rajada tem o próprio espaçamento).
+      intervalo_segundos: intervalo && !rapida ? Number(intervalo) : null,
+      velocidade: rapida ? "rapida" : "gradual",
       janela_inicio_hora: janelaInicio ? Number(janelaInicio) : null,
       janela_fim_hora: janelaFim ? Number(janelaFim) : null,
       teto_diario: tetoDiario ? Number(tetoDiario) : null,
@@ -519,22 +525,25 @@ export function NovaCampanha() {
 
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Ritmo desta campanha")}</h2>
+        {canal && <VelocidadeDaCampanha valor={velocidade} onChange={setVelocidade} ehOficial={ehOficial} />}
         <p className="text-sm text-muted-foreground">
           {t(
             "Em branco, vale o ritmo do número (Conexões › Proteção de envio). O que você puser aqui só pode deixar mais devagar.",
           )}
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="intervalo">{t("Intervalo mínimo entre mensagens (segundos)")}</Label>
-            <Input
-              id="intervalo"
-              type="number"
-              min={1}
-              value={intervalo}
-              onChange={(e) => setIntervalo(e.target.value)}
-            />
-          </div>
+          {!rapida && (
+            <div className="space-y-2">
+              <Label htmlFor="intervalo">{t("Intervalo mínimo entre mensagens (segundos)")}</Label>
+              <Input
+                id="intervalo"
+                type="number"
+                min={1}
+                value={intervalo}
+                onChange={(e) => setIntervalo(e.target.value)}
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="teto">{t("Máximo por dia")}</Label>
             <Input

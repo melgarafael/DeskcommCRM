@@ -55,6 +55,16 @@
  * (`decidirWhatsappDoLembrete`). Sem isso, o motivo do pulo vai para o log e a
  * API do provedor não é chamada — tentar e falhar deixa dúvida no lugar de
  * resposta.
+ *
+ * ═══ E O CANAL É UM NÚMERO, NÃO UM PERFIL (#3358) ═══
+ *
+ * O destino deste aviso é sempre um TELEFONE: o número que a pessoa deixou, que
+ * a rodada casa com `contacts.phone_number`. Por isso a sessão de envio é
+ * pedida COM a preferência por telefone — a organização pode ter Instagram e
+ * WhatsApp ligados ao mesmo tempo, e a rede social não alcança um número (o
+ * contato de lá é outro endereço). Sem ela a organização que conectou o
+ * Instagram primeiro recebia o lembrete numa conversa social, recusada pela
+ * janela de 24h fechada.
  */
 import { randomUUID } from "node:crypto";
 
@@ -82,6 +92,7 @@ import {
   type PreferenciaDeLembrete,
   type TipoDeAvisoDeTarefa,
 } from "@/lib/tarefas/preferencia-de-lembrete";
+import { HREF_MINHAS_TAREFAS } from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
@@ -330,7 +341,7 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
         title: texto.titulo,
         body: truncar(texto.corpo),
         tag: `task:${tarefa.id}`,
-        href: "/app/tasks",
+        href: HREF_MINHAS_TAREFAS,
       });
     } catch (err) {
       logger.warn("[task-reminder] push falhou", {
@@ -349,7 +360,15 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
     // mensagens usa) — sem sessão de canal da organização a rodada NEM TENTA.
     const pref = preferencias.get(responsavel) ?? lerPreferenciaDeLembrete(undefined);
     if (pref.whatsapp) {
-      const canalId = await sessaoProntaParaEnvio(admin, tarefa.organization_id);
+      // O DESTINO DESTA RODADA É UM TELEFONE (#3358) — o número que a pessoa
+      // deixou, casado logo abaixo com `contacts.phone_number`. Sem a
+      // preferência, a porta devolvia a sessão `WORKING` mais ANTIGA da
+      // organização, e numa organização que conectou o Instagram/Facebook antes
+      // do WhatsApp a escolhida era a social: o lembrete era gravado numa
+      // conversa de Instagram e recusado pela janela de 24h fechada. O `create`
+      // de contato e a conversa compartilhada ainda chamam sem a opção
+      // (continuação do #3358).
+      const canalId = await sessaoProntaParaEnvio(admin, tarefa.organization_id, { preferirTelefone: true });
       const telefone = pref.whatsapp_numero ?? null;
       let contatoId: string | null = null;
       // A tela grava só dígitos (`5511999990000`) e `contacts.phone_number`

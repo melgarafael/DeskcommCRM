@@ -11,6 +11,7 @@ import { ehVersaoPublicada, textoDaRodadaDoBanco } from "@/lib/system/update-run
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 // Sem `cd <pasta>`: o instalador não fixa o nome da pasta do clone
 // (REPO_DIR é configurável, default "deskcommcrm" minúsculo) — quem tem
@@ -123,6 +124,9 @@ export function UpdatePanel() {
       queryClient.invalidateQueries({ queryKey: ["system-version"] });
     },
     onError: (err) => {
+      // O código desta sessão venceu (ou nunca foi provado): "tente de novo"
+      // não resolve, e entrar de novo não o pede a quem confiou no dispositivo.
+      if (err instanceof ApiError && err.code === "mfa_required") return irAoDesafioDeMfa();
       // 409 é estado de negócio ("já tem um run rodando" / "já está em dia"),
       // não falha técnica — mostra a mensagem que a API já escreveu em
       // português em vez de um genérico "tente de novo".
@@ -152,6 +156,7 @@ export function UpdatePanel() {
       queryClient.invalidateQueries({ queryKey: ["system-version"] });
     },
     onError: (err) => {
+      if (err instanceof ApiError && err.code === "mfa_required") return irAoDesafioDeMfa();
       const mensagem =
         err instanceof ApiError && err.status === 409
           ? t(err.message)
@@ -400,8 +405,16 @@ export function UpdatePanel() {
           // O MESMO alvo do comando logo abaixo, entregue como run (#2757) —
           // e só quando ele existe de verdade: uma versão publicada para onde
           // voltar. `ehVersaoPublicada` é a régua das duas coisas.
+          //
+          // Na volta automática que TERMINOU o botão não entra (#3271): o alvo
+          // dele é a versão que já está no ar, e clicar ali só derrubaria o
+          // sistema por ~2 min para reinstalar o que já roda. Ele continua no
+          // desfecho em que a volta NÃO terminou — que é outro ramo desta tela
+          // (`failed`), porque a rota grava `failed` quando o `update.sh --to`
+          // da volta sai com código diferente de zero. É por isso que os dois
+          // desfechos não podem continuar chegando aqui como um só.
           voltar={
-            ehVersaoPublicada(data.run.from_version)
+            !data.run.volta_automatica && ehVersaoPublicada(data.run.from_version)
               ? {
                   destino: anterior,
                   mutate: () => voltar.mutate(),

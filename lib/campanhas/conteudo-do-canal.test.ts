@@ -6,7 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
-import { decidirConteudo } from "./conteudo-do-canal";
+import { decidirConteudo, decidirVelocidade } from "./conteudo-do-canal";
 
 const SEM_BANCO = new Proxy({} as SupabaseClient, {
   get() {
@@ -67,5 +67,22 @@ describe("decidirConteudo", () => {
   it("canal que não faz campanha (rede social)", async () => {
     const r = await decidirConteudo(SEM_BANCO, { ...base, modoDoCanal: null, pedido: {} });
     expect(r).toMatchObject({ ok: false, codigo: "campanha_canal_indisponivel" });
+  });
+});
+
+describe("decidirVelocidade", () => {
+  it("rápida no número oficial passa; sem pedir, fica a que estava", () => {
+    expect(decidirVelocidade({ pedida: "rapida", atual: "gradual", modo: "template" })).toEqual({ ok: true, velocidade: "rapida" });
+    expect(decidirVelocidade({ pedida: undefined, atual: "rapida", modo: "template" })).toEqual({ ok: true, velocidade: "rapida" });
+    expect(decidirVelocidade({ pedida: undefined, atual: "gradual", modo: "template" })).toEqual({ ok: true, velocidade: "gradual" });
+  });
+
+  it("rápida pedida num número por QR é recusada com o código e a frase", () => {
+    const r = decidirVelocidade({ pedida: "rapida", atual: "gradual", modo: "text" });
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_velocidade_do_canal", status: 422 });
+  });
+
+  it("campanha rápida que troca para um número por QR volta a gradual em vez de travar no CHECK", () => {
+    expect(decidirVelocidade({ pedida: undefined, atual: "rapida", modo: "text" })).toEqual({ ok: true, velocidade: "gradual" });
   });
 });

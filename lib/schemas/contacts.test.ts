@@ -209,6 +209,28 @@ describe("contactPatchSchema", () => {
     expect(parsed).toEqual({ tags: ["vip"] });
     expect("source" in parsed).toBe(false);
   });
+
+  it("não materializa contact_type quando o PATCH omite o tipo", () => {
+    // O default 'cliente' é do BANCO (migration 0763): um PATCH que só troca o
+    // nome não pode mandar `contact_type: 'cliente'` e rebaixar um fornecedor
+    // em silêncio. O campo ausente fica AUSENTE.
+    const parsed = contactPatchSchema.parse({ name: "Ana" });
+
+    expect("contact_type" in parsed).toBe(false);
+  });
+
+  it("aceita o PATCH de fornecedor (issue 3005)", () => {
+    const parsed = contactPatchSchema.parse({ contact_type: "fornecedor" });
+
+    expect(parsed.contact_type).toBe("fornecedor");
+  });
+
+  it("recusa um tipo que o CHECK do banco não conhece", () => {
+    // A lista é a MESMA dos dois lados (`CONTACT_TIPOS`): deixar passar
+    // 'transportadora' aqui seria 23514 no caminho de gravação, longe da causa.
+    expect(contactPatchSchema.safeParse({ contact_type: "transportadora" }).success).toBe(false);
+    expect(contactCreateSchema.safeParse({ contact_type: "cliente" }).success).toBe(true);
+  });
 });
 
 describe("contactListQuerySchema", () => {

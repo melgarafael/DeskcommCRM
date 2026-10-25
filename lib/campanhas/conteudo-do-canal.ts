@@ -14,7 +14,7 @@ import { modoDeCampanhaDoCanal } from "@/lib/channels/capabilities";
 
 import type { VariaveisDaCampanha } from "./modelo";
 import { conferirModeloDaCampanha } from "./modelo-da-conexao";
-import type { ModoDaMensagem } from "./tipos";
+import type { ModoDaMensagem, VelocidadeDaCampanha } from "./tipos";
 
 export interface PedidoDeConteudo {
   message_mode?: ModoDaMensagem | undefined;
@@ -145,4 +145,32 @@ export async function decidirConteudo(
       provider_template_variables: variaveis,
     },
   };
+}
+
+export type DecisaoDaVelocidade =
+  | { ok: true; velocidade: VelocidadeDaCampanha }
+  | { ok: false; codigo: ApiErrorCode; mensagem: string; status: number };
+
+/**
+ * A VELOCIDADE SEGUE O CONTEÚDO (migration 0711): rápida só com modelo
+ * aprovado, que é o número oficial. Pedir rápida num número por QR é recusado
+ * com a frase; trocar uma campanha rápida para um número por QR a devolve a
+ * gradual — a única que ali existe —, em vez de travar a edição no CHECK.
+ */
+export function decidirVelocidade(entrada: {
+  pedida: VelocidadeDaCampanha | undefined;
+  atual: VelocidadeDaCampanha;
+  modo: ModoDaMensagem;
+}): DecisaoDaVelocidade {
+  if (entrada.pedida === "rapida" && entrada.modo !== "template") {
+    return {
+      ok: false,
+      codigo: "campanha_velocidade_do_canal",
+      mensagem:
+        "Envio rápido é só do número oficial, com modelo aprovado: no número por QR a rajada leva ao banimento.",
+      status: 422,
+    };
+  }
+  const velocidade = entrada.pedida ?? entrada.atual;
+  return { ok: true, velocidade: entrada.modo === "template" ? velocidade : "gradual" };
 }

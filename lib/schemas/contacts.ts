@@ -19,6 +19,23 @@ import { isValidCpf, PAIS_PADRAO, type PerfilDoPais } from "@/lib/legal/perfil-d
 export const PHONE_REGEX = /^\+\d{8,15}$/;
 
 /**
+ * O TIPO DO CONTATO (issue 3005, fatia 1): cliente (padrão) ou fornecedor.
+ *
+ * As DUAS palavras do produto moram numa constante porque a tela, o schema e a
+ * migration precisam da MESMA lista: o CHECK `contacts_contact_type_check`
+ * guarda estes dois valores, e uma terceira palavra no schema que o banco não
+ * conhece seria `23514` no caminho de gravação.
+ *
+ * O default é do BANCO (`'cliente'`, migration 0763), não do Zod: um PATCH que
+ * não fala de tipo não pode materializar `contact_type` no payload e reescrever
+ * a coluna de quem já é fornecedor — mesma régua do `source` no PATCH, que
+ * ficou sem default exatamente por isso (`contactPatchSchema`, mais abaixo).
+ */
+export const CONTACT_TIPOS = ["cliente", "fornecedor"] as const;
+export const contactTypeSchema = z.enum(CONTACT_TIPOS);
+export type ContactType = z.infer<typeof contactTypeSchema>;
+
+/**
  * Teto de 32 KB no jsonb inteiro. O CHECK do banco só garante que é OBJETO —
  * sem limite de tamanho, um cliente da API escreveria megabytes numa coluna que
  * a listagem de contatos traz inteira, e o custo apareceria como "a tela de
@@ -54,6 +71,10 @@ export const contactCreateSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // O papel do contato (issue 3005): ausente = o default do BANCO ('cliente'),
+  // e por isso `contactPatchSchema` também o deixa opcional — um PATCH que só
+  // troca o nome não reescreve o tipo de um fornecedor.
+  contact_type: contactTypeSchema.optional(),
   // O marcador nasce em caixa baixa, pela MESMA regra da tag de conversa: o
   // "VIP" gravado verbatim não casava com o filtro `?tag=vip` (issue #1224).
   tags: z.array(z.string()).transform(normalizarTags).optional(),
@@ -258,6 +279,16 @@ export const contactListQuerySchema = z.object({
     .union([z.boolean(), z.enum(["true", "false"])])
     .optional()
     .transform((v) => v === true || v === "true"),
+  /**
+   * A LISTA DE QUEM PEDIU PARA NÃO SER INCOMODADO.
+   *
+   * Sem isto o bloqueio existia só como etiqueta na linha: para saber quem
+   * pediu era preciso percorrer a lista inteira a olho. Responde só pelo
+   * opt-out do titular: a lista de exclusão de campanha e os anonimizados
+   * são outras perguntas, fora deste filtro. Ausente = todos (o padrão de
+   * sempre); `z.enum` recusa o valor inventado com 422, como o `modo`.
+   */
+  blocked: z.enum(["yes", "no"]).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   order_by: z.enum(CONTACT_ORDER_BY).default("last_activity_at"),

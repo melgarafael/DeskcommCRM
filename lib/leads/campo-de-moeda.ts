@@ -58,5 +58,8 @@ export function semAMoeda(texto: string, moeda: string): string {
  * antes fazia depois de tirar o « R$ », agora para toda moeda.
  */
 export function lerCampoDeMoeda(texto: string, moeda: string): number | null {
-  return parseReaisToCents(semAMoeda(texto, moeda));
+  // ⚠️ A moeda vai ADIANTE (#3331): sem ela o parser lia `1,300` de uma
+  // organização em dólar como 1,30 — a moeda chegava até aqui só para tirar o
+  // símbolo e escrever o exemplo, e parava antes da leitura.
+  return parseReaisToCents(semAMoeda(texto, moeda), moeda);
 }

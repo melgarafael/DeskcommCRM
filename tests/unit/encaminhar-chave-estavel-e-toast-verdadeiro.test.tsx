@@ -166,12 +166,22 @@ describe("encaminhar: o toast diz a verdade sobre o desfecho", () => {
 
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledTimes(1);
-    expect(toastError.mock.calls[0]![0]).toContain("waha_error");
+    expect(toastError.mock.calls[0]![0]).toBe(
+      "Não foi possível encaminhar: Não conseguimos falar com o serviço de WhatsApp. Confira se ele está no ar.",
+    );
   });
 
-  it("o motivo gravado pelo envio vence o código do adaptador", async () => {
+  // Revisão deliberada do #2835 ("o motivo gravado pelo envio vence o código do
+  // adaptador"): o texto gravado pode ser o cru do transporte, com endereço
+  // interno. Agora a frase NOSSA do código vence o texto gravado — e a de canal
+  // excluído, na conversa, não fala de automação. O texto gravado só aparece
+  // quando nenhuma frase conhece o código (ver `lib/inbox/motivo-da-falha.ts`).
+  it("a frase nossa do código vence o texto gravado, sem falar de automação", async () => {
     post.mockResolvedValueOnce({
-      data: { status: "failed", error_code: "waha_error", error_message: "Connection Closed" },
+      data: {
+        status: "failed", error_code: "channel_archived",
+        error_message: "texto que o envio gravou",
+      },
     });
     const { result } = renderHook(() => useEncaminharMensagem(), { wrapper });
 
@@ -180,7 +190,32 @@ describe("encaminhar: o toast diz a verdade sobre o desfecho", () => {
     });
 
     expect(toastError).toHaveBeenCalledTimes(1);
-    expect(toastError.mock.calls[0]![0]).toContain("Connection Closed");
+    expect(toastError.mock.calls[0]![0]).toBe(
+      "Não foi possível encaminhar: Este número foi excluído da Central de Conexões.",
+    );
+    expect(toastError.mock.calls[0]![0]).not.toContain("automação");
+  });
+
+  // O texto livre do TRANSPORTE pode trazer o endereço interno do serviço: com
+  // frase própria no código, vale a frase; sem ela, a genérica.
+  it.each([
+    ["waha_error", "Não foi possível encaminhar: Não conseguimos falar com o serviço de WhatsApp. Confira se ele está no ar."],
+    ["codigo_sem_frase", "Não foi possível encaminhar: Não foi possível enviar esta mensagem."],
+  ])("o texto cru do canal não chega ao toast (%s)", async (error_code, esperado) => {
+    post.mockResolvedValueOnce({
+      data: {
+        status: "failed", error_code,
+        error_message: "fetch failed http://servico-interno:3000/api/sendText",
+      },
+    });
+    const { result } = renderHook(() => useEncaminharMensagem(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(vars);
+    });
+
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError.mock.calls[0]![0]).toBe(esperado);
   });
 
   it("envio ENTREGUE: toast de sucesso, sem toast de erro", async () => {

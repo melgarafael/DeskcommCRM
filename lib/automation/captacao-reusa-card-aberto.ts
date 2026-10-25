@@ -9,8 +9,13 @@
  * mesmo funil, e quem olha três cards do mesmo cliente não sabe qual dos três a
  * equipe está tocando.
  *
- * Com `external_id` o defeito não aparece — quem identifica o card é o id do
- * envio (`findLeadByExternalId`), e essa régua é a do #2316, intocada.
+ * Com um `external_id` que JÁ existe o defeito não aparece — quem identifica o
+ * card é o id do envio (`findLeadByExternalId`), e essa régua é a do #2316,
+ * intocada. Com um `external_id` INÉDITO ele aparecia igual (#3357): o id ainda
+ * não apontava para card nenhum, a captação abria o segundo card e o da conversa
+ * ficava parado. Hoje a ROTA adota o card neste caminho e carimba o id nele; a
+ * pergunta deste módulo continua sendo uma só — existe card aberto do contato
+ * neste funil?
  *
  * ## O desenho é o da própria issue, e ele tem duas portas
  *

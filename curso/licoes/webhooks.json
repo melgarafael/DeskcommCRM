@@ -1,0 +1,1317 @@
+{
+  "id": "webhooks",
+  "titulo": "Webhooks",
+  "tela": "/app/webhooks",
+  "resumo": "Onde você liga os formulários do seu site ao funil, vê cada contato que chegou por eles e cria avisos automáticos para outros sistemas quando algo acontece no CRM.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Webhooks",
+      "objetivo": "Saber para que serve cada aba e ler de relance se cada formulário está ligado e recebendo contatos.",
+      "papel": "admin",
+      "busca": [
+        "webhooks",
+        "integração",
+        "formulário do site",
+        "landing page",
+        "receber contatos de fora",
+        "ligar outro sistema",
+        "fontes de captação"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As quatro abas",
+          "texto": "A tela de Webhooks liga o CRM a outros lugares. Na aba \"Receber dados\" ficam as fontes: cada formulário ou landing page que traz contatos para o seu funil. \"Leads recebidos\" mostra tudo o que chegou por esses formulários. Em \"Automações\" você cria regras que agem sozinhas, como avisar outro sistema quando um paciente fecha. \"Atividade\" mostra o que cada automação fez.",
+          "dica": "Só quem é gerente ou administrador vê esta tela. Os atendentes que tentam abri-la vão para a Inbox.",
+          "rota": "/app/webhooks",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "As quatro abas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova fonte",
+                "exato": true
+              },
+              "rotulo": "Ligar um formulário novo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma fonte para cada formulário",
+          "texto": "Cada cartão é uma fonte. O selo verde \"Ativa\" quer dizer que ela está aceitando contatos. \"Pausada\" quer dizer que ela recusa os envios: quem preencher aquele formulário não entra no funil. Embaixo do nome aparece há quanto tempo chegou o último contato, ou \"nunca recebeu\" se ainda não chegou nenhum. Um formulário que costumava receber todo dia e está parado há muito tempo merece uma olhada.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ativa",
+                "exato": true,
+                "dentro": {
+                  "css": "div.cursor-pointer:has-text('Avaliação nutricional')"
+                }
+              },
+              "rotulo": "Aceitando contatos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^último recebimento",
+                "regex": true,
+                "dentro": {
+                  "css": "div.cursor-pointer:has-text('Avaliação nutricional')"
+                }
+              },
+              "rotulo": "Último contato que chegou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Pausada",
+                "exato": true,
+                "dentro": {
+                  "css": "div.cursor-pointer:has-text('Pilates para iniciantes')"
+                }
+              },
+              "rotulo": "Recusando envios",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "texto": "Formulário do site — Avaliação nutricional",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Abrindo uma fonte",
+          "texto": "Clique num cartão para abrir o painel da fonte, à direita. No alto ficam o nome e a situação. O lápis ao lado do nome serve para renomear a fonte. Logo abaixo vem o endereço da fonte: é ele que você cola no seu site. A próxima lição mostra como.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Formulário do site — Avaliação nutricional",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Endereço da fonte",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.flex.items-center.gap-2:has(> div.min-w-0 > button[aria-label='Editar nome da fonte'])"
+              },
+              "rotulo": "Nome, lápis e situação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(> p:text-is('Endereço da fonte'))"
+              },
+              "rotulo": "Endereço da fonte",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "Logo abaixo do endereço há três chaves técnicas: autorizar IA, atualizar o card e reaproveitar o card. Elas servem para integrações feitas por um programador. Pode deixá-las desligadas."
+        }
+      ]
+    },
+    {
+      "id": "criar-fonte",
+      "titulo": "Criar uma fonte para o seu formulário",
+      "objetivo": "Criar uma fonte nova e escolher em que funil e etapa os contatos do formulário vão entrar.",
+      "papel": "admin",
+      "busca": [
+        "criar fonte",
+        "conectar formulário",
+        "nova landing page",
+        "contatos do site no funil",
+        "formulário cair no funil",
+        "captar leads do site"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Começar uma fonte",
+          "texto": "Para cada formulário ou landing page, crie uma fonte. Assim você sabe de onde veio cada contato e pode pausar um formulário sem mexer nos outros. Clique em \"Nova fonte\".",
+          "rota": "/app/webhooks",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova fonte",
+                "exato": true
+              },
+              "rotulo": "Criar uma fonte",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova fonte",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Dar um nome",
+          "texto": "Dê à fonte um nome que diga qual é o formulário. Aqui, \"Formulário de avaliação postural\". Depois escolha o \"Funil de entrada\", o funil em que o contato vai entrar. O \"Estágio de entrada\" (a etapa do funil) só abre depois do funil. Em \"URL de obrigado\", cole a página de agradecimento do seu site. Ela vale para o formulário pronto do CRM. Preencha agora: depois de criada, a fonte não deixa mudar esse endereço.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova fonte",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog",
+                "nome": "Nova fonte de captação"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "valor": "Formulário de avaliação postural"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "rotulo": "Nome do formulário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label:text-is('Funil de entrada')) button[role=combobox]"
+              },
+              "rotulo": "Funil de entrada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label:text-is('Estágio de entrada')) button[role=combobox]"
+              },
+              "rotulo": "Abre depois do funil",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "URL de obrigado (opcional)",
+                "exato": true
+              },
+              "rotulo": "Página depois do envio",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "div.space-y-2:has(> label:text-is('Funil de entrada')) button[role=combobox]"
+          },
+          "dica": "Se for usar o formulário pronto e deixar a URL de obrigado vazia, quem enviar verá uma página com texto técnico. O exemplo em cinza dentro do campo é só um modelo e some quando você digita."
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher o funil",
+          "texto": "A lista mostra os funis da sua empresa. Nesta clínica de exemplo há um só, \"Pacientes\". Clique nele.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.space-y-2:has(> label:text-is('Funil de entrada')) button[role=combobox]"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Pacientes",
+                "exato": true
+              },
+              "rotulo": "O funil dos pacientes",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Pacientes",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Escolher a etapa",
+          "texto": "Agora, em \"Estágio de entrada\", escolha a etapa do funil em que o contato entra. Quem preenche um formulário em geral ainda está no começo, então \"Primeiro contato\" costuma ser a escolha certa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Pacientes",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.space-y-2:has(> label:text-is('Estágio de entrada')) button[role=combobox]"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Primeiro contato",
+                "exato": true
+              },
+              "rotulo": "Onde o contato entra",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Primeiro contato",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Criar a fonte",
+          "texto": "Confira o funil e o estágio e clique em \"Criar fonte\". Se esquecer um dos dois, a tela avisa e não cria. Capriche nessa escolha: depois de criada, a fonte não deixa trocar o funil nem o estágio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Primeiro contato",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label:text-is('Funil de entrada')) button[role=combobox]"
+              },
+              "rotulo": "Funil escolhido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label:text-is('Estágio de entrada')) button[role=combobox]"
+              },
+              "rotulo": "Estágio escolhido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div:has(> button:text-is('Cancelar')):has(> button:text-is('Criar fonte'))"
+              },
+              "rotulo": "Criar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar fonte",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "A fonte pronta",
+          "texto": "A fonte nasce ativa, e o painel dela abre sozinho. O endereço no alto já está pronto para usar: cada envio com nome, telefone ou e-mail vira um contato no funil Pacientes, na etapa Primeiro contato. As chaves técnicas logo abaixo do endereço podem ficar desligadas. A próxima lição mostra como colocar esse endereço no seu site.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar fonte",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog",
+                "nome": "Formulário de avaliação postural"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.flex.items-center.gap-2:has(> div.min-w-0 > button[aria-label='Editar nome da fonte'])"
+              },
+              "rotulo": "Já nasce ativa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(> p:text-is('Endereço da fonte'))"
+              },
+              "rotulo": "O endereço para o seu site",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ligar-ao-site",
+      "titulo": "Ligar a fonte ao seu site",
+      "objetivo": "Colocar o formulário no seu site, ajustar as perguntas, testar se funciona e saber pausar ou proteger a fonte.",
+      "papel": "admin",
+      "busca": [
+        "colar formulário no site",
+        "endereço do webhook",
+        "elementor",
+        "wordpress",
+        "testar formulário",
+        "lead de teste",
+        "perguntas do formulário"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O endereço da fonte",
+          "texto": "Abra a fonte do formulário que você quer ligar. O endereço da fonte é para onde o seu formulário manda os dados. Muitos construtores de site têm um campo para colar esse endereço. O botão ao lado copia o endereço inteiro. No seu CRM, o endereço começa com o endereço da sua instalação.",
+          "rota": "/app/webhooks",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Formulário do site — Avaliação nutricional",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Endereço da fonte",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "code.truncate"
+              },
+              "rotulo": "Endereço da fonte",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(> p:text-is('Endereço da fonte')) button"
+              },
+              "rotulo": "Copiar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Perguntas extras do formulário",
+          "texto": "Além de nome, WhatsApp e e-mail, o formulário pode ter perguntas suas. Esta fonte já pergunta \"Qual é o seu objetivo?\", com uma lista de opções. \"+ Adicionar pergunta\" cria outra: você escreve a pergunta e escolhe o tipo de resposta (texto curto, texto longo, número, moeda, lista de opções ou caixa de seleção). \"Remover\" tira a pergunta. O botão \"Salvar perguntas\" só fica disponível depois que você muda alguma coisa. As respostas ficam guardadas no lead.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "+ Adicionar pergunta",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-3.rounded-sm:has-text('Pergunta 1')"
+              },
+              "rotulo": "Uma pergunta sua",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "+ Adicionar pergunta",
+                "exato": true
+              },
+              "rotulo": "Mais uma pergunta",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar perguntas",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "\"Resposta obrigatória\" faz o formulário pronto não deixar enviar sem essa resposta. \"Chave enviada ao CRM\" é o nome interno do campo: pode deixar o que aparece."
+        },
+        {
+          "id": "p3",
+          "titulo": "O formulário pronto",
+          "texto": "Se o seu site não tem formulário, use o pronto. \"Copiar formulário\" copia o código, já com as suas perguntas e apontando para o endereço certo. Cole esse código numa área de código do seu site, ou entregue a quem cuida dele. Para quem enviar ver uma página de agradecimento, a fonte precisa ter sido criada com a \"URL de obrigado\" preenchida.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar formulário",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "textarea[readonly]"
+              },
+              "rotulo": "O código do formulário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar formulário",
+                "exato": true
+              },
+              "rotulo": "Copiar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Passo a passo para o seu caso",
+          "texto": "Clique em \"Como conectar no seu caso\" para ver onde colar o endereço nas ferramentas mais usadas: Elementor Pro, JetFormBuilder, WordPress, Zapier ou n8n, e \"Formulário próprio\", que é o código pronto do passo anterior. Logo abaixo, \"Para desenvolvedores\" traz um exemplo técnico para quem programa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Como conectar no seu caso",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "Para desenvolvedores",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "details[open]"
+              },
+              "rotulo": "Onde colar em cada ferramenta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Testar a fonte",
+          "texto": "Para ter certeza de que está tudo certo, clique em \"Enviar lead de teste\". Um contato chamado \"Lead de Teste\" entra no funil, na etapa da fonte. Quando dá certo, aparece o link \"Ver no Kanban\", e o envio aparece em \"Últimos recebimentos\". Atenção: o teste é um contato de verdade. Se você tiver automações para quando entra um contato novo, como uma mensagem de boas-vindas, elas também rodam para ele.",
+          "dica": "Depois do teste, apague o card \"Lead de Teste\" do funil e o contato dele em Contatos, para ele não se misturar com os pacientes de verdade.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar lead de teste",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver no Kanban",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar lead de teste",
+                "exato": true
+              },
+              "rotulo": "Testar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver no Kanban",
+                "exato": true
+              },
+              "rotulo": "Deu certo: veja no funil",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Últimos recebimentos",
+          "texto": "Em \"Últimos recebimentos\" fica cada envio que chegou por esta fonte, do mais novo para o mais antigo. O primeiro é o teste que você acabou de fazer. A bolinha verde quer dizer só que o envio chegou; a vermelha, que a assinatura não conferiu. Para saber se o envio virou lead, veja a aba \"Leads recebidos\". A lista se atualiza sozinha a cada 5 segundos enquanto o painel está aberto.",
+          "antes": [
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> p:text-is('Últimos recebimentos'))"
+              },
+              "rotulo": "O que chegou por esta fonte",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p7",
+          "titulo": "Pausar ou excluir",
+          "texto": "Para parar de receber contatos por um tempo, desligue \"Fonte ativa\": aparece o aviso \"Fonte pausada.\", o formulário passa a ser recusado e nada entra no funil. Ao fechar o painel, o cartão da fonte mostra \"Pausada\". Ligue de novo quando quiser. \"Excluir fonte\" desliga o endereço para sempre. Os contatos que já chegaram continuam no funil.",
+          "dica": "Acima fica a \"Assinatura (HMAC)\". Ela é só para quem tem um programador ligando outro sistema: protege o endereço para que só esse sistema consiga mandar contatos. Não ligue se você usa o formulário pronto ou um construtor de site: eles não sabem assinar, e todos os envios passam a ser recusados. Com ela ligada, o botão de teste também fica desligado.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir fonte",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(p:text-is('Fonte ativa'))"
+              },
+              "rotulo": "Ligar e pausar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir fonte",
+                "exato": true
+              },
+              "rotulo": "Excluir de vez",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "leads-recebidos",
+      "titulo": "Ver quem preencheu seus formulários",
+      "objetivo": "Encontrar cada envio dos formulários, saber se ele virou lead e entender por que um envio não entrou.",
+      "papel": "admin",
+      "busca": [
+        "leads recebidos",
+        "quem preencheu o formulário",
+        "formulário não chegou",
+        "lead não entrou",
+        "origem do lead",
+        "utm campanha"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Tudo o que chegou",
+          "texto": "A aba \"Leads recebidos\" lista cada envio dos seus formulários, do mais novo para o mais antigo: quem é, o contato, por qual fonte chegou, o dia e a hora, a página de origem e o resultado. \"Virou lead\" quer dizer que entrou no funil. \"Reenvio\" é quando o sistema que envia manda de novo o mesmo envio, com o mesmo código de identificação: ele não cria outro lead. Se a mesma pessoa preencher o formulário duas vezes, cada envio vira um lead. \"Não entrou\" quer dizer que o envio foi recusado.",
+          "dica": "Existe também \"Card atualizado\": aparece só em fontes com assinatura em que você ligou a opção de atualizar o card, quando o envio muda um card que já existia.",
+          "rota": "/app/webhooks?aba=leads",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "table"
+              },
+              "rotulo": "Envios dos formulários",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Reenvio",
+                "exato": true
+              },
+              "rotulo": "Envio repetido pelo sistema",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não entrou",
+                "exato": true
+              },
+              "rotulo": "Envio recusado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Procurar e filtrar",
+          "texto": "No alto ficam os filtros. Digite um nome, telefone ou e-mail e aperte Enter (ou clique na lupa). Também dá para ver só uma fonte, só um resultado ou um período, com \"De\" e \"Até\". Vamos ver só os envios que não entraram: clique em \"Resultado\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome, telefone ou e-mail",
+                "exato": true
+              },
+              "rotulo": "Buscar pessoa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por fonte",
+                "exato": true
+              },
+              "rotulo": "Fonte",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por resultado",
+                "exato": true
+              },
+              "rotulo": "Resultado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "De",
+                "exato": true
+              },
+              "rotulo": "Início do período",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Até",
+                "exato": true
+              },
+              "rotulo": "Fim do período",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "combobox",
+            "nome": "Filtrar por resultado",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Só os que não entraram",
+          "texto": "Com \"Não entrou\" escolhido, a lista mostra só os envios recusados. Este não tem nome: a tabela mostra \"(sem identificação)\". Clique nele para ver o motivo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por resultado",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Não entrou",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "(sem identificação)",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por resultado",
+                "exato": true
+              },
+              "rotulo": "Filtro ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "(sem identificação)",
+                "exato": true
+              },
+              "rotulo": "Envio sem nome",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "(sem identificação)",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Por que não entrou",
+          "texto": "O painel abre com o motivo em vermelho. Aqui o formulário não mandou nome, telefone nem e-mail que o CRM reconhecesse. Logo abaixo, em \"O que o formulário trouxe\", você vê os nomes que o formulário usou nos campos. Com isso, quem cuida do site sabe o que corrigir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "(sem identificação)",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^O envio não trazia nome",
+                "regex": true
+              },
+              "rotulo": "O motivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(h3:has-text('O que o formulário trouxe'))"
+              },
+              "rotulo": "O que chegou",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Um envio que virou lead",
+          "texto": "Agora um envio que deu certo, o da Larissa Mendes. Em \"O que o formulário trouxe\" aparecem nome, telefone, e-mail e a resposta da pergunta extra. O botão \"Cadastrar como campo do lead\" transforma essa resposta num campo do funil, que passa a aparecer no card do lead.",
+          "rota": "/app/webhooks?aba=leads",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Larissa Mendes",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Virou lead'):has-text('Larissa Mendes')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(h3:has-text('O que o formulário trouxe'))"
+              },
+              "rotulo": "O que a Larissa enviou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cadastrar como campo do lead",
+                "exato": true
+              },
+              "rotulo": "Guardar como campo do lead",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "De onde veio e onde está",
+          "texto": "Em \"De onde veio\" aparecem a página do formulário, o endereço de internet (IP) e o navegador de quem enviou. As linhas com \"utm\" dizem de qual anúncio ou campanha a pessoa veio, quando o seu link tem essa marcação. Aqui, do Instagram, campanha \"avaliacao-outubro\". O botão \"Ver o lead no funil\" abre o lead que esse envio criou.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver o lead no funil",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(h3:has-text('De onde veio'))"
+              },
+              "rotulo": "Página e campanha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver o lead no funil",
+                "exato": true
+              },
+              "rotulo": "Abrir o lead",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "avisar-outro-sistema",
+      "titulo": "Avisar outro sistema quando algo acontece",
+      "objetivo": "Montar uma automação que manda um aviso para outro sistema (planilha, financeiro, laboratório) quando algo acontece no CRM.",
+      "papel": "admin",
+      "busca": [
+        "avisar outro sistema",
+        "enviar dados para outro sistema",
+        "webhook de saída",
+        "integrar com planilha",
+        "automação",
+        "quando fechar negócio avisar"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Suas automações",
+          "texto": "A aba \"Automações\" mostra as regras da sua empresa. Cada cartão traz o nome, a situação (\"Ativa\" ou \"Pausada\"), quando ela age e quantas ações faz. A chave liga e pausa a regra. Os ícones à direita abrem a regra no designer (um desenho do caminho), editam e excluem. No alto, \"Montar no designer\" cria uma regra nova direto no designer. Esta regra avisa o sistema do financeiro sempre que um paciente fecha.",
+          "rota": "/app/webhooks?aba=automacoes",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has-text('Avisar o financeiro quando o paciente fechar')"
+              },
+              "rotulo": "Uma automação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Pausar Avisar o financeiro quando o paciente fechar",
+                "exato": true
+              },
+              "rotulo": "Ligar e pausar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova automação",
+                "exato": true
+              },
+              "rotulo": "Criar uma regra",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Montar no designer",
+                "exato": true
+              },
+              "rotulo": "Regra nova no designer",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova automação",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome e momento",
+          "texto": "Toda automação tem três partes: QUANDO (o que acontece), SE (uma condição, se quiser) e ENTÃO (o que fazer). Dê um nome que diga o que ela faz. Depois escolha o QUANDO: clique em \"Escolha o gatilho\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova automação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog",
+                "nome": "Nova automação"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome da automação",
+                "exato": true
+              },
+              "valor": "Avisar o laboratório de horário marcado"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome da automação",
+                "exato": true
+              },
+              "rotulo": "Nome da regra",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(> h3:text-is('QUANDO')) > button[role=combobox]"
+              },
+              "rotulo": "QUANDO",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "section:has(> h3:text-is('QUANDO')) > button[role=combobox]"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Quando ela age",
+          "texto": "A lista traz tudo o que pode disparar uma automação: um contato novo, um lead que muda de etapa, um negócio ganho ou perdido, uma mensagem que chega, um horário marcado ou cancelado, e outros. Para avisar o laboratório, escolha \"Quando um horário for marcado\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "section:has(> h3:text-is('QUANDO')) > button[role=combobox]"
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "option",
+                "nome": "Quando um horário for marcado",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Quando um horário for marcado",
+                "exato": true
+              },
+              "rotulo": "Horário marcado",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Quando um horário for marcado",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Condição e ação",
+          "texto": "A parte SE é opcional. Com \"Adicionar condição\" você limita a regra, por exemplo, a um tipo de atendimento. Para avisar sempre, deixe vazio. Na parte ENTÃO, clique em \"Adicionar ação\" para escolher o que a automação faz.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Quando um horário for marcado",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar condição",
+                "exato": true
+              },
+              "rotulo": "SE (opcional)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(> h3:text-is('ENTÃO')) > button[role=combobox]"
+              },
+              "rotulo": "ENTÃO",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "section:has(> h3:text-is('ENTÃO')) > button[role=combobox]"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Escolher \"Avisar outro sistema\"",
+          "texto": "Entre as ações, \"Avisar outro sistema (webhook)\" é a que manda os dados do que aconteceu para o endereço de outro sistema. Esse outro sistema precisa ter um endereço próprio para receber avisos. É assim que o CRM conversa com um sistema de gestão ou com ferramentas como Zapier e n8n, que podem levar o aviso adiante, por exemplo para uma planilha.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "section:has(> h3:text-is('ENTÃO')) > button[role=combobox]"
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "option",
+                "nome": "Avisar outro sistema (webhook)",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Avisar outro sistema (webhook)",
+                "exato": true
+              },
+              "rotulo": "Avisar outro sistema",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Avisar outro sistema (webhook)",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "O endereço do outro sistema",
+          "texto": "Cole em \"Endereço (URL)\" o endereço que o outro sistema te deu para receber avisos. O \"Segredo (opcional)\" serve para o outro sistema conferir que o aviso veio mesmo do seu CRM. Só preencha se quem cuida dele pedir; o texto cinza é só um exemplo. \"Incluir o responsável no corpo\" fica desligado: ligue só se o outro sistema precisar saber quem da equipe atende o cliente.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Avisar outro sistema (webhook)",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "https://meusistema.com/webhook",
+                "exato": true
+              },
+              "valor": "https://laboratorio.bemviver.example/agendamentos"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "https://meusistema.com/webhook",
+                "exato": true
+              },
+              "rotulo": "Endereço do outro sistema",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "placeholder": "uma senha só sua",
+                "exato": true
+              },
+              "rotulo": "Segredo (opcional)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-md.border:has-text('Incluir o responsável no corpo')"
+              },
+              "rotulo": "Quem atende (desligado)",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "Embaixo, \"Adicionar ação\" soma outra ação à mesma regra."
+        },
+        {
+          "id": "p7",
+          "titulo": "Criar a automação",
+          "texto": "Clique em \"Criar automação\". Ela nasce pausada, para você revisar antes, e aparece na lista com o selo \"Pausada\" e a chave desligada. Quando tiver revisado, ligue a chave: a partir daí, cada horário marcado manda um aviso para o endereço do laboratório. Na aba \"Atividade\" você confere se ele chegou.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar automação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar Avisar o laboratório de horário marcado",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has-text('Avisar o laboratório de horário marcado')"
+              },
+              "rotulo": "A automação nova, pausada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar Avisar o laboratório de horário marcado",
+                "exato": true
+              },
+              "rotulo": "Ligar quando estiver pronta",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conferir-avisos",
+      "titulo": "Conferir se o aviso chegou",
+      "objetivo": "Ver na aba Atividade se cada automação funcionou e o que fazer quando um aviso não chega.",
+      "papel": "admin",
+      "busca": [
+        "atividade das automações",
+        "aviso não chegou",
+        "webhook falhou",
+        "reenviar aviso",
+        "histórico de automações",
+        "erro 404"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que cada automação fez",
+          "texto": "A aba \"Atividade\" mostra cada vez que uma automação agiu, da mais recente para a mais antiga. Cada cartão traz o nome da regra, há quanto tempo foi e o resultado. \"Sucesso\" quer dizer que todas as ações da regra deram certo; num aviso, que o outro sistema respondeu que recebeu. \"Falhou\" quer dizer que nenhuma ação deu certo; num aviso, que o outro sistema não aceitou ou não respondeu.",
+          "dica": "Pode aparecer também \"Parcial\", quando só algumas ações deram certo, e \"Aguardando envio\", quando uma mensagem espera para sair.",
+          "rota": "/app/webhooks?aba=atividade",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Sucesso",
+                "exato": true
+              },
+              "rotulo": "Tudo deu certo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Falhou",
+                "exato": true
+              },
+              "rotulo": "Nada deu certo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Quando o aviso falha",
+          "texto": "Embaixo da ação que falhou aparece o que o outro sistema respondeu. Aqui é \"http_404\": o endereço não foi encontrado do outro lado. Em geral é endereço digitado errado ou que mudou. Confira o endereço na automação (o lápis do cartão, na aba Automações). Depois volte aqui e clique em \"Reenviar\": o mesmo aviso sai de novo e um cartão novo mostra o resultado.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "http_404",
+                "exato": true
+              },
+              "rotulo": "O que o outro sistema respondeu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reenviar",
+                "exato": true
+              },
+              "rotulo": "Mandar de novo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Ver as novidades",
+          "texto": "Se algo acabou de acontecer e ainda não aparece na lista, clique em \"Atualizar\" para buscar as execuções mais novas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Atualizar",
+                "exato": true
+              },
+              "rotulo": "Buscar as mais novas",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

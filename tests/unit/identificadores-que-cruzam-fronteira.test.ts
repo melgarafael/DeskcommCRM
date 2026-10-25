@@ -161,6 +161,11 @@ function caminhosCom(padrao: RegExp): string[] {
 const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validador" }[] = [
   // Storage — a chave do objeto sai daqui e vira objeto lá.
   { arquivo: "workers/lgpd-export-worker.ts", fronteira: "storage.chave-de-objeto" },
+  // O atestado de anonimização (#2342): a chave é `{org}/{pedido}/atestado.pdf`
+  // — o primeiro pedaço é o UUID da org que o banco gera, o segundo é o id do
+  // pedido já validado como uuid pela rota, e o sufixo é fixo. Nada de texto
+  // digitado por ninguém entra na chave.
+  { arquivo: "lib/lgpd/emitir-atestado.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "workers/media-persist-worker.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "lib/ai/skills/install.ts", fronteira: "storage.chave-de-objeto" },
   // Herança de arquivos do pacote no save textual (#2047): a chave é montada
@@ -183,6 +188,8 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // O anexo da nota interna (#1863, F3): MESMO molde de chave da rota irmã
   // (`{org}/{conversa}/note-{uuid}.{ext}`), bucket próprio `internal-media`.
   { arquivo: "app/api/v1/conversations/[id]/notes/media/route.ts", fronteira: "storage.chave-de-objeto" },
+  // O anexo de lead (#2829): anexo em campo customizado do lead, bucket `internal-media`.
+  { arquivo: "app/api/v1/leads/[id]/attachments/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/upload/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.

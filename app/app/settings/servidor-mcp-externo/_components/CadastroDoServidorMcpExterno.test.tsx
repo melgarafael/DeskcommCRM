@@ -28,9 +28,11 @@ vi.mock("@/app/actions/settings/listarFerramentasMcpExternas", () => ({
 // O dicionário de verdade fica de fora: o que se mede é o literal da tela, e a
 // tradução tem guarda própria (`tests/unit/i18n-espanhol-cobre-a-tela.test.ts`).
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
+vi.mock("@/lib/auth/ir-ao-desafio-de-mfa", () => ({ irAoDesafioDeMfa: vi.fn() }));
 
 import { definirServidorMcpExterno } from "@/app/actions/settings/definirServidorMcpExterno";
 import { listarFerramentasMcpExternas } from "@/app/actions/settings/listarFerramentasMcpExternas";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 import { CadastroDoServidorMcpExterno } from "./CadastroDoServidorMcpExterno";
 
@@ -58,6 +60,7 @@ beforeEach(() => {
   cadastro().mockResolvedValue({ ok: true, chaveUltimos4: "abcd" });
   listagem().mockReset();
   listagem().mockResolvedValue({ ok: true, host: "erp.loja", ferramentas: [] });
+  vi.mocked(irAoDesafioDeMfa).mockReset();
 });
 
 describe("cadastro: a chave só aparece na criação", () => {
@@ -173,5 +176,26 @@ describe("remoção: a mesma action, com o contrato de apagar", () => {
     expect(screen.queryByTestId("chave-criada")).toBeNull();
     expect(valorDoCampoDaChave()).toBe("");
     expect(screen.queryByTestId("erro")).toBeNull();
+  });
+});
+
+describe("recusa por falta do código: a tela leva ao desafio", () => {
+  it("mfa_required ao salvar leva ao código (entrar de novo não o pediria a quem confiou no dispositivo)", async () => {
+    cadastro().mockResolvedValue({ ok: false, error: "mfa_required" });
+    abrir();
+    digitar(ENDERECO);
+    fireEvent.click(screen.getByTestId("salvar"));
+
+    await waitFor(() => expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1));
+  });
+
+  it("CONTROLE: outra recusa mostra a frase e fica na tela", async () => {
+    cadastro().mockResolvedValue({ ok: false, error: "endpoint_inseguro" });
+    abrir();
+    digitar(ENDERECO_INSEGURO);
+    fireEvent.click(screen.getByTestId("salvar"));
+
+    await waitFor(() => expect(screen.getByTestId("erro")).toBeInTheDocument());
+    expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
   });
 });

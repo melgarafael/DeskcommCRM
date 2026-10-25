@@ -349,6 +349,8 @@ export const ApiErrorCodes = {
   campanha_modelo_inexistente: "campanha_modelo_inexistente", // 422: o modelo não existe neste número
   campanha_modelo_nao_aprovado: "campanha_modelo_nao_aprovado", // 422: modelo pausado, recusado ou em análise
   campanha_modelo_variaveis: "campanha_modelo_variaveis", // 422: variável sem origem, ou origem que não serve
+  // Migration 0711: envio rápido (rajada) só pelo número oficial, com modelo aprovado.
+  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido pedido num número por QR
 
   // 500 / upstream
   internal_error: "internal_error",

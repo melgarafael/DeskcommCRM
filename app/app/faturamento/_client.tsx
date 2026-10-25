@@ -201,7 +201,7 @@ export function Faturamento({
             value={de}
             data-testid="periodo-de"
             onChange={(e) => setDe(e.target.value)}
-            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-text-muted">
@@ -211,7 +211,7 @@ export function Faturamento({
             value={ate}
             data-testid="periodo-ate"
             onChange={(e) => setAte(e.target.value)}
-            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11"
           />
         </label>
       </form>
@@ -253,6 +253,10 @@ export function Faturamento({
       <ListaDeLancamentos
         lancamentos={lancamentos.data ?? []}
         contas={contas.data ?? []}
+        // A moeda da organização é a régua do valor digitado (#3367) — mesma
+        // moeda que ordena os blocos acima. A `currency` gravada na linha ainda
+        // nasce no padrão do banco, BRL (ver #3379).
+        moeda={moedaDaOrg}
         podeLancar={podeLancar}
         onCriar={(corpo) => criar.mutate(corpo)}
         onPagar={(id) => pagar.mutate(id)}

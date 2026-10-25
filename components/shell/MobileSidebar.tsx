@@ -77,7 +77,7 @@ export function GavetaDeNavegacao({ comoAba = false }: { comoAba?: boolean }) {
       </SheetTrigger>
       <SheetContent
         side="left"
-        className="flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-0 p-0 sm:max-w-xs"
+        className="flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-0 p-0 sm:max-w-xs [&_a]:min-h-11 [&_h2>button]:min-h-11"
       >
         <SheetTitle className="sr-only">{t("Navegação principal")}</SheetTitle>
         <SidebarContent

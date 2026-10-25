@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
+import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -244,7 +245,7 @@ export function JanelaFechadaAviso({
         onSuccess: (res) => {
           const enviada = res.data;
           if (enviada?.status === "failed") {
-            toast.error(enviada.error_message ?? t("Não consegui enviar o modelo."));
+            toast.error(t("Não consegui enviar o modelo."), { description: motivoDaFalhaDaMensagem(enviada, t) });
             return;
           }
           salvarNoModelo(modelo, enviados);

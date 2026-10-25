@@ -283,65 +283,71 @@ export function PainelDeTags({ tags, idioma, paginado = false }: { tags: LinhaDe
   return (
     <div className="flex flex-col gap-4">
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <caption className="sr-only">{t("Etiquetas da organização e onde são usadas")}</caption>
-          <thead className="bg-muted/50 text-left">
-            <tr>
-              <th className="p-3 font-medium">{t("Etiqueta")}</th>
-              <th className="p-3 font-medium">{t("Contatos")}</th>
-              <th className="p-3 font-medium">{t("Leads")}</th>
-              <th className="p-3 font-medium">{t("Conversas")}</th>
-              <th className="p-3 font-medium">{t("Regras de agente")}</th>
-              <th className="p-3 font-medium">{t("Ações")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tags.map((linha) => (
-              <tr key={linha.tag} className="border-t border-border/60">
-                <td className="p-3">
-                  {/* A cor do SERVIDOR, não a do cache do chip: esta lista acabou
-                      de ler o vocabulário, e mostrar o que a outra leitura
-                      devolveu seria a tela discordando de si mesma por alguns
-                      segundos. */}
-                  <ChipDeEtiqueta tag={linha.tag} cor={linha.cor} />
-                  {!linha.no_vocabulario && (
-                    // Em uso e fora do vocabulário curado: existe em algum
-                    // registro sem passar por nenhuma tela de cadastro. Dar cor
-                    // (o botão ao lado) traz a etiqueta para o vocabulário —
-                    // escolher como ela aparece É curá-la.
-                    <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                      {t("em uso, fora do vocabulário")}
-                    </span>
-                  )}
-                </td>
-                <td className="p-3 tabular-nums">{linha.uso_em_contatos}</td>
-                <td className="p-3 tabular-nums">{linha.uso_em_leads}</td>
-                <td className="p-3 tabular-nums">{linha.uso_em_conversas}</td>
-                <td className="p-3 tabular-nums">
-                  {linha.em_regras > 0 ? (
-                    <span className="font-medium">{linha.em_regras}</span>
-                  ) : (
-                    <span className="text-muted-foreground">0</span>
-                  )}
-                </td>
-                <td className="flex flex-wrap gap-2 p-3">
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "definir_cor")}>
-                    {t("Cor")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "renomear")}>
-                    {t("Renomear")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "juntar")}>
-                    {t("Juntar")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "excluir")}>
-                    {t("Excluir")}
-                  </Button>
-                </td>
+        {/* O Card corta o que passa da borda, e no celular a tabela passava:
+            Renomear, Juntar e Excluir sumiam sem barra de rolagem. Abaixo de
+            `md` saem as três colunas de contagem; o invólucro rola se ainda
+            assim não couber, em vez de cortar. */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <caption className="sr-only">{t("Etiquetas da organização e onde são usadas")}</caption>
+            <thead className="bg-muted/50 text-left">
+              <tr>
+                <th className="p-3 font-medium">{t("Etiqueta")}</th>
+                <th className="p-3 font-medium">{t("Contatos")}</th>
+                <th className="p-3 font-medium max-md:hidden">{t("Leads")}</th>
+                <th className="p-3 font-medium max-md:hidden">{t("Conversas")}</th>
+                <th className="p-3 font-medium max-md:hidden">{t("Regras de agente")}</th>
+                <th className="p-3 font-medium">{t("Ações")}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tags.map((linha) => (
+                <tr key={linha.tag} className="border-t border-border/60">
+                  <td className="p-3">
+                    {/* A cor do SERVIDOR, não a do cache do chip: esta lista acabou
+                        de ler o vocabulário, e mostrar o que a outra leitura
+                        devolveu seria a tela discordando de si mesma por alguns
+                        segundos. */}
+                    <ChipDeEtiqueta tag={linha.tag} cor={linha.cor} />
+                    {!linha.no_vocabulario && (
+                      // Em uso e fora do vocabulário curado: existe em algum
+                      // registro sem passar por nenhuma tela de cadastro. Dar cor
+                      // (o botão ao lado) traz a etiqueta para o vocabulário —
+                      // escolher como ela aparece É curá-la.
+                      <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {t("em uso, fora do vocabulário")}
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3 tabular-nums">{linha.uso_em_contatos}</td>
+                  <td className="p-3 tabular-nums max-md:hidden">{linha.uso_em_leads}</td>
+                  <td className="p-3 tabular-nums max-md:hidden">{linha.uso_em_conversas}</td>
+                  <td className="p-3 tabular-nums max-md:hidden">
+                    {linha.em_regras > 0 ? (
+                      <span className="font-medium">{linha.em_regras}</span>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </td>
+                  <td className="flex flex-wrap gap-2 p-3">
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "definir_cor")}>
+                      {t("Cor")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "renomear")}>
+                      {t("Renomear")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "juntar")}>
+                      {t("Juntar")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "excluir")}>
+                      {t("Excluir")}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {!paginado && tags.length >= TETO_DA_LISTA && (
           <p className="border-t border-border/60 p-3 text-sm text-muted-foreground">
             {t(

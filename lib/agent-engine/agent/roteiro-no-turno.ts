@@ -13,6 +13,28 @@
  * E abria um roteiro para ele. A ordem é o conserto; o teste de ordem
  * (`roteiro-no-turno.test.ts`) a vigia no texto do turno.
  *
+ * ─── As entradas do turno ───────────────────────────────────────────────────
+ *
+ * Um roteiro sem roteiro vivo começa, neste turno, por uma de três portas, em
+ * precedência: o ROTEADOR (o membro aponta um roteiro — decisão já tomada sobre
+ * a mensagem), a PALAVRA-GATILHO (`settings.gatilhos`, o cliente pedindo) e a
+ * ETAPA DO FUNIL (`settings.etapas_do_funil`, o card do contato numa etapa —
+ * contexto do card, não da mensagem). A terceira é o #2630: sem ela, um card em
+ * "Proposta enviada" não disparava o roteiro daquela etapa.
+ *
+ * ─── A etapa vale UMA VEZ POR ENTRADA, não por turno (revisão do #3253) ──────
+ *
+ * A #2630 pede "começar quando o card ENTRAR na etapa". O primeiro desenho
+ * começava enquanto ele ESTAVA lá — todo turno sem roteiro vivo rearmava a etapa
+ * —, e o mantenedor mediu o efeito: roteiro concluído com `pode_recomecar`
+ * reabria na mensagem seguinte, e de novo a cada conclusão, com o card parado na
+ * etapa. Quem decide isso é `escolherFluxoDoTurno`/`entradaJaGasta` (a entrada é
+ * um evento, `crm_leads.stage_changed_at`, com o `created_at` de reserva), e não
+ * este arquivo: o turno continua lendo a etapa em TODO turno — o que mudou é que
+ * a etapa só liga se a entrada dela ainda não tiver sido gasta. O mecanismo do
+ * próximo turno segue como a issue propôs. A palavra-gatilho e a etapa entram
+ * pela MESMA chamada, que lê os roteiros ativos uma vez só (revisão do #3253).
+ *
  * ─── Chave desligada = nada ─────────────────────────────────────────────────
  *
  * A primeira coisa é a chave da instalação. Desligada, a função devolve `null`
@@ -32,7 +54,7 @@ import type { LeituraDaResposta, MensagemDoContexto, PerguntaDoFluxo } from './f
 import type { EndFinish } from '@/lib/followup/graph-schema';
 import {
   carregarEstadoDeAtendimento,
-  escolherFluxoPeloGatilho,
+  escolherFluxoDoTurno,
   iniciarFluxoDeAtendimento,
   lerLoteParaORoteiro,
   processarInboundDoFluxo,
@@ -143,22 +165,40 @@ export async function prepararRoteiroDoTurno(
       contactId: t.contactId,
     });
     if (estado === null) {
-      const porGatilho =
-        t.flowPointerDoRoteador === null
-          ? await escolherFluxoPeloGatilho(deps.pool, {
-              organizationId: t.organizationId,
-              contactId: t.contactId,
-              texto,
-            })
-          : null;
-      const alvo = t.flowPointerDoRoteador ?? porGatilho?.id ?? null;
+      // AS ENTRADAS DO TURNO, em ordem de precedência declarada:
+      //   roteador → palavra-gatilho → etapa do funil.
+      // O roteador é a decisão já tomada sobre ESTA mensagem (o membro aponta um
+      // roteiro) e ganha de todo o resto; a palavra-gatilho é o cliente pedindo
+      // agora, com todas as letras; e a etapa do funil é contexto do CARD, não
+      // da mensagem — entra quando ninguém falou nada. Sem a terceira, um card
+      // em "Proposta enviada" não disparava o roteiro daquela etapa (#2630). A
+      // etapa é lida em todo turno, mas só LIGA uma vez por entrada do card nela
+      // (revisão do #3253): quem já nasceu depois da entrada a gastou.
+      //
+      // A palavra-gatilho e a etapa são UMA decisão só (`escolherFluxoDoTurno`,
+      // revisão do #3253): as duas leem o mesmo conjunto de roteiros ativos, e
+      // lê-lo por porta fazia o turno ler a lista duas vezes quando a palavra não
+      // casava. O roteador segue separado, porque não lê roteiro nenhum.
+      let alvo: string | null = t.flowPointerDoRoteador;
+      let origem: "roteador" | "gatilho" | "etapa" = "roteador";
+      if (alvo === null) {
+        const porPortaDoMotor = await escolherFluxoDoTurno(deps.pool, {
+          organizationId: t.organizationId,
+          contactId: t.contactId,
+          texto,
+        });
+        if (porPortaDoMotor !== null) {
+          alvo = porPortaDoMotor.id;
+          origem = porPortaDoMotor.origem;
+        }
+      }
       if (alvo !== null) {
         await iniciarFluxoDeAtendimento(deps.pool, {
           organizationId: t.organizationId,
           contactId: t.contactId,
           flowPointerId: alvo,
           conversationId: t.conversationId,
-          origem: t.flowPointerDoRoteador !== null ? 'roteador' : 'gatilho',
+          origem,
         });
         estado = await carregarEstadoDeAtendimento(deps.pool, {
           organizationId: t.organizationId,

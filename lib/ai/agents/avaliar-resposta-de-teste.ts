@@ -76,6 +76,11 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
     porque:
       "depende de a organização ter ligado \"Não fazer afirmação clínica\" em Segurança; quando ligada, a prévia do motor aplica",
   },
+  {
+    gate: "commercial_restriction",
+    porque:
+      "depende de a organização ter ligado \"Deixar valores e negociação com a equipe\" em Segurança; quando ligada, a prévia do motor aplica",
+  },
 ];
 
 /**

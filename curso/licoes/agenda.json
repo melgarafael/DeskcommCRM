@@ -1,0 +1,1303 @@
+{
+  "id": "agenda",
+  "titulo": "Agenda",
+  "tela": "/app/agenda",
+  "resumo": "Onde ficam as consultas, sessões e reuniões da equipe: ver a semana, marcar, remarcar, cancelar e registrar quem veio.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-agenda",
+      "titulo": "Conhecendo a Agenda",
+      "objetivo": "Reconhecer as partes da Agenda e andar pelos dias, semanas e meses.",
+      "papel": "admin",
+      "busca": [
+        "agenda",
+        "agendamentos",
+        "calendário",
+        "compromissos",
+        "consultas marcadas",
+        "semana",
+        "mês",
+        "dia",
+        "hoje"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As partes da tela",
+          "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
+          "texto": "A Agenda mostra os compromissos da clínica: consultas, sessões e reuniões da equipe. Abaixo do título \"Agendamentos\" ficam as setas para mudar de semana e os botões de visão. Logo depois vem a lista de compromissos, separada em abas, e mais abaixo a grade da semana, com um bloco colorido para cada compromisso. No topo, o quadro \"Sincronizar com o Google ainda não está disponível\" aparece enquanto a instalação não tem a ligação com o Google cadastrada. A Agenda funciona normalmente sem ela; só não troca compromissos com a agenda do Google.",
+          "dica": "Quem administra a instalação vê o link \"Cadastrar as credenciais do Google\". O resto do quadro, com o endereço de retorno, é para essa pessoa e pode ser ignorado por quem só usa a Agenda. Na sua instalação, o endereço mostra o seu domínio; na foto aparece o desta demonstração (127.0.0.1). Depois do cadastro, o quadro troca pelo botão \"Conectar Google\".",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "google-nao-configurado"
+              },
+              "rotulo": "Ligação com o Google",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Agendamentos",
+                "exato": true
+              },
+              "rotulo": "Título da tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "historico-da-agenda"
+              },
+              "rotulo": "Lista de compromissos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "grade-da-agenda"
+              },
+              "rotulo": "Grade da semana",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Andar pelas semanas",
+          "texto": "As setas ao lado da data mudam o período: a da esquerda volta e a da direita avança. Na visão de semana, cada clique anda uma semana inteira. O texto ao lado das setas mostra o período que está na tela, de domingo a sábado. O botão \"Hoje\" volta para o dia de hoje, de onde você estiver.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "periodo-anterior"
+              },
+              "rotulo": "Voltar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "periodo-seguinte"
+              },
+              "rotulo": "Avançar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "periodo"
+              },
+              "rotulo": "Período na tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Hoje",
+                "exato": true
+              },
+              "rotulo": "Voltar para hoje",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "visao-dia"
+          },
+          "antes": []
+        },
+        {
+          "id": "p3",
+          "titulo": "Ver um dia só",
+          "texto": "Os botões \"Dia\", \"Semana\" e \"Mês\" trocam o tamanho do período. Em \"Dia\", a grade mostra só um dia, com mais espaço para cada compromisso, e as setas passam a andar um dia por vez. No celular, a Agenda já abre nesta visão.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "visao-dia"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "alternador-de-visao"
+              },
+              "rotulo": "Dia, Semana ou Mês",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "periodo"
+              },
+              "rotulo": "O dia na tela",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "visao-mes"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Ver o mês inteiro",
+          "texto": "Em \"Mês\", cada quadrado é um dia. Dentro dele aparecem até dois compromissos, com a hora e o nome, na cor de quem atende. Quando o dia tem mais, aparece no canto quantos ficaram de fora, como \"+1\". É o jeito de ver de longe quais dias estão cheios. Para voltar à grade de horários, clique em \"Semana\", no alto, ao lado de \"Dia\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "visao-mes"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "press",
+              "alvo": {
+                "testid": "visao-mes"
+              },
+              "tecla": "ArrowDown"
+            },
+            {
+              "acao": "press",
+              "alvo": {
+                "testid": "visao-mes"
+              },
+              "tecla": "ArrowDown"
+            },
+            {
+              "acao": "press",
+              "alvo": {
+                "testid": "visao-mes"
+              },
+              "tecla": "ArrowDown"
+            },
+            {
+              "acao": "press",
+              "alvo": {
+                "testid": "visao-mes"
+              },
+              "tecla": "ArrowDown"
+            },
+            {
+              "acao": "press",
+              "alvo": {
+                "testid": "visao-mes"
+              },
+              "tecla": "ArrowDown"
+            },
+            {
+              "acao": "press",
+              "alvo": {
+                "testid": "visao-mes"
+              },
+              "tecla": "ArrowDown"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "alternador-de-visao"
+              },
+              "rotulo": "Voltar para Semana",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "grade-da-agenda"
+              },
+              "rotulo": "O mês na tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid^='celula-mes-']:has([data-testid='chip-mes-be300000-0000-4000-8000-000000000001'])"
+              },
+              "rotulo": "Dia com +1",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agenda-de-cada-pessoa",
+      "titulo": "A agenda de cada pessoa da equipe",
+      "objetivo": "Saber de quem é cada compromisso e ver a agenda de uma pessoa só.",
+      "papel": "admin",
+      "busca": [
+        "agenda da equipe",
+        "agenda de um profissional",
+        "filtrar por pessoa",
+        "cores",
+        "quem atende",
+        "agenda da Ana",
+        "ver só uma pessoa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Cada pessoa tem uma cor",
+          "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
+          "texto": "As bolinhas com as iniciais, ao lado dos botões \"Dia\", \"Semana\" e \"Mês\", são as pessoas da equipe. Cada pessoa tem uma cor, e os compromissos dela aparecem na grade e na lista com essa cor. Aqui estão a Helena Prado, a Ana Ribeiro, da fisioterapia, e o Carlos Mendes, da odontologia.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "filtro-de-pessoas"
+              },
+              "rotulo": "Pessoas da equipe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "agendamento-be300000-0000-4000-8000-000000000010"
+              },
+              "rotulo": "Compromisso da Ana",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Ver só a agenda de Ana Ribeiro",
+            "exato": true
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Ver só a agenda de uma pessoa",
+          "texto": "Clique na bolinha de uma pessoa para ver só a agenda dela. A grade e a lista passam a mostrar apenas os compromissos da Ana, a bolinha dela sobe um pouco e as outras ficam cinza. Ao lado aparece o botão \"Todos\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ver só a agenda de Ana Ribeiro",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "filtro-de-pessoas"
+              },
+              "rotulo": "Só a Ana",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "botao-todos"
+              },
+              "rotulo": "Voltar a ver todos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "grade-da-agenda"
+              },
+              "rotulo": "Só os compromissos da Ana",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "botao-todos"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Voltar a ver a equipe inteira",
+          "texto": "Para ver de novo a agenda de todos, clique em \"Todos\" ou outra vez na bolinha da pessoa escolhida. A grade volta a mostrar os compromissos da equipe inteira, cada um na cor de quem atende.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "botao-todos"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "filtro-de-pessoas"
+              },
+              "rotulo": "Todos de volta",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lista-de-compromissos",
+      "titulo": "A lista de compromissos",
+      "objetivo": "Usar as abas da lista para ver o que vem pela frente, aprovar horários e registrar quem veio.",
+      "papel": "admin",
+      "busca": [
+        "próximos compromissos",
+        "aguardando confirmação",
+        "confirmar horário",
+        "passados",
+        "realizado",
+        "faltou",
+        "não compareceu",
+        "cancelados",
+        "histórico"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As quatro abas",
+          "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
+          "texto": "A lista fica logo acima da grade e tem quatro abas: \"Próximos\", \"Aguardando confirmação\", \"Passados\" e \"Cancelados\". O número em cada aba diz quantos compromissos ela tem. A lista acompanha o período que está na tela: aqui avançamos uma semana com a seta da direita, para ver o que vem pela frente. Em cada linha aparecem o dia, o horário, o nome do cliente (ou o nome do compromisso, quando não há cliente), quem vai atender e a situação.",
+          "dica": "Clique no nome da linha para abrir os detalhes do compromisso.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "periodo-seguinte"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000021"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tablist",
+                "nome": "Filtrar o histórico",
+                "exato": true
+              },
+              "rotulo": "Abas da lista",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000021"
+              },
+              "rotulo": "Um compromisso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "periodo"
+              },
+              "rotulo": "Semana que vem",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "aba-aguardando"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Aprovar um horário",
+          "texto": "Em \"Aguardando confirmação\" ficam os horários reservados que ainda precisam de um sim da clínica. Isso acontece nos tipos de atendimento em que uma pessoa aprova cada horário. O botão \"Confirmar\" aprova o horário, e ele passa para \"Próximos\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "aba-aguardando"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000023"
+              },
+              "rotulo": "Esperando aprovação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "confirmar-be300000-0000-4000-8000-000000000023"
+              },
+              "rotulo": "Aprovar o horário",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "aba-passados"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "O que já passou",
+          "texto": "\"Passados\" mostra o que já aconteceu no período. Aqui voltamos para a semana passada, clicando duas vezes na seta da esquerda. Como a semana já passou, a grade avisa que não há horário livre. O selo diz o resultado: \"Realizado\" quando o paciente veio e \"Não compareceu\" quando faltou. Os que ainda estão como \"Confirmado\" esperam alguém da equipe dizer o que houve, com os botões \"Realizado\" e \"Faltou\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "aba-passados"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "periodo-anterior"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "periodo-anterior"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000004"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000004"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Já registrado: faltou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000005"
+              },
+              "rotulo": "Sem registro: Realizado ou Faltou",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "realizado-be300000-0000-4000-8000-000000000005"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Registrar que o paciente veio",
+          "texto": "Ao clicar em \"Realizado\", aparece o aviso \"Marcado como realizado.\" e, em instantes, o selo da linha muda e os botões somem. Só dá para registrar presença ou falta depois que o horário começou.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "realizado-be300000-0000-4000-8000-000000000005"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000005"
+              },
+              "rotulo": "Agora: Realizado",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "aba-cancelados"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Os cancelados",
+          "texto": "Em \"Cancelados\" ficam os horários desmarcados. Eles saem da grade, para o horário ficar livre de novo, mas continuam aqui para consulta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "aba-cancelados"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "linha-be300000-0000-4000-8000-000000000007"
+              },
+              "rotulo": "Horário desmarcado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "detalhes-do-compromisso",
+      "titulo": "Os detalhes de um compromisso",
+      "objetivo": "Abrir um compromisso e entender o que cada parte do painel mostra.",
+      "papel": "admin",
+      "busca": [
+        "abrir compromisso",
+        "detalhes da consulta",
+        "observação",
+        "anotação",
+        "local do atendimento",
+        "compareceu",
+        "faltou",
+        "lembrar em uma hora",
+        "motivo do cancelamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir pelo bloco da grade",
+          "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
+          "texto": "Clique num bloco da grade para abrir os detalhes daquele compromisso. Todo bloco mostra o nome; os mais compridos mostram também o horário de início. Aqui vamos abrir a reunião de equipe de quarta-feira.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "agendamento-be300000-0000-4000-8000-000000000009"
+              },
+              "rotulo": "Reunião de equipe",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "agendamento-be300000-0000-4000-8000-000000000009"
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "O que o painel mostra",
+          "texto": "Os detalhes abrem na lateral: o nome do compromisso, o dia e o horário, o local e a observação. A \"Anotação\" é um recado interno, para quem vai atender. Logo abaixo vem a situação (aqui, \"Agendado\", que é o mesmo que aparece como \"Confirmado\" na lista) e com quem é. Esta reunião não tem cliente, por isso aparece \"Compromisso pessoal, sem cliente vinculado.\". Quando há um cliente, no lugar aparece o link \"Ver contato\", que abre a ficha dele.",
+          "dica": "O quadro \"Sincronização Google\", no alto do painel, aparece em todo compromisso. Enquanto a agenda do Google não estiver conectada, ele pode dizer \"Ainda não publicado no Google.\" ou \"Há alterações aguardando sincronização.\", com o botão \"Tentar sincronizar novamente\". Pode ignorar: o compromisso fica só aqui na Agenda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "agendamento-be300000-0000-4000-8000-000000000009"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "compromisso-horario"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "compromisso-horario"
+              },
+              "rotulo": "Dia e horário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "compromisso-local"
+              },
+              "rotulo": "Local",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "compromisso-observacao"
+              },
+              "rotulo": "Observação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "compromisso-anotacao"
+              },
+              "rotulo": "Recado interno",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "As ações do compromisso",
+          "texto": "Mais abaixo ficam as ações. \"Compareceu\" e \"Faltou\" registram o que aconteceu, e só funcionam depois que o horário começou. Quando o compromisso tem cliente e ele avisou por mensagem, escolha a mensagem dele em \"Mensagem do cliente usada como evidência (opcional)\" antes de clicar. \"Lembrar em uma hora\" adia por uma hora o aviso que pede à equipe para registrar a presença. Para desmarcar, escreva o motivo, com pelo menos 3 letras, em \"Motivo do cancelamento\" e clique em \"Cancelar agendamento\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar agendamento",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Compareceu",
+                "exato": true
+              },
+              "rotulo": "Registrar presença",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Faltou",
+                "exato": true
+              },
+              "rotulo": "Registrar falta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Lembrar em uma hora",
+                "exato": true
+              },
+              "rotulo": "Adiar o aviso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Motivo do cancelamento"
+              },
+              "rotulo": "Motivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar agendamento",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Desmarcar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "novo-agendamento",
+      "titulo": "Marcar um novo agendamento",
+      "objetivo": "Marcar um horário para um cliente pelo botão Novo agendamento.",
+      "papel": "admin",
+      "busca": [
+        "marcar consulta",
+        "novo agendamento",
+        "agendar cliente",
+        "marcar horário",
+        "escolher dia",
+        "horários livres",
+        "convidado",
+        "endereço",
+        "observação"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Novo agendamento",
+          "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
+          "texto": "O botão \"Novo agendamento\", no alto à direita, abre o painel para marcar um horário. Ele só aparece para quem é atendente ou tem cargo acima, e fica apagado enquanto não houver nenhum tipo de agendamento cadastrado.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "novo-agendamento"
+              },
+              "rotulo": "Marcar um horário",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "novo-agendamento"
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Os dados do compromisso",
+          "texto": "O painel abre na lateral. Em cima ficam os dados do compromisso: \"Quem será atendido\", o \"Tipo de agendamento\", o \"E-mail do convidado\", o \"Endereço\" e a \"Observação\". Escolha o tipo pelos botões (eles aparecem quando a clínica tem mais de um tipo); cada um mostra a duração. O endereço já vem com o do tipo escolhido, e dá para trocar. Se \"Quem será atendido\" ficar em branco, o compromisso é pessoal, sem cliente.",
+          "dica": "O convite por e-mail só sai quando quem atende conectou a agenda do Google. Aí o cliente com e-mail na ficha já é convidado, e o \"E-mail do convidado\" serve para chamar mais alguém, como um acompanhante. Sem o Google conectado, ninguém recebe convite por e-mail.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "novo-agendamento"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "contexto-da-marcacao"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "quem-sera-atendido"
+              },
+              "rotulo": "Cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "tipos-de-agendamento"
+              },
+              "rotulo": "Tipo e duração",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "email-do-convidado"
+              },
+              "rotulo": "Convidado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "endereco-do-compromisso"
+              },
+              "rotulo": "Endereço",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "observacao-do-compromisso"
+              },
+              "rotulo": "Observação",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "quem-sera-atendido"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher o cliente",
+          "texto": "Clique em \"Quem será atendido\" e digite o nome do cliente. A lista mostra os contatos que combinam; clique no certo. Quando nenhum contato combina com o que você digitou, a lista oferece \"Criar\" com esse nome, para cadastrar o cliente ali mesmo. A primeira opção, \"Compromisso pessoal, sem cliente\", serve para marcar um horário sem cliente, como uma reunião.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "quem-sera-atendido"
+              },
+              "valor": "Mariana"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "option",
+                "nome": "Mariana Souza",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "quem-sera-atendido"
+              },
+              "rotulo": "Nome digitado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Mariana Souza",
+                "exato": true
+              },
+              "rotulo": "Cliente encontrado",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Mariana Souza",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O resumo e o calendário",
+          "texto": "Com o cliente escolhido, aparece \"Conversa vinculada (opcional)\", para ligar o compromisso a uma conversa dele. Mais abaixo, à esquerda, o painel resume o atendimento: quem atende, o tipo, a duração e o local. No calendário ao lado, os dias com horário livre ficam coloridos. Clique num deles.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Mariana Souza",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid^='dia-'][data-disponivel='true']",
+                "n": 1
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "contexto-da-marcacao"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Conversa vinculada (opcional)"
+              },
+              "rotulo": "Ligar a uma conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "contexto-da-marcacao"
+              },
+              "rotulo": "Resumo do atendimento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid^='dia-'][data-disponivel='true']",
+                "n": 1
+              },
+              "rotulo": "Dia com horário livre",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "[data-testid^='dia-'][data-disponivel='true']",
+            "n": 1
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Escolher o horário e confirmar",
+          "texto": "Os horários livres do dia aparecem à direita. Clique no que quiser e aparece o resumo com o dia e a hora. O compromisso só é marcado quando você clica em \"Confirmar\". Depois disso, o painel mostra \"Marcado.\" e o botão \"Ver na agenda\".",
+          "dica": "Precisa de um horário que não está na lista? \"Outro horário\" deixa digitar a hora. Vale fora dos horários publicados; a agenda só recusa se o horário já estiver ocupado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid^='dia-'][data-disponivel='true']",
+                "n": 1
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid^='horario-']",
+                "n": 0
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "confirmacao"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "confirmar-marcacao"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lista-de-horarios"
+              },
+              "rotulo": "Horários livres do dia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "confirmacao"
+              },
+              "rotulo": "Dia e hora escolhidos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "confirmar-marcacao"
+              },
+              "rotulo": "Marcar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "marcar-pela-grade",
+      "titulo": "Marcar direto na grade",
+      "objetivo": "Escolher o tipo de atendimento e marcar clicando num horário livre da grade.",
+      "papel": "admin",
+      "busca": [
+        "clicar na grade",
+        "horário livre",
+        "marcar rápido",
+        "horários livres de",
+        "tipo de atendimento",
+        "jornada",
+        "expediente",
+        "semana que vem"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Horários livres de qual tipo",
+          "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
+          "texto": "Logo acima da grade fica a linha \"Horários livres de\", com um botão para cada tipo de agendamento. O tipo escolhido decide quais horários a grade oferece: a duração dele e o expediente de quem atende. Aqui está escolhida a \"Sessão de fisioterapia\", que é da Ana. Quando não sobra horário livre no período, aparece o aviso \"Nenhum horário livre neste período.\". E, se quem atende ainda não publicou o expediente, o aviso é \"A jornada de atendimento ainda não foi publicada.\".",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "tipo-da-grade"
+              },
+              "rotulo": "Horários livres de",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "tipo-da-grade-be310000-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Tipo escolhido",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "periodo-seguinte"
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Achar um horário livre",
+          "texto": "Avançamos uma semana: ali a Ana ainda tem muitos horários livres. Passe o mouse na grade: o horário livre que está embaixo do mouse fica colorido e o cursor vira a mãozinha de clique. Os espaços fora do expediente e os horários já ocupados não mudam de cor nem respondem ao clique.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "periodo-seguinte"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid^='bloco-'][data-testid$='-13:00'][data-livre='true']",
+                "n": 0
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[data-testid^='bloco-'][data-testid$='-13:00'][data-livre='true']",
+                "n": 0
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": "[data-testid^='bloco-'][data-testid$='-13:00'][data-livre='true']",
+                "n": 0
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='bloco-'][data-testid$='-13:00'][data-livre='true']",
+                "n": 0
+              },
+              "rotulo": "Horário livre",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "[data-testid^='bloco-'][data-testid$='-13:00'][data-livre='true']",
+            "n": 0
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "O painel já vem com a hora",
+          "texto": "Clique no horário livre e o painel de marcação abre com esse dia e essa hora já escolhidos. Preencha \"Quem será atendido\" no alto do painel, se for um cliente, e clique em \"Confirmar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid^='bloco-'][data-testid$='-13:00'][data-livre='true']",
+                "n": 0
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "confirmacao"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "confirmacao"
+              },
+              "rotulo": "Dia e hora da grade",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "confirmar-marcacao"
+              },
+              "rotulo": "Marcar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remarcar-e-cancelar",
+      "titulo": "Remarcar e cancelar",
+      "objetivo": "Mudar o horário de um compromisso e desmarcar com motivo.",
+      "papel": "admin",
+      "busca": [
+        "remarcar consulta",
+        "mudar horário",
+        "trocar dia",
+        "cancelar consulta",
+        "desmarcar",
+        "motivo do cancelamento",
+        "arrastar compromisso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Remarcar e Cancelar na lista",
+          "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
+          "texto": "Na aba \"Próximos\" da lista, cada compromisso tem os botões \"Remarcar\" e \"Cancelar\". Avançamos para a semana que vem e vamos remarcar a sessão de fisioterapia do Roberto Almeida.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "periodo-seguinte"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "remarcar-be300000-0000-4000-8000-000000000021"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "remarcar-be300000-0000-4000-8000-000000000021"
+              },
+              "rotulo": "Mudar o horário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "cancelar-be300000-0000-4000-8000-000000000021"
+              },
+              "rotulo": "Desmarcar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "remarcar-be300000-0000-4000-8000-000000000021"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher o novo horário",
+          "texto": "Abre o painel \"Remarcar agendamento\", com o mesmo calendário de marcar. Escolha o novo dia e o novo horário e clique em \"Confirmar\". O compromisso muda de lugar e continua com o mesmo cliente, o mesmo tipo e a mesma pessoa que atende.",
+          "dica": "Antes de clicar em \"Remarcar\", confira se \"Horários livres de\", acima da grade, está no tipo do compromisso: os horários oferecidos seguem esse tipo. Para remarcar uma consulta do Carlos, escolha antes \"Consulta odontológica\" ali. Trocar o tipo dentro do painel não muda o tipo do compromisso. Também dá para arrastar o bloco na grade até outro horário: a Agenda pergunta antes de remarcar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "remarcar-be300000-0000-4000-8000-000000000021"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "contexto-da-marcacao"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Remarcar agendamento",
+                "exato": true
+              },
+              "rotulo": "Remarcando",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "painel-de-marcacao"
+              },
+              "rotulo": "Novo dia e horário",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Cancelar com motivo",
+          "texto": "Para desmarcar, clique em \"Cancelar\" na linha do compromisso. Aqui vamos desmarcar a sessão da Camila Rocha de quarta-feira. O painel pede o motivo, que é obrigatório: escreva pelo menos 3 letras e o botão \"Cancelar agendamento\" acende. O horário volta a ficar livre e o compromisso vai para a aba \"Cancelados\". \"Voltar\" fecha o painel sem cancelar nada.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "cancelar-be300000-0000-4000-8000-000000000024"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "motivo-do-cancelamento"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "motivo-do-cancelamento"
+              },
+              "valor": "A paciente pediu para remarcar por telefone."
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "motivo-do-cancelamento"
+              },
+              "rotulo": "Motivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "confirmar-cancelamento"
+              },
+              "rotulo": "Desmarcar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Voltar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Fechar sem cancelar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

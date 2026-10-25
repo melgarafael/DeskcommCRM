@@ -79,7 +79,7 @@ export const CHAVES_RESERVADAS = ["id", "titulo", "link"] as const;
 export type TipoDeCampo = "texto" | "numero" | "preco";
 
 /** O filtro que o agente pode pedir sobre um campo. */
-export type FiltroDeCampo = "nenhum" | "contem" | "minimo" | "maximo";
+export type FiltroDeCampo = "nenhum" | "contem" | "igual" | "minimo" | "maximo";
 
 /** O filtro que o agente pode pedir sobre uma categoria. */
 export type FiltroDeCategoria = "nenhum" | "contem" | "igual";

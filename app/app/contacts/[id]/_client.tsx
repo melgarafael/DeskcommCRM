@@ -208,6 +208,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
             {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
                 etiquetas não apaga o selo — mesma regra do "Bloqueado" acima. */}
             {contact.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
+            {/* O TIPO DO CONTATO (issue 3005, fatia 1): selo lido da COLUNA
+                (`contacts.contact_type`), mesma regra dos de cima — a etiqueta
+                `fornecedor` é de trabalho e removível; o selo não. Só o
+                fornecedor aparece: cliente é o padrão da coluna. */}
+            {contact.contact_type === "fornecedor" && (
+              <Badge variant="secondary">{t("Fornecedor")}</Badge>
+            )}
             {/* A marca PERMANENTE (issue 2379): lida da COLUNA, mesma régua do
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}

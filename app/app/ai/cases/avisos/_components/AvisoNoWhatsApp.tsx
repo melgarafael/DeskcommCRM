@@ -9,7 +9,11 @@
  *    configuração é aceita e nenhum aviso chega. Elas vêm antes do formulário
  *    de propósito — ler "seus números não servem para isso" depois de preencher
  *    tudo é a definição de tela que não avisou.
- * 2. **Salva pelo RPC**, que é quem faz as sete guardas na mesma transação.
+ * 2. **Salva pelo RPC**, que é quem faz as sete guardas na mesma transação — e
+ *    **remove** pelo `DELETE`, a ação que devolve o número à ingestão normal
+ *    (issue #3338). As duas são coisas diferentes de propósito: desligar o
+ *    switch PRESERVA o número e ele continua interno (o que chega dele não vira
+ *    atendimento), remover apaga a configuração e o número volta a ser atendido.
  * 3. **Manda um aviso de teste de verdade**, com o preço escrito antes do
  *    clique: ele gasta uma mensagem do número.
  *
@@ -50,6 +54,7 @@ import { usePaisDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import {
   useAvisoDeCaso,
+  useRemoverAvisoDeCaso,
   useSalvarAvisoDeCaso,
   useTestarAvisoDeCaso,
   type EstadoDoAviso,
@@ -151,10 +156,18 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
   const noBrasil = perfilDoPais(usePaisDaOrgAtiva()).codigo === "BR";
   const salvar = useSalvarAvisoDeCaso();
   const testar = useTestarAvisoDeCaso();
+  const remover = useRemoverAvisoDeCaso();
 
   const [rascunho, setRascunho] = useState<Rascunho>(() => rascunhoDoEstado(estado));
   /** A pergunta do número que já é cliente. `null` = não foi feita. */
   const [confirmarContato, setConfirmarContato] = useState<string | null>(null);
+  /**
+   * A confirmação da REMOÇÃO. Estado próprio, e não o `confirmarContato`: uma é
+   * sobre um número que vai ENTRAR (e pode ser cancelada escolhendo outro), a
+   * outra sobre a configuração que vai SAIR. Compartilhar as duas faria a
+   * primeira pergunta reagir ao clique da segunda.
+   */
+  const [confirmarRemocao, setConfirmarRemocao] = useState(false);
 
   const oferecidas = estado.conexoes.filter((c) => c.aceitaMensagemLivre);
   const telefoneOk = telefoneDeAvisoValido(rascunho.telefone);
@@ -221,6 +234,20 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
     } catch (erro) {
       toast.error(
         erro instanceof ApiError ? erro.message : t("Não foi possível mandar o teste agora."),
+      );
+    }
+  }
+
+  async function removerDestinatario() {
+    try {
+      await remover.mutateAsync();
+      setConfirmarRemocao(false);
+      toast.success(t("Destinatário removido."));
+    } catch (erro) {
+      toast.error(
+        erro instanceof ApiError
+          ? erro.message
+          : t("Não foi possível remover o destinatário. Tente de novo."),
       );
     }
   }
@@ -372,6 +399,67 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           "O teste manda uma mensagem de verdade e conta no limite diário desse número. Salve antes de testar.",
         )}
       </p>
+
+      {/* ── A REMOÇÃO DO DESTINATÁRIO (issue #3338) ────────────────────────
+          No FIM do cartão, e não ao lado de Salvar: uma ação que apaga a
+          configuração não pode ficar a um clique de distância de quem só queria
+          salvar. Só aparece com configuração SALVA — antes disso não há
+          destinatário para remover, e um botão que não faz nada ensina a não
+          confiar nos botões. */}
+      {jaSalvo ? (
+        confirmarRemocao ? (
+          <div
+            className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3"
+            data-testid="confirmar-remocao"
+          >
+            <p className="text-sm font-medium">{t("Remover o destinatário dos avisos?")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "A configuração de avisos é apagada e este número volta a ser um número comum: o que ele mandar passa a virar atendimento no Inbox. O histórico de entregas desta tela continua aqui.",
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Também param de sair, até você cadastrar um número de novo: os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".",
+              )}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => void removerDestinatario()}
+                disabled={remover.isPending}
+              >
+                {remover.isPending ? t("Removendo…") : t("Remover destinatário")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmarRemocao(false)}
+                disabled={remover.isPending}
+              >
+                {t("Manter")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={() => setConfirmarRemocao(true)}
+            >
+              {t("Remover destinatário")}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Diferente de desligar os avisos: aqui o número sai da configuração e volta a entrar no Inbox.",
+              )}
+            </p>
+          </div>
+        )
+      ) : null}
     </Card>
   );
 }

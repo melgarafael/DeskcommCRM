@@ -319,13 +319,15 @@ const acoesFixas = [
       template: z.string().min(1).max(2000),
       /**
        * #2734 — MÍDIA OPCIONAL por URL. Quando presente, o `template` deixa de ser
-       * a mensagem inteira e vira a LEGENDA da imagem/PDF. Opcional de propósito: a
-       * regra antiga (só texto) não tem a chave e continua idêntica. O `nullish`
-       * deixa o editor gravar `null`/ausente sem recusar a regra.
+       * a mensagem inteira e vira a LEGENDA da mídia (imagem, vídeo, áudio ou
+       * documento). Opcional de propósito: a regra antiga (só texto) não tem a
+       * chave e continua idêntica. O `nullish` deixa o editor gravar
+       * `null`/ausente sem recusar a regra.
        *
-       * O `type` (imagem × PDF) NÃO mora aqui: quem o decide é o envio, a partir do
-       * MIME — a extensão da URL quando não há MIME. Guardar uma cópia do tipo no
-       * config criaria uma segunda verdade que envelhece se a URL mudar.
+       * O `type` (imagem × vídeo × áudio × documento) NÃO mora aqui: quem o
+       * decide é o envio, a partir do MIME — a extensão da URL quando não há
+       * MIME. Guardar uma cópia do tipo no config criaria uma segunda verdade
+       * que envelhece se a URL mudar.
        */
       media_url: z.string().url().max(2000).nullish(),
     }),

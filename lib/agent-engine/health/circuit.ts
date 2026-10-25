@@ -13,9 +13,11 @@
  * Fontes HONESTAS (só o que já é drenado/medido — nada inventado):
  *   - block rate = send_ledger.status='vetoed' (is_blocked, F2-06) / total de
  *     tentativas de outbound do número na janela. Atribuição ao número: exists em
- *     conversations (contact_id + channel_session_id, is_group=false) — o vínculo
- *     durável contato↔sessão no CRM. É o sinal por-envio do "outbound que virou
- *     is_blocked"; contacts.is_blocked é o estado por-contato.
+ *     conversations (contact_id + channel_session_id) — o vínculo durável
+ *     contato↔sessão no CRM, incluindo as conversas de GRUPO da mesma sessão
+ *     (#2729: o envio do grupo queima o mesmo número, e o circuito é do número).
+ *     É o sinal por-envio do "outbound que virou is_blocked"; contacts.is_blocked
+ *     é o estado por-contato.
  *   - response rate = contatos (do número) contatados (send_ledger 'accepted') que
  *     responderam (evento ai_agent.dispatch_requested no event_log, F2-05) / contatados.
  *     ponytail: é um PROXY (janela grosseira; conversa iniciada por inbound infla o
@@ -102,12 +104,19 @@ interface SessionRates {
 /**
  * Computa block/response rate do número na janela — só de fontes já drenadas/medidas.
  * Atribuição send_ledger→número: `exists` em conversations (contact_id +
- * channel_session_id, is_group=false) — send_ledger não guarda a sessão; a
- * conversa 1:1 do contato no número é o vínculo durável. Inbound via evento
+ * channel_session_id) — send_ledger não guarda a sessão; a conversa do contato
+ * naquele número é o vínculo durável. **Inclui as conversas de GRUPO da mesma
+ * sessão (#2729)**: com a chave do grupo ligada a IA envia por ali, e um envio
+ * que o circuito não vê é um bloqueio que ele não pausa antes de acontecer —
+ * a conta passa a ser do NÚMERO, que é quem queima. Inbound via evento
  * ai_agent.dispatch_requested no event_log do CRM (payload.channel_session_id/
- * contact_id — as chaves que lib/waha/ingest.ts emite).
+ * contact_id — as chaves que lib/waha/ingest.ts e o ingest de grupo emitem).
+ *
+ * @internal exportada para o invariante `saude-do-numero-conta-o-grupo`: a régua
+ * é o SQL, então o teste tem de rodá-lo contra um Postgres de verdade — um dublê
+ * de `query` provaria só que a função sabe chamar um dublê.
  */
-async function computeSessionRates(
+export async function computeSessionRates(
   db: pg.Pool,
   tenantId: string,
   channelSessionId: string,
@@ -126,28 +135,28 @@ async function computeSessionRates(
             and exists (
               select 1 from conversations c
               where c.organization_id = $1 and c.contact_id = sl.contact_id
-                and c.channel_session_id = $2::uuid and c.is_group = false))::int as total_sends,
+                and c.channel_session_id = $2::uuid))::int as total_sends,
        (select count(*) from send_ledger sl
           where sl.organization_id = $1 and sl.status = 'vetoed'
             and sl.created_at >= (select t from cut)
             and exists (
               select 1 from conversations c
               where c.organization_id = $1 and c.contact_id = sl.contact_id
-                and c.channel_session_id = $2::uuid and c.is_group = false))::int as blocked_sends,
+                and c.channel_session_id = $2::uuid))::int as blocked_sends,
        (select count(distinct sl.contact_id) from send_ledger sl
           where sl.organization_id = $1 and sl.status = 'accepted'
             and sl.created_at >= (select t from cut)
             and exists (
               select 1 from conversations c
               where c.organization_id = $1 and c.contact_id = sl.contact_id
-                and c.channel_session_id = $2::uuid and c.is_group = false))::int as sent_leads,
+                and c.channel_session_id = $2::uuid))::int as sent_leads,
        (select count(distinct sl.contact_id) from send_ledger sl
           where sl.organization_id = $1 and sl.status = 'accepted'
             and sl.created_at >= (select t from cut)
             and exists (
               select 1 from conversations c
               where c.organization_id = $1 and c.contact_id = sl.contact_id
-                and c.channel_session_id = $2::uuid and c.is_group = false)
+                and c.channel_session_id = $2::uuid)
             and exists (
               select 1 from event_log e
               where e.organization_id = $1 and e.event_type = 'ai_agent.dispatch_requested'

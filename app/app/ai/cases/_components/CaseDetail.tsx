@@ -43,7 +43,7 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
           <h2 className="text-base font-semibold">{data.contact_name ?? t("Contato sem nome")}</h2>
           <p className="text-xs text-muted-foreground">{data.contact_phone ?? t("Sem telefone")}</p>
           <Link
-            className="text-xs underline underline-offset-4"
+            className="relative text-xs underline underline-offset-4 pointer-coarse:inline-block pointer-coarse:before:absolute pointer-coarse:before:-inset-3.5 pointer-coarse:before:content-['']"
             href={`/app/inbox/${data.conversation_id}`}
           >
             {t("Ver conversa")}

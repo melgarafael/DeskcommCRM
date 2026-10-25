@@ -1102,6 +1102,9 @@ export function InboxLayout({
               respondendo={respondendo}
               onCancelarResposta={() => setRespondendo(null)}
               currentContactId={selectedConversation.contact_id}
+              // A barra de recursos lembra o recolhimento POR usuário (#3282);
+              // o id vem do `AuthProvider` daqui, não de dentro do compositor.
+              usuarioId={user.id}
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}

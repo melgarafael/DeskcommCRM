@@ -36,6 +36,7 @@ import {
   recusaReabertura,
 } from "@/lib/leads/reabertura";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   recusaDeMotivoDoGanho,
   settingsDoFunil,
@@ -1352,6 +1353,7 @@ export async function moveLeadHandler(
     : validaCamposExigidos({
         lead: lead as Record<string, unknown>,
         settingsDoFunil: settings,
+        camposComAnexo: await camposComAnexo(supabase, settings, ctx.organization_id, leadId),
         destino: {
           stageId: stage.id,
           desfecho: stage.is_won ? "won" : stage.is_lost ? "lost" : null,

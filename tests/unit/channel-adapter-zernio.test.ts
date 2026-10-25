@@ -258,6 +258,20 @@ describe("send — mídia", () => {
     expect(corpo()).toMatchObject({ attachmentType: "audio", voiceNote: true });
   });
 
+  it("áudio com legenda NÃO manda message — a bolha de voz não leva legenda (#3266)", async () => {
+    respondeOk();
+    await zernioAdapter.send({
+      organizationId: ORG,
+      sessionRef: CREDS.accountId,
+      to: "5959",
+      providerConversationId: THREAD,
+      kind: "audio",
+      media: { ...media, mime: "audio/ogg", filename: "a.ogg", caption: "olha" },
+    });
+    expect(corpo()).toMatchObject({ attachmentType: "audio", voiceNote: true });
+    expect(corpo()).not.toHaveProperty("message");
+  });
+
   it("documento cai em file, não em image", async () => {
     respondeOk();
     await zernioAdapter.send({

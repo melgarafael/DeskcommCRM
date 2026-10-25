@@ -99,9 +99,9 @@ describe("GET /api/v1/anuncios/meta/[org]", () => {
     await chamar("?utm_campaign=black-friday&nome=Fulano&telefone=5511999999999");
 
     expect(estado.inserts[0]?.utm).toEqual({ utm_campaign: "black-friday" });
-    // A query crua fica guardada inteira de propósito (é a prova de onde o
-    // clique veio), mas o que vira ATRIBUIÇÃO é só a UTM normalizada.
-    expect(estado.inserts[0]?.query_raw).toMatchObject({ nome: "Fulano" });
+    // Nome e telefone que a landing repassa na query não chegam à tabela:
+    // `query_raw` guarda só as UTMs normalizadas, como `rastreio/links.ts`.
+    expect(estado.inserts[0]?.query_raw).toEqual({ utm_campaign: "black-friday" });
   });
 
   it("hit sem UTM nenhuma: vai para o WhatsApp sem ref, e não grava linha", async () => {
@@ -213,5 +213,15 @@ describe("casarClickRef (Meta)", () => {
   it("linha sem UTM não vira atribuição", async () => {
     const casado = await casarClickRef(adminQueDevolve({ utm: {} }) as never, ORG, "K7M2P9", CONTATO);
     expect(casado).toBeNull();
+  });
+});
+
+describe("a rota de captura é alcançável por quem clicou", () => {
+  it("o proxy não exige sessão de quem chega do botão da landing", async () => {
+    const { isPublicPath } = await import("@/lib/auth/public-paths");
+    expect(isPublicPath("/api/v1/anuncios/meta/loja")).toBe(true);
+    // Âncora num segmento só: nenhum sub-path nasce público de carona.
+    expect(isPublicPath("/api/v1/anuncios/meta/loja/admin")).toBe(false);
+    expect(isPublicPath("/api/v1/anuncios/meta")).toBe(false);
   });
 });

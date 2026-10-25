@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   useAcaoDeCampanha,
   useCampanha,
@@ -41,6 +42,7 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { TEXTO_DA_EXCLUSAO } from "@/lib/campanhas/tipos";
 
 import { ModeloDaCampanhaNoDetalhe } from "../_components/ModeloDaCampanhaNoDetalhe";
+import { VelocidadeDaCampanha, minutosParaEnviar, type Velocidade } from "../_components/VelocidadeDaCampanha";
 
 export function DetalheDaCampanha({ id }: { id: string }) {
   const t = useT();
@@ -149,7 +151,14 @@ export function DetalheDaCampanha({ id }: { id: string }) {
         <Card className="space-y-3 border-warning-fg p-4">
           <p className="text-sm">
             {confirmando === "iniciar"
-              ? `${t("Começar a enviar para")} ${c.snapshot_eligible} ${c.snapshot_eligible === 1 ? t("pessoa?") : t("pessoas?")} ${t("O envio segue o ritmo do número e pode levar horas.")}`
+              ? `${t("Começar a enviar para")} ${c.snapshot_eligible} ${c.snapshot_eligible === 1 ? t("pessoa?") : t("pessoas?")} ${
+                  c.velocidade === "rapida"
+                    ? t("Envio rápido: sai tudo em cerca de {n} min.").replace(
+                        "{n}",
+                        String(minutosParaEnviar(c.snapshot_eligible ?? 0, "rapida")),
+                      )
+                    : t("O envio segue o ritmo do número e pode levar horas.")
+                }`
               : t(
                   "Cancelar é definitivo: quem ainda não recebeu não recebe mais, e a campanha não volta a rodar.",
                 )}
@@ -437,6 +446,10 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
   const [tetoHora, setTetoHora] = useState(texto(campanha.teto_horario));
   const [inicio, setInicio] = useState(texto(campanha.janela_inicio_hora));
   const [fim, setFim] = useState(texto(campanha.janela_fim_hora));
+  const [velocidade, setVelocidade] = useState<Velocidade>(campanha.velocidade === "rapida" ? "rapida" : "gradual");
+  const [emBaloes, setEmBaloes] = useState(campanha.split_messages === true);
+  const ehOficial = campanha.message_mode === "template";
+  const rapida = ehOficial && velocidade === "rapida";
 
   const encerrada = campanha.status === "completed" || campanha.status === "cancelled";
   if (encerrada) return null;
@@ -451,13 +464,16 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
           )}
         </p>
       </div>
+      <VelocidadeDaCampanha valor={velocidade} onChange={setVelocidade} ehOficial={ehOficial} nome="r-velocidade" />
       <div className="grid gap-4 sm:grid-cols-2">
-        <CampoDeRitmo
-          id="r-intervalo"
-          rotulo={t("Intervalo mínimo entre mensagens (segundos)")}
-          valor={intervalo}
-          onChange={setIntervalo}
-        />
+        {!rapida && (
+          <CampoDeRitmo
+            id="r-intervalo"
+            rotulo={t("Intervalo mínimo entre mensagens (segundos)")}
+            valor={intervalo}
+            onChange={setIntervalo}
+          />
+        )}
         <CampoDeRitmo
           id="r-dia"
           rotulo={t("Máximo por dia")}
@@ -470,7 +486,8 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
           valor={tetoHora}
           onChange={setTetoHora}
         />
-        <div />
+        {/* Na rápida, sem o intervalo, os tetos já ocupam a linha inteira. */}
+        {!rapida && <div />}
         <CampoDeRitmo
           id="r-inicio"
           rotulo={t("Enviar só a partir das (hora)")}
@@ -484,17 +501,34 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
           onChange={setFim}
         />
       </div>
+      {/* Modelo aprovado sai como a plataforma aprovou: nunca se divide. */}
+      {!ehOficial && (
+        <div className="flex items-start gap-3">
+          <Switch id="r-baloes" checked={emBaloes} onCheckedChange={setEmBaloes} />
+          <div className="space-y-1">
+            <Label htmlFor="r-baloes">{t("Dividir a mensagem em balões, um por parágrafo")}</Label>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Até 3 balões por pessoa; o que passar disso vai junto no último. Cada balão conta no limite diário do número.",
+              )}
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <Button
           size="sm"
           disabled={editar.isPending}
           onClick={() =>
             editar.mutate({
-              intervalo_segundos: numero(intervalo),
+              // Na rápida o intervalo não vale: a rajada tem o próprio espaçamento.
+              intervalo_segundos: rapida ? null : numero(intervalo),
+              ...(ehOficial ? { velocidade: rapida ? "rapida" : "gradual" } : {}),
               teto_diario: numero(tetoDia),
               teto_horario: numero(tetoHora),
               janela_inicio_hora: numero(inicio),
               janela_fim_hora: numero(fim),
+              ...(ehOficial ? {} : { split_messages: emBaloes }),
             })
           }
         >

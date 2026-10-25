@@ -2,18 +2,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import type { CamadaSemantica } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import type { CamadaConfiguravel } from "@/lib/agent-engine/guardrails/camadas-da-org";
 
 /**
- * As duas verificações que consultam um modelo — e por isso são escolha de quem
- * paga a conta.
+ * As verificações que são escolha da organização (`CAMADAS_CONFIGURAVEIS`): as que
+ * consultam um modelo, e por isso são de quem paga a conta, e as que só o negócio
+ * sabe se servem a ele.
  *
  * `escolha: null` significa "esta organização não escolheu", e aí vale
  * `padraoDoAmbiente`. Três estados, não dois: colapsá-los faria a tela mostrar um
  * interruptor desligado para quem tem a camada LIGADA pelo servidor.
  */
 export interface CamadaDeSeguranca {
-  layer: CamadaSemantica;
+  layer: CamadaConfiguravel;
   escolha: boolean | null;
   padraoDoAmbiente: boolean;
   /** O que de fato vale hoje — é este que a tela usa para posicionar o controle. */
@@ -37,7 +38,7 @@ export function useGuardrailLayers() {
 export function useSetGuardrailLayer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { layer: CamadaSemantica; enabled: boolean }) =>
+    mutationFn: (v: { layer: CamadaConfiguravel; enabled: boolean }) =>
       apiClient.put("/api/v1/ai/guardrail-layers", v),
     // Sem o invalidate a tela mostraria o estado antigo depois de gravar, e o
     // usuário concluiria que o clique não pegou — o defeito que faz alguém clicar

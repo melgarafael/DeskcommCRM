@@ -153,6 +153,23 @@ describe("persistMessageMedia", () => {
     );
   });
 
+  it("histórico importado (#999): guarda no storage mas NÃO pede derivação (sem visão/transcrição paga)", async () => {
+    messageRow.metadata = { raw_type: "image", historico_importado: "true" };
+    const result = await persistMessageMedia(eventRow());
+    expect(result.status).toBe("ok");
+    expect(uploadMock).toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_storage_path: "org1/conv1/msg1.jpg",
+        metadata: expect.objectContaining({ media_status: "stored", historico_importado: "true" }),
+      }),
+    );
+    expect(rpcMock).not.toHaveBeenCalledWith(
+      "emit_event",
+      expect.objectContaining({ p_event_type: "media.derive_requested" }),
+    );
+  });
+
   it("grupo: persiste mas NÃO pede derivação (a IA não serve grupos)", async () => {
     conversationRow.is_group = true;
     const result = await persistMessageMedia(eventRow());

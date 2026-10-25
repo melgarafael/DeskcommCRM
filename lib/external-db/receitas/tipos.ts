@@ -11,7 +11,7 @@
 import type { z } from "zod";
 
 export type MotorReceita = "mysql" | "postgres";
-export type FamiliaReceita = "woocommerce" | "wordpress";
+export type FamiliaReceita = "woocommerce" | "wordpress" | "tabela-direta";
 
 export interface DefinicaoDeReceita {
   /** Identificador estável da receita (ex.: "woocommerce-produtos"). */

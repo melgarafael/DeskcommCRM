@@ -203,3 +203,6 @@ __pycache__/
 # compose não tem de onde nascer).
 caddy-sites/*
 !caddy-sites/README.caddy
+
+# Curso ilustrado — fotos e site gerados (curso/capturar.ts, curso/montar.ts)
+curso/saida/

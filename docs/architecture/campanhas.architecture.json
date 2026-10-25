@@ -102,7 +102,7 @@
       "lane": "motor",
       "col": 1,
       "type": "worker",
-      "label": "cron campaign-worker → rodada.ts: 1 mensagem por número por tique"
+      "label": "cron campaign-worker → rodada.ts: 1 mensagem por número por tique (gradual) ou rajada (rápida)"
     },
     {
       "id": "ritmo",
@@ -222,6 +222,13 @@
       "col": 4,
       "type": "service",
       "label": "lib/channels/erro-da-plataforma.ts — falha da pessoa (segue) × do envio inteiro (pausa a campanha com o motivo)"
+    },
+    {
+      "id": "rajada",
+      "lane": "motor",
+      "col": 3,
+      "type": "logic",
+      "label": "rajada.ts — envio rápido (0711): 6 inícios/s, 4 em voo, até 38 s por rodada; para no 1º desfecho que vale para todos"
     }
   ],
   "edges": [
@@ -260,6 +267,10 @@
     { "id": "preparacao-resolve-modelo", "from": "preparacao", "to": "modelo-da-campanha", "label": "valores de cada contato congelados em variables.modelo" },
     { "id": "modelo-confere-espelho", "from": "modelo-da-campanha", "to": "espelho-de-modelos", "label": "aprovado neste número? toda variável tem origem?" },
     { "id": "rodada-manda-modelo", "from": "rodada", "to": "send-handler", "label": "type=template com os valores congelados; corpo = texto do modelo preenchido (o agente lê)" },
-    { "id": "falha-classificada", "from": "erro-da-plataforma", "to": "rodada", "label": "modelo pausado / número restringido / pagamento → campanha pausa com o motivo" }
+    { "id": "falha-classificada", "from": "erro-da-plataforma", "to": "rodada", "label": "modelo pausado / número restringido / pagamento → campanha pausa com o motivo" },
+    { "id": "rodada-usa-rajada", "from": "rodada", "to": "rajada", "label": "campaigns.velocidade = rapida: o envio de sempre repetido em lotes no prazo da rodada" },
+    { "id": "rajada-le-fila", "from": "rajada", "to": "campaign-recipients", "label": "lotes de pendentes; reserva em compare-and-set, ninguém duas vezes" },
+    { "id": "limite-volta-para-fila", "from": "erro-da-plataforma", "to": "rajada", "label": "429 do provedor / 130429: a pessoa volta para a fila e a rajada para" },
+    { "id": "detalhe-escolhe-velocidade", "from": "detalhe", "to": "campaigns", "label": "ritmo: Gradual ou Rápido (só número oficial)" }
   ]
 }

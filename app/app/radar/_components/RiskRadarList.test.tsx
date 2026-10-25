@@ -174,6 +174,33 @@ describe("#3062 — o item SEM conversa abre o quadro do funil JÁ com o negóci
     );
   });
 
+  it("no celular, sem ação nenhuma a faixa de ações some em vez de sobrar vazia", async () => {
+    // A seta é `max-md:hidden`: sem "Assumir" nem compromisso a faixa não tem
+    // nada visível no celular, e com `max-md:pb-3` ela somava 12px vazios. O
+    // jsdom não calcula layout, então o teste cobra a CLASSE.
+    vi.mocked(useAtRiskLeads).mockReturnValue({
+      data: { ...BASE, items: [SEM_CONVERSA], total: 1 },
+      isLoading: false,
+    } as never);
+    renderRadar();
+    const faixa = (await screen.findByTestId("radar-item")).lastElementChild!;
+    expect(faixa.classList.contains("max-md:hidden")).toBe(true);
+    expect(faixa.classList.contains("max-md:pb-3")).toBe(false);
+  });
+
+  it("no celular, com \"Assumir\" a faixa de ações desce para baixo do título", async () => {
+    vi.mocked(useAtRiskLeads).mockReturnValue({
+      data: { ...BASE, items: [{ ...SEM_CONVERSA, conversation_id: "conv-7" }], total: 1 },
+      isLoading: false,
+    } as never);
+    renderRadar();
+    const linha = await screen.findByTestId("radar-item");
+    const faixa = within(linha).getByTestId("radar-claim").parentElement!;
+    expect(faixa).toBe(linha.lastElementChild);
+    expect(faixa.classList.contains("max-md:hidden")).toBe(false);
+    expect(faixa.classList.contains("max-md:pb-3")).toBe(true);
+  });
+
   it("com conversa o destino continua sendo o inbox — o `?lead=` não rouba o caso", async () => {
     vi.mocked(useAtRiskLeads).mockReturnValue({
       data: { ...BASE, items: [{ ...SEM_CONVERSA, conversation_id: "conv-7" }], total: 1 },

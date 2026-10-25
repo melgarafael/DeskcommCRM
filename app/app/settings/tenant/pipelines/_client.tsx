@@ -20,6 +20,12 @@ import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfi
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import {
+  DIAS_MAXIMO_DO_RECORTE,
+  DIAS_MINIMO_DO_RECORTE,
+  DIAS_PADRAO_DO_RECORTE,
+  diasDeRecorte,
+} from "@/lib/kanban/recorte-de-encerrados";
+import {
   buscarOpcoes,
   exportarOpcoesCsv,
   importarOpcoesCsv,
@@ -39,7 +45,9 @@ import {
   OPERADORES_DE_MOSTRA,
   type OperadorDeMostra,
 } from "@/lib/schemas/mostrar-quando";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, Plus, Trash } from "@/lib/ui/icons";
+import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -51,6 +59,8 @@ export interface PipelineRow {
   settings: Record<string, unknown> | null;
   /** Opcional só para os testes; a página sempre manda (ver `ehFunilPadrao`). */
   is_default?: boolean;
+  /** O funil de clientes (#0262): o servidor também lê `entrada_do_inbox` nele. */
+  is_client_pipeline?: boolean;
 }
 
 /**
@@ -90,6 +100,38 @@ export interface EtapaDoFunil {
   id: string;
   name: string;
   is_archived: boolean;
+  /**
+   * Etapa de fechamento. Opcional porque o editor de `obrigatorio_em` (#1536)
+   * não distingue fechamento de abertura — ele mostra TODAS as etapas, e a
+   * marca que alguém já fez não pode sumir por causa de um filtro. Quem
+   * ESCOLHE a etapa de entrada do Inbox (#3011) filtra por eles: card não
+   * nasce em "Ganho". A página sempre manda os dois.
+   */
+  is_won?: boolean;
+  is_lost?: boolean;
+}
+
+/**
+ * O item do seletor da entrada do Inbox que significa "a primeira etapa do
+ * funil" — o comportamento de sempre, e o valor que DESLIGA o ajuste (#3011).
+ *
+ * Radix recusa `value=""` em `<SelectItem>`, e "não quero escolher etapa" precisa
+ * ser um item como os outros — não um placeholder que some quando a pessoa
+ * escolhe algo.
+ */
+export const ENTRADA_DO_INBOX_PADRAO = "__primeira_etapa__";
+
+/**
+ * As etapas que PODEM receber a conversa nova (#3011): abertas, e nem ganho nem
+ * perdido.
+ *
+ * É a mesma lista que `etapaDeEntrada` consulta no banco antes de aceitar a
+ * etapa declarada. Oferecer uma etapa que a gravação recusaria faria a tela
+ * prometer uma escolha que o fallback desfaz em silêncio — o defeito que este
+ * controle existe para acabar.
+ */
+export function etapasQueRecebemConversa(etapas: EtapaDoFunil[]): EtapaDoFunil[] {
+  return etapas.filter((e) => !e.is_archived && e.is_won !== true && e.is_lost !== true);
 }
 
 /**
@@ -487,7 +529,7 @@ export function OpcoesDaLista({
   }
 
   return (
-    <div className="space-y-2 md:col-span-4" data-testid={`opcoes-campo-${indice + 1}`}>
+    <div className="space-y-2 lg:col-span-4" data-testid={`opcoes-campo-${indice + 1}`}>
       <div className="flex flex-wrap items-center gap-2">
         {/* O RESUMO é o que a tela mostra no lugar das opções — e a contagem é
             o número que quem configura precisa ver de relance. */}
@@ -680,6 +722,31 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  // O recorte de encerrados antigos do quadro (#2995): opção POR FUNIL em
+  // `settings.ocultar_encerrados_dias`, desligada por padrão. O número relido é
+  // o que está gravado (`null` = desligado) e é ele que preenche o campo de
+  // dias, para ligar/desligar não exigir digitação; o campo já nasce com a
+  // sugestão de 30 dias, que NÃO é gravada enquanto ninguém ligar a opção.
+  const diasRelidos = diasDeRecorte(pipeline.settings);
+  const [ocultarEncerrados, setOcultarEncerrados] = useState(diasRelidos !== null);
+  const [diasDosEncerrados, setDiasDosEncerrados] = useState(
+    diasRelidos !== null ? String(diasRelidos) : String(DIAS_PADRAO_DO_RECORTE),
+  );
+  /**
+   * A ENTRADA DAS CONVERSAS DO INBOX (#3011) — quantas fatias da tela o ajuste
+   * tem.
+   *
+   * O ajuste nasceu no banco, com leitura e fallback provados, e sem lugar
+   * nenhum para ser ligado: a doutrina (`docs/doctrine/sistema-vivo.md`,
+   * invariante 6) pede tela para ver, tela para mudar e aviso visível quando
+   * falha. São DOIS estados porque o ajuste tem duas decisões: se ele vale
+   * (`ativa`) e QUAL etapa foi escolhida (`stage_id`). Desligar NÃO apaga a
+   * etapa — quem desliga e depois religa não escolhe de novo, e é por isso que
+   * o valor lembrado é guardado mesmo com o seletor na primeira etapa.
+   */
+  const entradaInicial = entradaDoInboxDeclarada(pipeline.settings);
+  const [entradaAtiva, setEntradaAtiva] = useState(entradaInicial.ativa);
+  const [entradaEtapaId, setEntradaEtapaId] = useState<string | null>(entradaInicial.stage_id);
   // O texto CSV de importação de opções (#2521), por chave de campo — vive só
   // enquanto a pessoa cola; "Importar" o transforma em opções e o limpa.
   const [csvDeOpcoes, setCsvDeOpcoes] = useState<Record<string, string>>({});
@@ -749,6 +816,26 @@ function PipelineEditor({
       .map((s2) => s2.trim())
       .filter((s2) => s2.length > 0);
 
+    // #2995 — o recorte de encerrados antigos do quadro: os dias vêm de um
+    // campo de texto, e um número fora da faixa faria o schema recusar o save
+    // inteiro com a mensagem genérica de validação. Barrar aqui diz o que está
+    // errado — a mesma técnica dos campos logo acima. O `0` é o DESLIGADO, e
+    // vai explícito no patch: a action faz merge com o settings do banco, então
+    // omitir a chave deixaria o número antigo e a pessoa desligaria a opção
+    // para continuar vendo os cards sumirem. (O texto repete a faixa de
+    // `DIAS_MINIMO_DO_RECORTE`/`DIAS_MAXIMO_DO_RECORTE`, como o resto da tela
+    // repete os limites dos campos: a chave de tradução é o texto renderizado.)
+    const diasDigitados = Number(diasDosEncerrados.trim());
+    if (
+      ocultarEncerrados &&
+      (!Number.isInteger(diasDigitados) ||
+        diasDigitados < DIAS_MINIMO_DO_RECORTE ||
+        diasDigitados > DIAS_MAXIMO_DO_RECORTE)
+    ) {
+      toast.error(t("Escolha de 1 a 3650 dias para esconder os negócios encerrados do quadro."));
+      return;
+    }
+
     const patch: PipelineConfigPatch = {
       vocabulary: { lead, deal, won, lost },
       fields: ok,
@@ -757,10 +844,30 @@ function PipelineEditor({
       won_reason_required: wonRequired,
       comanda_no_ganho: comandaNoGanho,
       reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
+      // A ENTRADA DAS CONVERSAS DO INBOX (#3011) vai no MESMO patch, pela
+      // MESMA porta de escrita do settings — a gravação no banco já existe
+      // (`updatePipelineConfig`), e a tela só passa a mandar a chave.
+      //
+      // A chave SÓ entra quando há o que dizer: um funil que nunca declarou
+      // etapa nenhuma continua idêntico ao de antes deste ajuste, em vez de
+      // ganhar `{ ativa: false }` morto em toda gravação. Quem JÁ declarou e
+      // desliga manda a escolha junto (`stage_id` preservado), porque o
+      // desligado é uma decisão com memória: religar não obriga a escolher de
+      // novo.
+      ...(entradaLigada || entradaInicial.ativa || entradaInicial.stage_id
+        ? {
+            entrada_do_inbox: {
+              ativa: entradaLigada,
+              ...(entradaEtapaId ? { stage_id: entradaEtapaId } : {}),
+            },
+          }
+        : {}),
+      ocultar_encerrados_dias: ocultarEncerrados ? diasDigitados : 0,
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
       if (r.ok) toast.success(`${pipeline.name} ${t("atualizado.")}`);
+      else if (r.error === "mfa_required") irAoDesafioDeMfa();
       else toast.error(`${t("Erro:")} ${r.error}`);
     });
   }
@@ -770,6 +877,25 @@ function PipelineEditor({
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+
+  // ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ──────────────────────────
+  // Quem pode ser escolhido, o que está escolhido hoje, e o que fazer quando a
+  // escolha deixou de valer. A escolha inválida CONTINUA à mostra no seletor
+  // (marcada como indisponível) e o aviso diz para onde as conversas estão indo
+  // — é o "aviso visível quando falha" que a doutrina pede, e é o que impede a
+  // queda para a primeira etapa de virar silêncio.
+  const etapasDeEntrada = etapasQueRecebemConversa(etapas);
+  // "Ligado" é terceiro estado: sem etapa escolhida não há o que declarar —
+  // um ajuste ligado apontando para lugar nenhum cairia na primeira etapa de
+  // qualquer forma, e o seletor diz isso mostrando o item padrão.
+  const entradaLigada = entradaAtiva && entradaEtapaId !== null;
+  const etapaDeclarada = entradaInicial.stage_id;
+  const declaradaVale = etapaDeclarada !== null && etapasDeEntrada.some((e) => e.id === etapaDeclarada);
+  const escolhaPerdida = entradaInicial.ativa && !declaradaVale;
+  const etapaForaDaLista = etapaDeclarada !== null && !declaradaVale;
+  const nomeDaEtapaPerdida = etapaForaDaLista
+    ? `${etapas.find((e) => e.id === etapaDeclarada)?.name ?? t("Etapa removida")} (${t("indisponível")})`
+    : "";
 
   return (
     <div className="space-y-4" data-testid={`editor-${pipeline.id}`}>
@@ -876,6 +1002,124 @@ function PipelineEditor({
         </p>
       </div>
 
+      {/* ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ─────────────────────
+          O ajuste existia só no BANCO: a etapa declarada já valia, o fallback
+          já era provado — e ninguém conseguia ligar, porque nenhum ponto da
+          interface mandava a chave. A doutrina
+          (`docs/doctrine/sistema-vivo.md`, invariante 6) pede tela para ver,
+          tela para mudar e aviso visível quando falha; a issue #3011 pede a
+          escolha na edição do funil.
+
+          A escolha sai daqui no patch de `updatePipelineConfig` — a MESMA porta
+          de escrita do resto do settings. A gravação no banco não é reescrita
+          aqui: a tela só passa a mandar `entrada_do_inbox`.
+
+          SÓ NO FUNIL QUE O SERVIDOR LÊ: `funilDeEntrada`
+          (`lib/leads/nascimento-do-lead.ts`) consulta a chave apenas no funil
+          `is_default` e no `is_client_pipeline`. Num funil secundário a escolha
+          seria salva e nunca usada, e o aviso diria que as conversas caem numa
+          etapa dele, onde elas não entram. Não é `ehFunilPadrao`: ele cai em
+          `pipelines[0]` sem padrão, e o servidor ali devolve
+          `sem_funil_de_entrada`. */}
+      {(pipeline.is_default === true || pipeline.is_client_pipeline === true) && (
+      <div className="space-y-1">
+        <Label className="text-xs">{t("Novas conversas do Inbox entram em…")}</Label>
+        <Select
+          value={entradaLigada && entradaEtapaId ? entradaEtapaId : ENTRADA_DO_INBOX_PADRAO}
+          onValueChange={(valor) => {
+            if (valor === ENTRADA_DO_INBOX_PADRAO) {
+              // DESLIGAR NÃO ESQUECE A ETAPA: o identificador fica no estado (e
+              // vai no patch), então religar é um clique — não uma escolha nova.
+              setEntradaAtiva(false);
+              return;
+            }
+            setEntradaAtiva(true);
+            setEntradaEtapaId(valor);
+          }}
+        >
+          <SelectTrigger
+            aria-label={t("Etapa de entrada das conversas do Inbox")}
+            className="h-8 w-72 text-xs"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ENTRADA_DO_INBOX_PADRAO}>
+              {t("Primeira etapa do funil (padrão)")}
+            </SelectItem>
+            {/* A etapa declarada que DEIXOU DE VALER continua na lista, marcada.
+                Tirá-la da tela apagaria a escolha por baixo de quem a fez — e o
+                admin não teria como ver onde ela apontava. Ela some no dia em
+                que outra etapa é escolhida. */}
+            {etapaForaDaLista && (
+              <SelectItem value={etapaDeclarada!}>{nomeDaEtapaPerdida}</SelectItem>
+            )}
+            {etapasDeEntrada.map((e) => (
+              <SelectItem key={e.id} value={e.id}>
+                {e.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "A conversa nova do Inbox vira card nesta etapa. Sem escolha, ela nasce na primeira etapa do funil — o comportamento de sempre.",
+          )}
+        </p>
+        {/* O AVISO VISÍVEL QUANDO FALHA: a etapa gravada deixou de valer e as
+            conversas estão caindo na primeira etapa. O fallback do servidor
+            já decide isso (e loga `logger.warn`); o que faltava era quem
+            configurou FICAR SABENDO. */}
+        {escolhaPerdida && (
+          <p role="alert" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+            {etapaDeclarada === null
+              ? t(
+                  "Nenhuma etapa escolhida: as conversas novas estão entrando na primeira etapa do funil.",
+                )
+              : t(
+                  "A etapa escolhida não está mais disponível (arquivada, apagada ou fechada): as conversas novas estão entrando na primeira etapa do funil. Escolha outra para voltar a decidir.",
+                )}
+          </p>
+        )}
+      </div>
+      )}
+
+      {/* ─── O RECORTE DE ENCERRADOS ANTIGOS (#2995) ──────────────────────
+          O quadro traz TODO negócio não arquivado — ganhos e perdas de meses
+          atrás inclusive — e num funil com histórico longo ele fica ilegível.
+          A opção é POR FUNIL e vem DESLIGADA: quem não ligar continua vendo
+          exatamente o que via. O corte é por DATA DE ENCERRAMENTO, e não por
+          status: negócio aberto nunca sai (por antigo que seja) e encerrado sem
+          data de encerramento fica — a data não existe, e inventá-la tiraria do
+          quadro um negócio que ninguém sabe quando fechou. Vale só para o que a
+          TELA mostra: nenhum negócio é apagado ou arquivado. */}
+      <div className="space-y-1">
+        <label className="flex flex-wrap items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={ocultarEncerrados}
+            onChange={(e) => setOcultarEncerrados(e.target.checked)}
+          />
+          {t("Esconder do quadro os negócios encerrados há mais de")}
+          <Input
+            type="number"
+            min={DIAS_MINIMO_DO_RECORTE}
+            max={DIAS_MAXIMO_DO_RECORTE}
+            aria-label={t("Dias de encerrado para esconder do quadro")}
+            className="h-8 w-20 text-xs"
+            disabled={!ocultarEncerrados}
+            value={diasDosEncerrados}
+            onChange={(e) => setDiasDosEncerrados(e.target.value)}
+          />
+          {t("dias")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Negócios abertos nunca são escondidos, e negócios encerrados sem data de encerramento ficam no quadro. Nada é apagado ou arquivado: desligar a opção traz todos de volta.",
+          )}
+        </p>
+      </div>
+
       {/* ─── A COMANDA DO GANHO (#1477) ───────────────────────────────
           Porta do consumidor de `lead.won`. Desligada por padrão, pela régua
           de `docs/doctrine/extensoes.md`: quem não ativar continua com a
@@ -906,8 +1150,13 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t("Aparecem no dossiê do negócio. No follow-up, você escolhe em qual campo gravar a resposta.")}
         </p>
+        {/* `lg:` e não `md:` (#3099): com a barra lateral aberta, a 768px sobram ~380px
+            para a linha, e a coluna de 13rem deixava Chave e Rótulo com 46px. Abaixo de
+            1024px os campos empilham, como no celular. Os `col-span-4` dos blocos de
+            dentro seguem o MESMO corte: um `md:col-span-4` sozinho cria quatro colunas
+            implícitas e devolve a linha espremida, mesmo sem o template. */}
         {fields.map((f, i) => (
-          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 md:grid-cols-[1fr_1fr_8rem_auto]">
+          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]">
             <Input
               aria-label={`${t("Chave do campo")} ${i + 1}`}
               placeholder={t("chave (endereco)")}
@@ -936,7 +1185,10 @@ function PipelineEditor({
                 setFields(next);
               }}
             >
-              <SelectTrigger aria-label={`${t("Tipo do campo")} ${i + 1}`}>
+              <SelectTrigger
+                aria-label={`${t("Tipo do campo")} ${i + 1}`}
+                title={rotuloDoTipo(f.type, t, moeda)}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -976,7 +1228,7 @@ function PipelineEditor({
                 recolhido: o que a tela monta antes de a pessoa pedir é o
                 resumo, nunca as opções. */}
             {f.type === "searchable_select" && (
-              <div className="space-y-1 md:col-span-4">
+              <div className="space-y-1 lg:col-span-4">
                 <label className="flex items-center gap-1 text-xs">
                   <input
                     type="checkbox"
@@ -990,6 +1242,32 @@ function PipelineEditor({
                   />
                   {t("Permitir valor novo (fora da lista)")}
                 </label>
+                {/* ── MÚLTIPLA ESCOLHA (#3182) ────────────────────────────────
+                    O modo múltiplo da lista pesquisável: o campo grava uma
+                    LISTA de valores canônicos e a ficha mostra os escolhidos
+                    como chips. Sem esta tela a chave nasceria no schema e
+                    ninguém conseguiria ligá-la (#1536 foi o mesmo defeito, com
+                    o `obrigatorio_em`). Desmarcar APAGA a chave: o funil que
+                    ninguém tocou continua idêntico ao de antes. */}
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("Permitir várias escolhas")} ${i + 1}`}
+                    checked={f.multiple === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      // `false` some da definição: desmarcar não deixa uma
+                      // chave morta no settings — vale para o valor único
+                      // gravado por TODO funil que existe hoje.
+                      const { multiple: _apagado, ...semMultiplo } = f;
+                      next[i] = ev.target.checked
+                        ? { ...f, multiple: true }
+                        : (semMultiplo as CustomFieldDef);
+                      setFields(next);
+                    }}
+                  />
+                  {t("Permitir várias escolhas")}
+                </label>
               </div>
             )}
             {/* ── QUANDO ESTE CAMPO OBRIGA (issue #1536) ────────────────────
@@ -998,7 +1276,7 @@ function PipelineEditor({
                 marcas são as que `campoExigidoNoDestino` lê — etapas de
                 entrada, `ao_ganhar` e `ao_perder` — e nada mais, para a tela
                 não prometer gatilho que o servidor não pergunta. */}
-            <div className="space-y-1 md:col-span-4">
+            <div className="space-y-1 lg:col-span-4">
               <p className="text-xs font-medium">{t("Exigir o preenchimento:")}</p>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 {etapas.map((e) => (
@@ -1065,7 +1343,7 @@ function PipelineEditor({
                 operadores são exatamente os três que `campoVisivel` aplica —
                 a tela não promete nenhum outro. Meio montada, a condição não
                 grava (ver `normalizaMostrarQuando`), como `obrigatorio_em`. */}
-            <div className="space-y-1 md:col-span-4">
+            <div className="space-y-1 lg:col-span-4">
               <p className="text-xs font-medium">{t("Mostrar só quando:")}</p>
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Select
@@ -1193,7 +1471,7 @@ function PipelineEditor({
             {/* Fora do funil padrão o seletor só aparece para DESFAZER uma marca
                 "Contato" que já exista (gravada quando este era o padrão). */}
             {(ehFunilPadrao || escopoDoCampo(f) === "contato") && (
-              <div className="flex flex-wrap items-center gap-3 md:col-span-4">
+              <div className="flex flex-wrap items-center gap-3 lg:col-span-4">
                 <span className="text-xs font-medium">{t("Este campo pertence a:")}</span>
                 <Select
                   value={escopoDoCampo(f)}

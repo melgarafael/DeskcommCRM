@@ -17,7 +17,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { FILTRO_VAZIO } from "@/lib/campanhas/audiencia";
-import { decidirConteudo, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
+import { decidirConteudo, decidirVelocidade, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
 import { gravarPool } from "@/lib/campanhas/pool-de-numeros";
 import {
   codificarCursor,
@@ -135,6 +135,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!conteudo.ok) {
     return fail(conteudo.codigo, t(conteudo.mensagem), conteudo.status, { requestId });
   }
+  // Rápida só com modelo aprovado (migration 0711).
+  const velocidade = decidirVelocidade({ pedida: entrada.velocidade, atual: "gradual", modo: conteudo.modo });
+  if (!velocidade.ok) {
+    return fail(velocidade.codigo, t(velocidade.mensagem), velocidade.status, { requestId });
+  }
 
   const { data, error } = await supabase
     .from("campaigns")
@@ -153,6 +158,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       janela_fim_hora: entrada.janela_fim_hora ?? null,
       teto_diario: entrada.teto_diario ?? null,
       teto_horario: entrada.teto_horario ?? null,
+      velocidade: velocidade.velocidade,
+      split_messages: entrada.split_messages ?? false,
       pipeline_id: entrada.pipeline_id ?? null,
       stage_id: entrada.stage_id ?? null,
       agent_id: entrada.agent_id ?? null,

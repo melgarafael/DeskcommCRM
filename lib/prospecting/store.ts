@@ -27,6 +27,7 @@ import { vereditoPuro } from "./site-classify";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import {
   provedorDaOrganizacao,
+  provedorExigeCredencialDaOrganizacao,
   validarCredencialDaOrganizacao,
 } from "./provedor";
 
@@ -137,6 +138,11 @@ export async function configureCredential(
   // responde com a MESMA validação de sempre — `users/me`, mesma URL, mesmo
   // erro — então quem não pediu nada não muda de comportamento.
   await validarCredencialDaOrganizacao(pool, org, key);
+  // #2942: o `local-http` NÃO tem segredo por organização — a URL do engine
+  // vem da INSTALAÇÃO (`PROSPECTING_LOCAL_HTTP_URL`). Nessa escolha o
+  // `configure` é só o gatilho de validação (o health check do engine) e o
+  // valor recebido é IGNORADO: não é gravado nem usado.
+  if (!(await provedorExigeCredencialDaOrganizacao(pool, org))) return;
   const encrypted = await encryptWebhookSecret(admin, key);
   if (!encrypted)
     throw new ProspectingError("A cifra de credenciais da instalação não está disponível.");
@@ -158,12 +164,17 @@ export async function createSearch(
       [org, requestId],
     );
     if (prior.rows[0]) return prior.rows[0];
-    const key = await credential(db, admin, org);
     // O provedor é ESCOLHA desta organização (#1758) e resolve-se ANTES de
     // qualquer escrita: escolha desconhecida falha fechado sem deixar campanha
     // órfã no banco. As outras organizações resolvem as suas próprias — a
     // escolha de uma não vaza para a outra.
     const provedor = await provedorDaOrganizacao(db, org);
+    // A credencial só é exigida de quem tem segredo POR ORGANIZAÇÃO: o
+    // `local-http` da #2942 lê a URL do engine da INSTALAÇÃO
+    // (`PROSPECTING_LOCAL_HTTP_URL`) e não tem o que buscar aqui.
+    const key = (await provedorExigeCredencialDaOrganizacao(db, org))
+      ? await credential(db, admin, org)
+      : "";
     const { rows } = await db.query<Campaign>(
       "insert into prospecting_campaigns(organization_id,request_id,name,search) values($1,$2,$3,$4) returning *",
       [org, requestId, search.name, search],
@@ -197,13 +208,17 @@ export async function createSearch(
 }
 export async function synchronizeSearch(db: pg.PoolClient, admin: SupabaseClient, c: Campaign) {
   if (!c.run_id) return;
-  const key = await credential(db, admin, c.organization_id);
   // A escolha ATUAL desta organização (#1758), relida a cada tick — e não
   // necessariamente o provedor que lançou esta execução: nada aqui guarda quem
   // lançou. Trocar de provedor com uma busca em andamento faz o novo ler um id
   // que não é dele. Rotear pelo provedor que lançou fica para a fatia que
   // trouxer um provedor real (#2174).
   const provedor = await provedorDaOrganizacao(db, c.organization_id);
+  // Como em `createSearch`: só quem tem segredo POR ORGANIZAÇÃO busca a
+  // credencial aqui (#2942, `local-http` lê a URL da instalação).
+  const key = (await provedorExigeCredencialDaOrganizacao(db, c.organization_id))
+    ? await credential(db, admin, c.organization_id)
+    : "";
   const run = await provedor.readSearch(key, c.run_id);
   if (["FAILED", "ABORTED", "TIMED-OUT"].includes(run.status)) {
     await db.query(

@@ -109,3 +109,4 @@ As três vezes o custo foi o mesmo: descobrir a aresta **durante** a
 implementação, com a peça já meio pronta.
 
 - `carteiras-transferencia.architecture.json`: atribuição respeita o escopo da carteira sob lock.
+- `atendimento-comercial.architecture.json`: entrada, veto, briefing e configuração de atendimento comercial exclusivamente humano.

@@ -464,6 +464,46 @@ describe("MessageBubble — mensagem que falhou", () => {
     expect(document.body.textContent).not.toContain("http://servico-interno");
   });
 
+  // O tooltip do selo "Falhou" conta a MESMA frase da linha visível — antes
+  // ele mostrava o `error_message` cru. Sabotagem: pôr o `error_message` do
+  // transporte à frente da frase do código deixa este caso VERMELHO.
+  it("o tooltip do 'Falhou' diz a mesma frase da linha, sem o texto cru", async () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "channel_session_not_working",
+      error_message: "fetch failed http://servico-interno:3000/api/sendText",
+    })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    const dica = await screen.findByRole("tooltip");
+    const frase = "O número escolhido não está conectado no momento.";
+    expect(dica).toHaveTextContent(frase);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent(frase);
+    expect(document.body.textContent).not.toContain("servico-interno");
+  });
+
+  it("código sem frase + texto cru: a genérica no tooltip e na linha, sem o endereço", async () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "canal_x_error",
+      error_message: "fetch failed http://servico-interno:3000/api/sendText",
+    })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    const dica = await screen.findByRole("tooltip");
+    expect(dica).toHaveTextContent("Não foi possível enviar esta mensagem.");
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não foi possível enviar esta mensagem.");
+    expect(document.body.textContent).not.toContain("servico-interno");
+  });
+
+  it.each([
+    ["pre_go_live", "Envio automático bloqueado pelo modo de teste do canal."],
+    ["org_suspensa", "Envio automático bloqueado: a organização está suspensa."],
+    ["channel_archived", "Este número foi excluído da Central de Conexões."],
+  ])("frase nossa gravada no envio (%s) aparece no tooltip e na linha", async (error_code, frase) => {
+    render(<MessageBubble message={msg({ status: "failed", error_code, error_message: frase })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(frase);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent(frase);
+    expect(document.body.textContent).not.toContain("automação");
+  });
+
   it("código sem frase cai na frase genérica", () => {
     render(<MessageBubble message={msg({ status: "failed", error_code: "codigo_novo" })} />);
     expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não foi possível enviar esta mensagem.");

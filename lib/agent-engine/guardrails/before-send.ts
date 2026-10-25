@@ -1,3 +1,4 @@
+import { comercialExigeHumano, contemAssuntoComercialNaSaida, restricaoComercialBarra } from '@/lib/escalacao/assunto-comercial';
 import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
@@ -257,6 +258,11 @@ export interface GateContext {
    *    quando a organização ligou a camada.
    */
   clinicalClaimEnforced?: boolean;
+  /**
+   * Restrição comercial da organização (#2877). Resolvida em `runBeforeSend` — ver
+   * `RunBeforeSendArgs.enforceCommercialRestriction` —, nunca um default calado.
+   */
+  commercialRestrictionEnforced?: boolean;
   /**
    * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
    * oposta do `internalVocabularyEnforced` logo acima, e a assimetria é
@@ -602,6 +608,18 @@ export const clinicalClaimGate: Gate = {
       // nunca o trecho — a frase barrada pode conter o nome da doença do paciente.
       detail: { clinical_kinds: achado.categorias.join(',') },
     };
+  },
+};
+
+/** Valores e negociação são exclusivos da equipe quando a organização assim determina. */
+export const commercialRestrictionGate: Gate = {
+  name: 'commercial_restriction',
+  evaluate: (ctx) => {
+    if (ctx.commercialRestrictionEnforced !== true || !contemAssuntoComercialNaSaida(ctx.body))
+      return { pass: true };
+    return { pass: false, code: 'commercial_requires_human',
+      reason: 'Valores e negociação exigem atendimento humano; não envie esta resposta.',
+      detail: { restricted_kind: 'commercial' } };
   },
 };
 
@@ -966,7 +984,8 @@ const spinningGate: Gate = {
  * do agente de uma organização que ligou a camada `afirmacao_clinica`, então a v8 não
  * muda o destino de nenhum envio de quem não ligou.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 9;
+// v10: restrição comercial explícita da organização, antes de qualquer emenda do corpo.
+export const BEFORE_SEND_CHAIN_VERSION = 10;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1033,6 +1052,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   casePromiseGate,
   internalVocabularyGate,
   clinicalClaimGate,
+  commercialRestrictionGate,
   agendaStallGate,
   disclosureGate,
 ];
@@ -1158,6 +1178,18 @@ export interface RunBeforeSendArgs {
    * (`camadaLigada(camadas.afirmacao_clinica, false)`).
    */
   enforceClinicalClaim?: boolean;
+  /**
+   * Arma o `commercialRestrictionGate` (#2877). AUSENTE não é "desligado": a
+   * cadeia lê a escolha da organização ela mesma (`comercialExigeHumano`), e a
+   * leitura que falha conta como LIGADA. Esquecer o argumento num caminho novo de
+   * envio, portanto, não abre a trava — foi assim que o template, o roteiro e o
+   * follow-up ficaram de fora na primeira versão.
+   *
+   * Só não lê quem não é texto da IA: resposta aprovada por humano
+   * (`approvedReply`) e o link do Meet (`meetingDelivery`). Texto fixo do
+   * sistema que sabe o que diz (o aviso de escalação) passa `false` explícito.
+   */
+  enforceCommercialRestriction?: boolean;
   /**
    * Desarma o `spinningGate` para ESTA tentativa. Ausente = armado (ver
    * `GateContext.spinningEnforced` para a razão da assimetria e para a conta que
@@ -1301,6 +1333,13 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
  * classificador semântico de promessa (F4-02) e a conferência de fato (#2231), que
  * rodam antes de tomar conexão — ver o porquê no ponto da chamada.
  */
+/** Falha FECHADA — a regra mora em `restricaoComercialBarra`, a mesma do atalho inline do follow-up. */
+async function resolverRestricaoComercial(args: RunBeforeSendArgs, body: string): Promise<boolean> {
+  if (args.enforceCommercialRestriction !== undefined) return args.enforceCommercialRestriction;
+  if (args.approvedReply !== undefined || args.meetingDelivery !== undefined) return false;
+  return restricaoComercialBarra(body, () => comercialExigeHumano(args.pool, args.tenantId), (m, c) => args.log.warn(m, c));
+}
+
 export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSendResult> {
   const gates = args.gates ?? BEFORE_SEND_GATES;
   // ANTES de tomar conexão, de propósito: preferência de estilo não precisa do
@@ -1320,6 +1359,11 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
   // resposta aprovada ou aviso de código passarem por uma preferência de estilo.
   const bodyDoModelo =
     estilo !== null ? aplicarAjustesDeEstilo(args.body, estilo.ajustes) : args.body;
+
+  // Restrição comercial (#2877) — fora do lock pela mesma razão do estilo acima.
+  // Só consulta quando o corpo tem cara de preço: o gate não vetaria nada sem
+  // isso, e todo envio comum não paga o round-trip.
+  const restricaoComercial = await resolverRestricaoComercial(args, bodyDoModelo);
 
   // ═══ A CONFERÊNCIA SEMÂNTICA DE PROMESSA RODA FORA DO LOCK ═══
   //
@@ -1495,6 +1539,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
+      commercialRestrictionEnforced: restricaoComercial,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
     };

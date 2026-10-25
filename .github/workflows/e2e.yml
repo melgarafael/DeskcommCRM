@@ -795,6 +795,7 @@ jobs:
         agente-papeis-operador.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
+        mfa-dispositivo-confiavel.spec.ts
         agenda-tela-do-produto.spec.ts
         notificacoes-diz-o-que-falta.spec.ts
         notificacoes-tela-bloqueada.spec.ts
@@ -1181,6 +1182,7 @@ jobs:
         catalogo-busca-no-catalogo-inteiro.spec.ts
         relatorio-por-etiqueta.spec.ts
         integracao-dados-mysql-na-tela.spec.ts
+        minhas-tarefas-no-celular.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
@@ -1460,19 +1462,21 @@ jobs:
       # Graph, assinatura do WAHA ligada, seed extra) não entra aqui: ganha
       # parte própria, com número seguinte.
       #
-      # As quatro vieram de partes diferentes, e cada uma semeia o que usa ou
-      # só lê os seeds de passo: `agente-novo-e-uso` (da 1) cria o agente pela
-      # tela; `capacidades-do-agente` (da 2) roda os próprios seeds se faltar
-      # algo e devolve o rascunho como achou; `extensoes-versao` (da 5) sobe o
-      # catálogo de extensões dela e o limpa no `afterAll`;
-      # `prova-painel-provedores` (da 6) lê o catálogo da OpenRouter que o
-      # passo `seed-e2e-catalogo-openrouter` semeia em toda parte comum.
-      # Nenhuma cita WAHA, Graph ou webhook.
+      # As specs desta parte vieram de partes diferentes, por tempo de
+      # execução, ou nasceram aqui; a lista abaixo é a fonte, e este
+      # comentário não a enumera para não envelhecer a cada spec nova. A
+      # regra de entrada: cada uma semeia o que usa ou só lê os seeds de
+      # passo (ex.: o catálogo da OpenRouter que `seed-e2e-catalogo-openrouter`
+      # semeia em toda parte comum), e nenhuma cita WAHA, Graph ou webhook.
       SPECS_PARTE_7: >-
+        celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
         capacidades-do-agente.spec.ts
+        equipe-no-celular.spec.ts
         extensoes-versao.spec.ts
+        ia-no-celular.spec.ts
         prova-painel-provedores.spec.ts
+        comercial-no-celular.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -1994,6 +1998,10 @@ jobs:
       # Só em máquina do GitHub: no executor próprio o runner é um contêiner
       # com apt e `sudo` próprios, e lá o passo segue como era (NÃO MEDIDO se
       # o espelho pesa naquela máquina).
+      #
+      # As três linhas `Acquire::*` são de outro defeito, o da TRAVA (ver o
+      # bloco antes de "Instalar o browser"): sem dado por 30 s, o apt larga a
+      # conexão e tenta de novo, em vez de esperar a do espelho para sempre.
       - name: Apontar o cache do apt para uma pasta cacheável
         if: runner.environment == 'github-hosted'
         id: debs
@@ -2001,13 +2009,14 @@ jobs:
           set -euo pipefail
           pasta="$HOME/.cache/playwright-apt"
           mkdir -p "$pasta/partial"
-          printf 'Dir::Cache::Archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\n' "$pasta" \
+          printf 'Dir::Cache::Archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\nAcquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' "$pasta" \
             | sudo tee /etc/apt/apt.conf.d/99-debs-do-playwright >/dev/null
           pw=$(pnpm exec playwright --version | awk '{print $2}')
           : "${ImageOS:?runner do GitHub sem ImageOS — a chave do cache ficaria sem a imagem}"
           : "${ImageVersion:?runner do GitHub sem ImageVersion}"
           echo "prefixo=playwright-apt-${ImageOS}-pw${pw}-" >> "$GITHUB_OUTPUT"
           echo "imagem=${ImageVersion}" >> "$GITHUB_OUTPUT"
+          echo "os=${ImageOS}" >> "$GITHUB_OUTPUT"
 
       - name: Restaurar os .deb do browser
         if: runner.environment == 'github-hosted'
@@ -2018,8 +2027,41 @@ jobs:
           key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
           restore-keys: ${{ steps.debs.outputs.prefixo }}
 
+      # ─── O espelho do apt às vezes TRAVA, e aí não é lentidão ─────────────
+      #
+      # Medido em 23/10/2026 sobre 42 runs (281 partes): o passo abaixo e o do
+      # ffmpeg são BIMODAIS. Saudáveis, o browser leva no máximo 53 s e o ffmpeg
+      # 17 s; fora disso, nada entre 1 e 10 min — o passo trava de 653 s a
+      # 1.511 s e o teto do job cancela a parte sem rodar caso nenhum. Foram 2
+      # de 281 no browser e 9 de 38 no ffmpeg (só a parte 6 instala ffmpeg).
+      # No log do run 39965635473 (parte 7) o `apt-get update` recebe os
+      # `InRelease` do `azure.archive.ubuntu.com` e fica 24,5 min sem imprimir
+      # mais uma linha até o cancelamento.
+      #
+      # Nem toda "trava" é trava. No run 39981658310 (parte 6, o PR que trouxe
+      # este laço) o índice desceu a 11,8 MB/s e os .deb do ffmpeg a ~60 kB/s:
+      # 62,8 MB nesse ritmo são ~17 min, e as 3 tentativas morreram no meio.
+      # Contra espelho LENTO tentar de novo não salva; o que salva é não
+      # descer do espelho — por isso o ffmpeg ganhou cache de .deb próprio
+      # (abaixo), como o browser já tinha.
+      #
+      # Travado não destrava esperando: cada tentativa ganha 180 s (3× o pior
+      # caso saudável) e a seguinte abre conexões novas com o espelho. Morta a
+      # tentativa, um `apt-get` órfão e um `dpkg` interrompido são o que
+      # quebraria a próxima — daí o `pkill` e o `dpkg --configure -a`. O
+      # `timeout-minutes` do passo é o cinto, caso o próprio laço trave.
       - name: Instalar o browser
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          for tentativa in 1 2 3; do
+            if timeout -k 20 180 pnpm exec playwright install --with-deps chromium; then exit 0; fi
+            echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o browser não terminou em 180 s (espelho do apt travado?)"
+            sudo pkill -KILL -x apt-get || :
+            sudo dpkg --configure -a
+          done
+          echo "::error title=O preparo não instalou o browser::3 tentativas de 180 s sem terminar. É o espelho do apt, não o PR — rerode a parte."
+          exit 1
 
       # Salva logo depois de instalar, e não no fim do job: o `actions/cache`
       # comum só grava se o job passar, e a parte que estoura o teto — a que
@@ -2036,16 +2078,57 @@ jobs:
       # para AAC (`?formato=aac`, F2 da ADR-0006). O executor não traz ffmpeg
       # garantido: instala, e a sonda reprova ALTO se faltar um dos dois
       # encoders, em vez de o B-5 cair por um motivo que não é o produto.
+      #
+      # Mesmo laço do browser (a trava e a medição estão no bloco dele). A 1ª
+      # tentativa não roda `apt-get update`: o `--with-deps` do passo anterior
+      # acabou de atualizar os índices, e um update a menos é uma ida a menos
+      # ao espelho que trava. `-q` e não `-qq`: com `-qq` o log do run
+      # 39942328361 ficou 22,7 min mudo, sem dizer se travou no índice ou no
+      # download.
+      #
+      # Os .deb do ffmpeg (87 pacotes, 62,8 MB) moram numa pasta só deles, com
+      # cache próprio: a chave do browser é escrita por qualquer parte, e só a
+      # parte 6 tem o ffmpeg. Mesmo raciocínio da pasta do browser — o apt
+      # confere cada .deb restaurado contra o índice e só desce o que mudou.
+      - name: Restaurar os .deb do ffmpeg
+        if: matrix.parte == 6 && runner.environment == 'github-hosted'
+        id: debs-ffmpeg
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ffmpeg-apt/*.deb
+          key: ffmpeg-apt-${{ steps.debs.outputs.os }}-${{ steps.debs.outputs.imagem }}
+          restore-keys: ffmpeg-apt-${{ steps.debs.outputs.os }}-
+
       - name: Instalar o ffmpeg e sondar os encoders (áudio no celular, F2)
         if: matrix.parte == 6
+        timeout-minutes: 12
         run: |
           set -euo pipefail
           if ! command -v ffmpeg >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq --no-install-recommends ffmpeg
+            debs="$HOME/.cache/ffmpeg-apt"
+            mkdir -p "$debs/partial"
+            atualizar=""
+            for tentativa in 1 2 3; do
+              if timeout -k 20 180 bash -c "${atualizar} sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=$debs/ ffmpeg"; then break; fi
+              echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o ffmpeg não terminou em 180 s (espelho do apt travado?)"
+              if [ "$tentativa" -eq 3 ]; then
+                echo "::error title=O preparo não instalou o ffmpeg::3 tentativas de 180 s sem terminar. É o espelho do apt, não o PR — rerode a parte."
+                exit 1
+              fi
+              sudo pkill -KILL -x apt-get || :
+              sudo dpkg --configure -a
+              atualizar="sudo apt-get update -q &&"
+            done
           fi
           ffmpeg -hide_banner -encoders | grep -E ' (aac|libopus) '
           test "$(ffmpeg -hide_banner -encoders | grep -cE ' (aac|libopus) ')" -ge 2
+
+      - name: Guardar os .deb do ffmpeg
+        if: matrix.parte == 6 && runner.environment == 'github-hosted' && steps.debs-ffmpeg.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/ffmpeg-apt/*.deb
+          key: ffmpeg-apt-${{ steps.debs.outputs.os }}-${{ steps.debs.outputs.imagem }}
 
       # `.env.local` é CÓPIA do `.env.e2e`, não uma terceira redação dele.
       #

@@ -1,10 +1,11 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followups/enrollments/:id/cancel (manager+) — encerra um
- *   enrollment VIVO (active|waiting_reply|paused_handoff) manualmente pela
- *   fila. 409 `already_terminal` se já tiver encerrado (completed/cancelled/
- *   dead) — cancelar 2x não é erro operacional, mas também não deve reescrever
- *   o desfecho de um enrollment que já fechou por conta própria.
+ *   enrollment VIVO (active|waiting_reply|paused_handoff|paused_manual|
+ *   coletando|dormente) manualmente pela fila. 409 `already_terminal` se já
+ *   tiver encerrado (completed/cancelled/dead) — cancelar 2x não é erro
+ *   operacional, mas também não deve reescrever o desfecho de um enrollment que
+ *   já fechou por conta própria.
  *
  * Promessas (`cron_jobs`) NÃO são canceláveis por aqui — fora de escopo desta
  *   task; só enrollments do motor.
@@ -27,7 +28,12 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // passo, e entre o retomar e o cancelar o motor poderia mandar a mensagem.
 // `coletando` (0394) é o roteiro de atendimento em andamento: quem opera pode
 // encerrá-lo pela fila — antes, a rota devolvia 409 como se já tivesse acabado.
-const LIVE_STATUSES = ["active", "waiting_reply", "paused_handoff", "paused_manual", "coletando"];
+// `dormente` (0308) é a espera longa pela vaga do contato: a fila o mostra como
+// vivo (`LIVE_ENROLLMENT_STATUSES`) e oferece o botão de cancelar, então quem
+// opera precisa poder desistir de uma espera de dias. O cancelamento grava
+// `status = 'cancelled'` com `next_eval_at = null`, e o claim do despertar só
+// busca `dormente` — a espera cancelada não volta a acordar.
+const LIVE_STATUSES = ["active", "waiting_reply", "paused_handoff", "paused_manual", "coletando", "dormente"];
 
 type RouteCtx = { params: Promise<{ id: string }> };
 

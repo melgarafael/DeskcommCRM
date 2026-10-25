@@ -76,6 +76,8 @@ const CONFIG = {
   provider: null as string | null,
   /** #2734 — `conversations.last_inbound_at` (ISO), para a janela de 24 h. */
   ultimoInbound: null as string | null,
+  /** #2877 — `org_guardrail_layers.restricao_comercial`; `"falha"` = a leitura estoura. */
+  camadaComercial: false as boolean | "falha",
 };
 
 function reiniciarConfig() {
@@ -95,6 +97,8 @@ function reiniciarConfig() {
   CONFIG.ritmo = { ultimoEnvioIso: null, doDia: 0 };
   CONFIG.provider = null;
   CONFIG.ultimoInbound = null;
+  CONFIG.camadaComercial = false;
+  JOB.payload.fixed_body = "Oi, tudo bem?";
   delete (JOB.payload as Record<string, unknown>).fixed_media_url;
 }
 
@@ -148,6 +152,10 @@ function admin(revogado = false, falhaDeLeitura: Error | null = null) {
             data: CONFIG.ritmo.ultimoEnvioIso ? { sent_at: CONFIG.ritmo.ultimoEnvioIso } : null,
             error: null,
           });
+        if (table === "org_guardrail_layers")
+          return Promise.resolve(CONFIG.camadaComercial === "falha"
+            ? { data: null, error: { message: "offline" } }
+            : { data: { enabled: CONFIG.camadaComercial }, error: null });
         if (table === "organizations") return Promise.resolve({ data: { timezone: CONFIG.fuso }, error: null });
         if (table === "ai_agents") return Promise.resolve({ data: { published_version_id: "v1" }, error: null });
         if (table === "ai_agent_versions") return Promise.resolve({ data: { followup: CONFIG.followup }, error: null });
@@ -551,9 +559,9 @@ describe("enviarTextoFixoPendente · mídia com legenda (#2734)", () => {
     });
   });
 
-  it(".docx: recusado com o motivo, nada sai, e o passo volta como `skipped`", async () => {
+  it("URL sem tipo identificável: recusada com o motivo, nada sai, e o passo volta como `skipped`", async () => {
     decidir.mockResolvedValue({ permite: true });
-    comMidia("https://cdn.exemplo.com/contrato.docx");
+    comMidia("https://cdn.exemplo.com/arquivo-sem-tipo");
 
     expect(await enviarTextoFixoPendente(admin())).toBe(0);
     expect(sendMessageHandler).not.toHaveBeenCalled();
@@ -594,5 +602,44 @@ describe("enviarTextoFixoPendente · mídia com legenda (#2734)", () => {
 
     expect(await enviarTextoFixoPendente(admin())).toBe(1);
     expect(sendMessageHandler.mock.calls[0]![2]).toMatchObject({ type: "text", body: "Oi, tudo bem?" });
+  });
+});
+
+// #2877 / #3270 — o atalho inline manda o mesmo `fixed_body` que o worker manda
+// pela cadeia; sem a régua aqui, quem pegasse o job primeiro entregava o preço.
+describe("enviarTextoFixoPendente · restrição comercial", () => {
+  beforeEach(() => {
+    decidir.mockResolvedValue({ permite: true, motivo: "autorizado", bloqueioPorAllowlist: false });
+    JOB.payload.fixed_body = "Consigo fazer por 1.800 se fechar hoje";
+  });
+
+  it("camada ligada → o preço NÃO sai, passo skipped e job done", async () => {
+    CONFIG.camadaComercial = true;
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment).toHaveBeenCalledWith(
+      expect.anything(), "org-1", "enr-1", "node-1",
+      { kind: "skipped", reason: "O envio foi recusado pelas regras do atendimento." },
+      undefined, "job-1", expect.anything(),
+    );
+    expect(settleCalls).toEqual([expect.objectContaining({ p_done: true, p_error: "commercial_requires_human", p_retry_at: null })]);
+  });
+
+  it("camada desligada → sai normalmente", async () => {
+    CONFIG.camadaComercial = false;
+    expect(await enviarTextoFixoPendente(admin())).toBe(1);
+    expect(sendMessageHandler).toHaveBeenCalledOnce();
+  });
+
+  it("leitura da camada falha → NÃO sai (falha fechada)", async () => {
+    CONFIG.camadaComercial = "falha";
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("corpo sem cara de preço sai mesmo com a camada ligada", async () => {
+    CONFIG.camadaComercial = true;
+    JOB.payload.fixed_body = "Oi, tudo bem?";
+    expect(await enviarTextoFixoPendente(admin())).toBe(1);
   });
 });

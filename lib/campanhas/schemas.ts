@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { filtroDeAudienciaSchema } from "./audiencia";
 import { variaveisDaCampanhaSchema } from "./modelo";
-import { MODOS_DA_MENSAGEM } from "./tipos";
+import { MODOS_DA_MENSAGEM, VELOCIDADES_DA_CAMPANHA } from "./tipos";
 
 /**
  * O ritmo próprio. Todos opcionais e anuláveis: `null` devolve a decisão ao
@@ -23,6 +23,16 @@ export const ritmoSchema = z.object({
   janela_fim_hora: z.number().int().min(1).max(24).nullable().optional(),
   teto_diario: z.number().int().min(1).max(10_000).nullable().optional(),
   teto_horario: z.number().int().min(1).max(10_000).nullable().optional(),
+  /**
+   * Migration 0711. Ausente = a que já está (`gradual` numa campanha nova). A
+   * rota confere contra o número: rápida só com modelo aprovado.
+   */
+  velocidade: z.enum(VELOCIDADES_DA_CAMPANHA).optional(),
+  /**
+   * Migration 0765. Texto em balões, um por parágrafo; ausente = o que já está
+   * (`false` numa campanha nova). Modelo aprovado nunca se divide.
+   */
+  split_messages: z.boolean().optional(),
 });
 
 const baseDaCampanha = {

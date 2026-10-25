@@ -10,6 +10,7 @@ import { combinarInterfaces } from "@/lib/navigation/interface";
  */
 import { readSupportContext } from "@/lib/impersonate/support";
 import { cookies, headers } from "next/headers";
+import { agindoPeloPoderDePlataforma } from "@/lib/auth/poder-de-plataforma";
 import { redirect } from "next/navigation";
 import { safeNext } from "@/lib/auth/safe-next";
 import { logger } from "@/lib/logger";
@@ -580,6 +581,26 @@ export async function mfaEmDivida(): Promise<boolean> {
   //
   // Cadastrar e provar são perguntas diferentes. Quem TEM fator prova, sempre.
   if (!(await isMfaEnrolled())) return false;
+  if ((await sessionAal()) === "aal2") return false;
+  if (await agindoPeloPoderDePlataforma()) return true;
+  // `aal1` com fator: só o banco sabe se esta sessão foi reconhecida por um
+  // dispositivo confiável (`lib/auth/dispositivo-confiavel.ts`). Pergunta à
+  // MESMA função que as definer cobram, para app e banco não divergirem — e
+  // falha fechado: leitura que não aconteceu não vira "provada".
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_session_mfa_proven");
+  if (error) throw error;
+  return data !== true;
+}
+
+/**
+ * A mesma dívida, SEM aceitar dispositivo confiável: quem tem fator precisa do
+ * `aal2` do GoTrue, o código provado nesta sessão. É a régua das rotas da
+ * PLATAFORMA cuja organização vem do path (`/admin/**`, extensões da
+ * instalação), onde a organização ativa não diz nada sobre o alvo.
+ */
+export async function mfaEmDividaEstrita(): Promise<boolean> {
+  if (!(await isMfaEnrolled())) return false;
   return (await sessionAal()) !== "aal2";
 }
 
@@ -588,12 +609,25 @@ export async function mfaEmDivida(): Promise<boolean> {
  * ao desafio, de volta para onde estava. É a mesma pergunta das rotas
  * (`mfaEmDivida`), para que a tela e as rotas por trás dela respondam igual.
  *
- * Não custa leitura nova no `/app`: `isMfaEnrolled` é `cache` da requisição e o
- * layout já a pediu; `sessionAal` lê o token da própria sessão. Falha ao ler os
- * fatores LANÇA (o `isMfaEnrolled`), como nas rotas — nenhuma tela renderiza.
+ * A régua é a BRANDA de propósito: dispositivo confiável vale em `/app` — com
+ * `mfaEmDividaEstrita` aqui, confiar no dispositivo não teria efeito nenhum. Quem
+ * age pelo poder de plataforma segue devendo o código (`mfaEmDivida` decide), e o
+ * `/admin` tem portão próprio, que exige o `aal2` (`requirePlatformAdmin`).
+ *
+ * Custo: sem fator, ou com `aal2`, nada de novo (`isMfaEnrolled` é `cache` da
+ * requisição e o layout já a pediu; `sessionAal` lê o token). Sessão `aal1` COM
+ * fator faz duas leituras a mais: a org ativa, via `agindoPeloPoderDePlataforma`,
+ * que roda antes para todo platform admin, e o rpc `fn_session_mfa_proven`.
+ * Falha ao ler os fatores LANÇA (o `isMfaEnrolled`), como nas rotas — nenhuma tela
+ * renderiza; erro do rpc também lança.
+ *
+ * `regua`: a tela cujas ações usam a régua ESTRITA (as da instalação em `/app`:
+ * extensões, servidor MCP externo) passa `mfaEmDividaEstrita`. Sem isso, quem
+ * entrou pelo dispositivo confiável abria a tela e recebia `mfa_required` em
+ * toda ação — e entrar de novo não pedia o código.
  */
-export async function exigirProvaDeMfa(): Promise<void> {
-  if (!(await mfaEmDivida())) return;
+export async function exigirProvaDeMfa(regua: () => Promise<boolean> = mfaEmDivida): Promise<void> {
+  if (!(await regua())) return;
   // `x-pathname` vem do `proxy.ts`, gravado ANTES do `NextResponse.next` — só o
   // que existe ali chega aqui (tests/unit/proxy-encaminha-o-caminho.test.ts).
   const caminho = safeNext((await headers()).get("x-pathname"), "/app");

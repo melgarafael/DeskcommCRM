@@ -53,11 +53,12 @@ export default async function MetaAdsPage() {
     /*
       Superfície clara — mesmo escopo de Desempenho, a vizinha no menu. `-m-6`
       cancela o respiro do `<main>` do AppShell para o Paper alcançar a borda, e
-      o `p-6` o repõe.
+      o `p-6` o repõe. Abaixo de `sm` o respiro do `<main>` é `p-4`, e um `-m-6`
+      ali alargava a página 16px além da tela: o par acompanha o do AppShell.
     */
     <div
       data-superficie="clara"
-      className="-m-6 flex min-h-[calc(100%+3rem)] flex-col gap-6 bg-bg p-6 text-text"
+      className="-m-4 flex min-h-[calc(100%+2rem)] flex-col gap-6 bg-bg p-4 text-text sm:-m-6 sm:min-h-[calc(100%+3rem)] sm:p-6"
     >
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Meta Ads")}</h1>

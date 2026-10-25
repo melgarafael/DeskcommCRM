@@ -11,13 +11,13 @@
 import { supportWriteError } from "@/lib/impersonate/support";
 import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type DisconnectResult =
   | { ok: true }
-  | { ok: false; error: "auth_required" | "no_active_org" | "forbidden" | "not_connected" | "db_error" };
+  | { ok: false; error: "auth_required" | "no_active_org" | "forbidden" | "mfa_required" | "not_connected" | "db_error" };
 
 export async function disconnectNuvemshop(): Promise<DisconnectResult> {
   const user = await loadAuthUser();
@@ -30,6 +30,7 @@ export async function disconnectNuvemshop(): Promise<DisconnectResult> {
   if (!podeAdministrarEmpresa(user, activeOrg)) {
     return { ok: false, error: "forbidden" };
   }
+  if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
   const admin = createAdminClient();
   const { data: existing, error: lookupErr } = await admin

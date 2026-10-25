@@ -25,7 +25,6 @@ import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
 import { reenvioDaMensagem } from "@/lib/messaging/reenvio";
 import { ApiError } from "@/lib/api/types";
-import { FRASES_DE_FALHA, fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
 import { marcadorDaApagada, textoDaApagadaApareceNaInbox } from "@/lib/messaging/apagada";
@@ -200,11 +199,7 @@ export function MessageBubble({
     && !message.metadata?._optimistic;
   // O MOTIVO à vista, e não só no Tooltip: o dedo não abre Tooltip. O texto
   // cru do canal fica fora daqui — ele pode trazer endereço interno do serviço.
-  const codigoDaFalha = message.error_code ?? "";
-  const motivoDaFalha = fraseDaFalhaDeCanal(codigoDaFalha)
-    // `as string`, e não `!`: é a forma que a cerca de i18n desembrulha para cobrar o espanhol de cada frase.
-    ? t(FRASES_DE_FALHA[codigoDaFalha] as string)
-    : t("Não foi possível enviar esta mensagem.");
+  const motivoDaFalha = motivoDaFalhaDaMensagem(message, t);
   const aiGenerated = isAiGeneratedMessage(message.metadata);
   const citations = extractCitations(message.metadata);
   const showCitationButton =
@@ -555,9 +550,7 @@ export function MessageBubble({
                     <WarningOctagon size={10} weight="fill" aria-hidden /> {t("Falhou")}
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>
-                  {motivoDaFalhaDaMensagem(message, t)}
-                </TooltipContent>
+                <TooltipContent>{motivoDaFalha}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}

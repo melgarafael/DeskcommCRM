@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { InterfaceEditor } from "@/components/team/InterfaceEditor";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import type { Role } from "@/lib/auth/types";
 import { lerInterface, MAX_CAMPOS_DE_COMPRA, type InterfaceSettings } from "@/lib/navigation/interface";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
@@ -55,6 +56,7 @@ export function InterfaceDaEmpresaForm({ initial, role, camposDeCompra = [] }: P
         toast.success(t("Menu lateral da empresa salvo."));
         return;
       }
+      if (resultado.error === "mfa_required") return irAoDesafioDeMfa();
       toast.error(t("Não foi possível salvar o menu da empresa."));
     });
   }

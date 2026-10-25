@@ -260,8 +260,9 @@ export function ActionForm({
   );
   const aprovados = useModelosAprovadosDoFluxo();
   const variaveisDe = (id: string) => aprovados.data?.find((m) => m.id === id)?.variaveis ?? [];
-  // #2734 — mídia OPCIONAL do passo: com uma imagem ou PDF, o texto acima vira a
-  // LEGENDA. O upload pela tela ainda não existe nesta fatia — o campo é a URL.
+  // #2734 — mídia OPCIONAL do passo: com uma imagem, um vídeo, um áudio ou um
+  // documento (#2972), o texto acima vira a LEGENDA. O upload pela tela ainda não
+  // existe nesta fatia — o campo é a URL.
   const [mediaUrl, setMediaUrl] = useState(
     config.mode === "text" ? (config.media_url ?? "") : "",
   );
@@ -355,7 +356,7 @@ export function ActionForm({
             {t("Sai exatamente assim, sem IA. No laço,")} {t("{{volta}}")} {t("e")} {t("{{voltas}}")} {t("viram o número da volta.")}
           </p>
           <div className="space-y-2">
-            <Label htmlFor="action-media-url">{t("Imagem ou PDF (opcional)")}</Label>
+            <Label htmlFor="action-media-url">{t("Imagem, vídeo, áudio ou documento (opcional)")}</Label>
             <Input
               id="action-media-url"
               type="url"
@@ -368,7 +369,7 @@ export function ActionForm({
               }}
             />
             <p className="text-xs text-text-muted">
-              {t("Com uma imagem ou PDF, o texto acima vira a legenda do arquivo. Outros tipos de arquivo são recusados. Depois de 24 horas sem resposta do cliente, a mídia não sai — só um modelo aprovado chega até ele.")}
+              {t("Com uma imagem, um vídeo, um áudio ou um documento, o texto acima vira a legenda do arquivo (o áudio sai como mensagem de voz, sem legenda — o texto não vai junto). Depois de 24 horas sem resposta do cliente, a mídia não sai — só um modelo aprovado chega até ele.")}
             </p>
           </div>
         </div>

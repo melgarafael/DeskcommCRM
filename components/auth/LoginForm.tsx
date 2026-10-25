@@ -2,7 +2,7 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTransition, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useT } from "@/hooks/i18n/useT";
@@ -12,11 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signInWithPassword } from "@/app/actions/auth/signInWithPassword";
 import { Eye, EyeSlash } from "@/lib/ui/icons";
+import { AvisoSemResposta, useEnvioComTeto } from "@/components/auth/teto-da-espera";
 
 export function LoginForm({ next }: { next?: string }) {
   const t = useT();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const { pendente: isPending, semResposta, enviar } = useEnvioComTeto();
   const [serverError, setServerError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -31,10 +32,9 @@ export function LoginForm({ next }: { next?: string }) {
 
   const onSubmit = (values: LoginInput) => {
     setServerError(null);
-    startTransition(async () => {
-      // Server Action redirects on success — no return value reaches here.
-      // On failure, an error discriminator is returned and rendered inline.
-      const res = await signInWithPassword(values, next);
+    // Server Action redirects on success — no return value reaches here.
+    // On failure, an error discriminator is returned and rendered inline.
+    void enviar(() => signInWithPassword(values, next), (res) => {
       if (!res) {
         // Should be unreachable (redirect throws), but guard anyway.
         router.replace(next || "/app");
@@ -109,6 +109,7 @@ export function LoginForm({ next }: { next?: string }) {
           {serverError}
         </div>
       )}
+      {semResposta && <AvisoSemResposta />}
       <Button type="submit" className="w-full" disabled={isPending}>
         {isPending ? t("Entrando...") : t("Entrar")}
       </Button>

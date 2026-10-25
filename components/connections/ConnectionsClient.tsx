@@ -29,6 +29,7 @@ import { AntiBanSheet } from "./AntiBanSheet";
 import { GruposSheet } from "./GruposSheet";
 import { PairingOptions } from "./PairingOptions";
 import { ChannelAcervo } from "./ChannelAcervo";
+import { ChannelHistorico } from "./ChannelHistorico";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
@@ -394,7 +395,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               ? t("Nenhum número conectado ainda.")
               : `${list.length} ${list.length === 1 ? t("número conectado") : t("números conectados")}.`}
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {list.length > 0 && (
             <Button
               variant="outline"
@@ -497,7 +498,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         if (await copyToClipboard(connectionDetail)) toast.success(t("Copiado!"));
         else toast.error(t("Não foi possível copiar. Selecione e copie manualmente."));
       }}>{t("Copiar detalhes")}</Button></details>}
-      <Link href="/app/settings/atendimento" className="text-sm underline">{t("Configurar responsáveis por número")}</Link>
+      <Link href="/app/settings/atendimento" className="text-sm underline max-md:flex max-md:min-h-11 max-md:items-center">{t("Configurar responsáveis por número")}</Link>
       {!wahaConfigured && (
         <div className="rounded-md border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
           <p className="font-medium">{t("O serviço do WhatsApp não está configurado.")}</p>
@@ -597,6 +598,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                 </p>
                 <ChannelAiAccess channelId={c.id} />
                 {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
+                {dependeDoTransporte(c) && <ChannelHistorico channelId={c.id} />}
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
                 <div className="mt-auto flex flex-wrap gap-2">
                   <RenomearConexao

@@ -35,7 +35,10 @@ function poolFalso(
   // de promessa começa junto, fora do lock). Responder nos dois lugares faz o
   // teste medir a ORDEM, e não a porta por onde a consulta passou.
   const estilo = (s: string): { rows: unknown[] } | null => {
-    if (!s.includes("org_guardrail_layers")) return null;
+    // Só a consulta DO ESTILO (`layer = any(...)`): a da restrição comercial
+    // (#2877) também lê esta tabela, e respondê-la com a linha do estilo ligaria
+    // a restrição por engano do dublê.
+    if (!s.includes("org_guardrail_layers") || !s.includes("any(")) return null;
     eventos.push("le_estilo");
     if (opcoes.falharNoEstilo === true) throw new Error("db indisponível");
     return {

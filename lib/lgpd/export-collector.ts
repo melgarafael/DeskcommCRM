@@ -803,6 +803,20 @@ export interface ExportPayload {
    * dois quando ele pede anonimização; o que se apaga a pedido dele é o que se
    * entrega a pedido dele (Art. 18 II). Mesmo escopo da cascata: org + contato.
    */
+  /**
+   * Anexos dos negócios dele (#3229): o documento que ele mandou (voucher,
+   * comprovante) é dado dele, e a cascata o apaga a pedido dele — então sai aqui
+   * a pedido dele. Vai o registro (nome, tipo, tamanho, data), não o binário.
+   */
+  lead_attachments?: Array<{
+    id: string;
+    lead_id: string;
+    field_key: string;
+    file_name: string;
+    mime_type: string;
+    file_size: number;
+    created_at: string;
+  }>;
   lead_notes?: Array<{
     id: string;
     headline: string | null;
@@ -1328,6 +1342,30 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("leads", data, 200);
       leads = data;
+    }
+  }
+
+  // Anexos dos negócios dele (#3229) — pelos ids de `leads` já coletados.
+  let lead_attachments: NonNullable<ExportPayload["lead_attachments"]> = [];
+  if (leads.length > 0) {
+    const { data, error } = await admin
+      .from("crm_lead_attachments")
+      .select("id, lead_id, field_key, file_name, mime_type, file_size, created_at")
+      .eq("organization_id", organizationId)
+      .in(
+        "lead_id",
+        leads.map((l) => l.id),
+      )
+      .order("created_at", { ascending: true })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] lead attachments load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("lead_attachments", data, 500);
+      lead_attachments = data;
     }
   }
 
@@ -2300,6 +2338,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     conversation_drafts,
     conversation_notes,
     contact_field_proposals,
+    lead_attachments,
     lead_notes,
     ai_agent_runs,
     lead_state,
@@ -2490,6 +2529,7 @@ function emptyPayload(
     campaign_suppressions: [],
     channel_session_groups: [],
     group_messages_authored: [],
+    lead_attachments: [],
     lead_notes: [],
     ai_agent_runs: [],
     lead_state: [],

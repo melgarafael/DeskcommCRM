@@ -40,6 +40,63 @@ export type Database = {
         Update: { organization_id?: string; profile_id?: string; credential_encrypted?: string; created_at?: string; updated_at?: string }
         Relationships: [{ foreignKeyName: "channel_integrations_organization_id_fkey"; columns: ["organization_id"]; isOneToOne: true; referencedRelation: "organizations"; referencedColumns: ["id"] }]
       }
+      crm_lead_attachments: {
+        Row: {
+          id: string;
+          organization_id: string;
+          lead_id: string;
+          field_key: string;
+          file_name: string;
+          file_size: number;
+          mime_type: string;
+          storage_path: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          lead_id: string;
+          field_key: string;
+          file_name: string;
+          file_size?: number;
+          mime_type?: string;
+          storage_path: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          lead_id?: string;
+          field_key?: string;
+          file_name?: string;
+          file_size?: number;
+          mime_type?: string;
+          storage_path?: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "crm_lead_attachments_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "crm_lead_attachments_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       ai_reply_drafts: {
         Row: {
           id: string;
@@ -1540,9 +1597,11 @@ export type Database = {
           agent_id: string | null
           blocker: string
           closed_at: string | null
+          cobrancas_na_espera: number
           context_snapshot: Json
           conversation_id: string
           created_at: string
+          espera_desde: string | null
           followup_attempts: number
           id: string
           lead_id: string | null
@@ -1558,9 +1617,11 @@ export type Database = {
           agent_id?: string | null
           blocker: string
           closed_at?: string | null
+          cobrancas_na_espera?: number
           context_snapshot?: Json
           conversation_id: string
           created_at?: string
+          espera_desde?: string | null
           followup_attempts?: number
           id?: string
           lead_id?: string | null
@@ -1576,9 +1637,11 @@ export type Database = {
           agent_id?: string | null
           blocker?: string
           closed_at?: string | null
+          cobrancas_na_espera?: number
           context_snapshot?: Json
           conversation_id?: string
           created_at?: string
+          espera_desde?: string | null
           followup_attempts?: number
           id?: string
           lead_id?: string | null
@@ -4391,6 +4454,7 @@ isOneToOne: false
           client_recognized_at: string | null
           client_tag_by_system: string | null
           consent: Json
+          contact_type: string
           cpf_encrypted: string | null
           custom_fields: Json
           cpf_hash: string | null
@@ -4437,6 +4501,7 @@ isOneToOne: false
           client_recognized_at?: string | null
           client_tag_by_system?: string | null
           consent?: Json
+          contact_type?: string
           cpf_encrypted?: string | null
           custom_fields?: Json
           cpf_hash?: string | null
@@ -4483,6 +4548,7 @@ isOneToOne: false
           client_recognized_at?: string | null
           client_tag_by_system?: string | null
           consent?: Json
+          contact_type?: string
           cpf_encrypted?: string | null
           custom_fields?: Json
           cpf_hash?: string | null
@@ -8154,6 +8220,9 @@ isOneToOne: false
           dpo_email: string | null
           id: string
           legal_name: string
+          lembrete_caso_intervalo_horas: number
+          lembrete_caso_ligado: boolean
+          lembrete_caso_teto: number
           locale: string
           media_retention_days: number
           media_retention_enforced: boolean
@@ -8180,6 +8249,9 @@ isOneToOne: false
           dpo_email?: string | null
           id?: string
           legal_name: string
+          lembrete_caso_intervalo_horas?: number
+          lembrete_caso_ligado?: boolean
+          lembrete_caso_teto?: number
           locale?: string
           media_retention_days?: number
           media_retention_enforced?: boolean
@@ -8206,6 +8278,9 @@ isOneToOne: false
           dpo_email?: string | null
           id?: string
           legal_name?: string
+          lembrete_caso_intervalo_horas?: number
+          lembrete_caso_ligado?: boolean
+          lembrete_caso_teto?: number
           locale?: string
           media_retention_days?: number
           media_retention_enforced?: boolean

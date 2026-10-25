@@ -16,7 +16,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { carregarCampanha } from "@/lib/campanhas/acoes";
 import { ehEditavel, ehTerminal } from "@/lib/campanhas/maquina-de-estados";
 import { gravarPool, lerPoolExtra } from "@/lib/campanhas/pool-de-numeros";
-import { decidirConteudo, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
+import { decidirConteudo, decidirVelocidade, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
 import { variaveisDaCampanhaSchema } from "@/lib/campanhas/modelo";
 import { editarCampanhaSchema } from "@/lib/campanhas/schemas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -32,7 +32,7 @@ const COLUNAS =
   "snapshot_excluded, scheduled_at, prepared_at, started_at, paused_at, completed_at, " +
   "cancelled_at, failure_code, failure_detail, intervalo_segundos, janela_inicio_hora, janela_fim_hora, " +
   "teto_diario, teto_horario, pipeline_id, stage_id, agent_id, created_at, created_by, " +
-  "message_mode, provider_template_name, provider_template_language, provider_template_variables";
+  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, split_messages";
 
 export async function GET(
   _req: NextRequest,
@@ -108,6 +108,8 @@ export async function PATCH(
     "janela_fim_hora",
     "teto_diario",
     "teto_horario",
+    "velocidade",
+    "split_messages",
   ] as const;
   const mexeEmConteudo = Object.entries(entrada).some(
     ([campo, valor]) =>
@@ -153,6 +155,7 @@ export async function PATCH(
     "janela_fim_hora",
     "teto_diario",
     "teto_horario",
+    "split_messages",
     "channel_session_id",
     "pipeline_id",
     "stage_id",
@@ -227,6 +230,21 @@ export async function PATCH(
     if (mudouOModelo && mudanca.content_version === undefined) {
       mudanca.content_version = campanha.content_version + 1;
     }
+  }
+
+  // ═══ A velocidade segue o conteúdo (migration 0711) ═══
+  // Rápida só com modelo. Pedida num número por QR, recusa; uma campanha rápida
+  // que trocou para um número por QR volta a gradual (a única que ali existe).
+  if (entrada.velocidade !== undefined || mudanca.message_mode !== undefined) {
+    const velocidade = decidirVelocidade({
+      pedida: entrada.velocidade,
+      atual: campanha.velocidade === "rapida" ? "rapida" : "gradual",
+      modo: (mudanca.message_mode ?? campanha.message_mode) === "template" ? "template" : "text",
+    });
+    if (!velocidade.ok) {
+      return fail(velocidade.codigo, t(velocidade.mensagem), velocidade.status, { requestId });
+    }
+    mudanca.velocidade = velocidade.velocidade;
   }
 
   // O compare-and-set prende o estado que foi CONFERIDO acima — não o literal

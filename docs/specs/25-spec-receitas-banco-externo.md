@@ -44,7 +44,7 @@ caminho único e vira o modo avançado; o padrão passa a ser a receita pronta
 | # | Tema | Decisão |
 |---|---|---|
 | D1 | Escopo da fase | Receitas prontas por família (padrão) + VIEW na origem (avançado) + foto por URL validada (proposta; a confirmação fica para o PR da parte que envia a foto) + ida ao funil via `crm_create_lead`. Sem SQL livre em v1. |
-| D2 | Famílias da v1 | `woocommerce` (produtos/pedidos), `wordpress` (o **conteúdo de qualquer tipo de post** — imóveis, veículos, cursos, cardápio; ACF ou JetEngine), `jetengine-imoveis` (Custom Content Types), `tabela-direta` (tabelas planas, coluna = dado). Sistema artesanal com relacionamento próprio: sem receita — cai no avançado (VIEW). |
+| D2 | Famílias da v1 | `woocommerce` (produtos/pedidos), `wordpress` (o **conteúdo de qualquer tipo de post** — imóveis, veículos, cursos, cardápio; ACF ou JetEngine modo padrão), `tabela-direta` (tabelas planas, coluna = dado; o JetEngine CCT é um **modelo** desta receita, não uma receita à parte). Sistema artesanal com relacionamento próprio: sem receita — cai no avançado (VIEW). |
 | D3 | Onde a receita mora | Template + schema de parâmetros no **código** (versionado, revisado, sai no `update.sh`). A **instância** (receita X + parâmetros preenchidos na tela) é gravada no nosso Postgres, na linha da conexão (`jsonb`, RLS por org — mesma mecânica das `sources` da Spec 23 D3/Fatia 2a). Proposta de coluna nova segue a tripla (migration com `-- manifest:`, apêndice idempotente no `baseline.sql` com `add column if not exists`, colunas novas no FIM de qualquer lista de view, `revoke`/`grant` reemitidos se `_safe` mudar, sem linha no `MANIFEST.md`, `pnpm checar:colisao-de-migration`); tabela própria só pela função provisionadora da ADR-0002 — decisão do mantenedor. Precedente das `sources`: a coluna `receitas` fica **fora** da view `_safe` e das listas `COLUNAS_SEGURAS` (só contagem exposta); o array só é lido pelo servidor com `organization_id` no filtro. |
 | D4 | Execução | Template + parâmetros validados (Zod) → placeholders ligados, nunca concatenação. Validador SELECT-only + tabelas permitidas antes de rodar. As tabelas do JOIN da receita passam pela mesma lista de fontes liberadas da Spec 23 D7, no mesmo ponto único de aplicação (`tabelaLiberada`/`colunasLiberadas`/`aplicarAoCatalogo` em `lib/external-db/fontes.ts`, aplicados em `criarDialetoPostgres`, `lib/external-db/dialeto.ts`): tabela fora da lista → `fonte_nao_liberada`; a receita nunca furta a lista. Execução na armadura do dialeto: transação só-leitura + timeouts (`lib/external-db/conexao.ts:127-147`, CONFIRMADO) e tetos (`max_rows`/`max_filters`/`max_response_bytes` em `lib/external-db/credenciais.ts`, truncagem de célula em `lib/external-db/leitura.ts:23`, teto de bytes da tool — CONFIRMADO). Nada da origem é persistido como entidade: o resultado volta ao turno e o que fica é o rastro da execução sob as regras da D8; auditoria sem valores (padrão de `dados-externos.ts:17-22`, CONFIRMADO). |
 | D5 | ACF vs. JetEngine | Receitas separadas por família; o sistema **sugere** pela heurística (tabelas existentes + amostra de `meta_key`), a palavra final é do admin na tela. A heurística roda só no caminho de preview do admin (só-leitura); em empate (ambos presentes, restos de `meta_key` legados), sugere as duas e o admin escolhe. Nenhuma receita é liberada sem o C1 verde naquela família/versão. |
@@ -396,3 +396,41 @@ Destino: núcleo, dentro do módulo de banco externo, que nasce desligado.
 O que a R2 **não** traz (e continua nas fatias seguintes): foto/`imagem_url`
 (R4), JetEngine CCT e tabela direta (R3), ida ao funil e sugestão automática
 de campos (R5), runbook do leigo (R6).
+
+## R3 entregue: tabela direta (qualquer tabela plana) + modelo JetEngine CCT
+
+A receita `tabela-direta` lê uma tabela plana do banco externo: uma linha =
+um item, uma coluna = um dado. O administrador diz a tabela, a coluna do id,
+a coluna do título, e mapeia cada dado (rótulo → coluna, tipo texto/número/
+preço, filtro nenhum/contém/mínimo/máximo/igual). É o MESMO editor de
+"Campos" da R2 (`CampoMapeado`, mesmas chaves reservadas, `chaveDoRotulo`/
+`chaveUnica`, teto de itens 5), sem JOIN, sem taxonomia, sem categoria, sem
+foto (é a R4). Opcional: "só mostrar quando <coluna> = <valor>" (ex.: `
+cct_status = publish`) e "esconder quando <coluna> in <valores>" (ex.: `
+situacao = vendido`).
+
+O JetEngine CCT virou **modelo** desta receita ("JetEngine — tipo de conteúdo
+próprio (CCT)"): preenche a tabela `<prefixo>jet_cct_<slug>`, o id `_ID`, a
+coluna do título `titulo`, "só publicados" `cct_status = publish` e os campos
+de imóveis. Não existe mais a receita `jetengine-imoveis` separada com campos
+fixos: o CCT é um modelo da tabela-direta, e o modelo "Em branco" também
+existe.
+
+### O que mudou
+- `lib/external-db/receitas/tipos.ts` — família `tabela-direta` adicionada a `FamiliaReceita`.
+- `lib/external-db/receitas/tabela-direta.ts` — `RECEITA_TABELA_DIRETA` (id `tabela-direta`, família `tabela-direta`): Zod dos fixos e da busca, `tabelas()` = só a tabela informada, `colunas()` = as colunas mapeadas (trava das fontes/colunas liberadas — D4), `montar()` com `?` sempre, identificadores com `quotarIdentificadorMysql`, apelido de saída quotado, preço com `precoNumero`, filtro desconhecido = erro (mesmo padrão de `validarFiltrosDaBusca` da R2).
+- `lib/external-db/receitas/modelos-tabela-direta.ts` — modelo JetEngine CCT (imóveis) e "Em branco".
+- `lib/external-db/receitas/registro.ts` — a receita `tabela-direta` registrada no mapa de receitas.
+- `app/app/integracao-dados/[id]/_components/ReceitasProntas.tsx` — "Adicionar receita" oferece as três receitas; editor da tabela direta com os mesmos componentes/estilo de Campos da R2 + tabela, coluna do id, coluna do título, "só mostrar quando" e "esconder quando"; modelo aplica com 1 clique e pergunta antes de apagar o que já foi digitado.
+- `lib/i18n/dicionario.ts` — novas frases com tradução `es` (sem repetir chave).
+- `lib/mcp/tools/receitas-externas.ts` e catálogo — a receita nova aparece com os filtros que a instância declarou (`descreverFiltrosDaInstanciaTabelaDireta`). D8 continua: o rastro só guarda contagem.
+- `lib/external-db/receitas/tabela-direta.unit.test.ts` — unit (SQL, `?` = valores, quoting, filtro desconhecido, validador com e sem a tabela liberada, coluna não liberada recusada).
+- `app/app/integracao-dados/[id]/_components/ReceitasProntas.tabela-direta.test.tsx` — tela (escolher receita, modelo CCT, editar, PUT).
+- `tests/mysql/receita-tabela-direta.test.ts` — MySQL 8 de verdade: tabela CCT real (`_ID`, `cct_status`, `titulo`, `preco`, `quartos`, `bairro`, `cidade`, `area`, ...) e outra tabela de nicho diferente (`carros`); prova filtros, "só publicados", "esconder" e que bairro/cidade/quartos saem na linha.
+
+### O que NÃO entra nesta fatia
+- Foto/`imagem_url`: é a R4.
+- Ida ao funil e sugestão automática de campos: é a R5.
+- Runbook do leigo: é a R6.
+
+Destino: núcleo, dentro do módulo de banco externo, que nasce desligado.

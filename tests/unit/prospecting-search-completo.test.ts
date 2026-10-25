@@ -9,6 +9,10 @@ vi.mock("@/lib/audit", () => ({
 
 vi.mock("@/lib/prospecting/provedor", () => ({
   provedorDaOrganizacao: vi.fn(),
+  // #2942: `synchronizeSearch` passou a perguntar se a escolha exige credencial
+  // por organização. Nesta escolha (a Apify do dublê) ela exige — mesmo caminho
+  // de sempre.
+  provedorExigeCredencialDaOrganizacao: vi.fn(async () => true),
   validarCredencialDaOrganizacao: vi.fn(),
 }));
 
