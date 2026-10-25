@@ -282,13 +282,25 @@ beforeAll(() => {
           returning id into v_proposta;
         end if;
 
-        if not exists (
-          select 1 from public.crm_proposal_items where proposal_id = v_proposta
+        if not exists (select 1 from public.crm_proposal_items where proposal_id = v_proposta
         ) then
-          insert into public.crm_proposal_items
-            (proposal_id, organization_id, descricao, quantidade, preco_unitario_cents, position)
-          values (v_proposta, v_org, 'RLS invariant item', 1, 1000, 1000);
-        end if;
+            insert into public.crm_proposal_items
+              (proposal_id, organization_id, descricao, quantidade, preco_unitario_cents, position)
+            values (v_proposta, v_org, 'RLS invariant item', 1, 1000, 1000);
+          end if;
+
+          -- 0768 (#3316) — a fila de proposta de campo do card lida num documento:
+          -- o trecho e os valores sao o dado que a IA leu sobre a PESSOA, e a
+          -- linha existe so ate alguem confirmar em revisao. Os DOIS tenants
+          -- recebem uma linha real (o cross-tenant de org A lendo org B vale porque
+          -- org B tambem tem, nao porque esta vazia).
+          if not exists (select 1 from public.lead_field_proposals where organization_id = v_org) then
+            insert into public.lead_field_proposals
+              (organization_id, lead_id, campo, valor_proposto, trecho, expires_at)
+            select v_org, id, 'telefone', '"+5541999990000"'::jsonb,
+                   'RLS invariant proposta lida num documento', now() + interval '7 days'
+            from public.crm_leads where organization_id = v_org limit 1;
+          end if;
 
         if not exists (select 1 from public.org_guardrail_layers where organization_id = v_org) then
           insert into public.org_guardrail_layers (organization_id, layer, enabled)
@@ -851,6 +863,13 @@ export const TABLES = [
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
   // prova vive em `tests/invariants/cobranca-isolamento.test.ts`.
+  // 0768 (#3316) — a fila de proposta de campo do card lida num documento. A
+  // leitura é org-scoped + vínculo com o negócio (a policy de select cobra a
+  // FK coerente com a org); a ESCRITA (policy `for all`) cobra
+  // fn_role_at_least('agent') e é medida em
+  // `tests/unit/capacidade-alcancavel-pelo-agente.test.ts`, não aqui. O seed
+  // acima grava uma linha real nos DOIS tenants.
+  "lead_field_proposals",
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
