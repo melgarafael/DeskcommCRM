@@ -1,22 +1,29 @@
 /**
- * Adapter do chat da OLX (issue #2927, fatia 1) — o ESQUELETO verificável.
+ * Adapter do chat da OLX (issue #2927) — o tradutor de formato e o envio.
  *
  * Burro como os irmãos: traduz formato e nada mais. Janela, cap diário e
  * horário vivem na cadeia `before_send` (`docs/doctrine/restricao-de-canal.md`).
  *
- * ─── O que esta fatia entrega, e o que ela NÃO entrega ──────────────────────
+ * ─── O ciclo, medido contra a doc pública da OLX ────────────────────────────
  *
- * Entrega o VOCABULÁRIO (o provider existe na união, na matriz de capabilities
- * e nos CHECKs do banco), o adapter registrado no seam e a ENTRADA: duas
- * funções puras que fazem a tradução de formato — uma lê o payload que a OLX
- * empurra, a outra monta o corpo de envio.
+ * A fatia 1 entregou o VOCABULÁRIO e a tradução de formato. Esta fatia fecha o
+ * ciclo, com o contrato que a própria OLX publica em
+ * `developers.olx.com.br/chat/`:
  *
- * NÃO entrega o round-trip real. Ficam de fora, por exigirem credencial que esta
- * instalação não tem (client_id, client_secret e conta de vendedor na OLX):
+ *   1. entrada: `POST /autoservice/v1/chat` registra o webhook na conta do
+ *      vendedor (feito pela rota de conexão, não por aqui);
+ *   2. saída: `POST /autoservice/v1/chat/send` com `{textMessage, messageId,
+ *      chatId}` e `Authorization: Bearer <access token>`;
+ *   3. credencial: access token OAuth 2.0 com `scope=chat`, cifrado em
+ *      `channel_sessions.olx_token_encrypted` e LIDO por `lib/channels/
+ *      chat-de-vendedor/credentials.ts`.
  *
- *   1. O OAuth 2.0 contra `auth.olx.com.br` (`scope=chat`);
- *   2. o registro/desregistro do webhook na conta do vendedor;
- *   3. o envio com resposta 200.
+ * O que continua de fora, e por quê: o handshake do OAuth é authorization_code
+ * com redirect por navegador (`auth.olx.com.br/oauth` + `/oauth/token`), então
+ * a obtenção do token é feita pelo integrador cadastrado junto à OLX e o CRM
+ * recebe o access token já na mão; e a doc de envio não devolve id da mensagem
+ * (só status HTTP), então `externalId` sai `null` — honesto, e diferente de um
+ * `sent` inventado.
  *
  * ─── A OLX endereça por THREAD, como o intermediado ─────────────────────────
  *
@@ -28,17 +35,10 @@
  * `resolveRecipient` continua devolvendo telefone/id opaco porque é o que
  * identifica o CONTATO para o resto do sistema (dedup, log, abertura de
  * conversa); ele não é o que endereça este envio.
- *
- * ─── O contrato do envio NÃO tem fonte pública (medido) ─────────────────────
- *
- * A issue descreve `POST .../chat/send` com `{textMessage, messageId, chatId}` e
- * `Authorization: Bearer <token>` do OAuth da OLX — e registra que a doc pública
- * do chat ainda diverge ("a página de leads diz que a resposta é só pelo
- * portal"). O corpo abaixo reproduz o que a ISSUE documenta, e `corpoDeEnvioOlx`
- * é a fonte única dele. Enquanto o envio não for verificável sem credencial,
- * `send` desiste com `olx_not_configured` em vez de inventar endpoint ou fingir
- * um `sent` sem id.
  */
+import { createAdminClient } from "@/lib/supabase/admin";
+
+import { canalChatDeVendedorLigado, chatDeVendedorApiBase, resolveTokenChatDeVendedor } from "../chat-de-vendedor/credentials";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -67,11 +67,22 @@ export interface CorpoDeEnvioOlx {
  * credencial. `chatId` é a thread (`providerConversationId`); `textMessage` é o
  * texto; `messageId` entra só quando há citação (`replyToExternalId`).
  *
- * A issue #2927 lista os TRÊS campos sempre, sem dizer o que `messageId`
- * significa (id próprio? idempotência?). Sem fonte pública, a leitura adotada é
- * a de thread-reply — o id da mensagem a que esta responde — e o campo é OMITIDO
- * quando não há citação, em vez de inventar um id. É contrato PENDENTE.
+ * A doc pública (`developers.olx.com.br/chat/send_message.html`) lista os TRÊS
+ * campos sempre, sem dizer o que `messageId` significa (id da mensagem a que se
+ * responde? idempotência?). A leitura adotada é a de thread-reply — o id da
+ * mensagem a que esta responde — e o campo é OMITIDO quando não há citação, em
+ * vez de inventar um id. É contrato PENDENTE.
  */
+/**
+ * `Authorization: Bearer <token>` do acesso do vendedor.
+ *
+ * Concatenado em vez de template literal porque a formação do cabeçalho é
+ * contrato, não texto: o token nunca aparece em log nem em erro daqui.
+ */
+function cabecalhoDeAutorizacao(token: string): string {
+  return "Bearer " + token;
+}
+
 export function corpoDeEnvioOlx(envelope: OutboundEnvelope): CorpoDeEnvioOlx {
   const corpo: CorpoDeEnvioOlx = {
     chatId: envelope.providerConversationId ?? "",
@@ -79,6 +90,17 @@ export function corpoDeEnvioOlx(envelope: OutboundEnvelope): CorpoDeEnvioOlx {
   };
   if (envelope.replyToExternalId) corpo.messageId = envelope.replyToExternalId;
   return corpo;
+}
+
+/**
+ * Endpoint de envio, na forma que a doc pública da OLX descreve
+ * (`POST /autoservice/v1/chat/send`).
+ *
+ * Exportada de propósito, como `corpoDeEnvioOlx`: o caminho é contrato, e o
+ * teste fixa ele sem precisar de credencial nem de rede.
+ */
+export function urlDoEnvioOlx(apiBase?: string): string {
+  return `${chatDeVendedorApiBase(apiBase)}/autoservice/v1/chat/send`;
 }
 
 /**
@@ -206,26 +228,34 @@ export const olxAdapter: ChannelAdapter = {
   },
 
   /**
-   * `false` — e é a resposta honesta desta fatia.
+   * `true` só com o canal LIGADO na instalação — a metade que este método
+   * consegue responder com honestidade.
    *
-   * Diferente dos canais cuja credencial vive na SESSÃO (onde `isConfigured`
-   * responde `true` porque não consegue consultar o banco com honestidade), a
-   * OLX ainda NÃO tem caminho de credencial: o OAuth 2.0 contra `auth.olx.com.br`
-   * é trabalho de uma fatia seguinte. Enquanto não houver token, não há envio a
-   * ser feito, e dizer `true` faria o handler tentar e falhar por um motivo que
-   * este método já sabia.
+   * A outra metade (há credencial gravada?) não cabe aqui: `isConfigured` é
+   * SÍNCRONO e a credencial vive no banco, cifrada na sessão. Mesmo impasse do
+   * canal oficial (#674) e do canal do parceiro: quem fecha a segunda metade é
+   * o `send`, que LÊ `olx_token_encrypted` e, sem token, lança
+   * `olx_not_configured` — o handler traduz o prefixo para `queued_reason`, o
+   * mesmo desfecho de um canal desligado.
+   *
+   * Com a fatia 1 devolvendo `false` incondicional, um self-hoster que ligasse
+   * o canal continuaria sem conseguir ENVIAR: o handler nem chegava ao `send`.
    */
   isConfigured(): boolean {
-    return false;
+    return canalChatDeVendedorLigado();
   },
 
   /**
-   * Não envia nesta fatia. Desiste NOMEANDO o motivo — nunca um `sent` sem id.
+   * Envia o texto pela API de chat da OLX, com o token da SESSÃO.
    *
-   * A thread ainda é conferida primeiro: ela é requisito estrutural do canal
-   * (independente de credencial), e falhar por falta dela com o motivo certo
-   * evita que, quando o OAuth entrar, o defeito de "thread ausente" apareça
-   * disfarçado de "não configurado".
+   * Três recusas nomeadas, nesta ordem — nunca um `sent` sem id:
+   *   1. sem thread (`olx_no_conversation`): requisito estrutural do canal;
+   *   2. canal desligado na instalação (`olx_not_configured`);
+   *   3. sem credencial gravada (`olx_not_configured`).
+   *
+   * A resposta de sucesso da OLX é só um status (200 = enviado; a doc pública
+   * não descreve corpo), então `externalId` sai `null` — que o seam
+   * distingue de "não tentei".
    */
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
     if (!envelope.providerConversationId) {
@@ -234,26 +264,75 @@ export const olxAdapter: ChannelAdapter = {
           "ela chega no webhook do chat.",
       );
     }
-    // O CORPO do envio está em `corpoDeEnvioOlx` (o contrato que a issue
-    // documenta), mas a chamada depende do OAuth da OLX, que esta fatia deixa
-    // fora de propósito: sem client_id/client_secret não há token, e inventar
-    // endpoint ou resposta seria pior que não enviar.
-    throw new Error(
-      "olx_not_configured: o envio pela OLX exige credencial OAuth 2.0 " +
-        "(auth.olx.com.br, scope=chat), ainda não implementada nesta instalação.",
-    );
+    if (!canalChatDeVendedorLigado()) {
+      throw new Error(
+        "olx_not_configured: o canal está desligado nesta instalação (OLX_ENABLED).",
+      );
+    }
+    const creds = await resolveTokenChatDeVendedor(createAdminClient(), {
+      organizationId: envelope.organizationId,
+      sellerId: envelope.sessionRef,
+    });
+    if (!creds) {
+      throw new Error(
+        "olx_not_configured: nenhuma credencial OAuth gravada para esta sessão " +
+          "(channel_sessions.olx_token_encrypted).",
+      );
+    }
+
+    await envelope.beforeSend?.();
+
+    let r: Response;
+    try {
+      r = await fetch(urlDoEnvioOlx(), {
+        method: "POST",
+        headers: {
+          Authorization: cabecalhoDeAutorizacao(creds.token),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(corpoDeEnvioOlx(envelope)),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (err) {
+      const detalhe = err instanceof Error ? err.message : "erro_desconhecido";
+      throw new Error(`olx_error: não foi possível falar com a OLX (${detalhe.slice(0, 200)})`);
+    }
+
+    if (!r.ok) {
+      // 401 = token inválido/expirado; 400 = body inválido ou conta sem
+      // integração; 500 = erro interno deles. O status entra no código para o
+      // operador saber procurar do lado de lá.
+      const corpo = (await r.text().catch(() => "")).slice(0, 200);
+      throw new Error(`olx_${r.status}: ${corpo || "a OLX recusou o envio"}`);
+    }
+
+    return { externalId: null };
   },
 
   /**
-   * Sem credencial não há o que sondar — e `reachable: false` é o certo: não
-   * deu para perguntar, o que é diferente de "o canal está caído". O cron de
-   * saúde NÃO pula quem implementa isto (ao contrário de quem não tem o
+   * Não há endpoint de saúde documentado — e `reachable: false` é o certo:
+   * não deu para perguntar, o que é diferente de "o canal está caído". O cron
+   * de saúde NÃO pula quem implementa isto (ao contrário de quem não tem o
    * método), então esta resposta impede que a sessão fique muda na Central.
+   *
+   * Canal desligado responde a MESMA coisa de canal ligado sem token, e não é
+   * atalho preguiçoso: desligado também não tem credencial usável para a
+   * sessão, e é essa a pergunta que este método responde. O motivo de o canal
+   * estar assim (`OLX_ENABLED` desligado) está nomeado no `send`, que é onde o
+   * operador vai ver o envio parar.
    */
   async checkHealth(
-    _input: ChannelTenantScope & { sessionRef: string },
+    input: ChannelTenantScope & { sessionRef: string },
   ): Promise<ChannelHealth> {
-    return { reachable: false, status: null, detail: "sem_credencial_para_a_sessao" };
+    if (!canalChatDeVendedorLigado()) {
+      return { reachable: false, status: null, detail: "sem_credencial_para_a_sessao" };
+    }
+    const creds = await resolveTokenChatDeVendedor(createAdminClient(), {
+      organizationId: input.organizationId,
+      sellerId: input.sessionRef,
+    });
+    if (!creds) return { reachable: false, status: null, detail: "sem_credencial_para_a_sessao" };
+    return { reachable: false, status: null, detail: "sem_endpoint_de_saude_documentado" };
   },
 
   codes: {
