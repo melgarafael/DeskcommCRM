@@ -1,0 +1,109 @@
+-- manifest: **A partir de 30/10/2026 a Supabase deixa de conceder `select/insert/update/delete` de TABELA NOVA em `public` a `anon`, `authenticated` e `service_role` — e o Deskcomm depende desse default nas tabelas que o apêndice do baseline cria sem `GRANT` próprio (contagem derivada do próprio `baseline.sql` pelo teste, não literal); estas três linhas reescrevem o `alter default privileges` que o baseline já carrega, para que a instalação que criar tabela depois do corte não responda `42501 permission denied` na Data API (#3140).** Três linhas idempotentes, espelho exato do `ALTER DEFAULT PRIVILEGES … ON TABLES` do corpo do baseline, provadas em `tests/invariants/tabela-nova-depois-do-corte-de-30-10-2026.test.ts`.
+
+-- ============================================================================
+-- 9029 — A TABELA NOVA NASCE CONCEDIDA, ESCRITO POR NÓS (#3140)
+--
+-- ─── O que muda em 30/10/2026 ───────────────────────────────────────────────
+--
+-- A Supabase avisou os donos de projeto: a partir de **30/10/2026**, nos projetos
+-- da NUVEM (inclusive os que já existem), tabela criada em `public` deixa de
+-- receber automaticamente `select/insert/update/delete` para `anon`,
+-- `authenticated` e `service_role`. O mecanismo é um `alter default privileges
+-- for role postgres in schema public revoke …` que a plataforma passa a aplicar
+-- no provisionamento — não é um `revoke` nas tabelas que existem, é o DEFAULT que
+-- alimenta `pg_default_acl`. Tabela nova nasce sem `GRANT` nenhum, e o
+-- supabase-js e a REST respondem `42501 permission denied`, porque os dois falam
+-- com o Postgres pelo PostgREST, sempre como um desses três roles. Conexão
+-- direta ao Postgres (o `service_role` do servidor via `pg`) não é afetada.
+--
+-- ─── Por que isso quebra uma instalação NOVA deste CRM ──────────────────────
+--
+-- Medido no apêndice de `supabase/baseline.sql` desta base, com a mesma régua que a
+-- issue usou (contar `create table … public.<t>` no apêndice e descontar quem tem
+-- `grant … on … public.<t>`): das **130** tabelas que o apêndice cria, **58 não têm
+-- `GRANT` explícito** no próprio apêndice — `account_plans`, `automation_rules`,
+-- `calendar_appointments`, `calendar_event_types`, entre outras. Todas contam com o
+-- default ACL para serem alcançáveis pela Data API. Sem este bloco, elas nascem mudas.
+--
+-- Na abertura da issue (commit 9ff58fb35) a MESMA régua media 111 e 48; o apêndice
+-- cresceu desde então. Nenhum desses quatro números é literal copiado:
+-- `tabelasDoApendiceSemGrantProprio()`, no teste desta migration, deriva as duas listas
+-- do arquivo — quando o apêndice muda, elas mudam junto, e as desta linha são
+-- conferíveis rodando o teste.
+--
+-- ─── Por que a migration, se o baseline já tem a linha ──────────────────────
+--
+-- O corpo do dump traz, em `supabase/baseline.sql` (~linha 4782):
+--
+--     ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+--       GRANT ALL ON TABLES TO "anon" / "authenticated" / "service_role";
+--
+-- e o `install.sh`/`update.sh` do kit self-host reaplica o arquivo inteiro, então
+-- esse caminho se cura sozinho. O que NÃO se cura é o outro público: quem instala
+-- pelo Supabase CLI (`supabase db push`) aplica a CADEIA de migrations, nunca o
+-- baseline — e nas instalações existentes, a próxima tabela criada depois do
+-- corte nasce sem privilégio se o default não for reescrito por nós. A migration é
+-- o registro durável do que a instalação precisa, e o apêndice do baseline é o
+-- espelho que faz o kit aplicar a mesma coisa.
+--
+-- ─── O que estas três linhas são, e o que NÃO são ───────────────────────────
+--
+-- São EXATAMENTE o default ACL que a instalação já tem hoje: `grant all on
+-- tables` é o que o `pg_default_acl` de um projeto Supabase mede
+-- (`{postgres=arwdDxtm,anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm}`
+-- em `supabase/postgres:17.6.1.106`), e é o que o prelude do `scripts/test-db.sh`
+-- reproduz para o banco efêmero ser o banco do produto. Nada é ampliado aqui:
+-- `grant all` inclui `truncate/references/trigger` porque o dump da plataforma
+-- também inclui — conceder só as quatro operações da notificação deixaria a
+-- instalação com MENOS privilégio do que a de hoje, que é a receita para um
+-- `permission denied` novo em quem nunca quebrou.
+--
+-- Não é `for role postgres` do lado do DONO: o `postgres` é dono dos objetos e o
+-- privilégio dele é implícito, ninguém o revoga. As três linhas do dump que citam
+-- `TO postgres` são artefato do `pg_dump` serializando a ACL, não requisito.
+--
+-- Não toca SEQUENCES nem FUNCTIONS: o corte anunciado é de tabela, e as duas
+-- outras classes já vêm concedidas pelo corpo do baseline. Se a plataforma
+-- estender o corte para elas, o conserto é o mesmo movimento, três linhas por
+-- classe.
+--
+-- ─── `anon`: por que entra, e quem governa o alcance ───────────────────────
+--
+-- `anon` entra porque o default ACL de hoje o inclui, e este bloco é a RESTAURAÇÃO
+-- do status quo — não uma decisão nova de exposição. Quem governa o alcance real
+-- continua sendo, em três camadas: a RLS de cada tabela (todas têm RLS ligada), a
+-- varredura de `anon` no fim do apêndice do baseline (migration 0116) e os
+-- `revoke … from anon` por tabela espalhados pelo apêndice (as tabelas derivadas
+-- acima são exatamente as que NÃO têm `grant` explícito, não as que deveriam ser
+-- fechadas).
+--
+-- A outra metade da pergunta da issue — tirar `anon` do default e conceder só o
+-- tamanho necessário, por tabela — é decisão de produto, com alcance em toda a
+-- superfície pública do produto, e não cabe numa entrega de quatro dias com prazo
+-- de quebra. Quando ela vier, ela mora AQUI: é esta lista que deixa de citar
+-- `anon`, e o teste desta migration é o que cobra que a decisão seja explícita em
+-- vez de acidental.
+--
+-- ─── A prova ────────────────────────────────────────────────────────────────
+--
+-- `tests/invariants/tabela-nova-depois-do-corte-de-30-10-2026.test.ts`, em banco
+-- de verdade: simula o corte (`revoke all on tables` nos três roles), confere que
+-- ele MORDE (tabela criada depois do corte não é alcançável por `authenticated`),
+-- aplica ESTE arquivo, cria uma tabela e mede
+-- `has_table_privilege('authenticated', …, 'select|insert|update|delete')` sem
+-- nenhum `grant` manual — e compara o conjunto de privilégios de `anon` com o que
+-- o baseline concede, para provar que nada foi ampliado. Um caso separado deriva
+-- do `baseline.sql` a lista de tabelas do apêndice sem `GRANT` próprio (os dois
+-- números acima) e confere na mesma execução que cada nome derivado existe no
+-- banco — a lista é medida, não digitada.
+--
+-- ─── Reversão ──────────────────────────────────────────────────────────────
+--
+-- Reverter este bloco NÃO devolve o comportamento de antes do corte — devolve o
+-- comportamento que a plataforma impõe a partir de 30/10, que é tabela nova muda.
+-- Para reverter é preciso aceitar isso por escrito; não há caminho intermediário.
+-- ============================================================================
+
+alter default privileges for role postgres in schema public grant all on tables to anon;
+alter default privileges for role postgres in schema public grant all on tables to authenticated;
+alter default privileges for role postgres in schema public grant all on tables to service_role;
