@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { ligarOrganizacao, salvarContratacao, salvarEquipeDoCliente } from "@/app/actions/agencia/clientes";
 import { ReunioesDoCliente } from "@/components/agencia/calendario/ReunioesDoCliente";
+import { TrilhaDoCliente, type ModeloParaIniciar } from "@/components/agencia/trilhas/TrilhaDoCliente";
 import { EnvioParaODrive } from "@/components/agencia/EnvioParaODrive";
 import { QuadroDeTarefas } from "@/components/agencia/tarefas/QuadroDeTarefas";
 import type { ApoioDoQuadro } from "@/components/agencia/tarefas/ModalDaTarefa";
@@ -22,11 +23,13 @@ import {
   type Quantidades,
 } from "@/lib/agencia/clientes/vocabulario";
 import type { TarefaDoQuadro } from "@/lib/agencia/tarefas/consultas";
+import type { TrilhaDaTela } from "@/lib/agencia/trilhas/consultas";
 import { cn } from "@/lib/utils";
 
 import { FormularioDoCliente, type DadosDoCliente } from "./FormularioDoCliente";
 
-type Aba = "dados" | "contratacoes" | "equipe" | "tarefas" | "reunioes" | "arquivos";
+const ABAS_DA_FICHA = ["dados", "contratacoes", "equipe", "trilha", "tarefas", "reunioes", "arquivos"] as const;
+type Aba = (typeof ABAS_DA_FICHA)[number];
 
 export interface ContratacaoDaFicha {
   id?: string;
@@ -69,9 +72,13 @@ export function FichaDoCliente(p: {
   apoioDaAgenda: ApoioDaAgenda;
   podeGerenciarCalendario: boolean;
   agendaLiberada: boolean;
+  trilha: TrilhaDaTela | null;
+  modelosDeTrilha: ModeloParaIniciar[];
 }) {
   const router = useRouter();
-  const [aba, setAba] = useState<Aba>("dados");
+  // `?aba=trilha` (o link dos avisos da trilha) abre direto na aba.
+  const pedida = useSearchParams().get("aba");
+  const [aba, setAba] = useState<Aba>(() => ABAS_DA_FICHA.find((a) => a === pedida) ?? "dados");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [equipe, setEquipe] = useState(p.equipe);
   const [org, setOrg] = useState(p.organizacaoId ?? "");
@@ -87,6 +94,7 @@ export function FichaDoCliente(p: {
     ["dados", "Dados"],
     ["contratacoes", "Contratações"],
     ["equipe", "Equipe"],
+    ["trilha", p.trilha && p.trilha.situacao === "ativa" ? `Trilha (${p.trilha.progresso.pct}%)` : "Trilha"],
     ["tarefas", `Tarefas (${p.tarefas.filter((t) => t.coluna !== "concluido").length})`],
     ["reunioes", `Reuniões (${p.reunioes.filter((r) => r.situacao === "marcada").length})`],
     ["arquivos", "Arquivos"],
@@ -249,6 +257,25 @@ export function FichaDoCliente(p: {
           podeCriar={p.podeCriarTarefa}
           podeAtribuir={p.podeAtribuir}
           clienteFixo={p.id}
+        />
+      )}
+
+      {aba === "trilha" && (
+        <TrilhaDoCliente
+          clienteId={p.id}
+          trilha={p.trilha}
+          modelos={p.modelosDeTrilha}
+          contratacoes={p.contratacoes
+            .filter((c) => c.id && c.situacao !== "encerrada")
+            .map((c) => ({
+              id: c.id!,
+              rotulo: `${c.tipo === "recorrente" ? "Recorrente" : "Avulsa"}${c.servicos.length ? ` — ${c.servicos.map((s) => ROTULO_DO_SERVICO[s as keyof typeof ROTULO_DO_SERVICO] ?? s).join(", ")}` : ""}`,
+            }))}
+          podeGerenciar={p.podeGerenciar}
+          podeMarcarReuniao={p.podeGerenciarCalendario}
+          apoio={p.apoioDaAgenda}
+          meuMembroId={p.meuMembroId}
+          agendaLiberada={p.agendaLiberada}
         />
       )}
 

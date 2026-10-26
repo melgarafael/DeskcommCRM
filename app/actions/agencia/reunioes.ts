@@ -11,6 +11,7 @@ import { fechamentoUmaSemanaDepois, tituloSugerido } from "@/lib/agencia/calenda
 import { FORMATOS, MARCOS_DE_LEMBRETE, SITUACOES_DA_REUNIAO, TIPOS_DE_REUNIAO } from "@/lib/agencia/calendario/vocabulario";
 import { normalizarWhatsapp } from "@/lib/agencia/convite";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
+import { aoMudarReuniao, lerPasso, ligarAoPassoDaTrilha, ligarFechamentoAutomatico, ligarReuniao } from "@/lib/agencia/trilhas/motor";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -57,6 +58,8 @@ const reuniaoSchema = z
     convidados: z.array(convidadoSchema).max(20),
     avisarCliente: z.boolean(),
     marcarFechamento: z.boolean(),
+    /** Marcada pelo botão de um passo da trilha (SPEC-trilhas). */
+    trilhaPassoId: z.string().uuid().nullable().optional(),
   })
   .refine((r) => new Date(r.fim).getTime() > new Date(r.inicio).getTime(), "O fim tem de ser depois do início.")
   .refine((r) => r.formato !== "presencial" || !!r.local, "Informe o endereço da reunião presencial.");
@@ -151,7 +154,12 @@ export async function salvarReuniao(entrada: EntradaDaReuniao): Promise<Resultad
         }
         const novos = membrosValidos.filter((m) => !antes.membros.includes(m));
         if (!mudouHorario && novos.length) await avisarAEquipe(sincronizada, "reuniao_marcada", novos, ctx.membro?.id ?? null);
+        // Remarcar a Apresentação arrasta o Fechamento marcado junto (SPEC-trilhas, R9).
+        if (mudouHorario && d.tipo === "apresentacao") {
+          await arrastarSeguintes(d.id, new Date(d.inicio).getTime() - new Date(antes.inicio).getTime(), quem, ctx.membro?.id ?? null);
+        }
       }
+      await aoMudarReuniao(d.id);
       await auditarAgencia("agencia.reuniao_alterada", ctx.user.id, { tipo: "agencia_reuniao", id: d.id }, { mudou_horario: mudouHorario });
       revalidar(d.clienteId);
       return { ok: true as const, dados: { id: d.id, fechamentoId: null } };
@@ -181,6 +189,21 @@ export async function salvarReuniao(entrada: EntradaDaReuniao): Promise<Resultad
     await avisarAEquipe(apresentada, "reuniao_marcada", membrosValidos, ctx.membro?.id ?? null);
     if (fechamentoSinc) await avisarAEquipe(fechamentoSinc, "reuniao_marcada", membrosValidos, ctx.membro?.id ?? null);
 
+    // A trilha do cliente fica sabendo da reunião: pelo passo que pediu, ou pelo primeiro passo desse tipo em aberto.
+    if (d.clienteId) {
+      let passoId: string | null = null;
+      if (d.trilhaPassoId) {
+        const passo = await lerPasso(d.trilhaPassoId);
+        if (passo && passo.cliente_id === d.clienteId && passo.tipo === "reuniao") passoId = passo.id;
+      }
+      if (passoId && fechamento) await ligarFechamentoAutomatico(passoId, fechamento.id);
+      if (passoId) await ligarReuniao(passoId, nova.id);
+      else {
+        const ligado = await ligarAoPassoDaTrilha(d.clienteId, d.tipo, nova.id);
+        if (ligado && fechamento) await ligarFechamentoAutomatico(ligado, fechamento.id);
+      }
+    }
+
     await auditarAgencia("agencia.reuniao_marcada", ctx.user.id, { tipo: "agencia_reuniao", id: nova.id }, {
       tipo: d.tipo,
       formato: d.formato,
@@ -189,6 +212,33 @@ export async function salvarReuniao(entrada: EntradaDaReuniao): Promise<Resultad
     revalidar(d.clienteId);
     return { ok: true as const, dados: { id: nova.id, fechamentoId: fechamento?.id ?? null } };
   });
+}
+
+/**
+ * Desloca as reuniões marcadas a partir desta (o Fechamento da Apresentação, K5)
+ * pelo mesmo tanto que ela andou — só as que ainda não aconteceram.
+ */
+async function arrastarSeguintes(origemId: string, deltaMs: number, quem: Awaited<ReturnType<typeof carregarQuemOlhaAgenda>>, quemFez: string | null) {
+  if (deltaMs === 0) return;
+  const db = createAdminClient();
+  const { data } = await db
+    .from("agencia_reunioes")
+    .select("id, inicio, fim, google_event_id")
+    .eq("origem_id", origemId)
+    .eq("situacao", "marcada")
+    .gt("inicio", new Date().toISOString());
+  for (const s of (data ?? []) as Array<{ id: string; inicio: string; fim: string; google_event_id: string | null }>) {
+    const inicio = new Date(new Date(s.inicio).getTime() + deltaMs).toISOString();
+    const fim = new Date(new Date(s.fim).getTime() + deltaMs).toISOString();
+    await db.from("agencia_reunioes").update({ inicio, fim, horario_em: new Date().toISOString(), atualizada_em: new Date().toISOString() }).eq("id", s.id);
+    await db.from("agencia_lembretes_de_reuniao").delete().eq("reuniao_id", s.id);
+    const depois = await carregarReuniao(s.id, quem);
+    if (!depois) continue;
+    const sincronizada = await sincronizarComOGoogle(depois, s.google_event_id);
+    await avisarOCliente(sincronizada, "remarcada");
+    await avisarAEquipe(sincronizada, "reuniao_alterada", sincronizada.membros, quemFez, "Novo horário: ");
+    await aoMudarReuniao(s.id);
+  }
 }
 
 async function membrosAtivos(ids: readonly string[]): Promise<string[]> {
@@ -235,6 +285,7 @@ export async function cancelarReuniao(id: string): Promise<ResultadoDaAcao> {
       await avisarOCliente(r, "cancelada");
       await avisarAEquipe(r, "reuniao_alterada", r.membros, ctx.membro?.id ?? null, "Cancelada: ");
     }
+    await aoMudarReuniao(id);
     await auditarAgencia("agencia.reuniao_cancelada", ctx.user.id, { tipo: "agencia_reuniao", id });
     revalidar(r.clienteId);
     return { ok: true as const };
@@ -273,6 +324,8 @@ export async function registrarResultado(entrada: z.input<typeof resultadoSchema
       })
       .eq("id", p.data.id);
     if (error) return { ok: false as const, erro: "Não deu para salvar. Tente de novo." };
+    // Realizada conclui o passo da trilha e libera os seguintes (SPEC-trilhas, R4).
+    await aoMudarReuniao(p.data.id);
     await auditarAgencia(
       p.data.situacao === "realizada" ? "agencia.reuniao_realizada" : "agencia.reuniao_alterada",
       ctx.user.id,

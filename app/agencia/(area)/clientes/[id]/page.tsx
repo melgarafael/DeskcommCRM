@@ -7,6 +7,7 @@ import { requireAreaDaAgencia } from "@/lib/agencia/acesso";
 import { estadoDoDrive } from "@/lib/agencia/acervo/drive";
 import { apoioDaAgenda } from "@/lib/agencia/calendario/apoio";
 import { carregarQuemOlhaAgenda, listarReunioes } from "@/lib/agencia/calendario/consultas";
+import { trilhaDoCliente } from "@/lib/agencia/trilhas/consultas";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { lerQuantidades, type SituacaoDoCliente } from "@/lib/agencia/clientes/vocabulario";
 import { idSchema } from "@/lib/agencia/schemas";
@@ -32,7 +33,7 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
 
   const quem = await carregarQuemOlha(ctx);
   const quemAgenda = await carregarQuemOlhaAgenda(ctx);
-  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda] = await Promise.all([
+  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda, trilha, modelos] = await Promise.all([
     db.from("agencia_clientes_empresas").select("nome, documento").eq("cliente_id", id).order("ordem"),
     db.from("agencia_contratacoes").select("*").eq("cliente_id", id).order("criado_em", { ascending: false }),
     db.from("agencia_clientes_membros").select("membro_id").eq("cliente_id", id),
@@ -46,6 +47,12 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
     apoioDoQuadro(quem),
     listarReunioes(quemAgenda, { clienteId: id }),
     apoioDaAgenda(quemAgenda),
+    trilhaDoCliente(id),
+    db
+      .from("agencia_trilha_modelos")
+      .select("id, nome, agencia_trilha_modelo_passos(chave, titulo, etapa, ordem)")
+      .eq("ativo", true)
+      .order("nome"),
   ]);
 
   const subpastas = (c.drive_subpastas as Record<string, string> | null) ?? {};
@@ -114,6 +121,18 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
           apoioDaAgenda={apoioAgenda}
           podeGerenciarCalendario={ctx.permissoes.has("calendario.gerenciar")}
           agendaLiberada={drive.agendaLiberada}
+          trilha={trilha}
+          modelosDeTrilha={((modelos.data ?? []) as Array<{
+            id: string;
+            nome: string;
+            agencia_trilha_modelo_passos: Array<{ chave: string; titulo: string; etapa: number; ordem: number }> | null;
+          }>).map((m) => ({
+            id: m.id,
+            nome: m.nome,
+            passos: [...(m.agencia_trilha_modelo_passos ?? [])]
+              .sort((a, b) => a.etapa - b.etapa || a.ordem - b.ordem)
+              .map((x) => ({ chave: x.chave, titulo: x.titulo })),
+          }))}
         />
       </Suspense>
     </div>

@@ -3,6 +3,7 @@ import { LembretesDeReuniao } from "@/components/agencia/calendario/LembretesDeR
 import { SecaoDoDrive } from "@/components/agencia/SecaoDoDrive";
 import { estadoDoDrive, retornoDoDrive } from "@/lib/agencia/acervo/drive";
 import { requirePermissaoNaPagina } from "@/lib/agencia/acesso";
+import { destinatariosDoAviso } from "@/lib/agencia/avisos/destinatarios";
 import { mascararTelefone } from "@/lib/agencia/whatsapp/regra";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -15,7 +16,7 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
   const db = createAdminClient();
   const [{ drive: resultadoDoDrive }, estadoDrive] = await Promise.all([searchParams, estadoDoDrive()]);
 
-  const [config, canais, envios] = await Promise.all([
+  const [config, canais, envios, membros, donos] = await Promise.all([
     db
       .from("agencia_config")
       .select("canal_session_id, janela_inicio, janela_fim, avisos_antecedencia, reunioes_lembretes")
@@ -31,7 +32,26 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
       .select("id, motivo, telefone, situacao, erro_codigo, criado_em, enviado_em")
       .order("criado_em", { ascending: false })
       .limit(20),
+    db.from("agencia_membros").select("id, user_id, situacao, agencia_membros_funcoes(agencia_funcoes(ativa, permissoes))").eq("situacao", "ativo"),
+    db.from("platform_admins").select("user_id").eq("scope", "full").is("revoked_at", null),
   ]);
+
+  // Quem recebe os avisos gerais (prazos da trilha, reuniões por marcar): sem ninguém, eles somem calados.
+  const recebemGerais = destinatariosDoAviso(
+    { tipo: "gerais" },
+    ((membros.data ?? []) as Array<{
+      id: string;
+      user_id: string | null;
+      situacao: string;
+      agencia_membros_funcoes: Array<{ agencia_funcoes: { ativa: boolean; permissoes: string[] } | null }> | null;
+    }>).map((m) => ({
+      id: m.id,
+      user_id: m.user_id,
+      situacao: m.situacao,
+      funcoes: (m.agencia_membros_funcoes ?? []).flatMap((f) => (f.agencia_funcoes ? [f.agencia_funcoes] : [])),
+    })),
+    new Set(((donos.data ?? []) as Array<{ user_id: string }>).map((d) => d.user_id)),
+  ).length;
 
   const c = config.data as {
     canal_session_id: string | null;
@@ -76,6 +96,12 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
         <p className="text-sm text-muted-foreground">O WhatsApp que fala pela agência e quando os avisos saem.</p>
       </div>
+      {recebemGerais === 0 && (
+        <p role="alert" className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm" data-testid="ninguem-recebe-gerais">
+          Ninguém recebe os avisos gerais (reunião da trilha por marcar, contrato por confirmar, prazos que não são tarefa). Ative o seu
+          perfil em Perfil, ou dê a alguém uma função com &quot;Receber os avisos gerais&quot; em Equipe › Funções.
+        </p>
+      )}
       <ConfiguracoesCliente
         canais={listaDeCanais}
         inicial={{

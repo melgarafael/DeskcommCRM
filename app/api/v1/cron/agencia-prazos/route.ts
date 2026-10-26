@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { avisarLembretesDeReuniao } from "@/lib/agencia/calendario/lembretes";
 import { avisarPrazos } from "@/lib/agencia/tarefas/relogios";
+import { avisarPrazosDaTrilha } from "@/lib/agencia/trilhas/relogio";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -17,7 +18,8 @@ export const maxDuration = 120;
  * A cada 15 min, pelo `scheduler`. Rodada que não avisou ninguém não audita.
  *
  * O mesmo relógio manda os lembretes das reuniões (SPEC-calendario, K7) — sem
- * cron novo, para o agendador não precisar ser reconstruído.
+ * cron novo, para o agendador não precisar ser reconstruído — e o relógio da
+ * trilha do cliente (SPEC-trilhas, R10), pelo mesmo motivo.
  */
 async function handle(req: NextRequest) {
   const requestId = randomUUID();
@@ -31,7 +33,11 @@ async function handle(req: NextRequest) {
     if (l.lembrados > 0) {
       void audit({ action: "agencia.lembretes_de_reuniao_enviados", organizationId: null, metadata: { lembrados: l.lembrados }, requestId });
     }
-    return ok({ ...r, ...l }, { requestId });
+    const t = await avisarPrazosDaTrilha();
+    if (t.avisados > 0) {
+      void audit({ action: "agencia.avisos_de_trilha_enviados", organizationId: null, metadata: { avisados: t.avisados }, requestId });
+    }
+    return ok({ ...r, ...l, trilha: t.avisados }, { requestId });
   } catch (err) {
     const detalhe = err instanceof Error ? err.message : String(err);
     logger.error("[agencia-prazos.cron] falhou", { error: detalhe, requestId });

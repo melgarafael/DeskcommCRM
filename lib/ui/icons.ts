@@ -28,6 +28,7 @@ export {
   // admin platform
   Buildings,
   Briefcase,
+  Path,
   FlowArrow,
   Lightning,
   Shuffle,

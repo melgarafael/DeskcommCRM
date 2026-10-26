@@ -4,6 +4,7 @@
 > - **Fase 1** (equipe, WhatsApp da agência, avisos): construída e publicada no teste em 23/10/2026 — ver [plano-fase-1.md](plano-fase-1.md).
 > - **Fase 2** (clientes, acervo, tarefas): construída e publicada no teste em 24/10/2026 — ver [plano-fase-2.md](plano-fase-2.md).
 > - **Fase 3** (calendário e reuniões): spec aprovada em 24/10/2026 — [SPEC-calendario](SPEC-calendario.md); construída e publicada no teste — [plano-fase-3](plano-fase-3.md).
+> - **Fase 4** (trilha do cliente): decidida e construída em 26/10/2026, publicada no teste — [SPEC-trilhas](SPEC-trilhas.md), [plano-fase-4](plano-fase-4.md). A partir daqui as fases seguem sem parar para aprovação (pedido do dono em 26/10/2026).
 > Este arquivo é o índice da iniciativa: cada módulo abaixo ganha a sua própria
 > especificação (`docs/agencia/SPEC-<id>.md`) só depois que este mapa for aprovado.
 

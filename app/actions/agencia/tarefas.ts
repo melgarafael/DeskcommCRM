@@ -10,6 +10,7 @@ import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
 import { carregarQuemOlha, carregarTarefa } from "@/lib/agencia/tarefas/consultas";
 import { podePegar } from "@/lib/agencia/tarefas/regras";
 import { COLUNAS, PRIORIDADES } from "@/lib/agencia/tarefas/vocabulario";
+import { aoApagarTarefa, aoMudarTarefa } from "@/lib/agencia/trilhas/motor";
 import { midpoint } from "@/lib/kanban/fractional-indexing";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -56,6 +57,7 @@ async function seguro<T>(acao: () => Promise<T>): Promise<T | { ok: false; erro:
 
 function revalidar() {
   revalidatePath("/agencia/tarefas");
+  revalidatePath("/agencia/trilhas");
   revalidatePath("/agencia");
 }
 
@@ -192,6 +194,8 @@ export async function salvarTarefa(entrada: EntradaDaTarefa): Promise<ResultadoD
       });
     }
 
+    // A trilha do cliente acompanha a tarefa (SPEC-trilhas, R4).
+    await aoMudarTarefa(id!);
     revalidar();
     return { ok: true as const, dados: { id: id! } };
   });
@@ -238,6 +242,7 @@ export async function moverTarefa(
       de: atual.coluna,
       para: c.data,
     });
+    await aoMudarTarefa(id);
     revalidar();
     return { ok: true as const };
   });
@@ -299,6 +304,8 @@ export async function excluirTarefa(id: string): Promise<ResultadoDaAcao> {
     const ctx = await exigirPermissao("tarefas.atribuir");
     const quem = await carregarQuemOlha(ctx);
     if (!(await carregarTarefa(id, quem))) return { ok: false as const, erro: "Tarefa não encontrada." };
+    // O passo da trilha volta a pedir uma tarefa, em vez de ficar ligado a nada.
+    await aoApagarTarefa(id);
     const { error } = await createAdminClient().from("agencia_tarefas").delete().eq("id", id);
     if (error) return { ok: false as const, erro: "Não deu para excluir." };
     await auditarAgencia("agencia.tarefa_alterada", ctx.user.id, { tipo: "agencia_tarefa", id }, { excluida: true });

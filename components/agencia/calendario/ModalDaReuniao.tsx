@@ -33,6 +33,9 @@ export interface NovaReuniao {
   dia: string;
   hora: string;
   clienteId: string | null;
+  /** Já vem escolhido quando a reunião é marcada por um passo da trilha. */
+  tipo?: TipoDeReuniao;
+  trilhaPassoId?: string | null;
 }
 
 interface Rascunho {
@@ -70,7 +73,7 @@ function convidadosDoCliente(c: ClienteDaAgenda | undefined): Rascunho["convidad
 
 function novoRascunho(n: NovaReuniao, apoio: ApoioDaAgenda, meuMembroId: string | null): Rascunho {
   const cliente = apoio.clientes.find((c) => c.id === n.clienteId);
-  const tipo: TipoDeReuniao = cliente ? "apresentacao" : "interna";
+  const tipo: TipoDeReuniao = n.tipo ?? (cliente ? "apresentacao" : "interna");
   return {
     tipo,
     titulo: tituloSugerido(tipo, cliente?.nome ?? null),
@@ -195,6 +198,7 @@ export function ModalDaReuniao({
         convidados: r.convidados.filter((c) => c.nome.trim()),
         avisarCliente: r.avisarCliente,
         marcarFechamento: r.marcarFechamento,
+        trilhaPassoId: reuniao ? null : (nova.trilhaPassoId ?? null),
       });
       if (!res.ok) return setErro(res.erro);
       aoFechar(true);
