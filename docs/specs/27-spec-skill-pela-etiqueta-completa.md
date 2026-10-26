@@ -118,7 +118,7 @@ etiqueta.
   `pnpm checar:colisao-de-migration`), troca a CHECK para
   `('hard','probe','tag')`, idempotente, com `-- manifest:` no cabeçalho e
   apêndice no `supabase/baseline.sql`.
-- O traço do turno (`traco-do-turno.ts`) mostra "entrou pela etiqueta".
+- O traço do turno (`traco-do-turno.ts`) já agrega `trigger` por skill, então o `tag` chega ao dado do traço. **Mostrar "entrou pela etiqueta" numa tela fica fora desta spec**: hoje nenhuma tela exibe o campo `gatilho` do traço (medido por busca em `app/` e `lib/`).
 
 ## Fora desta spec (de propósito)
 
@@ -141,7 +141,7 @@ etiqueta.
 3. `feat(skills): o Testar aceita etiquetas simuladas` — schema da prévia,
    `TurnPreview`, painel.
 4. `feat(skills): a ativação registra que entrou pela etiqueta` — migration
-   (tripla), `matchSkills`, gravação e traço.
+   (tripla), `matchSkills` e gravação.
 
 ## Como provar
 
@@ -158,7 +158,7 @@ etiqueta.
 - **Pela tela, como leigo** (banco fresco do `baseline.sql`): criar campanha,
   ver o campo pré-preenchido com o nicho, iniciar, conferir a etiqueta na ficha
   do contato antes da primeira mensagem; no Testar do agente, simular a
-  etiqueta e ver a skill no traço.
+  etiqueta e ver a skill ativa no resultado do teste.
 - **Na instalação de origem da medição**, depois do deploy: repetir M1 com os
   contatos novos (meta: todo contato de campanha com `contact_tags` nasce com a
   etiqueta) e M5 (aparecer `tag`).
