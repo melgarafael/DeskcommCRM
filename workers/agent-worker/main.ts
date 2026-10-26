@@ -685,10 +685,13 @@ export async function main(): Promise<void> {
     "scheduled_message",
     createScheduledMessageHandler(
       {
+        // `Logger` deste worker é `(msg, fields)` — a mensagem PRIMEIRO, ao
+        // contrário do pino. A ordem invertida compila em JS e troca os dois
+        // campos no log: a linha sai com `msg` = objeto e o texto virando campo.
         log: {
-          info: (mensagem, meta) => log.info(meta ?? {}, mensagem),
-          warn: (mensagem, meta) => log.warn(meta ?? {}, mensagem),
-          error: (mensagem, meta) => log.error(meta ?? {}, mensagem),
+          info: (mensagem, meta) => log.info(mensagem, meta),
+          warn: (mensagem, meta) => log.warn(mensagem, meta),
+          error: (mensagem, meta) => log.error(mensagem, meta),
         },
         enviarParte: criarEnviadorDeParte({}),
       },

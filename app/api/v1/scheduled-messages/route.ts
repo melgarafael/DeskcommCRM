@@ -23,9 +23,11 @@ import { audit } from "@/lib/audit";
 import { chaveDaRequisicao, comIdempotencia } from "@/lib/api/idempotency";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import {
   agendaMensagemNoCrm,
   listaMensagensAgendadasNoCrm,
+  type PacoteGravado,
   type RecusaDaOperacao,
 } from "@/lib/mensagem-agendada/crm";
 import { motivoLegivel } from "@/lib/mensagem-agendada/regras";
@@ -93,6 +95,12 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  // Guarda de EFEITO do suporte (#3118): em `support_readonly` a rota não grava
+  // nem agenda — e vem antes do RBAC porque a trava do suporte é mais larga que o
+  // papel: quem está em somente-leitura não precisa nem chegar à checagem de role.
+  const negado = await requireSupportWrite();
+  if (negado) return negado;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "scheduled_messages" });
   if (!authz.ok) return authz.response;
@@ -121,7 +129,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     source: "inbox" as const,
   };
 
-  const executar = async () => {
+  /**
+   * O tipo da resposta é escrito à mão, e não deixado para a inferência.
+   *
+   * `comIdempotencia` é genérico em `T`, e `executar` devolve uma UNIÃO
+   * (`pacote` ou `{ erro, mensagem }`). Com dois ramos, o TypeScript infere `T`
+   * do primeiro e recusa o segundo — o erro aparece longe daqui, na chamada. Uma
+   * união nomeada faz o genérico resolver para ela, que é o que a rota já
+   * devolve de fato.
+   */
+  type RespostaDoAgendamento = PacoteGravado | { erro: RecusaDaOperacao; mensagem: string };
+  const executar = async (): Promise<{ resposta: RespostaDoAgendamento; status: number }> => {
     const criado = await agendaMensagemNoCrm(deps, parsed.data);
     if (!criado.ok) {
       return {
@@ -172,5 +190,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       requestId,
     });
   }
-  return ok(desfecho.resposta, { requestId, status: desfecho.status });
+  // `OkOptions.status` é literal (`200 | 201 | 204`); a união que vem do
+  // idempotente é `number`. O único sucesso possível aqui é a criação (201) ou o
+  // replay da MESMA chave (200) — qualquer coisa fora disso já voltou por `fail`
+  // acima.
+  return ok(desfecho.resposta, { requestId, status: desfecho.status === 201 ? 201 : 200 });
 }

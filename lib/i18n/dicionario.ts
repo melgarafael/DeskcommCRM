@@ -17980,6 +17980,52 @@ export const DICIONARIO: Traducoes = {
   "Parâmetro inválido.": {
     es: "Parámetro no válido.",
   },
+  // #3118 — mensagem agendada na conversa: o relógio do compositor, o diálogo e
+  // a faixa "Agendadas". Chaves próprias em vez de reaproveitar as da AGENDA
+  // ("Cancelar agendamento" = "Cancelar cita"): aqui é envio de mensagem numa
+  // hora marcada, não um compromisso na agenda — reaproveitar trocaria o
+  // sentido na cara de quem lê.
+  "Agendar mensagem": { es: "Programar mensaje" },
+  "A mensagem sai sozinha no horário marcado, mesmo com o navegador fechado.": {
+    es: "El mensaje se envía solo a la hora programada, incluso con el navegador cerrado.",
+  },
+  "Quando enviar": { es: "Cuándo enviar" },
+  "No fuso do seu aparelho.": { es: "En la zona horaria de tu dispositivo." },
+  "Escreva a mensagem que vai sair no horário marcado…": {
+    es: "Escribe el mensaje que se enviará a la hora programada…",
+  },
+  "Cancelar se o contato responder antes": { es: "Cancelar si el contacto responde antes" },
+  "Se ele responder, o agendamento é desmarcado sozinho.": {
+    es: "Si responde, la programación se cancela sola.",
+  },
+  "Escolha um dia e um horário para a mensagem sair.": {
+    es: "Elige un día y una hora para que salga el mensaje.",
+  },
+  "Escolha um horário pelo menos 30 segundos à frente de agora.": {
+    es: "Elige una hora al menos 30 segundos después de ahora.",
+  },
+  "O agendamento vale por até um ano. Escolha um horário mais próximo.": {
+    es: "La programación vale por hasta un año. Elige una hora más cercana.",
+  },
+  "Escreva a mensagem antes de agendar.": { es: "Escribe el mensaje antes de programar." },
+  "A mensagem passa de 4096 caracteres. Encurte antes de agendar.": {
+    es: "El mensaje supera los 4096 caracteres. Acórtalo antes de programar.",
+  },
+  "O fuso do seu aparelho não foi reconhecido. Recarregue a página e tente de novo.": {
+    es: "No se reconoció la zona horaria de tu dispositivo. Recarga la página e inténtalo de nuevo.",
+  },
+  "Não foi possível agendar. Revise o horário e o texto.": {
+    es: "No se pudo programar. Revisa la hora y el texto.",
+  },
+  "Mensagem agendada.": { es: "Mensaje programado." },
+  Agendadas: { es: "Programadas" },
+  "Enviando agora…": { es: "Enviando ahora…" },
+  "Saiu só em parte": { es: "Salió solo en parte" },
+  "Envio agendado cancelado.": { es: "Envío programado cancelado." },
+  "(anexo)": { es: "(adjunto)" },
+  "{n} mensagens seguidas": { es: "{n} mensajes seguidos" },
+  "Cancela se o contato responder": { es: "Se cancela si el contacto responde" },
+  "Cancelar envio agendado": { es: "Cancelar envío programado" },
 };
 
 /**

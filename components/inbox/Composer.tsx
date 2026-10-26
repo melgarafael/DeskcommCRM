@@ -9,7 +9,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from "react";
-import { PaperPlaneTilt } from "@/lib/ui/icons";
+import { CalendarPlus, PaperPlaneTilt } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
@@ -53,6 +53,8 @@ import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifi
 import { cn } from "@/lib/utils";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
+import { AgendarMensagemDialog } from "@/components/inbox/composer/AgendarMensagemDialog";
+import { FaixaDeAgendadas } from "@/components/inbox/composer/FaixaDeAgendadas";
 import { type Recurso } from "@/lib/inbox/recursos";
 import type { Message } from "@/lib/types/messaging";
 
@@ -208,6 +210,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    */
   const [pendingEm, setPendingEm] = useState<"reply" | "note">("reply");
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  /**
+   * O diálogo de agendar (#3118). Mora no compositor porque o texto que ele
+   * abre preenchido é o DESTE campo: mandar a mensagem para as 9h é uma decisão
+   * sobre o que acabou de ser escrito, não sobre a conversa em geral.
+   */
+  const [agendarOpen, setAgendarOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">(initialMode);
   /**
@@ -827,6 +835,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </p>
           </div>
         )}
+        {/* A FAIXA DAS AGENDADAS (#3118) — acima dos modos, e só em resposta:
+            nota interna é conversa do time e não existe agendamento de nota.
+            Vive no compositor (e não no fio) porque é aqui que se decide entre
+            "mando agora" e "deixo para as 9h". Some sozinha quando não há
+            nada marcado — zero altura quando a conversa está em dia. */}
+        {mode === "reply" && (
+          <FaixaDeAgendadas conversationId={conversationId} desabilitado={isDisabled} />
+        )}
         <div className="mb-1.5 flex gap-1">
           <button
             type="button"
@@ -944,6 +960,29 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             texto NÃO é despejado no campo: quem revisa e decide é o bloco, e ter
             o mesmo texto nos dois lugares diria duas vezes a mesma coisa.
           */}
+          {/* O RELÓGIO DO AGENDAMENTO (#3118) — o mesmo gesto do Enviar, com
+              hora marcada. Fica junto do "+" e do emoji porque é uma forma de
+              MANDAR, não uma configuração; abre com o texto do campo dentro,
+              para agendar exatamente o que se acabou de escrever.
+
+              Desabilitado pela MESMA trava do envio (`respostaBarrada`): janela
+              fechada barra a resposta, e um agendamento é resposta que sai
+              depois — deixá-lo passar seria a janela de 24h furada por uma
+              porta lateral. */}
+          {mode === "reply" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={() => setAgendarOpen(true)}
+              disabled={respostaBarrada}
+              aria-label={t("Agendar mensagem")}
+              title={t("Agendar mensagem")}
+            >
+              <CalendarPlus size={16} aria-hidden />
+            </Button>
+          )}
           {mode === "reply" && !sugestao && (
             <DraftReplyButton
               conversationId={conversationId}
@@ -1099,6 +1138,20 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             },
             { onSuccess: () => setContactPickerOpen(false) },
           );
+        }}
+      />
+      {/* O DIÁLOGO DO AGENDAMENTO (#3118) — fecha o ciclo: o texto que estava
+          no campo vai para o pacote e o campo esvazia, como depois do Enviar.
+          Manter o texto ali depois de agendar faria o operador mandar a MESMA
+          mensagem agora, sem perceber que ela já está na fila para as 9h. */}
+      <AgendarMensagemDialog
+        open={agendarOpen}
+        onOpenChange={setAgendarOpen}
+        conversationId={conversationId}
+        textoInicial={text}
+        onAgendado={() => {
+          setText("");
+          requestAnimationFrame(() => autoresize());
         }}
       />
     </>

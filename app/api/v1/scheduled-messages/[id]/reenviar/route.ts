@@ -12,6 +12,7 @@ import type { NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { reenviaOQueFaltouNoCrm, type RecusaDaOperacao } from "@/lib/mensagem-agendada/crm";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -32,6 +33,10 @@ const STATUS_DA_RECUSA: Record<string, number> = {
 type Contexto = { params: Promise<{ id: string }> };
 
 export async function POST(_req: NextRequest, contexto: Contexto): Promise<Response> {
+  // Reenviar cria um pacote NOVO (e um cron novo): é escrita como qualquer outra.
+  const negado = await requireSupportWrite();
+  if (negado) return negado;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "scheduled_messages" });
   if (!authz.ok) return authz.response;

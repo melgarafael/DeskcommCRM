@@ -13,6 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { registrarEnvioNoLedger } from "@/lib/agent-engine/pacing/ledger-supabase";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import type { EnviarParte, ParteDoDisparo, ResultadoDoEnvioDaParte } from "./disparo";
@@ -103,6 +104,19 @@ export function criarEnviadorDeParte(deps: DepsDoEnviador): EnviarParte {
 
       return { ok: true, messageId: resultado.id };
     } catch (err) {
+      /**
+       * A organização pode PARAR entre o veredito e a saída — é a única corrida
+       * que sobra depois de `vereditoDoDisparo` já ter checado `organizacaoOperante`.
+       *
+       * Tratada à parte, e não como falha da parte, por dois motivos: o motivo
+       * gravado é o canônico (`org_nao_operante`, o mesmo vocabulário do pacote),
+       * e a parte não é culpada — quem lê `last_error` precisa saber que o
+       * pacote parou por causa da conta, não do canal. Nada é revertido nem
+       * retentado aqui: quem decide o desfecho é o handler, com o motivo em mãos.
+       */
+      if (err instanceof OrgNaoOperanteError) {
+        return { ok: false, motivo: "org_nao_operante" };
+      }
       return {
         ok: false,
         motivo: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),

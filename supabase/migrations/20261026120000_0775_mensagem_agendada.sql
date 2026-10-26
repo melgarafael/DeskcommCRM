@@ -203,6 +203,17 @@ alter table public.job_queue drop constraint if exists job_queue_kind_check;
 alter table public.job_queue add constraint job_queue_kind_check
   check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply','scheduled_message'));
 
+-- A outra ponta do mesmo vocabulário: `job_queue_turn_needs_contact` diz QUAIS
+-- kinds exigem `contact_id`. O cron da mensagem agendada sempre tem contato — o
+-- pacote nasce de uma conversa (ou de um contato com conversa única), e o
+-- `cron_jobs` só enfileira depois disso. Sem esta reconstrução, o baseline
+-- aceitaria `scheduled_message` e a CADEIA recusaria: é o caso do PR #963, em que
+-- o clone da VPS bate 23514 no primeiro uso enquanto os testes passam.
+-- Vigiado por `tests/unit/check-do-baseline-nao-diverge-da-cadeia.test.ts`.
+alter table public.job_queue drop constraint if exists job_queue_turn_needs_contact;
+alter table public.job_queue add constraint job_queue_turn_needs_contact
+  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply','scheduled_message')) = (contact_id is not null));
+
 alter table public.cron_jobs drop constraint if exists cron_jobs_job_kind_check;
 alter table public.cron_jobs add constraint cron_jobs_job_kind_check
   check (job_kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','scheduled_message'));

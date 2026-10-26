@@ -60288,6 +60288,198 @@ grant execute on function public.fn_casos_parados_para_lembrar(integer) to servi
 
 notify pgrst, 'reload schema';
 
+-- ---- mensagem agendada na conversa (migration 0775, #3118) ----
+--
+-- O pacote (`scheduled_messages`) e as partes (`scheduled_message_parts`) que
+-- saem na hora marcada, pelo servidor, na ordem. O disparo reusa `cron_jobs`
+-- (kind 'at', job_kind 'scheduled_message'), e o `internal_message_id` de cada
+-- parte é a chave anti-duplicata que o `sendMessageHandler` já honra.
+--
+-- A lista de `job_queue.kind`, `cron_jobs.job_kind` e
+-- `agent_inbox_items.kind` NÃO é reconstruída aqui: o bloco único de cada uma
+-- fica no lugar de sempre (`baseline-constraint-reconstruida.test.ts`) e já traz
+-- o valor novo. Este apêndice é tabela + RLS + o gatilho de opt-out/LGPD.
+--
+-- Idempotente: `create table if not exists`, `create index if not exists`,
+-- `drop policy if exists` antes de cada `create policy`, `create or replace
+-- function` e `drop trigger if exists`.
+
+create table if not exists public.scheduled_messages (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  conversation_id uuid not null references public.conversations (id) on delete cascade,
+  contact_id uuid not null references public.contacts (id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions (id) on delete cascade,
+  scheduled_for timestamptz not null,
+  tz text not null default 'UTC',
+  status text not null default 'scheduled'
+    check (status in ('scheduled', 'sending', 'sent', 'partial', 'failed', 'cancelled')),
+  created_by uuid references auth.users (id) on delete set null,
+  created_by_token uuid references public.api_tokens (id) on delete set null,
+  source text not null default 'inbox' check (source in ('inbox', 'api', 'mcp')),
+  cancel_if_contact_replies boolean not null default false,
+  cancelled_at timestamptz,
+  cancel_reason text,
+  last_error text,
+  attempts smallint not null default 0,
+  original_id uuid references public.scheduled_messages (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check ((status = 'cancelled') = (cancelled_at is not null))
+);
+
+create index if not exists scheduled_messages_vivas_idx
+  on public.scheduled_messages (organization_id, conversation_id, scheduled_for)
+  where status in ('scheduled', 'sending');
+create index if not exists scheduled_messages_contato_idx
+  on public.scheduled_messages (organization_id, contact_id, scheduled_for desc);
+
+create table if not exists public.scheduled_message_parts (
+  id uuid primary key default gen_random_uuid(),
+  scheduled_message_id uuid not null references public.scheduled_messages (id) on delete cascade,
+  position smallint not null check (position between 0 and 9),
+  body text check (body is null or (length(body) between 1 and 4096)),
+  media_storage_path text,
+  media_mime text,
+  media_size_bytes bigint check (media_size_bytes is null or media_size_bytes > 0),
+  internal_message_id uuid not null default gen_random_uuid(),
+  status text not null default 'pending'
+    check (status in ('pending', 'sent', 'failed', 'skipped')),
+  message_id uuid references public.messages (id) on delete set null,
+  error_code text,
+  sent_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (scheduled_message_id, position),
+  check (body is not null or media_storage_path is not null)
+);
+
+create unique index if not exists scheduled_message_parts_internal_id_idx
+  on public.scheduled_message_parts (internal_message_id);
+
+alter table public.scheduled_messages enable row level security;
+drop policy if exists scheduled_messages_select on public.scheduled_messages;
+create policy scheduled_messages_select on public.scheduled_messages
+  for select using (organization_id in (select public.fn_user_org_ids()));
+drop policy if exists scheduled_messages_insert on public.scheduled_messages;
+create policy scheduled_messages_insert on public.scheduled_messages
+  for insert with check (
+    (organization_id in (select public.fn_user_org_ids()))
+    and public.fn_role_at_least(organization_id, 'agent')
+  );
+drop policy if exists scheduled_messages_update on public.scheduled_messages;
+create policy scheduled_messages_update on public.scheduled_messages
+  for update using (
+    (organization_id in (select public.fn_user_org_ids()))
+    and public.fn_role_at_least(organization_id, 'agent')
+  )
+  with check (
+    (organization_id in (select public.fn_user_org_ids()))
+    and public.fn_role_at_least(organization_id, 'agent')
+  );
+
+alter table public.scheduled_message_parts enable row level security;
+drop policy if exists scheduled_message_parts_select on public.scheduled_message_parts;
+create policy scheduled_message_parts_select on public.scheduled_message_parts
+  for select using (
+    exists (
+      select 1
+        from public.scheduled_messages m
+       where m.id = scheduled_message_parts.scheduled_message_id
+         and m.organization_id in (select public.fn_user_org_ids())
+    )
+  );
+
+revoke all on public.scheduled_messages from public, anon, authenticated;
+grant select, insert, update on public.scheduled_messages to authenticated;
+grant all on public.scheduled_messages to service_role;
+
+revoke all on public.scheduled_message_parts from public, anon, authenticated;
+grant select on public.scheduled_message_parts to authenticated;
+grant all on public.scheduled_message_parts to service_role;
+
+comment on table public.scheduled_messages is
+  'Mensagem agendada numa conversa (#3118): o pacote que sai na hora marcada pelo servidor, em partes e na ordem. Distinto do retorno agendado (cron_jobs job_kind=followup_turn), em que a IA reescreve, e do compromisso (calendar_appointments), que ocupa a agenda de alguém.';
+comment on column public.scheduled_messages.scheduled_for is
+  'O instante absoluto do disparo, em UTC. É o next_run_at do cron_jobs kind=at que dispara o pacote — a hora que a tela mostrou é este mesmo instante no fuso de `tz`.';
+comment on column public.scheduled_messages.tz is
+  'Fuso usado na tela que agendou, só para exibir. A hora que vale é scheduled_for.';
+comment on column public.scheduled_messages.status is
+  'scheduled = ainda vai sair; sending = reservado pelo worker (update condicional, 0 linhas = já foi/cancelado); sent = todas as partes saíram; partial = alguma saiu e outra falhou; failed = nenhuma saiu; cancelled = desmarcado por gente, opt-out ou anonimização.';
+comment on column public.scheduled_messages.cancel_if_contact_replies is
+  'Ligado = se o contato responder antes da hora, o pacote é cancelado (motivo contato_respondeu). Default false: o operador marca quando a resposta torna o envio inútil.';
+comment on column public.scheduled_messages.original_id is
+  'De qual pacote este é o "reenviar o que faltou". Pacote novo, partes novas e internal_message_id novos: reenviar é decisão explícita, nunca repetição automática.';
+comment on table public.scheduled_message_parts is
+  'Cada parte de uma mensagem agendada (#3118), enviada na ordem de `position`. A parte só vira sent quando o canal confirmou (external_id gravado).';
+comment on column public.scheduled_message_parts.internal_message_id is
+  'A chave anti-duplicata: o envio grava messages.id com este valor. Repetir o handler na mesma parte relê a mensagem existente (23505) e NÃO reenvia quando ela já tem recibo.';
+comment on column public.scheduled_message_parts.media_storage_path is
+  'Anexo já subido ao bucket whatsapp-media na hora de agendar. O cron de retenção de mídia (media-retention) não pode apagar arquivo referenciado por parte pendente.';
+
+-- Opt-out e anonimização: cancelam o pacote vivo (e o cron dele); a redação
+-- apaga também o corpo das partes que nunca saíram.
+create or replace function public.fn_contato_encerra_mensagens_agendadas()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_motivo text;
+begin
+  if new.is_anonymized = true and coalesce(old.is_anonymized, false) = false then
+    v_motivo := 'Contato anonimizado (LGPD)';
+  elsif new.is_blocked = true and coalesce(old.is_blocked, false) = false then
+    v_motivo := 'Contato pediu para parar (opt-out)';
+  else
+    return new;
+  end if;
+
+  update public.scheduled_messages
+     set status = 'cancelled',
+         cancelled_at = now(),
+         cancel_reason = v_motivo,
+         updated_at = now()
+   where organization_id = new.organization_id
+     and contact_id = new.id
+     and status in ('scheduled', 'sending');
+
+  update public.cron_jobs
+     set enabled = false,
+         cancelled_at = coalesce(cancelled_at, now()),
+         cancel_reason = coalesce(cancel_reason, v_motivo),
+         updated_at = now()
+   where organization_id = new.organization_id
+     and contact_id = new.id
+     and enabled = true
+     and job_kind = 'scheduled_message';
+
+  if new.is_anonymized = true and coalesce(old.is_anonymized, false) = false then
+    update public.scheduled_message_parts p
+       set body = null,
+           error_code = coalesce(p.error_code, 'lgpd_redigido')
+      from public.scheduled_messages m
+     where m.id = p.scheduled_message_id
+       and m.organization_id = new.organization_id
+       and m.contact_id = new.id
+       and p.status = 'pending';
+  end if;
+
+  return new;
+end
+$$;
+
+revoke all on function public.fn_contato_encerra_mensagens_agendadas() from public;
+revoke execute on function public.fn_contato_encerra_mensagens_agendadas() from anon;
+revoke execute on function public.fn_contato_encerra_mensagens_agendadas() from authenticated;
+
+drop trigger if exists trg_contato_encerra_mensagens_agendadas on public.contacts;
+create trigger trg_contato_encerra_mensagens_agendadas
+  after update of is_blocked, is_anonymized on public.contacts
+  for each row execute function public.fn_contato_encerra_mensagens_agendadas();
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -63768,194 +63960,4 @@ create index if not exists idx_crm_leads_org_pipeline_position_id
 comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
 
--- ---- mensagem agendada na conversa (migration 0775, #3118) ----
---
--- O pacote (`scheduled_messages`) e as partes (`scheduled_message_parts`) que
--- saem na hora marcada, pelo servidor, na ordem. O disparo reusa `cron_jobs`
--- (kind 'at', job_kind 'scheduled_message'), e o `internal_message_id` de cada
--- parte é a chave anti-duplicata que o `sendMessageHandler` já honra.
---
--- A lista de `job_queue.kind`, `cron_jobs.job_kind` e
--- `agent_inbox_items.kind` NÃO é reconstruída aqui: o bloco único de cada uma
--- fica no lugar de sempre (`baseline-constraint-reconstruida.test.ts`) e já traz
--- o valor novo. Este apêndice é tabela + RLS + o gatilho de opt-out/LGPD.
---
--- Idempotente: `create table if not exists`, `create index if not exists`,
--- `drop policy if exists` antes de cada `create policy`, `create or replace
--- function` e `drop trigger if exists`.
 
-create table if not exists public.scheduled_messages (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations (id) on delete cascade,
-  conversation_id uuid not null references public.conversations (id) on delete cascade,
-  contact_id uuid not null references public.contacts (id) on delete cascade,
-  channel_session_id uuid not null references public.channel_sessions (id) on delete cascade,
-  scheduled_for timestamptz not null,
-  tz text not null default 'UTC',
-  status text not null default 'scheduled'
-    check (status in ('scheduled', 'sending', 'sent', 'partial', 'failed', 'cancelled')),
-  created_by uuid references auth.users (id) on delete set null,
-  created_by_token uuid references public.api_tokens (id) on delete set null,
-  source text not null default 'inbox' check (source in ('inbox', 'api', 'mcp')),
-  cancel_if_contact_replies boolean not null default false,
-  cancelled_at timestamptz,
-  cancel_reason text,
-  last_error text,
-  attempts smallint not null default 0,
-  original_id uuid references public.scheduled_messages (id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  check ((status = 'cancelled') = (cancelled_at is not null))
-);
-
-create index if not exists scheduled_messages_vivas_idx
-  on public.scheduled_messages (organization_id, conversation_id, scheduled_for)
-  where status in ('scheduled', 'sending');
-create index if not exists scheduled_messages_contato_idx
-  on public.scheduled_messages (organization_id, contact_id, scheduled_for desc);
-
-create table if not exists public.scheduled_message_parts (
-  id uuid primary key default gen_random_uuid(),
-  scheduled_message_id uuid not null references public.scheduled_messages (id) on delete cascade,
-  position smallint not null check (position between 0 and 9),
-  body text check (body is null or (length(body) between 1 and 4096)),
-  media_storage_path text,
-  media_mime text,
-  media_size_bytes bigint check (media_size_bytes is null or media_size_bytes > 0),
-  internal_message_id uuid not null default gen_random_uuid(),
-  status text not null default 'pending'
-    check (status in ('pending', 'sent', 'failed', 'skipped')),
-  message_id uuid references public.messages (id) on delete set null,
-  error_code text,
-  sent_at timestamptz,
-  created_at timestamptz not null default now(),
-  unique (scheduled_message_id, position),
-  check (body is not null or media_storage_path is not null)
-);
-
-create unique index if not exists scheduled_message_parts_internal_id_idx
-  on public.scheduled_message_parts (internal_message_id);
-
-alter table public.scheduled_messages enable row level security;
-drop policy if exists scheduled_messages_select on public.scheduled_messages;
-create policy scheduled_messages_select on public.scheduled_messages
-  for select using (organization_id in (select public.fn_user_org_ids()));
-drop policy if exists scheduled_messages_insert on public.scheduled_messages;
-create policy scheduled_messages_insert on public.scheduled_messages
-  for insert with check (
-    (organization_id in (select public.fn_user_org_ids()))
-    and public.fn_role_at_least(organization_id, 'agent')
-  );
-drop policy if exists scheduled_messages_update on public.scheduled_messages;
-create policy scheduled_messages_update on public.scheduled_messages
-  for update using (
-    (organization_id in (select public.fn_user_org_ids()))
-    and public.fn_role_at_least(organization_id, 'agent')
-  )
-  with check (
-    (organization_id in (select public.fn_user_org_ids()))
-    and public.fn_role_at_least(organization_id, 'agent')
-  );
-
-alter table public.scheduled_message_parts enable row level security;
-drop policy if exists scheduled_message_parts_select on public.scheduled_message_parts;
-create policy scheduled_message_parts_select on public.scheduled_message_parts
-  for select using (
-    exists (
-      select 1
-        from public.scheduled_messages m
-       where m.id = scheduled_message_parts.scheduled_message_id
-         and m.organization_id in (select public.fn_user_org_ids())
-    )
-  );
-
-revoke all on public.scheduled_messages from public, anon, authenticated;
-grant select, insert, update on public.scheduled_messages to authenticated;
-grant all on public.scheduled_messages to service_role;
-
-revoke all on public.scheduled_message_parts from public, anon, authenticated;
-grant select on public.scheduled_message_parts to authenticated;
-grant all on public.scheduled_message_parts to service_role;
-
-comment on table public.scheduled_messages is
-  'Mensagem agendada numa conversa (#3118): o pacote que sai na hora marcada pelo servidor, em partes e na ordem. Distinto do retorno agendado (cron_jobs job_kind=followup_turn), em que a IA reescreve, e do compromisso (calendar_appointments), que ocupa a agenda de alguém.';
-comment on column public.scheduled_messages.scheduled_for is
-  'O instante absoluto do disparo, em UTC. É o next_run_at do cron_jobs kind=at que dispara o pacote — a hora que a tela mostrou é este mesmo instante no fuso de `tz`.';
-comment on column public.scheduled_messages.tz is
-  'Fuso usado na tela que agendou, só para exibir. A hora que vale é scheduled_for.';
-comment on column public.scheduled_messages.status is
-  'scheduled = ainda vai sair; sending = reservado pelo worker (update condicional, 0 linhas = já foi/cancelado); sent = todas as partes saíram; partial = alguma saiu e outra falhou; failed = nenhuma saiu; cancelled = desmarcado por gente, opt-out ou anonimização.';
-comment on column public.scheduled_messages.cancel_if_contact_replies is
-  'Ligado = se o contato responder antes da hora, o pacote é cancelado (motivo contato_respondeu). Default false: o operador marca quando a resposta torna o envio inútil.';
-comment on column public.scheduled_messages.original_id is
-  'De qual pacote este é o "reenviar o que faltou". Pacote novo, partes novas e internal_message_id novos: reenviar é decisão explícita, nunca repetição automática.';
-comment on table public.scheduled_message_parts is
-  'Cada parte de uma mensagem agendada (#3118), enviada na ordem de `position`. A parte só vira sent quando o canal confirmou (external_id gravado).';
-comment on column public.scheduled_message_parts.internal_message_id is
-  'A chave anti-duplicata: o envio grava messages.id com este valor. Repetir o handler na mesma parte relê a mensagem existente (23505) e NÃO reenvia quando ela já tem recibo.';
-comment on column public.scheduled_message_parts.media_storage_path is
-  'Anexo já subido ao bucket whatsapp-media na hora de agendar. O cron de retenção de mídia (media-retention) não pode apagar arquivo referenciado por parte pendente.';
-
--- Opt-out e anonimização: cancelam o pacote vivo (e o cron dele); a redação
--- apaga também o corpo das partes que nunca saíram.
-create or replace function public.fn_contato_encerra_mensagens_agendadas()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_motivo text;
-begin
-  if new.is_anonymized = true and coalesce(old.is_anonymized, false) = false then
-    v_motivo := 'Contato anonimizado (LGPD)';
-  elsif new.is_blocked = true and coalesce(old.is_blocked, false) = false then
-    v_motivo := 'Contato pediu para parar (opt-out)';
-  else
-    return new;
-  end if;
-
-  update public.scheduled_messages
-     set status = 'cancelled',
-         cancelled_at = now(),
-         cancel_reason = v_motivo,
-         updated_at = now()
-   where organization_id = new.organization_id
-     and contact_id = new.id
-     and status in ('scheduled', 'sending');
-
-  update public.cron_jobs
-     set enabled = false,
-         cancelled_at = coalesce(cancelled_at, now()),
-         cancel_reason = coalesce(cancel_reason, v_motivo),
-         updated_at = now()
-   where organization_id = new.organization_id
-     and contact_id = new.id
-     and enabled = true
-     and job_kind = 'scheduled_message';
-
-  if new.is_anonymized = true and coalesce(old.is_anonymized, false) = false then
-    update public.scheduled_message_parts p
-       set body = null,
-           error_code = coalesce(p.error_code, 'lgpd_redigido')
-      from public.scheduled_messages m
-     where m.id = p.scheduled_message_id
-       and m.organization_id = new.organization_id
-       and m.contact_id = new.id
-       and p.status = 'pending';
-  end if;
-
-  return new;
-end
-$$;
-
-revoke all on function public.fn_contato_encerra_mensagens_agendadas() from public;
-revoke execute on function public.fn_contato_encerra_mensagens_agendadas() from anon;
-revoke execute on function public.fn_contato_encerra_mensagens_agendadas() from authenticated;
-
-drop trigger if exists trg_contato_encerra_mensagens_agendadas on public.contacts;
-create trigger trg_contato_encerra_mensagens_agendadas
-  after update of is_blocked, is_anonymized on public.contacts
-  for each row execute function public.fn_contato_encerra_mensagens_agendadas();
-
-notify pgrst, 'reload schema';

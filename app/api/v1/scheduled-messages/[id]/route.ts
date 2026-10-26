@@ -13,6 +13,7 @@ import type { NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import {
   cancelaMensagemAgendadaNoCrm,
   editaMensagemAgendadaNoCrm,
@@ -69,6 +70,10 @@ export async function GET(_req: NextRequest, contexto: Contexto): Promise<Respon
 }
 
 export async function PATCH(req: NextRequest, contexto: Contexto): Promise<Response> {
+  // Mesma guarda de efeito do POST: mudar a hora marcada é escrita.
+  const negado = await requireSupportWrite();
+  if (negado) return negado;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "scheduled_messages" });
   if (!authz.ok) return authz.response;
@@ -103,6 +108,11 @@ export async function PATCH(req: NextRequest, contexto: Contexto): Promise<Respo
 }
 
 export async function DELETE(req: NextRequest, contexto: Contexto): Promise<Response> {
+  // Desmarcar é escrita, e é a que mais pesa em somente-leitura: pacote
+  // cancelado não volta.
+  const negado = await requireSupportWrite();
+  if (negado) return negado;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "scheduled_messages" });
   if (!authz.ok) return authz.response;
