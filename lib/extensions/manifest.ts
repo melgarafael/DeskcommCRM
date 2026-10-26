@@ -9,6 +9,7 @@ import {
 } from "./capacidades";
 
 import { ExtensionError } from "./errors";
+import { fluxoDoTurnoSchema, type FluxoDoTurno } from "./fluxo-do-turno";
 import { parseStrictJson } from "./strict-json";
 import {
   esquemaDaContribuicaoDeTema,
@@ -33,7 +34,16 @@ export const EXTENSION_LIMITS = {
   bodyCharacters: 2_000,
 } as const;
 
-export type LocalizedText = { "pt-BR": string; es?: string };
+/**
+ * Textos localizados do pacote.
+ *
+ * Cresceu de `{ pt-BR, es }` para os idiomas que o produto sabe DETECTAR na
+ * conversa (#3076, item 5): o consumidor real do gancho de extensão fala inglês e
+ * híndi, e um pacote que não pudesse trazer o texto nesses idiomas entraria no
+ * ar falando português para quem escreveu em inglês. `pt-BR` continua
+ * OBRIGATÓRIO porque é o recuo de `localize()` — nunca existe texto vazio.
+ */
+export type LocalizedText = { "pt-BR": string; es?: string; en?: string; hi?: string };
 
 export type ExtensionConfiguration = {
   density: "comfortable" | "compact";
@@ -89,6 +99,11 @@ export type ExtensionManifest = {
     }>;
     /** Um tema opcional que a organização pode escolher para pintar o produto. */
     theme?: TemaDeExtensao;
+    /**
+     * O fluxo declarativo que o host executa no turno da conversa (#3076).
+     * Ver `lib/extensions/fluxo-do-turno.ts` para o vocabulário e as cercas.
+     */
+    turn_flow?: FluxoDoTurno;
   };
 };
 
@@ -174,7 +189,7 @@ function textSchema(maxCharacters: number) {
 
 function localizedTextSchema(maxCharacters: number) {
   const text = textSchema(maxCharacters);
-  return z.object({ "pt-BR": text, es: text.optional() }).strict();
+  return z.object({ "pt-BR": text, es: text.optional(), en: text.optional(), hi: text.optional() }).strict();
 }
 
 const hostApiSchema = z
@@ -329,6 +344,20 @@ const manifestSchema: z.ZodType<ExtensionManifest> = z
           // contribui card nenhum, e um declarativo sem card não teria o que mostrar.
           .optional(),
         theme: esquemaDaContribuicaoDeTema.optional(),
+        /**
+         * O GANCHO DE TURNO (#3076): o fluxo que a extensão declara para agir
+         * DENTRO da conversa, antes da IA. É o ponto genérico que o fluxo de
+         * laudo do #3063 consome — o núcleo traz o ponto, o pacote traz o fluxo.
+         *
+         * Sem permissão nova de propósito, e a decisão está escrita: um fluxo de
+         * turno não abre tela, não alcança dado e não fala com o canal — ele
+         * escreve só o que o pacote já declara, no idioma que o pacote já traz,
+         * e o HOST executa pela cadeia de envio do núcleo. O consentimento é a
+         * ATIVAÇÃO da extensão na organização (o mesmo gesto que já a põe no
+         * hub); uma permissão a mais na tela de aceite prometeria um alcance que
+         * ele não tem.
+         */
+        turn_flow: fluxoDoTurnoSchema.optional(),
       })
       .strict(),
   })
@@ -604,11 +633,25 @@ function incompatible(reason: CompatibilityReason): CompatibilityResult {
   return { compatible: false, reason };
 }
 
+/**
+ * O texto no idioma pedido, com RECUO em pt-BR.
+ *
+ * A comparação é pelo código-base do locale (`en-GB` → `en`, `pt-BR` → `pt`), e
+ * a lista de idiomas é a de `LocalizedText` — nenhum texto é inventado: idioma
+ * que o pacote não trouxe cai no português e `fallback: true` diz isso à tela,
+ * que é a diferença entre "traduzido" e "no idioma do produto".
+ */
 export function localize(text: LocalizedText, locale: string): { text: string; fallback: boolean } {
-  if (locale.toLowerCase().split("-")[0] === "es" && text.es !== undefined) {
-    return { text: text.es, fallback: false };
+  const base = locale.toLowerCase().split("-")[0]!;
+  const porBase: Array<[string, string | undefined]> = [
+    ["es", text.es],
+    ["en", text.en],
+    ["hi", text.hi],
+  ];
+  for (const [chave, valor] of porBase) {
+    if (base === chave && valor !== undefined) return { text: valor, fallback: false };
   }
-  return { text: text["pt-BR"], fallback: locale.toLowerCase() !== "pt-br" };
+  return { text: text["pt-BR"], fallback: base !== "pt" };
 }
 
 async function sha256(bytes: Uint8Array) {

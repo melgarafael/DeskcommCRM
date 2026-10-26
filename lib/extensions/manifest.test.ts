@@ -463,3 +463,85 @@ describe("catálogo e artefato", () => {
     );
   });
 });
+
+describe("idiomas do texto localizado (#3076, item 5)", () => {
+  it("aceita en e hi no pacote: o consumidor real do gancho fala inglês e híndi", () => {
+    const comIdiomas = {
+      ...manifest,
+      display: {
+        ...manifest.display,
+        title: {
+          "pt-BR": "Laudo",
+          es: "Informe",
+          en: "Report",
+          hi: "रिपोर्ट",
+        },
+      },
+    };
+    expect(parseManifest(manifestBytes(comIdiomas)).display.title.en).toBe("Report");
+  });
+
+  it("continua recusando idioma fora da lista fechada", () => {
+    const comFrances = {
+      ...manifest,
+      display: { ...manifest.display, title: { "pt-BR": "Laudo", fr: "Rapport" } },
+    };
+    expect(() => parseManifest(manifestBytes(comFrances))).toThrow();
+  });
+
+  it("pt-BR continua OBRIGATÓRIO: é o recuo", () => {
+    expect(() =>
+      parseManifest(manifestBytes({ ...manifest, display: { ...manifest.display, title: { en: "Report" } } })),
+    ).toThrow();
+  });
+
+  it("localize usa o idioma pedido e cai no pt-BR com fallback marcado", () => {
+    const texto = { "pt-BR": "Olá", es: "Hola", en: "Hello", hi: "नमस्ते" };
+    expect(localize(texto, "en-GB")).toEqual({ text: "Hello", fallback: false });
+    expect(localize(texto, "hi")).toEqual({ text: "नमस्ते", fallback: false });
+    expect(localize(texto, "pt-BR")).toEqual({ text: "Olá", fallback: false });
+    // Idioma que o pacote não trouxe: português, e a tela SABE que é recuo.
+    expect(localize({ "pt-BR": "Olá" }, "en")).toEqual({ text: "Olá", fallback: true });
+  });
+});
+
+describe("contributions.turn_flow (#3076)", () => {
+  const fluxo = {
+    id: "laudo",
+    idiomas: ["pt-BR", "en"],
+    gatilhos: [
+      { idioma: "pt-BR", texto: "meu laudo está pronto" },
+      { idioma: "en", texto: "is my report ready" },
+    ],
+    perguntas: [
+      { campo: "tipo-de-exame", texto: { "pt-BR": "Qual é o tipo de exame?", en: "What type of exam?" } },
+    ],
+    desfecho: {
+      tipo: "passar_para_humano",
+      aviso: { "pt-BR": "Vou passar seu caso para a equipe.", en: "I'll pass your case to the team." },
+    },
+  };
+
+  it("o pacote declara o fluxo do turno junto com os cards", () => {
+    const comFluxo = {
+      ...manifest,
+      contributions: { ...manifest.contributions, turn_flow: fluxo },
+    };
+    expect(parseManifest(manifestBytes(comFluxo)).contributions.turn_flow?.id).toBe("laudo");
+  });
+
+  it("fluxo com vocabulário fora da lista derruba o pacote inteiro", () => {
+    const comLixo = {
+      ...manifest,
+      contributions: {
+        ...manifest.contributions,
+        turn_flow: { ...fluxo, gatilhos: [{ idioma: "fr", texto: "mon rapport" }] },
+      },
+    };
+    expect(() => parseManifest(manifestBytes(comLixo))).toThrow();
+  });
+
+  it("pacote SEM turn_flow continua válido — zero extensões é estado de primeira classe", () => {
+    expect(parseManifest(manifestBytes(manifest)).contributions.turn_flow).toBeUndefined();
+  });
+});

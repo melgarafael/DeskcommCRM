@@ -72,6 +72,55 @@ Parâmetros técnicos iniciais, publicados antes dos ensaios e sujeitos à medi�
 
 Uma função compartilhada verifica compatibilidade na instalação, ativação, leitura de card/guia e resolução de ação. Recusa API fora da faixa, formato, perfil, capacidade ou dependência não suportados. Revalidar o manifesto persistido impede que um upgrade do CRM interprete cegamente um contrato anterior. Fallback de texto é pt-BR e fica indicado quando não há tradução para o idioma escolhido.
 
+## Gancho de turno: agir dentro da conversa (#3076)
+
+O ponto genérico existe no núcleo desde esta entrega: `executarTurnoDoAgente`
+passa por `prepararGanchoDoTurno` **depois** de todos os silenciadores (passagem
+humana ativa, conversa não elegível, agente pausado, pedido de humano, opt-out) e
+**antes** do roteiro de atendimento e da IA. Zero extensões ativas com fluxo = o
+turno de hoje, sem escrita nenhuma.
+
+O pacote **declara** o fluxo em `contributions.turn_flow`, num vocabulário
+fechado (`lib/extensions/fluxo-do-turno.ts`) — sem JavaScript, sem SQL e sem
+acesso ao banco, como todo o perfil declarativo. O host executa:
+
+```typescript
+type FluxoDoTurno = {
+  id: string;                 // slug
+  idiomas: IdiomaDoTurno[];   // pt-BR | es | en | hi — pt-BR é obrigatório (recuo)
+  gatilhos: Array<{ idioma: IdiomaDoTurno; texto: string }>;
+  perguntas: Array<{ campo: string; texto: TextoDoFluxo }>; // 1..6, campo único
+  desfecho: { tipo: "passar_para_humano"; aviso: TextoDoFluxo };
+  teto_de_turnos_sem_progresso?: number; // 1..5 (default 5)
+};
+```
+
+Três desfechos por mensagem, e nenhum deixa a conversa presa: *não é comigo* (o
+turno segue e a IA responde), *assumo* (o host manda a pergunta pela cadeia de
+envio do núcleo; a IA não roda) e *passo para humano* (a passagem leva os campos
+coletados). Mensagem fora do fluxo ("obrigado", "quanto custa?", "abrem sábado?")
+devolve a conversa à IA; mídia sem texto repete a pergunta e conta turno sem
+progresso; o teto escala em vez de repetir para sempre.
+
+**Idioma.** O texto localizado do manifesto passou a aceitar `en` e `hi` além de
+`pt-BR`/`es` (`localize()` com recuo em pt-BR). O gatilho carrega o idioma
+JUNTO — o idioma detectado da mensagem tem de ser o mesmo do gatilho, ele casa
+como frase (tokens contíguos) e a mensagem-gatilho é curta. Sem as três cercas,
+"report" casaria dentro de uma frase em português.
+
+**Estado e envio são do host.** O estado mora em
+`conversations.metadata.gancho_de_extensao` (JSONB, sem migration), com o claim
+das mensagens lidas: retry do mesmo turno é no-op. A bolha passa por
+`runBeforeSend` (throttle, janela, teto, opt-out, anti-ban) e o "digitando" é
+marcado antes dela; a passagem vai pelo caminho (c3) com a chave de
+idempotência da mensagem reivindicada. Se a cadeia vetar, o host devolve o turno
+para a IA e apaga o estado — cliente mudo nunca é desfecho.
+
+**Fora desta entrega, declarado:** a atividade de timeline de "assumir" e
+"devolver" (o "passar" já emite `handoff_triggered`); e uma permissão própria do
+fluxo de turno — hoje o consentimento é a ativação da extensão, e ampliar o
+conjunto fechado de permissões do banco é passo separado.
+
 ## Versões: atualizar, desfazer a última troca e remover
 
 O perfil é declarativo e a configuração segue um esquema do host, então não existe dado de domínio do pacote para migrar. "Atualizar" é trocar o ponteiro do artefato da instalação; "desfazer" é trocar de volta. Artefatos continuam imutáveis e nunca são apagados.
