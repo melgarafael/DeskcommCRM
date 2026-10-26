@@ -122,7 +122,7 @@ export function Atividade({ id, ativa }: { id: string; ativa: boolean }) {
       <div className="flex items-center justify-between"><h3 className="font-semibold">{t("Histórico da inscrição")}</h3><Button variant="ghost" onClick={() => { ++consultaHistorico.current; setHistorico(null); }}>{t("Fechar")}</Button></div>
       {erroEventos && <p role="alert">{t("Não foi possível carregar os eventos.")}</p>}
       {eventos.length === 0 && !eventosOcupado && !erroEventos && <p>{t("Nenhum evento nesta inscrição.")}</p>}
-      <ol className="space-y-2">{eventos.map((e) => <li key={e.id} className="flex flex-wrap gap-x-3 text-sm"><time dateTime={e.created_at}>{instante(e.created_at)}</time><span>{t(ROTULOS_EVENTO[e.tipo] ?? e.tipo)}</span>{e.passo_id && <span className="text-text-muted">{e.passo_id}</span>}</li>)}</ol>
+      <ol className="space-y-2">{eventos.map((e) => <li key={e.id} className="flex flex-wrap gap-x-3 text-sm"><time dateTime={e.created_at}>{instante(e.created_at)}</time><span>{t(ROTULOS_EVENTO[e.tipo] ?? e.tipo)}</span></li>)}</ol>
       {erroEventos && <Button variant="outline" disabled={eventosOcupado} onClick={() => void carregarEventos(historico, cursorEventos ?? undefined)}>{t("Tentar novamente")}</Button>}
       {cursorEventos && !erroEventos && <Button variant="outline" disabled={eventosOcupado} onClick={() => void carregarEventos(historico, cursorEventos)}>{t("Carregar mais eventos")}</Button>}
       {eventosOcupado && <p role="status">{t("Carregando histórico…")}</p>}

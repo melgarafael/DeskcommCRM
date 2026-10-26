@@ -30,7 +30,7 @@ describe("export de cadências preserva o contrato de quem não instalou", () =>
     expect(data).not.toHaveProperty("cadencias_inscricoes"); expect(data).not.toHaveProperty("cadencias_eventos");
     expect(estado.lidas.some((t) => t.startsWith("email_cadence"))).toBe(false);
   });
-  it("registro instalado exporta inscrições e eventos reais devolvidos pelo transporte", async () => {
+  it("registro instalado inclui inscrições e eventos devolvidos pelo transporte", async () => {
     estado.instalado = true;
     const data = await collectExportData(args);
     expect(data.cadencias_inscricoes).toEqual([expect.objectContaining({ id: "inscricao-a", motivo_parada: "descadastro" })]);
