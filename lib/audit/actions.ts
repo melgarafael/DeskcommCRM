@@ -1327,6 +1327,13 @@ export const AUDIT_ACTIONS = [
   // cala a cobrança da organização inteira, e "quem desligou, e quando" só tem
   // resposta na trilha — a coluna guarda só o valor de agora.
   "ai.lembrete_de_caso_configurado",
+  // Mensagem agendada na conversa (#3118): quem marcou, para quando e quantas
+  // partes; quem desmarcou e por quê. `api_audit_log` é append-only e a cascata
+  // de LGPD não o alcança — por isso o metadata NÃO leva o corpo das partes, só
+  // a contagem e o instante (o texto já é redigido em `scheduled_message_parts`).
+  "scheduled_message.created",
+  "scheduled_message.cancelled",
+  "scheduled_message.resent",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

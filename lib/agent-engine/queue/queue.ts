@@ -24,7 +24,10 @@ export type JobKind =
   | 'case_reply_turn'
   | 'operator_turn'
   | 'transactional_delivery'
-  | 'approved_reply';
+  | 'approved_reply'
+  // Mensagem agendada por uma pessoa na conversa (#3118): o cron kind=at
+  // enfileira este job na hora marcada e o worker manda o pacote.
+  | 'scheduled_message';
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'dead';
 
 export interface JobRow {

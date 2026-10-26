@@ -101,6 +101,9 @@ import { runHealthLoop } from "@/lib/agent-engine/health/circuit";
 import { runFlywheelLoop } from "@/lib/agent-engine/flywheel/live";
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { loadEnv, type Env } from "@/lib/agent-engine/env";
+import { createScheduledMessageHandler } from "@/lib/mensagem-agendada/disparo";
+import { criarEnviadorDeParte } from "@/lib/mensagem-agendada/enviar";
+import { criaPacoteDbPg } from "@/lib/mensagem-agendada/pg";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 import { createLogger, type Logger } from "@/lib/agent-engine/obs/logger";
 import {
@@ -674,6 +677,24 @@ export async function main(): Promise<void> {
   // worker que não conhecesse o kind faria os jobs morrerem em 'dead' sem que
   // ninguém entendesse por quê.
   handlers.set("operator_turn", createOperatorTurnHandler(turnDeps));
+  // #3118 — mensagem agendada na conversa. O cron kind=at enfileira este job na
+  // hora marcada; quem manda o pacote é este handler, pelo `sendMessageHandler`
+  // (a porta de saída de todo envio), com o `internal_message_id` de cada parte
+  // como chave anti-duplicata.
+  handlers.set(
+    "scheduled_message",
+    createScheduledMessageHandler(
+      {
+        log: {
+          info: (mensagem, meta) => log.info(meta ?? {}, mensagem),
+          warn: (mensagem, meta) => log.warn(meta ?? {}, mensagem),
+          error: (mensagem, meta) => log.error(meta ?? {}, mensagem),
+        },
+        enviarParte: criarEnviadorDeParte({}),
+      },
+      criaPacoteDbPg,
+    ),
+  );
   await startWorker(env, handlers, log);
 }
 

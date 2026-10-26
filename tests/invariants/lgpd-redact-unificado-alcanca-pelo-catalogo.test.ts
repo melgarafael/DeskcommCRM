@@ -277,6 +277,14 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "0174: captured_name/captured_email/captured_phone (o payload cru de captação) zerados por gatilho — a entrada na dívida do invariante irmão é o aviso de que este instrumento não lia gatilho.",
   },
+  scheduled_messages: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "0775 (#3118): o corpo das partes que nunca saíram é texto escrito pelo operador SOBRE a pessoa; " +
+      "fn_contato_encerra_mensagens_agendadas cancela o pacote vivo e apaga o `body` das partes `pending` na virada de is_anonymized. " +
+      "A linha do pacote fica (estado, hora, autor): é a prova de que existia envio marcado, sem o conteúdo.",
+  },
   ai_agent_runs: {
     decidida: "redigir",
     caminho: "gatilho",

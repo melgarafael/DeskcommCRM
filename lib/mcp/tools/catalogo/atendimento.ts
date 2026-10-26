@@ -182,4 +182,43 @@ export const TOOLS_ATENDIMENTO = declararTools([
     // `capacidades-do-agente.spec.ts` (comentário de `TOOLS_DO_SEED`).
     pacotes: ["escalar"],
   },
+  {
+    name: "crm_schedule_message",
+    category: "write",
+    rotulo: "Agendar uma mensagem para o cliente",
+    explicacao:
+      "Marca um texto para ser enviado sozinho numa hora futura — um lembrete, um aviso de manhã, " +
+      "uma cobrança para o dia combinado. O texto sai exatamente como foi escrito, e a pessoa pode " +
+      "desmarcar na conversa enquanto não chegou a hora.",
+    oQueToca: "Atendimento",
+    // `atencao` pela régua do próprio catálogo: "efeito que não dá para desfazer"
+    // é o `critico`, e este é o contrário — o pacote fica `scheduled` e o
+    // operador cancela na conversa até o minuto do disparo. O ENVIO em si passa
+    // pelos mesmos portões de sempre (opt-out, janela do canal, organização
+    // operante), e falha parcial avisa na Central.
+    risco: "atencao",
+    pacotes: ["reter"],
+  },
+  {
+    name: "crm_list_scheduled_messages",
+    category: "read",
+    rotulo: "Ver as mensagens agendadas do cliente",
+    explicacao:
+      "Mostra o que já está marcado para sair para este cliente: a hora, o começo do texto e se saiu, " +
+      "falhou, saiu pela metade ou foi desmarcado.",
+    oQueToca: "Atendimento",
+    risco: "seguro",
+    pacotes: ["reter"],
+  },
+  {
+    name: "crm_cancel_scheduled_message",
+    category: "write",
+    rotulo: "Desmarcar uma mensagem agendada",
+    explicacao:
+      "Cancela uma mensagem que ainda não saiu, para ela não chegar ao cliente. Só vale enquanto está " +
+      "marcada: depois que o envio começou, o que saiu não volta atrás.",
+    oQueToca: "Atendimento",
+    risco: "atencao",
+    pacotes: ["reter"],
+  },
 ]);
