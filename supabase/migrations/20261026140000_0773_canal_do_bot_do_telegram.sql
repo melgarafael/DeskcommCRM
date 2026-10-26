@@ -1,4 +1,4 @@
--- 0773 — o bot do Telegram entra no seam de canais (issue #3440, fatia T1).
+-- manifest: o bot do Telegram entra no seam de canais como provedor `telegram` — a sessao guarda o id do robo, a ingestao e idempotente por `tg:<robo>:<chat>:<msg>`, e a prova de origem e o `secret_token` devolvido no cabecalho (comparado em tempo constante), somado ao token do caminho. Issue #3440, fatia T1.
 --
 -- ─── O que entra ───────────────────────────────────────────────────────────
 --
