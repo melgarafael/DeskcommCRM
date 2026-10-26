@@ -476,6 +476,13 @@ export async function marcarEtiquetasDaCampanha(
     const adicionadas = Array.isArray(retorno.adicionadas) ? retorno.adicionadas.map(String) : [];
     if (!adicionadas.length) return;
     const tags = Array.isArray(retorno.tags) ? retorno.tags.map(String) : [];
+    // `service_origin: null` DE PROPÓSITO. A ação add_tag preenche esta chave com
+    // `originFromAutomationEvent(ctx, contactId)` (lib/atendimento/origem-automacao.ts), que
+    // só devolve `{ kind: "event", event_id: ctx.event.id, … }` a partir do evento raiz da
+    // execução de uma automação (`ctx.event`). A campanha não roda dentro de automação e não
+    // tem evento raiz: não há `event_id` a registrar, e inventar um quebraria o contrato do
+    // evento. O `observeServiceOrigin` (lib/atendimento/origem.ts) é outra origem (comando
+    // observado), que a add_tag não usa; trazê-la aqui mudaria o contrato do evento.
     const { error: erroDoEvento } = await admin.rpc("emit_event", {
       p_event_type: "contact.tag_added",
       p_entity_kind: "contact",

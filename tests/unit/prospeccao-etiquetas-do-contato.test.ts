@@ -213,8 +213,11 @@ describe("criarPegadaDoCandidato põe as etiquetas no contato antes do envio", (
       p_entity_kind: "contact",
       p_entity_id: CONTATO_NOVO,
       p_organization_id: ORG,
-      p_payload: { added_tags: ["estetica"], tags: ["estetica"] },
+      p_payload: { added_tags: ["estetica"], tags: ["estetica"], service_origin: null },
     });
+    // `null` é o valor certo para a campanha (sem evento raiz de automação): a chave existe e vale
+    // null, não é ausente nem um objeto inventado. Ver o comentário em marcarEtiquetasDaCampanha.
+    expect(evento?.args.p_payload).toHaveProperty("service_origin", null);
   });
 
   it("etiqueta que o contato JÁ tinha: a junção responde adicionadas vazio e não há evento", async () => {
