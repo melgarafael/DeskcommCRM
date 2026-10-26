@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import { ligarOrganizacao, salvarContratacao, salvarEquipeDoCliente } from "@/app/actions/agencia/clientes";
 import { ReunioesDoCliente } from "@/components/agencia/calendario/ReunioesDoCliente";
 import { AcessosDoCliente, type FormularioDaFicha } from "@/components/agencia/cofre/AcessosDoCliente";
+import { ContratosDoCliente, type ContratoDaFicha } from "@/components/agencia/contratos/ContratosDoCliente";
 import { TrilhaDoCliente, type ModeloParaIniciar } from "@/components/agencia/trilhas/TrilhaDoCliente";
 import { EnvioParaODrive } from "@/components/agencia/EnvioParaODrive";
 import { QuadroDeTarefas } from "@/components/agencia/tarefas/QuadroDeTarefas";
@@ -30,7 +31,7 @@ import { cn } from "@/lib/utils";
 
 import { FormularioDoCliente, type DadosDoCliente } from "./FormularioDoCliente";
 
-const ABAS_DA_FICHA = ["dados", "contratacoes", "equipe", "trilha", "tarefas", "reunioes", "acessos", "arquivos"] as const;
+const ABAS_DA_FICHA = ["dados", "contratacoes", "contratos", "equipe", "trilha", "tarefas", "reunioes", "acessos", "arquivos"] as const;
 type Aba = (typeof ABAS_DA_FICHA)[number];
 
 export interface ContratacaoDaFicha {
@@ -79,6 +80,13 @@ export function FichaDoCliente(p: {
   formulario: FormularioDaFicha | null;
   cofre: ItemDoCofre[];
   podeVerSenhas: boolean;
+  /** `null` = a pessoa não tem `contratos.gerenciar` (a aba não aparece). */
+  contratos: {
+    lista: ContratoDaFicha[];
+    modelos: Array<{ id: string; nome: string }>;
+    hoje: string;
+    integracoes: { zapsign: boolean; infinitepay: boolean };
+  } | null;
 }) {
   const router = useRouter();
   // `?aba=trilha` (o link dos avisos da trilha) abre direto na aba.
@@ -98,6 +106,7 @@ export function FichaDoCliente(p: {
   const ABAS: Array<[Aba, string]> = [
     ["dados", "Dados"],
     ["contratacoes", "Contratações"],
+    ...(p.contratos ? ([["contratos", `Contratos (${p.contratos.lista.length})`]] as Array<[Aba, string]>) : []),
     ["equipe", "Equipe"],
     ["trilha", p.trilha && p.trilha.situacao === "ativa" ? `Trilha (${p.trilha.progresso.pct}%)` : "Trilha"],
     ["tarefas", `Tarefas (${p.tarefas.filter((t) => t.coluna !== "concluido").length})`],
@@ -293,6 +302,22 @@ export function FichaDoCliente(p: {
           meuMembroId={p.meuMembroId}
           podeGerenciar={p.podeGerenciarCalendario}
           agendaLiberada={p.agendaLiberada}
+        />
+      )}
+
+      {aba === "contratos" && p.contratos && (
+        <ContratosDoCliente
+          clienteId={p.id}
+          contratos={p.contratos.lista}
+          modelos={p.contratos.modelos}
+          contratacoes={p.contratacoes
+            .filter((c) => c.id && c.situacao !== "encerrada")
+            .map((c) => ({
+              id: c.id!,
+              rotulo: `${c.tipo === "recorrente" ? "Recorrente" : "Avulsa"}${c.servicos.length ? ` — ${c.servicos.map((s) => ROTULO_DO_SERVICO[s as keyof typeof ROTULO_DO_SERVICO] ?? s).join(", ")}` : ""}`,
+            }))}
+          hoje={p.contratos.hoje}
+          integracoes={p.contratos.integracoes}
         />
       )}
 

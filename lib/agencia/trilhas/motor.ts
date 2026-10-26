@@ -321,7 +321,7 @@ export async function lerPasso(passoId: string): Promise<(LinhaDoPasso & { clien
  * Conclui à mão (o marco, ou uma reunião que aconteceu fora do calendário).
  * `dia` (AAAA-MM-DD) é quando aconteceu; o "assinado e pago" liga a regra do dia 15.
  */
-export async function concluirPasso(passoId: string, dia: string | null, userId: string): Promise<{ ok: true } | { ok: false; erro: string }> {
+export async function concluirPasso(passoId: string, dia: string | null, userId: string | null): Promise<{ ok: true } | { ok: false; erro: string }> {
   const p = await lerPasso(passoId);
   if (!p || p.trilha_situacao !== "ativa") return { ok: false, erro: "Passo não encontrado." };
   if (p.situacao === "bloqueado") return { ok: false, erro: "Esse passo ainda está bloqueado." };

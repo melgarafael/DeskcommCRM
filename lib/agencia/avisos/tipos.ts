@@ -15,6 +15,7 @@ export const TIPOS_DE_AVISO = [
   "reuniao_lembrete",
   "etapa_liberada",
   "formulario_enviado",
+  "contrato_concluido",
   "aprovacao_respondida",
 ] as const;
 
@@ -33,5 +34,6 @@ export const PLURAL_DO_TIPO: Record<TipoDeAviso, string> = {
   reuniao_lembrete: "reuniões chegando",
   etapa_liberada: "etapas liberadas",
   formulario_enviado: "formulários preenchidos",
+  contrato_concluido: "contratos assinados e pagos",
   aprovacao_respondida: "aprovações respondidas",
 };

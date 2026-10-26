@@ -941,6 +941,24 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint `userinfo` do OpenID do Google: a conexão Google da área da agência (fork, `lib/agencia/acervo/drive.ts`) lê o e-mail da conta conectada para mostrar em Configurações. Contrato do Google.",
   },
+  "api.zapsign.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "API da ZapSign (assinatura digital) que a área da agência (fork, `lib/agencia/contratos/integracoes.ts`) chama com o token da própria agência: criar o documento, conferir se foi assinado e cadastrar o webhook. Contrato do fornecedor.",
+  },
+  "sandbox.api.zapsign.com.br": {
+    categoria: "FORNECEDOR",
+    motivo: "o ambiente de testes da mesma API da ZapSign, escolhido em Configurações da agência (fork).",
+  },
+  "app.zapsign.com.br": {
+    categoria: "FORNECEDOR",
+    motivo: "o link de assinatura que a ZapSign devolve (`/verificar/<token>`), montado quando a resposta não traz `sign_url` (fork).",
+  },
+  "api.checkout.infinitepay.io": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "API de checkout da InfinitePay: criar o link de pagamento e conferir o pagamento (`payment_check`) antes de aceitar o webhook (fork, `lib/agencia/contratos/integracoes.ts`).",
+  },
   "drive.google.com": {
     categoria: "FORNECEDOR",
     motivo:

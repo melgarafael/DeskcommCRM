@@ -6,6 +6,7 @@
 > - **Fase 3** (calendário e reuniões): spec aprovada em 24/10/2026 — [SPEC-calendario](SPEC-calendario.md); construída e publicada no teste — [plano-fase-3](plano-fase-3.md).
 > - **Fase 4** (trilha do cliente): decidida e construída em 26/10/2026, publicada no teste — [SPEC-trilhas](SPEC-trilhas.md), [plano-fase-4](plano-fase-4.md). A partir daqui as fases seguem sem parar para aprovação (pedido do dono em 26/10/2026).
 > - **Fase 5** (formulário e cofre de acessos): construída e publicada no teste em 26/10/2026 — [SPEC-cofre-e-formulario](SPEC-cofre-e-formulario.md), [plano-fase-5](plano-fase-5.md). O `formulario.emmovimento.tech` pode ser aposentado quando o dono quiser.
+> - **Fase 6** (contratos): construída, publicada e provada no teste em 26/10/2026 — [SPEC-contratos](SPEC-contratos.md), [plano-fase-6](plano-fase-6.md). Para retomar o trabalho: [CONTINUIDADE.md](CONTINUIDADE.md).
 > Este arquivo é o índice da iniciativa: cada módulo abaixo ganha a sua própria
 > especificação (`docs/agencia/SPEC-<id>.md`) só depois que este mapa for aprovado.
 

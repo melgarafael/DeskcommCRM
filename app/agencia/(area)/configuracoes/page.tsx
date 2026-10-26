@@ -1,5 +1,7 @@
 import { ConfiguracoesCliente, type CanalDaLista, type EnvioDaLista } from "@/components/agencia/ConfiguracoesCliente";
 import { LembretesDeReuniao } from "@/components/agencia/calendario/LembretesDeReuniao";
+import { IntegracoesDosContratos } from "@/components/agencia/contratos/IntegracoesDosContratos";
+import { configDosContratos } from "@/lib/agencia/contratos/integracoes";
 import { SecaoDoDrive } from "@/components/agencia/SecaoDoDrive";
 import { estadoDoDrive, retornoDoDrive } from "@/lib/agencia/acervo/drive";
 import { requirePermissaoNaPagina } from "@/lib/agencia/acesso";
@@ -14,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function PaginaDeConfiguracoes({ searchParams }: { searchParams: Promise<{ drive?: string }> }) {
   await requirePermissaoNaPagina("configuracoes.gerenciar");
   const db = createAdminClient();
-  const [{ drive: resultadoDoDrive }, estadoDrive] = await Promise.all([searchParams, estadoDoDrive()]);
+  const [{ drive: resultadoDoDrive }, estadoDrive, contratos] = await Promise.all([searchParams, estadoDoDrive(), configDosContratos()]);
 
   const [config, canais, envios, membros, donos] = await Promise.all([
     db
@@ -113,6 +115,9 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
         envios={ultimos}
       />
       <LembretesDeReuniao inicial={c?.reunioes_lembretes ?? [1440, 60]} />
+      <IntegracoesDosContratos
+        inicial={{ zapsign: !!contratos.zapsignToken, sandbox: contratos.zapsignSandbox, handle: contratos.infinitepayHandle ?? "" }}
+      />
       <SecaoDoDrive estado={estadoDrive} enderecoDeRetorno={retornoDoDrive()} resultado={resultadoDoDrive ?? null} />
     </div>
   );

@@ -1214,6 +1214,17 @@ export const AUDIT_ACTIONS = [
   "agencia.cofre_item_salvo",
   "agencia.cofre_item_excluido",
   "agencia.cofre_relatorio_gerado",
+  "agencia.contrato_gerado",
+  "agencia.contrato_alterado",
+  "agencia.contrato_enviado_zapsign",
+  "agencia.contrato_link_de_pagamento",
+  "agencia.contrato_assinado",
+  "agencia.contrato_pago",
+  "agencia.contrato_concluido",
+  "agencia.contrato_recusado",
+  "agencia.contrato_cancelado",
+  "agencia.contrato_modelo_salvo",
+  "agencia.contratos_integracoes_configuradas",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

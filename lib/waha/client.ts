@@ -567,6 +567,31 @@ export class WahaClient {
   }
 
   /**
+   * Cria um grupo com os participantes (`<telefone>@c.us`) e devolve o id
+   * (`…@g.us`). Usado pela área da agência ao assinar e pagar o contrato
+   * (docs/agencia/SPEC-contratos.md, K5). `POST /api/{session}/groups` com
+   * `{ name, participants: [{ id }] }`; a resposta traz o grupo, cujo id pode vir
+   * como string ou como `{ _serialized }` conforme o engine.
+   */
+  async criarGrupo(session: string, nome: string, participantes: readonly string[]): Promise<{ chatId: string }> {
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/${encodeURIComponent(session)}/groups`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nome, participants: participantes.map((id) => ({ id })) }),
+    });
+    if (!res.ok) throw new Error(`waha_create_group_${res.status}`);
+    const o = ((await res.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+    const id = o.id ?? o.gid ?? o.JID;
+    const chatId =
+      typeof id === "string" ? id
+      : id && typeof id === "object" && typeof (id as Record<string, unknown>)._serialized === "string"
+        ? ((id as Record<string, unknown>)._serialized as string)
+        : null;
+    if (!chatId || !chatId.endsWith("@g.us")) throw new Error("waha_create_group_sem_id");
+    return { chatId };
+  }
+
+  /**
    * Liga ou desliga o recebimento de grupos NESTA sessão. Só devolve `true` quando o GET
    * seguinte confirma a troca: o WAHA já respondeu 200 para operação que não aconteceu
    * (medido na issue melgarafael/DeskcommCRM#1428).

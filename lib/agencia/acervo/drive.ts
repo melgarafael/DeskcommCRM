@@ -317,3 +317,26 @@ export async function enviarTexto(p: { nome: string; conteudo: string; pastaId: 
     return { ok: false, erro: "O Google Drive não respondeu agora." };
   }
 }
+
+/** Grava um arquivo pequeno (o PDF do contrato) numa pasta, em uma chamada só. */
+export async function enviarArquivoPequeno(p: { nome: string; mime: string; conteudo: Buffer; pastaId: string }): Promise<Resultado<{ id: string; webViewLink?: string }>> {
+  const token = await accessToken();
+  if (!token.ok) return token;
+  const fronteira = `agencia${Date.now()}`;
+  const corpo = Buffer.concat([
+    Buffer.from(`--${fronteira}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: p.nome, parents: [p.pastaId] })}\r\n--${fronteira}\r\nContent-Type: ${p.mime}\r\n\r\n`),
+    p.conteudo,
+    Buffer.from(`\r\n--${fronteira}--`),
+  ]);
+  try {
+    const r = await fetch(`${UPLOAD}/files?uploadType=multipart&fields=id,webViewLink`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token.valor}`, "Content-Type": `multipart/related; boundary=${fronteira}` },
+      body: new Uint8Array(corpo),
+    });
+    if (!r.ok) return { ok: false, erro: `O Google Drive recusou o arquivo (${r.status}).` };
+    return { ok: true, valor: (await r.json()) as { id: string; webViewLink?: string } };
+  } catch {
+    return { ok: false, erro: "O Google Drive não respondeu agora." };
+  }
+}

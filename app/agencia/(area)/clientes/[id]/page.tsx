@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, type ComponentProps } from "react";
 
 import { FichaDoCliente } from "@/components/agencia/clientes/FichaDoCliente";
 import { requireAreaDaAgencia } from "@/lib/agencia/acesso";
@@ -9,6 +9,9 @@ import { apoioDaAgenda } from "@/lib/agencia/calendario/apoio";
 import { carregarQuemOlhaAgenda, listarReunioes } from "@/lib/agencia/calendario/consultas";
 import { trilhaDoCliente } from "@/lib/agencia/trilhas/consultas";
 import { listarCofre } from "@/lib/agencia/cofre/cofre";
+import { configDosContratos } from "@/lib/agencia/contratos/integracoes";
+import { situacaoVisivel } from "@/lib/agencia/contratos/regras";
+import { diaLocal } from "@/lib/agencia/tarefas/regras";
 import { situacaoDoLink } from "@/lib/agencia/formulario/link";
 import { respostasSchema } from "@/lib/agencia/formulario/perguntas";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
@@ -74,6 +77,58 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
     respostas: unknown;
   } | null;
   const respostas = f?.respostas ? respostasSchema.safeParse(f.respostas) : null;
+
+  // Contratos (docs/agencia/SPEC-contratos.md): só para quem tem `contratos.gerenciar`.
+  let contratos: ComponentProps<typeof FichaDoCliente>["contratos"] = null;
+  if (ctx.permissoes.has("contratos.gerenciar")) {
+    const hoje = diaLocal(new Date());
+    const [lista, modelosDeContrato, integracoes] = await Promise.all([
+      db
+        .from("agencia_contratos")
+        .select("id, titulo, modelo_nome, texto, situacao, valor_mensal_cents, valido_ate, assinado_em, pago_em, concluido_em, zapsign_link, zapsign_situacao, pagamento_link, grupo_chat_id")
+        .eq("cliente_id", id)
+        .order("criado_em", { ascending: false }),
+      db.from("agencia_contrato_modelos").select("id, nome").eq("ativo", true).order("nome"),
+      configDosContratos(),
+    ]);
+    contratos = {
+      hoje,
+      modelos: (modelosDeContrato.data ?? []) as Array<{ id: string; nome: string }>,
+      integracoes: { zapsign: !!integracoes.zapsignToken, infinitepay: !!integracoes.infinitepayHandle },
+      lista: ((lista.data ?? []) as Array<{
+        id: string;
+        titulo: string;
+        modelo_nome: string;
+        texto: string;
+        situacao: string;
+        valor_mensal_cents: number;
+        valido_ate: string;
+        assinado_em: string | null;
+        pago_em: string | null;
+        concluido_em: string | null;
+        zapsign_link: string | null;
+        zapsign_situacao: string | null;
+        pagamento_link: string | null;
+        grupo_chat_id: string | null;
+      }>).map((k) => ({
+        id: k.id,
+        titulo: k.titulo,
+        modeloNome: k.modelo_nome,
+        texto: k.texto,
+        situacao: situacaoVisivel(k, hoje),
+        valorMensalCents: Number(k.valor_mensal_cents),
+        validoAte: k.valido_ate,
+        assinadoEm: k.assinado_em,
+        pagoEm: k.pago_em,
+        concluidoEm: k.concluido_em,
+        zapsignLink: k.zapsign_link,
+        zapsignSituacao: k.zapsign_situacao,
+        pagamentoLink: k.pagamento_link,
+        grupoCriado: !!k.grupo_chat_id,
+        podeEditarTexto: k.situacao === "rascunho",
+      })),
+    };
+  }
 
   const subpastas = (c.drive_subpastas as Record<string, string> | null) ?? {};
   const s = (k: string) => (typeof c[k] === "string" ? (c[k] as string) : "");
@@ -156,6 +211,7 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
           }
           cofre={cofre}
           podeVerSenhas={ctx.permissoes.has("cofre.ver_senhas")}
+          contratos={contratos}
           modelosDeTrilha={((modelos.data ?? []) as Array<{
             id: string;
             nome: string;

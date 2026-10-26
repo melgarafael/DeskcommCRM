@@ -7,12 +7,8 @@ import { exigirPermissao, type ContextoDaAgencia } from "@/lib/agencia/acesso";
 import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agencia/auditoria";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { cifrarSenha, decifrarSenha, PLATAFORMAS_DO_COFRE, registrarVisualizacao } from "@/lib/agencia/cofre/cofre";
-import { normalizarWhatsapp } from "@/lib/agencia/convite";
-import { linkDoFormulario, novoToken, VALIDADE_DO_FORMULARIO_MS } from "@/lib/agencia/formulario/link";
+import { gerarFormulario, type ResultadoDoWhatsapp } from "@/lib/agencia/formulario/gerar";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
-import { enfileirarWhatsappDaAgencia } from "@/lib/agencia/whatsapp/enfileirar";
-import { marcaDaSaida } from "@/lib/branding/saida";
-import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -43,53 +39,18 @@ function revalidar(clienteId: string) {
 export async function gerarLinkDoFormulario(
   clienteId: string,
   enviarNoWhatsapp: boolean,
-): Promise<ResultadoDaAcao<{ link: string; whatsapp: "enviado" | "sem_numero" | "sem_whatsapp" | "nao_pedido" }>> {
+): Promise<ResultadoDaAcao<{ link: string; whatsapp: ResultadoDoWhatsapp }>> {
   return seguro(async () => {
     const ctx = await exigirPermissao("clientes.gerenciar");
     if (!idSchema.safeParse(clienteId).success || !(await alcanca(ctx, clienteId))) return { ok: false as const, erro: "Cliente não encontrado." };
-    const db = createAdminClient();
-    const { data: cliente } = await db.from("agencia_clientes").select("nome, responsavel_nome, whatsapp").eq("id", clienteId).maybeSingle();
-    const c = cliente as { nome: string; responsavel_nome: string | null; whatsapp: string | null } | null;
-    if (!c) return { ok: false as const, erro: "Cliente não encontrado." };
-
-    // Um link aberto por cliente: o novo substitui o anterior (F2).
-    await db.from("agencia_formularios").update({ situacao: "cancelado" }).eq("cliente_id", clienteId).eq("situacao", "aberto");
-    const { token, hash } = novoToken();
-    const { data, error } = await db
-      .from("agencia_formularios")
-      .insert({ cliente_id: clienteId, token_hash: hash, expira_em: new Date(Date.now() + VALIDADE_DO_FORMULARIO_MS).toISOString(), criado_por: ctx.user.id })
-      .select("id")
-      .single();
-    if (error || !data) return { ok: false as const, erro: "Não deu para gerar o link." };
-    const link = linkDoFormulario(env.NEXT_PUBLIC_APP_URL, token);
-
-    let whatsapp: "enviado" | "sem_numero" | "sem_whatsapp" | "nao_pedido" = "nao_pedido";
-    if (enviarNoWhatsapp) {
-      const telefone = c.whatsapp ? normalizarWhatsapp(c.whatsapp) : null;
-      if (!telefone) whatsapp = "sem_numero";
-      else {
-        const agencia = (await marcaDaSaida(null)).nome;
-        const nome = (c.responsavel_nome ?? "").trim().split(/\s+/)[0];
-        const fila = await enfileirarWhatsappDaAgencia({
-          motivo: "formulario",
-          referenciaId: (data as { id: string }).id,
-          telefone,
-          corpo: [
-            `Olá${nome ? `, ${nome}` : ""}! Para começarmos, preencha o formulário de acesso da ${c.nome}:`,
-            link,
-            "O link vale 72 horas. Use só contas e senhas corporativas da empresa.",
-            agencia,
-          ].join("\n\n"),
-        });
-        whatsapp = fila.enfileirado ? "enviado" : "sem_whatsapp";
-      }
-    }
-    await auditarAgencia("agencia.formulario_gerado", ctx.user.id, { tipo: "agencia_formulario", id: (data as { id: string }).id }, {
+    const r = await gerarFormulario({ clienteId, userId: ctx.user.id, enviarNoWhatsapp });
+    if (!r.ok) return r;
+    await auditarAgencia("agencia.formulario_gerado", ctx.user.id, { tipo: "agencia_formulario", id: r.formularioId }, {
       cliente_id: clienteId,
-      whatsapp,
+      whatsapp: r.whatsapp,
     });
     revalidar(clienteId);
-    return { ok: true as const, dados: { link, whatsapp } };
+    return { ok: true as const, dados: { link: r.link, whatsapp: r.whatsapp } };
   });
 }
 
