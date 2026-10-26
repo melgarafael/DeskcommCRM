@@ -14330,6 +14330,8 @@ export const DICIONARIO: Traducoes = {
   // FIXAS do aviso; o que o modelo escreveu (título, resumo, bloqueio) nunca é
   // traduzido, porque traduzir o relato de um cliente é reescrevê-lo.
   "novo caso esperando você": { es: "nuevo caso esperando por ti" },
+  "atualização do caso esperando você": { es: "actualización del caso esperando por ti" },
+  "Nova informação do cliente": { es: "Nueva información del cliente" },
   Assunto: { es: "Asunto" },
   Abrir: { es: "Abrir" },
   "A IA prometeu algo e travou": { es: "La IA prometió algo y se trabó" },

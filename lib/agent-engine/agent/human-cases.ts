@@ -116,6 +116,7 @@ export async function hasOpenCaseForContact(
 
 export interface CaseAwaitingLead {
   id: string;
+  eventId: string;
   /** O que o HUMANO pediu ao lead (body do evento need_lead_info mais recente) —
    * NÃO `agent_cases.blocker` (motivo original da IA travar; `markAwaitingLead`
    * nunca o atualiza — usá-lo aqui daria ao modelo a pergunta ERRADA). */
@@ -136,15 +137,21 @@ export async function getCaseAwaitingLead(
   conversationId: string,
 ): Promise<CaseAwaitingLead | null> {
   const { rows } = await db.query<CaseAwaitingLead>(
-    `select c.id, e.body as ask
+    `select c.id, e.id as "eventId", e.body as ask
        from agent_cases c
        join lateral (
-         select body from agent_case_events
-          where case_id = c.id and kind = 'human_replied' and human_action = 'need_lead_info'
-          order by created_at desc
+         select id, body from agent_case_events
+          where organization_id = c.organization_id and case_id = c.id and kind = 'human_replied' and human_action = 'need_lead_info'
+          order by created_at desc, id desc
           limit 1
        ) e on true
       where c.organization_id = $1 and c.conversation_id = $2 and c.status = 'awaiting_lead'
+        and (c.context_snapshot->'service_boundary' is null or exists (
+          select 1 from conversations scope left join demandas d on d.organization_id=scope.organization_id
+            and d.contact_id=scope.contact_id and d.id=scope.current_demanda_id
+          where scope.organization_id=$1 and scope.id=$2 and public.fn_meet_boundary_current(
+            (c.context_snapshot->'service_boundary') || case when c.context_snapshot->'service_boundary'->>'demanda_id' is null
+              then jsonb_build_object('demanda_id',scope.current_demanda_id,'demanda_revision',d.revision) else '{}'::jsonb end)))
       limit 1`,
     [tenantId, conversationId],
   );
@@ -309,21 +316,54 @@ export type ProvideCaseUpdateResult = { ok: true } | { ok: false; error: { code:
 export async function provideCaseUpdate(
   db: pg.Pool,
   ids: CaseIds,
-  input: { caseId: string; info: string },
+  input: { caseId: string; info: string; requestEventId?: string; clientMessageId?: string; sourceJobId?: string },
 ): Promise<ProvideCaseUpdateResult> {
+  await guardServiceEffect();
+  // A transição, o fato persistido e a outbox são um único efeito atômico.
+  // O id do pedido vem da fotografia do turno, nunca da saída do modelo.
   const { rows } = await db.query<{ case_id: string }>(
-    `with updated as (
-       update agent_cases
+    `with request as (
+       select id from agent_case_events
+        where organization_id = $1 and case_id = $2
+          and kind = 'human_replied' and human_action = 'need_lead_info'
+        order by created_at desc, id desc limit 1
+     ), updated as (
+       update agent_cases ac
           set status = 'awaiting_human', updated_at = now()
         where organization_id = $1 and id = $2 and status = 'awaiting_lead'
           and conversation_id = $4
+          and exists (select 1 from request where $5::uuid is null or id = $5)
+          and (ac.context_snapshot->'service_boundary' is null or exists (
+            select 1 from conversations scope left join demandas d on d.organization_id=scope.organization_id
+              and d.contact_id=scope.contact_id and d.id=scope.current_demanda_id
+            where scope.organization_id=$1 and scope.id=$4 and public.fn_meet_boundary_current(
+              (ac.context_snapshot->'service_boundary') || case when ac.context_snapshot->'service_boundary'->>'demanda_id' is null
+                then jsonb_build_object('demanda_id',scope.current_demanda_id,'demanda_revision',d.revision) else '{}'::jsonb end)))
+          and ($6::uuid is null or exists (
+            select 1 from messages m join conversations c on c.organization_id=m.organization_id and c.id=m.conversation_id
+            where m.organization_id=$1 and m.conversation_id=$4 and m.id=$6 and m.direction='inbound'
+              and m.contact_id=c.contact_id and m.service_revision=c.service_revision
+              and ($7::uuid is null or exists(select 1 from job_queue j where j.organization_id=$1
+                and j.contact_id=c.contact_id and j.id=$7 and j.kind='inbound_turn'
+                and j.payload->>'inbound_message_id'=m.id::text))))
         returning id
-     )
-     insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
-     select $1, id, 'lead_provided', 'lead', $3
-       from updated
-     returning case_id`,
-    [ids.tenantId, input.caseId, input.info, ids.conversationId],
+     ), provided as (
+       insert into agent_case_events (organization_id, case_id, kind, actor_kind, body, metadata)
+       select $1, id, 'lead_provided', 'lead', $3,
+              jsonb_build_object('request_event_id', (select id from request), 'client_message_id', $6::uuid, 'source_job_id', $7::uuid)
+         from updated returning id, case_id
+     ), queued as (
+       insert into event_log (organization_id, event_type, entity_kind, entity_id, payload)
+       select $1, 'ai.case_updated', 'agent_case', p.case_id,
+              jsonb_build_object('case_id', p.case_id, 'case_event_id', p.id,
+                'conversation_id', c.id, 'contact_id', c.contact_id,
+                'config_revision', cfg.updated_at::text)
+         from provided p
+         join conversations c on c.organization_id = $1 and c.id = $4
+         left join config_aviso_de_caso cfg on cfg.organization_id = $1
+       returning entity_id as case_id
+     ) select case_id from queued`,
+    [ids.tenantId, input.caseId, input.info, ids.conversationId, input.requestEventId ?? null, input.clientMessageId ?? null, input.sourceJobId ?? null],
   );
 
   if (rows.length === 0) {

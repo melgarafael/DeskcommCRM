@@ -418,6 +418,7 @@ async function lerLaco(admin: SupabaseClient, orgId: string, agora: Date): Promi
       .select("case_id, enviado_em")
       .eq("organization_id", orgId)
       .eq("status", "enviado")
+      .is("update_event_id", null)
       .in("case_id", ids),
     admin
       .from("agent_case_events")

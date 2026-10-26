@@ -23,6 +23,7 @@ export type ComandoDeRespostaDoSuporte = {
   caseId: string;
   action: "resolved" | "need_lead_info";
   body: string;
+  updateEventId?: string;
 };
 
 /** O formato é explícito para que uma mensagem não resolva o caso errado. */
@@ -34,12 +35,16 @@ export function parseComandoDeRespostaDoSuporte(
   if (!m) return null;
   const caseId = CasoId.safeParse(m[2]);
   const action = m[1]?.toUpperCase();
-  const body = m[3]?.trim() ?? "";
+  const restante = m[3]?.trim() ?? "";
+  const ciclo = /^ATUALIZACAO\s+([0-9a-f-]{36})\s+([\s\S]+)$/i.exec(restante);
+  if (/^ATUALIZACAO(?:\s|$)/i.test(restante) && (!ciclo || !CasoId.safeParse(ciclo[1]).success)) return null;
+  const body = ciclo ? ciclo[2]!.trim() : restante;
   if (!caseId.success || !action || body.length === 0 || body.length > 4000) return null;
   return {
     caseId: caseId.data,
     action: action === "PERGUNTAR" ? "need_lead_info" : "resolved",
     body,
+    ...(ciclo ? { updateEventId: ciclo[1] } : {}),
   };
 }
 
@@ -135,6 +140,7 @@ export async function consumirComResultado(
       p_action: comando.action,
       p_body: comando.body,
       p_message_key: `${entrada.channelSessionId}:${entrada.externalId}`,
+      p_update_event: comando.updateEventId ?? null,
     } as never);
     data = resposta.data;
     error = resposta.error;

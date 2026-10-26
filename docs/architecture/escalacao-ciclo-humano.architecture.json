@@ -649,6 +649,14 @@
       "type": "worker",
       "label": "cron case-stale-watcher (1o braco)",
       "sublabel": "fn_casos_parados_para_lembrar: o aviso N vence em espera_desde + N x intervalo; o relogio e o teto valem por espera (trg_caso_marca_inicio_da_espera)"
+    },
+    {
+      "id": "retornoCasoOutbox",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "event_log ai.case_updated",
+      "sublabel": "lead_provided + transição + outbox atômicos; identidade por atualização"
     }
   ],
   "edges": [
@@ -1502,6 +1510,30 @@
       "from": "casoCobranca",
       "to": "central",
       "label": "abre o aviso case_stale — um aberto por caso; o último diz que é o último"
+    },
+    {
+      "id": "retornoCaso1",
+      "from": "maquina",
+      "to": "retornoCasoOutbox",
+      "label": "provide_case_update vinculado à pergunta do turno"
+    },
+    {
+      "id": "retornoCaso2",
+      "from": "retornoCasoOutbox",
+      "to": "avisoSuporteMotor",
+      "label": "revalida ciclo, configuração e fronteira; claim com CAS"
+    },
+    {
+      "id": "retornoCaso3",
+      "from": "avisoSuporteMotor",
+      "to": "avisoSuporteRegistro",
+      "label": "recibo por atualização, preservando a abertura"
+    },
+    {
+      "id": "retornoCaso4",
+      "from": "avisoSuporteTexto",
+      "to": "reply",
+      "label": "comando ATUALIZACAO exige ciclo enviado; evento e job humanos canônicos"
     }
   ],
   "cards": [

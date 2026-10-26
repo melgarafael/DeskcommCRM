@@ -4778,6 +4778,8 @@ async function executarTurnoDoAgente(
       .map((m) => ({ direction: m.direction, body: m.body })),
   });
 
+  let caseAwaitingLead: Awaited<ReturnType<typeof getCaseAwaitingLead>> = null;
+
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
   // entram quando a tela habilita (cases_enabled) — mesmo padrão do handoff acima.
   // Ids do closure (row do job), nunca do payload; payload inválido é erro de ENSINO
@@ -4840,15 +4842,18 @@ async function executarTurnoDoAgente(
           };
         }
         try {
+          if (liveJob().kind !== "inbound_turn" || !input.inboundMessageId || !caseAwaitingLead || caseAwaitingLead.id !== parsed.data.case_id) {
+            return { ok: false, error: { code: 'invalid_case_state', message: 'este turno não recebeu uma pergunta pendente deste caso.' } };
+          }
           const res = await provideCaseUpdate(
             pool,
             { tenantId, conversationId: input.conversationId },
-            { caseId: parsed.data.case_id, info: parsed.data.info },
+            { caseId: parsed.data.case_id, info: parsed.data.info, requestEventId: caseAwaitingLead.eventId, clientMessageId: input.inboundMessageId, sourceJobId: liveJob().id },
           );
           if (!res.ok) return res;
           return {
             ok: true,
-            message: 'informação enviada ao responsável; aguarde o retorno pelo caso.',
+            message: 'informação registrada no caso para a equipe; o aviso segue pela fila de entrega.',
           };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -5258,7 +5263,7 @@ async function executarTurnoDoAgente(
     // isso o modelo nunca consegue chamar provide_case_update quando o lead simplesmente
     // responde (o caminho comum; case_reply_turn só cobre a AÇÃO do humano). Sufixo
     // por-lead (volátil) — nunca no prefixo cacheável (o case_id muda a cada caso).
-    const caseAwaitingLead =
+    caseAwaitingLead =
       preview?.kind !== 'sandbox' && agentConfig !== null && agentConfig.casesEnabled
         ? await getCaseAwaitingLead(pool, tenantId, input.conversationId)
         : null;
