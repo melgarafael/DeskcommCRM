@@ -63759,3 +63759,10 @@ create index if not exists idx_crm_leads_org_pipeline_position_id
 
 comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
+
+-- ---- skill ativada pela etiqueta: trigger 'tag' (migration 0793) ----
+alter table skill_activations
+  drop constraint if exists skill_activations_trigger_check;
+
+alter table skill_activations
+  add constraint skill_activations_trigger_check check (trigger in ('hard', 'probe', 'tag'));

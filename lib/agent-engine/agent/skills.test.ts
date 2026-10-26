@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadSkills, matchSkills, recentInboundSignal, skillMatcherSchema, type LoadedSkill } from './skills';
+import {
+  gatilhoDaAtivacao,
+  loadSkills,
+  matchSkills,
+  recentInboundSignal,
+  skillMatcherSchema,
+  type LoadedSkill,
+} from './skills';
 
 const skill = (name: string, matcher: LoadedSkill['matcher']): LoadedSkill => ({
   versionId: `v-${name}`,
@@ -93,6 +100,47 @@ describe('matchSkills — etiqueta da conversa ou do contato (any_tags)', () => 
   it('chamada sem o terceiro argumento é o comportamento de antes', () => {
     const r = matchSkills([frete], 'frete caro');
     expect(r.matched.map((s) => s.name)).toEqual(['frete']);
+  });
+});
+
+describe('matchSkills — o motivo de cada match (spec 27, fatia 4)', () => {
+  const prospeccao = skill('prospec-odonto', { any_keywords: ['dentista'], any_tags: ['odonto'] });
+  const frete = skill('frete', { any_keywords: ['frete'] });
+  const soEtiqueta = skill('so-etiqueta', { any_keywords: ['nunca-aparece'], any_tags: ['vip'] });
+
+  it('entrou pela palavra da mensagem: motivo `palavra`', () => {
+    const r = matchSkills([frete], 'quanto custa o frete?');
+    expect(r.motivos.get(frete)).toBe('palavra');
+  });
+
+  it('entrou só pela etiqueta: motivo `etiqueta`', () => {
+    const r = matchSkills([soEtiqueta], 'Olá', ['vip']);
+    expect(r.matched).toEqual([soEtiqueta]);
+    expect(r.motivos.get(soEtiqueta)).toBe('etiqueta');
+  });
+
+  it('palavra E etiqueta casam: vale `etiqueta` (a etiqueta é a que a telemetria precisa ver)', () => {
+    const r = matchSkills([prospeccao], 'quero um dentista', ['odonto']);
+    expect(r.matched).toEqual([prospeccao]);
+    expect(r.motivos.get(prospeccao)).toBe('etiqueta');
+  });
+
+  it('skill que não entrou não tem motivo; `matched` tem o mesmo formato de antes', () => {
+    const r = matchSkills([prospeccao, frete], 'quanto custa o frete?');
+    expect(r.matched).toEqual([frete]);
+    expect(r.motivos.has(prospeccao)).toBe(false);
+    expect([...r.motivos.keys()]).toEqual([frete]);
+  });
+
+  it('o motivo sai no mesmo objeto que está em `matched` (é por ele que o motor grava)', () => {
+    const r = matchSkills([frete], 'frete');
+    expect(r.motivos.get(r.matched[0]!)).toBe('palavra');
+  });
+
+  it('o gatilho gravado: `tag` quando entrou pela etiqueta, `hard` pela palavra ou sem motivo', () => {
+    expect(gatilhoDaAtivacao('etiqueta')).toBe('tag');
+    expect(gatilhoDaAtivacao('palavra')).toBe('hard');
+    expect(gatilhoDaAtivacao(undefined)).toBe('hard');
   });
 });
 
