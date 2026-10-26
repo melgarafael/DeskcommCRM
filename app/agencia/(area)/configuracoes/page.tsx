@@ -39,7 +39,7 @@ export default async function PaginaDeConfiguracoes({ searchParams }: { searchPa
   // Quem recebe os avisos gerais (prazos da trilha, reuniões por marcar): sem ninguém, eles somem calados.
   const recebemGerais = destinatariosDoAviso(
     { tipo: "gerais" },
-    ((membros.data ?? []) as Array<{
+    ((membros.data ?? []) as unknown as Array<{
       id: string;
       user_id: string | null;
       situacao: string;

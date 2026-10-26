@@ -37,6 +37,9 @@ export const PUBLIC_PATHS: RegExp[] = [
   // onde o cookie Strict não viaja. O token é a credencial, conferido pelo hash
   // no servidor. Um segmento só, no formato do token (43 caracteres base64url).
   /^\/agencia\/convite\/[A-Za-z0-9_-]{43}$/,
+  // O formulário de acesso que o CLIENTE da agência preenche (docs/agencia/SPEC-cofre-e-formulario.md):
+  // quem chega não tem conta; o token do link é a credencial, decidida no servidor.
+  /^\/agencia\/formulario\/[A-Za-z0-9_-]{43}$/,
   // A volta do Google na conexão do Drive da agência (docs/agencia/SPEC-acervo.md):
   // mesma natureza de /auth/callback — vem de outro site, a identidade é o
   // `state` assinado, e a rota confere a permissão de novo no banco.

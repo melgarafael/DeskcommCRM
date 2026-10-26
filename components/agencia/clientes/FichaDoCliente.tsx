@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 
 import { ligarOrganizacao, salvarContratacao, salvarEquipeDoCliente } from "@/app/actions/agencia/clientes";
 import { ReunioesDoCliente } from "@/components/agencia/calendario/ReunioesDoCliente";
+import { AcessosDoCliente, type FormularioDaFicha } from "@/components/agencia/cofre/AcessosDoCliente";
 import { TrilhaDoCliente, type ModeloParaIniciar } from "@/components/agencia/trilhas/TrilhaDoCliente";
 import { EnvioParaODrive } from "@/components/agencia/EnvioParaODrive";
 import { QuadroDeTarefas } from "@/components/agencia/tarefas/QuadroDeTarefas";
@@ -24,11 +25,12 @@ import {
 } from "@/lib/agencia/clientes/vocabulario";
 import type { TarefaDoQuadro } from "@/lib/agencia/tarefas/consultas";
 import type { TrilhaDaTela } from "@/lib/agencia/trilhas/consultas";
+import type { ItemDoCofre } from "@/lib/agencia/cofre/vocabulario";
 import { cn } from "@/lib/utils";
 
 import { FormularioDoCliente, type DadosDoCliente } from "./FormularioDoCliente";
 
-const ABAS_DA_FICHA = ["dados", "contratacoes", "equipe", "trilha", "tarefas", "reunioes", "arquivos"] as const;
+const ABAS_DA_FICHA = ["dados", "contratacoes", "equipe", "trilha", "tarefas", "reunioes", "acessos", "arquivos"] as const;
 type Aba = (typeof ABAS_DA_FICHA)[number];
 
 export interface ContratacaoDaFicha {
@@ -74,6 +76,9 @@ export function FichaDoCliente(p: {
   agendaLiberada: boolean;
   trilha: TrilhaDaTela | null;
   modelosDeTrilha: ModeloParaIniciar[];
+  formulario: FormularioDaFicha | null;
+  cofre: ItemDoCofre[];
+  podeVerSenhas: boolean;
 }) {
   const router = useRouter();
   // `?aba=trilha` (o link dos avisos da trilha) abre direto na aba.
@@ -97,6 +102,7 @@ export function FichaDoCliente(p: {
     ["trilha", p.trilha && p.trilha.situacao === "ativa" ? `Trilha (${p.trilha.progresso.pct}%)` : "Trilha"],
     ["tarefas", `Tarefas (${p.tarefas.filter((t) => t.coluna !== "concluido").length})`],
     ["reunioes", `Reuniões (${p.reunioes.filter((r) => r.situacao === "marcada").length})`],
+    ["acessos", "Acessos"],
     ["arquivos", "Arquivos"],
   ];
 
@@ -288,6 +294,10 @@ export function FichaDoCliente(p: {
           podeGerenciar={p.podeGerenciarCalendario}
           agendaLiberada={p.agendaLiberada}
         />
+      )}
+
+      {aba === "acessos" && (
+        <AcessosDoCliente clienteId={p.id} formulario={p.formulario} cofre={p.cofre} podeGerenciar={p.podeGerenciar} podeVerSenhas={p.podeVerSenhas} />
       )}
 
       {aba === "arquivos" && (

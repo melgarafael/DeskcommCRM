@@ -8,6 +8,9 @@ import { estadoDoDrive } from "@/lib/agencia/acervo/drive";
 import { apoioDaAgenda } from "@/lib/agencia/calendario/apoio";
 import { carregarQuemOlhaAgenda, listarReunioes } from "@/lib/agencia/calendario/consultas";
 import { trilhaDoCliente } from "@/lib/agencia/trilhas/consultas";
+import { listarCofre } from "@/lib/agencia/cofre/cofre";
+import { situacaoDoLink } from "@/lib/agencia/formulario/link";
+import { respostasSchema } from "@/lib/agencia/formulario/perguntas";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { lerQuantidades, type SituacaoDoCliente } from "@/lib/agencia/clientes/vocabulario";
 import { idSchema } from "@/lib/agencia/schemas";
@@ -33,7 +36,7 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
 
   const quem = await carregarQuemOlha(ctx);
   const quemAgenda = await carregarQuemOlhaAgenda(ctx);
-  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda, trilha, modelos] = await Promise.all([
+  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda, trilha, modelos, formulario, cofre] = await Promise.all([
     db.from("agencia_clientes_empresas").select("nome, documento").eq("cliente_id", id).order("ordem"),
     db.from("agencia_contratacoes").select("*").eq("cliente_id", id).order("criado_em", { ascending: false }),
     db.from("agencia_clientes_membros").select("membro_id").eq("cliente_id", id),
@@ -53,7 +56,24 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
       .select("id, nome, agencia_trilha_modelo_passos(chave, titulo, etapa, ordem)")
       .eq("ativo", true)
       .order("nome"),
+    db
+      .from("agencia_formularios")
+      .select("id, situacao, expira_em, criado_em, enviado_em, respostas")
+      .eq("cliente_id", id)
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    listarCofre(id),
   ]);
+  const f = formulario.data as {
+    id: string;
+    situacao: string;
+    expira_em: string;
+    criado_em: string;
+    enviado_em: string | null;
+    respostas: unknown;
+  } | null;
+  const respostas = f?.respostas ? respostasSchema.safeParse(f.respostas) : null;
 
   const subpastas = (c.drive_subpastas as Record<string, string> | null) ?? {};
   const s = (k: string) => (typeof c[k] === "string" ? (c[k] as string) : "");
@@ -122,6 +142,20 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
           podeGerenciarCalendario={ctx.permissoes.has("calendario.gerenciar")}
           agendaLiberada={drive.agendaLiberada}
           trilha={trilha}
+          formulario={
+            f
+              ? {
+                  id: f.id,
+                  situacao: situacaoDoLink(f, new Date()) as "valido" | "enviado" | "cancelado" | "expirado",
+                  criadoEm: f.criado_em,
+                  expiraEm: f.expira_em,
+                  enviadoEm: f.enviado_em,
+                  respostas: respostas?.success ? respostas.data : null,
+                }
+              : null
+          }
+          cofre={cofre}
+          podeVerSenhas={ctx.permissoes.has("cofre.ver_senhas")}
           modelosDeTrilha={((modelos.data ?? []) as Array<{
             id: string;
             nome: string;

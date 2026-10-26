@@ -20,7 +20,7 @@
  */
 import type { CanalDoAviso, PacingDoAviso, TransporteDoAviso } from "@/lib/escalacao/aviso-ao-suporte";
 
-export type MotivoDoEnvio = "convite" | "aviso" | "teste" | "reuniao";
+export type MotivoDoEnvio = "convite" | "aviso" | "teste" | "reuniao" | "formulario";
 export type SituacaoDoEnvio = "pendente" | "enviado" | "falhou" | "descartado";
 
 export interface EnvioDaAgencia {

@@ -295,3 +295,25 @@ export async function iniciarEnvio(p: {
     return { ok: false, erro: "O Google Drive não respondeu agora." };
   }
 }
+
+/** Grava um arquivo de texto numa pasta (a cópia legível do formulário, D20). */
+export async function enviarTexto(p: { nome: string; conteudo: string; pastaId: string }): Promise<Resultado<{ id: string }>> {
+  const token = await accessToken();
+  if (!token.ok) return token;
+  const fronteira = `agencia${Date.now()}`;
+  const corpo =
+    `--${fronteira}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name: p.nome, parents: [p.pastaId], mimeType: "text/plain" }) +
+    `\r\n--${fronteira}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${p.conteudo}\r\n--${fronteira}--`;
+  try {
+    const r = await fetch(`${UPLOAD}/files?uploadType=multipart&fields=id`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token.valor}`, "Content-Type": `multipart/related; boundary=${fronteira}` },
+      body: corpo,
+    });
+    if (!r.ok) return { ok: false, erro: `O Google Drive recusou o arquivo (${r.status}).` };
+    return { ok: true, valor: (await r.json()) as { id: string } };
+  } catch {
+    return { ok: false, erro: "O Google Drive não respondeu agora." };
+  }
+}
