@@ -9428,14 +9428,21 @@ alter table public.channel_sessions
   add column if not exists datafy_waba_id text,
   add column if not exists datafy_token_encrypted bytea;
 
+-- telegram (migration 0773, bot do @BotFather — issue #3440) — as colunas do
+-- provider novo nascem ANTES das constraints abaixo, que as referenciam.
+alter table public.channel_sessions
+  add column if not exists telegram_bot_id text,
+  add column if not exists telegram_token_encrypted bytea;
+
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_check;
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
-  -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'telegram'
+  -- (0773) somados AQUI — UM bloco só por constraint (não duplicar drop+add
+  -- por migration).
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9448,7 +9455,9 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    -- Bot do Telegram (migration 0773): endereça pelo id do robô.
+    (provider = 'telegram'   and telegram_bot_id      is not null)
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -35369,7 +35378,7 @@ comment on column public.contacts.social_identity is
 -- primeira conexão de rede social.
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook'));
+  check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram'));
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql
@@ -65997,6 +66006,37 @@ create index if not exists idx_crm_leads_org_pipeline_position_id
 
 comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
+
+-- ---- canal do bot do Telegram (migration 0773, issue #3440) ----
+-- manifest: **Bot do Telegram na caixa de entrada (#3440, fatia T1).** `channel_sessions` ganha `telegram_bot_id` (o `sessionRef` do canal, e a chave de `contacts.social_identity = telegram:<robô>:<usuário>`) e `telegram_token_encrypted` (token do @BotFather cifrado por `fn_encrypt_oauth`, nunca devolvido à tela); `'telegram'` entra no vocabulário de `channel_sessions.provider`, no ramo do `channel_sessions_provider_ref_check` que exige o id do robô e em `conversations_channel_check`; e nasce o índice único parcial `channel_sessions_telegram_bot_id_ativo_unique` (molde da 0165): dois canais ATIVOS não apontam para o mesmo bot, senão os webhooks disputam `setWebhook` e a caixa de uma organização recebe a conversa da outra. O contato não tem telefone — identidade social opaca, molde da 0368 —, e por isso o provider fica FORA de `PROVIDERS_DE_TELEFONE` (lição do #3358/#3364). Grupos, mídia, edição e IA sobre o canal ficam para a T2. Aditiva e idempotente; as três constraints seguem em bloco ÚNICO (as duas de `channel_sessions` no trecho do dump, a de `conversations` no apêndice da 0368) e este bloco só acrescenta índice, comentários e as colunas.
+--
+-- ─── Por que os `comment on column` vêm DEPOIS do índice ─────────────────────
+-- Guiados por `to_regclass`: um clone cujo `channel_sessions` não exista (base
+-- em migração parcial) não pode derrubar a atualização inteira por causa de um
+-- comentário. O `if not exists` das colunas é o que torna o bloco seguro para o
+-- `update.sh`, que reaplica este arquivo a cada versão.
+
+alter table public.channel_sessions
+  add column if not exists telegram_bot_id text,
+  add column if not exists telegram_token_encrypted bytea;
+
+create unique index if not exists channel_sessions_telegram_bot_id_ativo_unique
+  on public.channel_sessions (telegram_bot_id)
+  where archived_at is null and telegram_bot_id is not null;
+
+do $$
+begin
+  if to_regclass('public.channel_sessions') is not null then
+    comment on column public.channel_sessions.telegram_bot_id is
+      'Id do bot no Telegram (getMe.id). É o sessionRef deste canal e a chave da social_identity do contato.';
+    comment on column public.channel_sessions.telegram_token_encrypted is
+      'Token do bot (@BotFather) cifrado por fn_encrypt_oauth. Nunca volta para a tela nem para o log.';
+  end if;
+end
+$$;
+
+comment on index public.channel_sessions_telegram_bot_id_ativo_unique is
+  'Um bot do Telegram é UMA conexão ativa (#3440): dois webhooks do mesmo robô disputariam o setWebhook e misturariam as caixas de entrada.';
 
 -- ---- vínculo e motivo legado das propostas de campos (migration 0807) ----
 -- manifest: lead_field_proposals: WITH CHECK exige negócio visível da mesma organização; motivos legados de contatos já anonimizados saem pelos vínculos direto e crm_lead_links, sem repetir a anonimização

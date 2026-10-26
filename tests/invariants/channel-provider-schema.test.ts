@@ -109,9 +109,14 @@ describe("0087 · o canal da sessão chega ao clone", () => {
   });
 
   it("provider fora do vocabulário é RECUSADO", () => {
+    // A sonda usava `'telegram'` enquanto o Telegram não era provider nenhum.
+    // Desde a #3440 ele É (migration 0773), e a sonda passou a medir o
+    // contrário do que o nome do caso diz: um valor que o CHECK agora ACEITA.
+    // O literal virou `'canal_inexistente'` — o caso continua sendo "valor
+    // fora do vocabulário", que é o invariante, e não "o Telegram é recusado".
     const org = novaOrg(`inv-0087-c-${Date.now()}`);
     const msg = erroDe(() =>
-      insertSession(org, { provider: `'telegram'`, waha_session_name: `'s-c'` }),
+      insertSession(org, { provider: `'canal_inexistente'`, waha_session_name: `'s-c'` }),
     );
     expect(msg).toMatch(/channel_sessions_provider_check/);
   });
