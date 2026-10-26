@@ -74,9 +74,28 @@ services:
       # ele dá 503 se WAHA/Redis caem, o que deixaria o app "unhealthy" e derrubaria
       # o Caddy junto (blackout total por uma dependência secundária).
       test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
-      interval: 30s
+      # A cada 10 s, e não a cada 30 (conserto de @jmpo, PR #3393). Atrás do
+      # Traefik da hospedagem (Hostinger, Coolify, Dokploy — o
+      # docker-compose.traefik.yml), o tráfego só vai a contêiner `healthy`; o
+      # app fica pronto em ~5 s, mas com Docker 24 ou mais antigo a primeira
+      # checagem só rodava aos 30 s, e a atualização deixava o domínio em
+      # "404 page not found" por 30–45 s (medido numa instalação real em
+      # 24/09/2026, quatro deploys no dia).
+      # Com Docker 25 ou mais novo a janela já era de ~5 s e não muda. O Caddy
+      # padrão do kit não consulta a saúde para rotear.
+      # `retries` sobe na mesma proporção: 10 s × 15 = os mesmos 150 s de
+      # tolerância de antes (30 s × 5) para declarar o app doente.
+      #
+      # NÃO trocar por `start_interval` (que pergunta rápido só durante o
+      # `start_period`): o Compose 2.17 RECUSA o arquivo inteiro com
+      # "Additional property start_interval is not allowed", e o kit só exige
+      # "docker compose v2" — o `up -d` de quem tem Compose antigo morreria.
+      # Medido: 2.17.2 recusa; 2.21.0 e 5.5.1 com motor de API 1.43 (Docker
+      # 24) aceitam e ignoram calados. Vigiado em
+      # tests/unit/healthcheck-do-app-libera-o-trafego-cedo.test.ts.
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 15
       start_period: 40s
     logging: *default-logging
     networks: [internal]
