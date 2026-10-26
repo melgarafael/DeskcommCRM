@@ -138,7 +138,7 @@ function turno(texto: string | null, messageId: string | null = MSG) {
 }
 
 const EXTENSAO: LinhaDeExtensao = {
-  extensao: "deskcomm/laudo-do-exame",
+  extensao: "acme/laudo-do-exame",
   fluxo: fluxoDeLaudo(),
   permissoes: AMBAS,
   aceitas: AMBAS,
@@ -282,7 +282,7 @@ describe("reversão: desligar/desinstalar devolve o turno à IA (exigência 4)",
     // A conversa está no meio do fluxo (etapa 1) e a extensão deixou de dirigir — mas OUTRA
     // extensão com fluxo segue ativa, então o leitor roda e o estado órfão é recolhido.
     const outra: LinhaDeExtensao = {
-      extensao: "deskcomm/outra",
+      extensao: "acme/outra",
       fluxo: fluxoDeLaudo({ id: "outra", gatilhos: [{ idioma: "pt-BR", texto: "outra-coisa" }] }),
       permissoes: AMBAS,
       aceitas: AMBAS,

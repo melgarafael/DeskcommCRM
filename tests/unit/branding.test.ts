@@ -353,6 +353,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "fixture que reproduz o CHANGELOG real, incluindo as URLs do repositório no GitHub. A marca aqui é o nome do repositório upstream, que o clone não renomeia",
     marcas: ["deskcommcrm", "deskcommcrm", "deskcommcrm"],
   },
+  "lib/extensions/exemplo-turno-jornada.test.ts": {
+    categoria: "DEV",
+    motivo:
+      "a jornada percorre o PACOTE REAL que o produto publica (`extensoes/pacotes/deskcomm/laudo-do-exame-1.0.0.json`), e o publicador é o nome da casa no catálogo; a ocorrência ficou reduzida a UMA constante, porque repetir o literal em oito pontos foi o que a catraca pegou primeiro",
+    marcas: ["deskcomm"],
+  },
 
   // ─── PADRAO — a marca padrão precisa existir em algum lugar. ───
   "lib/branding.ts": {
