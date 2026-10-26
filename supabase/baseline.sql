@@ -69479,3 +69479,119 @@ begin
   end if;
 end;
 $recibos_9018$;
+
+-- ---- lista de espera com encaixe (migration 0771) ----
+-- Espelho idempotente da 0771. É este apêndice que chega a todo self-host: o
+-- `install.sh`/`update.sh` aplica o `baseline.sql`, não a cadeia de migrations.
+--
+-- A fila do "quero encaixe" (`calendar_waitlist`) e a ORIGEM nova do compromisso
+-- (`source = 'waitlist'`, a vaga que o encaixe segura). Nenhuma instalação muda
+-- sozinha: tabela nova não tem leitor antigo, e não há backfill.
+--
+-- ⚠️ O CHECK de `source` é derrubado e recriado dentro de um bloco `do` com
+-- `to_regclass`: o `update.sh` roda este arquivo sem ON_ERROR_STOP, e `drop` e
+-- `add` soltos deixariam a coluna sem guarda nenhuma se o `add` falhasse.
+-- Os cinco valores são os de antes MAIS `waitlist` — vocabulário não encolhe.
+
+create table if not exists public.calendar_waitlist (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  event_type_id uuid not null references public.calendar_event_types(id) on delete cascade,
+  owner_user_id uuid references auth.users(id) on delete set null,
+  janelas jsonb not null default '[]'::jsonb,
+  antecedencia_minima_horas smallint not null default 0,
+  valido_ate timestamptz,
+  urgencia smallint not null default 0,
+  status text not null default 'waiting',
+  oferta_appointment_id uuid references public.calendar_appointments(id) on delete set null,
+  oferta_expira_em timestamptz,
+  ofertada_em timestamptz,
+  observacoes text,
+  created_by_kind text not null default 'user',
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint calendar_waitlist_status_check check (status in (
+    'waiting','offered','booked','expired','cancelled'
+  )),
+  constraint calendar_waitlist_created_by_kind_check check (created_by_kind in (
+    'user','ai','system','contact'
+  )),
+  constraint calendar_waitlist_janelas_e_lista check (jsonb_typeof(janelas) = 'array'),
+  constraint calendar_waitlist_antecedencia_sensata
+    check (antecedencia_minima_horas between 0 and 720),
+  constraint calendar_waitlist_urgencia_sensata check (urgencia between -5 and 5),
+  constraint calendar_waitlist_oferta_coerente check (
+    (status <> 'offered')
+    or (oferta_appointment_id is not null and oferta_expira_em is not null)
+  )
+);
+
+create index if not exists calendar_waitlist_fila_idx
+  on public.calendar_waitlist (organization_id, urgencia desc, created_at)
+  where status = 'waiting';
+
+create unique index if not exists calendar_waitlist_viva_por_contato_servico_idx
+  on public.calendar_waitlist (organization_id, contact_id, event_type_id)
+  where status in ('waiting', 'offered');
+
+create index if not exists calendar_waitlist_ofertas_a_vencer_idx
+  on public.calendar_waitlist (oferta_expira_em)
+  where status = 'offered';
+
+create index if not exists calendar_waitlist_oferta_appointment_idx
+  on public.calendar_waitlist (oferta_appointment_id)
+  where oferta_appointment_id is not null;
+
+comment on table public.calendar_waitlist is
+  'O "quero encaixe" de um contato por serviço: janelas que servem, antecedência mínima, validade, urgência e a vaga segurada quando uma abre. Distinto de calendar_appointments, que é o horário COMBINADO — a linha daqui é a intenção, e vira compromisso `pending` quando a vaga é oferecida.';
+comment on column public.calendar_waitlist.janelas is
+  'Faixas que servem, no formato do schedule do roteamento ({dow: 0=domingo..6=sábado, start: "HH:MM", end: "HH:MM"}). Lista vazia = qualquer horário. O atendimento INTEIRO tem de caber na faixa: 11:30 num serviço de 60 min não cabe em 09:00–12:00.';
+comment on column public.calendar_waitlist.antecedencia_minima_horas is
+  'Antecedência mínima da pessoa para aceitar um encaixe, em horas (0 = serve hoje). Soma por MAIOR com calendar_event_types.minimum_notice_minutes — quem precisa de 48h não é chamado para daqui a 3h.';
+comment on column public.calendar_waitlist.valido_ate is
+  'Até quando a inscrição vale. NULL = sem prazo. É o que tira alguém da fila; uma oferta sem resposta NÃO tira — a pessoa volta para waiting.';
+comment on column public.calendar_waitlist.urgencia is
+  'Desempate da fila, maior primeiro (a ordem de chegada desempata depois). Negativo para quem pode esperar.';
+comment on column public.calendar_waitlist.oferta_appointment_id is
+  'O compromisso `pending` que SEGURA a vaga oferecida a esta pessoa. `pending` porque é o estado que já ocupa o horário e já tem prazo que solta sozinho. NULL fora de `offered`.';
+comment on column public.calendar_waitlist.oferta_expira_em is
+  'Prazo da oferta. Vencido, o compromisso é desmarcado e a vaga passa para o próximo da fila. Obrigatório em `offered` (CHECK), porque oferta sem prazo é horário preso.';
+
+do $$
+begin
+  if to_regclass('public.calendar_appointments') is null then
+    return;
+  end if;
+  alter table public.calendar_appointments
+    drop constraint if exists calendar_appointments_source_check;
+  alter table public.calendar_appointments
+    add constraint calendar_appointments_source_check check (source in (
+      'ui','mcp','google_sync','public_page','waitlist'
+    ));
+end
+$$;
+
+alter table public.calendar_waitlist enable row level security;
+drop policy if exists tenant_isolation_calendar_waitlist_all on public.calendar_waitlist;
+drop policy if exists calendar_waitlist_select on public.calendar_waitlist;
+create policy calendar_waitlist_select on public.calendar_waitlist
+  for select using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids()))
+  );
+drop policy if exists calendar_waitlist_write on public.calendar_waitlist;
+create policy calendar_waitlist_write on public.calendar_waitlist
+  using (
+    public.fn_is_platform_admin_full()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin_full()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+revoke all on public.calendar_waitlist from anon;
