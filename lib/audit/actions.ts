@@ -1229,6 +1229,9 @@ export const AUDIT_ACTIONS = [
   "agencia.aprovacao_cancelada",
   "agencia.aprovacao_aprovada",
   "agencia.aprovacao_ajustes",
+  "agencia.mapa_criado",
+  "agencia.mapa_publicado",
+  "agencia.mapa_arquivado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -15,6 +15,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { criarAviso } from "../avisos/criar";
+import { aoApagarTarefaDoMapa, aoMudarTarefaDoMapa } from "../mapas/motor";
 import { diaDe, instanteDoDia } from "../calendario/regras";
 import {
   antecessores,
@@ -381,8 +382,13 @@ const SITUACAO_DA_COLUNA: Record<string, SituacaoDoPasso> = {
   concluido: "concluido",
 };
 
-/** A tarefa mudou de coluna (ou foi salva): o passo dela acompanha (R4). Nunca lança. */
+/**
+ * A tarefa mudou de coluna (ou foi salva): o passo dela acompanha (R4). Nunca lança.
+ * É também o gancho do mapa mental (SPEC-mapa-mental, M4) — um ponto só, já
+ * chamado por todas as ações que mexem em tarefa.
+ */
 export async function aoMudarTarefa(tarefaId: string): Promise<void> {
+  await aoMudarTarefaDoMapa(tarefaId);
   try {
     const { data } = await db()
       .from("agencia_trilha_passos")
@@ -410,6 +416,7 @@ export async function aoMudarTarefa(tarefaId: string): Promise<void> {
 
 /** A tarefa vai ser apagada: o passo volta a "liberado", sem tarefa, para poder ser recriada. */
 export async function aoApagarTarefa(tarefaId: string): Promise<void> {
+  await aoApagarTarefaDoMapa(tarefaId);
   await db()
     .from("agencia_trilha_passos")
     .update({ situacao: "liberado", tarefa_id: null, concluido_em: null })
