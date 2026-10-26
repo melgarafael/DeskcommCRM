@@ -311,6 +311,22 @@ fechar cada fase.
 
 ---
 
+## 6b. ⚠️ Colisão de numeração de migration com o outro chat
+
+Medido em 26/10/2026 no checkout principal (`F:\...\DeskcommCRM`): o outro chat criou
+`supabase/migrations/20261024180000_9003_aumentar_limite_fotos_catalogo_10.sql`. Ele colide
+com este módulo em DUAS coisas:
+
+- o **número** 9003 é o da Fase 1 da agência (`20261023190000_9003_agencia_equipe_e_avisos.sql`);
+- o **timestamp** `20261024180000` é o mesmo da Fase 3 (`20261024180000_9005_agencia_calendario.sql`).
+
+No teste nada quebra (cada SQL foi aplicado pelo conteúdo). Mas, quando as branches da agência
+e a do outro chat se encontrarem na `main`, `tests/unit/manifest-x-migrations.test.ts` reprova
+(número e carimbo repetidos). **Antes de juntar**, uma das duas tem de ser renumerada (com o
+apêndice do `baseline.sql` acompanhando o novo número) — decisão do dono, porque a do outro
+chat pode já ter sido aplicada na central. Os números da agência são 9003–9009; para novas, use
+**9010 em diante** e confira os dois checkouts antes.
+
 ## 7. Falhas de teste que NÃO são do módulo (já existiam no fork)
 
 Quem rodar as cercas vai ver vermelho que **não** é da agência — não "conserte" sem falar com o dono:

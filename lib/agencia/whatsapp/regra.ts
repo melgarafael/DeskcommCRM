@@ -20,7 +20,7 @@
  */
 import type { CanalDoAviso, PacingDoAviso, TransporteDoAviso } from "@/lib/escalacao/aviso-ao-suporte";
 
-export type MotivoDoEnvio = "convite" | "aviso" | "teste" | "reuniao" | "formulario";
+export type MotivoDoEnvio = "convite" | "aviso" | "teste" | "reuniao" | "formulario" | "aprovacao";
 export type SituacaoDoEnvio = "pendente" | "enviado" | "falhou" | "descartado";
 
 export interface EnvioDaAgencia {
@@ -158,7 +158,7 @@ export async function aplicaEnvioDaAgencia(deps: DepsDoWhatsapp, envioId: string
   }
 
   // 3. Janela de horário — aviso e reunião.
-  if ((envio.motivo === "aviso" || envio.motivo === "reuniao") && !dentroDaJanela(agora, cfg.janelaInicio, cfg.janelaFim, fuso)) {
+  if ((envio.motivo === "aviso" || envio.motivo === "reuniao" || envio.motivo === "aprovacao") && !dentroDaJanela(agora, cfg.janelaInicio, cfg.janelaFim, fuso)) {
     return retry(proximaAbertura(agora, cfg.janelaInicio, fuso), "fora_da_janela");
   }
 

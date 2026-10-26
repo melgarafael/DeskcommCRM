@@ -75,6 +75,8 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "agencia_clientes", razao: "tests/invariants/agencia-fase-7.test.ts (e agencia-fase-2.test.ts) — tabela da INSTALAÇÃO (área da agência, fork) em que organization_id é só a ligação com a organização do cliente: authenticated recebe insufficient_privilege mesmo sendo membro da organização ligada, e anon também; só o servidor lê e escreve." },
+  { tabela: "agencia_aprovacoes", razao: "tests/invariants/agencia-fase-7.test.ts — dois tenants reais por JWT (agent): leitura local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated recusados (só o servidor grava). Área da agência (fork)." },
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },

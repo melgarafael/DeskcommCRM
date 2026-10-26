@@ -5,12 +5,27 @@
  * imports tardios: o dreno carrega este módulo por import dinâmico.
  */
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
+import type { TransporteDoAviso } from "@/lib/escalacao/aviso-ao-suporte";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { EVENTO_WHATSAPP_ENFILEIRADO } from "./eventos";
 import { aplicaEnvioDaAgencia, type DbDoWhatsapp, type EnvioDaAgencia, type PatchDoEnvio } from "./regra";
 
 export const WHATSAPP_DA_AGENCIA_HANDLER_KEY = "agencia-whatsapp.v1";
+
+/**
+ * O envio para o GRUPO do cliente (SPEC-aprovacoes, P7): o "telefone" do envio é
+ * o id do grupo (`…@g.us`), que já é o endereço que o WAHA usa — não passa pela
+ * tradução de número do transporte, que só conhece contato.
+ */
+function comGrupo(t: TransporteDoAviso): TransporteDoAviso {
+  return {
+    ...t,
+    async resolveDestino(organizationId, canal, telefone) {
+      return telefone.endsWith("@g.us") ? telefone : t.resolveDestino(organizationId, canal, telefone);
+    },
+  };
+}
 
 export const whatsappDaAgenciaHandler: EventHandler = {
   key: WHATSAPP_DA_AGENCIA_HANDLER_KEY,
@@ -72,7 +87,7 @@ export const whatsappDaAgenciaHandler: EventHandler = {
       const desfecho = await aplicaEnvioDaAgencia(
         {
           db,
-          transporte: await criarTransporteDoAviso(admin),
+          transporte: comGrupo(await criarTransporteDoAviso(admin)),
           pacing: await criarPacingDoCanal(admin),
           clock: () => new Date(),
         },

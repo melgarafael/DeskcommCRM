@@ -300,6 +300,20 @@ export const NAV_CATALOG = [
     modulo: "crm_b2b",
   },
   {
+    // Fork Em Movimento (docs/agencia/SPEC-aprovacoes.md): o que a agência de
+    // marketing mandou a empresa aprovar. Só existe para a organização que é
+    // cliente da agência (capacidade ligada pela própria agência); as demais
+    // nunca veem a porta, e a rota responde 404 para elas.
+    href: "/app/aprovacoes",
+    label: "Aprovações",
+    description: "Veja e responda o que a agência mandou para aprovar: vídeos, roteiros, artes e a estratégia do mês.",
+    icon: "ClipboardText",
+    group: "crm",
+    section: "O dia a dia da venda",
+    capacidade: "aprovacoes_da_agencia",
+    sidebar: true,
+  },
+  {
     // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
     // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
     // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ

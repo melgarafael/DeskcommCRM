@@ -8,6 +8,7 @@ import { estadoDoDrive } from "@/lib/agencia/acervo/drive";
 import { apoioDaAgenda } from "@/lib/agencia/calendario/apoio";
 import { carregarQuemOlhaAgenda, listarReunioes } from "@/lib/agencia/calendario/consultas";
 import { trilhaDoCliente } from "@/lib/agencia/trilhas/consultas";
+import type { AprovacaoDaFicha } from "@/components/agencia/aprovacoes/AprovacoesDoCliente";
 import { listarCofre } from "@/lib/agencia/cofre/cofre";
 import { configDosContratos } from "@/lib/agencia/contratos/integracoes";
 import { situacaoVisivel } from "@/lib/agencia/contratos/regras";
@@ -39,7 +40,7 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
 
   const quem = await carregarQuemOlha(ctx);
   const quemAgenda = await carregarQuemOlhaAgenda(ctx);
-  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda, trilha, modelos, formulario, cofre] = await Promise.all([
+  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda, trilha, modelos, formulario, cofre, aprovacoes] = await Promise.all([
     db.from("agencia_clientes_empresas").select("nome, documento").eq("cliente_id", id).order("ordem"),
     db.from("agencia_contratacoes").select("*").eq("cliente_id", id).order("criado_em", { ascending: false }),
     db.from("agencia_clientes_membros").select("membro_id").eq("cliente_id", id),
@@ -67,6 +68,12 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
       .limit(1)
       .maybeSingle(),
     listarCofre(id),
+    db
+      .from("agencia_aprovacoes")
+      .select("id, tipo, titulo, link, versao, situacao, comentario, pedido_em, respondido_em, tarefa_id")
+      .eq("cliente_id", id)
+      .order("pedido_em", { ascending: false })
+      .limit(100),
   ]);
   const f = formulario.data as {
     id: string;
@@ -212,6 +219,29 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
           cofre={cofre}
           podeVerSenhas={ctx.permissoes.has("cofre.ver_senhas")}
           contratos={contratos}
+          aprovacoes={((aprovacoes.data ?? []) as Array<{
+            id: string;
+            tipo: AprovacaoDaFicha["tipo"];
+            titulo: string;
+            link: string | null;
+            versao: number;
+            situacao: AprovacaoDaFicha["situacao"];
+            comentario: string | null;
+            pedido_em: string;
+            respondido_em: string | null;
+            tarefa_id: string | null;
+          }>).map((a) => ({
+            id: a.id,
+            tipo: a.tipo,
+            titulo: a.titulo,
+            link: a.link,
+            versao: a.versao,
+            situacao: a.situacao,
+            comentario: a.comentario,
+            pedidoEm: a.pedido_em,
+            respondidoEm: a.respondido_em,
+            tarefaId: a.tarefa_id,
+          }))}
           modelosDeTrilha={((modelos.data ?? []) as Array<{
             id: string;
             nome: string;

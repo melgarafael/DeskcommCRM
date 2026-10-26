@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import { ligarOrganizacao, salvarContratacao, salvarEquipeDoCliente } from "@/app/actions/agencia/clientes";
 import { ReunioesDoCliente } from "@/components/agencia/calendario/ReunioesDoCliente";
 import { AcessosDoCliente, type FormularioDaFicha } from "@/components/agencia/cofre/AcessosDoCliente";
+import { AprovacoesDoCliente, type AprovacaoDaFicha } from "@/components/agencia/aprovacoes/AprovacoesDoCliente";
 import { ContratosDoCliente, type ContratoDaFicha } from "@/components/agencia/contratos/ContratosDoCliente";
 import { TrilhaDoCliente, type ModeloParaIniciar } from "@/components/agencia/trilhas/TrilhaDoCliente";
 import { EnvioParaODrive } from "@/components/agencia/EnvioParaODrive";
@@ -31,7 +32,7 @@ import { cn } from "@/lib/utils";
 
 import { FormularioDoCliente, type DadosDoCliente } from "./FormularioDoCliente";
 
-const ABAS_DA_FICHA = ["dados", "contratacoes", "contratos", "equipe", "trilha", "tarefas", "reunioes", "acessos", "arquivos"] as const;
+const ABAS_DA_FICHA = ["dados", "contratacoes", "contratos", "equipe", "trilha", "tarefas", "aprovacoes", "reunioes", "acessos", "arquivos"] as const;
 type Aba = (typeof ABAS_DA_FICHA)[number];
 
 export interface ContratacaoDaFicha {
@@ -81,6 +82,7 @@ export function FichaDoCliente(p: {
   cofre: ItemDoCofre[];
   podeVerSenhas: boolean;
   /** `null` = a pessoa não tem `contratos.gerenciar` (a aba não aparece). */
+  aprovacoes: AprovacaoDaFicha[];
   contratos: {
     lista: ContratoDaFicha[];
     modelos: Array<{ id: string; nome: string }>;
@@ -110,6 +112,7 @@ export function FichaDoCliente(p: {
     ["equipe", "Equipe"],
     ["trilha", p.trilha && p.trilha.situacao === "ativa" ? `Trilha (${p.trilha.progresso.pct}%)` : "Trilha"],
     ["tarefas", `Tarefas (${p.tarefas.filter((t) => t.coluna !== "concluido").length})`],
+    ["aprovacoes", `Aprovações (${p.aprovacoes.filter((a) => a.situacao === "pendente").length})`],
     ["reunioes", `Reuniões (${p.reunioes.filter((r) => r.situacao === "marcada").length})`],
     ["acessos", "Acessos"],
     ["arquivos", "Arquivos"],
@@ -318,6 +321,17 @@ export function FichaDoCliente(p: {
             }))}
           hoje={p.contratos.hoje}
           integracoes={p.contratos.integracoes}
+        />
+      )}
+
+      {aba === "aprovacoes" && (
+        <AprovacoesDoCliente
+          clienteId={p.id}
+          organizacaoLigada={!!p.organizacaoId}
+          aprovacoes={p.aprovacoes}
+          arquivos={p.arquivos.map((a) => ({ id: a.id, nome: a.nome }))}
+          tarefas={p.tarefas.filter((t) => t.coluna !== "concluido").map((t) => ({ id: t.id, titulo: t.titulo }))}
+          podePedir={p.podeCriarTarefa}
         />
       )}
 

@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "aprovacoes_da_agencia"] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -27,6 +27,10 @@ export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number
  */
 const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional> = {
   propostas: "propostas",
+  // Fork Em Movimento (docs/agencia/SPEC-aprovacoes.md, P2): a organização que é
+  // cliente da agência vê as aprovações. Quem liga é a própria agência, ao pedir
+  // a primeira aprovação; com o módulo da agência desligado, não liga nada.
+  aprovacoes_da_agencia: "agencia",
 };
 
 function objeto(v: unknown): Record<string, unknown> | null {
@@ -42,7 +46,11 @@ export function capacidadesLigadas(
   modulos: readonly ModuloOpcional[],
 ): CapacidadeDaOrganizacao[] {
   const propostas = objeto(objeto(settings)?.proposals);
-  const daEmpresa: CapacidadeDaOrganizacao[] = propostas?.enabled === true ? ["propostas"] : [];
+  const agencia = objeto(objeto(settings)?.agencia);
+  const daEmpresa: CapacidadeDaOrganizacao[] = [
+    ...(propostas?.enabled === true ? (["propostas"] as const) : []),
+    ...(agencia?.aprovacoes === true ? (["aprovacoes_da_agencia"] as const) : []),
+  ];
   return daEmpresa.filter((c) => modulos.includes(MODULO_DA_CAPACIDADE[c]));
 }
 
