@@ -92,6 +92,16 @@ vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
   useMessageTemplates: () => ({ data: [] }),
 }));
 
+// A faixa das AGENDADAS (#3118) consulta a lista da conversa, e este arquivo não
+// monta `QueryClientProvider` — mesmo tratamento que os outros hooks do
+// compositor recebem aqui. Lista vazia = faixa ausente, que é o estado destes
+// casos; quem prova a faixa montada é `composer/FaixaDeAgendadas.test.tsx`.
+vi.mock("@/hooks/inbox/useMensagensAgendadas", () => ({
+  useMensagensAgendadas: () => ({ data: undefined }),
+  useAgendarMensagem: () => ({ mutate: vi.fn(), isPending: false }),
+  useCancelarAgendada: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: toastWarning },
 }));
