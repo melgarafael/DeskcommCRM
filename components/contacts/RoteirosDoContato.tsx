@@ -52,7 +52,8 @@ export function RoteirosDoContato({ contactId, variante = "ficha" }: Props) {
               <div key={campo.key} data-testid={`roteiro-campo-${campo.key}`}>
                 <dt className="text-xs uppercase text-muted-foreground">{campo.label}</dt>
                 <dd className={campo.valor === null ? "text-muted-foreground" : ""}>
-                  {campo.valor ?? t("não respondido")}
+                  {campo.valor ??
+                    (campo.onde === "negocio" ? t("no card do negócio") : t("não respondido"))}
                 </dd>
               </div>
             ))}
