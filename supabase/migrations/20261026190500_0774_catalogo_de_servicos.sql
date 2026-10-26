@@ -49,22 +49,31 @@ alter table public.catalog_products
   add column if not exists pai_id uuid,
   add column if not exists revision integer not null default 1;
 
-comment on column public.catalog_products.tipo_servico is
-  'Tipo do serviço (issue #3372): hora_marcada, projeto ou recorrente. NULL = produto de prateleira, que é o que toda linha anterior a esta migration é.';
-comment on column public.catalog_products.unidade_cobranca is
-  'Como o item é cobrado: sessao/hora (hora marcada), valor_fechado/hora (projeto), mes/trimestre/ano (recorrente). A compatibilidade com o tipo é CHECK, não convenção.';
-comment on column public.catalog_products.prazo_dias_uteis is
-  'Prazo de entrega em dias úteis — só existe em projeto; CHECK recusa em qualquer outro tipo.';
-comment on column public.catalog_products.sinal_tipo is
-  'Como o sinal é calculado: percentual (sinal_percentual, 1 a 100) ou fixo (sinal_cents). O valor por variação é calculado na leitura, nunca copiado.';
-comment on column public.catalog_products.instrucoes_ia is
-  'Instruções internas para a IA: orientam a conversa e NUNCA vão ao cliente. A busca do agente devolve marcadas como "não repita ao cliente".';
-comment on column public.catalog_products.ia_agenda is
-  'Quando ligado, a IA pode reservar horário deste serviço. Nasce desligado: quem escreve (agenda) nasce fechado, quem só lê (ia_oferece) nasce aberto.';
-comment on column public.catalog_products.pai_id is
-  'Variação do serviço: aponta para o item principal, que carrega tipo, unidade, prazo e sinal. A variação tem nome, código e preço próprios e ZERO detalhe de serviço (CHECK).';
-comment on column public.catalog_products.revision is
-  'Só cresce (gatilho). É o que faz PATCH com `expected_revision` velho responder 409 em vez de sobrescrever a edição de outra pessoa.';
+-- Comentário em bloco com guarda `to_regclass`: `comment on column` num objeto
+-- que não existe derruba a passada do `update.sh` sem ON_ERROR_STOP, e o desfecho
+-- seria uma atualização interrompida por causa de documentação.
+do $servico_comentarios$
+begin
+  if to_regclass('public.catalog_products') is not null then
+    execute $c$comment on column public.catalog_products.tipo_servico is
+      'Tipo do serviço (issue #3372): hora_marcada, projeto ou recorrente. NULL = produto de prateleira, que é o que toda linha anterior a esta migration é.'$c$;
+    execute $c$comment on column public.catalog_products.unidade_cobranca is
+      'Como o item é cobrado: sessao/hora (hora marcada), valor_fechado/hora (projeto), mes/trimestre/ano (recorrente). A compatibilidade com o tipo é CHECK, não convenção.'$c$;
+    execute $c$comment on column public.catalog_products.prazo_dias_uteis is
+      'Prazo de entrega em dias úteis — só existe em projeto; CHECK recusa em qualquer outro tipo.'$c$;
+    execute $c$comment on column public.catalog_products.sinal_tipo is
+      'Como o sinal é calculado: percentual (sinal_percentual, 1 a 100) ou fixo (sinal_cents). O valor por variação é calculado na leitura, nunca copiado.'$c$;
+    execute $c$comment on column public.catalog_products.instrucoes_ia is
+      'Instruções internas para a IA: orientam a conversa e NUNCA vão ao cliente. A busca do agente devolve marcadas como "não repita ao cliente".'$c$;
+    execute $c$comment on column public.catalog_products.ia_agenda is
+      'Quando ligado, a IA pode reservar horário deste serviço. Nasce desligado: quem escreve (agenda) nasce fechado, quem só lê (ia_oferece) nasce aberto.'$c$;
+    execute $c$comment on column public.catalog_products.pai_id is
+      'Variação do serviço: aponta para o item principal, que carrega tipo, unidade, prazo e sinal. A variação tem nome, código e preço próprios e ZERO detalhe de serviço (CHECK).'$c$;
+    execute $c$comment on column public.catalog_products.revision is
+      'Só cresce (gatilho). É o que faz PATCH com `expected_revision` velho responder 409 em vez de sobrescrever a edição de outra pessoa.'$c$;
+  end if;
+end
+$servico_comentarios$;
 
 -- ⚠️ drop + add num bloco DO só: o `update.sh` reaplica o baseline sem
 -- ON_ERROR_STOP e em autocommit. Soltos, um `add` que falhasse deixaria a coluna

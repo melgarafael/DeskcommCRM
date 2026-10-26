@@ -62434,8 +62434,9 @@ $$;
 
 revoke execute on function public.fn_nascer_lead_da_conversa(uuid, uuid, uuid, uuid, text, text, jsonb, text[]) from public, anon;
 grant  execute on function public.fn_nascer_lead_da_conversa(uuid, uuid, uuid, uuid, text, text, jsonb, text[]) to authenticated, service_role;
--- ---- catálogo de serviços: tipo, unidade, prazo e sinal (migration 0773, #3372) ----
--- Espelho idempotente da migration 0773. É este apêndice que chega a todo
+
+-- ---- catálogo de serviços: tipo, unidade, prazo e sinal (migration 0774, #3372) ----
+-- Espelho idempotente da migration 0774. É este apêndice que chega a todo
 -- self-host: o `install.sh` aplica o baseline num banco novo e o `update.sh` o
 -- re-aplica num banco existente — nenhum dos dois roda as migrations.
 --

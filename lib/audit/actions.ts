@@ -801,7 +801,7 @@ export const AUDIT_ACTIONS = [
   // As fotos do produto (migration 0390): subir uma, e reordenar/remover.
   "catalog_product.photo_added",
   "catalog_product.photos_updated",
-  // O serviço no catálogo (#3372, migration 0773): sinal, prazo e preço do
+  // O serviço no catálogo (#3372, migration 0774): sinal, prazo e preço do
   // serviço são combinados com o cliente, e quem mudou precisa ficar registrado
   // como no produto. A variação tem ação própria porque é outro preço — o valor
   // que o cliente ouviu.
