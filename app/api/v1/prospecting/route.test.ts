@@ -83,6 +83,8 @@ describe("POST /api/v1/prospecting por token", () => {
   it.each([
     ["start", { action: "start", id: ID, config: CONFIG }],
     ["resume", { action: "resume", id: ID }],
+    // Spec 27: trocar as etiquetas de contato de uma campanha segue a régua do ritmo — fechada ao token.
+    ["adjust_tags", { action: "adjust_tags", id: ID, contact_tags: ["estetica"] }],
   ])("%s responde 403 sem tocar no banco", async (_nome, body) => {
     const res = await POST(tokenPost(body));
     expect(res.status).toBe(403);
