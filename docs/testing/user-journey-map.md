@@ -3937,3 +3937,20 @@ Capturas dos dois casos e traces foram inspecionados; evidência local em
 iniciais com nome completo, um nome e fallback pelo e-mail: 8 vermelhos antes,
 8 verdes depois. **Não medido:** reconhecimento de voz em aparelho real e o
 fluxo inteiro em espanhol (a cobertura em espanhol aqui é do componente).
+
+
+## Cadências de e-mail opcionais (PR1738 / decisão75B) `[P1]`
+
+Estado da adaptação: **PENDENTE DE PROVA VISUAL E BANCO**, draft. Não é marcado PASS por unitário.
+
+| Gesto | Resultado exigido | Evidência |
+|---|---|---|
+| Clonar/aplicar baseline sem instalar | Nenhuma das três tabelas de cadências existe; menu/rotas/worker sem efeito | Invariante `cadencias-provisionadora`, execução de banco pendente |
+| Dono instala em /admin/modulos; admin da empresa liga | Tabelas protegidas e porta no menu; outra empresa segue desligada | Banco e captura pendentes |
+| Gerente cria e ativa sequência; inscreve negócio sem autorização de rastreio | E-mail real no transporte de teste, link de descadastro e nenhum pixel | Bancada de e-mail e captura pendentes |
+| Inscreve outro contato com autorização | Pixel soma somente com consentimento e empresa ligados; evento aparece na atividade | Invariante + jornada visual pendentes |
+| Pausa/desliga com fila vencida | Nenhum novo envio; dados preservados | Jornada pendente |
+| Destinatário concluiu sequência e clica descadastro com empresa desligada | Supressão persistente; reinscrição recusada; repetição idempotente | Invariante + navegador pendentes |
+| Exporta e anonimiza o titular | Inscrições/eventos exportados; fila encerrada; pixel revogado; vizinho preservado | Invariante LGPD e export pendentes |
+| Transporte aceita mas avanço falha | Fila não reenvia; inscrição mostra resultado incerto para revisão | Unitário de efeito; prova de integração pendente |
+

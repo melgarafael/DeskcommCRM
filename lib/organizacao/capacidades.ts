@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "cadencias"] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -27,6 +27,7 @@ export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number
  */
 const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional> = {
   propostas: "propostas",
+  cadencias: "cadencias",
 };
 
 function objeto(v: unknown): Record<string, unknown> | null {
@@ -42,7 +43,11 @@ export function capacidadesLigadas(
   modulos: readonly ModuloOpcional[],
 ): CapacidadeDaOrganizacao[] {
   const propostas = objeto(objeto(settings)?.proposals);
-  const daEmpresa: CapacidadeDaOrganizacao[] = propostas?.enabled === true ? ["propostas"] : [];
+  const cadencias = objeto(objeto(settings)?.cadencias);
+  const daEmpresa: CapacidadeDaOrganizacao[] = [
+    ...(propostas?.enabled === true ? ["propostas" as const] : []),
+    ...(cadencias?.enabled === true ? ["cadencias" as const] : []),
+  ];
   return daEmpresa.filter((c) => modulos.includes(MODULO_DA_CAPACIDADE[c]));
 }
 

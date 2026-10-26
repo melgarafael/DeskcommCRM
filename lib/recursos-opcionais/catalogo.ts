@@ -114,6 +114,7 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Empresas e pessoas (venda para empresas)",
     oQueFaz: "Cadastro de empresas por CNPJ, das pessoas que decidem nelas e importação de planilha.",
   },
+  cadencias: { nome: "Cadências de e-mail", oQueFaz: "Sequências de e-mail opcionais por negócio, com descadastro e rastreio autorizado." },
   honorarios: {
     nome: "Honorários",
     oQueFaz: "Contratos de honorários com parcelas e o controle do que já foi pago.",
@@ -350,6 +351,7 @@ const DO_SERVIDOR: RecursoOpcional[] = [
 ];
 
 const DA_EMPRESA: RecursoOpcional[] = [
+  { id: "cadencias_da_empresa", nome: "Cadências de e-mail da empresa", oQueFaz: "Sequências opcionais com inscrição manual e descadastro, usando o e-mail da instalação.", nivel: "organizacao", padrao: "desligado", quemDecide: "admin", href: "/app/settings/cadencias", modulo: "cadencias", capacidade: "cadencias", ler: (f) => f.settings === null || f.modulos === null ? "nao_lido" : capacidadesLigadas(f.settings, f.modulos).includes("cadencias") ? "ligado" : "desligado" },
   {
     id: "conversa_fica_com_quem_atendeu",
     nome: "A conversa fica com quem atendeu",

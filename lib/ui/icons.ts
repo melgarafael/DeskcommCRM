@@ -157,6 +157,8 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // Construtor de cadências — mesma família da interface.
+  Hourglass, Lightning, Minus, StopCircle, CheckSquare, ArrowLeft,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
 } from "@phosphor-icons/react/dist/ssr";

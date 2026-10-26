@@ -833,6 +833,27 @@ export const NAV_CATALOG = [
     // `/admin/modulos`. Mesmo mecanismo genérico de `banco_externo` acima, só
     // que a fonte é a TABELA, não a flag de `platform_config`; `deModuloDesligado`
     // e este filtro não sabem a diferença, e não precisam saber.
+    href: "/app/cadencias",
+    label: "Cadências de e-mail",
+    description: "Sequências de e-mail por negócio, com descadastro.",
+    icon: "PaperPlaneTilt",
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "manager",
+    modulo: "cadencias",
+    capacidade: "cadencias",
+  },
+  {
+    href: "/app/settings/cadencias",
+    label: "Configurar cadências",
+    description: "Ativar as cadências de e-mail nesta empresa.",
+    icon: "PaperPlaneTilt",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+    modulo: "cadencias",
+  },
+  {
     href: "/app/honorarios",
     label: "Honorários",
     description: "O modelo de cobrança de cada caso e o calendário de parcelas.",

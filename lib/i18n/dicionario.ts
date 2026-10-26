@@ -31,6 +31,8 @@
  * chave crua nem para erro. Uma tradução incompleta não pode deixar a tela pior
  * do que estava.
  */
+import { TEXTOS_CADENCIAS } from "./cadencias";
+import { TEXTOS_CADENCIAS_ORIGINAIS } from "./cadencias-originais";
 import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
@@ -39,6 +41,8 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...TEXTOS_CADENCIAS_ORIGINAIS,
+  ...TEXTOS_CADENCIAS,
   "Mensagens da conversa": { es: "Mensajes de la conversación" },
   "Novas mensagens · Ir para o fim": { es: "Mensajes nuevos · Ir al final" },
   // Encaminhar mensagem (#2835) — botão na bolha do chat e o diálogo de destino.

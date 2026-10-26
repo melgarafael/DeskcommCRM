@@ -69,6 +69,8 @@ CRONS="
 # número: é o cron que dá a cadência base, e o ritmo da campanha e do canal
 # (channel_knobs + pacing_ledger) só sabem torná-la mais lenta.
 * * * * *|45|api/v1/cron/campaign-worker
+# Módulo opcional: sai antes de tocar em tabelas quando não instalado.
+* * * * *|55|api/v1/cron/cadencia-worker
 */5 * * * *|60|api/v1/cron/webhook-log-retention
 */5 * * * *|45|api/v1/cron/channel-health
 # A JANELA DE MANUTENÇÃO (#2388). Minuto a minuto porque o que ela decide é a

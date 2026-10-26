@@ -664,6 +664,9 @@ export interface ExportPayload {
    */
   honorarios_contratos: HonorariosContratoRow[];
   honorarios_parcelas: HonorariosParcelaRow[];
+  /** Módulo opcional; o coletor atual inclui vazio se não instalado. Payloads antigos podem não conter a seção. */
+  cadencias_inscricoes?: { id: string; cadence_id: string; lead_id: string; status: string; motivo_parada: string | null; rastreio_consentido: boolean; consentimento_em: string | null; emails_enviados: number; aberturas: number; created_at: string; concluida_em: string | null; parada_em: string | null }[];
+  cadencias_eventos?: { id: string; enrollment_id: string; tipo: string; created_at: string }[];
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
@@ -1407,6 +1410,35 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
           throw new Error(`honorarios_parcelas_load_failed: ${erroParcelas.message}`);
         } else if (parcelas) {
           honorarios_parcelas = parcelas;
+        }
+      }
+    }
+  }
+
+  // ADR-0002/D8: ausência do módulo é vazia; qualquer outra falha é explícita.
+  let cadenciasInstaladas = false;
+  let cadencias_inscricoes: NonNullable<ExportPayload["cadencias_inscricoes"]> = [];
+  let cadencias_eventos: NonNullable<ExportPayload["cadencias_eventos"]> = [];
+  if (contactId) {
+    // O registro, não o cache de schema do PostgREST, diz se o módulo existe.
+    // Suspenso também exporta: privacidade nunca depende do recurso ligado.
+    const { data: moduloCadencias, error: erroModulo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "cadencias").maybeSingle();
+    if (erroModulo) throw new Error("cadencias_export_module_read_failed");
+    if (moduloCadencias) {
+      cadenciasInstaladas = true;
+      const { data: inscricoesCadencia, error: erroCadencias } = await admin.from("email_cadence_enrollments")
+        .select("id, cadence_id, lead_id, status, motivo_parada, rastreio_consentido, consentimento_em, emails_enviados, aberturas, created_at, concluida_em, parada_em")
+        .eq("organization_id", organizationId).eq("contact_id", contactId).order("created_at", { ascending: false }).limit(500);
+      if (erroCadencias) throw new Error("cadencias_export_load_failed");
+      if (inscricoesCadencia) {
+        conferirTeto("cadencias_inscricoes", inscricoesCadencia, 500);
+        cadencias_inscricoes = inscricoesCadencia;
+        const ids = inscricoesCadencia.map((i) => i.id);
+        if (ids.length > 0) {
+          const { data: eventos, error: erroEventos } = await admin.from("email_cadence_events").select("id, enrollment_id, tipo, created_at")
+            .eq("organization_id", organizationId).in("enrollment_id", ids).order("created_at", { ascending: false }).limit(500);
+          if (erroEventos) throw new Error("cadencias_events_export_load_failed");
+          if (eventos) { conferirTeto("cadencias_eventos", eventos, 500); cadencias_eventos = eventos; }
         }
       }
     }
@@ -2311,6 +2343,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     leads,
     honorarios_contratos,
     honorarios_parcelas,
+    // O módulo ausente não altera o contrato do arquivo legado. Instalado
+    // (inclusive suspenso), entrega suas seções, mesmo sem linhas do titular.
+    ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
     orders,
     activities,
     checkpoints,

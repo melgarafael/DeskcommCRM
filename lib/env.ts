@@ -454,6 +454,7 @@ const schema = z.object({
    * e são o piso de rollback. Todas `optional().default()`: `.env` antigo não
    * quebra ao atualizar.
    */
+  CADENCIA_LIMITE_EMAILS_POR_DIA: z.coerce.number().int().min(1).max(10_000).optional().default(60),
   SMTP_HOST: z.string().optional().default(""),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(587),
   SMTP_SECURITY: z.enum(["starttls", "tls", "none"]).optional().default("starttls"),

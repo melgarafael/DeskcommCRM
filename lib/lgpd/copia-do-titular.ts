@@ -93,6 +93,8 @@ export const O_QUE_FICA = {
   leads: "as oportunidades abertas para ele: título, estado e valor",
   honorarios_contratos: "o contrato de honorários dele (sem a divisão interna do escritório)",
   honorarios_parcelas: "as parcelas que ele paga",
+  cadencias_inscricoes: "as sequências de e-mail nas quais foi inscrito, autorização de abertura e descadastro",
+  cadencias_eventos: "os envios, aberturas e paradas registrados sobre ele, sem metadados internos do provedor",
   orders: "os pedidos dele na loja",
   activities: "o que foi registrado sobre ele e quando",
   checkpoints: "o resumo que a máquina fez da conversa com ele (LGPD art. 20)",
