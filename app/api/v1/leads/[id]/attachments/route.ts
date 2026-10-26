@@ -80,7 +80,10 @@ function serializarAnexo(row: {
 
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  // LER o anexo é ler o negócio (#3431): quem enxerga o lead enxerga o
+  // documento dele — o `viewer` inclusive. A escrita (POST/DELETE, abaixo)
+  // segue em `agent`: lista é leitura, upload e remoção não são.
+  const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { id: leadId } = await ctx.params;

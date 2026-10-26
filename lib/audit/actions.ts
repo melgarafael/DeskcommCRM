@@ -1334,6 +1334,15 @@ export const AUDIT_ACTIONS = [
   "scheduled_message.created",
   "scheduled_message.cancelled",
   "scheduled_message.resent",
+  // Materiais do acervo (criar, enviar arquivo, editar, arquivar, reindexar).
+  // O metadata leva só ids e contagens: o texto do material nunca entra — a
+  // tabela é append-only e a cascata de LGPD não a alcança. Criar e enviar
+  // arquivo usam o MESMO código: para quem lê a trilha a pergunta é "quem pôs
+  // este material no acervo", não por qual das duas portas ele entrou.
+  "ai.knowledge_source_created",
+  "ai.knowledge_source_updated",
+  "ai.knowledge_source_archived",
+  "ai.knowledge_source_reindexed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

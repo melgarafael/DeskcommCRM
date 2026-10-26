@@ -759,6 +759,29 @@ jobs:
     # NÃO MEDIDO: se as quatro passam na vizinhança da parte 7. Quem responde
     # é o e2e do PR que criou esta parte. Se uma delas falhar por vizinhança,
     # a troca mais barata medida é `capacidades-do-agente` → parte 6 (~1069s).
+    #
+    # ── 2026-10-26: o preparo não pode gastar a folga antes do nativo ──────
+    #
+    # Run 40361684172, head 8a063d8db: partes 1/3/4/5/6/7 verdes; a 2 foi
+    # cortada sem caso vermelho, com 674s de preparo + 1006s de suíte.
+    # Eram 99 casos verdes, 6 pulados e 2 pendentes (o rótulo 105 do reporter
+    # não é contagem de verdes). Faltavam só os dois últimos de `navegacao`.
+    # O main verde 40347496767 mediu os dois em 28,2s + 2,3s; a spec inteira,
+    # 12 casos, em 329,1s. Seus ~30s por login são a espera anti-replay TOTP
+    # do helper, preservada; o Redis ausente não explica essa cadência.
+    #
+    # Supabase levou 377–390s nas partes 1/2/4/6/7: três tentativas forçadas
+    # e suas esperas antes de liberar o fallback nativo. Na 2, só o caminho
+    # até ele custou 269s. O main verde levou 94–109s no mesmo passo. Agora
+    # o nativo é a PRIMEIRA tentativa, mantendo as quatro, esperas, pipefail
+    # e classificação de falha. Não é motivo para mudar teto nem orçamento.
+    #
+    # Só `navegacao` vai da 2 para a 7, parte comum com os mesmos seeds. No
+    # main medido: jobs 2/7 = 1401/965s; subtrair/somar os 329s da spec dá
+    # 1072/1294s ESTIMADOS. No run com pull limitado, a 7 terminou em 1225s,
+    # antes da mudança; liberar o nativo primeiro recupera folga também nela.
+    # NÃO MEDIDO aqui: a nova vizinhança e o tempo real após as duas mudanças.
+    # Quem os prova é o próximo e2e completo, sem rerodar o head antigo.
     env:
       # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
       INTERNAL_AGENT_RUN_STUB: "true"
@@ -927,7 +950,6 @@ jobs:
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
-        navegacao.spec.ts
         menu-por-empresa-e-a-porta-de-volta.spec.ts
         icone-da-aba.spec.ts
       # `moeda-da-organizacao` entrou na PARTE_2 em 2026-09-04, ao lado de
@@ -1475,6 +1497,7 @@ jobs:
         equipe-no-celular.spec.ts
         extensoes-versao.spec.ts
         ia-no-celular.spec.ts
+        navegacao.spec.ts
         prova-painel-provedores.spec.ts
         comercial-no-celular.spec.ts
 
@@ -1793,6 +1816,19 @@ jobs:
       # endereçada por digest, então o que já veio de um registro não é
       # baixado de novo do outro.
       #
+      # Em 26/10/2026, partes 3 e 7 do run 40353735403 morreram antes dos
+      # testes: GHCR recusou com `toomanyrequests` e ECR com `Data limit
+      # exceeded`. Repetir o ECR na última tentativa não abria outra saída.
+      # O CLI pinado já tenta ECR, GHCR e Docker Hub quando o override está
+      # VAZIO, reaproveitando primeiro as imagens locais. O vazio explícito
+      # na tentativa limpa o GHCR que setup-cli exportou; só omitir a
+      # variável manteria o override e impediria o fallback nativo.
+      # A medição do run 40361684172 põe o nativo PRIMEIRO nesta correção: a
+      # parte 2 gastou 269s nas três tentativas forçadas e nas esperas até chegar
+      # ao caminho que funcionou. As tentativas 2/3 ainda oferecem os registros
+      # explícitos depois de uma falha transitória; a quarta libera de novo o
+      # nativo. O pin, as quatro tentativas e os backoffs continuam os mesmos.
+      #
       # `-x studio,postgres-meta`: menos imagens, menos requisições ao
       # registro. Nenhuma spec, script ou passo deste workflow fala com o
       # Studio (porta 54323) nem com o postgres-meta (que só o Studio usa):
@@ -1808,12 +1844,12 @@ jobs:
           mv supabase/migrations /tmp/migrations-off
           mkdir -p supabase/migrations
           esperas=(0 20 60 120)
-          registros=(ghcr.io public.ecr.aws ghcr.io public.ecr.aws)
+          registros=("" public.ecr.aws ghcr.io "")
           for tentativa in 1 2 3 4; do
             espera=${esperas[$((tentativa - 1))]}
             registro=${registros[$((tentativa - 1))]}
             if [ "$espera" -gt 0 ]; then
-              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro} — a anterior falhou baixando imagem do registro"
+              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro:-fallback nativo (ECR, GHCR e Docker Hub)} — a anterior falhou baixando imagem do registro"
               supabase stop --no-backup || true
               sleep "$espera"
             fi
@@ -1825,7 +1861,7 @@ jobs:
               exit 1
             fi
           done
-          echo "::error title=supabase start falhou 4 vezes baixando imagens::ghcr.io e public.ecr.aws recusaram o pull nas 4 tentativas (esperas de 20s, 60s e 120s). É limite de taxa ou rede do registro, não o PR — rerode a parte."
+          echo "::error title=supabase start falhou 4 vezes baixando imagens::GHCR, ECR e o fallback nativo com Docker Hub não concluíram o pull (esperas de 20s, 60s e 120s). O preparo falhou antes dos testes; confira os erros dos registros acima antes de rerodar."
           exit 1
 
       # O baseline é um dump `--schema-only`: ele USA os tipos das extensões

@@ -3921,6 +3921,13 @@ código e a hora anteriores e se houve confirmação).
 WhatsApp; o caminho termina em «Não enviada — sem conexão»); o toque num iPhone e num
 Android reais; o reenvio de mídia pela tela (coberto só pela regra e pela rota).
 
+## Conferência integrada de correções — 26/10/2026
+
+[Registro do lote #3462](lote-3462-2026-10-26.md): oito contribuições provadas numa
+aplicação compilada, com banco fresco, navegador, Storage, Realtime, autorização e
+webhook assinado reais. O registro delimita cada PASS, a autoria e os serviços externos
+que não foram medidos; capturas e traces contêm somente dados sintéticos.
+
 ## Controles do topo — nome acessível `[P1]` (2026-10-26, PR #3409)
 
 O seletor de idioma e o menu da pessoa incluem seus textos visíveis (PT/ES e

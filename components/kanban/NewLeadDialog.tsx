@@ -197,6 +197,11 @@ export function NewLeadDialog({
         settingsDoFunil: settings,
         destino: { stageId, desfecho: null },
         motivoDeGanho: null,
+        // O arquivo ainda não pode existir (#3433): o anexo é do negócio, e o
+        // negócio é o que este formulário vai criar. Sem isto, a etapa que pede
+        // documento deixava o botão "Criar lead" travado para sempre — o campo
+        // aparecia como faltando e não havia onde anexar.
+        semAnexosAinda: true,
       }).faltando,
     [settings, stageId, camposDoNegocio],
   );

@@ -593,6 +593,26 @@ export async function ingestMetaAppContactSync(
     return { status: "ignored", reason: "numero_interno_de_aviso" };
   }
 
+  // Titular apagado a pedido (LGPD) não volta pela agenda do app. A anonimização
+  // ZERA o telefone do cadastro (`phone_number = null`), então
+  // `findContactByVariants` não acha a ficha e `fn_upsert_wa_contact` — que casa
+  // contato só por `phone_number`/`wa_lid` — INSERIRIA uma ficha nova com o
+  // número e o nome da agenda. A pergunta vem antes de qualquer escrita, com a
+  // mesma régua do importador de histórico (`lib/channels/historico/rodada.ts`):
+  // na dúvida (erro ou resposta que não é sim/não) NÃO cria — falha fechada.
+  // O evento da agenda não traz LID, então a pergunta é só pelo telefone.
+  const { data: apagado, error: erroApagado } = await admin.rpc(
+    "fn_titular_apagado_a_pedido" as never,
+    { p_org: orgId, p_telefone: canonicalPhoneBR(telefone), p_lid: null } as never,
+  );
+  if (erroApagado || typeof apagado !== "boolean") {
+    return {
+      status: "failed",
+      reason: `titular_apagado: ${erroApagado?.message ?? "resposta sem booleano"}`,
+    };
+  }
+  if (apagado) return { status: "ignored", reason: "titular_apagado_a_pedido" };
+
   const existente = await findContactByVariants(admin, orgId, e.phone);
   const phone = existente?.phone_number
     ? canonicalPhoneBR(existente.phone_number)

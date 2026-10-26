@@ -672,6 +672,12 @@ export async function createLeadHandler(
       settingsDoFunil: settingsDaCriacao,
       destino: { stageId: stage.id, desfecho: null },
       motivoDeGanho: null,
+      // O ARQUIVO não é cobrado aqui (#3433): o anexo mora em
+      // `crm_lead_attachments.lead_id` e só pode subir depois que o negócio
+      // existe. Sem esta opção, etapa que exige documento recusava TODA
+      // criação (422) sem caminho de saída. A exigência volta no próximo move,
+      // no lote ou no fechamento — lá `camposComAnexo` é lido de verdade.
+      semAnexosAinda: true,
     });
     if (vereditoDeCampos.faltando.length > 0) {
       const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, ctx.idioma);
