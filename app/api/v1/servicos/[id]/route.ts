@@ -31,6 +31,10 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
+// O id entra em `.or()` como TEXTO de filtro (`id.eq.<id>,pai_id.eq.<id>`):
+// um id com vírgula mudaria a consulta. Só UUID chega ao banco.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface Contexto {
   params: Promise<{ id: string }>;
 }
@@ -68,6 +72,7 @@ export async function GET(_req: NextRequest, ctx: Contexto): Promise<Response> {
   const authz = await requireRole("viewer", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
   const { id } = await ctx.params;
+  if (!UUID.test(id)) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
 
   const supabase = await createClient();
   const { linhas, encontrado } = await lerServico(supabase, authz.org.orgId, id);
@@ -90,6 +95,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { id } = await ctx.params;
+  if (!UUID.test(id)) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
 
   const parsed = servicoPatchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -144,7 +150,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     .select("id, preco_cents")
     .eq("organization_id", authz.org.orgId)
     .or(`id.eq.${atual.pai_id ?? atual.id},pai_id.eq.${atual.pai_id ?? atual.id}`);
-  const precoNovo = mesclado.preco_cents ?? atual.preco_cents;
+  const precoNovo = patch.preco_cents ?? atual.preco_cents;
   const precos = ((familiares ?? []) as Array<{ id: string; preco_cents: number }>).map((linha) =>
     linha.id === id ? precoNovo : linha.preco_cents,
   );
