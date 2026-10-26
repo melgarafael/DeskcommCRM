@@ -25,7 +25,9 @@ import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
  *   A-6  com o WhatsApp desconectado o documento cabe na tela e a faixa fica visível;
  *        numa tela longa, a barra de cima gruda abaixo da faixa;
  *   A-7  com o teclado aberto (modelo Android: a janela encolhe) o composer e o
- *        último balão continuam visíveis e a fileira de ações sai.
+ *        último balão continuam visíveis e a fileira de ações sai;
+ *   A-8  a ficha do contato, aberta pelo "Ficha", tem os botões e o campo de
+ *        etiqueta com 44px (antes `h-7`, 28px, por cima do primitivo).
  *
  * E o composer de toque (PR B da F2):
  *
@@ -277,6 +279,47 @@ test.describe("atender pelo celular", () => {
     expect(assumir!.direita).toBeLessThanOrEqual(LARGURA);
     const maisAEsquerda = Math.min(...fileira.map((f) => f.esquerda));
     expect(Math.abs(assumir!.esquerda - maisAEsquerda), "Assumir não é o primeiro da fileira").toBeLessThanOrEqual(1);
+  });
+
+  // A FICHA DO CONTATO, aberta pelo "Ficha" no celular. Os primitivos já têm
+  // 44px abaixo de `lg` (`Button` e `Input`), mas a ficha os sobrescrevia com
+  // `h-7` — 28px em qualquer largura, porque o `twMerge` troca o `h-11` da
+  // variante pelo `h-7` do chamador. É a ficha lateral desenhada para mouse,
+  // que no celular abre numa folha e vira alvo de dedo. O gatilho da cor da
+  // etiqueta fica de fora: ele só existe para `manager+`, e este arquivo entra
+  // como `agent`.
+  test("A-8 a ficha do contato abre com alvos de 44px", async ({ page }) => {
+    await entrar(page);
+    await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+    await esperarConversa(page);
+
+    await page.getByRole("button", { name: "Ficha", exact: true }).tap();
+    const ficha = page.getByRole("dialog");
+    await expect(ficha.getByRole("button", { name: "Novo Lead", exact: true })).toBeVisible({ timeout: 20_000 });
+    await ficha.getByRole("button", { name: "Tags do contato", exact: true }).tap();
+    await expect(ficha.getByPlaceholder("Nova tag…").first()).toBeVisible();
+
+    const alvos = [
+      { nome: "Tags do contato", local: ficha.getByRole("button", { name: "Tags do contato", exact: true }), largura: false },
+      { nome: "Novo Lead", local: ficha.getByRole("button", { name: "Novo Lead", exact: true }), largura: false },
+      { nome: "Ver contato", local: ficha.getByRole("link", { name: "Ver contato" }), largura: false },
+      { nome: "Adicionar tag", local: ficha.getByRole("button", { name: "Adicionar tag", exact: true }), largura: true },
+      { nome: "Nova tag…", local: ficha.getByPlaceholder("Nova tag…"), largura: false },
+    ];
+    const pequenos: string[] = [];
+    for (const alvo of alvos) {
+      const n = await alvo.local.count();
+      expect(n, `"${alvo.nome}" não está na ficha`).toBeGreaterThan(0);
+      for (let i = 0; i < n; i++) {
+        await alvo.local.nth(i).scrollIntoViewIfNeeded();
+        const r = await alvo.local.nth(i).boundingBox();
+        expect(r, `"${alvo.nome}" #${i} sem caixa`).not.toBeNull();
+        if (r!.height < 44) pequenos.push(`${alvo.nome} #${i}: ${r!.height}px de altura`);
+        if (alvo.largura && r!.width < 44) pequenos.push(`${alvo.nome} #${i}: ${r!.width}px de largura`);
+      }
+    }
+    expect(pequenos, "alvo da ficha abaixo de 44px no celular").toEqual([]);
+    await page.screenshot({ path: path.join(EVIDENCE, "a8-ficha-alvos-de-toque.png") });
   });
 
   test("A-3 voltar pela tela não reabre a conversa no voltar do navegador", async ({ page }) => {

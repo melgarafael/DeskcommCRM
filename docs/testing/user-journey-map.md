@@ -1788,6 +1788,7 @@ CI — a coluna abaixo diz QUEM mede, não o que foi medido.
 | J49.5 (A-5) | Gesto de voltar do sistema | devolve a lista, sem `id=` | E2E (CI) |
 | J49.6 (A-6) `[P0]` | WhatsApp desconectado | com a faixa na tela o documento não rola (`scrollY` ≤ 1 depois de `scrollTo` ao fim); aberta a conversa, topo da camada = base das faixas (±1), a faixa continua por cima (`elementFromPoint`), o composer termina ≤ 844 e a barra de voltar fica abaixo da faixa; de volta à lista e com a página rolada (espaçador de 3000px no `<main>`), o topo do `<header>` sticky = base das faixas (±1) e `elementFromPoint` no topo dele cai no header | E2E (CI, conexão `FAILED` semeada e apagada no `finally`, com a remoção conferida) + UNIT `faixas-de-cima` |
 | J49.7 (A-7) | Teclado aberto, modelo Android | janela de 500px: `data-teclado-aberto`, fileira de ações escondida, último balão dentro do fio e composer ≤ 500 | E2E (CI) + UNIT `altura-visivel` |
+| J49.8 (A-8) | A ficha do contato no celular | aberta pelo «Ficha» (folha): «Tags do contato», «Novo Lead», «Ver contato», o campo «Nova tag…» ≥ 44 de altura; «Adicionar tag» ≥ 44×44 (o gatilho da cor, só de `manager+`, não é medido: a spec entra como `agent`) — a ficha sobrescrevia os 44px do primitivo com `h-7` (28px); acima de `lg` a densidade de mouse fica (`lg:h-7`) | E2E (CI); evidência `evidence/atender-pelo-celular-20261021/a8-ficha-alvos-de-toque.png` |
 
 **NÃO MEDIDO — só o aparelho prova:** o teclado do iOS (que NÃO encolhe a
 janela: ali quem mede é o `visualViewport.offsetTop`, e a fórmula da camada com
