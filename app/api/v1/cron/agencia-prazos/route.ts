@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { avisarLembretesDeReuniao } from "@/lib/agencia/calendario/lembretes";
+import { publicarAgendadas } from "@/lib/agencia/publicacoes/motor";
 import { avisarPrazos } from "@/lib/agencia/tarefas/relogios";
 import { avisarPrazosDaTrilha } from "@/lib/agencia/trilhas/relogio";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -19,7 +20,8 @@ export const maxDuration = 120;
  *
  * O mesmo relógio manda os lembretes das reuniões (SPEC-calendario, K7) — sem
  * cron novo, para o agendador não precisar ser reconstruído — e o relógio da
- * trilha do cliente (SPEC-trilhas, R10), pelo mesmo motivo.
+ * trilha do cliente (SPEC-trilhas, R10), pelo mesmo motivo. E publica as
+ * publicações agendadas com "publicar sozinho" (SPEC-publicacoes, P6).
  */
 async function handle(req: NextRequest) {
   const requestId = randomUUID();
@@ -37,7 +39,11 @@ async function handle(req: NextRequest) {
     if (t.avisados > 0) {
       void audit({ action: "agencia.avisos_de_trilha_enviados", organizationId: null, metadata: { avisados: t.avisados }, requestId });
     }
-    return ok({ ...r, ...l, trilha: t.avisados }, { requestId });
+    const p = await publicarAgendadas();
+    if (p.publicadas + p.falharam > 0) {
+      void audit({ action: "agencia.publicacoes_publicadas", organizationId: null, metadata: { ...p }, requestId });
+    }
+    return ok({ ...r, ...l, trilha: t.avisados, ...p }, { requestId });
   } catch (err) {
     const detalhe = err instanceof Error ? err.message : String(err);
     logger.error("[agencia-prazos.cron] falhou", { error: detalhe, requestId });

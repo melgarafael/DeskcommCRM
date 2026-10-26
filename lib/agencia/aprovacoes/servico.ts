@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import { criarAviso } from "../avisos/criar";
 import { normalizarWhatsapp } from "../convite";
+import { aoResponderAprovacaoDaPublicacao } from "../publicacoes/motor";
 import { aoMudarTarefa } from "../trilhas/motor";
 import { enfileirarWhatsappDaAgencia } from "../whatsapp/enfileirar";
 import { textoDoPedidoDeAprovacao, type TipoDeAprovacao } from "./vocabulario";
@@ -87,15 +88,19 @@ export async function registrarResposta(r: RespostaDoCliente): Promise<boolean> 
     .eq("id", r.aprovacaoId)
     .eq("organization_id", r.organizationId)
     .eq("situacao", "pendente")
-    .select("id, titulo, tarefa_id, pedido_por, agencia_clientes(nome)");
+    .select("id, titulo, tarefa_id, publicacao_id, pedido_por, agencia_clientes(nome)");
   if (error || !data?.length) return false;
   const a = data[0] as unknown as {
     id: string;
     titulo: string;
     tarefa_id: string | null;
+    publicacao_id: string | null;
     pedido_por: string | null;
     agencia_clientes: { nome: string } | null;
   };
+
+  // A publicação ligada acompanha (SPEC-publicacoes, P3).
+  if (a.publicacao_id) await aoResponderAprovacaoDaPublicacao(a.publicacao_id, r.decisao, r.comentario);
 
   // A tarefa ligada acompanha (P6): aprovado conclui, ajustes devolve com o comentário.
   let alvos: string[] = [];

@@ -1232,6 +1232,11 @@ export const AUDIT_ACTIONS = [
   "agencia.mapa_criado",
   "agencia.mapa_publicado",
   "agencia.mapa_arquivado",
+  "agencia.publicacao_salva",
+  "agencia.publicacao_agendada",
+  "agencia.publicacao_marcada_publicada",
+  "agencia.publicacao_cancelada",
+  "agencia.publicacoes_publicadas",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

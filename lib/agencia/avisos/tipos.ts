@@ -17,6 +17,8 @@ export const TIPOS_DE_AVISO = [
   "formulario_enviado",
   "contrato_concluido",
   "aprovacao_respondida",
+  "publicacao_feita",
+  "publicacao_falhou",
 ] as const;
 
 export type TipoDeAviso = (typeof TIPOS_DE_AVISO)[number];
@@ -36,4 +38,6 @@ export const PLURAL_DO_TIPO: Record<TipoDeAviso, string> = {
   formulario_enviado: "formulários preenchidos",
   contrato_concluido: "contratos assinados e pagos",
   aprovacao_respondida: "aprovações respondidas",
+  publicacao_feita: "publicações no ar",
+  publicacao_falhou: "publicações que falharam",
 };

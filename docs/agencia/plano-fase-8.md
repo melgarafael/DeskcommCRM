@@ -49,3 +49,67 @@ A Fase 8 sai em duas partes, cada uma com o seu commit na branch `feat/agencia-f
 - A tela (`components/agencia/mapas/TelaDoMapa.tsx`) é HTML + SVG, com arrasto por pointer
   events, um painel lateral e a lista no celular. O menu ganhou "Mapas".
 - Auditoria: `agencia.mapa_criado`, `agencia.mapa_publicado`, `agencia.mapa_arquivado`.
+
+## 8b — Publicações
+
+> Estado: **construída, publicada no teste.emmovimento.tech e provada** em 26/10/2026.
+> Prova pela tela em `evidence/agencia-fase-8b/` (01 a 05).
+>
+> **Verificação:** typecheck e lint limpos, 6 testes das regras
+> (`tests/unit/agencia-publicacoes-regras.test.ts`). No Postgres da VPS, baseline install +
+> update sem erro e os invariantes da agência verdes, inclusive as publicações em
+> `agencia-fase-8.test.ts`: tabela fora do alcance de anon/authenticated, rede, formato e
+> situação fechadas, mídia e post só https, `publicacao_id` da aprovação com `on delete set null`
+> e cascata do cliente. A única falha da suíte é a varredura de RLS acusando Bling e
+> `social_insights`, que já existia no fork.
+>
+> **Prova pela tela** (membro de teste com uma função temporária "Publicações (prova F8b)", que
+> tinha `publicacoes.gerenciar` e `tarefas.criar`. Para responder como cliente, ele entrou
+> temporariamente como agent na Empresa Modelo, e os dois acessos foram retirados depois):
+> 1. O membro criou o Reels de 12/11 às 18:30 com a legenda e o link do Drive, e ele apareceu na
+>    grade como Rascunho.
+> 2. "Pedir aprovação ao cliente" mudou a situação para "Com o cliente". O cliente viu a legenda
+>    em /app/aprovacoes e pediu ajustes. A publicação voltou para Rascunho com o comentário.
+> 3. A agência trocou a legenda e pediu de novo, e o cliente aprovou: Aprovada.
+> 4. "Agendar e publicar sozinho" foi recusado **antes de qualquer chamada à Meta** porque o link
+>    é de pasta do Drive. O agendamento para postar à mão funcionou.
+> 5. A publicação foi marcada como publicada, com o link do post, e os campos ficaram travados.
+> 6. Com 375 px a tela mostra a lista, esconde a grade e não rola para o lado.
+>
+> **Relógio** (diagnóstico pelo banco e pela rota do cron, que é o caminho real do agendador):
+> uma publicação agendada com "publicar sozinho", de um cliente sem organização, foi tomada pela
+> rodada, ficou como `falhou` com "O cliente não está ligado a uma organização do CRM." e
+> auditada em `agencia.publicacoes_publicadas`, sem nova tentativa.
+>
+> **⚠️ Achado de segurança da prova:** a organização "Empresa Modelo (Testes)" tem **conexão
+> Meta real** (página e Instagram com token). Por isso a prova nunca ligou "publicar sozinho"
+> nela. Quem testar a publicação automática deve usar uma conta de teste da Meta, nunca essa
+> organização.
+>
+> **Não provado:**
+> - A chamada real à Graph API (container + `media_publish` no Instagram e `/photos` na página).
+> - O aviso de "não publicou": a rodada chama `criarAviso`, mas no teste ninguém recebe os avisos
+>   gerais (pendência do dono: ativar o perfil de membro com `avisos.gerais`).
+> - O nome do mês aparece "Novembro De 2026" (a classe `capitalize` põe maiúscula em toda
+>   palavra). O conserto vai na Fase 9.
+
+### Decisões de arquitetura
+
+- **Migration 9011** + apêndice no baseline. `agencia_publicacoes` é da instalação, como as
+  outras tabelas da agência, e `agencia_aprovacoes.publicacao_id` liga a aprovação à
+  publicação.
+- As regras puras ficam em `lib/agencia/publicacoes/regras.ts`: `publicaSozinho`,
+  `linkDeMidiaDireto`, `problemaParaAgendar` e `mudouOConteudo`. Mudar o que o cliente aprovou
+  volta a publicação para rascunho e cancela a aprovação pendente.
+- `lib/agencia/publicacoes/meta.ts` fala com a Graph API v21.0, com o token no cabeçalho. Usa a
+  conexão que já existe em `social_insights_connections` (`lerConexaoSocial`).
+- `lib/agencia/publicacoes/motor.ts`:
+  - `aoResponderAprovacaoDaPublicacao` é chamado por `registrarResposta` da Fase 7.
+  - `publicarAgendadas` roda no cron `agencia-prazos` (a cada 15 min), sem mudar o agendador.
+    A trava é `agendada → publicando` no próprio UPDATE. Uma publicação parada em "publicando"
+    por mais de 15 min vira "falhou", sem repetir.
+- A tela fica em `/agencia/publicacoes` (`CalendarioDePublicacoes`), com o menu "Publicações" e a
+  permissão `publicacoes.gerenciar`. Os avisos novos são `publicacao_feita` e
+  `publicacao_falhou`.
+- Auditoria: `agencia.publicacao_salva`, `_agendada`, `_marcada_publicada`, `_cancelada` e
+  `agencia.publicacoes_publicadas` (só quando a rodada fez algo).

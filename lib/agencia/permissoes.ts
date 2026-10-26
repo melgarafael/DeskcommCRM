@@ -22,6 +22,7 @@ export const PERMISSOES_DA_AGENCIA = [
   "cofre.ver_senhas",
   "contratos.gerenciar",
   "mapa.editar",
+  "publicacoes.gerenciar",
 ] as const;
 
 export type PermissaoDaAgencia = (typeof PERMISSOES_DA_AGENCIA)[number];
@@ -40,6 +41,7 @@ export const DESCRICAO_DA_PERMISSAO: Record<PermissaoDaAgencia, string> = {
   "cofre.ver_senhas": "Ver as senhas dos clientes",
   "contratos.gerenciar": "Gerar e enviar contratos",
   "mapa.editar": "Editar o mapa mental",
+  "publicacoes.gerenciar": "Montar o calendário de publicações e publicar",
 };
 
 /** As permissões que já têm efeito nesta versão — as outras ficam escondidas na tela. */
@@ -56,6 +58,7 @@ export const PERMISSOES_EM_USO: readonly PermissaoDaAgencia[] = [
   "cofre.ver_senhas",
   "contratos.gerenciar",
   "mapa.editar",
+  "publicacoes.gerenciar",
 ];
 
 export function ehPermissaoDaAgencia(valor: string): valor is PermissaoDaAgencia {

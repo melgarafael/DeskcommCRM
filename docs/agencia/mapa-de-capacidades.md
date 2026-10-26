@@ -9,6 +9,7 @@
 > - **Fase 6** (contratos): construída, publicada e provada no teste em 26/10/2026 — [SPEC-contratos](SPEC-contratos.md), [plano-fase-6](plano-fase-6.md). Para retomar o trabalho: [CONTINUIDADE.md](CONTINUIDADE.md).
 > - **Fase 7** (aprovações do cliente): construída, publicada e provada no teste em 26/10/2026 — [SPEC-aprovacoes](SPEC-aprovacoes.md), [plano-fase-7](plano-fase-7.md).
 > - **Fase 8a** (mapa mental): construída, publicada e provada no teste em 26/10/2026 — [SPEC-mapa-mental](SPEC-mapa-mental.md), [plano-fase-8](plano-fase-8.md).
+> - **Fase 8b** (publicações): construída, publicada e provada no teste em 26/10/2026 — [SPEC-publicacoes](SPEC-publicacoes.md), [plano-fase-8](plano-fase-8.md). A publicação automática na Meta não foi exercida com conta real.
 > Este arquivo é o índice da iniciativa: cada módulo abaixo ganha a sua própria
 > especificação (`docs/agencia/SPEC-<id>.md`) só depois que este mapa for aprovado.
 
