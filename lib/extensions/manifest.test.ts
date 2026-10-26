@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { ExtensionError } from "./errors";
+import type { FluxoDoTurno } from "./fluxo-do-turno";
 import {
   checkCompatibility,
   configurationSchema,
@@ -463,3 +464,170 @@ describe("catálogo e artefato", () => {
     );
   });
 });
+
+/**
+ * O FLUXO DO TURNO NO CONTRATO DO MANIFESTO (#3076).
+ *
+ * O defeito que estes testes fecham, nas palavras do mantenedor no #3456: "`manifest.ts` aceita
+ * `turn_flow` explicitamente sem permissão nova". Uma extensão ativada para abrir Tarefas
+ * ganhava, de graça, o direito de responder ao cliente e de entregar a conversa a uma pessoa.
+ *
+ * São quatro regras, e cada uma é uma direção do mesmo contrato:
+ *   1. `turn_flow` sem `turn.send` ⇒ incompatível;
+ *   2. desfecho de passagem sem `turn.handoff` ⇒ incompatível;
+ *   3. permissão de turno declarada SEM fluxo ⇒ incompatível (não anunciar o que não existe);
+ *   4. o fluxo tem vocabulário e idiomas PRÓPRIOS (en e hi inclusos) — a nota do mantenedor sobre
+ *      o idioma do consumidor real, sem esticar o `LocalizedText` da vitrine.
+ */
+const fluxoDeLaudo: FluxoDoTurno = {
+  id: "laudo",
+  idiomas: ["pt-BR", "en", "hi"],
+  gatilhos: [
+    { idioma: "pt-BR", texto: "laudo" },
+    { idioma: "en", texto: "my report" },
+    { idioma: "hi", texto: "रिपोर्ट" },
+  ],
+  perguntas: [
+    {
+      campo: "exame",
+      texto: {
+        "pt-BR": "Qual é o tipo de exame?",
+        en: "Which exam is it?",
+        hi: "कौन सा परीक्षण है?",
+      },
+    },
+  ],
+  desfecho: {
+    tipo: "passar_para_humano",
+    aviso: {
+      "pt-BR": "Vou passar para a equipe.",
+      en: "I will pass this to the team.",
+      hi: "मैं इसे टीम को भेज रहा हूँ।",
+    },
+  },
+};
+
+function manifestoComTurno(permalink: { permissions: string[]; fluxo?: unknown }) {
+  return {
+    ...manifest,
+    permissions: permalink.permissions,
+    contributions: {
+      ...(permalink.fluxo === undefined ? {} : { turn_flow: permalink.fluxo }),
+    },
+  };
+}
+
+describe("o fluxo do turno no manifesto", () => {
+  it("aceita o pacote que declara as duas permissões e o fluxo", () => {
+    const completo = manifestoComTurno({
+      permissions: ["turn.send", "turn.handoff"],
+      fluxo: fluxoDeLaudo,
+    });
+    const parsed = parseManifest(manifestBytes(completo));
+    expect(parsed.contributions.turn_flow?.id).toBe("laudo");
+    expect(checkCompatibility(parsed)).toEqual({ compatible: true, reason: null });
+  });
+
+  it("recusa `turn_flow` SEM permissão nova — o furo exato do #3456", () => {
+    expect(() =>
+      parseManifest(
+        manifestBytes({
+          ...manifest,
+          contributions: { ...manifest.contributions, turn_flow: fluxoDeLaudo },
+        }),
+      ),
+    ).toThrow(ExtensionError);
+    // E, no sujeito de compatibilidade (o caminho que a API usa antes de baixar),
+    // o motivo é o mesmo do resto: permissão não suportada/declarada.
+    expect(
+      checkCompatibility({
+        format_version: 1,
+        profile: "declarative",
+        host_api: { min: 1, max: 2 },
+        permissions: ["navigation.tasks"],
+        dependencies: [],
+        contributions: { turn_flow: fluxoDeLaudo },
+      }),
+    ).toEqual({ compatible: false, reason: "permission_unsupported" });
+  });
+
+  it("recusa desfecho de passagem sem `turn.handoff`", () => {
+    expect(
+      checkCompatibility({
+        format_version: 1,
+        profile: "declarative",
+        host_api: { min: 1, max: 2 },
+        permissions: ["turn.send"],
+        dependencies: [],
+        contributions: { turn_flow: fluxoDeLaudo },
+      }),
+    ).toEqual({ compatible: false, reason: "permission_unsupported" });
+    // Com as duas, o mesmo fluxo passa: a recusa é da permissão que falta, não do fluxo.
+    expect(
+      checkCompatibility({
+        format_version: 1,
+        profile: "declarative",
+        host_api: { min: 1, max: 2 },
+        permissions: ["turn.send", "turn.handoff"],
+        dependencies: [],
+        contributions: { turn_flow: fluxoDeLaudo },
+      }),
+    ).toEqual({ compatible: true, reason: null });
+  });
+
+  it("fluxo que só encerra a coleta não exige `turn.handoff`", () => {
+    const soEncerra: FluxoDoTurno = {
+      ...fluxoDeLaudo,
+      desfecho: { tipo: "assumir", texto: { "pt-BR": "Anotei, obrigado!", en: "Noted, thank you!" } },
+    };
+    expect(
+      checkCompatibility({
+        format_version: 1,
+        profile: "declarative",
+        host_api: { min: 1, max: 2 },
+        permissions: ["turn.send"],
+        dependencies: [],
+        contributions: { turn_flow: soEncerra },
+      }),
+    ).toEqual({ compatible: true, reason: null });
+  });
+
+  it("permissão de turno declarada SEM fluxo é recusada — não se anuncia concessão que não existe", () => {
+    expect(
+      checkCompatibility({
+        format_version: 1,
+        profile: "declarative",
+        host_api: { min: 1, max: 2 },
+        permissions: ["turn.send"],
+        dependencies: [],
+        contributions: { crm_cards: [] },
+      }),
+    ).toEqual({ compatible: false, reason: "permission_unsupported" });
+  });
+
+  it("o sujeito PARCIAL (o `entry` do catálogo, sem contribuições) não é julgado por ausência", () => {
+    // A pré-checagem da instalação passa host_api/permissions sem `contributions`: ali a ausência
+    // de fluxo é ausência de informação. Se este teste cair, nenhuma extensão de turno instala.
+    expect(
+      checkCompatibility({
+        host_api: { min: 1, max: 2 },
+        permissions: ["turn.send", "turn.handoff"],
+      }),
+    ).toEqual({ compatible: true, reason: null });
+  });
+
+  it("o perfil de dados não dirige o turno", () => {
+    expect(() =>
+      parseManifest(
+        manifestBytes({
+          ...manifest,
+          permissions: ["turn.send"],
+          data: { mode: "declarado", objetos: [{ slug: "ficha", rotulo: { "pt-BR": "Ficha" }, campos: [{ slug: "nome", tipo: "texto" }] }] },
+          configuration: {},
+          contributions: { turn_flow: { ...fluxoDeLaudo, desfecho: { tipo: "assumir", texto: { "pt-BR": "ok" } } } },
+        }),
+      ),
+    ).toThrow(ExtensionError);
+  });
+});
+

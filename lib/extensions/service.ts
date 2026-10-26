@@ -12,6 +12,8 @@ import { createClient } from "@/lib/supabase/server";
 
 import { assertCatalogOrigin, downloadArtifact } from "./download";
 import { SQL_ERRORS } from "./erros-do-banco";
+import { aceitePendente } from "./consentimento";
+import type { ExtensionPermission } from "./capacidades";
 import { causaSegura, ExtensionError } from "./errors";
 import {
   lerManifestoAdmitido,
@@ -77,6 +79,9 @@ const bindingRowSchema = z.object({
   configuration: configurationSchema,
   revision: z.number().int(),
   deactivated_by_removal_at: z.string().nullable(),
+  // O aceite do dono da organização (#3076). `text[]` chega como lista; nulo só em banco cujo
+  // schema precede a 0767, e nesse caso a leitura devolve `[]` (nada aceito) em vez de explodir.
+  accepted_permissions: z.array(z.string()).nullable().optional(),
 });
 const countRowSchema = z.object({
   installation_id: uuid,
@@ -129,6 +134,29 @@ function dbFailure(error: { code?: string; message?: string } | null): void {
     "Não foi possível confirmar o resultado. Consulte o histórico antes de repetir o pedido.",
     503,
   );
+}
+
+/**
+ * O aceite vigente da ORGANIZAÇÃO para esta instalação (#3076).
+ *
+ * Lido do banco e não do `input`: o pedido que só muda a densidade não carrega concessão, e
+ * presumir o que está gravado a partir do que o cliente mandou seria aceitar a palavra da tela
+ * como se fosse o ato do dono.
+ */
+async function lerAceiteVigente(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  installationId: string,
+): Promise<ExtensionPermission[]> {
+  const result = await admin
+    .from("organization_extensions")
+    .select("accepted_permissions")
+    .eq("organization_id", organizationId)
+    .eq("installation_id", installationId)
+    .maybeSingle();
+  dbFailure(result.error);
+  const row = z.object({ accepted_permissions: z.array(z.string()).nullable() }).nullable().parse(result.data);
+  return (row?.accepted_permissions ?? []) as ExtensionPermission[];
 }
 
 function serviceError(code: keyof typeof SQL_ERRORS): ExtensionServiceError {
@@ -212,7 +240,7 @@ const INSTALL_COLS =
   "id,catalog_id,artifact_id,previous_artifact_id,publisher,name,version,revision,removed_at";
 const ARTIFACT_COLS = "id,sha256,byte_length,manifest,document";
 const BINDING_COLS =
-  "organization_id,installation_id,enabled,configuration,revision,deactivated_by_removal_at";
+  "organization_id,installation_id,enabled,configuration,revision,deactivated_by_removal_at,accepted_permissions";
 
 /**
  * Leitura por lista de ids em lotes. O filtro `in` vai na URL do PostgREST; 256 uuids passam de
@@ -967,21 +995,38 @@ export async function configureExtension(
   organizationId: string,
   installationId: string,
   operationId: string,
-  input: { expected_revision: number; enabled: boolean; configuration: ExtensionConfiguration },
+  input: {
+    expected_revision: number;
+    enabled: boolean;
+    configuration: ExtensionConfiguration;
+    /** O conjunto ACEITO neste ato (#3076). Ausente = nenhuma concessão nova. */
+    accept_permissions?: ExtensionPermission[];
+  },
 ): Promise<ExtensionOperationView> {
   const admin = createAdminClient();
-  // A ativação usa o mesmo contrato de leitura/instalação antes da mutação.
-  if (input.enabled) {
-    const result = await admin
+  /**
+   * O manifesto vigente é a fonte do que o pacote PEDE, mas só é lido quando o ato precisa dele:
+   * ativar (compatibilidade + cobertura do fluxo de turno) ou conceder aceite (só se aceita o que
+   * a versão DECLARA).
+   *
+   * Desativar sem conceder nada não precisa do manifesto — e não deve precisar: a reversão não
+   * pode depender de ler o artefato, e a repetição da MESMA chave de idempotência tem de chegar à
+   * RPC (que devolve o recibo, `applied_now: false`) sem exigir tabela nenhuma. Ler sempre
+   * transformava "reenviei o pedido" em `extension_installation_not_found`.
+   */
+  const precisaDoManifesto = input.enabled || input.accept_permissions !== undefined;
+  let manifest: ExtensionManifest | null = null;
+  if (precisaDoManifesto) {
+    const instalacao = await admin
       .from("extension_installations")
       .select("artifact_id,removed_at")
       .eq("id", installationId)
       .maybeSingle();
-    dbFailure(result.error);
+    dbFailure(instalacao.error);
     const installed = z
       .object({ artifact_id: uuid, removed_at: z.string().nullable() })
       .nullable()
-      .parse(result.data);
+      .parse(instalacao.data);
     if (!installed) throw serviceError("extension_installation_not_found");
     // Removida: a RPC recusa com `extension_removed` (ou devolve o recibo de uma repetição);
     // conferir a compatibilidade antes daria o motivo errado.
@@ -992,13 +1037,41 @@ export async function configureExtension(
         .eq("id", installed.artifact_id)
         .single();
       dbFailure(artifact.error);
-      if (
-        !checkCompatibility(admittedManifest(artifactRowSchema.parse(artifact.data))).compatible
-      ) {
+      manifest = admittedManifest(artifactRowSchema.parse(artifact.data));
+      if (input.enabled && !checkCompatibility(manifest).compatible) {
         throw new ExtensionError("extension_incompatible");
       }
     }
   }
+
+  /**
+   * O ACEITE, conferido ANTES da RPC (que confere de novo).
+   *
+   * Três regras, e a ordem importa:
+   *
+   *   1. só se aceita o que a versão vigente DECLARA — aceitar um nome que o manifesto não tem
+   *      seria conceder autoridade para um efeito que o pacote não exerce;
+   *   2. o conjunto informado substitui o anterior (não é delta): um delta somado esconderia a
+   *      permissão que a organização aceitou antes e que esta versão já não pede;
+   *   3. ativar exige COBERTURA do que o fluxo usa. É a "verificação dessa mudança nas
+   *      atualizações" do mantenedor: uma versão que passa a pedir `turn.handoff` não herda o
+   *      aceite de `turn.send`, e a ativação falha com o código que a tela sabe transformar em
+   *      "Autorizar". Desativar nunca é bloqueado — a reversão não depende de aceite.
+   */
+  if (manifest !== null && input.accept_permissions !== undefined) {
+    const declaradas = manifest.permissions as readonly ExtensionPermission[];
+    if (input.accept_permissions.some((permissao) => !declaradas.includes(permissao))) {
+      throw serviceError("extension_invalid_input");
+    }
+  }
+  if (manifest !== null && input.enabled) {
+    const aceitas = input.accept_permissions ?? (await lerAceiteVigente(admin, organizationId, installationId));
+    const fluxo = manifest.contributions.turn_flow;
+    if (fluxo !== undefined && aceitePendente({ declaradas: manifest.permissions, aceitas, fluxo }).length > 0) {
+      throw serviceError("extension_permission_not_accepted");
+    }
+  }
+
   const result = await admin.rpc("fn_extensions_configure", {
     p_actor: actorId,
     p_organization: organizationId,
@@ -1007,6 +1080,10 @@ export async function configureExtension(
     p_expected_revision: input.expected_revision,
     p_enabled: input.enabled,
     p_configuration: input.configuration,
+    // `null` = "não estou concedendo nada agora"; a RPC preserva o aceite vigente. Mandar o
+    // conjunto vazio apagaria concessões antigas numa troca de densidade, que é o oposto de
+    // "instalar não é autorizar" — seria "configurar é revogar".
+    p_accepted_permissions: input.accept_permissions ?? null,
   });
   dbFailure(result.error);
   const operation = operationView(result.data);
@@ -1021,6 +1098,11 @@ export async function configureExtension(
         operation_id: operation.id,
         expected_revision: input.expected_revision,
         enabled: input.enabled,
+        // O aceite entra na AUDITORIA: é o ato que autoriza o efeito, e quem audita precisa ver
+        // a concessão e não só a ativação que ela permitiu.
+        ...(input.accept_permissions !== undefined
+          ? { accepted_permissions: input.accept_permissions }
+          : {}),
       },
     });
   }

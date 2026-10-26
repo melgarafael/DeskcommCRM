@@ -1,5 +1,6 @@
 /** Contrato de apresentação; não importa cliente de banco nem configuração do servidor. */
 import type { CatalogEntry, ExtensionConfiguration, ExtensionManifest } from "./manifest";
+import type { ExtensionPermission } from "./capacidades";
 import type { ExtensionOperationKind, ExtensionOperationStatus } from "./vocabulario";
 
 export interface ExtensionOperationView {
@@ -44,6 +45,20 @@ export interface InstalledExtensionView {
   version: string;
   display: ExtensionManifest["display"];
   permissions: ExtensionManifest["permissions"];
+  /**
+   * O que a ORGANIZAÇÃO aceitou explicitamente (#3076).
+   *
+   * Não se confunde com `permissions`: aquele é o que o pacote PEDE, este é o que o dono da
+   * organização CONCEDEU. A tela precisa dos dois para mostrar "o que já valia" e "o que falta".
+   */
+  accepted_permissions: ExtensionPermission[];
+  /**
+   * As permissões de efeito que a versão vigente exige e o aceite ainda não cobre.
+   *
+   * Não vazio = a extensão não age, mesmo ativa e compatível. É a prova de ATUALIZAÇÃO visível na
+   * tela: uma versão nova que passa a pedir `turn.handoff` aparece aqui até o aceite novo.
+   */
+  pending_permissions: ExtensionPermission[];
   enabled: boolean;
   /** Revisão do VÍNCULO desta organização (a precondição de configurar). */
   revision: number;

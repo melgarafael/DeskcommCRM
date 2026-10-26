@@ -12,6 +12,7 @@ import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { randomId } from "@/lib/random-id";
 import { ehTrocaParaVersaoMenor } from "@/lib/extensions/versao";
 import type { CatalogEntry, ExtensionConfiguration } from "@/lib/extensions/manifest";
+import type { ExtensionPermission } from "@/lib/extensions/capacidades";
 import type {
   ExtensionListView,
   ExtensionOperationView,
@@ -606,11 +607,17 @@ export function ExtensionsManager({
       extension: InstalledExtensionView,
       enabled: boolean,
       configuration: ExtensionConfiguration,
+      // O ACEITE (#3076). Só viaja quando o dono da organização autoriza; ausente = nenhuma
+      // concessão nova, e o servidor preserva a que já existe.
+      acceptPermissionList?: ExtensionPermission[],
     ): Promise<{ ok: boolean; message: string }> => {
       const payload = {
         expected_revision: extension.revision,
         enabled,
         configuration,
+        ...(acceptPermissionList === undefined
+          ? {}
+          : { accept_permissions: acceptPermissionList }),
       };
       const targetKey = `configure:${extension.id}:${JSON.stringify(payload)}`;
       const result = await runMutation({
@@ -1054,6 +1061,16 @@ export function ExtensionsManager({
                       onConfigure={async (alvo, enabled, configuration) => {
                         setConfigFeedback(({ [alvo.id]: _, ...resto }) => resto);
                         const { message } = await configure(alvo, enabled, configuration);
+                        setConfigFeedback((atual) => ({ ...atual, [alvo.id]: message }));
+                      }}
+                      onAccept={async (alvo) => {
+                        setConfigFeedback(({ [alvo.id]: _, ...resto }) => resto);
+                        // O conjunto INTEIRO — o que já valia mais o que falta. O pedido substitui
+                        // o aceite anterior; mandar só a pendência apagaria a concessão antiga.
+                        const { message } = await configure(alvo, alvo.enabled, alvo.configuration, [
+                          ...alvo.accepted_permissions,
+                          ...alvo.pending_permissions,
+                        ]);
                         setConfigFeedback((atual) => ({ ...atual, [alvo.id]: message }));
                       }}
                       canInstall={data.can_install}

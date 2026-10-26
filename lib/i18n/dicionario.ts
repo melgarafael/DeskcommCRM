@@ -9085,6 +9085,39 @@ export const DICIONARIO: Traducoes = {
   "Envio bloqueado": { es: "Envío bloqueado" },
   "Passou para humano": { es: "Pasó a una persona" },
   "Voltou para o atendimento automático": { es: "Volvió a la atención automática" },
+  // O par da extensão no turno (#3076) — a conversa muda de dono entre a IA e o
+  // pacote instalado, e quem lê a timeline precisa ver as duas pontas.
+  "Extensão assumiu a conversa": { es: "La extensión asumió la conversación" },
+  "A extensão pede permissões que a organização ainda não aceitou.": {
+    es: "La extensión pide permisos que la organización todavía no aceptó.",
+  },
+  // O bloco de aceite do card (#3076): a tela nomeia a concessão pendente e o botão que a concede.
+  "Falta o seu aceite": { es: "Falta tu consentimiento" },
+  "O que ela pede:": { es: "Lo que pide:" },
+  "Enquanto você não aceitar, ela não responde ao cliente.": {
+    es: "Mientras no lo aceptes, no responde al cliente.",
+  },
+  Autorizar: { es: "Autorizar" },
+  "Peça a um administrador da organização para autorizar.": {
+    es: "Pide a un administrador de la organización que lo autorice.",
+  },
+  "Conversa voltou para o atendimento automático": {
+    es: "La conversación volvió a la atención automática",
+  },
+  // As duas permissões nomeadas do turno (lib/extensions/capacidades.ts) — o nome
+  // que a tela mostra ANTES de alguém aceitar. Elas não abrem tela, então a frase
+  // diz o que o pacote passa a poder FAZER, e não para onde leva.
+  "Responde ao cliente no seu lugar": { es: "Responde al cliente en tu lugar" },
+  "Passa a conversa para uma pessoa": { es: "Pasa la conversación a una persona" },
+  "Responde ao cliente no seu lugar, com aceite próprio.": {
+    es: "Responde al cliente en tu lugar, con tu consentimiento expreso.",
+  },
+  "Passa a conversa para uma pessoa, com aceite próprio.": {
+    es: "Pasa la conversación a una persona, con tu consentimiento expreso.",
+  },
+  "Responde ao cliente no seu lugar e passa a conversa para uma pessoa, com aceite próprio.": {
+    es: "Responde al cliente en tu lugar y pasa la conversación a una persona, con tu consentimiento expreso.",
+  },
   "Próxima ação aprovada": { es: "Próxima acción aprobada" },
   "Próxima ação descartada": { es: "Próxima acción descartada" },
   "Dados do negócio alterados": { es: "Datos del negocio modificados" },

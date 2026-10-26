@@ -61,6 +61,11 @@ function installation(overrides: Partial<InstalledExtensionView> = {}): Installe
     version: "1.0.0",
     display: { ...DISPLAY },
     permissions: ["navigation.tasks"],
+    // O vínculo da organização e o que a VERSÃO ainda pede (#3076). O dublê não declara fluxo de
+    // turno, então nada fica pendente: `[]`/`[]` é o mesmo estado que a rota devolve para uma
+    // extensão que só abre tela.
+    accepted_permissions: [],
+    pending_permissions: [],
     enabled: false,
     revision: 1,
     configuration: { density: "comfortable", show_description: true },
@@ -1882,5 +1887,79 @@ describe("ExtensionsManager", () => {
       await vi.advanceTimersByTimeAsync(3_000);
     });
     expect(leituras()).toBeGreaterThan(comAbaOculta);
+  });
+
+  it("permissão de turno pendente aparece como 'Falta o seu aceite', e Autorizar manda o conjunto INTEIRO", async () => {
+    // A prova de ATUALIZAÇÃO na tela (#3076): a versão nova passou a pedir `turn.handoff`, o aceite
+    // antigo cobre só `turn.send`. O card nomeia o que falta — e o pedido leva os DOIS nomes, porque
+    // o conjunto substitui o anterior em vez de somar.
+    const pendente = list(ORG_A, {
+      installations: [
+        installation({
+          enabled: true,
+          revision: 3,
+          permissions: ["navigation.tasks", "turn.send", "turn.handoff"],
+          accepted_permissions: ["turn.send"],
+          pending_permissions: ["turn.handoff"],
+        }),
+      ],
+    });
+    let enviado: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json({ data: pendente }))
+        .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+          enviado = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          const id = new Headers(init?.headers).get("Idempotency-Key")!;
+          return Promise.resolve(json({ data: operation({ id, kind: "configure" }) }));
+        })
+        .mockResolvedValue(json({ data: pendente })),
+    );
+    const user = userEvent.setup();
+    renderManager();
+
+    const bloco = await screen.findByTestId(`extension-pending-permissions-${INSTALLATION}`);
+    expect(bloco).toHaveTextContent("Falta o seu aceite");
+    // A concessão é NOMEADA: quem autoriza lê o EFEITO, não um código de permissão.
+    expect(bloco).toHaveTextContent("Passa a conversa para uma pessoa");
+    expect(bloco).not.toHaveTextContent("turn.handoff");
+
+    await user.click(screen.getByTestId(`extension-accept-permissions-${INSTALLATION}`));
+
+    await waitFor(() => expect(enviado).not.toBeNull());
+    expect(enviado).toMatchObject({
+      expected_revision: 3,
+      enabled: true,
+      accept_permissions: ["turn.send", "turn.handoff"],
+    });
+  });
+
+  it("quem não administra a organização lê a pendência, mas não recebe o botão de autorizar", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        json({
+          data: list(ORG_A, {
+            can_manage: false,
+            installations: [
+              installation({
+                enabled: true,
+                permissions: ["turn.send"],
+                accepted_permissions: [],
+                pending_permissions: ["turn.send"],
+              }),
+            ],
+          }),
+        }),
+      ),
+    );
+    renderManager();
+
+    const bloco = await screen.findByTestId(`extension-pending-permissions-${INSTALLATION}`);
+    expect(bloco).toHaveTextContent("Falta o seu aceite");
+    expect(bloco).toHaveTextContent("Peça a um administrador da organização para autorizar.");
+    expect(screen.queryByTestId(`extension-accept-permissions-${INSTALLATION}`)).toBeNull();
   });
 });

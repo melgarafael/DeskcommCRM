@@ -8,7 +8,9 @@ import {
   type ExtensionPermission,
 } from "./capacidades";
 
+import { PERMISSOES_DE_TURNO, permissoesDoFluxo } from "./consentimento";
 import { ExtensionError } from "./errors";
+import { fluxoDoTurnoSchema, type FluxoDoTurno } from "./fluxo-do-turno";
 import { parseStrictJson } from "./strict-json";
 import {
   esquemaDaContribuicaoDeTema,
@@ -89,6 +91,15 @@ export type ExtensionManifest = {
     }>;
     /** Um tema opcional que a organização pode escolher para pintar o produto. */
     theme?: TemaDeExtensao;
+    /**
+     * O fluxo que a extensão dirige DENTRO do turno do agente (#3076). O vocabulário é próprio
+     * (`lib/extensions/fluxo-do-turno.ts`) e traz os idiomas que ele cobre — inglês e híndi
+     * inclusive —, em vez de esticar o `LocalizedText` do manifesto, que é o texto da VITRINE.
+     *
+     * Declarar isto exige `turn.send` e `turn.handoff` (quando o desfecho passa para humano):
+     * é a permissão nomeada que o #3456 não tinha, e sem ela o manifesto é incompatível.
+     */
+    turn_flow?: FluxoDoTurno;
   };
 };
 
@@ -329,6 +340,9 @@ const manifestSchema: z.ZodType<ExtensionManifest> = z
           // contribui card nenhum, e um declarativo sem card não teria o que mostrar.
           .optional(),
         theme: esquemaDaContribuicaoDeTema.optional(),
+        // O fluxo do turno. O schema é o do vocabulário, e não uma cópia: uma cópia aqui
+        // aceitaria um campo que o host recusa na hora de dirigir a conversa.
+        turn_flow: fluxoDoTurnoSchema.optional(),
       })
       .strict(),
   })
@@ -346,13 +360,23 @@ const manifestSchema: z.ZodType<ExtensionManifest> = z
       if (!("density" in manifest.configuration)) {
         context.addIssue({ code: "custom", message: "perfil declarativo exige configuração" });
       }
-      if (manifest.contributions.crm_cards === undefined) {
+      // Um declarativo contribui ALGUMA coisa visível: cards de orientação ou um fluxo de turno.
+      // Antes isto exigia `crm_cards`; um pacote que só dirige o turno não tem card — e exigir um
+      // card inútil só para caber na validação seria o mesmo erro que a ADR-0005 D4 recusou para
+      // os módulos de dados.
+      if (
+        manifest.contributions.crm_cards === undefined &&
+        manifest.contributions.turn_flow === undefined
+      ) {
         context.addIssue({ code: "custom", message: "perfil declarativo contribui cards" });
       }
       return;
     }
     if (manifest.contributions.crm_cards !== undefined) {
       context.addIssue({ code: "custom", message: "perfil de dados não contribui card" });
+    }
+    if (manifest.contributions.turn_flow !== undefined) {
+      context.addIssue({ code: "custom", message: "perfil de dados não dirige o turno" });
     }
     if (manifest.data.mode !== "declarado") {
       context.addIssue({ code: "custom", message: "perfil de dados declara objetos" });
@@ -540,8 +564,36 @@ export function temConfiguracaoDeCard(
   return "density" in configuration && typeof configuration.density === "string";
 }
 
+/**
+ * O PACOTE NÃO PODE DECLARAR O EFEITO SEM A PERMISSÃO NOMEADA.
+ *
+ * O #3456 fechou porque `manifest.ts` aceitava `contributions.turn_flow` sem permissão nova:
+ * o fluxo existia no contrato, mas não existia concessão. A regra tem de morrer no PARSE, e
+ * não só no `checkCompatibility`, porque o parse é o único caminho por onde todo manifesto
+ * entra — catálogo, instalação, atualização, revalidação do gravado. Um check a jusante pode
+ * ser esquecido por um chamador novo; o parse, não.
+ *
+ * A permissão é DERIVADA do desfecho (`permissoesDoFluxo`): um pacote que declare "só uso
+ * `turn.send`" e tenha desfecho de passagem continua tendo o efeito largo, e por isso é
+ * recusado pelo que o fluxo FAZ, não pelo que ele diz.
+ */
+function exigirPermissoesDoFluxo(manifest: ExtensionManifest): void {
+  const fluxo = manifest.contributions.turn_flow;
+  if (fluxo === undefined) return;
+  const faltando = permissoesDoFluxo(fluxo).filter(
+    (permissao) => !manifest.permissions.includes(permissao),
+  );
+  if (faltando.length > 0) {
+    throw new ExtensionError("extension_invalid_package", {
+      cause: new Error(`turn_flow exige permissão não declarada: ${faltando.join(", ")}`),
+    });
+  }
+}
+
 export function parseManifest(bytes: Uint8Array): ExtensionManifest {
-  return parseWithSchema(bytes, EXTENSION_LIMITS.packageBytes, manifestSchema);
+  const manifest = parseWithSchema(bytes, EXTENSION_LIMITS.packageBytes, manifestSchema);
+  exigirPermissoesDoFluxo(manifest);
+  return manifest;
 }
 
 export function parseCatalog(bytes: Uint8Array): ExtensionCatalog {
@@ -594,6 +646,34 @@ export function checkCompatibility(subject: CompatibilitySubject): Compatibility
   if (
     subject.contributions?.theme !== undefined &&
     !declaradas.has("theme.apply")
+  ) {
+    return incompatible("permission_unsupported");
+  }
+  // ─── O FLUXO DO TURNO (#3076) ──────────────────────────────────────────────
+  //
+  // É A REGRA QUE FALTAVA NO #3456: `contributions.turn_flow` entrava no manifesto sem permissão
+  // nova, e a ativação genérica — feita para abrir Tarefas — passava a autorizar a extensão a
+  // responder ao cliente e a entregar a conversa a uma pessoa. Duas direções, as duas fechadas:
+  //
+  //   - o fluxo usa capacidades (`turn.respond`, e `turn.handoff` quando passa para humano), e
+  //     CADA capacidade tem permissão nomeada; elas precisam estar declaradas;
+  //   - declarar permissão de turno sem fluxo é anunciar ao dono da organização uma concessão
+  //     que o pacote não usa — a mesma mentira que a ADR-0005 D4 recusou para `dados.proprios`.
+  //
+  // A permissão é DERIVADA do desfecho (`permissoesDoFluxo`), nunca lida de um campo paralelo: um
+  // pacote que declarasse "só uso `turn.send`" e tivesse desfecho de passagem ficaria com a
+  // permissão estreita e o efeito largo.
+  // O segundo ramo só vale quando `contributions` veio junto (manifesto inteiro). O `entry` do
+  // catálogo não carrega contribuições, e a pré-checagem de instalação passa um sujeito parcial:
+  // ali a ausência de fluxo é ausência de INFORMAÇÃO, não de contribuição.
+  const fluxo = subject.contributions?.turn_flow;
+  if (fluxo !== undefined) {
+    if (permissoesDoFluxo(fluxo).some((permissao) => !declaradas.has(permissao))) {
+      return incompatible("permission_unsupported");
+    }
+  } else if (
+    subject.contributions !== undefined &&
+    PERMISSOES_DE_TURNO.some((permissao) => declaradas.has(permissao))
   ) {
     return incompatible("permission_unsupported");
   }

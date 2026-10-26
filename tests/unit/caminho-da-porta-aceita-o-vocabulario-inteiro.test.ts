@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { EXTENSION_CAPABILITIES, PORTA_DA_CAPACIDADE } from "@/lib/extensions/capacidades";
+import {
+  CAPACIDADES_DE_EFEITO,
+  CAPACIDADES_DE_PORTA,
+  EFEITO_DA_CAPACIDADE,
+  PORTA_DA_CAPACIDADE,
+} from "@/lib/extensions/capacidades";
 import { checkCompatibility } from "@/lib/extensions/manifest";
 import { openRequestSchema } from "@/lib/extensions/requests";
 
@@ -33,8 +38,20 @@ const manifestoBase = {
   dependencies: [] as [],
 };
 
+/**
+ * O vocabulário tem DUAS naturezas desde o #3076, e o caminho é percorrido em cada uma:
+ *
+ *   `porta`  — `CAPACIDADES_DE_PORTA`: abre tela, tem destino no mapa do host e é aceita pelo
+ *              pedido HTTP do clique (`openRequestSchema`).
+ *   `efeito` — `CAPACIDADES_DE_EFEITO`: age na conversa, NÃO tem destino e o pedido de porta a
+ *              RECUSA. Dar-lhe uma entrada aqui seria abrir navegação para o que não navega;
+ *              recusá-la no schema é a mesma cerca vista do outro lado.
+ *
+ * Percorrer só a primeira lista deixaria a segunda sem prova; foi assim que o defeito original
+ * (schema com `z.literal`) sobreviveu a sete rodadas até a prova em tela achar.
+ */
 describe("o caminho da porta aceita o vocabulário inteiro", () => {
-  it.each([...EXTENSION_CAPABILITIES])(
+  it.each([...CAPACIDADES_DE_PORTA])(
     "%s é aceita pelo schema do pedido HTTP",
     (capacidade) => {
       const r = openRequestSchema.safeParse({
@@ -49,11 +66,24 @@ describe("o caminho da porta aceita o vocabulário inteiro", () => {
     },
   );
 
-  it.each([...EXTENSION_CAPABILITIES])("%s tem porta no mapa do host", (capacidade) => {
-    expect(PORTA_DA_CAPACIDADE[capacidade]?.destino).toBeTruthy();
+  it.each([...CAPACIDADES_DE_PORTA])("%s tem porta no mapa do host", (capacidade) => {
+    expect(PORTA_DA_CAPACIDADE[capacidade].destino).toBeTruthy();
   });
 
-  it.each([...EXTENSION_CAPABILITIES])(
+  it.each([...CAPACIDADES_DE_EFEITO])(
+    "%s tem efeito no mapa do host e o pedido de PORTA a recusa",
+    (capacidade) => {
+      expect(EFEITO_DA_CAPACIDADE[capacidade].permissao).toMatch(/^turn\./);
+      const r = openRequestSchema.safeParse({
+        capability: capacidade,
+        expected_revision: 1,
+        card_id: "um-cartao",
+      });
+      expect(r.success, `${capacidade} navegaria: o schema do clique a aceitou`).toBe(false);
+    },
+  );
+
+  it.each([...CAPACIDADES_DE_PORTA])(
     "%s é compatível quando a permissão dela está declarada",
     (capacidade) => {
       const permissao = PORTA_DA_CAPACIDADE[capacidade].permissao;

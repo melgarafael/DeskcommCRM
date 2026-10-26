@@ -102,6 +102,22 @@ export type ActivityType =
   | "conversation_released"
   | "conversation_ai_paused"
   /**
+   * A CONVERSA MUDOU DE DONO ENTRE A IA E UMA EXTENSÃO (#3076).
+   *
+   * `conversation_claimed`/`conversation_released` contam a troca entre PESSOAS; a
+   * ida e a volta IA↔humano contam o handoff. A extensão que dirige o turno não era
+   * nenhuma das duas: ela toma a conversa por conta própria, coleta o que precisa e
+   * devolve — e sem estas duas linhas a timeline mostrava o cliente atendido por
+   * ninguém, porque a bolha dela sai pelo host, não pela IA.
+   *
+   * São um PAR, e a razão é a mesma de `handoff_triggered`/`handoff_resolved`: a ida
+   * sozinha é meia continuidade lida como continuidade. `assumed` abre a coleta;
+   * `returned` fecha (concluiu, devolveu a mensagem fora do fluxo, ou a extensão
+   * deixou de dirigir — desligada/removida/sem aceite).
+   */
+  | "extension_turn_assumed"
+  | "extension_turn_returned"
+  /**
    * Chamada de voz WhatsApp (WaCalls, spec 18) encerrada — gravada na timeline
    * junto com mensagens/notas. Emitida pela ponte de eventos do worker
    * (`lib/wacalls/events-bridge.ts`) ao receber `call-ended`, via
@@ -306,6 +322,10 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // arquivos e o controle NEGATIVO de `handoff-por-orcamento.test.ts` usa
   // literalmente "Voltar para a IA" como a sabotagem que deve reprovar.
   conversation_ai_paused: "Pausou o automático",
+  // O par da extensão (#3076). "Extensão" é o nome que o produto usa na tela de
+  // gestão — quem lê a timeline precisa ligar a linha ao que instalou.
+  extension_turn_assumed: "Extensão assumiu a conversa",
+  extension_turn_returned: "Conversa voltou para o atendimento automático",
   voice_call: "Chamada de voz",
   voice_call_missed: "Chamada de voz perdida",
   voice_call_unanswered: "Chamada de voz sem resposta",

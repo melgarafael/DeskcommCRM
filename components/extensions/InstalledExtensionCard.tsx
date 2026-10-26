@@ -53,6 +53,7 @@ export function InstalledExtensionCard({
   busy,
   feedback,
   onConfigure,
+  onAccept,
   canInstall = false,
   platformBusyAction = null,
   preparationInProgress = false,
@@ -77,6 +78,12 @@ export function InstalledExtensionCard({
     enabled: boolean,
     configuration: ExtensionConfiguration,
   ) => Promise<void>;
+  /**
+   * O ato de ACEITAR as permissões de efeito pendentes (#3076). Separado de `onConfigure` porque
+   * é outro consentimento: salvar densidade não é conceder envio; e a tela precisa de um botão
+   * que diga "Autorizar", não um "Salvar" que carregue a concessão de carona.
+   */
+  onAccept: (extension: InstalledExtensionView) => Promise<void>;
   /** Quem administra a instalação: vê o bloco "Em todas as organizações". */
   canInstall?: boolean;
   /** Qual ação de plataforma está em curso, para o indicador ficar no botão certo. */
@@ -152,6 +159,10 @@ export function InstalledExtensionCard({
       </p>
     ) : null;
 
+  // A concessão pendente, NOMEADA (não o código `turn.handoff`): montada aqui, e não num
+  // `.replace()` dentro do JSX, porque a guarda de espanhol lê aquele shape como texto cru.
+  const pedidoPendente = portasLegiveis(extension.pending_permissions, t);
+
   // Rótulos em t() literal: passados por variável, escapavam do gate de espanhol.
   const status = !extension.compatible
     ? { label: t("Incompatível"), variant: "error" as const }
@@ -194,6 +205,52 @@ export function InstalledExtensionCard({
           <dd className="mt-0.5">{portasLegiveis(extension.permissions, t)}</dd>
         </div>
       </dl>
+
+      {/*
+        O ACEITE EXPLÍCITO (#3076). O bloco só existe quando a versão vigente pede um efeito que a
+        organização ainda não aceitou — e a frase é a mesma que a doutrina exige: sem este "sim",
+        a extensão NÃO responde ao cliente nem passa a conversa a uma pessoa, mesmo ativa.
+        `portasLegiveis` descreve a concessão pendente; o botão manda o conjunto INTEIRO
+        (aceito + pendente), porque o pedido substitui o anterior em vez de somar.
+        A frase é "o que ela pede" e não "esta extensão quer X" porque `portasLegiveis` devolve
+        orações na terceira pessoa ("Passa a conversa para uma pessoa"): encaixá-las depois de
+        "quer" produzia "quer passa a conversa" no texto que decide o aceite.
+      */}
+      {extension.pending_permissions.length > 0 ? (
+        <div
+          className="mt-4 rounded-md border border-warning/40 bg-warning-bg p-3 text-sm"
+          data-testid={`extension-pending-permissions-${extension.id}`}
+        >
+          <p className="font-medium">{t("Falta o seu aceite")}</p>
+          <p className="mt-1 text-muted-foreground">
+            {t("O que ela pede:")} {pedidoPendente}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("Enquanto você não aceitar, ela não responde ao cliente.")}
+          </p>
+          {canManage ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              data-testid={`extension-accept-permissions-${extension.id}`}
+              disabled={busy || actionsDisabled}
+              onClick={() => void onAccept(extension)}
+            >
+              {t("Autorizar")}
+            </Button>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t("Peça a um administrador da organização para autorizar.")}
+            </p>
+          )}
+          {feedback ? (
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
+              {feedback}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {deactivatedByRemoval}
 

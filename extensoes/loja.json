@@ -19,6 +19,16 @@
     ],
     "published_at": "2026-09-18"
   },
+  "deskcomm/laudo-do-exame": {
+    "publisher_label": "Deskcomm",
+    "repository": "https://github.com/melgarafael/DeskcommCRM",
+    "tags": [
+      "clinica",
+      "laudo",
+      "atendimento"
+    ],
+    "published_at": "2026-10-26"
+  },
   "deskcomm/primeira-semana": {
     "publisher_label": "Deskcomm",
     "repository": "https://github.com/melgarafael/DeskcommCRM",

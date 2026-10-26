@@ -78,6 +78,13 @@ export const SQL_ERRORS: Readonly<Record<string, { message: string; status: numb
     message: "A configuração mudou em outra sessão. Recarregue antes de salvar.",
     status: 409,
   },
+  // O ACEITE que falta (#3076). 409 e não 422: o pedido está bem formado, e o que falta é
+  // uma decisão do dono da organização — a tela responde com o botão "Autorizar", não com
+  // "confira os dados".
+  extension_permission_not_accepted: {
+    message: "A extensão pede permissões que a organização ainda não aceitou.",
+    status: 409,
+  },
   extension_active_limit: {
     message: "O limite de extensões ativas foi atingido. Desative uma antes de ativar outra.",
     status: 409,

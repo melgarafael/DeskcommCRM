@@ -533,3 +533,146 @@ describe("auditoria só quando a chamada fez a transição", () => {
     expect(mocks.audit).not.toHaveBeenCalled();
   });
 });
+
+
+/**
+ * O ACEITE DAS PERMISSÕES DE TURNO NO SERVIÇO (#3076).
+ *
+ * A `fn_extensions_configure` recusa de novo, mas a recusa tem de acontecer AQUI também: é o
+ * serviço que transforma o motivo em código HTTP que a tela sabe virar "Autorizar", e é ele que
+ * impede a escrita quando o aceite não cobre o fluxo.
+ */
+describe("configureExtension — o aceite das permissões de turno", () => {
+  /** Um artefato com fluxo de turno de verdade, para o parse e a compatibilidade serem os reais. */
+  function comFluxo(
+    desfecho: "assumir" | "passar_para_humano",
+    permissoes: string[] = ["navigation.tasks", "turn.send", "turn.handoff"],
+  ): Row {
+    const base = artifact("laudo");
+    const manifest = {
+      ...(base.manifest as Row),
+      permissions: permissoes,
+      contributions: {
+        ...(base.manifest as { contributions: Row }).contributions,
+        turn_flow: {
+          id: "laudo-do-exame",
+          idiomas: ["pt-BR"],
+          gatilhos: [{ idioma: "pt-BR", texto: "preciso do laudo" }],
+          perguntas: [{ campo: "tipo-de-exame", texto: { "pt-BR": "Qual o tipo de exame?" } }],
+          desfecho:
+            desfecho === "assumir"
+              ? { tipo: "assumir", texto: { "pt-BR": "Anotado, obrigado." } }
+              : { tipo: "passar_para_humano", aviso: { "pt-BR": "Já estou passando para alguém." } },
+        },
+      },
+    };
+    const document = JSON.stringify(manifest);
+    return {
+      ...base,
+      manifest,
+      document,
+      sha256: createHash("sha256").update(document).digest("hex"),
+      byte_length: Buffer.byteLength(document),
+    };
+  }
+
+  const CONFIG = { density: "comfortable", show_description: true } as const;
+
+  function cenario(artifactRow: Row, aceitas: string[]) {
+    const instalacao = installationRow(artifactRow);
+    const admin = fakeClient(
+      {
+        extension_artifacts: [artifactRow],
+        extension_installations: [instalacao],
+        extension_operations: [],
+        organization_extensions: [
+          { organization_id: ORG_A, installation_id: instalacao.id, accepted_permissions: aceitas },
+        ],
+      },
+      {
+        fn_extensions_configure: () => ({
+          data: {
+            ...operationRow({
+              kind: "configure",
+              organization_id: ORG_A,
+              installation_id: instalacao.id,
+            }),
+            applied_now: true,
+          },
+          error: null,
+        }),
+      },
+    );
+    mocks.admin = admin;
+    return { instalacao, admin };
+  }
+
+  it("ativar sem aceite que cubra o fluxo recusa ANTES da RPC, com o código que a tela vira 'Autorizar'", async () => {
+    // A versão passou a passar a conversa para humano; o aceite antigo cobre só `turn.send`.
+    const { instalacao, admin } = cenario(comFluxo("passar_para_humano"), ["turn.send"]);
+
+    await expect(
+      configureExtension(ACTOR, ORG_A, instalacao.id as string, randomUUID(), {
+        expected_revision: 1,
+        enabled: true,
+        configuration: CONFIG,
+      }),
+    ).rejects.toMatchObject({ code: "extension_permission_not_accepted", status: 409 });
+
+    // Nada foi escrito, e nenhuma linha de auditoria anuncia uma ativação que não houve.
+    expect(admin.rpcCalls.filter((call) => call.name === "fn_extensions_configure")).toEqual([]);
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it("aceitar um nome que a versão vigente não declara é entrada inválida", async () => {
+    // `turn.handoff` fora do manifesto: aceitar seria conceder autoridade para um efeito que o
+    // pacote não exerce — e o dono da organização veria na tela uma permissão que não existe.
+    const { instalacao, admin } = cenario(comFluxo("assumir", ["navigation.tasks", "turn.send"]), []);
+
+    await expect(
+      configureExtension(ACTOR, ORG_A, instalacao.id as string, randomUUID(), {
+        expected_revision: 1,
+        enabled: true,
+        configuration: CONFIG,
+        accept_permissions: ["turn.send", "turn.handoff"],
+      }),
+    ).rejects.toMatchObject({ code: "extension_invalid_input" });
+    expect(admin.rpcCalls.filter((call) => call.name === "fn_extensions_configure")).toEqual([]);
+  });
+
+  it("o aceite que cobre o fluxo ativa, e o conjunto concedido vai para a RPC e para a auditoria", async () => {
+    const { instalacao, admin } = cenario(comFluxo("passar_para_humano"), []);
+
+    await configureExtension(ACTOR, ORG_A, instalacao.id as string, randomUUID(), {
+      expected_revision: 1,
+      enabled: true,
+      configuration: CONFIG,
+      accept_permissions: ["turn.send", "turn.handoff"],
+    });
+
+    const chamada = admin.rpcCalls.find((call) => call.name === "fn_extensions_configure");
+    // O conjunto vai INTEIRO (não é delta), e é o que o dono concedeu neste ato.
+    expect(chamada?.args.p_accepted_permissions).toEqual(["turn.send", "turn.handoff"]);
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "extension.configured",
+        metadata: expect.objectContaining({ accepted_permissions: ["turn.send", "turn.handoff"] }),
+      }),
+    );
+  });
+
+  it("salvar sem conceder nada manda null para a RPC, para não revogar o aceite vigente", async () => {
+    // "Instalar não é autorizar" tem um par: configurar também não é revogar. Mandar `[]` apagaria
+    // a concessão anterior numa simples troca de densidade.
+    const { instalacao, admin } = cenario(comFluxo("passar_para_humano"), ["turn.send", "turn.handoff"]);
+
+    await configureExtension(ACTOR, ORG_A, instalacao.id as string, randomUUID(), {
+      expected_revision: 1,
+      enabled: true,
+      configuration: { density: "compact", show_description: true },
+    });
+
+    const chamada = admin.rpcCalls.find((call) => call.name === "fn_extensions_configure");
+    expect(chamada?.args.p_accepted_permissions).toBeNull();
+  });
+});

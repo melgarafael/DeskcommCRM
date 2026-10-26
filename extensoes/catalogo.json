@@ -40,6 +40,42 @@
     },
     {
       "publisher": "deskcomm",
+      "name": "laudo-do-exame",
+      "version": "1.0.0",
+      "license": "MIT",
+      "host_api": {
+        "min": 2,
+        "max": 2
+      },
+      "display": {
+        "title": {
+          "pt-BR": "Laudo do exame",
+          "es": "Informe del examen"
+        },
+        "summary": {
+          "pt-BR": "Recebe o pedido de laudo na conversa, pergunta exame, paciente, data e médico — e entrega a um humano com tudo preenchido.",
+          "es": "Recibe el pedido de informe en la conversación, pregunta examen, paciente, fecha y médico, y lo entrega a una persona con todo completo."
+        },
+        "category": "service",
+        "icon": "BookOpen"
+      },
+      "permissions": [
+        "turn.send",
+        "turn.handoff"
+      ],
+      "sha256": "3e59870c00b0a8d09644c7af06e824d4795f59171ac12f0759dedebacdf11e61",
+      "byte_length": 3068,
+      "publisher_label": "Deskcomm",
+      "repository": "https://github.com/melgarafael/DeskcommCRM",
+      "tags": [
+        "clinica",
+        "laudo",
+        "atendimento"
+      ],
+      "published_at": "2026-10-26"
+    },
+    {
+      "publisher": "deskcomm",
       "name": "primeira-semana",
       "version": "1.0.0",
       "license": "MIT",
@@ -110,5 +146,5 @@
       "published_at": "2026-09-18"
     }
   ],
-  "revision": 1
+  "revision": 2
 }

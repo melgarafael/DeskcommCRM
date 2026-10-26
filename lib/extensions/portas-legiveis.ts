@@ -1,4 +1,5 @@
 import { PORTA_DA_CAPACIDADE, type ExtensionPermission } from "./capacidades";
+import { PERMISSOES_DE_TURNO, ehPermissaoDeTurno } from "./consentimento";
 
 /**
  * O nome de cada porta em português, para a tela mostrar ANTES de alguém aceitar a extensão.
@@ -29,6 +30,11 @@ const NOME_DA_PORTA: Record<ExtensionPermission, string> = {
   // está aqui para o `Record` exaustivo e para quem lista as concessões uma a uma; a frase da tela
   // o trata à parte, porque "abre" e "guarda" não são a mesma promessa.
   "dados.proprios": "Fichas próprias",
+  // As duas concessões do TURNO (#3076) também não abrem tela — e são as únicas que agem sobre o
+  // CLIENTE. O nome é a frase que a tela mostra no aceite; a política está em
+  // `lib/extensions/consentimento.ts`.
+  "turn.send": "Responde ao cliente no seu lugar",
+  "turn.handoff": "Passa a conversa para uma pessoa",
 };
 
 export function nomeDaPorta(permissao: ExtensionPermission): string {
@@ -53,25 +59,44 @@ export function portasLegiveis(
   // `dados.proprios` sai da lista de "abre": ele não é uma tela, é armazenamento. Misturá-lo na
   // mesma oração faria a tela prometer uma coisa e o módulo fazer outra.
   const guardaDados = permissoes.includes("dados.proprios");
+  // O mesmo vale para as concessões de TURNO (#3076): elas não abrem tela, agem na CONVERSA. Uma
+  // frase começando por "Abre" para quem responde ao cliente seria a tela mentindo sobre o que a
+  // pessoa está autorizando — e é essa leitura que decide o aceite.
+  const ageNaConversa = PERMISSOES_DE_TURNO.filter((p) => permissoes.includes(p));
   const nomes = [...permissoes]
-    .filter((p) => p !== "dados.proprios" && p in NOME_DA_PORTA)
+    .filter((p) => p !== "dados.proprios" && !ehPermissaoDeTurno(p) && p in NOME_DA_PORTA)
     .sort((a, b) => NOME_DA_PORTA[a].localeCompare(NOME_DA_PORTA[b], "pt-BR"))
     .map((p) => t(nomeDaPorta(p)));
 
-  if (nomes.length === 0) {
-    return guardaDados
-      ? t("Guarda fichas próprias nesta instalação; não lê seus dados.")
-      : t("Não abre nenhuma tela e não lê seus dados.");
+  const partes: string[] = [];
+  if (nomes.length > 0) {
+    const lista =
+      nomes.length === 1 ? nomes[0]! : `${nomes.slice(0, -1).join(", ")} ${t("e")} ${nomes.at(-1)!}`;
+    partes.push(
+      guardaDados
+        ? t("Abre {portas} e guarda fichas próprias nesta instalação; não lê seus dados.").replace(
+            "{portas}",
+            lista,
+          )
+        : t("Abre {portas}; não lê seus dados.").replace("{portas}", lista),
+    );
+  } else if (guardaDados) {
+    partes.push(t("Guarda fichas próprias nesta instalação; não lê seus dados."));
+  } else if (ageNaConversa.length === 0) {
+    partes.push(t("Não abre nenhuma tela e não lê seus dados."));
   }
-  const lista =
-    nomes.length === 1 ? nomes[0]! : `${nomes.slice(0, -1).join(", ")} ${t("e")} ${nomes.at(-1)!}`;
-  if (guardaDados) {
-    return t("Abre {portas} e guarda fichas próprias nesta instalação; não lê seus dados.").replace(
-      "{portas}",
-      lista,
+  if (ageNaConversa.length > 0) {
+    const responde = ageNaConversa.includes("turn.send");
+    const passa = ageNaConversa.includes("turn.handoff");
+    partes.push(
+      responde && passa
+        ? t("Responde ao cliente no seu lugar e passa a conversa para uma pessoa, com aceite próprio.")
+        : responde
+          ? t("Responde ao cliente no seu lugar, com aceite próprio.")
+          : t("Passa a conversa para uma pessoa, com aceite próprio."),
     );
   }
-  return t("Abre {portas}; não lê seus dados.").replace("{portas}", lista);
+  return partes.join(" ");
 }
 
 /** Os destinos correspondentes, para quem quiser conferir para onde cada porta leva. */

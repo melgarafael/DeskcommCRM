@@ -10,6 +10,8 @@ import {
   type ExtensionManifest,
 } from "./manifest";
 import type { InstalledExtensionView, PreviousVersionView } from "./view";
+import { aceitePendente } from "./consentimento";
+import type { ExtensionPermission } from "./capacidades";
 
 export const MOTIVO_API_INCOMPATIVEL =
   "Esta extensão não é compatível com a API disponível nesta instalação.";
@@ -107,12 +109,27 @@ export function montarInstalada({
         revision: number;
         configuration: ExtensionConfiguration;
         deactivated_by_removal_at: string | null;
+        /** O aceite do dono da organização (#3076); nulo/ausente = nada aceito. */
+        accepted_permissions?: string[] | null;
       }
     | undefined;
   previous?: PreviousVersionView | null;
   activeOrganizations?: number | null;
 }): InstalledExtensionView {
   const leitura = artifact && catalog ? lerManifestoAdmitido(artifact) : null;
+  // O ACEITE (o que o dono concedeu) e a PENDÊNCIA (o que a versão vigente exige e ele ainda não
+  // aceitou) andam juntos na view porque, separados, cada um mente: só `permissions` diria que a
+  // extensão responde ao cliente; só `accepted_permissions` esconderia o que falta aceitar.
+  const aceitas: ExtensionPermission[] = [...(binding?.accepted_permissions ?? [])] as ExtensionPermission[];
+  const manifestoLegivel = leitura?.ok ? leitura.manifest : null;
+  const pendentes: readonly ExtensionPermission[] =
+    manifestoLegivel === null || manifestoLegivel.contributions.turn_flow === undefined
+      ? []
+      : aceitePendente({
+          declaradas: manifestoLegivel.permissions,
+          aceitas,
+          fluxo: manifestoLegivel.contributions.turn_flow,
+        });
   const comum = {
     id: item.id,
     catalog_id: item.catalog_id,
@@ -122,6 +139,8 @@ export function montarInstalada({
     version: item.version,
     // O contrato v1 só admite esta permissão, na admissão do catálogo e no parser.
     permissions: ["navigation.tasks"] as ExtensionManifest["permissions"],
+    accepted_permissions: aceitas,
+    pending_permissions: [...pendentes],
     enabled: binding?.enabled ?? false,
     revision: binding?.revision ?? 0,
     installation_revision: item.revision,

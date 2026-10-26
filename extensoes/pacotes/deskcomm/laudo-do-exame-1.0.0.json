@@ -1,0 +1,108 @@
+{
+  "format_version": 1,
+  "profile": "declarative",
+  "publisher": "deskcomm",
+  "name": "laudo-do-exame",
+  "version": "1.0.0",
+  "license": "MIT",
+  "host_api": {
+    "min": 2,
+    "max": 2
+  },
+  "permissions": [
+    "turn.send",
+    "turn.handoff"
+  ],
+  "dependencies": [],
+  "data": {
+    "mode": "none"
+  },
+  "display": {
+    "title": {
+      "pt-BR": "Laudo do exame",
+      "es": "Informe del examen"
+    },
+    "summary": {
+      "pt-BR": "Recebe o pedido de laudo na conversa, pergunta exame, paciente, data e médico — e entrega a um humano com tudo preenchido.",
+      "es": "Recibe el pedido de informe en la conversación, pregunta examen, paciente, fecha y médico, y lo entrega a una persona con todo completo."
+    },
+    "category": "service",
+    "icon": "BookOpen"
+  },
+  "configuration": {
+    "density": "comfortable",
+    "show_description": true
+  },
+  "contributions": {
+    "turn_flow": {
+      "id": "laudo",
+      "idiomas": [
+        "pt-BR",
+        "en",
+        "hi"
+      ],
+      "gatilhos": [
+        {
+          "idioma": "pt-BR",
+          "texto": "laudo"
+        },
+        {
+          "idioma": "en",
+          "texto": "my report"
+        },
+        {
+          "idioma": "hi",
+          "texto": "रिपोर्ट"
+        }
+      ],
+      "perguntas": [
+        {
+          "campo": "exame",
+          "texto": {
+            "pt-BR": "Qual é o tipo de exame?",
+            "es": "¿Cuál es el tipo de examen?",
+            "en": "Which exam is it?",
+            "hi": "कौन सा परीक्षण है?"
+          }
+        },
+        {
+          "campo": "paciente",
+          "texto": {
+            "pt-BR": "Qual é o nome do paciente?",
+            "es": "¿Cuál es el nombre del paciente?",
+            "en": "What is the patient's name?",
+            "hi": "मरीज़ का नाम क्या है?"
+          }
+        },
+        {
+          "campo": "data",
+          "texto": {
+            "pt-BR": "Qual é a data do exame?",
+            "es": "¿Cuál es la fecha del examen?",
+            "en": "What is the exam date?",
+            "hi": "परीक्षण की तारीख क्या है?"
+          }
+        },
+        {
+          "campo": "medico",
+          "texto": {
+            "pt-BR": "Quem é o médico solicitante?",
+            "es": "¿Quién es el médico solicitante?",
+            "en": "Who is the requesting doctor?",
+            "hi": "डॉक्टर का नाम क्या है?"
+          }
+        }
+      ],
+      "desfecho": {
+        "tipo": "passar_para_humano",
+        "aviso": {
+          "pt-BR": "Obrigado! Vou passar seu pedido para a nossa equipe conferir.",
+          "es": "¡Gracias! Voy a pasar tu pedido a nuestro equipo para revisarlo.",
+          "en": "Thank you! I will pass this to our team to check.",
+          "hi": "धन्यवाद! मैं इसे हमारी टीम को भेज रहा हूँ।"
+        }
+      },
+      "teto_de_turnos_sem_progresso": 3
+    }
+  }
+}

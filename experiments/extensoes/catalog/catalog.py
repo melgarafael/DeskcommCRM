@@ -47,6 +47,13 @@ PERMISSOES = [
     # O consentimento para um tema de extensão pintar o produto (ADR-0003, #1095).
     # A ordem espelha `EXTENSION_PERMISSIONS` em `lib/extensions/capacidades.ts` —
     # `tests/unit/catalogo-de-ensaio-espelha-o-vocabulario.test.ts` compara as duas.
+    #
+    # As duas do TURNO (#3076) fecham a lista, na mesma ordem do TypeScript. Elas não abrem tela:
+    # autorizam o host a responder ao cliente e a passar a conversa a uma pessoa, e por isso
+    # exigem ACEITE próprio da organização (`lib/extensions/consentimento.ts`). A bancada as
+    # conhece para poder publicar o pacote de exemplo com `turn_flow`.
+    "turn.send",
+    "turn.handoff",
 ]
 CAPACIDADES = [
     "tasks.open",
@@ -55,6 +62,9 @@ CAPACIDADES = [
     "contacts.open",
     "agenda.open",
     "radar.open",
+    # Efeito, e não porta: mesmas duas naturezas do vocabulário do host (#3076).
+    "turn.respond",
+    "turn.handoff",
 ]
 HOST_API_ATUAL = 2
 

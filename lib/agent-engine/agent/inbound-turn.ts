@@ -165,6 +165,13 @@ import {
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword, type PublishedAgentConfig } from './agent-config';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
+// #3076 — o gancho de extensão: LIDO antes do roteiro, e o turno devolve cedo quando
+// uma extensão com ACEITE assume, conclui ou passa a conversa.
+import {
+  enviarTextoSemModelo,
+  lerFluxosAtivosDaOrganizacao,
+  prepararGanchoDoTurno,
+} from './gancho-de-extensao';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
@@ -3125,6 +3132,138 @@ async function executarTurnoDoAgente(
       throw new JobSettledError(
         'fora do horário de funcionamento — job reagendado para a abertura da janela',
       );
+    }
+  }
+
+  // GANCHO DE EXTENSÃO (#3076) — o ponto onde uma extensão DECLARATIVA, com
+  // CONCESSÃO do dono da organização, pode assumir a conversa. Entra AQUI, e a
+  // posição é o contrato: DEPOIS de tudo que silencia o turno (handoff humano,
+  // conversa não elegível, pausa, pedido de humano, opt-out) e ANTES do roteiro
+  // de atendimento e da IA. O mesmo lugar que o #3063 escolheu.
+  //
+  // Quatro desfechos, e nenhum deles deixa a conversa presa:
+  //   `nao_e_comigo` — o turno segue exatamente como hoje (zero extensões ativas é
+  //                    este caso, sem escrita nenhuma: item 7), inclusive quando a
+  //                    extensão está ativa mas NÃO tem o aceite das permissões de
+  //                    turno — a ativação genérica não autoriza envio nem handoff;
+  //   `assumido`   — a extensão respondeu (bolha já enviada pela cadeia do núcleo):
+  //                  a IA NÃO roda neste turno;
+  //   `concluido`  — a coleta terminou e a conversa voltou para a IA: este turno
+  //                  mandou a despedida e o seguinte é do agente;
+  //   `passado`    — a conversa foi para um humano com os campos coletados: a IA
+  //                  não roda neste turno;
+  //   `ja_tratado` — a mensagem já foi reivindicada num turno anterior: retry é
+  //                  no-op, nem responde de novo.
+  // Ver `gancho-de-extensao.ts` (host) e `lib/extensions/fluxo-do-turno.ts`
+  // (vocabulário declarado pelo pacote).
+  if (!preview && liveJob().kind === 'inbound_turn' && !optedOutThisTurn) {
+    const gancho = await prepararGanchoDoTurno(
+      {
+        pool,
+        log: runLog,
+        fluxos: () => lerFluxosAtivosDaOrganizacao(pool, tenantId, runLog),
+        enviar: (texto) =>
+          enviarTextoSemModelo({
+            pool,
+            log: runLog,
+            tenantId,
+            leadId,
+            conversationId: input.conversationId,
+            channelSessionId: input.channelSessionId,
+            jobId: liveJob().id,
+            agentId: agentConfig?.agentId ?? null,
+            channel: liveChannel(),
+            texto,
+            optedOutThisTurn,
+            agora: clock(),
+            // Primeira bolha do turno. O ledger do canal deduplica por
+            // `(job_id, seq)`, e a IA não roda neste turno: não há colisão.
+            seq: 1,
+          }),
+        passarParaHumano: async ({ campos, aviso, idempotencia }) => {
+          // O aviso ao contato é do PACOTE e sai pela cadeia do núcleo. O
+          // desfecho dele vira LINHA na passagem (c3): "gravado" não é
+          // "avisado", e quem assume precisa saber qual dos dois aconteceu.
+          const avisado = await enviarTextoSemModelo({
+            pool,
+            log: runLog,
+            tenantId,
+            leadId,
+            conversationId: input.conversationId,
+            channelSessionId: input.channelSessionId,
+            jobId: liveJob().id,
+            agentId: agentConfig?.agentId ?? null,
+            channel: liveChannel(),
+            texto: aviso,
+            optedOutThisTurn,
+            agora: clock(),
+            seq: 1,
+          });
+          await performHumanHandoff(
+            pool,
+            { tenantId, leadId, conversationId: input.conversationId },
+            {
+              reason: 'verificacao_manual',
+              conversationSummary:
+                'Passagem pedida por uma extensão: os campos foram coletados e precisam de verificação humana.',
+              // O caminho (c3): os campos vão na PASSAGEM (lida sob
+              // `fn_can_view_conversation`), nunca no corpo da Central.
+              camposColetados: campos,
+              ...(idempotencia !== null ? { idempotenciaDaPassagem: idempotencia } : {}),
+              avisoAoLead: avisado
+                ? { avisado: true }
+                : { avisado: false, porque: 'envio_vetado_pela_cadeia' },
+              log: runLog,
+            },
+          );
+        },
+        // A TIMELINE (#3076, exigência 6): assumir e devolver são linhas próprias do
+        // vocabulário (`extension_turn_assumed` / `extension_turn_returned`). O
+        // "passar" já emite `handoff_triggered` pelo handoff — três linhas para o
+        // mesmo turno seriam a timeline contando a mesma história três vezes.
+        registrarAtividade: async ({ tipo, extensao, fluxo, motivo }) => {
+          const roteou = await emitAgentActivityForContact({
+            pool,
+            organizationId: tenantId,
+            contactId: leadId,
+            type: tipo,
+            sourceModule: 'extension_turn',
+            sourceId: input.conversationId,
+            ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
+            reason:
+              tipo === 'extension_turn_assumed'
+                ? 'Extensão assumiu a conversa'
+                : 'Conversa voltou para o atendimento automático',
+            payload: { extensao, fluxo, motivo, conversation_id: input.conversationId },
+          });
+          if (!roteou.routed) {
+            runLog.warn('atividade de extensão não roteada para um negócio', {
+              motivo: roteou.reason,
+              tipo,
+            });
+          }
+        },
+      },
+      {
+        organizationId: tenantId,
+        contactId: leadId,
+        conversationId: input.conversationId,
+        texto: currentInboundText,
+        messageId: input.inboundMessageId ?? null,
+        agora: clock(),
+      },
+    );
+    if (
+      gancho.tipo === 'assumido' ||
+      gancho.tipo === 'concluido' ||
+      gancho.tipo === 'passado' ||
+      gancho.tipo === 'ja_tratado'
+    ) {
+      runLog.info('turno respondido pelo gancho de extensão — a IA não roda neste turno', {
+        desfecho: gancho.tipo,
+        ...('fluxo' in gancho ? { fluxo: gancho.fluxo } : {}),
+      });
+      return;
     }
   }
 

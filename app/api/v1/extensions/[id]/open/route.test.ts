@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
-import { EXTENSION_CAPABILITIES, PORTA_DA_CAPACIDADE } from "@/lib/extensions/capacidades";
+import { CAPACIDADES_DE_PORTA, PORTA_DA_CAPACIDADE } from "@/lib/extensions/capacidades";
 import { loadExtensionGuide } from "@/lib/extensions/service";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 
@@ -61,7 +61,10 @@ beforeEach(() => {
 });
 
 describe("a rota do clique resolve o destino pela capacidade", () => {
-  it.each([...EXTENSION_CAPABILITIES])("%s abre a porta dela, não Tarefas", async (capacidade) => {
+  // Só as capacidades de PORTA: as de EFEITO (`turn.*`) não navegam, e o pedido de abertura as
+  // recusa — é `tests/unit/caminho-da-porta-aceita-o-vocabulario-inteiro.test.ts` que prova esse
+  // outro lado. Percorrer o vocabulário inteiro aqui pediria um destino que não existe.
+  it.each([...CAPACIDADES_DE_PORTA])("%s abre a porta dela, não Tarefas", async (capacidade) => {
     vi.mocked(loadExtensionGuide).mockResolvedValue(guiaCom(capacidade) as never);
 
     const resposta = await POST(pedido(capacidade), contexto);
@@ -77,7 +80,7 @@ describe("a rota do clique resolve o destino pela capacidade", () => {
   it("controle: os seis destinos são distintos", () => {
     // Sem este caso, um handler que devolvesse sempre o mesmo href passaria no anterior se o
     // mapa também apontasse tudo para um lugar só — que é exatamente o defeito que houve.
-    const destinos = EXTENSION_CAPABILITIES.map((c) => PORTA_DA_CAPACIDADE[c].destino);
+    const destinos = CAPACIDADES_DE_PORTA.map((c) => PORTA_DA_CAPACIDADE[c].destino);
     expect(new Set(destinos).size).toBe(destinos.length);
   });
 
