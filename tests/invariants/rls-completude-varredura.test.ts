@@ -355,6 +355,19 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "agent), promovido a admin passa a ler (controle), e UPDATE/INSERT/DELETE " +
       "pela sessão e qualquer leitura por anon dão permission denied. Migration 0510.",
   },
+  {
+    tabela: "organization_resend_accounts",
+    razao:
+      "tests/invariants/conta-resend-da-organizacao-e-server-side.test.ts (migration " +
+      "0769, #3287) — deny-all medido: RLS ligada, ZERO policies, privilégio NENHUM " +
+      "de anon/authenticated e permission denied sob set role para leitura (inclusive " +
+      "só o api_key_last4 — a chave cifrada não sai em payload nenhum), escrita e " +
+      "para o membro da própria organização com JWT authenticated; service_role " +
+      "mantém privilégio, nenhuma view expõe a tabela, e a linha semeada guarda o " +
+      "segredo em bytea com o last4 de 4 caracteres. Guarda a chave Resend que ESCREVE " +
+      "e-mail com o domínio do cliente — a correção \"natural\" de TABLES (policy de " +
+      "tenant) a exporia pelo PostgREST.",
+  },
 ];
 
 /**
