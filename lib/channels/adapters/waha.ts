@@ -25,7 +25,7 @@ import { consultarNomeDaAgenda } from "@/lib/contacts/nome-da-agenda";
 import { marcarConversaComoLida, resolveWahaChatId } from "@/lib/waha/send";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
 import { DETALHE_CREDENCIAL_RECUSADA } from "../health";
-import type { ChannelAdapter, ChannelHealth, OutboundEnvelope, RecipientInput } from "../types";
+import type { ChannelAdapter, ChannelHealth, OutboundEnvelope, PublishStatusInput, RecipientInput } from "../types";
 
 /**
  * O HTTP que o WAHA devolveu, lido do PREFIXO da mensagem de erro.
@@ -298,6 +298,32 @@ export const wahaAdapter: ChannelAdapter = {
     // mesmo tipo dos dois lados, e reconstruí-lo faria a próxima adição de
     // campo sumir em silêncio aqui no meio.
     return fetchWahaMedia(input.url, input.hintMime ?? null);
+  },
+
+  /**
+   * Status (#3397): o público vira JID aqui, não em quem publica.
+   *
+   * O provedor endereça Status por `@c.us` — o telefone em dígitos mais o
+   * sufixo do WhatsApp —, e essa é a única parte da operação que é do CANAL:
+   * a lista chega neutra (só dígitos) e sai no dialeto do transporte. Quem
+   * está acima não precisa saber que o sufixo existe.
+   *
+   * `{ tipo: "todos" }` sai SEM lista: no provedor, "sem `contacts`" é o número
+   * inteiro. É por isso que o público é uma escolha declarada, e não um array
+   * possivelmente vazio (ver `PublicoDoStatus`).
+   */
+  async publishStatus(input: PublishStatusInput): Promise<{ externalId: string | null }> {
+    const client = getWahaClient();
+    if (!client) throw new Error("waha_not_configured");
+    const res = await client.sendStatusImage(input.sessionRef, {
+      mimetype: input.imagem.mime,
+      data: input.imagem.base64,
+      ...(input.legenda ? { caption: input.legenda } : {}),
+      ...(input.publico.tipo === "contatos"
+        ? { contacts: input.publico.numeros.map((numero) => `${numero}@c.us`) }
+        : {}),
+    });
+    return { externalId: parseWahaMessageId(res) };
   },
 
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {

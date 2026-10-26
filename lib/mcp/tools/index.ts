@@ -28,6 +28,7 @@ import {
 } from "./leads";
 import { crmGetPipelineForecast, crmListPipelines } from "./pipelines";
 import { crmSendWhatsappMessage } from "./messages";
+import { crmPublishWhatsappStatus } from "./status";
 import { crmStartConversationAndSend } from "./start-conversation";
 import {
   crmAssignConversation,
@@ -160,6 +161,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmMoveLeadStage,
   crmRetomarLead,
   crmSendWhatsappMessage,
+  // Status não é mensagem: não tem destinatário nem conversa, e quem publica
+  // escolhe um PÚBLICO. Vem logo depois do envio porque é a outra forma de
+  // alcançar o cliente pelo mesmo número.
+  crmPublishWhatsappStatus,
   crmStartConversationAndSend,
   crmCreateConversationDraft,
   crmAssignConversation,
