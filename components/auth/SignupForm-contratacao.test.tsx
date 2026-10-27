@@ -25,7 +25,7 @@ describe("compromisso explícito no formulário nativo", () => {
   it("trocar para trial antes do envio remove o compromisso automático de pagamento", async () => {
     render(<SignupForm planos={planos} planoInicial={P} />); preencher();
     fireEvent.change(screen.getByLabelText("Plano"), { target: { value: T } });
-    fireEvent.click(screen.getByRole("button", { name: "Criar conta", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
     await waitFor(() => expect(h.signup).toHaveBeenCalledTimes(1));
     expect(h.signup.mock.calls[0]?.[0]).toMatchObject({ cobranca_plan_id: T, continuar_pagamento: false });
   });

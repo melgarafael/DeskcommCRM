@@ -24,7 +24,7 @@ beforeEach(() => {
     if (c.tabela === "user_organizations" && operacao(c) === "select") return { data: vinculo ? { organization_id: vinculo } : null };
     if (c.tabela === "organizations" && operacao(c) === "insert") {
       const input = argumentos(c, "insert")?.[0] as Record<string, string>;
-      return colisao ? { data: null, error: { code: "23505" } } : { data: { id: input.id ?? NATIVA, slug: input.slug } };
+      return colisao ? { data: null, error: { code: "23505", message: "colisao sintetica de QA" } } : { data: { id: input.id ?? NATIVA, slug: input.slug } };
     }
     return { data: null };
   });

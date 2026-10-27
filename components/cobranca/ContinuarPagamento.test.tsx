@@ -29,7 +29,7 @@ describe("continuidade até o pagamento", () => {
     await waitFor(() => expect(h.abrir).toHaveBeenCalledWith("https://pagamento.example.test/fatura"));
     expect(h.post).toHaveBeenCalledTimes(1);
     expect(h.post).toHaveBeenCalledWith("/api/v1/cobranca/assinatura/checkout", { volta: "contratacao", continuar_cadastro: true }, { timeoutMs: 90_000 });
-    expect(screen.queryByRole("button", { name: "Assinar", exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Assinar" })).not.toBeInTheDocument();
     expect(window.location.search).toBe("?retomar=1");
   });
   it("simples login/retomada sem intenção não inicia cobrança", () => {
@@ -39,7 +39,7 @@ describe("continuidade até o pagamento", () => {
   });
   it("Asaas pede somente documento faltante; preenchê-lo não envia antes do clique", async () => {
     render(<ContinuarPagamento {...props} provedor="asaas" />);
-    const continuar = screen.getByRole("button", { name: "Continuar para pagamento", exact: true });
+    const continuar = screen.getByRole("button", { name: "Continuar para pagamento" });
     expect(continuar).toBeDisabled();
     expect(h.post).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("CPF ou CNPJ de quem paga"), { target: { value: "11222333000181" } });
@@ -52,7 +52,7 @@ describe("continuidade até o pagamento", () => {
   it("sem recibo anterior o clique atual confirma manualmente o pagamento, sem inventar intenção", async () => {
     render(<ContinuarPagamento {...props} provedor="asaas" automatico={false} temIntencao={false} />);
     fireEvent.change(screen.getByLabelText("CPF ou CNPJ de quem paga"), { target: { value: "11222333000181" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continuar para pagamento", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar para pagamento" }));
     await waitFor(() => expect(h.abrir).toHaveBeenCalledTimes(1));
     expect(h.post.mock.calls[0]?.[1]).toEqual({ volta: "contratacao", documento: "11222333000181" });
   });
@@ -68,7 +68,7 @@ describe("continuidade até o pagamento", () => {
     let concluir!: (v: { data: { url: string } }) => void;
     h.post.mockImplementationOnce(() => new Promise((resolve) => { concluir = resolve; }));
     render(<ContinuarPagamento {...props} automatico={false} />);
-    const botao = screen.getByRole("button", { name: "Continuar para pagamento", exact: true });
+    const botao = screen.getByRole("button", { name: "Continuar para pagamento" });
     fireEvent.click(botao); fireEvent.click(botao);
     expect(h.post).toHaveBeenCalledTimes(1);
     concluir({ data: { url: "https://pagamento.example.test/fatura" } });
