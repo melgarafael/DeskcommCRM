@@ -80,7 +80,8 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     // O switch é otimista; navegar antes da resposta aborta a Server Action.
     const respostaDoSalvamento = await salvamento;
     expect(respostaDoSalvamento.status()).toBe(200);
-    expect(await respostaDoSalvamento.finished()).toBeNull();
+    // A transição reabilita o controle ao receber o resultado; o poll abaixo confirma a gravação.
+    await expect(interruptor).toBeEnabled();
     await expect.poll(async () => {
       const gravada = await db.from("platform_config").select("valor").eq("chave", "MODULO_COBRANCA").maybeSingle();
       expect(gravada.error).toBeNull();

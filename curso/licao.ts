@@ -25,6 +25,8 @@ const AlvoSimples = z
     texto: z.string().optional(),
     css: z.string().optional(),
     exato: z.boolean().optional(),
+    /** Nome de dado da semente, preservado mesmo quando coincide com um rótulo traduzível. */
+    literal: z.boolean().optional(),
     /** `nome`/`texto` são expressão regular (sem barras), para rótulos que carregam contador ou hora. */
     regex: z.boolean().optional(),
     /** Qual das ocorrências (0 = primeira). Sem `n`, o alvo precisa ser único. */

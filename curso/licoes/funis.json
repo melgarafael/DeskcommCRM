@@ -237,7 +237,8 @@
           "destaques": [
             {
               "alvo": {
-                "css": "[aria-label='Responsável: Ana Ribeiro']",
+                "css": "[title='Ana Ribeiro']",
+                "literal": true,
                 "dentro": {
                   "role": "group",
                   "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
@@ -249,7 +250,8 @@
             },
             {
               "alvo": {
-                "css": "[aria-label^='Responsável: Bia']",
+                "css": "[title^='Bia']",
+                "literal": true,
                 "dentro": {
                   "role": "group",
                   "nome": "Lead: Pacote de pilates — Camila Rocha",
@@ -263,9 +265,7 @@
               "alvo": {
                 "css": "[aria-label='Sem responsável']",
                 "dentro": {
-                  "role": "group",
-                  "nome": "Lead: Primeira consulta nutricional — Mariana",
-                  "exato": true
+                  "css": "[role='group']:has(button:text-is('Primeira consulta nutricional — Mariana'))"
                 }
               },
               "rotulo": "Ninguém cuidando",
