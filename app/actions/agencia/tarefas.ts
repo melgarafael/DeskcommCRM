@@ -6,6 +6,7 @@ import { z } from "zod";
 import { contextoLiberado, exigirPermissao, type ContextoDaAgencia } from "@/lib/agencia/acesso";
 import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agencia/auditoria";
 import { criarAviso } from "@/lib/agencia/avisos/criar";
+import { ehSubpasta } from "@/lib/agencia/acervo/pastas";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
 import { carregarQuemOlha, carregarTarefa } from "@/lib/agencia/tarefas/consultas";
 import { podePegar } from "@/lib/agencia/tarefas/regras";
@@ -400,4 +401,21 @@ export async function abrirTarefa(id: string) {
   const ctx = await contextoLiberado();
   if (!ctx) return null;
   return carregarTarefa(id, await carregarQuemOlha(ctx));
+}
+
+/**
+ * O link da subpasta do cliente no Drive (plano de 27/10, item 4): o editor recebe a
+ * pasta Captações sem ninguém copiar e colar. Só para cliente que a pessoa alcança.
+ */
+export async function pastaDoClienteNoDrive(clienteId: string, subpasta: string): Promise<ResultadoDaAcao<{ titulo: string; url: string }>> {
+  return seguro(async () => {
+    const ctx = await exigirPermissao("tarefas.criar");
+    if (!idSchema.safeParse(clienteId).success || !ehSubpasta(subpasta)) return { ok: false as const, erro: "Pedido inválido." };
+    const quem = await carregarQuemOlha(ctx);
+    if (!quem.alcance.todos && !quem.alcance.ids.has(clienteId)) return { ok: false as const, erro: "Você não atende esse cliente." };
+    const { data } = await createAdminClient().from("agencia_clientes").select("drive_subpastas").eq("id", clienteId).maybeSingle();
+    const pasta = ((data as { drive_subpastas: Record<string, string> | null } | null)?.drive_subpastas ?? {})[subpasta];
+    if (!pasta) return { ok: false as const, erro: "A pasta do cliente ainda não existe no Drive: conecte o Google Drive em Configurações da agência." };
+    return { ok: true as const, dados: { titulo: `Pasta ${subpasta.replace(/^\d+\s/, "")} do cliente (Drive)`, url: `https://drive.google.com/drive/folders/${pasta}` } };
+  });
 }

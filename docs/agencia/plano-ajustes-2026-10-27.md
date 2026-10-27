@@ -324,3 +324,22 @@ Spec: [`SPEC-envios.md`](SPEC-envios.md). Migration **9013** (+ apêndice no bas
   0,55) e o painel só aparece com um bloco escolhido (botão Fechar). Publicado e provado de novo:
   `01-modelo-etapa-3-1440.png` mostra o modelo legível.
 - Os dados de prova foram apagados (`docs/agencia/scripts/mapas-limpar.sql`).
+
+### Item 4 — Tarefas: **feito, publicado e provado no teste em 27/10/2026**
+
+- **"Começar de um modelo"** ao criar a tarefa: 27 modelos, do mesmo catálogo dos blocos do mapa
+  (Edição de vídeo, Gravação, Roteiro, Arte…). O modelo preenche o título e acrescenta o
+  checklist da espécie.
+- **"+ Pasta Captações / Edições / Artes do cliente"** nos links (`pastaDoClienteNoDrive`): põe o
+  link da subpasta do cliente no Drive com um clique. Sem o Drive conectado, explica o motivo em
+  vez de inventar link. Os links manuais continuam.
+- **"Enviar para o cliente aprovar"** dentro da tarefa já tinha entrado com Envios (item 1).
+- **Prova** (`docs/agencia/scripts/prova-tarefas-modelos.mjs`, evidência em
+  `evidence/agencia-ajustes-tarefas/`):
+  - 27 modelos oferecidos;
+  - Gravação preencheu o título e 3 itens de checklist, e a tarefa foi salva com os 3;
+  - os três botões de pasta apareceram ao escolher o cliente;
+  - sem Drive, o botão explicou o motivo.
+
+  Os dados de prova foram apagados.
+- **Não provado:** o link real da pasta, que depende do Google Drive conectado (pendência do dono).

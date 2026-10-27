@@ -10,6 +10,7 @@ import {
   excluirTarefa,
   iniciarCronometro,
   lancarTempo,
+  pastaDoClienteNoDrive,
   pausarCronometro,
   salvarTarefa,
 } from "@/app/actions/agencia/tarefas";
@@ -19,6 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ACOES_DA_IA, ROTULO_DA_ACAO_DA_IA } from "@/lib/agencia/ia/catalogo";
+import { ESPECIES_DE_BLOCO, GRUPOS_DE_BLOCO, especieDe, type GrupoDeBloco } from "@/lib/agencia/mapas/blocos";
 import type { TarefaCompleta } from "@/lib/agencia/tarefas/consultas";
 import { formatarDuracao, tempoTotalSegundos } from "@/lib/agencia/tarefas/regras";
 import {
@@ -230,6 +232,37 @@ export function ModalDaTarefa({
             <DialogTitle>{tarefa ? "Editar tarefa" : "Nova tarefa"}</DialogTitle>
             <DialogDescription>{carregando ? "Carregando…" : "Quem for responsável recebe o aviso no sininho e no WhatsApp."}</DialogDescription>
           </DialogHeader>
+
+          {!tarefa && (
+            <div className="space-y-1.5">
+              <Label htmlFor="tarefa-modelo">Começar de um modelo</Label>
+              <select
+                id="tarefa-modelo"
+                defaultValue=""
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  const m = especieDe(e.target.value);
+                  setR({
+                    ...r,
+                    titulo: m.titulo || m.rotulo,
+                    checklist: [...r.checklist, ...(m.checklist ?? []).filter((t) => !r.checklist.some((c) => c.texto === t)).map((texto) => ({ texto, feito: false }))],
+                  });
+                }}
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Tarefa em branco</option>
+                {(Object.keys(GRUPOS_DE_BLOCO) as GrupoDeBloco[]).map((g) => (
+                  <optgroup key={g} label={GRUPOS_DE_BLOCO[g]}>
+                    {ESPECIES_DE_BLOCO.filter((e) => e.grupo === g && e.tipo === "tarefa" && e.titulo).map((e) => (
+                      <option key={e.especie} value={e.especie}>
+                        {e.rotulo}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="tarefa-titulo">Título</Label>
@@ -519,6 +552,28 @@ export function ModalDaTarefa({
                 </button>
               </div>
             ))}
+            {r.clienteId && (
+              <div className="flex flex-wrap gap-2" data-testid="pastas-do-cliente">
+                {(["05 Captações", "06 Edições", "07 Artes"] as const).map((sub) => (
+                  <Button
+                    key={sub}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={pendente}
+                    onClick={() =>
+                      startTransition(async () => {
+                        const res = await pastaDoClienteNoDrive(r.clienteId, sub);
+                        if (!res.ok) return setErro(res.erro);
+                        if (!r.links.some((l) => l.url === res.dados.url)) setR((a) => ({ ...a, links: [...a.links, res.dados] }));
+                      })
+                    }
+                  >
+                    + Pasta {sub.replace(/^\d+\s/, "")} do cliente
+                  </Button>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_2fr_auto]">
               <Input placeholder="Título" value={novoLink.titulo} onChange={(e) => setNovoLink({ ...novoLink, titulo: e.target.value })} />
               <Input placeholder="https://" value={novoLink.url} onChange={(e) => setNovoLink({ ...novoLink, url: e.target.value })} />
