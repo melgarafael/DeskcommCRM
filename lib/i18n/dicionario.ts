@@ -12177,6 +12177,8 @@ export const DICIONARIO: Traducoes = {
   "Reconectar o áudio": { es: "Reconectar el audio" },
   "Chamada de voz": { es: "Llamada de voz" },
   "Chamada de voz sem resposta": { es: "Llamada de voz sin respuesta" },
+  // #3509: a linha da timeline quando o provedor confirma o pagamento.
+  "Pagamento confirmado": { es: "Pago confirmado" },
   "A chamada de voz não está configurada.": { es: "La llamada de voz no está configurada." },
   "Falta o endereço do serviço (": { es: "Falta la dirección del servicio (" },
   ") nas variáveis de ambiente desta instalação.": {

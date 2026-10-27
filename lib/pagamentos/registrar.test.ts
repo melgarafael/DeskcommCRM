@@ -110,7 +110,7 @@ beforeEach(() => {
 
 describe("registrar o link na conversa", () => {
   it("⭐ caminho feliz: grava o recebimento pendente e o ponteiro na mensagem, preservando o metadata", async () => {
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.reutilizado).toBe(false);
@@ -146,14 +146,14 @@ describe("registrar o link na conversa", () => {
 
   it("⭐ mensagem de outra conversa/organização: 404 e NADA é gravado", async () => {
     m.mensagem = null;
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: false, code: "not_found", status: 404 });
     expect(banco.cadeias.filter((c) => c.tabela === "pagamento_recebimentos")).toEqual([]);
     expect(cadeia("messages", "update")).toEqual([]);
   });
 
   it("o filtro da mensagem carrega organização E conversa (não é busca por id solto)", async () => {
-    await registrarLinkDoPagamento(banco.cliente, pedido());
+    await registrarLinkDoPagamento(banco.cliente as never, pedido());
     const select = banco.cadeias.find((c) => c.tabela === "messages")!;
     expect(valorDoFiltro(select, "eq", "organization_id")).toBe(ORG);
     expect(valorDoFiltro(select, "eq", "conversation_id")).toBe(CONV);
@@ -162,14 +162,14 @@ describe("registrar o link na conversa", () => {
 
   it("⭐ link que não está no corpo da mensagem: 422 e nada gravado", async () => {
     m.mensagem!.body = "outro link: https://pay.infinitepay.io/outro";
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: false, code: "validation_failed", status: 422 });
     expect(banco.cadeias.filter((c) => c.tabela === "pagamento_recebimentos")).toEqual([]);
   });
 
   it("⭐ mensagem que o CLIENTE mandou: 422 (link recebido não é cobrança nossa)", async () => {
     m.mensagem!.direction = "inbound";
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: false, status: 422 });
   });
 
@@ -181,7 +181,7 @@ describe("registrar o link na conversa", () => {
       pedido({ link: "http://pay.infinitepay.io/abc123" }),
       pedido({ externalId: "com espaco" }),
     ]) {
-      const r = await registrarLinkDoPagamento(banco.cliente, ruim);
+      const r = await registrarLinkDoPagamento(banco.cliente as never, ruim);
       expect(r).toMatchObject({ ok: false, status: 422 });
     }
     expect(banco.cadeias).toEqual([]);
@@ -189,7 +189,7 @@ describe("registrar o link na conversa", () => {
 
   it("sem negócio aberto único, o recebimento nasce com lead_id nulo (o pagamento continua válido)", async () => {
     m.leads = [];
-    await registrarLinkDoPagamento(banco.cliente, pedido());
+    await registrarLinkDoPagamento(banco.cliente as never, pedido());
     const gravado = argumentos(cadeia("pagamento_recebimentos", "insert")[0]!, "insert")?.[0] as {
       lead_id: string | null;
     };
@@ -198,7 +198,7 @@ describe("registrar o link na conversa", () => {
 
   it("DOIS negócios abertos do contato: não escolhe nenhum (lead_id nulo)", async () => {
     m.leads = [{ id: LEAD }, { id: "cccccccc-0000-4000-8000-0000000000ff" }];
-    await registrarLinkDoPagamento(banco.cliente, pedido());
+    await registrarLinkDoPagamento(banco.cliente as never, pedido());
     const gravado = argumentos(cadeia("pagamento_recebimentos", "insert")[0]!, "insert")?.[0] as {
       lead_id: string | null;
     };
@@ -217,7 +217,7 @@ describe("registrar o link na conversa", () => {
       },
     };
     m.existente = recebimento();
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: true, reutilizado: true });
     expect(cadeia("pagamento_recebimentos", "insert")).toEqual([]);
   });
@@ -225,20 +225,20 @@ describe("registrar o link na conversa", () => {
   it("⭐ 23505 com a MESMA mensagem: reutiliza (o retry da tela não vira erro)", async () => {
     m.insert = { error: { code: "23505", message: "duplicate key" } };
     m.existente = recebimento();
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: true, reutilizado: true });
   });
 
   it("⭐ 23505 com OUTRA mensagem: 409 — o mesmo pagamento não vive em duas conversas", async () => {
     m.insert = { error: { code: "23505", message: "duplicate key" } };
     m.existente = recebimento({ message_id: "cccccccc-0000-4000-8000-0000000000aa" });
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: false, code: "state_conflict", status: 409 });
   });
 
   it("falha de escrita do recebimento que não é 23505: 500 e o ponteiro NÃO é escrito", async () => {
     m.insert = { error: { code: "23503", message: "fk" } };
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: false, code: "internal_error", status: 500 });
     expect(cadeia("messages", "update")).toEqual([]);
     expect(h.erro).toHaveBeenCalled();
@@ -246,7 +246,7 @@ describe("registrar o link na conversa", () => {
 
   it("metadata não gravado: 500 (a tela repete, e o retry cai no caminho reutilizado)", async () => {
     m.patch = { error: { code: "42501", message: "rls" } };
-    const r = await registrarLinkDoPagamento(banco.cliente, pedido());
+    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: false, code: "internal_error", status: 500 });
   });
 });

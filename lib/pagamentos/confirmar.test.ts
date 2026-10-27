@@ -107,7 +107,7 @@ const pedido = { provedor: "infinitepay", externalId: "pay_123", quando: QUANDO 
 
 describe("confirmar o pagamento", () => {
   it("⭐ aviso válido: marca paga UMA vez, move o negócio e escreve uma linha na timeline", async () => {
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r).toMatchObject({ ok: true, efeito: "pago" });
     if (!r.ok || r.efeito !== "pago") return;
     expect(r.recebimento.status).toBe("paga");
@@ -139,7 +139,7 @@ describe("confirmar o pagamento", () => {
 
   it("⭐ evento REPETIDO (já pago): nada muda — sem update, sem etapa, sem segunda linha na timeline", async () => {
     m.linhas = [pendente({ status: "paga", pago_em: QUANDO.toISOString() })];
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r).toEqual({ ok: true, efeito: "duplicado", status: "paga" });
     expect(escritas("pagamento_recebimentos")).toEqual([]);
     expect(escritas("crm_leads")).toEqual([]);
@@ -148,7 +148,7 @@ describe("confirmar o pagamento", () => {
 
   it("⭐ CORRIDA: o compare-and-set atualiza zero linhas (outra entrega chegou antes) — nada acontece", async () => {
     m.cas = { data: [] };
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r).toEqual({ ok: true, efeito: "duplicado", status: "paga" });
     expect(escritas("crm_leads")).toEqual([]);
     expect(cadeias("crm_lead_activities")).toEqual([]);
@@ -156,14 +156,14 @@ describe("confirmar o pagamento", () => {
   });
 
   it("limite de 2 na busca por id externo: é a ambiguidade que se mede, não a primeira linha", async () => {
-    await confirmarPagamento(banco.cliente, pedido);
+    await confirmarPagamento(banco.cliente as never, pedido);
     const select = cadeias("pagamento_recebimentos")[0]!;
     expect(select.passos.filter((p) => p.metodo === "limit").map((p) => p.args)).toContainEqual([2]);
   });
 
   it("⭐ id externo ambíguo (mesma conta em duas empresas): 500 e NADA é marcado", async () => {
     m.linhas = [pendente(), pendente({ id: "cccccccc-0000-4000-8000-0000000000bb", organization_id: "cccccccc-0000-4000-8000-0000000000cc" })];
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r).toMatchObject({ ok: false, status: 500 });
     expect(escritas("pagamento_recebimentos")).toEqual([]);
     expect(h.erro).toHaveBeenCalled();
@@ -171,14 +171,14 @@ describe("confirmar o pagamento", () => {
 
   it("id que não é nosso: `desconhecido` e nada escrito", async () => {
     m.linhas = [];
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r).toEqual({ ok: true, efeito: "desconhecido" });
     expect(banco.cadeias.filter((c) => operacao(c) !== "select")).toEqual([]);
   });
 
   it("negócio JÁ na etapa de ganho: pagamento vale, card não se move", async () => {
     m.lead!.stage_id = ETAPA_GANHO;
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "ja_esta_la" });
     expect(escritas("crm_leads")).toEqual([]);
     expect(cadeias("crm_lead_activities")).toHaveLength(1);
@@ -186,21 +186,21 @@ describe("confirmar o pagamento", () => {
 
   it("funil SEM etapa de ganho: não move (estado legítimo, não erro)", async () => {
     m.etapa = null;
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "sem_etapa_de_ganho" });
     expect(escritas("crm_leads")).toEqual([]);
   });
 
   it("negócio já encerrado (ganho ou perdido): não reescreve o desfecho", async () => {
     m.lead!.status = "lost";
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "negocio_encerrado" });
     expect(escritas("crm_leads")).toEqual([]);
   });
 
   it("sem negócio vinculado: marca pago e não escreve timeline (não há negócio onde escrever)", async () => {
     m.linhas = [pendente({ lead_id: null })];
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "sem_negocio" });
     expect(cadeias("crm_leads")).toEqual([]);
     expect(cadeias("crm_lead_activities")).toEqual([]);
@@ -208,7 +208,7 @@ describe("confirmar o pagamento", () => {
 
   it("humano moveu o card entre a leitura e a escrita: `conflito_humano`, e a decisão dele vence", async () => {
     m.moveu = { data: [] };
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "conflito_humano" });
     // O update leva o estágio de ORIGEM no filtro — é a trava otimista.
     const upd = cadeias("crm_leads").find((c) => operacao(c) === "update")!;
@@ -217,7 +217,7 @@ describe("confirmar o pagamento", () => {
 
   it("falha ao marcar o pagamento: 500 (o provedor reentrega) e nada mais é escrito", async () => {
     m.cas = { error: { code: "42501", message: "rls" } };
-    const r = await confirmarPagamento(banco.cliente, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido);
     expect(r).toMatchObject({ ok: false, status: 500 });
     expect(escritas("messages")).toEqual([]);
     expect(cadeias("crm_lead_activities")).toEqual([]);
@@ -227,7 +227,7 @@ describe("confirmar o pagamento", () => {
     m.mensagem!.metadata = {
       pagamento: { provedor: "infinitepay", id: "pay_123", valor: 15000, moeda: "BRL", status: "pendente", recebimento_id: "outro" },
     };
-    await confirmarPagamento(banco.cliente, pedido);
+    await confirmarPagamento(banco.cliente as never, pedido);
     expect(escritas("messages")).toEqual([]);
   });
 });

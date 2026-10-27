@@ -65812,7 +65812,23 @@ create policy tenant_isolation_pagamento_recebimentos_write on public.pagamento_
   with check (
     organization_id in (select public.fn_user_org_ids())
       and public.fn_role_at_least(organization_id, 'agent')
+      -- O vínculo tem de ser da MESMA organização: sem isto, um `insert` com o
+      -- organization_id da própria empresa e o conversation_id de outra gravaria
+      -- uma linha que ninguém enxerga (a policy de leitura confere o par). O
+      -- caminho da tela já valida a conversa antes, mas guarda de RLS não confia
+      -- na camada de cima.
+      and exists (
+        select 1 from public.conversations c
+         where c.id = pagamento_recebimentos.conversation_id
+           and c.organization_id = pagamento_recebimentos.organization_id
+      )
   );
+
+-- ⚠️ AS TRÊS TRAVAS DO SUPORTE, DEPOIS DA TABELA (9026, #3509).
+-- A última chamada de fn_aplicar_travas_de_suporte() do arquivo ocorre ANTES
+-- desta tabela nascer; sem esta linha ela fica sem support_write_insert/update/
+-- delete e o invariante de travas reprova (medido: 369 contra 372).
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
 notify pgrst, 'reload schema';
 

@@ -101,7 +101,9 @@ export async function confirmarPagamento(
     });
     return { ok: false, code: "internal_error", message: "Não foi possível ler o recebimento.", status: 500 };
   }
-  const linhas = (achados ?? []) as Recebimento[];
+  // O `select` tipado do supabase-js devolve união com erro de string; o cast
+  // passa por `unknown` para o compilador não fingir que a forma é garantida.
+  const linhas = (achados ?? []) as unknown as Recebimento[];
   if (linhas.length === 0) return { ok: true, efeito: "desconhecido" };
   if (linhas.length > 1) {
     logger.error("[pagamentos.confirmar] id externo ambíguo entre organizações", {

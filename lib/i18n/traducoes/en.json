@@ -6803,6 +6803,7 @@
   "Reconectar o áudio": "Reconnect audio",
   "Chamada de voz": "Voice call",
   "Chamada de voz sem resposta": "Unanswered voice call",
+  "Pagamento confirmado": "Payment confirmed",
   "A chamada de voz não está configurada.": "Voice calling isn't set up.",
   "Falta o endereço do serviço (": "The service address is missing (",
   ") nas variáveis de ambiente desta instalação.": ") from this installation's environment variables.",
