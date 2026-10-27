@@ -442,7 +442,7 @@ export function AgendaClient({
   // três, e eu só olhei dois.
   //
   // `useState(() => x)[0]` faz o mesmo congelamento sem tocar em ref no render.
-  const recorteDoServidor = React.useState(() => recorteDaGrade);
+  const [recorteDoServidor] = React.useState(() => recorteDaGrade);
   const naJanelaDoServidor =
     recorteDaGrade.de === recorteDoServidor.de && recorteDaGrade.ate === recorteDoServidor.ate;
 
