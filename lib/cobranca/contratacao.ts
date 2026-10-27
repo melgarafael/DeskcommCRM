@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { estaSuspensa } from "@/lib/organizacao/operante";
 import { roleAtLeast, type AuthUser, type Role } from "@/lib/auth/types";
 import { verificarIntencaoDeContratacao, VALIDADE_DA_INTENCAO_MS } from "./intencao-assinada";
 export { VALIDADE_DA_INTENCAO_MS } from "./intencao-assinada";
@@ -36,7 +37,7 @@ export async function lerIntencaoDeContratacao(
   ]);
   if (org.error || assinatura.error) throw new Error("contratacao: leitura indisponível");
   const a = assinatura.data;
-  if (!org.data || org.data.created_by !== userId || org.data.status !== "suspended" ||
+  if (!org.data || org.data.created_by !== userId || !estaSuspensa(org.data.status) ||
       org.data.suspended_kind !== "cobranca" || !a || !primeiroPagamentoPendente(a) || a.estado === "cancelada") return null;
 
   const checked = await lerIntencaoDoCadastro(db, userId, a.plano_id, agora);

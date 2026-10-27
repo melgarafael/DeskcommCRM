@@ -11,6 +11,7 @@ import { sugestaoDoCadastro } from "@/lib/cobranca/documento";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { ehOperante } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { ContinuarPagamento } from "@/components/cobranca/ContinuarPagamento";
@@ -35,7 +36,7 @@ export default async function ContratarPage({ searchParams }: {
       .eq("organization_id", ativa.orgId).maybeSingle(),
   ]);
   if (org.error || assinatura.error || !org.data) throw new Error("contratacao: estado indisponível");
-  if (org.data.status === "active") redirect("/onboarding/welcome");
+  if (ehOperante(org.data.status)) redirect("/onboarding/welcome");
   if (org.data.suspended_kind !== "cobranca" || !primeiroPagamentoPendente(assinatura.data)) redirect("/account-suspended");
   const a = assinatura.data!;
   const { data: plano, error } = await db.from("cobranca_planos").select("id, nome, preco_cents, intervalo")
