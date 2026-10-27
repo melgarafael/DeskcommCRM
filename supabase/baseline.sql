@@ -51275,6 +51275,123 @@ begin
   execute 'alter table public.skill_versions enable trigger trg_skill_versions_immutable';
 end $$;
 
+-- ============================================================================
+-- 0808 — o vínculo com o catálogo é reconstruído por EVIDÊNCIA de auditoria, e
+-- o vínculo que a 0644 inventou é solto (issue #1976). Bloco IDÊNTICO, linha a
+-- linha, ao da migration
+-- `20261027150000_0808_vinculo_com_o_catalogo_ancorado_na_auditoria.sql`
+-- (`tests/unit/vinculo-do-catalogo-ancorado-na-auditoria.test.ts` prende os dois
+-- à mesma letra). Não cria função, então entra aqui em cima da VARREDURA anon
+-- por ordem de apêndice, não por necessidade. Instalação nova roda sobre
+-- `skill_versions` vazia (no-op); instalação que atualiza solta o vínculo de
+-- quem foi `.zip` por cima do catálogo e cura a herança atravessando o #1960.
+-- Reaplicável: a segunda passada não acha candidata nenhuma.
+-- ============================================================================
+do $$
+declare
+  v_soltas integer;
+  v_curadas integer;
+  v_pendentes integer;
+begin
+  execute 'alter table public.skill_versions disable trigger trg_skill_versions_immutable';
+
+  -- ─── Passada 1: o vínculo de quem foi .zip por cima do catálogo ─────────────
+  update public.skill_versions v
+     set forked_from_version_id = null
+    from (
+      select copia.id
+        from public.skill_versions copia
+       where copia.organization_id is not null
+         and copia.forked_from_version_id is not null
+         and 'ai.skill_imported' = (
+               select evento.action
+                 from public.skill_versions elo
+                 join public.api_audit_log evento on evento.resource_id = elo.id
+                where elo.organization_id = copia.organization_id
+                  and elo.name = copia.name
+                  and (elo.created_at, elo.id) <= (copia.created_at, copia.id)
+                  and evento.resource_type = 'skill_versions'
+                  and evento.action in ('ai.skill_installed', 'ai.skill_imported')
+                order by elo.created_at desc, elo.id desc
+                limit 1)
+    ) manuais
+   where v.id = manuais.id;
+
+  get diagnostics v_soltas = row_count;
+
+  -- ─── Passada 2: cura onde a cadeia inteira é do editor ──────────────────────
+  with candidatas as (
+    select v.id,
+           v.organization_id,
+           v.name,
+           v.created_at,
+           ancora.created_at as ancora_em,
+           ancora.id as ancora_id,
+           ancora.forked_from_version_id as origem
+      from public.skill_versions v
+      join lateral (
+        select a.id, a.created_at, a.forked_from_version_id
+          from public.skill_versions a
+         where a.organization_id = v.organization_id
+           and a.name = v.name
+           and a.forked_from_version_id is not null
+           and (a.created_at, a.id) < (v.created_at, v.id)
+           and exists (
+             select 1
+               from public.skill_versions origem_plataforma
+              where origem_plataforma.id = a.forked_from_version_id
+                and origem_plataforma.organization_id is null -- a origem tem de ser versão de PLATAFORMA
+           )
+         order by a.created_at desc, a.id desc
+         limit 1
+      ) ancora on true
+     where v.organization_id is not null
+       and v.forked_from_version_id is null
+  ),
+  provadas as (
+    select c.id, c.origem
+      from candidatas c
+     where exists (
+             select 1
+               from public.api_audit_log salva
+              where salva.resource_type = 'skill_versions'
+                and salva.resource_id = c.id
+                and salva.action = 'ai.skill_saved'   -- o editor criou ESTA versão
+           )
+       and not exists (
+             select 1
+               from public.skill_versions elo
+              where elo.organization_id = c.organization_id
+                and elo.name = c.name
+                and (elo.created_at, elo.id) > (c.ancora_em, c.ancora_id)
+                and (elo.created_at, elo.id) < (c.created_at, c.id)
+                and not exists (
+                      select 1
+                        from public.api_audit_log salva_elo
+                       where salva_elo.resource_type = 'skill_versions'
+                         and salva_elo.resource_id = elo.id
+                         and salva_elo.action = 'ai.skill_saved' -- elo sem prova bloqueia a cura
+                    )
+           )
+  )
+  update public.skill_versions v
+     set forked_from_version_id = provadas.origem
+    from provadas
+   where v.id = provadas.id;
+
+  get diagnostics v_curadas = row_count;
+
+  select count(*) into v_pendentes
+    from public.skill_versions v
+   where v.organization_id is not null
+     and v.forked_from_version_id is null;
+
+  raise notice '0808: % vinculo(s) inventado(s) solto(s), % versao(oes) curada(s) por evidencia, % versao(oes) de org seguem sem vinculo',
+    v_soltas, v_curadas, v_pendentes;
+
+  execute 'alter table public.skill_versions enable trigger trg_skill_versions_immutable';
+end $$;
+
 -- ---- o comando da conversa lê o bit do contato (migration 0645, issue #2739) ----
 -- A trava do contato que o campo calculado `comando_da_conversa` lia POR LINHA
 -- (duas subconsultas a `contacts` por conversa) passa a viver na própria
