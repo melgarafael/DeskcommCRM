@@ -14,6 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { criarAviso } from "../avisos/criar";
 import { copiarEnvio, enfileirarCopia } from "../envios/copia";
 import { normalizarWhatsapp } from "../convite";
+import { aoResponderEnvioDoMapa } from "../mapas/motor";
 import { aoResponderAprovacaoDaPublicacao } from "../publicacoes/motor";
 import { aoMudarTarefa } from "../trilhas/motor";
 import { enfileirarWhatsappDaAgencia } from "../whatsapp/enfileirar";
@@ -176,6 +177,8 @@ export async function registrarCiencia(p: { aprovacaoId: string; organizationId:
     .select("id, titulo, pedido_por, agencia_clientes(nome)");
   if (error || !data?.length) return false;
   const a = data[0] as unknown as { id: string; titulo: string; pedido_por: string | null; agencia_clientes: { nome: string } | null };
+  // O bloco "Aviso ao cliente" do mapa que mandou este aviso conclui.
+  await aoResponderEnvioDoMapa(a.id);
   try {
     const { data: m } = a.pedido_por ? await db.from("agencia_membros").select("id").eq("user_id", a.pedido_por).eq("situacao", "ativo").maybeSingle() : { data: null };
     await criarAviso({

@@ -67,6 +67,8 @@ export async function aplicarProposta(mapaId: string, proposta: Proposta): Promi
     titulo: b.titulo,
     descricao: b.descricao,
     tipo: b.tipo,
+    // A espécie da paleta (blocos.ts): marco é marco; o resto entra como tarefa livre.
+    especie: b.tipo === "marco" ? "marco" : "tarefa",
     executor: b.executor,
     acao_ia: b.acao_ia,
     prazo: b.prazo_em_dias === null ? null : instanteDoDia(somarDias(hoje, b.prazo_em_dias), "18:00").toISOString(),

@@ -303,3 +303,24 @@ Spec: [`SPEC-envios.md`](SPEC-envios.md). Migration **9013** (+ apêndice no bas
     "aprovada".
 
   Tudo conferido no banco e na auditoria; os dados de prova foram apagados.
+
+### Item 5 — Mapas no estilo do Fluxo: **feito e provado no teste; último ajuste de layout ainda NÃO publicado**
+
+- Migration **9014**: espécie do bloco (34 na paleta), configuração, e os efeitos novos aviso,
+  publicação, espera e nota. Modelos prontos: as Etapas 1, 2 e 3 do recorrente e 6 serviços
+  avulsos.
+- **Provado no teste** (`docs/agencia/scripts/prova-mapas-fluxo.mjs`, evidências em
+  `evidence/agencia-ajustes-mapas/`):
+  - modelo da Etapa 3 com 12 blocos, 12 setas, mini-mapa e controles;
+  - o "+" cria o próximo bloco já ligado;
+  - arrastar da paleta e ligar pela alça funcionam;
+  - o painel muda conforme o bloco;
+  - publicar → roteiro concluído → o aviso foi sozinho para o cliente → "Ciente" concluiu o
+    bloco → o post nasceu em rascunho no calendário;
+  - 375 px sem rolagem lateral.
+- **Pendente:** depois da prova, os modelos passaram a sair **de cima para baixo**, o painel só
+  aparece com um bloco escolhido e a vista abre nos primeiros blocos. A tela anterior ficava
+  apertada (ver `01-modelo-etapa-3-1440.png`). Isso tem typecheck limpo, mas **falta publicar no
+  teste e refazer a prova**: o pacote é `TelaDoMapa.tsx` e `lib/agencia/mapas/modelos.ts`, pelo
+  `trocar-arquivos.sh`.
+- Dados de prova no teste: rode `docs/agencia/scripts/mapas-limpar.sql`.

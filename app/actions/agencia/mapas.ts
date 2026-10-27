@@ -7,6 +7,8 @@ import { exigirPermissao, type ContextoDaAgencia } from "@/lib/agencia/acesso";
 import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agencia/auditoria";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { ACOES_DA_IA } from "@/lib/agencia/ia/catalogo";
+import { ESPECIES, especieDe } from "@/lib/agencia/mapas/blocos";
+import { blocosDoModelo, MODELOS_DE_MAPA } from "@/lib/agencia/mapas/modelos";
 import { concluirMarcoDoMapa, lerMapa, publicarMapa } from "@/lib/agencia/mapas/motor";
 import { problemaNoMapa } from "@/lib/agencia/mapas/regras";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
@@ -48,7 +50,7 @@ function revalidar(mapaId: string) {
   revalidatePath("/agencia/mapas");
 }
 
-export async function criarMapa(clienteId: string, titulo: string): Promise<ResultadoDaAcao<{ id: string }>> {
+export async function criarMapa(clienteId: string, titulo: string, modelo: string | null = null): Promise<ResultadoDaAcao<{ id: string }>> {
   return seguro(async () => {
     const ctx = await exigirPermissao("mapa.editar");
     const t = z.string().trim().min(2, "Dê um nome ao mapa.").max(120).safeParse(titulo);
@@ -57,7 +59,21 @@ export async function criarMapa(clienteId: string, titulo: string): Promise<Resu
     const { data, error } = await createAdminClient().from("agencia_mapas").insert({ cliente_id: clienteId, titulo: t.data, criado_por: ctx.user.id }).select("id").single();
     if (error || !data) return { ok: false as const, erro: "Não deu para criar o mapa." };
     const id = (data as { id: string }).id;
-    await auditarAgencia("agencia.mapa_criado", ctx.user.id, { tipo: "agencia_mapa", id }, { cliente_id: clienteId });
+    // Mapa pronto para começar (plano de 27/10, item 5): os blocos e as setas do modelo.
+    if (modelo && MODELOS_DE_MAPA.some((m) => m.id === modelo)) {
+      const { blocos, setas } = blocosDoModelo(modelo);
+      const db = createAdminClient();
+      const { data: criados } = await db
+        .from("agencia_mapa_blocos")
+        .insert(blocos.map((b) => ({ ...b.linha, mapa_id: id })))
+        .select("id");
+      const idDe = new Map(blocos.map((b, i) => [b.chave, (criados?.[i] as { id: string } | undefined)?.id]));
+      const ligacoes = setas
+        .map(([de, para]) => ({ mapa_id: id, de_id: idDe.get(de), para_id: idDe.get(para) }))
+        .filter((l): l is { mapa_id: string; de_id: string; para_id: string } => !!l.de_id && !!l.para_id);
+      if (ligacoes.length) await db.from("agencia_mapa_ligacoes").insert(ligacoes);
+    }
+    await auditarAgencia("agencia.mapa_criado", ctx.user.id, { tipo: "agencia_mapa", id }, { cliente_id: clienteId, modelo });
     revalidatePath("/agencia/mapas");
     return { ok: true as const, dados: { id } };
   });
@@ -69,9 +85,18 @@ const blocoSchema = z.object({
   titulo: z.string().trim().min(1, "Dê um título ao bloco.").max(200),
   descricao: z.string().trim().max(4000).nullable(),
   cor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  x: z.number().finite().min(0).max(10_000),
-  y: z.number().finite().min(0).max(10_000),
-  tipo: z.enum(["tarefa", "marco"]),
+  x: z.number().finite().min(-20_000).max(20_000),
+  y: z.number().finite().min(-20_000).max(20_000),
+  /** A espécie da paleta; o efeito no motor (tipo) sai dela (lib/agencia/mapas/blocos.ts). */
+  especie: z.string().refine((e) => ESPECIES.includes(e), "Bloco desconhecido.").prefault("tarefa"),
+  /** Configuração por espécie: texto do aviso; rede e formato do post. */
+  config: z
+    .object({
+      texto: z.string().trim().max(4000).optional(),
+      rede: z.enum(["instagram", "facebook", "tiktok", "youtube", "outra"]).optional(),
+      formato: z.enum(["feed", "reels", "story", "carrossel", "video"]).optional(),
+    })
+    .prefault({}),
   funcaoId: z.string().uuid().nullable(),
   responsavelId: z.string().uuid().nullable(),
   prazo: z.string().datetime({ offset: true }).nullable(),
@@ -101,7 +126,9 @@ export async function salvarBloco(entrada: EntradaDoBloco): Promise<ResultadoDaA
       cor: d.cor,
       x: d.x,
       y: d.y,
-      tipo: d.tipo,
+      especie: d.especie,
+      tipo: especieDe(d.especie).tipo,
+      config: d.config,
       funcao_id: d.funcaoId,
       responsavel_id: d.responsavelId,
       prazo: d.prazo,
@@ -140,7 +167,7 @@ export async function salvarBloco(entrada: EntradaDoBloco): Promise<ResultadoDaA
 export async function moverBloco(id: string, x: number, y: number): Promise<ResultadoDaAcao> {
   return seguro(async () => {
     const ctx = await exigirPermissao("mapa.editar");
-    const pos = z.object({ x: z.number().finite().min(0).max(10_000), y: z.number().finite().min(0).max(10_000) }).safeParse({ x, y });
+    const pos = z.object({ x: z.number().finite().min(-20_000).max(20_000), y: z.number().finite().min(-20_000).max(20_000) }).safeParse({ x, y });
     if (!pos.success) return { ok: false as const, erro: "Posição inválida." };
     const m = await mapaDoBloco(ctx, id);
     if (!m) return { ok: false as const, erro: "Bloco não encontrado." };
@@ -229,5 +256,44 @@ export async function concluirMarco(blocoId: string): Promise<ResultadoDaAcao> {
     if (!r.ok) return r;
     revalidar(m.id);
     return { ok: true as const };
+  });
+}
+
+/**
+ * Acrescenta um bloco da paleta (plano de 27/10, item 5), já com o título, a cor
+ * e o checklist da espécie — e, quando vem do "+" de outro bloco, já ligado a ele.
+ */
+export async function adicionarBloco(mapaId: string, especie: string, x: number, y: number, depoisDe: string | null = null): Promise<ResultadoDaAcao<{ id: string }>> {
+  return seguro(async () => {
+    const ctx = await exigirPermissao("mapa.editar");
+    const m = await mapaPermitido(ctx, mapaId);
+    if (!m || m.situacao !== "rascunho") return { ok: false as const, erro: "Só se acrescenta bloco em mapa em Criação." };
+    if (!ESPECIES.includes(especie)) return { ok: false as const, erro: "Bloco desconhecido." };
+    const e = especieDe(especie);
+    const db = createAdminClient();
+    const { data, error } = await db
+      .from("agencia_mapa_blocos")
+      .insert({
+        mapa_id: mapaId,
+        especie,
+        tipo: e.tipo,
+        titulo: e.titulo || e.rotulo,
+        cor: e.cor,
+        x: Math.max(-20_000, Math.min(20_000, Math.round(x))),
+        y: Math.max(-20_000, Math.min(20_000, Math.round(y))),
+        checklist: e.checklist ?? [],
+        executor: e.executor ?? "humano",
+        acao_ia: e.executor === "ia" ? (e.acaoIa ?? null) : null,
+      })
+      .select("id")
+      .single();
+    if (error || !data) return { ok: false as const, erro: "Não deu para acrescentar o bloco." };
+    const id = (data as { id: string }).id;
+    if (depoisDe && idSchema.safeParse(depoisDe).success && e.tipo !== "nota") {
+      const { data: de } = await db.from("agencia_mapa_blocos").select("id").eq("id", depoisDe).eq("mapa_id", mapaId).maybeSingle();
+      if (de) await db.from("agencia_mapa_ligacoes").insert({ mapa_id: mapaId, de_id: depoisDe, para_id: id });
+    }
+    revalidar(mapaId);
+    return { ok: true as const, dados: { id } };
   });
 }

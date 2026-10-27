@@ -28,6 +28,10 @@ export default async function PaginaDoMapa({ params }: { params: Promise<{ id: s
       mapa={{ id, titulo: lido.mapa.titulo, situacao: lido.mapa.situacao, clienteNome: lido.mapa.agencia_clientes?.nome ?? "" }}
       blocos={lido.blocos.map((b) => ({
         id: b.id,
+        especie: b.especie,
+        config: (b.config ?? {}) as { texto?: string; rede?: string; formato?: string },
+        envioId: b.envio_id,
+        publicacaoId: b.publicacao_id,
         titulo: b.titulo,
         descricao: b.descricao,
         cor: b.cor,

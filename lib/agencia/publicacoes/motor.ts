@@ -1,6 +1,7 @@
 import "server-only";
 
 import { criarAviso } from "@/lib/agencia/avisos/criar";
+import { aoPublicarPostDoMapa } from "@/lib/agencia/mapas/motor";
 import { logger } from "@/lib/logger";
 import { lerConexaoSocial } from "@/lib/social-insights/meta-client";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -96,6 +97,7 @@ export async function publicarAgendadas(agora = new Date()): Promise<{ publicada
         .from("agencia_publicacoes")
         .update({ situacao: "publicada", post_id: r.postId, post_url: r.postUrl, erro: null, publicada_em: fim, atualizado_em: fim })
         .eq("id", p.id);
+      await aoPublicarPostDoMapa(p.id);
     } else {
       falharam++;
       await db.from("agencia_publicacoes").update({ situacao: "falhou", erro: r.erro, atualizado_em: fim }).eq("id", p.id);

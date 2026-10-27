@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { avisarLembretesDeReuniao } from "@/lib/agencia/calendario/lembretes";
 import { copiarEnviosPendentes } from "@/lib/agencia/envios/copia";
+import { avancarEsperasDosMapas } from "@/lib/agencia/mapas/motor";
 import { publicarAgendadas } from "@/lib/agencia/publicacoes/motor";
 import { avisarPrazos } from "@/lib/agencia/tarefas/relogios";
 import { avisarPrazosDaTrilha } from "@/lib/agencia/trilhas/relogio";
@@ -44,13 +45,15 @@ async function handle(req: NextRequest) {
     if (p.publicadas + p.falharam > 0) {
       void audit({ action: "agencia.publicacoes_publicadas", organizationId: null, metadata: { ...p }, requestId });
     }
+    // Mapas: o bloco "Esperar data" que venceu segue o caminho (plano de 27/10, item 5).
+    const esperas = await avancarEsperasDosMapas();
     // SPEC-envios, E6: termina as cópias para o Drive que a resposta do cliente começou.
     // 35 s: o agendador espera 60 s por esta rota; a cópia longa roda logo depois da aprovação.
     const c = await copiarEnviosPendentes(35_000);
     if (c.copiados > 0) {
       void audit({ action: "agencia.envios_copiados", organizationId: null, metadata: { ...c }, requestId });
     }
-    return ok({ ...r, ...l, trilha: t.avisados, ...p, envios: c }, { requestId });
+    return ok({ ...r, ...l, trilha: t.avisados, ...p, envios: c, esperas }, { requestId });
   } catch (err) {
     const detalhe = err instanceof Error ? err.message : String(err);
     logger.error("[agencia-prazos.cron] falhou", { error: detalhe, requestId });

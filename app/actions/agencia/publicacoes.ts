@@ -8,6 +8,7 @@ import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agenci
 import { horaLocal, instanteDoDia } from "@/lib/agencia/calendario/regras";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { FORMATOS, REDES, mudouOConteudo, problemaParaAgendar, type Formato, type Rede, type SituacaoDaPublicacao } from "@/lib/agencia/publicacoes/regras";
+import { aoPublicarPostDoMapa } from "@/lib/agencia/mapas/motor";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -201,6 +202,7 @@ export async function marcarComoPublicada(id: string, postUrl: string): Promise<
     if (linha.situacao === "publicada" || linha.situacao === "cancelada") return { ok: false as const, erro: "Essa publicação já foi encerrada." };
     const agora = new Date().toISOString();
     await gravar(linha.id, { situacao: "publicada", post_url: url || null, publicada_em: agora, erro: null, auto_publicar: false, atualizado_em: agora });
+    await aoPublicarPostDoMapa(linha.id);
     await auditarAgencia("agencia.publicacao_marcada_publicada", ctx.user.id, { tipo: "agencia_publicacao", id: linha.id }, { situacao_antes: linha.situacao });
     revalidatePath("/agencia/publicacoes");
     return { ok: true as const };
