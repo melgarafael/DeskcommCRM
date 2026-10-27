@@ -180,6 +180,7 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // registro acima: UUID v4 de alfabeto ASCII + `.jpg`/`.png` conhecido pela
   // ASSINATURA dos bytes, nunca pelo content-type que o cliente diz.
   { arquivo: "app/api/v1/message-templates/[id]/midias/route.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "app/api/v1/products/[id]/ai-presentation/audio/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/cron/contact-avatars/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/channels/partner/templates/media/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/settings/sons/route.ts", fronteira: "storage.chave-de-objeto" },

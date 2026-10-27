@@ -41,8 +41,8 @@ describe("prepararFotosDoProduto — a foto do catálogo vai para a pasta da con
       ok: true,
       tinha: 2,
       fotos: [
-        { storagePath: `${ORG}/${CONVERSA}/catalogo-11111111-2222-4333-8444-555555555555.jpg`, mime: "image/jpeg" },
-        { storagePath: `${ORG}/${CONVERSA}/catalogo-66666666-7777-4888-8999-000000000000.png`, mime: "image/png" },
+        { kind: "image", storagePath: `${ORG}/${CONVERSA}/catalogo-11111111-2222-4333-8444-555555555555.jpg`, mime: "image/jpeg" },
+        { kind: "image", storagePath: `${ORG}/${CONVERSA}/catalogo-66666666-7777-4888-8999-000000000000.png`, mime: "image/png" },
       ],
     });
   });
@@ -80,8 +80,8 @@ describe("prepararFotosDoProduto — a foto do catálogo vai para a pasta da con
 });
 
 describe("enviarComFotos — o texto é a legenda da primeira foto", () => {
-  const FOTO_1: FotoParaEnvio = { storagePath: `${ORG}/${CONVERSA}/catalogo-1.jpg`, mime: "image/jpeg" };
-  const FOTO_2: FotoParaEnvio = { storagePath: `${ORG}/${CONVERSA}/catalogo-2.jpg`, mime: "image/jpeg" };
+  const FOTO_1: FotoParaEnvio = { kind: "image", storagePath: `${ORG}/${CONVERSA}/catalogo-1.jpg`, mime: "image/jpeg" };
+  const FOTO_2: FotoParaEnvio = { kind: "image", storagePath: `${ORG}/${CONVERSA}/catalogo-2.jpg`, mime: "image/jpeg" };
 
   function canal(desfechos: string[] = []) {
     const enviados: Array<{ tipo: "texto" | "foto"; corpo: string; foto?: string }> = [];
@@ -130,7 +130,7 @@ describe("enviarComFotos — o texto é a legenda da primeira foto", () => {
   // já saiu. Achado de revisão: com o teto calculado uma vez, antes do texto, a
   // descrição longa (texto à parte) não era descontada e o turno estourava.
   describe("teto de mensagens do turno (max_sends_per_turn)", () => {
-    const FOTO_3: FotoParaEnvio = { storagePath: `${ORG}/${CONVERSA}/catalogo-3.jpg`, mime: "image/jpeg" };
+    const FOTO_3: FotoParaEnvio = { kind: "image", storagePath: `${ORG}/${CONVERSA}/catalogo-3.jpg`, mime: "image/jpeg" };
     const comTeto = (c: ReturnType<typeof canal>, teto: number) => ({
       ...c.opts,
       restantes: () => teto - c.enviados.length,
@@ -176,7 +176,7 @@ describe("corpoDoEnvio — a foto chega ao handler como imagem da conversa", () 
 
   it("com media: type image, caminho e mime, e a legenda no body", () => {
     expect(
-      corpoDoEnvio({ ...base, body: "legenda", media: { storagePath: "p.jpg", mime: "image/jpeg" } }, "k"),
+      corpoDoEnvio({ ...base, body: "legenda", media: { kind: "image", storagePath: "p.jpg", mime: "image/jpeg" } }, "k"),
     ).toEqual({
       conversation_id: CONVERSA,
       type: "image",
@@ -188,8 +188,25 @@ describe("corpoDoEnvio — a foto chega ao handler como imagem da conversa", () 
   });
 
   it("foto sem legenda vai SEM body — o schema do envio recusa corpo vazio", () => {
-    const corpo = corpoDoEnvio({ ...base, body: "", media: { storagePath: "p.jpg", mime: "image/jpeg" } }, "k");
+    const corpo = corpoDoEnvio({ ...base, body: "", media: { kind: "image", storagePath: "p.jpg", mime: "image/jpeg" } }, "k");
     expect("body" in corpo).toBe(false);
+  });
+
+  it("áudio continua áudio na borda do handler", () => {
+    expect(
+      corpoDoEnvio(
+        {
+          ...base,
+          body: "",
+          media: { kind: "audio", storagePath: "apresentacao.ogg", mime: "audio/ogg" },
+        },
+        "k",
+      ),
+    ).toMatchObject({
+      type: "audio",
+      media_storage_path: "apresentacao.ogg",
+      media_mime: "audio/ogg",
+    });
   });
 
   it("texto comum segue texto", () => {

@@ -66,21 +66,21 @@ export interface SendMessageInput {
   /**
    * Presente = o envio sai como MÍDIA e o `body` é a LEGENDA.
    *
-   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem
+   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem ou o áudio
    * que já mora na pasta da conversa (`whatsapp-media/...`, foto de produto — assinada
    * curta por quem conhece o provider), e `url` é a mídia de um passo automático
    * (#2734, ampliada pelo #2972 para áudio, vídeo e documento), que o operador
    * aponta direto e o handler confere antes de buscar.
    */
   media?:
-    | { storagePath: string; mime: string }
+    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 
 /**
- * O corpo que o handler de mensagens recebe: texto, template ou imagem da
+ * O corpo que o handler de mensagens recebe: texto, template ou mídia da
  * conversa. Exportado para o teste — o tipo decide o caminho no handler, e um
- * `type` errado manda a foto como texto sem ninguém ver.
+ * `type` errado degrada áudio ou imagem sem ninguém ver.
  */
 export function corpoDoEnvio(
   input: SendMessageInput,
@@ -106,7 +106,7 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: 'image' as const,
+              type: input.media.kind ?? 'image',
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
             }

@@ -596,7 +596,12 @@ export function ProdutosClient({
               // `key` porque o painel fica na MESMA posição do DOM ao trocar de
               // produto: sem ela o React reaproveita o estado e o formulário
               // abriria preenchido com o produto anterior.
-              <EdicaoDoProduto key={p.id} produto={p} aoFechar={() => setEditando(null)} />
+              <EdicaoDoProduto
+                key={p.id}
+                produto={p}
+                urlsDasFotos={urlsDasFotos}
+                aoFechar={() => setEditando(null)}
+              />
             ) : null}
             </li>
             );

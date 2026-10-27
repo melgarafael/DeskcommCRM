@@ -39,6 +39,7 @@ export const PASTA_DE_TESTE_DE_MIDIA = 'dry-run';
 
 export interface FotoParaEnvio {
   /** caminho em `whatsapp-media`, dentro da pasta da conversa */
+  kind: 'image';
   storagePath: string;
   mime: string;
 }
@@ -127,7 +128,8 @@ export async function prepararFotosDoProduto(
   const fotos: FotoParaEnvio[] = [];
   for (const origem of deste) {
     const destino = `${input.tenantId}/${input.conversationId}/catalogo-${origem.split('/').pop()}`;
-    if (await copiar(origem, destino)) fotos.push({ storagePath: destino, mime: mimeDaFoto(origem) });
+    if (await copiar(origem, destino))
+      fotos.push({ kind: 'image', storagePath: destino, mime: mimeDaFoto(origem) });
   }
   return { ok: true, fotos, tinha: deste.length };
 }

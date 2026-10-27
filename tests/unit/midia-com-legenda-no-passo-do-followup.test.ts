@@ -155,6 +155,17 @@ describe("corpoDoEnvio — a mídia do passo chega ao handler como MÍDIA, não 
     ).toMatchObject({ type: "document", media_url: "https://cdn.exemplo/a.pdf", media_mime: "application/pdf" });
   });
 
+  it("áudio privado da apresentação mantém o tipo e não vira imagem", () => {
+    const corpo = corpoDoEnvio({ ...base, body: "", media: {
+      kind: "audio", storagePath: "org/conversa/catalogo-apresentacao.ogg", mime: "audio/ogg;codecs=opus",
+    } }, "audio-k");
+    expect(corpo).toEqual({
+      conversation_id: base.conversationId,
+      type: "audio", media_storage_path: "org/conversa/catalogo-apresentacao.ogg",
+      media_mime: "audio/ogg;codecs=opus", metadata: { idempotency_key: "audio-k" },
+    });
+  });
+
   it("o caminho ANTIGO do Storage (foto do catálogo) continua idêntico", () => {
     expect(
       corpoDoEnvio({ ...base, body: "legenda", media: { storagePath: "p.jpg", mime: "image/jpeg" } }, "k"),

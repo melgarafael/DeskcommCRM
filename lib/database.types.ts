@@ -4434,6 +4434,73 @@ export type Database = {
           },
         ];
       };
+      catalog_product_presentations: {
+        Row: {
+          audio_mime: string | null;
+          audio_size_bytes: number | null;
+          audio_storage_path: string | null;
+          catalog_product_id: string;
+          created_at: string;
+          enabled: boolean;
+          id: string;
+          kind: string;
+          organization_id: string;
+          show_price: boolean;
+          text_content: string | null;
+          title: string | null;
+          updated_at: string;
+          use_catalog_photos: boolean;
+        };
+        ComputedFields: never;
+        Insert: {
+          audio_mime?: string | null;
+          audio_size_bytes?: number | null;
+          audio_storage_path?: string | null;
+          catalog_product_id: string;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          kind?: string;
+          organization_id: string;
+          show_price?: boolean;
+          text_content?: string | null;
+          title?: string | null;
+          updated_at?: string;
+          use_catalog_photos?: boolean;
+        };
+        Update: {
+          audio_mime?: string | null;
+          audio_size_bytes?: number | null;
+          audio_storage_path?: string | null;
+          catalog_product_id?: string;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          kind?: string;
+          organization_id?: string;
+          show_price?: boolean;
+          text_content?: string | null;
+          title?: string | null;
+          updated_at?: string;
+          use_catalog_photos?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "catalog_product_presentations_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "catalog_product_presentations_product_org_fk";
+            columns: ["organization_id", "catalog_product_id"];
+            isOneToOne: false;
+            referencedRelation: "catalog_products";
+            referencedColumns: ["organization_id", "id"];
+          },
+        ];
+      };
       catalog_products: {
         Row: {
           ativo: boolean;
@@ -9476,6 +9543,7 @@ export type Database = {
       job_queue: {
         Row: {
           attempts: number;
+          catalog_presentation_snapshot: Json | null;
           contact_id: string | null;
           created_at: string;
           id: string;
@@ -9494,6 +9562,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;
@@ -9511,6 +9580,7 @@ export type Database = {
         };
         Update: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;

@@ -91,6 +91,11 @@ import {
   type FotoParaEnvio,
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
+import { resumePersistedCatalogPresentation } from '@/lib/catalogo/retomada-de-apresentacao';
+import { resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
+import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
+import { catalogPresentationSelectionSchema } from '@/lib/catalogo/plano-de-apresentacao';
+import { apresentacaoEncerraTurno, terminalizarApresentacaoNoTurno } from '@/lib/catalogo/terminalidade-de-apresentacao';
 import {
   applyLeadStateUpdate,
   getLeadState,
@@ -163,7 +168,11 @@ import {
   catalogoEntregueAoOperador,
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
-import { matchesHandoffKeyword, type PublishedAgentConfig } from './agent-config';
+import {
+  loadConversationAgentConfig,
+  matchesHandoffKeyword,
+  type PublishedAgentConfig,
+} from './agent-config';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
@@ -5024,6 +5033,73 @@ async function executarTurnoDoAgente(
       });
     }
 
+    // Só o inbound automático tem a porta de replay anterior ao classificador.
+    // Exigir a busca realmente montada evita oferecer uma capacidade de catálogo
+    // que a versão publicada ou a ponte MCP não autorizou neste turno.
+    let apresentacaoAcionada = false;
+    let disposicaoDaApresentacao: 'completed' | 'interrupted' | 'settled' | null = null;
+    if (
+      !preview && liveJob().kind === 'inbound_turn' &&
+      rawTools.crm_search_products && rawTools.send_message && agentConfig &&
+      !agentConfig.pausedAt && agentConfig.operationMode !== 'assisted'
+    ) {
+      rawTools.present_catalog_items = tool({
+        description:
+          'Apresenta os produtos do catálogo pelos códigos na ordem escolhida. Se retornar ok: true, esta é a última ação do turno; não chame outra ferramenta nem escreva resposta depois. Se retornar ok: false, responda normalmente ao cliente usando send_message.',
+        inputSchema: catalogPresentationSelectionSchema,
+        execute: async ({ product_codes }) => {
+          const current = liveJob();
+          const claim = claimOfJob(current);
+          if (!claim) throw new Error('catalog_presentation_claim_missing');
+          if (!current.contact_id || !agentOperation) throw new StaleServiceBoundaryError();
+          const currentAgent = await loadConversationAgentConfig(
+            pool, tenantId, input.conversationId, input.channelSessionId,
+          );
+          if (!currentAgent || currentAgent.pausedAt || currentAgent.operationMode === 'assisted') {
+            disposicaoDaApresentacao = 'interrupted';
+            return { ok: false, code: 'catalog_presentation_agent_paused' };
+          }
+          const snapshot = await resolveAndSnapshotCatalogPresentation(pool, {
+            organizationId: tenantId,
+            contactId: current.contact_id,
+            jobId: current.id,
+            agentOperation,
+            claim,
+            sendsAlreadyCounted: seq,
+            maxSendsPerTurn,
+            orderedProductCodes: product_codes,
+          });
+          if (!snapshot.ok) {
+            return {
+              ok: false,
+              code: `catalog_presentation_${snapshot.error.code}`,
+              message: 'A apresentação não pôde ser iniciada. Responda normalmente ao cliente.',
+            };
+          }
+          const resumed = await resumePersistedCatalogPresentation(
+            pool,
+            { ...current, catalog_presentation_snapshot: snapshot.snapshot },
+            ctx,
+            { conversationId: input.conversationId, channelSessionId: input.channelSessionId },
+            {
+              channel: liveChannel(),
+              log: runLog,
+              maxSendsPerTurn,
+              queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
+              respostaObsoletaTetoMs: deps.knobs.respostaObsoletaTetoMs ?? 0,
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode } : {}),
+              ...(deps.clock !== undefined ? { clock: deps.clock } : {}),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+            },
+          );
+          if (!resumed.handled) throw new Error('catalog_presentation_snapshot_missing');
+          disposicaoDaApresentacao = resumed.disposition;
+          return { ok: true, disposition: resumed.disposition };
+        },
+      });
+    }
+
     // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
     // entre runs por construção (mesma garantia de isolamento do resto do run).
     if (preview && rawTools.get_lead_note)
@@ -5077,15 +5153,23 @@ async function executarTurnoDoAgente(
             conferirAfirmacoes,
           )
         : rawTools;
+    const breakerTools = wrapToolsWithBreaker(previewTools, {
+      thresholds: deps.knobs.breaker,
+      readOnlyTools: READ_ONLY_TOOLS,
+      log: runLog, // os warns dos gates do breaker saem carimbados com o run
+    });
+    const presentationTools = rawTools.present_catalog_items
+      ? terminalizarApresentacaoNoTurno(
+          breakerTools,
+          'present_catalog_items',
+          () => { apresentacaoAcionada = true; },
+          apresentacaoEncerraTurno,
+        )
+      : breakerTools;
     const tools = envolverFerramentasComTraco(
-      wrapToolsWithBreaker(previewTools, {
-        thresholds: deps.knobs.breaker,
-        readOnlyTools: READ_ONLY_TOOLS,
-        log: runLog, // os warns dos gates do breaker saem carimbados com o run
-      }),
-      // O envoltório do traço fica POR FORA do breaker: assim a chamada que o
-      // breaker bloqueou também aparece na linha, marcada como `bloqueada` — é
-      // justamente a que mais falta faz numa investigação (#2869).
+      presentationTools,
+      // O traço continua por fora: registra tanto o veto do breaker quanto o
+      // descarte de ferramentas após a apresentação terminal.
       input.tracoDoTurno?.coletor,
     );
 
@@ -5380,7 +5464,9 @@ async function executarTurnoDoAgente(
         // before_send volta ao modelo para ele reescrever (o 1º veto ensina).
         ...(preview?.kind === 'assisted'
           ? { pararQuando: () => preview.result.candidates.length > 0 }
-          : {}),
+          : rawTools.present_catalog_items
+            ? { pararQuando: () => apresentacaoAcionada }
+            : {}),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -5393,6 +5479,18 @@ async function executarTurnoDoAgente(
       },
       { registry: deps.registry, log: runLog },
     );
+
+    // A apresentação já dispôs da mensagem ou do próprio job. Nenhuma correção
+    // de turno mudo, pergunta de roteiro ou segunda chamada de modelo pode enviar.
+    if (apresentacaoAcionada) {
+      if (disposicaoDaApresentacao === 'settled') {
+        throw new JobSettledError('apresentacao do catalogo reagendada ou cancelada');
+      }
+      if (disposicaoDaApresentacao === null) {
+        throw new Error('catalog_presentation_without_disposition');
+      }
+      return;
+    }
 
     // SAÍDA TRUNCADA (finish_reason = 'length'): o modelo bateu no
     // teto de tokens de saída e o que produziu veio cortado. A detecção mora aqui,
@@ -6298,6 +6396,37 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       channelSessionId: payload.channel_session_id,
     })) return;
 
+    // A coluna interna conserva plano e operação originais; não é uma nova
+    // escolha de agente. O payload legado nunca autoriza nem controla replay.
+    if (job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
+      const resumedPresentation = await resumePersistedCatalogPresentation(
+        pool,
+        job,
+        ctx,
+        {
+          conversationId: payload.conversation_id,
+          channelSessionId: payload.channel_session_id,
+        },
+        {
+          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+          log: deps.log,
+          maxSendsPerTurn: deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN,
+          queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
+          respostaObsoletaTetoMs: deps.knobs.respostaObsoletaTetoMs ?? 0,
+          ...(deps.knobs.disclosureMode !== undefined
+            ? { disclosureMode: deps.knobs.disclosureMode }
+            : {}),
+          ...(deps.clock !== undefined ? { clock: deps.clock } : {}),
+          ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+        },
+      );
+      if (resumedPresentation.handled) {
+        if (resumedPresentation.disposition === 'settled') {
+          throw new JobSettledError('apresentacao do catalogo retomada e job reagendado/cancelado');
+        }
+        return;
+      }
+    }
     const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
       tenantId: job.organization_id,
       leadId: job.contact_id,
