@@ -79,7 +79,7 @@ export function diaDe(valor: unknown): string | null {
  * disso, o negócio fica no dia do campo inicial — continua VENDO a data que
  * começou tudo, que é a pergunta original.
  */
-const LIMITE_DO_INTERVALO = 366;
+export const LIMITE_DO_INTERVALO = 366;
 
 /**
  * Os dias em que o negócio aparece: o do campo inicial, e — se houver um
