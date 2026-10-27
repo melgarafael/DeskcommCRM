@@ -82,10 +82,33 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
   const [funilEscolhido, setFunilEscolhido] = React.useState<string | null>(null);
   const [campoEscolhido, setCampoEscolhido] = React.useState<string | null>(null);
   const [campoFimEscolhido, setCampoFimEscolhido] = React.useState<string | null>(null);
-  const [itens, setItens] = React.useState<ItemDeDataDoNegocio[] | null>(null);
-  const [truncado, setTruncado] = React.useState(false);
-  const [erro, setErro] = React.useState<"campo_nao_e_data" | "geral" | null>(null);
-  const [carregando, setCarregando] = React.useState(false);
+  /**
+   * A RESPOSTA é carimbada com a chave da pergunta que a produziu.
+   *
+   * Sem o carimbo, trocar de funil/campo/período mostraria por um instante a
+   * lista da pergunta ANTERIOR — o mesmo defeito que a Agenda já pagou ao
+   * navegar de semana com o dado do servidor. Com ele, "os itens desta consulta"
+   * é uma DERIVAÇÃO (`resposta.chave === chaveDaConsulta`), e não um estado que
+   * precisa ser limpo por efeito: `setState` síncrono dentro de `useEffect` é
+   * justamente o que o `react-hooks/set-state-in-effect` reprova, e limpar na
+   * mão é onde nasce a corrida entre a resposta velha e a nova.
+   */
+  const [resposta, setResposta] = React.useState<{
+    chave: string;
+    itens: ItemDeDataDoNegocio[];
+    truncado: boolean;
+  } | null>(null);
+  /** A falha, também carimbada: só vale para a consulta que a produziu. */
+  const [falha, setFalha] = React.useState<{ chave: string; tipo: "geral" | "campo_nao_e_data" } | null>(
+    null,
+  );
+  /**
+   * O campo escolhido sumiu do funil (renomeado/apagado).
+   *
+   * Vive FORA do carimbo porque é o único aviso que precisa sobreviver à
+   * consulta: ele mesmo zera a escolha, então não há mais chave a que pertencer.
+   */
+  const [campoSumiu, setCampoSumiu] = React.useState(false);
 
   /**
    * Derivados, não sincronizados por efeito — a mesma regra do Calendário do
@@ -120,17 +143,11 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
     : null;
 
   React.useEffect(() => {
-    if (!chaveDaConsulta || !funilId || !campoDaBusca) {
-      setItens(null);
-      setTruncado(false);
-      setCarregando(false);
-      // O aviso de campo que sumiu SOBREVIVE a este ramo: é justamente ele que
-      // zerou a escolha, e apagá-lo aqui faria o motivo sumir no mesmo instante
-      // em que apareceu. Escolher outro campo limpa (`setErro(null)` lá embaixo).
-      setErro((atual) => (atual === "campo_nao_e_data" ? atual : null));
-      return;
-    }
+    // Sem pergunta não há busca — e NÃO há limpeza de estado aqui: quem não tem
+    // consulta não desenha item nenhum, porque os itens são derivados da chave.
+    if (!chaveDaConsulta || !funilId || !campoDaBusca) return;
 
+    const chave = chaveDaConsulta;
     const controle = new AbortController();
     const parametros = new URLSearchParams({
       pipeline_id: funilId,
@@ -140,40 +157,34 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
     });
     if (campoFim) parametros.set("campo_fim", campoFim);
 
-    setCarregando(true);
-    setErro(null);
     fetch(`/api/v1/agenda/datas-dos-negocios?${parametros.toString()}`, {
       signal: controle.signal,
     })
-      .then(async (resposta) => {
-        const corpo = (await resposta.json()) as {
+      .then(async (retorno) => {
+        const corpo = (await retorno.json()) as {
           data?: { itens: ItemDeDataDoNegocio[]; truncado: boolean };
           error?: { code?: string };
         };
-        if (!resposta.ok || !corpo.data) {
+        if (!retorno.ok || !corpo.data) {
           // `campo_nao_e_data` tem tratamento próprio (decisão (c) da issue): o
           // campo que a pessoa escolheu deixou de existir no funil — renomeado
           // ou apagado. A escolha é ESQUECIDA, e a camada volta ao estado
           // "escolha o campo" com o motivo à vista; insistir nela repetiria o
           // 422 a cada repintura, e uma grade vazia sem explicação é
           // indistinguível de "ninguém embarca neste período".
-          const campoSumiu = corpo.error?.code === "campo_nao_e_data";
-          setErro(campoSumiu ? "campo_nao_e_data" : "geral");
-          if (campoSumiu) setCampoEscolhido(null);
-          setItens(null);
-          setTruncado(false);
+          const sumiu = corpo.error?.code === "campo_nao_e_data";
+          setFalha({ chave, tipo: sumiu ? "campo_nao_e_data" : "geral" });
+          if (sumiu) {
+            setCampoSumiu(true);
+            setCampoEscolhido(null);
+          }
           return;
         }
-        setItens(corpo.data.itens);
-        setTruncado(corpo.data.truncado);
+        setResposta({ chave, itens: corpo.data.itens, truncado: corpo.data.truncado });
       })
-      .catch((falha: unknown) => {
-        if (falha instanceof Error && falha.name === "AbortError") return;
-        setErro("geral");
-        setItens(null);
-      })
-      .finally(() => {
-        if (!controle.signal.aborted) setCarregando(false);
+      .catch((erroDoFetch: unknown) => {
+        if (erroDoFetch instanceof Error && erroDoFetch.name === "AbortError") return;
+        setFalha({ chave, tipo: "geral" });
       });
 
     return () => controle.abort();
@@ -182,6 +193,18 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
   // Sem funil com campo de data não há camada a oferecer: a tela fica EXATAMENTE
   // como era antes desta entrega — nem o interruptor aparece.
   if (funis.length === 0) return null;
+
+  // ─── O que esta consulta sabe, e o que é de outra ─────────────────────────
+  const itens = resposta && resposta.chave === chaveDaConsulta ? resposta.itens : null;
+  const truncado = resposta && resposta.chave === chaveDaConsulta ? resposta.truncado : false;
+  const erro = campoSumiu
+    ? "campo_nao_e_data"
+    : falha && falha.chave === chaveDaConsulta
+      ? falha.tipo
+      : null;
+  // "Carregando" é o intervalo entre a pergunta e a resposta dela — e não um
+  // estado que precisa ser ligado e desligado à mão em cada ramo.
+  const carregando = chaveDaConsulta !== null && itens === null && erro === null;
 
   const campos = funil?.campos ?? [];
   const porDia = new Map<string, ItemDeDataDoNegocio[]>();
@@ -253,6 +276,9 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
               value={campo ?? ""}
               onValueChange={(valor) => {
                 setCampoEscolhido(valor);
+                // Escolha nova é página virada: o aviso de campo que sumiu já
+                // cumpriu o papel e não pode acompanhar a próxima consulta.
+                setCampoSumiu(false);
                 if (valor === campoFimEscolhido) setCampoFimEscolhido(null);
               }}
             >
