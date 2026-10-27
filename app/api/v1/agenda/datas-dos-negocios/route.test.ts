@@ -136,6 +136,9 @@ function fakeDb({
 function funilComDatas() {
   return {
     id: FUNIL,
+    // A consulta filtra por organização ALÉM do id: sem esta coluna o dublê
+    // devolveria 404 e o caso passaria a medir a coisa errada.
+    organization_id: ORG,
     name: "Viagens",
     settings: {
       fields: [
@@ -192,11 +195,12 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
   it("o negócio aparece no dia do campo, com o rótulo do campo", async () => {
     const { cliente } = fakeDb({
       pipelines: [funilComDatas()],
-      stages: [{ id: ETAPA, name: "Reservado" }],
+      stages: [{ id: ETAPA, name: "Reservado", organization_id: ORG, pipeline_id: FUNIL }],
       leads: [
         {
           id: "lead-1",
           title: "Família Prado — Gramado",
+          organization_id: ORG,
           pipeline_id: FUNIL,
           stage_id: ETAPA,
           status: "open",
@@ -222,11 +226,12 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
   it("negócio SEM data não volta — nem quando o banco o entrega", async () => {
     const { cliente } = fakeDb({
       pipelines: [funilComDatas()],
-      stages: [{ id: ETAPA, name: "Reservado" }],
+      stages: [{ id: ETAPA, name: "Reservado", organization_id: ORG, pipeline_id: FUNIL }],
       leads: [
         {
           id: "lead-sem-data",
           title: "Sem data",
+          organization_id: ORG,
           pipeline_id: FUNIL,
           stage_id: ETAPA,
           status: "open",
@@ -246,7 +251,7 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
   it("a consulta é desta organização E deste funil — RLS é piso, não escopo", async () => {
     const { cliente, consultas } = fakeDb({
       pipelines: [funilComDatas()],
-      stages: [{ id: ETAPA, name: "Reservado" }],
+      stages: [{ id: ETAPA, name: "Reservado", organization_id: ORG, pipeline_id: FUNIL }],
       leads: [],
     });
     vi.mocked(createClient).mockResolvedValue(cliente);
@@ -305,11 +310,12 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
   it("com segundo campo, o retorno vem no dia do retorno", async () => {
     const { cliente } = fakeDb({
       pipelines: [funilComDatas()],
-      stages: [{ id: ETAPA, name: "Reservado" }],
+      stages: [{ id: ETAPA, name: "Reservado", organization_id: ORG, pipeline_id: FUNIL }],
       leads: [
         {
           id: "lead-1",
           title: "Família Prado — Gramado",
+          organization_id: ORG,
           pipeline_id: FUNIL,
           stage_id: ETAPA,
           status: "open",

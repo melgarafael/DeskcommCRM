@@ -304,6 +304,14 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
 
       {ligada ? (
         <div data-testid="camada-datas-itens" className="max-h-64 overflow-y-auto border-t px-3 py-2">
+          {/*
+            O MOTIVO e o CORPO são independentes, e não um `else` do outro.
+
+            Quando o campo escolhido deixa de existir no funil (decisão (c)), a
+            camada faz DUAS coisas: diz por que a escolha sumiu E volta a pedir
+            o campo. Como ramos exclusivos, o aviso de erro engolia o pedido e a
+            tela ficava sem saída — medido no primeiro run deste teste.
+          */}
           {erro === "campo_nao_e_data" ? (
             <p data-testid="camada-datas-erro" className="text-xs text-text-muted">
               {t("Este campo de data não existe mais neste funil.")}
@@ -312,11 +320,12 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
             <p data-testid="camada-datas-erro" className="text-xs text-danger">
               {t("Não foi possível carregar as datas dos negócios.")}
             </p>
-          ) : !campo ? (
+          ) : null}
+          {!campo ? (
             <p data-testid="camada-datas-aviso" className="text-xs text-text-muted">
               {t("Escolha o campo de data para ver os negócios na agenda.")}
             </p>
-          ) : carregando && itens === null ? (
+          ) : erro ? null : carregando && itens === null ? (
             <p className="text-xs text-text-muted">{t("Carregando…")}</p>
           ) : porDia.size === 0 ? (
             <p data-testid="camada-datas-vazio" className="text-xs text-text-muted">

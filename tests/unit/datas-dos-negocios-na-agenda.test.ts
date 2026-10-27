@@ -58,7 +58,11 @@ describe("diaDoCampo — a régua de data que a Agenda herda do Calendário do f
     expect(diaDoCampo(undefined)).toBeNull();
     expect(diaDoCampo(42)).toBeNull();
     expect(diaDoCampo("2026-02-30")).toBeNull();
-    expect(diaDoCampo("10/03/2026")).toBeNull();
+    // Mês 13 não existe; e texto livre não é data. (`10/03/2026` NÃO entra aqui:
+    // o `Date` do JS o lê como 3 de outubro em MM/DD — é o fallback documentado
+    // de `diaDe` para data cheia, e não lixo.)
+    expect(diaDoCampo("2026-13-01")).toBeNull();
+    expect(diaDoCampo("sem data")).toBeNull();
   });
 
   it("data cheia (com hora) vale pelo dia LOCAL do carimbo", () => {
