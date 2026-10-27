@@ -10713,6 +10713,117 @@ select d.organization_id, d.id, cv.id
       where dc.demanda_id = d.id and dc.conversation_id = cv.id
    );
 
+-- LIMPEZA #2992 — o resíduo da derivação anterior ao #2825 sai.
+--
+-- O R2 acima já pula conversa `archived` (PR #2825). Quem derivou ANTES do
+-- conserto ficou com demandas abertas derivadas de conversa arquivada, e elas
+-- reaparecem como pendência a cada rodada. O critério inteiro, o relatório e a
+-- idempotência estão na migration 0784; o bloco abaixo é o mesmo, byte a byte.
+do $$
+declare
+  v_rodada  int;
+  v_filtros text := '';
+  v_total   bigint := 0;
+  v_org     record;
+begin
+  if to_regclass('public.demandas') is null
+     or to_regclass('public.demanda_conversas') is null
+     or to_regclass('public.conversations') is null then
+    raise notice '#2992: tabelas de demandas ausentes nesta instalação — nada a limpar';
+    return;
+  end if;
+
+  create temp table if not exists _limpeza_2992 (
+    rodada          int         not null,
+    organization_id uuid,
+    apagadas        bigint      not null,
+    em              timestamptz not null default clock_timestamp()
+  ) on commit drop;
+
+  select coalesce(max(rodada), 0) + 1 into v_rodada from _limpeza_2992;
+
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'conversations'
+                and column_name = 'current_demanda_id') then
+    v_filtros := v_filtros
+      || ' and not exists (select 1 from public.conversations r where r.current_demanda_id = d.id)';
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'messages'
+                and column_name = 'demanda_id') then
+    v_filtros := v_filtros
+      || ' and not exists (select 1 from public.messages r where r.demanda_id = d.id)';
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'lead_checkpoints'
+                and column_name = 'demanda_id') then
+    v_filtros := v_filtros
+      || ' and not exists (select 1 from public.lead_checkpoints r where r.demanda_id = d.id)';
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'crm_tasks'
+                and column_name = 'demanda_id') then
+    v_filtros := v_filtros
+      || ' and not exists (select 1 from public.crm_tasks r where r.demanda_id = d.id)';
+  end if;
+
+  execute format($limpeza$
+    with apagadas as (
+      delete from public.demandas d
+       where d.origem = 'derivada'
+         and d.fechada_em is null
+         and d.desfecho is null
+         and d.agent_case_id is null
+         and d.lead_id is null
+         and d.dono_user_id is null
+         and d.proximo_passo is null
+         -- tem vínculo de conversa (senão não é este o defeito)
+         and exists (
+           select 1
+             from public.demanda_conversas v
+            where v.demanda_id = d.id
+         )
+         -- e nenhuma conversa VIVA: todas as vinculadas estão arquivadas
+         and not exists (
+           select 1
+             from public.demanda_conversas v
+             join public.conversations cv on cv.id = v.conversation_id
+            where v.demanda_id = d.id
+              and cv.status <> 'archived'
+         )
+         -- e ao menos uma delas carrega a assinatura do backfill R2
+         and exists (
+           select 1
+             from public.demanda_conversas v
+             join public.conversations cv on cv.id = v.conversation_id
+            where v.demanda_id = d.id
+              and cv.status = 'archived'
+              and cv.created_at = d.aberta_em
+         )
+         %s
+       returning d.organization_id
+    )
+    insert into _limpeza_2992 (rodada, organization_id, apagadas)
+    select %s, organization_id, count(*)
+      from apagadas
+     group by organization_id
+  $limpeza$, v_filtros, v_rodada);
+
+  select coalesce(sum(apagadas), 0) into v_total
+    from _limpeza_2992 where rodada = v_rodada;
+
+  for v_org in select organization_id, apagadas
+                 from _limpeza_2992
+                where rodada = v_rodada
+                order by apagadas desc loop
+    raise notice '#2992 rodada % — organização %: % demanda(s) derivada(s) de conversa arquivada apagada(s)',
+      v_rodada, v_org.organization_id, v_org.apagadas;
+  end loop;
+
+  raise notice '#2992 rodada % — % demanda(s) apagada(s) no total', v_rodada, v_total;
+end $$;
+-- fim da limpeza #2992
+
 comment on table public.demandas is
   'A unidade do PROPÓSITO (doutrina cap. 5): uma coisa a ser resolvida. '
   'Contato é quem pede; conversa é por onde se fala; demanda é o que precisa '
