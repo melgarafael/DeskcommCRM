@@ -1,8 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { roleAtLeast, type AuthUser, type Role } from "@/lib/auth/types";
 import { verificarIntencaoDeContratacao, VALIDADE_DA_INTENCAO_MS } from "./intencao-assinada";
 export { VALIDADE_DA_INTENCAO_MS } from "./intencao-assinada";
 
 export const CAMINHO_DA_CONTRATACAO = "/cobranca/contratar";
+
+/** Mesma autoridade financeira de requireRole(admin); LGPD tem régua própria. */
+export function podeContinuarContratacao(
+  user: Pick<AuthUser, "is_platform_admin" | "platform_admin_scope" | "support">, role: Role,
+): boolean {
+  return !user.support && (roleAtLeast(role, "admin") || (user.is_platform_admin && user.platform_admin_scope === "full"));
+}
 
 /** Primeiro pagamento não é inadimplência. O bloqueio de acesso continua no banco. */
 export function primeiroPagamentoPendente(a: {
@@ -29,7 +37,7 @@ export async function lerIntencaoDeContratacao(
   if (org.error || assinatura.error) throw new Error("contratacao: leitura indisponível");
   const a = assinatura.data;
   if (!org.data || org.data.created_by !== userId || org.data.status !== "suspended" ||
-      org.data.suspended_kind !== "cobranca" || !a || !primeiroPagamentoPendente(a)) return null;
+      org.data.suspended_kind !== "cobranca" || !a || !primeiroPagamentoPendente(a) || a.estado === "cancelada") return null;
 
   const checked = await lerIntencaoDoCadastro(db, userId, a.plano_id, agora);
   // O UUID da empresa é escolhido pelo servidor no cadastro e assinado antes

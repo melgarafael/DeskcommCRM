@@ -11,7 +11,7 @@
   "nodes": [
     {"id":"cadastro","lane":"pessoa","col":1,"type":"frontend","label":"SignupForm","sublabel":"Plano oferecido, sem trial, escolha explícita"},
     {"id":"recibo","lane":"servidor","col":1,"type":"security","label":"signUp + HMAC","sublabel":"Identidade nova; usuário/empresa/plano/nonce/validade"},
-    {"id":"auth","lane":"servidor","col":2,"type":"security","label":"Auth nativo","sublabel":"Confirmação, sessão e MFA preservados"},
+    {"id":"auth","lane":"servidor","col":2,"type":"security","label":"Auth nativo","sublabel":"Confirmação, sessão, MFA e autoridade financeira"},
     {"id":"hub","lane":"servidor","col":2,"type":"backend","label":"Hub de suspensão","sublabel":"Primeiro pagamento; admin fora de suporte"},
     {"id":"continuar","lane":"pessoa","col":3,"type":"frontend","label":"/cobranca/contratar","sublabel":"Plano do banco; documento faltante; retry"},
     {"id":"checkout","lane":"financeiro","col":3,"type":"backend","label":"POST checkout existente","sublabel":"Intenção revalidada; CAS e idempotência"},
@@ -31,7 +31,7 @@
     {"from":"checkout","to":"gateway","label":"Reusa cliente/link/assinatura"},
     {"from":"gateway","to":"confirmar","label":"Ponte e releitura nativas"},
     {"from":"confirmar","to":"onboarding","label":"Ativa e operante"},
-    {"from":"confirmar","to":"continuar","label":"Pendente: retomar ou conferir"},
+    {"from":"confirmar","to":"continuar","label":"Pendente ou cancelado: retomar explicitamente"},
     {"from":"checkout","to":"continuar","label":"Erro recuperável"}
   ]
 }

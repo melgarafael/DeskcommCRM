@@ -47,7 +47,22 @@ describe("continuidade até o pagamento", () => {
     expect(h.post).not.toHaveBeenCalled();
     fireEvent.click(continuar);
     await waitFor(() => expect(h.abrir).toHaveBeenCalledTimes(1));
+    expect(h.post.mock.calls[0]?.[1]).toEqual({ volta: "contratacao", continuar_cadastro: true, documento: "11222333000181" });
+  });
+  it("sem recibo anterior o clique atual confirma manualmente o pagamento, sem inventar intenção", async () => {
+    render(<ContinuarPagamento {...props} provedor="asaas" automatico={false} temIntencao={false} />);
+    fireEvent.change(screen.getByLabelText("CPF ou CNPJ de quem paga"), { target: { value: "11222333000181" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar para pagamento", exact: true }));
+    await waitFor(() => expect(h.abrir).toHaveBeenCalledTimes(1));
     expect(h.post.mock.calls[0]?.[1]).toEqual({ volta: "contratacao", documento: "11222333000181" });
+  });
+  it("plano alterado ou recibo expirado relê o resumo, sem criar nem repetir cobrança", async () => {
+    h.post.mockRejectedValueOnce(new ApiError(409, "state_conflict", undefined, "r", "Confira seu plano e continue para o pagamento."));
+    render(<ContinuarPagamento {...props} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Confira seu plano");
+    expect(h.refresh).toHaveBeenCalledTimes(1);
+    expect(h.post).toHaveBeenCalledTimes(1);
+    expect(h.abrir).not.toHaveBeenCalled();
   });
   it("duplo clique enquanto aguarda mantém uma única requisição", async () => {
     let concluir!: (v: { data: { url: string } }) => void;
@@ -91,6 +106,20 @@ describe("continuidade até o pagamento", () => {
     render(<ContinuarPagamento {...props} automatico={false} voltou />);
     await waitFor(() => expect(h.refresh).toHaveBeenCalled());
     expect(h.replace).not.toHaveBeenCalled();
+  });
+  it("cancelamento confirmado mostra o estado e apenas relê a tela, sem novo checkout", async () => {
+    h.post.mockResolvedValue({ data: { estado: "cancelada", org_operante: false } });
+    render(<ContinuarPagamento {...props} automatico={false} voltou />);
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Cancelada"));
+    expect(h.refresh).toHaveBeenCalledTimes(1);
+    expect(h.abrir).not.toHaveBeenCalled();
+    expect(h.post).toHaveBeenCalledTimes(1);
+    expect(h.post).toHaveBeenCalledWith("/api/v1/cobranca/assinatura/sincronizar", {});
+  });
+  it("retomada de assinatura cancelada já informa o estado antes de qualquer ação", () => {
+    render(<ContinuarPagamento {...props} automatico={false} temIntencao={false} cancelada />);
+    expect(screen.getByRole("status")).toHaveTextContent("Cancelada");
+    expect(h.post).not.toHaveBeenCalled();
   });
   it("provedor ausente não tenta criar e mostra limite honesto", () => {
     render(<ContinuarPagamento {...props} provedor={null} />);

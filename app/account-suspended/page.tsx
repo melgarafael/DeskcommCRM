@@ -13,7 +13,7 @@ import { orgAtivaSemPortao, requireAuth } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { emailDeSuporte } from "@/lib/branding/saida";
 import { lerPainelDoHub, oQueOHubMostra } from "@/lib/cobranca/hub";
-import { CAMINHO_DA_CONTRATACAO, primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
+import { CAMINHO_DA_CONTRATACAO, podeContinuarContratacao, primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -101,7 +101,8 @@ export default async function AccountSuspendedPage({
     : null;
   if (inicial?.error) throw new Error("account_suspended_primeiro_pagamento_indisponivel");
   const primeiroPagamento = primeiroPagamentoPendente(inicial?.data ?? null);
-  if (primeiroPagamento && administra && !user.support && !pedidoValido && ajuda !== "1") {
+  const podeContratar = podeContinuarContratacao(user, ativa.role);
+  if (primeiroPagamento && podeContratar && !pedidoValido && ajuda !== "1") {
     redirect(`${CAMINHO_DA_CONTRATACAO}${voltou === "1" ? "?voltou=1&retomar=1" : ""}`);
   }
   const mostra = oQueOHubMostra({ administra, tipo: tipoDaAtiva, cobrancaLigada, temAssinatura: painel?.assinatura != null });
@@ -157,7 +158,7 @@ export default async function AccountSuspendedPage({
             </form>
           </div>
         </Card>
-        {primeiroPagamento && administra && !user.support && (
+        {primeiroPagamento && podeContratar && (
           <Button asChild><a href={CAMINHO_DA_CONTRATACAO}>{t("Continuar para pagamento")}</a></Button>
         )}
         {!primeiroPagamento && mostra === "pagamento" && painel?.assinatura && (

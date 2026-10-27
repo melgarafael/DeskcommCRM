@@ -5,8 +5,7 @@ import { signOut } from "@/app/actions/auth/signOut";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { exigirProvaDeMfa, orgAtivaSemPortao, requireAuth } from "@/lib/auth/server";
-import { roleAtLeast } from "@/lib/auth/types";
-import { lerIntencaoDeContratacao, primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
+import { lerIntencaoDeContratacao, podeContinuarContratacao, primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
 import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
 import { sugestaoDoCadastro } from "@/lib/cobranca/documento";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
@@ -26,7 +25,7 @@ export default async function ContratarPage({ searchParams }: {
   const user = await requireAuth();
   const ativa = await orgAtivaSemPortao(user);
   if (!ativa) redirect("/get-started");
-  if (user.support || !roleAtLeast(ativa.role, "admin")) redirect("/account-suspended");
+  if (!podeContinuarContratacao(user, ativa.role)) redirect("/account-suspended");
   await exigirProvaDeMfa();
   const db = createAdminClient();
   if (!(await moduloLigado(db, "cobranca"))) redirect("/app");
@@ -63,6 +62,7 @@ export default async function ContratarPage({ searchParams }: {
             temIntencao={intencao !== null} automatico={intencao !== null && params.retomar !== "1" && params.voltou !== "1"}
             provedor={provedor} clienteExiste={a.provedor_cliente_id !== null}
             documentoInicial={sugestaoDoCadastro(org.data.cnpj)} voltou={params.voltou === "1"}
+            cancelada={a.estado === "cancelada"}
           />
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <Link href="/account-suspended?ajuda=1">{t("Precisa de ajuda?")}</Link>

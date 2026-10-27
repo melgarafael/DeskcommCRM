@@ -12,6 +12,7 @@ const cena = vi.hoisted(() => ({
   falhaNaLeitura: false,
   suporte: "suporte@revenda.test",
   platformAdmin: false,
+  scope: "full",
   modoSuporte: null as { reason: string } | null,
   semOrgAtiva: false,
   cobranca: false,
@@ -28,6 +29,7 @@ vi.mock("@/lib/auth/server", () => ({
     id: "11111111-1111-4111-8111-111111111111",
     email: "admin@empresa.test",
     is_platform_admin: cena.platformAdmin,
+    platform_admin_scope: cena.scope,
     support: cena.modoSuporte,
     idioma: "pt-BR",
     organizations: [
@@ -94,6 +96,7 @@ beforeEach(() => {
   cena.falhaNaLeitura = false;
   cena.suporte = "suporte@revenda.test";
   cena.platformAdmin = false;
+  cena.scope = "full";
   cena.modoSuporte = null;
   cena.semOrgAtiva = false;
   cena.cobranca = false;
@@ -104,6 +107,16 @@ describe("/account-suspended: o hub de quem está numa empresa suspensa", () => 
   it("primeiro pagamento leva o administrador à continuação sem terceiro Assinar", async () => {
     cena.cobranca = true;
     await expect(montar()).rejects.toThrow("NEXT_REDIRECT:/cobranca/contratar");
+  });
+  it("poder pleno da plataforma com papel agent tem a mesma porta financeira, sem laço", async () => {
+    cena.cobranca = true; cena.platformAdmin = true; cena.papel = "agent";
+    await expect(montar()).rejects.toThrow("NEXT_REDIRECT:/cobranca/contratar");
+  });
+  it("plataforma somente leitura não entra em laço nem recebe ação financeira", async () => {
+    cena.cobranca = true; cena.platformAdmin = true; cena.scope = "read_only"; cena.papel = "agent";
+    await montar();
+    expect(screen.getByRole("heading", { name: "Aguardando primeiro pagamento" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Continuar para pagamento" })).toBeNull();
   });
 
   it("o retorno do provedor segue para conferir, sem reiniciar checkout automaticamente", async () => {

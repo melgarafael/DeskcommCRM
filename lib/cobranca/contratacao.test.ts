@@ -59,6 +59,11 @@ describe("intenção auditada de continuar o cadastro", () => {
     Object.assign(assinatura, delta);
     expect(await lerIntencaoDeContratacao(banco().cliente as unknown as SupabaseClient, USER, ORG, AGORA)).toBeNull();
   });
+  it("cancelamento conserva a tela de primeira contratação, mas retira autoprosseguimento", async () => {
+    assinatura.estado = "cancelada";
+    expect(primeiroPagamentoPendente(assinatura as { pagamento_inicial_pendente: boolean; periodo_pago_desde: null; estado: string })).toBe(true);
+    expect(await lerIntencaoDeContratacao(banco().cliente as unknown as SupabaseClient, USER, ORG, AGORA)).toBeNull();
+  });
   it("metadata editável sem recibo auditado não vale como intenção", async () => {
     audit = null;
     expect(await lerIntencaoDeContratacao(banco().cliente as unknown as SupabaseClient, USER, ORG, AGORA)).toBeNull();

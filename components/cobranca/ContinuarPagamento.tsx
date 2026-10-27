@@ -22,6 +22,7 @@ type Props = {
   clienteExiste: boolean;
   documentoInicial: string | null;
   voltou: boolean;
+  cancelada?: boolean;
 };
 
 /** Só POST autenticado prepara pagamento; GET/preview não chama o provedor. */
@@ -30,7 +31,7 @@ export function ContinuarPagamento(p: Props) {
   const router = useRouter();
   const [documento, setDocumento] = useState(p.documentoInicial ?? "");
   const [ocupado, setOcupado] = useState(false);
-  const [recado, setRecado] = useState<string | null>(null);
+  const [recado, setRecado] = useState<string | null>(p.cancelada ? t("Cancelada") : null);
   const [falhou, setFalhou] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const emVoo = useRef(false);
@@ -66,13 +67,14 @@ export function ContinuarPagamento(p: Props) {
         const existente = linkDePagamentoSeguro(e.details?.link_de_pagamento as string | undefined);
         if (existente) { abrirPagamento(existente); return; }
       }
+      if (e instanceof ApiError && e.code === "state_conflict") router.refresh();
       setFalhou(true);
       setRecado(t(e instanceof ApiError ? e.message : "Não foi possível preparar seu pagamento. Tente novamente."));
     } finally {
       emVoo.current = false;
       if (montado.current) setOcupado(false);
     }
-  }, [abrirPagamento, normalizado, p.provedor, pedeDocumento, t]);
+  }, [abrirPagamento, normalizado, p.provedor, pedeDocumento, router, t]);
 
   const conferir = useCallback(async () => {
     if (emVoo.current) return;
@@ -80,6 +82,11 @@ export function ContinuarPagamento(p: Props) {
     try {
       const { data } = await apiClient.post<{ data: { estado: string | null; org_operante: boolean } }>(`${BASE}/sincronizar`, {});
       if (!montado.current) return;
+      if (data.estado === "cancelada") {
+        setRecado(t("Cancelada"));
+        router.refresh();
+        return;
+      }
       if (data.estado === "ativa" && data.org_operante) {
         router.replace("/onboarding/welcome");
         router.refresh();
@@ -115,7 +122,7 @@ export function ContinuarPagamento(p: Props) {
   return (
     <div className="space-y-4">
       {!p.temIntencao && <p className="text-sm">{t("Confira o plano e o período acima antes de continuar para o pagamento.")}</p>}
-      <form onSubmit={(e) => { e.preventDefault(); void preparar(false); }} className="space-y-4">
+      <form onSubmit={(e) => { e.preventDefault(); void preparar(p.temIntencao); }} className="space-y-4">
         {pedeDocumento && (
           <div className="space-y-2">
             <Label htmlFor="documento-da-contratacao">{t("CPF ou CNPJ de quem paga")}</Label>

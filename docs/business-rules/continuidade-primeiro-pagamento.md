@@ -10,6 +10,8 @@ SignupForm envia `continuar_pagamento` somente para escolha explícita de plano 
 
 A confirmação anti-scanner, convite, Google, recuperação e MFA conservam seus handlers. Após Auth, o gate financeiro continua barrando acesso ao produto. O hub reconhece `pagamento_inicial_pendente=true`, sem período pago nem assinatura ativa, e leva administradores fora do modo suporte a `/cobranca/contratar`. Pedido LGPD e ajuda continuam no hub. Dívida posterior e suspensão administrativa conservam seu fluxo. Usuários sem papel financeiro recebem orientação, sem checkout automático.
 
+A porta financeira compartilha uma régua entre hub e continuação: admin da organização ou poder pleno de plataforma, sempre fora do modo suporte. Plataforma somente leitura sem papel admin permanece no hub; não há redirect em laço nem nova autoridade financeira. O guard de sessão/MFA e `requireRole` continuam sendo nativos. Estado `cancelada` retira a continuação automática mesmo com recibo não expirado; a tela informa o estado e uma retomada exige clique atual.
+
 O GET da continuação só lê estado da organização da sessão e preço/período do plano no banco. O componente inicia POST nativo apenas quando recebeu intenção válida e os dados obrigatórios já existem. CPF/CNPJ faltante pede preenchimento e um único Continuar para pagamento; digitar não envia. Não guarda documento na intenção nem na auditoria. Convite, trial e login sem intenção não criam pagamento automático.
 
 ## Dinheiro, concorrência e retorno
