@@ -18,4 +18,4 @@ um aviso e o diálogo do arrasto diz por que está pedindo — em vez de travar 
 explicação. Nada do que já estava gravado é apagado ao trocar o valor do campo
 de origem.
 
-Contribuição de @webtecnica.
+Contribuição de @webtecnica (#3584).
