@@ -944,6 +944,7 @@ jobs:
         agenda-kit-visual.spec.ts
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
+        celular-cabe-na-tela.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         aba-e-cookie-divergentes.spec.ts
@@ -1456,7 +1457,6 @@ jobs:
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
         app-no-celular.spec.ts
-        celular-cabe-na-tela.spec.ts
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts
         cobranca-suspensao-e-limites.spec.ts
