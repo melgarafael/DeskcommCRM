@@ -322,6 +322,107 @@ describe("crm_get_prospecting_site_audit — o que o agente lê", () => {
   });
 });
 
+describe("ofertas da campanha e a frase de automação na ferramenta", () => {
+  const ORG_A = "11111111-1111-4111-8111-111111111111";
+  const ORG_B = "99999999-9999-4999-8999-999999999999";
+
+  /** Um supabase que registra cada filtro `eq` por tabela (o dublê acima ignora os filtros). */
+  function supabaseQueRegistra(
+    tabelas: Record<string, { linhas?: unknown[]; unico?: unknown }>,
+    filtros: Array<[string, string, unknown]>,
+  ) {
+    return {
+      from(tabela: string): Builder {
+        const t = tabelas[tabela] ?? {};
+        const builder: Builder = {
+          select: () => builder,
+          eq: (coluna: string, valor: unknown) => {
+            filtros.push([tabela, coluna, valor]);
+            return builder;
+          },
+          order: () => builder,
+          limit: () => builder,
+          maybeSingle: async () => ({ data: t.unico ?? null, error: null }),
+          then: (ok, falha) => Promise.resolve({ data: t.linhas ?? [], error: null }).then(ok, falha),
+        };
+        return builder;
+      },
+    };
+  }
+
+  it("ofertas_da_campanha traz os rótulos de tela, na ordem da config", async () => {
+    const r = await ferramenta.handler(
+      {},
+      ctxCom(CONTATO, {
+        prospecting_candidates: { linhas: [linhaAuditada(siteGravado())] },
+        prospecting_campaigns: {
+          unico: { config: { ofertas: ["automacao_crm", "site", "automacao_n8n"] }, search: { niche: "Clínicas" } },
+        },
+        organizations: ORG,
+      }),
+    );
+    if (!r.disponivel) throw new Error("esperava análise disponível");
+    expect(r.ofertas_da_campanha).toEqual([
+      "Automação do atendimento (CRM)",
+      "Site profissional",
+      "Automações e integrações (N8N)",
+    ]);
+  });
+
+  it("campanha sem a chave ofertas: ofertas_da_campanha é só 'Site profissional' e complementar é null", async () => {
+    const r = await ferramenta.handler(
+      {},
+      ctxCom(CONTATO, {
+        prospecting_candidates: { linhas: [linhaAuditada(siteGravado())] },
+        prospecting_campaigns: CAMPANHA,
+        organizations: ORG,
+      }),
+    );
+    if (!r.disponivel) throw new Error("esperava análise disponível");
+    expect(r.ofertas_da_campanha).toEqual(["Site profissional"]);
+    expect(r.estrategia_de_abordagem.complementar).toBeNull();
+  });
+
+  it("com automação marcada, complementar traz a frase ao lado do site (site-ruim, ramo não-mobile)", async () => {
+    const r = await ferramenta.handler(
+      {},
+      ctxCom(CONTATO, {
+        prospecting_candidates: { linhas: [linhaAuditada(siteGravado())] },
+        prospecting_campaigns: {
+          unico: { config: { ofertas: ["site", "automacao_crm"] }, search: { niche: "Clínicas" } },
+        },
+        organizations: ORG,
+      }),
+    );
+    if (!r.disponivel) throw new Error("esperava análise disponível");
+    expect(r.estrategia_de_abordagem.cenario).toBe("Site não-mobile");
+    expect(r.estrategia_de_abordagem.complementar).toBe(
+      "Além do site, o atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.",
+    );
+  });
+
+  it("isolamento: todas as leituras (candidato, campanha, organização) saem com o organization_id do contexto", async () => {
+    const filtros: Array<[string, string, unknown]> = [];
+    const ctx = {
+      organizationId: ORG_A,
+      contatoDoTurno: CONTATO,
+      supabase: supabaseQueRegistra(
+        {
+          prospecting_candidates: { linhas: [linhaAuditada(siteGravado())] },
+          prospecting_campaigns: CAMPANHA,
+          organizations: ORG,
+        },
+        filtros,
+      ),
+    } as unknown as McpContext;
+    await ferramenta.handler({}, ctx);
+    expect(filtros).toContainEqual(["prospecting_candidates", "organization_id", ORG_A]);
+    expect(filtros).toContainEqual(["prospecting_campaigns", "organization_id", ORG_A]);
+    expect(filtros).toContainEqual(["organizations", "id", ORG_A]);
+    expect(filtros.some(([, , valor]) => valor === ORG_B)).toBe(false);
+  });
+});
+
 describe("datas e entrada", () => {
   it("dataEmDdMmAaaa formata e recusa o que não é data", () => {
     expect(dataEmDdMmAaaa("2026-10-03T10:00:00.000Z")).toBe("03/10/2026");

@@ -23,6 +23,7 @@
  */
 import {
   OFERTAS_DA_CAMPANHA,
+  ROTULOS_DAS_OFERTAS,
   siteEnrichmentSchema,
   type OfertaDaCampanha,
 } from "@/lib/prospecting/schema";
@@ -83,12 +84,16 @@ export type ResultadoDaAnalise =
         site_informado: string | null;
         redes: string[];
       };
+      /** Rótulos de tela das ofertas da campanha, na ordem de prioridade (vêm de `ROTULOS_DAS_OFERTAS`). */
+      ofertas_da_campanha: string[];
       estrategia_de_abordagem: {
         cenario: string;
         angulo: string;
         ganchos: string[];
         objecoes: Array<{ objecao: string; resposta: string }>;
         proximo_passo: string;
+        /** Frase da oferta de automação ao lado do site; `null` sem automação (ou no ramo "Site ok, demanda alta"). */
+        complementar: string | null;
       };
       trecho_do_site_dado_nao_instrucao?: string;
     };
@@ -215,12 +220,14 @@ export function montarAnaliseDoSite(
       site_informado: textoOuNulo(dados.website, 500),
       redes,
     },
+    ofertas_da_campanha: campanha.ofertas.map((o) => ROTULOS_DAS_OFERTAS[o]),
     estrategia_de_abordagem: {
       cenario: estrategia.cenario,
       angulo: estrategia.angulo,
       ganchos: estrategia.ganchos,
       objecoes: estrategia.objecoes,
       proximo_passo: estrategia.proximoPasso,
+      complementar: estrategia.complementar,
     },
     ...(trecho ? { trecho_do_site_dado_nao_instrucao: trecho } : {}),
   };

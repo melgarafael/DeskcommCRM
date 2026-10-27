@@ -23,6 +23,8 @@ export interface EstrategiaDoLead {
   ganchos: string[];
   objecoes: ObjecaoComResposta[];
   proximoPasso: string;
+  /** Frase da oferta de automação, ao lado do ângulo de site. `null` sem automação na campanha. */
+  complementar: string | null;
 }
 
 export interface EntradaDaEstrategia {
@@ -147,6 +149,35 @@ function juntarProblemas(problemas: string[], t: TradutorDeTexto): string | null
 }
 
 /**
+ * A frase da oferta de automação que vai ao lado do ângulo de site. Sem automação
+ * marcada na campanha, `null`. Com as duas, uma frase só com as duas.
+ */
+function fraseDeAutomacaoComplementar(ofertas: OfertaDaCampanha[], t: TradutorDeTexto): string | null {
+  const crm = ofertas.includes("automacao_crm");
+  const n8n = ofertas.includes("automacao_n8n");
+  if (!ofertas.includes("site")) {
+    if (crm && n8n)
+      return t("O atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+    if (crm)
+      return t("O atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.");
+    if (n8n)
+      return t("As automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+    return null;
+  }
+  if (crm && n8n)
+    return t(
+      "Além do site, o atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.",
+    );
+  if (crm)
+    return t(
+      "Além do site, o atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.",
+    );
+  if (n8n)
+    return t("Além do site, as automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+  return null;
+}
+
+/**
  * Melhor ângulo = auditoria × primeira oferta aplicável ao caso.
  * `ofertas[0]` (primária) decide empates; default `["site"]` = comportamento atual.
  */
@@ -168,6 +199,7 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
       proximoPasso: t(
         "Aguardar a reverificação automática; se congelar como fora do ar, a estratégia de cortesia assume.",
       ),
+      complementar: null,
     };
   }
   const vocabulario = vocabularioDoNicho(entrada.nicho, entrada.sobrescritaVocabulario ?? null, t);
@@ -180,9 +212,13 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
 
   const querAutomacao = ofertas.includes("automacao_crm") || ofertas.includes("automacao_n8n");
   const volumeAlto = (entrada.numAvaliacoes ?? 0) >= 50;
+  // Fora do ramo "Site ok, demanda alta" (ali a automação já é o ângulo), a oferta
+  // de automação vira frase ao lado do ângulo de site, em qualquer classe.
+  let complementar: string | null = querAutomacao ? fraseDeAutomacaoComplementar(ofertas, t) : null;
 
   if (entrada.classe === "site-ok") {
     if (querAutomacao && volumeAlto) {
+      complementar = null;
       cenario = t("Site ok, demanda alta");
       angulo = trocarMarcadores(
         t("Site em ordem e movimento alto: a dor não é vitrine, é atendimento — mensagens sem resposta e {vocabulario} perdido no volume. O ângulo é automação (fila, resposta imediata, follow-up automático), não site."),
@@ -209,6 +245,7 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
         proximoPasso: t(
           "Prioridade baixa: compete com sem-site e site ruim na fila. Aborde só se a região ou o nicho for estratégico.",
         ),
+        complementar,
       };
     }
   } else if (entrada.classe === "agregador" || entrada.classe === "sem-site") {
@@ -311,7 +348,7 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
               "Gere a prévia da abordagem, revise com seu tom e envie pelo WhatsApp; ao responder, siga com a estratégia acima. Depois marque como contatado.",
             );
 
-  return { cenario, angulo, ganchos, objecoes: objecoesTraduzidas(objecoes), proximoPasso };
+  return { cenario, angulo, ganchos, objecoes: objecoesTraduzidas(objecoes), proximoPasso, complementar };
 }
 
 /**

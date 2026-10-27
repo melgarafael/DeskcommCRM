@@ -78,6 +78,11 @@ const REPUTACOES: Array<[number | null, number | null]> = [
 const OFERTAS: Array<[OfertaDaCampanha[], number | null]> = [
   [["site"], null],
   [["automacao_crm"], 80],
+  [["automacao_n8n"], 80],
+  [["automacao_crm", "automacao_n8n"], 80],
+  [["site", "automacao_crm"], 80],
+  [["site", "automacao_n8n"], 80],
+  [["site", "automacao_crm", "automacao_n8n"], 80],
 ];
 const FALTAS: ItemDoRaioX[] = ["whatsapp", "tel", "mapa"];
 
@@ -114,6 +119,7 @@ function textosDa(e: EstrategiaDoLead): string[] {
     e.cenario,
     e.angulo,
     e.proximoPasso,
+    ...(e.complementar ? [e.complementar] : []),
     ...e.ganchos,
     ...e.objecoes.flatMap((o) => [o.objecao, o.resposta]),
   ];
