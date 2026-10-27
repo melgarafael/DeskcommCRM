@@ -246,6 +246,21 @@ export const customFieldSchema = z.object({
    */
   mostrar_quando: mostrarQuandoSchema.optional(),
   /**
+   * QUANDO este campo passa a ser EXIGIDO pela condição (issue #3036) — o par
+   * de `obrigatorio_em` para o caso "só cobro condição de pagamento de PJ".
+   *
+   * A forma é a MESMA de `mostrar_quando` (campo + operador + valor, com o
+   * operador `em` aceitando um conjunto), lida pela mesma régua
+   * (`lib/schemas/mostrar-quando.ts`). A diferença é a pergunta: lá "aparece?",
+   * aqui "cobra?".
+   *
+   * COMPÕE com `obrigatorio_em`, não o substitui: o campo continua exigido na
+   * etapa/gatilho que `obrigatorio_em` declarar, com ou sem condição. Ausente
+   * é o caminho de todo funil instalado hoje — nenhum campo passa a ser
+   * cobrado por causa desta chave.
+   */
+  exigir_quando: mostrarQuandoSchema.optional(),
+  /**
    * O FORMATO que o valor tem de ter (issue #2730): regex em string, na grafia
    * do `pipeline.settings.fields` — `"^\\d{1,2}(,\\d{1,2})*$"` por exemplo.
    *

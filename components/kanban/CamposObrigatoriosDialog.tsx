@@ -168,39 +168,53 @@ export function CamposObrigatoriosDialog({
           {campos.map((campo) => {
             const nome = campo.chave === "won_reason" ? t("Motivo do ganho") : campo.rotulo;
             const rotuloCampo = `${nome}${campo.tipo === "boolean" ? "" : " *"}`;
+            // A ETAPA venceu a condição (#3036): a frase explica o pedido em
+            // vez de deixar a pessoa procurar na ficha um campo que some lá.
+            const explicacao = campo.exigido_pela_etapa ? (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "A etapa de destino exige este campo, mesmo que a condição de exibição o esconda — por isso ele aparece aqui.",
+                )}
+              </p>
+            ) : null;
             if (campo.tipo === "boolean") {
               return (
-                <div key={campo.chave} className="flex items-center gap-2">
-                  <input
-                    id={`campo-${campo.chave}`}
-                    type="checkbox"
-                    className="checkbox"
-                    checked={(valores[campo.chave] ?? "") === "true"}
-                    onChange={(e) =>
-                      setValores((v) => ({
-                        ...v,
-                        [campo.chave]: e.target.checked ? "true" : "false",
-                      }))
-                    }
-                  />
-                  <Label htmlFor={`campo-${campo.chave}`} className="text-sm">
-                    {rotuloCampo}
-                  </Label>
+                <div key={campo.chave} className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id={`campo-${campo.chave}`}
+                      type="checkbox"
+                      className="checkbox"
+                      checked={(valores[campo.chave] ?? "") === "true"}
+                      onChange={(e) =>
+                        setValores((v) => ({
+                          ...v,
+                          [campo.chave]: e.target.checked ? "true" : "false",
+                        }))
+                      }
+                    />
+                    <Label htmlFor={`campo-${campo.chave}`} className="text-sm">
+                      {rotuloCampo}
+                    </Label>
+                  </div>
+                  {explicacao}
                 </div>
               );
             }
             if (campo.tipo === "file") {
               return (
-                <FileUploadCustomField
-                  key={campo.chave}
-                  fieldKey={campo.chave}
-                  label={nome}
-                  required
-                  leadId={recusa.args.leadId}
-                  onChange={(files) =>
-                    setValores((v) => ({ ...v, [campo.chave]: String(files.length) }))
-                  }
-                />
+                <div key={campo.chave} className="space-y-1">
+                  <FileUploadCustomField
+                    fieldKey={campo.chave}
+                    label={nome}
+                    required
+                    leadId={recusa.args.leadId}
+                    onChange={(files) =>
+                      setValores((v) => ({ ...v, [campo.chave]: String(files.length) }))
+                    }
+                  />
+                  {explicacao}
+                </div>
               );
             }
             if (
@@ -226,6 +240,7 @@ export function CamposObrigatoriosDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  {explicacao}
                 </div>
               );
             }
@@ -238,6 +253,7 @@ export function CamposObrigatoriosDialog({
                     value={valores[campo.chave] ?? ""}
                     onChange={(e) => setValores((v) => ({ ...v, [campo.chave]: e.target.value }))}
                   />
+                  {explicacao}
                 </div>
               );
             }
@@ -252,6 +268,7 @@ export function CamposObrigatoriosDialog({
                   value={valores[campo.chave] ?? ""}
                   onChange={(e) => setValores((v) => ({ ...v, [campo.chave]: e.target.value }))}
                 />
+                {explicacao}
               </div>
             );
           })}

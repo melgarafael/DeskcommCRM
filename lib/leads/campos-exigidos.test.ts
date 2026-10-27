@@ -230,7 +230,7 @@ describe("validaCamposExigidos — o que o funil exige", () => {
     ).toEqual([]);
   });
 
-  it("campo OCULTO pela condição não é cobrado — esconder não vira bloqueio (#2728)", () => {
+  it("campo OCULTO pela condição e exigido pela ETAPA continua cobrado, e vem MARCADO (#3036)", () => {
     const settings = {
       fields: [
         { key: "tipo_servico", label: "Tipo de serviço", type: "select" },
@@ -245,18 +245,32 @@ describe("validaCamposExigidos — o que o funil exige", () => {
     };
     const destino = { stageId: ETAPA_PROPOSTA };
 
-    // Condição fora: o campo não está na ficha, então não pode barrar a
-    // escrita — a promessa da issue é "o campo oculto não é validado como
-    // obrigatório".
+    // A ETAPA vence a condição: a regra foi ligada pelo dono do funil para a
+    // etapa, e ignorá-la porque outra regra escondeu o campo abriria um buraco
+    // de dado em silêncio. O marcador é o que a tela usa para DIZER por que
+    // está pedindo um campo que a condição esconde.
     expect(
       validaCamposExigidos({
         lead: { custom_fields: { tipo_servico: "Limpeza" } },
         settingsDoFunil: settings,
         destino,
       }).faltando,
+    ).toEqual([
+      { chave: "outro_servico", rotulo: "Outro serviço (qual?)", tipo: "text", exigido_pela_etapa: true },
+    ]);
+
+    // Com o valor já gravado, o campo escondido passa: esconder não apaga, e o
+    // que está no registro satisfaz a exigência da etapa.
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_servico: "Limpeza", outro_servico: "Desinsetização" } },
+        settingsDoFunil: settings,
+        destino,
+      }).faltando,
     ).toEqual([]);
 
-    // Condição DENTRO e campo vazio: cobra, como sempre.
+    // Condição DENTRO e campo vazio: cobra, como sempre — e sem o marcador,
+    // porque aqui a condição e a etapa concordam.
     expect(
       validaCamposExigidos({
         lead: { custom_fields: { tipo_servico: "Outro" } },
@@ -264,6 +278,41 @@ describe("validaCamposExigidos — o que o funil exige", () => {
         destino,
       }).faltando.map((c) => c.chave),
     ).toEqual(["outro_servico"]);
+
+    // E fora da etapa da regra nada é cobrado, com ou sem condição.
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_servico: "Outro" } },
+        settingsDoFunil: settings,
+        destino: { stageId: ETAPA_OUTRA },
+      }).faltando,
+    ).toEqual([]);
+  });
+
+  it("campo OCULTO não é cobrado pela CONDIÇÃO — esconder não vira bloqueio (#2728)", () => {
+    const settings = {
+      fields: [
+        { key: "tipo_servico", label: "Tipo de serviço", type: "select" },
+        {
+          key: "outro_servico",
+          label: "Outro serviço (qual?)",
+          type: "text",
+          exigir_quando: { campo: "tipo_servico", contem: "Outro" },
+          mostrar_quando: { campo: "tipo_servico", contem: "Outro" },
+        },
+      ],
+    };
+
+    // A condição de EXIGÊNCIA não cobra o que a condição de VISIBILIDADE
+    // esconde: quem não vê o campo não tem como preenchê-lo. É a promessa da
+    // #2728 preservada onde ela nasceu — a exigência condicional.
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_servico: "Limpeza" } },
+        settingsDoFunil: settings,
+        destino: { stageId: ETAPA_PROPOSTA },
+      }).faltando,
+    ).toEqual([]);
   });
 
   it("condição que aponta para campo APAGADO é ilegível: o campo aparece e é cobrado (#2728)", () => {
@@ -437,5 +486,173 @@ describe("campo de escopo contato não entra na régua do negócio (issue #2791)
         destino: { stageId: ETAPA_PROPOSTA },
       }).faltando.map((c) => c.chave),
     ).toEqual(["concorrente"]);
+  });
+});
+
+/**
+ * CAMPOS CONDICIONAIS (#3036) — a obrigatoriedade POR VALOR, compondo com a
+ * obrigatoriedade por ETAPA (#1536) e com a visibilidade (#2728).
+ *
+ * O caso real da issue é o roteiro deste bloco: "Tipo de cliente = PJ" exige a
+ * condição de pagamento ao mover de Proposta para Fechamento; para PF os campos
+ * não aparecem e não são cobrados.
+ */
+describe("validaCamposExigidos — exigir_quando, a obrigatoriedade por valor (#3036)", () => {
+  const FECHAMENTO = "77777777-7777-4777-8777-777777777777";
+
+  /** O funil do caso real: PJ pede a condição de pagamento, PF não. */
+  const funilComTipoDeCliente = {
+    fields: [
+      {
+        key: "tipo_cliente",
+        label: "Tipo de cliente",
+        type: "select",
+        options: [
+          { value: "PJ", label: "Pessoa jurídica" },
+          { value: "PF", label: "Pessoa física" },
+        ],
+      },
+      {
+        key: "condicao_pagamento",
+        label: "Condição de pagamento",
+        type: "text",
+        exigir_quando: { campo: "tipo_cliente", operador: "igual", valor: "PJ" },
+      },
+    ],
+  };
+
+  const valida = (customFields: Record<string, unknown>, destino = { stageId: FECHAMENTO }) =>
+    validaCamposExigidos({
+      lead: { custom_fields: customFields },
+      settingsDoFunil: funilComTipoDeCliente,
+      destino,
+    }).faltando.map((c) => c.chave);
+
+  it("PJ exige a condição de pagamento; PF não exige nada (o caso da issue)", () => {
+    expect(valida({ tipo_cliente: "PJ" })).toEqual(["condicao_pagamento"]);
+    expect(valida({ tipo_cliente: "PF" })).toEqual([]);
+  });
+
+  it("a condição reavalia a CADA valor do campo de origem — trocar na hora muda o veredito", () => {
+    // A mesma escrita, variando só o valor que manda: é o que a tela faz a cada
+    // tecla, porque a régua é chamada com os valores correntes.
+    const veredito = ["PF", "PJ", "PF", ""].map((tipo) => valida({ tipo_cliente: tipo }));
+    expect(veredito).toEqual([[], ["condicao_pagamento"], [], []]);
+  });
+
+  it("preenchido o campo, a condição fica satisfeita — e o valor NÃO é apagado", () => {
+    const customFields = { tipo_cliente: "PJ", condicao_pagamento: "30/60/90" };
+    expect(valida(customFields)).toEqual([]);
+    // A régua só LÊ: nenhum caminho aqui reescreve `custom_fields`.
+    expect(customFields).toEqual({ tipo_cliente: "PJ", condicao_pagamento: "30/60/90" });
+  });
+
+  it("o conjunto `em` cobre mais de um valor do campo de origem", () => {
+    const settings = {
+      fields: [
+        { key: "tipo_cliente", label: "Tipo de cliente", type: "select" },
+        {
+          key: "inscricao_estadual",
+          label: "Inscrição estadual",
+          type: "text",
+          exigir_quando: { campo: "tipo_cliente", operador: "em", valor: ["PJ", "MEI"] },
+        },
+      ],
+    };
+    const chaves = (tipo: string) =>
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_cliente: tipo } },
+        settingsDoFunil: settings,
+        destino: { stageId: FECHAMENTO },
+      }).faltando.map((c) => c.chave);
+
+    expect(chaves("PJ")).toEqual(["inscricao_estadual"]);
+    expect(chaves("MEI")).toEqual(["inscricao_estadual"]);
+    expect(chaves("PF")).toEqual([]);
+  });
+
+  it("o valor PROPOSTO na mesma escrita conta — o diálogo do arrasto reenvia o move", () => {
+    // Sem isto a segunda tentativa cairia na mesma recusa da primeira: o lead
+    // ainda não foi gravado, e o valor vem em `customFieldsPropostos` (#1536).
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: {} },
+        settingsDoFunil: funilComTipoDeCliente,
+        destino: { stageId: FECHAMENTO },
+        customFieldsPropostos: { tipo_cliente: "PJ", condicao_pagamento: "À vista" },
+      }).faltando,
+    ).toEqual([]);
+  });
+
+  it("a etapa CONTINUA exigindo o que ela sempre exigiu — a condição não a substitui", () => {
+    // CONTROLE: campo exigido pela etapa, sem condição nenhuma. É a régua que a
+    // issue manda preservar, e ela vale mesmo com outro campo do funil tendo
+    // `exigir_quando`.
+    const settings = {
+      fields: [
+        ...funilComTipoDeCliente.fields,
+        {
+          key: "concorrente",
+          label: "Concorrente",
+          type: "text",
+          obrigatorio_em: { etapas: [FECHAMENTO] },
+        },
+      ],
+    };
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_cliente: "PF" } },
+        settingsDoFunil: settings,
+        destino: { stageId: FECHAMENTO },
+      }).faltando,
+    ).toEqual([{ chave: "concorrente", rotulo: "Concorrente", tipo: "text" }]);
+  });
+
+  it("condição ilegível não exige nada — exigir por lixo no banco travaria a escrita", () => {
+    const settings = {
+      fields: [
+        {
+          key: "condicao_pagamento",
+          label: "Condição de pagamento",
+          type: "text",
+          exigir_quando: { campo: "", operador: "igual", valor: "PJ" },
+        },
+        {
+          key: "outro",
+          label: "Outro",
+          type: "text",
+          exigir_quando: { campo: "tipo_cliente", operador: "operador_que_nao_existe", valor: "PJ" },
+        },
+      ],
+    };
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_cliente: "PJ" } },
+        settingsDoFunil: settings,
+        destino: { stageId: FECHAMENTO },
+      }).faltando,
+    ).toEqual([]);
+  });
+
+  it("campo do CONTATO com exigir_quando é inerte, como as marcas de etapa (#2791)", () => {
+    const settings = {
+      fields: [
+        { key: "tipo_cliente", label: "Tipo de cliente", type: "select" },
+        {
+          key: "aniversario",
+          label: "Aniversário",
+          type: "text",
+          escopo: "contato",
+          exigir_quando: { campo: "tipo_cliente", valor: "PJ" },
+        },
+      ],
+    };
+    expect(
+      validaCamposExigidos({
+        lead: { custom_fields: { tipo_cliente: "PJ" } },
+        settingsDoFunil: settings,
+        destino: { stageId: FECHAMENTO },
+      }).faltando,
+    ).toEqual([]);
   });
 });
