@@ -8,7 +8,7 @@ import { estadoDoDrive } from "@/lib/agencia/acervo/drive";
 import { apoioDaAgenda } from "@/lib/agencia/calendario/apoio";
 import { carregarQuemOlhaAgenda, listarReunioes } from "@/lib/agencia/calendario/consultas";
 import { trilhaDoCliente } from "@/lib/agencia/trilhas/consultas";
-import type { AprovacaoDaFicha } from "@/components/agencia/aprovacoes/AprovacoesDoCliente";
+import type { AprovacaoDaFicha } from "@/components/agencia/clientes/FichaDoCliente";
 import { listarCofre } from "@/lib/agencia/cofre/cofre";
 import { configDosContratos } from "@/lib/agencia/contratos/integracoes";
 import { situacaoVisivel } from "@/lib/agencia/contratos/regras";

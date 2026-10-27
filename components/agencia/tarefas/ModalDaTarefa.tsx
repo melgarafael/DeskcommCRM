@@ -277,6 +277,16 @@ export function ModalDaTarefa({
             </div>
           )}
 
+          {tarefa?.clienteId && (
+            <a
+              href={`/agencia/envios?novo=1&cliente=${tarefa.clienteId}&tarefa=${tarefa.id}&titulo=${encodeURIComponent(tarefa.titulo)}`}
+              className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent/40"
+              data-testid="enviar-para-aprovar"
+            >
+              Enviar para o cliente aprovar
+            </a>
+          )}
+
           <div className="space-y-2">
             <Label>Checklist</Label>
             {r.checklist.map((c, i) => (

@@ -6,6 +6,8 @@ import { z } from "zod";
 import { exigirPermissao } from "@/lib/agencia/acesso";
 import { avisarClienteDaAprovacao, ligarAprovacoesNaOrganizacao } from "@/lib/agencia/aprovacoes/servico";
 import { TIPOS_DE_APROVACAO } from "@/lib/agencia/aprovacoes/vocabulario";
+import { apagarObjetos, conferirObjeto } from "@/lib/agencia/envios/armazenamento";
+import { FORMAS_DO_TIPO, caminhoEhDoCliente, problemaNoArquivo } from "@/lib/agencia/envios/regras";
 import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agencia/auditoria";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
@@ -42,8 +44,18 @@ const pedidoSchema = z
     arquivoId: z.string().uuid().nullable(),
     tarefaId: z.string().uuid().nullable(),
     origemId: z.string().uuid().nullable(),
+    /** Roteiro, estratégia ou aviso escritos na própria tela (SPEC-envios, E2). */
+    texto: z.string().trim().max(20000).nullable().prefault(null),
+    /** Arquivo que o navegador já mandou ao bucket `agencia-envios` (E3). */
+    envio: z
+      .object({ caminho: z.string().max(200), nome: z.string().trim().min(1).max(200), mime: z.string().max(100), bytes: z.number().int().positive() })
+      .nullable()
+      .prefault(null),
   })
-  .refine((p) => !!p.link || !!p.arquivoId, "Cole o link ou escolha um arquivo do acervo.");
+  .refine((p) => !!p.link || !!p.arquivoId || !!p.texto || !!p.envio, "Mande o arquivo, escreva o texto ou cole o link.")
+  .refine((p) => (p.tipo === "aviso" ? !!p.texto && !p.envio && !p.link && !p.arquivoId : true), "O aviso é só texto.")
+  .refine((p) => !p.texto || FORMAS_DO_TIPO[p.tipo].includes("texto"), "Este tipo de envio não leva texto: mande o arquivo.")
+  .refine((p) => !p.envio || FORMAS_DO_TIPO[p.tipo].includes("arquivo"), "Este tipo de envio não leva arquivo.");
 export type PedidoDeAprovacao = z.input<typeof pedidoSchema>;
 
 export async function pedirAprovacao(entrada: PedidoDeAprovacao): Promise<ResultadoDaAcao<{ id: string; aviso: string }>> {
@@ -65,6 +77,14 @@ export async function pedirAprovacao(entrada: PedidoDeAprovacao): Promise<Result
       const a = arq as { link: string; cliente_id: string | null } | null;
       if (!a || a.cliente_id !== d.clienteId) return { ok: false as const, erro: "Arquivo não encontrado no acervo deste cliente." };
       link = link ?? a.link;
+    }
+    // E3: o arquivo tem de estar no bucket, na pasta DESTE cliente, com o tamanho e o tipo declarados.
+    if (d.envio) {
+      if (!caminhoEhDoCliente(d.envio.caminho, d.clienteId)) return { ok: false as const, erro: "Arquivo inválido." };
+      const problema = problemaNoArquivo(d.tipo, d.envio.mime, d.envio.bytes);
+      if (problema) return { ok: false as const, erro: problema };
+      const obj = await conferirObjeto(d.envio.caminho);
+      if (!obj || obj.bytes !== d.envio.bytes) return { ok: false as const, erro: "O arquivo não terminou de subir. Envie de novo." };
     }
     if (d.tarefaId) {
       const { data: t } = await db.from("agencia_tarefas").select("cliente_id").eq("id", d.tarefaId).maybeSingle();
@@ -92,6 +112,11 @@ export async function pedirAprovacao(entrada: PedidoDeAprovacao): Promise<Result
         versao,
         origem_id: d.origemId,
         pedido_por: ctx.user.id,
+        texto: d.texto || null,
+        arquivo_caminho: d.envio?.caminho ?? null,
+        arquivo_nome: d.envio?.nome ?? null,
+        arquivo_mime: d.envio?.mime ?? null,
+        arquivo_bytes: d.envio?.bytes ?? null,
       })
       .select("id")
       .single();
@@ -99,13 +124,14 @@ export async function pedirAprovacao(entrada: PedidoDeAprovacao): Promise<Result
     const id = (data as { id: string }).id;
 
     await ligarAprovacoesNaOrganizacao(organizationId);
-    // A tarefa ligada fica em Revisão enquanto o cliente olha.
-    if (d.tarefaId) {
+    // A tarefa ligada fica em Revisão enquanto o cliente olha (o aviso não pede revisão).
+    if (d.tarefaId && d.tipo !== "aviso") {
       await db.from("agencia_tarefas").update({ coluna: "revisao", concluida_em: null, atualizada_em: new Date().toISOString() }).eq("id", d.tarefaId).neq("coluna", "concluido");
     }
     const destino = await avisarClienteDaAprovacao({ aprovacaoId: id, clienteId: d.clienteId, tipo: d.tipo, titulo: d.titulo, versao }).catch(() => "sem_whatsapp" as const);
     await auditarAgencia("agencia.aprovacao_pedida", ctx.user.id, { tipo: "agencia_aprovacao", id }, { tipo: d.tipo, versao, aviso: destino });
     revalidatePath(`/agencia/clientes/${d.clienteId}`);
+    revalidatePath("/agencia/envios");
     const aviso = {
       grupo: "O grupo do cliente foi avisado.",
       responsavel: "O responsável foi avisado no WhatsApp.",
@@ -121,12 +147,17 @@ export async function cancelarAprovacao(id: string): Promise<ResultadoDaAcao> {
     const ctx = await exigirPermissao("tarefas.criar");
     if (!idSchema.safeParse(id).success) return { ok: false as const, erro: "Aprovação inválida." };
     const db = createAdminClient();
-    const { data } = await db.from("agencia_aprovacoes").select("cliente_id").eq("id", id).maybeSingle();
-    const clienteId = (data as { cliente_id?: string } | null)?.cliente_id;
+    const { data } = await db.from("agencia_aprovacoes").select("cliente_id, arquivo_caminho, arquivo_apagado_em").eq("id", id).maybeSingle();
+    const linha = data as { cliente_id?: string; arquivo_caminho: string | null; arquivo_apagado_em: string | null } | null;
+    const clienteId = linha?.cliente_id;
     if (!clienteId || !podeVerCliente(await carregarAlcance(ctx), clienteId)) return { ok: false as const, erro: "Aprovação não encontrada." };
-    await db.from("agencia_aprovacoes").update({ situacao: "cancelado" }).eq("id", id).eq("situacao", "pendente");
+    const { data: cancelada } = await db.from("agencia_aprovacoes").update({ situacao: "cancelado" }).eq("id", id).eq("situacao", "pendente").select("id");
+    if (cancelada?.length && linha?.arquivo_caminho && !linha.arquivo_apagado_em && (await apagarObjetos([linha.arquivo_caminho]))) {
+      await db.from("agencia_aprovacoes").update({ arquivo_apagado_em: new Date().toISOString() }).eq("id", id);
+    }
     await auditarAgencia("agencia.aprovacao_cancelada", ctx.user.id, { tipo: "agencia_aprovacao", id });
     revalidatePath(`/agencia/clientes/${clienteId}`);
+    revalidatePath("/agencia/envios");
     return { ok: true as const };
   });
 }

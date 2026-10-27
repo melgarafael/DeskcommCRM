@@ -106,6 +106,11 @@ services:
 
   storage:
     container_name: !reset null
+    environment:
+      # Teto por arquivo do Storage. A área da agência manda vídeo de até 2 GB para o
+      # cliente aprovar (docs/agencia/SPEC-envios.md); o compose oficial vem com 50 MB.
+      # O teto de cada bucket continua valendo abaixo deste.
+      FILE_SIZE_LIMIT: ${STORAGE_FILE_SIZE_LIMIT:-2147483648}
 
   imgproxy:
     container_name: !reset null

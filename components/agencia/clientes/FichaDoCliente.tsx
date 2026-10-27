@@ -7,7 +7,7 @@ import { useState, useTransition } from "react";
 import { ligarOrganizacao, salvarContratacao, salvarEquipeDoCliente } from "@/app/actions/agencia/clientes";
 import { ReunioesDoCliente } from "@/components/agencia/calendario/ReunioesDoCliente";
 import { AcessosDoCliente, type FormularioDaFicha } from "@/components/agencia/cofre/AcessosDoCliente";
-import { AprovacoesDoCliente, type AprovacaoDaFicha } from "@/components/agencia/aprovacoes/AprovacoesDoCliente";
+import { ROTULO_DA_SITUACAO_DA_APROVACAO, ROTULO_DO_TIPO_DE_APROVACAO, type SituacaoDaAprovacao, type TipoDeAprovacao } from "@/lib/agencia/aprovacoes/vocabulario";
 import { ContratosDoCliente, type ContratoDaFicha } from "@/components/agencia/contratos/ContratosDoCliente";
 import { EnvioParaODrive } from "@/components/agencia/EnvioParaODrive";
 import { QuadroDeTarefas } from "@/components/agencia/tarefas/QuadroDeTarefas";
@@ -30,6 +30,20 @@ import type { ItemDoCofre } from "@/lib/agencia/cofre/vocabulario";
 import { cn } from "@/lib/utils";
 
 import { FormularioDoCliente, type DadosDoCliente } from "./FormularioDoCliente";
+
+/** O resumo dos envios na ficha; quem envia e acompanha é a tela Envios (SPEC-envios). */
+export interface AprovacaoDaFicha {
+  id: string;
+  tipo: TipoDeAprovacao;
+  titulo: string;
+  link: string | null;
+  versao: number;
+  situacao: SituacaoDaAprovacao;
+  comentario: string | null;
+  pedidoEm: string;
+  respondidoEm: string | null;
+  tarefaId: string | null;
+}
 
 const ABAS_DA_FICHA = ["dados", "contratacoes", "contratos", "equipe", "trilha", "tarefas", "aprovacoes", "reunioes", "acessos", "arquivos"] as const;
 type Aba = (typeof ABAS_DA_FICHA)[number];
@@ -327,14 +341,37 @@ export function FichaDoCliente(p: {
       )}
 
       {aba === "aprovacoes" && (
-        <AprovacoesDoCliente
-          clienteId={p.id}
-          organizacaoLigada={!!p.organizacaoId}
-          aprovacoes={p.aprovacoes}
-          arquivos={p.arquivos.map((a) => ({ id: a.id, nome: a.nome }))}
-          tarefas={p.tarefas.filter((t) => t.coluna !== "concluido").map((t) => ({ id: t.id, titulo: t.titulo }))}
-          podePedir={p.podeCriarTarefa}
-        />
+        <section className="space-y-3 rounded-md border p-4" data-testid="envios-na-ficha">
+          {!p.organizacaoId && <p className="text-sm text-muted-foreground">Ligue o cliente a uma organização do CRM (aba Dados) para ele ver os envios.</p>}
+          {p.aprovacoes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nada enviado para este cliente ainda.</p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {p.aprovacoes.slice(0, 6).map((a) => (
+                <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                  <span>
+                    {a.titulo}
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      {ROTULO_DO_TIPO_DE_APROVACAO[a.tipo]}
+                      {a.versao > 1 ? ` · v${a.versao}` : ""}
+                    </span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">{ROTULO_DA_SITUACAO_DA_APROVACAO[a.situacao]}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/agencia/envios?cliente=${p.id}`} className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent/40">
+              Abrir Envios deste cliente
+            </Link>
+            {p.podeCriarTarefa && p.organizacaoId && (
+              <Link href={`/agencia/envios?novo=1&cliente=${p.id}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent/40">
+                Novo envio
+              </Link>
+            )}
+          </div>
+        </section>
       )}
 
       {aba === "acessos" && (

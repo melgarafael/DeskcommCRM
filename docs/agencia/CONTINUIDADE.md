@@ -17,8 +17,8 @@ o que não chama o modelo, porque o teste não tem chave de IA (ver o
 | Item | Estado |
 |---|---|
 | Worktree | `F:\Área de Trabalho\SITES CLIENTES\CRM TESTE\DeskcommCRM-agencia` |
-| Última branch | `feat/agencia-fase-9` (encadeada: sai da 8, que sai da 7…) |
-| Migrations da agência | 9003–9012 (9010 mapa mental, 9011 publicações, 9012 IA). **Próxima livre: 9013** — e veja a colisão do §6b |
+| Última branch | `feat/agencia-ajustes` (sai da Fase 9): os ajustes pedidos em 27/10 — ver [`plano-ajustes-2026-10-27.md`](plano-ajustes-2026-10-27.md) › Andamento |
+| Migrations da agência | 9003–9013 (9010 mapa mental, 9011 publicações, 9012 IA, 9013 envios). **Próxima livre: 9014** — e veja a colisão do §6b |
 | Teste | tudo publicado; o último pacote foi `f12` + `f12b` (modal da tarefa) |
 | Central (produção) | **intocada** — levar o módulo para lá é decisão do dono |
 
@@ -152,8 +152,8 @@ o GitHub. O trabalho de cada fase tem **spec** (`SPEC-*.md`) e **plano com a ver
 - **Toda mudança de schema** = migration nova em `supabase/migrations/<timestamp>_<NNNN>_<slug>.sql`
   com `-- manifest:` no cabeçalho **+** o mesmo conteúdo no apêndice do `supabase/baseline.sql`,
   **antes** da linha `-- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----`.
-  Numeração do fork: 9001 e 9002 são do **outro chat** (catálogo, Meta); 9003–9012 são deste
-  módulo. **A próxima livre é 9013** — confira antes com
+  Numeração do fork: 9001 e 9002 são do **outro chat** (catálogo, Meta); 9003–9013 são deste
+  módulo. **A próxima livre é 9014** — confira antes com
   `find supabase/migrations -name "*_90*"` no worktree **e** no checkout principal.
 - Idempotência: `create … if not exists`, `drop constraint if exists` antes de recriar CHECK.
 - Datas sempre no fuso **America/Sao_Paulo** (`formatarDataHora`, `diaLocal`, `instanteDoDia`).
@@ -297,8 +297,8 @@ No teste nada quebra (cada SQL foi aplicado pelo conteúdo). Mas, quando as bran
 e a do outro chat se encontrarem na `main`, `tests/unit/manifest-x-migrations.test.ts` reprova
 (número e carimbo repetidos). **Antes de juntar**, uma das duas tem de ser renumerada (com o
 apêndice do `baseline.sql` acompanhando o novo número) — decisão do dono, porque a do outro
-chat pode já ter sido aplicada na central. Os números da agência são 9003–9012; para novas, use
-**9013 em diante** e confira os dois checkouts antes.
+chat pode já ter sido aplicada na central. Os números da agência são 9003–9013; para novas, use
+**9014 em diante** e confira os dois checkouts antes.
 
 ## 7. Falhas de teste que NÃO são do módulo (já existiam no fork)
 

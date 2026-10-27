@@ -233,3 +233,44 @@ que é o que muda a rotina com os clientes.
   - a troca de cliente e o filtro "Com atraso" funcionam;
   - o botão da ficha leva à aba Trilhas;
   - com 375 px não há rolagem lateral.
+
+### Item 1 — Envios: **feito, publicado e provado no teste em 27/10/2026**
+
+Spec: [`SPEC-envios.md`](SPEC-envios.md). Migration **9013** (+ apêndice no baseline).
+
+- Menu **Envios** (`/agencia/envios`): vídeo (até 2 GB), arte, roteiro, estratégia e aviso. O
+  arquivo sobe do navegador direto para o Storage da VPS em partes de 6 MB (TUS), com barra de
+  progresso, retomada e cancelamento. O servidor só assina o envio e depois confere o objeto
+  (caminho do cliente e tamanho).
+- O cliente vê em `/app/aprovacoes`, **sem link para fora**: o vídeo toca no player com a
+  descrição ao lado, a arte abre grande e o roteiro e o aviso aparecem como texto. O aviso tem
+  **"Ciente"**, que fica registrado e avisa quem mandou.
+- Quando o cliente pede ajustes, a agência manda a **nova versão** (v2…). O cancelamento apaga o
+  arquivo da VPS.
+- **Aprovou** → entra na fila de cópia para o Drive: vídeo em "06 Edições", arte em "07 Artes" e
+  texto em "03 Planejamento". A cópia vai em pedaços e é retomável; começa logo após a aprovação
+  e o relógio da agência termina o que faltar. **Só depois de o Drive confirmar o tamanho**, a
+  cadeia de versões sai da VPS. Sem Drive, o arquivo fica, a tela diz por quê e quem enviou é
+  avisado uma vez.
+- A ficha do cliente (aba Aprovações) resume e leva a Envios. A tarefa ganhou **"Enviar para o
+  cliente aprovar"**, que abre Envios já com o cliente, a tarefa e o título.
+- O Storage passou a aceitar **2 GB por arquivo**: no kit
+  (`hostgator-setup-kit/supabase-single-server.override.yml`, `STORAGE_FILE_SIZE_LIMIT`) e no
+  teste, onde só o contêiner de storage foi recriado. A central não foi tocada.
+- **Prova** (`docs/agencia/scripts/prova-envios.mjs`, evidências em
+  `evidence/agencia-ajustes-envios/`):
+  - o vídeo de 20 MB subiu em partes, com a barra;
+  - no cliente ele tocou do nosso domínio (`readyState` 4, 20 s, 1280 px), com a descrição ao
+    lado;
+  - o roteiro apareceu em texto e o aviso ficou "ciente";
+  - pedido de ajustes → v2 → aprovado;
+  - a arte cancelada teve o arquivo apagado;
+  - sem Drive, os dois vídeos ficaram na VPS (2 objetos, 39,7 MB) e a cópia ficou como
+    "aguardando", com o motivo;
+  - houve auditoria de cada passo;
+  - com 375 px não há rolagem lateral.
+
+  Os dados e os arquivos de prova foram apagados (os arquivos pela API do Storage).
+- **Não provado:** a cópia real para o Drive e a limpeza depois dela, porque o Google ainda não
+  está conectado no teste (pendência do dono). Também não foi provado um vídeo perto de 2 GB: a
+  prova usou 20 MB, em 4 partes.

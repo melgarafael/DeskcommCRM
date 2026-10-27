@@ -4,12 +4,15 @@
  * (cliente). Toda leitura e escrita filtra `organization_id` À MÃO — o client é
  * o de serviço, que ignora a RLS.
  */
+import { after } from "next/server";
+
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { criarAviso } from "../avisos/criar";
+import { copiarEnvio, enfileirarCopia } from "../envios/copia";
 import { normalizarWhatsapp } from "../convite";
 import { aoResponderAprovacaoDaPublicacao } from "../publicacoes/motor";
 import { aoMudarTarefa } from "../trilhas/motor";
@@ -88,7 +91,9 @@ export async function registrarResposta(r: RespostaDoCliente): Promise<boolean> 
     .eq("id", r.aprovacaoId)
     .eq("organization_id", r.organizationId)
     .eq("situacao", "pendente")
-    .select("id, titulo, tarefa_id, publicacao_id, pedido_por, agencia_clientes(nome)");
+    // O aviso não se aprova: só se marca ciente (SPEC-envios, E5).
+    .neq("tipo", "aviso")
+    .select("id, titulo, tarefa_id, publicacao_id, pedido_por, arquivo_caminho, texto, agencia_clientes(nome)");
   if (error || !data?.length) return false;
   const a = data[0] as unknown as {
     id: string;
@@ -96,8 +101,19 @@ export async function registrarResposta(r: RespostaDoCliente): Promise<boolean> 
     tarefa_id: string | null;
     publicacao_id: string | null;
     pedido_por: string | null;
+    arquivo_caminho: string | null;
+    texto: string | null;
     agencia_clientes: { nome: string } | null;
   };
+
+  // E6: aprovado com arquivo ou texto vai para o Drive — começa já, depois da resposta;
+  // o relógio da agência termina o que faltar.
+  if (r.decisao === "aprovado" && (a.arquivo_caminho || a.texto)) {
+    await enfileirarCopia(a.id);
+    after(async () => {
+      await copiarEnvio(a.id, 10 * 60_000).catch(() => undefined);
+    });
+  }
 
   // A publicação ligada acompanha (SPEC-publicacoes, P3).
   if (a.publicacao_id) await aoResponderAprovacaoDaPublicacao(a.publicacao_id, r.decisao, r.comentario);
@@ -140,6 +156,37 @@ export async function registrarResposta(r: RespostaDoCliente): Promise<boolean> 
     });
   } catch (e) {
     logger.warn("agência: resposta gravada, aviso falhou", { detalhe: e instanceof Error ? e.message : String(e) });
+  }
+  return true;
+}
+
+/**
+ * O cliente marcou que está ciente do aviso (SPEC-envios, E5). Só o aviso, só
+ * desta organização e só se ainda estiver pendente. Avisa quem mandou.
+ */
+export async function registrarCiencia(p: { aprovacaoId: string; organizationId: string; userId: string }): Promise<boolean> {
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("agencia_aprovacoes")
+    .update({ situacao: "ciente", respondido_por: p.userId, respondido_em: new Date().toISOString() })
+    .eq("id", p.aprovacaoId)
+    .eq("organization_id", p.organizationId)
+    .eq("tipo", "aviso")
+    .eq("situacao", "pendente")
+    .select("id, titulo, pedido_por, agencia_clientes(nome)");
+  if (error || !data?.length) return false;
+  const a = data[0] as unknown as { id: string; titulo: string; pedido_por: string | null; agencia_clientes: { nome: string } | null };
+  try {
+    const { data: m } = a.pedido_por ? await db.from("agencia_membros").select("id").eq("user_id", a.pedido_por).eq("situacao", "ativo").maybeSingle() : { data: null };
+    await criarAviso({
+      alvo: m ? { tipo: "membros", ids: [(m as { id: string }).id] } : { tipo: "gerais" },
+      tipo: "aprovacao_respondida",
+      titulo: `Ciente: ${a.titulo} — ${a.agencia_clientes?.nome ?? "Cliente"}`,
+      link: `/agencia/envios?abrir=${a.id}`,
+      referenciaId: a.id,
+    });
+  } catch (e) {
+    logger.warn("agência: ciência gravada, aviso falhou", { detalhe: e instanceof Error ? e.message : String(e) });
   }
   return true;
 }

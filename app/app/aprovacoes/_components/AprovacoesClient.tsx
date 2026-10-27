@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { responderAprovacao, type ResultadoDaResposta } from "@/app/actions/aprovacoesDaAgencia";
+import { marcarCiente, responderAprovacao, type ResultadoDaResposta } from "@/app/actions/aprovacoesDaAgencia";
+import { Material, type MaterialDoEnvio } from "@/components/agencia/envios/Material";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { tagDeIdioma } from "@/lib/i18n/datas";
@@ -11,17 +12,18 @@ import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { cn } from "@/lib/utils";
 
 /**
- * A tela de aprovações da empresa (docs/agencia/SPEC-aprovacoes.md): o que a
- * agência mandou, com o link para ver, e "Aprovar" / "Pedir ajustes".
+ * A tela de aprovações da empresa (SPEC-aprovacoes, SPEC-envios): o que a agência
+ * mandou, aberto AQUI (vídeo no player, arte grande, roteiro em texto), com
+ * "Aprovar" / "Pedir ajustes" — e, no aviso, "Ciente".
  */
 export interface AprovacaoDaTela {
   id: string;
-  tipo: "video" | "roteiro" | "arte" | "estrategia" | "outro";
+  tipo: "video" | "roteiro" | "arte" | "estrategia" | "outro" | "aviso";
   titulo: string;
   descricao: string | null;
-  link: string | null;
+  material: MaterialDoEnvio;
   versao: number;
-  situacao: "pendente" | "aprovado" | "ajustes";
+  situacao: "pendente" | "aprovado" | "ajustes" | "ciente";
   comentario: string | null;
   pedido_em: string;
   respondido_em: string | null;
@@ -33,6 +35,7 @@ const TIPO: Record<AprovacaoDaTela["tipo"], string> = {
   arte: "Arte",
   estrategia: "Estratégia do mês",
   outro: "Outro",
+  aviso: "Aviso",
 };
 
 const ERRO: Record<Exclude<ResultadoDaResposta, { ok: true }>["error"], string> = {
@@ -58,6 +61,15 @@ export function AprovacoesClient({ aprovacoes, podeResponder, fuso }: { aprovaco
   const abertas = aprovacoes.filter((a) => a.situacao === "pendente");
   const respondidas = aprovacoes.filter((a) => a.situacao !== "pendente");
 
+  function ciente(id: string) {
+    setErro(null);
+    startTransition(async () => {
+      const r = await marcarCiente(id);
+      if (!r.ok) return setErro(t(ERRO[r.error]));
+      router.refresh();
+    });
+  }
+
   function responder(id: string, decisao: "aprovado" | "ajustes") {
     setErro(null);
     startTransition(async () => {
@@ -78,13 +90,26 @@ export function AprovacoesClient({ aprovacoes, podeResponder, fuso }: { aprovaco
           {a.versao > 1 ? ` · v${a.versao}` : ""} · {data(a.pedido_em)}
         </span>
       </div>
-      {a.descricao && <p className="whitespace-pre-line text-sm text-muted-foreground">{a.descricao}</p>}
-      {a.link && (
-        <a href={a.link} target="_blank" rel="noreferrer" className="inline-block text-sm underline underline-offset-4">
-          {t("Abrir o material")}
-        </a>
-      )}
-      {a.situacao === "pendente" ? (
+      <div className={cn(a.material.url && a.material.mime?.startsWith("video/") && "grid gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]")}>
+        <Material m={a.material} titulo={a.titulo} t={t} />
+        {a.descricao && <p className="whitespace-pre-line text-sm text-muted-foreground">{a.descricao}</p>}
+      </div>
+      {a.tipo === "aviso" ? (
+        a.situacao === "pendente" ? (
+          podeResponder ? (
+            <Button type="button" size="sm" disabled={pendente} onClick={() => ciente(a.id)}>
+              {t("Ciente")}
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t("Quem responde é alguém da equipe com acesso de atendimento ou acima.")}</p>
+          )
+        ) : (
+          <p className="text-sm">
+            <strong>{t("Você marcou que está ciente")}</strong>
+            {a.respondido_em ? ` · ${data(a.respondido_em)}` : ""}
+          </p>
+        )
+      ) : a.situacao === "pendente" ? (
         podeResponder ? (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
@@ -128,7 +153,7 @@ export function AprovacoesClient({ aprovacoes, podeResponder, fuso }: { aprovaco
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">{t("Aprovações")}</h1>
-        <p className="text-sm text-muted-foreground">{t("O que a agência preparou para a sua empresa aprovar: vídeos, roteiros, artes e a estratégia do mês.")}</p>
+        <p className="text-sm text-muted-foreground">{t("O que a agência preparou para a sua empresa: vídeos, roteiros e artes para aprovar, e avisos para você ficar ciente.")}</p>
       </div>
       {erro && (
         <p role="alert" className="text-sm text-destructive">

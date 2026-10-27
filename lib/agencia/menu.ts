@@ -16,6 +16,7 @@ export const MENU_DA_AGENCIA: ReadonlyArray<EntradaDaCasca & { exige?: Permissao
   { href: "/agencia/trilhas", rotulo: "Trilhas", icone: "trilhas" },
   { href: "/agencia/mapas", rotulo: "Mapas", icone: "mapas" },
   { href: "/agencia/publicacoes", rotulo: "Publicações", icone: "publicacoes" },
+  { href: "/agencia/envios", rotulo: "Envios", icone: "envios", exige: "tarefas.criar" },
   { href: "/agencia/contratos", rotulo: "Contratos", icone: "contratos", exige: "contratos.gerenciar" },
   { href: "/agencia/equipe", rotulo: "Equipe", icone: "equipe", exige: "equipe.gerenciar" },
   { href: "/agencia/configuracoes", rotulo: "Configurações", icone: "configuracoes", exige: "configuracoes.gerenciar" },
