@@ -113,7 +113,7 @@ Instalações: **central.emmovimento.tech** = produção (NÃO MEXER sem autoriz
 | 7 | `b383d513a` (`feat/agencia-fase-7`) | 9009 | Aprovações do cliente: a agência pede (vídeo, roteiro, arte, estratégia), o cliente aprova ou pede ajustes em `/app/aprovacoes` da organização dele; versões; a tarefa ligada acompanha. Primeira tabela da agência com `organization_id` e RLS de tenant. |
 | 8a | `a2e0420bf` + `3946f4b87` (`feat/agencia-fase-8`) | 9010 | Mapa mental: Criação (blocos, setas sem círculo, arrasto) e Ao vivo (bloco liberado vira tarefa; tarefa concluída libera os seguintes). |
 | 8b | `3aa2267bd` (`feat/agencia-fase-8`) | 9011 | Calendário de publicações ligado às aprovações; marcar publicada à mão; publicar sozinho na Meta por chave da publicação (desligada por padrão), pelo cron `agencia-prazos`. |
-| 9 | ver `git log` em `feat/agencia-fase-9` | 9012 | IA da agência: "Pedir à IA" no mapa (proposta conferida antes de aplicar) e executor IA na tarefa (roteiro, legenda, pautas, rascunho de campanha só em texto, publicação em rascunho). |
+| 9 | `684b13f5d` (`feat/agencia-fase-9`) | 9012 | IA da agência: "Pedir à IA" no mapa (proposta conferida antes de aplicar) e executor IA na tarefa (roteiro, legenda, pautas, rascunho de campanha só em texto, publicação em rascunho). |
 
 As branches são **encadeadas** (cada uma sai da anterior); nenhuma foi para a `main` nem para
 o GitHub. O trabalho de cada fase tem **spec** (`SPEC-*.md`) e **plano com a verificação**
