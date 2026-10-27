@@ -1,11 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { EXTENSION_CAPABILITIES, EXTENSION_PERMISSIONS } from "@/lib/extensions/capacidades";
+import { checkCompatibility, parseManifest } from "@/lib/extensions/manifest";
 
 /**
  * O CATÁLOGO DE ENSAIO É OUTRO PROCESSO, E POR ISSO ELE DIVERGE CALADO.
@@ -43,16 +44,29 @@ describe("o catálogo de ensaio espelha o vocabulário do host", () => {
     expect(listaPython("CAPACIDADES")).toEqual([...EXTENSION_CAPABILITIES]);
   });
 
-  it("a versão do host da bancada é a que o manifesto aceita", () => {
-    const declarada = /^HOST_API_ATUAL\s*=\s*(\d+)/m.exec(fonte)?.[1];
-    expect(declarada, "HOST_API_ATUAL ausente em catalog.py").toBeDefined();
-    // A fonte é o manifesto: um pacote com {min:1,max:N} tem de ser compatível com este host.
-    const manifesto = readFileSync(
-      join(__dirname, "..", "..", "lib", "extensions", "manifest.ts"),
-      "utf8",
-    );
-    const host = /HOST_API_VERSION\s*=\s*(\d+)/.exec(manifesto)?.[1];
-    expect(declarada).toBe(host);
+  it("o pacote make-example da bancada é aceito pelo host", () => {
+    const diretorio = mkdtempSync(join(tmpdir(), "catalogo-contrato-host-"));
+    const arquivo = join(diretorio, "exemplo.json");
+    try {
+      const saida = spawnSync("python3", [CATALOG_PY, "make-example", "--output", arquivo], {
+        encoding: "utf8",
+      });
+      expect(saida.error, "python3 indisponível: o caso não mediu nada").toBeUndefined();
+      expect(saida.status, `make-example falhou:\n${saida.stdout}\n${saida.stderr}`).toBe(0);
+      // Mede os bytes produzidos pelo CLI real, sem depender de uma constante privada do host.
+      const manifesto = parseManifest(readFileSync(arquivo));
+      expect(checkCompatibility(manifesto)).toEqual({ compatible: true, reason: null });
+      for (const api of [1, 4]) {
+        const exclusiva = parseManifest(Buffer.from(JSON.stringify({
+          ...manifesto, host_api: { min: api, max: api },
+        })));
+        expect(checkCompatibility(exclusiva)).toEqual({
+          compatible: false, reason: "host_api_unsupported",
+        });
+      }
+    } finally {
+      rmSync(diretorio, { recursive: true, force: true });
+    }
   });
 
   it("a bancada não guarda mais o valor fixo do contrato v1", () => {

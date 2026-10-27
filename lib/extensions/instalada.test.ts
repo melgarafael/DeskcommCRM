@@ -159,7 +159,7 @@ describe("montarAnterior", () => {
       compatible: false,
       compatibility_reason: MOTIVO_PACOTE_ILEGIVEL,
     });
-    const outraApi = artefato(JSON.stringify({ ...manifesto, host_api: { min: 3, max: 3 } }));
+    const outraApi = artefato(JSON.stringify({ ...manifesto, host_api: { min: 4, max: 4 } }));
     expect(montarAnterior(outraApi, item, [])).toMatchObject({
       version: "1.2.3",
       compatible: false,

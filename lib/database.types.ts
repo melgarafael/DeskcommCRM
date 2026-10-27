@@ -11344,6 +11344,7 @@ export type Database = {
       };
       organization_extensions: {
         Row: {
+          accepted_permissions: string[];
           configuration: NonNullable<Json>;
           deactivated_by_removal_at: string | null;
           enabled: boolean;
@@ -11355,6 +11356,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          accepted_permissions?: string[];
           configuration: NonNullable<Json>;
           deactivated_by_removal_at?: string | null;
           enabled: boolean;
@@ -11365,6 +11367,7 @@ export type Database = {
           updated_by?: string | null;
         };
         Update: {
+          accepted_permissions?: string[];
           configuration?: NonNullable<Json>;
           deactivated_by_removal_at?: string | null;
           enabled?: boolean;
@@ -15201,6 +15204,7 @@ export type Database = {
       };
       fn_extensions_configure: {
         Args: {
+          p_accepted_permissions?: Json;
           p_actor: string;
           p_configuration: Json;
           p_enabled: boolean;

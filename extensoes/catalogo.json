@@ -40,6 +40,43 @@
     },
     {
       "publisher": "deskcomm",
+      "name": "consulta-de-laudos",
+      "version": "1.0.0",
+      "license": "MIT",
+      "host_api": {
+        "min": 3,
+        "max": 3
+      },
+      "display": {
+        "title": {
+          "pt-BR": "Consulta de laudos",
+          "es": "Consulta de informes"
+        },
+        "summary": {
+          "pt-BR": "Encaminha patologia para conferência humana e coleta só as pendências de biópsia ou radiologia. Contexto desta conversa é opcional, com aceite próprio.",
+          "es": "Deriva patología para revisión humana y recopila solo lo pendiente de biopsia o radiología. El contexto de esta conversación es opcional, con consentimiento propio."
+        },
+        "category": "service",
+        "icon": "BookOpen"
+      },
+      "permissions": [
+        "turn.send",
+        "turn.handoff",
+        "turn.context"
+      ],
+      "sha256": "c46508ec24a0fcbc98cab861ce776dd7a65568180de0ce6e58ba16ccde6cfd3b",
+      "byte_length": 10613,
+      "publisher_label": "Deskcomm",
+      "repository": "https://github.com/melgarafael/DeskcommCRM",
+      "tags": [
+        "clinica",
+        "laudo",
+        "atendimento"
+      ],
+      "published_at": "2026-10-26"
+    },
+    {
+      "publisher": "deskcomm",
       "name": "primeira-semana",
       "version": "1.0.0",
       "license": "MIT",
@@ -110,5 +147,5 @@
       "published_at": "2026-09-18"
     }
   ],
-  "revision": 1
+  "revision": 4
 }

@@ -164,6 +164,41 @@
       "col": 17,
       "type": "ui",
       "label": "Auditoria da organização /app/audit"
+    },
+    {
+      "id": "turn_hook",
+      "lane": "app",
+      "col": 18,
+      "type": "service",
+      "label": "Gancho antes da IA · permissões e aceite atuais"
+    },
+    {
+      "id": "turn_state",
+      "lane": "db",
+      "col": 19,
+      "type": "database",
+      "label": "metadata.gancho_de_extensao · revisões + claim temporário"
+    },
+    {
+      "id": "turn_timeline",
+      "lane": "human",
+      "col": 20,
+      "type": "ui",
+      "label": "Timeline · assumir/devolver e passagem protegida"
+    },
+    {
+      "id": "turn_context",
+      "lane": "app",
+      "col": 21,
+      "type": "service",
+      "label": "Contexto selecionado · OUTBOUND com proveniência por item"
+    },
+    {
+      "id": "report_package",
+      "lane": "external",
+      "col": 22,
+      "type": "database",
+      "label": "consulta-de-laudos · regras e textos no pacote JSON"
     }
   ],
   "edges": [
@@ -346,6 +381,51 @@
       "from": "audit_view",
       "to": "manager",
       "label": "responsável volta à gestão para desfazer, remover ou reinstalar"
+    },
+    {
+      "from": "binding",
+      "to": "turn_hook",
+      "label": "fluxo ativo com aceite; revisão da organização e instalação"
+    },
+    {
+      "from": "artifact",
+      "to": "turn_hook",
+      "label": "revalidar contrato declarativo e permissões de efeito"
+    },
+    {
+      "from": "turn_hook",
+      "to": "turn_state",
+      "label": "claim e coleta; mudança de revisão encerra estado"
+    },
+    {
+      "from": "turn_state",
+      "to": "turn_hook",
+      "label": "sem vínculo ou revisão atual: limpar e devolver à IA"
+    },
+    {
+      "from": "turn_hook",
+      "to": "turn_timeline",
+      "label": "atividade sem valores; campos somente na passagem autorizada"
+    },
+    {
+      "from": "turn_hook",
+      "to": "turn_context",
+      "label": "ler só com turn.context declarada e aceita separadamente"
+    },
+    {
+      "from": "turn_context",
+      "to": "turn_hook",
+      "label": "somente opção literal; mesma organização/conversa ou falha fechada"
+    },
+    {
+      "from": "report_package",
+      "to": "artifact",
+      "label": "identidade nova; permissões imutáveis; hash e metadado revisados"
+    },
+    {
+      "from": "artifact",
+      "to": "report_package",
+      "label": "revalidar contrato; categorias e perguntas fora do núcleo"
     }
   ],
   "contracts": {
@@ -362,7 +442,8 @@
       "Admissão manual de catálogo não é TUF nem distribuição pública.",
       "Coordenação cobre o atualizador pelo app, não comandos externos arbitrários.",
       "Desfazer guarda um passo de histórico; versões mais antigas voltam pelo catálogo, se a revisão admitida ainda as listar.",
-      "Remoção é lógica: nenhuma linha é apagada, e reinstalar exige que cada organização ative de novo."
+      "Remoção é lógica: nenhuma linha é apagada, e reinstalar exige que cada organização ative de novo.",
+      "Gancho e consumidor consulta-de-laudos medidos em unidade nesta adaptação; banco real e jornada visual fresca pendentes. Contexto opcional só usa OUTBOUND já selecionado com proveniência; transformação sem essa propriedade falha fechada."
     ]
   }
 }

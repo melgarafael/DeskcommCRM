@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import { readExtensionBody } from "./http";
-import { EXTENSION_CAPABILITIES } from "./capacidades";
+import { CAPACIDADES_DE_PORTA } from "./capacidades";
+import { PERMISSOES_DE_TURNO } from "./consentimento";
 import { configurationSchema } from "./manifest";
 import { parseStrictJson } from "./strict-json";
 
@@ -30,6 +31,15 @@ export const configureRequestSchema = z
     expected_revision: z.number().int().min(0).max(2_147_483_646),
     enabled: z.boolean(),
     configuration: configurationSchema,
+    // O ACEITE EXPLÍCITO (#3076). `accept_permissions` é o conjunto que o dono da organização
+    // está concedendo NESTE ato — o conjunto inteiro, e não um delta, porque um delta somado a
+    // um aceite antigo esconderia uma permissão que a versão anterior aceitou e esta não pede.
+    //
+    // Envio/passagem e leitura opcional viajam por aqui; a UI oferece contexto num ato
+    // separado e envia a união com o que já foi aceito. O limite acompanha o vocabulário,
+    // sem conceder nada por omissão. Navegação, tema e dados seguem pelo ato de ativar.
+    // Serviço e banco revalidam a declaração e a cobertura necessária para ativação.
+    accept_permissions: z.array(z.enum(PERMISSOES_DE_TURNO)).min(1).max(PERMISSOES_DE_TURNO.length).optional(),
   })
   .strict();
 export const openRequestSchema = z
@@ -42,7 +52,10 @@ export const openRequestSchema = z
     //
     // Nenhum teste de unidade pegou, porque todos exercitavam o manifesto e o mapa; o caminho
     // HTTP completo só é percorrido pela prova em tela, e foi ela que achou.
-    capability: z.enum(EXTENSION_CAPABILITIES),
+    // As capacidades do TURNO ficam fora deste pedido de propósito (#3076): elas não navegam,
+    // então aceitá-las aqui daria um 200 com destino nulo — outra forma de dizer "o botão não
+    // abriu" que o comentário acima existe para não repetir.
+    capability: z.enum(CAPACIDADES_DE_PORTA),
     expected_revision: z.number().int().positive(),
     card_id: slug,
   })

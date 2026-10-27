@@ -1,0 +1,41 @@
+{
+  "source_commit": "271a327efe9d0f4532657f3007a6e751306986bd",
+  "files": {
+    "manifest.ts": {
+      "source_path": "lib/extensions/manifest.ts",
+      "source_sha256": "45c4fc8fbbf39ebf4033a94e32d2d222c9423224d38e1d92d6a5e2895ced03e4",
+      "fixture_sha256": "45c4fc8fbbf39ebf4033a94e32d2d222c9423224d38e1d92d6a5e2895ced03e4",
+      "relocation": null
+    },
+    "capacidades.ts": {
+      "source_path": "lib/extensions/capacidades.ts",
+      "source_sha256": "1bcd40e6b56e0b8200d87c93a888ac3e0bcccd6aa3ded364e95576ba43bb8747",
+      "fixture_sha256": "1bcd40e6b56e0b8200d87c93a888ac3e0bcccd6aa3ded364e95576ba43bb8747",
+      "relocation": null
+    },
+    "strict-json.ts": {
+      "source_path": "lib/extensions/strict-json.ts",
+      "source_sha256": "a06284d0b5a549a4bd18d72ea74de3ddf516d6afff70533c1160a191d8c6343c",
+      "fixture_sha256": "a06284d0b5a549a4bd18d72ea74de3ddf516d6afff70533c1160a191d8c6343c",
+      "relocation": null
+    },
+    "errors.ts": {
+      "source_path": "lib/extensions/errors.ts",
+      "source_sha256": "53ab3427fa5400f910f68a4f79d43fd0ff22ab7f212d9c75710068e2d291b3ca",
+      "fixture_sha256": "53ab3427fa5400f910f68a4f79d43fd0ff22ab7f212d9c75710068e2d291b3ca",
+      "relocation": null
+    },
+    "tema.ts": {
+      "source_path": "lib/extensions/tema.ts",
+      "source_sha256": "60cc110d0dd2ab719d62e701285ed0afe713628688ffaa417e55d57359fbb123",
+      "fixture_sha256": "dde0cb2e6348bf566d56eae2f457241c1fed898cb50c5bdbae550e86ea278fb6",
+      "relocation": "somente import de formas-de-valor para dependencia congelada"
+    },
+    "formas-de-valor.ts": {
+      "source_path": "lib/branding/formas-de-valor.ts",
+      "source_sha256": "fdb076fe127588b1414f7e8d500971439c082027b1ab50cf787db8713e128552",
+      "fixture_sha256": "fdb076fe127588b1414f7e8d500971439c082027b1ab50cf787db8713e128552",
+      "relocation": null
+    }
+  }
+}

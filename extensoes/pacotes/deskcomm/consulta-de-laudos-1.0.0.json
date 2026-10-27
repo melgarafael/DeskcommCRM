@@ -1,0 +1,362 @@
+{
+  "format_version": 1,
+  "profile": "declarative",
+  "publisher": "deskcomm",
+  "name": "consulta-de-laudos",
+  "version": "1.0.0",
+  "license": "MIT",
+  "host_api": {
+    "min": 3,
+    "max": 3
+  },
+  "permissions": [
+    "turn.send",
+    "turn.handoff",
+    "turn.context"
+  ],
+  "dependencies": [],
+  "data": {
+    "mode": "none"
+  },
+  "display": {
+    "title": {
+      "pt-BR": "Consulta de laudos",
+      "es": "Consulta de informes"
+    },
+    "summary": {
+      "pt-BR": "Encaminha patologia para conferência humana e coleta só as pendências de biópsia ou radiologia. Contexto desta conversa é opcional, com aceite próprio.",
+      "es": "Deriva patología para revisión humana y recopila solo lo pendiente de biopsia o radiología. El contexto de esta conversación es opcional, con consentimiento propio."
+    },
+    "category": "service",
+    "icon": "BookOpen"
+  },
+  "configuration": {
+    "density": "comfortable",
+    "show_description": true
+  },
+  "contributions": {
+    "turn_flow": {
+      "id": "consulta-laudo",
+      "idiomas": [
+        "pt-BR",
+        "es",
+        "en",
+        "hi",
+        "hi-Latn"
+      ],
+      "gatilhos": [
+        {
+          "idioma": "pt-BR",
+          "texto": "laudo",
+          "com_um_de": [
+            "pronto",
+            "status",
+            "quando",
+            "onde",
+            "saiu"
+          ]
+        },
+        {
+          "idioma": "es",
+          "texto": "informe",
+          "com_um_de": [
+            "listo",
+            "estado",
+            "cuando",
+            "donde"
+          ]
+        },
+        {
+          "idioma": "en",
+          "texto": "report",
+          "com_um_de": [
+            "ready",
+            "status",
+            "available",
+            "download",
+            "when",
+            "where",
+            "got",
+            "received",
+            "receive",
+            "check",
+            "checking"
+          ]
+        },
+        {
+          "idioma": "hi",
+          "texto": "रिपोर्ट",
+          "com_um_de": [
+            "कब",
+            "तैयार",
+            "कहाँ",
+            "मिल",
+            "स्टेटस",
+            "चेक"
+          ]
+        },
+        {
+          "idioma": "hi",
+          "texto": "परिणाम",
+          "com_um_de": [
+            "कब",
+            "तैयार",
+            "कहाँ",
+            "मिल",
+            "स्टेटस",
+            "चेक"
+          ]
+        },
+        {
+          "idioma": "hi-Latn",
+          "texto": "report",
+          "com_um_de": [
+            "kab",
+            "kahan",
+            "mil",
+            "mila",
+            "mili",
+            "milega",
+            "milegi",
+            "taiyar",
+            "tayyar",
+            "check",
+            "kitni"
+          ]
+        },
+        {
+          "idioma": "hi-Latn",
+          "texto": "miltajulta"
+        }
+      ],
+      "perguntas": [
+        {
+          "campo": "categoria",
+          "texto": {
+            "pt-BR": "De qual serviço é o laudo? 1) Patologia  2) Biópsia  3) Radiologia (Ultrassom, Eco 2D, TMT, ECG)",
+            "es": "¿De qué servicio es el informe? 1) Patología  2) Biopsia  3) Radiología (Ecografía, Eco 2D, TMT, ECG)",
+            "en": "Which service is this report for? 1) Pathology test  2) Biopsy  3) Radiology (Ultrasound, 2D Echo, TMT, ECG)",
+            "hi": "यह रिपोर्ट किस सेवा की है? 1) पैथोलॉजी टेस्ट  2) बायोप्सी  3) रेडियोलॉजी (अल्ट्रासाउंड, 2D इको, TMT, ECG)",
+            "hi-Latn": "Yeh report kis service ki hai? 1) Pathology test  2) Biopsy  3) Radiology (Ultrasound, 2D Echo, TMT, ECG)"
+          },
+          "opcoes": [
+            {
+              "valor": "patologia",
+              "termos": [
+                "1",
+                "pathology",
+                "pathological",
+                "blood",
+                "urine",
+                "cbc",
+                "haemogram",
+                "hemogram",
+                "culture",
+                "sample",
+                "patologia",
+                "sangue",
+                "urina",
+                "hemograma",
+                "पैथोलॉजी",
+                "रक्त",
+                "खून",
+                "यूरिन",
+                "सैंपल",
+                "हिमोग्लोबिन"
+              ]
+            },
+            {
+              "valor": "biopsia",
+              "termos": [
+                "2",
+                "biopsy",
+                "biopsia",
+                "biópsia",
+                "बायोप्सी"
+              ]
+            },
+            {
+              "valor": "radiologia",
+              "termos": [
+                "3",
+                "radiology",
+                "radiologia",
+                "radiología",
+                "ultrasound",
+                "sonography",
+                "usg",
+                "2d echo",
+                "2-d echo",
+                "echocardiogram",
+                "tmt",
+                "treadmill",
+                "ecg",
+                "ekg",
+                "ultrassom",
+                "अल्ट्रासाउंड",
+                "सोनोग्राफी",
+                "रेडियोलॉजी",
+                "ईसीजी",
+                "एकोकार्डियोग्राफी"
+              ]
+            }
+          ]
+        },
+        {
+          "campo": "nome",
+          "texto": {
+            "pt-BR": "Qual é o nome do paciente, como no registro?",
+            "es": "¿Cuál es el nombre del paciente, como en el registro?",
+            "en": "Patient name, as on the registration?",
+            "hi": "मरीज़ का नाम?",
+            "hi-Latn": "Patient ka naam?"
+          },
+          "quando": {
+            "campo": "categoria",
+            "valores": [
+              "biopsia",
+              "radiologia"
+            ]
+          },
+          "extrair": {
+            "tipo": "marcador",
+            "termos": [
+              "nome:",
+              "name:",
+              "nombre:",
+              "naam:",
+              "नाम:"
+            ]
+          }
+        },
+        {
+          "campo": "data-cirurgia",
+          "texto": {
+            "pt-BR": "Qual é a data da cirurgia?",
+            "es": "¿Cuál es la fecha de la cirugía?",
+            "en": "Date of surgery?",
+            "hi": "ऑपरेशन की तारीख?",
+            "hi-Latn": "Operation ki date?"
+          },
+          "quando": {
+            "campo": "categoria",
+            "valores": [
+              "biopsia"
+            ]
+          },
+          "extrair": {
+            "tipo": "data"
+          }
+        },
+        {
+          "campo": "medico",
+          "texto": {
+            "pt-BR": "Qual é o nome do médico ou hospital?",
+            "es": "¿Cuál es el nombre del médico u hospital?",
+            "en": "Doctor's name or hospital name?",
+            "hi": "डॉक्टर का नाम या अस्पताल का नाम?",
+            "hi-Latn": "Doctor ka naam ya hospital ka naam?"
+          },
+          "quando": {
+            "campo": "categoria",
+            "valores": [
+              "biopsia"
+            ]
+          },
+          "extrair": {
+            "tipo": "marcador",
+            "termos": [
+              "Dr.",
+              "Dra.",
+              "doctor ",
+              "hospital ",
+              "clinic ",
+              "nursing home ",
+              "डॉ.",
+              "डॉ ",
+              "अस्पताल "
+            ],
+            "incluir_marcador": true
+          }
+        },
+        {
+          "campo": "data-exame",
+          "texto": {
+            "pt-BR": "Qual é a data do exame?",
+            "es": "¿Cuál es la fecha del examen?",
+            "en": "Date of the test?",
+            "hi": "टेस्ट की तारीख?",
+            "hi-Latn": "Test ki date?"
+          },
+          "quando": {
+            "campo": "categoria",
+            "valores": [
+              "radiologia"
+            ]
+          },
+          "extrair": {
+            "tipo": "data"
+          }
+        },
+        {
+          "campo": "exame",
+          "texto": {
+            "pt-BR": "Qual exame? (Ultrassom, Eco 2D, TMT ou ECG)",
+            "es": "¿Qué examen? (Ecografía, Eco 2D, TMT o ECG)",
+            "en": "Which test? (Ultrasound, 2D Echo, TMT or ECG)",
+            "hi": "कौन-सा टेस्ट? (अल्ट्रासाउंड, 2D इको, TMT या ECG)",
+            "hi-Latn": "Kaunsa test? (Ultrasound, 2D Echo, TMT ya ECG)"
+          },
+          "quando": {
+            "campo": "categoria",
+            "valores": [
+              "radiologia"
+            ]
+          },
+          "extrair": {
+            "tipo": "marcador",
+            "termos": [
+              "exame:",
+              "test:",
+              "examen:",
+              "परीक्षण:"
+            ]
+          }
+        }
+      ],
+      "encerrar_quando": {
+        "campo": "categoria",
+        "valores": [
+          "patologia"
+        ]
+      },
+      "contexto": {
+        "campo": "categoria",
+        "marcadores": [
+          "registration",
+          "registered",
+          "appointment",
+          "booked",
+          "booking",
+          "token",
+          "sample collected",
+          "रजिस्ट्रेशन",
+          "अपॉइंटमेंट",
+          "सैंपल"
+        ],
+        "padrao": "patologia"
+      },
+      "desfecho": {
+        "tipo": "passar_para_humano",
+        "aviso": {
+          "pt-BR": "Seu pedido precisa de conferência humana. Estou passando para a equipe agora.",
+          "es": "Tu solicitud necesita revisión humana. La estoy pasando al equipo ahora.",
+          "en": "Your report status needs a manual check at the lab. I am passing this to a colleague at the front desk now.",
+          "hi": "रिपोर्ट की स्थिति लैब में चेक करनी होगी। मैं यह जानकारी अभी डेस्क के सहयोगी को भेज रहा हूँ।",
+          "hi-Latn": "Report ka status lab mein manual check karna hoga. Main yeh abhi desk ke colleague ko bhej raha hoon."
+        }
+      },
+      "teto_de_turnos_sem_progresso": 2
+    }
+  }
+}

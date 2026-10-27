@@ -161,3 +161,41 @@ describe("getLeadContext — remetente do grupo (#2729)", () => {
     expect(r.context.messages[0]).not.toHaveProperty("sender");
   });
 });
+
+
+describe("getLeadContext — proveniência do contexto já selecionado", () => {
+  it("cada item leva os ids da linha retornada pela mesma consulta, sem nova leitura", async () => {
+    const { db, consultas } = montarDb({ propostas: [], historico: [{
+      organization_id: TENANT_ID, conversation_id: INPUT.conversationId,
+      direction: "outbound", type: "text", body: "Registro sintético",
+      media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null,
+      sent_at: new Date("2026-10-26T12:00:00Z"), metadata: null,
+    }] });
+    const r = await getLeadContext(db as never, {} as never, INPUT, KNOBS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.context.messages[0]).toMatchObject({ proveniencia: {
+      organization_id: TENANT_ID, conversation_id: INPUT.conversationId,
+    } });
+    expect(JSON.stringify(r.context)).not.toContain("proveniencia");
+    const leituras = consultas.filter((sql) => sql.includes("from messages"));
+    expect(leituras).toHaveLength(1);
+    expect(leituras[0]).toContain("organization_id = $1 and conversation_id = $2");
+    expect(leituras[0]).toContain("select organization_id, conversation_id,");
+  });
+  it("se o corte de orçamento transforma o item, a proveniência ausente falha fechada", async () => {
+    const { db } = montarDb({ propostas: [], historico: [{
+      organization_id: TENANT_ID, conversation_id: INPUT.conversationId,
+      direction: "outbound", type: "text", body: "Registro sintético ".repeat(500),
+      media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null,
+      sent_at: new Date("2026-10-26T12:00:00Z"), metadata: null,
+    }] });
+    const r = await getLeadContext(db as never, {} as never, INPUT, { ...KNOBS, maxTokens: 250 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.context.messages).toHaveLength(1);
+    expect(r.context.messages[0]!.body.length).toBeLessThan("Registro sintético ".repeat(500).length);
+    expect(r.context.messages[0]!.proveniencia).toBeUndefined();
+  });
+
+});

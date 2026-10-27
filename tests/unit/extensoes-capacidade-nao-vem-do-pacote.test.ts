@@ -5,7 +5,10 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
+  CAPACIDADES_DE_EFEITO,
+  CAPACIDADES_DE_PORTA,
   DESTINOS_PERMITIDOS,
+  EFEITO_DA_CAPACIDADE,
   EXTENSION_CAPABILITIES,
   PORTA_DA_CAPACIDADE,
   destinoDaCapacidade,
@@ -157,15 +160,37 @@ describe("a capacidade não vem do pacote — o mapa", () => {
     expect(mortas, "porta de extensão apontando para tela inexistente").toEqual([]);
   });
 
-  it("toda capacidade declarada tem porta, e nenhuma sobra no mapa", () => {
-    expect(Object.keys(PORTA_DA_CAPACIDADE).sort()).toEqual([...EXTENSION_CAPABILITIES].sort());
+  it("toda capacidade de PORTA tem destino, e nenhuma sobra no mapa", () => {
+    // O vocabulário tem duas naturezas desde o #3076: o mapa de PORTAS cobre exatamente as
+    // capacidades que navegam. As de EFEITO não entram nele de propósito — a linha seguinte
+    // afirma a ausência, para que "dar uma porta vazia" não passe como solução.
+    expect(Object.keys(PORTA_DA_CAPACIDADE).sort()).toEqual([...CAPACIDADES_DE_PORTA].sort());
+    for (const capacidade of CAPACIDADES_DE_EFEITO) {
+      expect(capacidade in PORTA_DA_CAPACIDADE, `${capacidade} ganhou porta`).toBe(false);
+    }
+  });
+
+  it("toda capacidade de EFEITO tem efeito nomeado, e o mapa é exaustivo", () => {
+    expect(Object.keys(EFEITO_DA_CAPACIDADE).sort()).toEqual([...CAPACIDADES_DE_EFEITO].sort());
+    // As duas naturezas, juntas, são o vocabulário inteiro: nenhuma capacidade fica sem mapa.
+    expect([...CAPACIDADES_DE_PORTA, ...CAPACIDADES_DE_EFEITO].sort()).toEqual(
+      [...EXTENSION_CAPABILITIES].sort(),
+    );
   });
 });
 
 describe("a capacidade não vem do pacote — comportamento do resolvedor", () => {
-  it("resolve toda capacidade da lista", () => {
-    for (const capacidade of EXTENSION_CAPABILITIES) {
+  it("resolve toda capacidade de PORTA da lista", () => {
+    for (const capacidade of CAPACIDADES_DE_PORTA) {
       expect(destinoDaCapacidade(capacidade)).toBe(PORTA_DA_CAPACIDADE[capacidade].destino);
+    }
+  });
+
+  it("uma capacidade de EFEITO não resolve destino, mesmo com o nome certo", () => {
+    // A capacidade é do vocabulário, mas não navega: o resolvedor devolve `null`, e nenhum
+    // caminho de clique chega a montar um href para ela.
+    for (const capacidade of CAPACIDADES_DE_EFEITO) {
+      expect(destinoDaCapacidade(capacidade)).toBeNull();
     }
   });
 

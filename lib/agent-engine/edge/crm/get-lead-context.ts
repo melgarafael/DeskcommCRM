@@ -39,6 +39,8 @@ export interface LeadContextKnobs {
 
 /** Uma mensagem do histórico, já curada. */
 export interface LeadContextMessage {
+  /** Proveniência do host; não enumerável, fica fora do prompt e do orçamento. */
+  proveniencia?: { organization_id: string; conversation_id: string };
   direction: 'inbound' | 'outbound';
   /** Corpo textual; mídia usa o derivado (transcrição/visão/pdf) ou marcador [tipo]. */
   body: string;
@@ -217,6 +219,8 @@ function paraDecisao(row: DecisionRow): UltimaDecisaoHumana | null {
 }
 
 interface HistoryRow {
+  organization_id?: string;
+  conversation_id?: string;
   direction: 'inbound' | 'outbound';
   type: string;
   body: string | null;
@@ -278,7 +282,7 @@ export async function getLeadContext(
       conversationId
         ? db
             .query<HistoryRow>(
-              `select direction, type, body, media_url, media_storage_path, media_mime,
+              `select organization_id, conversation_id, direction, type, body, media_url, media_storage_path, media_mime,
                       media_derived_text, sent_at, metadata
                from messages
                where organization_id = $1 and conversation_id = $2
@@ -458,7 +462,7 @@ function fitToBudget(
     // recebido de grupo traz `group_sender` (o ingest grava só nesse sentido);
     // nas demais linhas o campo fica AUSENTE, e o prompt não ganha ruído.
     const remetente = m.direction === 'inbound' ? lerRemetenteDeGrupo(m.metadata) : null;
-    return {
+    const mensagem: LeadContextMessage = {
       direction: m.direction,
       body,
       // Hora de PAREDE do tenant, não UTC cru — ver o comentário de `sent_at` na
@@ -469,6 +473,13 @@ function fitToBudget(
         : {}),
       ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
     };
+    if (typeof m.organization_id === 'string' && typeof m.conversation_id === 'string') {
+      Object.defineProperty(mensagem, 'proveniencia', {
+        value: { organization_id: m.organization_id, conversation_id: m.conversation_id },
+        enumerable: false,
+      });
+    }
+    return mensagem;
   });
   const build = (msgs: LeadContextMessage[]): LeadContext => ({ ...base, messages: msgs });
   const over = (msgs: LeadContextMessage[]): boolean =>
