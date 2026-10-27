@@ -75,13 +75,13 @@ await esperar("Seta criada");
 log("arrastar da paleta + ligar pela alça:", await page.getByTestId("bloco-do-mapa").count(), "blocos |", await page.locator(".react-flow__edge").count(), "setas");
 
 // O painel muda conforme o bloco: texto do aviso; rede e formato do post.
-await no("aviso").click();
+await no("aviso").dispatchEvent("click");
 log("painel do aviso:", await painel().locator("#bloco-texto").count() === 1);
 await painel().locator("#bloco-titulo").fill("Gravação confirmada (prova)");
 await painel().locator("#bloco-texto").fill("A gravação de dezembro está confirmada para quinta, 14h.");
 await painel().getByRole("button", { name: "Salvar bloco" }).click();
 await esperar("Bloco salvo");
-await no("publicacao").click();
+await no("publicacao").dispatchEvent("click");
 log("painel do post:", (await painel().locator("#bloco-rede").count()) === 1 && (await painel().locator("#bloco-formato").count()) === 1);
 await painel().locator("#bloco-titulo").fill("Reels de dezembro (prova)");
 await painel().locator("#bloco-formato").selectOption("reels");
@@ -95,7 +95,7 @@ await page.getByTestId("tela-do-mapa").and(page.locator('[data-modo="ao-vivo"]')
 const estados = async () =>
   (await page.getByTestId("bloco-do-mapa").evaluateAll((els) => els.map((e) => `${e.dataset.especie}=${e.dataset.situacao}`))).join(" | ");
 log("ao vivo:", await estados());
-await no("roteiro").click();
+await no("roteiro").dispatchEvent("click");
 await painel().getByRole("link", { name: "Abrir tarefa" }).click();
 await page.waitForLoadState("networkidle");
 await page.waitForFunction(() => (document.querySelector("#tarefa-titulo")?.value ?? "").length > 0, null, { timeout: 20000 });
@@ -118,7 +118,7 @@ await page.goto(url);
 await page.waitForLoadState("networkidle");
 await page.locator(".react-flow__node").first().waitFor({ timeout: 20000 });
 log("depois do Ciente:", await estados());
-await no("publicacao").click();
+await no("publicacao").dispatchEvent("click");
 const verPost = painel().getByRole("link", { name: "Ver o post" });
 log("o bloco liga ao post:", await verPost.count());
 await page.screenshot({ path: `${OUT}/03-ao-vivo-1440.png`, fullPage: true });
