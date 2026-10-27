@@ -16,6 +16,10 @@ const JOB = "cccccccc-0000-4000-8000-000000000001";
 const CONVERSATION = "dddddddd-0000-4000-8000-000000000001";
 const SESSION = "eeeeeeee-0000-4000-8000-000000000001";
 
+function kindOfMedia(media: ChannelSendInput["media"]) {
+  return media && ("storagePath" in media ? media.kind : media.type);
+}
+
 function product(
   code: string,
   overrides: Partial<ResolvedCatalogPresentation> = {},
@@ -76,7 +80,7 @@ function fixture(
     channel: "test",
     async send(input) {
       sent.push(input);
-      events.push(`channel:${input.seq}:${input.media?.kind ?? "text"}`);
+      events.push(`channel:${input.seq}:${kindOfMedia(input.media) ?? "text"}`);
       const kind = options.outcomes?.[outcomeIndex++] ?? "sent";
       if (kind === "unavailable") return { kind, reason: "test" };
       if (kind === "blocked") return { kind, idempotencyKey: `key-${input.seq}` };
@@ -168,7 +172,7 @@ describe("executor serial da apresentação do catálogo", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(f.sent.map((input) => [input.seq, input.body, input.media?.kind])).toEqual([
+    expect(f.sent.map((input) => [input.seq, input.body, kindOfMedia(input.media)])).toEqual([
       [1, "Apartamento CENTRO\n\nDescrição CENTRO", undefined],
       [2, "Apartamento JARDINS", undefined],
       [3, "", "audio"],

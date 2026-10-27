@@ -64950,8 +64950,7 @@ create index if not exists catalog_product_presentations_org_idx
 
 alter table public.catalog_product_presentations enable row level security;
 
-drop policy if exists catalog_product_presentations_select
-  on public.catalog_product_presentations;
+drop policy if exists catalog_product_presentations_select on public.catalog_product_presentations;
 create policy catalog_product_presentations_select
   on public.catalog_product_presentations
   for select using (
@@ -64959,8 +64958,7 @@ create policy catalog_product_presentations_select
     or public.fn_is_platform_admin()
   );
 
-drop policy if exists catalog_product_presentations_write
-  on public.catalog_product_presentations;
+drop policy if exists catalog_product_presentations_write on public.catalog_product_presentations;
 create policy catalog_product_presentations_write
   on public.catalog_product_presentations
   using (

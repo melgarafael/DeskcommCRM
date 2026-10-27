@@ -304,7 +304,7 @@ describe("integração da seleção persistida com a disposição do worker", ()
       acionada,
       apresentacaoEncerraTurno,
     );
-    const model = new MockLanguageModelV3({
+    const model: MockLanguageModelV3 = new MockLanguageModelV3({
       doGenerate: async (options) => {
         const step = model.doGenerateCalls.length;
         if (step === 2) {

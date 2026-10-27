@@ -45,11 +45,15 @@ const planned = planCatalogPresentation({
 });
 if (!planned.ok) throw Error(planned.error.code);
 const SNAPSHOT = { schema_version: 1 as const, sends_already_counted: 0, ordered_product_codes: ["A", "B"], plan: planned.plan, agent_operation: OPERATION };
-const JOB = {
+const JOB: JobRow = {
   id: JOB_ID, organization_id: ORG, contact_id: CONTACT, kind: "inbound_turn", status: "running",
   payload: { service_boundary: BOUNDARY }, catalog_presentation_snapshot: SNAPSHOT,
   locked_by: "worker", claim_acquired_at: "2026-10-27T00:00:00.000Z",
-} as JobRow;
+  source_event_id: null, priority: 100, attempts: 0, max_attempts: 5, last_error: null,
+  locked_at: new Date("2026-10-27T00:00:00.000Z"),
+  run_after: new Date("2026-10-27T00:00:00.000Z"),
+  created_at: new Date("2026-10-27T00:00:00.000Z"),
+};
 
 function world(change?: (state: ReturnType<typeof stateOfAgent>) => void, currentLease = true) {
   const state = stateOfAgent();
@@ -98,7 +102,7 @@ function world(change?: (state: ReturnType<typeof stateOfAgent>) => void, curren
   let pauseChecks = 0;
   const deps: CatalogPresentationResumeDeps = {
     channel: new WahaChannelAdapter(pool, { supabase }),
-    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     maxSendsPerTurn: 10, queuedRetryDelayMs: 30_000, respostaObsoletaTetoMs: 0,
     clock: () => new Date("2026-10-27T12:00:00.000Z"),
     sleep: async () => {},

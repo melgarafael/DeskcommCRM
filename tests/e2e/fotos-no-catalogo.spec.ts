@@ -23,6 +23,7 @@
  * Pré-requisito: `.e2e-creds.json` (o helper roda o seed se faltar). Sem WAHA,
  * Resend, Nuvemshop nem Redis.
  */
+import { mkdirSync } from "node:fs";
 import * as zlib from "node:zlib";
 
 import { test, expect, type Locator, type Page, type TestInfo } from "./helpers/test";
@@ -273,6 +274,9 @@ test("gerente cria a primeira apresentação, persiste e não sobrescreve com re
   await linha(page).getByTestId("abrir-apresentacao-ia").click();
   await expect(linha(page).getByTestId("apresentacao-texto")).toHaveValue(salva.text_content);
   await expect(linha(page).getByTestId("apresentacao-ativa")).toBeChecked();
+  // O CI publica evidence/ também em sucesso; o attach abaixo fica preservado.
+  mkdirSync("evidence/catalogo-apresentacoes", { recursive: true });
+  await page.screenshot({ path: "evidence/catalogo-apresentacoes/primeiro-save-persistido.png", fullPage: true });
   await evidencia(page, info, "06-apresentacao-inicial-persistida");
 });
 
