@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { TelaDoMapa } from "@/components/agencia/mapas/TelaDoMapa";
 import { requireAreaDaAgencia } from "@/lib/agencia/acesso";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
+import { iaDisponivel } from "@/lib/agencia/ia/modelo";
 import { lerMapa } from "@/lib/agencia/mapas/motor";
 import { idSchema } from "@/lib/agencia/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -39,6 +40,7 @@ export default async function PaginaDoMapa({ params }: { params: Promise<{ id: s
         checklist: b.checklist,
         links: b.links,
         executor: b.executor,
+        acaoIa: b.acao_ia,
         situacao: b.situacao,
         tarefaId: b.tarefa_id,
       }))}
@@ -46,6 +48,7 @@ export default async function PaginaDoMapa({ params }: { params: Promise<{ id: s
       membros={(membros ?? []) as Array<{ id: string; nome: string }>}
       funcoes={(funcoes ?? []) as Array<{ id: string; nome: string }>}
       podeEditar={ctx.permissoes.has("mapa.editar")}
+      iaDisponivel={iaDisponivel()}
     />
   );
 }

@@ -30,6 +30,8 @@ export interface BlocoDoMapa {
   checklist: string[];
   links: string[];
   executor: "humano" | "ia";
+  /** A ação do catálogo que a tarefa do bloco vai executar (SPEC-ia-da-agencia, I4). */
+  acao_ia: string | null;
   situacao: "bloqueado" | "liberado" | "em_andamento" | "concluido";
   tarefa_id: string | null;
   liberado_em: string | null;
@@ -86,6 +88,7 @@ async function criarTarefaDoBloco(b: BlocoDoMapa, clienteId: string, clienteNome
       cliente_id: clienteId,
       funcao_id: b.responsavel_id ? null : b.funcao_id,
       executor: b.executor,
+      acao_ia: b.executor === "ia" ? b.acao_ia : null,
     })
     .select("id")
     .single();

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { exigirPermissao, type ContextoDaAgencia } from "@/lib/agencia/acesso";
 import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agencia/auditoria";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
+import { ACOES_DA_IA } from "@/lib/agencia/ia/catalogo";
 import { concluirMarcoDoMapa, lerMapa, publicarMapa } from "@/lib/agencia/mapas/motor";
 import { problemaNoMapa } from "@/lib/agencia/mapas/regras";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
@@ -77,6 +78,8 @@ const blocoSchema = z.object({
   checklist: z.array(z.string().trim().min(1).max(300)).max(50),
   links: z.array(z.string().trim().max(2000).refine((u) => /^https?:\/\//i.test(u), "Link precisa começar com http.")).max(20),
   executor: z.enum(["humano", "ia"]),
+  /** O que a IA faz quando o bloco é dela (SPEC-ia-da-agencia, I4). */
+  acaoIa: z.enum(ACOES_DA_IA).nullable().prefault(null),
   /** Os blocos de que este depende (as setas que chegam nele). Só vale em rascunho. */
   dependeDe: z.array(z.string().uuid()).max(30),
 });
@@ -105,6 +108,7 @@ export async function salvarBloco(entrada: EntradaDoBloco): Promise<ResultadoDaA
       checklist: d.checklist,
       links: d.links,
       executor: d.executor,
+      acao_ia: d.executor === "ia" ? (d.acaoIa ?? "roteiro") : null,
     };
     let id = d.id;
     if (id) {

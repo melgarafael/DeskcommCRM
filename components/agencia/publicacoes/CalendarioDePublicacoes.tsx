@@ -77,7 +77,9 @@ type Rascunho = Omit<PublicacaoNaTela, "id" | "clienteNome" | "situacao" | "auto
 
 function nomeDoMes(mes: string): string {
   const [a, m] = mes.split("-").map(Number) as [number, number];
-  return new Date(Date.UTC(a, m - 1, 15)).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+  const nome = new Date(Date.UTC(a, m - 1, 15)).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+  // Só a primeira letra: "Novembro de 2026", nunca "Novembro De 2026".
+  return nome.charAt(0).toUpperCase() + nome.slice(1);
 }
 
 export function CalendarioDePublicacoes(p: Props) {
@@ -165,7 +167,7 @@ export function CalendarioDePublicacoes(p: Props) {
         <Link href={url({ mes: somarMeses(p.mes, -1) })} className="rounded-md border px-2 py-1 hover:bg-accent" aria-label="Mês anterior">
           ←
         </Link>
-        <span className="min-w-[10rem] text-center font-medium capitalize" data-testid="mes-aberto">
+        <span className="min-w-[10rem] text-center font-medium" data-testid="mes-aberto">
           {nomeDoMes(p.mes)}
         </span>
         <Link href={url({ mes: somarMeses(p.mes, 1) })} className="rounded-md border px-2 py-1 hover:bg-accent" aria-label="Próximo mês">

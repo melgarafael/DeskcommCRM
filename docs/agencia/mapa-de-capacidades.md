@@ -10,6 +10,7 @@
 > - **Fase 7** (aprovações do cliente): construída, publicada e provada no teste em 26/10/2026 — [SPEC-aprovacoes](SPEC-aprovacoes.md), [plano-fase-7](plano-fase-7.md).
 > - **Fase 8a** (mapa mental): construída, publicada e provada no teste em 26/10/2026 — [SPEC-mapa-mental](SPEC-mapa-mental.md), [plano-fase-8](plano-fase-8.md).
 > - **Fase 8b** (publicações): construída, publicada e provada no teste em 26/10/2026 — [SPEC-publicacoes](SPEC-publicacoes.md), [plano-fase-8](plano-fase-8.md). A publicação automática na Meta não foi exercida com conta real.
+> - **Fase 9** (IA da agência): construída e publicada no teste em 27/10/2026 — [SPEC-ia-da-agencia](SPEC-ia-da-agencia.md), [plano-fase-9](plano-fase-9.md). Provada sem modelo (o teste não tem chave de IA); o caminho com modelo espera a chave.
 > Este arquivo é o índice da iniciativa: cada módulo abaixo ganha a sua própria
 > especificação (`docs/agencia/SPEC-<id>.md`) só depois que este mapa for aprovado.
 

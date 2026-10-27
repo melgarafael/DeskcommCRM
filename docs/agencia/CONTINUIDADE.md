@@ -1,6 +1,6 @@
 # Módulo da Agência — documento de continuidade
 
-> Escrito em **26/10/2026, ~19h20 (Brasília)**, a pedido do dono, para outra IA (ou pessoa)
+> Escrito em **26/10/2026, ~19h20 (Brasília)** e atualizado em **27/10/2026 ~00h30**, a pedido do dono, para outra IA (ou pessoa)
 > continuar exatamente de onde o trabalho parou. Leia este arquivo inteiro antes de tocar
 > em qualquer coisa. Depois, leia o [`CLAUDE.md`](../../CLAUDE.md) da raiz (a doutrina do
 > repositório) e o [`mapa-de-capacidades.md`](mapa-de-capacidades.md) (o índice da iniciativa).
@@ -9,78 +9,40 @@
 
 ## 1. Onde o trabalho parou (estado exato)
 
-**Atualização de 26/10/2026 ~22h:** a Fase 6 foi provada pela tela e commitada (ver
-[`plano-fase-6.md`](plano-fase-6.md)). A próxima é a **Fase 7**. O texto abaixo descreve o
-estado no momento em que este documento foi escrito (antes da prova) e segue válido como
-roteiro.
-
-**Fase 6 — Contratos: CONSTRUÍDA e PUBLICADA no teste, mas NÃO PROVADA pela tela e NÃO
-COMMITADA.**
+**Atualização de 27/10/2026 ~00h30 (Brasília):** as **nove fases do mapa estão construídas e
+publicadas no teste**. As fases 1 a 8 foram provadas pela tela; a Fase 9 (IA) foi provada em tudo
+o que não chama o modelo, porque o teste não tem chave de IA (ver o
+[`plano-fase-9.md`](plano-fase-9.md)). Nada foi para o GitHub e nada foi para a central.
 
 | Item | Estado |
 |---|---|
-| Branch | `feat/agencia-fase-6` (sai do commit da Fase 5, `9bbce4938`) |
 | Worktree | `F:\Área de Trabalho\SITES CLIENTES\CRM TESTE\DeskcommCRM-agencia` |
-| Arquivos da Fase 6 | **26 alterados/novos, sem commit** (`git status` no worktree) |
-| Spec | [`SPEC-contratos.md`](SPEC-contratos.md) — escrita e decidida |
-| Migration | `supabase/migrations/20261026200000_9008_agencia_contratos.sql` + apêndice no `baseline.sql` |
-| Banco na VPS (`pnpm test:db`) | **verde**: install + update sem erro, 104/104 invariantes da agência (inclui `tests/invariants/agencia-fase-6.test.ts`) — ATENÇÃO: esse teste rodou ANTES de tirar o motivo `contrato` do CHECK do WhatsApp; rode de novo antes do commit |
-| Typecheck | limpo (`tsc=0`) |
-| Lint | limpo nos arquivos da fase |
-| Testes unitários | `tests/unit/agencia-contratos-regras.test.ts` passa; as falhas que sobram nas cercas são **antigas do fork** (ver §7) |
-| Publicado no teste | **sim**, em 26/10 19:04–19:14 UTC (TS `20261026-190443`): SQL 9008 aplicado no banco do teste, app e worker reconstruídos, `/` 200, `/app` 307; os dois webhooks novos respondem **403** com segredo errado |
-| Prova pela tela | **NÃO feita** |
-| Doc de plano da fase | **não escrito** (`plano-fase-6.md` falta) |
+| Última branch | `feat/agencia-fase-9` (encadeada: sai da 8, que sai da 7…) |
+| Migrations da agência | 9003–9012 (9010 mapa mental, 9011 publicações, 9012 IA). **Próxima livre: 9013** — e veja a colisão do §6b |
+| Teste | tudo publicado; o último pacote foi `f12` + `f12b` (modal da tarefa) |
+| Central (produção) | **intocada** — levar o módulo para lá é decisão do dono |
 
-### Para fechar a Fase 6 (na ordem)
+### O que falta (na ordem que faz sentido)
 
-1. **Rodar o `test:db` de novo** (o CHECK do WhatsApp mudou depois da última rodada) — §5.3.
-2. **Provar pela tela no teste** (§5.5), como o membro de teste com uma função temporária que
-   tenha `contratos.gerenciar` + `clientes.gerenciar` (e tirar a função no fim):
-   - ficha do cliente "Empresa Modelo (Testes)" › aba **Contratos** › "Novo contrato" com o
-     modelo inicial, valor `2.500,00` → "Ver prévia" (mostra o que falta) → "Gerar contrato";
-   - "Abrir PDF" (rota `/api/v1/agencia/contratos/<id>/pdf`, deve vir `application/pdf`);
-   - "Ajustar texto" (só em rascunho);
-   - "Marcar assinado" e "Marcar pago" (à mão) → a mensagem deve dizer "Assinado e pago!" e
-     listar o que foi feito e o que falta. Conferir no banco: `agencia_contratos.situacao =
-     'concluido'`, cliente `situacao = 'ativo'`, novo `agencia_formularios` aberto, aviso
-     `contrato_concluido`. Como o WhatsApp da agência NÃO está configurado no teste, o grupo
-     e o envio do formulário devem cair em "falta fazer à mão" — isso é o comportamento certo;
-   - a trilha da Empresa Modelo já tem "Contrato assinado e pago" **concluído** (foi a prova da
-     Fase 4), então a conclusão do contrato vai registrar só a pendência — para provar a trilha
-     junto, use outro cliente com trilha iniciada até o Fechamento;
-   - "Recusou" num segundo contrato → cliente vai para `remarketing` (depois volte a situação
-     do cliente à mão para não sujar o teste);
-   - `/agencia/contratos` (lista), `/agencia/contratos/modelos` (editor), Configurações ›
-     "Contratos: assinatura e pagamento" (só salvar o InfiniteTag de mentira e ver que guarda;
-     **não** cadastrar token real de ZapSign sem o dono);
-   - 375 px sem rolagem lateral na aba Contratos;
-   - capturas em `evidence/agencia-fase-6/` (sem nenhum PDF com dado sensível).
-3. Escrever `docs/agencia/plano-fase-6.md` (mesmo formato do `plano-fase-5.md`) e acrescentar a
-   linha da Fase 6 no cabeçalho do `mapa-de-capacidades.md`.
-4. Rodar `typecheck` (`NODE_OPTIONS=--max-old-space-size=7168 npx tsc --noEmit -p
-   tsconfig.typecheck.json`) — **sempre antes de commitar** (ver §8, lição 1).
-5. Commit na `feat/agencia-fase-6` com a mensagem no padrão das anteriores (ver
-   `git log -5` no worktree) e a linha `Co-Authored-By`.
-6. Atualizar a memória do projeto (§6).
+1. **Provar a IA com modelo** quando o dono puser uma chave no `.env` do teste:
+   [`scripts/prova-fase9-com-modelo.mjs`](scripts/prova-fase9-com-modelo.mjs) (o roteiro está no
+   plano da Fase 9).
+2. **Provar a publicação automática na Meta** com uma **conta de teste da Meta**. Nunca use a
+   organização "Empresa Modelo (Testes)": a conexão Meta dela é **real** (ver o plano da
+   Fase 8, 8b).
+3. **Resolver a colisão de numeração** com o outro chat (§6b) antes de juntar as branches na
+   `main`.
+4. **Juntar as branches** (`feat/agencia-fase-1` … `-9`) e decidir com o dono como e quando o
+   módulo vai para a central. Isso exige autorização explícita, e o `update.sh` da central
+   aplica o baseline.
+5. Fora do mapa, mas citados pelo dono:
+   - as trilhas dos clientes avulsos (gravação, tráfego, site…), ainda não descritas;
+   - TikTok e YouTube nas publicações (precisam de pesquisa e de app aprovado);
+   - a criação real de campanha pausada no Gerenciador de Anúncios (I5 da spec da IA).
 
 ---
 
-## 2. O que falta depois da Fase 6
-
-| Fase | Módulos | O que entrega | Observações para quem for fazer |
-|---|---|---|---|
-| **7** | `aprovacoes` | Aba da agência **dentro da organização do cliente** (`/app`, o CRM do cliente): o cliente aprova vídeos, roteiros, artes e a estratégia do mês; aviso no grupo do WhatsApp apontando para lá (D11). | **É a única fase que toca telas/tabelas que as organizações já usam** — o mapa (§Limites) manda **perguntar ao dono antes**. Precisa de RLS por `organization_id` (o cliente da agência tem `agencia_clientes.organization_id`). Respeitar a doutrina de multi-tenancy do `CLAUDE.md`. |
-| **8** | `mapa-mental`, `publicacoes` | Mapa mental com duas telas — **Criação** (blocos com responsável, prazo, checklist, anexos, cor, link, executor humano/IA; ligações e desbloqueios; rascunho) e **Ao vivo** (publicado, cumprido etapa por etapa, como fases de jogo; bloco vira tarefa) (D12, D16, D17); calendário de postagens por cliente e publicação agendada (Instagram/Facebook pela Meta primeiro). | Pesquisa pendente: o token da Meta da instalação (migration 9002 do outro chat) cobre `instagram_content_publish` / `pages_manage_posts`? TikTok e YouTube exigem app aprovado. O motor de desbloqueio da trilha (`lib/agencia/trilhas/regras.ts`) serve de base para o mapa. |
-| **9** | `ia-da-agencia` | IA montando o mapa (chat que cria blocos), organizando o mês, rascunhando proposta/contrato, checklist da Apresentação, árvore de links; **executor IA** dos blocos marcados "IA": campanha criada **pausada** para aval humano, publicação agendada (D17). | Usar o Vercel AI Gateway do repo (`CLAUDE.md` › Stack). Ação que gasta dinheiro nasce pausada. A tarefa já tem o campo `executor` (humano/ia) desde a Fase 2. |
-
-O dono pediu (26/10/2026): **tocar as fases em sequência sem parar para aprovação** —
-escrever a spec como registro, construir, testar, publicar no teste, provar, commitar e
-emendar a próxima. Exceções que continuam valendo: **não fazer push**, **não tocar na central
-(produção) sem autorização explícita**, e a Fase 7 pede consulta antes porque mexe no lado do
-cliente (regra do próprio mapa).
-
-### Pendências que dependem do dono (fora do código)
+## 2. Pendências que dependem do dono (fora do código)
 
 1. **Google**: no Google Cloud do app da Agenda, ativar a **Google Drive API**, acrescentar os
    escopos `drive.file` e `calendar.events` e o endereço de retorno
@@ -88,13 +50,18 @@ cliente (regra do próprio mapa).
    agência, **Conectar/Reconectar Google** marcando Drive e Agenda.
 2. **WhatsApp da agência**: conectar o número por QR (WAHA) numa organização própria da agência
    e escolhê-lo em Configurações da agência. Sem isso não sai aviso, lembrete, link de
-   formulário, mensagem de reunião, nem grupo.
+   formulário, mensagem de reunião, pedido de aprovação, nem grupo.
 3. **Avisos gerais**: hoje **ninguém** recebe avisos gerais no teste (o login do dono não tem
    perfil de membro e nenhuma função tem "Receber os avisos gerais"). Configurações mostra um
    alerta. O dono precisa ativar o perfil em `/agencia/perfil` ou dar a permissão a alguém.
-4. **Contratos**: trocar o modelo inicial pelo texto real (o dono disse que traria "o resumo
-   dos modelos" de outro chat); cadastrar o token da ZapSign e o InfiniteTag em Configurações.
-5. **Formulário antigo** (`formulario.emmovimento.tech`) pode ser aposentado quando o dono quiser.
+   Por isso o aviso "não publicou" da 8b não chegou a ninguém na prova.
+4. **Contratos**: trocar o modelo inicial pelo texto real; cadastrar o token da ZapSign e o
+   InfiniteTag em Configurações.
+5. **Chave de IA** no `.env` do teste (e, um dia, na central) para a Fase 9 funcionar. Cada
+   pedido gasta crédito do provedor.
+6. **Meta**: para publicar sozinho, a conexão Meta da organização do cliente precisa das
+   permissões `instagram_content_publish` / `pages_manage_posts`.
+7. **Formulário antigo** (`formulario.emmovimento.tech`) pode ser aposentado quando o dono quiser.
 
 ---
 
@@ -133,7 +100,7 @@ Instalações: **central.emmovimento.tech** = produção (NÃO MEXER sem autoriz
 - Cada tarefa/bloco tem executor humano ou IA; ação que gasta dinheiro nasce pausada (D17).
 - Tudo responsivo (celular e computador) (D14).
 
-### O que já existe (Fases 1–6)
+### O que já existe (Fases 1–9)
 
 | Fase | Commit | Migration | Entrega |
 |---|---|---|---|
@@ -142,7 +109,11 @@ Instalações: **central.emmovimento.tech** = produção (NÃO MEXER sem autoriz
 | 3 | `da8b76227` (`feat/agencia-fase-3`) | 9005 | Calendário (Semana/Mês/Próximos), reuniões com Meet pela Agenda Google, Fechamento D+7 automático, pauta da Apresentação, lembretes 1 dia/1 hora, ata e gravação, WhatsApp ao cliente. |
 | 4 | `9d59e64e9` (`feat/agencia-fase-4`) | 9006 | Trilha do cliente: modelo "Cliente recorrente" (20 passos das Etapas 1 e 2), desbloqueio, prazos por regra, regra do dia 15, começar do meio, remarcar Apresentação arrasta o Fechamento, relógio da trilha, painel e editor de modelos. |
 | 5 | `9bbce4938` (`feat/agencia-fase-5`) | 9007 | Formulário de acesso público (link de 72 h, rascunho sem senha, várias empresas, CNPJ validado) e cofre de senhas (AES-256-GCM, "Ver senha" registrado, relatório PDF, 403 sem permissão). |
-| 6 | **sem commit** (`feat/agencia-fase-6`) | 9008 | Contratos: modelos com campos, PDF, ZapSign/InfinitePay opcionais com webhooks conferidos, marcar à mão, assinado e pago → cliente ativo + trilha + formulário + grupo + aviso, recusa → remarketing. |
+| 6 | `6a1c64b0b` (`feat/agencia-fase-6`) | 9008 | Contratos: modelos com campos, PDF, ZapSign/InfinitePay opcionais com webhooks conferidos, marcar à mão, assinado e pago → cliente ativo + trilha + formulário + grupo + aviso, recusa → remarketing. |
+| 7 | `b383d513a` (`feat/agencia-fase-7`) | 9009 | Aprovações do cliente: a agência pede (vídeo, roteiro, arte, estratégia), o cliente aprova ou pede ajustes em `/app/aprovacoes` da organização dele; versões; a tarefa ligada acompanha. Primeira tabela da agência com `organization_id` e RLS de tenant. |
+| 8a | `a2e0420bf` + `3946f4b87` (`feat/agencia-fase-8`) | 9010 | Mapa mental: Criação (blocos, setas sem círculo, arrasto) e Ao vivo (bloco liberado vira tarefa; tarefa concluída libera os seguintes). |
+| 8b | `3aa2267bd` (`feat/agencia-fase-8`) | 9011 | Calendário de publicações ligado às aprovações; marcar publicada à mão; publicar sozinho na Meta por chave da publicação (desligada por padrão), pelo cron `agencia-prazos`. |
+| 9 | ver `git log` em `feat/agencia-fase-9` | 9012 | IA da agência: "Pedir à IA" no mapa (proposta conferida antes de aplicar) e executor IA na tarefa (roteiro, legenda, pautas, rascunho de campanha só em texto, publicação em rascunho). |
 
 As branches são **encadeadas** (cada uma sai da anterior); nenhuma foi para a `main` nem para
 o GitHub. O trabalho de cada fase tem **spec** (`SPEC-*.md`) e **plano com a verificação**
@@ -162,7 +133,9 @@ o GitHub. O trabalho de cada fase tem **spec** (`SPEC-*.md`) e **plano com a ver
 | Avisos | `lib/agencia/avisos/criar.ts` (`criarAviso` — a ÚNICA porta) e `tipos.ts` |
 | WhatsApp da agência | `lib/agencia/whatsapp/` (fila `enfileirar.ts`, regra `regra.ts`, handler do `event_log`, grupo `grupo.ts`) |
 | Google (Drive + Agenda) | `lib/agencia/acervo/drive.ts` (uma conexão só), `lib/agencia/calendario/google.ts` |
-| Tarefas, calendário, trilha, cofre, formulário, contratos | `lib/agencia/{tarefas,calendario,trilhas,cofre,formulario,contratos}/` |
+| Tarefas, calendário, trilha, cofre, formulário, contratos, aprovações, mapa, publicações, IA | `lib/agencia/{tarefas,calendario,trilhas,cofre,formulario,contratos,aprovacoes,mapas,publicacoes,ia}/` |
+| Tela do cliente (organização) | `app/app/aprovacoes/` (capacidade `aprovacoes_da_agencia`) |
+| Gancho "a tarefa mudou" | `aoMudarTarefa` em `lib/agencia/trilhas/motor.ts`, que avisa a trilha **e** o mapa; a resposta do cliente à aprovação chama a publicação ligada (`aoResponderAprovacaoDaPublicacao`) |
 | Ações (server actions) | `app/actions/agencia/*.ts` — toda escrita chama `exigirPermissao` e confere o alcance do cliente |
 | Telas | `app/agencia/(area)/**` (área logada), `app/agencia/convite/[token]` e `app/agencia/formulario/[token]` (públicas) |
 | Componentes | `components/agencia/**` |
@@ -179,8 +152,8 @@ o GitHub. O trabalho de cada fase tem **spec** (`SPEC-*.md`) e **plano com a ver
 - **Toda mudança de schema** = migration nova em `supabase/migrations/<timestamp>_<NNNN>_<slug>.sql`
   com `-- manifest:` no cabeçalho **+** o mesmo conteúdo no apêndice do `supabase/baseline.sql`,
   **antes** da linha `-- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----`.
-  Numeração do fork: 9001 e 9002 são do **outro chat** (catálogo, Meta); 9003–9008 são deste
-  módulo. **A próxima livre é 9009** — confira antes com
+  Numeração do fork: 9001 e 9002 são do **outro chat** (catálogo, Meta); 9003–9012 são deste
+  módulo. **A próxima livre é 9013** — confira antes com
   `find supabase/migrations -name "*_90*"` no worktree **e** no checkout principal.
 - Idempotência: `create … if not exists`, `drop constraint if exists` antes de recriar CHECK.
 - Datas sempre no fuso **America/Sao_Paulo** (`formatarDataHora`, `diaLocal`, `instanteDoDia`).
@@ -324,8 +297,8 @@ No teste nada quebra (cada SQL foi aplicado pelo conteúdo). Mas, quando as bran
 e a do outro chat se encontrarem na `main`, `tests/unit/manifest-x-migrations.test.ts` reprova
 (número e carimbo repetidos). **Antes de juntar**, uma das duas tem de ser renumerada (com o
 apêndice do `baseline.sql` acompanhando o novo número) — decisão do dono, porque a do outro
-chat pode já ter sido aplicada na central. Os números da agência são 9003–9009; para novas, use
-**9010 em diante** e confira os dois checkouts antes.
+chat pode já ter sido aplicada na central. Os números da agência são 9003–9012; para novas, use
+**9013 em diante** e confira os dois checkouts antes.
 
 ## 7. Falhas de teste que NÃO são do módulo (já existiam no fork)
 
@@ -358,13 +331,23 @@ Confira sempre se alguma linha cita `agencia` — essas sim são do módulo.
 5. Zod 4: objeto com padrão que passa pelo parse usa `.prefault({})`, não `.default({})`.
 6. `"use server"` só exporta funções assíncronas (e tipos).
 7. Cliente sem perfil de membro não recebe aviso: o dono precisa ativar o perfil.
+8. **SQL com `$$` nunca entra por `String.replace` do JavaScript** (o `$$` da substituição vira `$`).
+   Insira o apêndice por fatia (`s.slice(0, i) + bloco + s.slice(i)`) ou pelo Python do
+   `publicar-fase.sh`. O `test:db` pegou isso no install da Fase 9.
+9. **"Variável presente" não é "variável com valor"**: o `.env` do teste tem as chaves de IA com
+   `""`. Confira o comprimento (`${#v}`), nunca imprima o valor.
+10. **Antes de qualquer prova que publique fora**, confira se a organização tem conexão real. A
+    "Empresa Modelo (Testes)" tem Meta real conectada.
+11. Depois de um pedido ao servidor que muda a tarefa, o formulário aberto precisa **reler**; senão
+    o próximo Salvar desfaz a mudança (achado da Fase 9).
+12. No Git Bash, o Node do Windows não enxerga o `/tmp` do Bash (lê `F:\tmp`): use a pasta de
+    rascunho ou `cygpath -w`.
 
 ---
 
 ## 9. Checklist rápido para a próxima IA
 
 - [ ] Ler este arquivo, o `CLAUDE.md` e o `mapa-de-capacidades.md`.
-- [ ] No worktree: `git status` (os 26 arquivos da Fase 6) e `git log -6`.
-- [ ] Fechar a Fase 6 pelo §1 (test:db de novo, prova pela tela, plano, typecheck, commit).
-- [ ] Perguntar ao dono antes da Fase 7 (toca o lado do cliente).
+- [ ] No worktree: `git status` e `git log -8` na `feat/agencia-fase-9`.
+- [ ] Ver o §1 › "O que falta" e o §2 (pendências do dono).
 - [ ] Nunca: push, central, Docker no PC, senha em chat, mexer no checkout principal.

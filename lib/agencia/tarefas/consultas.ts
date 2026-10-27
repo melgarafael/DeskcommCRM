@@ -120,6 +120,9 @@ export async function listarTarefas(quem: QuemOlha, filtro: { clienteId?: string
 export interface TarefaCompleta extends TarefaDoQuadro {
   descricao: string | null;
   executor: "humano" | "ia";
+  /** A ação do catálogo da IA e o último resultado (SPEC-ia-da-agencia). */
+  acaoIa: string | null;
+  resultadoIa: string | null;
   checklist: Array<{ id: string; texto: string; feito: boolean }>;
   links: Array<{ id: string; titulo: string; url: string }>;
   arquivos: Array<{ id: string; nome: string; link: string; tamanho: number | null }>;
@@ -129,8 +132,8 @@ export interface TarefaCompleta extends TarefaDoQuadro {
 /** Uma tarefa com tudo, ou `null` quando não existe ou a pessoa não pode ver. */
 export async function carregarTarefa(id: string, quem: QuemOlha): Promise<TarefaCompleta | null> {
   const db = createAdminClient();
-  const { data } = await db.from("agencia_tarefas").select(`${SELECAO}, descricao, executor`).eq("id", id).maybeSingle();
-  const l = data as unknown as (LinhaBruta & { descricao: string | null; executor: "humano" | "ia" }) | null;
+  const { data } = await db.from("agencia_tarefas").select(`${SELECAO}, descricao, executor, acao_ia, resultado_ia`).eq("id", id).maybeSingle();
+  const l = data as unknown as (LinhaBruta & { descricao: string | null; executor: "humano" | "ia"; acao_ia: string | null; resultado_ia: string | null }) | null;
   if (!l) return null;
   const responsaveis = (l.agencia_tarefas_responsaveis ?? []).map((r) => r.membro_id);
   if (!podeVerTarefa(quem, { clienteId: l.cliente_id, funcaoId: l.funcao_id, responsaveis })) return null;
@@ -145,6 +148,8 @@ export async function carregarTarefa(id: string, quem: QuemOlha): Promise<Tarefa
     ...paraQuadro(l, quem, new Date()),
     descricao: l.descricao,
     executor: l.executor,
+    acaoIa: l.acao_ia,
+    resultadoIa: l.resultado_ia,
     checklist: (checklist.data ?? []) as TarefaCompleta["checklist"],
     links: (links.data ?? []) as TarefaCompleta["links"],
     arquivos: ((arquivos.data ?? []) as Array<{ id: string; nome: string; link: string; tamanho_bytes: number | null }>).map((a) => ({

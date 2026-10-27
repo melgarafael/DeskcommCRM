@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 
+import { definirAcaoDaIa, executarTarefaComIa } from "@/app/actions/agencia/ia";
 import {
   abrirTarefa,
   criarEmLote,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ACOES_DA_IA, ROTULO_DA_ACAO_DA_IA } from "@/lib/agencia/ia/catalogo";
 import type { TarefaCompleta } from "@/lib/agencia/tarefas/consultas";
 import { formatarDuracao, tempoTotalSegundos } from "@/lib/agencia/tarefas/regras";
 import {
@@ -119,6 +121,8 @@ export function ModalDaTarefa({
   const [minutos, setMinutos] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  // O que a IA respondeu (erro ou pronto) aparece na própria caixa da IA, à vista de quem clicou.
+  const [falaDaIa, setFalaDaIa] = useState<{ ok: boolean; texto: string } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [pendente, startTransition] = useTransition();
   const [agora, setAgora] = useState(() => Date.now());
@@ -127,6 +131,7 @@ export function ModalDaTarefa({
     if (!aberto) return;
     setErro(null);
     setAviso(null);
+    setFalaDaIa(null);
     if (!tarefaId) {
       setTarefa(null);
       setR(vazio(colunaInicial, clienteInicial, meuMembroId));
@@ -174,7 +179,8 @@ export function ModalDaTarefa({
         etiquetas: r.etiquetas,
         checklist: r.checklist,
         links: r.links,
-        executor: "humano",
+        // Tarefa da IA continua da IA: quem escolhe é o seletor "O que a IA faz".
+        executor: tarefa?.executor ?? "humano",
       });
       if (res.ok) aoFechar(true);
       else setErro(res.erro);
@@ -186,6 +192,35 @@ export function ModalDaTarefa({
   }
 
   const tempoTotal = tarefa ? tempoTotalSegundos(tarefa.sessoes, new Date(agora)) : 0;
+
+  /** Depois da IA a tarefa muda no servidor (coluna, checklist): o formulário relê, senão o Salvar desfaria. */
+  async function reler() {
+    if (!tarefa) return;
+    const t = await abrirTarefa(tarefa.id);
+    if (t) {
+      setTarefa(t);
+      setR(deTarefa(t));
+    }
+  }
+  function escolherAcaoDaIa(valor: string) {
+    if (!tarefa) return;
+    setFalaDaIa(null);
+    startTransition(async () => {
+      const res = await definirAcaoDaIa(tarefa.id, valor || null);
+      if (!res.ok) return setFalaDaIa({ ok: false, texto: res.erro });
+      await reler();
+    });
+  }
+  function executarComIa() {
+    if (!tarefa) return;
+    setFalaDaIa(null);
+    startTransition(async () => {
+      const res = await executarTarefaComIa(tarefa.id);
+      if (!res.ok) return setFalaDaIa({ ok: false, texto: res.erro });
+      setFalaDaIa({ ok: true, texto: "A IA terminou: confira o resultado. A tarefa foi para Revisão." });
+      await reler();
+    });
+  }
 
   return (
     <Dialog open={aberto} onOpenChange={(v) => !v && aoFechar(false)}>
@@ -200,6 +235,47 @@ export function ModalDaTarefa({
             <Label htmlFor="tarefa-titulo">Título</Label>
             <Input id="tarefa-titulo" value={r.titulo} onChange={(e) => setR({ ...r, titulo: e.target.value })} required />
           </div>
+
+          {tarefa && (
+            <div className="space-y-2 rounded-md border p-3" data-testid="ia-da-tarefa">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-[14rem] flex-1 space-y-1">
+                  <Label htmlFor="tarefa-acao-ia">IA</Label>
+                  <select id="tarefa-acao-ia" value={tarefa.acaoIa ?? ""} disabled={pendente} onChange={(e) => escolherAcaoDaIa(e.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
+                    <option value="">Sem IA (feita por pessoa)</option>
+                    {ACOES_DA_IA.map((a) => (
+                      <option key={a} value={a}>
+                        {ROTULO_DA_ACAO_DA_IA[a]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {tarefa.acaoIa && (
+                  <Button type="button" variant="outline" disabled={pendente || tarefa.coluna === "concluido"} onClick={executarComIa}>
+                    {pendente ? "Trabalhando…" : tarefa.resultadoIa ? "Executar de novo" : "Executar com IA"}
+                  </Button>
+                )}
+              </div>
+              {falaDaIa && (
+                <p role={falaDaIa.ok ? "status" : "alert"} data-testid="fala-da-ia" className={cn("text-sm", falaDaIa.ok ? "text-emerald-700 dark:text-emerald-400" : "text-destructive")}>
+                  {falaDaIa.texto}
+                </p>
+              )}
+              {tarefa.resultadoIa && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Resultado da IA (confira antes de usar)</span>
+                    <button type="button" className="text-xs underline" onClick={() => void navigator.clipboard?.writeText(tarefa.resultadoIa ?? "")}>
+                      Copiar
+                    </button>
+                  </div>
+                  <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-sans text-sm" data-testid="resultado-da-ia">
+                    {tarefa.resultadoIa}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Checklist</Label>

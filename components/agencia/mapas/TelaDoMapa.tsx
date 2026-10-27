@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type PointerEvent as EventoDePonteiro } from "react";
 
+import { aplicarPropostaDaIa, proporBlocosComIa } from "@/app/actions/agencia/ia";
 import { arquivarMapa, concluirMarco, desligarBlocos, excluirBloco, ligarBlocos, moverBloco, publicarOMapa, salvarBloco } from "@/app/actions/agencia/mapas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { diaDe, horaLocal, instanteDoDia } from "@/lib/agencia/calendario/regras";
+import { ACOES_DA_IA, ROTULO_DA_ACAO_DA_IA, type AcaoDaIa } from "@/lib/agencia/ia/catalogo";
+import type { Proposta } from "@/lib/agencia/ia/proposta";
 import { CORES_DO_BLOCO } from "@/lib/agencia/mapas/regras";
 import { formatarDataHora } from "@/lib/agencia/tarefas/regras";
 import { Check, Lock } from "@/lib/ui/icons";
@@ -33,6 +36,7 @@ export interface BlocoDaTela {
   checklist: string[];
   links: string[];
   executor: "humano" | "ia";
+  acaoIa: string | null;
   situacao: "bloqueado" | "liberado" | "em_andamento" | "concluido";
   tarefaId: string | null;
 }
@@ -61,6 +65,7 @@ interface Rascunho {
   checklist: string;
   links: string;
   executor: "humano" | "ia";
+  acaoIa: AcaoDaIa;
   dependeDe: string[];
   x: number;
   y: number;
@@ -80,6 +85,7 @@ function deBloco(b: BlocoDaTela, dependeDe: string[]): Rascunho {
     checklist: b.checklist.join("\n"),
     links: b.links.join("\n"),
     executor: b.executor,
+    acaoIa: (ACOES_DA_IA as readonly string[]).includes(b.acaoIa ?? "") ? (b.acaoIa as AcaoDaIa) : "roteiro",
     dependeDe,
     x: b.x,
     y: b.y,
@@ -93,6 +99,7 @@ export function TelaDoMapa(p: {
   membros: Array<{ id: string; nome: string }>;
   funcoes: Array<{ id: string; nome: string }>;
   podeEditar: boolean;
+  iaDisponivel: boolean;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
@@ -101,6 +108,8 @@ export function TelaDoMapa(p: {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [rascunho, setRascunho] = useState<Rascunho | null>(null);
   const [ligandoDe, setLigandoDe] = useState<string | null>(null);
+  const [pedidoIa, setPedidoIa] = useState("");
+  const [proposta, setProposta] = useState<Proposta | null>(null);
   const arraste = useRef<{ id: string; dx: number; dy: number; moveu: boolean } | null>(null);
   const area = useRef<HTMLDivElement>(null);
 
@@ -184,6 +193,7 @@ export function TelaDoMapa(p: {
       checklist: "",
       links: "",
       executor: "humano",
+      acaoIa: "roteiro",
       dependeDe: selecionado ? [selecionado] : [],
       x,
       y,
@@ -209,6 +219,7 @@ export function TelaDoMapa(p: {
         checklist: r.checklist.split("\n").map((x) => x.trim()).filter(Boolean),
         links: r.links.split("\n").map((x) => x.trim()).filter(Boolean),
         executor: r.executor,
+        acaoIa: r.executor === "ia" ? r.acaoIa : null,
         dependeDe: r.dependeDe,
       });
       if (!res.ok) return setMsg({ ok: false, texto: res.erro });
@@ -335,6 +346,86 @@ export function TelaDoMapa(p: {
         <p role="status" className={msg.ok ? "text-sm text-muted-foreground" : "text-sm text-destructive"} data-testid="mensagem-do-mapa">
           {msg.texto}
         </p>
+      )}
+
+      {criacao && editavel && (
+        <section className="space-y-2 rounded-md border p-3" data-testid="pedir-a-ia">
+          <Label htmlFor="pedido-ia">Pedir à IA</Label>
+          {!p.iaDisponivel ? (
+            <p className="text-sm text-muted-foreground">A instalação não tem chave de IA configurada. Peça a quem administra a instalação.</p>
+          ) : (
+            <>
+              <textarea
+                id="pedido-ia"
+                value={pedidoIa}
+                onChange={(e) => setPedidoIa(e.target.value)}
+                rows={2}
+                placeholder="Ex.: plano de dezembro com 8 Reels: roteiros, gravação em 2 dias, edição e aprovação do cliente antes do dia 20"
+                className="w-full rounded-md border bg-background p-2 text-sm"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pendente || pedidoIa.trim().length < 10}
+                  onClick={() => {
+                    setMsg(null);
+                    setProposta(null);
+                    startTransition(async () => {
+                      const r = await proporBlocosComIa(p.mapa.id, pedidoIa);
+                      if (!r.ok) return setMsg({ ok: false, texto: r.erro });
+                      setProposta(r.dados.proposta);
+                    });
+                  }}
+                >
+                  {pendente && !proposta ? "Pensando…" : "Propor blocos"}
+                </Button>
+              </div>
+            </>
+          )}
+          {proposta && (
+            <div className="space-y-2 rounded-md bg-muted/40 p-3 text-sm" data-testid="proposta-da-ia">
+              <p>{proposta.resumo}</p>
+              <ol className="list-decimal space-y-0.5 pl-5">
+                {proposta.blocos.map((b) => {
+                  const antes = proposta.ligacoes.filter((l) => l.para === b.chave).map((l) => proposta.blocos.find((x) => x.chave === l.de)?.titulo ?? tituloDe(l.de));
+                  return (
+                    <li key={b.chave} data-testid="bloco-proposto">
+                      <strong>{b.titulo}</strong>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {b.tipo === "marco" ? "Marco" : b.executor === "ia" ? `IA: ${ROTULO_DA_ACAO_DA_IA[b.acao_ia ?? "roteiro"]}` : "Pessoa"}
+                        {b.prazo_em_dias !== null ? ` · em ${b.prazo_em_dias} dia(s)` : ""}
+                        {antes.length ? ` · depois de ${antes.join(", ")}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  disabled={pendente}
+                  onClick={() =>
+                    agir(async () => {
+                      const r = await aplicarPropostaDaIa(p.mapa.id, proposta);
+                      if (r.ok) {
+                        setProposta(null);
+                        setPedidoIa("");
+                      }
+                      return r;
+                    }, `${proposta.blocos.length} blocos entraram no mapa.`)
+                  }
+                >
+                  Aplicar no mapa
+                </Button>
+                <Button type="button" variant="ghost" disabled={pendente} onClick={() => setProposta(null)}>
+                  Descartar
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
@@ -512,6 +603,18 @@ export function TelaDoMapa(p: {
                     </select>
                   </div>
                 </div>
+                {rascunho.executor === "ia" && (
+                  <div className="space-y-1">
+                    <Label htmlFor="bloco-acao-ia">O que a IA faz</Label>
+                    <select id="bloco-acao-ia" value={rascunho.acaoIa} onChange={(e) => setRascunho({ ...rascunho, acaoIa: e.target.value as AcaoDaIa })} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
+                      {ACOES_DA_IA.map((a) => (
+                        <option key={a} value={a}>
+                          {ROTULO_DA_ACAO_DA_IA[a]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label htmlFor="bloco-responsavel">Responsável</Label>
                   <select id="bloco-responsavel" value={rascunho.responsavelId} onChange={(e) => setRascunho({ ...rascunho, responsavelId: e.target.value })} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
