@@ -91,7 +91,7 @@ vi.mock("@/hooks/i18n/useT", () => ({ useT: () => traduzir }));
 
 vi.mock("@/hooks/i18n/useLocaleDeData", async () => {
   const { ptBR } = await import("date-fns/locale");
-  return { useLocaleDeData: () => ptBR, useTagDeIdioma: "pt-BR" };
+  return { useLocaleDeData: () => ptBR, useTagDeIdioma: () => "pt-BR" };
 });
 
 /**
