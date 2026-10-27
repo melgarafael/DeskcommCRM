@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { exigirPermissao } from "@/lib/agencia/acesso";
 import { auditarAgencia, erroDeAcesso, type ResultadoDaAcao } from "@/lib/agencia/auditoria";
-import { instanteDoDia } from "@/lib/agencia/calendario/regras";
+import { horaLocal, instanteDoDia } from "@/lib/agencia/calendario/regras";
 import { carregarAlcance, podeVerCliente } from "@/lib/agencia/clientes/visibilidade";
 import { FORMATOS, REDES, mudouOConteudo, problemaParaAgendar, type Formato, type Rede, type SituacaoDaPublicacao } from "@/lib/agencia/publicacoes/regras";
 import { idSchema, primeiroErro } from "@/lib/agencia/schemas";
@@ -223,4 +223,31 @@ export async function cancelarPublicacao(id: string): Promise<ResultadoDaAcao> {
 
 async function gravar(id: string, campos: Record<string, unknown>) {
   await createAdminClient().from("agencia_publicacoes").update(campos).eq("id", id).not("situacao", "in", "(publicada,publicando)");
+}
+
+/**
+ * Arrastar o post para outro dia no calendário (plano de 27/10, item 3): mantém
+ * a hora. Agendado que muda de data volta a "aprovada" — agenda-se de novo,
+ * como ao editar a data no painel.
+ */
+export async function moverPublicacao(id: string, dia: string): Promise<ResultadoDaAcao<{ aviso: string | null }>> {
+  return seguro(async () => {
+    const { ctx, linha } = await daPessoa(id);
+    if (!linha) return { ok: false as const, erro: "Publicação não encontrada." };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return { ok: false as const, erro: "Dia inválido." };
+    if (["publicada", "publicando", "cancelada"].includes(linha.situacao)) return { ok: false as const, erro: "Publicação encerrada não muda de dia." };
+    const quando = instanteDoDia(dia, horaLocal(linha.quando)).toISOString();
+    if (quando === new Date(linha.quando).toISOString()) return { ok: true as const, dados: { aviso: null } };
+    const voltaParaAprovada = linha.situacao === "agendada";
+    const { data } = await createAdminClient()
+      .from("agencia_publicacoes")
+      .update({ quando, ...(voltaParaAprovada ? { situacao: "aprovada", auto_publicar: false } : {}), atualizado_em: new Date().toISOString() })
+      .eq("id", linha.id)
+      .not("situacao", "in", "(publicada,publicando,cancelada)")
+      .select("id");
+    if (!data?.length) return { ok: false as const, erro: "A publicação mudou enquanto você olhava. Recarregue." };
+    await auditarAgencia("agencia.publicacao_salva", ctx.user.id, { tipo: "agencia_publicacao", id: linha.id }, { arrastada_para: dia });
+    revalidatePath("/agencia/publicacoes");
+    return { ok: true as const, dados: { aviso: voltaParaAprovada ? "A data mudou: agende de novo." : null } };
+  });
 }

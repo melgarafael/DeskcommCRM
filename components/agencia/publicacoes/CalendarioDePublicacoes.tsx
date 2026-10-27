@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition, type PointerEvent as EventoDePonteiro } from "react";
 
 import {
   agendarPublicacao,
   cancelarPublicacao,
   marcarComoPublicada,
+  moverPublicacao,
   pedirAprovacaoDaPublicacao,
   salvarPublicacao,
 } from "@/app/actions/agencia/publicacoes";
@@ -92,6 +93,63 @@ export function CalendarioDePublicacoes(p: Props) {
   const [mensagem, setMensagem] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
   const [postUrl, setPostUrl] = useState("");
   const [pendente, startTransition] = useTransition();
+  // Arrastar o post para outro dia (plano de 27/10, item 3). No toque, só depois de segurar.
+  const gesto = useRef<{ id: string; x0: number; y0: number; ativo: boolean; toque: boolean; timer: ReturnType<typeof setTimeout> | null } | null>(null);
+  const acabouDeArrastar = useRef(false);
+  const [diaAlvo, setDiaAlvo] = useState<string | null>(null);
+  const [movidas, setMovidas] = useState<Record<string, string>>({});
+  const encerrada = (x: PublicacaoNaTela) => x.situacao === "publicada" || x.situacao === "publicando" || x.situacao === "cancelada";
+  const arrastavel = (x: PublicacaoNaTela) => p.podeEditar && !encerrada(x);
+
+  function aoApertar(e: EventoDePonteiro<HTMLElement>, x: PublicacaoNaTela) {
+    if (!arrastavel(x) || e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const g = { id: x.id, x0: e.clientX, y0: e.clientY, ativo: false, toque: e.pointerType === "touch", timer: null as ReturnType<typeof setTimeout> | null };
+    if (g.toque) g.timer = setTimeout(() => (g.ativo = true), 450);
+    gesto.current = g;
+  }
+  function aoMover(e: EventoDePonteiro<HTMLElement>) {
+    const g = gesto.current;
+    if (!g) return;
+    const d = Math.hypot(e.clientX - g.x0, e.clientY - g.y0);
+    if (!g.ativo) {
+      // No toque, só o "segurar" ativa; mexer antes disso é rolagem.
+      if (g.toque) return d > 8 ? cancelar() : undefined;
+      if (d < 4) return;
+      g.ativo = true;
+    }
+    const alvo = document.elementsFromPoint(e.clientX, e.clientY).find((el) => (el as HTMLElement).dataset?.dia) as HTMLElement | undefined;
+    setDiaAlvo(alvo?.dataset.dia ?? null);
+  }
+  function cancelar() {
+    if (gesto.current?.timer) clearTimeout(gesto.current.timer);
+    gesto.current = null;
+    setDiaAlvo(null);
+  }
+  function aoSoltar() {
+    const g = gesto.current;
+    const dia = diaAlvo;
+    cancelar();
+    if (!g?.ativo) return;
+    acabouDeArrastar.current = true;
+    setTimeout(() => (acabouDeArrastar.current = false), 0);
+    const x = p.publicacoes.find((q) => q.id === g.id);
+    if (!x || !dia || dia === (movidas[x.id] ?? x.dia)) return;
+    setMovidas((m) => ({ ...m, [x.id]: dia }));
+    startTransition(async () => {
+      const r = await moverPublicacao(x.id, dia);
+      if (!r.ok) {
+        setMovidas((m) => {
+          const { [x.id]: _sai, ...resto } = m;
+          return resto;
+        });
+        return setMensagem({ tipo: "erro", texto: r.erro });
+      }
+      setMensagem({ tipo: "ok", texto: `"${x.titulo}" foi para ${rotuloCurtoDoDia(dia)}, ${x.hora}.${r.dados.aviso ? ` ${r.dados.aviso}` : ""}` });
+      router.refresh();
+    });
+  }
+
   const atual = aberta ? p.publicacoes.find((x) => x.id === aberta) ?? null : null;
 
   function deTela(x: PublicacaoNaTela): Rascunho {
@@ -135,7 +193,7 @@ export function CalendarioDePublicacoes(p: Props) {
     });
   }
 
-  const doDia = (dia: string) => p.publicacoes.filter((x) => x.dia === dia);
+  const doDia = (dia: string) => p.publicacoes.filter((x) => (movidas[x.id] ?? x.dia) === dia);
   const doMes = p.publicacoes.filter((x) => x.dia.startsWith(p.mes));
   const editavel = p.podeEditar && (!atual || !["publicada", "publicando", "cancelada"].includes(atual.situacao));
 
@@ -191,11 +249,15 @@ export function CalendarioDePublicacoes(p: Props) {
           {p.grade.map((semana) => (
             <div key={semana[0]} className="grid grid-cols-7 border-b last:border-b-0">
               {semana.map((dia) => (
-                <div key={dia} className={cn("min-h-24 border-r p-1 last:border-r-0", !dia.startsWith(p.mes) && "bg-muted/30 text-muted-foreground")}>
+                <div
+                  key={dia}
+                  data-dia={dia}
+                  className={cn("min-h-24 border-r p-1 last:border-r-0", !dia.startsWith(p.mes) && "bg-muted/30 text-muted-foreground", diaAlvo === dia && "bg-primary/10 ring-2 ring-inset ring-primary")}
+                >
                   <div className="flex items-center justify-between">
-                    <span className={cn("text-xs", dia === p.hoje && "rounded bg-primary px-1 text-primary-foreground")}>{Number(dia.slice(8))}</span>
+                    <span className={cn("text-xs", dia === p.hoje && "rounded-sm bg-primary px-1 text-primary-foreground")}>{Number(dia.slice(8))}</span>
                     {p.podeEditar && (
-                      <button type="button" onClick={() => nova(dia)} className="rounded px-1 text-xs text-muted-foreground hover:bg-accent" aria-label={`Nova publicação em ${rotuloCurtoDoDia(dia)}`}>
+                      <button type="button" onClick={() => nova(dia)} className="rounded-sm px-1 text-xs text-muted-foreground hover:bg-accent" aria-label={`Nova publicação em ${rotuloCurtoDoDia(dia)}`}>
                         +
                       </button>
                     )}
@@ -205,10 +267,21 @@ export function CalendarioDePublicacoes(p: Props) {
                       <button
                         key={x.id}
                         type="button"
-                        onClick={() => abrirPublicacao(x)}
+                        onClick={() => !acabouDeArrastar.current && abrirPublicacao(x)}
+                        onPointerDown={(e) => aoApertar(e, x)}
+                        onPointerMove={aoMover}
+                        onPointerUp={aoSoltar}
+                        onPointerCancel={cancelar}
+                        style={arrastavel(x) ? { touchAction: "none" } : undefined}
                         data-testid="publicacao-na-grade"
                         data-situacao={x.situacao}
-                        className={cn("block w-full truncate rounded border px-1 py-0.5 text-left text-[11px]", COR_DA_SITUACAO[x.situacao], aberta === x.id && "ring-2 ring-primary")}
+                        data-publicacao={x.id}
+                        className={cn(
+                          "block w-full truncate rounded-sm border px-1 py-0.5 text-left text-[11px]",
+                          COR_DA_SITUACAO[x.situacao],
+                          aberta === x.id && "ring-2 ring-primary",
+                          arrastavel(x) && "cursor-grab active:cursor-grabbing",
+                        )}
                         title={`${x.hora} ${x.titulo} — ${x.clienteNome}`}
                       >
                         {x.hora} {x.titulo}

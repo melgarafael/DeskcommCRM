@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState, type MouseEvent } from "react";
+import { useRef, useState, type MouseEvent, type PointerEvent as EventoDePonteiro } from "react";
+
+import { remarcarReuniao } from "@/app/actions/agencia/reunioes";
 
 import type { ApoioDaAgenda } from "@/lib/agencia/calendario/apoio";
+import { horarioDepoisDoGesto, minutosDoArrasto } from "@/lib/agencia/calendario/arrasto";
 import type { ReuniaoDaAgenda } from "@/lib/agencia/calendario/consultas";
 import {
   diaDe,
@@ -56,6 +59,20 @@ interface Props {
 
 const HORAS = Array.from({ length: FAIXA_FIM_H - FAIXA_INICIO_H }, (_, i) => FAIXA_INICIO_H + i);
 const ALTURA_DA_HORA = 48;
+/** No toque, o arrasto só começa depois de segurar: senão briga com a rolagem da página. */
+const SEGURAR_NO_TOQUE_MS = 450;
+
+interface Gesto {
+  r: ReuniaoDaAgenda;
+  modo: "mover" | "esticar";
+  /** Na vista Mês só o dia muda. */
+  soDia: boolean;
+  x0: number;
+  y0: number;
+  ativo: boolean;
+  toque: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+}
 
 /** Reuniões que se sobrepõem no dia dividem a largura: cada uma ganha uma raia. */
 function raias(lista: ReuniaoDaAgenda[]): Map<string, { raia: number; total: number }> {
@@ -79,6 +96,18 @@ export function CalendarioCliente(p: Props) {
   const busca = useSearchParams();
   const [abertaId, setAbertaId] = useState<string | null>(p.abrirId);
   const [nova, setNova] = useState<NovaReuniao | null>(null);
+  const gesto = useRef<Gesto | null>(null);
+  const acabouDeArrastar = useRef(false);
+  const [previa, setPreviaNaTela] = useState<{ id: string; inicio: string; fim: string } | null>(null);
+  // A prévia também num ref: o "soltar" roda num ouvinte da janela, que não vê o estado novo.
+  const previaRef = useRef<{ id: string; inicio: string; fim: string } | null>(null);
+  const setPrevia = (v: { id: string; inicio: string; fim: string } | null) => {
+    previaRef.current = v;
+    setPreviaNaTela(v);
+  };
+  /** Horário que a tela já mostra enquanto o servidor confirma (some quando o servidor concorda). */
+  const [otimista, setOtimista] = useState<Record<string, { de: string; inicio: string; fim: string }>>({});
+  const [recado, setRecado] = useState<{ texto: string; erro: boolean; desfazer?: { id: string; inicio: string; fim: string } } | null>(null);
 
   const aberta = abertaId ? (p.reunioes.find((r) => r.id === abertaId) ?? null) : null;
 
@@ -114,8 +143,115 @@ export function CalendarioCliente(p: Props) {
   }
 
   const vista = p.vista;
+  const naTela = p.reunioes.map((r) => {
+    if (previa?.id === r.id) return { ...r, inicio: previa.inicio, fim: previa.fim };
+    const o = otimista[r.id];
+    return o && (r.inicio === o.de || r.inicio === o.inicio) ? { ...r, inicio: o.inicio, fim: o.fim } : r;
+  });
+  const podeArrastar = (r: ReuniaoDaAgenda) => p.podeGerenciar && r.situacao === "marcada";
+
+  async function remarcar(r: ReuniaoDaAgenda, novo: { inicio: string; fim: string }, desfazendo = false) {
+    setOtimista((m) => ({ ...m, [r.id]: { de: r.inicio, ...novo } }));
+    setRecado({ texto: "Remarcando…", erro: false });
+    const res = await remarcarReuniao(r.id, novo.inicio, novo.fim);
+    if (!res.ok) {
+      setOtimista((m) => {
+        const { [r.id]: _sai, ...resto } = m;
+        return resto;
+      });
+      setRecado({ texto: res.erro, erro: true });
+      return;
+    }
+    setRecado({
+      texto: desfazendo ? "Voltou para o horário anterior." : `${r.titulo}: ${rotuloCurtoDoDia(diaDe(novo.inicio))}, ${horaLocal(novo.inicio)}–${horaLocal(novo.fim)}`,
+      erro: false,
+      desfazer: desfazendo ? undefined : { id: r.id, inicio: r.inicio, fim: r.fim },
+    });
+    router.refresh();
+  }
+
+  function aoApertar(e: EventoDePonteiro<HTMLElement>, r: ReuniaoDaAgenda, modo: "mover" | "esticar", soDia = false) {
+    if (!podeArrastar(r) || e.button !== 0) return;
+    e.stopPropagation();
+    const toque = e.pointerType === "touch";
+    const g: Gesto = { r, modo, soDia, x0: e.clientX, y0: e.clientY, ativo: false, toque, timer: null };
+    if (toque) g.timer = setTimeout(() => (g.ativo = true), SEGURAR_NO_TOQUE_MS);
+    gesto.current = g;
+    // Ouvintes na JANELA: durante o arrasto o bloco muda de coluna e o React o recria —
+    // a captura do ponteiro se perde e o "soltar" cairia na coluna, sem ninguém para ouvir.
+    const mover = (ev: PointerEvent) => aoMover(ev);
+    const fim = (cancelado: boolean) => () => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+      window.removeEventListener("pointercancel", cancelar);
+      if (cancelado) cancelarGesto();
+      else aoSoltar();
+    };
+    const soltar = fim(false);
+    const cancelar = fim(true);
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+    window.addEventListener("pointercancel", cancelar);
+  }
+
+  function aoMover(e: { clientX: number; clientY: number }) {
+    const g = gesto.current;
+    if (!g) return;
+    const dx = e.clientX - g.x0;
+    const dy = e.clientY - g.y0;
+    if (!g.ativo) {
+      if (g.toque) {
+        // Mexeu antes de segurar: é rolagem, não arrasto.
+        if (Math.hypot(dx, dy) > 8) cancelarGesto();
+        return;
+      }
+      if (Math.hypot(dx, dy) < 4) return;
+      g.ativo = true;
+    }
+    const alvo = document.elementsFromPoint(e.clientX, e.clientY).find((el) => (el as HTMLElement).dataset?.dia) as HTMLElement | undefined;
+    const novo = horarioDepoisDoGesto({
+      inicio: g.r.inicio,
+      fim: g.r.fim,
+      modo: g.modo,
+      deltaMin: g.soDia ? 0 : minutosDoArrasto(dy, ALTURA_DA_HORA),
+      diaNovo: g.modo === "mover" ? alvo?.dataset.dia : undefined,
+    });
+    setPrevia(novo ? { id: g.r.id, ...novo } : null);
+  }
+
+  function cancelarGesto() {
+    if (gesto.current?.timer) clearTimeout(gesto.current.timer);
+    gesto.current = null;
+    setPrevia(null);
+  }
+
+  function aoSoltar() {
+    const g = gesto.current;
+    if (!g) return;
+    if (g.timer) clearTimeout(g.timer);
+    gesto.current = null;
+    if (!g.ativo) return;
+    acabouDeArrastar.current = true;
+    setTimeout(() => (acabouDeArrastar.current = false), 0);
+    const p2 = previaRef.current;
+    setPrevia(null);
+    if (p2 && p2.id === g.r.id) void remarcar(g.r, { inicio: p2.inicio, fim: p2.fim });
+  }
+
+  /** Clique abre o modal — menos quando acabou de ser um arrasto. */
+  const abrirReuniao = (id: string) => {
+    if (!acabouDeArrastar.current) setAbertaId(id);
+  };
+  const gestos = (r: ReuniaoDaAgenda, soDia = false) =>
+    podeArrastar(r)
+      ? {
+          onPointerDown: (e: EventoDePonteiro<HTMLElement>) => aoApertar(e, r, "mover", soDia),
+          style: { touchAction: "none" as const },
+        }
+      : {};
+
   const porDia = new Map<string, ReuniaoDaAgenda[]>();
-  for (const r of p.reunioes) {
+  for (const r of naTela) {
     const d = diaDe(r.inicio);
     porDia.set(d, [...(porDia.get(d) ?? []), r]);
   }
@@ -134,13 +270,17 @@ export function CalendarioCliente(p: Props) {
     <button
       key={r.id}
       type="button"
-      onClick={() => setAbertaId(r.id)}
+      onClick={() => abrirReuniao(r.id)}
       data-testid="reuniao-no-calendario"
+      data-reuniao={r.id}
+      {...gestos(r, true)}
       className={cn(
         "flex w-full min-w-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-left text-xs text-white",
         r.situacao === "cancelada" && "line-through opacity-50",
+        podeArrastar(r) && "cursor-grab active:cursor-grabbing",
+        previa?.id === r.id && "ring-2 ring-foreground",
       )}
-      style={{ backgroundColor: COR_DO_TIPO[r.tipo] }}
+      style={{ backgroundColor: COR_DO_TIPO[r.tipo], ...(podeArrastar(r) ? { touchAction: "none" } : {}) }}
       title={`${horaLocal(r.inicio)} ${r.titulo}`}
     >
       <span className="shrink-0 font-semibold">{horaLocal(r.inicio)}</span>
@@ -165,7 +305,7 @@ export function CalendarioCliente(p: Props) {
         <div className="grid grid-cols-[48px_repeat(7,minmax(0,1fr))] border-b bg-card">
           <div />
           {Array.from({ length: 7 }, (_, i) => somarDias(inicioDaSemana(p.dia), i)).map((d) => (
-            <div key={d} className={cn("space-y-1 border-l p-1.5 text-xs", d === p.hoje && "bg-muted")}>
+            <div key={d} data-dia={d} className={cn("space-y-1 border-l p-1.5 text-xs", d === p.hoje && "bg-muted")}>
               <div className={cn("font-medium", d === p.hoje && "text-foreground")}>{rotuloCurtoDoDia(d)}</div>
               {(prazosPorDia.get(d) ?? []).slice(0, 3).map(marcadorDePrazo)}
               {(prazosPorDia.get(d) ?? []).length > 3 && (
@@ -207,12 +347,17 @@ export function CalendarioCliente(p: Props) {
                       key={r.id}
                       type="button"
                       data-testid="reuniao-no-calendario"
-                      onClick={() => setAbertaId(r.id)}
+                      data-reuniao={r.id}
+                      onClick={() => abrirReuniao(r.id)}
+                      {...gestos(r)}
                       className={cn(
                         "absolute overflow-hidden rounded-sm px-1.5 py-0.5 text-left text-[11px] leading-tight text-white shadow-sm",
                         r.situacao === "cancelada" && "line-through opacity-50",
+                        podeArrastar(r) && "cursor-grab active:cursor-grabbing",
+                        previa?.id === r.id && "z-10 ring-2 ring-foreground",
                       )}
                       style={{
+                        ...(podeArrastar(r) ? { touchAction: "none" } : {}),
                         top: `${pos.topo * 100}%`,
                         height: `${pos.altura * 100}%`,
                         left: `calc(${(l.raia / l.total) * 100}% + 2px)`,
@@ -220,8 +365,22 @@ export function CalendarioCliente(p: Props) {
                         backgroundColor: COR_DO_TIPO[r.tipo],
                       }}
                     >
-                      <span className="block font-semibold">{horaLocal(r.inicio)}</span>
+                      <span className="block font-semibold">
+                        {horaLocal(r.inicio)}
+                        {previa?.id === r.id ? `–${horaLocal(r.fim)}` : ""}
+                      </span>
                       <span className="block truncate">{r.titulo}</span>
+                      {podeArrastar(r) && (
+                        <span
+                          role="separator"
+                          aria-label={`Esticar ${r.titulo}`}
+                          data-testid="esticar-reuniao"
+                          onPointerDown={(e) => aoApertar(e, r, "esticar")}
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize bg-black/15 hover:bg-black/30"
+                          style={{ touchAction: "none" }}
+                        />
+                      )}
                     </button>
                   );
                 })}
@@ -250,6 +409,7 @@ export function CalendarioCliente(p: Props) {
               <div
                 key={d}
                 onClick={(e) => e.target === e.currentTarget && novaEm(d)}
+                data-dia={d}
                 className={cn(
                   "min-h-24 space-y-1 border-b border-l p-1",
                   fora && "bg-muted/30 text-muted-foreground",
@@ -284,7 +444,7 @@ export function CalendarioCliente(p: Props) {
               <li key={r.id}>
                 <button
                   type="button"
-                  onClick={() => setAbertaId(r.id)}
+                  onClick={() => abrirReuniao(r.id)}
                   data-testid="reuniao-na-lista"
                   className={cn("flex w-full items-start gap-3 p-3 text-left text-sm hover:bg-accent/40", r.situacao === "cancelada" && "opacity-60")}
                 >
@@ -435,6 +595,38 @@ export function CalendarioCliente(p: Props) {
           agendaLiberada={p.agendaLiberada}
           aoFechar={fechar}
         />
+      )}
+
+      {recado && (
+        <div
+          role={recado.erro ? "alert" : "status"}
+          data-testid="recado-do-calendario"
+          className={cn(
+            "fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-center justify-between gap-3 rounded-md border bg-card px-4 py-3 text-sm shadow-lg",
+            recado.erro && "border-destructive text-destructive",
+          )}
+        >
+          <span className="min-w-0">{recado.texto}</span>
+          <span className="flex shrink-0 gap-2">
+            {recado.desfazer && (
+              <button
+                type="button"
+                className="font-medium underline"
+                onClick={() => {
+                  const d = recado.desfazer!;
+                  const r = p.reunioes.find((x) => x.id === d.id);
+                  const agora = otimista[d.id];
+                  if (r) void remarcar(agora ? { ...r, inicio: agora.inicio, fim: agora.fim } : r, { inicio: d.inicio, fim: d.fim }, true);
+                }}
+              >
+                Desfazer
+              </button>
+            )}
+            <button type="button" aria-label="Fechar aviso" onClick={() => setRecado(null)}>
+              ✕
+            </button>
+          </span>
+        </div>
       )}
     </div>
   );

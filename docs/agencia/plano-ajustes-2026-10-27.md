@@ -274,3 +274,32 @@ Spec: [`SPEC-envios.md`](SPEC-envios.md). Migration **9013** (+ apêndice no bas
 - **Não provado:** a cópia real para o Drive e a limpeza depois dela, porque o Google ainda não
   está conectado no teste (pendência do dono). Também não foi provado um vídeo perto de 2 GB: a
   prova usou 20 MB, em 4 partes.
+
+### Item 3 — Calendário arrastar e esticar: **feito, publicado e provado no teste em 27/10/2026**
+
+- **Reuniões, vista Semana:** segurar e arrastar troca o dia e o horário, de 15 em 15 min, dentro
+  da faixa das 7h às 22h. A **alça na borda de baixo** estica ou encurta a reunião (mínimo de
+  15 min). **Mês:** arrastar troca só o dia e mantém a hora. A tela muda na hora e depois mostra
+  o aviso com **"Desfazer"**; se o servidor recusar, volta como estava. No toque, o arrasto só
+  começa depois de segurar meio segundo, para não brigar com a rolagem.
+- A remarcação passa pelo **mesmo caminho** do "Remarcar" (`remarcarReuniao` → `salvarReuniao`):
+  Agenda Google, aviso ao cliente e à equipe, Fechamento arrastado junto com a Apresentação,
+  trilha sabendo, lembretes refeitos e auditoria `agencia.reuniao_alterada`. Só reunião
+  marcada se arrasta, e só quem tem `calendario.gerenciar`.
+- **Publicações:** arrastar o post para outro dia mantém a hora (`moverPublicacao`). Um post
+  agendado que muda de dia volta a "aprovada" e pede novo agendamento.
+- Regra pura em `lib/agencia/calendario/arrasto.ts`, com 5 testes.
+- **Achado na prova e consertado:** durante o arrasto o bloco muda de coluna e o React o recria,
+  então a captura do ponteiro se perdia e soltar não fazia nada. Agora o movimento e o soltar
+  são ouvidos na janela, e a prévia mora num `ref`.
+- **Prova** (`docs/agencia/scripts/prova-calendario.mjs`, evidências em
+  `evidence/agencia-ajustes-calendario/`):
+  - terça 10h–11h → quinta 11h30–12h30;
+  - esticar → 11h30–13h30 (o bloco mediu 96 px, 2 h);
+  - "Desfazer" voltou o último gesto;
+  - o clique sem arrastar ainda abre a reunião;
+  - no Mês, arrastar para o dia 20 manteve 11h30;
+  - o post rascunho foi de 12/11 para 14/11 18h; o agendado foi para 16/11 e voltou a
+    "aprovada".
+
+  Tudo conferido no banco e na auditoria; os dados de prova foram apagados.

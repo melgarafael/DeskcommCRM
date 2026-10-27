@@ -353,3 +353,33 @@ export async function salvarLembretesDeReuniao(marcos: number[]): Promise<Result
     return { ok: true as const };
   });
 }
+
+/**
+ * Arrastar ou esticar no calendário (plano de 27/10, item 3): muda SÓ o horário,
+ * pelo mesmo caminho de `salvarReuniao` — Agenda Google, aviso ao cliente e à
+ * equipe, Fechamento arrastado junto e trilha sabendo.
+ */
+export async function remarcarReuniao(id: string, inicio: string, fim: string): Promise<ResultadoDaAcao<{ id: string; fechamentoId: string | null }>> {
+  return seguro(async () => {
+    const ctx = await exigirPermissao("calendario.gerenciar");
+    if (!idSchema.safeParse(id).success) return { ok: false as const, erro: "Reunião inválida." };
+    const r = await carregarReuniao(id, await carregarQuemOlhaAgenda(ctx));
+    if (!r) return { ok: false as const, erro: "Reunião não encontrada." };
+    if (r.situacao !== "marcada") return { ok: false as const, erro: "Só reunião marcada muda de horário." };
+    return salvarReuniao({
+      id,
+      tipo: r.tipo,
+      titulo: r.titulo,
+      clienteId: r.clienteId,
+      inicio,
+      fim,
+      formato: r.formato,
+      local: r.local,
+      pauta: r.pauta,
+      membros: r.membros,
+      convidados: r.convidados.map((c) => ({ nome: c.nome, whatsapp: c.whatsapp, email: c.email })),
+      avisarCliente: r.avisarCliente,
+      marcarFechamento: false,
+    });
+  });
+}
