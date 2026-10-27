@@ -207,3 +207,29 @@ que é o que muda a rotina com os clientes.
 5. **Blocos do mapa:** a lista foi ampliada para montar as **três etapas do recorrente** e os
    **serviços avulsos**, com mapas prontos para começar (item 5).
 6. **Arrastar vale também no calendário de publicações.**
+
+---
+
+## Andamento
+
+### Item 2 — Trilhas: **feito, publicado e provado no teste em 27/10/2026**
+
+- A trilha abre em `/agencia/trilhas/<cliente>`, sem pular para Clientes. A lista de Trilhas
+  tem o seletor "Ver a trilha de…", filtros (Todas, Com atraso, Em dia), busca e "Clientes sem
+  trilha" (é por ali que se inicia uma).
+- A tela do cliente virou linha do tempo por etapa: feito em verde, com a data; liberado em
+  destaque; bloqueado apagado, com "Espera: …".
+- **Reloginho** na ponta de cada passo que falta. Ele conta até o prazo (ou até a reunião
+  marcada), mostra os segundos quando falta menos de um dia, fica amarelo a menos de 24 h e
+  vermelho quando atrasa ("atrasado há 13 h 51 min 10 s"). O topo mostra o próximo prazo.
+- A ficha do cliente só resume (passos e %) e tem o botão "Abrir a trilha". Os avisos da trilha
+  passaram a apontar para a aba Trilhas.
+- **Prova** (`docs/agencia/scripts/prova-trilhas.mjs`, evidências em
+  `evidence/agencia-ajustes-trilhas/`):
+  - abriu em `/agencia/trilhas/<id>`;
+  - 4 passos concluídos, 7 liberados e 9 bloqueados, com 8 reloginhos nas três cores;
+  - o reloginho anda (08 s → 10 s);
+  - o marcador fica sobre a linha (centro 405 × linha 405, medido);
+  - a troca de cliente e o filtro "Com atraso" funcionam;
+  - o botão da ficha leva à aba Trilhas;
+  - com 375 px não há rolagem lateral.

@@ -31,7 +31,8 @@ async function seguro<T>(acao: () => Promise<T>): Promise<T | { ok: false; erro:
 
 function revalidar(clienteId: string) {
   revalidatePath(`/agencia/clientes/${clienteId}`);
-  revalidatePath("/agencia/trilhas");
+  // "layout" alcança também a trilha de cada cliente (/agencia/trilhas/<cliente>).
+  revalidatePath("/agencia/trilhas", "layout");
   revalidatePath("/agencia/tarefas");
   revalidatePath("/agencia");
 }

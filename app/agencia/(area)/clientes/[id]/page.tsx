@@ -40,7 +40,7 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
 
   const quem = await carregarQuemOlha(ctx);
   const quemAgenda = await carregarQuemOlhaAgenda(ctx);
-  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda, trilha, modelos, formulario, cofre, aprovacoes] = await Promise.all([
+  const [empresas, contratacoes, equipe, membros, arquivos, orgs, drive, tarefas, apoio, reunioes, apoioAgenda, trilha, formulario, cofre, aprovacoes] = await Promise.all([
     db.from("agencia_clientes_empresas").select("nome, documento").eq("cliente_id", id).order("ordem"),
     db.from("agencia_contratacoes").select("*").eq("cliente_id", id).order("criado_em", { ascending: false }),
     db.from("agencia_clientes_membros").select("membro_id").eq("cliente_id", id),
@@ -55,11 +55,6 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
     listarReunioes(quemAgenda, { clienteId: id }),
     apoioDaAgenda(quemAgenda),
     trilhaDoCliente(id),
-    db
-      .from("agencia_trilha_modelos")
-      .select("id, nome, agencia_trilha_modelo_passos(chave, titulo, etapa, ordem)")
-      .eq("ativo", true)
-      .order("nome"),
     db
       .from("agencia_formularios")
       .select("id, situacao, expira_em, criado_em, enviado_em, respostas")
@@ -241,17 +236,6 @@ export default async function PaginaDoCliente({ params }: { params: Promise<{ id
             pedidoEm: a.pedido_em,
             respondidoEm: a.respondido_em,
             tarefaId: a.tarefa_id,
-          }))}
-          modelosDeTrilha={((modelos.data ?? []) as Array<{
-            id: string;
-            nome: string;
-            agencia_trilha_modelo_passos: Array<{ chave: string; titulo: string; etapa: number; ordem: number }> | null;
-          }>).map((m) => ({
-            id: m.id,
-            nome: m.nome,
-            passos: [...(m.agencia_trilha_modelo_passos ?? [])]
-              .sort((a, b) => a.etapa - b.etapa || a.ordem - b.ordem)
-              .map((x) => ({ chave: x.chave, titulo: x.titulo })),
           }))}
         />
       </Suspense>

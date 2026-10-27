@@ -240,7 +240,7 @@ export async function avancar(trilhaId: string): Promise<{ liberados: number }> 
           alvo: { tipo: "gerais" },
           tipo: "etapa_liberada",
           titulo: `${p.tipo === "reuniao" ? "Marcar: " : "Aguardando: "}${p.titulo}${clienteNome ? ` — ${clienteNome}` : ""}`,
-          link: `/agencia/clientes/${trilha.cliente_id}?aba=trilha`,
+          link: `/agencia/trilhas/${trilha.cliente_id}`,
           referenciaId: p.id,
         });
       }

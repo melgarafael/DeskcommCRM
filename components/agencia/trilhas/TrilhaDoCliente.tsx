@@ -25,6 +25,8 @@ import { CHAVE_ASSINOU_PAGOU, ROTULO_DA_ETAPA, ROTULO_DA_SITUACAO_DO_PASSO } fro
 import { Check, Lock } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
+import { Reloginho } from "./Reloginho";
+
 /**
  * A aba Trilha da ficha do cliente (docs/agencia/SPEC-trilhas.md › Telas).
  * O servidor decide o que pode; a tela só mostra os botões de quem pode.
@@ -173,6 +175,12 @@ export function TrilhaDoCliente(p: {
   }
 
   const t = p.trilha;
+  /** O instante que o reloginho do passo conta: a reunião marcada, senão o prazo do passo. */
+  const prazoDoRelogio = (x: PassoDaTela): string | null =>
+    x.reuniao && x.reuniao.situacao !== "realizada" ? x.reuniao.inicio : x.prazo;
+  const proximo = t.passos
+    .filter((x) => (x.situacao === "liberado" || x.situacao === "em_andamento") && prazoDoRelogio(x))
+    .sort((a, b) => prazoDoRelogio(a)!.localeCompare(prazoDoRelogio(b)!))[0];
   const etapas = [...new Set(t.passos.map((x) => x.etapa))].sort((a, b) => a - b);
   const tituloDe = new Map(t.passos.map((x) => [x.chave, x.titulo]));
 
@@ -184,12 +192,18 @@ export function TrilhaDoCliente(p: {
       return dep && dep.situacao !== "concluido" && dep.situacao !== "pulado";
     });
     return (
-      <li key={x.id} className={cn("space-y-2 p-3", x.situacao === "bloqueado" && "opacity-70")} data-testid="passo-da-trilha" data-situacao={x.situacao}>
+      <li
+        key={x.id}
+        className={cn("relative space-y-2 rounded-md py-2 pl-2 pr-2", aberto && "bg-primary/5", x.situacao === "bloqueado" && "opacity-60")}
+        data-testid="passo-da-trilha"
+        data-situacao={x.situacao}
+      >
         <div className="flex items-start gap-3">
           <span
             className={cn(
-              "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs",
-              x.situacao === "concluido" && "border-primary bg-primary text-primary-foreground",
+              "absolute -left-[2.32rem] top-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background text-xs",
+              x.situacao === "concluido" && "border-emerald-600 bg-emerald-600 text-white",
+              aberto && "border-primary ring-4 ring-primary/15",
               x.situacao === "pulado" && "border-dashed text-muted-foreground",
               x.situacao === "em_andamento" && "border-primary text-primary",
             )}
@@ -206,7 +220,7 @@ export function TrilhaDoCliente(p: {
                 x.tarefa?.responsaveis.length ? x.tarefa.responsaveis.join(", ") : x.funcaoNome,
                 x.tarefa ? ROTULO_DA_COLUNA[x.tarefa.coluna] : null,
                 x.reuniao ? `${x.reuniao.situacao === "realizada" ? "Realizada" : "Marcada"} ${formatarDataHora(x.reuniao.inicio)}` : null,
-                feito && x.concluidoEm && !x.reuniao ? `em ${formatarDataHora(x.concluidoEm)}` : null,
+                feito && x.concluidoEm && !x.reuniao ? `feito em ${formatarDataHora(x.concluidoEm)}` : null,
               ]
                 .filter(Boolean)
                 .join(" · ")}
@@ -222,10 +236,11 @@ export function TrilhaDoCliente(p: {
               <p className="text-xs text-muted-foreground">Espera: {pendentes.map((d) => tituloDe.get(d) ?? d).join(", ")}</p>
             )}
           </div>
+          {aberto && prazoDoRelogio(x) && <Reloginho prazo={prazoDoRelogio(x)!} />}
         </div>
 
         {(aberto || x.tarefa || x.reuniao) && (
-          <div className="flex flex-wrap items-center gap-2 pl-9">
+          <div className="flex flex-wrap items-center gap-2">
             {x.tarefa && (
               <Link href={`/agencia/tarefas?abrir=${x.tarefa.id}`} className="rounded-md border px-2 py-1 text-xs">
                 Abrir tarefa
@@ -314,6 +329,13 @@ export function TrilhaDoCliente(p: {
         <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={t.progresso.pct} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full bg-primary transition-all" style={{ width: `${t.progresso.pct}%` }} />
         </div>
+        {proximo && (
+          <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="proximo-prazo">
+            <span className="text-muted-foreground">Próximo prazo:</span>
+            <span className="font-medium">{proximo.titulo}</span>
+            <Reloginho prazo={prazoDoRelogio(proximo)!} />
+          </div>
+        )}
         {t.assinouPagouEm && t.contratoInicio && t.preparacaoFim && (
           <p className="text-sm" data-testid="datas-do-contrato">
             Assinado e pago em {dataCurta(t.assinouPagouEm)} · contrato a partir de {dataCurta(t.contratoInicio)}
@@ -335,7 +357,7 @@ export function TrilhaDoCliente(p: {
             {ROTULO_DA_ETAPA[e] ?? `Etapa ${e}`}
             {t.etapaAtual === e && " · agora"}
           </h3>
-          <ul className="divide-y rounded-md border">{t.passos.filter((x) => x.etapa === e).map(linha)}</ul>
+          <ol className="ml-3 space-y-1 border-l-2 border-muted pl-6">{t.passos.filter((x) => x.etapa === e).map(linha)}</ol>
         </div>
       ))}
 

@@ -56,7 +56,7 @@ export async function avisarPrazosDaTrilha(agora: Date = new Date()): Promise<{ 
       alvo: { tipo: "gerais" },
       tipo: TIPO_DO_MARCO[marco] ?? "prazo_chegando",
       titulo: `${quando}: ${p.tipo === "reuniao" ? "marcar " : ""}${p.titulo}${cliente ? ` — ${cliente}` : ""}`,
-      link: `/agencia/clientes/${p.agencia_trilhas.cliente_id}?aba=trilha`,
+      link: `/agencia/trilhas/${p.agencia_trilhas.cliente_id}`,
       referenciaId: p.id,
     });
     avisados++;

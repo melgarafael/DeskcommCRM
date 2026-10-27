@@ -9,7 +9,6 @@ import { ReunioesDoCliente } from "@/components/agencia/calendario/ReunioesDoCli
 import { AcessosDoCliente, type FormularioDaFicha } from "@/components/agencia/cofre/AcessosDoCliente";
 import { AprovacoesDoCliente, type AprovacaoDaFicha } from "@/components/agencia/aprovacoes/AprovacoesDoCliente";
 import { ContratosDoCliente, type ContratoDaFicha } from "@/components/agencia/contratos/ContratosDoCliente";
-import { TrilhaDoCliente, type ModeloParaIniciar } from "@/components/agencia/trilhas/TrilhaDoCliente";
 import { EnvioParaODrive } from "@/components/agencia/EnvioParaODrive";
 import { QuadroDeTarefas } from "@/components/agencia/tarefas/QuadroDeTarefas";
 import type { ApoioDoQuadro } from "@/components/agencia/tarefas/ModalDaTarefa";
@@ -77,7 +76,6 @@ export function FichaDoCliente(p: {
   podeGerenciarCalendario: boolean;
   agendaLiberada: boolean;
   trilha: TrilhaDaTela | null;
-  modelosDeTrilha: ModeloParaIniciar[];
   formulario: FormularioDaFicha | null;
   cofre: ItemDoCofre[];
   podeVerSenhas: boolean;
@@ -279,22 +277,26 @@ export function FichaDoCliente(p: {
       )}
 
       {aba === "trilha" && (
-        <TrilhaDoCliente
-          clienteId={p.id}
-          trilha={p.trilha}
-          modelos={p.modelosDeTrilha}
-          contratacoes={p.contratacoes
-            .filter((c) => c.id && c.situacao !== "encerrada")
-            .map((c) => ({
-              id: c.id!,
-              rotulo: `${c.tipo === "recorrente" ? "Recorrente" : "Avulsa"}${c.servicos.length ? ` — ${c.servicos.map((s) => ROTULO_DO_SERVICO[s as keyof typeof ROTULO_DO_SERVICO] ?? s).join(", ")}` : ""}`,
-            }))}
-          podeGerenciar={p.podeGerenciar}
-          podeMarcarReuniao={p.podeGerenciarCalendario}
-          apoio={p.apoioDaAgenda}
-          meuMembroId={p.meuMembroId}
-          agendaLiberada={p.agendaLiberada}
-        />
+        <section className="space-y-3 rounded-md border p-4" data-testid="trilha-na-ficha">
+          {p.trilha && p.trilha.situacao !== "cancelada" ? (
+            <>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="font-semibold">{p.trilha.modeloNome}</h2>
+                <span className="text-sm text-muted-foreground">
+                  {p.trilha.progresso.feitos} de {p.trilha.progresso.total} passos · {p.trilha.progresso.pct}%
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div className="h-full bg-primary" style={{ width: `${p.trilha.progresso.pct}%` }} />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Este cliente ainda não tem trilha.</p>
+          )}
+          <Link href={`/agencia/trilhas/${p.id}`} className="inline-block rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent/40">
+            {p.trilha && p.trilha.situacao !== "cancelada" ? "Abrir a trilha" : "Iniciar a trilha"}
+          </Link>
+        </section>
       )}
 
       {aba === "reunioes" && (

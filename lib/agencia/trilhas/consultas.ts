@@ -150,6 +150,8 @@ export interface ResumoDaTrilha {
   progresso: { feitos: number; total: number; pct: number };
   proximos: string[];
   atrasados: string[];
+  /** O passo aberto que vence primeiro (o reloginho da lista). */
+  proximoPrazo: { titulo: string; prazo: string } | null;
 }
 
 /** As trilhas ativas dos clientes que a pessoa alcança (painel `/agencia/trilhas`). */
@@ -174,6 +176,11 @@ export async function listarTrilhasAtivas(alcance: AlcanceDeClientes): Promise<R
         progresso: tela.progresso,
         proximos: abertos.map((p) => p.titulo),
         atrasados: abertos.filter((p) => p.atrasado).map((p) => p.titulo),
+        proximoPrazo:
+          abertos
+            .map((p) => ({ titulo: p.titulo, prazo: p.reuniao && p.reuniao.situacao !== "realizada" ? p.reuniao.inicio : p.prazo }))
+            .filter((p): p is { titulo: string; prazo: string } => !!p.prazo)
+            .sort((a, b) => a.prazo.localeCompare(b.prazo))[0] ?? null,
       };
     });
 }
