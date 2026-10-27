@@ -16,8 +16,9 @@ import { chaveDaRequisicao } from "@/lib/api/idempotency";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { gerarLinkDePagamento } from "@/lib/cobranca/checkout";
+import { lerIntencaoDeContratacao } from "@/lib/cobranca/contratacao";
 import { emailDoAdminDaEmpresa } from "@/lib/cobranca/emails";
-import { urlDoHub, urlDoPainelDaEmpresa } from "@/lib/cobranca/url";
+import { urlDaContratacao, urlDoHub, urlDoPainelDaEmpresa } from "@/lib/cobranca/url";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
@@ -27,7 +28,9 @@ export const dynamic = "force-dynamic";
 
 const corpoSchema = z.strictObject({
   /** Só um destino nomeado (nunca uma URL livre: sem redirecionamento aberto). */
-  volta: z.enum(["hub"]).optional(),
+  volta: z.enum(["hub", "contratacao"]).optional(),
+  /** Autoprosseguimento só com intenção auditada e revalidada nesta sessão/org. */
+  continuar_cadastro: z.boolean().optional(),
   /** CPF ou CNPJ de quem paga, com ou sem máscara. Vai direto ao provedor e NÃO é guardado (spec §2.3, LGPD). */
   documento: z.string().max(32).optional(),
 });
@@ -47,6 +50,19 @@ export async function POST(req: NextRequest) {
   const corpo = corpoSchema.safeParse(await req.json().catch(() => ({})));
   if (!corpo.success) return fail("validation_failed", "Pedido inválido.", 400, { requestId, details: corpo.error.flatten() });
 
+  let chaveDaIntencao: string | null = null;
+  let planoDaIntencao: string | undefined;
+  if (corpo.data.continuar_cadastro === true) {
+    try {
+      const intencao = await lerIntencaoDeContratacao(admin, authz.user.id, authz.org.orgId);
+      if (!intencao) return fail("state_conflict", "Confira seu plano e continue para o pagamento.", 409, { requestId });
+      chaveDaIntencao = intencao.id;
+      planoDaIntencao = intencao.planoId;
+    } catch {
+      return fail("unavailable", "Não foi possível retomar sua contratação. Tente novamente.", 503, { requestId });
+    }
+  }
+
   let email: string | null;
   try {
     email = await emailDoAdminDaEmpresa(admin, authz.org.orgId);
@@ -64,11 +80,12 @@ export async function POST(req: NextRequest) {
     orgId: authz.org.orgId,
     documentoBruto: corpo.data.documento,
     email,
-    chaveIdempotencia: chave ?? randomUUID(),
-    urlDeVolta: corpo.data.volta === "hub" ? urlDoHub() : urlDoPainelDaEmpresa(),
+    chaveIdempotencia: chaveDaIntencao ?? chave ?? randomUUID(),
+    urlDeVolta: corpo.data.volta === "contratacao" ? urlDaContratacao() : corpo.data.volta === "hub" ? urlDoHub() : urlDoPainelDaEmpresa(),
     actorUserId: authz.user.id,
     requestId,
     comoDono: false,
+    planoEsperado: planoDaIntencao,
   });
   if (r.ok) return ok({ url: r.url }, { requestId });
   return fail(r.code, r.message, r.status, {

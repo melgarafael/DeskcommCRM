@@ -27,6 +27,8 @@ describe("a volta do provedor passa pela ponte (cookie de sessão Strict)", () =
     ["para=painel&voltou=1", "/app/settings/billing?voltou=1"],
     ["para=hub", "/account-suspended"],
     ["para=hub&voltou=1", "/account-suspended?voltou=1"],
+    ["para=contratacao", "/cobranca/contratar?retomar=1"],
+    ["para=contratacao&voltou=1", "/cobranca/contratar?retomar=1&voltou=1"],
     ["", "/app/settings/billing"],
   ])("%s → %s", (query, destino) => {
     expect(destinoDaVolta(new URLSearchParams(query))).toBe(destino);

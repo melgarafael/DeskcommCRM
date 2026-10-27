@@ -60,6 +60,8 @@ export async function gerarLinkDePagamento(
     requestId: string;
     /** O dono da instalação agindo sobre a empresa: o audit registra o bypass de RLS. */
     comoDono: boolean;
+    /** Continuação do cadastro: não cobrar outro plano se ele mudou entre leituras. */
+    planoEsperado?: string;
   },
 ): Promise<ResultadoDoCheckout> {
   const { orgId } = p;
@@ -83,6 +85,9 @@ export async function gerarLinkDePagamento(
   if (error) return recusar(500, "internal_error", "Não foi possível ler a assinatura.");
   const lida = data as Lida | null;
   if (!lida) return recusar(404, "not_found", "Sua empresa não tem plano de cobrança.");
+  if (p.planoEsperado && lida.plano_id !== p.planoEsperado) {
+    return recusar(409, "state_conflict", "O plano mudou. Confira a escolha antes de continuar para o pagamento.");
+  }
 
   const agora = new Date();
   const expira = lida.checkout_expira_em === null ? null : Date.parse(lida.checkout_expira_em);
@@ -117,6 +122,7 @@ export async function gerarLinkDePagamento(
     .from("cobranca_assinaturas")
     .update({ checkout_url: null, checkout_expira_em: reserva, checkout_sessao_id: null })
     .eq("organization_id", orgId)
+    .eq("plano_id", lida.plano_id)
     .or(`checkout_expira_em.is.null,checkout_expira_em.lt."${agora.toISOString()}"`)
     .select("organization_id")
     .maybeSingle();

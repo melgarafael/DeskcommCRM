@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Primeiro pagamento depois da autenticação",
+    "pergunta": "Como continuar uma intenção válida sem dispensar autenticação ou confirmação financeira?",
+    "resumo": "Intenção assinada liga cadastro ao checkout nativo; retorno confirmado libera o onboarding."
+  },
+  "lanes": [{"id":"pessoa","label":"Pessoa"},{"id":"servidor","label":"Servidor"},{"id":"financeiro","label":"Cobrança nativa"}],
+  "mainPath": ["cadastro","recibo","hub","continuar","checkout","confirmar","onboarding"],
+  "nodes": [
+    {"id":"cadastro","lane":"pessoa","col":1,"type":"frontend","label":"SignupForm","sublabel":"Plano oferecido, sem trial, escolha explícita"},
+    {"id":"recibo","lane":"servidor","col":1,"type":"security","label":"signUp + HMAC","sublabel":"Identidade nova; usuário/empresa/plano/nonce/validade"},
+    {"id":"auth","lane":"servidor","col":2,"type":"security","label":"Auth nativo","sublabel":"Confirmação, sessão e MFA preservados"},
+    {"id":"hub","lane":"servidor","col":2,"type":"backend","label":"Hub de suspensão","sublabel":"Primeiro pagamento; admin fora de suporte"},
+    {"id":"continuar","lane":"pessoa","col":3,"type":"frontend","label":"/cobranca/contratar","sublabel":"Plano do banco; documento faltante; retry"},
+    {"id":"checkout","lane":"financeiro","col":3,"type":"backend","label":"POST checkout existente","sublabel":"Intenção revalidada; CAS e idempotência"},
+    {"id":"gateway","lane":"financeiro","col":4,"type":"external","label":"Gateway conectado","sublabel":"Pagamento e avisos nativos"},
+    {"id":"confirmar","lane":"financeiro","col":4,"type":"backend","label":"Retorno + sincronizar","sublabel":"Só assinatura ativa e org operante"},
+    {"id":"onboarding","lane":"pessoa","col":5,"type":"frontend","label":"/onboarding/welcome"},
+    {"id":"ajuda","lane":"pessoa","col":3,"type":"frontend","label":"Hub + LGPD","sublabel":"Ajuda ou pedido mantém destino"}
+  ],
+  "edges": [
+    {"from":"cadastro","to":"recibo","label":"Servidor valida"},
+    {"from":"recibo","to":"auth","label":"Não substitui confirmação"},
+    {"from":"auth","to":"hub","label":"Gate financeiro preservado"},
+    {"from":"hub","to":"continuar","label":"Primeiro pagamento"},
+    {"from":"hub","to":"ajuda","label":"Pedido LGPD ou ajuda"},
+    {"from":"recibo","to":"checkout","label":"HMAC + vínculo + prazo"},
+    {"from":"continuar","to":"checkout","label":"POST autenticado"},
+    {"from":"checkout","to":"gateway","label":"Reusa cliente/link/assinatura"},
+    {"from":"gateway","to":"confirmar","label":"Ponte e releitura nativas"},
+    {"from":"confirmar","to":"onboarding","label":"Ativa e operante"},
+    {"from":"confirmar","to":"continuar","label":"Pendente: retomar ou conferir"},
+    {"from":"checkout","to":"continuar","label":"Erro recuperável"}
+  ]
+}

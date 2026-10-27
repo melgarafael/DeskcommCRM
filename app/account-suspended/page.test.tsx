@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as Hub from "@/lib/cobranca/hub";
 
 const cena = vi.hoisted(() => ({
   B: "00000000-0000-4000-8000-00000000000b",
@@ -13,6 +14,8 @@ const cena = vi.hoisted(() => ({
   platformAdmin: false,
   modoSuporte: null as { reason: string } | null,
   semOrgAtiva: false,
+  cobranca: false,
+  inicial: true,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -42,15 +45,25 @@ vi.mock("@/lib/auth/server", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    from: () => ({
+    from: (tabela: string) => tabela === "cobranca_assinaturas" ? ({
+      select: () => ({ eq: (_coluna: string, id: string) => ({ maybeSingle: async () => {
+        expect(id).toBe(cena.B);
+        return { data: { estado: "inadimplente", pagamento_inicial_pendente: cena.inicial, periodo_pago_desde: cena.inicial ? null : "2026-01-01T00:00:00Z" }, error: null };
+      } }) }),
+    }) : ({
       select: () => ({
         in: async (_coluna: string, ids: string[]) =>
           cena.falhaNaLeitura
             ? { data: null, error: { message: "rede" } }
-            : { data: ids.map((id) => ({ id, status: cena.status[id] ?? "active" })), error: null },
+            : { data: ids.map((id) => ({ id, status: cena.status[id] ?? "active", suspended_kind: cena.cobranca ? "cobranca" : null })), error: null },
       }),
     }),
   }),
+}));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => cena.cobranca }));
+vi.mock("@/lib/cobranca/hub", async (original) => ({
+  ...await original<typeof Hub>(),
+  lerPainelDoHub: async () => null,
 }));
 vi.mock("@/lib/branding/saida", () => ({ emailDeSuporte: async () => cena.suporte }));
 vi.mock("@/app/actions/auth/signOut", () => ({ signOut: vi.fn() }));
@@ -83,9 +96,53 @@ beforeEach(() => {
   cena.platformAdmin = false;
   cena.modoSuporte = null;
   cena.semOrgAtiva = false;
+  cena.cobranca = false;
+  cena.inicial = true;
 });
 
 describe("/account-suspended: o hub de quem está numa empresa suspensa", () => {
+  it("primeiro pagamento leva o administrador à continuação sem terceiro Assinar", async () => {
+    cena.cobranca = true;
+    await expect(montar()).rejects.toThrow("NEXT_REDIRECT:/cobranca/contratar");
+  });
+
+  it("o retorno do provedor segue para conferir, sem reiniciar checkout automaticamente", async () => {
+    cena.cobranca = true;
+    await expect(AccountSuspendedPage({ searchParams: Promise.resolve({ voltou: "1" }) }))
+      .rejects.toThrow("NEXT_REDIRECT:/cobranca/contratar?voltou=1&retomar=1");
+  });
+
+  it("primeiro pagamento mantém o pedido LGPD solicitado no próprio hub", async () => {
+    cena.cobranca = true;
+    await montar("22222222-2222-4222-8222-222222222222");
+    expect(screen.getByRole("heading", { name: "Aguardando primeiro pagamento" })).toBeVisible();
+    expect(screen.getByTestId("lgpd-pedido")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Assinar" })).toBeNull();
+  });
+
+  it("ajuda fica acessível sem laço para pagamento", async () => {
+    cena.cobranca = true;
+    render(await AccountSuspendedPage({ searchParams: Promise.resolve({ ajuda: "1" }) }));
+    expect(screen.getByTestId("lgpd-lista")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Continuar para pagamento" })).toHaveAttribute("href", "/cobranca/contratar");
+  });
+
+  it.each(["agent", "suporte"])("%s não é enviado a uma ação financeira automática", async (papel) => {
+    cena.cobranca = true;
+    if (papel === "agent") cena.papel = "agent";
+    else cena.modoSuporte = { reason: "acompanhamento" };
+    await montar();
+    expect(screen.getByRole("heading", { name: "Aguardando primeiro pagamento" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Continuar para pagamento" })).toBeNull();
+  });
+
+  it("dívida depois de um período pago conserva o hub de suspensão", async () => {
+    cena.cobranca = true;
+    cena.inicial = false;
+    await montar();
+    expect(screen.getByRole("heading", { name: "Conta suspensa" })).toBeVisible();
+  });
+
   it("diz QUAL empresa está suspensa — quem participa de várias não fica na dúvida", async () => {
     await montar();
     const titulo = screen.getByRole("heading", { level: 1, name: "Conta suspensa" });

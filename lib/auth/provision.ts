@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
+import { lerIntencaoDoCadastro } from "@/lib/cobranca/contratacao";
 
 /** Normaliza o nome da empresa para um slug candidato (citext unique no DB). */
 export function slugify(name: string): string {
@@ -97,6 +98,12 @@ export async function ensureTenantForUser(
     user.email?.split("@")[0] ||
     "Minha empresa";
   const base = slugify(orgName);
+  // Só um recibo assinado do servidor pode reservar o UUID da primeira empresa.
+  // Metadata editável sozinha conserva o provisionamento nativo sem auto-checkout.
+  const planoDoCadastro = user.user_metadata?.cobranca_plan_id;
+  const intencao = typeof planoDoCadastro === "string"
+    ? await lerIntencaoDoCadastro(admin, user.id, planoDoCadastro)
+    : null;
 
   // ponytail: check-then-insert tem janela de corrida se o mesmo link for
   // confirmado 2x em paralelo (pior caso: org duplicada órfã). Advisory lock
@@ -107,6 +114,7 @@ export async function ensureTenantForUser(
     const { data, error } = await admin
       .from("organizations")
       .insert({
+        ...(intencao ? { id: intencao.organization_id } : {}),
         slug,
         display_name: orgName,
         legal_name: orgName,

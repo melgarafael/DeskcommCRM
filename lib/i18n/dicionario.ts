@@ -35,11 +35,13 @@ import { entradaDoCatalogo } from "./catalogos";
 import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
+import { TEXTOS_CONTRATACAO } from "./contratacao";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...TEXTOS_CONTRATACAO,
   "Mensagens da conversa": { es: "Mensajes de la conversación" },
   "Novas mensagens · Ir para o fim": { es: "Mensajes nuevos · Ir al final" },
   // Encaminhar mensagem (#2835) — botão na bolha do chat e o diálogo de destino.

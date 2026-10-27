@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   taxaOk: true,
   audit: vi.fn(),
   logError: vi.fn(),
+  intencao: vi.fn(),
   banco: undefined as unknown as BancoFalso,
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.papel }));
@@ -24,6 +25,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.client
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: async () => ({ allowed: h.taxaOk }) }));
 vi.mock("@/lib/cobranca/emails", () => ({ emailDoAdminDaEmpresa: h.emailDoAdmin }));
+vi.mock("@/lib/cobranca/contratacao", () => ({ lerIntencaoDeContratacao: h.intencao }));
 
 import { ErroDoProvedor } from "@/lib/cobranca/provedores/contrato";
 
@@ -62,6 +64,7 @@ const lerAssinatura = () => h.banco.cadeias.filter((c) => c.tabela === "cobranca
 beforeEach(() => {
   vi.clearAllMocks();
   h.ligada = true;
+  h.intencao.mockResolvedValue(null);
   h.provedor = "stripe";
   h.taxaOk = true;
   m = { linha: { ...EM_TESTE }, reservaOk: true };
@@ -73,6 +76,38 @@ beforeEach(() => {
 });
 
 describe("checkout da assinatura", () => {
+  it("continuação automática revalida intenção e usa recibo estável da mesma pessoa/org", async () => {
+    h.intencao.mockResolvedValue({ id: CHAVE, planoId: "plano-a" });
+    expect((await assinar({ continuar_cadastro: true, volta: "contratacao" })).status).toBe(200);
+    expect(h.intencao).toHaveBeenCalledWith(h.banco.cliente, "admin-1", ORG);
+    expect(h.ad.iniciarAssinatura).toHaveBeenCalledWith(expect.objectContaining({ chaveIdempotencia: CHAVE, urlDeVolta: expect.stringMatching(/para=contratacao$/) }));
+  });
+  it("sem prova de intenção não reserva nem chama gateway automaticamente", async () => {
+    expect((await assinar({ continuar_cadastro: true })).status).toBe(409);
+    expect(updates()).toEqual([]);
+    expect(h.ad.iniciarAssinatura).not.toHaveBeenCalled();
+  });
+  it("plano diferente do compromisso autenticado recusa antes da reserva e do provedor", async () => {
+    h.intencao.mockResolvedValue({ id: CHAVE, planoId: "plano-escolhido" });
+    expect((await codigo(await assinar({ continuar_cadastro: true }))).code).toBe("state_conflict");
+    expect(updates()).toEqual([]);
+    expect(h.ad.garantirCliente).not.toHaveBeenCalled();
+    expect(h.ad.iniciarAssinatura).not.toHaveBeenCalled();
+  });
+  it("a reserva exige o mesmo plano lido; concorrência perdedora não chega ao gateway", async () => {
+    h.intencao.mockResolvedValue({ id: CHAVE, planoId: "plano-a" });
+    m.reservaOk = false;
+    expect((await codigo(await assinar({ continuar_cadastro: true }))).code).toBe("checkout_em_preparo");
+    const reserva = lerAssinatura().find((c) => operacao(c) === "update" && filtros(c).some((f) => f[0] === "or"));
+    expect(reserva).toBeDefined();
+    expect(filtros(reserva!)).toContainEqual(["eq", "plano_id", "plano-a"]);
+    expect(h.ad.iniciarAssinatura).not.toHaveBeenCalled();
+  });
+  it("intenção ilegível é erro recuperável e não executa cobrança", async () => {
+    h.intencao.mockRejectedValue(new Error("rede"));
+    expect((await assinar({ continuar_cadastro: true })).status).toBe(503);
+    expect(updates()).toEqual([]);
+  });
   it("chave desligada: 404; empresa isenta: 404; nenhum provedor conectado: 409 com frase para leigo", async () => {
     h.ligada = false;
     expect((await assinar()).status).toBe(404);
