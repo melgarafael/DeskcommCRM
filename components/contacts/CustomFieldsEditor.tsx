@@ -30,6 +30,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { buscarOpcoes, valorCanonico } from "@/lib/leads/campos-pesquisaveis";
 import { cn } from "@/lib/utils";
 import { camposVisiveis, type MostrarQuando } from "@/lib/schemas/mostrar-quando";
+import type { CustomFieldDef as DefinicaoDoFunil } from "@/lib/schemas/settings";
 import { mensagemDoCampo } from "@/lib/leads/padrao-do-campo";
 
 import { FileUploadCustomField } from "@/components/kanban/FileUploadCustomField";
@@ -64,6 +65,13 @@ export interface CustomFieldDef {
    * e viaja no save — esconder não é limpar.
    */
   mostrar_quando?: MostrarQuando;
+  /**
+   * A exigência por ETAPA (#1536), que o dossiê lê para a composição da #3036:
+   * um campo escondido pela condição e exigido pela etapa continua na tela, com
+   * a frase que explica. Aqui a definição vem do schema do funil — o editor não
+   * reimplementa a regra, só carrega o que ela declarou.
+   */
+  obrigatorio_em?: DefinicaoDoFunil["obrigatorio_em"];
   /** O FORMATO do valor (#2730) — ver `lib/leads/padrao-do-campo`. */
   padrao?: string;
   /** A frase do dono para quem digitar fora do formato (#2730). */
