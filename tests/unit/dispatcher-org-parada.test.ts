@@ -42,6 +42,7 @@ import { followupGatilhoLeadHandler } from "@/lib/followup/gatilho-lead.handler"
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
 import { followupReactivityHandler } from "@/lib/followup/reactivity.handler";
+import { followupSaidaDaEtapaHandler } from "@/lib/followup/saida-da-etapa.handler";
 import { avisoDeEtapaHandler } from "@/lib/leads/aviso-de-etapa.handler";
 import { avisoAoDonoDaCarteira } from "@/lib/carteira/aviso-ao-dono";
 import { comandaDoGanhoHandler } from "@/lib/financeiro/comanda-do-ganho.handler";
@@ -69,6 +70,10 @@ const RODA: EventHandler[] = [
   // #2591 — tarefa interna para o dono da carteira: escrita no próprio banco,
   // sem rede, roda com a organização parada (mesma régua do aviso de etapa).
   avisoAoDonoDaCarteira,
+  // Saiu da etapa: desagenda o toque que ela armou. Escrita interna, sem rede —
+  // e o lado SEGURO de uma organização parada (toque armado voltaria em rajada
+  // na reativação, fora de contexto).
+  followupSaidaDaEtapaHandler,
 ];
 
 const PULA: EventHandler[] = [
