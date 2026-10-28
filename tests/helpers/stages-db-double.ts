@@ -191,6 +191,13 @@ export interface DbOpts {
    */
   manifestacoes?: Linha[];
   organizationSettings?: Record<string, unknown> | null;
+  /**
+   * As CONVERSAS (#3611, fatia 2): `channel` decide se o canal é o do fluxo e
+   * `metadata` é onde o rascunho da manifestação mora. Sem elas, o dublê devolve
+   * conversa inexistente — que é o caso de "a ingestão não sabe de quem é a
+   * mensagem", e não o caso comum.
+   */
+  conversas?: Linha[];
 }
 
 type Linha = Record<string, unknown>;
@@ -229,6 +236,7 @@ export interface Registro {
     contacts: Linha[];
     organizations: Linha[];
     ouvidoria_manifestacoes: Linha[];
+    conversations: Linha[];
   };
 }
 
@@ -297,6 +305,9 @@ export function makeDb(opts: DbOpts = {}): Registro {
         { id: OUTRA_ORG, settings: opts.organizationSettings ?? null },
       ],
       ouvidoria_manifestacoes: (opts.manifestacoes ?? []) as Linha[],
+      // As conversas do canal (#3611, fatia 2): `channel` e `metadata` da MESMA
+      // linha — é dela que sai o rascunho da manifestação.
+      conversations: (opts.conversas ?? []) as Linha[],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
