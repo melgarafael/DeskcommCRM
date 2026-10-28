@@ -11622,6 +11622,58 @@ export type Database = {
           },
         ];
       };
+      ouvidoria_manifestacoes: {
+        Row: {
+          canal: string;
+          contact_id: string | null;
+          created_at: string;
+          id: string;
+          organization_id: string;
+          protocolo: string;
+          status: string;
+          texto: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          canal: string;
+          contact_id?: string | null;
+          created_at?: string;
+          id?: string;
+          organization_id: string;
+          protocolo: string;
+          status?: string;
+          texto: string;
+          updated_at?: string;
+        };
+        Update: {
+          canal?: string;
+          contact_id?: string | null;
+          created_at?: string;
+          id?: string;
+          organization_id?: string;
+          protocolo?: string;
+          status?: string;
+          texto?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ouvidoria_manifestacoes_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ouvidoria_manifestacoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       pacing_ledger: {
         Row: {
           channel_session_id: string;
