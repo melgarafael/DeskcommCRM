@@ -18,18 +18,18 @@
 --
 -- ─── Por que isso quebra uma instalação NOVA deste CRM ──────────────────────
 --
--- Medido no apêndice de `supabase/baseline.sql` desta base, com a mesma régua que a
--- issue usou (contar `create table … public.<t>` no apêndice e descontar quem tem
--- `grant … on … public.<t>`): das **130** tabelas que o apêndice cria, **58 não têm
--- `GRANT` explícito** no próprio apêndice — `account_plans`, `automation_rules`,
+-- Medido no apêndice de `supabase/baseline.sql` desta base, com a mesma janela da
+-- issue (do primeiro bloco do complemento ao fim do arquivo) e ignorando comentário:
+-- das **130** tabelas que o apêndice cria em `public`, **62 não têm `GRANT`
+-- explícito** no próprio apêndice — `account_plans`, `automation_rules`,
 -- `calendar_appointments`, `calendar_event_types`, entre outras. Todas contam com o
 -- default ACL para serem alcançáveis pela Data API. Sem este bloco, elas nascem mudas.
 --
--- Na abertura da issue (commit 9ff58fb35) a MESMA régua media 111 e 48; o apêndice
--- cresceu desde então. Nenhum desses quatro números é literal copiado:
--- `tabelasDoApendiceSemGrantProprio()`, no teste desta migration, deriva as duas listas
--- do arquivo — quando o apêndice muda, elas mudam junto, e as desta linha são
--- conferíveis rodando o teste.
+-- A issue abriu com 111 e 48 no commit 9ff58fb35; o apêndice cresceu desde então, e
+-- a prosa deste arquivo cita `create table`/`grant` em comentário — contar prosa faz
+-- a conta mentir para MENOS. Por isso nenhum número daqui é literal copiado:
+-- `tabelasDoApendiceSemGrantProprio()`, no teste desta migration, deriva as duas
+-- listas do arquivo, e as desta linha são conferíveis rodando o teste.
 --
 -- ─── Por que a migration, se o baseline já tem a linha ──────────────────────
 --

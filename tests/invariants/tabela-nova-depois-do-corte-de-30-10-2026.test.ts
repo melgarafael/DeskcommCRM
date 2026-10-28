@@ -46,11 +46,13 @@ import { sql } from "./gov-helpers";
  *
  * O tamanho do problema — quantas tabelas o apêndice cria e quantas delas não têm
  * `GRANT` próprio — sai de `tabelasDoApendiceSemGrantProprio()`, que lê o
- * `baseline.sql` desta árvore. Número copiado envelhece em silêncio: o apêndice
- * ganha tabela toda semana, e um literal digitado aqui viraria ficção sem ninguém
- * notar. A lista derivada é a régua, e o caso confere no banco que cada nome dela
- * existe de verdade — parser que lesse `create table` de prosa produziria nome
- * fantasma e passaria medindo nada.
+ * `baseline.sql` desta árvore do primeiro bloco do complemento ao FIM do arquivo,
+ * ignorando comentário (a prosa cita `create table` e `grant` o tempo todo, e
+ * prosa não concede nada). Número copiado envelhece em silêncio: o apêndice ganha
+ * tabela toda semana, e um literal digitado aqui viraria ficção sem ninguém notar.
+ * A lista derivada é a régua, e o caso confere no banco que cada nome dela existe
+ * de verdade — parser que lesse prosa produziria nome fantasma e passaria medindo
+ * nada.
  *
  * ## `anon`: restauração, não ampliação
  *
@@ -89,13 +91,16 @@ const APENDICE_FIM = "-- ---- VARREDURA anon:";
 /** O apêndice começa no primeiro bloco do complemento — a mesma âncora da régua da issue. */
 const APENDICE_INICIO = /^-- ---- /m;
 
-function regiaoDoBaseline(inicio: RegExp | string, fim: string): string {
-  const m = typeof inicio === "string" ? { index: SQL_DO_BASELINE.indexOf(inicio) } : APENDICE_INICIO.exec(SQL_DO_BASELINE);
-  const de = m?.index ?? -1;
-  if (de === -1) throw new Error(`marcador ausente no baseline.sql: '${String(inicio)}'.`);
-  const ate = SQL_DO_BASELINE.indexOf(fim, de);
-  if (ate === -1) throw new Error(`marcador ausente depois de '${String(inicio)}' no baseline.sql: '${fim}'.`);
-  return SQL_DO_BASELINE.slice(de, ate);
+/**
+ * O apêndice INTEIRO — do primeiro bloco de complemento ao fim do arquivo, que é
+ * a janela da régua da issue. Ele continua depois da varredura de anon (as travas
+ * do suporte, 0274), e as tabelas criadas ali dependem do default ACL do mesmo
+ * jeito: parar na varredura mediria menos do que o problema.
+ */
+function apendiceDoBaseline(): string {
+  const de = SQL_DO_BASELINE.search(APENDICE_INICIO);
+  if (de === -1) throw new Error("apêndice do baseline não encontrado ('-- ---- ' abrindo o complemento).");
+  return SQL_DO_BASELINE.slice(de);
 }
 
 /** SQL de verdade: sem as linhas de comentário — a prosa cita `create table` o tempo todo. */
@@ -126,7 +131,7 @@ function grantNomeiaTabela(sqlTexto: string, tabela: string): boolean {
  * É nelas que a Data API depende do default ACL: a lista que a 9029 protege.
  */
 function tabelasDoApendiceSemGrantProprio(): string[] {
-  const apendice = semComentario(regiaoDoBaseline(APENDICE_INICIO, APENDICE_FIM));
+  const apendice = semComentario(apendiceDoBaseline());
   return tabelasCriadas(apendice).filter((tabela) => !grantNomeiaTabela(apendice, tabela));
 }
 
