@@ -40,6 +40,10 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // Avaliações do Google na Central (#3510): a nota aparece na linha da lista.
+  "Avaliação do Google": { es: "Evaluación de Google" },
+  "de 5": { es: "de 5" },
+  "Falta configurar: {vars}": { es: "Falta configurar: {vars}" },
   "Com regras nesta lista, o telefone vinculado à conversa escolhe o agente antes da IA. Os demais números usam o fallback público. Intenções, campanhas e o agente anterior não mudam essa escolha.": { es: "Con reglas en esta lista, el teléfono vinculado a la conversación elige el agente antes de la IA. Los demás números usan el agente público de reserva. Las intenciones, campañas y el agente anterior no cambian esta elección." },
   "Telefone com DDI": { es: "Teléfono con código de país" },
   "Agente reservado": { es: "Agente reservado" },

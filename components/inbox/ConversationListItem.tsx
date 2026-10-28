@@ -22,6 +22,7 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
+import { notaDaAvaliacaoNaConversa } from "@/lib/channels/google-business/avaliacoes";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -174,6 +175,14 @@ export function ConversationListItem({
   const overflow = tags.length - visibleTags.length;
   const preview = conversation.last_message_preview?.trim() || t("Sem mensagens");
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
+  /**
+   * A NOTA DA AVALIAÇÃO, quando a linha é do Google Business (#3510).
+   *
+   * Avaliação sem nota na lista é texto solto: quem varre a fila não vê que a
+   *quele cliente deu 1 estrela antes de ler o comentário. `null` nas demais
+   * conversas, e a linha fica exatamente como era.
+   */
+  const notaDaAvaliacao = notaDaAvaliacaoNaConversa(conversation.metadata);
   const naFila = queuePosition !== undefined;
   /**
    * A HORA DO CANTO RESPONDE À MESMA PERGUNTA QUE ORDENA A LISTA.
@@ -417,6 +426,17 @@ export function ConversationListItem({
           >
             {isAi && mostrarAutomatico ? (
               <Robot size={12} weight="duotone" className="mr-1 inline align-[-2px]" aria-hidden />
+            ) : null}
+            {notaDaAvaliacao !== null ? (
+              <span
+                data-testid={`avaliacao-google-${conversation.id}`}
+                title={t("Avaliação do Google")}
+                aria-label={`${t("Avaliação do Google")}: ${notaDaAvaliacao} ${t("de 5")}`}
+                className="mr-1 inline-flex items-center gap-0.5 align-[-1px] text-[11px] font-semibold text-text tabular-nums"
+              >
+                <span aria-hidden>★</span>
+                {notaDaAvaliacao}
+              </span>
             ) : null}
             {truncated}
           </p>

@@ -49,7 +49,19 @@ export const SOCIAL_NETWORKS = [
   { id: "reddit", label: "Reddit", inbox: false, portas: ["intermediada"] },
   { id: "pinterest", label: "Pinterest", inbox: false, portas: ["intermediada"] },
   { id: "bluesky", label: "Bluesky", inbox: false, portas: ["intermediada"] },
-  { id: "googlebusiness", label: "Google Business", inbox: false, portas: ["intermediada"] },
+  /**
+   * Google Business entra no atendimento pela AVALIAÇÃO, não por mensagem (#3510).
+   *
+   * O que chega à Central são as avaliações do Perfil da Empresa, lidas do
+   * projeto Google da própria instalação (`lib/channels/google-business/`) e
+   * gravadas como conversa — o vínculo com o canal é a linha de
+   * `channel_sessions` que o "Receber no atendimento" cria. Sem o `inbox: true`
+   * a conta autoriza e a rede fica sem afordância nenhuma na tela de Conexões,
+   * que é o estado que a issue descreve como problema.
+   *
+   * A RESPOSTA à avaliação é da fatia 2: aqui só se lê.
+   */
+  { id: "googlebusiness", label: "Google Business", inbox: true, portas: ["intermediada"] },
   { id: "telegram", label: "Telegram", inbox: false, portas: ["intermediada"] },
   { id: "snapchat", label: "Snapchat", inbox: false, portas: ["intermediada"] },
   { id: "discord", label: "Discord", inbox: false, portas: ["intermediada"] },
