@@ -62056,6 +62056,71 @@ alter table public.system_update_runs
 comment on column public.system_update_runs.force_requested is
   'Pedido restrito de reaplicar a atualização pelo agente do host; ausência ou false preserva o caminho normal.';
 
+
+-- manifest: A vaga de número do plano deixa de ser ocupada por sessão que morreu SEM parear (#3416); quem tem número — FAILED inclusive — e quem tem conexão em curso continua contando.
+--
+-- 0809 — o slot do plano é do NÚMERO, não da linha (#3416). O corpo vigente
+-- fica AQUI, no fim do arquivo, como todos os apêndices: o `create or replace`
+-- da 0583 continua no lugar em que o dump o deixou e quem vale é o último.
+--
+-- A contagem era `archived_at is null and provider <> 'wacalls'` e tratava a
+-- sessão que nasceu de um QR que ninguém leu — `FAILED`, `phone_number` nulo —
+-- como o número ocupado da empresa; o número real seguinte era recusado com
+-- "Seu plano permite 1 número conectado". Agora a linha só ocupa vaga quando
+-- tem número pareado (a queda NÃO devolve o slot) ou quando é conexão em curso
+-- (`STARTING`/`SCAN_QR_CODE`) ou `WORKING` sem número gravado ainda — a vaga
+-- reservada, sem a qual abrir N QRs e parear todos daria N números com teto 1.
+-- Fora da conta fica só a linha MORTA (`FAILED`/`STOPPED`) SEM número.
+create or replace function public.fn_trava_canais_do_plano()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_limite integer;
+  v_em_uso integer;
+begin
+  if new.archived_at is not null or new.provider = 'wacalls' then
+    return new;
+  end if;
+  if new.phone_number is null and new.status in ('FAILED', 'STOPPED') then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' then
+    if old.archived_at is null
+       and old.provider <> 'wacalls'
+       and new.organization_id is not distinct from old.organization_id then
+      return new;
+    end if;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(new.organization_id, 'canais');
+  if v_limite is null then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text, 2281));
+
+  select count(*) into v_em_uso
+    from public.channel_sessions cs
+   where cs.organization_id = new.organization_id
+     and cs.archived_at is null
+     and cs.provider <> 'wacalls'
+     and (cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+     and cs.id <> new.id;
+
+  if v_em_uso >= v_limite then
+    raise exception 'limite_do_plano:canais:%', v_limite
+      using errcode = 'PT402',
+            detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_trava_canais_do_plano() from public, anon, authenticated;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
