@@ -58,6 +58,33 @@ describe("lerManifestacaoDaOuvidoria", () => {
     expect(resolveActiveOrg).not.toHaveBeenCalled();
   });
 
+  it("⭐ sessão de acompanhamento somente leitura não lê o relato sigiloso", async () => {
+    vi.mocked(loadAuthUser).mockResolvedValue({
+      id: USER_ID,
+      support: {
+        id: "77777777-7777-4777-8777-777777777777",
+        organization_id: ORG_ID,
+        actor_user_id: USER_ID,
+        auth_session_id: "88888888-8888-4888-8888-888888888888",
+        previous_organization_id: null,
+        expires_at: "2030-01-01T00:00:00.000Z",
+        name: "Suporte",
+        locale: null,
+        access_mode: "support_readonly",
+        status: "active",
+      },
+    } as never);
+    makeDb({ manifestacoes: [MANIFESTACAO] });
+    const { lerManifestacaoDaOuvidoria } = await import("./ler-manifestacao");
+
+    await expect(lerManifestacaoDaOuvidoria(MANIFESTACAO.id)).resolves.toEqual({
+      ok: false,
+      error: "forbidden_role",
+    });
+    // A barreira vem antes de qualquer resolução de tenant.
+    expect(resolveActiveOrg).not.toHaveBeenCalled();
+  });
+
   it("usuário sem organização ativa: forbidden_tenant", async () => {
     vi.mocked(loadAuthUser).mockResolvedValue({ id: USER_ID } as never);
     vi.mocked(resolveActiveOrg).mockResolvedValue(null);
