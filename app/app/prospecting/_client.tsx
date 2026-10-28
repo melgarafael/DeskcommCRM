@@ -29,7 +29,7 @@ import {
 } from "@/lib/prospecting/estrategia-site";
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
-import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
+import { previaAprovadaDoAgente, previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
 type Campaign = {
   id: string;
@@ -428,6 +428,7 @@ export function ProspectingClient() {
         action: "prever_abordagem",
         id: campaign.id,
         candidate_id: candidateId,
+        config,
       });
       return res.data;
     } finally {
@@ -436,6 +437,13 @@ export function ProspectingClient() {
       // campanha.
       setBusy(false);
     }
+  }
+  async function aprovarPrevia(candidateId: string, configAprovada: CampaignConfig): Promise<boolean> {
+    if (!campaign) return false;
+    return perform(
+      { action: "aprovar_previa", id: campaign.id, candidate_id: candidateId, config: configAprovada },
+      t("Prévia aprovada. A campanha só fará o primeiro contato após esta aprovação."),
+    );
   }
   const buscaConcluida = !!campaign && campaign.search_status === "succeeded";
   const noRascunho = buscaConcluida && campaign?.status === "draft";
@@ -474,6 +482,15 @@ export function ProspectingClient() {
   const temAgenteNaCampanha = !!campaign && campanhaGeraPrevia(campaign, data?.previa_padrao === true);
   const podeGerarPreviaAMao = !!campaign && campanhaPodeGerarPrevia(campaign, data?.previa_padrao === true);
   const marcadas = candidates.filter((c) => c.selected !== false);
+  const aprovacoesPendentes = config.agent_id
+    ? marcadas.filter(
+        (c) =>
+          !!c.data.phone &&
+          (c.status === "new" || c.status === "queued") &&
+          (c.automatic_sends ?? 0) === 0 &&
+          !previaAprovadaDoAgente(c.data, config.agent_id!),
+      ).length
+    : 0;
   const opcoes = opcoesDoPreparo(campaign?.search);
   const sitesVerificados = marcadas.length - pendentesDeSite;
   const previasProntas = marcadas.filter((c) => previaValida(c.data)).length;
@@ -869,7 +886,7 @@ export function ProspectingClient() {
                     [t("Responderam"), count(["replied", "qualified"])],
                     [t("Pediram para parar"), candidates.filter((c) => c.is_blocked).length],
                     [t("Qualificados"), count(["qualified"])],
-                    [t("Score médio"), scoreMedio()],
+                    [t("Prioridade média"), scoreMedio()],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <p className="text-2xl font-semibold tabular-nums">{value}</p>
@@ -914,7 +931,7 @@ export function ProspectingClient() {
                             {t("Editar ritmo")}
                           </Button>
                           <Button
-                            disabled={busy}
+                            disabled={busy || aprovacoesPendentes > 0}
                             onClick={() =>
                               perform(
                                 { action: "resume", id: campaign.id },
@@ -927,6 +944,11 @@ export function ProspectingClient() {
                         </div>
                       ) : null}
                     </div>
+                    {campaign.status === "paused" && aprovacoesPendentes > 0 && (
+                      <p className="mt-3 text-sm text-amber-700">
+                        {t("Revise e aprove as prévias pendentes antes de retomar a fila.")} ({aprovacoesPendentes})
+                      </p>
+                    )}
                     {campaign.status === "paused" && ritmo?.campaignId === campaign.id && (
                       <form
                         className="mt-4 space-y-3 rounded-md border p-4"
@@ -1422,11 +1444,17 @@ export function ProspectingClient() {
                                   "Ao iniciar, os contatos novos com telefone entram no funil. Contatos já existentes são preservados. A fila faz uma primeira abordagem; respostas seguem no Inbox. Uma mensagem já em transmissão pode concluir após a pausa.",
                                 )}
                           </p>
+                          {aprovacoesPendentes > 0 && (
+                            <p className="text-sm text-amber-700">
+                              {t("Abra os detalhes de cada empresa selecionada, revise a prévia e aprove antes de iniciar.")} ({aprovacoesPendentes})
+                            </p>
+                          )}
                         </fieldset>
                         <Button
                           type="submit"
                           disabled={
                             busy ||
+                            aprovacoesPendentes > 0 ||
                             !agents.length ||
                             !data?.channels.some((c) => c.status === "WORKING")
                           }
@@ -1474,7 +1502,7 @@ export function ProspectingClient() {
                           onChange={(e) => setOrdenar(e.target.value as "" | "score")}
                         >
                           <option value="">{t("Recentes")}</option>
-                          <option value="score">{t("Score")}</option>
+                          <option value="score">{t("Prioridade")}</option>
                         </select>
                       </div>
                       {canSelect && (
@@ -1693,9 +1721,18 @@ export function ProspectingClient() {
                                 status={c.status ?? c.progress}
                                 disabled={busy}
                                 temAgente={podeGerarPreviaAMao}
+                                config={config}
+                                podeAprovar={
+                                  !!campaign &&
+                                  !!config.agent_id &&
+                                  ["draft", "paused"].includes(campaign.status) &&
+                                  c.selected !== false &&
+                                  ["new", "queued"].includes(c.status ?? "")
+                                }
                                 sobrescritaVocabulario={data?.personalizacao?.vocabulario ?? null}
                                 onReanalisar={reanalisarSite}
                                 onPrevia={preverAbordagem}
+                                onAprovar={aprovarPrevia}
                               />
                               <PreviaNaLinha
                                 candidato={c}

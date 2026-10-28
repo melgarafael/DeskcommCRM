@@ -16,6 +16,7 @@ const PAGINA_BOA = `<html><head><meta name="viewport" content="width=device-widt
 <link rel="icon" href="/f.ico"></head><body><h1>Bem-vindo à Vitta</h1>
 <a href="https://wa.me/551199">zap</a><a href="tel:+551199">tel</a><a href="mailto:a@b.com">m</a>
 <a href="https://instagram.com/x">ig</a><a href="https://google.com/maps?q=x">mapa</a>
+<address>Rua do Comércio, 123 - Sorocaba/SP</address>
 <img src="a.jpg"><img src="b.jpg"><img src="c.jpg"><p>Texto visível da clínica com serviços e contato.</p><p>Atendemos de segunda a sábado com hora marcada, convênios e pacotes promocionais para novos pacientes da região.</p><ul><li>Limpeza de pele</li><li>Harmonização facial</li><li>Massagem modeladora</li><li>Avaliação gratuita</li></ul></body></html>`;
 
 function fakeFetch(respostas: Record<string, { status: number; body: string; location?: string }>): typeof fetch {

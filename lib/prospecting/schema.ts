@@ -122,6 +122,15 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
       action: z.literal("prever_abordagem"),
       id: z.string().uuid(),
       candidate_id: z.string().uuid(),
+      config: campaignConfigSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("aprovar_previa"),
+      id: z.string().uuid(),
+      candidate_id: z.string().uuid(),
+      config: campaignConfigSchema.optional(),
     })
     .strict(),
   // Verificação de site sob demanda (spec 24): enriquece o próximo lote da

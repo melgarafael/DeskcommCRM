@@ -79,6 +79,7 @@ export const ITENS_DO_RAIO_X = [
   "tel",
   "mailto",
   "social",
+  "endereco",
   "mapa",
   "fotos",
   "titulo",
@@ -90,6 +91,17 @@ export type ItemDoRaioX = (typeof ITENS_DO_RAIO_X)[number];
 export interface RaioXDoSite {
   tem: ItemDoRaioX[];
   falta: ItemDoRaioX[];
+}
+
+/** Completude técnica explicável pelo número de itens do raio-X presentes. */
+export function pontuarCompletudeDoSite(
+  checklist: { tem?: readonly string[]; falta?: readonly string[] } | null | undefined,
+) {
+  const presentes = new Set((checklist?.tem ?? []).filter((item): item is ItemDoRaioX =>
+    (ITENS_DO_RAIO_X as readonly string[]).includes(item),
+  )).size;
+  const total = ITENS_DO_RAIO_X.length;
+  return { valor: Math.round((presentes / total) * 100), presentes, total };
 }
 
 /** Host canônico para comparação (`www.` fora, minúsculo) ou null se não for http(s). */
@@ -151,13 +163,8 @@ export function montarChecklist(html: string): RaioXDoSite {
     ["tel", minusculo.includes('href="tel:') || minusculo.includes("href='tel:")],
     ["mailto", minusculo.includes("mailto:")],
     ["social", minusculo.includes("instagram.com") || minusculo.includes("facebook.com")],
-    [
-      "mapa",
-      minusculo.includes("google.com/maps") ||
-        minusculo.includes("maps.google") ||
-        minusculo.includes("<address") ||
-        /\b\d{5}-\d{3}\b/.test(fonte),
-    ],
+    ["endereco", /<address\b/i.test(fonte) || /\b\d{5}-\d{3}\b/.test(fonte)],
+    ["mapa", minusculo.includes("google.com/maps") || minusculo.includes("maps.google")],
     ["fotos", (minusculo.match(/<img\b/g) ?? []).length >= 3],
     [
       "titulo",
@@ -305,7 +312,7 @@ export interface SiteEnrichment {
  * da fase de rede (o tick preenche depois).
  */
 export function vereditoPuro(website: string | null | undefined, agoraIso: string): SiteEnrichment | null {
-  const vazio: RaioXDoSite = { tem: [], falta: [] };
+  const vazio: RaioXDoSite = { tem: [], falta: [...ITENS_DO_RAIO_X] };
   if (ehSemSite(website)) {
     return {
       ver: 1, classe: "sem-site", problemas: [], checklist: vazio,

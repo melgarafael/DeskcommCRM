@@ -25,6 +25,7 @@ import { CanalReconectandoError, ProspectingError } from "./provider";
 import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
+import { previaAprovadaDoAgente } from "./previa";
 import {
   provedorDaOrganizacao,
   provedorExigeCredencialDaOrganizacao,
@@ -64,6 +65,7 @@ export interface Candidate {
   status: string;
   selected: boolean;
   phone: string | null;
+  automatic_sends?: number | null;
   contact_id: string | null;
   lead_id: string | null;
   conversation_id: string | null;
@@ -705,6 +707,7 @@ export async function activateCampaign(
         [org, id],
       )
     ).rows;
+    exigirAprovacaoAntesDoPrimeiroContato(candidates, config.agent_id);
     await enfileirarCandidatos(db, admin, org, c, config, candidates);
     await db.query(
       "update prospecting_campaigns set config=$3,status='running',next_send_at=now()+interval '1 minute',error=null,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
@@ -712,6 +715,32 @@ export async function activateCampaign(
     );
     return { started: true };
   });
+}
+
+/** A campanha não começa nem retoma enquanto houver primeiro contato sem revisão humana. */
+export function exigirAprovacaoAntesDoPrimeiroContato(
+  candidatos: Array<{
+    id: string;
+    data: Prospect;
+    phone: string | null;
+    selected?: boolean | null;
+    automatic_sends?: number | null;
+  }>,
+  agentId: string,
+): void {
+  const pendentes = candidatos.filter(
+    (candidato) =>
+      candidato.selected !== false &&
+      !!candidato.phone &&
+      (candidato.automatic_sends ?? 0) === 0 &&
+      !previaAprovadaDoAgente(candidato.data, agentId),
+  );
+  if (pendentes.length > 0) {
+    throw new ProspectingError(
+      `Revise e aprove a prévia de ${pendentes.length} empresa(s) antes de iniciar ou retomar a campanha.`,
+      409,
+    );
+  }
 }
 
 /**

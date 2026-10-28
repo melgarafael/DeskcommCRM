@@ -34,6 +34,8 @@ export const previaSalvaSchema = z.object({
   baseada_em: z.string().min(1).max(160),
   gerada_em: z.string().min(1).max(40),
   agente_id: z.string().uuid(),
+  aprovada_por: z.string().uuid().optional(),
+  aprovada_em: z.string().max(40).optional(),
 });
 export type PreviaSalva = z.infer<typeof previaSalvaSchema>;
 
@@ -80,6 +82,42 @@ export function previaValida(data: DadosDaPrevia): PreviaSalva | null {
 export function previaDoAgente(data: DadosDaPrevia, agenteId: string): PreviaSalva | null {
   const previa = previaValida(data);
   return previa && previa.agente_id === agenteId ? previa : null;
+}
+
+/** A prévia só libera o primeiro contato se a pessoa atual a aprovou. */
+export function previaAprovadaDoAgente(data: DadosDaPrevia, agenteId: string): PreviaSalva | null {
+  const previa = previaDoAgente(data, agenteId);
+  return previa?.aprovada_por && previa.aprovada_em ? previa : null;
+}
+
+/** Marca como aprovada apenas a prévia exata que a pessoa acabou de revisar. */
+export async function aprovarPrevia(
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount?: number | null }> },
+  args: {
+    organizationId: string;
+    campaignId: string;
+    candidateId: string;
+    agentId: string;
+    baseadaEm: string;
+    geradaEm: string;
+    approverUserId: string;
+    approvedAt: string;
+  },
+): Promise<boolean> {
+  const result = await db.query(
+    "update prospecting_candidates set data=jsonb_set(data,'{previa}',(data->'previa') || jsonb_build_object('aprovada_por',$7::text,'aprovada_em',$8::text),true),updated_at=now() where organization_id=$1 and campaign_id=$2 and id=$3 and selected is not false and status in ('new','queued') and data->'previa'->>'agente_id'=$4 and data->'previa'->>'baseada_em'=$5 and data->'previa'->>'gerada_em'=$6",
+    [
+      args.organizationId,
+      args.campaignId,
+      args.candidateId,
+      args.agentId,
+      args.baseadaEm,
+      args.geradaEm,
+      args.approverUserId,
+      args.approvedAt,
+    ],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**

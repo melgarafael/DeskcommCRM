@@ -111,7 +111,19 @@ const candidate = {
   message_id: "stable-message",
   phone: "+5511999990000",
   service_boundary: { conversation_id: id },
-  data: { name: "Example", socials: [] },
+  data: {
+    name: "Example",
+    socials: [],
+    website: null,
+    previa: {
+      texto: "Prévia revisada pela pessoa.",
+      baseada_em: "sem-site@derivado",
+      gerada_em: "2026-10-20T12:00:00.000Z",
+      agente_id: id,
+      aprovada_por: id,
+      aprovada_em: "2026-10-20T12:05:00.000Z",
+    },
+  },
 };
 function database(
   counts = {
@@ -132,6 +144,8 @@ function database(
     // sem ele a tupla de `mock.calls` tem comprimento 1 e `calls[i][1]` reprova o
     // typecheck (TS2493) mesmo com o teste passando no vitest.
     query: vi.fn(async (sql: string, _params?: unknown[]) => {
+      if (sql.includes("aguarda revisão e aprovação humana"))
+        return { rows: [{ id }], rowCount: 1 };
       if (sql.startsWith("select daily_message_limit"))
         return { rows: [{ daily_message_limit: 50 }] };
       if (sql.includes("count(*) filter")) return { rows: [counts] };
@@ -163,6 +177,19 @@ beforeEach(() => {
   mocks.send.mockResolvedValue({ status: "sent" });
 });
 describe("gradual outreach", () => {
+  it("pauses and records the gate when the first-contact preview has no human approval", async () => {
+    const row = {
+      ...candidate,
+      automatic_sends: 0,
+      data: { name: "Example", website: null, socials: [], previa: null },
+    };
+    const db = database(undefined, row);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    expect(db.query.mock.calls.some(([sql]) => sql.includes("aguarda revisão e aprovação humana"))).toBe(true);
+    expect(mocks.preflight).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
   it("sends one candidate with stable identity and the mandatory last-moment guard", async () => {
     const db = database();
     await sendNextCandidate({} as never, db as never, {} as never, campaign);
@@ -368,6 +395,8 @@ describe("gradual outreach", () => {
           baseada_em: `fora-do-ar@${verificadoEm}`,
           gerada_em: verificadoEm,
           agente_id: id,
+          aprovada_por: id,
+          aprovada_em: verificadoEm,
         },
       },
     };
@@ -782,7 +811,18 @@ describe("funil só no envio (`funnel_entry: on_send`)", () => {
     service_boundary: null,
     message_id: "stable-message",
     phone: "+5511999990000",
-    data: { name: "Example", socials: [] },
+    data: {
+      name: "Example",
+      socials: [],
+      previa: {
+        texto: "Prévia aprovada",
+        baseada_em: "sem-site@derivado",
+        gerada_em: "2026-10-20T12:00:00.000Z",
+        agente_id: id,
+        aprovada_por: id,
+        aprovada_em: "2026-10-20T12:05:00.000Z",
+      },
+    },
   };
 
   it("prepara a empresa ANTES de gerar e enviar, e envia com os dados que a preparação criou", async () => {
@@ -844,7 +884,18 @@ describe("funil só no envio: a checagem do canal vem ANTES de criar qualquer co
     service_boundary: null,
     message_id: "stable-message",
     phone: "+5511999990000",
-    data: { name: "Example", socials: [] },
+    data: {
+      name: "Example",
+      socials: [],
+      previa: {
+        texto: "Prévia aprovada",
+        baseada_em: "sem-site@derivado",
+        gerada_em: "2026-10-20T12:00:00.000Z",
+        agente_id: id,
+        aprovada_por: id,
+        aprovada_em: "2026-10-20T12:05:00.000Z",
+      },
+    },
   };
 
   it("canal que recusa a abordagem: a campanha pausa SEM ter deixado contato, negócio nem conversa", async () => {
@@ -891,11 +942,13 @@ describe("a abordagem fria leva a estratégia e a prévia guardada (par com a te
         gerada_em: "2026-10-11T09:00:00.000Z",
         // O MESMO agente da campanha: a prévia de outro agente não é aproveitada.
         agente_id: id,
+        aprovada_por: id,
+        aprovada_em: "2026-10-11T09:05:00.000Z",
       },
     },
   };
 
-  it("F) a prévia escrita por OUTRO agente (o padrão) não vai: o envio escreve do zero", async () => {
+  it("prévia aprovada por outro agente pausa antes de qualquer envio", async () => {
     const deOutro = {
       ...comPrevia,
       data: {
@@ -904,8 +957,8 @@ describe("a abordagem fria leva a estratégia e a prévia guardada (par com a te
       },
     };
     await sendNextCandidate({} as never, database(undefined, deOutro) as never, {} as never, campaign);
-    const args = mocks.generate.mock.calls[0]![2] as { dados: Record<string, string> };
-    expect(args.dados["Rascunho de abordagem"]).toBeUndefined();
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
   });
 
   it("F) passa a estratégia na instrução e o rascunho nos dados", async () => {
@@ -921,14 +974,16 @@ describe("a abordagem fria leva a estratégia e a prévia guardada (par com a te
     expect(args.instrucao).toContain("Estratégia");
   });
 
-  it("F) sem prévia guardada o rascunho não vai — mas a estratégia continua indo", async () => {
-    await sendNextCandidate({} as never, database() as never, {} as never, campaign);
-    const args = mocks.generate.mock.calls[0]![2] as {
-      instrucao: string;
-      dados: Record<string, string>;
-    };
-    expect(args.dados["Rascunho de abordagem"]).toBeUndefined();
-    expect(args.instrucao).toContain("Sem site");
+  it("sem prévia aprovada, o worker pausa sem gerar nem enviar", async () => {
+    const semPrevia = { ...candidate, data: { name: "Example", socials: [] } };
+    await sendNextCandidate({} as never, database(undefined, semPrevia) as never, {} as never, campaign);
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(
+      (mocks.audit.mock.calls as Array<[{ action?: string }]>).some(([entry]) =>
+        entry.action === "prospecting.approval_required",
+      ),
+    ).toBe(true);
   });
 });
 
