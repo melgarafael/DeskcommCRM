@@ -23,6 +23,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { updateMarcaDaOrganizacao } from "@/app/actions/settings/updateMarcaDaOrganizacao";
+import {
+  conectarContaResendDaOrganizacao,
+  desconectarContaResendDaOrganizacao,
+} from "@/app/actions/settings/conectarContaResendDaOrganizacao";
 import { CampoDeLogo } from "@/components/branding/CampoDeLogo";
 import { TiraDeTons, type ItemDaLegenda } from "@/components/branding/TiraDeTons";
 import { Button } from "@/components/ui/button";
@@ -73,6 +77,16 @@ interface Props {
     readonly email_from_name: string | null;
     readonly email_reply_to: string | null;
   };
+  /**
+   * A conta Resend conectada (#3287, fatia da conta própria) — só o que a tela
+   * PODE ver: o endereço de remetente e os 4 últimos da chave. A chave em claro
+   * e o ciphertext não saem do servidor (critério D).
+   */
+  readonly contaResend: {
+    readonly from_email: string | null;
+    readonly last4: string | null;
+    readonly indisponivel?: boolean;
+  };
   /** A linha da marca da INSTALAÇÃO — a camada logo abaixo desta. */
   readonly instalacao: LinhaDaInstalacao;
   /** O arquivo de instalação do servidor — o fundo da pilha. */
@@ -106,6 +120,29 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
   // gravação não casou nenhuma linha, e a tela dizer "salvo" quando nada foi
   // gravado é a forma exata do defeito que a função SQL veio fechar.
   nao_gravou: "A alteração não chegou ao banco — nada foi mudado. Tente de novo.",
+};
+
+/**
+ * Mensagem por código de recusa ao CONECTAR a conta Resend (#3287).
+ *
+ * `dominio_nao_verificado` ganha frase PRÓPRIA com o domínio — é o critério
+ * (E): a pessoa lê "verifique este domínio na Resend", não um erro cru da API
+ * em inglês no meio de uma automação.
+ */
+const ERRO_DA_CONTA_EM_PORTUGUES: Record<string, string> = {
+  validation_failed: "Confira a chave e o endereço de e-mail.",
+  unauthenticated: "Sua sessão expirou. Entre de novo para conectar.",
+  forbidden_tenant: "Não consegui identificar sua empresa. Recarregue a página.",
+  forbidden_role: "Só quem administra esta empresa pode conectar uma conta de e-mail.",
+  mfa_required: "Confirme o código do seu aplicativo de duas etapas e tente de novo.",
+  chave_recusada: "A Resend não aceitou esta chave. Confira se você copiou a chave da API dela.",
+  permissao_insuficiente: "Esta chave não permite consultar domínios. Crie uma chave Full Access na Resend e tente de novo.",
+  consulta_indisponivel: "Não consegui consultar a Resend agora. Tente de novo em instantes.",
+  envio_desabilitado: "O envio está desativado para este domínio na Resend. Ative-o no painel da Resend e tente de novo.",
+  sem_endereco: "Use um endereço de e-mail como contato@suaempresa.com",
+  cifra_indisponivel: "Não consegui guardar esta chave em segurança. Fale com quem instalou o sistema.",
+  nao_gravou: "A conta não chegou ao banco — nada foi conectado. Tente de novo.",
+  db_error: "Não consegui conectar a conta agora. Tente de novo.",
 };
 
 const CLASSE_DO_TOM: Record<Tom, string> = {
@@ -144,7 +181,7 @@ function LinhaDeOrigem({ campo, valor }: { campo: string; valor: string }) {
   );
 }
 
-export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, vocabulario }: Props) {
+export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalacao, ambiente, vocabulario }: Props) {
   const t = useT();
   const router = useRouter();
   const [nome, setNome] = useState(gravada.app_name ?? "");
@@ -155,6 +192,15 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
   // nem na prévia — só no `Salvar`.
   const [remetenteNome, setRemetenteNome] = useState(gravada.email_from_name ?? "");
   const [responderPara, setResponderPara] = useState(gravada.email_reply_to ?? "");
+  // A conta Resend da organização (#3287, fatia da conta própria). Estado
+  // SEPARADO do `Salvar` da marca: conectar chama a action própria (que vai à
+  // API da Resend conferir o domínio e cifra a chave), então não pode esperar o
+  // submit do formulário de cor/nome.
+  const [contaConectada, setContaConectada] = useState(contaResend.from_email);
+  const [chaveResend, setChaveResend] = useState("");
+  const [emailRemetenteResend, setEmailRemetenteResend] = useState(contaResend.from_email ?? "");
+  const [erroConta, setErroConta] = useState<string | null>(null);
+  const [salvandoConta, setSalvandoConta] = useState(false);
   const [erroTecnico, setErroTecnico] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -308,6 +354,61 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
       // ao servidor. Falhar fechado na ação, aberto na informação.
       if (!ERRO_EM_PORTUGUES[resultado.error]) setErroTecnico(resultado.error);
     });
+  }
+
+  /**
+   * Conecta a conta Resend (#3287). A action confere o DOMÍNIO pela API da
+   * Resend e CIFRA a chave antes de gravar; aqui só se traduz o desfecho. O
+   * campo da chave é esvaziado no sucesso — a chave já está cifrada no banco, e
+   * deixá-la no estado do navegador seria mantê-la viva na tela sem motivo.
+   */
+  async function handleConectarResend() {
+    setErroConta(null);
+    setSalvandoConta(true);
+    try {
+      const resultado = await conectarContaResendDaOrganizacao({
+        api_key: chaveResend.trim(),
+        from_email: emailRemetenteResend.trim(),
+      });
+      if (resultado.ok) {
+        setContaConectada(emailRemetenteResend.trim());
+        setChaveResend("");
+        toast.success(t("Conta Resend conectada. Os e-mails das automações saem por ela agora."));
+        router.refresh();
+        return;
+      }
+      setErroConta(
+        resultado.error === "dominio_nao_verificado" && typeof resultado.details === "string"
+          ? // Literal com PLACEHOLDER: `t()` tem de receber a frase escrita, não
+            // a montada em runtime — quem escolhe espanhol senão recebe português
+            // (o gate de i18n cobre 100% das chamadas). O domínio entra depois.
+            t(
+              "O domínio {dominio} ainda não está verificado na sua conta Resend. Verifique os registros dele no painel da Resend e tente de novo.",
+            ).replace("{dominio}", resultado.details)
+          : t(ERRO_DA_CONTA_EM_PORTUGUES[resultado.error] ?? "Não consegui conectar a conta agora."),
+      );
+    } finally {
+      setSalvandoConta(false);
+    }
+  }
+
+  /** Desconecta: apaga a linha, e o envio volta para o remetente da plataforma. */
+  async function handleDesconectarResend() {
+    setErroConta(null);
+    setSalvandoConta(true);
+    try {
+      const resultado = await desconectarContaResendDaOrganizacao();
+      if (resultado.ok) {
+        setContaConectada(null);
+        setEmailRemetenteResend("");
+        toast.success(t("Conta Resend desconectada. Os e-mails voltam para o remetente do sistema."));
+        router.refresh();
+        return;
+      }
+      setErroConta(t(ERRO_DA_CONTA_EM_PORTUGUES[resultado.error] ?? "Não consegui desconectar agora."));
+    } finally {
+      setSalvandoConta(false);
+    }
   }
 
   return (
@@ -528,6 +629,93 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
             {t("Para onde vai a resposta do cliente. Deixe em branco para usar o endereço do sistema.")}
           </p>
         </div>
+
+        {/*
+          A CONTA RESEND DA ORGANIZAÇÃO (#3287, fatia da conta própria), no
+          MESMO bloco "Como seus e-mails saem" — como o mantidor pediu na issue.
+          Com a conta conectada, o e-mail da AUTOMAÇÃO sai pelo domínio DELA (e
+          os eventos de entrega caem na conta dela). Sem conta, é o remetente do
+          sistema de sempre. A chave é cifrada no banco e NUNCA aparece aqui — a
+          tela só vê o endereço e os 4 últimos.
+        */}
+        <div className="space-y-3 border-t border-border pt-4">
+          <p className="text-sm font-medium text-text">
+            {t("Conta Resend da sua empresa (opcional)")}
+          </p>
+          <p className="text-xs text-text-muted">
+            {t(
+              "Se você conectar sua própria conta Resend, os e-mails das automações saem pelo SEU domínio e os registros de entrega ficam na sua conta. Os e-mails do sistema (convites, recuperação de senha, LGPD) continuam pelo remetente do sistema.",
+            )}
+          </p>
+
+          {contaResend.indisponivel ? (
+            <p className="text-sm text-error-fg" role="alert">
+              {t("Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.")}
+            </p>
+          ) : contaConectada ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+              <span className="text-sm text-text">
+                {t("Conectada")}:{" "}
+                <span className="font-mono">{contaConectada}</span>
+                {contaResend.last4 ? (
+                  <span className="text-text-muted font-mono">{` (…${contaResend.last4})`}</span>
+                ) : null}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={salvandoConta}
+                onClick={handleDesconectarResend}
+              >
+                {t("Desconectar")}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">{t("Nenhuma conta Resend conectada.")}</p>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="org_resend_api_key">{t("Chave da API da Resend")}</Label>
+            <Input
+              id="org_resend_api_key"
+              type="password"
+              value={chaveResend}
+              onChange={(e) => setChaveResend(e.target.value)}
+              placeholder="re_..."
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <p className="text-xs text-text-muted">
+              {t("Use uma chave Full Access para conferir o domínio da conta. A chave é cifrada e não volta à tela.")}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="org_resend_from_email">{t("E-mail de envio no seu domínio")}</Label>
+            <Input
+              id="org_resend_from_email"
+              value={emailRemetenteResend}
+              onChange={(e) => setEmailRemetenteResend(e.target.value)}
+              placeholder="contato@suaempresa.com"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <p className="text-xs text-text-muted">
+              {t(
+                "O domínio deste endereço precisa estar verificado na sua conta Resend. Confiro na conexão.",
+              )}
+            </p>
+          </div>
+          {erroConta ? <p className="text-sm text-error-fg">{erroConta}</p> : null}
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              disabled={salvandoConta || chaveResend.trim().length < 10 || emailRemetenteResend.trim().length === 0}
+              onClick={handleConectarResend}
+            >
+              {salvandoConta ? t("Conectando…") : t("Conectar conta Resend")}
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/*
@@ -612,7 +800,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
           </li>
           <li>
             {t(
-              "O envio continua saindo pelo servidor de e-mail do sistema: o endereço do remetente (o domínio) não muda, e um servidor de e-mail próprio da sua empresa ainda não é configurável por aqui.",
+              "Sem uma conta Resend conectada, o envio continua saindo pelo servidor de e-mail do sistema — o endereço do remetente (o domínio) não muda. Os e-mails do sistema (convites, recuperação de senha, LGPD) seguem pelo remetente do sistema mesmo com a conta conectada.",
             )}
           </li>
           <li>

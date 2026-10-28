@@ -100,7 +100,19 @@ export function fromAddress(remetente: string | null, fromName?: string): string
  * entre "reinicie o container" e "verifique seu domínio na Resend" — a lição
  * já paga neste projeto: erro que não nomeia a causa vira caça ao fantasma.
  */
-function classificar(nome: string, mensagem: string): NonNullable<SendResult["error"]> {
+/**
+ * O classificador de erro da Resend, EXPORTADO para a conta da organização
+ * (`lib/email/resend-da-organizacao.ts`) reusar o MESMO vocabulário.
+ *
+ * Sem exportar, o segundo envio (o da conta do cliente final) teria de repetir o
+ * regex — e duas réguas de classificação divergiriam no dia em que a Resend
+ * mudasse a mensagem, devolvendo `send_failed` genérico para um domínio não
+ * verificado. Um lugar por vocabulário, como o `fromAddress` já é.
+ */
+export function classificarErroResend(
+  nome: string,
+  mensagem: string,
+): NonNullable<SendResult["error"]> {
   if (nome.toLowerCase().includes("rate")) return "rate_limited";
   if (/not verified|domain is not verified|não verificad/i.test(mensagem)) {
     return "dominio_nao_verificado";
@@ -145,7 +157,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
     if (error) {
       return {
         ok: false,
-        error: classificar(String(error.name || ""), error.message ?? ""),
+        error: classificarErroResend(String(error.name || ""), error.message ?? ""),
         details: error.message,
       };
     }

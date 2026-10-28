@@ -4052,3 +4052,26 @@ terão trace/vídeo. Não foi medido download na janela anterior à persistênci
 do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
 substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
 relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
+
+## E-mail da organização — conta e domínio (#3443 + #3464)
+
+**Estado do resgate:** unitários e transporte HTTP sintético medidos; banco e jornada
+pelo browser ainda **NÃO EXECUTADOS** no candidato integrado. O receiver recebe
+requisições reais da SDK com credenciais/destinatários artificiais; isso não prova
+entrega pela Resend nem chegada à caixa de entrada.
+
+| Jornada | Aceite | Estado |
+|---|---|---|
+| Admin encontra Configurações › Marca › Como seus e-mails saem | conecta uma conta com From válido e domínio habilitado na Resend; chave não volta após recarregar | UI pendente; action/SDK unitários |
+| Chave só de envio, domínio pendente, envio desabilitado ou falha de rede | causa nomeada; sem escrita nem segredo em payload/log | unitários; UI pendente |
+| Conta ausente versus conta ilegível | ausência mantém transporte da instalação; cifra/consulta falhando recusa, sem enviar pela outra conta | unitários; DB/UI pendentes |
+| Duas organizações com contas diferentes | automação entrega ao receiver com a chave e From da sua organização; convite/LGPD seguem pela plataforma | SDK→HTTP real para duas contas; DB/UI/sistema pendentes |
+| Conferir domínio com Reply-To de outro domínio | usa From da conta e registros oficiais; campos do browser não escolhem tenant/domínio | unitários; UI pendente |
+| Return-Path personalizado/CNAME, null MX, SPF divergente e timeout | consulta nomes oficiais; mostra divergência/indisponibilidade separadamente do estado da Resend; sem selo de garantia de entrega | unitários; UI pendente |
+| Desconectar pela tela | remove só a conta da organização ativa e restaura o transporte da instalação | action unitária; DB/UI pendentes |
+
+Fontes: `lib/email/resend-da-organizacao*.test.ts`, `lib/email/dominio-de-envio*.test.ts`,
+`tests/unit/conferir-dominio-de-envio.test.ts` e
+`tests/unit/conectar-conta-resend-da-organizacao.test.ts`. As provas do resgate
+permanecem associadas ao checkout e ao head nos recibos operacionais; nenhum PASS
+unitário é contado como captura de UX.

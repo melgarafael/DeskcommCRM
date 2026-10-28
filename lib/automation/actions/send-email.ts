@@ -70,6 +70,10 @@ import {
   SEM_REMETENTE_DA_ORGANIZACAO,
   type RemetenteDaOrganizacao,
 } from "@/lib/email/remetente-da-organizacao";
+import {
+  carregarContaResend,
+  enviarPelaContaDaOrganizacao,
+} from "@/lib/email/resend-da-organizacao";
 import { sendEmail, type EmailDeliveryError } from "@/lib/email/roteador";
 import { logger } from "@/lib/logger";
 import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
@@ -386,25 +390,41 @@ async function execute(
   // Depois do teto, de propósito: recusa por limite não paga a leitura do
   // `settings` da organização. Quem não vai enviar não precisa saber o remetente.
   const remetente = await remetenteDaAutomacao(ctx);
-  const resultado = await sendEmail({
+  const pedido = {
     to: para.endereco,
     subject: assuntoPronto,
     html: corpoParaHtml(corpoHtml, formato),
     text: corpoParaTexto(corpoPronto, formato),
     // O remetente da ORGANIZAÇÃO (#3287, fatia 1): quando ela configurou um
     // nome de exibição e/ou um "responder para", o e-mail da automação sai com
-    // eles. O ENDEREÇO do `From` continua sendo o da PLATAFORMA — quem entrega
-    // não muda nesta fatia (o SMTP próprio é a fatia 2). Sem configuração, as
-    // duas chaves ficam AUSENTES e o envio sai byte a byte como sempre saiu:
-    // `fromName: undefined` não é o mesmo que a chave ausente para quem monta o
-    // cabeçalho (o SMTP da plataforma usa o `fromName` DELE quando ninguém
-    // passa um).
+    // eles. Sem configuração, as duas chaves ficam AUSENTES e o envio sai byte a
+    // byte como sempre saiu (`fromName: undefined` não é o mesmo que a chave
+    // ausente para quem monta o cabeçalho).
     ...(remetente.fromName ? { fromName: remetente.fromName } : {}),
     ...(remetente.replyTo ? { replyTo: remetente.replyTo } : {}),
     // Mesma tag da cobrança, com o valor que diz de ONDE veio: no painel da
     // Resend dá para separar o envio de automação do convite de equipe.
     tags: [{ name: "origem", value: "automacao" }],
-  });
+  };
+  // DE QUEM o e-mail sai (#3287, fatia da conta própria): se a organização
+  // conectou a CONTA Resend DELA, este envio sai por ela — o domínio no `From:`
+  // é o da organização e os eventos de entrega caem na conta dele. Sem conta
+  // conectada, o roteador da plataforma entrega como sempre. Erro de leitura
+  // ou cifra inválida não autoriza trocar a identidade de quem envia.
+  let conta;
+  try {
+    conta = await carregarContaResend(ctx.admin, ctx.organizationId);
+  } catch {
+    return {
+      type: "send_email",
+      status: "failed",
+      error: "conta_de_email_indisponivel",
+      detail: { destinatario, via: "resend" },
+    };
+  }
+  const resultado = conta
+    ? { ...(await enviarPelaContaDaOrganizacao(conta, pedido)), via: "resend" as const }
+    : await sendEmail(pedido);
 
   const base = { destinatario, via: resultado.via ?? null };
   if (!resultado.ok) {

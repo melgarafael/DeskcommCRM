@@ -27,6 +27,10 @@
     "interface"
   ],
   "nodes": [
+    { "id": "orgresendconfig", "lane": "escrita", "col": 2, "type": "api", "label": "conectarContaResendDaOrganizacao", "sublabel": "admin + org ativa + MFA · From canônico e domínio verificado · cifra antes de gravar · só forma no audit" },
+    { "id": "orgresendconta", "lane": "banco", "col": 3, "type": "database", "label": "organization_resend_accounts", "sublabel": "migration 0795 · RLS deny-all · chave AES-GCM nunca sai para a sessão · tela lê só from_email/last4" },
+    { "id": "orgemailauto", "lane": "saida", "col": 7, "type": "service", "label": "send-email → resend-da-organizacao", "sublabel": "conta da empresa nas automações · ausência usa plataforma · erro de leitura/cifra recusa sem trocar remetente" },
+    { "id": "orgemaildns", "lane": "escrita", "col": 4, "type": "api", "label": "conferirDominioDeEnvio", "sublabel": "From da conta, não Reply-To nem domínio do browser · registros oficiais e DNS · Return-Path/CNAME · diagnóstico não promete entrega" },
     {
       "id": "installsh",
       "lane": "config",
@@ -112,6 +116,13 @@
     {"id": "swapp", "lane": "saida", "col": 11, "type": "frontend", "label": "public/notify-sw.js", "sublabel": "todo push vira notificação; navegação sem rede → página neutra SEM marca nem dado (D4); nenhum cache"}
   ],
   "edges": [
+    { "id": "emailorg1", "from": "orgmarca", "to": "orgresendconfig", "label": "conecta/desconecta a conta da empresa sem mudar o envio de sistema" },
+    { "id": "emailorg2", "from": "orgresendconfig", "to": "orgresendconta", "label": "upsert/delete com organization_id resolvido da sessão; cifra/IV/tag antes da escrita" },
+    { "id": "emailorg3", "from": "orgresendconta", "to": "orgemailauto", "label": "leitura e decifragem no envio da própria organização" },
+    { "id": "emailorg4", "from": "orgemailauto", "to": "caixaentrada", "label": "From próprio e Reply-To configurado; erro nomeado chega à Atividade da automação" },
+    { "id": "emailorg5", "from": "orgmarca", "to": "orgemaildns", "label": "Conferir usa apenas a conta conectada da organização ativa" },
+    { "id": "emailorg6", "from": "orgresendconta", "to": "orgemaildns", "label": "credencial só no servidor para domains.list/get; não retorna ao browser" },
+    { "id": "emailorg7", "from": "orgemaildns", "to": "orgmarca", "label": "estado oficial separado da comparação DNS; consulta inconclusiva não é ausência" },
     { "id": "e1", "from": "installsh", "to": "env", "label": "grava a marca no .env — e o arquivo é escrito com truncamento: chave que o script não grava some no update seguinte" },
     { "id": "e2", "from": "env", "to": "platformbranding", "label": "sementeDoAmbiente(): a 1ª leitura semeia a tabela e marca seeded_from_env" },
     { "id": "e3", "from": "env", "to": "resolver", "label": "camadaDoAmbiente() — a camada mais baixa da pilha, e a ÚNICA porta por onde um hex torto entra: lib/env.ts:201 não valida formato (o formulário e o CHECK barram os outros dois caminhos)" },

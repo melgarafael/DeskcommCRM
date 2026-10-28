@@ -33,12 +33,16 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { marcaDaOrganizacaoDeSettings } from "@/lib/branding/organizacao";
+import { estadoDaContaResend } from "@/lib/email/resend-da-organizacao";
+import { dominioDeEndereco } from "@/lib/email/dominio-de-envio";
 import { env } from "@/lib/env";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 import { FormularioDaMarcaDaOrganizacao } from "./_form";
+import { DominioDeEnvio } from "./_dominio-de-envio";
 
 export const metadata = { title: "Marca" };
 export const dynamic = "force-dynamic";
@@ -70,6 +74,16 @@ export default async function MarcaDaOrganizacaoPage() {
   // degrada para o Brasil quando a coluna está vazia ou o país é desconhecido
   // — e o Brasil tem lei revisada, então o `?? "LGPD"` cobre só o tipo.
   const perfil = perfilDoPais(data?.country);
+  // A CONTA Resend conectada (#3287, fatia da conta própria). A tabela tem RLS
+  // SEM policy (a chave é segredo), então só o admin client lê — e ele lê SÓ as
+  // colunas seguras (`from_email`, `api_key_last4`): a chave e o ciphertext não
+  // saem do servidor, nem aqui nem em lugar nenhum (critério D).
+  let contaResend: Awaited<ReturnType<typeof estadoDaContaResend>> = null;
+  let contaIndisponivel = false;
+  try { contaResend = await estadoDaContaResend(createAdminClient(), activeOrg.orgId); }
+  catch { contaIndisponivel = true; }
+  // Reply-To pode apontar a outra empresa; quem envia é o From da conta.
+  const dominioDoRemetente = dominioDeEndereco(contaResend?.from_email);
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -94,6 +108,13 @@ export default async function MarcaDaOrganizacaoPage() {
           // grava junto da marca e lê de volta para preencher os inputs.
           email_from_name: gravada?.email_from_name ?? null,
           email_reply_to: gravada?.email_reply_to ?? null,
+        }}
+        // A conta Resend conectada (#3287): só o endereço e os 4 últimos da
+        // chave — a chave em claro NUNCA atravessa esta fronteira.
+        contaResend={{
+          from_email: contaResend?.from_email ?? null,
+          last4: contaResend?.api_key_last4 ?? null,
+          indisponivel: contaIndisponivel,
         }}
         // As DUAS camadas de baixo descem para o formulário, e não uma resolução
         // já pronta: a prévia ao vivo remonta a pilha inteira a cada tecla, pelo
@@ -125,6 +146,8 @@ export default async function MarcaDaOrganizacaoPage() {
           rotuloNomeLegal: perfil.empresa.rotuloNomeLegal,
         }}
       />
+
+      <DominioDeEnvio key={dominioDoRemetente ?? "sem-conta"} dominioInicial={dominioDoRemetente} contaIndisponivel={contaIndisponivel} idioma={idioma} />
     </div>
   );
 }

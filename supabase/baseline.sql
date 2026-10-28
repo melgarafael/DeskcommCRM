@@ -65613,3 +65613,35 @@ update public.lead_field_proposals p
           and vinculo.target_kind = 'contact'
      )
    );
+
+-- Espelho da 0795 no banco-molde: o test:invariants aplica SO o baseline,
+-- e o invariant `on-conflict-aponta-para-constraint-real` consulta pg_index
+-- do banco molde -- sem esta tabela o upsert da #3287 aparecia sem indice
+-- unico nenhum. RLS FECHADA sem policy, de proposito (mesma razao da migracao):
+-- so service_role le a chave.
+
+create table if not exists organization_resend_accounts (
+  organization_id uuid primary key references organizations (id) on delete cascade,
+  api_key_ciphertext bytea not null,
+  api_key_iv bytea not null,
+  api_key_tag bytea not null,
+  -- Só os 4 últimos caracteres: é o que a tela mostra ("chave …8c2f") para
+  -- identificar a chave sem nunca devolver a chave.
+  api_key_last4 text not null,
+  -- O endereço de REMETENTE no domínio VERIFICADO da conta da organização.
+  from_email text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- RLS FECHADA de propósito: nenhuma policy. `anon` e `authenticated` não leem
+-- nem gravam; só o service_role (que faz bypass) — e é ele que a action de
+-- envio (worker) e a de conexão usam. A tela lê o estado pela action/rota com
+-- admin client, selecionando só as colunas seguras.
+alter table organization_resend_accounts enable row level security;
+
+revoke all on organization_resend_accounts from public, anon, authenticated;
+
+-- O worker recebe só CRUD, sem depender do DEFAULT ALL da instalação.
+revoke all on organization_resend_accounts from service_role;
+grant select, insert, update, delete on organization_resend_accounts to service_role;

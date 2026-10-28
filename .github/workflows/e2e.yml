@@ -914,7 +914,11 @@ jobs:
       # (COBRANCA_API_BASE_URL_TESTE do .env.e2e) e devolve as chaves da
       # instalação como achou.
       # PREVISÃO, não medida: ~5 min de caso.
+      # Conta Resend: parte semeada; stub persistente3997 serve TODAS as SDKs.
+      # Main verdes40488577619/40447836178/40447015911:1059/1104/1004s.
+      # Máximo1104s deixa336s até orçamento1440; teto/margem inalterados.
       SPECS_PARTE_2: >-
+        conta-resend-da-organizacao.spec.ts
         agente-marca-consulta.spec.ts
         agenda-marcar-pela-tela.spec.ts
         agenda-remarcar-e-cancelar.spec.ts
@@ -2254,19 +2258,56 @@ jobs:
       # O dublê é exercitado pelo SMOKE antes da spec: se ele não responder o
       # contrato, o job falha aqui, com a rota nomeada, em vez de falhar seis
       # minutos depois dentro do Playwright com "elemento não encontrado".
-      - if: matrix.parte == 4
-        name: Ligar a VPS fresca (WAHA, Redis e dublê de SaaS)
+      # O receiver vive pelo job inteiro: RESEND_BASE_URL afeta também a SDK
+      # da plataforma. A spec não o fecha nem altera a configuração da instalação.
+      - if: matrix.parte == 2 || matrix.parte == 4
+        name: Ligar o dublê de SaaS persistente (Resend e Nuvemshop)
         run: |
           set -euo pipefail
-
-          # 1. O dublê de Resend/Nuvemshop: processo separado, porta de verdade.
           nohup node scripts/duble-saas-e2e.mjs >/tmp/duble-saas.log 2>&1 &
+          echo "$!" > /tmp/duble-saas-e2e.pid
           for _ in $(seq 1 30); do
             if curl -sf http://127.0.0.1:3997/__duble/saude >/dev/null; then break; fi
             sleep 1
           done
-          cat /tmp/duble-saas.log
+          # Não aceitar um receiver antigo de outro checkout que já ocupava a porta.
+          curl -sf http://127.0.0.1:3997/__duble/saude \
+            | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{try{if(JSON.parse(b).pid!==Number(process.argv[1]))process.exit(1)}catch{process.exit(1)}})' "$(cat /tmp/duble-saas-e2e.pid)"
           bash scripts/duble-saas-e2e-smoke.sh
+          if [ "${{ matrix.parte }}" = 2 ]; then
+            node scripts/duble-saas-email-organizacao-smoke.mjs
+          fi
+
+      - if: matrix.parte == 2
+        name: Apontar todas as SDKs Resend ao receiver da parte semeada
+        run: |
+          set -euo pipefail
+          # Só a base de transporte: não inventar chave/From/SMTP configurados.
+          # A fonte canônica chega ao Next, aos seeds e ao runner da ação real.
+          grep -v '^RESEND_BASE_URL=' .env.e2e > /tmp/env-email-sem-base
+          echo 'RESEND_BASE_URL=http://127.0.0.1:3997' >> /tmp/env-email-sem-base
+          mv /tmp/env-email-sem-base .env.e2e
+          echo 'RESEND_BASE_URL=http://127.0.0.1:3997' >> "$GITHUB_ENV"
+          echo 'CANDIDATO_SHA=${{ github.event.pull_request.head.sha || github.sha }}' >> "$GITHUB_ENV"
+
+      - if: matrix.parte == 2
+        name: Conferir loader da ação real de e-mail antes do navegador
+        run: |
+          set -euo pipefail
+          # Só imports/contratoSDK: sem query ou envio. Falha alto antes daUI,
+          # com prazo e sem publicar stderr bruto/credenciais do processo.
+          if timeout -k 2s 20s node --import tsx scripts/provas/enviar-email-da-organizacao.ts --conferir-loader \
+              > /tmp/email-runner-loader.json 2> /tmp/email-runner-loader.stderr; then
+            cat /tmp/email-runner-loader.json
+          else
+            echo '::error title=Loader da prova de e-mail recusado::O filho próprio encerrou sem um loader válido; stderr bruto não é publicado.'
+            exit 1
+          fi
+
+      - if: matrix.parte == 4
+        name: Ligar a VPS fresca (WAHA, Redis e dublê de SaaS)
+        run: |
+          set -euo pipefail
 
           # 2. O que a spec fresca exige do ambiente (cabeçalho dela):
           #    WAHA ativo, Redis local, e Resend SEM chave — instalação nova não
@@ -2739,6 +2780,23 @@ jobs:
             echo "$(( MARGEM_SEGUNDOS / 60 )) min de folga à suíte, para o vermelho dizer o NOME do problema"
             echo "(qual parte, com quantos segundos medidos) em vez de cancelar em silêncio."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Encerrar somente o receiver criado por este job
+        if: ${{ always() && (matrix.parte == 2 || matrix.parte == 4) }}
+        run: |
+          set -euo pipefail
+          [ -f /tmp/duble-saas-e2e.pid ] || exit 0
+          pid=$(cat /tmp/duble-saas-e2e.pid)
+          [[ "$pid" =~ ^[0-9]+$ ]] || exit 1
+          proprio() { ps -p "$pid" -o args= | grep -Eq '(^|/)node scripts/duble-saas-e2e.mjs$'; }
+          if proprio; then
+            kill -TERM "$pid"
+            for _ in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then break; fi
+              sleep 0.1
+            done
+            if proprio; then kill -KILL "$pid"; fi
+          fi
 
   # O NOME DESTE JOB É O CHECK OBRIGATÓRIO, e é por isso que ele existe.
   #

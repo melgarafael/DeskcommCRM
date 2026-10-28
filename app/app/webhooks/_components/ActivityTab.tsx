@@ -71,6 +71,8 @@ function statusBadgeLabel(status: AutomationRuleRunRow["status"], t: (texto: str
  * que nascem no próprio executor.
  */
 const MOTIVO_DA_PARADA: Record<string, string> = {
+  conta_de_email_indisponivel:
+    "Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.",
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",

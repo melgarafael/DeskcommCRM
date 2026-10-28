@@ -1,0 +1,20 @@
+{
+  "a": {
+    "key": "re_e2e_empresa_a_8ca1",
+    "domain": "empresa-a.email-e2e.invalid",
+    "id": "dominio-empresa-a",
+    "from": "envio@empresa-a.email-e2e.invalid"
+  },
+  "b": {
+    "key": "re_e2e_empresa_b_8cb2",
+    "domain": "empresa-b.email-e2e.invalid",
+    "id": "dominio-empresa-b",
+    "from": "envio@empresa-b.email-e2e.invalid"
+  },
+  "errors": {
+    "permission": "re_e2e_sem_permissao_3443",
+    "pending": "re_e2e_pendente_3443",
+    "disabled": "re_e2e_envio_desligado_3443",
+    "unavailable": "re_e2e_indisponivel_3443"
+  }
+}

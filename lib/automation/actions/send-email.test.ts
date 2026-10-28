@@ -20,12 +20,30 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+// A cifragem da conta Resend precisa da chave ANTES de `lib/env` carregar.
+vi.hoisted(() => {
+  process.env.AI_CRED_AES_KEY = "iBc1Z2gYaAH4rEHs1dHQ2dvNQ6t4OfrdE1/Y6OSvtZY=";
+});
+
 vi.mock("@/lib/email/roteador", () => ({ sendEmail: vi.fn() }));
+
+// A SDK da Resend é mockada para o CAMINHO DA CONTA DA ORGANIZAÇÃO (#3287):
+// quando a ação escolhe a conta dela, quem recebe o `send` é este dupe. O
+// roteador da plataforma continua mockado acima — os dois caminhos são
+// distintos, e é isso que o critério A mede.
+const { orgSendMock } = vi.hoisted(() => ({ orgSendMock: vi.fn() }));
+vi.mock("resend", () => ({
+  // `function` (não arrow) para ser CONSTRUÍVEL: a ação faz `new Resend(...)`.
+  Resend: vi.fn(function () {
+    return { emails: { send: orgSendMock }, domains: { list: vi.fn() } };
+  }),
+}));
 
 import { sendEmail } from "@/lib/email/roteador";
 import { getAction } from "@/lib/automation/actions";
 import type { ActionCtx } from "@/lib/automation/types";
 import { actionSchema } from "@/lib/schemas/webhooks";
+import { bufToBytea, encryptKey } from "@/lib/crypto/aes_gcm";
 
 import {
   JANELA_DO_LIMITE_SEG,
@@ -196,6 +214,8 @@ function ctx(
   emailDoAcesso: (id: string) => string | null = () => "dono@estudio.com",
   /** O `settings.branding` da organização — o remetente da automação (#3287). */
   marcaDaOrganizacao: Record<string, unknown> | null = null,
+  /** A linha de `organization_resend_accounts` — a conta Resend conectada (#3287). */
+  contaResend: Linha | null = null,
 ): ActionCtx {
   return {
     admin: {
@@ -206,6 +226,12 @@ function ctx(
       },
       from: (tabela: string) => {
         if (tabela === "user_organizations") return tabelaDeVinculos(vinculos, falhaDaConsulta);
+        // A CONTA RESEND da organização (#3287, fatia da conta própria). Sem
+        // linha, a ação cai no roteador da plataforma — a invariância
+        // "sem conta = como hoje". `tabelaGenerica` aplica o `.eq` de org.
+        if (tabela === "organization_resend_accounts") {
+          return tabelaGenerica(contaResend === null ? [] : [contaResend]);
+        }
         // `organizations` é lida pela AÇÃO (o remetente da automação, #3287) e —
         // só com `{{resumo}}` — pelo carregador do resumo. O dublê separa as
         // duas pela forma da consulta; ver `tabelaDaOrganizacao`.
@@ -241,10 +267,12 @@ const acao = () => getAction("send_email");
 
 beforeEach(() => {
   enviar.mockReset();
+  orgSendMock.mockReset();
   // Sucesso por PADRÃO no dublê: um teste de recusa não pode passar só porque o
   // transporte estourou com `undefined` — se a ação chamar o envio quando não
   // devia, a asserção de `skipped` é quem fica vermelha, não um TypeError.
   enviar.mockResolvedValue({ ok: true, id: "e-mail-padrao", via: "smtp" });
+  orgSendMock.mockResolvedValue({ data: { id: "e-mail-da-org" }, error: null });
 });
 
 describe("send_email no schema", () => {
@@ -815,5 +843,80 @@ describe("send_email — o remetente da organização (#3287, fatia 1)", () => {
 
     expect(r.status).toBe("success");
     expect("fromName" in enviar.mock.calls[0]![0]).toBe(false);
+  });
+});
+
+
+/**
+ * A CONTA RESEND DA ORGANIZAÇÃO (#3287, fatia da conta própria).
+ *
+ * O critério (A): com a conta conectada, o e-mail da AUTOMAÇÃO sai pela conta
+ * DELA (o SDK da Resend recebe o `send`), e o roteador da plataforma NÃO é
+ * chamado. O critério (C) é o espelho: sem conta, é o roteador de sempre e a
+ * SDK não toca nada. A B (e-mail de sistema não passa por aqui) é estrutural —
+ * esta ação SÓ é o caminho da automação; convite/LGPD/recuperação seguem pelo
+ * roteador e por `lib/email/resend.ts`, que este teste não altera.
+ */
+describe("a conta Resend da organização na automação (#3287)", () => {
+  const CHAVE_ORG = "re_org_key_1234567890";
+
+  /** Uma linha CIFRADA de verdade da conta da organização. */
+  function linhaContaResend(fromEmail = "contato@lojadaana.com") {
+    const env = encryptKey(CHAVE_ORG);
+    return {
+      organization_id: "org-1",
+      api_key_ciphertext: bufToBytea(env.ciphertext),
+      api_key_iv: bufToBytea(env.iv),
+      api_key_tag: bufToBytea(env.tag),
+      api_key_last4: env.last4,
+      from_email: fromEmail,
+    };
+  }
+
+  it("cifra ilegível falha sem tentar o remetente da plataforma", async () => {
+    const linha = { ...linhaContaResend(), api_key_tag: "invalida" };
+    const r = await acao()!.execute(ctx({}, EQUIPE_ATIVA, null, null, undefined, null, linha), CONFIG);
+    expect(r).toMatchObject({ status: "failed", error: "conta_de_email_indisponivel" });
+    expect(enviar).not.toHaveBeenCalled();
+    expect(orgSendMock).not.toHaveBeenCalled();
+  });
+
+  it("com conta conectada, o envio sai pela CONTA da organização e o roteador não é chamado", async () => {
+    const r = await acao()!.execute(ctx({}, EQUIPE_ATIVA, null, null, undefined, null, linhaContaResend()), CONFIG);
+
+    // O caminho da conta: o `send` da SDK (Resend da ORGANIZAÇÃO) recebeu o envio.
+    expect(orgSendMock).toHaveBeenCalledTimes(1);
+    expect(orgSendMock.mock.calls[0]![0].from).toContain("@lojadaana.com");
+    // ...e o roteador da plataforma NÃO foi chamado (o da conta prevalece).
+    expect(enviar).not.toHaveBeenCalled();
+    expect(r.status).toBe("success");
+    // `via` é "resend" — a conta é Resend, só que a da organização.
+    expect(r).toMatchObject({ detail: { via: "resend" } });
+  });
+
+  it("sem conta conectada, é o roteador de sempre — a SDK não toca nada (regressão zero)", async () => {
+    const r = await acao()!.execute(ctx(), CONFIG);
+
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(orgSendMock).not.toHaveBeenCalled();
+    expect(r.status).toBe("success");
+  });
+
+  it("o NOME de exibição da fatia 1 continua valendo no envio pela conta da organização", async () => {
+    await acao()!.execute(
+      ctx({}, EQUIPE_ATIVA, null, null, undefined, { email_from_name: "Loja da Ana" }, linhaContaResend()),
+      CONFIG,
+    );
+    expect(orgSendMock.mock.calls[0]![0].from).toBe('Loja da Ana <contato@lojadaana.com>');
+  });
+
+  it("erro de domínio não verificado na conta vira `dominio_nao_verificado`, não falha opaca", async () => {
+    orgSendMock.mockResolvedValue({
+      data: null,
+      error: { name: "validation_error", message: "The domain is not verified" },
+    });
+    const r = await acao()!.execute(ctx({}, EQUIPE_ATIVA, null, null, undefined, null, linhaContaResend()), CONFIG);
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe("dominio_nao_verificado");
   });
 });

@@ -22,6 +22,7 @@
  * Resend (`https://api.resend.com`):
  *   POST /emails                    → 200 { id }
  *   GET  /emails/:id                → 200 { id, to, subject, last_event }
+ *   GET  /domains e /domains/:id    → domínios/registros só das contas sintéticas
  *
  * Nuvemshop / Tiendanube (`https://www.tiendanube.com` e
  * `https://api.tiendanube.com/v1`), incluindo o handshake OAuth:
@@ -40,6 +41,7 @@
  * ── COMO O APP CHEGA AQUI ────────────────────────────────────────────────
  *
  * Pela env, nunca por edição de código:
+ *   RESEND_BASE_URL         (SDK: plataforma e organização, durante todo ojob)
  *   RESEND_API_BASE_URL     (default do produto: https://api.resend.com)
  *   NUVEMSHOP_AUTH_BASE     (default: https://www.tiendanube.com)
  *   NUVEMSHOP_API_BASE      (default: https://api.tiendanube.com/v1)
@@ -57,6 +59,12 @@
 
 import http from "node:http";
 import { URL } from "node:url";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+const CONTAS = JSON.parse(
+  readFileSync(new URL("../tests/fixtures/resend-da-organizacao.json", import.meta.url), "utf8"),
+);
 
 // ── Configuração ───────────────────────────────────────────────────────────
 
@@ -80,7 +88,7 @@ const TETO_RECEBIDOS = 500;
 
 // ── Estado (em memória, por processo) ──────────────────────────────────────
 
-/** @type {Array<{t: string, metodo: string, caminho: string, corpo: unknown}>} */
+/** @type {Array<{t: string, metodo: string, caminho: string, corpo: unknown, authorization_sha256: string | null}>} */
 const recebidos = [];
 /** @type {Map<string, {id: string, to: unknown, subject: string, html: string, last_event: string}>} */
 const emails = new Map();
@@ -88,8 +96,17 @@ const emails = new Map();
 const webhooks = new Map();
 let seq = 0;
 
-function registrar(metodo, caminho, corpo) {
-  recebidos.push({ t: new Date().toISOString(), metodo, caminho, corpo });
+function registrar(metodo, caminho, corpo, authorization) {
+  recebidos.push({
+    t: new Date().toISOString(),
+    metodo,
+    caminho,
+    corpo,
+    // O receiver serve todas as SDKs durante o job; identifica a conta sem revelar a chave.
+    authorization_sha256: authorization
+      ? createHash("sha256").update(authorization).digest("hex")
+      : null,
+  });
   if (recebidos.length > TETO_RECEBIDOS) recebidos.shift();
 }
 
@@ -127,13 +144,119 @@ function autorizadoResend(req) {
   return /^Bearer\s+\S+/i.test(cabecalho);
 }
 
+function contaResendSintetica(req) {
+  const key = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+  return [CONTAS.a, CONTAS.b].find((conta) => conta.key === key);
+}
+
+/** Domínios são só de chaves sintéticas conhecidas; envio legado de plataforma continua aceito. */
+function resendDominios(req, partes, res) {
+  if (req.method !== "GET") return responder(res, 405, { error: "method_not_allowed" });
+  const key = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+  if (!autorizadoResend(req))
+    return responder(res, 401, {
+      statusCode: 401,
+      name: "missing_api_key",
+      message: "Missing API key",
+    });
+  if (key === CONTAS.errors.permission)
+    return responder(res, 401, {
+      statusCode: 401,
+      name: "restricted_api_key",
+      message: "Synthetic key cannot list domains",
+    });
+  if (key === CONTAS.errors.unavailable)
+    return responder(res, 503, {
+      statusCode: 503,
+      name: "internal_server_error",
+      message: "Synthetic provider unavailable",
+    });
+  const conta =
+    contaResendSintetica(req) ??
+    ([CONTAS.errors.pending, CONTAS.errors.disabled].includes(key) ? CONTAS.a : null);
+  if (!conta)
+    return responder(res, 401, {
+      statusCode: 401,
+      name: "validation_error",
+      message: "Synthetic key not recognized",
+    });
+  const dominio = {
+    id: conta.id,
+    name: conta.domain,
+    region: "us-east-1",
+    created_at: "2026-10-27T00:00:00.000Z",
+    status: key === CONTAS.errors.pending ? "pending" : "verified",
+    capabilities: {
+      sending: key === CONTAS.errors.disabled ? "disabled" : "enabled",
+      receiving: "disabled",
+    },
+  };
+  if (!partes[1]) return responder(res, 200, { object: "list", has_more: false, data: [dominio] });
+  if (partes[1] !== conta.id)
+    return responder(res, 404, { statusCode: 404, name: "not_found", message: "Domain not found" });
+  return responder(res, 200, {
+    ...dominio,
+    object: "domain",
+    records: [
+      {
+        record: "SPF",
+        type: "TXT",
+        name: `outbound.${conta.domain}`,
+        value: "v=spf1 include:amazonses.com ~all",
+        status: "verified",
+        ttl: "Auto",
+      },
+      {
+        record: "SPF",
+        type: "MX",
+        name: `outbound.${conta.domain}`,
+        value: "feedback-smtp.us-east-1.amazonses.com",
+        priority: 10,
+        status: "verified",
+        ttl: "Auto",
+      },
+      {
+        record: "DKIM",
+        type: "CNAME",
+        name: `seletor._domainkey.${conta.domain}`,
+        value: `dkim.${conta.domain}`,
+        status: "verified",
+        ttl: "Auto",
+      },
+    ],
+  });
+}
+
 // ── Rotas: Resend ──────────────────────────────────────────────────────────
 
 function resendCriarEmail(req, corpo, res) {
   if (!autorizadoResend(req)) {
     // 401 de verdade: um dublê permissivo esconderia do teste que o produto
     // parou de mandar a chave.
-    return responder(res, 401, { statusCode: 401, name: "missing_api_key", message: "Missing API key" });
+    return responder(res, 401, {
+      statusCode: 401,
+      name: "missing_api_key",
+      message: "Missing API key",
+    });
+  }
+  const conta = contaResendSintetica(req);
+  if (conta) {
+    const from =
+      typeof corpo?.from === "string"
+        ? (corpo.from.match(/<([^<>]+)>$/)?.[1] ?? corpo.from).trim()
+        : "";
+    const to = Array.isArray(corpo?.to) ? corpo.to : [corpo?.to];
+    if (
+      from !== conta.from ||
+      to.length === 0 ||
+      !to.every((v) => typeof v === "string" && v.endsWith(".invalid"))
+    ) {
+      return responder(res, 403, {
+        statusCode: 403,
+        name: "validation_error",
+        message: "Synthetic account and sender do not match",
+      });
+    }
   }
   const id = proximoId("email");
   const registro = {
@@ -167,7 +290,10 @@ function nuvemshopAuthorize(url, res) {
   try {
     destino = new URL(redirecionar);
   } catch {
-    return responder(res, 400, { error: "invalid_request", error_description: "redirect_uri inválido" });
+    return responder(res, 400, {
+      error: "invalid_request",
+      error_description: "redirect_uri inválido",
+    });
   }
   destino.searchParams.set("code", codigo);
   destino.searchParams.set("state", estado);
@@ -183,7 +309,10 @@ function nuvemshopToken(corpo, res) {
     return responder(res, 400, { error: "invalid_request", error_description: "corpo ausente" });
   }
   if (corpo.client_secret !== CLIENT_SECRET_NUVEMSHOP) {
-    return responder(res, 401, { error: "invalid_client", error_description: "client_secret inválido" });
+    return responder(res, 401, {
+      error: "invalid_client",
+      error_description: "client_secret inválido",
+    });
   }
   return responder(res, 200, {
     access_token: `token-e2e-${cx()}`,
@@ -242,7 +371,7 @@ async function rotear(req, res) {
   const corpo = ["POST", "PUT", "PATCH"].includes(metodo) ? await lerCorpo(req) : undefined;
 
   if (!partes[0]?.startsWith("__duble")) {
-    registrar(metodo, url.pathname + url.search, corpo);
+    registrar(metodo, url.pathname + url.search, corpo, req.headers.authorization);
   }
 
   // ── Plano de controle ──
@@ -250,12 +379,14 @@ async function rotear(req, res) {
     if (partes[1] === "saude") {
       return responder(res, 200, {
         ok: true,
-        porta: PORTA,
+        porta: typeof servidor.address() === "object" ? servidor.address()?.port : PORTA,
+        pid: process.pid,
         recebidos: recebidos.length,
         emails: emails.size,
         webhooks: webhooks.size,
         resend: "POST /emails · GET /emails/:id",
-        nuvemshop: "GET /apps/:id/authorize · POST /apps/authorize/token · /:store_id/{store,webhooks}",
+        nuvemshop:
+          "GET /apps/:id/authorize · POST /apps/authorize/token · /:store_id/{store,webhooks}",
       });
     }
     if (partes[1] === "recebidos") {
@@ -269,6 +400,7 @@ async function rotear(req, res) {
   }
 
   // ── Resend ──
+  if (partes[0] === "domains") return resendDominios(req, partes, res);
   if (partes[0] === "emails") {
     // `req` vai junto: `autorizadoResend` lê o `Authorization` do cabeçalho, e
     // sem ele o 401 de verdade (chave ausente) virava 500 — o dublê escondia do
@@ -276,7 +408,12 @@ async function rotear(req, res) {
     if (metodo === "POST") return resendCriarEmail(req, corpo, res);
     if (metodo === "GET" && partes[1]) {
       const email = emails.get(partes[1]);
-      if (!email) return responder(res, 404, { statusCode: 404, name: "not_found", message: "Email not found" });
+      if (!email)
+        return responder(res, 404, {
+          statusCode: 404,
+          name: "not_found",
+          message: "Email not found",
+        });
       return responder(res, 200, email);
     }
     return responder(res, 405, { error: "method_not_allowed" });
@@ -316,12 +453,13 @@ const servidor = http.createServer((req, res) => {
 });
 
 servidor.listen(PORTA, HOST, () => {
-  const base = `http://${HOST}:${PORTA}`;
-  console.log(`[duble-saas] ouvindo em ${base}`);
-  console.log(`[duble-saas] resend     → RESEND_API_BASE_URL=${base}`);
-  console.log(`[duble-saas] nuvemshop  → NUVEMSHOP_AUTH_BASE=${base}`);
-  console.log(`[duble-saas] nuvemshop  → NUVEMSHOP_API_BASE=${base}`);
-  console.log(`[duble-saas] saúde      → ${base}/__duble/saude`);
+  const endereco = servidor.address();
+  const base = `http://${HOST}:${typeof endereco === "object" ? endereco.port : PORTA}`;
+  console.info(`[duble-saas] ouvindo em ${base}`);
+  console.info(`[duble-saas] resend     → RESEND_API_BASE_URL=${base}`);
+  console.info(`[duble-saas] nuvemshop  → NUVEMSHOP_AUTH_BASE=${base}`);
+  console.info(`[duble-saas] nuvemshop  → NUVEMSHOP_API_BASE=${base}`);
+  console.info(`[duble-saas] saúde      → ${base}/__duble/saude`);
 });
 
 for (const sinal of ["SIGINT", "SIGTERM"]) {

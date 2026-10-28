@@ -11391,6 +11391,48 @@ export type Database = {
           },
         ];
       };
+      organization_resend_accounts: {
+        Row: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at: string;
+          from_email: string;
+          organization_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at?: string;
+          from_email: string;
+          organization_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          api_key_ciphertext?: string;
+          api_key_iv?: string;
+          api_key_last4?: string;
+          api_key_tag?: string;
+          created_at?: string;
+          from_email?: string;
+          organization_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_resend_accounts_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       organizations: {
         Row: {
           cnpj: string | null;
