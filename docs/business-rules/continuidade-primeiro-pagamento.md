@@ -20,6 +20,12 @@ O GET da continuação só lê estado da organização da sessão e preço/perí
 
 O retorno passa pela ponte nativa de cookie Strict e destino fixo permitido. Antes de sair ao gateway, histórico local ganha `retomar=1`, evitando redirecionamento automático ao voltar. `voltou=1` e Já paguei apenas chamam a sincronização nativa. Só `estado=ativa` **e** `org_operante=true` levam ao onboarding. Query de sucesso ou declaração humana não liberam uso. Valor anual mostra o total pago de uma vez; preço não vem da URL.
 
+## Régua e retorno do provedor
+
+CONFIRMADO pelo código: `aplicarRegua` usa `primeiroPagamentoPendente`, que exige a marca inicial, ausência de período pago e assinatura ainda não ativa. Nesse estado a régua não agenda aviso de inadimplência. Uma marca inicial antiga numa assinatura ativa ou com período pago não silencia o atraso legítimo. Cancelamento e sincronização financeira conservam seus caminhos nativos, e retry de aviso real continua deduplicado.
+
+CONFIRMADO pelo código: o adaptador Asaas valida a URL própria recebida do servidor antes de acessar o provedor. Configura `callback.successUrl` com `voltou=1` e `autoRedirect=true` na assinatura e na primeira fatura; a atualização idempotente da fatura também cobre assinatura recuperada após retry. Exige HTTPS fora do loopback explicitamente injetado para teste, sem credenciais ou fragmento. Nenhum callback marca pagamento ou aceita valor/plano vindo da URL; falha do PUT mantém erro recuperável sem uma nova assinatura.
+
 ## Living System Checklist
 
 1. Entrada: formulário validado, identidade nova do GoTrue, auditoria assinada e estado atual da org da sessão.

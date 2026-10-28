@@ -164,10 +164,10 @@ describe("⭐ trial vencido × assinatura atrasada: a tolerância só protege qu
     expect(decidir(comAviso, ATIVA, 7).acao).toEqual({ tipo: "nada" });
   });
 
-  it("entrada paga (plano de 0 dias, D-16) suspensa à espera do 1º pagamento: o lembrete NÃO fala em teste grátis", () => {
+  it("entrada paga suspensa à espera do primeiro pagamento não recebe aviso de inadimplência", () => {
     const criada = ha(0.1);
     const d = decidir(a({ estado: "trial", temProvedor: false, assinaturasVivas: 0, trialAte: criada, relidaEm: null, entradaPendente: true }), SUSPENSA_POR_COBRANCA);
-    expect(d.acao).toMatchObject({ tipo: "avisar", aviso: "suspensa", origem: "atraso" });
+    expect(d.acao).toEqual({ tipo: "nada" });
   });
 
   it("assinatura que já teve trial e voltou a dever (vencida_desde ≠ fim do teste): tolerância normal", () => {
