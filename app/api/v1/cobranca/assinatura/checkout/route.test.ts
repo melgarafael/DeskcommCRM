@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   taxaOk: true,
   audit: vi.fn(),
   logError: vi.fn(),
+  logWarn: vi.fn(),
   intencao: vi.fn(),
   banco: undefined as unknown as BancoFalso,
 }));
@@ -20,7 +21,7 @@ vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligada 
 vi.mock("@/lib/cobranca/configuracao", () => ({ provedorDaInstalacao: async () => h.provedor }));
 vi.mock("@/lib/cobranca/provedores", () => ({ adaptador: () => h.ad, modoDoProvedor: async () => "teste" }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
-vi.mock("@/lib/logger", () => ({ logger: { error: h.logError, warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
+vi.mock("@/lib/logger", () => ({ logger: { error: h.logError, warn: h.logWarn, info: vi.fn(), debug: vi.fn() } }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: async () => ({ allowed: h.taxaOk }) }));
@@ -188,6 +189,30 @@ describe("checkout da assinatura", () => {
     h.ad.garantirCliente.mockRejectedValue(new ErroDoProvedor(400, "parameter_invalid", false));
     expect((await assinar()).status).toBe(502);
   });
+
+  it("correlaciona a recusa com HTTP e código sem despejar corpo ou segredo", async () => {
+    const erro = new ErroDoProvedor(400, "invalid_callback", false);
+    Object.assign(erro, { response: { description: "segredo-fixture", url: "https://fixture.invalid/?token=segredo-fixture" } });
+    h.ad.iniciarAssinatura.mockRejectedValue(erro);
+    const res = await assinar();
+    expect(res.status).toBe(502);
+    expect(h.logWarn).toHaveBeenCalledWith("cobranca: checkout recusado pelo provedor", {
+      requestId: expect.any(String), organizationId: ORG, provedor: "stripe",
+      status: 400, codigo: "invalid_callback", transitorio: false,
+    });
+    expect(JSON.stringify(h.logWarn.mock.calls)).not.toContain("segredo-fixture");
+    expect(JSON.stringify(await res.json())).not.toContain("invalid_callback");
+    expect(updates().at(-1)).toEqual({ checkout_expira_em: null });
+  });
+
+  it.each(["https://fixture.invalid/?token=segredo-fixture", "$aact_hmlg_fixture", "99991111140", "fixture@example.invalid"])(
+    "não registra código do provedor com formato de dado sensível: %s", async (codigoInseguro) => {
+      h.ad.iniciarAssinatura.mockRejectedValue(new ErroDoProvedor(400, codigoInseguro, false));
+      expect((await assinar()).status).toBe(502);
+      expect(h.logWarn).toHaveBeenCalledWith("cobranca: checkout recusado pelo provedor", expect.objectContaining({ codigo: "codigo_nao_publicavel" }));
+      expect(JSON.stringify(h.logWarn.mock.calls)).not.toContain(codigoInseguro);
+    },
+  );
 
   it("reserva perdida para outro clique entre a leitura e a escrita: 409 checkout_em_preparo", async () => {
     m.reservaOk = false;

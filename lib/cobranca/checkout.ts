@@ -171,6 +171,15 @@ export async function gerarLinkDePagamento(
       });
       return recusar(500, "internal_error", "Não foi possível gerar o link de pagamento. Tente de novo em instantes.");
     }
+    // Só metadados técnicos: nunca Error, description, corpo, URL ou credencial.
+    logger.warn("cobranca: checkout recusado pelo provedor", {
+      requestId: p.requestId,
+      organizationId: orgId,
+      provedor,
+      status: e.status,
+      codigo: /^[a-z][a-z0-9_]{0,63}$/i.test(e.codigo) ? e.codigo : "codigo_nao_publicavel",
+      transitorio: e.transitorio,
+    });
     if (e.codigo === "invalid_cpfCnpj") {
       // Dígitos certos e o Asaas recusou (o CNPJ alfanumérico, por exemplo): é o
       // documento, e quem clicou consegue resolver. Nunca o 502 "fale com quem administra".
