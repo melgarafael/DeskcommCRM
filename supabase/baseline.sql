@@ -64099,6 +64099,59 @@ begin
 end;
 $$;
 
+-- ---- ouvidoria: a manifestação registrada (migration 9030, #3611) ----
+-- manifest: módulo de Ouvidoria, fatia 1 — registro com protocolo do servidor, sem card no funil.
+-- Espelho do corpo da 9030. Entra ANTES da VARREDURA anon por vizinhança (não cria função).
+create table if not exists public.ouvidoria_manifestacoes (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  protocolo text not null
+    check (protocolo ~ '^OUV-[0-9]{8}-[0-9A-F]{8}$'),
+  canal text not null
+    check (canal in ('whatsapp', 'web', 'email', 'telefone', 'presencial', 'outro')),
+  texto text not null
+    check (char_length(btrim(texto)) between 1 and 20000),
+  contact_id uuid references public.contacts(id) on delete set null,
+  status text not null default 'recebida'
+    check (status in ('recebida', 'em_analise', 'concluida')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists ouvidoria_manifestacoes_protocolo_org_idx
+  on public.ouvidoria_manifestacoes (organization_id, protocolo);
+create index if not exists ouvidoria_manifestacoes_org_created_idx
+  on public.ouvidoria_manifestacoes (organization_id, created_at desc);
+create index if not exists ouvidoria_manifestacoes_contact_idx
+  on public.ouvidoria_manifestacoes (contact_id)
+  where contact_id is not null;
+
+alter table public.ouvidoria_manifestacoes enable row level security;
+
+drop policy if exists ouvidoria_manifestacoes_admin_select on public.ouvidoria_manifestacoes;
+create policy ouvidoria_manifestacoes_admin_select on public.ouvidoria_manifestacoes
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'admin')
+  );
+
+revoke all on public.ouvidoria_manifestacoes from public, anon, authenticated;
+grant select on public.ouvidoria_manifestacoes to authenticated;
+grant all on public.ouvidoria_manifestacoes to service_role;
+
+do $$
+begin
+  if to_regclass('public.ouvidoria_manifestacoes') is not null then
+    comment on column public.ouvidoria_manifestacoes.protocolo is
+      'Protocolo da manifestação, GERADO NO SERVIDOR (lib/ouvidoria/registro.ts) — nunca aceito do cliente. Único POR ORGANIZAÇÃO (índice ouvidoria_manifestacoes_protocolo_org_idx); a forma OUV-AAAAMMDD-XXXXXXXX é cobrada pelo CHECK da coluna (9030).';
+    comment on column public.ouvidoria_manifestacoes.contact_id is
+      'Contato do CRM que relatou, OPCIONAL. on delete set null: apagar ou anonimizar a pessoa NÃO apaga a manifestação nem o protocolo (decisão escrita no catálogo LGPD dos invariantes).';
+    comment on column public.ouvidoria_manifestacoes.status is
+      'recebida -> em_analise -> concluida. A transição é da tela de gestão (fatia seguinte); esta fatia só grava o estado inicial.';
+  end if;
+end
+$$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
