@@ -36,10 +36,16 @@
  * A ação NUNCA devolve a manifestação de outro tenant com `ok: true`: há dois
  * predicados (o `.eq("organization_id", …)` da leitura e a RLS da 9030) e o
  * teste de unidade mede o primeiro.
+ *
+ * ─── A régua de acesso saiu daqui (fatia 3) ─────────────────────────────────
+ *
+ * A fatia 3 precisa da MESMA régua em cinco portas (lista, detalhe, mudança de
+ * status e as duas telas). Ela mora em `lib/ouvidoria/acesso.ts`, com a ordem
+ * das recusas documentada lá — e esta ação passou a chamá-la em vez de repetir
+ * as quatro linhas. A conduta é idêntica: a barreira de acompanhamento continua
+ * vindo ANTES de `resolveActiveOrg`, e o piso continua `admin`.
  */
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
-import { supportWriteError } from "@/lib/impersonate/support";
+import { acessoDaOuvidoria } from "@/lib/ouvidoria/acesso";
 import { lerManifestacao, type ManifestacaoLida } from "@/lib/ouvidoria/leitura";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,24 +59,13 @@ export type ResultadoDaLeituraDaOuvidoria =
 export async function lerManifestacaoDaOuvidoria(
   id: string,
 ): Promise<ResultadoDaLeituraDaOuvidoria> {
-  const user = await loadAuthUser();
-  if (!user) return { ok: false, error: "unauthenticated" };
-
-  // A sessão de acompanhamento não é a organização. Mesmo com `admin` no papel,
-  // quem está do lado de fora vendo a tela do cliente não lê o relato de quem
-  // reclamou: é a mesma barreira das actions de leitura desta natureza (ver
-  // `app/actions/settings/listarFerramentasMcpExternas.ts`), e aqui ela pesa
-  // mais porque a manifestação é sigilosa por definição (§ privacidade da #3611).
-  if (supportWriteError(user.support)) return { ok: false, error: "forbidden_role" };
-
-  const org = await resolveActiveOrg(user);
-  if (!org) return { ok: false, error: "forbidden_tenant" };
-  if (ROLE_RANK[org.role] < ROLE_RANK.admin) return { ok: false, error: "forbidden_role" };
+  const acesso = await acessoDaOuvidoria();
+  if (!acesso.ok) return acesso;
 
   // Cliente de SESSÃO de propósito: a RLS da 9030 (organização + admin) é a
   // segunda cerca, e ela só existe neste caminho.
   const supabase = await createClient();
-  const resultado = await lerManifestacao({ supabase, organizationId: org.orgId }, id);
+  const resultado = await lerManifestacao({ supabase, organizationId: acesso.org.orgId }, id);
 
   if (resultado.ok) return resultado;
   return {
