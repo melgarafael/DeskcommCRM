@@ -181,7 +181,15 @@ function listaDe(
           etapa.is_lost === false &&
           (!ids || ids.includes(etapa.id)),
       )
-      .map((etapa) => ({ id: etapa.id }));
+      // As colunas que a PÁGINA lê para montar o catálogo (nome e funil), e não
+      // só o `id` que a action confere: devolver menos aqui fazia a tela renderizar
+      // a seção 2 vazia, e foi assim que este dublê mentiu na primeira rodada.
+      .map((etapa) => ({
+        id: etapa.id,
+        name: etapa.name,
+        pipeline_id: etapa.pipeline_id,
+        position: etapa.position,
+      }));
   }
   return [];
 }
@@ -599,6 +607,30 @@ describe("quem entra na tela", () => {
 
     expect(screen.getByText("Entrada automática no funil")).toBeVisible();
     expect(screen.getByText("Follow-up por etapa")).toBeVisible();
+  });
+
+  it("organização A não vê a configuração de B — a etapa da vizinha não vira linha", async () => {
+    // O `settings` da empresa A carrega uma chave apontando para a etapa da
+    // empresa B (escrita por fora: script, seed, API antiga — jsonb não tem FK).
+    // A tela lista as etapas do CATÁLOGO de A; a chave órfã não pode virar linha
+    // marcada, nem "vazar" o prazo e o texto que a vizinha configurou.
+    estado.settings.followup_por_etapa = {
+      "abababab-abab-4bab-8bab-abababababab": {
+        ativa: true,
+        prazo_horas: 6,
+        mensagem: "Regra da vizinha",
+      },
+      [ETAPA_ESCOLHIDA]: { ativa: true, prazo_horas: 24, mensagem: "Regra da casa" },
+    };
+
+    render(await EntradaEFollowupPage());
+
+    expect(screen.queryByTestId("etapa-abababab-abab-4bab-8bab-abababababab")).toBeNull();
+    expect(screen.queryByText("Regra da vizinha")).toBeNull();
+    // E a regra da PRÓPRIA empresa continua aparecendo, marcada.
+    const minha = within(screen.getByTestId(`etapa-${ETAPA_ESCOLHIDA}`));
+    expect(minha.getByText("Marcada para follow-up")).toBeVisible();
+    expect(screen.getByTestId(`followup-mensagem-${ETAPA_ESCOLHIDA}`)).toHaveValue("Regra da casa");
   });
 
   it("a action recusa papel abaixo de manager mesmo fora da tela", async () => {
