@@ -16,8 +16,11 @@ import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+// O canal de teste "canal-com-chat" é o que responde pela última recebida; a
+// regra real de qual canal é esse mora na porta de canal.
 vi.mock("@/lib/channels/endereco-da-ultima-recebida", () => ({
   enderecoDaUltimaRecebida: vi.fn(async () => null),
+  respondePelaUltimaRecebida: (p: string | null | undefined) => p === "canal-com-chat",
 }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
@@ -26,7 +29,7 @@ const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const CONTATO = "44444444-4444-4444-8444-444444444444";
 
 interface Montagem {
-  principal?: { phone_number: string; source_metadata?: Record<string, unknown> };
+  principal?: { phone_number: string; wa_lid?: string | null };
   extras?: Array<{ phone_number: string; wa_lid: string | null }>;
   provider?: string;
   isGroup?: boolean;
@@ -41,7 +44,7 @@ function fakeSupabase(m: Montagem) {
       id: CONVERSA,
       contact_id: m.semContato ? null : CONTATO,
       is_group: m.isGroup ?? false,
-      channel_sessions: { provider: m.provider ?? "waha" },
+      channel_sessions: { provider: m.provider ?? "canal-com-chat" },
     },
     contacts: m.principal ?? null,
     contact_phones: m.extras ?? [],
@@ -97,7 +100,7 @@ describe("GET /api/v1/conversations/[id]/reply-address", () => {
       phone_number: "+5511999998888",
       via: "principal",
       has_extras: false,
-      provider: "waha",
+      follows_last_inbound: true,
     });
   });
 
@@ -117,14 +120,14 @@ describe("GET /api/v1/conversations/[id]/reply-address", () => {
       phone_number: "+5515999998888",
       via: "ultima_recebida",
       has_extras: true,
-      provider: "waha",
+      follows_last_inbound: true,
     });
   });
 
   it("@lid que é do extra → o número do extra", async () => {
     vi.mocked(enderecoDaUltimaRecebida).mockResolvedValue("777666555444@lid");
     const { cliente } = fakeSupabase({
-      principal: { phone_number: "+5511999998888", source_metadata: { waha_lid: "111222333444@lid" } },
+      principal: { phone_number: "+5511999998888", wa_lid: "111222333444" },
       extras: [{ phone_number: "+5515988887777", wa_lid: "777666555444" }],
     });
     vi.mocked(createClient).mockResolvedValue(cliente as never);

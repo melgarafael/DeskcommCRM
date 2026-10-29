@@ -1,9 +1,9 @@
 /**
  * GET /api/v1/conversations/[id]/reply-address — para qual número a resposta sai (Spec 31, B4).
  *
- * `{ phone_number, via, has_extras, provider }`:
+ * `{ phone_number, via, has_extras, follows_last_inbound }`:
  * - `via: "ultima_recebida"` — a resposta volta pelo número da última mensagem
- *   recebida da conversa (WAHA, conversa individual, ficha com telefone extra);
+ *   recebida da conversa (canal que responde por ela, conversa individual, ficha com telefone extra);
  * - `via: "principal"` — o principal da ficha (ficha sem extra, grupo, outro canal,
  *   ou nenhuma mensagem recebida).
  *
@@ -15,7 +15,7 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { enderecoDaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
+import { enderecoDaUltimaRecebida, respondePelaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +68,7 @@ export async function GET(_req: NextRequest, ctx: Context): Promise<Response> {
   if (conversa.contact_id) {
     const { data: ficha, error: errFicha } = await supabase
       .from("contacts")
-      .select("phone_number, source_metadata")
+      .select("phone_number, wa_lid")
       .eq("organization_id", organizationId)
       .eq("id", conversa.contact_id)
       .maybeSingle();
@@ -76,9 +76,7 @@ export async function GET(_req: NextRequest, ctx: Context): Promise<Response> {
       return fail("internal_error", "Não foi possível ler a ficha.", 500, { requestId });
     }
     if (ficha) {
-      const meta = (ficha.source_metadata ?? {}) as Record<string, unknown>;
-      const lid = typeof meta.waha_lid === "string" ? meta.waha_lid.replace(/@.*$/, "") : "";
-      principal = { phone_number: ficha.phone_number ?? null, lid: lid || null };
+      principal = { phone_number: ficha.phone_number ?? null, lid: ficha.wa_lid ?? null };
     }
     const { data: linhas, error: errExtras } = await supabase
       .from("contact_phones")
@@ -124,7 +122,12 @@ export async function GET(_req: NextRequest, ctx: Context): Promise<Response> {
   }
 
   return ok(
-    { phone_number: phoneNumber, via, has_extras: hasExtras, provider },
+    {
+      phone_number: phoneNumber,
+      via,
+      has_extras: hasExtras,
+      follows_last_inbound: respondePelaUltimaRecebida(provider),
+    },
     { requestId },
   );
 }

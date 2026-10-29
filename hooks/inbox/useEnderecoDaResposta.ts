@@ -8,7 +8,8 @@ export interface EnderecoDaResposta {
   phone_number: string | null;
   via: "ultima_recebida" | "principal";
   has_extras: boolean;
-  provider: string | null;
+  /** O canal responde pelo número da última mensagem recebida (senão, pelo principal). */
+  follows_last_inbound: boolean;
 }
 
 /**

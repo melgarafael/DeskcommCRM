@@ -12,6 +12,15 @@ import { chatIdDaUltimaRecebida } from "@/lib/waha/ultima-recebida";
  * Devolve `null` — e quem chama segue a regra de sempre — para grupo, para outro
  * canal e para ficha sem extra.
  */
+/**
+ * O canal responde pelo número da última mensagem recebida? Hoje só o WAHA; os
+ * outros respondem pelo principal da ficha, e a tela avisa isso quando a última
+ * mensagem chegou por um telefone extra.
+ */
+export function respondePelaUltimaRecebida(provider: string | null | undefined): boolean {
+  return provider === "waha";
+}
+
 export async function enderecoDaUltimaRecebida(
   client: SupabaseClient,
   args: {
