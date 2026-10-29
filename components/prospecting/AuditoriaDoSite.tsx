@@ -117,6 +117,7 @@ export function AuditoriaDoSite({
         <h4 className="font-medium">{t("Estratégia de abordagem")}</h4>
         <p className="mt-1">{estrategia.cenario}</p>
         <p className="mt-1 text-muted-foreground">{estrategia.angulo}</p>
+        {estrategia.complementar && <p className="mt-1">{estrategia.complementar}</p>}
         {estrategia.ganchos.length > 0 && (
           <ul className="mt-1 list-disc space-y-1 pl-4">
             {estrategia.ganchos.map((gancho, i) => (

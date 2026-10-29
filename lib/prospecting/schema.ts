@@ -22,6 +22,17 @@ export const ofertasDaCampanhaSchema = z
   .default(["site"]);
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
 
+/**
+ * Rótulos de tela de cada oferta. Fonte única: a tela da campanha (com `t()`), o
+ * contexto que o agente lê em cada turno e a ferramenta de auditoria usam estes
+ * mesmos textos, para os três lugares não divergirem.
+ */
+export const ROTULOS_DAS_OFERTAS = {
+  site: "Site profissional",
+  automacao_crm: "Automação do atendimento (CRM)",
+  automacao_n8n: "Automações e integrações (N8N)",
+} as const satisfies Record<OfertaDaCampanha, string>;
+
 export const campaignConfigSchema = z
   .object({
     agent_id: z.string().uuid(),

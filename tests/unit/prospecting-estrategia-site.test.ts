@@ -32,6 +32,66 @@ const base: EntradaDaEstrategia = {
   followUpsEnviados: 0,
 };
 
+describe("complementar: a oferta de automação ao lado do site", () => {
+  const FRASE_CRM = "Além do site, o atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.";
+  const FRASE_N8N = "Além do site, as automações tiram o trabalho repetido, sem trocar ninguém da equipe.";
+
+  it("agregador (só rede social) com automação de CRM traz a frase do atendimento fora de hora", () => {
+    const e = montarEstrategia({ ...base, classe: "agregador", ofertas: ["site", "automacao_crm"], numAvaliacoes: 20 });
+    expect(e.cenario).toBe("Só rede social");
+    expect(e.complementar).toBe(FRASE_CRM);
+  });
+
+  it("automação de N8N traz a frase das automações que tiram o trabalho repetido", () => {
+    const e = montarEstrategia({ ...base, classe: "sem-site", ofertas: ["site", "automacao_n8n"], numAvaliacoes: 20 });
+    expect(e.complementar).toBe(FRASE_N8N);
+  });
+
+  it("as duas automações numa só frase, com as duas ideias", () => {
+    const e = montarEstrategia({ ...base, classe: "agregador", ofertas: ["site", "automacao_crm", "automacao_n8n"], numAvaliacoes: 20 });
+    expect(e.complementar).toContain("fora de hora");
+    expect(e.complementar).toContain("trabalho repetido");
+    expect(e.complementar?.startsWith("Além do site")).toBe(true);
+  });
+
+  it("só ['site'] não traz complementar", () => {
+    expect(montarEstrategia({ ...base, classe: "agregador", ofertas: ["site"], numAvaliacoes: 20 }).complementar).toBeNull();
+  });
+
+  it("'Site ok, demanda alta' continua igual: automação já é o ângulo, complementar null", () => {
+    const e = montarEstrategia({ ...base, classe: "site-ok", ofertas: ["site", "automacao_crm"], numAvaliacoes: 120 });
+    expect(e.cenario).toBe("Site ok, demanda alta");
+    expect(e.angulo).toContain("automação");
+    expect(e.complementar).toBeNull();
+  });
+
+  it("verificação provisória não ganha complementar, mesmo com automação marcada", () => {
+    const e = montarEstrategia({ ...base, classe: "fora-do-ar", provisorio: true, ofertas: ["automacao_crm"] });
+    expect(e.cenario).toBe("Verificação pendente");
+    expect(e.complementar).toBeNull();
+  });
+
+  it("o campo existe em todo ramo, inclusive no 'Site ok' sem volume", () => {
+    const e = montarEstrategia({ ...base, classe: "site-ok", ofertas: ["automacao_crm"], numAvaliacoes: 10 });
+    expect(e.cenario).toBe("Site ok");
+    expect(e.complementar).toBe("O atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.");
+    expect(montarEstrategia({ ...base, classe: "site-ok", ofertas: ["site"], numAvaliacoes: 10 })).toHaveProperty(
+      "complementar",
+      null,
+    );
+  });
+
+  it.each<{ ofertas: EntradaDaEstrategia["ofertas"] }>([
+    { ofertas: ["automacao_crm"] },
+    { ofertas: ["automacao_n8n"] },
+    { ofertas: ["automacao_crm", "automacao_n8n"] },
+  ])("automação sem site não anuncia site na frase nova: $ofertas", ({ ofertas }) => {
+    const e = montarEstrategia({ ...base, classe: "agregador", ofertas, numAvaliacoes: 20 });
+    expect(e.complementar).not.toBeNull();
+    expect(e.complementar).not.toMatch(/site/i);
+  });
+});
+
 describe("estrategia-site", () => {
   it("sem-site com Instagram vende complemento, não substituto", () => {
     const e = montarEstrategia(base);
