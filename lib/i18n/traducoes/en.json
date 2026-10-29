@@ -9427,5 +9427,13 @@
   "Etiquetas de ativação": "Activation tags",
   "Etiquetas que ativam (opcional)": "Tags that activate it (optional)",
   "odonto, clínica": "dental, clinic",
-  "Se a conversa ou o contato tiver uma destas etiquetas, a skill entra mesmo sem a palavra-chave.": "If the conversation or the contact has one of these tags, the skill is used even without the keyword."
+  "Se a conversa ou o contato tiver uma destas etiquetas, a skill entra mesmo sem a palavra-chave.": "If the conversation or the contact has one of these tags, the skill is used even without the keyword.",
+  "Ferramentas do servidor externo": "External server tools",
+  "Consultas ao sistema cadastrado em Configurações › Servidor MCP externo": "Lookups in the system registered under Settings › External MCP server",
+  "O servidor externo não respondeu agora. As ferramentas já ligadas continuam salvas.": "The external server did not respond right now. Tools already turned on stay saved.",
+  "Só leitura": "Read only",
+  "Escrita": "Write",
+  "O servidor não declarou esta ferramenta como só leitura: durante a conversa com o cliente, o CRM recusa usá-la.": "The server did not declare this tool as read only: during the conversation with the customer, the CRM refuses to use it.",
+  "ligada, mas o servidor não oferece mais esta ferramenta.": "turned on, but the server no longer offers this tool.",
+  "ligada.": "turned on."
 }

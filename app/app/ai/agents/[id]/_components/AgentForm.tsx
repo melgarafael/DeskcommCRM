@@ -36,6 +36,7 @@ import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
+import { ehToolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
 import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 import { ModelPicker, useModelMeta } from "./ModelPicker";
@@ -59,6 +60,7 @@ import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
 import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
+import { FerramentasDoServidorExterno } from "./FerramentasDoServidorExterno";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -1248,11 +1250,27 @@ export function AgentForm(props: Props) {
                 "Ligue por jornada de trabalho. O agente só consegue fazer o que estiver ligado aqui — e o que estiver ligado, ele fará sozinho durante o atendimento.",
               )}
             </p>
+            {/* As remotas do servidor MCP externo (#2147) ficam FORA do seletor do
+                catálogo, que as tomaria por capacidade extinta e as apagaria. */}
             <ToolPicker
-              value={form.tool_ids}
-              onChange={(ids) => patch({ tool_ids: ids })}
+              value={form.tool_ids.filter((id) => !ehToolIdRemoto(id))}
+              onChange={(ids) =>
+                patch({ tool_ids: [...ids, ...form.tool_ids.filter(ehToolIdRemoto)] })
+              }
               disabled={disabled}
             />
+            {isEdit && !readOnly ? (
+              <FerramentasDoServidorExterno
+                value={form.tool_ids.filter(ehToolIdRemoto)}
+                onChange={(remotas) =>
+                  patch({
+                    tool_ids: [...form.tool_ids.filter((id) => !ehToolIdRemoto(id)), ...remotas],
+                  })
+                }
+                vagas={TETO_TOOLS_POR_AGENTE - form.tool_ids.length}
+                disabled={disabled}
+              />
+            ) : null}
             {validation.tool_ids ? (
               <p className="text-xs text-destructive">{validation.tool_ids}</p>
             ) : null}

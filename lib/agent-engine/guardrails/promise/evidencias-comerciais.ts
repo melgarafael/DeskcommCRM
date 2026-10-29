@@ -4,11 +4,22 @@
  * Não recebe histórico, notas do contato, prompt do agente ou argumentos de tool.
  */
 export interface EvidenciaComercial {
-  origem: "catalogo" | "conhecimento";
+  origem: OrigemDaEvidencia;
   referencia: string;
   titulo: string;
   conteudo: string;
 }
+
+/**
+ * `servidor_externo`: resultado de uma ferramenta do servidor MCP externo que a
+ * montagem do turno classificou como LEITURA (`leiturasRemotasMontadas`). É o
+ * sistema do próprio cliente — a agenda, o pedido — consultado com a
+ * identidade do contato da conversa; a data que ele devolve é fato registrado,
+ * não oferta do modelo.
+ */
+export type OrigemDaEvidencia = "catalogo" | "conhecimento" | "servidor_externo";
+
+const ORIGENS: readonly OrigemDaEvidencia[] = ["conhecimento", "catalogo", "servidor_externo"];
 
 import { canonizarTipoDeFonte, type TipoDeFonteId } from "@/lib/ai/rag/tipos-de-fonte";
 import type { Queryable } from "../../queue/queue";
@@ -147,9 +158,33 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
     }
   }
 
+  let consultasRemotas = 0;
+
+  /**
+   * Só retornos bem-sucedidos (`{ texto, dados? }` de `definirFerramentasRemotas`).
+   * Erro do servidor, recusa de escopo e resultado vazio não viram evidência.
+   * Resultado maior que o teto de uma evidência é descartado inteiro, como nas
+   * outras origens: cortar a resposta poderia esconder a ressalva do fim.
+   */
+  function registrarLeituraRemota(nome: string, resultado: unknown) {
+    const r = objeto(resultado);
+    if (!r || r.error || r.erro || r.ok === false || r.permitido === false) return;
+    const conteudo =
+      r.dados !== undefined && r.dados !== null ? JSON.stringify(r.dados) : texto(r.texto);
+    if (!conteudo) return;
+    consultasRemotas += 1;
+    guardar({
+      origem: "servidor_externo",
+      referencia: `${nome}:${consultasRemotas}`,
+      titulo: `Consulta ao sistema externo: ${nome}`,
+      conteudo,
+    });
+  }
+
   return {
     registrarConhecimento,
     registrarCatalogo,
+    registrarLeituraRemota,
     // Relevância escolhe o CONTEXTO, nunca concede autorização. O classificador
     // recebe os trechos completos, inclusive condições/negações, e decide.
     ler: (candidata = ""): EvidenciaComercial[] => {
@@ -183,7 +218,7 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
       // Reserva mínima para cada origem: política e produto complementam-se.
       // O restante segue a relevância global, sem duplicar ou truncar itens.
       for (let i = 0; i < 3; i++)
-        for (const origem of ["conhecimento", "catalogo"] as const) {
+        for (const origem of ORIGENS) {
           const item = ordenadas.filter(({ e }) => e.origem === origem)[i];
           if (item) adicionar(item.e);
         }

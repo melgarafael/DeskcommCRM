@@ -192,3 +192,54 @@ describe("qual material do agente pode provar uma oferta", () => {
     expect(chamadas).toEqual([["org-1", ["fonte-faq", "fonte-conversas"]]]);
   });
 });
+
+describe("leitura do servidor MCP externo como evidência (#2147)", () => {
+  const agenda = {
+    texto: "1 agendamento encontrado",
+    dados: { resposta: "Exame periódico em 30/11/2026 às 17:50, empresa Metalúrgica Exemplo." },
+  };
+
+  it("guarda o resultado bem-sucedido, com o nome da ferramenta na referência", () => {
+    const e = criarEvidenciasComerciaisDoTurno([]);
+    e.registrarLeituraRemota("consultar_agendamentos", agenda);
+    expect(e.ler("seu exame está agendado para 30/11/2026 às 17:50")).toEqual([
+      {
+        origem: "servidor_externo",
+        referencia: "consultar_agendamentos:1",
+        titulo: "Consulta ao sistema externo: consultar_agendamentos",
+        conteudo: JSON.stringify(agenda.dados),
+      },
+    ]);
+  });
+
+  it("sem `dados`, o texto da resposta é a evidência", () => {
+    const e = criarEvidenciasComerciaisDoTurno([]);
+    e.registrarLeituraRemota("consultar_agendamentos", { texto: "Exame em 30/11/2026 às 17:50" });
+    expect(e.ler().map((x) => x.conteudo)).toEqual(["Exame em 30/11/2026 às 17:50"]);
+  });
+
+  it("erro, recusa de escopo e resposta vazia não viram evidência", () => {
+    const e = criarEvidenciasComerciaisDoTurno([]);
+    for (const result of [
+      { error: "servidor fora do ar", texto: "Exame em 30/11" },
+      { permitido: false, motivo: "escrita_sem_escopo_do_turno" },
+      { ok: false, dados: { resposta: "Exame em 30/11" } },
+      { texto: "   " },
+      null,
+      "Exame em 30/11",
+    ])
+      e.registrarLeituraRemota("consultar_agendamentos", result);
+    expect(e.ler()).toEqual([]);
+  });
+
+  it("duas consultas no mesmo turno ficam as duas, e a reserva por origem as alcança", () => {
+    const e = criarEvidenciasComerciaisDoTurno([]);
+    e.registrarCatalogo({ produtos: [produto] });
+    e.registrarLeituraRemota("consultar_agendamentos", { texto: "Exame A em 01/12" });
+    e.registrarLeituraRemota("consultar_agendamentos", { texto: "Exame B em 02/12" });
+    const lidas = e.ler("plano anual");
+    expect(lidas.filter((x) => x.origem === "servidor_externo").map((x) => x.referencia)).toEqual(
+      expect.arrayContaining(["consultar_agendamentos:1", "consultar_agendamentos:2"]),
+    );
+  });
+});

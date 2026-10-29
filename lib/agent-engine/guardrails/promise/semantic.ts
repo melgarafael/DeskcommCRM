@@ -132,6 +132,10 @@ const INSTRUCAO_COM_EVIDENCIAS =
   "sustentar o compromisso específico. Um material sem relação com entrega não autoriza " +
   "'entrego amanhã'; uma oferta gratuita aprovada autoriza informar essa oferta. " +
   "Os exemplos de frases que NÃO são promessa continuam valendo.\n" +
+  "Evidência com origem 'servidor_externo' é o resultado de uma consulta de leitura ao " +
+  "sistema da empresa (agenda, pedido, cadastro). Informar ao cliente o que ela registra — " +
+  "data, horário, situação — é relatar um fato, não prometer; garantir algo além do " +
+  "registrado continua sendo promessa.\n" +
   "## Pergunta 1 — isPromise (compromisso NÃO autorizado)\n" +
   "isPromise=true SOMENTE quando a mensagem INTEIRA contém ao menos um compromisso concreto " +
   "que não é sustentado pelas evidências. Informar uma oferta gratuita, isenção ou duração " +

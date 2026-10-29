@@ -94,6 +94,19 @@ function shapeDaFerramenta(ferramenta: FerramentaRemota): Record<string, z.ZodTy
 }
 
 /**
+ * LEITURA só com as duas metades do item 8 — ver o cabeçalho deste arquivo.
+ * Exportada porque a montagem do turno também precisa saber quais remotas são
+ * leitura (o resultado delas vira evidência da revisão de promessa) e não pode
+ * ter uma segunda cópia da regra.
+ */
+export function ehLeituraRemota(
+  escolha: EscolhaRemota,
+  ferramenta: Pick<FerramentaRemota, "somenteLeitura">,
+): boolean {
+  return escolha.leitura && ferramenta.somenteLeitura === true;
+}
+
+/**
  * As ferramentas remotas ESCOLHIDAS pelo agente, já convertidas.
  *
  * `nomesOcupados` é o catálogo COMPILADO inteiro (`allTools`), não só o que
@@ -135,8 +148,7 @@ export function definirFerramentasRemotas(
       continue;
     }
 
-    // LEITURA só com as duas metades do item 8 — ver o cabeçalho deste arquivo.
-    const ehLeitura = escolha.leitura && ferramenta.somenteLeitura === true;
+    const ehLeitura = ehLeituraRemota(escolha, ferramenta);
 
     definicoes.push({
       name: ferramenta.name,
