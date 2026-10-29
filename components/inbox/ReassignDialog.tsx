@@ -26,6 +26,7 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useContinuarPorOutroNumero } from "@/hooks/inbox/useContinuarPorOutroNumero";
 import { useTransferConversation } from "@/hooks/inbox/useTransferConversation";
 import { outrosNumerosDoContato } from "@/lib/inbox/outros-numeros";
+import { rotuloDoAtendente } from "@/lib/users/rotulo-do-atendente";
 
 export type AbaDeTransferencia = "atendente" | "numero";
 
@@ -179,7 +180,12 @@ export function ReassignDialog({
               <SelectContent>
                 {options.map((m) => (
                   <SelectItem key={m.user_id} value={m.user_id}>
-                    {m.full_name ?? `${t("Atendente")} ${m.user_id.slice(0, 8)}`}
+                    {/*
+                      O rótulo único (#3023): sem nome cadastrado, a linha diz
+                      "Atendente sem nome" — nunca os primeiros dígitos do
+                      `user_id`, que não identificam ninguém para quem transfere.
+                    */}
+                    {rotuloDoAtendente(m.full_name, t)}
                     <span className="ml-1 text-muted-foreground">
                       · {t(ROLE_LABEL[m.role] ?? m.role)}
                     </span>

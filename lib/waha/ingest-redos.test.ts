@@ -5,7 +5,7 @@
  * SAO DOIS TESTES COM PAPEIS DIFERENTES — nao junte nem apague um.
  *
  *  1. `nao e quadratico` e o UNICO que reprova a volta de `replace(/@.*$/, "")`.
- *     O conserto e semanticamente identico a regex, entao nenhum teste de
+ *     O corte do sufixo e semanticamente identico a regex; nenhum teste de
  *     comportamento a distingue: a diferenca observavel e so o tempo. Para esta
  *     classe de defeito, tempo E a correcao.
  *  2. `preserva a semantica` e o unico que reprova trocar o helper por
@@ -42,7 +42,7 @@ describe("parseChatId nao e ReDoS polinomial", () => {
     expect(ms).toBeLessThan(1000);
   });
 
-  it("preserva a semantica exata do antigo replace(/@.*$/, '')", () => {
+  it("preserva o corte de sufixo do antigo replace(/@.*$/, '') e recusa telefone inválido", () => {
     // `.` nao casa terminador de linha e `$` (sem /m) so casa no fim da string: o `@`
     // que a regex achava e o PRIMEIRO depois do ULTIMO terminador de linha. Nao e o
     // primeiro `@` (indexOf) nem o ultimo (lastIndexOf).
@@ -58,15 +58,16 @@ describe("parseChatId nao e ReDoS polinomial", () => {
       ["@lid", "lid", ""],
       ["@@@@lid", "lid", ""],
       ["a@b@c@lid", "lid", "a"],
-      ["5511@999@c.us", "phone", "+5511"],
-      ["++5511@c.us", "phone", "++5511"],
-      ["+@c.us", "phone", "+"],
+      // #3519: o corte continua igual, mas um telefone fora da faixa já não é endereçável.
+      ["5511@999@c.us", "unknown", null],
+      ["++5511@c.us", "unknown", null],
+      ["+@c.us", "unknown", null],
       // com terminador de linha: corta no primeiro @ DEPOIS dele.
       // indexOf devolveria "" / "a"; lastIndexOf, "@@@\n@" / "a@b\nc@".
       ["@@@\n@lid", "lid", "@@@\n"],
       ["a@b\nc@lid", "lid", "a@b\nc"],
       ["@@\r@lid", "lid", "@@\r"],
-      ["abc\n@c.us", "phone", "+abc\n"],
+      ["abc\n@c.us", "unknown", null],
       // U+2028/U+2029 tambem sao terminadores para `.` — somem facil num refactor
       // que so lembra de \n e \r, e o sumico e silencioso.
       ["@a\u2028@lid", "lid", "@a\u2028"],

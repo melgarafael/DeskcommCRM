@@ -21,6 +21,7 @@ import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { agentRunsKey } from "@/hooks/ai/useAgentRuns";
 import { useT } from "@/hooks/i18n/useT";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 
@@ -125,6 +126,7 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
 
 export function TestPanel({ agent, draft, published, readOnly }: Props) {
   const t = useT();
+  const telefoneExemplo = useTelefoneExemplo();
   const target = draft ?? published;
   const qc = useQueryClient();
 
@@ -245,7 +247,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
               id="test-phone"
               value={contactPhone}
               onChange={(e) => setContactPhone(e.target.value)}
-              placeholder="+55..."
+              placeholder={telefoneExemplo}
               disabled={pending || readOnly}
             />
           </div>

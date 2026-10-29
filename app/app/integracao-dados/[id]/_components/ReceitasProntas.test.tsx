@@ -228,6 +228,21 @@ describe("Receitas prontas — comportamento da lista", () => {
     expect(args.map((a) => a.receita)).toContain("woocommerce-clientes");
   });
 
+  it("em carregando, não há como adicionar: salvar antes da lista chegar apagaria as receitas salvas", () => {
+    deps.useReceitasDaConexao.mockReturnValue({
+      data: undefined,
+      isError: false,
+      refetch: vi.fn(async () => ({} as { status: number })),
+    });
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ReceitasProntas connectionId="conn-1" motor="mysql" canWrite />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Receitas prontas")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Adicionar receita/i })).toBeNull();
+  });
+
   it("com 1 salva: adicionar outra → salvar chama o PUT com as 2", async () => {
     renderComQuery([INSTANCIA_SALVA], true);
 

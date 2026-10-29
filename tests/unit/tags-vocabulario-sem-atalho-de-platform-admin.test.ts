@@ -57,6 +57,9 @@ vi.mock("next/navigation", () => ({ redirect: redirecionar, useRouter: () => ({ 
 import { GET, POST } from "@/app/api/v1/tags/vocabulario/route";
 import TagsPage from "@/app/app/settings/tags/page";
 
+/** A página sem `?page`/`?busca` (#2855: ela passou a ler a página do vocabulário). */
+const SEM_BUSCA = { searchParams: Promise.resolve({}) };
+
 /** As RPCs que a rota e a página chamam, na ordem em que chamaram. */
 const chamadas = () => rpc.mock.calls.map((c) => c[0] as string);
 
@@ -89,6 +92,7 @@ beforeEach(() => {
   rpc.mockImplementation(async (fn: string) => {
     if (fn === "fn_user_role_in_org") return { data: estado.papelNoBanco, error: null };
     if (fn === "fn_vocabulario_de_tags") return { data: [], error: null };
+    if (fn === "fn_vocabulario_de_tags_pagina") return { data: { items: [], total: 0 }, error: null };
     if (fn === "fn_vocabulario_de_tags_operar") return { data: { contatos: 0 }, error: null };
     return { data: null, error: { message: `rpc inesperada: ${fn}` } };
   });
@@ -96,7 +100,7 @@ beforeEach(() => {
 
 describe("platform admin sem papel de gerente NESTA organização", () => {
   it("⭐ GET da rota recusa com 403 antes de ler o vocabulário", async () => {
-    const resposta = await GET();
+    const resposta = await GET(new NextRequest("http://localhost/api/v1/tags/vocabulario"));
     expect(resposta.status).toBe(403);
     expect(chamadas()).not.toContain("fn_vocabulario_de_tags");
   });
@@ -108,8 +112,9 @@ describe("platform admin sem papel de gerente NESTA organização", () => {
   });
 
   it("⭐ a página manda para /403 em vez de oferecer os três botões", async () => {
-    await expect(TagsPage()).rejects.toThrow("REDIRECT:/403");
+    await expect(TagsPage(SEM_BUSCA)).rejects.toThrow("REDIRECT:/403");
     expect(chamadas()).not.toContain("fn_vocabulario_de_tags");
+    expect(chamadas()).not.toContain("fn_vocabulario_de_tags_pagina");
   });
 });
 
@@ -120,7 +125,7 @@ describe("CONTROLE: com papel de gerente a porta abre — senão os casos acima 
   });
 
   it("GET devolve 200 e lê o vocabulário", async () => {
-    const resposta = await GET();
+    const resposta = await GET(new NextRequest("http://localhost/api/v1/tags/vocabulario"));
     expect(resposta.status, await resposta.clone().text()).toBe(200);
     expect(chamadas()).toContain("fn_vocabulario_de_tags");
   });
@@ -132,8 +137,8 @@ describe("CONTROLE: com papel de gerente a porta abre — senão os casos acima 
   });
 
   it("a página lê o vocabulário sem redirecionar", async () => {
-    await TagsPage();
+    await TagsPage(SEM_BUSCA);
     expect(redirecionar).not.toHaveBeenCalled();
-    expect(chamadas()).toContain("fn_vocabulario_de_tags");
+    expect(chamadas()).toContain("fn_vocabulario_de_tags_pagina");
   });
 });

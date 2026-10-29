@@ -42,6 +42,10 @@ export const FRASES_DE_FALHA: Record<string, string> = {
   // O watchdog desistiu de uma linha parada em `sending`: o canal pode ter
   // aceitado sem confirmar, então a frase não promete que não saiu.
   send_timeout: "O WhatsApp não confirmou o envio a tempo. Pode ser que a mensagem tenha chegado.",
+  // O canal aceitou a mensagem e DEPOIS devolveu erro no aviso de entrega
+  // (ack = -1). A frase não promete que não saiu: o aparelho pode ter recebido.
+  ack_error:
+    "O WhatsApp devolveu um erro para esta mensagem depois de aceitá-la. Pode ser que ela tenha chegado; confira na conversa antes de reenviar.",
   // Canal desativado pelo operador (o envio é recusado antes de sair).
   channel_disabled: "Este número está desativado. Reative em Conexões para enviar.",
   // Recusas assíncronas da plataforma oficial, gravadas pelo código numérico.

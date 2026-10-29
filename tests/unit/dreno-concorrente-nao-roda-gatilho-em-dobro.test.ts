@@ -14,7 +14,7 @@
  * filtros do PostgREST que o dreno usa. O mesmo vale para dois escopados
  * concorrentes (duas mensagens da mesma organização ao mesmo tempo).
  */
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/env", () => ({ env: {} }));
 
@@ -104,14 +104,14 @@ beforeAll(() => {
 
 const ESCOPO: EscopoDoDreno = { organizationId: "org-1", handlers: [RETORNO] };
 
-function cenario() {
+function cenario(eventType = "message.received") {
   for (const k of Object.keys(rodadas)) delete rodadas[k];
   return {
     event_log: [
       {
         id: "e1",
         organization_id: "org-1",
-        event_type: "message.received",
+        event_type: eventType,
         entity_kind: "message",
         entity_id: "msg-1",
         payload: { contact_id: "contato-1" },
@@ -147,4 +147,64 @@ describe("dreno que leu antes de outro dreno soltar a linha", () => {
       expect(linha!.status).toBe("done");
     }
   });
+});
+
+describe("dreno que leu antes de outro dreno adiar a linha", () => {
+  afterEach(() => vi.useRealTimers());
+
+  for (const resultado of ["retry", "error"] as const) {
+    it.each([false, true])(
+      `${resultado}: respeita o prazo novo (dreno atrasado escopado: %s)`,
+      async (escopado) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
+        const key = `teste-prazo-${resultado}-${escopado}`;
+        let chamadas = 0;
+        registerHandler({
+          key,
+          naOrgParada: "roda",
+          events: [key],
+          async handle() {
+            chamadas += 1;
+            return chamadas === 1
+              ? {
+                  consumer_key: key,
+                  status: resultado,
+                  retry_at: "2026-01-15T13:00:00.000Z",
+                  detail: "indisponibilidade transitória",
+                }
+              : { consumer_key: key, status: "ok" };
+          },
+        });
+        const tabelas = cenario(key);
+        const primeiro = banco(tabelas);
+        const atrasado = banco(tabelas, () => drainEventLog(primeiro));
+
+        const resumo = await drainEventLog(atrasado, {
+          escopo: escopado ? { organizationId: "org-1", handlers: [key] } : undefined,
+        });
+
+        const linha = tabelas.event_log[0]!;
+        expect(chamadas, "o claim não pode ignorar o adiamento do primeiro dreno").toBe(1);
+        expect(linha.status).toBe("pending");
+        expect(linha.attempts).toBe(resultado === "error" ? 1 : 0);
+        expect(linha.consumed_by).toEqual([]);
+        expect(resumo.done).toBe(0);
+        expect(resumo.retried).toBe(0);
+        const prazo = String(linha.next_attempt_at);
+        expect(new Date(prazo).getTime()).toBeGreaterThan(Date.now());
+
+        // O evento continua vivo: nem um milissegundo antes, mas exatamente
+        // no prazo ele volta ao despacho e pode concluir normalmente.
+        vi.setSystemTime(new Date(new Date(prazo).getTime() - 1));
+        await drainEventLog(primeiro);
+        expect(chamadas).toBe(1);
+        vi.setSystemTime(new Date(prazo));
+        await drainEventLog(primeiro);
+        expect(chamadas).toBe(2);
+        expect(linha.status).toBe("done");
+        expect(linha.consumed_by).toContain(key);
+      },
+    );
+  }
 });

@@ -1,0 +1,511 @@
+{
+  "id": "admin-incidents",
+  "titulo": "Incidents (Admin)",
+  "tela": "/admin/incidents",
+  "resumo": "A lista de problemas do servidor que pedem atenção: o que aconteceu, em qual empresa, quão grave é, e o lugar onde você anota como resolveu.",
+  "licoes": [
+    {
+      "id": "conhecendo-os-incidentes",
+      "titulo": "Conhecendo a lista de incidentes",
+      "objetivo": "Abrir a lista de incidentes e entender o que cada coluna diz.",
+      "papel": "admin",
+      "busca": [
+        "incidentes",
+        "problemas no servidor",
+        "falhas registradas na instalação",
+        "alerta crítico",
+        "o que deu errado no sistema",
+        "lista de erros"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista de problemas do servidor",
+          "texto": "\"Incidents\" é a lista de incidentes: o lugar feito para registrar problemas do servidor que pedem a atenção de quem administra, como um número de WhatsApp que caiu. Nesta versão, porém, nada no sistema abre um incidente sozinho, então numa instalação nova a lista vem vazia. A tela abre mostrando só os incidentes abertos, ou seja, os que ainda ninguém resolveu. Abaixo do título aparece quantos estão na lista.",
+          "dica": "Nesta versão, nenhuma parte do sistema abre incidentes sozinha: numa instalação nova esta lista aparece vazia, com o aviso \"Nenhum incidente encontrado\". Os incidentes deste curso são exemplos, colocados para mostrar como a tela funciona.",
+          "rota": "/admin/incidents",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Incidents",
+                "exato": true,
+                "dentro": {
+                  "role": "navigation"
+                }
+              },
+              "rotulo": "Incidents no menu do Admin",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "^\\d+ incidentes?\\+?$",
+                "regex": true
+              },
+              "rotulo": "Quantos estão na lista",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada coluna diz",
+          "texto": "Cada linha é um incidente. \"Quando\" diz há quanto tempo ele foi aberto. \"Tipo\" é o código do problema, em inglês. \"Tenant\" é a empresa onde aconteceu; o traço quer dizer que o problema é do servidor inteiro, não de uma empresa. \"Severidade\" diz a gravidade: \"Crítico\", \"Atenção\" ou \"Info\" (só para você saber). \"Status\" diz em que pé está: \"Aberto\" ou \"Resolvido\".",
+          "dica": "Os mais novos aparecem primeiro. A lista traz 30 por vez; quando há mais, o número ganha um \"+\" e aparece o botão \"Carregar mais\" no fim.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "thead"
+              },
+              "rotulo": "Colunas da lista",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "tbody tr",
+                "n": 0
+              },
+              "rotulo": "Um incidente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Abrir um incidente",
+          "texto": "No fim de cada linha, \"Ver\" abre a página do incidente, com os detalhes do problema e o botão para resolvê-lo. Você aprende essa página na última lição.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Abrir o incidente",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filtrando-incidentes",
+      "titulo": "Filtrando por situação e gravidade",
+      "objetivo": "Ver os incidentes já resolvidos, recortar só os críticos e desligar o filtro.",
+      "papel": "admin",
+      "busca": [
+        "ver incidentes resolvidos",
+        "filtrar incidentes críticos",
+        "histórico de problemas resolvidos",
+        "filtrar por gravidade",
+        "limpar filtros de incidentes"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Escolher a situação",
+          "texto": "O primeiro filtro escolhe a situação dos incidentes. Ele começa em \"Abertos\". \"Resolvidos\" mostra os que alguém já resolveu. \"Reconhecidos\" é para os que alguém já viu mas ainda não resolveu; nesta versão nenhum botão da tela marca um incidente assim, então essa lista fica vazia. Clique em \"Resolvidos\".",
+          "rota": "/admin/incidents",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role='combobox']",
+                "n": 0
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "As três situações",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Resolvidos",
+                "exato": true
+              },
+              "rotulo": "Ver os já resolvidos",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Resolvidos",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O histórico do que foi resolvido",
+          "texto": "Agora a lista mostra só os incidentes resolvidos, com o selo verde \"Resolvido\". Abrindo um deles em \"Ver\", você lê a anotação de quem resolveu, explicando o que foi feito.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Resolvidos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role='combobox']",
+                "n": 0
+              },
+              "rotulo": "Situação escolhida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "tbody"
+              },
+              "rotulo": "Só os resolvidos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher a gravidade",
+          "texto": "O segundo filtro recorta pela gravidade: \"Crítico\", \"Atenção\" ou \"Info\". Ele começa em \"Todas severidades\". Vamos voltar para os abertos e ver só os críticos, os que pedem ação primeiro. Clique em \"Crítico\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role='combobox']",
+                "n": 0
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Abertos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role='combobox']",
+                "n": 1
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Crítico",
+                "exato": true
+              },
+              "rotulo": "Só os críticos",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Crítico",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Os dois filtros juntos, e limpar",
+          "texto": "Os filtros se somam: agora a lista mostra só os incidentes abertos e críticos. Com a gravidade escolhida aparece \"Limpar filtros\", que volta para todas as gravidades. A situação escolhida no primeiro filtro continua como está.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Crítico",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role='combobox']",
+                "n": 0
+              },
+              "rotulo": "Situação",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "button[role='combobox']",
+                "n": 1
+              },
+              "rotulo": "Gravidade",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              },
+              "rotulo": "Voltar para todas as gravidades",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "tbody"
+              },
+              "rotulo": "Abertos e críticos",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "resolvendo-um-incidente",
+      "titulo": "Lendo e resolvendo um incidente",
+      "objetivo": "Ler a página de um incidente, registrar como ele foi resolvido e ver que ele saiu da lista de abertos.",
+      "papel": "admin",
+      "busca": [
+        "resolver incidente",
+        "marcar problema como resolvido",
+        "nota de resolução",
+        "detalhes do incidente",
+        "whatsapp caiu no servidor",
+        "fechar alerta crítico"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A página do incidente",
+          "texto": "Esta é a página que abre ao clicar em \"Ver\": aqui, o número de WhatsApp da Clínica Bem Viver que caiu. No alto ficam o código do problema, os selos de gravidade e de situação, o apelido da empresa e a data em que foi aberto. \"Incidentes\", acima do título, volta para a lista.",
+          "rota": "/admin/incidents",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "whatsapp\\.session_disconnected",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "whatsapp.session_disconnected",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.min-w-0.space-y-2:has(> h1)"
+              },
+              "rotulo": "Problema, gravidade, empresa e data",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Incidentes",
+                "exato": true,
+                "dentro": {
+                  "role": "main"
+                }
+              },
+              "rotulo": "Voltar para a lista",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Os detalhes e o histórico",
+          "texto": "\"Payload\" guarda os detalhes do problema, do jeito que foram anotados: aqui, qual número caiu e há quantos minutos. \"Audit Trail\" é o histórico deste incidente. Ele ainda está vazio porque é a primeira vez que alguém abre esta página. Cada visita fica anotada como \"platform_admin.incident_viewed\", e a resolução, como \"incident.resolved\": você vê as duas linhas daqui a pouco.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is(\"Payload\"))"
+              },
+              "rotulo": "Detalhes do problema",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is(\"Audit Trail\"))"
+              },
+              "rotulo": "Histórico do incidente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Anotar como foi resolvido",
+          "texto": "Depois de resolver o problema de verdade (aqui, reconectar o número na tela Conexões da própria empresa, não no Admin), clique em \"Resolver incidente\". Abre uma janela para você escrever o que causou o problema e o que foi feito. O botão \"Confirmar resolução\" só libera com pelo menos 10 caracteres escritos, e a anotação pode ter no máximo 1000.",
+          "dica": "Resolver não pode ser desfeito, e fica anotado no registro de auditoria (\"Audit\" no menu), com quem resolveu e a anotação.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Resolver incidente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Descreva a causa raiz e as ações tomadas para resolver o incidente..."
+              },
+              "valor": "O celular da recepção ficou sem bateria. Carregamos e reconectamos o número em Conexões."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Descreva a causa raiz e as ações tomadas para resolver o incidente..."
+              },
+              "rotulo": "O que causou e o que foi feito",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar resolução",
+                "exato": true
+              },
+              "rotulo": "Resolver",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Confirmar resolução",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Incidente resolvido",
+          "texto": "Ao confirmar, aparece o aviso \"Incidente resolvido com sucesso\". O selo de situação muda para \"Resolvido\", o botão \"Resolver incidente\" some e surge o quadro \"Resolução\", com a sua anotação e a data. No \"Audit Trail\" já aparecem a sua visita e a resolução, com dia e hora.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar resolução",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Resolução",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.min-w-0.space-y-2:has(> h1)"
+              },
+              "rotulo": "Agora \"Resolvido\"",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is(\"Audit Trail\"))"
+              },
+              "rotulo": "Visita e resolução anotadas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is(\"Resolução\"))"
+              },
+              "rotulo": "A sua anotação",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Fora da lista de abertos",
+          "texto": "Volte para a lista em \"Incidentes\". O incidente resolvido saiu da lista de abertos, e o número abaixo do título diminuiu. Ele continua guardado: escolha \"Resolvidos\" no primeiro filtro para encontrá-lo de novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Incidentes",
+                "exato": true,
+                "dentro": {
+                  "role": "main"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "tbody"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^\\d+ incidentes?\\+?$",
+                "regex": true
+              },
+              "rotulo": "Um a menos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "tbody"
+              },
+              "rotulo": "Só os que faltam resolver",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

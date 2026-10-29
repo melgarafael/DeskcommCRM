@@ -1,0 +1,43 @@
+<title>Curso DeskComm</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/*ESTILO*/
+</style>
+
+<div class="casca">
+  <aside class="menu" id="menu" aria-label="Menu do sistema">
+    <a class="marca" href="#inicio">
+      <span class="marca-d" aria-hidden="true">D</span>
+      <span class="marca-nome">DeskComm</span>
+      <span class="marca-selo">Curso</span>
+    </a>
+    <nav id="menu-grupos"></nav>
+  </aside>
+
+  <div class="principal">
+    <header class="barra">
+      <button class="botao-menu" id="botao-menu" type="button" aria-controls="menu" aria-expanded="false">Menu</button>
+      <div class="busca">
+        <label class="visualmente-oculto" for="busca">Buscar no curso</label>
+        <input id="busca" type="search" autocomplete="off" placeholder="Buscar no curso (ex.: transferir conversa)" aria-controls="resultados" aria-expanded="false">
+        <kbd class="busca-atalho" aria-hidden="true">/</kbd>
+        <ul class="resultados" id="resultados" role="listbox" hidden></ul>
+      </div>
+    </header>
+    <main id="vista" tabindex="-1" aria-label="Conteúdo do curso"></main>
+    <footer class="rodape" id="rodape"></footer>
+  </div>
+</div>
+
+<dialog class="ampliada" id="ampliada" aria-label="Foto ampliada">
+  <button class="botao botao-secundario ampliada-fechar" type="button" data-fechar>Fechar</button>
+  <div class="ampliada-conteudo"></div>
+</dialog>
+
+<script id="dados" type="application/json">/*DADOS*/</script>
+<script>
+/*APP*/
+</script>

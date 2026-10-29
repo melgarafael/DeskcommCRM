@@ -33,6 +33,29 @@ describe('parseSkillPackage', () => {
     }
   });
 
+  it('lê matcher.any_tags do frontmatter: a etiqueta do pacote não se perde na importação', () => {
+    const comEtiqueta = `---
+name: prospec-odonto
+description: Abordagem para dentistas.
+matcher:
+  any_keywords: [dentista, odontologia]
+  any_tags: [odonto, clinica]
+---
+Apresente-se e pergunte sobre a agenda.`;
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': comEtiqueta }));
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.pkg.matcher.any_keywords).toEqual(['dentista', 'odontologia']);
+      expect(out.pkg.matcher.any_tags).toEqual(['odonto', 'clinica']);
+    }
+  });
+
+  it('pacote sem any_tags segue sem o campo', () => {
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': validSkillMd }));
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.pkg.matcher.any_tags).toBeUndefined();
+  });
+
   it('SKILL.md ausente → erro de ensino', () => {
     const out = parseSkillPackage(makeZip({ 'leia.txt': 'oi' }));
     expect(out.ok).toBe(false);

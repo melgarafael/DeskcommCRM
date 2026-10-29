@@ -933,6 +933,24 @@
   background: var(--color-surface);
 }
 
+/* Zoom e encaixe com o dedo: a folha da lib declara 26px com UMA classe e é
+   importada pelo componente, então chega depois deste arquivo na cascata. Duas
+   classes vencem por especificidade, não por ordem. Só com ponteiro grosso:
+   com mouse o canto do canvas fica como sempre.
+   Vale para TODO `.react-flow`, não só o construtor de follow-up: o canvas de
+   Automações (`CanvasDaAutomacao`) também ganha botões de zoom de 44px. É de
+   propósito — o mesmo dedo, o mesmo controle.
+   As alças de ligação (`.react-flow__handle`) ficaram de fora de propósito:
+   moram dentro do viewport com zoom (44px de CSS viram 22px a 50%), e uma área
+   para fora do nó cobre o vão de 80px entre dois passos, onde passa a aresta
+   que o toque seleciona. */
+@media (pointer: coarse) {
+  .react-flow .react-flow__controls-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 /* ---- Pulso de chegada no card do Kanban (CRM Vivo, Wave 3) --------------
    Vivo é o que RESPONDE, não o que se agita: um pulso, uma vez, e cessa.
    A animação não repete (sem `infinite`) — ficar animando é rejeição de review.

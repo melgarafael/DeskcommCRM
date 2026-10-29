@@ -7,6 +7,7 @@
  * passa pelo servidor, mesmo padrão do board de pipelines.
  */
 import { randomUUID } from "node:crypto";
+import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
@@ -30,6 +31,18 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const { org: activeOrg } = authz;
 
   const supabase = await createClient();
+  if (_req.nextUrl.searchParams.has("busca")) {
+    const query = tagsPageQuerySchema.safeParse({ busca: _req.nextUrl.searchParams.get("busca") });
+    if (!query.success) return fail("validation_failed", "Confira a busca e a página.", 422, { requestId });
+    const { data: result, error: readError } = await supabase.rpc("fn_vocabulario_de_tags_pagina", {
+      p_org: activeOrg.orgId, p_busca: query.data.busca, p_offset: 0, p_limit: 200,
+    });
+    const parsed = tagsPageResultSchema.safeParse(result);
+    if (readError || !parsed.success) return fail("internal_error", "Não foi possível carregar as tags.", 500, { requestId });
+    const tags = [...new Set(parsed.data.items.map(row => row.tag.trim().toLowerCase().slice(0,40)))];
+    return ok(tags, { requestId, meta: { total: parsed.data.total, has_more: parsed.data.total > tags.length } });
+  }
+
   const { data, error } = await supabase
     .from("organizations")
     .select("settings")

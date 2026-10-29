@@ -86,7 +86,7 @@ describe("/api/v1/settings/assinatura", () => {
   it("GET sem a chave devolve o padrão: tudo desligado", async () => {
     sessao("manager");
     const corpo = await (await GET()).json();
-    expect(corpo.data).toEqual({ humanos: false, ia: false, nome_ia: "Assistente Virtual" });
+    expect(corpo.data).toEqual({ humanos: false, ia: false, nome_ia: "Assistente Virtual", por_agente: false });
   });
 
   it("PATCH grava a chave SEM apagar as outras, e audita", async () => {
@@ -96,14 +96,29 @@ describe("/api/v1/settings/assinatura", () => {
     expect(estado.settings).toEqual({
       routing: { mode: "round_robin" },
       campanhas: { x: 1 },
-      assinatura_mensagens: { humanos: true, ia: true, nome_ia: "Bia" },
+      assinatura_mensagens: { humanos: true, ia: true, nome_ia: "Bia", por_agente: false },
     });
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "settings.message_signature_updated", organizationId: ORG }),
     );
   });
 
+  it("PATCH grava o interruptor `por_agente` (#3310), e o GET o devolve", async () => {
+    sessao("manager");
+    expect((await patch({ humanos: false, ia: true, nome_ia: "Bia", por_agente: true })).status).toBe(200);
+    expect(estado.settings.assinatura_mensagens).toEqual({ humanos: false, ia: true, nome_ia: "Bia", por_agente: true });
+    expect((await (await GET()).json()).data.por_agente).toBe(true);
+  });
+
+  it("PATCH sem `por_agente` (cliente anterior ao #3310) mantém o que está gravado", async () => {
+    sessao("manager");
+    estado.settings = { assinatura_mensagens: { humanos: true, ia: true, nome_ia: "Bia", por_agente: true } };
+    expect((await patch({ humanos: true, ia: true, nome_ia: "Bia 2" })).status).toBe(200);
+    expect(estado.settings.assinatura_mensagens).toEqual({ humanos: true, ia: true, nome_ia: "Bia 2", por_agente: true });
+  });
+
   it.each([
+    ["interruptor como texto", { humanos: true, ia: true, nome_ia: "Bia", por_agente: "true" }],
     ["asterisco", { humanos: true, ia: true, nome_ia: "Bia*" }],
     ["quebra de linha", { humanos: true, ia: true, nome_ia: "Bia\nBot" }],
     ["nome vazio", { humanos: true, ia: true, nome_ia: "   " }],

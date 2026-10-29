@@ -22,7 +22,9 @@ import type { ChannelGroup, ChannelProvider } from "@/lib/channels/types";
 import { logger } from "@/lib/logger";
 
 export class GrupoError extends Error {
-  constructor(public readonly code: "sessao_nao_encontrada" | "canal_sem_grupos" | "filtro_nao_confirmado") {
+  constructor(
+    public readonly code: "sessao_nao_encontrada" | "canal_sem_grupos" | "filtro_nao_confirmado" | "grupo_desligado",
+  ) {
     super(code);
     this.name = "GrupoError";
   }
@@ -46,6 +48,16 @@ export interface GrupoDoNumero {
    * grupo fica preso ligado para sempre.
    */
   presente: boolean;
+  /**
+   * #2729 — a chave POR GRUPO "Permitir que a IA responda neste grupo".
+   *
+   * Ela só existe dentro de um grupo já LIGADO (a rota recusa `grupo_desligado`
+   * para o resto) porque é a segunda de DUAS decisões: entrar na inbox é o que
+   * `enabled` faz, e mexe no filtro do WhatsApp; responder é o que esta faz, e
+   * é local. O padrão é `false` — o estado de quem nunca tocou em nada continua
+   * sendo a IA calada em grupo.
+   */
+  iaResponde: boolean;
 }
 
 interface LinhaDeGrupo {
@@ -53,7 +65,17 @@ interface LinhaDeGrupo {
   subject: string | null;
   enabled: boolean;
   enabled_at: string | null;
+  /** #2729 — a chave por grupo; `null` nunca vem do banco (`not null`). */
+  ia_responde: boolean | null;
 }
+
+/**
+ * O que a tela da fila grava: a chave da IA NÃO entra aqui. Ela nasce no
+ * default da coluna (desligada) e só muda pela `definirIa` — ligar um grupo
+ * não pode ligar a IA junto, e desligar não pode desligar (senão re-ligar o
+ * grupo silenciosamente apagaria a escolha do operador).
+ */
+type LinhaDeGravacao = Omit<LinhaDeGrupo, "ia_responde"> & { enabled_by_user_id: string | null };
 
 export interface GruposDb {
   lerSessao(
@@ -62,7 +84,13 @@ export interface GruposDb {
   ): Promise<{ provider: ChannelProvider; sessionRef: string; groupsCapability: "full" | "limited" | "none" } | null>;
   listarLinhas(org: string, sessionId: string): Promise<LinhaDeGrupo[]>;
   contarLigados(org: string, sessionId: string): Promise<number>;
-  gravarLinha(org: string, sessionId: string, row: LinhaDeGrupo & { enabled_by_user_id: string | null }): Promise<{ id: string }>;
+  gravarLinha(org: string, sessionId: string, row: LinhaDeGravacao): Promise<{ id: string }>;
+  /**
+   * #2729 — grava a chave por grupo SEM passar pelo transporte: atualiza só
+   * linha LIGADA (um `update ... where enabled = true`). `null` = o grupo não
+   * está na fila, e quem chama recusa com `grupo_desligado`.
+   */
+  definirIa(org: string, sessionId: string, groupChatId: string, valor: boolean): Promise<{ id: string } | null>;
 }
 
 export interface DepsDeGrupos {
@@ -112,6 +140,9 @@ export async function listarGruposDoNumero(
       enabled: l?.enabled ?? false,
       enabledAt: l?.enabled_at ?? null,
       presente: true,
+      // #2729: `l?.ia_responde ?? false` — grupo sem linha não tem como ter
+      // a chave ligada, e `false` é o default da coluna (0653).
+      iaResponde: l?.ia_responde === true,
     };
   });
   // Órfãos: LIGADOS no banco, mas o WhatsApp não devolveu mais (o número saiu
@@ -126,6 +157,9 @@ export async function listarGruposDoNumero(
       enabled: l.enabled,
       enabledAt: l.enabled_at,
       presente: false,
+      // Órfão LIGADO traz a chave junto: a IA pode estar respondendo num grupo
+      // que o número deixou, e a tela tem de poder calá-la.
+      iaResponde: l.ia_responde === true,
     }));
   return [...daLista, ...orfaos];
 }
@@ -273,6 +307,57 @@ async function desligarGrupo(deps: DepsDeGrupos, s: SessaoComGrupos, e: Alternar
   return { enabled: false };
 }
 
+/**
+ * #2729 — a segunda chave, POR GRUPO: "Permitir que a IA responda neste grupo".
+ *
+ * Ela é o oposto de `alternarGrupo` em tudo o que importa:
+ *
+ *  - NÃO mexe no transporte. Não há filtro a confirmar, não há sessão a
+ *    reiniciar, não há contagem a recontar: é uma preferência nossa, não do
+ *    WhatsApp. Por isso não há confirmação de volume na tela — ligar um grupo
+ *    muda o que o número RECEBE; ligar a IA muda quem RESPONDE, só nos
+ *    grupos já recebidos.
+ *  - só existe para grupo LIGADO. Sem linha na fila não há mensagem nossa na
+ *    inbox, logo não há nada para a IA responder — liberar seria uma chave que
+ *    não liga nada, e uma chave que não liga nada é mentira na tela.
+ *  - não zera nem renasce com ligar/desligar o grupo (`LinhaDeGravacao`): a
+ *    escolha do operador sobrevive a uma reconexão do número.
+ *
+ * As proteções de envio (janela de 24h, ritmo, teto diário, silêncio
+ * pós-handoff, elegibilidade) continuam valendo: elas moram no turno, depois
+ * desta decisão, e nada aqui as contorna.
+ */
+export async function definirIaDoGrupo(
+  deps: DepsDeGrupos,
+  e: {
+    organizationId: string;
+    channelSessionId: string;
+    groupChatId: string;
+    iaResponde: boolean;
+    actorUserId: string;
+    requestId: string;
+  },
+): Promise<{ ia_responde: boolean }> {
+  chatIdDeGrupo.parse(e.groupChatId);
+  await sessaoComGrupos(deps, e.organizationId, e.channelSessionId);
+
+  const row = await deps.db.definirIa(e.organizationId, e.channelSessionId, e.groupChatId, e.iaResponde);
+  if (!row) throw new GrupoError("grupo_desligado");
+  await deps.audit({
+    action: e.iaResponde ? "channel.group_ai_enabled" : "channel.group_ai_disabled",
+    organizationId: e.organizationId,
+    actorUserId: e.actorUserId,
+    resourceId: row.id,
+    requestId: e.requestId,
+    metadata: {
+      channel_session_id: e.channelSessionId,
+      group_chat_id: e.groupChatId,
+      ia_responde: e.iaResponde,
+    },
+  });
+  return { ia_responde: e.iaResponde };
+}
+
 /** Dependências reais. `admin` é service role: TODA consulta filtra `organization_id`. */
 export function criarDepsDeGrupos(admin: SupabaseClient): DepsDeGrupos {
   return {
@@ -291,7 +376,7 @@ export function criarDepsDeGrupos(admin: SupabaseClient): DepsDeGrupos {
       async listarLinhas(org, sessionId) {
         const { data } = await admin
           .from("channel_session_groups")
-          .select("group_chat_id, subject, enabled, enabled_at")
+          .select("group_chat_id, subject, enabled, enabled_at, ia_responde")
           .eq("organization_id", org)
           .eq("channel_session_id", sessionId);
         return (data ?? []) as LinhaDeGrupo[];
@@ -313,6 +398,24 @@ export function criarDepsDeGrupos(admin: SupabaseClient): DepsDeGrupos {
           .single();
         if (error) throw error;
         return data as { id: string };
+      },
+      async definirIa(org, sessionId, groupChatId, valor) {
+        // O `enabled = true` no WHERE é o que faz a atualização devolver
+        // `null` para grupo FORA da fila (sem linha, ou linha desligada) — é a
+        // régua do banco por trás do `grupo_desligado` (#2729). A coluna não
+        // nasce no upsert da tela (`LinhaDeGravacao`): ligar o grupo não liga
+        // a IA junto, e desligar não a apaga.
+        const { data, error } = await admin
+          .from("channel_session_groups")
+          .update({ ia_responde: valor })
+          .eq("organization_id", org)
+          .eq("channel_session_id", sessionId)
+          .eq("group_chat_id", groupChatId)
+          .eq("enabled", true)
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        return data as { id: string } | null;
       },
     },
     async listGroups(provider, sessionRef) {

@@ -72,6 +72,9 @@ vi.mock("next/navigation", () => ({
     throw Object.assign(new Error(`REDIRECT:${d}`), { digest: `NEXT_REDIRECT;replace;${d};307;` });
   },
 }));
+// O atalho de plataforma (#3200) mora em módulo próprio; aqui ninguém age por
+// ele — o usuário não é admin da plataforma.
+vi.mock("@/lib/auth/poder-de-plataforma", () => ({ agindoPeloPoderDePlataforma: async () => false }));
 vi.mock("@/lib/channels/health", () => ({ listarConexoesCaidas: async () => [] }));
 vi.mock("@/lib/instalacao/modulos", () => ({ modulosLigados: async () => [] }));
 vi.mock("@/lib/auth/vinculo-revogado", () => ({ acessoFoiRevogado: async () => false }));
@@ -94,12 +97,15 @@ vi.mock("@/app/actions/onboarding/_shared", () => ({
 type Fatores = { status: string }[] | "falha";
 
 /** O que a sessão diz sobre si: fatores (pela rede) e nível de garantia (do token). */
-function sessao(fatores: Fatores, nivel: string | null, paRow: unknown = null) {
+function sessao(fatores: Fatores, nivel: string | null, paRow: unknown = null, dispositivoConfiavel = false) {
   const consulta: Record<string, unknown> = {};
   for (const m of ["select", "eq", "is"]) consulta[m] = () => consulta;
   consulta.maybeSingle = async () => ({ data: paRow, error: null });
   vi.mocked(createClient).mockResolvedValue({
     from: () => consulta,
+    // `fn_session_mfa_proven` (#3200): a sessão `aal1` reconhecida por um
+    // dispositivo confiável conta como provada; as demais, não.
+    rpc: async () => ({ data: dispositivoConfiavel, error: null }),
     auth: {
       // A forma da falha é a do `getUser()` do auth-js: não lança, DEVOLVE o erro.
       // `isMfaEnrolled` lê os fatores dessa mesma ida (#3122), não do `listFactors()`.
@@ -220,6 +226,12 @@ describe("/app: quem tem fator prova a sessão antes de ver a casca", () => {
     expect(acha(arvore, "MfaEnrollGate")).toBeNull();
   });
 
+  it("dispositivo confiável (#3200): sessão aal1 reconhecida pelo banco → renderiza", async () => {
+    sessao([{ status: "verified" }], "aal1", null, true);
+    const arvore = await casca();
+    expect(acha(arvore, "AppShell")).not.toBeNull();
+  });
+
   it("controle: política exige e não há fator → o bloqueador de CADASTRO segue igual", async () => {
     h.politica = true;
     sessao([], "aal1");
@@ -266,6 +278,11 @@ describe("/admin: a mesma regra, com a política da plataforma desligada", () =>
 
   it("fator verificado + sessão aal1 → desafio", async () => {
     sessao([{ status: "verified" }], "aal1", linha);
+    await expect(guarda()).rejects.toMatchObject(desafio("/admin"));
+  });
+
+  it("dispositivo confiável NÃO abre o painel da plataforma (#3200): aal1 reconhecida → desafio", async () => {
+    sessao([{ status: "verified" }], "aal1", linha, true);
     await expect(guarda()).rejects.toMatchObject(desafio("/admin"));
   });
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { signInWithGoogle } from "@/app/actions/auth/signInWithGoogle";
+import { AvisoSemResposta, useEnvioComTeto } from "@/components/auth/teto-da-espera";
 
 /**
  * O botão "Entrar com Google" — o mesmo no login e no cadastro.
@@ -19,13 +20,12 @@ import { signInWithGoogle } from "@/app/actions/auth/signInWithGoogle";
  */
 export function EntrarComGoogle({ next, convite }: { next?: string; convite?: string }) {
   const t = useT();
-  const [isPending, startTransition] = useTransition();
+  const { pendente: isPending, semResposta, enviar } = useEnvioComTeto();
   const [erro, setErro] = useState<string | null>(null);
 
   const onClick = () => {
     setErro(null);
-    startTransition(async () => {
-      const res = await signInWithGoogle({ next, convite });
+    void enviar(() => signInWithGoogle({ next, convite }), (res) => {
       // `res` indefinido = o redirect do sucesso aconteceu (ele lança).
       if (!res) return;
 
@@ -54,6 +54,7 @@ export function EntrarComGoogle({ next, convite }: { next?: string; convite?: st
           {erro}
         </div>
       )}
+      {semResposta && <AvisoSemResposta />}
       <Button
         type="button"
         variant="outline"

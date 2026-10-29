@@ -319,13 +319,15 @@ const acoesFixas = [
       template: z.string().min(1).max(2000),
       /**
        * #2734 — MÍDIA OPCIONAL por URL. Quando presente, o `template` deixa de ser
-       * a mensagem inteira e vira a LEGENDA da imagem/PDF. Opcional de propósito: a
-       * regra antiga (só texto) não tem a chave e continua idêntica. O `nullish`
-       * deixa o editor gravar `null`/ausente sem recusar a regra.
+       * a mensagem inteira e vira a LEGENDA da mídia (imagem, vídeo, áudio ou
+       * documento). Opcional de propósito: a regra antiga (só texto) não tem a
+       * chave e continua idêntica. O `nullish` deixa o editor gravar
+       * `null`/ausente sem recusar a regra.
        *
-       * O `type` (imagem × PDF) NÃO mora aqui: quem o decide é o envio, a partir do
-       * MIME — a extensão da URL quando não há MIME. Guardar uma cópia do tipo no
-       * config criaria uma segunda verdade que envelhece se a URL mudar.
+       * O `type` (imagem × vídeo × áudio × documento) NÃO mora aqui: quem o
+       * decide é o envio, a partir do MIME — a extensão da URL quando não há
+       * MIME. Guardar uma cópia do tipo no config criaria uma segunda verdade
+       * que envelhece se a URL mudar.
        */
       media_url: z.string().url().max(2000).nullish(),
     }),
@@ -601,6 +603,21 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
    * como antes do #2316, sem a integração poder reescrever edição manual.
    */
   update_existing_lead_on_capture: z.boolean().optional(),
+  /**
+   * A opção do #3101: quando o envio NÃO traz `external_id` e o contato casado
+   * já tem card ABERTO no mesmo funil, ATUALIZAR esse card (campos e etapa) em
+   * vez de abrir outro.
+   *
+   * Só entra no PATCH, como a opção irmã: nasce DESLIGADA por DEFAULT na coluna
+   * (migration 0722), e quem nunca mexer aqui segue exatamente como antes —
+   * cada envio vira um card novo.
+   *
+   * Como `update_existing_lead_on_capture`, só liga em fonte com assinatura
+   * configurada — mesma régua da opção irmã (`opcaoSemAssinatura`, conferida
+   * na rota do PATCH): reescrever um card que já existe é integração entre
+   * sistemas.
+   */
+  reuse_open_lead_on_capture: z.boolean().optional(),
 });
 
 export const createAutomationRuleSchema = z

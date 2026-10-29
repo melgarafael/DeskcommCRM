@@ -40,13 +40,15 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { canonicalTagsDoFunil } from "@/lib/contacts/etiquetas";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { ROLE_RANK, roleAtLeast } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
+import { JuntarComOutraFicha } from "@/components/contacts/JuntarComOutraFicha";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
+import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
@@ -93,6 +95,10 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   const canonicalTags = canonicalTagsDoFunil(pipelineQuery.data?.pipeline.settings ?? null);
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
+  // Juntar com outra ficha (spec 31, PR A): gestor, mesmo gate da fusão. Fica
+  // antes dos early returns pelo mesmo motivo dos hooks acima.
+  const podeJuntar = roleAtLeast(activeOrg?.role, "manager");
+  const [juntarOpen, setJuntarOpen] = useState(false);
   // Desfazer o descadastro é o override da regra W-02 — só admin, e auditado.
   // O hook fica ANTES dos early returns: chamá-lo depois mudaria a ordem dos
   // hooks entre renderizações e o React reprova.
@@ -207,6 +213,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
             {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
                 etiquetas não apaga o selo — mesma regra do "Bloqueado" acima. */}
             {contact.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
+            {/* O TIPO DO CONTATO (issue 3005, fatia 1): selo lido da COLUNA
+                (`contacts.contact_type`), mesma regra dos de cima — a etiqueta
+                `fornecedor` é de trabalho e removível; o selo não. Só o
+                fornecedor aparece: cliente é o padrão da coluna. */}
+            {contact.contact_type === "fornecedor" && (
+              <Badge variant="secondary">{t("Fornecedor")}</Badge>
+            )}
             {/* A marca PERMANENTE (issue 2379): lida da COLUNA, mesma régua do
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}
@@ -350,6 +363,16 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
               </Button>
             )}
             <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
+            {podeJuntar && (
+              <Button
+                variant="outline"
+                onClick={() => setJuntarOpen(true)}
+                className="shrink-0"
+                data-testid="juntar-com-outra-ficha"
+              >
+                <span>{t("Juntar com outra ficha")}</span>
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
               <PencilSimple size={16} weight="bold" aria-hidden />
               <span>{t("Editar")}</span>
@@ -513,6 +536,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>
+          {/* AS ÚLTIMAS COMPRAS (issue #3179): a MESMA seção do painel do Inbox,
+              na ficha do contato — negócios ganhos em todos os funis, com data,
+              título, valor, campos escolhidos pela organização e atalho. */}
+          {!contact.is_anonymized && (
+            <div className="mt-4">
+              <UltimasComprasDoContato contactId={contactId} />
+            </div>
+          )}
           {/*
             O que os módulos de dados instalados guardam sobre esta pessoa. A lista vem do servidor e
             é vazia quando não há módulo com ficha de contato — então quem não instalou nada não vê
@@ -573,6 +604,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         canonicalTags={canonicalTags}
       />
       <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
+      {podeJuntar && (
+        <JuntarComOutraFicha
+          contatoAtual={contact}
+          open={juntarOpen}
+          onOpenChange={setJuntarOpen}
+        />
+      )}
     </div>
   );
 }

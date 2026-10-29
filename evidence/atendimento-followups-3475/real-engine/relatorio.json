@@ -1,0 +1,411 @@
+{
+  "synthetic": true,
+  "build": {
+    "sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+    "id": "cyznjcUkNaQa9Fn5H6iU4"
+  },
+  "cases": [
+    {
+      "name": "invisible",
+      "contact_id": "417b4c3a-fe9b-4b73-b3f3-053070eeb982",
+      "conversation_id": "86929f02-0d22-429d-a82b-8b7ee93e1a7d",
+      "message_id": "119bfc15-73de-455f-922d-8eb97b352a09",
+      "job_id": "c9519437-4840-4b84-8ea5-1c2d2b0d9c7e",
+      "errorName": "AI_APICallError",
+      "outbound": [],
+      "trace": [
+        {
+          "id": "7fa40e3c-0651-43bf-a597-8d9e2008f395",
+          "status": "failed",
+          "is_dry_run": false,
+          "messages_sent": 0,
+          "ferramentas": [
+            {
+              "erro": "O texto da mensagem ficou vazio. Escreva a resposta de verdade e chame send_message de novo.",
+              "nome": "send_message",
+              "estado": "falhou",
+              "duracao_ms": 1
+            }
+          ]
+        }
+      ],
+      "http_receipts": []
+    },
+    {
+      "name": "valid",
+      "contact_id": "aee1994a-f4f0-44ff-b26b-cb5a19daa04b",
+      "conversation_id": "2d3928d6-7847-412a-9026-db4b654a2469",
+      "message_id": "1b68fed4-d3a8-4ff9-8f46-c0bb1cafeea8",
+      "job_id": "8afaa40f-37a1-4cde-a4d4-a22d2eaf5fa5",
+      "errorName": null,
+      "outbound": [
+        {
+          "id": "fbe0cb7c-7daa-4b72-a53b-4c31dd4d5cb5",
+          "body": "Olá! A mensagem de controle foi recebida e registrada.",
+          "status": "sent",
+          "external_id": "qa3475-engine-52b18c01-5557-4afa-ad36-5d70f8733378"
+        }
+      ],
+      "trace": [
+        {
+          "id": "5f69f1ea-10ab-488f-9377-ee8294158fd9",
+          "status": "completed",
+          "is_dry_run": false,
+          "messages_sent": 1,
+          "ferramentas": [
+            {
+              "erro": null,
+              "nome": "send_message",
+              "estado": "ok",
+              "duracao_ms": 2120
+            }
+          ]
+        }
+      ],
+      "http_receipts": [
+        {
+          "id": "qa3475-engine-52b18c01-5557-4afa-ad36-5d70f8733378",
+          "text_sha256": "afebe4c9ddefbb6a17319a18147d9c247a160b50a0e5d9e09278a837a223ca25"
+        }
+      ]
+    }
+  ],
+  "provider_calls": [
+    {
+      "id": "chatcmpl_fa3bd14e-da31-47bc-9124-216296e6e59e",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": true,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "347f68a67b1ffcffddac9af3a5865c3d46913caf60e9b7054be482f6fa4f240a",
+      "at": "2026-10-26T19:19:02.951Z"
+    },
+    {
+      "id": "chatcmpl_c997a8e5-693d-4076-848f-8cab98b03355",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": true,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "d5d0b70dfd7a87baa569be91602bc4059f84444396e0055118942392316b1c17",
+      "at": "2026-10-26T19:19:02.953Z"
+    },
+    {
+      "id": "chatcmpl_b28d9ea6-cd51-4679-a272-2aa2909d69d9",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [
+        "crm_move_lead_stage",
+        "get_lead_context",
+        "get_lead_note",
+        "request_human_handoff",
+        "save_lead_note",
+        "schedule_followup",
+        "send_message",
+        "update_lead_state"
+      ],
+      "invisible": true,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": [
+        8206
+      ],
+      "tool_result_content": [],
+      "tool_schemas": [
+        {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+            },
+            "produto_codigo": {
+              "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "tool_result_codes": [],
+      "request_sha256": "6cc410007f79d8bb69a85ab28b26f6f507df0b4c0125477887e8004765cbbda1",
+      "at": "2026-10-26T19:19:02.992Z"
+    },
+    {
+      "id": "chatcmpl_2f124cad-81da-4aec-bce5-3617c189c1a3",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [
+        "crm_move_lead_stage",
+        "get_lead_context",
+        "get_lead_note",
+        "request_human_handoff",
+        "save_lead_note",
+        "schedule_followup",
+        "send_message",
+        "update_lead_state"
+      ],
+      "invisible": true,
+      "corpo_vazio_observado": true,
+      "tool_body_codepoints": null,
+      "tool_result_content": [
+        "{\"ok\":false,\"error\":{\"code\":\"corpo_vazio\",\"message\":\"O texto da mensagem ficou vazio. Escreva a resposta de verdade e chame send_message de novo.\"}}"
+      ],
+      "tool_schemas": [
+        {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+            },
+            "produto_codigo": {
+              "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "tool_result_codes": [
+        "corpo_vazio"
+      ],
+      "request_sha256": "4fd33e4a80afbf5c87b07724f385af06adb70b0000229993fe201360c95d48d0",
+      "at": "2026-10-26T19:19:03.005Z"
+    },
+    {
+      "id": "chatcmpl_90e14a15-589d-491d-a5be-cdf990faf037",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": false,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "5d8da20e22fbca1c2f836966eea8a0ddf0722a3ae1691a92d627f682a9735085",
+      "at": "2026-10-26T19:19:03.458Z"
+    },
+    {
+      "id": "chatcmpl_04f81682-1cdf-412d-95a0-5047299d48ed",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": false,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "3c0d3fb3fbf5a82e186fc97c89ad066d8332914a765f22456744987a1e2d7cb3",
+      "at": "2026-10-26T19:19:03.458Z"
+    },
+    {
+      "id": "chatcmpl_942af656-da50-4c8a-8032-b6d2d9c5bf9d",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [
+        "crm_move_lead_stage",
+        "get_lead_context",
+        "get_lead_note",
+        "request_human_handoff",
+        "save_lead_note",
+        "schedule_followup",
+        "send_message",
+        "update_lead_state"
+      ],
+      "invisible": false,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": [
+        79,
+        108,
+        225,
+        33,
+        32,
+        65,
+        32,
+        109,
+        101,
+        110,
+        115,
+        97,
+        103,
+        101,
+        109,
+        32,
+        100,
+        101,
+        32,
+        99,
+        111,
+        110,
+        116,
+        114,
+        111,
+        108,
+        101,
+        32,
+        102,
+        111,
+        105,
+        32,
+        114,
+        101,
+        99,
+        101,
+        98,
+        105,
+        100,
+        97,
+        32,
+        101,
+        32,
+        114,
+        101,
+        103,
+        105,
+        115,
+        116,
+        114,
+        97,
+        100,
+        97,
+        46
+      ],
+      "tool_result_content": [],
+      "tool_schemas": [
+        {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+            },
+            "produto_codigo": {
+              "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "tool_result_codes": [],
+      "request_sha256": "9624faaf03120c8c72fcc00ee0da146db5e9d962634893ce228e461edbf9b6bb",
+      "at": "2026-10-26T19:19:03.474Z"
+    },
+    {
+      "id": "chatcmpl_c4168f10-4e40-4a16-9821-fed24cdacb7e",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": false,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "087eaf4e0725d09beb7cf49c51c470334a1d0772609e93e16670a1916ae7d0d3",
+      "at": "2026-10-26T19:19:03.485Z"
+    },
+    {
+      "id": "chatcmpl_b234f6ed-1b78-49b6-91d6-d89222a44618",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [
+        "crm_move_lead_stage",
+        "get_lead_context",
+        "get_lead_note",
+        "request_human_handoff",
+        "save_lead_note",
+        "schedule_followup",
+        "send_message",
+        "update_lead_state"
+      ],
+      "invisible": false,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [
+        "{\"ok\":true,\"status\":\"enviada\",\"message_id\":\"fbe0cb7c-7daa-4b72-a53b-4c31dd4d5cb5\"}"
+      ],
+      "tool_schemas": [
+        {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+            },
+            "produto_codigo": {
+              "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "tool_result_codes": [
+        "outro"
+      ],
+      "request_sha256": "8f91b473319cc083499c283d3f562e4c26716ba500bebc745396e8d9db78aeaa",
+      "at": "2026-10-26T19:19:05.602Z"
+    },
+    {
+      "id": "chatcmpl_3221eae0-e511-4d9e-b84e-509eb0f092c0",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": false,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "3f785a993fb8f30fe43a086d2be6f508bdaf9db8836ed985ca8cc09e2449db8c",
+      "at": "2026-10-26T19:19:05.610Z"
+    }
+  ],
+  "limits": [
+    "HTTP provider controlado; não é modelo externo nem WhatsApp real.",
+    "A tentativa invisível é encerrada intencionalmente por HTTP400 do provider APÓS receber corpo_vazio; mede a guarda real, não recuperação do modelo.",
+    "Handler, lease, fronteira e liquidação são os mesmos do worker, executados uma vez sem iniciar os outros loops."
+  ]
+}

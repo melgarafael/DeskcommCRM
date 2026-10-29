@@ -263,8 +263,8 @@ function GraficoDiario({
                   contentStyle={{
                     borderRadius: "8px",
                     fontSize: "12px",
-                    border: "1px solid hsl(var(--border))",
-                    background: "hsl(var(--popover))",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-surface)",
                   }}
                 />
                 <Line type="monotone" dataKey="value" stroke={cor} strokeWidth={2} dot={false} />

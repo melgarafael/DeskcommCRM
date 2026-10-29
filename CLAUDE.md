@@ -695,6 +695,7 @@ naquele clone — no Claude Code a skill GLOBAL vence a do projeto com o mesmo n
 
 - `deskcomm-instalar` — instalar, atualizar ou consertar a instalação numa VPS
 - `deskcomm-operacao` — usar o CRM no dia a dia, encontrar telas, fluxos e configurações pela interface
+- `deskcomm-curso` — atualizar aulas, traduções e capturas do curso a partir das mudanças do produto
 - `deskcomm-cliente-novo` — configurar o CRM para um cliente ou nicho (agentes, roteadores, follow-ups, conhecimento)
 - `deskcomm-saas` — revender o CRM como SaaS: planos, cobrança pela Stripe ou pelo Asaas, régua, contrato
 - `deskcomm-metricas` — desempenho, conversão, custo de IA, funil, relatório

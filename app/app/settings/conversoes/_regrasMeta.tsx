@@ -183,6 +183,13 @@ export function RegrasDeConversaoMeta({
                       </option>
                     ))}
                   </select>
+                  {r.metaEvent === "LeadSubmitted" && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      {t(
+                        "Leads de anúncio Click-to-WhatsApp elegíveis já informam o nascimento. Esta regra informa separadamente a entrada nesta etapa.",
+                      )}
+                    </p>
+                  )}
                 </div>
               )}
 

@@ -1,6 +1,7 @@
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { RiskBucket } from "@/lib/leads/risk-radar";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   settingsDoFunil,
   validaCamposExigidos,
@@ -78,8 +79,13 @@ export type DestinoDoAgente =
    * ninguém ter afirmado nada sobre esta. É a causa inventada do parágrafo de
    * cima, entrando pela porta do dado velho. Quem arrasta vê o card e decide; o
    * agente não vê o que mudou desde a primeira perda.
+   *
+   * ⚠️ `stageName` entra AQUI e não só no sucesso (issue #3148): o aviso da
+   * Central precisa nomear a etapa do FUNIL do dono ("Perdido"), e este é o ponto
+   * onde o nome é conhecido — `alvo` já veio da leitura de etapas. Sem propagá-lo,
+   * o espelho recusado só teria à mão o passo interno do agente, que é o defeito.
    */
-  | { move: false; motivo: "perda_sem_motivo"; passo: string };
+  | { move: false; motivo: "perda_sem_motivo"; passo: string; stageName: string };
 
 /**
  * Para onde o negócio vai quando o agente avança para `passo`.
@@ -106,7 +112,9 @@ export function resolveDestinoDoAgente(
   // SEM `motivoAtual`: o agente não manda motivo, e o que está na linha é o da
   // perda anterior de um negócio reaberto (ver `perda_sem_motivo` acima).
   const veredito = decideMotivoDaPerda({ etapaDeDestino: alvo });
-  if (!veredito.ok) return { move: false, motivo: "perda_sem_motivo", passo };
+  // O NOME viaja com a recusa (issue #3148): o aviso da Central diz ao dono a
+  // etapa do FUNIL dele, não o passo interno que o agente usou para chegar aqui.
+  if (!veredito.ok) return { move: false, motivo: "perda_sem_motivo", passo, stageName: alvo.name };
   return { move: true, stageId: alvo.id, stageName: alvo.name };
 }
 
@@ -305,7 +313,18 @@ export async function sincronizaEstagioDoAgente(
     input.passo,
     lead.stage_id,
   );
-  if (!destino.move) return { moveu: false, motivo: destino.motivo, leadId: lead.id };
+  if (!destino.move) {
+    return {
+      moveu: false,
+      motivo: destino.motivo,
+      leadId: lead.id,
+      // O NOME da etapa do funil viaja com a recusa de PERDA (#3148): o aviso da
+      // Central nomeia o quadro do dono ("Perdido"), nunca o passo interno do
+      // agente. `sem_mapeamento`/`ja_esta_la` não têm etapa de destino (são
+      // warn-only, sem aviso) e por isso não carregam nome.
+      ...(destino.motivo === "perda_sem_motivo" ? { stageName: destino.stageName } : {}),
+    };
+  }
 
   // ── A RÉGUA DE CAMPOS OBRIGATÓRIOS (issue #1536) ────────────────────────────
   //
@@ -331,6 +350,7 @@ export async function sincronizaEstagioDoAgente(
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as unknown as Record<string, unknown>,
     settingsDoFunil: settings,
+    camposComAnexo: await camposComAnexo(admin, settings, input.organizationId, lead.id),
     destino: {
       stageId: destino.stageId,
       desfecho: etapaDeDestino?.is_won ? "won" : etapaDeDestino?.is_lost ? "lost" : null,
@@ -342,6 +362,9 @@ export async function sincronizaEstagioDoAgente(
       motivo: "campos_obrigatorios",
       leadId: lead.id,
       detalhe: recusaDeCamposObrigatorios(vereditoDeCampos.faltando, null).mensagem,
+      // O destino JÁ resolvido conhece o nome da etapa do funil (#3148) — o aviso
+      // da Central mostra "Proposta enviada", não o passo interno "negotiating".
+      stageName: destino.stageName,
     };
   }
 
@@ -379,7 +402,14 @@ export async function sincronizaEstagioDoAgente(
     // motivo fora do vocabulário do funil) e mantém o rótulo honesto.
     const recusa = recusaDeMotivoDaPerdaPeloBanco(error);
     if (recusa) {
-      return { moveu: false, motivo: "perda_sem_motivo", leadId: lead.id, detalhe: recusa.mensagem };
+      return {
+        moveu: false,
+        motivo: "perda_sem_motivo",
+        leadId: lead.id,
+        detalhe: recusa.mensagem,
+        // Nome da etapa do funil, como nas outras recusas de estado legítimo (#3148).
+        stageName: destino.stageName,
+      };
     }
     return { moveu: false, motivo: "falha_de_escrita", leadId: lead.id, detalhe: error.message };
   }

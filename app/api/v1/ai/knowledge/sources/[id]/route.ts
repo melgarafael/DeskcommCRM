@@ -11,10 +11,11 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { aceitaTextoColado, canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
+import { canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
 
 export const dynamic = "force-dynamic";
 
@@ -110,7 +111,7 @@ export async function PATCH(
 
   const ctx = await resolveContext(requestId);
   if (ctx.error) return ctx.error;
-  const { activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+  const { authUser, activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
 
   // Parse + validate body.
   let rawBody: unknown;
@@ -150,6 +151,23 @@ export async function PATCH(
   const ksRow = existing as { id: string; source_type: string; agent_id: string | null };
   const tipo = canonizarTipoDeFonte(ksRow.source_type);
 
+  // `items` SÓ tem efeito em `faq`. A conferência vem antes de QUALQUER escrita.
+  //
+  // A recusa anterior testava `!aceitaTextoColado(tipo)`, e `documento` aceita
+  // texto colado — na CRIAÇÃO, onde o texto vira arquivo. No PATCH isso passava
+  // pela recusa, não entrava no ramo do FAQ e terminava em `200 { id }`: quem
+  // integra por API achava que tinha trocado o conteúdo e nada mudou. E a
+  // recusa vinha DEPOIS do `update` de nome/metadata, então um 422 em
+  // `{ name, items }` já tinha gravado o nome novo. Recusa alta, antes de tudo.
+  if (input.items !== undefined && tipo !== "faq") {
+    return fail(
+      "unprocessable_entity",
+      "Este material não é preenchido por texto colado — envie o arquivo ou aguarde a rotina que o alimenta.",
+      422,
+      { requestId },
+    );
+  }
+
   // Build update payload (only provided fields).
   const updatePayload: Record<string, unknown> = {};
   if (input.name !== undefined) updatePayload.name = input.name;
@@ -172,17 +190,6 @@ export async function PATCH(
 
   // Replace FAQ items if provided.
   let itemsCount: number | undefined;
-  // Itens mandados para um tipo que não os ingere eram DESCARTADOS em silêncio:
-  // a pessoa editava o conteúdo, recebia 200, e nada mudava.
-  if (input.items !== undefined && tipo !== null && !aceitaTextoColado(tipo)) {
-    return fail(
-      "unprocessable_entity",
-      "Este material não é preenchido por texto colado — envie o arquivo ou aguarde a rotina que o alimenta.",
-      422,
-      { requestId },
-    );
-  }
-
   if (input.items !== undefined && tipo === "faq") {
     // Delete existing items.
     const { error: delErr } = await admin
@@ -236,6 +243,23 @@ export async function PATCH(
     console.warn("[ai-knowledge-sources] emit_event failed (non-blocking):", emitErr.message);
   }
 
+  // A trilha responde "quem mudou o que o agente diz aos clientes". Só ids,
+  // nomes de campo e contagem — o texto do material nunca entra: a tabela é
+  // append-only e a cascata da LGPD não a alcança.
+  void audit({
+    action: "ai.knowledge_source_updated",
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_knowledge_source",
+    resourceId: sourceId,
+    requestId,
+    metadata: {
+      source_type: ksRow.source_type,
+      campos: Object.keys(updatePayload),
+      ...(itemsCount !== undefined ? { items_count: itemsCount } : {}),
+    },
+  });
+
   return ok(
     { id: sourceId, ...(itemsCount !== undefined ? { items_count: itemsCount } : {}) },
     { requestId },
@@ -258,7 +282,7 @@ export async function DELETE(
 
   const ctx = await resolveContext(requestId);
   if (ctx.error) return ctx.error;
-  const { activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+  const { authUser, activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
 
   // Verify ownership with user-scoped client.
   const supabase = await createClient();
@@ -296,6 +320,17 @@ export async function DELETE(
     console.error("[ai-knowledge-sources] arquivar falhou:", archiveErr.message);
     return fail("internal_error", "Erro ao arquivar o material.", 500, { requestId });
   }
+
+  // Arquivar tira o material do que o agente responde: "quem arquivou o FAQ de
+  // trocas, e quando" só tem resposta aqui.
+  void audit({
+    action: "ai.knowledge_source_archived",
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_knowledge_source",
+    resourceId: sourceId,
+    requestId,
+  });
 
   return ok({ id: sourceId, status: "archived" }, { requestId });
 }

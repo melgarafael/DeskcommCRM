@@ -30,6 +30,27 @@ describe("somarDiasNoFuso (pura)", () => {
     const instante = new Date("2026-01-01T12:00:00Z");
     expect(somarDiasNoFuso(instante, 15, "America/Sao_Paulo")).toBe("2026-01-16");
   });
+
+  it.each([
+    ["entrada do horário de verão", "2026-03-28T23:30:00Z", 1, "2026-03-29"],
+    ["saída do horário de verão", "2026-10-25T00:30:00+01:00", 1, "2026-10-26"],
+    ["validade de 15 dias na entrada", "2026-03-14T23:30:00Z", 15, "2026-03-29"],
+    ["validade de 15 dias na saída", "2026-10-11T00:30:00+01:00", 15, "2026-10-26"],
+  ])("conta dias de calendário na %s", (_caso, iso, dias, esperado) => {
+    // Somar blocos de 24h atravessa a meia-noite na direção errada: o dia
+    // local da transição tem 23 ou 25 horas, mas continua sendo UM dia.
+    expect(somarDiasNoFuso(new Date(iso), dias, "Europe/Lisbon")).toBe(esperado);
+  });
+
+  it.each([
+    ["America/Sao_Paulo", "2026-03-14T23:30:00-03:00", 15, "2026-03-29"],
+    ["Europe/Lisbon", "2026-01-01T12:00:00Z", 15, "2026-01-16"],
+    ["Nao/Existe", "2026-03-14T23:30:00-03:00", 15, "2026-03-29"],
+    ["America/Sao_Paulo", "2027-01-01T01:30:00Z", 1, "2027-01-01"],
+    ["Europe/Lisbon", "2028-02-28T12:00:00Z", 1, "2028-02-29"],
+  ])("preserva o calendário de %s a partir de %s", (fuso, iso, dias, esperado) => {
+    expect(somarDiasNoFuso(new Date(iso), dias, fuso)).toBe(esperado);
+  });
 });
 
 describe("fusoDaOrganizacao", () => {

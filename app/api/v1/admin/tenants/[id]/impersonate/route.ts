@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
-import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDividaEstrita, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let ctx;
   try { ctx = await requirePlatformAdmin(); }
   catch (err) { return falhaDaEscritaDePlatformAdmin(err, requestId, "Administração da plataforma necessária."); }
-  if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
+  if (await mfaEmDividaEstrita()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
   if (!isImpersonateSecretReady()) return fail("upstream_unavailable", "Acompanhamento não configurado nesta instalação.", 503, { requestId });
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Entre novamente.", 401, { requestId });

@@ -69,6 +69,28 @@ describe("reenvio que o canal recusou de novo", () => {
     expect((toastErro.mock.calls[0] as [string, { description: string }])[1].description).toBe("Não foi possível enviar esta mensagem.");
   });
 
+  it("texto cru do canal com endereço interno não chega ao aviso", async () => {
+    post.mockResolvedValueOnce({ data: {
+      status: "failed", error_code: "canal_x_error",
+      error_message: "fetch failed http://servico-interno:3000/api/sendText",
+    } });
+    const { hook } = setup();
+    await reenviar(hook);
+    const descricao = (toastErro.mock.calls[0] as [string, { description: string }])[1].description;
+    expect(descricao).toBe("Não foi possível enviar esta mensagem.");
+  });
+
+  it("frase nossa gravada no envio (organização suspensa) chega ao aviso", async () => {
+    post.mockResolvedValueOnce({ data: {
+      status: "failed", error_code: "org_suspensa",
+      error_message: "Envio automático bloqueado: a organização está suspensa.",
+    } });
+    const { hook } = setup();
+    await reenviar(hook);
+    const descricao = (toastErro.mock.calls[0] as [string, { description: string }])[1].description;
+    expect(descricao).toBe("Envio automático bloqueado: a organização está suspensa.");
+  });
+
   it("reenvio aceito (queued/sent) não dispara aviso: a bolha muda sozinha", async () => {
     post.mockResolvedValueOnce({ data: { status: "queued", error_code: null } });
     const { hook } = setup();

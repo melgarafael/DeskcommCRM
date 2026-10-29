@@ -14,6 +14,16 @@
  * `reason` é a classificação (ver `lib/net/alcance`), e é o que basta para saber
  * ONDE mexer.
  *
+ * ─── Por que o check do banco recusa o 3xx e o 200 que não é JSON ────────────
+ * "O endereço respondeu" não é "o BANCO respondeu". Numa instalação em que o
+ * endereço configurado cai num proxy, o `fetch` seguia o `307` para a tela de
+ * login, tomava o `200` do HTML dela e o check saía `ok` — com o PostgREST
+ * inalcançável. Um `ok` assim é pior que um `down`: ele desliga a pergunta. Por
+ * isso o ping não segue redirect (`redirect: "manual"`), o `3xx` vira `down` com
+ * o destino do `Location` no detalhe, e um `200` só conta quando o corpo é do
+ * PostgREST (`respostaDoPostgrest`, abaixo). O `401/403` legítimo continua `ok`:
+ * ali quem respondeu foi o banco, recusando a credencial.
+ *
  * ─── Por que o ENDEREÇO só sai autenticado ───────────────────────────────────
  * Esta rota é pública — é o que permite um monitor externo bater nela. O endereço
  * do Redis e do WAHA é superfície de ataque: publicá-lo entrega a quem varre a
@@ -67,6 +77,45 @@ function motivoDoStatusHttp(status: number): MotivoDeFalha {
   return status === 401 || status === 403 ? "credencial_recusada" : "resposta_inesperada";
 }
 
+/**
+ * O que respondeu no `200` é do PostgREST?
+ *
+ * ─── O defeito que este predicado separa ─────────────────────────────────────
+ * O `200` de uma leitura do PostgREST é JSON. Um `200` que NÃO é JSON é OUTRA
+ * COISA respondendo no endereço do banco — tipicamente a tela de login que um
+ * proxy serve no lugar da API. Contá-lo como banco de pé é o mesmo defeito do
+ * `307` seguido pelo `fetch`, só que pela porta do corpo: o `/health` diria `ok`
+ * com o PostgREST fora do ar, e `wait_app_healthy` liberaria (ou reverteria)
+ * uma atualização por causa de uma página de HTML.
+ *
+ * ─── Por que a régua é o CORPO, e não o `content-type` ───────────────────────
+ * Porque o cabeçalho não separa os dois. Medido no Node desta instalação (v22):
+ * `new Response("[]")` sai com `content-type: text/plain;charset=UTF-8`, e o
+ * mesmo carimbo vai num `new Response("<html>…")`. Ou seja, exigir
+ * `content-type: application/json` reprovaria o JSON do PostgREST que passou por
+ * um cliente sem cabeçalho, e aceitar `text/plain` aceitaria a tela de login.
+ * Quem distingue é o que veio no corpo.
+ *
+ * ─── Por que o corpo VAZIO conta como ok ─────────────────────────────────────
+ * Um `200` sem corpo não contradiz o banco — não afirma ser outra coisa. O que
+ * este check reprova é uma resposta que se declara NÃO sendo do PostgREST, e é
+ * o que o contrato antigo desta sonda já aceitava (`200/401/empty body`).
+ *
+ * A leitura passa pelo mesmo teto de tempo do `fetch`: um `200` cujo corpo nunca
+ * chega é um serviço que não respondeu, e cai no `catch` de quem chama — `down`
+ * com o motivo de alcance, como qualquer outra falha de leitura.
+ */
+async function respostaDoPostgrest(res: Response): Promise<boolean> {
+  const corpo = (await withTimeout(res.text())).trim();
+  if (!corpo) return true;
+  try {
+    JSON.parse(corpo);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function checkSupabase(): Promise<Check> {
   const t0 = Date.now();
   // A sonda pergunta ao MESMO endereço que o app usa para falar com o banco, e
@@ -76,7 +125,7 @@ async function checkSupabase(): Promise<Check> {
   const url = urlDoSupabaseNoServidor(env.SUPABASE_SERVER_URL, env.NEXT_PUBLIC_SUPABASE_URL);
   try {
     // Ping leve via REST com anon key — não precisa de service_role pra health check.
-    // Se chegar 200/401/empty body, conexão e API key estão OK.
+    // Se chegar 200 (JSON) ou 401/403, conexão e API key estão OK.
     const key = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const res = await withTimeout(
       fetch(`${url}/rest/v1/organizations?select=id&limit=1`, {
@@ -105,11 +154,52 @@ async function checkSupabase(): Promise<Check> {
           "Accept-Profile": "public",
         },
         cache: "no-store",
+        // O REDIRECT NÃO É SEGUIDO, e é o que separa "o banco respondeu" de
+        // "quem respondeu foi outra coisa".
+        //
+        // Medido numa instalação real: o endereço que o servidor usava para
+        // falar com o Supabase respondia `307` para `/login`. O `fetch`, sozinho,
+        // SEGUE o redirect — chegava na tela de login, recebia o `200` do HTML
+        // dela, e o check declarava o banco `ok`. O `/health` dizia `ok` com o
+        // PostgREST inalcançável, e `wait_app_healthy` (que decide se uma
+        // atualização é mantida ou revertida) lia esse `ok` como banco de pé.
+        // Com `redirect: "manual"` o `3xx` chega cru, com o `Location` que diz
+        // para onde fomos mandados, e o ramo abaixo o trata como `down`.
+        redirect: "manual",
       }),
     );
-    // 200 (lista vazia por RLS) ou 401/403 (auth ok mas RLS bloqueia anon) → conexão OK
-    if (res.status === 200 || res.status === 401 || res.status === 403) {
+    // 3xx: quem respondeu no endereço do banco não foi o PostgREST — foi um
+    // proxy que nos manda para outro lugar (a tela de login, no caso medido).
+    // O DESTINO vai no `error`, que é onde quem opera lê o "para onde"; como todo
+    // texto desta rota pública, ele é redigido para quem não tem o segredo.
+    if (res.status >= 300 && res.status < 400) {
+      const destino = res.headers.get("location");
+      return {
+        status: "down",
+        latency_ms: Date.now() - t0,
+        error: destino ? `redirect_${res.status}: ${destino}` : `redirect_${res.status}`,
+        reason: "resposta_inesperada",
+        target: alvoDe(url),
+      };
+    }
+    // 401/403 (auth ok mas RLS bloqueia anon) → chegamos ao PostgREST, conexão OK
+    if (res.status === 401 || res.status === 403) {
       return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
+    }
+    // 200 (lista vazia por RLS) → conexão OK, mas só se o que voltou FOR do
+    // PostgREST. Um `200` com HTML no corpo é a tela de login respondendo no
+    // lugar da API: antes do conserto, ele vinha com `status: ok`.
+    if (res.status === 200) {
+      if (await respostaDoPostgrest(res)) {
+        return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
+      }
+      return {
+        status: "down",
+        latency_ms: Date.now() - t0,
+        error: `resposta_nao_json (content-type: ${res.headers.get("content-type") ?? "ausente"})`,
+        reason: "resposta_inesperada",
+        target: alvoDe(url),
+      };
     }
     return {
       status: "down",

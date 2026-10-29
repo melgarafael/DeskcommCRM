@@ -215,6 +215,10 @@ describe("a rota escreve na ORGANIZAÇÃO DA TAREFA, e com o par que a trava lê
     expect(fonte).toContain("enviarPushAoUsuario(tarefa.organization_id, responsavel");
   });
 
+  it("o toque no push abre as tarefas do responsável", () => {
+    expect(fonte).toContain("href: HREF_MINHAS_TAREFAS");
+  });
+
   it("audit só quando houve efeito", () => {
     expect(fonte).toMatch(/if \(resultado\.avisadas > 0\) \{\s*void audit\(/);
   });
@@ -337,5 +341,26 @@ describe("avisoDaCentral — o aviso de prazo é do RESPONSÁVEL (doc 162, migra
   it("a rodada grava pela função, e não por um insert à mão que perderia o dono", () => {
     const fonte = readFileSync(join(__dirname, "route.ts"), "utf8");
     expect(fonte).toMatch(/\.from\("agent_inbox_items"\)\s*\.insert\(avisoDaCentral\(/);
+  });
+});
+
+describe("o lembrete por telefone pede o canal que alcança o aparelho (#3358)", () => {
+  const fonte = readFileSync(join(__dirname, "route.ts"), "utf8");
+
+  it("a porta que escolhe a sessão recebe a preferência por telefone", () => {
+    // O destino DESTE envio é um TELEFONE: o número que a pessoa deixou, casado
+    // com `contacts.phone_number`. Sem a preferência, a porta devolvia a sessão
+    // WORKING mais ANTIGA da organização — e numa organização que conectou o
+    // Instagram antes do WhatsApp essa é a social, que não alcança telefone
+    // nenhum: o lembrete ia para o Instagram e era recusado pela janela de 24h.
+    expect(fonte).toContain(
+      "sessaoProntaParaEnvio(admin, tarefa.organization_id, { preferirTelefone: true })",
+    );
+  });
+
+  it("a sessão escolhida é a MESMA que vai para `ensureConversation`", () => {
+    // A preferência só vale se chegar ao envio: é este `canalId` que abre a
+    // conversa e por onde o texto sai.
+    expect(fonte).toContain("ensureConversation(admin, tarefa.organization_id, contatoId, canalId)");
   });
 });

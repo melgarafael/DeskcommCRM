@@ -111,7 +111,8 @@ export interface FollowupJobRequest {
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
     /**
-     * action (mode 'text') — #2734: mídia OPCIONAL (imagem ou PDF) por URL. Presente,
+     * action (mode 'text') — #2734/#2972: mídia OPCIONAL (imagem, vídeo, áudio ou
+     * documento) por URL. Presente,
      * o `fixed_body` vira a LEGENDA. O envio reusa o caminho de mídia do Inbox e das
      * campanhas (`sendMessageHandler`), nos dois caminhos que mandam o texto fixo.
      */
@@ -1640,7 +1641,9 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         {
           admin,
           organizationId: item.organization_id,
-          ruleId: `followup:${item.enrollment_id}`,
+          // Follow-up não é regra de automação: não inventamos `ruleId` de regra
+          // (o anti-laço do motor descarta eventos com `caused_by_rule`).
+          ruleId: "",
           ruleName: "Fluxo de follow-up",
           event: {} as EventRow,
           context,

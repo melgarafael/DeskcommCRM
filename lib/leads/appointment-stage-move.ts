@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   settingsDoFunil,
   validaCamposExigidos,
@@ -163,6 +164,7 @@ export async function moverLeadParaEtapaDeAgendamento(
   const vereditoDeCampos = validaCamposExigidos({
     lead: leadRow as unknown as Record<string, unknown>,
     settingsDoFunil: settings,
+    camposComAnexo: await camposComAnexo(admin, settings, input.organizationId, leadRow.id),
     destino: {
       stageId: etapaRow.id,
       desfecho: etapaRow.is_won ? "won" : etapaRow.is_lost ? "lost" : null,

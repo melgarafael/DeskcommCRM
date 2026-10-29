@@ -205,6 +205,29 @@ describe("POST /api/v1/products/import — o código não diferencia maiúsculas
   });
 });
 
+describe("POST /api/v1/products/import — estoque inválido não chega ao banco", () => {
+  it("reimportar estoque negativo não sobrescreve o produto; as outras linhas seguem", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", ["P1"]) as never);
+    const { POST } = await import("./route");
+    const arquivo = new File([
+      "codigo;nome;preco;estoque\nP1;Produto existente;10;-5\nP2;Produto novo;20;3\n",
+    ], "catalogo.csv", { type: "text/csv" });
+
+    const res = await POST(pedido(arquivo));
+    const corpo = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(upserts.flat()).toEqual([
+      expect.objectContaining({ codigo: "P2", quantidade: 3, organization_id: ORG_ID }),
+    ]);
+    expect(corpo.data).toMatchObject({ total_linhas: 2, criados: 1, atualizados: 0 });
+    expect(corpo.data.erros).toEqual([{
+      linha: 2,
+      motivo: 'quantidade inválida ("-5") — use um inteiro de 0 a 2147483647',
+    }]);
+  });
+});
+
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/impersonate/support")>(),

@@ -5,6 +5,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -33,13 +34,18 @@ import { LoseLeadDialog } from "./LoseLeadDialog";
 import { MoveToOtherPipelineDialog } from "./MoveToOtherPipelineDialog";
 import { EditLeadDialog } from "./EditLeadDialog";
 import type { Lead } from "@/lib/types/leads";
+import type { Stage } from "@/lib/kanban/types";
 
 interface KanbanCardActionsProps {
   lead: Lead;
   pipelineId: string;
+  /** As etapas do funil para o "Mover para…" — o gesto do celular, onde arrastar disputa com a rolagem. */
+  etapas?: Stage[];
+  /** O mesmo caminho do arrasto (KanbanBoard), para cair nas mesmas janelas de campos e de motivo. */
+  onMoverPara?: (lead: Lead, stageId: string) => void;
 }
 
-export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) {
+export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: KanbanCardActionsProps) {
   const t = useT();
   const [loseOpen, setLoseOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -59,6 +65,7 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
   const { data: members } = useAssignableMembers(canAssign);
   // A rota já devolve só agente ativo e não arquivado — é o picker.
   const { data: agents } = useAssignableAgents(canAssign);
+  const destinos = etapas?.filter((e) => e.id !== lead.stage_id) ?? [];
 
   const reassignToUser = (ownerUserId: string | null) => {
     if (ownerUserId === lead.owner_user_id) return;
@@ -104,7 +111,10 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
             // Visível por padrão e escondido até o hover SÓ onde existe hover:
             // no toque não há hover, e `opacity-0` deixava o menu inalcançável.
             // Mesmo padrão de `components/inbox/MessageBubble.tsx`.
-            className="h-7 w-7 shrink-0 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+            // Abaixo de `lg` a área de toque cresce 8px para cada lado (28 → 44px)
+            // sem o card crescer: o respiro do card (10px em cima, 12px à
+            // direita) é maior que a expansão, então o `overflow-hidden` não a corta.
+            className="relative h-7 w-7 shrink-0 max-lg:before:absolute max-lg:before:-inset-2 max-lg:before:content-[''] opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
             onClick={(e) => e.stopPropagation()}
             aria-label={t("Ações do lead")}
           >
@@ -180,6 +190,22 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
           >
             {t("Marcar como perdido")}
           </DropdownMenuItem>
+          {canAssign && onMoverPara && destinos.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("Mover para…")}</DropdownMenuLabel>
+              {destinos.map((e) => (
+                <DropdownMenuItem
+                  key={e.id}
+                  className="min-h-11 lg:min-h-0"
+                  onSelect={() => onMoverPara(lead, e.id)}
+                >
+                  {e.name}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+            </>
+          )}
           {/*
             `canAssign` já É `usePermission("pipeline.move_card")` — a MESMA
             permissão que `POST /api/v1/leads/[id]/clone` exige no servidor

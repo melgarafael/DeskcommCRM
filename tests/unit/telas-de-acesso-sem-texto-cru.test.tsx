@@ -92,7 +92,7 @@ describe("a regeneração dos códigos não mostra o código do erro", () => {
     render(
       noIdioma(
         idioma,
-        <SecurityClient mfaEnrolled obrigatorio={false} podeExigirDaEquipe={false} papelMinimo="none" diasDeCarencia={0} />,
+        <SecurityClient mfaEnrolled obrigatorio={false} podeExigirDaEquipe={false} papelMinimo="none" diasDeCarencia={0} dispositivos={[]} />,
       ),
     );
     fireEvent.click(screen.getByRole("button", { name: traduzir("Regenerar códigos de recuperação", idioma) }));

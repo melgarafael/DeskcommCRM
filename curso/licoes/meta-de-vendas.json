@@ -1,0 +1,414 @@
+{
+  "id": "meta-de-vendas",
+  "titulo": "Meta de vendas",
+  "tela": "/app/settings/metas",
+  "resumo": "Dizer quantas vendas a clínica quer fechar no mês, para a tela de Desempenho mostrar quanto já foi feito e quanto falta.",
+  "licoes": [
+    {
+      "id": "definindo-a-meta",
+      "titulo": "Definindo a meta do mês",
+      "objetivo": "Achar a tela Meta de vendas, entender os dois campos e salvar a meta do mês.",
+      "papel": "admin",
+      "busca": [
+        "meta de vendas",
+        "meta do mês",
+        "definir meta",
+        "quanto quero vender no mês",
+        "objetivo de vendas",
+        "alvo de vendas da equipe",
+        "cadastrar meta mensal"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Clique em \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" fica o cartão \"Meta de vendas\". É ali que você diz quantas vendas a clínica quer fechar no mês. A tela de Desempenho usa esse número para mostrar quanto já foi feito e quanto falta.",
+          "dica": "Só o administrador e o gerente abrem esta tela. Quem é atendente, como a Ana, vê a meta no Desempenho, mas não consegue mudá-la.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Configurações",
+                "exato": true
+              },
+              "rotulo": "Configurações",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Meta de vendas",
+                "regex": true
+              },
+              "rotulo": "Abrir Meta de vendas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Meta de vendas",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "As partes da tela",
+          "texto": "No alto, o título e a frase logo abaixo dele explicam para que serve a meta. No meio fica o quadro com os dois campos e o botão \"Salvar meta\". Embaixo, uma nota avisa o que entra na conta: a meta é da clínica inteira e conta a quantidade de vendas ganhas no mês, e não o valor delas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Meta de vendas",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Meta de vendas",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "header:has(> h1)"
+              },
+              "rotulo": "Para que serve",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "form"
+              },
+              "rotulo": "Os campos da meta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Nesta primeira versão a meta é da EMPRESA inteira",
+                "exato": false
+              },
+              "rotulo": "O que entra na conta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Preenchendo os campos",
+          "texto": "O campo \"Mês\" já vem no mês atual: a meta vale do dia 1º ao último dia dele. Em \"Vendas ganhas no mês\", digite quantos negócios a clínica quer fechar como ganhos. Aqui a Helena digitou 20. Use um número inteiro maior que zero: com o campo vazio ou em zero, o botão \"Salvar meta\" fica apagado. Embaixo do número, a frase \"Ainda não há meta para este mês.\" confirma que este mês ainda não tem meta salva.",
+          "dica": "Conta como venda o negócio marcado como ganho no funil, na data em que foi fechado. Um negócio criado no mês passado e ganho neste mês conta para este mês.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Vendas ganhas no mês",
+                "exato": true
+              },
+              "valor": "20"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Mês",
+                "exato": true
+              },
+              "rotulo": "Mês da meta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Vendas ganhas no mês",
+                "exato": true
+              },
+              "rotulo": "Quantas vendas fechar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Ainda não há meta para este mês.",
+                "exato": true
+              },
+              "rotulo": "Ainda sem meta",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar meta",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvando a meta",
+          "texto": "Clique em \"Salvar meta\". Um aviso rápido, \"Meta salva.\", pisca por alguns segundos no canto de baixo da tela (some sozinho), e a frase embaixo do número muda para \"Salvar de novo corrige a meta deste mês — nada é duplicado.\". A partir de agora a tela de Desempenho mostra o progresso da clínica contra essas 20 vendas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar meta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Salvar de novo corrige a meta deste mês",
+                "exato": false
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Vendas ganhas no mês",
+                "exato": true
+              },
+              "rotulo": "Meta de 20 vendas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Salvar de novo corrige a meta deste mês",
+                "exato": false
+              },
+              "rotulo": "Agora já existe meta",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "acompanhando-a-meta",
+      "titulo": "Acompanhando e corrigindo a meta",
+      "objetivo": "Ver no Desempenho quanto da meta já foi feito e corrigir o número quando o plano do mês mudar.",
+      "papel": "admin",
+      "busca": [
+        "acompanhar meta de vendas",
+        "quanto falta para a meta",
+        "percentual da meta",
+        "progresso das vendas do mês",
+        "mudar a meta",
+        "corrigir meta do mês",
+        "meta no desempenho"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quando ainda não há meta",
+          "texto": "Abra \"Desempenho\", no grupo Análise do menu, e desça até o quadro \"Meta do mês\". Sem meta cadastrada, ele diz \"Nenhuma meta cadastrada para este mês.\" e não mostra zero: a clínica pode ter vendido, só não tem alvo. O link \"Definir a meta\" leva direto à tela de cadastro.",
+          "dica": "O administrador, o gerente e o atendente veem este quadro. O link \"Definir a meta\" só aparece para o administrador e o gerente; o atendente lê \"Só quem administra a empresa define a meta.\".",
+          "rota": "/app/metrics",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "Nenhuma meta cadastrada para este mês.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> div > div:text-matches('^Meta do mês'))"
+              },
+              "rotulo": "Meta do mês",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Definir a meta",
+                "exato": true
+              },
+              "rotulo": "Ir para o cadastro",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Definir a meta",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Cadastrando pelo atalho",
+          "texto": "O link abre a tela Meta de vendas. A Helena digitou 20 em \"Vendas ganhas no mês\" e clicou em \"Salvar meta\". O aviso \"Meta salva.\" pisca no canto de baixo e some sozinho, e a frase embaixo do número passa a dizer que salvar de novo corrige a meta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Definir a meta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Vendas ganhas no mês",
+                "exato": true
+              },
+              "valor": "20"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar meta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Salvar de novo corrige a meta deste mês",
+                "exato": false
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Vendas ganhas no mês",
+                "exato": true
+              },
+              "rotulo": "Meta de 20 vendas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Salvar de novo corrige a meta deste mês",
+                "exato": false
+              },
+              "rotulo": "Agora já existe meta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Lendo o progresso",
+          "texto": "De volta ao Desempenho, o quadro mostra o mês ao lado do título e, na linha \"Empresa\", quanto da meta já foi feito: \"45% da meta\". A barra enche conforme as vendas entram. Embaixo, \"9 de 20 Vendas ganhas\" e \"Faltam 11 para a meta\". Quando a meta é batida, a barra fica verde e a frase vira \"Meta atingida.\".",
+          "dica": "Para o administrador e o gerente, o quadro conta as vendas da clínica inteira e não muda quando se escolhe um atendente no filtro \"Atendente\".",
+          "rota": "/app/metrics",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "da meta",
+                "exato": false
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "span:has(> [data-meta='percentual'])"
+              },
+              "rotulo": "Quanto já foi feito",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "span:has(> [data-meta='realizado'])"
+              },
+              "rotulo": "Vendas feitas e a meta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "span:has(> [data-meta='falta'])"
+              },
+              "rotulo": "Quanto falta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Corrigindo a meta",
+          "texto": "O plano mudou? Volte em Configurações, \"Meta de vendas\". O campo já mostra a meta atual. Troque o número e clique em \"Salvar meta\" de novo: pisca o aviso \"Meta salva.\", que some sozinho, e a meta do mês é corrigida, sem criar outra. Aqui a Helena baixou de 20 para 15, porque uma fisioterapeuta entrou de férias. Uma meta não pode ser apagada, só corrigida.",
+          "rota": "/app/settings/metas",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Vendas ganhas no mês",
+                "exato": true
+              },
+              "valor": "15"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar meta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 3000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Vendas ganhas no mês",
+                "exato": true
+              },
+              "rotulo": "Novo número: 15",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar meta",
+                "exato": true
+              },
+              "rotulo": "Salvar de novo corrige",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O progresso com a meta nova",
+          "texto": "No Desempenho, o quadro já usa a meta nova: as mesmas 9 vendas agora são \"60% da meta\", e \"Faltam 6 para a meta\". Se ainda aparecer o número antigo, recarregue a página.",
+          "rota": "/app/metrics",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "da meta",
+                "exato": false
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> div > div:text-matches('^Meta do mês'))"
+              },
+              "rotulo": "Meta corrigida para 15",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

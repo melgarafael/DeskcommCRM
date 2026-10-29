@@ -39,6 +39,18 @@ Medido com `document.body.scrollWidth - document.documentElement.clientWidth` �
 grampeia no `clientWidth` e faz a conta dar zero com um filho de 3000px. Neste
 produto um estouro não produz barra de rolagem: o conteúdo some pela direita.
 
+> **⚠️ Correção de 2026-10-23: o "zero" acima foi medido com uma régua cega.**
+> O `<main>` da casca (`app/app/_components/AppShell.tsx`) tem `overflow-auto`.
+> O que passa da largura rola DENTRO dele, e o `body` fica da largura da janela.
+> Então `body.scrollWidth - clientWidth` dá zero mesmo quando a tela estoura, e
+> as combinações deste parágrafo não provam que nada estourava dentro do
+> conteúdo. A régua da cerca passou a ser
+> `Math.max(body.scrollWidth - clientWidth, main.scrollWidth - main.clientWidth)`
+> (`tests/e2e/celular-cabe-na-tela.spec.ts`, ADR-0006 F4). O achado que a
+> leitura do código prevê, e que o CI confirma ou desmente, é a Previsão de
+> `/app/metrics`: uma tabela crua de cinco colunas que passa da tela de 390px.
+> O número que vale é o do run do CI com a régua nova, não o deste parágrafo.
+
 ## Alvos de toque — 44px (Apple HIG, princípio 4 da estratégia)
 
 As quatro superfícies de celular, em 360px, sessão completa:

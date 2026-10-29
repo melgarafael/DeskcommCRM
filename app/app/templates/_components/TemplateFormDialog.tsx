@@ -47,6 +47,8 @@ interface CreateInput {
   body: string;
   shortcut?: string;
   shared?: boolean;
+  /** "Mostrar na barra do Inbox" (#3282) — ausente é ligado. */
+  mostrar_na_barra?: boolean;
 }
 
 interface UpdateInput {
@@ -55,6 +57,8 @@ interface UpdateInput {
   body: string;
   shortcut: string | null;
   midias?: MidiaDeTemplate[];
+  /** "Mostrar na barra do Inbox" (#3282). */
+  mostrar_na_barra?: boolean;
 }
 
 /**
@@ -78,6 +82,11 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
   const [body, setBody] = React.useState("");
   const [shortcut, setShortcut] = React.useState("");
   const [shared, setShared] = React.useState(false);
+  /**
+   * "Mostrar na barra do Inbox" (#3282). Nasce LIGADO — o default da coluna e o
+   * comportamento de quem já usava o produto.
+   */
+  const [mostrarNaBarra, setMostrarNaBarra] = React.useState(true);
   const [tipo, setTipo] = React.useState<TipoDeRecurso>("texto");
   // O arquivo de áudio escolhido NESTA edição; quando null, o recurso continua
   // com o áudio que já tem em `midias` (`audioAtual`).
@@ -136,6 +145,8 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
     setBody(template?.body ?? "");
     setShortcut(template?.shortcut ?? "");
     setShared(template ? template.owner_user_id === null : false);
+    // Ausente = ligado: linha anterior à coluna (e template recém-criado) aparece.
+    setMostrarNaBarra(template ? template.mostrar_na_barra !== false : true);
     setTipo(midiaDeAudioDe(template?.midias) ? "audio" : "texto");
     setArquivo(null);
     setGravadas(((template?.midias ?? []) as MidiaDeTemplate[]).filter((m) => !ehMidiaDeAudio(m)));
@@ -246,6 +257,7 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
             title,
             body: corpo,
             shortcut: shortcut.trim() || null,
+            mostrar_na_barra: mostrarNaBarra,
             ...(nova ? { midias: [nova] } : {}),
           });
           setGravadas([]);
@@ -260,6 +272,7 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
           title,
           body: corpo,
           shortcut: shortcut.trim() || null,
+          mostrar_na_barra: mostrarNaBarra,
           ...(sai.length ? { midias: listaNova } : {}),
         });
         if (sai.length) {
@@ -283,6 +296,7 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
           body: corpo,
           shortcut: shortcut.trim() || undefined,
           shared: canShare ? shared : false,
+          mostrar_na_barra: mostrarNaBarra,
         });
         // A partir daqui o template JÁ existe: deixar o diálogo aberto faria o
         // próximo clique criar um segundo. O `finally` fecha mesmo quando o
@@ -367,6 +381,9 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
               />
               <p className="text-xs text-muted-foreground">
                 {t("Use")} {"{{primeiro_nome}}"} {t("e")} {"{{nome}}"} {t("para personalizar.")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
               </p>
             </div>
           ) : (
@@ -495,6 +512,26 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
               <Label htmlFor="tpl-shared">{t("Compartilhar com a equipe")}</Label>
             </div>
           )}
+          {/*
+            "MOSTRAR NA BARRA DO INBOX" (#3282) — o liga/desliga por resposta
+            rápida. Nasce LIGADO (default da coluna e da tela): quem já usava o
+            produto continua vendo tudo na barra. Desmarcado, o botão sai da
+            barra e a resposta CONTINUA no atalho `/` — a dica abaixo diz isso,
+            porque a confusão natural é achar que apagar da barra apaga a resposta.
+          */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="tpl-na-barra"
+                checked={mostrarNaBarra}
+                onCheckedChange={setMostrarNaBarra}
+              />
+              <Label htmlFor="tpl-na-barra">{t("Mostrar na barra do Inbox")}</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t("Desmarcado, a resposta sai da barra do Inbox e continua no atalho /.")}
+            </p>
+          </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               {t("Cancelar")}

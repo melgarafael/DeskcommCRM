@@ -199,3 +199,16 @@ describe("resumo do que foi publicado", () => {
     expect(screen.queryByTestId("resumo-publicado")).toBeNull();
   });
 });
+
+describe("a linha da janela no celular (ADR-0006, F4)", () => {
+  it("os campos de hora podem encolher e perdem o respiro largo abaixo de md", () => {
+    abrir([{ dow: 1, start: "08:00", end: "18:00" }], vi.fn(async (w: ScheduleWindow[]) => w));
+    // A 390px a linha tem dia (90px), dois campos, o traço e a lixeira de 44px:
+    // sem `min-w-0` o campo não encolhe e estoura o diálogo; com o `px-4` do
+    // `Input` sobram ~50px para «08:00» e o relógio do navegador.
+    const linha = screen.getByTestId("janela");
+    for (const rotulo of ["Início", "Fim"]) {
+      expect(within(linha).getByLabelText(rotulo)).toHaveClass("min-w-0", "max-md:px-2");
+    }
+  });
+});

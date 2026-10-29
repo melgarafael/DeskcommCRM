@@ -31,7 +31,7 @@ export const MOTIVOS_AGUARDANDO = [
 export interface FiltrosDoHistorico {
   periodo: Periodo;
   situacao: Situacao;
-  /** `Purchase`, `QualifiedLead`, `Etapa:<uuid>`, `MetaEtapa:<uuid>` ou vazio para todos. */
+  /** `Purchase`, `QualifiedLead`, `LeadSubmitted`, `Etapa:<uuid>`, `MetaEtapa:<uuid>` ou vazio. */
   evento: string;
   plataforma: "" | "google_ads" | "meta_ads";
   busca: string;
@@ -61,6 +61,7 @@ export interface LinhaDoHistorico {
 export function situacaoDaLinha(status: string, motivo: string | null): Situacao {
   if (status === "sent") return "entregue";
   if (status === "error") return "falha";
+  if (status === "processing") return "aguardando";
   if (motivo && (MOTIVOS_AGUARDANDO as readonly string[]).includes(motivo)) return "aguardando";
   return "nao_enviado";
 }
@@ -93,7 +94,9 @@ export function lerFiltros(bruto: Record<string, string | undefined>): FiltrosDo
   return {
     periodo: um(PERIODOS, bruto.periodo, "30d"),
     situacao: um(SITUACOES, bruto.situacao, "todas"),
-    evento: /^(Purchase|QualifiedLead|(Meta)?Etapa:[0-9a-f-]{36})$/.test(evento) ? evento : "",
+    evento: /^(Purchase|QualifiedLead|LeadSubmitted|(Meta)?Etapa:[0-9a-f-]{36})$/.test(evento)
+      ? evento
+      : "",
     plataforma: um(["", "google_ads", "meta_ads"] as const, bruto.plataforma, ""),
     // Só letras, números, espaço e pontuação comum: vai para um ilike.
     busca: (bruto.busca ?? "")
@@ -133,7 +136,9 @@ export async function lerHistorico(
       q = q.eq("status", "error");
       break;
     case "aguardando":
-      q = q.eq("status", "skipped").in("reason", [...MOTIVOS_AGUARDANDO]);
+      q = q.or(
+        `status.eq.processing,and(status.eq.skipped,reason.in.(${MOTIVOS_AGUARDANDO.join(",")}))`,
+      );
       break;
     case "nao_enviado":
       q = q.eq("status", "skipped").not("reason", "in", `(${MOTIVOS_AGUARDANDO.join(",")})`);
@@ -192,6 +197,7 @@ export function rotuloDoEvento(
   regras: Pick<RegraDeConversaoGoogle, "eventName" | "label">[],
 ): string {
   if (evento === "Purchase") return "Compra";
+  if (evento === "LeadSubmitted") return "Nascimento por anúncio";
   const regra = regras.find((r) => r.eventName === evento);
   if (regra) return regra.label;
   return evento === "QualifiedLead" ? "Lead qualificado" : "Etapa do funil";

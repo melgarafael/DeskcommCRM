@@ -29,7 +29,8 @@
  * Ele vira rede de segurança: worker fora do ar não pode significar event_log
  * parado. Rodar os dois em paralelo é seguro porque `drainEventLog` reivindica
  * cada linha com um claim otimista (`update … where id = $1 and status =
- * 'pending'`) e pula o que outra instância já pegou — ver `drain.ts`.
+ * 'pending'` e prazo de retry elegível) e pula o que outra instância já pegou
+ * ou adiou — ver `drain.ts`.
  *
  * ─── Por que os imports são dinâmicos ────────────────────────────────────────
  *

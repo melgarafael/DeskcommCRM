@@ -3,7 +3,7 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { formatDistanceToNowStrict } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowsClockwise, Scales, ShieldCheck } from "@/lib/ui/icons";
+import { ArrowsClockwise, Scales, ShieldCheck, UsersThree } from "@/lib/ui/icons";
 import { retentionCopy, type RetentionKind } from "@/lib/inbox/retention-copy";
 import { useRetention } from "@/hooks/inbox/useRetention";
 import { cn } from "@/lib/utils";
@@ -12,12 +12,16 @@ const KIND_ICON: Record<RetentionKind, typeof ShieldCheck> = {
   protection: ShieldCheck,
   compliance: Scales,
   quality: ArrowsClockwise,
+  // #3310: a conversa está com a EQUIPE — ícone de gente, não de trava. Nada
+  // aqui é conformidade nem correção, e o desenho não pode dizer o contrário.
+  handoff: UsersThree,
 };
 
 const KIND_CLASS: Record<RetentionKind, string> = {
   protection: "border-warning bg-warning-bg text-warning-fg",
   compliance: "border-destructive/40 bg-destructive/10 text-destructive",
   quality: "border-border bg-muted/40 text-muted-foreground",
+  handoff: "border-border bg-muted/40 text-muted-foreground",
 };
 
 /**

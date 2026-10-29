@@ -322,6 +322,7 @@ export function ScheduleDialog({
                 </Select>
                 <Input
                   type="time"
+                  className="min-w-0 max-md:px-2"
                   value={w.start}
                   aria-label={t("Início")}
                   onChange={(e) =>
@@ -333,6 +334,7 @@ export function ScheduleDialog({
                 <span className="text-muted-foreground">–</span>
                 <Input
                   type="time"
+                  className="min-w-0 max-md:px-2"
                   value={w.end}
                   aria-label="Fim"
                   onChange={(e) =>
@@ -545,6 +547,10 @@ interface Props {
   organizationTimezone?: string;
 }
 
+/** No celular o cabeçalho some: o rótulo da coluna vem do `data-rotulo` da célula. */
+const ROTULO_NO_CELULAR =
+  "max-md:before:mr-1.5 max-md:before:text-xs max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]";
+
 export function AttendantsClient({ canManage, organizationTimezone }: Props) {
   const t = useT();
   const avail = useAttendants();
@@ -601,8 +607,8 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
             {t("Nenhum atendente na organização. Convide membros com papel de atendente ou superior.")}
           </p>
         ) : (
-          <Table>
-            <TableHeader>
+          <Table className="max-md:block">
+            <TableHeader className="max-md:hidden">
               <TableRow>
                 <TableHead>{t("Atendente")}</TableHead>
                 <TableHead>Status</TableHead>
@@ -612,31 +618,37 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
                 {canManage ? <TableHead className="w-[120px]">{t("Disponível")}</TableHead> : null}
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-md:block">
               {attendants.map((a) => {
                 const capacity = a.availability?.capacity ?? 5;
                 const load = a.availability?.current_load ?? 0;
                 const windows = a.availability?.schedule?.windows ?? [];
                 return (
-                  <TableRow key={a.userId}>
-                    <TableCell>
+                  <TableRow
+                    key={a.userId}
+                    className="max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-1 max-md:px-4 max-md:py-2"
+                  >
+                    <TableCell className="max-md:basis-full max-md:p-0 max-md:wrap-anywhere">
                       <div className="font-medium">{a.name}</div>
                       {a.email ? (
                         <div className="text-xs text-muted-foreground">{a.email}</div>
                       ) : null}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:p-0">
                       <div className="flex flex-col items-start gap-1.5">
                         <StatusBadge attendant={a} now={now} />
                         <PresenceBadge attendant={a} />
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-rotulo={t("Carga")} className={`max-md:p-0 ${ROTULO_NO_CELULAR}`}>
                       <span className={load >= capacity ? "font-medium text-destructive" : ""}>
                         {load}
                       </span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell
+                      data-rotulo={t("Capacidade")}
+                      className={`max-md:flex max-md:items-center max-md:p-0 ${ROTULO_NO_CELULAR}`}
+                    >
                       {canManage ? (
                         <Input
                           type="number"
@@ -656,14 +668,17 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
                         capacity
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell
+                      data-rotulo={t("Horário")}
+                      className={`text-sm text-muted-foreground max-md:flex max-md:basis-full max-md:items-center max-md:p-0 ${ROTULO_NO_CELULAR}`}
+                    >
                       <div className="flex items-center gap-2">
                         <span>{summarizeSchedule(windows, t)}</span>
                         {canManage ? (
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7"
+                            className="md:h-7 md:w-7"
                             aria-label={`Editar horário de ${a.name}`}
                             onClick={() => setScheduleFor(a)}
                           >
@@ -678,7 +693,10 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
                       </div>
                     </TableCell>
                     {canManage ? (
-                      <TableCell>
+                      <TableCell
+                        data-rotulo={t("Disponível")}
+                        className={`max-md:ml-auto max-md:flex max-md:items-center max-md:p-0 ${ROTULO_NO_CELULAR}`}
+                      >
                         <Switch
                           checked={!!a.availability?.is_available}
                           aria-label={`Disponibilidade de ${a.name}`}

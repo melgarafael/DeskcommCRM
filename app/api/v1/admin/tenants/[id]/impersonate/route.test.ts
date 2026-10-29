@@ -25,6 +25,7 @@ vi.mock("@/lib/auth/server", async () => {
   const orgAtivaSemPortao = async () => ({ orgId: h.orgDoAdmin, name: "Empresa do admin", role: "admin", org_status: h.statusDaOrgDoAdmin });
   return {
     mfaEmDivida: async () => false,
+    mfaEmDividaEstrita: async () => false,
     loadAuthUser: async () => ({ id: h.ator, support: null, organizations: [] }),
     orgAtivaSemPortao,
     // O porteiro das telas: org parada → /account-suspended.

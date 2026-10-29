@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +20,7 @@ vi.mock("@/hooks/inbox/useSendMessage", () => ({
 }));
 
 import { Composer } from "@/components/inbox/Composer";
+import { Button } from "@/components/ui/button";
 
 function renderComposer() {
   const qc = new QueryClient();
@@ -33,6 +35,41 @@ describe("Composer + anexos", () => {
   beforeEach(() => {
     uploadMock.mockClear();
     sendMock.mockClear();
+  });
+
+  // #3268: a dica do ícone de anexos. O caso mede o CONTRATO pela tela — hover
+  // no botão, papel `tooltip` no DOM e o texto do rótulo — e não a leitura do
+  // fonte, para que tirar o Tooltip do gatilho deixe o caso vermelho.
+  it("passar o mouse no ícone de anexos mostra a dica com o rótulo daquele ícone", async () => {
+    const user = userEvent.setup();
+    renderComposer();
+    // Sem ponteiro não há balão: a dica nasce do hover, não do render.
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    await user.hover(screen.getByRole("button", { name: /anexar/i }));
+
+    const dica = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(dica).toHaveTextContent("Anexar");
+    // Rótulo DAQUELE ícone: a dica do emoji não vaza para cá.
+    expect(dica).not.toHaveTextContent("Emoji");
+  });
+
+  it("a dica não acrescenta caixa na linha de ações (mesma altura)", () => {
+    renderComposer();
+    const botao = screen.getByRole("button", { name: /anexar/i });
+    // jsdom não calcula layout: o que dá para afirmar é o que DECIDE a altura —
+    // (1) o botão segue filho DIRETO da linha (`flex items-end gap-2`), ou seja,
+    // Provider/Tooltip/Trigger não inseriram nó nenhum na fileira; (2) a classe
+    // do botão é a MESMA de um Button size="icon" sem Tooltip — comparada
+    // inteira, e não por um pedaço como "h-9", que segue presente quando alguém
+    // força um tamanho fixo e tira o alvo de 44px do toque.
+    expect(botao.parentElement?.className).toContain("items-end");
+    const { getByRole } = render(
+      <Button type="button" size="icon" variant="ghost" className="shrink-0" aria-label="referência" />,
+    );
+    expect(botao.className).toBe(getByRole("button", { name: "referência" }).className);
+    // E o balão fechado não ocupa lugar nenhum no lugar do ícone.
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("botão Anexar abre o menu com as duas opções", () => {
@@ -87,4 +124,8 @@ describe("Composer + anexos", () => {
 });
 
 // A fixture exercita um atendente autorizado a consultar modelos de mensagem.
-vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  usePermission: () => true,
+  // A escolha de contato do Composer lê o país da organização (o exemplo do telefone); sem organização, o Brasil.
+  usePaisDaOrgAtiva: () => null,
+}));

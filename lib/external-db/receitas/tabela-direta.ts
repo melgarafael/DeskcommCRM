@@ -363,9 +363,10 @@ export const RECEITA_TABELA_DIRETA: DefinicaoDeReceita = {
         .slice(0, 10);
       if (valoresEscondidos.length > 0) {
         const marcas = valoresEscondidos.map((v) => marcador(v)).join(", ");
-        clausulas.push(
-          `${quotarIdentificadorMysql(esconder.coluna.trim())} not in (${marcas})`,
-        );
+        const coluna = quotarIdentificadorMysql(esconder.coluna.trim());
+        // `NULL not in (...)` é NULL, não verdadeiro: sem o `is null`, o item
+        // sem situação preenchida sumiria junto com os escondidos.
+        clausulas.push(`(${coluna} is null or ${coluna} not in (${marcas}))`);
       }
     }
 

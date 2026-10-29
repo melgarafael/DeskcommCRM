@@ -21,6 +21,13 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => useUpdate }));
+/* O escritor da cor também é react-query (`useQueryClient`) e este fixture monta
+   o diálogo sem provider nenhum — então ele é dublado aqui, como o
+   `useUpdateContact` acima. O `useActiveOrg` sem `role` já deixa a paleta fora
+   do campo, que é o que estes casos medem. */
+vi.mock("@/hooks/tags/useDefinirCorDaEtiqueta", () => ({
+  useDefinirCorDaEtiqueta: () => ({ definirCor: vi.fn(async () => true) }),
+}));
 const { mutateAsync, useUpdate } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   useUpdate: { mutateAsync: vi.fn(), isPending: false },

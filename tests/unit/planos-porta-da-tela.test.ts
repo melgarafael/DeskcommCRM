@@ -19,6 +19,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { hubSections, searchable } from "@/lib/navigation/registry";
+import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
+import { explicarRecusaDoPlano } from "@/lib/tarefas/recusa-do-plano";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
@@ -175,5 +177,51 @@ describe("PATCH /api/v1/settings/task-plans", () => {
     const res = await PATCH(requisicao({ planos: "lixo" }));
     expect(res.status).toBe(422);
     expect(escritas).toHaveLength(0);
+  });
+});
+
+describe("a recusa do PATCH diz QUAL campo passou do teto", () => {
+  // Relato de cliente (23/10/2026): "algumas descrições dão certo e outras
+  // aparece Dados inválidos". A descrição do plano tem teto de 300, a caixa
+  // deixava digitar além e a tela mostrava só a mensagem genérica.
+  const t = (texto: string) => texto;
+
+  it("descrição no teto grava; um caractere a mais é recusado e a frase nomeia o campo", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(adminCom({ task_plans: [] }) as never);
+
+    const noTeto = await PATCH(
+      requisicao({ planos: [{ ...PLANO, descricao: "$%&".repeat(100) }] }),
+    );
+    expect(noTeto.status, "300 caracteres com $%& cabem").toBe(200);
+
+    const longa = { ...PLANO, descricao: "a".repeat(LIMITES_DO_PLANO.descricao + 1) };
+    const res = await PATCH(requisicao({ planos: [PLANO, longa] }));
+    const corpo = (await res.json()) as { error: { details: Record<string, unknown> } };
+
+    expect(res.status).toBe(422);
+    expect(Object.keys(corpo.error.details)).toEqual(["1.descricao"]);
+    expect(explicarRecusaDoPlano(corpo.error.details, t)).toBe(
+      "A descrição do plano pode ter até 300 caracteres.",
+    );
+  });
+
+  it("título e prazo do passo dizem QUAL passo", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(adminCom({ task_plans: [] }) as never);
+    const passo = PLANO.passos[0]!;
+    const torto = {
+      ...PLANO,
+      passos: [passo, { ...passo, titulo: "x".repeat(LIMITES_DO_PLANO.tituloDoPasso + 1) }],
+    };
+
+    const res = await PATCH(requisicao({ planos: [torto] }));
+    const corpo = (await res.json()) as { error: { details: Record<string, unknown> } };
+    expect(explicarRecusaDoPlano(corpo.error.details, t)).toBe(
+      "O título do passo 2 pode ter até 200 caracteres.",
+    );
+
+    expect(explicarRecusaDoPlano({ "0.passos.0.vence_em_dias": "x" }, t)).toBe(
+      "O prazo do passo 1 precisa ser um número inteiro de dias, de 0 a 365.",
+    );
+    expect(explicarRecusaDoPlano({ "0.id": "x" }, t), "campo sem frase cai no genérico").toBeNull();
   });
 });

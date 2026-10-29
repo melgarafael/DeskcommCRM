@@ -77,7 +77,7 @@ export function ConexaoCaidaBanner({ caidas }: { caidas: ConexaoCaida[] }) {
       </div>
       {podeAbrirConexoes ? <Link
         href="/app/connections"
-        className="rounded-md border border-red-400 bg-white/70 px-3 py-1 font-medium text-red-950 hover:bg-white dark:border-red-700 dark:bg-red-900/40 dark:text-red-50 dark:hover:bg-red-900/70"
+        className="rounded-md border border-red-400 bg-white/70 px-3 py-1 font-medium max-md:inline-flex max-md:min-h-11 max-md:items-center text-red-950 hover:bg-white dark:border-red-700 dark:bg-red-900/40 dark:text-red-50 dark:hover:bg-red-900/70"
       >
         {precisaEscanear ? t("Escanear o QR") : t("Ver conexões")}
       </Link> : <span>{t("Peça a quem administra para revisar a conexão do WhatsApp.")}</span>}

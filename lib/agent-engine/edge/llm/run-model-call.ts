@@ -56,7 +56,7 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { costCents, gravacaoDeUmaHora } from './pricing';
+import { custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { cobrancaLigadaComMemo } from '../../../instalacao/modulos';
@@ -1179,7 +1179,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // nunca calado, e nunca um 0 inventado. O caminho dos modelos que já têm linha
   // na tabela estática não muda uma vírgula: `costCents` segue sendo chamado
   // primeiro, e só o `null` dele chega aqui.
-  let cost = costCents(model, usage, cfg.cacheTtl ?? '1h');
+  let cost = custoTerraPorPassos(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h');
   let origemDoCusto: 'catalogo_da_instalacao' | undefined;
   if (cost === null) {
     cost = await custoDoModeloForaDoMotor(db, {

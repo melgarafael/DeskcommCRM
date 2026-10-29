@@ -417,6 +417,22 @@ export const NAV_CATALOG = [
     // na navegação" — a porta existia, era outra.
   },
   {
+    // O aviso de agendamento no WhatsApp do dono (migration 0753). Fica junto
+    // dos tipos de agendamento porque é configuração da agenda do NEGÓCIO, não
+    // do dia de quem atende. "Aviso de agendamento", nunca "Aviso no WhatsApp":
+    // esse já é o nome do aviso de CASO, e dois destinos com o mesmo rótulo na
+    // busca não dizem qual é qual.
+    href: "/app/agenda/avisos",
+    label: "Aviso de agendamento",
+    description: "Receber no WhatsApp cada horário marcado, remarcado ou cancelado, e o resumo das 7h.",
+    icon: "PaperPlaneTilt",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`: escolhe um número conectado e manda nome de cliente para um
+    // celular — o mesmo gate da rota e da RLS de `config_aviso_de_agendamento`.
+    minRole: "admin",
+  },
+  {
     href: "/app/settings/tenant/proposals",
     label: "Propostas",
     description: "Configure a validade padrão e condições para propostas comerciais.",
@@ -834,6 +850,32 @@ export const NAV_CATALOG = [
     group: "analise",
     section: "Os números do período",
     sidebar: true,
+  },
+  {
+    // ── A porta do ALVO (#3025, fatia 1) ────────────────────────────────────
+    //
+    // Mora aqui, ao lado de Desempenho, porque é a metade que faltava da MESMA
+    // tela: lá se lê o progresso contra a meta, e sem esta porta o alvo não
+    // teria onde ser cadastrado — o painel novo diria "nenhuma meta" para
+    // sempre. O `group` é `organizacao` (é Configurações, como as vizinhas de
+    // /app/settings), e é ele — não a posição nesta lista — que a coloca no
+    // hub certo.
+    //
+    // SEM `sidebar`: definir o alvo é decisão de uma vez por mês, não uso
+    // diário. O painel de Desempenho é a porta que se usa todo dia, e é ele
+    // que linka para cá quando não há meta.
+    href: "/app/settings/metas",
+    label: "Meta de vendas",
+    description: "Quanto a empresa quer vender no mês, para o Desempenho medir o progresso.",
+    // `Gauge` (já exportado por lib/ui/icons.ts) e não um gráfico novo: aqui se
+    // AJUSTA o medidor, não se lê o resultado — os gráficos ficam para as telas
+    // de leitura, ao lado.
+    icon: "Gauge",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `manager`, a MESMA régua da action: o alvo é o número pelo qual a
+    // empresa cobra o próprio time, e quem o define não é quem o persegue.
+    minRole: "manager",
   },
   {
     // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá

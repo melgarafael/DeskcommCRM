@@ -1,0 +1,25 @@
+{
+  "_medido": "WAHA 2026.7.2 NOWEB. GET /chats (offset) e GET /chats/{id}/messages (asc, filter.timestamp.gte em segundos). Telefones e ids inventados.",
+  "chats": [
+    { "id": "5511900000001@s.whatsapp.net", "conversationTimestamp": 1760000300 },
+    { "id": { "_serialized": "111111111111111@lid" }, "conversationTimestamp": 1760000500 },
+    { "id": "120363000000000001@g.us", "conversationTimestamp": 1760000600 },
+    { "id": "status@broadcast" }
+  ],
+  "messages": {
+    "5511900000001@s.whatsapp.net": [
+      { "id": "false_222222222222222@lid_AAA001", "timestamp": 1760000100, "from": "5511900000001@c.us", "fromMe": false, "source": "app", "body": "Oi, tudo bem?", "hasMedia": false, "media": null, "ack": 3, "ackName": "READ", "location": null, "vCards": [], "replyTo": null, "_data": { "key": { "remoteJid": "222222222222222@lid", "remoteJidAlt": "5511900000001@s.whatsapp.net", "fromMe": false, "id": "AAA001" }, "pushName": "Cliente Um" } },
+      { "id": "true_222222222222222@lid_AAA002", "timestamp": 1760000200, "from": "5511900000099@c.us", "fromMe": true, "source": "app", "body": "Tudo bem, em que posso ajudar?", "hasMedia": false, "media": null, "ack": 3, "ackName": "READ", "location": null, "vCards": [], "replyTo": null, "_data": { "key": { "remoteJid": "222222222222222@lid", "remoteJidAlt": "5511900000001@s.whatsapp.net", "fromMe": true, "id": "AAA002" } } },
+      { "id": "false_5511900000001@s.whatsapp.net_AAA003", "timestamp": 1760000300, "from": "5511900000001@c.us", "fromMe": false, "source": "app", "body": "", "hasMedia": true, "media": { "url": null, "mimetype": "image/jpeg", "filename": null }, "ack": 3, "ackName": "READ", "location": null, "vCards": [], "replyTo": null, "_data": { "key": { "remoteJid": "5511900000001@s.whatsapp.net", "fromMe": false, "id": "AAA003" }, "message": { "imageMessage": { "mimetype": "image/jpeg" } } } },
+      { "id": "false_222222222222222@lid_AAA004", "timestamp": 1760000400, "from": "5511900000001@c.us", "fromMe": false, "source": "app", "body": "", "hasMedia": true, "media": { "url": null, "mimetype": "audio/ogg; codecs=opus", "filename": null }, "ack": 3, "ackName": "READ", "location": null, "vCards": [], "replyTo": null, "_data": { "key": { "remoteJid": "222222222222222@lid", "remoteJidAlt": "5511900000001@s.whatsapp.net", "fromMe": false, "id": "AAA004" }, "message": { "audioMessage": { "mimetype": "audio/ogg; codecs=opus" } } } }
+    ],
+    "111111111111111@lid": [
+      { "id": "false_111111111111111@lid_BBB001", "timestamp": 1760000450, "from": "111111111111111@lid", "fromMe": false, "source": "app", "body": "Boa tarde", "hasMedia": false, "media": null, "ack": 3, "ackName": "READ", "location": null, "vCards": [], "replyTo": null, "_data": { "key": { "remoteJid": "111111111111111@lid", "remoteJidAlt": "5511900000002@s.whatsapp.net", "fromMe": false, "id": "BBB001" }, "pushName": "Cliente Dois" } },
+      { "id": "true_111111111111111@lid_BBB002", "timestamp": 1760000500, "from": "5511900000099@c.us", "fromMe": true, "source": "app", "body": "Boa tarde! Posso ajudar?", "hasMedia": false, "media": null, "ack": 2, "ackName": "DEVICE", "location": null, "vCards": [], "replyTo": null, "_data": { "key": { "remoteJid": "111111111111111@lid", "remoteJidAlt": "5511900000002@s.whatsapp.net", "fromMe": true, "id": "BBB002" } } }
+    ]
+  },
+  "midia": {
+    "disponivel": { "id": "false_5511900000001@s.whatsapp.net_AAA003", "media": { "url": "http://waha.test/api/files/AAA003.jpeg", "mimetype": "image/jpeg", "error": null } },
+    "expirada": { "id": "false_222222222222222@lid_AAA004", "media": { "url": null, "mimetype": "audio/ogg; codecs=opus", "error": { "status": 404, "message": "media not available" } } }
+  }
+}

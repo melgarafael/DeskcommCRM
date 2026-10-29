@@ -260,7 +260,10 @@ export interface PayloadDoEvento {
     | "gatilho"
     | "roteador"
     | "encadeamento"
-    | "automacao";
+    | "automacao"
+    // `etapa` (#2630): o roteiro começou porque o card do contato estava numa
+    // etapa de `settings.etapas_do_funil`, e não porque alguém escreveu.
+    | "etapa";
   correcao?: boolean;
   esgotadas?: string[];
   proximo_fluxo?: string;
@@ -954,21 +957,76 @@ const jaConcluiuSql = (parametroDoContato: string) => `exists (
        ) as ja_concluiu`;
 
 /**
- * ENTRADA POR GATILHO (motor): entre os roteiros ativos, qual LIGA pela
- * mensagem do cliente (palavra-gatilho). Independe do modelo e do roteador.
+ * O NASCIMENTO mais recente de um enrollment DESTE roteiro para o contato — a
+ * data que responde "depois da entrada do card na etapa?" (#2630, revisão do
+ * #3253). Fica no SELECT, e não na cláusula: a MESMA leitura serve às duas
+ * portas do turno. A palavra-gatilho ignora a data (a entrada dela é a própria
+ * mensagem, e quem decide se repete é o `pode_recomecar`); a etapa a compara com
+ * a entrada do card, em `entradaJaGasta`. Era o contrário que fazia o turno ler
+ * a lista de roteiros ativos DUAS vezes sempre que a palavra não casava: cada
+ * porta pedia a sua consulta.
  *
- * O roteiro que o contato já concluiu e não pode recomeçar sai da disputa AQUI,
- * e não só no `iniciarFluxoDeAtendimento`: se ele ficasse, ganharia a palavra e
- * não começaria — e outro roteiro com a mesma palavra nunca teria a vez.
+ * `started_at` é o nascimento do enrollment (não há `created_at` nesta tabela) —
+ * a única data que responde "depois da entrada?". Ela é do ENROLLMENT, e não do
+ * turno: por isso o card parado não rearma o roteiro a cada mensagem.
  */
-export async function escolherFluxoPeloGatilho(
+const ultimoNascimentoSql = (parametroDoContato: string) => `(select max(e.started_at)
+           from followup_enrollments e
+          where e.organization_id = p.organization_id
+            and e.pointer_id = p.id
+            and e.contact_id = ${parametroDoContato}) as ultimo_nascimento`;
+
+/** Um roteiro ATIVO de atendimento, já com o grafo da versão publicada. */
+interface RoteiroAtivo {
+  id: string;
+  nome: string;
+  graph: FlowGraph;
+  /** O contato JÁ concluiu este roteiro (quem decide se ele volta é `pode_recomecar`). */
+  jaConcluiu: boolean;
+  /** `started_at` do enrollment mais recente deste roteiro para o contato, ou `null`. */
+  ultimoNascimento: string | Date | null;
+}
+
+/**
+ * A entrada do card na etapa já foi GASTA por este roteiro? Quem nasceu depois
+ * da entrada JÁ É a resposta dela — não importa por qual porta ele nasceu
+ * (etapa, palavra-gatilho, roteador, encadeamento) nem como terminou:
+ * 'coletando' segue pelo turno, e o concluído/cancelado/expirado já cumpriu o
+ * que a entrada pedia (#2630, revisão do #3253).
+ */
+function entradaJaGasta(ativo: RoteiroAtivo, entrada: string | Date): boolean {
+  // ponytail: o node-pg devolve `timestamptz` como Date; `Date.parse(Date)` passa
+  // pelo toString() e perde o milissegundo (entrada e nascimento no mesmo segundo
+  // empatavam). `getTime()` preserva o ms para Date e para ISO; abaixo do ms (o µs
+  // do Postgres) a régua não enxerga.
+  const ms = (v: string | Date) => new Date(v).getTime();
+  return ativo.ultimoNascimento !== null && ms(ativo.ultimoNascimento) > ms(entrada);
+}
+
+/**
+ * Os roteiros de atendimento ATIVOS da organização, com o grafo, o `ja_concluiu`
+ * do contato e o NASCIMENTO do enrollment mais recente. As três entradas do
+ * motor (palavra-gatilho, etapa e — pelo turno — o que o roteador aponta) leem o
+ * MESMO conjunto; a disputa entre elas é que é diferente, e mora em quem chama.
+ *
+ * UMA leitura serve às duas portas do turno (#3253): a comparação com a entrada
+ * do card é feita AQUI FORA, em `entradaJaGasta`, e não na cláusula do SQL — por
+ * isso não há uma consulta por porta.
+ */
+async function roteirosAtivosDeAtendimento(
   db: BancoDoRoteiro,
-  args: { organizationId: string; contactId: string; texto: string | null },
-): Promise<{ id: string; nome: string } | null> {
-  if (!args.texto) return null;
-  const { rows } = await db.query<{ id: string; nome: string; graph: unknown; ja_concluiu: boolean }>(
+  args: { organizationId: string; contactId: string },
+): Promise<RoteiroAtivo[]> {
+  const { rows } = await db.query<{
+    id: string;
+    nome: string;
+    graph: unknown;
+    ja_concluiu: boolean;
+    ultimo_nascimento: string | Date | null;
+  }>(
     `select p.id, p.name as nome, v.graph,
-       ${jaConcluiuSql("$2")}
+       ${jaConcluiuSql("$2")},
+       ${ultimoNascimentoSql("$2")}
        from followup_flow_pointers p
        join followup_flow_versions v on v.id = p.active_version_id and v.organization_id = p.organization_id
       where p.organization_id = $1
@@ -976,16 +1034,191 @@ export async function escolherFluxoPeloGatilho(
         and p.status = 'active'`,
     [args.organizationId, args.contactId],
   );
-  const fluxos: FluxoComGatilhos[] = [];
+  const ativos: RoteiroAtivo[] = [];
   for (const row of rows) {
     const parsed = flowGraphSchema.safeParse(row.graph);
     if (!parsed.success) continue;
+    // O roteiro que o contato já concluiu e não pode recomeçar sai da disputa
+    // AQUI, e não só no `iniciarFluxoDeAtendimento`: se ele ficasse, ganharia a
+    // palavra (ou a etapa) e não começaria — e outro roteiro com a mesma palavra
+    // nunca teria a vez.
     if (!podeComecarParaOContato(parsed.data.settings, row.ja_concluiu === true)) continue;
-    const gatilhos = parsed.data.settings?.gatilhos ?? [];
-    if (gatilhos.length > 0) fluxos.push({ id: row.id, nome: row.nome, gatilhos });
+    ativos.push({
+      id: row.id,
+      nome: row.nome,
+      graph: parsed.data,
+      jaConcluiu: row.ja_concluiu === true,
+      ultimoNascimento: row.ultimo_nascimento,
+    });
   }
-  const melhor = melhorFluxoPorGatilho(fluxos, args.texto);
-  return melhor === null ? null : { id: melhor.id, nome: melhor.nome };
+  return ativos;
+}
+
+/** O roteiro que LIGA pela palavra do cliente, entre os ativos JÁ lidos. */
+function melhorPeloGatilho(ativos: readonly RoteiroAtivo[], texto: string | null): RoteiroAtivo | null {
+  if (!texto) return null;
+  const fluxos: FluxoComGatilhos[] = [];
+  for (const ativo of ativos) {
+    const gatilhos = ativo.graph.settings?.gatilhos ?? [];
+    if (gatilhos.length > 0) fluxos.push({ id: ativo.id, nome: ativo.nome, gatilhos });
+  }
+  const melhor = melhorFluxoPorGatilho(fluxos, texto);
+  return melhor === null ? null : (ativos.find((ativo) => ativo.id === melhor.id) ?? null);
+}
+
+/**
+ * O roteiro que LIGA pela etapa do card do contato, entre os ativos JÁ lidos. O
+ * ⚠️ EMPATE: dois roteiros armados na MESMA etapa (ou um contato com mais de um
+ * card) dão no mesmo — entre roteiros, o desempate é o `nome`, determinístico e
+ * visível para quem configurou, em vez da ordem que o banco devolveu.
+ */
+function melhorPelaEtapa(
+  ativos: readonly RoteiroAtivo[],
+  etapa: string,
+  entrada: string | Date,
+): RoteiroAtivo | null {
+  const candidatos = ativos
+    .filter((ativo) => (ativo.graph.settings?.etapas_do_funil ?? []).includes(etapa))
+    .filter((ativo) => !entradaJaGasta(ativo, entrada))
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+  return candidatos[0] ?? null;
+}
+
+/**
+ * O card do contato — a ETAPA em que ele está e a ENTRADA nela (`crm_leads`). O
+ * card FECHADO (ganho ou perdido) não conta: ele pode ficar parado na etapa, e a
+ * porta da etapa não pode ligar o roteiro por um negócio que já terminou
+ * (detalhe apontado pelo mantenedor na revisão do #3253). O card lido é o ABERTO
+ * de `updated_at` mais recente, como em `loadLeadFacts`.
+ */
+async function lerEtapaDoCard(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string },
+): Promise<{ etapa: string | null; entrada: string | Date | null }> {
+  const { rows } = await db.query<{
+    stage_id: string | null;
+    stage_changed_at: string | Date | null;
+    created_at: string | Date | null;
+  }>(
+    `select stage_id, stage_changed_at, created_at
+       from crm_leads
+      where organization_id = $1 and contact_id = $2 and status = 'open'
+      order by updated_at desc
+         limit 1`,
+    [args.organizationId, args.contactId],
+  );
+  const etapa = rows[0]?.stage_id ?? null;
+  // A ENTRADA nesta etapa. Sem data de entrada não há evento que ligue a etapa
+  // (linha legada sem carimbo e sem criação legível): devolve `null` em vez de
+  // inventar um instante — é a mesma escolha da 0071 e do `ancoraDaEtapa`.
+  const entrada = rows[0]?.stage_changed_at ?? rows[0]?.created_at ?? null;
+  return { etapa, entrada };
+}
+
+/**
+ * ENTRADA POR GATILHO (motor): entre os roteiros ativos, qual LIGA pela
+ * mensagem do cliente (palavra-gatilho). Independe do modelo e do roteador.
+ */
+export async function escolherFluxoPeloGatilho(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string; texto: string | null },
+): Promise<{ id: string; nome: string } | null> {
+  if (!args.texto) return null;
+  const escolhido = melhorPeloGatilho(await roteirosAtivosDeAtendimento(db, args), args.texto);
+  return escolhido === null ? null : { id: escolhido.id, nome: escolhido.nome };
+}
+
+/**
+ * ENTRADA POR ETAPA DO FUNIL (motor): entre os roteiros ativos, qual LIGA porque
+ * o card do contato ENTROU numa etapa listada em `settings.etapas_do_funil` —
+ * irmã da entrada por palavra-gatilho, e sem depender do que foi escrito.
+ *
+ * ⚠️ O CARD QUE ENTRA NA ETAPA NÃO CHEGA COMO EVENTO AQUI. O roteiro de
+ * atendimento é conduzido pelo TURNO (`next_eval_at` nulo, 0394): quem lê a
+ * etapa é o turno seguinte da conversa daquele contato, pelo mesmo fio da
+ * palavra-gatilho. Isto é o OPOSTO do gatilho de etapa do follow-up, que é
+ * event-driven (`lead.stage_changed` → `lib/followup/gatilho-etapa.ts` e o dreno
+ * de um minuto) e não alcança a superfície `atendimento` — lá o `trigger_config`
+ * é obrigado a `manual` (0394) e o `enrollFollowupFlow` recusa a superfície.
+ * Nenhum evento novo nasce daqui, e o `lead.stage_changed` continua com o dono
+ * que já tem. O que o turno lê NÃO é "o card está na etapa": é a ÚLTIMA ENTRADA
+ * dele lá — o carimbo que o banco já mantém.
+ *
+ * ─── UMA VEZ POR ENTRADA, e não enquanto o card está lá (#2630, revisão do #3253)
+ *
+ * A #2630 pede "começar quando o card ENTRAR na etapa". A primeira versão
+ * começava enquanto o card ESTAVA na etapa — em todo turno sem roteiro vivo —, e
+ * o mantenedor mediu o resultado: o roteiro concluído com `pode_recomecar`
+ * reabria na mensagem seguinte, e de novo a cada conclusão, enquanto o card não
+ * saísse da etapa; e o roteiro que venceu pelo prazo (vira `cancelled`, que o
+ * `ja_concluiu` não conta) recomeçava do zero semanas depois.
+ *
+ * A entrada é um EVENTO, com data: `crm_leads.stage_changed_at`, carimbada pelo
+ * trigger da 0071 (a MESMA âncora de "tempo na etapa" do card, do relatório e do
+ * gatilho de etapa parada), com o `created_at` só de reserva para a linha sem
+ * carimbo — o trigger da 0071 já carimba `stage_changed_at` no INSERT, então o
+ * card criado direto na etapa tem a criação como entrada. A etapa só liga se o
+ * roteiro NÃO tiver enrollment nascido depois dessa entrada (`entradaJaGasta`):
+ * quem nasceu depois já é a resposta daquela entrada.
+ *
+ * ⚠️ ACEITO, e declarado na tela e no changelog: o card que JÁ ESTÁ na etapa
+ * quando alguém marca a caixa também liga, na mensagem seguinte do cliente — a
+ * entrada dele é antiga e nenhum enrollment nasceu depois dela. Ancorar na
+ * publicação da versão trocaria esse falso positivo por um falso negativo a
+ * cada republicação (o card que entrou antes da edição nunca ligaria).
+ *
+ * E o CARD FECHADO não conta: ganho ou perdido, ele pode ficar parado na etapa, e
+ * a porta da etapa não pode ligar um roteiro por um negócio que já terminou.
+ *
+ * ⚠️ EMPATE. Dois roteiros armados na MESMA etapa (ou um contato com mais de um
+ * card) dão no mesmo. O card lido é o ABERTO de `updated_at` mais recente, como
+ * em `loadLeadFacts`; entre roteiros, o desempate é o `nome` — determinístico, e
+ * visível para quem configurou — em vez da ordem que o banco devolveu.
+ */
+export async function escolherFluxoPelaEtapa(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string },
+): Promise<{ id: string; nome: string } | null> {
+  const { etapa, entrada } = await lerEtapaDoCard(db, args);
+  // Contato sem card aberto (ou card sem etapa): nenhuma etapa liga — e nenhuma
+  // consulta de roteiro é feita à toa.
+  if (etapa === null || entrada === null) return null;
+  const escolhido = melhorPelaEtapa(await roteirosAtivosDeAtendimento(db, args), etapa, entrada);
+  return escolhido === null ? null : { id: escolhido.id, nome: escolhido.nome };
+}
+
+/**
+ * AS DUAS PORTAS DO TURNO, numa leitura só (#3253, revisão do mantenedor).
+ *
+ * A palavra-gatilho e a etapa do funil leem o MESMO conjunto de roteiros ativos.
+ * Cada porta pedir a sua consulta fazia o turno ler a lista DUAS vezes sempre que
+ * a palavra não casava — o detalhe que o mantenedor apontou. Aqui a lista é lida
+ * UMA vez e as duas portas disputam sobre ela, com a precedência declarada:
+ * palavra-gatilho → etapa.
+ *
+ * O card do contato só é lido se a palavra-gatilho não decidir antes: quando ela
+ * casa, o pedido explícito do cliente encerra a disputa e a etapa nem é olhada; e
+ * quando o contato não tem card aberto, nenhuma leitura de roteiro é paga à toa.
+ */
+export async function escolherFluxoDoTurno(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string; texto: string | null },
+): Promise<{ id: string; nome: string; origem: "gatilho" | "etapa" } | null> {
+  let ativos: RoteiroAtivo[] | null = null;
+  if (args.texto) {
+    ativos = await roteirosAtivosDeAtendimento(db, args);
+    const porGatilho = melhorPeloGatilho(ativos, args.texto);
+    if (porGatilho !== null) {
+      return { id: porGatilho.id, nome: porGatilho.nome, origem: "gatilho" };
+    }
+  }
+  const { etapa, entrada } = await lerEtapaDoCard(db, args);
+  if (etapa === null || entrada === null) return null;
+  // A MESMA lista da palavra-gatilho, quando ela já foi lida: é isto que faz a
+  // leitura dos roteiros ativos ser uma só por turno.
+  ativos ??= await roteirosAtivosDeAtendimento(db, args);
+  const porEtapa = melhorPelaEtapa(ativos, etapa, entrada);
+  return porEtapa === null ? null : { id: porEtapa.id, nome: porEtapa.nome, origem: "etapa" };
 }
 
 /**
@@ -1005,7 +1238,9 @@ export async function iniciarFluxoDeAtendimento(
     conversationId?: string | null;
     // `automacao` (#2647): a regra de webhooks que arma o roteiro pelo MESMO
     // caminho do gatilho e do roteador — o evento da trilha diz quem começou.
-    origem: "gatilho" | "roteador" | "encadeamento" | "automacao";
+    // `etapa` (#2630): o card do contato estava numa etapa de
+    // `settings.etapas_do_funil` — entrada por etapa, também pelo turno.
+    origem: "gatilho" | "roteador" | "encadeamento" | "automacao" | "etapa";
   },
 ): Promise<string | null> {
   const { rows } = await db.query<{

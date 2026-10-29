@@ -26,12 +26,19 @@ export const metadata: Metadata = { title: "Tarefas" };
  * Criar e editar é `agent` — e a rota cobra de novo (`requireRole("agent")`).
  * A tela esconder o botão é cortesia, não autorização.
  */
-export default async function TarefasPage() {
+export default async function TarefasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ assigned_to?: string }>;
+}) {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
 
   const podeEditar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
 
-  return <TarefasClient podeEditar={podeEditar} />;
+  // `?assigned_to=me` é o endereço que o lembrete e o push de tarefa abrem.
+  const { assigned_to } = await searchParams;
+
+  return <TarefasClient podeEditar={podeEditar} minhasDeInicio={assigned_to === "me"} />;
 }

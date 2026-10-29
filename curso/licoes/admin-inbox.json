@@ -1,0 +1,464 @@
+{
+  "id": "admin-inbox",
+  "titulo": "Inbox (Admin)",
+  "tela": "/admin/inbox",
+  "resumo": "Onde quem cuida do servidor lê as conversas de todas as empresas da instalação, sem responder, para dar suporte.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-inbox-do-admin",
+      "titulo": "Conhecendo a Inbox do Admin",
+      "objetivo": "Entender para que serve a Inbox do Admin e ler o que cada linha da lista mostra.",
+      "papel": "admin",
+      "busca": [
+        "inbox do admin",
+        "ver conversas de todas as empresas",
+        "suporte aos clientes da instalação",
+        "conversas de outra empresa",
+        "caixa de entrada geral",
+        "ler whatsapp das empresas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Todas as conversas, de todas as empresas",
+          "texto": "A \"Inbox\" do Admin junta numa lista só as conversas de todas as empresas do servidor. No Admin, cada empresa se chama \"tenant\". Ela serve para suporte: você lê o que aconteceu num atendimento sem precisar entrar na empresa. Aqui não dá para responder; é só leitura.",
+          "dica": "Só quem é administrador da plataforma vê esta tela. Cada vez que você abre a lista ou uma conversa, isso fica registrado no histórico do Admin, em \"Audit\". O aviso que fala em \"Impersonate\" se refere ao botão \"Acompanhar organização\", que fica na página da empresa (você chega lá na lição \"Lendo a conversa de uma empresa\").\\ A faixa amarela \"Sem SMTP configurado\", no alto, é um aviso geral do Admin: o envio de e-mails ainda não está configurado. O item \"E-mail\" do menu leva ao ajuste.",
+          "rota": "/admin/inbox",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Inbox",
+                "exato": true
+              },
+              "rotulo": "Inbox no menu do Admin",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "aside:has(input[placeholder='Buscar mensagem...'])"
+              },
+              "rotulo": "Conversas de todas as empresas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Selecione uma conversa para visualizar",
+                "exato": true
+              },
+              "rotulo": "A conversa aberta aparece aqui",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada linha mostra",
+          "texto": "Cada linha é uma conversa. Em cima vem o nome do cliente e quando chegou a última mensagem: a hora, se foi hoje; há quantos dias, se foi nesta semana; ou a data, se foi antes. Logo abaixo, um selo com um prédio diz de qual empresa é a conversa. Na última linha fica o começo da última mensagem e, quando há, um número com as mensagens ainda não lidas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Rafaela Duarte",
+                "exato": true,
+                "dentro": {
+                  "role": "button",
+                  "nome": "^Rafaela Duarte",
+                  "regex": true
+                }
+              },
+              "rotulo": "Nome do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Rede Sorriso Pleno",
+                "exato": true,
+                "dentro": {
+                  "role": "button",
+                  "nome": "^Rafaela Duarte",
+                  "regex": true
+                }
+              },
+              "rotulo": "De qual empresa é",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "2",
+                "exato": true,
+                "dentro": {
+                  "role": "button",
+                  "nome": "^Rafaela Duarte",
+                  "regex": true
+                }
+              },
+              "rotulo": "Mensagens não lidas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O nome curto da empresa",
+          "texto": "Pare o mouse em cima do selo da empresa para ver o nome curto dela no sistema, o mesmo que aparece ao lado do nome na página da empresa. Ajuda quando duas empresas têm nomes parecidos.",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "texto": "Rede Sorriso Pleno",
+                "exato": true,
+                "dentro": {
+                  "role": "button",
+                  "nome": "^Rafaela Duarte",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1200
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "rede-sorriso-pleno",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Nome curto da empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "A ordem da lista",
+          "texto": "A lista mistura as empresas e põe no alto quem escreveu por último. A ordem segue a última mensagem do cliente, e não a da empresa. Aqui, a Rafaela, da Rede Sorriso Pleno, vem antes do Pedro, da Clínica Bem Viver. A lista traz 30 conversas por vez; quando há mais, aparece \"Carregar mais\" no fim.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Rafaela Duarte",
+                "regex": true
+              },
+              "rotulo": "Escreveu por último",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Pedro Henrique Lima",
+                "regex": true
+              },
+              "rotulo": "Escreveu um pouco antes",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lendo-uma-conversa",
+      "titulo": "Lendo a conversa de uma empresa",
+      "objetivo": "Abrir uma conversa, ler as mensagens e os dados do cliente e chegar à página da empresa.",
+      "papel": "admin",
+      "busca": [
+        "abrir conversa no admin",
+        "ler conversa de outra empresa",
+        "ver mensagens do cliente",
+        "por que não consigo responder no admin",
+        "somente leitura",
+        "dados do contato e da empresa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrindo a conversa",
+          "texto": "Clique numa linha para abrir a conversa no meio da tela. No alto aparecem o nome do cliente, a situação da conversa e a empresa. A situação aparece com a palavra do sistema, em inglês: \"Open\" é a conversa que ainda ninguém pegou; \"Ai_handling\", com a IA; \"Claimed\", com um atendente; \"Closed\", encerrada.",
+          "rota": "/admin/inbox",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^Rafaela Duarte",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Modo somente-leitura."
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.border-b.px-4.py-3"
+              },
+              "rotulo": "Cliente, situação e empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "open",
+                "exato": true
+              },
+              "rotulo": "Situação: aberta",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "A tela é só de leitura: aqui não há campo para responder. O aviso no rodapé fala em \"Impersonate (em breve)\", mas esse recurso já existe e se chama \"Acompanhar organização\". O último passo desta lição mostra onde ele fica."
+        },
+        {
+          "id": "p2",
+          "titulo": "As mensagens",
+          "texto": "As mensagens aparecem na ordem em que foram trocadas, como na Inbox da empresa. As do cliente ficam à esquerda; as da empresa ficam à direita, com o selo de quem mandou: \"IA\" quando foi a inteligência artificial, \"Atendente\" quando foi alguém da equipe pelo sistema, \"Celular\" quando responderam pelo WhatsApp do celular. Aqui aparecem só as 50 mensagens mais recentes; para ver as anteriores, é preciso entrar na empresa com \"Acompanhar organização\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Estou com os dentes bem sensíveis hoje. Isso é normal?",
+                "exato": true
+              },
+              "rotulo": "Mensagem do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Oi, Rafaela! Espero que tenha gostado do resultado. Em que posso ajudar?",
+                "exato": true
+              },
+              "rotulo": "Resposta da IA da empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os dados do cliente",
+          "texto": "À direita, \"Contato\" mostra o nome e o telefone do cliente. O e-mail aparece com parte escondida, para proteger o cliente. Se o cliente pediu para não receber mais mensagens, aparece o selo \"Bloqueado\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "aside > section:has(> div > div:text-is('Rafaela Duarte'))",
+                "literal": true
+              },
+              "rotulo": "Dados do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "raf***@gmail.com",
+                "exato": true
+              },
+              "rotulo": "E-mail com parte escondida",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "De qual empresa é",
+          "texto": "Embaixo, \"Tenant\" mostra a empresa dona da conversa: o nome, o nome curto (\"Slug\") e a situação dela no servidor (\"Active\" quer dizer ativa). O link \"Abrir tenant\" leva para a página dessa empresa.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h3:text-is('Tenant'))"
+              },
+              "rotulo": "A empresa da conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir tenant"
+              },
+              "rotulo": "Ir para a página da empresa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Abrir tenant"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Agir dentro da empresa",
+          "texto": "Na página da empresa fica o botão \"Acompanhar organização\". Ele abre a confirmação \"Iniciar acompanhamento?\". Marque \"Somente leitura\" se quiser só olhar, sem poder mudar nada; deixe desmarcado para poder agir como alguém da equipe. Ao clicar em \"Confirmar e entrar\", você cai na Inbox da empresa com a sua identidade de administrador, por até uma hora, e tudo o que fizer fica registrado no seu nome. Os detalhes estão no módulo \"Tenants\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir tenant"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Acompanhar Rede Sorriso Pleno",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Acompanhar Rede Sorriso Pleno",
+                "exato": true
+              },
+              "rotulo": "Entrar na empresa para ajudar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "buscar-e-filtrar",
+      "titulo": "Buscando e filtrando conversas",
+      "objetivo": "Achar uma conversa pelo que foi escrito nela e mostrar só as conversas abertas.",
+      "papel": "admin",
+      "busca": [
+        "buscar conversa no admin",
+        "procurar mensagem de cliente",
+        "filtrar conversas abertas",
+        "achar atendimento de uma empresa",
+        "pesquisar pelo texto da mensagem"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Buscar pelo que o cliente escreveu",
+          "texto": "Digite uma palavra em \"Buscar mensagem...\" e a lista mostra só as conversas cuja última mensagem tem essa palavra. A busca não olha o nome do cliente nem as mensagens mais antigas. Aqui, \"encaixe\" achou o Marcos, da Rede Sorriso Pleno.",
+          "rota": "/admin/inbox",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar mensagem..."
+              },
+              "valor": "encaixe"
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "^Marcos Teles",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar mensagem..."
+              },
+              "rotulo": "Palavra procurada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Marcos Teles",
+                "regex": true
+              },
+              "rotulo": "A conversa encontrada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Filtrar pela situação",
+          "texto": "Abaixo da busca fica o filtro de situação, que começa em \"Todos\". Clique nele para ver as opções. \"Aberto\" mostra as conversas abertas. \"Pendente\" e \"Resolvido\" são situações de uma versão antiga do sistema e, numa instalação de hoje, costumam voltar vazias.",
+          "rota": "/admin/inbox",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "option",
+                "nome": "Aberto",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Aberto",
+                "exato": true
+              },
+              "rotulo": "Só as conversas abertas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Aberto",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Só as conversas abertas",
+          "texto": "\"Com \"Aberto\" escolhido, ficam só as conversas que ainda ninguém pegou, nem a IA nem um atendente, de todas as empresas. Saem as que estão com a IA, as que estão com um atendente, as encerradas e as arquivadas. Para ver tudo de novo, volte o filtro para \"Todos\".\" Rótulo do segundo destaque: \"Aberta, da Rede Sorriso Pleno\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Aberto",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox"
+              },
+              "rotulo": "Filtro em Aberto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Marcos Teles",
+                "regex": true
+              },
+              "rotulo": "Aberta, de outra empresa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

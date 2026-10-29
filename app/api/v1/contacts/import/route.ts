@@ -182,7 +182,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // ─── Pré-filtro de duplicados contra o banco (uma query por identificador) ──
   //
-  // Os índices únicos são parciais (excluem mesclados/anonimizados), então a
+  // Os índices únicos são parciais (excluem mesclados), então a
   // busca espelha o WHERE do índice — filtrar pelo que o índice não cobre
   // produziria "duplicado" imaginário.
   const phones = candidatos
@@ -199,6 +199,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .from("contacts")
       .select("phone_number")
       .eq("organization_id", orgId)
+      .is("is_merged_into", null)
       .not("phone_number", "is", null)
       .in("phone_number", lookup);
     for (const r of data ?? []) {
@@ -212,6 +213,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .from("contacts")
       .select("email_normalized")
       .eq("organization_id", orgId)
+      .is("is_merged_into", null)
       .in("email_normalized", emails.map((e) => e.toLowerCase()));
     for (const r of data ?? []) existentes.add(`email:${(r as { email_normalized: string }).email_normalized}`);
   }

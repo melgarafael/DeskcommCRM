@@ -360,11 +360,14 @@ export async function drainEventLog(
     // rodava esses handlers outra vez: o "cliente voltou" mandava a mensagem
     // proativa em dobro. O claim é exclusivo (pending → processing), então o
     // que ele devolve não muda até esta instância soltar a linha.
+    // Revalide também o prazo: outro dreno pode ter devolvido a linha a
+    // `pending` com retry/backoff futuro depois da leitura do lote.
     const { data: claimed } = await admin
       .from("event_log")
       .update({ status: "processing", updated_at: new Date().toISOString() })
       .eq("id", row.id)
       .eq("status", "pending")
+      .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
       .select("id, consumed_by, attempts");
     const reclamada = claimed?.[0] as Partial<Pick<EventRow, "consumed_by" | "attempts">> | undefined;
     if (!reclamada) continue;

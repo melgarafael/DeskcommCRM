@@ -12,6 +12,7 @@ import type { ChannelProvider } from "@/lib/channels/types";
 import { ProspectingError } from "@/lib/prospecting/provider";
 import { campaignConfigSchema, prospectingInputSchema, type Prospect } from "@/lib/prospecting/schema";
 import { configPadraoDaOrganizacao } from "@/lib/prospecting/config-padrao";
+import { provedorExigeCredencialDaOrganizacao } from "@/lib/prospecting/provedor";
 import { auditarSite } from "@/lib/prospecting/site-fetch";
 import { gravarPrevia } from "@/lib/prospecting/previa";
 import { gerarPreviaDoCandidato } from "@/lib/prospecting/previa-gerar";
@@ -114,12 +115,19 @@ export async function GET(req: NextRequest) {
     const previaPadrao = await configPadraoDaOrganizacao(db, org)
       .then((p) => p !== null)
       .catch(() => false);
+    // `configured` libera a busca na tela. O `local-http` (#2942) não grava chave
+    // por organização (a URL é da instalação), então a linha em
+    // prospecting_settings nunca existe para ele. Escolha desconhecida cai na
+    // régua antiga: a busca falha fechado no POST, a lista não cai aqui.
+    const configured =
+      !!settings.rows.length ||
+      !(await provedorExigeCredencialDaOrganizacao(db, org).catch(() => true));
     const personalizacao = lerPersonalizacao(
       (organizacao.rows[0] as { settings?: unknown } | undefined)?.settings,
     );
     return ok(
       {
-        configured: !!settings.rows.length,
+        configured,
         campaigns: campaigns.rows,
         candidates: candidates.rows,
         previa_padrao: previaPadrao,
@@ -388,7 +396,7 @@ export async function POST(req: NextRequest) {
         )
           throw new ProspectingError("Pause a outra campanha antes de retomar.", 409);
         await db.query(
-          "update prospecting_campaigns set status='running',error=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
+          "update prospecting_campaigns set status='running',error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
           [org, body.id],
         );
         return { resumed: true };

@@ -19,7 +19,7 @@ import { CORES_DA_MARCA } from "@/lib/branding/desenho";
  * evidência de símbolo, não de comportamento).
  */
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/app/inbox" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/app/inbox", useRouter: () => ({ prefetch: vi.fn() }) }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({ toggleSidebar: vi.fn() }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 vi.mock("@/components/connections/ConnectionHealthDot", () => ({

@@ -23,9 +23,17 @@ vi.mock("@/lib/branding/saida", () => ({
 }));
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
-  isServiceRoleConfigured: () => false,
+  isServiceRoleConfigured: () => true,
 }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+// Os códigos de recuperação só são gravados pelo client de serviço (0755).
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      delete: () => ({ eq: async () => ({ error: null }) }),
+      insert: async () => ({ error: null }),
+    }),
+  }),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("qrcode", () => ({
   default: { toDataURL: vi.fn(async () => "data:image/png;base64,QR") },
@@ -114,6 +122,7 @@ function provedor(opcoes: Opcoes) {
 let cruas: string[] = [];
 
 beforeEach(() => {
+  vi.stubEnv("INTERNAL_SECRET", "segredo-da-instalacao");
   cruas = [];
   vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
     cruas.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));

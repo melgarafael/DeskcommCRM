@@ -912,7 +912,7 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
         import("@/lib/branding/saida"),
         import("@/lib/i18n/idiomas"),
       ]);
-      const marca = await marcaDaSaida(orgId);
+      const marca = await marcaDaSaida(orgId, { semMemo: true });
       const { data } = await admin
         .from("organizations")
         .select("locale")
