@@ -8,6 +8,49 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.94.0] — 2026-10-27
+
+### Adicionado
+
+- **O Inbox lembra o número e o Não lidos que você escolheu** Quem atende um setor com um número só precisava escolher o número e ligar **Não lidos** toda vez que recarregava o Inbox. Agora os dois filtros ficam lembrados neste navegador, separados por organização: ao reabrir, o Inbox volta como você deixou. Desligar o filtro apaga a lembrança. Busca e etiqueta continuam valendo só para a visita. Não é preciso mexer em nada na VPS. Crédito: @xxfabioxx12 (#3402).
+
+- **Cadastrar contato ou negócio agora pode já abrir a conversa** Quem cadastra um contato ou um negócio e atende em seguida tinha de sair da tela, ir ao
+  Inbox, clicar em "Iniciar conversa" e procurar o contato de novo. Agora os dois cadastros
+  têm o botão **"Salvar e iniciar conversa"**: ele salva e cai direto na conversa daquele
+  contato, já atribuída a quem cadastrou — o mesmo caminho do Inbox (escolha de canal,
+  `open-with-contact` e `claim`), então a conversa não nasce órfã.
+
+  Quem só quer cadastrar continua com o botão de sempre, que não abre conversa nenhuma. E a
+  permissão não muda de lado: sem papel de atendente o servidor recusa, a tela mostra o
+  motivo e não navega. Contato sem telefone não abre conversa 1:1, e a tela diz por quê.
+
+  Contribuição de @webtecnica (#3528).
+
+- **Texto de reserva para variáveis das mensagens** Agora dá para escrever `{{primeiro_nome|"aluno"}}` numa mensagem: se o contato não tiver o dado, sai o texto entre aspas ("Oi aluno!") em vez de a variável ficar vazia ou a pessoa ficar de fora. Vale nas respostas rápidas do Inbox, nos modelos de resposta, no WhatsApp e no e-mail das automações, no texto do follow-up e na campanha de texto livre. Aspas retas ou curvas, de 1 a 100 caracteres, sem chaves nem aspas dentro. Com o dado preenchido, a reserva é ignorada; quem não usa `|` não percebe nenhuma mudança. Nada muda na VPS. Crédito: @xxfabioxx12 (#3405).
+
+### Corrigido
+
+- **Criar contato durante outro cadastro preserva o rascunho** Ao criar um contato dentro de um negócio ou agendamento, o contato volta selecionado
+  e os dados ainda em edição são preservados. No negócio, "Salvar e iniciar conversa"
+  continua disponível depois de concluir o cadastro. O cadastro avulso de contato
+  também conserva esse atalho.
+
+  Adaptação da contribuição de @webtecnica (#3528).
+
+- **A faixa de conexão caída respeita as regras de acesso da sessão** A faixa de conexão caída passa a consultar os canais com a identidade da pessoa
+  conectada, aplicando as mesmas regras de acesso no banco que a listagem de
+  canais já usa.
+
+  No produto padrão, a visibilidade continua sendo por organização. Esta correção
+  não cria uma divisão de canais por atendente. O cenário da instalação adaptada
+  relatado no issue #3088 ainda depende de conferir a regra específica usada ali.
+
+  Não é preciso alterar a configuração da instalação.
+
+  Contribuição de @webtecnica (Refs #3088).
+
+- **O card do negócio não mostra mais "Propõe: Responder o cliente"** A próxima ação que o agente escrevia sem dizer nada — "Responder o cliente", "Atender o lead" — não vira mais proposta no card do funil. O agente já responde a cada mensagem, então a frase ocupava a faixa do card no lugar de "esfriando", da proposta de retomada e da probabilidade, e aprovar aquilo contava como atividade do negócio no radar de risco. Essas frases genéricas são descartadas na gravação, preservando uma proposta anterior, e o agente recebe orientação para propor uma ação concreta. O filtro reconhece uma lista curta de expressões em português e espanhol; não avalia o conteúdo de toda proposta. A ação concreta e a limpeza da proposta continuam como antes, e nada a fazer na atualização. As propostas vazias que já estão gravadas seguem no card até alguém aprovar, ignorar ou o agente reescrever. Crédito: @webtecnica (#3458).
+
 ## [1.93.0] — 2026-10-27
 
 ### Adicionado
@@ -13172,7 +13215,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.93.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.94.0...HEAD
+[1.94.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.93.0...v1.94.0
 [1.93.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.92.0...v1.93.0
 [1.92.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.91.0...v1.92.0
 [1.91.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.90.0...v1.91.0

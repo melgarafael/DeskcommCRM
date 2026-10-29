@@ -814,7 +814,7 @@ jobs:
         contato-pessoal-sai-da-operacao.spec.ts
         confirmar-dado-do-contato.spec.ts
         credenciais-de-ia.spec.ts
-        risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
+        risk-radar.spec.ts invite-lifecycle.spec.ts
         agente-papeis-operador.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
@@ -944,6 +944,7 @@ jobs:
         agenda-kit-visual.spec.ts
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
+        celular-cabe-na-tela.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         aba-e-cookie-divergentes.spec.ts
@@ -1156,25 +1157,19 @@ jobs:
       # todas. Os 3 arquivos que o cancelamento impediu de medir vêm junto, porque
       # eles são justamente o fim da fila.
       SPECS_PARTE_3: >-
-        autonomia-assistida.spec.ts
         roteamento-por-canal.spec.ts
         whatsapp-pareamento-por-codigo.spec.ts
         central-avisos-destino.spec.ts
         agenda-google-sync.spec.ts
         agenda-servicos.spec.ts
-        encerramento-atendimento.spec.ts
-        atendimento-conjunto.spec.ts
         passagem-com-contexto.spec.ts
-        interface-por-vinculo.spec.ts
         pipelines-gestao.spec.ts
         qa-agente-usa-as-maos.spec.ts
         qa-selo-no-funil-usado.spec.ts
         qa-telas-descobertas-w4.spec.ts
         retorno-anti-morte.spec.ts
-        webhooks.spec.ts
         traco-do-turno-leitor.spec.ts
         designer-de-automacoes.spec.ts
-        logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts
         inbox-tempo-real.spec.ts
@@ -1183,7 +1178,6 @@ jobs:
         organizacoes-criacao-convite-e-cache.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
         busca-na-conversa.spec.ts
-        moeda-da-organizacao.spec.ts
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         email-da-instalacao-pela-tela.spec.ts
         central-avisos-resolver-em-lote.spec.ts
@@ -1205,7 +1199,6 @@ jobs:
         fotos-no-catalogo.spec.ts
         catalogo-busca-no-catalogo-inteiro.spec.ts
         relatorio-por-etiqueta.spec.ts
-        integracao-dados-mysql-na-tela.spec.ts
         minhas-tarefas-no-celular.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
@@ -1456,7 +1449,6 @@ jobs:
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
         app-no-celular.spec.ts
-        celular-cabe-na-tela.spec.ts
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts
         cobranca-suspensao-e-limites.spec.ts
@@ -1518,17 +1510,26 @@ jobs:
       #   - o passo "Semear funil de nascimento para a prova causal" roda
       #     `scripts/seed-e2e-nascimento-do-lead.ts` além dos seeds de sempre.
       # Os seeds comuns (`!= 4`) rodam aqui também. Um rebalanceamento pode
-      # TRAZER spec para esta parte (ela usa ~1/3 do orçamento) desde que a spec
+      # TRAZER spec para esta parte, com orçamento medido, desde que a spec
       # não poste no webhook do WAHA sem assinatura nem dependa do Graph real —
       # para listar quem posta: `grep -lE 'webhooks/waha' tests/e2e/*.spec.ts
       # tests/e2e/helpers/*.ts` (helper conta: `jev.ts` arrasta as jev-*).
       # Pode também LEVAR a causal para outra parte: o `if: matrix.parte == N`
       # dos dois passos acompanha a spec, e `tests/unit/e2e-cobertura-completa`
       # reprova se a spec e os passos ficarem em partes diferentes.
-      # PREVISÃO, não medida (o e2e deste PR mede): ~6 min de preparo, como as
-      # demais, + ~2 min de caso (9 casos, dublês locais) — job de ~8 a 10 min.
+      # O relógio publicado em cada run separa preparo, suíte e total da parte.
+      # Toda admissão exige medir a composição; teto de caso não é duração medida.
       SPECS_PARTE_8: >-
         meta-lead-submitted-causal.spec.ts
+        atendimento-conjunto.spec.ts
+        autonomia-assistida.spec.ts
+        encerramento-atendimento.spec.ts
+        integracao-dados-mysql-na-tela.spec.ts
+        interface-por-vinculo.spec.ts
+        logo-moldura-no-tema-escuro.spec.ts
+        moeda-da-organizacao.spec.ts
+        webhooks.spec.ts
+        system-update.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

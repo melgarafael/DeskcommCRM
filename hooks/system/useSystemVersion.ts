@@ -2,12 +2,19 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
+import type { RuntimeIdentity, RuntimeConfirmation } from "@/lib/system/runtime-identity";
 import type { RodadaDoBanco } from "@/lib/system/update-run";
 
 export interface SystemVersion {
   current_version: string;
+  identity?: RuntimeIdentity;
+  runtime_services?: RuntimeConfirmation["services"] | null;
+  manual_reconciliation_required?: boolean;
+  /** O agente em execução confirmou suporte; ausência não autoriza força. */
+  force_update_supported?: boolean;
   is_owner: boolean;
   latest_version?: string;
+  official_latest_version?: string;
   update_available?: boolean;
   off_release?: boolean;
   /** O host não conseguiu comparar a versão instalada com a última publicada. */

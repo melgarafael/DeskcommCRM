@@ -507,7 +507,7 @@
           "destaques": [
             {
               "alvo": {
-                "css": "div.rounded-lg.border:has(> div > div:text-matches('^Trilha de auditoria'))"
+                "css": "div.rounded-lg.border:has(> div > div:has-text('Trilha de auditoria'))"
               },
               "rotulo": "Tudo o que aconteceu",
               "tipo": "caixa"
@@ -773,7 +773,7 @@
             },
             {
               "alvo": {
-                "css": "div.rounded-lg.border:has(> div > div:text-matches('^Trilha de auditoria'))"
+                "css": "div.rounded-lg.border:has(> div > div:has-text('Trilha de auditoria'))"
               },
               "rotulo": "As três etapas",
               "tipo": "caixa"

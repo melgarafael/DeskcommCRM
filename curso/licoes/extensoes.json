@@ -924,9 +924,7 @@
             },
             {
               "alvo": {
-                "role": "button",
-                "nome": "Desfazer a última troca (volta para 1.0.0)",
-                "exato": true,
+                "css": "button[data-testid^='extension-revert-']",
                 "dentro": {
                   "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
                 }

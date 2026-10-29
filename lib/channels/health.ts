@@ -163,7 +163,8 @@ export interface ConexaoCaida {
 }
 
 /**
- * As conexões desta organização que estão fora do ar AGORA.
+ * As conexões desta organização que estão fora do ar AGORA — e que QUEM PEDE
+ * pode ver.
  *
  * Mora aqui, e não na tela, por duas razões que o repo já pagou caro: telas que
  * montam a consulta de `channel_sessions` à mão foram o que deixou três
@@ -172,14 +173,23 @@ export interface ConexaoCaida {
  * segunda lista divergiria com o tempo, e a faixa deixaria de aparecer para um
  * estado que a Central considera grave.
  *
+ * O cliente recebido determina se a consulta respeita a RLS. O layout passa
+ * o cliente da sessão, como GET /api/v1/channel-sessions; o cliente de serviço
+ * atravessaria as policies. O filtro explícito de organização vale nos dois.
+ *
+ * A policy nativa de SELECT permite leitura por organização e acesso de
+ * plataforma. Não há nela divisão de canais por atendente. O recorte adicional
+ * da instalação do relato #3088 só será herdado aqui se estiver na RLS; um patch
+ * exclusivo da rota não é aplicado por esta consulta direta.
+ *
  * Arquivada fica de fora: foi desligada de propósito, e anunciar que uma conexão
  * aposentada está parada é o ruído que ensina a ignorar a faixa.
  */
 export async function listarConexoesCaidas(
-  admin: SupabaseClient,
+  cliente: SupabaseClient,
   organizationId: string,
 ): Promise<ConexaoCaida[]> {
-  const { data } = await admin
+  const { data } = await cliente
     .from("channel_sessions")
     .select("id, display_name, phone_number, status, waha_session_name")
     .eq("organization_id", organizationId)

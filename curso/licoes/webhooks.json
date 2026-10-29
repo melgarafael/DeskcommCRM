@@ -444,8 +444,8 @@
               "acao": "rolar",
               "alvo": {
                 "role": "button",
-                "nome": "+ Adicionar pergunta",
-                "exato": true
+                "nome": "Adicionar pergunta",
+                "exato": false
               }
             }
           ],
@@ -460,8 +460,8 @@
             {
               "alvo": {
                 "role": "button",
-                "nome": "+ Adicionar pergunta",
-                "exato": true
+                "nome": "Adicionar pergunta",
+                "exato": false
               },
               "rotulo": "Mais uma pergunta",
               "tipo": "seta"

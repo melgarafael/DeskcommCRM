@@ -62040,6 +62040,22 @@ create trigger trg_limpar_snapshot_catalogo_ao_anonimizar
   for each row when (new.is_anonymized and not old.is_anonymized)
   execute function public.fn_limpar_snapshot_catalogo_ao_anonimizar();
 
+-- ---- runtime identity (migration 9024) ----
+-- manifest: system_version records bounded host observations of running services, separate from checkout and update intent.
+-- Nullable for compatibility. Old heartbeats explicitly clear the observation.
+alter table public.system_version
+  add column if not exists runtime_confirmation jsonb;
+comment on column public.system_version.runtime_confirmation is
+  'Authenticated host observation of compose services and immutable images; the API derives coverage, freshness and release identity.';
+
+-- ---- pedido restrito de força da atualização (migration 9025) ----
+-- manifest: Persiste no run a intenção restrita de refazer uma atualização; o default falso preserva pedidos antigos.
+-- Forward nova: não altera a migration autoral de runtime_confirmation.
+alter table public.system_update_runs
+  add column if not exists force_requested boolean not null default false;
+comment on column public.system_update_runs.force_requested is
+  'Pedido restrito de reaplicar a atualização pelo agente do host; ausência ou false preserva o caminho normal.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -65832,3 +65848,34 @@ do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
 notify pgrst, 'reload schema';
 
+-- ---- catálogo: GPT-6.1 Terra (migration 9031) ----
+-- O dump --schema-only não traz seed pós-snapshot. Sem este apêndice, clones
+-- novos (install.sh) e clones atualizando (update.sh reaplica baseline.sql)
+-- ficam sem o gpt-6.1-terra em Provedores de IA e no seletor do agente.
+-- As DUAS tabelas com os MESMOS números (invariante catálogo×preço). Não mexe
+-- no padrão (segue gpt-5.6-terra). Fonte do preço no cabeçalho da migration.
+insert into public.ai_models
+  (provider, model_id, display_name, description, context_window,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('openai', 'gpt-6.1-terra', 'GPT-6.1 Terra',
+   'Intermediário da linha 6: mais capaz que o Luna, metade do preço do Sol.',
+   1050000, 100, 500, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  context_window = excluded.context_window,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  deprecated_at = null;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gpt-6.1-terra', 100, 500, 'catálogo 9031 — acima de 272k tokens de entrada, 200/750')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
