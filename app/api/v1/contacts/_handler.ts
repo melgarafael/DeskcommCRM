@@ -262,15 +262,22 @@ export async function listContactsHandler(
       // número que não é o principal não acharia a pessoa que o tem. A consulta
       // aos extras é do mesmo jeito filtrada por organização; a ficha continua
       // passando pelo filtro de lápide e de pessoal da listagem.
-      const { data: extras } = await supabase
-        .from("contact_phones")
-        .select("contact_id")
-        .eq("organization_id", ctx.organization_id)
-        .or(criteriosDeTelefone.join(","));
-      const idsDeExtras = [
-        ...new Set(((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id)),
-      ];
-      if (idsDeExtras.length > 0) orParts.push(`id.in.(${idsDeExtras.join(",")})`);
+      //
+      // Só quando o termo TEM CARA DE TELEFONE (dígitos e a pontuação de número):
+      // texto com letras e dígitos ("a,organization_id.eq.000…") não é busca de
+      // número, e uma consulta a mais por termo hostil é o que a cerca da busca
+      // (`busca-de-contatos-normaliza-termo`) conta.
+      if (/^[\d\s()+.-]+$/.test(q.search.trim())) {
+        const { data: extras } = await supabase
+          .from("contact_phones")
+          .select("contact_id")
+          .eq("organization_id", ctx.organization_id)
+          .or(criteriosDeTelefone.join(","));
+        const idsDeExtras = [
+          ...new Set(((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id)),
+        ];
+        if (idsDeExtras.length > 0) orParts.push(`id.in.(${idsDeExtras.join(",")})`);
+      }
     }
     if (digits.length === 11) {
       orParts.push(`cpf_hash.eq.${hashCpf(digits)}`);
