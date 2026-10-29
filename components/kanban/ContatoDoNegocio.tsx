@@ -32,7 +32,7 @@ import {
   type TipoDeLink,
 } from "@/lib/leads/links-de-contato";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
-import { canonicalPhoneBR, normalizePhoneBR } from "@/lib/channels/phone-variants";
+import { decidirTelefone } from "@/lib/kanban/telefone-relacionado";
 import type { Contact } from "@/lib/types/contacts";
 
 interface Props {
@@ -352,23 +352,21 @@ function AdicionarTelefone({
   const pendente = create.isPending || adicionar.isPending;
 
   async function incluir() {
-    const canonico = normalizePhoneBR(numero);
-    if (!canonico) {
+    const decisao = decidirTelefone(numero, pessoas, contatos);
+    if (decisao.tipo === "invalido") {
       toast.error(t("Telefone inválido."));
       return;
     }
-    const existente = contatos.find(
-      (c) => c.phone_number && canonicalPhoneBR(c.phone_number) === canonico,
-    );
-    if (existente && pessoas.some((p) => p.contact_id === existente.id)) {
+    if (decisao.tipo === "ja_relacionado") {
       toast.error(t("Este número já está relacionado."));
       return;
     }
     try {
-      let contactId = existente?.id;
-      if (!contactId) {
+      let contactId =
+        decisao.tipo === "ligar_existente" ? decisao.contactId : undefined;
+      if (decisao.tipo === "criar_e_ligar") {
         const resposta = await create.mutateAsync({
-          phone_number: canonico,
+          phone_number: decisao.canonico,
           source: "manual",
         });
         contactId = resposta?.data?.contact?.id;
