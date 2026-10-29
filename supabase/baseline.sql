@@ -66140,3 +66140,25 @@ update public.agent_inbox_items as aviso
 create unique index if not exists inbox_task_reminder_ocasiao_unique
   on public.agent_inbox_items (organization_id, ref_id, kind, para_user_id, task_reminder_due_at)
   where ref_kind = 'task' and task_reminder_due_at is not null and status <> 'resolved';
+
+-- ============================================================================
+-- 9043 — O AVISO ESCRITO PELO ADMIN (#1418, fatia 1)
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+-- Até aqui todo push do produto nascia de evento de sistema (`kinds.ts`); esta
+-- tabela dá AUTOR ao recado: quem escreveu, para qual organização, com que
+-- janela. O envio reaproveita `enviarPushDaOrg()` (web-push já instalado).
+-- ============================================================================
+create table if not exists public.avisos (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  autor_id uuid references auth.users(id) on delete set null,
+  titulo text not null,
+  corpo text not null,
+  publicar_em timestamptz not null default now(),
+  expira_em timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table public.avisos enable row level security;
+revoke all on public.avisos from public, anon, authenticated;
+grant select, insert, update, delete on public.avisos to service_role;
