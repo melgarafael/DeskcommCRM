@@ -249,7 +249,7 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
   });
 
   it("o orçamento vale para TODAS as partes da matrix, não só para uma", () => {
-    // `verify-parte` é uma `matrix` (4 partes desde 08/10/2026), e o
+    // `verify-parte` é uma `matrix` (7 partes desde 23/10/2026), e o
     // `ORCAMENTO_MIN` vive num passo ÚNICO que todas as partes executam. Os passos vizinhos (`Cercas`,
     // `Typecheck`, `Lint`, `Kit self-host`) são todos `if: matrix.parte == N` —
     // então pôr um `if:` de parte neste aqui é uma edição de uma linha, natural
@@ -305,11 +305,11 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
     // Mexer na divisão (reequilibrar passos, criar a parte 3) tem dois erros
     // VERDES: `--shard=N/3` com matrix [1, 2] deixa um terço da suíte sem rodar,
     // e `if: matrix.parte == 3` com matrix [1, 2] deixa o passo sem parte.
-    // Desde 08/10/2026 há parte SEM unit (a 4: cercas + kit), excluída por
-    // `if: matrix.parte != 4` no passo de unit — então o N do shard é o número de
+    // Desde 08/10/2026 há parte SEM unit (a última — 4 até 23/10/2026, hoje 7: cercas + kit), excluída por
+    // `if: matrix.parte != 7` no passo de unit — então o N do shard é o número de
     // partes que RODAM unit, não o tamanho da matrix. Os dois erros verdes novos:
-    // tirar a exclusão (a parte 4 roda `--shard=4/3`, que o vitest recusa ou
-    // duplica) e excluir uma parte do meio (um terço da suíte sem rodar).
+    // tirar a exclusão (a parte 7 roda `--shard=7/6`, que o vitest recusa ou
+    // duplica) e excluir uma parte do meio (um sexto da suíte sem rodar).
     // Que o `--shard` do vitest corta em fatias disjuntas que somam tudo foi
     // provado com o sequenciador dele no PR que moveu o lint (1108 = 554 + 554).
     const texto = readFileSync(join(DIR_WORKFLOWS, "ci.yml"), "utf8");

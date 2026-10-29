@@ -26,9 +26,10 @@ const TooltipContent = React.forwardRef<
         // o limita: 267 caracteres viraram UMA linha de ~1467 px, com o fim do texto
         // fora da tela em 1280, 1366 e 1440 (#1215). Declarar `max-w` só no ponto que
         // mostrou o defeito conserta aquele texto LITERAL, que alguém consegue contar
-        // no código. O tooltip da bolha do inbox mostra `message.error_message`, que
-        // vem do provedor: não tem tamanho conhecido nem teto no banco (`text`), e
-        // nenhuma varredura de código pode medi-lo. Na base, o teto vale para todo
+        // no código. Tooltip também mostra DADO — o motivo da falha da bolha do inbox
+        // (`lib/inbox/motivo-da-falha.ts`) pode ser o título que o provedor gravou —,
+        // e dado não tem tamanho conhecido nem teto no banco (`text`): nenhuma
+        // varredura de código pode medi-lo. Na base, o teto vale para todo
         // tooltip, inclusive os que nascem de dado — e `break-words` é o par
         // obrigatório disso: sem ele, um erro de provedor sem espaço (URL, hash) é
         // cortado pelo `overflow-hidden` em vez de quebrar a linha.

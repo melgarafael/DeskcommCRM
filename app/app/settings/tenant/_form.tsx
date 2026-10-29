@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { updateTenant } from "@/app/actions/settings/updateTenant";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { IDIOMAS_VISIVEIS } from "@/lib/i18n/registro";
 import { MOEDAS_SERVIDAS, simboloDaMoeda, type MoedaServida } from "@/lib/money";
 import { paisesOferecidos, perfilDoPais } from "@/lib/legal/perfil-do-pais";
@@ -64,7 +65,8 @@ export function TenantForm({ initial, onSave, onSaved }: Props) {
       if (r.ok) {
         toast.success(t("Organização atualizada."));
         onSaved?.();
-      } else toast.error(`${t("Erro")}: ${r.error}`);
+      } else if (r.error === "mfa_required") irAoDesafioDeMfa();
+      else toast.error(`${t("Erro")}: ${r.error}`);
     });
   }
 

@@ -176,7 +176,9 @@ test("pré-visualização com banco inalcançável mostra mensagem legível", as
   await expect(page.getByText("Receitas prontas")).toBeVisible({ timeout: ESPERA });
 
   // Pré-visualiza (o banco é inalcançável; deve mostrar mensagem, não quebrar a tela).
-  await page.getByRole("button", { name: /pré-visualizar/i }).click();
+  // O caso anterior grava uma SEGUNDA instância WooCommerce (desde a R2 a mesma receita pode ter
+  // várias), então há dois "Pré-visualizar" idênticos; os dois apontam para o mesmo banco inalcançável.
+  await page.getByRole("button", { name: /pré-visualizar/i }).first().click();
   await page.waitForTimeout(2_000);
 
   // A tela não fica em branco nem exibe erro de SQL; mostra aviso legível.

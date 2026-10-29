@@ -74,9 +74,28 @@ services:
       # ele dá 503 se WAHA/Redis caem, o que deixaria o app "unhealthy" e derrubaria
       # o Caddy junto (blackout total por uma dependência secundária).
       test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
-      interval: 30s
+      # A cada 10 s, e não a cada 30 (conserto de @jmpo, PR #3393). Atrás do
+      # Traefik da hospedagem (Hostinger, Coolify, Dokploy — o
+      # docker-compose.traefik.yml), o tráfego só vai a contêiner `healthy`; o
+      # app fica pronto em ~5 s, mas com Docker 24 ou mais antigo a primeira
+      # checagem só rodava aos 30 s, e a atualização deixava o domínio em
+      # "404 page not found" por 30–45 s (medido numa instalação real em
+      # 24/09/2026, quatro deploys no dia).
+      # Com Docker 25 ou mais novo a janela já era de ~5 s e não muda. O Caddy
+      # padrão do kit não consulta a saúde para rotear.
+      # `retries` sobe na mesma proporção: 10 s × 15 = os mesmos 150 s de
+      # tolerância de antes (30 s × 5) para declarar o app doente.
+      #
+      # NÃO trocar por `start_interval` (que pergunta rápido só durante o
+      # `start_period`): o Compose 2.17 RECUSA o arquivo inteiro com
+      # "Additional property start_interval is not allowed", e o kit só exige
+      # "docker compose v2" — o `up -d` de quem tem Compose antigo morreria.
+      # Medido: 2.17.2 recusa; 2.21.0 e 5.5.1 com motor de API 1.43 (Docker
+      # 24) aceitam e ignoram calados. Vigiado em
+      # tests/unit/healthcheck-do-app-libera-o-trafego-cedo.test.ts.
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 15
       start_period: 40s
     logging: *default-logging
     networks: [internal]
@@ -122,6 +141,33 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+    # ═══ O PRAZO QUE FALTAVA (#2823) ═══
+    #
+    # No `docker stop` o Docker manda SIGTERM e espera ESTE prazo; passado ele,
+    # manda SIGKILL. Sem a chave, o prazo é o PADRÃO DE 10 s — e o worker se dá
+    # 30 s (`SHUTDOWN_GRACE_MS`) para fechar laços + drain + pool. O SIGKILL
+    # chegava, portanto, na METADE do prazo que o próprio worker pediu, e o job
+    # em voo voltava `running` até o reaper (10 min de invisibilidade a cada
+    # `docker stop` — o defeito da issue, medido em 19,6 s de parada ociosa com
+    # o laço do `event_log` preso numa chamada de rede).
+    #
+    # ═══ POR QUE O NÚMERO NÃO RESOLVE A ISSUE SOZINHO ═══
+    #
+    # Aumentar o prazo do supervisor é o remédio que a issue #2823 PROÍBE como
+    # conserto único (o comentário do `Dockerfile.worker` registra isso): com o
+    # prazo armado depois de esperar os laços, o `stop_grace_period` que faltava
+    # cobriria uma janela que começava tarde — os 19,6 s do laço preso ficavam
+    # por fora de qualquer prazo, interno ou externo. O par só funciona junto:
+    # o worker conta o prazo DO SINAL (`workers/agent-worker/desligamento-no-prazo.ts`)
+    # e este número é o teto de fora.
+    #
+    # ═══ A REGRA DO PAR ═══
+    #
+    # `stop_grace_period` > `SHUTDOWN_GRACE_MS`/1000, com folga para o fecho do
+    # pool e do healthz. O default de 40 s para os 30 s internos dá 10 s de
+    # folga. Os dois são gravados juntos pelo `install.sh` (kit) e o par que não
+    # fecha é reprovado por `workers/agent-worker/prazo-do-shutdown-comeca-no-sinal.test.ts`.
+    stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-40s}
     restart: unless-stopped
     env_file: .env
     environment:

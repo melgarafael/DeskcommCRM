@@ -171,7 +171,10 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
 
   return (
     <>
-      <div className="flex items-center gap-3 border-b px-4">
+      {/* `pr-14`: o X do diálogo (`components/ui/dialog.tsx`) mora no canto de
+          cima à direita, e o "Limpar" ficava embaixo dele — no celular, onde o
+          X tem 44 px de alvo, o toque em "Limpar" FECHAVA a busca. */}
+      <div className="flex items-center gap-3 border-b px-4 pr-14">
         <MagnifyingGlass size={18} aria-hidden className="shrink-0 text-muted-foreground" />
         <input
           autoFocus
@@ -204,7 +207,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
           type="button"
           onClick={() => mudarCategoria("todos")}
           className={cn(
-            "rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors",
+            "rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors pointer-coarse:min-h-11",
             categoriaAtiva === "todos"
               ? "bg-foreground text-background shadow-xs"
               : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -220,7 +223,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
               type="button"
               onClick={() => mudarCategoria(cat.id)}
               className={cn(
-                "rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors",
+                "rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors pointer-coarse:min-h-11",
                 categoriaAtiva === cat.id
                   ? "bg-foreground text-background shadow-xs"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -373,7 +376,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
           })}
         </ul>
       )}
-      <div className="flex items-center justify-between border-t bg-muted/20 px-4 py-2 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between border-t bg-muted/20 px-4 py-2 text-[11px] text-muted-foreground pointer-coarse:hidden">
         <span>{t("Use as setas ↑↓ e Enter para navegar")}</span>
         <span>{t("ESC para fechar")}</span>
       </div>

@@ -13,14 +13,14 @@ describe("fitToBudget — sent_at chega com o offset do fuso do tenant, não UTC
 
   it("mensagem em UTC vira hora de parede de São Paulo, com offset -03:00", () => {
     const ctx = __test_fitToBudget(base, [
-      { direction: "inbound", type: "text", body: "oi", media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null, sent_at: new Date("2026-09-02T18:45:38Z") },
+      { direction: "inbound", type: "text", body: "oi", media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null, sent_at: new Date("2026-09-02T18:45:38Z"), metadata: null },
     ], 100000, "America/Sao_Paulo");
     expect(ctx.messages[0]!.sent_at).toBe("2026-09-02T15:45:38-03:00");
   });
 
   it("nunca ISO em Z — offset explícito de duas casas", () => {
     const ctx = __test_fitToBudget(base, [
-      { direction: "inbound", type: "text", body: "oi", media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null, sent_at: new Date("2026-09-02T18:45:38Z") },
+      { direction: "inbound", type: "text", body: "oi", media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null, sent_at: new Date("2026-09-02T18:45:38Z"), metadata: null },
     ], 100000, "America/Sao_Paulo");
     expect(ctx.messages[0]!.sent_at).not.toMatch(/Z$/);
     expect(ctx.messages[0]!.sent_at).toMatch(/[+-]\d{2}:\d{2}$/);

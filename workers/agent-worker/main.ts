@@ -15,9 +15,11 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
  * migration 0050 aplicada — aplicar é ato de deploy) → solta órfãos → healthz →
  * loops (worker, drain, cron, holds, saúde do número).
  *
- * Graceful shutdown: SIGTERM/SIGINT → para de claimar, drena jobs em curso até
- * SHUTDOWN_GRACE_MS, fecha healthz e pool, sai 0. Morte súbita é o caso do
- * reaper — lease expira e o job volta.
+ * Graceful shutdown: SIGTERM/SIGINT → para de claimar e o prazo TOTAL começa no
+ * sinal (#2823), cobrindo laços, drain e pool até SHUTDOWN_GRACE_MS: dentro do
+ * prazo, fecha healthz e pool e sai 0; vencido, sai ≠ 0 sem esperar (o reaper
+ * devolve o lease). Morte súbita — SIGKILL do Docker no `stop_grace_period` — é
+ * o caso do reaper: lease expira e o job volta.
  *
  * Rodar: `pnpm worker` (tsx) — dev com --env-file=.env.local; container via
  * Dockerfile.worker (serviço `worker` do docker-compose).
@@ -108,6 +110,7 @@ import {
 } from "@/lib/agent-engine/obs/metrics";
 import { rodarLoopDaFila } from "@/lib/agent-engine/queue/loop";
 import { createHealthzServer } from "./healthz";
+import { desligarNoPrazo } from "./desligamento-no-prazo";
 import {
   adiarAteORecarregar,
   avisarFaltaDeSaldo,
@@ -556,43 +559,46 @@ export async function startWorker(
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info("sinal recebido — parando de claimar e drenando jobs em curso", {
-      signal,
-      in_flight: inFlight.size,
+    // (#2823) O prazo TOTAL arma no SINAL e cobre laços, drain e pool. Antes, a
+    // contagem começava DEPOIS de `await Promise.all(lacos)` e de
+    // `await workerLoop`, e `pool.end()` ficava fora dela: um laço preso (o do
+    // `event_log` numa chamada de rede, sem PostgREST) levou a parada ociosa a
+    // 19,6 s MEDIDOS por fora de qualquer prazo — e o que sobrava ainda competia
+    // com o SIGKILL do Docker, que chega no `stop_grace_period`. O porquê de o
+    // relógio ter de armar aqui está em `./desligamento-no-prazo.ts`.
+    const fim = await desligarNoPrazo({
+      prazoMs: env.SHUTDOWN_GRACE_MS,
+      sinal: signal,
+      emVoo: () => inFlight.size,
+      aoSinal: () => {
+        clearInterval(reaperTimer);
+        clearInterval(holdsTimer);
+        server.close();
+        server.closeIdleConnections();
+        loopsAbort.abort();
+      },
+      // A ORDEM importa: os laços param de claimar antes de o drain ser
+      // aguardado, e um claim já iniciado termina dentro de `workerLoop` (não
+      // larga lease no meio). Tudo isto é o que o prazo tem de cobrir.
+      encerrar: async () => {
+        await Promise.all([
+          drainLoop,
+          eventLogLoop,
+          healthLoop,
+          cronLoop,
+          sessionWatchdogLoop,
+          flywheelLoop,
+          voiceCallsBridgeLoop,
+        ]);
+        await workerLoop;
+        await Promise.all([...inFlight]);
+        await pool.end();
+      },
+      log,
     });
-    clearInterval(reaperTimer);
-    clearInterval(holdsTimer);
-    server.close();
-    server.closeIdleConnections();
-    loopsAbort.abort();
-    await Promise.all([
-      drainLoop,
-      eventLogLoop,
-      healthLoop,
-      cronLoop,
-      sessionWatchdogLoop,
-      flywheelLoop,
-      voiceCallsBridgeLoop,
-    ]);
-    await workerLoop;
-    let graceTimer: NodeJS.Timeout | undefined;
-    const grace = new Promise<"grace">((resolve) => {
-      graceTimer = setTimeout(() => resolve("grace"), env.SHUTDOWN_GRACE_MS);
-    });
-    const outcome = await Promise.race([
-      Promise.all([...inFlight]).then(() => "drained" as const),
-      grace,
-    ]);
-    clearTimeout(graceTimer);
-    if (outcome === "grace") {
-      log.error("shutdown: jobs em curso não drenaram no prazo — saindo sem esperar", {
-        grace_ms: env.SHUTDOWN_GRACE_MS,
-        in_flight: inFlight.size,
-      });
+    if (fim === "prazo-estourado") {
       process.exit(1);
     }
-    await pool.end();
-    log.info("worker encerrado limpo", {});
     resolveStopped();
   };
   process.once("SIGTERM", (signal) => void shutdown(signal));

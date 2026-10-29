@@ -187,7 +187,7 @@ test.describe("Janela de perder — os motivos são os do funil", () => {
     // ── 2. "OUTRO" RECUSA ANTES DO CLIQUE, E DIZ ONDE CADASTRAR ────────────
     await page.locator('input[name="lost-reason"][value="other"]').check();
     await expect(
-      page.getByText(/cadastre em Configurações/),
+      page.getByText(/cadastre em CRM › Ver tudo em CRM › Etapas do funil/),
       "sem esta frase, 'Outro' é beco sem saída: recusa todo texto novo e não diz onde se cadastra um",
     ).toBeVisible();
 

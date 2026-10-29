@@ -45,6 +45,11 @@ export const PUBLIC_PATHS: RegExp[] = [
   // redirect pro WhatsApp. Âncorado num segmento só (`[^/]+$`): um sub-path
   // futuro sob `/google/` não nasce público de carona.
   /^\/api\/v1\/anuncios\/google\/[^/]+$/,
+  // A irmã da Meta (UTMs da landing → `[ref:]`), mesma natureza e mesma âncora.
+  // Faltava esta linha: a rota existia, o script do site apontava os botões
+  // para ela, e todo visitante recebia 401 do proxy em vez do WhatsApp —
+  // medido em produção em 02/10/2026.
+  /^\/api\/v1\/anuncios\/meta\/[^/]+$/,
   // Heartbeat do agente do host (bearer INTERNAL_SECRET/INTERNAL_CRON_SECRET,
   // checado dentro da própria rota) — sem cookie de sessão, igual /cron/.
   /^\/api\/v1\/system\/agent$/,
@@ -88,6 +93,22 @@ export const PUBLIC_PATHS: RegExp[] = [
   // `GET` da listagem, não `/api/v1/contacts/[id]` nem `/import`, que ainda
   // não têm suporte a Bearer.
   /^\/api\/v1\/contacts$/,
+  // FOTO DO CONTATO SERVER-TO-SERVER (issue #3420). Mesma dualidade da
+  // listagem logo acima: sessão de navegador OU Bearer `dsk_…` com escopo
+  // `contacts:read`, resolvido por `lib/api/auth-dual.ts` DENTRO da rota
+  // (`app/api/v1/contacts/[id]/avatar/route.ts`), com a organização saindo da
+  // LINHA DO TOKEN e nunca do path. Existe porque quem pede a foto por aqui é
+  // um servidor (um painel próprio seguindo o 307 para o bucket), não uma tela.
+  // Sem esta linha o proxy devolve 401 ao Bearer antes do handler — a tela não
+  // muda (ela entra por cookie pelo `/api/v1/contacts` de cima), só a porta do
+  // token deixa de ser inalcançável.
+  //
+  // O segmento do id é FORMA DE UUID, nunca `[^/]+`: `/api/v1/contacts/` tem
+  // irmãos LITERAIS no mesmo nível (`bulk`, `duplicates`, `export`, `import`,
+  // `merge`), nenhum deles com suporte a Bearer, que um padrão largo tornaria
+  // público por engano. Âncora `$`: nenhum sub-path futuro de `/avatar` nasce
+  // público de carona.
+  /^\/api\/v1\/contacts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/avatar$/i,
   // ENVIO SERVER-TO-SERVER. Mesma dualidade de `/api/v1/contacts` acima, com
   // `mcp:write` em vez de `mcp:read`: sessão de navegador OU Bearer `dsk_…`,
   // resolvidos por `lib/api/auth-dual.ts` DENTRO de cada rota, com a org saindo

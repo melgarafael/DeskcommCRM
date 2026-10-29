@@ -81,6 +81,9 @@ vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/components/voice/DialButton", () => ({ DialButton: () => null }));
 vi.mock("@/components/inbox/VideoCallButton", () => ({ VideoCallButton: () => null }));
+vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
+  ParticipantesDaConversa: () => null,
+}));
 vi.mock("@/components/inbox/SnoozeButton", () => ({
   SnoozeButton: () => <button type="button">Lembrar</button>,
 }));

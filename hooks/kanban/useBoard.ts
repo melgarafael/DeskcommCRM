@@ -15,9 +15,12 @@ import type { BoardData } from "@/lib/kanban/types";
  * and PostgREST returns PGRST116. Routing through /api/v1/pipelines/[id]/board
  * uses the server-side cookie reader, identical to every other authed query.
  */
-async function fetchBoard(pipelineId: string): Promise<BoardData> {
+async function fetchBoard(pipelineId: string, leadPedido: string | null): Promise<BoardData> {
+  // `?lead=` faz o recorte de encerrados antigos (#2995) manter o negócio que o
+  // link pediu, para o dossiê dele abrir mesmo com a opção ligada.
+  const qs = leadPedido ? `?lead=${encodeURIComponent(leadPedido)}` : "";
   const res = await apiClient.get<{ data: BoardData }>(
-    `/api/v1/pipelines/${pipelineId}/board`,
+    `/api/v1/pipelines/${pipelineId}/board${qs}`,
   );
   // apiClient unwraps { data, meta } envelope already in some helpers;
   // ours returns the parsed JSON literally. Handle both shapes safely.
@@ -60,9 +63,29 @@ export function chaveDoQuadro(pipelineId: string | null) {
   return ["board", pipelineId] as const;
 }
 
-export function useBoard(pipelineId: string | null) {
+/**
+ * A LEITURA DO QUADRO ACONTECE SÓ QUANDO ALGUÉM OLHA O QUADRO (#3172, item 4 do
+ * CR). `enabled: false` não é cache morno nem consulta adiada: é a leitura do
+ * funil INTEIRO que não sai — nem a query, nem o canal de realtime, nem a rede
+ * de segurança que a acompanha.
+ *
+ * É o que deixa a aba Lista abrir num funil com milhares de negócios: `select
+ * *` em `crm_leads` com a visibilidade por linha avaliada em cada card é
+ * justamente a leitura que estoura o `statement_timeout` do papel
+ * `authenticated`, e a lista existe para não pagá-la.
+ *
+ * O padrão é `true` porque há dois consumidores além da página do funil
+ * (`KanbanBoard`, com este hook para o quadro embutido), e nenhum deles quer
+ * "não ler" por omissão.
+ */
+export function useBoard(
+  pipelineId: string | null,
+  leadPedido: string | null = null,
+  opcoes?: { enabled?: boolean },
+) {
   const qc = useQueryClient();
   const queryKey = chaveDoQuadro(pipelineId);
+  const ativo = !!pipelineId && (opcoes?.enabled ?? true);
 
   /**
    * Cards que acabaram de mudar POR EVENTO REMOTO — o pulso da Wave 3.
@@ -77,8 +100,13 @@ export function useBoard(pipelineId: string | null) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => fetchBoard(pipelineId as string),
-    enabled: !!pipelineId,
+    queryFn: () => fetchBoard(pipelineId as string, leadPedido),
+    enabled: ativo,
+    // Com o staleTime global de 30 s (lib/query/client.ts), um quadro fresco no
+    // cache seria entregue sem buscar, e o `?lead=` não chegaria à rota. A chave
+    // NÃO leva o lead: useMoveCard, KanbanBoard e useMotivosDePerdaDoFunil
+    // leem e escrevem a chave exata.
+    refetchOnMount: leadPedido ? "always" : true,
   });
 
   const onChange = useCallback(
@@ -144,7 +172,7 @@ export function useBoard(pipelineId: string | null) {
         }
       : undefined,
     onChange,
-    enabled: !!pipelineId,
+    enabled: ativo,
   });
 
   // Timers pendentes morrem com o componente — senão um setState chega depois
@@ -174,7 +202,7 @@ export function useBoard(pipelineId: string | null) {
       return `${leads.length}:${maior}`;
     },
     ultimaEntrega,
-    enabled: !!pipelineId,
+    enabled: ativo,
   });
 
   return { ...query, pulses, realtimeStatus, seguranca };

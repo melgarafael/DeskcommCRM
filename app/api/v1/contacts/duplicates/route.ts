@@ -10,6 +10,12 @@
  * é comparação de igualdade, e é por isso que a regra vive em TypeScript
  * testável em vez de virar SQL que ninguém relê.
  *
+ * Há um segundo motivo, que NÃO é igualdade: `nome_parecido` (Spec 31). Ele vem
+ * DEPOIS dos fortes, com o mesmo formato, e é sugestão para conferir — o nome
+ * sozinho não prova nada. Os pares que a pessoa dispensou ("não são a mesma
+ * empresa") saem da lista para todo papel, porque a leitura da dispensa usa o
+ * cliente administrador, filtrado pela organização da sessão.
+ *
  * `viewer` pode LISTAR (é leitura de contato, que ele já enxerga na tabela);
  * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
  */
@@ -20,10 +26,13 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import {
   encontrarContatosDuplicados,
+  encontrarParecidosPorNome,
   principalSugerido,
   type ContatoParaDeduplicar,
 } from "@/lib/contacts/duplicados";
+import { lerParesDispensados } from "@/lib/contacts/dispensar-par";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +62,7 @@ const TETO_DE_VARREDURA = 2000;
 const TAMANHO_DA_PAGINA = 1000;
 
 const COLUNAS_DO_CONTATO =
-  "id, name, display_name, email, email_normalized, phone_number, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
+  "id, name, display_name, address_book_name, email, email_normalized, phone_number, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -103,7 +112,28 @@ export async function GET(): Promise<Response> {
 
   const varreuTudo =
     totalDeVivos !== null ? totalDeVivos <= TETO_DE_VARREDURA : linhas.length <= TETO_DE_VARREDURA;
-  const grupos = encontrarContatosDuplicados(linhas.slice(0, TETO_DE_VARREDURA));
+  const varridos = linhas.slice(0, TETO_DE_VARREDURA);
+
+  // As dispensas são lidas com o cliente administrador, filtrado pela organização da
+  // SESSÃO (nunca do pedido): a policy de `merge_queue` só deixa gestor ler, e o par
+  // dispensado tem de sumir para todo papel que vê esta lista. Se a leitura falhar,
+  // a rota falha — mostrar a lista sem as dispensas faria um par tirado voltar calado.
+  let dispensados: Set<string>;
+  try {
+    dispensados = await lerParesDispensados(createAdminClient(), org.orgId);
+  } catch {
+    // Sem o detalhe do erro na resposta: a mensagem do banco não é para quem opera a tela.
+    return fail("internal_error", "Não foi possível ler as dispensas de duplicados.", 500, {
+      requestId,
+    });
+  }
+
+  // Os fortes vêm primeiro, com o mesmo formato. O nome vem depois, em grupos de
+  // dois: sugestão para conferir, não prova.
+  const grupos = [
+    ...encontrarContatosDuplicados(varridos),
+    ...encontrarParecidosPorNome(varridos, { dispensados }),
+  ];
 
   return ok(
     grupos.map((grupo) => ({
@@ -114,6 +144,7 @@ export async function GET(): Promise<Response> {
         id: c.id,
         name: c.name,
         display_name: c.display_name,
+        address_book_name: c.address_book_name ?? null,
         email: c.email,
         phone_number: c.phone_number,
         created_at: c.created_at,

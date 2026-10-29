@@ -144,7 +144,17 @@ function varrerDatasNoAst(): string[] {
       const fonte = ts.createSourceFile(arq, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const visita = (no: ts.Node): void => {
         if (ts.isStringLiteral(no) && no.text === "pt-BR") {
-          const pai = no.parent;
+          // Sobe pelo ramo de um ternário: `idioma === "es" ? "es" : "pt-BR"`
+          // também fixa o português para todo idioma que não seja o espanhol.
+          let pai = no.parent;
+          let filho: ts.Node = no;
+          while (
+            ts.isParenthesizedExpression(pai) ||
+            (ts.isConditionalExpression(pai) && pai.condition !== filho)
+          ) {
+            filho = pai;
+            pai = pai.parent;
+          }
           let ehData = false;
           if (ts.isNewExpression(pai) && /DateTimeFormat$/.test(pai.expression.getText(fonte))) {
             ehData = true;

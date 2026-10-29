@@ -181,6 +181,27 @@ describe("receita tabela-direta contra MySQL 8 de verdade", () => {
     expect(titulos(linhas)).not.toContain("Apartamento Campolim");
   });
 
+  it("esconder: item SEM situação (NULL) continua aparecendo", async () => {
+    // `NULL not in (...)` é NULL no SQL; sem o `is null` da receita, todo item
+    // com a coluna de esconder vazia sumia junto com os vendidos.
+    await root.query(
+      `insert into \`${banco}\`.\`wp_jet_cct_imovel\`
+        (cct_status, titulo, preco, quartos, bairro, cidade, area, situacao)
+      values (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["publish", "Sala Sem Situação", 150000, 1, "Centro", "Sorocaba", 30, null],
+    );
+    try {
+      const linhas = await consultar(FIXOS_CCT, {}, 20);
+      expect(titulos(linhas)).toContain("Sala Sem Situação");
+      expect(titulos(linhas)).not.toContain("Apartamento Campolim");
+    } finally {
+      await root.query(
+        `delete from \`${banco}\`.\`wp_jet_cct_imovel\` where titulo = ?`,
+        ["Sala Sem Situação"],
+      );
+    }
+  });
+
   it("filtro de preço máximo: preço texto é convertido e compara como número", async () => {
     const baratos = await consultar(FIXOS_CCT, { filtros: { preco: 400000 } }, 20);
     expect(titulos(baratos)).toContain("Casa Centro Sorocaba");

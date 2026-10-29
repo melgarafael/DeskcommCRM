@@ -61,4 +61,18 @@ describe("controles do canvas de follow-up seguem o tema", () => {
     // Sem o sufixo `-default`: com ele, a var da lib venceria e nada mudaria.
     expect(corpo).not.toMatch(/--xy-edge-stroke-default/);
   });
+
+  /**
+   * ZOOM COM O DEDO. A folha da lib dá 26px ao botão com uma classe só e entra
+   * DEPOIS deste arquivo na cascata (é importada pelo componente), então uma
+   * regra de uma classe aqui perderia. O seletor de duas classes vence por
+   * especificidade; a prova da caixa medida é `tests/e2e/ia-no-celular.spec.ts`.
+   */
+  it("com ponteiro grosso, o botão de zoom tem 44px e vence a folha da lib", () => {
+    const i = CSS.indexOf("@media (pointer: coarse) {\n  .react-flow .react-flow__controls-button {");
+    expect(i, "bloco de ponteiro grosso dos controles").toBeGreaterThan(-1);
+    const corpo = CSS.slice(i, CSS.indexOf("\n}", i));
+    expect(corpo).toMatch(/width:\s*44px/);
+    expect(corpo).toMatch(/height:\s*44px/);
+  });
 });

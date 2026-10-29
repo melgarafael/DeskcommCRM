@@ -101,4 +101,17 @@ export const TOOLS_FUNIL = declararTools([
     // e estouraria o teto dos outros pacotes (pacote-reserva-vaga-da-critica).
     pacotes: ["reter"],
   },
+  {
+    name: "crm_propose_lead_fields_from_document",
+    category: "write",
+    rotulo: "Propor dados de um documento para o card",
+    explicacao:
+      "Separa, de um documento que o agente leu (voucher, bilhete, apólice), os valores dos campos do card do negócio como PROPOSTAS — nada é gravado sem que uma pessoa confirme campo a campo, com o trecho do documento à vista.",
+    oQueToca: "Funil de vendas",
+    risco: "atencao",
+    // Pós-venda (o funil "Experiência do Cliente" da issue): quem atende depois
+    // da compra é o agente de retenção, não o de aquisição — em "vender" ela
+    // entraria no agente que nasce no onboarding (pacote-reserva-vaga-da-critica).
+    pacotes: ["reter"],
+  },
 ]);

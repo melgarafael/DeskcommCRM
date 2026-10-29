@@ -1,13 +1,15 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * GET/PUT /api/v1/ai/guardrail-layers — as duas verificações que custam dinheiro.
+ * GET/PUT /api/v1/ai/guardrail-layers — as verificações que são escolha da organização.
  *
- * A cadeia que confere a mensagem antes de sair tem dez verificações. Oito são
- * determinísticas, custam zero e **não são escolha de ninguém** — por isso não
- * existem aqui: uma rota que aceitasse desligá-las seria a porta para queimar o
- * número do cliente por um PUT, mesmo que a tela não oferecesse o botão.
+ * A maior parte da cadeia que confere a mensagem antes de sair é determinística,
+ * custa zero e **não é escolha de ninguém** — por isso não existe aqui: uma rota
+ * que aceitasse desligá-la seria a porta para queimar o número do cliente por um
+ * PUT, mesmo que a tela não oferecesse o botão.
  *
- * As duas que consultam um modelo custam por mensagem, e aí há escolha real.
+ * Há escolha real em `CAMADAS_CONFIGURAVEIS`: as duas que consultam um modelo e
+ * custam por mensagem, a afirmação clínica (só serve a saúde) e a restrição
+ * comercial (o negócio decide se a IA pode falar de preço).
  *
  * ═══ AUSÊNCIA DE LINHA NÃO É "DESLIGADO" ═══
  *
@@ -32,7 +34,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
-import { CAMADAS_SEMANTICAS, padraoDasCamadasNoAmbiente } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import { CAMADAS_CONFIGURAVEIS, padraoDasCamadasNoAmbiente } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -57,7 +59,7 @@ export async function GET(): Promise<Response> {
   const padrao = padraoDasCamadasNoAmbiente();
 
   return ok({
-    camadas: CAMADAS_SEMANTICAS.map((layer) => ({
+    camadas: CAMADAS_CONFIGURAVEIS.map((layer) => ({
       layer,
       /** `null` = a organização não escolheu; vale o ambiente. */
       escolha: escolhido.get(layer) ?? null,
@@ -71,7 +73,7 @@ export async function GET(): Promise<Response> {
 const corpoDoPut = z.object({
   // Só as camadas que TÊM escolha. Um valor fora da lista não é "desconhecido":
   // é alguém tentando desligar pela API o que a tela não oferece.
-  layer: z.enum(CAMADAS_SEMANTICAS),
+  layer: z.enum(CAMADAS_CONFIGURAVEIS),
   enabled: z.boolean(),
 });
 

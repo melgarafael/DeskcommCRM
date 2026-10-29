@@ -56,7 +56,14 @@ export async function rodadaDaCobranca(admin: SupabaseClient, deps: Dependencias
     logger.error("cobranca.rodada_falhou", { organization_id: org, erro: e instanceof Error ? e.message : "desconhecido" });
   };
 
-  const { data: conjunto, error } = await admin.rpc("fn_cobranca_reconciliaveis");
+  // O PostgREST pode cortar a resposta antes de ela chegar aqui (max_rows).
+  // A prioridade e o recorte precisam valer no banco, inclusive para a
+  // assinatura nunca lida que ficou depois das primeiras 1.000 linhas.
+  const { data: conjunto, error } = await admin
+    .rpc("fn_cobranca_reconciliaveis")
+    .eq("precisa_reler", true)
+    .order("relida_em", { ascending: true, nullsFirst: true })
+    .limit(LIMITE_DA_RECONCILIACAO);
   if (error) throw new Error(`cobranca: reconciliáveis ilegíveis (${error.code ?? "sem_codigo"})`);
   const fila = ((conjunto ?? []) as Reconciliavel[])
     .filter((l) => l.precisa_reler)

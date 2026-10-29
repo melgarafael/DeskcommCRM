@@ -36,6 +36,12 @@ export const createTemplateSchema = z.object({
   shortcut: z.string().trim().min(1).max(40).optional(),
   /** true = compartilhado da org (owner null, exige manager+); false = pessoal. */
   shared: z.boolean().default(false),
+  /**
+   * "Mostrar na barra do Inbox" (#3282). Ausente = LIGADO: a resposta nasce
+   * aparecendo na barra, como o produto sempre fez. A tela manda `false` só
+   * quando o operador desmarca.
+   */
+  mostrar_na_barra: z.boolean().optional(),
 });
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 
@@ -51,7 +57,27 @@ export const updateTemplateSchema = z
     body: z.string().trim().max(4096),
     shortcut: z.string().trim().min(1).max(40).nullable(),
     midias: z.array(midiaDoTemplateSchema).max(MAXIMO_DE_MIDIAS).optional(),
+    /** "Mostrar na barra do Inbox" (#3282) — o liga/desliga da tela. */
+    mostrar_na_barra: z.boolean().optional(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "Informe ao menos um campo." });
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
+
+/**
+ * A REORDENAÇÃO (#3244) — onde a resposta rápida foi solta.
+ *
+ * `depois_de` é o id do vizinho da ESQUERDA; `null` é a primeira posição. A tela
+ * manda o VIZINHO, nunca um número: quem arrasta sabe em que resposta soltou, e
+ * a posição (`ordem`) que isso vira é conta do servidor (`lib/templates/ordem.ts`)
+ * — o mesmo desenho da reordenação de etapa do funil.
+ *
+ * Não é `z.string().uuid()`: o id de uma resposta rápida é uuid, mas quem
+ * VALIDA a posse é a lista visível da organização (a régua das mídias). Um
+ * formato recusado aqui sairia como 422 "Dados inválidos" sem dizer que a
+ * resposta é de outra organização, e é essa a mensagem que interessa.
+ */
+export const moverTemplateSchema = z.object({
+  depois_de: z.string().trim().min(1).max(64).nullable(),
+});
+export type MoverTemplateInput = z.infer<typeof moverTemplateSchema>;

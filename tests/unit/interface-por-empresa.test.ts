@@ -227,3 +227,60 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
     }
   });
 });
+
+describe("as quatro portas pessoais sobrevivem à interface simplificada (issue #3295)", () => {
+  /**
+   * Perfil, Segurança, Notificações e App no celular são preferências de CADA
+   * UM — moram no `raw_user_meta_data` da própria pessoa, e o administrador não
+   * configura por ela. Escondidas pela interface simplificada, a pessoa que mais
+   * precisa delas (a vendedora com tarefas a prazo, que é `agent`) não tinha
+   * porta nenhuma até a tela: o lembrete de tarefa só existia por URL.
+   *
+   * O caso mede os hrefs, e não a lista: quem trocar o href de uma das telas
+   * tem de trocar aqui junto — a porta e a tela andam juntas ou o teste reprova.
+   */
+  const PESSOAIS = [
+    "/app/settings/profile",
+    "/app/settings/security",
+    "/app/settings/notifications",
+    "/app/settings/aplicativo",
+  ] as const;
+
+  it("no preset simplificado e como `agent`, o hub de Configurações lista as QUATRO", () => {
+    const visiveis = hrefs({ preset: "simplificada" }, "agent");
+    for (const porta of PESSOAIS) {
+      expect(visiveis, `${porta} sumiu para o agent na interface simplificada`).toContain(porta);
+    }
+  });
+
+  it("e continuam de pé mesmo contra um vínculo HOSTIL (a garantia vale para todo vínculo)", () => {
+    // Escolha mínima da empresa e do vínculo: sobra o essencial. As duas novas
+    // portas têm de estar lá como as vizinhas pessoais, senão a garantia é da
+    // lista e não do comportamento.
+    const hostil = combinarInterfaces(
+      { preset: "completa", destinos: ["/app/inbox"] },
+      { preset: "completa", destinos: ["/app/inbox"] },
+    );
+    const visiveis = hrefs(hostil, "agent");
+    for (const porta of PESSOAIS) {
+      expect(visiveis, `${porta} sumiu sob a escolha mínima`).toContain(porta);
+    }
+  });
+
+  it("ser pessoal NÃO as torna porta de administração: o papel continua decidindo por cima", () => {
+    // Controle negativo: quem não tem o papel que a porta exige continua sem
+    // vê-la. As duas novas são pessoais (`essencial` vale para todo vínculo) e
+    // por isso NÃO entram em `ESSENCIAIS_DE_ADMIN` — se entrassem, a garantia
+    // pessoal viraria porta de admin.
+    const visiveis = hrefs({ preset: "simplificada" }, "agent");
+    for (const porta of PESSOAIS) {
+      const d = NAV_CATALOG.find((item) => item.href === porta)!;
+      expect(d, `${porta} está nas pessoais e não existe no catálogo`).toBeDefined();
+      expect(essencial(d, "agent"), `${porta} deixou de valer para todo vínculo`).toBe(true);
+      expect(essencial(d, "admin"), `${porta} deixou de valer para todo vínculo`).toBe(true);
+    }
+    // as portas que EXIGEM o vínculo de administração seguem fora do alcance
+    expect(visiveis).not.toContain("/app/settings/tenant");
+    expect(visiveis).not.toContain("/app/team");
+  });
+});

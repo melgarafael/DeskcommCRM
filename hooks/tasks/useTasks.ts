@@ -30,6 +30,8 @@ export interface FiltrosDeTarefa {
   demanda_id?: string;
   /** `true` = só o que ainda pede ação (pendente ou em andamento). */
   aberto?: boolean;
+  /** De quem é: `me` (a rota resolve quem é), `ninguem` (sem responsável) ou o id de um membro. Ausente = de todos. */
+  assigned_to?: string;
 }
 
 export interface OpcoesDeTarefas {
@@ -59,6 +61,7 @@ export function useTasks(filtros: FiltrosDeTarefa = {}, opcoes: OpcoesDeTarefas 
   if (filtros.contact_id) params.set("contact_id", filtros.contact_id);
   if (filtros.demanda_id) params.set("demanda_id", filtros.demanda_id);
   if (filtros.aberto) params.set("aberto", "true");
+  if (filtros.assigned_to) params.set("assigned_to", filtros.assigned_to);
   const qs = params.toString();
 
   const query = useQuery({

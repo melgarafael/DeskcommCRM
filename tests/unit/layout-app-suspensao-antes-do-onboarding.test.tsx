@@ -21,7 +21,10 @@ vi.mock("next/navigation", () => ({
     throw new Error(`redirect:${destino}`);
   },
 }));
-vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
+// `getAll` não é enfeite: o cliente da sessão (`lib/supabase/server`) lê os
+// cookies por ele. Um dublê só com `get` derruba a casca — e o teste passaria
+// com o erro registrado como unhandled, que é ainda pior (#3088).
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined, getAll: () => [] }) }));
 vi.mock("@/lib/branding/instalacao", () => ({ marcaDaInstalacao: async () => ({}) }));
 vi.mock("@/lib/branding/organizacao", () => ({
   resolverMarcaDaOrganizacao: () => ({

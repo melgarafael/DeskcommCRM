@@ -15,7 +15,8 @@ import type { DisponibilidadeDoServico } from "@/lib/agenda/servicos/consulta";
 type Service = { id: string; name: string; service_enabled?: boolean; requires_confirmation: boolean; booking_mode?: string };
 type Receipt = { id: string; status: string; starts_at: string; ends_at: string; time_zone: string; participant_name: string | null; google_publication: string; human_confirmation: string; deduplicated?: boolean };
 const PUBLICATION: Record<string, string> = { not_configured: "Somente no CRM", pending: "Publicação pendente", synced: "Publicado no Google", failed: "Falha de publicação", conflict: "Conflito com o Google", removed: "Remoção confirmada no Google" };
-const field = "rounded-md border border-border bg-surface-elevated p-2 text-sm w-full";
+// 16px abaixo do md: o Safari do iPhone amplia a página ao focar campo menor.
+const field = "rounded-md border border-border bg-surface-elevated p-2 text-base md:text-sm w-full";
 
 /** Reserva pelo escritor normal. Não manda mensagem nem publica um agente. */
 export function ReservarServicoNaConversa({ contactId, conversationId, contactName }: { contactId: string; conversationId: string; contactName: string }) {

@@ -19,7 +19,7 @@
   "nodes": [
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
-    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Dossiê (Sheet)", "sublabel": "cabeçalho > timeline > campos" },
+    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Dossiê (Sheet)", "sublabel": "cabeçalho > contato > campos > tarefas > timeline" },
     { "id": "filtro", "lane": "humano", "col": 3, "type": "frontend", "label": "Filtro Responsável", "sublabel": "user: e agent: no mesmo eixo" },
     { "id": "chat", "lane": "humano", "col": 5, "type": "frontend", "label": "ChatThread ?msg=", "sublabel": "o destino da âncora" },
     { "id": "decisao", "lane": "humano", "col": 3, "type": "frontend", "label": "Aprovar · Editar · Ignorar", "sublabel": "a recusa é sinal" },
@@ -58,7 +58,7 @@
     { "id": "mcp-fila", "from": "pontemcp", "to": "filanegocio", "label": "organização + negócio após traduzir contato" },
     { "id": "mcp-escrita", "from": "filanegocio", "to": "leads", "label": "handlers nativos completos; updated_at ainda confere concorrência" },
     { "id": "mcp-audit", "from": "pontemcp", "to": "auditoria", "label": "mcp.tool_called: resultado e falha preservados" },
-    { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
+    { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action; frase genérica descartada preserva proposta e sequência" },
     { "id": "e2", "from": "ritual", "to": "checkpoints", "label": "grava o turno" },
     { "id": "e3", "from": "ritual", "to": "traces", "label": "registra portões e veto" },
     { "id": "e4", "from": "checkpoints", "to": "emissor", "label": "objeção NOVA (diff, não retrato)" },

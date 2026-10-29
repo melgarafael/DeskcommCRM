@@ -209,7 +209,7 @@ export function LoseLeadDialog({
               */}
               {(funilConfigurado || outroRecusado) && (
                 <p className="text-xs text-muted-foreground">
-                  {t("Para usar um motivo que não está aqui, cadastre em Configurações › Funis.")}
+                  {t("Para usar um motivo que não está aqui, cadastre em CRM › Ver tudo em CRM › Etapas do funil.")}
                 </p>
               )}
             </div>

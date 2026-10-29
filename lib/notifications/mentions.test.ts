@@ -164,6 +164,25 @@ describe("podarMencoes", () => {
     expect(podarMencoes("fala com @Ana Lima sobre o orçamento", [ana1])).toEqual([ana1]);
   });
 
+  it("o nome menor apagado não sobrevive dentro de uma escolha de nome maior", () => {
+    const soAna = { id: "id-so-ana", nome: "Ana" };
+    expect(podarMencoes("fala com @Ana Lima", [soAna, ana1])).toEqual([ana1]);
+    expect(podarMencoes("fala com @Ana Lima", [ana1, soAna])).toEqual([ana1]);
+  });
+
+  it("nomes contidos com ocorrências próprias conservam a ordem e as referências", () => {
+    const soAna = { id: "id-so-ana", nome: "Ana" };
+    const lista = [soAna, ana1];
+    expect(podarMencoes("@Ana Lima falou com @Ana", lista)).toBe(lista);
+    expect(podarMencoes("@Ana falou com @Ana Lima", lista)).toBe(lista);
+  });
+
+  it("a precedência do nome maior também vale com caixa diferente e metacaracteres", () => {
+    const menor = { id: "menor", nome: "Ana (HQ)" };
+    const maior = { id: "maior", nome: "Ana (HQ) Lima" };
+    expect(podarMencoes("@ANA (HQ) LIMA", [menor, maior])).toEqual([maior]);
+  });
+
   it("apagou o nome: a escolha sai", () => {
     expect(podarMencoes("fala com ", [ana1])).toEqual([]);
     expect(podarMencoes("", [ana1])).toEqual([]);

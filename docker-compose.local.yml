@@ -91,6 +91,35 @@ services:
 
   waha:
     image: devlikeapro/waha:latest-2026.7.2
+    # `platform` FIXADO por medição, não por hábito (#3032).
+    #
+    # O índice da tag acima publica UM arquivo só: `linux/amd64`. Medido em
+    # 2026-10-23 com `docker manifest inspect` sobre essa tag:
+    #
+    #   [{"architecture":"amd64","os":"linux"},
+    #    {"architecture":"unknown","os":"unknown"}]
+    #
+    # A tag irmã, a de arm64, é o espelho disso — só `linux/arm64`. Nenhuma das
+    # duas é multi-arch, então "trocar por uma tag multi-arch" não existe para
+    # esta versão: o que resta é declarar aqui a arquitetura que a tag publica.
+    #
+    # Sem esta linha o Compose pede o manifesto da arquitetura DO HOST, e num
+    # host arm64 (Mac Apple Silicon, VM arm64) o `up` morre em
+    #
+    #   no matching manifest for linux/arm64/v8 in the manifest list entries
+    #
+    # — a stack local não sobe. Com a arquitetura declarada a resolução vale em
+    # qualquer host: em arm64 o contêiner roda por emulação (Docker Desktop traz
+    # Rosetta/qemu; numa VM arm64, o qemu-user estático registrado no binfmt).
+    # É a mesma escolha que o `docker-compose.yml` da raiz já faz para a mesma
+    # imagem, e o teste `tests/unit/plataforma-do-canal-no-compose-local.test.ts`
+    # guarda que ela não suma.
+    #
+    # O `docker-compose.prod.yml` NÃO fixa plataforma de propósito: lá a imagem
+    # vem de interpolação e o instalador grava a variante nativa da arquitetura
+    # do host (arm64 recebe a tag publicada só para arm64) — fixar amd64 ali
+    # quebraria o host arm64, e o pedido voltaria a não casar manifesto.
+    platform: linux/amd64
     restart: unless-stopped
     ports:
       # 127.0.0.1 e não 0.0.0.0: o dashboard do WAHA está ligado logo abaixo e

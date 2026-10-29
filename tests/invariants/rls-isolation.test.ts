@@ -290,6 +290,19 @@ beforeAll(() => {
           values (v_proposta, v_org, 'RLS invariant item', 1, 1000, 1000);
         end if;
 
+        -- 0772 (#3316) — a fila de proposta de campo do card lida num documento:
+        -- o trecho e os valores sao o dado que a IA leu sobre a PESSOA, e a
+        -- linha existe so ate alguem confirmar em revisao. Os DOIS tenants
+        -- recebem uma linha real (o cross-tenant de org A lendo org B vale
+        -- porque org B tambem tem, nao porque esta vazia).
+        if not exists (select 1 from public.lead_field_proposals where organization_id = v_org) then
+          insert into public.lead_field_proposals
+            (organization_id, lead_id, campo, valor_proposto, trecho, expires_at)
+          select v_org, id, 'telefone', '"valor da proposta"'::jsonb,
+                 'RLS invariant proposta lida num documento', now() + interval '7 days'
+          from public.crm_leads where organization_id = v_org limit 1;
+        end if;
+
         if not exists (select 1 from public.org_guardrail_layers where organization_id = v_org) then
           insert into public.org_guardrail_layers (organization_id, layer, enabled)
             values (v_org, 'jailbreak', true);
@@ -598,6 +611,21 @@ beforeAll(() => {
             (v_org, v_sess, timestamptz '2030-01-01 03:00:00+00', timestamptz '2030-01-01 05:00:00+00');
         end if;
 
+        -- migration 0730 (#3025, fatia 1): a meta mensal da empresa por
+        -- indicador. A leitura e org-scoped sem gate de papel, entao o agent
+        -- semeado e controle positivo legitimo; a escrita exige manager e e
+        -- medida na action (fora desta lista, pelo mesmo eixo de
+        -- catalog_products). pipeline_id fica nulo nesta semente: e a meta
+        -- da EMPRESA, o escopo da fatia 1.
+        if not exists (select 1 from public.crm_metas where organization_id = v_org) then
+          insert into public.crm_metas
+            (organization_id, periodo, indicador, alvo, created_by)
+          values
+            (v_org, date_trunc('month', current_date)::date, 'vendas_ganhas', 20,
+             (select uo.user_id from public.user_organizations uo
+               where uo.organization_id = v_org limit 1));
+        end if;
+
         -- migration 0692 (#2041): o historico do rodizio da acao assign_owner.
         -- Semeado pelo ESCRITOR de producao (a funcao), com uma regra cuja fila
         -- e o usuario semeado (agent, elegivel). A leitura e org-scoped sem gate
@@ -615,6 +643,18 @@ beforeAll(() => {
           returning id into v_regra;
           perform public.fn_automation_rodizio_atribuir(v_org, v_regra,
             (select id from public.crm_leads where organization_id = v_org limit 1));
+        end if;
+
+        -- migration 0721 (#2869): o traco do turno do agente. Semeado pelo
+        -- harness (service_role) com a chave da PREVIA: a linha de turno real
+        -- exige job_id, e um job de verdade nao cabe numa semente que roda
+        -- duas vezes. A leitura e org-scoped sem gate de papel -- o agent
+        -- semeado e controle positivo legitimo (quem investiga o turno na tela
+        -- e a equipe) --, e a escrita e so do motor: a sessao tem so select.
+        if not exists (select 1 from public.agent_turn_traces where organization_id = v_org) then
+          insert into public.agent_turn_traces
+            (organization_id, preview_run_id, conversation_id, contact_id, is_dry_run, status, messages_sent)
+          values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
       end loop;
     end
@@ -752,6 +792,13 @@ export const TABLES = [
   // provar isso pediria um usuário abaixo de admin escrevendo. Fica declarado
   // em vez de parecer coberto.
   "external_db_connections",
+  // 0772 (#3316) — a fila de proposta de campo do card lida num documento. A
+  // leitura é org-scoped + vínculo com o negócio (a policy de select cobra a FK
+  // coerente com a org); a ESCRITA (policy `for all`) cobra
+  // fn_role_at_least('agent') e é medida em
+  // `tests/unit/capacidade-alcancavel-pelo-agente.test.ts`, não aqui. O seed
+  // acima grava uma linha real nos DOIS tenants.
+  "lead_field_proposals",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"
@@ -802,6 +849,24 @@ export const TABLES = [
   // só a função `fn_automation_rodizio_atribuir`, com service_role, grava. Esse
   // segundo eixo é medido em rodizio-da-acao-atribuir.test.ts.
   "automation_rodizio_atribuicoes",
+  // migration 0721 (#2869) — o traço do turno do agente: o que aconteceu numa
+  // execução (ferramentas chamadas, skills ativadas, custo, erro). Vazar a linha
+  // entrega ao vizinho o texto do erro e os ids das fontes de conhecimento do
+  // outro. A LEITURA é org-scoped sem gate de papel (o `agent` semeado é
+  // controle positivo legítimo: quem investiga o turno é a equipe); a ESCRITA é
+  // só do motor, e `authenticated` tem só `select` (o molde da 0692).
+  "agent_turn_traces",
+  // migration 0730 (#3025, fatia 1) — a meta mensal da empresa por indicador.
+  // Vazar a linha entrega ao vizinho o alvo que a outra empresa combinou com o
+  // time e o percentual que ela persegue: é o número pelo qual o dono cobra o
+  // próprio time. A LEITURA é org-scoped sem gate de papel (a tela de
+  // Desempenho mostra a meta da empresa a qualquer membro), então o `agent`
+  // semeado aqui é controle positivo legítimo. A ESCRITA tem um segundo eixo
+  // que este seed NÃO mede: exige `manager` (a policy `for all` chama
+  // fn_role_at_least), e provar isso pediria um usuário abaixo de manager
+  // escrevendo — mesmo eixo separado de `catalog_products` e
+  // `external_db_connections`.
+  "crm_metas",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

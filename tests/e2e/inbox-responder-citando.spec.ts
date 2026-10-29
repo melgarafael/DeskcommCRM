@@ -177,6 +177,79 @@ test.afterAll(async () => {
 });
 
 test.describe("responder citando", () => {
+  test("a barra de respostas rápidas preserva o rascunho e volta a funcionar ao apagar (#3354)", async ({
+    page,
+  }) => {
+    await login(page, creds.users.agent!.email);
+    // Precondição pela rota real: recurso pessoal, na mesma sessão que atende.
+    const titulo = `Rascunho ${SUFIXO}`;
+    const corpo = `Resposta preparada ${SUFIXO}`;
+    const criada = await page.request.post("/api/v1/message-templates", {
+      data: { title: titulo, body: corpo, mostrar_na_barra: true },
+    });
+    expect(criada.status()).toBe(201);
+    const { data: recurso } = (await criada.json()) as { data: { id: string } };
+    try {
+      await abrirConversa(page, conversas[0]!);
+      const barra = page.getByRole("toolbar", { name: "Respostas rápidas" });
+      const botao = barra.getByRole("button", { name: titulo, exact: true });
+      const campo = page.getByRole("textbox", { name: "Mensagem", exact: true });
+      await page.getByRole("button", { name: "Assumir", exact: true }).click();
+      await expect(campo).toBeEditable();
+      await expect(botao).toBeEnabled();
+      const rascunho = "Já confirmo o horário com a equipe";
+      await campo.fill(rascunho);
+      await expect(botao).toBeDisabled();
+      await expect(botao).toHaveAttribute("title", /Envie ou apague o rascunho/);
+      // Clique físico no botão desligado: dispatchEvent/force contornariam a UX.
+      const caixa = await botao.boundingBox();
+      expect(caixa).not.toBeNull();
+      await page.mouse.click(caixa!.x + caixa!.width / 2, caixa!.y + caixa!.height / 2);
+      await expect(campo).toHaveValue(rascunho);
+      fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
+      await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/rascunho-preservado.png" });
+
+      await campo.fill("");
+      await expect(botao).toBeEnabled();
+      await botao.click();
+      await expect(campo).toHaveValue(corpo);
+      // O comando em andamento continua sendo substituível, como no menu /.
+      await campo.fill("/rascunho");
+      await expect(botao).toBeEnabled();
+      await page.getByRole("listbox", { name: "Templates de script" })
+        .getByRole("button", { name: new RegExp(titulo) }).click();
+      await expect(campo).toHaveValue(corpo);
+      // O mesmo recurso passa a ter imagem real no Storage pela rota de upload.
+      const upload = await page.request.post(`/api/v1/message-templates/${recurso.id}/midias`, {
+        multipart: { file: { name: "controle.png", mimeType: "image/png", buffer: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT3sAAAAASUVORK5CYII=", "base64",
+        ) } },
+      });
+      expect(upload.status()).toBe(200);
+      await page.reload();
+      await expect(botao).toBeEnabled();
+      const quantidadeAntes = await db.from("messages").select("id", { count: "exact", head: true })
+        .eq("organization_id", orgId).eq("conversation_id", conversas[0]!);
+      expect(quantidadeAntes.error).toBeNull();
+      await botao.click();
+      const previa = page.getByRole("dialog", { name: "Enviar anexo", exact: true });
+      await expect(previa).toBeVisible();
+      await expect(previa.getByRole("img").first()).toBeVisible();
+      await expect.poll(() => previa.getByRole("img").first().evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      await expect(previa.getByRole("textbox", { name: "Legenda", exact: true })).toHaveValue(corpo);
+      const quantidadeDepois = await db.from("messages").select("id", { count: "exact", head: true })
+        .eq("organization_id", orgId).eq("conversation_id", conversas[0]!);
+      expect(quantidadeDepois.error).toBeNull();
+      expect(quantidadeDepois.count).toBe(quantidadeAntes.count);
+      await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/resposta-com-imagem-sem-enviar.png" });
+      await previa.getByRole("button", { name: "Cancelar", exact: true }).click();
+      await expect(previa).not.toBeVisible();
+    } finally {
+      const removida = await page.request.delete(`/api/v1/message-templates/${recurso.id}`);
+      expect(removida.ok(), "limpeza da resposta rápida do próprio caso").toBe(true);
+    }
+  });
+
   test("o botão de responder revela a faixa, e o × a desfaz", async ({ page }) => {
     await login(page, creds.users.agent!.email);
     await abrirConversa(page, conversas[0]!);
@@ -226,4 +299,59 @@ test.describe("responder citando", () => {
       "a citação sobreviveu à troca de conversa",
     ).toHaveCount(0);
   });
+});
+
+
+test("Só os seus: abrir livre assume e tentativas seguintes não repetem efeitos", async ({ page }) => {
+  const anterior = await db.from("organizations").select("settings").eq("id", orgId).single();
+  expect(anterior.error).toBeNull();
+  expect((await db.from("organizations").update({ settings: { ...anterior.data!.settings, visibility_mode: "own" } }).eq("id", orgId)).error).toBeNull();
+  const nome = `Claim próprio ${SUFIXO}`;
+  const contato = await insere("contacts", { organization_id: orgId, name: nome, display_name: nome, phone_number: `+55119${randomInt(10_000_000, 100_000_000)}` });
+  contatos.push(contato);
+  let leadId: string | undefined;
+  try {
+    // Card do próprio atendente: own conserva sua autoridade; não deve tomar card alheio.
+    const etapa = await db.from("crm_stages").select("id,pipeline_id").eq("organization_id", orgId).order("position").limit(1).single();
+    expect(etapa.error).toBeNull();
+    leadId = await insere("crm_leads", { organization_id: orgId, pipeline_id: etapa.data!.pipeline_id, stage_id: etapa.data!.id,
+      title: nome, contact_id: contato, position_in_stage: 0.5, source: "manual", owner_kind: "user", owner_user_id: creds.users.agent!.id });
+    await login(page, creds.users.agent!.email);
+    const entrada = { contact_id: contato, channel_session_id: canal };
+    const abertura = await page.request.post("/api/v1/conversations/open-with-contact", { data: entrada });
+    expect(abertura.status()).toBe(200);
+    const id = ((await abertura.json()) as { data: { conversation_id: string } }).data.conversation_id;
+    conversas.push(id);
+    const contagens = async () => {
+      const consultas = await Promise.all([
+        db.from("conversation_assignment_events").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("conversation_id", id).eq("reason", "claim"),
+        db.from("api_audit_log").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("resource_id", id).eq("action", "conversation.claimed"),
+        db.from("event_log").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("entity_id", id).eq("event_type", "conversation.claimed"),
+        db.from("crm_lead_activities").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("source_id", id).eq("type", "conversation_claimed"),
+      ]);
+      for (const q of consultas) expect(q.error).toBeNull();
+      return consultas.map((q) => q.count);
+    };
+    await expect.poll(contagens).toEqual([1, 1, 1, 1]);
+    const disputas = await Promise.all([
+      page.request.post(`/api/v1/conversations/${id}/claim`, { data: {} }),
+      page.request.post(`/api/v1/conversations/${id}/claim`, { data: {} }),
+    ]);
+    expect(disputas.map((r) => r.status())).toEqual([409, 409]);
+    expect((await page.request.post("/api/v1/conversations/open-with-contact", { data: entrada })).status()).toBe(200);
+    expect(await contagens()).toEqual([1, 1, 1, 1]);
+    const dono = await db.from("conversations").select("assigned_to_user_id").eq("organization_id", orgId).eq("id", id).single();
+    expect(dono.error).toBeNull();
+    expect(dono.data!.assigned_to_user_id).toBe(creds.users.agent!.id);
+    const card = await db.from("crm_leads").select("owner_user_id").eq("organization_id", orgId).eq("id", leadId).single();
+    expect(card.error).toBeNull();
+    expect(card.data!.owner_user_id).toBe(creds.users.agent!.id);
+    await page.goto(`/app/inbox?id=${id}`);
+    await expect(page.getByRole("textbox", { name: "Mensagem", exact: true })).toBeEditable();
+    fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
+    await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/conversa-propria-aberta.png" });
+  } finally {
+    expect((await db.from("organizations").update({ settings: anterior.data!.settings }).eq("id", orgId)).error).toBeNull();
+    if (leadId) expect((await db.from("crm_leads").delete().eq("organization_id", orgId).eq("id", leadId)).error).toBeNull();
+  }
 });

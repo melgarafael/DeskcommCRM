@@ -12,6 +12,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // A chave é exportada pelo módulo real e usada pela tela e pela mutação de
+  // ordem (#3244): sem ela aqui, o import da tela quebra antes de renderizar.
+  CHAVE_DOS_TEMPLATES: ["message-templates"],
+  useMoverTemplate: () => ({ mutate: vi.fn(), isPending: false }),
   useMessageTemplates: () => ({
     data: [
       { id: "1", title: "Meu Pessoal", body: "Oi {{primeiro_nome}}", shortcut: "oi", owner_user_id: "u1" },

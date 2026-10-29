@@ -9,6 +9,7 @@ import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
 import { loginSchema, type LoginInput } from "@/lib/auth/schemas";
 import { audit, hashEmail } from "@/lib/audit";
+import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel";
 import {
   authRateLimited,
   contaBloqueadaPorFalhas,
@@ -91,14 +92,16 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
   // complete the challenge in /login/mfa before reaching the app.
   const { data: factorsData } = await supabase.auth.mfa.listFactors();
   const verifiedTotp = factorsData?.totp?.find((f) => f.status === "verified");
-  if (verifiedTotp) {
+  const confiavel =
+    !!verifiedTotp && !!data.session && (await reconhecerDispositivoConfiavel(data.user.id, verifiedTotp.id, data.session.access_token));
+  if (verifiedTotp && !confiavel) {
     return { ok: false, error: "mfa_required", challengeId: verifiedTotp.id };
   }
 
   await audit({
     action: "auth.login_success",
     actorUserId: data.user.id,
-    metadata: {},
+    metadata: confiavel ? { mfa: "dispositivo_confiavel" } : {},
     requestId,
     ip,
     userAgent,

@@ -35,7 +35,7 @@ describe("o bloco de origem chega ao ritual de abertura", () => {
   });
 
   it("buildOpeningMessage repassa a origem ao ritual", () => {
-    const t = buildOpeningMessage(null, null, contexto, "sem notas", false, [], "", undefined, ORIGEM);
+    const t = buildOpeningMessage(null, null, contexto, "sem notas", false, [], "", undefined, undefined, ORIGEM);
     expect(t).toContain(TITULO);
   });
 });

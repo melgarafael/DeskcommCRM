@@ -64,8 +64,8 @@ function extensionOf(p: string): string {
 }
 
 /**
- * Lê só as 4 chaves conhecidas do frontmatter (name, description, matcher.any_keywords,
- * matcher.probe_keywords) — parser dedicado, não YAML genérico. Aceita a forma exata do
+ * Lê só as chaves conhecidas do frontmatter (name, description, matcher.any_keywords,
+ * matcher.probe_keywords, matcher.any_tags) — parser dedicado, não YAML genérico. Aceita a forma exata do
  * frontmatter de skill: `chave: valor` na raiz, `matcher:` seguido de `  any_keywords: [a, b]`
  * indentado por baixo.
  */
@@ -98,8 +98,10 @@ function parseFrontmatter(raw: string): { name?: string; description?: string; m
         const subTrimmed = sub.trim();
         const m = /^any_keywords:\s*(.*)$/.exec(subTrimmed);
         const p = /^probe_keywords:\s*(.*)$/.exec(subTrimmed);
+        const t = /^any_tags:\s*(.*)$/.exec(subTrimmed);
         if (m) matcher.any_keywords = parseInlineArray(m[1] ?? '');
         else if (p) matcher.probe_keywords = parseInlineArray(p[1] ?? '');
+        else if (t) matcher.any_tags = parseInlineArray(t[1] ?? '');
         j += 1;
       }
       i = j - 1;

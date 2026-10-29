@@ -28,6 +28,15 @@ import { join } from "node:path";
 
 import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import { NAV_GROUPS } from "@/lib/navigation/catalogo";
+import { NAV_DESTINATIONS } from "@/lib/navigation/registry";
+
+// O caminho é o do menu, não um nome solto: "Configurações › Funis" mandava
+// para um lugar que o menu não tem. Lido do catálogo para não envelhecer.
+const crm = NAV_GROUPS.find((g) => g.id === "crm")!;
+const etapas = NAV_DESTINATIONS.find((d) => d.href === "/app/settings/tenant/pipelines")!;
+const ONDE_CADASTRAR = `cadastre em ${crm.label} › ${crm.hub!.label} › ${etapas.label}.`;
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
@@ -162,13 +171,13 @@ describe("motivos de perda configurados no funil", () => {
     // motivo já cadastrado, e sem esta frase não diz onde se cadastra um novo.
     abrir(comFunil({ lost_reasons: ["Sem orçamento"] }));
     fireEvent.click(radio("other"));
-    expect(screen.getByText(/cadastre em Configurações/)).toBeTruthy();
+    expect(screen.getByText(ONDE_CADASTRAR, { exact: false })).toBeTruthy();
   });
 
   it("sem funil configurado a frase NÃO aparece antes de digitar — nada a corrigir ainda", () => {
     abrir(comFunil({}));
     fireEvent.click(radio("other"));
-    expect(screen.queryByText(/cadastre em Configurações/)).toBeNull();
+    expect(screen.queryByText(ONDE_CADASTRAR, { exact: false })).toBeNull();
   });
 
   it("BUG REPRODUZIDO (crm.fabrasoftware.com.br): sem funil configurado, texto livre em 'Outro' é recusado ANTES do clique, não 500 depois", () => {
@@ -188,7 +197,7 @@ describe("motivos de perda configurados no funil", () => {
     expect(screen.getByRole("alert").textContent).toBe(
       "Esse motivo de perda não está na lista deste funil — escolha um dos motivos configurados.",
     );
-    expect(screen.getByText(/cadastre em Configurações/)).toBeTruthy();
+    expect(screen.getByText(ONDE_CADASTRAR, { exact: false })).toBeTruthy();
   });
 
   it("sem funil configurado, o padrão do produto e o 'other' vazio continuam valendo", async () => {

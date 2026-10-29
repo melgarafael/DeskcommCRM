@@ -30,6 +30,8 @@ const { membros } = vi.hoisted(() => ({
     // que é o que sai no token (e para onde a notificação vai).
     { user_id: "ana-lima-0001", role: "agent", full_name: "Ana Lima" },
     { user_id: "ana-lima-0002", role: "agent", full_name: "Ana Lima" },
+    { user_id: "so-ana-0003", role: "agent", full_name: "Ana" },
+    { user_id: "outra-ana-0004", role: "agent", full_name: "Ana" },
   ],
 }));
 
@@ -131,6 +133,24 @@ describe("menção apagada não notifica a pessoa errada", () => {
 
     expect(enviado.body).toBe("fala com @[Ana Lima](mencao:ana-lima-0001) sobre o orçamento");
     expect(enviado.body).not.toContain("ana-lima-0002");
+  });
+
+  it("apagar Ana e depois escolhê-la de novo não deixa a escolha antiga roubar o nome contido em Ana Lima", async () => {
+    abrirModoNota();
+    await digitar("fala com @an");
+    const lista = await screen.findByRole("listbox", { name: /atendentes para mencionar/i });
+    fireEvent.click(within(lista).getAllByRole("option", { name: /^Ana$/i })[0]!);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await digitar("fala com @Ana e @an");
+    await escolherNaLista(0);
+    await digitar("fala com @Ana Lima");
+    await digitar("fala com @Ana Lima e @an");
+    const outraLista = await screen.findByRole("listbox", { name: /atendentes para mencionar/i });
+    fireEvent.click(within(outraLista).getAllByRole("option", { name: /^Ana$/i })[1]!);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const enviado = await enviarNota();
+    expect(enviado.body).toBe("fala com @[Ana Lima](mencao:ana-lima-0001) e @[Ana](mencao:outra-ana-0004)");
+    expect(enviado.body).not.toContain("mencao:so-ana-0003");
   });
 
   it("duas menções legítimas no texto: dois tokens, um de cada Ana (a poda não derruba escolha viva)", async () => {

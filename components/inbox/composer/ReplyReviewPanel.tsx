@@ -1,22 +1,15 @@
 "use client";
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
-import { motivoDoVeto, sugestaoParaMostrar } from "@/lib/agent-engine/agent/sugestao-de-resposta";
-type Draft = {
-  id: string;
-  revision: string;
-  status: string;
-  original_body: string | null;
-  edited_body: string | null;
-  error_code: string | null;
-  proposals: Array<{ tool: string; arguments: unknown }>;
-};
+import { chaveDosRascunhos, useRascunhoAssistido } from "@/hooks/inbox/useRascunhoAssistido";
+import { motivoDoVeto } from "@/lib/agent-engine/agent/sugestao-de-resposta";
 export function ReplyReviewPanel({
   conversationId,
   disabled,
@@ -26,27 +19,18 @@ export function ReplyReviewPanel({
 }) {
   const t = useT(),
     qc = useQueryClient(),
-    key = ["reply-drafts", conversationId];
-  const query = useQuery({
-    queryKey: key,
-    queryFn: () =>
-      apiClient.get<{ data: { drafts: Draft[] } }>(
-        `/api/v1/conversations/${conversationId}/draft-reply`,
-      ),
-    refetchInterval: 4000,
-    retry: false,
-  });
+    key = chaveDosRascunhos(conversationId);
+  // A MESMA consulta que o `Composer` usa para decidir se este bloco existe
+  // (issue #3027): uma chave, um cache, dois leitores. Antes dele montar o bloco
+  // só quando há sugestão, `drafts[0]` era escolhido aqui — o critério não mudou,
+  // mudou só quem pergunta.
+  const { sugestao: draft } = useRascunhoAssistido(conversationId);
   const [edits, setEdits] = useState<Record<string, string>>({}),
     [feedback, setFeedback] = useState(""),
     [busy, setBusy] = useState(false),
-    [notice, setNotice] = useState<{
-      draftId: string;
-      message: string;
-      kind: "success" | "error";
-    } | null>(null);
-  // Antes: `drafts[0]`, o mais recente, QUALQUER que fosse o estado dele — então
-  // uma sugestão rejeitada ficava na tela para sempre, sem botão de fechar.
-  const draft = sugestaoParaMostrar(query.data?.data.drafts);
+    // Só o ERRO mora aqui: a confirmação virou toast (ver `decide`), porque o
+    // bloco inteiro sai da tela quando a sugestão é decidida.
+    [notice, setNotice] = useState<{ draftId: string; message: string } | null>(null);
   const body = draft ? (edits[draft.id] ?? draft.edited_body ?? draft.original_body ?? "") : "";
   // A causa do veto, em linguagem de quem opera (issue #2975): sem código
   // conhecido, a frase genérica de sempre continua sendo a verdade.
@@ -74,20 +58,23 @@ export function ReplyReviewPanel({
         body,
         feedback,
       });
-      setNotice({
-        draftId: draft.id,
-        kind: "success",
-        message:
-          action === "approve"
-            ? t("Resposta aprovada. Acompanhe o envio aqui.")
-            : t("Sugestão rejeitada. O feedback será usado na próxima sugestão."),
-      });
+      // A CONFIRMAÇÃO VAI PARA O TOAST (issue #3027).
+      //
+      // Ela nasceu inline, dentro deste bloco, porque quem rejeita costuma pedir
+      // outra sugestão em seguida e a tela esvaziava em silêncio. Só que agora o
+      // bloco INTEIRO sai quando a sugestão é enviada ou descartada — o aviso
+      // inline morreria junto com ele, e o silêncio voltaria. Toast sobrevive à
+      // saída do bloco, e é onde as outras confirmações da tela já moram.
+      toast.success(
+        action === "approve"
+          ? t("Resposta aprovada. Acompanhe o envio aqui.")
+          : t("Sugestão rejeitada. O feedback será usado na próxima sugestão."),
+      );
       await qc.invalidateQueries({ queryKey: key });
     } catch (e) {
       showApiError(e);
       setNotice({
         draftId: draft.id,
-        kind: "error",
         message: t(
           "Sua edição foi preservada. Confira se a conversa mudou antes de aprovar novamente.",
         ),
@@ -193,21 +180,19 @@ export function ReplyReviewPanel({
         </>
       )}
       {/*
-        A confirmação da rejeição ("o feedback será usado na próxima sugestão")
-        estava amarrada a `draft` existir. Agora a rejeitada some da tela — que é
-        o conserto —, e sem esta mudança a confirmação sumiria junto com ela: a
-        pessoa clicaria em Rejeitar e a tela apenas esvaziaria, sem dizer nada.
-        Quando ainda há sugestão, o aviso continua amarrado a ela.
+        O aviso de ERRO continua inline, amarrado ao rascunho que ele explica:
+        "sua edição foi preservada" só faz sentido ao lado do texto preservado —
+        como toast, ele chegaria depois, sem o bloco à vista para conferir.
+
+        A confirmação de sucesso NÃO passa por aqui: ela é toast (ver `decide`),
+        porque quando a sugestão sai da tela (enviada ou descartada) este bloco
+        sai junto, e o aviso inline sairia com ele.
       */}
-      {notice &&
-        (!draft ||
-          (notice.draftId === draft.id &&
-            (notice.kind === "error" ||
-              ["approved", "sending", "sent", "dismissed"].includes(draft.status)))) && (
-          <p role="status" className="text-xs">
-            {notice.message}
-          </p>
-        )}
+      {draft && notice && notice.draftId === draft.id && (
+        <p role="status" className="text-xs">
+          {notice.message}
+        </p>
+      )}
     </section>
   );
 }

@@ -260,6 +260,44 @@ else
   c_grn "✓ preflight — as quatro imagens da $TARGET_TAG estão prontas no registro."
 fi
 
+# ── 1.6 A volta fica de prontidão (#2757) ──────────────────────────────────
+# Daqui para baixo a atualização VAI mexer no que está no ar. Esta marca é o
+# que autoriza o agente do host a voltar sozinho, sem ninguém do outro lado,
+# se o app não responder mais depois disto — é o caso em que o painel de
+# atualização está justamente dentro do app que parou, e nenhum botão salva.
+#
+# Nasce SÓ aqui: antes do preflight nada foi tocado (o `refuse` devolve RC 3 e
+# a versão atual segue no ar), e uma marca sem atualização de verdade seria
+# rollback disparado sobre uma queda qualquer. E só com a versão que ESTAVA no
+# ar — instalação fora de release não tem tag para onde voltar, e aí
+# `vigia_armar` fica calada em vez de prometer uma volta impossível.
+#
+# Quem DESARMA é o agente, quando vê o app respondendo (ou quando a janela de
+# validade fecha) — não este script: ele termina com o app saudável, mas é a
+# vigência de alguns minutos depois que prova que a versão nova continuou de
+# pé sob os primeiros requests e sob o primeiro cron novo.
+#
+# EXCETO quando esta execução É a volta: andar pra trás não arma. Sem isto a
+# própria volta gravaria uma marca nova (o `vigia_encerrar` do agente corre
+# ANTES de chamar este script), e o agente — vendo o app ainda fora do ar,
+# porque a queda não era da versão — voltaria de novo daqui a dois ciclos,
+# para a release que acabou de ser largada. As duas trocas se alternariam a
+# cada ~10 min, com backup e migration de cada vez, até a janela de duas
+# horas fechar: o laço que a issue apontou como risco principal. Uma ida,
+# uma vigília — quem está saindo não vigia.
+VOLTA_NO_TEMPO=""
+if [ -z "$MESMA_TAG" ]; then
+  # O MESMO critério da recusa lá em cima (e do agente): alvo contido no que
+  # roda aqui = versão anterior. `2` (não consegui ter certeza) não é volta
+  # comprovada, e aí armar continua sendo o lado seguro.
+  is_already_in_head "$TARGET_TAG" && VOLTA_NO_TEMPO=1 || VOLTA_NO_TEMPO=""
+fi
+if [ -n "$VOLTA_NO_TEMPO" ]; then
+  c_ylw "Volta para a $TARGET_TAG — a vigência pós-atualização não re-arma: quem está voltando não vigia."
+else
+  vigia_armar "$CURRENT_TAG"
+fi
+
 # ── 2. Backup de segurança ANTES de tocar no banco ───────────────────────────
 if [ -z "$SKIP_BACKUP" ]; then
   step "Backup de segurança (antes de mexer no banco)"
