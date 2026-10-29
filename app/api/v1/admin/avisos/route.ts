@@ -9,17 +9,12 @@ import { enviarPushDaOrg } from "@/lib/notifications/web_push";
 
 const esquema = z
   .object({
-    titulo: z.string().trim().min(1).optional(),
-    title: z.string().trim().min(1).optional(),
-    corpo: z.string().optional(),
-    body: z.string().optional(),
+    titulo: z.string().trim().min(1),
+    corpo: z.string(),
     publicar_em: z.string().datetime({ offset: true }).optional().nullable(),
-    publica_em: z.string().datetime({ offset: true }).optional().nullable(),
-    publish_at: z.string().datetime({ offset: true }).optional().nullable(),
     expira_em: z.string().datetime({ offset: true }).optional().nullable(),
-    expires_at: z.string().datetime({ offset: true }).optional().nullable(),
   })
-  .passthrough();
+  .strict();
 
 function normalizarData(valor: string | null | undefined): string | null {
   if (!valor) return null;
@@ -40,18 +35,14 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const titulo = corpo.data.titulo ?? corpo.data.title;
-  const texto = corpo.data.corpo ?? corpo.data.body ?? "";
-  if (!titulo || !texto.trim()) {
+  const titulo = corpo.data.titulo;
+  const texto = corpo.data.corpo;
+  if (!texto.trim()) {
     return fail("validation_error", "Título e corpo são obrigatórios.", 400, { requestId });
   }
 
-  const publicarEm = normalizarData(
-    corpo.data.publicar_em ?? corpo.data.publica_em ?? corpo.data.publish_at ?? null,
-  );
-  const expiraEm = normalizarData(
-    corpo.data.expira_em ?? corpo.data.expires_at ?? null,
-  );
+  const publicarEm = normalizarData(corpo.data.publicar_em ?? null);
+  const expiraEm = normalizarData(corpo.data.expira_em ?? null);
 
   const admin = createAdminClient();
   const { data: aviso, error } = await admin
