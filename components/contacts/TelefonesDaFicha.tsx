@@ -339,7 +339,13 @@ export function TelefonesDaFicha({
               )}
               {podeEditar && temExtra && (
                 <>
-                  <Button type="button" size="sm" variant="outline" disabled>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled
+                    title={t("Torne outro número principal antes de remover este.")}
+                  >
                     {t("Remover")}
                   </Button>
                   <p className="w-full text-xs text-muted-foreground">

@@ -144,7 +144,7 @@ async function emitirTelefoneAdicionado(ctx: TelefoneCtx, numero: string): Promi
 async function auditar(
   ctx: TelefoneCtx,
   action: AuditAction,
-  resourceId: string,
+  contatoId: string,
   metadata: Record<string, unknown>,
 ): Promise<void> {
   await audit({
@@ -152,7 +152,7 @@ async function auditar(
     actorUserId: ctx.actorUserId,
     organizationId: ctx.organizationId,
     resourceType: "contact",
-    resourceId,
+    resourceId: contatoId,
     requestId: ctx.requestId,
     metadata,
   });
