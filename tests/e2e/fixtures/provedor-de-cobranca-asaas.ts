@@ -63,6 +63,7 @@ export interface CobrancaAsaas {
   status: "PENDING" | "OVERDUE" | "CONFIRMED" | "RECEIVED";
   dueDate: string;
   billingType: "UNDEFINED" | "PIX" | "CREDIT_CARD";
+  callback?: { successUrl: string; autoRedirect: boolean };
   paymentDate: string | null;
   confirmedDate: string | null;
   deleted: boolean;
@@ -201,6 +202,7 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
   });
   const objCobranca = (c: CobrancaAsaas) => ({
     object: "payment", id: c.id, dateCreated: c.dateCreated, customer: c.customer, subscription: c.subscription, value: c.value,
+    callback: c.callback,
     netValue: c.value, billingType: c.billingType, status: c.status, dueDate: c.dueDate, originalDueDate: c.dueDate,
     paymentDate: c.paymentDate, clientPaymentDate: c.paymentDate, confirmedDate: c.confirmedDate, invoiceUrl: urlDaFatura(c), deleted: c.deleted,
   });
@@ -383,6 +385,22 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
         for (const x of removidas) await enviar("PAYMENT_DELETED", objCobranca(x));
         return json(res, 200, { deleted: true, id: a.id });
       }
+    }
+    const pagamentoUnico = /^\/v3\/payments\/([^/]+)$/.exec(p);
+    if (metodo === "PUT" && pagamentoUnico) {
+      const pagamento = cobrancas.get(pagamentoUnico[1] ?? "");
+      if (!pagamento || pagamento.deleted) return erro(res, 404, "not_found", "Cobrança não encontrada.");
+      const callback = c.callback;
+      if (callback === null || typeof callback !== "object" || Array.isArray(callback))
+        return erro(res, 400, "invalid_object", "callback inválido");
+      const { successUrl, autoRedirect } = callback as Record<string, unknown>;
+      if (typeof successUrl !== "string" || !URL.canParse(successUrl) || typeof autoRedirect !== "boolean")
+        return erro(res, 400, "invalid_object", "callback inválido");
+      const retorno = new URL(successUrl);
+      if (!["http:", "https:"].includes(retorno.protocol) || retorno.username || retorno.password || retorno.hash)
+        return erro(res, 400, "invalid_object", "callback inválido");
+      pagamento.callback = { successUrl, autoRedirect };
+      return json(res, 200, objCobranca(pagamento));
     }
     if (metodo === "GET" && p === "/v3/payments") {
       const dados = [...cobrancas.values()]

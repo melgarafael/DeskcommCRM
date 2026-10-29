@@ -97,6 +97,10 @@ export function decidirRegua(
     return decisao(cobraAinda ? { tipo: "cancelar_no_provedor" } : NADA);
   }
 
+  // A suspensão inicial restringe acesso enquanto o primeiro pagamento não chega.
+  // Não é uma dívida vencida nem deve gerar lembretes de inadimplência.
+  if (a.entradaPendente && a.estado !== "ativa") return decisao(NADA);
+
   // Teste grátis sem provedor que acabou: vira dívida desde o fim do teste. Com
   // provedor, quem traduz é `sincronizar` (a Stripe pode estar no teste dela).
   if (estado === "trial" && !a.temProvedor && (a.trialAte === null || a.trialAte.getTime() <= t)) {

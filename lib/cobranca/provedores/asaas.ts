@@ -480,12 +480,18 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
   /**
    * Releitura antes de criar (sem chave de idempotência): uma assinatura ACTIVE
    * do cliente é a de um POST anterior que processou e perdeu a resposta.
-   * `urlDeVolta` e `chaveIdempotencia` não se aplicam: a fatura do Asaas não
-   * expira nem devolve o cliente — a volta é o "Já paguei", que relê.
+   * A fatura não expira. O callback só navega à ponte própria; a confirmação
+   * continua sendo a releitura autenticada, nunca a chegada à URL.
    */
   async function iniciarAssinatura(
     p: Parameters<AdaptadorDeCobranca["iniciarAssinatura"]>[0],
   ): ReturnType<AdaptadorDeCobranca["iniciarAssinatura"]> {
+    if (!URL.canParse(p.urlDeVolta)) throw new ErroDoProvedor(null, "retorno_invalido", false);
+    const retorno = new URL(p.urlDeVolta);
+    if ((retorno.protocol !== "https:" && !(dep.baseUrl !== undefined && baseDeLoopback(p.urlDeVolta))) || retorno.username || retorno.password || retorno.hash)
+      throw new ErroDoProvedor(null, "retorno_invalido", false);
+    retorno.searchParams.set("voltou", "1");
+    const callback = { successUrl: retorno.toString(), autoRedirect: true };
     const orgId = uuidDaOrg(p.orgId);
     const caminho = `/subscriptions?customer=${encodeURIComponent(p.clienteRef)}&status=ACTIVE&limit=10`;
     const ativas = ler(listaDoAsaas(comId), await chamar("GET", caminho)).data.filter((s) => s.deleted !== true);
@@ -502,6 +508,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
           value: p.plano.precoCents / 100,
           cycle: CICLO_DO_INTERVALO[p.plano.intervalo],
           nextDueDate: fimDoTeste !== null && fimDoTeste > hoje ? fimDoTeste : hoje,
+          callback,
           description: p.plano.nome,
           externalReference: orgId,
         }),
@@ -510,6 +517,9 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     if (primeira === undefined) throw new ErroDoProvedor(null, "cobranca_ainda_nao_gerada", true);
     const url = linkSeguro(primeira.invoiceUrl);
     if (url === null) throw new ErroDoProvedor(200, "resposta_invalida", false);
+    // Também cobre a primeira fatura de uma assinatura recuperada após retry.
+    // PUT idempotente altera só navegação; não cria cobrança nem marca pagamento.
+    await chamar("PUT", `/payments/${encodeURIComponent(primeira.id)}`, { callback });
     // A cobrança é a "sessão" do Asaas: é a id que a troca de plano expira no
     // provedor (#2609) — guardada junto com o link em `checkout_sessao_id`.
     return { url, expiraEm: null, assinaturaRef, sessaoId: primeira.id };

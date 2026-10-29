@@ -109,6 +109,20 @@ describe("dialeto Asaas do dublê × adaptador Asaas", () => {
     const [primeira] = duble.asaas.cobrancasDe(cliente);
     expect(primeira).toMatchObject({ status: "PENDING", dueDate: hojeEmSaoPaulo(), value: 49.9 });
     expect(inicio.url).toBe(`${duble.base}/i/${primeira?.id}`);
+    expect(primeira?.callback).toEqual({ successUrl: VOLTA, autoRedirect: true });
+    const callbackAntes = { ...primeira?.callback };
+    const chamadasAntes = duble.asaas.chamadas.length;
+    const rejeitada = await fetch(`${duble.base}/v3/payments/${primeira?.id}`, {
+      method: "PUT",
+      headers: { access_token: estado.chave, "User-Agent": "ContratoDuble/1", "Content-Type": "application/json" },
+      body: JSON.stringify({ callback: { successUrl: VOLTA, autoRedirect: "true" } }),
+    });
+    expect(rejeitada.status).toBe(400);
+    expect(primeira?.callback).toEqual(callbackAntes);
+    expect(duble.asaas.cobrancasDe(cliente)).toHaveLength(1);
+    expect(duble.asaas.assinaturasDe(cliente)).toHaveLength(1);
+    expect(duble.asaas.chamadas.slice(chamadasAntes)).toHaveLength(1);
+
     // Medido no sandbox (smoke): na criação nasce UMA cobrança só; a seguinte vem depois de pago.
     expect(duble.asaas.cobrancasDe(cliente).filter((c) => c.status === "PENDING")).toHaveLength(1);
 

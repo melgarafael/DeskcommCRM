@@ -21,6 +21,7 @@ import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
 import { textoDoAviso, type TextoDoAviso } from "@/lib/cobranca/avisos";
 import { toleranciaDias } from "@/lib/cobranca/configuracao";
+import { primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
 import { enviarAvisoAosAdmins } from "@/lib/cobranca/emails";
 import { aplicarLeitura } from "@/lib/cobranca/estado";
 import { SEM_TROCA } from "@/lib/cobranca/prorata";
@@ -382,7 +383,7 @@ export async function aplicarRegua(
       ultimoAviso: linha.ultimo_aviso,
       ultimoAvisoEm: emData(linha.ultimo_aviso_em),
       relidaEm: emData(linha.relida_em),
-      entradaPendente: linha.pagamento_inicial_pendente === true,
+      entradaPendente: primeiroPagamentoPendente(linha),
     },
     { status: org.status, suspendedKind: org.suspended_kind },
     agora,

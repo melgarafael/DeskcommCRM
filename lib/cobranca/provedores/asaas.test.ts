@@ -41,6 +41,7 @@ type Chamada = { rota: string; url: URL; headers: Headers; corpo: unknown };
 
 /** Rota = "MÉTODO /caminho" sem `/v3` e sem query. Lista = fila (a última se repete). Rota não declarada → 404. */
 function asaasFalso(rotas: Record<string, Responder>) {
+  rotas = { "PUT /payments/pay_1": { corpo: {} }, "PUT /payments/pay_v": { corpo: {} }, ...rotas };
   const filas = new Map<string, Responder>(Object.entries(rotas).map(([k, v]) => [k, Array.isArray(v) ? [...v] : v]));
   const chamadas: Chamada[] = [];
   const fetchFalso: typeof fetch = async (entrada, init) => {
@@ -639,10 +640,34 @@ describe("iniciarAssinatura", () => {
     expect(await adaptador.iniciarAssinatura(PEDIDO)).toEqual({
       url: "https://sandbox.asaas.com/i/pay_1", expiraEm: null, assinaturaRef: "sub_novo", sessaoId: "pay_1",
     });
+    expect(chamadas.find((c) => c.rota === "PUT /payments/pay_1")?.corpo).toEqual({
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
+    });
     expect(chamadas.find((c) => c.rota === "POST /subscriptions")?.corpo).toEqual({
       customer: CLIENTE, billingType: "UNDEFINED", value: 49.9, cycle: "MONTHLY", nextDueDate: "2026-10-05",
       description: "Essencial", externalReference: ORG,
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
     });
+  });
+
+  it.each([
+    "nao-e-url", "http://crm.example.com/volta", "javascript:alert(1)",
+    "https://usuario:senha@crm.example.com/volta", "https://crm.example.com/volta#fragmento",
+  ])("recusa retorno inseguro antes de chamar o provedor: %s", async (urlDeVolta) => {
+    const { adaptador, chamadas } = criando();
+    await expect(adaptador.iniciarAssinatura({ ...PEDIDO, urlDeVolta })).rejects.toMatchObject({ codigo: "retorno_invalido" });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it("falha ao atualizar callback mantém a assinatura existente e não cria outra", async () => {
+    const { adaptador, chamadas } = montar({
+      "GET /subscriptions": rotaDeAssinaturas([assinatura({ id: "sub_viva" })]),
+      "GET /payments": rotaDePagamentos([cobranca({ id: "pay_v", subscription: "sub_viva" })]),
+      "PUT /payments/pay_v": { status: 503 },
+    });
+    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 503, transitorio: true });
+    expect(chamadas.filter((c) => c.rota.startsWith("POST "))).toHaveLength(0);
+    expect(chamadas.filter((c) => c.rota === "PUT /payments/pay_v").length).toBeGreaterThan(0);
   });
 
   it("⭐ cria cobrança avulsa proporcional no mesmo cliente e recupera o pagamento por referência idempotente", async () => {
@@ -706,6 +731,9 @@ describe("iniciarAssinatura", () => {
     expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_viva", url: "https://sandbox.asaas.com/i/pay_v" });
     expect(chamadas.some((c) => c.rota === "POST /subscriptions")).toBe(false);
     expect(chamadas[0]?.url.searchParams.get("status")).toBe("ACTIVE");
+    expect(chamadas.find((c) => c.rota === "PUT /payments/pay_v")?.corpo).toEqual({
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
+    });
   });
 
   it("cobrança ainda não gerada: transitório (o 2º clique reaproveita a assinatura)", async () => {
@@ -726,11 +754,11 @@ describe("iniciarAssinatura", () => {
     await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ codigo: "resposta_invalida" });
   });
 
-  it("a volta e a chave de idempotência não vão ao Asaas (a fatura não devolve o cliente)", async () => {
+  it("a volta segue no callback, mas a chave de idempotência não é enviada ao Asaas", async () => {
     const { adaptador, chamadas } = criando();
     await adaptador.iniciarAssinatura(PEDIDO);
     const tudo = JSON.stringify(chamadas.map((c) => [c.url.toString(), c.corpo]));
-    expect(tudo).not.toContain("cobranca/volta");
+    expect(tudo).toContain("cobranca/volta");
     expect(tudo).not.toContain("idem-1");
   });
 });

@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   taxaOk: true,
   audit: vi.fn(),
   logError: vi.fn(),
+  logWarn: vi.fn(),
+  intencao: vi.fn(),
   banco: undefined as unknown as BancoFalso,
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.papel }));
@@ -19,11 +21,12 @@ vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligada 
 vi.mock("@/lib/cobranca/configuracao", () => ({ provedorDaInstalacao: async () => h.provedor }));
 vi.mock("@/lib/cobranca/provedores", () => ({ adaptador: () => h.ad, modoDoProvedor: async () => "teste" }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
-vi.mock("@/lib/logger", () => ({ logger: { error: h.logError, warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
+vi.mock("@/lib/logger", () => ({ logger: { error: h.logError, warn: h.logWarn, info: vi.fn(), debug: vi.fn() } }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: async () => ({ allowed: h.taxaOk }) }));
 vi.mock("@/lib/cobranca/emails", () => ({ emailDoAdminDaEmpresa: h.emailDoAdmin }));
+vi.mock("@/lib/cobranca/contratacao", () => ({ lerIntencaoDeContratacao: h.intencao }));
 
 import { ErroDoProvedor } from "@/lib/cobranca/provedores/contrato";
 
@@ -62,6 +65,7 @@ const lerAssinatura = () => h.banco.cadeias.filter((c) => c.tabela === "cobranca
 beforeEach(() => {
   vi.clearAllMocks();
   h.ligada = true;
+  h.intencao.mockResolvedValue(null);
   h.provedor = "stripe";
   h.taxaOk = true;
   m = { linha: { ...EM_TESTE }, reservaOk: true };
@@ -73,6 +77,38 @@ beforeEach(() => {
 });
 
 describe("checkout da assinatura", () => {
+  it("continuação automática revalida intenção e usa recibo estável da mesma pessoa/org", async () => {
+    h.intencao.mockResolvedValue({ id: CHAVE, planoId: "plano-a" });
+    expect((await assinar({ continuar_cadastro: true, volta: "contratacao" })).status).toBe(200);
+    expect(h.intencao).toHaveBeenCalledWith(h.banco.cliente, "admin-1", ORG);
+    expect(h.ad.iniciarAssinatura).toHaveBeenCalledWith(expect.objectContaining({ chaveIdempotencia: CHAVE, urlDeVolta: expect.stringMatching(/para=contratacao$/) }));
+  });
+  it("sem prova de intenção não reserva nem chama gateway automaticamente", async () => {
+    expect((await assinar({ continuar_cadastro: true })).status).toBe(409);
+    expect(updates()).toEqual([]);
+    expect(h.ad.iniciarAssinatura).not.toHaveBeenCalled();
+  });
+  it("plano diferente do compromisso autenticado recusa antes da reserva e do provedor", async () => {
+    h.intencao.mockResolvedValue({ id: CHAVE, planoId: "plano-escolhido" });
+    expect((await codigo(await assinar({ continuar_cadastro: true }))).code).toBe("state_conflict");
+    expect(updates()).toEqual([]);
+    expect(h.ad.garantirCliente).not.toHaveBeenCalled();
+    expect(h.ad.iniciarAssinatura).not.toHaveBeenCalled();
+  });
+  it("a reserva exige o mesmo plano lido; concorrência perdedora não chega ao gateway", async () => {
+    h.intencao.mockResolvedValue({ id: CHAVE, planoId: "plano-a" });
+    m.reservaOk = false;
+    expect((await codigo(await assinar({ continuar_cadastro: true }))).code).toBe("checkout_em_preparo");
+    const reserva = lerAssinatura().find((c) => operacao(c) === "update" && filtros(c).some((f) => f[0] === "or"));
+    expect(reserva).toBeDefined();
+    expect(filtros(reserva!)).toContainEqual(["eq", "plano_id", "plano-a"]);
+    expect(h.ad.iniciarAssinatura).not.toHaveBeenCalled();
+  });
+  it("intenção ilegível é erro recuperável e não executa cobrança", async () => {
+    h.intencao.mockRejectedValue(new Error("rede"));
+    expect((await assinar({ continuar_cadastro: true })).status).toBe(503);
+    expect(updates()).toEqual([]);
+  });
   it("chave desligada: 404; empresa isenta: 404; nenhum provedor conectado: 409 com frase para leigo", async () => {
     h.ligada = false;
     expect((await assinar()).status).toBe(404);
@@ -153,6 +189,30 @@ describe("checkout da assinatura", () => {
     h.ad.garantirCliente.mockRejectedValue(new ErroDoProvedor(400, "parameter_invalid", false));
     expect((await assinar()).status).toBe(502);
   });
+
+  it("correlaciona a recusa com HTTP e código sem despejar corpo ou segredo", async () => {
+    const erro = new ErroDoProvedor(400, "invalid_callback", false);
+    Object.assign(erro, { response: { description: "segredo-fixture", url: "https://fixture.invalid/?token=segredo-fixture" } });
+    h.ad.iniciarAssinatura.mockRejectedValue(erro);
+    const res = await assinar();
+    expect(res.status).toBe(502);
+    expect(h.logWarn).toHaveBeenCalledWith("cobranca: checkout recusado pelo provedor", {
+      requestId: expect.any(String), organizationId: ORG, provedor: "stripe",
+      status: 400, codigo: "invalid_callback", transitorio: false,
+    });
+    expect(JSON.stringify(h.logWarn.mock.calls)).not.toContain("segredo-fixture");
+    expect(JSON.stringify(await res.json())).not.toContain("invalid_callback");
+    expect(updates().at(-1)).toEqual({ checkout_expira_em: null });
+  });
+
+  it.each(["https://fixture.invalid/?token=segredo-fixture", "$aact_hmlg_fixture", "99991111140", "fixture@example.invalid"])(
+    "não registra código do provedor com formato de dado sensível: %s", async (codigoInseguro) => {
+      h.ad.iniciarAssinatura.mockRejectedValue(new ErroDoProvedor(400, codigoInseguro, false));
+      expect((await assinar()).status).toBe(502);
+      expect(h.logWarn).toHaveBeenCalledWith("cobranca: checkout recusado pelo provedor", expect.objectContaining({ codigo: "codigo_nao_publicavel" }));
+      expect(JSON.stringify(h.logWarn.mock.calls)).not.toContain(codigoInseguro);
+    },
+  );
 
   it("reserva perdida para outro clique entre a leitura e a escrita: 409 checkout_em_preparo", async () => {
     m.reservaOk = false;
