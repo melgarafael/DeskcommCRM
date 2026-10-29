@@ -14943,6 +14943,10 @@ export const DICIONARIO: Traducoes = {
   "Pagante, passageiro…": { es: "Pagador, pasajero…" },
   "Participante adicionado.": { es: "Participante agregado." },
   "Participante removido.": { es: "Participante eliminado." },
+  // ─── fatia 1b da #3669: adicionar pessoa por telefone ───
+  "+ telefone": { es: "+ teléfono" },
+  "Telefone inválido.": { es: "Teléfono inválido." },
+  "Este número já está relacionado.": { es: "Este número ya está relacionado." },
   "Este contato já é o contato principal do negócio.": {
     es: "Este contacto ya es el contacto principal del negocio.",
   },

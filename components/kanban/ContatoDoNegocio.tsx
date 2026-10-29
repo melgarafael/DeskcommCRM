@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useContactList } from "@/hooks/contacts/useContactList";
+import { useCreateContact } from "@/hooks/contacts/useCreateContact";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useT } from "@/hooks/i18n/useT";
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
@@ -31,6 +32,7 @@ import {
   type TipoDeLink,
 } from "@/lib/leads/links-de-contato";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { canonicalPhoneBR, normalizePhoneBR } from "@/lib/channels/phone-variants";
 import type { Contact } from "@/lib/types/contacts";
 
 interface Props {
@@ -174,6 +176,7 @@ function PessoasRelacionadas({ leadId }: { leadId: string | null }) {
         </ul>
       )}
       <AdicionarParticipante leadId={leadId} />
+      <AdicionarTelefone leadId={leadId} pessoas={pessoas} />
     </div>
   );
 }
@@ -328,6 +331,113 @@ function FormularioDeParticipante({ leadId, onFechar }: { leadId: string; onFech
         {t("Cancelar")}
       </Button>
     </div>
+  );
+}
+
+function AdicionarTelefone({
+  leadId,
+  pessoas,
+}: {
+  leadId: string;
+  pessoas: ContatoRelacionado[];
+}) {
+  const t = useT();
+  const [aberto, setAberto] = useState(false);
+  const [numero, setNumero] = useState("");
+  const create = useCreateContact();
+  const adicionar = useAdicionarParticipante(leadId);
+  const termo = numero.trim();
+  const { data, isLoading } = useContactList({ search: termo || undefined, limit: 5 });
+  const contatos = data?.pages?.[0]?.data ?? [];
+  const pendente = create.isPending || adicionar.isPending;
+
+  async function incluir() {
+    const canonico = normalizePhoneBR(numero);
+    if (!canonico) {
+      toast.error(t("Telefone inválido."));
+      return;
+    }
+    const existente = contatos.find(
+      (c) => c.phone_number && canonicalPhoneBR(c.phone_number) === canonico,
+    );
+    if (existente && pessoas.some((p) => p.contact_id === existente.id)) {
+      toast.error(t("Este número já está relacionado."));
+      return;
+    }
+    try {
+      let contactId = existente?.id;
+      if (!contactId) {
+        const resposta = await create.mutateAsync({
+          phone_number: canonico,
+          source: "manual",
+        });
+        contactId = resposta?.data?.contact?.id;
+      }
+      if (!contactId) return;
+      await adicionar.mutateAsync({ contact_id: contactId, papel: null });
+      toast.success(t("Participante adicionado."));
+      setNumero("");
+      setAberto(false);
+    } catch {
+      // os hooks já mostram o erro da API
+    }
+  }
+
+  if (aberto) {
+    return (
+      <form
+        className="space-y-2 rounded-md border border-border p-2"
+        data-testid="formulario-de-telefone"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void incluir();
+        }}
+      >
+        <div className="space-y-1">
+          <Label htmlFor="telefone" className="text-xs">
+            {t("Telefone")}
+          </Label>
+          <Input
+            id="telefone"
+            data-testid="telefone"
+            value={numero}
+            placeholder={t("Telefone")}
+            onChange={(e) => setNumero(e.target.value)}
+          />
+        </div>
+        {isLoading && <p className="text-[11px] text-text-muted">{t("Carregando…")}</p>}
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={pendente}>
+            {t("Adicionar")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[11px] text-text-muted"
+            onClick={() => {
+              setAberto(false);
+              setNumero("");
+            }}
+          >
+            {t("Cancelar")}
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="h-7 px-2 text-xs text-text-muted hover:text-text"
+      data-testid="adicionar-telefone"
+      onClick={() => setAberto(true)}
+    >
+      {t("+ telefone")}
+    </Button>
   );
 }
 
