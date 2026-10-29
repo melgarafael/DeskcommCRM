@@ -1,0 +1,445 @@
+{
+  "id": "aviso-no-whatsapp",
+  "titulo": "Aviso no WhatsApp",
+  "tela": "/app/ai/cases/avisos",
+  "resumo": "Toda vez que a IA trava e abre um caso para a equipe, um celular de plantão recebe na hora uma mensagem de WhatsApp com o resumo e o link do caso.",
+  "licoes": [
+    {
+      "id": "aviso-conhecendo-a-tela",
+      "titulo": "Conhecendo o Aviso no WhatsApp",
+      "objetivo": "Entender para que serve o aviso, ler os alertas do alto da tela e saber o que cada campo da configuração decide.",
+      "papel": "admin",
+      "busca": [
+        "aviso no whatsapp",
+        "aviso de caso",
+        "receber aviso no celular",
+        "plantão",
+        "avisar a equipe quando a ia travar",
+        "número que recebe os avisos",
+        "aviso de teste"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Aviso no WhatsApp não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" está o cartão \"Aviso no WhatsApp\". O caminho completo é: Agente de IA › Ver tudo em IA › Aviso no WhatsApp.",
+          "dica": "Só quem administra a empresa vê este cartão, porque a tela escolhe um número da clínica e manda dados de cliente para um celular. Para os outros papéis, o endereço da tela leva à página \"403 — Sem permissão\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em IA",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Aviso no WhatsApp",
+                "regex": true
+              },
+              "rotulo": "Abrir o Aviso no WhatsApp",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Aviso no WhatsApp",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "rota": "/app/ai/cases/avisos",
+          "texto": "Quando a IA não consegue resolver um pedido, ela abre um caso para a equipe decidir (é o que a tela Casos mostra). Esta tela faz esse caso chegar no WhatsApp de alguém da equipe na mesma hora, com o resumo e o link para abrir o caso. Assim ninguém precisa ficar de olho no sistema para saber que um cliente está esperando. Aqui a clínica já configurou o aviso para o celular do plantão da recepção.",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Número que recebe os avisos"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Aviso no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Aviso no WhatsApp",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos"
+              },
+              "rotulo": "Para onde vai",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os quadros do alto",
+          "texto": "Antes do formulário, a tela avisa quando o aviso não vai funcionar como você espera. Um quadro com borda vermelha impede o aviso de sair até ser resolvido; os outros são alertas. Aqui aparece \"Nenhum assistente está autorizado a abrir casos\": enquanto nenhum agente puder abrir caso, nenhum aviso sai, e o link \"Ir para os assistentes\" leva aonde isso se liga. E \"Este é o mesmo número que fala com seus clientes\": funciona, mas os avisos contam no mesmo limite diário de mensagens desse número. No alto pode aparecer também \"Este sistema ainda não tem um endereço na internet\": o aviso leva um link para o caso, e sem o endereço do sistema (o domínio) esse link não abriria nada. Instalações feitas pelo guia já têm domínio; esta foto é de um sistema de testes, sem ele.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "alerta-casos_desligados"
+              },
+              "rotulo": "Nenhum caso pode ser aberto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ir para os assistentes",
+                "exato": true
+              },
+              "rotulo": "Resolver",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "alerta-conexao_atende_clientes"
+              },
+              "rotulo": "Mesmo número dos clientes",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Quem envia e quem recebe",
+          "texto": "Em \"Conexão que envia os avisos\" você escolhe qual número de WhatsApp da clínica manda a mensagem. Só aparecem os números que conseguem mandar mensagem a qualquer hora. Em \"Número que recebe os avisos\" vai o celular da pessoa da equipe, começando por +55 e o DDD. \"Como chamar esse número\" é opcional: é só um apelido para a equipe reconhecer o número.",
+          "dica": "O número que recebe passa a ser só da equipe: o que ele mandar para a clínica deixa de virar atendimento. Se você digitar o celular de um cliente, a tela pergunta antes de salvar.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Conexão que envia os avisos"
+              },
+              "rotulo": "Quem envia",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos"
+              },
+              "rotulo": "Quem recebe",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "rotulo": "Como chamar esse número (opcional)"
+              },
+              "rotulo": "Apelido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Ligar, salvar e testar",
+          "texto": "A chave \"Receber avisos no WhatsApp\" liga e desliga o envio. O aviso sai na hora, inclusive de noite e no fim de semana, porque quem recebe é a equipe, não um cliente. Nada muda até você clicar em \"Salvar\". Depois de salvo, \"Enviar aviso de teste\" manda uma mensagem de verdade para o número, para você conferir se chegou. Essa mensagem conta no limite diário do número que envia.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Liga e desliga",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar aviso de teste",
+                "exato": true
+              },
+              "rotulo": "Testar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "aviso-conferindo-as-entregas",
+      "titulo": "Conferindo se os avisos chegaram",
+      "objetivo": "Ler a lista dos últimos avisos, entender por que um aviso não saiu e saber se o aviso está ajudando a equipe.",
+      "papel": "admin",
+      "busca": [
+        "últimos avisos enviados",
+        "aviso não saiu",
+        "aviso não chegou",
+        "tentando enviar",
+        "histórico de avisos",
+        "o aviso está funcionando"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista dos últimos avisos",
+          "rota": "/app/ai/cases/avisos",
+          "texto": "Mais abaixo fica \"Últimos avisos enviados\". Cada linha é um aviso que o sistema tentou mandar, do mais novo para o mais antigo: o dia e a hora, a situação, o número que recebeu (só com os 4 últimos dígitos, para proteger o celular de quem está de plantão) e o link \"Abrir o atendimento\", que abre o caso na tela Casos. Esta lista não some quando alguém resolve um alerta: ela é o registro do que saiu.",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "lista-de-entregas"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "lista-de-entregas"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Últimos avisos enviados",
+                "exato": true
+              },
+              "rotulo": "Últimos avisos",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "lista-de-entregas"
+              },
+              "rotulo": "Um aviso por linha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Entregue, tentando ou não saiu",
+          "texto": "\"Entregue\" quer dizer que a mensagem saiu. \"Tentando enviar\" quer dizer que o sistema ainda está insistindo: se a conexão estiver fora do ar, ele tenta de novo por até 24 horas. \"Não saiu\" quer dizer que ele desistiu, e uma frase logo abaixo explica o motivo.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "entrega-situacao-enviado",
+                "n": 0
+              },
+              "rotulo": "Entregue",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "entrega-situacao-pendente"
+              },
+              "rotulo": "Ainda tentando",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "entrega-situacao-falhou"
+              },
+              "rotulo": "Não saiu",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Por que não saiu",
+          "texto": "Aqui um aviso não saiu porque \"A conexão de WhatsApp escolhida para os avisos está fora do ar.\". O caso não se perde por isso: ele continua esperando na tela Casos, e a falha também aparece na Central de alertas. Clique em \"Abrir o atendimento\" nessa linha para responder o caso direto por lá.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "A conexão de WhatsApp escolhida para os avisos está fora do ar.",
+                "exato": true
+              },
+              "rotulo": "O motivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir o atendimento",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has([data-testid='entrega-situacao-falhou'])"
+                }
+              },
+              "rotulo": "Abrir o caso",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Abrir o atendimento",
+            "exato": true,
+            "dentro": {
+              "css": "li:has([data-testid='entrega-situacao-falhou'])"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O aviso está ajudando?",
+          "texto": "No fim do quadro, a tela compara os casos dos últimos 30 dias: quanto tempo a equipe leva para agir quando o aviso chegou e quando não chegou. É assim que você sabe se o aviso está adiantando o atendimento. Enquanto não houver casos suficientes para comparar, aparece \"Ainda não há casos suficientes nos últimos 30 dias para comparar.\", e a comparação aparece sozinha depois.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "laco-do-aviso"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "laco-do-aviso"
+              },
+              "rotulo": "Com aviso × sem aviso",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aviso-responder-e-remover",
+      "titulo": "Responder pelo WhatsApp e remover o destinatário",
+      "objetivo": "Saber quando ligar a resposta de casos pelo WhatsApp e a diferença entre desligar o aviso e remover o destinatário.",
+      "papel": "admin",
+      "busca": [
+        "responder caso pelo whatsapp",
+        "responder perguntar",
+        "remover destinatário",
+        "parar de receber avisos",
+        "desligar aviso de caso",
+        "trocar o número do plantão"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Responder casos pelo WhatsApp",
+          "rota": "/app/ai/cases/avisos",
+          "texto": "Com a chave \"Responder casos por este WhatsApp\" ligada, quem está de plantão responde o caso sem abrir o sistema: basta responder o aviso com RESPONDER, o código do caso e a orientação para a IA, ou com PERGUNTAR, o código do caso e a pergunta que a IA deve fazer ao cliente. Desligada, que é o padrão, tudo o que esse número mandar é ignorado. Para valer, clique em \"Salvar\".",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Responder casos por este WhatsApp",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Responder casos por este WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Responder pelo WhatsApp",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Desligar não é remover",
+          "texto": "Para parar os avisos por um tempo, desligue a chave \"Receber avisos no WhatsApp\" e salve: o número continua guardado e continua sendo só da equipe. \"Remover destinatário\", no fim do quadro, é outra coisa: apaga a configuração, e o número volta a ser um número comum.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover destinatário",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover destinatário",
+                "exato": true
+              },
+              "rotulo": "Remover destinatário",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Remover destinatário",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A tela pergunta antes",
+          "texto": "Antes de remover, a tela pergunta \"Remover o destinatário dos avisos?\" e explica o que acontece: a configuração é apagada, o que esse número mandar volta a virar atendimento na Inbox, e também param de sair os avisos da Agenda que usam o mesmo número e as automações com a ação \"Mensagem para a equipe\". O histórico de entregas continua na tela. \"Remover destinatário\" confirma; \"Manter\" desiste.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover destinatário",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "confirmar-remocao"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "confirmar-remocao"
+              },
+              "rotulo": "A pergunta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Manter",
+                "exato": true
+              },
+              "rotulo": "Desistir",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Manter",
+            "exato": true
+          }
+        }
+      ]
+    }
+  ]
+}

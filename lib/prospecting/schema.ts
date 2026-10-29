@@ -128,6 +128,10 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
   // campanha AGORA, em vez de esperar o tick. Fechada a token: quem dispara
   // gasta rede e é uma pessoa revisando a fila.
   z.object({ action: z.literal("verificar_sites"), id: z.string().uuid() }).strict(),
+  // "Completar fichas" (spec 26 §3.3): acrescenta à ficha dos contatos JÁ EXISTENTES
+  // da campanha o link que falta (o que a pessoa digitou fica). Fechada a token:
+  // escreve no CRM, e quem decide é uma pessoa com sessão.
+  z.object({ action: z.literal("completar_fichas"), id: z.string().uuid() }).strict(),
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;

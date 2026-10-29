@@ -633,6 +633,11 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  * qualquer lixo é desligado aqui E lá. Se os dois idiomas divergissem, a tela
  * mostraria o selo de uma regra que o trigger não aplica.
  *
+ * `cliente_pela_venda` e `pos_venda_dias` (#3644): quem já COMPROU volta pelo
+ * funil de clientes, e não pelo de captação — e, dentro da janela de pós-venda,
+ * a conversa não vira card nenhum. As duas nascem desligadas; a régua de leitura
+ * é a mesma da chave acima.
+ *
  * `internal_contact_tags` (#2353): a lista de etiquetas que marcam um contato
  * INTERNO (equipe, sócio, família, fornecedor). Contato com uma delas não vira
  * card e não recebe atendimento da IA — ver `lib/contacts/tags-internas.ts`.
@@ -664,8 +669,40 @@ export const crmSettingsSchema = z
      * o bloco que as regras de contato já usam.
      */
     telefone_de_ficha_vazia: z.boolean().catch(false),
+    /**
+     * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
+     * aberto) volta pelo funil de clientes, e não pelo de captação.
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização, e a régua é a mesma das outras
+     * duas chaves: só o booleano `true` liga. Desligada, o roteamento é
+     * exatamente o de antes desta chave existir (`first_service_at` com a regra
+     * da agenda ligada) — é o que permite entregar a regra sem tocar em quem não
+     * a pediu.
+     *
+     * Mora no `crm` porque é uma regra de CONTATO, como as vizinhas — nenhuma
+     * coluna nem tabela nova, como o mantenedor decidiu no #2593.
+     */
+    cliente_pela_venda: z.boolean().catch(false),
+    /**
+     * `pos_venda_dias` (#3644): a janela em que a conversa de quem acabou de
+     * comprar NÃO abre negócio nenhum. `0` (o padrão) desliga a janela: o card
+     * nasce sempre, como hoje.
+     *
+     * Teto de 365 porque o que isto cobre é pós-venda imediato ("chegou
+     * certinho?"), não o relacionamento inteiro com o cliente — e um número
+     * fora da faixa é configuração torta, não intenção: cai em `0` (o
+     * comportamento de sempre) em vez de segurar conversa por um ano por causa
+     * de um dígito a mais.
+     */
+    pos_venda_dias: z.number().int().min(0).max(365).catch(0),
   })
-  .catch({ cliente_pela_agenda: false, internal_contact_tags: [], telefone_de_ficha_vazia: false });
+  .catch({
+    cliente_pela_agenda: false,
+    internal_contact_tags: [],
+    telefone_de_ficha_vazia: false,
+    cliente_pela_venda: false,
+    pos_venda_dias: 0,
+  });
 
 /**
  * `organizations.settings.notificacoes.conteudo_na_tela_bloqueada` — o que o
@@ -738,6 +775,45 @@ export function telefoneDeFichaVaziaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).telefone_de_ficha_vazia === true;
+}
+
+/**
+ * As regras de CONTATO do bloco `settings.crm`, lidas de UMA vez (#3644).
+ *
+ * ⚠️ EXISTE PORQUE AGORA SÃO TRÊS CHAVES NO MESMO OBJETO. O nascimento do lead
+ * decide o funil por duas delas (`cliente_pela_agenda` e `cliente_pela_venda`)
+ * e a janela de pós-venda pela terceira: lendo chave por chave, seriam três
+ * `select settings` na MESMA linha de `organizations` — no caminho quente da
+ * ingestão, por mensagem recebida. Uma leitura só, três respostas.
+ *
+ * A régua é a das vizinhas: só o booleano `true` liga, `pos_venda_dias` fora de
+ * 0–365 (ou torto) cai em `0`. Nunca lança.
+ */
+export interface RegrasDeCliente {
+  /** `first_service_at` preenchido passa a contar como cliente (migration 0262). */
+  pelaAgenda: boolean;
+  /** Negócio ganho sem nada aberto conta como cliente (#3644). */
+  pelaVenda: boolean;
+  /** Janela, em dias, em que a conversa de quem acabou de comprar não abre card. */
+  posVendaDias: number;
+}
+
+export function regrasDeCliente(settings: unknown): RegrasDeCliente {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  const lido = crmSettingsSchema.parse(crm ?? {});
+  return {
+    pelaAgenda: lido.cliente_pela_agenda === true,
+    pelaVenda: lido.cliente_pela_venda === true,
+    posVendaDias: lido.pos_venda_dias,
+  };
+}
+
+/** A regra "cliente pela venda" está ligada nesta organização? Nunca lança. */
+export function clientePelaVendaLigado(settings: unknown): boolean {
+  return regrasDeCliente(settings).pelaVenda;
 }
 
 /**

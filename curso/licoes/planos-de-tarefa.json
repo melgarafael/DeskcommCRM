@@ -1,0 +1,906 @@
+{
+  "id": "planos-de-tarefa",
+  "titulo": "Planos de tarefa",
+  "tela": "/app/tasks/planos",
+  "resumo": "Sequências de tarefas que se repetem, montadas uma vez só: uma automação aplica o plano a cada negócio e ninguém esquece o próximo passo.",
+  "licoes": [
+    {
+      "id": "planos-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Planos de tarefa",
+      "objetivo": "Achar a tela, entender o que é um plano de tarefa e o que cada cartão mostra.",
+      "papel": "admin",
+      "busca": [
+        "planos de tarefa",
+        "sequência de tarefas",
+        "modelo de tarefas",
+        "tarefas que se repetem",
+        "roteiro de acompanhamento",
+        "passos depois da avaliação",
+        "checklist do negócio"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Planos de tarefa não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Planos de tarefa\". O caminho completo é: CRM › Ver tudo em CRM › Planos de tarefa.",
+          "dica": "Se o cartão não aparecer, a interface da empresa ou a sua foi enxugada: com o \"Perfil de interface\" \"Simplificada\", ele some. Quem administra muda isso em Configurações › Organização (para a empresa toda) ou em Equipe (só para uma pessoa).",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Planos de tarefa",
+                "regex": true
+              },
+              "rotulo": "Abrir os planos",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Planos de tarefa",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve um plano",
+          "rota": "/app/tasks/planos",
+          "texto": "Muitos atendimentos pedem sempre os mesmos passos. Na clínica, depois da avaliação de fisioterapia, alguém liga no dia seguinte, manda os horários livres e, dias depois, pergunta se o paciente quer fechar o pacote. Um plano de tarefa guarda essa sequência uma vez só. Quando o plano é aplicado a um negócio do funil, cada passo vira uma tarefa na tela \"Tarefas\", com prazo e responsável.",
+          "dica": "Esta tela só monta os planos. Quem aplica um plano a um negócio é uma automação, com a ação \"Aplicar um plano de tarefas ao negócio\". Isso está na última lição.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "header:has(> div > h1)"
+              },
+              "rotulo": "O que a tela faz",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo plano",
+                "exato": true
+              },
+              "rotulo": "Montar um plano",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que cada cartão mostra",
+          "texto": "Cada plano salvo vira um cartão: o nome em cima, a descrição logo abaixo e os passos numerados, na ordem em que as tarefas serão criadas. \"Vence em (dias)\" é o prazo de cada tarefa, contado a partir do momento em que o plano é aplicado: 1 quer dizer um dia depois, no mesmo horário; 0 quer dizer na mesma hora.",
+          "dica": "Os códigos entre chaves, como {{contact.name}}, são trocados pelo nome do paciente quando a tarefa é criada. O cartão não mostra a prioridade nem a pessoa de cada passo: para ver, clique em \"Editar\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Pós-avaliação de fisioterapia",
+                "exato": true
+              },
+              "rotulo": "Nome do plano",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia')) ol"
+              },
+              "rotulo": "Os passos, em ordem",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Editar e Excluir",
+          "texto": "Cada cartão tem dois botões. \"Editar\" abre o plano no formulário, para mudar o que for preciso. \"Excluir\" apaga o plano. Os dois aparecem na lição \"Editar e excluir um plano\".",
+          "dica": "Qualquer pessoa da equipe abre esta tela e vê os planos, mas só gerente ou administrador consegue salvar ou excluir. Para os outros, os botões aparecem, mas a gravação é recusada com o aviso \"Permissão insuficiente\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia'))"
+                }
+              },
+              "rotulo": "Mudar o plano",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia'))"
+                }
+              },
+              "rotulo": "Apagar o plano",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planos-criar-um-plano",
+      "titulo": "Criar um plano",
+      "objetivo": "Montar um plano novo, passo a passo, e salvá-lo para as automações usarem.",
+      "papel": "admin",
+      "busca": [
+        "criar plano de tarefa",
+        "novo plano",
+        "montar sequência de tarefas",
+        "adicionar passo",
+        "prazo da tarefa em dias",
+        "responsável pela tarefa",
+        "nome do paciente na tarefa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o formulário",
+          "rota": "/app/tasks/planos",
+          "texto": "Clique em \"Novo plano\", no alto, à direita. O formulário abre logo abaixo do título da tela, em cima da lista de planos.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo plano",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Novo plano",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome e descrição",
+          "texto": "Em \"Nome do plano\", escreva um nome que a equipe reconheça: é ele que aparece na lista de planos das automações. A \"Descrição (opcional)\" conta quando usar o plano. O contador embaixo mostra quantos dos 300 caracteres você já usou.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Novo plano",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Nome do plano"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome do plano"
+              },
+              "valor": "Retorno da nutrição"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Descrição (opcional)"
+              },
+              "valor": "Para quem terminou o plano alimentar e precisa marcar o retorno."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome do plano"
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Descrição (opcional)"
+              },
+              "rotulo": "Quando usar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O primeiro passo",
+          "texto": "Cada passo vira uma tarefa. Em \"Título\", escreva o que precisa ser feito. Dá para usar dois códigos, que o sistema troca na hora de criar a tarefa: {{contact.name}} vira o nome do contato (o paciente) e {{lead.title}} vira o nome do negócio. Assim a tarefa já nasce dizendo com quem falar.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#passo-titulo-0"
+              },
+              "valor": "Ligar para {{contact.name}} e marcar o retorno"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#passo-titulo-0"
+              },
+              "rotulo": "O que fazer",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Prazo, prioridade e responsável",
+          "texto": "\"Vence em (dias)\" diz quantos dias depois da aplicação a tarefa vence; aqui, 25. \"Prioridade\" vai de Baixa a Urgente e começa em Média; escolhemos Alta. Em \"Atribuir a\", \"Dono do negócio\" entrega a tarefa a quem for o responsável pelo negócio quando o plano for aplicado. Também dá para escolher uma pessoa fixa da equipe.",
+          "dica": "Se um passo usa \"Dono do negócio\" e o negócio está sem responsável, o plano inteiro não é aplicado e nenhuma tarefa é criada. Quem só tem permissão de leitura não aparece na lista de pessoas.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#passo-prazo-0"
+              },
+              "valor": "25"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Média')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Alta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Dono do negócio')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#passo-prazo-0"
+              },
+              "rotulo": "25 dias",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Alta')"
+              },
+              "rotulo": "Prioridade",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Dono ou uma pessoa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Dono do negócio",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Mais um passo",
+          "texto": "Clique em \"Adicionar passo\" para pôr outra tarefa na sequência. Aqui, o passo 2 é conferir se o paciente confirmou o retorno, três dias depois do passo 1, e ele vai sempre para a Ana Ribeiro, da recepção. Um plano pode ter até 30 passos. \"Remover passo\" tira um passo da lista.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Dono do negócio",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar passo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "#passo-titulo-1"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#passo-titulo-1"
+              },
+              "valor": "Conferir se {{contact.name}} confirmou o retorno"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#passo-prazo-1"
+              },
+              "valor": "28"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.rounded-md:has(#passo-titulo-1) button[role=combobox]:has-text('Dono do negócio')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Ana Ribeiro",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-md:has(#passo-titulo-1)"
+              },
+              "rotulo": "O passo 2",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar passo",
+                "exato": true
+              },
+              "rotulo": "Mais um passo",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Salvar",
+          "texto": "Confira e clique em \"Salvar plano\". Se faltar o nome do plano ou o título de algum passo, nada é salvo e aparece um aviso vermelho no alto da tela, acima do formulário. \"Cancelar\" fecha o formulário sem guardar nada.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Fechar sem guardar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar plano",
+                "exato": true
+              },
+              "rotulo": "Guardar o plano",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar plano",
+            "exato": true
+          },
+          "dica": "Num plano comprido, a tela fica rolada para baixo e o aviso não aparece na hora: se nada parecer acontecer depois de \"Salvar plano\", suba a tela para ler o aviso."
+        },
+        {
+          "id": "p7",
+          "titulo": "O plano entrou na lista",
+          "texto": "O formulário fecha e o plano novo aparece no fim da lista, com os dois passos e os seus prazos. A partir de agora ele já pode ser escolhido nas automações.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar plano",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Retorno da nutrição",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> div > div > h2:text-is('Retorno da nutrição'))"
+              },
+              "rotulo": "Plano novo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planos-editar-e-excluir",
+      "titulo": "Editar e excluir um plano",
+      "objetivo": "Mudar um plano que já existe e apagar um que não serve mais.",
+      "papel": "admin",
+      "busca": [
+        "editar plano de tarefa",
+        "mudar prazo do plano",
+        "remover passo",
+        "excluir plano",
+        "apagar plano de tarefa",
+        "trocar responsável do passo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o plano",
+          "rota": "/app/tasks/planos",
+          "texto": "Para mudar um plano, clique em \"Editar\" no cartão dele. Vamos editar o \"Pós-avaliação de fisioterapia\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia'))"
+                }
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Editar",
+            "exato": true,
+            "dentro": {
+              "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia'))"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O formulário já vem preenchido",
+          "texto": "O mesmo formulário de \"Novo plano\" abre no alto da tela, com tudo o que o plano já tem, inclusive a prioridade e a pessoa de cada passo. Aqui mudamos o prazo do passo 2, o de enviar os horários livres, de 2 para 3 dias.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia'))"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "#passo-prazo-1"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#passo-prazo-1"
+              },
+              "valor": "3"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.rounded-md:has(#passo-titulo-2)"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-md:has(#passo-titulo-1)"
+              },
+              "rotulo": "O passo 2",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#passo-prazo-1"
+              },
+              "rotulo": "Agora 3 dias",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Tirar um passo",
+          "texto": "\"Remover passo\" tira o passo da sequência. Vamos tirar o passo 3. Se ele estiver no meio, os passos de baixo sobem e são numerados de novo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover passo",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-md:has(#passo-titulo-2)"
+                }
+              },
+              "rotulo": "Tirar o passo 3",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Remover passo",
+            "exato": true,
+            "dentro": {
+              "css": "div.rounded-md:has(#passo-titulo-2)"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar a mudança",
+          "texto": "O passo 3 saiu do formulário. Clique em \"Salvar plano\". A mudança vale para as próximas vezes que o plano for aplicado; as tarefas que ele já criou continuam como estão.",
+          "dica": "Um negócio que já recebeu este plano não recebe de novo, nem depois da mudança: o sistema aplica cada plano uma vez só em cada negócio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover passo",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-md:has(#passo-titulo-2)"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar plano",
+                "exato": true
+              },
+              "rotulo": "Guardar a mudança",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar plano",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "O cartão mudou",
+          "texto": "O formulário fecha e o cartão mostra o plano com dois passos. O passo 2 agora vence em 3 dias.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar plano",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia'))"
+              },
+              "rotulo": "Agora com 2 passos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Excluir um plano",
+          "texto": "Para apagar um plano, clique em \"Excluir\" no cartão dele. Atenção: não há pergunta de confirmação, o plano some na hora e não volta.",
+          "dica": "Uma automação que usava o plano apagado deixa de criar tarefas. Cada vez que ela rodar, a aba \"Atividade\" de Webhooks avisa que o plano escolhido não existe mais.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg:has(> div > div > h2:text-is('Boas-vindas ao paciente novo'))"
+                }
+              },
+              "rotulo": "Apaga na hora",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Excluir",
+            "exato": true,
+            "dentro": {
+              "css": "div.rounded-lg:has(> div > div > h2:text-is('Boas-vindas ao paciente novo'))"
+            }
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "O plano saiu da lista",
+          "texto": "O cartão \"Boas-vindas ao paciente novo\" sumiu e só ficou o outro plano. As tarefas que o plano apagado já tinha criado continuam na tela \"Tarefas\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg:has(> div > div > h2:text-is('Boas-vindas ao paciente novo'))"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> div > div > h2:text-is('Pós-avaliação de fisioterapia'))"
+              },
+              "rotulo": "Só este ficou",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planos-aplicar-com-automacao",
+      "titulo": "Aplicar o plano com uma automação",
+      "objetivo": "Fazer o plano virar tarefas sozinho, quando algo acontece com o negócio.",
+      "papel": "admin",
+      "busca": [
+        "aplicar plano de tarefa",
+        "automação de tarefas",
+        "criar tarefas automaticamente",
+        "quando o negócio for ganho",
+        "regra de automação",
+        "usar o plano no negócio"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde o plano é aplicado",
+          "rota": "/app/webhooks?aba=automacoes",
+          "texto": "O plano vira tarefas por meio de uma automação: uma regra do tipo \"quando acontecer isto, faça aquilo\". As automações ficam no menu \"Webhooks\", aba \"Automações\". Clique em \"Nova automação\".",
+          "dica": "Só gerente ou administrador vê o menu \"Webhooks\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Automações",
+                "exato": true
+              },
+              "rotulo": "Aba Automações",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova automação",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova automação",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Quando aplicar",
+          "texto": "Dê um nome à automação. Em \"QUANDO\", escolha o que dispara a regra. Aqui, \"Quando um negócio for ganho\": quando o paciente fecha o tratamento e o negócio é marcado como ganho no funil, a regra roda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova automação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Nome da automação"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome da automação"
+              },
+              "valor": "Boas-vindas a quem fechou o tratamento"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Escolha o gatilho')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Quando um negócio for ganho",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome da automação"
+              },
+              "rotulo": "Nome",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Quando um negócio for ganho')"
+              },
+              "rotulo": "O que dispara",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher o plano",
+          "texto": "Em \"ENTÃO\", abra \"Adicionar ação\" e escolha \"Aplicar um plano de tarefas ao negócio\". No campo \"Plano de tarefa\" aparece a lista dos planos salvos na tela Planos de tarefa. Escolha \"Boas-vindas ao paciente novo\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Adicionar ação')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Aplicar um plano de tarefas ao negócio",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Escolha um plano cadastrado')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Os planos salvos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Boas-vindas ao paciente novo",
+                "exato": true
+              },
+              "rotulo": "Escolha este",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Boas-vindas ao paciente novo",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O que acontece quando a regra roda",
+          "texto": "A cada negócio ganho, o plano cria as suas tarefas na ordem dos passos, com os prazos contados a partir daquele momento. O mesmo plano não é aplicado duas vezes no mesmo negócio, e a linha do tempo do negócio registra que o plano foi aplicado. A automação nasce pausada: depois de \"Criar automação\", ligue a chave dela na lista de automações.",
+          "dica": "Se algum passo usa \"Dono do negócio\" e o negócio não tem responsável, o plano não é aplicado e nenhuma tarefa é criada. O resultado de cada vez que a regra roda aparece na aba \"Atividade\" de Webhooks.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Boas-vindas ao paciente novo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-sm:has(> div > p:text-is('Aplicar um plano de tarefas ao negócio'))"
+              },
+              "rotulo": "A ação com o plano",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "A automação nasce pausada. Revise e ligue quando estiver pronta.",
+                "exato": true
+              },
+              "rotulo": "Nasce pausada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar automação",
+                "exato": true
+              },
+              "rotulo": "Criar",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

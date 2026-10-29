@@ -110,7 +110,17 @@ test.describe("Prospecção a partir da própria planilha (spec 30)", () => {
     ).toBeVisible();
 
     // 3. a campanha nova, com o rótulo "Planilha" e as 3 empresas na lista.
-    await expect(page.getByRole("heading", { name: NOME_CAMPANHA })).toBeVisible();
+    //
+    // O nome aparece DUAS vezes na tela, e as duas são legítimas — não é duplicata
+    // de UI: o `h2` é o título do painel da campanha (`_client.tsx`) e o `h3` é o
+    // cabeçalho do resumo do agente (`_agent-summary.tsx`), que nasce com o nome da
+    // campanha como padrão (`_create-agent.tsx`: `draft.name || campaign.name`).
+    // Um `getByRole("heading", { name })` cru casa os dois e cai em strict mode
+    // violation. O alvo desta asserção é o título do PAINEL, então o nível 2 é o
+    // escopo certo: diz QUAL heading, em vez de esconder a duplicação com `.first()`.
+    await expect(
+      page.getByRole("heading", { level: 2, name: NOME_CAMPANHA, exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: new RegExp(`${NOME_CAMPANHA}.*Planilha · .*3 empresas`) }),
     ).toBeVisible();

@@ -360,14 +360,16 @@ export function ProspectingClient() {
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
-  async function perform(body: unknown, message: string) {
+  // `message` pode ser uma função que lê a resposta (o envelope `{ data }`): só o
+  // "Completar fichas" precisa dela. Texto fixo segue igual para os outros botões.
+  async function perform(body: unknown, message: string | ((resposta: unknown) => string)) {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await apiClient.post("/api/v1/prospecting", body);
+      const resposta = await apiClient.post("/api/v1/prospecting", body);
       await query.refetch();
-      setNotice(message);
+      setNotice(typeof message === "function" ? message(resposta) : message);
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : t("Não foi possível concluir a operação."));
@@ -1773,6 +1775,30 @@ export function ProspectingClient() {
                             }
                           >
                             {t("Verificar agora")} ({pendentesDeSite})
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() =>
+                              void perform(
+                                { action: "completar_fichas", id: campaign!.id },
+                                (resposta) => {
+                                  const r = (
+                                    resposta as {
+                                      data: { completadas: number; faltam: number };
+                                    }
+                                  ).data;
+                                  const feito = `${t("Fichas completadas:")} ${r.completadas}.`;
+                                  return r.faltam > 0
+                                    ? `${feito} ${t("Clique de novo para continuar.")}`
+                                    : feito;
+                                },
+                              )
+                            }
+                          >
+                            {t("Completar fichas")}
                           </Button>
                           {desmarcadas.length > 0 && (
                             <button
