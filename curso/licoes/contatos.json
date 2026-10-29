@@ -534,7 +534,7 @@
     {
      "id": "p2",
      "titulo": "Preencher o cadastro",
-     "texto": "Preencha o nome e pelo menos o e-mail ou o telefone. O telefone vai com DDD; não precisa digitar o +55. Em \"Tags\", escolha as etiquetas sugeridas ou digite uma por vez e aperte Enter. Se abrir a escolha de cor, confira e clique em \"Adicionar tag\" para confirmar. O CPF é opcional.",
+     "texto": "Preencha o nome e pelo menos o e-mail ou o telefone. O telefone vai com DDD; não precisa digitar o +55. Em \"Tags\", escolha as etiquetas sugeridas ou digite uma por vez e aperte Enter. Se abrir a escolha de cor, confira e clique em \"Adicionar tag\" para confirmar. O CPF é opcional. Para cadastrar e já falar com a pessoa, use \"Salvar e iniciar conversa\": o contato é salvo e a conversa com ele abre em seguida.",
      "dica": "Se o telefone, o e-mail ou o CPF já pertencer a outro contato, o cadastro é recusado com um aviso.",
      "antes": [
       {
@@ -661,6 +661,15 @@
        },
        "rotulo": "E-mail ou telefone é obrigatório",
        "tipo": "seta"
+      },
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Salvar e iniciar conversa",
+        "exato": true
+       },
+       "rotulo": "Salvar e já abrir a conversa",
+       "tipo": "caixa"
       }
      ],
      "clicar": {

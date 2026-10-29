@@ -21,5 +21,7 @@ export function menuDoAdmin(): ItemDoAdmin[] {
     rotulo: m[2]!,
   }));
   if (itens.length === 0) throw new Error(`nenhum item lido do menu do Admin em ${ARQUIVO} — o formato da lista mudou?`);
-  return itens;
+  // A Atualização não está no menu do Admin nem no catálogo: a porta é o rodapé de
+  // versão (tests/unit/navegacao-completude.test.ts), e só o dono da instalação a abre.
+  return [...itens, { href: "/app/settings/atualizacao", rotulo: "Atualização do sistema" }];
 }

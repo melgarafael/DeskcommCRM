@@ -666,26 +666,87 @@ const TELEFONE_DE_REMETENTE = /^\+\d{8,15}$/;
  */
 export function remetenteDoGrupo(p: WahaPayload): RemetenteDeGrupo | null {
   const autorBruto = primeiroTexto(p.participant, p.author, p._data?.key?.participant);
+  const { lid, phone } = identidadeDoParticipante(autorBruto, primeiroTexto(p._data?.key?.participantAlt));
+  const nome = notifyNameOf(p)?.trim().slice(0, 200) || null;
+
+  if (!nome && !phone && !lid) return null;
+  return { name: nome, phone, lid };
+}
+
+/**
+ * Um JID de PARTICIPANTE → `{ lid, phone }`, pela régua do remetente.
+ *
+ * Existe separado porque a MENÇÃO de grupo (#3566) precisa exatamente disto: o
+ * `mentionedJid` do Baileys é a mesma forma de JID que o autor da mensagem, com
+ * o mesmo sufixo de dispositivo possível, e a informação disponível é a mesma —
+ * identificador opaco quando é `@lid`, número quando é `@c.us`/`@s.whatsapp.net`.
+ * Duas leituras do mesmo campo divergiriam no dia em que o WhatsApp mudasse o
+ * formato; aqui é uma só.
+ *
+ * Quem chama decide o que fazer com o resultado: `remetenteDoGrupo` usa o
+ * `nome` do payload, e a menção não tem nome no payload — o rótulo dela vem do
+ * contato no CRM (`lib/grupos/ingest.ts`).
+ */
+function identidadeDoParticipante(
+  jidBruto: string | null,
+  altBruto: string | null,
+): { lid: string | null; phone: string | null } {
   // Sufixo de DISPOSITIVO (`:4`, `:12`...) que o WhatsApp multi-device às vezes
   // ancora antes do `@` — `123456:4@lid` e `5511999990000:12@s.whatsapp.net`
   // são o MESMO lid/telefone de sempre, só que com o dispositivo colado. Sem
   // remover, o teto de dígitos de `LID_DE_REMETENTE`/`TELEFONE_DE_REMETENTE`
-  // reprova os dois e o remetente do grupo se perde.
-  const autor = autorBruto ? autorBruto.replace(/:\d+@/, "@") : null;
+  // reprova os dois e o participante se perde.
+  const autor = jidBruto ? jidBruto.replace(/:\d+@/, "@") : null;
   // Teto antes de qualquer varredura: é campo de fora, como o `from`.
   const id = autor && autor.length <= 128 ? parseChatId(autor) : null;
 
   const doAutor = id?.kind === "phone" ? canonicalPhoneBR(id.phone) : null;
-  const doAlt = telefoneDoJid(primeiroTexto(p._data?.key?.participantAlt));
+  const doAlt = telefoneDoJid(altBruto);
   const telefone = [doAutor, doAlt ? canonicalPhoneBR(doAlt) : null].find(
     (t): t is string => !!t && TELEFONE_DE_REMETENTE.test(t),
   );
   const lid = id?.kind === "lid" && LID_DE_REMETENTE.test(id.lid) ? id.lid : null;
-  const nome = notifyNameOf(p)?.trim().slice(0, 200) || null;
-
-  if (!nome && !telefone && !lid) return null;
-  return { name: nome, phone: telefone ?? null, lid };
+  return { lid: lid ?? null, phone: telefone ?? null };
 }
+
+/**
+ * QUEM FOI MENCIONADO numa mensagem de grupo (#3566) — a lista que faltava
+ * guardar. O texto do WhatsApp traz a menção como `@<lid>`, e a lista real está
+ * no `contextInfo.mentionedJid` do Baileys (o mesmo lugar de onde a citação já
+ * é lida).
+ *
+ * Cada entrada passa pelo MESMO leitor de JID do remetente
+ * (`identidadeDoParticipante`) e sai no MESMO formato (`{ name, phone, lid }`,
+ * `lib/messaging/remetente-de-grupo.ts`), com `name` nulo: o payload não traz
+ * nome por menção, e o rótulo é resolvido no ingest de grupo pelo contato do
+ * CRM.
+ *
+ * Nunca lança e nunca derruba a mensagem: campo de fora, forma variável. Lista
+ * ausente, item de outro tipo e JID irreconhecível são simplesmente ignorados.
+ * Teto de 50 entradas porque é o limite prático do WhatsApp numa mensagem — e
+ * porque lista de fora sem teto é lista que cresce com o payload.
+ */
+export function mencoesDoGrupo(p: WahaPayload): RemetenteDeGrupo[] {
+  const contexto = contextoDoBaileys(p);
+  const lista = contexto?.mentionedJid;
+  if (!Array.isArray(lista)) return [];
+  const mencoes: RemetenteDeGrupo[] = [];
+  const vistos = new Set<string>();
+  for (const item of lista) {
+    if (typeof item !== "string") continue;
+    const { lid, phone } = identidadeDoParticipante(item, null);
+    // Sem lid e sem telefone não há como resolver nada depois — guardar
+    // `{ name: null, phone: null, lid: null }` só encheria o metadata.
+    if (lid === null && phone === null) continue;
+    const chave = lid !== null ? `lid:${lid}` : `phone:${phone}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    mencoes.push({ name: null, phone, lid });
+    if (mencoes.length >= 50) break;
+  }
+  return mencoes;
+}
+
 
 /**
  * O chat de GRUPO de uma mensagem `fromMe`, ou null.
@@ -742,6 +803,10 @@ async function ingerirMensagemDeGrupo(
       sentAt: dataDoTimestamp(p.timestamp, now),
       // `fromMe`: quem escreveu é o dono do número — o `pushName` é o da loja.
       remetente: direction === "inbound" ? remetenteDoGrupo(p) : null,
+      // #3566 — quem foi mencionado vai junto, nas duas direções: a lista está
+      // no payload de qualquer mensagem de grupo, e o eco de um envio nosso
+      // também tem as menções que o celular escreveu.
+      mencoes: mencoesDoGrupo(p),
       rawType: p.type ?? null,
     });
   } catch (err) {
@@ -914,13 +979,17 @@ export function ehReacao(p: WahaPayload): boolean {
 /**
  * O `contextInfo` do Baileys — o id cru da citada e a mensagem citada inteira.
  *
+ * É daqui também que sai a LISTA DE MENÇÕES (`mentionedJid`, #3566): o mesmo
+ * objeto, lido por `mencoesDoGrupo`. Por isso o nome é do CONTEXTO e não da
+ * citação — quem lê só metade do que mora ali nomeia o campo pela metade.
+ *
  * O formato varia: `extendedTextMessage.contextInfo` é o caso do texto (o
  * medido em produção), uma resposta com mídia carrega o dela em
  * `imageMessage.contextInfo`, e alguns formatos trazem direto na mensagem.
  * Varrer os valores evita acoplar a leitura a uma lista de tipos que o WhatsApp
  * muda sem avisar.
  */
-function contextoDaCitacao(p: WahaPayload): Record<string, unknown> | null {
+function contextoDoBaileys(p: WahaPayload): Record<string, unknown> | null {
   const msg = objetoSimples(p._data?.message);
   if (!msg) return null;
   const direto = objetoSimples(msg.contextInfo);
@@ -944,7 +1013,7 @@ function contextoDaCitacao(p: WahaPayload): Record<string, unknown> | null {
  */
 function citacaoDoPayload(p: WahaPayload): { id: string; texto: string | null } | null {
   const direto = objetoSimples(p.replyTo);
-  const contexto = contextoDaCitacao(p);
+  const contexto = contextoDoBaileys(p);
   const id = textoNaoVazio(direto?.id) ?? textoNaoVazio(contexto?.stanzaId);
   if (!id) return null;
   const citada = objetoSimples(contexto?.quotedMessage);

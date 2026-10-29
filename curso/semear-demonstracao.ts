@@ -24,7 +24,7 @@ import { type User, createClient } from "@supabase/supabase-js";
 import pg from "pg";
 
 import { exigirBancoLocal, exigirHttpLocal, validarOrganizacoesExtras } from "./seguranca";
-import { idiomaDaCaptura } from "./configuracao";
+import { commitDaFoto, idiomaDaCaptura } from "./configuracao";
 import { textoDaDemonstracao as demo } from "./espanhol-demonstracao";
 
 const SENHA = process.env.CURSO_SENHA ?? "Curso!Demo2026";
@@ -457,6 +457,70 @@ async function voltarAoEstadoDeFabrica(org: string, saida: string) {
   }
 }
 
+/**
+ * A bancada não tem o agente do servidor, então o rodapé diria "Execução não confirmada" em toda
+ * foto. Grava a observação que o agente de uma instalação saudável envia (lib/system/runtime-identity):
+ * a versão das fotos, nos três serviços, recolhida agora. Ela vale 15 minutos, e a semente roda
+ * antes de cada aula. A aula da Atualização muda este estado na própria semente.
+ */
+export function versaoDasFotos(): string {
+  const versao = (process.env.CURSO_VERSAO_FOTOS ?? "").replace(/^v/, "");
+  if (!/^\d+\.\d+\.\d+$/.test(versao)) throw new Error("CURSO_VERSAO_FOTOS precisa da versão fotografada (ex.: 1.94.0)");
+  return versao;
+}
+
+export async function confirmarVersaoDaInstalacao(
+  versao = versaoDasFotos(),
+  publicada = versao,
+  changelog = "",
+) {
+  const revisao = commitDaFoto();
+  const agora = new Date().toISOString();
+  // A aula da Atualização pede uma, e um pedido aberto trava as extensões
+  // (fn_extensions_core_update_in_progress): toda aula começa sem pedido.
+  semErro(
+    await db.from("system_update_runs").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    "pedidos de atualização",
+  );
+  const hex = (n: number) => String(n).repeat(64);
+  semErro(
+    await db
+      .from("system_version")
+      .update({
+        current_version: versao,
+        latest_version: publicada,
+        changelog_raw: changelog,
+        has_known_release: true,
+        off_release: false,
+        compare_failed: false,
+        agent_last_seen_at: agora,
+        update_requested_at: null,
+        update_requested_by: null,
+        runtime_confirmation: {
+          schema: 1,
+          collected_at: agora,
+          project: "deskcomm",
+          supports_forced_update: true,
+          published_release: publicada,
+          services: (["app", "worker", "scheduler"] as const).map((role, i) => ({
+            role,
+            container_id: hex(i + 1),
+            image_id: `sha256:${hex(i + 4)}`,
+            revision: revisao,
+            base_version: versao,
+            base_revision: revisao,
+            source_verified: true,
+            running: true,
+            healthy: true,
+          })),
+          issues: [],
+        },
+      } as never)
+      .eq("id", 1),
+    "versão da instalação",
+  );
+}
+
 export async function semearBase(): Promise<Contexto> {
   db = criarBanco();
   // ---------- organização ----------
@@ -524,6 +588,7 @@ export async function semearBase(): Promise<Contexto> {
   }
   const saida = path.join(path.dirname(new URL(import.meta.url).pathname), "saida");
   await voltarAoEstadoDeFabrica(org, saida);
+  await confirmarVersaoDaInstalacao();
   semErro(
     await db
       .from("organizations")
@@ -615,6 +680,12 @@ export async function semearBase(): Promise<Contexto> {
   );
   semErro(await db.from("conversations").delete().eq("organization_id", org), "limpar conversas");
   semErro(await db.from("crm_leads").delete().eq("organization_id", org), "limpar leads");
+  // `calendar_appointments.contact_id` é `on delete restrict`: as histórias do "em ação" deixam
+  // compromissos com cliente, e eles travariam a limpeza dos contatos de toda aula seguinte.
+  semErro(
+    await db.from("calendar_appointments").delete().eq("organization_id", org).not("contact_id", "is", null),
+    "limpar compromissos com cliente",
+  );
   semErro(await db.from("contacts").delete().eq("organization_id", org), "limpar contatos");
   semErro(
     await db.from("message_templates").delete().eq("organization_id", org),

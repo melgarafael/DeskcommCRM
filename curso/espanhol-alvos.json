@@ -172,5 +172,6 @@
   "^FisioMove Reabilitação.*IA Budget": "^FisioMove Reabilitação.*Presupuesto IA",
   "^NutriVida Consultório.*IA Budget": "^NutriVida Consultório.*Presupuesto IA",
   "^Tag: convenio": "^Etiqueta: convenio",
-  "Responsável:": "Responsable:"
+  "Responsável:": "Responsable:",
+  "^(Hoje|Ontem)$": "^(Hoy|Ayer)$"
 }
