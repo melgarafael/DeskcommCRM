@@ -687,6 +687,43 @@ export const SITUACOES_DO_ACOMPANHAMENTO: Record<EnrollmentStatus, string> = {
 };
 
 /**
+ * Os status em que quem opera ainda pode ENCERRAR o acompanhamento (#3434).
+ *
+ * Esta lista era escrita à mão em TRÊS lugares: `CANCELAVEL` no dossiê,
+ * `LIVE_ENROLLMENT_STATUSES` na fila e `LIVE_STATUSES` na rota de cancelar. O
+ * #3263 acrescentou `dormente` às duas últimas e esqueceu a do dossiê — a
+ * espera longa aparecia na fila com "Cancelar" e, aberta no dossiê, não tinha
+ * botão nenhum. Aqui a divergência deixa de ser possível: quem oferece o botão
+ * e quem aceita o POST leem a MESMA lista.
+ *
+ * O que entra tem de ser status que a rota trata como vivo; o que já acabou
+ * (`completed`, `cancelled`, `dead`) responde 409 `already_terminal`.
+ *
+ * `paused_manual` entra porque quem pausou tem o direito de desistir sem
+ * retomar antes (retomar reagendaria o próximo passo). `coletando` é o roteiro
+ * de atendimento em andamento (0394). `dormente` é a espera longa imune à
+ * resposta (nó `wait` com `immune_to_reply`): são DIAS parados, e desistir dela
+ * tem de ser possível pela tela onde o operador a encontrou.
+ *
+ * NÃO confundir com `LIVE_STATUSES` de `reactivity.ts`: aquela responde "a
+ * mensagem do contato pode mexer nesta inscrição?", e `dormente`,
+ * `paused_manual` e `coletando` ficam FORA dela de propósito.
+ */
+export const STATUS_CANCELAVEIS: readonly EnrollmentStatus[] = [
+  "active",
+  "waiting_reply",
+  "paused_handoff",
+  "paused_manual",
+  "coletando",
+  "dormente",
+];
+
+/** O mesmo `includes` dos três pontos, para nenhum deles reescrever a regra. */
+export function statusCancelavel(status: string): boolean {
+  return (STATUS_CANCELAVEIS as readonly string[]).includes(status);
+}
+
+/**
  * Como o acompanhamento terminou — na voz de quem opera o dossiê (#2014).
  *
  * Antes este mapa existia só para o teste. O desfecho agora sai por aqui na

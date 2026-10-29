@@ -25,6 +25,8 @@ const AlvoSimples = z
     texto: z.string().optional(),
     css: z.string().optional(),
     exato: z.boolean().optional(),
+    /** Nome de dado da semente, preservado mesmo quando coincide com um rótulo traduzível. */
+    literal: z.boolean().optional(),
     /** `nome`/`texto` são expressão regular (sem barras), para rótulos que carregam contador ou hora. */
     regex: z.boolean().optional(),
     /** Qual das ocorrências (0 = primeira). Sem `n`, o alvo precisa ser único. */
@@ -98,8 +100,8 @@ export const Modulo = z
   .object({
     id: z.string().regex(/^[a-z0-9-]+$/),
     titulo: z.string().min(1),
-    /** A tela do produto que o módulo ensina — um href de lib/navigation/catalogo.ts. */
-    tela: z.string().startsWith("/app/"),
+    /** A tela que o módulo ensina — um href de lib/navigation/catalogo.ts, ou do menu do Admin (curso/menu-do-admin.ts). */
+    tela: z.string().regex(/^\/(app|admin)\//),
     resumo: z.string().min(1),
     licoes: z.array(Licao).min(1),
   })

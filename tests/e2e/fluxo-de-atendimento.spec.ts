@@ -246,7 +246,19 @@ test("liga o módulo, cria um roteiro pela tela, o cliente responde pelo WhatsAp
       });
 
       // Fecha o painel antes de ligar as caixas, como faz a jornada do follow-up.
-      await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+      // O canto (20,20) ficou sob o header fixo no CI #3478. Ler a área
+      // exposta evita force e conserva a ação real de fechar clicando no fundo.
+      const pontoLivre = await page.locator(".react-flow__pane").evaluate((pane) => {
+        const r = pane.getBoundingClientRect();
+        for (const fy of [0.6, 0.8, 0.4]) for (const fx of [0.4, 0.6, 0.2, 0.8]) {
+          const x = r.left + r.width * fx;
+          const y = r.top + r.height * fy;
+          if (document.elementFromPoint(x, y) === pane) return { x, y };
+        }
+        return null;
+      });
+      expect(pontoLivre, "o canvas precisa ter fundo exposto para fechar o painel").not.toBeNull();
+      await page.mouse.click(pontoLivre!.x, pontoLivre!.y);
       await expect(page.getByTestId("node-config-sheet")).toHaveCount(0);
       await conectar(page, inicio, cpf);
       await conectar(page, cpf, modelo);

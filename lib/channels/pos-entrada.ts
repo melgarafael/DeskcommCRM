@@ -58,6 +58,7 @@ import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kic
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
+import { lerPessoalDoContato } from "@/lib/contacts/contato-pessoal";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -258,16 +259,27 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
  * recusa em `garantirLeadDaConversa`, `contato_pessoal`) continua valendo para
  * o negócio. Uma exceção aqui viraria 500 para o provider e tempestade de
  * reentregas.
+ *
+ * A CONSULTA não mora aqui: ela é `lib/contacts/contato-pessoal.ts`, a régua
+ * única da marca. Este arquivo só decide a POLÍTICA da dúvida (seguir), porque
+ * essa decisão é da entrada de mensagem — a derivação de mídia usa a mesma
+ * régua e decide o contrário (#3592: sem saber de quem é o arquivo, não gasta
+ * token).
  */
 async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
   try {
-    const { data } = await admin
-      .from("contacts")
-      .select("is_personal")
-      .eq("organization_id", entrada.organizationId)
-      .eq("id", entrada.contactId)
-      .maybeSingle();
-    return (data as { is_personal?: boolean } | null)?.is_personal === true;
+    const { pessoal, erro } = await lerPessoalDoContato(admin, {
+      organizationId: entrada.organizationId,
+      contactId: entrada.contactId,
+    });
+    if (erro) {
+      logger.warn("pos-entrada: leitura de is_personal falhou (os efeitos seguem)", {
+        organization_id: entrada.organizationId,
+        contact_id: entrada.contactId,
+        detail: erro,
+      });
+    }
+    return pessoal;
   } catch (err) {
     logger.warn("pos-entrada: leitura de is_personal falhou (os efeitos seguem)", {
       organization_id: entrada.organizationId,
@@ -538,11 +550,14 @@ async function encerrarDemandasAbertasDeQuemPediuParar(
  * bloqueado — por isso o passo 1 vem antes.
  */
 async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  // Sem ID retornado pelo INSERT, ainda tentamos abrir a demanda pelo caminho
+  // legado. A prova CTWA exige um ID persistido e não nasce desta alternativa.
   try {
     const nascimento = await garantirLeadDaConversa(admin, {
       organizationId: entrada.organizationId,
       contactId: entrada.contactId,
       conversationId: entrada.conversationId,
+      messageId: entrada.messageId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
     });

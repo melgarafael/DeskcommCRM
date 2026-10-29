@@ -291,7 +291,7 @@ check "e não deixa o arquivo cortado dos anexos (nem o .parcial) na pasta" \
   bash -c '! ls "$1"/backups/storage-*.tgz >/dev/null 2>&1 && ! ls "$1"/backups/.storage-*.parcial >/dev/null 2>&1' _ "$PROJ"
 
 dump_de_mentira "$PROJ/backups/db-20260922-030000.sql.gz"
-: > "$PROJ/backups/storage-20260922-030000.tgz"
+tar czf "$PROJ/backups/storage-20260922-030000.tgz" -C "$SB/volumes/storage" .
 : > "$LOG"
 (cd "$PROJ" && printf 'RESTAURAR\n' | bash "$KIT_DIR/restore.sh" backups/db-20260922-030000.sql.gz) > "$WORK/rs.out" 2>&1; rc=$?
 check "restore.sh single-server termina bem" test "$rc" -eq 0

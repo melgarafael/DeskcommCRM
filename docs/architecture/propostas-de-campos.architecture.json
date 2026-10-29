@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Documento propõe; pessoa confirma o campo do card", "output": "propostas-de-campos.html" },
+  "lanes": [
+    { "id": "entrada", "label": "Leitura e proposta" },
+    { "id": "humano", "label": "Revisão no dossiê" },
+    { "id": "garantias", "label": "Prazo, registro e dados pessoais" }
+  ],
+  "mainPath": ["leitura", "ferramenta", "fila", "revisao", "decisao", "card"],
+  "nodes": [
+    { "id": "leitura", "lane": "entrada", "col": 0, "type": "service", "label": "Assistente lê a mídia da conversa" },
+    { "id": "ferramenta", "lane": "entrada", "col": 1, "type": "api", "label": "crm_propose_lead_fields_from_document" },
+    { "id": "fila", "lane": "entrada", "col": 2, "type": "database", "label": "lead_field_proposals" },
+    { "id": "revisao", "lane": "humano", "col": 3, "type": "frontend", "label": "LeadDossier → RevisaoDoDocumento" },
+    { "id": "decisao", "lane": "humano", "col": 4, "type": "api", "label": "POST field-proposals/[pid]" },
+    { "id": "card", "lane": "humano", "col": 5, "type": "service", "label": "updateLeadHandler → custom_fields" },
+    { "id": "registro", "lane": "garantias", "col": 5, "type": "database", "label": "lead_edited e auditoria só com metadados" },
+    { "id": "cron", "lane": "garantias", "col": 2, "type": "service", "label": "contact-proposals-watcher → vencePropostasDeCampo" },
+    { "id": "lgpd", "lane": "garantias", "col": 3, "type": "database", "label": "Cascata LGPD e export do titular" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "leitura", "to": "ferramenta", "label": "valor e trecho por campo" },
+    { "id": "e2", "from": "ferramenta", "to": "fila", "label": "tipo, lista e padrão do funil; não grava o card" },
+    { "id": "e3", "from": "fila", "to": "revisao", "label": "GET com RLS e prazo vigente" },
+    { "id": "e4", "from": "revisao", "to": "decisao", "label": "pessoa aceita, corrige ou descarta" },
+    { "id": "e5", "from": "decisao", "to": "card", "label": "agent; revalida sem mudar a escala numérica" },
+    { "id": "e6", "from": "decisao", "to": "fila", "label": "decisão condicional enquanto pending" },
+    { "id": "e7", "from": "card", "to": "registro", "label": "atividade e trilha da confirmação" },
+    { "id": "e8", "from": "decisao", "to": "revisao", "label": "valor confirmado atualiza só o campo, preservando outros rascunhos" },
+    { "id": "e9", "from": "card", "to": "leitura", "label": "valor humano confirmado passa ao contexto do próximo atendimento" },
+    { "id": "e10", "from": "fila", "to": "cron", "label": "pendências cujo prazo passou" },
+    { "id": "e11", "from": "cron", "to": "fila", "label": "encerra como expired" },
+    { "id": "e12", "from": "fila", "to": "lgpd", "label": "dados do negócio incluídos no export" },
+    { "id": "e13", "from": "lgpd", "to": "fila", "label": "redige trecho, valores e motivo; preserva decisão" },
+    { "id": "e14", "from": "registro", "to": "revisao", "label": "atividade lead_edited aparece na linha do tempo do dossiê" }
+  ]
+}

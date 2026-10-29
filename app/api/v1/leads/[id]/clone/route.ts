@@ -22,6 +22,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import {
   recusaDeCamposObrigatorios,
@@ -419,7 +420,7 @@ export async function POST(
     return ok(
       {
         lead: clone,
-        origem: origemFinal ?? origemEncerrada ?? origem,
+        origem: ocultarProvaMetaNaResposta((origemFinal ?? origemEncerrada ?? origem) as Record<string, unknown>),
       },
       { requestId, status: 201 },
     );

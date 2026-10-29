@@ -44,7 +44,7 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
   }
   const { body, corpoSemPrevia } = corpoDoEvento(row);
 
-  const marca = await marcaDaSaida(row.organization_id);
+  const marca = await marcaDaSaida(row.organization_id, { semMemo: true });
   let contactName: string | null = null;
   let icon: string | null = null;
   if (contactId) {

@@ -1,6 +1,6 @@
 # ADR-0005 — Plataforma de módulos de terceiro: o host compila, o terceiro declara, o código dele nunca entra no processo
 
-- **Status:** Aceita (14/10/2026, escolhas pela recomendação, delegadas pelo dono) — ver *Decisões do dono*. A escolha 5 não tinha recomendação e segue aberta; ela só bloqueia a onda 4
+- **Status:** Aceita (14/10/2026, escolhas pela recomendação, delegadas pelo dono) — ver *Decisões do dono*. O endereço da escolha 5 foi aceito em 26/10/2026; infraestrutura e publicação ainda precisam de comprovação
 - **Data:** proposta em 2026-10-02; aceita em 2026-10-14
 - **Contexto medido em:** `efed1d574` (`main` de 01/10) e nos 1.029 forks públicos do repositório. **Revisada contra `ccbae41fd`** (`main` de 14/10), depois de a onda 1 começar a ser construída — ver *Estado da construção*
 - **Lei que muda:** [`docs/doctrine/extensoes.md`](../doctrine/extensoes.md) (não-negociáveis 2 e 9 emendados no mesmo PR que aceita esta ADR; o 11 continua valendo como está), [ADR-0002](0002-tabelas-de-modulo-num-banco-so.md) (o marco 4 que a D9 deixou aberto) e [ADR-0003](0003-perfil-declarativo-v2-portas-nomeadas-e-vitrine.md) (D1 e D5)
@@ -410,15 +410,18 @@ atualização do núcleo hoje não o toca.
 ## Decisões do dono
 
 Em 14/10/2026 o dono do produto delegou as escolhas: *"pode seguir suas recomendações"*. Cada escolha
-abaixo fica decidida **pela recomendação que estava escrita**, e nada além dela.
+abaixo fica decidida **pela recomendação que estava escrita**, e nada além dela. Em 26/10/2026,
+o dono voltou a autorizar seguir as recomendações dos documentos abertos; a escolha 5 foi
+registrada pelo subdomínio recomendado. Isso decide o endereço, sem afirmar que o serviço
+ou o DNS já foram publicados e sem assumir custo novo não especificado.
 
-| # | Escolha | Recomendação | Decisão (14/10/2026) |
+| # | Escolha | Recomendação | Decisão |
 |---|---|---|---|
 | 1 | A classe `data` (host compila, nada do terceiro executa) é a onda 1, e `connected` vem depois? | **Sim.** Cobre 76% da demanda com zero RAM e zero peça viva; é também a de menor risco | **Sim.** O código já tinha seguido esse caminho no #2334; o aceite agora é escrito |
 | 2 | Módulo de terceiro suspenso **não** reprova a atualização do núcleo (só avisa)? | **Sim.** O contrário deixa o cliente com app antigo sobre banco novo por causa de um módulo de fora | **Sim.** Ainda sem efeito no código (o módulo de dados não entra na reaplicação); módulo OFICIAL segue a ADR-0002 D6 |
 | 3 | A unidade de cobrança é a **organização**, e quem cobra é o **autor** (o projeto não é intermediário na onda 2)? | **Sim** na onda 2. Intermediação com divisão de receita só com volume | **Sim**, como eixo de dinheiro declarado fora do produto (D9), distinto dos três da ADR-0004 |
 | 4 | O catálogo oficial aceita módulo com **dados**, revisado por PR, com selo? | **Sim**, com revisão proporcional: schema declarado é auditável por leitura | **Sim.** O mecanismo já aceita o perfil `data`; o catálogo oficial ainda não publica nenhum, e a regra do selo é escrita quando o primeiro chegar |
-| 5 | O endereço da vitrine pública | nenhuma: define onde o catálogo é publicado, e a onda 4 depende dela | **Aberta.** Não havia recomendação a seguir. A única coisa decidida é a dependência: a O4 não começa sem esta escolha. A origem da pergunta é o DEC-007, que **não está no repositório** — a ADR-0003 o descreve como "quatro escolhas", então "escolha 5" não é conferível daqui |
+| 5 | O endereço da vitrine pública | **Subdomínio próprio: `extensoes.deskcomm.com.br`.** A escolha acrescentada à DEC-007 recomendava essa opção; o documento privado não é distribuído neste repositório | **Aceita em 26/10/2026.** Usar `extensoes.deskcomm.com.br` como destino do catálogo independente. O endereço deixa de ser uma decisão pendente; a publicação continua dependendo de infraestrutura e acesso verificados. Não bloqueia módulos oficiais distribuídos na própria imagem |
 
 ---
 

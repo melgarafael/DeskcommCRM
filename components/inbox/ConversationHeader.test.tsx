@@ -55,6 +55,11 @@ vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => nu
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
+// O atendimento conjunto (#2542) tem arquivo de teste próprio; este arquivo mede
+// a barra de ações, e o componente novo lê react-query (exigiria provider).
+vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
+  ParticipantesDaConversa: () => null,
+}));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
   useVoiceSessionStatus: () => ({ data: { configured: true, paired: true } }),

@@ -255,7 +255,7 @@ export async function PATCH(
       const idioma = normalizarIdioma(
         typeof atual.user.user_metadata?.locale === "string" ? atual.user.user_metadata.locale : null,
       );
-      const marca = await marcaDaSaida(id);
+      const marca = await marcaDaSaida(id, { semMemo: true });
       const corpo = buildAvisoDeTrocaDeEmail({ marca, idioma, data: dataNoFuso(idioma, fusoDaOrg) });
       const envio = await sendEmail({ to: anterior, fromName: marca.nome, ...corpo });
       avisoAoAntigo = envio.ok ? "enviado" : envio.error === "not_configured" ? "sem_envio_configurado" : "falhou";

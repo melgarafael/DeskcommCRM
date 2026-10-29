@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 
+import { VISIBILITY_MODES as MODOS_DE_VISIBILIDADE } from "@/lib/auth/types";
 import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 import { fusoValido } from "@/lib/tempo/fusos";
 
@@ -123,10 +124,11 @@ export function conversaFicaComQuemAtendeu(settings: unknown): boolean {
  * esse caminho exato. Aninhar aqui por arrumação quebraria a RLS em silêncio.
  *
  * O tipo canônico é o de `lib/auth/types.ts` (usado pelo layout e pelo inbox);
- * aqui só se declara a validação do input externo. A `satisfies` abaixo é o que
- * impede as duas listas de divergirem sem ninguém notar.
+ * aqui só se declara a VALIDAÇÃO do input externo, a partir da MESMA lista — a
+ * lista literal morava nos dois arquivos e um teste comparava array com array
+ * para impedir que divergissem. Agora não há o que divergir.
  */
-export const VISIBILITY_MODES = ["all", "own_and_unassigned", "own"] as const;
+export const VISIBILITY_MODES = MODOS_DE_VISIBILIDADE;
 export type VisibilityModeInput = (typeof VISIBILITY_MODES)[number];
 
 /**

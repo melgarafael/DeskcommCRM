@@ -91,6 +91,14 @@ export async function updatePipelineConfig(
   if (parsed.data.ocultar_encerrados_dias !== undefined) {
     nextSettings.ocultar_encerrados_dias = parsed.data.ocultar_encerrados_dias;
   }
+  // OS ATALHOS DO CARD (#3487). A chave é gravada como veio, inclusive a lista
+  // VAZIA: `[]` é o "apaguei todos" que a tela precisa poder dizer, e pular o
+  // vazio deixaria os atalhos antigos no banco — a pessoa removeria o botão,
+  // salvaria, e ele continuaria no card. Quem já barrou o `javascript:` foi o
+  // schema, acima; aqui não há segunda régua a divergir.
+  if (parsed.data.atalhos !== undefined) {
+    nextSettings.atalhos = parsed.data.atalhos;
+  }
 
   // Campo que passa a ser do Contato e que uma regra ativa do gatilho por data
   // lê (#2791): a regra seguiria ligada e pararia de disparar em silêncio.
@@ -132,6 +140,11 @@ export async function updatePipelineConfig(
       // #2995: quantos cards o quadro deixa de mostrar é decisão de quem opera
       // — a auditoria registra o número (ou `0`, o desligamento).
       ocultar_encerrados_dias: parsed.data.ocultar_encerrados_dias ?? null,
+      // #3487: quantos atalhos o funil passa a oferecer. O CONTEÚDO não entra
+      // na auditoria de propósito — o link montado carrega dado do cliente, e a
+      // auditoria é lida por quem administra, não necessariamente por quem vê o
+      // contato.
+      atalhos_count: parsed.data.atalhos?.length ?? null,
     },
   });
 

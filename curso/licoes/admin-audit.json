@@ -1,0 +1,470 @@
+{
+  "id": "admin-audit",
+  "titulo": "Audit (Admin)",
+  "tela": "/admin/audit",
+  "resumo": "O caderno de registro do servidor: cada coisa que muda em qualquer empresa fica anotada aqui, com o quê, quem fez e quando, para você conferir depois.",
+  "licoes": [
+    {
+      "id": "conhecendo-o-registro",
+      "titulo": "Conhecendo o registro",
+      "objetivo": "Abrir o registro de auditoria, entender o que cada coluna diz e carregar eventos mais antigos.",
+      "papel": "admin",
+      "busca": [
+        "registro de auditoria",
+        "audit log",
+        "quem mudou o quê",
+        "histórico de alterações",
+        "o que aconteceu no sistema",
+        "rastrear ação de usuário"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O caderno de registro do servidor",
+          "texto": "\"Audit\" é o registro de auditoria: um caderno onde o sistema anota sozinho cada coisa importante que acontece no servidor, em todas as empresas. Uma conversa transferida, um convite feito, um agente publicado, uma empresa suspensa: tudo vira uma linha aqui. Pelo sistema, ninguém consegue editar nem apagar uma linha. Só a limpeza automática tira as muito antigas, por padrão depois de 5 anos. Abaixo do título aparece quantos eventos a lista está mostrando.",
+          "dica": "A lista traz 50 eventos por vez, dos mais novos para os mais antigos. Quando há mais, o número ganha um \"+\".",
+          "rota": "/admin/audit",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Audit",
+                "exato": true,
+                "dentro": {
+                  "role": "navigation"
+                }
+              },
+              "rotulo": "Audit no menu do Admin",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "^\\d+ eventos?\\+?$",
+                "regex": true
+              },
+              "rotulo": "Quantos eventos a lista mostra",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada coluna diz",
+          "texto": "Cada linha é um evento. \"Quando\" diz há quanto tempo ele aconteceu. \"Action\" é o código do que aconteceu, em inglês: \"auth.login_success\" é uma entrada no sistema, \"conversation.transferred\" é uma conversa transferida. \"Tenant\" é o apelido da empresa onde aconteceu. \"Actor\" é o código de quem fez, e \"Recurso\" é o tipo da coisa mexida, com o começo do código dela. Um traço quer dizer que a informação não existe: sem empresa (como uma entrada no sistema, ou quando a empresa já foi apagada) ou sem pessoa (quando foi o próprio sistema ou uma integração ligada por chave de acesso).",
+          "dica": "Consultar o registro também vira linha: cada vez que a lista carrega (ao abrir a tela, mudar um filtro ou carregar mais) entra um \"platform_admin.audit_listed\", e abrir um evento grava \"platform_admin.audit_entry_viewed\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "thead"
+              },
+              "rotulo": "Colunas da lista",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "tbody tr",
+                "n": 0
+              },
+              "rotulo": "Um evento",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Ver os detalhes de um evento",
+          "texto": "No fim de cada linha, o botão \"Ver\" abre a página do evento, com tudo o que foi anotado: a data e a hora exatas, quem fez (com parte do e-mail escondida), a empresa e os detalhes da mudança. Você aprende a ler essa página na última lição.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Abrir o evento",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Eventos mais antigos",
+          "texto": "Role a lista até o fim. Quando existem mais eventos do que os 50 mostrados, aparece o botão \"Carregar mais\": cada clique traz os 50 seguintes, mais antigos, para baixo da lista. Para achar algo específico sem rolar tanto, use os filtros, que você vê na próxima lição.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Carregar mais",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Carregar mais",
+                "exato": true
+              },
+              "rotulo": "Trazer os próximos 50",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filtrando-o-registro",
+      "titulo": "Achando um evento com os filtros",
+      "objetivo": "Recortar o registro por empresa e por tipo de ação, conhecer os filtros de pessoa e de data e limpar tudo.",
+      "papel": "admin",
+      "busca": [
+        "filtrar auditoria por empresa",
+        "procurar evento no registro",
+        "quem transferiu a conversa",
+        "filtrar por data",
+        "filtrar por usuário",
+        "limpar filtros"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Só uma empresa",
+          "texto": "Clique em \"Tenants\" para escolher de quais empresas ver os eventos. Abre uma lista com as empresas do servidor, nome e apelido, e uma busca no alto. Clique numa empresa para marcá-la; dá para marcar mais de uma. Aqui vamos marcar a Clínica Bem Viver.",
+          "rota": "/admin/audit",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Tenants",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Clínica Bem Viver \\(",
+                "regex": true
+              },
+              "rotulo": "Marcar esta empresa",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "placeholder": "Buscar..."
+              },
+              "rotulo": "Procurar empresa pelo nome",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "^Clínica Bem Viver \\(",
+            "regex": true
+          },
+          "dica": "A lista mostra até 30 empresas. Se a que você procura não aparece, filtre por pessoa ou por data."
+        },
+        {
+          "id": "p2",
+          "titulo": "O filtro ligado",
+          "texto": "Com a empresa marcada, o botão \"Tenants\" mostra quantas estão escolhidas e a lista passa a trazer só os eventos dela. Clique fora da caixinha para fechá-la. O mesmo botão desmarca: abra de novo e clique na empresa, ou use \"Limpar seleção\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^Clínica Bem Viver \\(",
+                "regex": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Tenants",
+                "exato": true
+              },
+              "rotulo": "Uma empresa marcada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "tbody tr",
+                "n": 0
+              },
+              "rotulo": "Só os eventos dela",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Só um tipo de ação",
+          "texto": "\"Actions\" filtra pelo que aconteceu. A lista traz todos os códigos que o sistema registra, e a busca recorta por família: digite \"conversation.\" para ver só os eventos de conversa. \"conversation.transferred\" é a transferência de uma conversa para outra pessoa da equipe.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Actions",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar..."
+              },
+              "valor": "conversation."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar..."
+              },
+              "rotulo": "Família de ações",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "conversation.transferred",
+                "exato": true
+              },
+              "rotulo": "Conversa transferida",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "conversation.transferred",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Os dois filtros juntos",
+          "texto": "Os filtros se somam: agora a lista mostra só as transferências de conversa da Clínica Bem Viver. Cada linha diz há quanto tempo foi e o código de quem fez. Para saber quem recebeu a conversa e por quê, abra o evento em \"Ver\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "conversation.transferred",
+                "exato": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Tenants",
+                "exato": true
+              },
+              "rotulo": "Empresa",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Actions",
+                "exato": true
+              },
+              "rotulo": "Tipo de ação",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "tbody"
+              },
+              "rotulo": "Transferências da clínica",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Pessoa, datas e limpar",
+          "texto": "No campo \"Actor (user ID)\" você cola o código completo de uma pessoa para ver só o que ela fez; o código aparece na coluna \"Actor\" e na página de cada evento. Os dois campos de data limitam o período: o primeiro é o início e o segundo, o fim. Com qualquer filtro ligado aparece \"Limpar\", que desliga tudo de uma vez: empresas, ações, pessoa e datas.",
+          "dica": "Com o código da pessoa pela metade, a lista fica vazia: o filtro só funciona com o código inteiro. Depois do \"Limpar\", os campos de data continuam mostrando a data digitada, mesmo sem filtrar mais nada. Apague-os à mão para não se confundir.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Actor (user ID)"
+              },
+              "rotulo": "Só o que uma pessoa fez",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Data de início"
+              },
+              "rotulo": "A partir de",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Data de fim"
+              },
+              "rotulo": "Até",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar",
+                "exato": true
+              },
+              "rotulo": "Desligar os filtros",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lendo-um-evento",
+      "titulo": "Lendo a página de um evento",
+      "objetivo": "Ler tudo o que foi anotado sobre um evento: o quê, quando, quem, em qual empresa e o que mudou, e ir até a coisa que foi mexida.",
+      "papel": "admin",
+      "busca": [
+        "detalhes do evento de auditoria",
+        "quem fez essa alteração",
+        "e-mail de quem mudou",
+        "o que mudou exatamente",
+        "abrir conversa pelo registro",
+        "ver empresa do evento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que aconteceu e quando",
+          "texto": "Esta é a página que abre ao clicar em \"Ver\" numa linha do registro. Aqui, a transferência de uma conversa na Clínica Bem Viver. No alto ficam o código da ação, o apelido da empresa e, logo abaixo, a data e a hora exatas, seguidas de há quanto tempo foi. \"Audit Log\", acima do título, volta para a lista.",
+          "dica": "Quando quem fez estava agindo como administrador do servidor, aparece ao lado do título o selo \"Platform Admin\".",
+          "rota": "/admin/audit/ad100000-0000-4000-8000-000000000001",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-1:has(> div > h1)"
+              },
+              "rotulo": "Ação, empresa e horário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Audit Log",
+                "exato": true
+              },
+              "rotulo": "Voltar para a lista",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que mudou",
+          "texto": "\"Metadata\" guarda os detalhes da mudança, do jeito que o sistema anotou. Nesta transferência, \"to_user_id\" é o código da pessoa que recebeu a conversa e \"note\" é o motivo escrito por quem transferiu. Logo abaixo, \"Resource Type\" e \"Resource ID\" dizem qual coisa foi mexida; aqui, uma conversa. \"negocio_aberto\" diz o que aconteceu com o negócio do contato: \"sem_negocio_aberto\" quer dizer que ele não tinha negócio aberto, então nada mudou no funil.",
+          "dica": "\"Actor IP\" e \"User Agent\" mostram o endereço e o navegador de quem fez, quando o sistema anotou; o traço quer dizer que não foi anotado. \"Request ID\" é o número do pedido, útil para o suporte achar o caso nos registros técnicos. \"Bypassed RLS\" = \"Sim\" diz que a ação passou por cima da separação entre empresas, como fazem as ações do administrador do servidor.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "pre"
+              },
+              "rotulo": "Detalhes da mudança",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-md.border:has-text(\"Request ID\")"
+              },
+              "rotulo": "Ficha técnica do evento",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quem fez e em qual empresa",
+          "texto": "O quadro \"Actor\" mostra quem fez: o código da pessoa e o e-mail dela, com o começo trocado por asteriscos por segurança. O quadro \"Tenant\" mostra a empresa onde aconteceu: nome, apelido e situação (\"active\" é ativa, \"suspended\" é suspensa, \"archived\" é arquivada). O botão \"Ver tenant\" abre a ficha dessa empresa.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-md.border:has(> h2:text-is(\"Actor\"))"
+              },
+              "rotulo": "Quem fez",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-md.border:has(> h2:text-is(\"Tenant\"))"
+              },
+              "rotulo": "Em qual empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Ir até a conversa",
+          "texto": "Quando a coisa mexida é uma conversa ou uma empresa, aparece o quadro \"Recurso\". O botão \"Abrir recurso\" leva direto até ela: aqui, abre a conversa na Inbox do Admin, para você ler o que aconteceu antes e depois da transferência.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-md.border:has(> h2:text-is(\"Recurso\")) > p"
+              },
+              "rotulo": "Tipo e código da conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir recurso",
+                "exato": true
+              },
+              "rotulo": "Abrir a conversa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Abrir recurso",
+            "exato": true
+          }
+        }
+      ]
+    }
+  ]
+}

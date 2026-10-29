@@ -267,6 +267,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "da organização viraram venda, e quem o lê é o servidor com o admin client " +
       "filtrando organization_id à mão (a tela `/app/settings/conversoes`).",
   },
+  { tabela: "meta_ctwa_click_dispatches", razao: "tests/invariants/meta-lead-por-clique.test.ts — deny-all como ad_conversion_dispatches (doc 199): anon e authenticated levam `permission denied` ao ler, inserir, alterar e apagar; service_role lê (controle positivo). Livro dos cliques CTWA; só o servidor lê, filtrando organization_id à mão." },
   {
     tabela: "ad_hierarchy_cache",
     razao:
@@ -354,6 +355,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "(a leitura é de admin; por isso não cabe em TABLES, cujo usuário semeado é " +
       "agent), promovido a admin passa a ler (controle), e UPDATE/INSERT/DELETE " +
       "pela sessão e qualquer leitura por anon dão permission denied. Migration 0510.",
+  },
+  {
+    tabela: "conversation_participants",
+    razao:
+      "tests/invariants/atendimento-conjunto-participantes.test.ts — dois tenants " +
+      "por JWT (agent): o convidado LÊ a própria participação e passa a ver a " +
+      "conversa e as mensagens dela, o dono não lê a linha alheia, um membro de " +
+      "outra organização lê 0 nos dois sentidos e INSERT direto de authenticated " +
+      "dá permission denied. Migration 0661 (issue #2542).",
   },
 ];
 

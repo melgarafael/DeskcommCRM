@@ -5426,6 +5426,13 @@ grant execute on function public.fn_can_view_conversation(uuid, uuid)
 -- linha-por-linha que vivia aqui era reinstalada a cada update.sh e valia até
 -- aquele bloco, e era ela que fazia a caixa de entrada custar ~7 ms por linha
 -- (#3090): quem derruba o clone antigo é o `drop` colado no bloco final.
+-- A policy `conversations_select` saiu daqui: a 0035 a criava só com
+-- `fn_can_view_conversation` e o ramo de PARTICIPANTE da 0661 a redefine adiante.
+-- Deixar as duas reabria uma janela — em todo install/update a versão
+-- intermediária (sem o `or exists`) valia até a final chegar, e o convidado não
+-- via a conversa nesse intervalo. O `drop policy if exists` do bloco da 0661
+-- continua, e é ele que limpa o clone que recebeu a versão antiga. Vigiado por
+-- `tests/unit/baseline-nao-constroi-o-que-derruba.test.ts`.
 
 drop policy if exists "conversations_agent_write" on public.conversations;
 drop policy if exists "conversations_agent_insert" on public.conversations;
@@ -51781,6 +51788,41 @@ begin
     );
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('leads', v_count);
+  -- 5b. lead_field_proposals (0772, #3316) — a proposta de campo que a IA leu
+  -- num DOCUMENTO (voucher, bilhete, apólice). `trecho` é o texto do documento
+  -- sobre a PESSOA e os dois valores são o dado que a IA extraiu: o MESMO
+  -- tratamento do `custom_fields` do próprio negócio (passo 5) — campo, status
+  -- e decisão PERMANECEM (a fila continua explicável), o conteúdo identificável
+  -- sai. Alcança pelo vínculo do negócio com o contato (direto ou pela
+  -- `crm_lead_links`), como os passos 4 e 5.
+  -- Gate: tests/invariants/cascata-lgpd-nao-encolhe.test.ts (catraca da lista).
+  update lead_field_proposals set
+    trecho = v_anon_label,
+    valor_proposto = null,
+    valor_anterior = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      lead_id in (
+        select id from crm_leads
+         where organization_id = p_organization_id
+           and contact_id = p_contact_id
+      )
+      or lead_id in (
+        select lead_id from crm_lead_links
+         where target_kind = 'contact'
+           and target_id = p_contact_id
+           and organization_id = p_organization_id
+      )
+    )
+    -- Redação IDEMPOTENTE: a segunda anonimização não deve contar linha de novo
+    -- (o `already_anonymized` já barra, mas a condição também protege o rerun
+    -- parcial que a 0414 permite).
+    and (trecho is distinct from v_anon_label
+         or valor_proposto is not null
+         or valor_anterior is not null);
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('lead_field_proposals', v_count);
 
   -- 6. orders — PRESERVE values + status + timestamps. Strip personal fields from payload jsonb
   --    and replace customer_external_id with null (FK-safe; soft de-link). Keep contact_id null.
@@ -54398,6 +54440,55 @@ $$;
 -- Postgres dá a PUBLIC na criação ficaria de pé — alcançável pela anon key.
 revoke execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) from public, anon;
 grant  execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) to authenticated, service_role;
+
+-- ---- participantes do atendimento conjunto (migration 0661, issue #2542) ----
+-- Tabela introduzida pela 0661. A policy final vive na forward-fix 9016,
+-- depois do escopo em lote da 0726; cadeia e baseline terminam na mesma regra.
+-- Nasce ANTES da VARREDURA anon por vizinhança, embora não crie função.
+--
+-- A tabela, a RLS de leitura (organização + papel + a PRÓPRIA linha) e — a
+-- linha que faz o convidado VER — o ramo de participante no `conversations_select`
+-- (o `fn_can_view_conversation` continua a régua; aqui só se ACRESCENTA a porta).
+-- `messages` herda o escopo por `exists` na própria policy. O DONO único
+-- (`assigned_to_user_id`) não é tocado por nada disto: entrar não é assumir.
+create table if not exists public.conversation_participants (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.organizations(id) on delete cascade,
+  conversation_id  uuid not null references public.conversations(id) on delete cascade,
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  invited_by       uuid references auth.users(id) on delete set null,
+  joined_at        timestamptz not null default now(),
+  left_at          timestamptz,
+  constraint conversation_participants_unico unique (conversation_id, user_id)
+);
+
+alter table public.conversation_participants add column if not exists invited_by uuid;
+alter table public.conversation_participants add column if not exists joined_at timestamptz not null default now();
+alter table public.conversation_participants add column if not exists left_at timestamptz;
+
+create index if not exists participantes_por_usuario
+  on public.conversation_participants (organization_id, user_id)
+  where left_at is null;
+create index if not exists participantes_por_conversa
+  on public.conversation_participants (organization_id, conversation_id);
+
+alter table public.conversation_participants enable row level security;
+
+revoke all    on public.conversation_participants from anon, authenticated;
+grant  select on public.conversation_participants to authenticated;
+grant  all    on public.conversation_participants to service_role;
+
+drop policy if exists tenant_isolation_conversation_participants_select on public.conversation_participants;
+create policy tenant_isolation_conversation_participants_select
+  on public.conversation_participants
+  for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'agent')
+    and user_id = auth.uid()
+  );
+
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
 -- manifest: **O entregue e o lido da API oficial chegam ao destinatário da campanha (issue #2937).** `fn_campanha_sincroniza_ack` saía cedo quando `new.status is not distinct from old.status` e o gatilho escutava só `after update of status`: na API oficial o webhook de entrega/leitura mantém `messages.status = 'sent'` e grava apenas `delivered_at`/`read_at` (`lib/channels/meta/status-update.ts:23-31`), então o gatilho nem disparava ou saía no primeiro `if` — `campaign_recipients.delivered_at`/`read_at` ficavam nulos para sempre e as taxas de entrega/leitura da campanha, zeradas. A função passa a derivar o "status efetivo" dos carimbos quando o canal não muda o `status`, e o gatilho passa a escutar exatamente as três colunas que aquele ack toca (`status`, `delivered_at`, `read_at`). O caminho do canal não oficial (o `status` chega `delivered`/`read`, `lib/waha/ingest.ts`), a regra de "status analítico nunca retrocede" e o caminho de `failed` seguem idênticos. Gate: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` (vermelho na main, verde aqui).
 
@@ -58197,8 +58288,507 @@ begin
  if changed then new.google_next_attempt_at:=now(); end if;
  return new;
 end;$$;
+-- ---- nascimento CTWA causal e LeadSubmitted (migration 0803) ----
+alter table public.ad_conversion_dispatches
+  add column if not exists claim_token uuid,
+  add column if not exists claimed_until timestamptz;
+
+comment on column public.messages.metadata is
+  'meta_ctwa_message_v1 e reservado ao ingest service_role: clique real do referral da mensagem inbound. Authenticated pode editar os demais metadados.';
+comment on column public.crm_leads.source_metadata is
+  'meta_capi_lead_birth_v1 e prova causal reservada, escrita somente pela RPC fn_nascer_lead_da_mensagem. Nao e first-touch.';
+
+create or replace function public.fn_guard_meta_ctwa_message_v1()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if new.metadata ? 'meta_ctwa_message_v1' and
+     (new.direction <> 'inbound' or new.conversation_id is null or new.contact_id is null) then
+    raise exception 'meta_ctwa_message_v1_requires_inbound';
+  end if;
+  if current_user not in ('service_role', 'postgres') and
+     (case when tg_op = 'INSERT' then new.metadata ? 'meta_ctwa_message_v1'
+           else (new.metadata->'meta_ctwa_message_v1') is distinct from
+                (old.metadata->'meta_ctwa_message_v1')
+                or ((new.metadata ? 'meta_ctwa_message_v1' or old.metadata ? 'meta_ctwa_message_v1')
+                    and (new.organization_id,new.contact_id,new.conversation_id,new.direction)
+                        is distinct from
+                        (old.organization_id,old.contact_id,old.conversation_id,old.direction)) end) then
+    raise exception 'meta_ctwa_message_v1_reserved';
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_guard_meta_ctwa_message_v1() from public, anon, authenticated;
+grant execute on function public.fn_guard_meta_ctwa_message_v1() to service_role;
+drop trigger if exists trg_guard_meta_ctwa_message_v1 on public.messages;
+create trigger trg_guard_meta_ctwa_message_v1 before insert or update of metadata, direction, organization_id, contact_id, conversation_id
+  on public.messages for each row execute function public.fn_guard_meta_ctwa_message_v1();
+
+create or replace function public.fn_guard_meta_capi_lead_birth_v1()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if (case when tg_op = 'INSERT' then new.source_metadata ? 'meta_capi_lead_birth_v1'
+           else (new.source_metadata->'meta_capi_lead_birth_v1') is distinct from
+                (old.source_metadata->'meta_capi_lead_birth_v1')
+                or ((new.source_metadata ? 'meta_capi_lead_birth_v1' or old.source_metadata ? 'meta_capi_lead_birth_v1')
+                    and (new.organization_id,new.contact_id,new.created_at) is distinct from
+                        (old.organization_id,old.contact_id,old.created_at)) end) then
+    if current_user <> pg_get_userbyid((select proowner from pg_catalog.pg_proc
+         where oid = 'public.fn_nascer_lead_da_mensagem(uuid,uuid,uuid,uuid,text,text,jsonb,text[],uuid,uuid)'::regprocedure))
+       or current_setting('deskcomm.meta_capi_birth_lead_id', true) is distinct from new.id::text then
+      raise exception 'meta_capi_lead_birth_v1_reserved';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_guard_meta_capi_lead_birth_v1() from public, anon, authenticated;
+grant execute on function public.fn_guard_meta_capi_lead_birth_v1() to service_role;
+drop trigger if exists trg_guard_meta_capi_lead_birth_v1 on public.crm_leads;
+create trigger trg_guard_meta_capi_lead_birth_v1 before insert or update of source_metadata, organization_id, contact_id, created_at
+  on public.crm_leads for each row execute function public.fn_guard_meta_capi_lead_birth_v1();
+
+create or replace function public.fn_nascer_lead_da_mensagem(
+  p_org uuid, p_contact uuid, p_pipeline uuid, p_stage uuid, p_title text,
+  p_source text, p_source_metadata jsonb, p_tags text[],
+  p_message uuid, p_conversation uuid
+) returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  v_msg public.messages%rowtype;
+  v_lead uuid;
+  v_click text;
+  v_channel text;
+begin
+  select * into v_msg from public.messages
+    where id = p_message and organization_id = p_org
+      and contact_id = p_contact and conversation_id = p_conversation
+      and direction = 'inbound';
+  if not found then
+    raise exception 'causal_message_mismatch';
+  end if;
+  select c.channel into v_channel from public.conversations c
+    where c.id = p_conversation and c.organization_id = p_org
+      and c.contact_id = p_contact;
+  if not found then raise exception 'causal_conversation_mismatch'; end if;
+  if not exists (
+    select 1 from public.crm_stages s
+    where s.id=p_stage and s.organization_id=p_org and s.pipeline_id=p_pipeline
+  ) then raise exception 'causal_stage_mismatch'; end if;
+
+  -- A funcao oficial preserva advisory lock, moeda, funil, etapa, tags e NULL
+  -- para demanda ja aberta. Nunca recebe prova fornecida pelo chamador.
+  v_lead := public.fn_nascer_lead_da_conversa(
+    p_org, p_contact, p_pipeline, p_stage, p_title, p_source,
+    coalesce(p_source_metadata, '{}'::jsonb) - 'meta_capi_lead_birth_v1', p_tags);
+  if v_lead is null then return null; end if;
+
+  v_click := v_msg.metadata->'meta_ctwa_message_v1'->>'ctwa_clid';
+  if v_channel = 'whatsapp'
+     and v_msg.metadata->'meta_ctwa_message_v1'->>'platform' = 'meta_ads'
+     and v_msg.metadata->'meta_ctwa_message_v1'->>'source_type' = 'ad'
+     and nullif(btrim(v_click), '') is not null
+     and length(v_click) <= 512
+     and p_source is distinct from 'campanha'
+     and not exists (
+       select 1 from public.campaign_recipients cr
+       where cr.organization_id = p_org and cr.conversation_id = p_conversation
+     ) then
+    -- O gatilho exige simultaneamente o owner da RPC e este ID temporário.
+    -- Mesmo service_role/postgres fora deste nascimento não pode forjar a prova.
+    perform set_config('deskcomm.meta_capi_birth_lead_id', v_lead::text, true);
+    update public.crm_leads set source_metadata =
+      coalesce(source_metadata, '{}'::jsonb) ||
+      jsonb_build_object('meta_capi_lead_birth_v1',
+        jsonb_build_object('platform','meta_ads','source_type','ad',
+          'ctwa_clid',v_click,'message_id',p_message,
+          'conversation_id',p_conversation,'captured_at',v_msg.created_at))
+      where organization_id = p_org and id = v_lead;
+    perform set_config('deskcomm.meta_capi_birth_lead_id', '', true);
+  end if;
+
+  perform public.emit_event('lead.created','crm_lead',v_lead,
+    jsonb_build_object('pipeline_id',p_pipeline,'stage_id',p_stage,
+      'conversation_id',p_conversation),
+    jsonb_build_object('source','nascimento-da-conversa'),p_org);
+  return v_lead;
+end;
+$$;
+revoke execute on function public.fn_nascer_lead_da_mensagem(uuid,uuid,uuid,uuid,text,text,jsonb,text[],uuid,uuid) from public, anon, authenticated;
+grant execute on function public.fn_nascer_lead_da_mensagem(uuid,uuid,uuid,uuid,text,text,jsonb,text[],uuid,uuid) to service_role;
+
+create or replace function public.fn_claim_meta_lead_submitted(p_org uuid, p_lead uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_row public.ad_conversion_dispatches%rowtype;
+  v_token uuid := gen_random_uuid();
+begin
+  if not exists (
+    select 1 from public.crm_leads l where l.organization_id=p_org and l.id=p_lead
+      and l.source_metadata->'meta_capi_lead_birth_v1'->>'platform'='meta_ads'
+      and l.source_metadata->'meta_capi_lead_birth_v1'->>'source_type'='ad'
+      and nullif(l.source_metadata->'meta_capi_lead_birth_v1'->>'ctwa_clid','') is not null
+  ) then return jsonb_build_object('acquired',false,'status','no_proof'); end if;
+  insert into public.ad_conversion_dispatches
+    (organization_id,lead_id,platform,event_name,status,event_id,
+     event_occurred_at,meta_event_name,claim_token,claimed_until)
+    select p_org,p_lead,'meta_ads','LeadSubmitted','processing',
+      p_lead::text||':LeadSubmitted',l.created_at,'LeadSubmitted',
+      v_token,now()+interval '2 minutes'
+    from public.crm_leads l where l.organization_id=p_org and l.id=p_lead
+  on conflict (organization_id,lead_id,event_name) do nothing;
+  select * into v_row from public.ad_conversion_dispatches
+    where organization_id=p_org and lead_id=p_lead and event_name='LeadSubmitted'
+    for update;
+  if not found then return jsonb_build_object('acquired',false,'status','missing'); end if;
+  if v_row.platform <> 'meta_ads'
+     or v_row.event_id is distinct from p_lead::text||':LeadSubmitted'
+     or v_row.meta_event_name is distinct from 'LeadSubmitted'
+     or v_row.event_occurred_at is distinct from (
+       select l.created_at from public.crm_leads l
+       where l.organization_id=p_org and l.id=p_lead
+     ) then
+    return jsonb_build_object('acquired',false,'status','invalid_ledger');
+  end if;
+  if v_row.status='sent' then return jsonb_build_object('acquired',false,'status','sent'); end if;
+  if v_row.claim_token is not null and v_row.claimed_until > now()
+     and v_row.claim_token <> v_token then
+    return jsonb_build_object('acquired',false,'status','busy');
+  end if;
+  update public.ad_conversion_dispatches set status='processing',
+    claim_token=v_token,claimed_until=now()+interval '2 minutes',
+    event_id=p_lead::text||':LeadSubmitted',attempted_at=now()
+    where id=v_row.id and organization_id=p_org;
+  return jsonb_build_object('acquired',true,'status','processing','token',v_token);
+end;
+$$;
+revoke execute on function public.fn_claim_meta_lead_submitted(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.fn_claim_meta_lead_submitted(uuid,uuid) to service_role;
+
+create or replace function public.fn_settle_meta_lead_submitted(
+  p_org uuid,p_lead uuid,p_token uuid,p_status text,p_reason text,p_detail text
+) returns boolean language plpgsql security definer set search_path = '' as $$
+begin
+  if p_status not in ('sent','skipped','error') then return false; end if;
+  update public.ad_conversion_dispatches set status=p_status,reason=p_reason,
+    detail=left(p_detail,400),claim_token=null,claimed_until=null,attempted_at=now()
+  where organization_id=p_org and lead_id=p_lead and event_name='LeadSubmitted'
+    and platform='meta_ads' and event_id=p_lead::text||':LeadSubmitted'
+    and claim_token=p_token and claimed_until>now() and status='processing';
+  return found;
+end;
+$$;
+revoke execute on function public.fn_settle_meta_lead_submitted(uuid,uuid,uuid,text,text,text) from public, anon, authenticated;
+grant execute on function public.fn_settle_meta_lead_submitted(uuid,uuid,uuid,text,text,text) to service_role;
+
+-- Reenvio explicito usa o mesmo ledger e nao migra os consumidores antigos.
+create or replace function public.fn_solicitar_reenvio_conversao(p_org uuid, p_lead uuid, p_event text)
+returns boolean language plpgsql set search_path = public as $$
+declare v_linha public.ad_conversion_dispatches%rowtype;
+begin
+  if p_event is null or not (
+    p_event in ('Purchase', 'QualifiedLead', 'LeadSubmitted')
+    or p_event ~ '^Etapa:[0-9a-f-]{36}$'
+    or p_event ~ '^MetaEtapa:[0-9a-f-]{36}$'
+  ) then
+    return false;
+  end if;
+  select * into v_linha from public.ad_conversion_dispatches
+    where organization_id = p_org and lead_id = p_lead and event_name = p_event for update;
+  if not found or v_linha.status = 'sent' then return false; end if;
+  if p_event = 'LeadSubmitted' then
+    if v_linha.platform <> 'meta_ads' or v_linha.event_occurred_at is null
+       or v_linha.event_id is distinct from p_lead::text || ':LeadSubmitted'
+       or v_linha.meta_event_name is distinct from 'LeadSubmitted'
+       or (v_linha.claim_token is not null and v_linha.claimed_until > now())
+       then return false; end if;
+  elsif p_event ~ '^MetaEtapa:' then
+    if v_linha.event_occurred_at is null or v_linha.meta_event_name is null then return false; end if;
+  elsif p_event <> 'Purchase' and (v_linha.event_occurred_at is null or v_linha.google_action_id is null) then
+    return false;
+  end if;
+  if p_event = 'Purchase' and v_linha.remote_request_id is null and not exists (
+    select 1 from public.crm_leads where id = p_lead and organization_id = p_org and status = 'won'
+  ) then return false; end if;
+  if exists (select 1 from public.event_log where organization_id = p_org and entity_id = p_lead
+    and event_type = 'ad_conversion.retry_requested' and status in ('pending', 'processing')
+    and coalesce(payload->>'event_name', 'Purchase') = p_event) then return false; end if;
+  perform public.emit_event('ad_conversion.retry_requested', 'crm_lead', p_lead,
+    jsonb_build_object('event_name', p_event), '{}'::jsonb, p_org);
+  update public.ad_conversion_dispatches set reason = 'reprocessamento_solicitado', attempted_at = now()
+    where id = v_linha.id and organization_id = p_org;
+  return true;
+end;
+$$;
+revoke execute on function public.fn_solicitar_reenvio_conversao(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.fn_solicitar_reenvio_conversao(uuid, uuid, text) to service_role;
+
 notify pgrst,'reload schema';
 
+-- 0804: null desliga LeadSubmitted causal em toda organizacao.
+-- Coluna propria evita que um escritor antigo de settings restaure o estado.
+alter table public.organizations
+  add column if not exists meta_lead_birth_enabled_at timestamptz;
+comment on column public.organizations.meta_lead_birth_enabled_at is
+  'Null desliga LeadSubmitted causal. Cada ativacao troca o corte pelo horario do banco; reativar nao envia cliques antigos.';
+
+create or replace function public.fn_definir_meta_lead_birth(p_org uuid, p_enabled boolean)
+returns timestamptz language plpgsql set search_path = '' as $$
+declare
+  v_ativada_em timestamptz;
+begin
+  if p_org is null or p_enabled is null then
+    raise exception 'meta_lead_birth_invalid_input' using errcode = '22023';
+  end if;
+  update public.organizations
+     set meta_lead_birth_enabled_at = case when p_enabled then clock_timestamp() else null end
+   where id = p_org
+   returning meta_lead_birth_enabled_at into v_ativada_em;
+  if not found then
+    raise exception 'meta_lead_birth_org_not_found' using errcode = '22023';
+  end if;
+  return v_ativada_em;
+end;
+$$;
+revoke execute on function public.fn_definir_meta_lead_birth(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.fn_definir_meta_lead_birth(uuid, boolean) to service_role;
+notify pgrst,'reload schema';
+
+-- ---- LeadSubmitted por clique CTWA (migration 0805) ----
+-- manifest: Registra cada clique CTWA inbound em livro proprio, atomico com a mensagem, para LeadSubmitted por clique sem mudar o ledger de Purchase e etapas.
+-- O ID da primeira mensagem sobrevive a exclusao da conversa; a exclusao LGPD
+-- do contato ou da organizacao remove a linha por cascata.
+create table if not exists public.meta_ctwa_click_dispatches (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  first_message_id uuid not null,
+  ctwa_clid text not null check (length(ctwa_clid) between 1 and 512),
+  captured_at timestamptz not null,
+  activation_at_capture timestamptz,
+  status text not null default 'pending'
+    check (status in ('pending','processing','sent','skipped','error')),
+  reason text,
+  detail text,
+  event_id text not null,
+  claim_token uuid,
+  claimed_until timestamptz,
+  attempted_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (organization_id, ctwa_clid),
+  unique (organization_id, first_message_id),
+  unique (organization_id, event_id)
+);
+create index if not exists meta_ctwa_click_dispatches_org_status_idx
+  on public.meta_ctwa_click_dispatches (organization_id, status, captured_at desc);
+create index if not exists meta_ctwa_click_dispatches_org_contact_time_idx
+  on public.meta_ctwa_click_dispatches (organization_id, contact_id, captured_at desc);
+alter table public.meta_ctwa_click_dispatches enable row level security;
+revoke all on public.meta_ctwa_click_dispatches from public, anon, authenticated;
+grant select, insert, update, delete on public.meta_ctwa_click_dispatches to service_role;
+comment on table public.meta_ctwa_click_dispatches is
+  'Evidencia e livro-razao de LeadSubmitted por clique CTWA. Server-only; primeiro toque do contato e demais conversoes nao sao alterados.';
+comment on column public.meta_ctwa_click_dispatches.first_message_id is
+  'ID historico da primeira mensagem, sem FK para preservar a prova ate a exclusao LGPD do contato.';
+
+create or replace function public.fn_guard_meta_ctwa_click_identity() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if (new.organization_id,new.contact_id,new.first_message_id,new.ctwa_clid,
+      new.captured_at,new.activation_at_capture,new.event_id) is distinct from
+     (old.organization_id,old.contact_id,old.first_message_id,old.ctwa_clid,
+      old.captured_at,old.activation_at_capture,old.event_id) then
+    raise exception 'meta_ctwa_click_identity_immutable';
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_guard_meta_ctwa_click_identity() from public, anon, authenticated;
+grant execute on function public.fn_guard_meta_ctwa_click_identity() to service_role;
+drop trigger if exists trg_guard_meta_ctwa_click_identity on public.meta_ctwa_click_dispatches;
+create trigger trg_guard_meta_ctwa_click_identity before update
+  on public.meta_ctwa_click_dispatches for each row
+  execute function public.fn_guard_meta_ctwa_click_identity();
+
+-- O ledger anterior identifica o evento pelo lead, mas sua prova preserva o
+-- ctwa_clid. Um clique ja enviado antes desta tabela nao pode ganhar outro ID.
+create or replace function public.fn_meta_ctwa_click_enviado_legado(p_org uuid,p_clid text)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.ad_conversion_dispatches d
+    join public.crm_leads l on l.id=d.lead_id and l.organization_id=d.organization_id
+    where d.organization_id=p_org and d.platform='meta_ads'
+      and d.event_name='LeadSubmitted' and d.status='sent'
+      and l.source_metadata->'meta_capi_lead_birth_v1'->>'platform'='meta_ads'
+      and l.source_metadata->'meta_capi_lead_birth_v1'->>'source_type'='ad'
+      and l.source_metadata->'meta_capi_lead_birth_v1'->>'ctwa_clid'=p_clid
+  );
+$$;
+revoke execute on function public.fn_meta_ctwa_click_enviado_legado(uuid,text)
+  from public, anon, authenticated;
+grant execute on function public.fn_meta_ctwa_click_enviado_legado(uuid,text) to service_role;
+
+create or replace function public.fn_record_meta_ctwa_click() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_clid text;
+  v_activation timestamptz;
+  v_at timestamptz;
+  v_sent_legacy boolean;
+  v_id uuid := gen_random_uuid();
+begin
+  if new.direction <> 'inbound'
+     or new.metadata->'meta_ctwa_message_v1'->>'platform' is distinct from 'meta_ads'
+     or new.metadata->'meta_ctwa_message_v1'->>'source_type' is distinct from 'ad' then
+    return new;
+  end if;
+  v_clid := new.metadata->'meta_ctwa_message_v1'->>'ctwa_clid';
+  if v_clid is null or v_clid <> btrim(v_clid) or length(v_clid) not between 1 and 512 then
+    return new;
+  end if;
+  if not exists (select 1 from public.contacts c
+      where c.id=new.contact_id and c.organization_id=new.organization_id)
+     or not exists (select 1 from public.conversations c
+      where c.id=new.conversation_id and c.organization_id=new.organization_id
+        and c.contact_id=new.contact_id and c.channel='whatsapp') then
+    -- A ancora valida exige escopo valido. Falhar reverte mensagem e evento
+    -- juntos; aceitar a mensagem aqui perderia o clique silenciosamente.
+    raise exception 'meta_ctwa_click_scope_mismatch';
+  end if;
+  -- O lock ordena captura e toggle da organizacao, ambos no relogio do banco.
+  select o.meta_lead_birth_enabled_at into v_activation
+    from public.organizations o where o.id=new.organization_id for share;
+  v_at := clock_timestamp();
+  v_sent_legacy := public.fn_meta_ctwa_click_enviado_legado(new.organization_id,v_clid);
+  insert into public.meta_ctwa_click_dispatches
+    (id,organization_id,contact_id,first_message_id,ctwa_clid,captured_at,
+     activation_at_capture,status,reason,event_id)
+  values (v_id,new.organization_id,new.contact_id,new.id,v_clid,v_at,
+    v_activation,
+    case when v_sent_legacy or v_activation is null or v_at<=v_activation
+      then 'skipped' else 'pending' end,
+    case when v_sent_legacy then 'lead_submitted_legado_enviado'
+      when v_activation is null or v_at<=v_activation then 'lead_submitted_desativado'
+      else null end,
+    v_id::text||':LeadSubmitted')
+  on conflict (organization_id,ctwa_clid) do nothing;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_record_meta_ctwa_click() from public, anon, authenticated;
+grant execute on function public.fn_record_meta_ctwa_click() to service_role;
+drop trigger if exists trg_record_meta_ctwa_click on public.messages;
+create trigger trg_record_meta_ctwa_click after insert on public.messages
+  for each row execute function public.fn_record_meta_ctwa_click();
+
+create or replace function public.fn_claim_meta_ctwa_click(p_org uuid,p_click uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_row public.meta_ctwa_click_dispatches%rowtype;
+  v_token uuid := gen_random_uuid();
+begin
+  select * into v_row from public.meta_ctwa_click_dispatches
+    where organization_id=p_org and id=p_click for update;
+  if not found then return jsonb_build_object('acquired',false,'status','missing'); end if;
+  if v_row.status='sent' then return jsonb_build_object('acquired',false,'status','sent'); end if;
+  if public.fn_meta_ctwa_click_enviado_legado(p_org,v_row.ctwa_clid) then
+    update public.meta_ctwa_click_dispatches
+      set status='skipped',reason='lead_submitted_legado_enviado',
+          claim_token=null,claimed_until=null
+      where organization_id=p_org and id=p_click;
+    return jsonb_build_object('acquired',false,'status','legacy_sent');
+  end if;
+  if v_row.activation_at_capture is null or v_row.captured_at<=v_row.activation_at_capture then
+    return jsonb_build_object('acquired',false,'status','disabled_at_capture');
+  end if;
+  if v_row.event_id is distinct from v_row.id::text||':LeadSubmitted' then
+    return jsonb_build_object('acquired',false,'status','invalid_ledger');
+  end if;
+  if v_row.claim_token is not null and v_row.claimed_until>now() then
+    return jsonb_build_object('acquired',false,'status','busy');
+  end if;
+  update public.meta_ctwa_click_dispatches
+    set status='processing',claim_token=v_token,claimed_until=now()+interval '2 minutes',
+        attempted_at=now(),reason=null
+    where organization_id=p_org and id=p_click;
+  return jsonb_build_object('acquired',true,'status','processing','token',v_token);
+end;
+$$;
+revoke execute on function public.fn_claim_meta_ctwa_click(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.fn_claim_meta_ctwa_click(uuid,uuid) to service_role;
+
+create or replace function public.fn_settle_meta_ctwa_click(
+  p_org uuid,p_click uuid,p_token uuid,p_status text,p_reason text,p_detail text
+) returns boolean language plpgsql security definer set search_path = '' as $$
+begin
+  if p_status not in ('sent','skipped','error') then return false; end if;
+  update public.meta_ctwa_click_dispatches
+    set status=p_status,reason=p_reason,detail=left(p_detail,400),
+        claim_token=null,claimed_until=null,attempted_at=now()
+  where organization_id=p_org and id=p_click and claim_token=p_token
+    and claimed_until>now() and status='processing';
+  return found;
+end;
+$$;
+revoke execute on function public.fn_settle_meta_ctwa_click(uuid,uuid,uuid,text,text,text)
+  from public, anon, authenticated;
+grant execute on function public.fn_settle_meta_ctwa_click(uuid,uuid,uuid,text,text,text)
+  to service_role;
+
+create or replace function public.fn_solicitar_reenvio_meta_ctwa_click(p_org uuid,p_click uuid)
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare
+  v_row public.meta_ctwa_click_dispatches%rowtype;
+  v_enabled timestamptz;
+begin
+  select * into v_row from public.meta_ctwa_click_dispatches
+    where organization_id=p_org and id=p_click for update;
+  if not found or v_row.status='sent'
+     or (v_row.claim_token is not null and v_row.claimed_until>now()) then
+    return false;
+  end if;
+  if public.fn_meta_ctwa_click_enviado_legado(p_org,v_row.ctwa_clid) then
+    return false;
+  end if;
+  select meta_lead_birth_enabled_at into v_enabled
+    from public.organizations where id=p_org;
+  if v_row.activation_at_capture is null or v_enabled is distinct from v_row.activation_at_capture
+     or v_row.captured_at<=v_enabled then return false; end if;
+  perform public.emit_event('ad_conversion.click_retry_requested','meta_ctwa_click',p_click,
+    jsonb_build_object('click_id',p_click),'{}'::jsonb,p_org);
+  update public.meta_ctwa_click_dispatches
+    set reason='reprocessamento_solicitado',attempted_at=now()
+    where organization_id=p_org and id=p_click;
+  return true;
+end;
+$$;
+revoke execute on function public.fn_solicitar_reenvio_meta_ctwa_click(uuid,uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_solicitar_reenvio_meta_ctwa_click(uuid,uuid) to service_role;
+notify pgrst,'reload schema';
+
+
+-- ---- o clique em anúncio some na anonimização (migration 0806, doc 199) ----
+-- manifest: **O registro de clique em anúncio (`meta_ctwa_click_dispatches`) some quando o contato é anonimizado (#3128, doc 199 pergunta 2 = A).** A tabela guarda o `ctwa_clid`, que liga a pessoa ao anúncio em que ela clicou na Meta — dado pessoal. A anonimização não exclui o contato, então o `on delete cascade` da tabela nunca dispara num pedido do titular. O gatilho `trg_contacts_anonimizado_apaga_cliques_ctwa` APAGA as linhas do contato na virada de `is_anonymized` (o mesmo desenho de `fn_apaga_propostas_de_contato_anonimizado`): a porta por onde os dois caminhos de anonimização passam. Custo aceito no doc 199: se a Meta reenviar um clique antigo dessa pessoa, ele é contado de novo. Idempotente; espelhado no apêndice do `baseline.sql` logo depois do bloco da 0805. Gates: `tests/invariants/meta-lead-por-clique.test.ts` e a decisão em `tests/invariants/lgpd-redact-unificado-alcanca-pelo-catalogo.test.ts`.
+create or replace function public.fn_apaga_cliques_ctwa_de_contato_anonimizado()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path to ''
+as $$
+begin
+  delete from public.meta_ctwa_click_dispatches
+   where organization_id = new.organization_id and contact_id = new.id;
+  return new;
+end$$;
+
+revoke execute on function public.fn_apaga_cliques_ctwa_de_contato_anonimizado() from public, anon, authenticated;
+
+drop trigger if exists trg_contacts_anonimizado_apaga_cliques_ctwa on public.contacts;
+create trigger trg_contacts_anonimizado_apaga_cliques_ctwa
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
+  execute function public.fn_apaga_cliques_ctwa_de_contato_anonimizado();
 
 -- ---- o escopo da conversa avaliado uma vez por consulta (migration 0726) ----
 -- manifest: O escopo de leitura da conversa passa a ser avaliado UMA VEZ por consulta (`fn_conversation_scope()`) em vez de uma vez por linha (`fn_can_view_conversation`): a caixa de entrada deixa de custar ~7 ms por linha no RLS (#3090)
@@ -58342,25 +58932,6 @@ $$;
 revoke all on function public.fn_conversation_scope() from public, anon;
 grant execute on function public.fn_conversation_scope() to authenticated, service_role;
 
--- A policy: o mesmo resultado da 0035, sem uma chamada por linha.
-drop policy if exists "conversations_select" on public.conversations;
-create policy "conversations_select" on public.conversations
-  for select using (
-    (select public.fn_is_platform_admin())
-    or organization_id in (
-         select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
-       )
-    or (
-         assigned_to_user_id = auth.uid()
-         and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
-       )
-    or (
-         assigned_to_user_id is null
-         and organization_id in (
-              select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
-            )
-       )
-  );
 
 -- 0734 — avaliação única de permissões (#3087)
 -- manifest: Avalia papel e contexto de suporte uma vez por verificação RBAC (#3087), preservando regras, grants e limites.
@@ -60079,6 +60650,148 @@ $$;
 
 revoke execute on function public.fn_enfileirar_midia_vencida(integer) from public, anon, authenticated;
 grant execute on function public.fn_enfileirar_midia_vencida(integer) to service_role;
+-- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
+-- Espelho idempotente da migration 0563. É este apêndice que chega a todo
+-- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
+-- re-aplica num banco existente; nenhum dos dois roda as migrations.
+-- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
+-- O status `personal` é saída própria de campanha — nunca `opted_out`, para
+-- não inflar "pediu para parar".
+alter table public.contacts
+  add column if not exists is_personal boolean default false not null;
+
+comment on column public.contacts.is_personal is
+  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
+
+create index if not exists idx_contacts_org_personal
+  on public.contacts (organization_id)
+  where (is_personal = true);
+
+alter table public.campaign_recipients
+  drop constraint if exists campaign_recipients_status_check;
+
+alter table public.campaign_recipients
+  add constraint campaign_recipients_status_check check (status in (
+    'pending','queued','sending','sent','delivered','read','replied',
+    'failed','skipped','cancelled','opted_out','personal'
+  ));
+
+notify pgrst, 'reload schema';
+
+-- manifest: Preserva atendimento conjunto depois do escopo em lote da 0726, limita convite a leitura/resposta sem conceder controle e entrega entrada/saída pelo Realtime (#2542, integração #2848).
+-- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
+-- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
+-- COM participação depois dela, sem editar nenhuma migration já publicada.
+do $conversations_select$ begin
+  -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
+  -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
+  -- do scan. A forma antiga do PR (fn_can_view_conversation por linha) fazia o
+  -- planner voltar a chamar a função por candidata — reprovado por
+  -- tests/invariants/escopo-da-conversa-avaliado-uma-vez.test.ts (#2848 sobre o
+  -- conserto #3090). A política abaixo é a da main (58213) + o ramo participante.
+  drop policy if exists "conversations_select" on public.conversations;
+  create policy "conversations_select" on public.conversations
+    for select using (
+      (select public.fn_is_platform_admin())
+      or organization_id in (
+           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
+         )
+      or (
+           assigned_to_user_id = auth.uid()
+           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
+         )
+      or (
+           assigned_to_user_id is null
+           and organization_id in (
+                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
+              )
+         )
+      or exists (
+           select 1
+             from public.conversation_participants cp
+            where cp.conversation_id = conversations.id
+              and cp.organization_id = conversations.organization_id
+              and cp.user_id = auth.uid()
+              and cp.left_at is null
+              and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
+         )
+    );
+end $conversations_select$;
+
+-- O convite não amplia UPDATE/DELETE. Mantém o escopo anterior de quem já
+-- escrevia: owner, gestor e o modo de visibilidade configurado no banco.
+-- WITH CHECK true preserva a mudança de responsável que já era permitida;
+-- o USING mede a linha ANTES da escrita, não a identidade que o corpo propõe.
+drop policy if exists conversation_participant_read_is_not_control_update on public.conversations;
+create policy conversation_participant_read_is_not_control_update
+  on public.conversations as restrictive for update to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id))
+  with check (true);
+drop policy if exists conversation_participant_read_is_not_control_delete on public.conversations;
+create policy conversation_participant_read_is_not_control_delete
+  on public.conversations as restrictive for delete to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id));
+
+
+-- Responder não dá edição/exclusão do histórico de outra pessoa. Quem já
+-- tinha escopo mantém a escrita anterior; a convidada pode editar/revogar sua
+-- própria saída, como exige messages/[id], sem poder apagar linhas do histórico.
+drop policy if exists message_participant_reply_is_not_history_update on public.messages;
+create policy message_participant_reply_is_not_history_update
+  on public.messages as restrictive for update to authenticated
+  using (
+    (sent_by_user_id=auth.uid() and direction='outbound' and sent_via in ('user','crm'))
+    or exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id))
+  ) with check (
+    exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and (public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)
+          or (messages.sent_by_user_id=auth.uid() and messages.direction='outbound'
+            and messages.sent_via in ('user','crm'))))
+  );
+drop policy if exists message_participant_reply_is_not_history_delete on public.messages;
+create policy message_participant_reply_is_not_history_delete
+  on public.messages as restrictive for delete to authenticated
+  using (exists (select 1 from public.conversations c
+    where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+      and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)));
+
+-- O vínculo só é escrito pelo servidor. O toque notifica quem já observa a
+-- conversa, sem conceder SELECT nas participações alheias e sem trocar o dono.
+create or replace function public.fn_participacao_atualiza_conversa()
+returns trigger language plpgsql set search_path=public as $$
+begin
+  update public.conversations set updated_at=clock_timestamp()
+   where id=new.conversation_id and organization_id=new.organization_id;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_participacao_atualiza_conversa() from public, anon, authenticated;
+grant execute on function public.fn_participacao_atualiza_conversa() to service_role;
+drop trigger if exists participacao_atualiza_conversa on public.conversation_participants;
+create trigger participacao_atualiza_conversa
+  after insert or update on public.conversation_participants
+  for each row execute function public.fn_participacao_atualiza_conversa();
+
+-- A própria linha continua legível depois de left_at, então o removido recebe
+-- a revogação. Publication pode não existir num Postgres puro do self-host.
+do $participacoes_realtime$ begin
+  if exists (select 1 from pg_publication where pubname='supabase_realtime')
+     and not exists (select 1 from pg_publication_tables
+       where pubname='supabase_realtime' and schemaname='public' and tablename='conversation_participants') then
+    alter publication supabase_realtime add table public.conversation_participants;
+  end if;
+end $participacoes_realtime$;
+
+notify pgrst, 'reload schema';
+
 
 -- ---- leitura sensível pelo poder de plataforma pede a sessão confirmada (migration 0762) ----
 -- `decrypt_cpf` troca `fn_is_platform_admin()` por `fn_is_platform_admin_full()`
@@ -60279,6 +60992,1370 @@ revoke execute on function public.fn_casos_parados_para_lembrar(integer) from pu
 grant execute on function public.fn_casos_parados_para_lembrar(integer) to service_role;
 
 notify pgrst, 'reload schema';
+
+-- ---- #2327: a trava de número novo sai sozinha do número já formado (migration 0793) ----
+-- Ver o cabeçalho da migration 0793 (doc 109, opção A). Cria função, então fica
+-- ANTES da VARREDURA anon. Idempotente: `create or replace`; a transição roda
+-- uma vez por instalação (marca no audit log), e repetir a função não muda nada.
+create or replace function public.fn_go_live_solta_numero_formado()
+returns integer
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_soltos integer;
+begin
+  with candidatos as (
+    select s.organization_id,
+           s.id as channel_session_id,
+           s.status,
+           -- `parseWarmupCaps` + `PACING_DEFAULTS.warmupDailyCaps`: degrau inválido
+           -- ou ausente cai no padrão conservador, como no motor.
+           case
+             when jsonb_typeof(k.warmup_daily_caps) = 'array'
+              and jsonb_array_length(k.warmup_daily_caps) > 0
+              and not exists (
+                select 1 from jsonb_array_elements(k.warmup_daily_caps) e
+                 where jsonb_typeof(e) <> 'object'
+                    or coalesce(jsonb_typeof(e -> 'minAgeDays'), '') <> 'number'
+                    or coalesce(jsonb_typeof(e -> 'cap'), '') not in ('null', 'number'))
+             then k.warmup_daily_caps
+             else '[{"minAgeDays":0,"cap":20},{"minAgeDays":4,"cap":50},{"minAgeDays":8,"cap":100},{"minAgeDays":15,"cap":200},{"minAgeDays":31,"cap":null}]'::jsonb
+           end as degraus,
+           -- `decidePacing`: dias completos desde a ativação, nunca negativo; sem
+           -- linha de ritmo, idade 0.
+           coalesce(greatest(0, floor(extract(epoch from (now() - k.number_activated_at)) / 86400)), 0) as idade
+      -- Parte da SESSÃO, não da linha de saúde: a linha só nasce no primeiro
+      -- aviso de conexão (`lib/channels/health.ts`). Número formado sem ela não
+      -- está travado hoje, mas seria travado como "novo" no primeiro aviso —
+      -- depois de a marca de rodada única já ter fechado esta transição.
+      from channel_sessions s
+      left join channel_session_health h
+        on h.organization_id = s.organization_id and h.channel_session_id = s.id
+      left join channel_knobs k
+        on k.organization_id = s.organization_id and k.channel_session_id = s.id
+     where h.health_released_at is null
+       and coalesce(h.health_hold_reason, 'go_live') = 'go_live'
+  ),
+  formados as (
+    select c.organization_id,
+           c.channel_session_id,
+           c.status,
+           case
+             -- `warmupCapFor`: o ÚLTIMO degrau alcançado pela idade; aquém do
+             -- primeiro, o primeiro. `cap` null = sem limite de aquecimento.
+             when coalesce(
+                    (select e -> 'cap'
+                       from jsonb_array_elements(c.degraus) with ordinality as t(e, i)
+                      where (e ->> 'minAgeDays')::numeric <= c.idade
+                      order by i desc
+                      limit 1),
+                    c.degraus -> 0 -> 'cap') = 'null'::jsonb
+               then 'ritmo_sem_limite_de_aquecimento'
+             when exists (
+                    select 1 from messages m
+                     where m.organization_id = c.organization_id
+                       and m.channel_session_id = c.channel_session_id
+                       and m.direction = 'outbound'
+                       and m.status in ('sent', 'delivered', 'read')
+                       and m.sent_at <= now() - interval '31 days')
+               then 'primeira_saida_ha_31_dias_ou_mais'
+           end as motivo
+      from candidatos c
+  ),
+  -- Sem linha de saúde, nasce uma já liberada; com linha, ela é solta. O
+  -- `where` do conflito é a segunda guarda da trava de saúde.
+  liberados as (
+    insert into channel_session_health (organization_id, channel_session_id, status, health_released_at)
+    select f.organization_id, f.channel_session_id, f.status, now()
+      from formados f
+     where f.motivo is not null
+    on conflict (organization_id, channel_session_id) do update
+       set health_released_at = now(),
+           health_hold_active = false,
+           health_hold_reason = null,
+           updated_at = now()
+     where channel_session_health.health_released_at is null
+    returning organization_id, channel_session_id
+  ),
+  soltos as (
+    select l.organization_id, l.channel_session_id, f.motivo
+      from liberados l
+      join formados f
+        on f.organization_id = l.organization_id and f.channel_session_id = l.channel_session_id
+  ),
+  fechados as (
+    update agent_inbox_items i
+       set status = 'resolved', resolved_at = now()
+      from soltos s
+     where i.organization_id = s.organization_id
+       and i.kind = 'other'
+       and i.ref_kind = 'number_health'
+       and i.ref_id = s.channel_session_id
+       and i.status in ('open', 'ack')
+    returning i.organization_id, i.ref_id
+  ),
+  auditados as (
+    insert into api_audit_log (organization_id, action, resource_type, resource_id, metadata, bypassed_rls)
+    select s.organization_id,
+           'channel.go_live_liberado_na_atualizacao',
+           'channel_session',
+           s.channel_session_id,
+           jsonb_build_object(
+             'motivo', s.motivo,
+             'itens_fechados', (select count(*) from fechados f
+                                 where f.organization_id = s.organization_id
+                                   and f.ref_id = s.channel_session_id)),
+           true
+      from soltos s
+    returning 1
+  )
+  select count(*) into v_soltos from auditados;
+  return v_soltos;
+end;
+$$;
+
+revoke execute on function public.fn_go_live_solta_numero_formado() from public, anon, authenticated, service_role;
+
+-- Uma vez por instalação: a marca é a própria linha de auditoria da rodada.
+do $$
+declare
+  v_soltos integer;
+begin
+  if not exists (
+    select 1 from public.api_audit_log where action = 'channel.go_live_transicao_da_atualizacao'
+  ) then
+    v_soltos := public.fn_go_live_solta_numero_formado();
+    insert into public.api_audit_log (organization_id, action, resource_type, metadata, bypassed_rls)
+    values (null, 'channel.go_live_transicao_da_atualizacao', 'channel_session_health',
+            jsonb_build_object('numeros_liberados', v_soltos), true);
+  end if;
+end;
+$$;
+
+-- ---- motivo de recusa na anonimização de propostas de campos (migration 0797) ----
+-- manifest: A anonimização também limpa motivo_recusa das propostas de campos do negócio (#3471/#3316): texto livre pode citar a pessoa. Preserva as demais etapas, status e decisões da cascata; corrige adiante quem já aplicou a 0772, sem editar aquela migration.
+--
+-- 0797 — a recusa humana também pode conter dado pessoal.
+--
+-- A 0772 guarda o motivo livre na fila, fora do audit append-only, mas seu
+-- passo 5b redigia apenas trecho e valores. O motivo permanecia legível depois
+-- da anonimização. Esta substituição mantém o corpo vigente e acrescenta a
+-- limpeza dessa coluna, pelos dois vínculos já usados: contato direto do
+-- negócio ou crm_lead_links. A condição de redação inclui motivo_recusa para
+-- alcançar também linhas cujos outros valores já estejam vazios.
+--
+-- A 0772 original é preservada: estar fora da main não prova que um fork não a
+-- tenha aplicado. Esta correção é uma migration NOVA e o mesmo bloco entra no
+-- baseline antes da varredura de anon. Não cria tabela nem nova autoridade.
+
+create or replace function public.fn_lgpd_cascade_redact_contact(p_organization_id uuid, p_contact_id uuid, p_request_id uuid) returns jsonb
+    language plpgsql security definer
+    set search_path to 'public', 'extensions', 'pg_temp'
+    as $$
+declare
+  v_already bool;
+  v_counts jsonb := '{}'::jsonb;
+  v_media_paths text[] := '{}';
+  v_anon_label text;
+  v_count int;
+  v_variantes text[] := '{}';
+  v_secao record;
+  v_secoes jsonb := '{}'::jsonb;
+begin
+  perform public.fn_service_lock(p_organization_id,p_contact_id);
+  select is_anonymized into v_already
+    from contacts
+    where id = p_contact_id and organization_id = p_organization_id;
+
+  if not found then
+    raise exception 'contact not found' using errcode = 'P0002';
+  end if;
+
+  if v_already then
+    return jsonb_build_object('already_anonymized', true, 'counts', v_counts, 'media_paths', v_media_paths);
+  end if;
+
+  -- O rótulo NÃO deriva mais do id (issue #2342): `fn_lgpd_rotulo_anonimizado`
+  -- gera um sufixo OPACO (aleatório, gravado no passo 1 abaixo). Antes, o
+  -- sufixo eram os 8 primeiros caracteres do uuid do contato — quem tem o
+  -- banco casava `Cliente Anonimizado #7a5f0011` com a linha `7a5f0011-…` e
+  -- reidentificava o titular pelo próprio rótulo (pseudonimização, não
+  -- anonimização: RGPD considerando 26, LGPD art. 12 e art. 13 §4).
+  v_anon_label := public.fn_lgpd_rotulo_anonimizado(p_contact_id);
+
+  -- Seções de módulo (D8, 0485): a redação delas é do gatilho
+  -- `trg_lgpd_secoes_de_modulo`, que não devolve contagem — mas a contagem é
+  -- EVIDÊNCIA (vai para `cascaded_to` no audit e no retorno). Uma chave por
+  -- seção declarada, com o nome da tabela, contando pela MESMA `ligacao` do
+  -- gatilho ($1 = organização, $2 = contato). Conta ANTES do passo 1 (que
+  -- dispara o gatilho): a seção que soltar a própria ligação seguiria contada.
+  -- Sem o módulo a tabela não existe e a chave não aparece. Seção com ligação
+  -- vazia não é contada: o erro nomeado (`modulo_secao_invalida`) é do gatilho.
+  for v_secao in
+    select tabela, ligacao from public.modulo_secoes_lgpd order by modulo, tabela
+  loop
+    if to_regclass(format('public.%I', v_secao.tabela)) is not null
+       and btrim(v_secao.ligacao) <> '' then
+      execute format('select count(*) from public.%I where (%s)', v_secao.tabela, v_secao.ligacao)
+        into v_count using p_organization_id, p_contact_id;
+      v_secoes := v_secoes || jsonb_build_object(v_secao.tabela, v_count);
+    end if;
+  end loop;
+
+  select coalesce(public.fn_telefone_variantes(phone_number), '{}')
+    into v_variantes
+    from contacts
+    where id = p_contact_id and organization_id = p_organization_id;
+
+  select coalesce(array_agg(distinct media_storage_path) filter (where media_storage_path is not null), '{}')
+    into v_media_paths
+    from messages
+    where organization_id = p_organization_id
+      and conversation_id in (
+        select id from conversations
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      );
+
+  -- 1. contacts (irreversible)
+  update contacts set
+    name = v_anon_label,
+    display_name = v_anon_label,
+    email = null,
+    phone_number = null,
+    cpf_encrypted = null,
+    cpf_hash = null,
+    birthdate = null,
+    is_anonymized = true,
+    anonymized_at = now(),
+    consent = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contacts', v_count);
+
+  -- 2. conversations metadata + preview strip
+  update conversations set
+    metadata = '{}'::jsonb,
+    last_message_preview = null,
+    last_handoff_reason = null,
+    updated_at = now()
+  where contact_id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('conversations', v_count);
+
+  -- 3. messages: redact body + null media + strip metadata (preserve status/timestamps/conversation_id)
+  update messages set
+    body = '[mensagem anonimizada]',
+    media_url = null,
+    media_mime = null,
+    media_size_bytes = null,
+    media_storage_path = null,
+    media_derived_text = null,
+    -- `external_id` guarda o TELEFONE do titular (número no inbound, id do
+    -- provider no outbound) e sobrevivia legível na linha que RESTA da
+    -- anonimização — a última PII viva do pedido de exclusão. Zerar não quebra
+    -- nada que dependa da coluna: o unique (organization_id, external_id)
+    -- trata NULL como distinto de todo NULL, a citação (`reply_to_message_id`)
+    -- aponta para o id da linha e não para o `external_id`, e o eco do provider
+    -- só deduplica mensagem ainda em voo — pedido de exclusão não manda nada.
+    external_id = null,
+    metadata = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and conversation_id in (
+      select id from conversations
+        where contact_id = p_contact_id and organization_id = p_organization_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('messages', v_count);
+
+  -- 4. crm_lead_activities — strip payload, metadata E reason (migration 0071).
+  update crm_lead_activities set
+    payload = '{}'::jsonb,
+    metadata = '{}'::jsonb,
+    reason = null
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or lead_id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select id from crm_leads
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('activities', v_count);
+
+  -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags but PRESERVE pipeline/stage/value
+  update crm_leads set
+    title = v_anon_label,
+    description = null,
+    custom_fields = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('leads', v_count);
+  -- 5b. lead_field_proposals (0772, #3316) — a proposta de campo que a IA leu
+  -- num DOCUMENTO (voucher, bilhete, apólice). `trecho` é o texto do documento
+  -- sobre a PESSOA e os dois valores são o dado que a IA extraiu: o MESMO
+  -- tratamento do `custom_fields` do próprio negócio (passo 5) — campo, status
+  -- e decisão PERMANECEM (a fila continua explicável), o conteúdo identificável
+  -- sai. Alcança pelo vínculo do negócio com o contato (direto ou pela
+  -- `crm_lead_links`), como os passos 4 e 5.
+  -- Gate: tests/invariants/cascata-lgpd-nao-encolhe.test.ts (catraca da lista).
+  update lead_field_proposals set
+    trecho = v_anon_label,
+    valor_proposto = null,
+    valor_anterior = null,
+    motivo_recusa = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      lead_id in (
+        select id from crm_leads
+         where organization_id = p_organization_id
+           and contact_id = p_contact_id
+      )
+      or lead_id in (
+        select lead_id from crm_lead_links
+         where target_kind = 'contact'
+           and target_id = p_contact_id
+           and organization_id = p_organization_id
+      )
+    )
+    -- Redação IDEMPOTENTE: a segunda anonimização não deve contar linha de novo
+    -- (o `already_anonymized` já barra, mas a condição também protege o rerun
+    -- parcial que a 0414 permite).
+    and (trecho is distinct from v_anon_label
+         or valor_proposto is not null
+         or valor_anterior is not null
+         or motivo_recusa is not null);
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('lead_field_proposals', v_count);
+
+  -- 6. orders — PRESERVE values + status + timestamps. Strip personal fields from payload jsonb
+  --    and replace customer_external_id with null (FK-safe; soft de-link). Keep contact_id null.
+  update orders set
+    payload = (coalesce(payload, '{}'::jsonb))
+      - 'customer'
+      - 'customer_name'
+      - 'customer_email'
+      - 'customer_phone'
+      - 'shipping_address'
+      - 'billing_address'
+      - 'contact_identification',
+    customer_external_id = null,
+    contact_id = null,
+    is_anonymized = true,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('orders', v_count);
+
+  -- 6b. crm_proposals (migration 0477, #1504) — PRESERVA número, valores,
+  -- itens, datas e status; redige só o que identifica a PESSOA. Ver o
+  -- cabeçalho desta migration para o porquê de cada coluna.
+  -- O PDF que o cliente recebeu (bucket `propostas`, `<org>/<proposta>.pdf`)
+  -- tem o nome dele impresso: redigir as colunas e deixar o arquivo seria
+  -- anonimizar a linha e manter o documento. Vai para a mesma fila de expurgo
+  -- da mídia (passo 7), com o bucket CERTO — a mensagem que levou o PDF
+  -- aponta para o mesmo caminho, mas o passo 7 só enfileira `whatsapp-media`.
+  -- Lido ANTES de o passo seguinte zerar `pdf_path`.
+  insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+  select p_organization_id, p_request_id, 'propostas', pdf_path
+    from crm_proposals
+   where organization_id = p_organization_id
+     and contact_id = p_contact_id
+     and pdf_path is not null and length(pdf_path) > 0
+     -- só arquivo DESTA organização: o expurgo nunca alcança o PDF de outra
+     and pdf_path like p_organization_id::text || '/%'
+  on conflict (bucket, object_path) do nothing;
+  update crm_proposals set
+    destinatario_nome = v_anon_label,
+    briefing_json = '{}'::jsonb,
+    resumo_comercial = null,
+    -- o texto do documento como foi montado e como foi editado à mão: é o
+    -- conteúdo do PDF, com o mesmo nome dentro.
+    rendered_snapshot = null,
+    secoes_editadas = null,
+    pdf_path = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('crm_proposals', v_count);
+
+  -- CAMPANHAS: o que foi DITO à pessoa e o endereço para onde foi.
+  update campaign_recipients set
+    rendered_body = null,
+    recipient_address = null,
+    variables = '{}'::jsonb,
+    last_error_detail = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('campaign_recipients', v_count);
+
+  -- LISTA DE EXCLUSÃO: solta o vínculo e apaga a cauda do telefone.
+  update campaign_suppressions set
+    address_tail = null,
+    reason = null,
+    contact_id = null
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('campaign_suppressions', v_count);
+
+  -- 6c. sales — a comanda SAIU desta cascata (PR #1907, item 1).
+  -- Este passo alterava a comanda pelo NOME, e as cinco tabelas da comanda
+  -- saíram do baseline para nascerem só na instalação do módulo (ADR-0002
+  -- D2/D3): sem o módulo a tabela não existe e a alteração abortava a
+  -- ANONIMIZAÇÃO INTEIRA com `relation "sales" does not exist` — 68
+  -- ocorrências no CI do #1907 — além de violar a D8 (migration 0485), que
+  -- proíbe o núcleo nomear tabela de módulo. A redação da comanda acontece
+  -- agora pela SEÇÃO declarada `financeiro/sales` em `modulo_secoes_lgpd`,
+  -- que `trg_lgpd_secoes_de_modulo` aplica nos DOIS caminhos de anonimização
+  -- (a cascata e a virada `is_anonymized` de `fn_lgpd_anonymize_contact`) —
+  -- e pula, sem erro, onde o módulo não está instalado (`to_regclass`), que é
+  -- exatamente o contrato.
+  -- 6d. conversation_notes (migration 0483, F3 da #1863) — a nota interna é
+  -- texto escrito SOBRE a pessoa durante o atendimento, e o anexo dela é mídia
+  -- ancorada na conversa: os dois entram no alcance do titular. A 0477 já
+  -- mostrou o desenho (arquivo vai para a fila ANTES de a coluna ser zerada).
+  -- O bucket é `internal-media`, e não o do passo 7: a nota nunca sobe no
+  -- `whatsapp-media` (é o bucket do canal do CLIENTE), e enfileirar o caminho
+  -- num bucket onde ele não está deixaria a remoção apontando para o nada —
+  -- a mesma falha de não ter anonimizado, um endereço mais para a direita.
+  -- Por isso os caminhos de nota também NÃO entram em `v_media_paths`: essa
+  -- lista só existe para o passo 7, que enfileira `whatsapp-media`.
+  insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+  select p_organization_id, p_request_id, 'internal-media', n.media_storage_path
+    from conversation_notes n
+   where n.organization_id = p_organization_id
+     and n.conversation_id in (
+       select id from conversations
+        where contact_id = p_contact_id and organization_id = p_organization_id
+     )
+     and n.media_storage_path is not null and length(n.media_storage_path) > 0
+     and n.media_storage_path like p_organization_id::text || '/%'
+  on conflict (bucket, object_path) do nothing;
+  update conversation_notes set
+    body = '[nota interna anonimizada]',
+    media_storage_path = null,
+    media_mime = null,
+    media_size_bytes = null
+  where organization_id = p_organization_id
+    and conversation_id in (
+      select id from conversations
+       where contact_id = p_contact_id and organization_id = p_organization_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('conversation_notes', v_count);
+
+  -- 7. enqueue media for async deletion (idempotent via unique (bucket, object_path))
+  if array_length(v_media_paths, 1) > 0 then
+    insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+    select p_organization_id, p_request_id, 'whatsapp-media', path
+      from unnest(v_media_paths) as path
+      where path is not null and length(path) > 0
+    on conflict (bucket, object_path) do nothing;
+  end if;
+
+  -- 7b. voice_calls — o TELEFONE de quem falou ao telefone (migration 0235).
+  update voice_calls set
+    peer_phone = v_anon_label,
+    owner_user_id = null,
+    created_by = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('voice_calls', v_count);
+
+  update prospecting_candidates set suppression_salt = gen_random_bytes(32)
+  where organization_id = p_organization_id
+    and (contact_id = p_contact_id
+         or (phone is not null
+             and regexp_replace(phone, '\D', '', 'g') = any (v_variantes)))
+    and suppression_salt is null;
+  update prospecting_candidates set
+    suppression_place = hmac(convert_to(place_id, 'UTF8'), suppression_salt, 'sha256'),
+    suppression_phone = case when phone is null then null
+      else hmac(convert_to(phone, 'UTF8'), suppression_salt, 'sha256') end,
+    place_id = 'redacted:' || id::text,
+    phone = null,
+    data = jsonb_build_object('key', 'redacted:' || id::text,
+      'name', v_anon_label, 'phone', null, 'website', null,
+      'category', null, 'address', null, 'maps_url', null,
+      'rating', null, 'reviews', null, 'emails', '[]'::jsonb, 'socials', '[]'::jsonb),
+    status = 'skipped', service_boundary = null, error = null, updated_at = now()
+  where organization_id = p_organization_id
+    and (contact_id = p_contact_id
+         or (phone is not null
+             and regexp_replace(phone, '\D', '', 'g') = any (v_variantes)));
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('prospecting_candidates', v_count);
+
+  -- agent_cases — o que a IA escreveu SOBRE a pessoa quando travou (migration 0280).
+  update agent_cases set
+    title = v_anon_label,
+    summary = '[resumo anonimizado]',
+    blocker = '[bloqueio anonimizado]',
+    context_snapshot = '{}'::jsonb
+  where organization_id = p_organization_id
+    and conversation_id in (
+      select id from conversations
+        where contact_id = p_contact_id and organization_id = p_organization_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('agent_cases', v_count);
+
+  -- agent_case_events — a linha do tempo do caso (migration 0280).
+  update agent_case_events set
+    body = null,
+    metadata = '{}'::jsonb
+  where organization_id = p_organization_id
+    and case_id in (
+      select id from agent_cases
+        where organization_id = p_organization_id
+          and conversation_id in (
+            select id from conversations
+              where contact_id = p_contact_id and organization_id = p_organization_id
+          )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('agent_case_events', v_count);
+
+  -- demandas — o assunto do pedido (migration 0280).
+  update demandas set
+    assunto = null
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('demandas', v_count);
+
+  -- agent_inbox_items — o aviso que leva o texto do caso para a Central (migration 0280/0292).
+  update agent_inbox_items set
+    status = 'resolved',
+    resolved_at = now(),
+    body = 'Contato anonimizado.',
+    ref_id = null
+  where organization_id = p_organization_id
+    and kind in ('handoff', 'case_stale', 'aviso_de_caso_nao_entregue')
+    and (
+      (ref_kind = 'contact' and ref_id = p_contact_id)
+      or (ref_kind = 'conversation' and ref_id in (
+            select id from conversations
+              where contact_id = p_contact_id and organization_id = p_organization_id
+          ))
+      or (ref_kind = 'agent_case' and ref_id in (
+            select id from agent_cases
+              where organization_id = p_organization_id
+                and conversation_id in (
+                  select id from conversations
+                    where contact_id = p_contact_id and organization_id = p_organization_id
+                )
+          ))
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('agent_inbox_items', v_count);
+
+  -- agent_case_chat_messages — a consulta interna da equipe à IA SOBRE o caso (migration 0281).
+  update agent_case_chat_messages set
+    body = null,
+    redacted_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id
+    and redacted_at is null;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('agent_case_chat_messages', v_count);
+
+  -- passagens_de_atendimento — o BRIEFING é sobre a pessoa (migration 0291).
+  update passagens_de_atendimento set
+    body       = v_anon_label,
+    title      = null,
+    notes      = null,
+    content    = null,
+    tentativas = '[]'::jsonb
+  where organization_id = p_organization_id and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('passagens_de_atendimento', v_count);
+
+  -- entregas_de_aviso_de_caso — o registro do aviso ao suporte (migration 0292).
+  update entregas_de_aviso_de_caso set
+    erro_detalhe = null
+  where organization_id = p_organization_id
+    and case_id in (
+      select id from agent_cases
+        where organization_id = p_organization_id
+          and conversation_id in (
+            select id from conversations
+              where contact_id = p_contact_id and organization_id = p_organization_id
+          )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('entregas_de_aviso_de_caso', v_count);
+
+  -- channel_session_groups.subject — o NOME do grupo, e a FK contact_id aponta
+  -- para o placeholder do grupo (contacts.kind = 'whatsapp_group'), nunca para
+  -- o titular real sendo anonimizado neste caminho — mas a FK para contacts e o
+  -- nome da coluna casam o padrão automático do escopo (migration 0482), e
+  -- nulificar não perde nada operacional: número, conversa e liga/desliga ficam.
+  update public.channel_session_groups set
+    subject = null
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('channel_session_groups', v_count);
+
+  -- 7z. as contagens das seções de módulo (calculadas antes do passo 1); o
+  --     núcleo vence numa colisão de nome.
+  v_counts := v_secoes || v_counts;
+
+  -- 8. dense audit row
+  insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
+  values (
+    p_organization_id,
+    'lgpd.redact_executed',
+    null,
+    'contact',
+    p_contact_id,
+    jsonb_build_object(
+      'cascaded_to', v_counts,
+      'media_queued', coalesce(array_length(v_media_paths, 1), 0),
+      'request_id', p_request_id
+    ),
+    true
+  );
+
+  return jsonb_build_object(
+    'already_anonymized', false,
+    'counts', v_counts,
+    'media_paths', v_media_paths
+  );
+end;
+$$;
+
+-- CREATE OR REPLACE preserva os grants existentes, mas a fronteira continua
+-- explícita para quem aplica só esta correção: apenas o servidor executa.
+revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
+-- ---- traço do turno do agente (migration 0721) ----
+-- manifest: traço do turno do agente — uma linha por execução, chave `job_id` (issue #2869).
+
+-- ═══ O que esta tabela responde, e por que ela existe ═════════════════════════
+--
+-- O turno real do agente é auditável hoje em pedaços que moram longe um do
+-- outro: `llm_calls` guarda cada chamada de modelo, `skill_activations` guarda
+-- quais skills entraram, `event_log` guarda a cadeia de eventos. Nenhuma linha
+-- responde "o que aconteceu NESTE turno": quais ferramentas o modelo chamou (e
+-- qual falhou), qual janela de histórico foi carregada, quais fontes de
+-- conhecimento estavam ligadas e como o turno terminou. Um turno que respondeu
+-- errado só se explica lendo o código.
+--
+-- ═══ Por que tabela nova, e não `ai_agent_runs` ═══════════════════════════════
+--
+-- `ai_agent_runs` nasceu com a forma disso (0023) e o motor vivo NUNCA escreveu
+-- nela: o único escritor é a prévia (`is_dry_run = true`), e por isso a aba
+-- Execuções passou a ler `llm_calls` (medido: 0 linhas em produção com 130
+-- chamadas `agent_turn`). Reaproveitá-la significaria decidir, de passagem, que
+-- ela volta a ser a fonte do turno real — decisão do mantenedor, não nossa.
+-- Esta tabela é ADITIVA: a tela de Execuções continua lendo o que já lê.
+--
+-- ═══ Por que SEM trigger de auditoria ════════════════════════════════════════
+--
+-- Toda outra tabela do módulo de IA audita cada linha. Aqui não, de propósito:
+-- é uma escrita por TURNO, e o conteúdo do traço já é o registro do que
+-- aconteceu. Auditar a auditoria dobraria o volume de `audit_log` sem responder
+-- nenhuma pergunta nova. Se a política mudar, é um `create trigger` de uma linha.
+--
+-- ═══ O que esta fatia ainda NÃO grava ════════════════════════════════════════
+--
+-- O snapshot/hash da composição do prompt, os trechos de conhecimento
+-- efetivamente recuperados, a janela de histórico REALMENTE carregada (a coluna
+-- `historico_mensagens` existe para a fatia que medir isso, e nasce `null` em
+-- vez de receber a janela PEDIDA, que é outra coisa) e a comparação entre a
+-- resposta crua do modelo e o texto enviado ficam para as fatias seguintes. O
+-- que esta já separa é prévia de turno real (`is_dry_run`).
+
+create table if not exists public.agent_turn_traces (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  -- Turno real: `job_id` (o job da fila É o run). Prévia: `preview_run_id`.
+  -- Exatamente um dos dois — o CHECK abaixo é o que impede a linha órfã.
+  job_id uuid,
+  preview_run_id text,
+  conversation_id uuid,
+  contact_id uuid,
+  agent_id uuid,
+  agent_version_id uuid,
+  is_dry_run boolean not null default false,
+  status text not null check (status in ('completed', 'failed', 'aborted')),
+  abort_reason text,
+  error_code text,
+  error_message text,
+  provider text,
+  model text,
+  messages_sent integer not null default 0 check (messages_sent >= 0),
+  historico_mensagens integer check (historico_mensagens is null or historico_mensagens >= 0),
+  -- Agregados do job, somados na hora de gravar (não há segunda escrita).
+  tokens_in integer not null default 0 check (tokens_in >= 0),
+  tokens_out integer not null default 0 check (tokens_out >= 0),
+  cost_cents numeric not null default 0,
+  latency_ms integer not null default 0 check (latency_ms >= 0),
+  -- Skills ativadas no turno (`skill_activations` do mesmo job).
+  skills jsonb not null default '[]'::jsonb,
+  -- Ferramentas chamadas: nome, estado (ok|falhou|bloqueada), erro e duração.
+  ferramentas jsonb not null default '[]'::jsonb,
+  ferramentas_truncadas boolean not null default false,
+  -- Fontes de conhecimento ligadas ao agente, com versão e hash.
+  kb_sources jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint agent_turn_traces_chave check (
+    (job_id is not null and preview_run_id is null)
+    or (job_id is null and preview_run_id is not null)
+  )
+);
+
+comment on table public.agent_turn_traces is
+  'Uma linha por execução do agente (issue #2869): chave `job_id` no turno real, `preview_run_id` na prévia. Agrega tokens/custo/latência de `llm_calls` e as skills de `skill_activations` do mesmo job, e guarda o que só existe no turno: as ferramentas chamadas (nome, estado, erro, duração), a janela de histórico e as fontes de conhecimento ligadas. Escrita melhor-esforço pelo motor — falhar aqui nunca derruba o atendimento.';
+
+-- A chave do turno real. Parcial de propósito: a prévia não tem job, e uma
+-- coluna nula não colide no Postgres — sem o `where`, o upsert do turno real
+-- não teria em que se apoiar (e o `on conflict` da gravação é o que torna a
+-- repetição de um turno idempotente em vez de duplicar a linha).
+create unique index if not exists agent_turn_traces_job_idx
+  on public.agent_turn_traces (job_id) where job_id is not null;
+
+create index if not exists agent_turn_traces_org_created_idx
+  on public.agent_turn_traces (organization_id, created_at desc);
+
+create index if not exists agent_turn_traces_preview_idx
+  on public.agent_turn_traces (preview_run_id) where preview_run_id is not null;
+
+-- O agregado do traço lê `skill_activations` pelo `job_id` a cada turno, e a
+-- tabela só tinha índice por organização e por skill (0078). Sem isto, cada
+-- turno paga uma varredura da tabela inteira para descobrir o que ele mesmo
+-- acabou de gravar.
+create index if not exists idx_skill_activations_job
+  on public.skill_activations (job_id) where job_id is not null;
+
+-- RLS: o traço é da organização e ninguém mais o lê. A leitura é do painel
+-- (sessão do usuário, `authenticated`), por uma policy só de `select`. A
+-- escrita é só do worker, que passa por fora do RLS: por isso `authenticated`
+-- perde o grant de escrita (o molde de `automation_rodizio_atribuicoes`, 0692),
+-- e `anon` não recebe nada em hipótese alguma: um traço carrega o texto do erro
+-- e os ids das fontes de conhecimento.
+alter table public.agent_turn_traces enable row level security;
+
+drop policy if exists tenant_isolation_agent_turn_traces_all on public.agent_turn_traces;
+drop policy if exists tenant_isolation_agent_turn_traces_select on public.agent_turn_traces;
+create policy tenant_isolation_agent_turn_traces_select on public.agent_turn_traces
+  for select using (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on public.agent_turn_traces from anon, authenticated;
+grant select on public.agent_turn_traces to authenticated;
+grant all on public.agent_turn_traces to service_role;
+
+-- ---- #3201: o traço do turno ganha prazo (migration 9021) ----
+-- manifest: O traço do turno ganha poda por idade (#3201, entrega parcial da #2869). Função definer sem seletor de organização/linha, padrão 400 e piso 100 no corpo, lote com teto 10000, execute somente service_role. Reusa AI_TELEMETRY_RETENTION_DAYS, conforme decisão 218; índice de created_at e comentário guardado. Apêndice idempotente espelhado no baseline; a 0721 permanece intacta.
+--
+-- 9021 — adaptação da migration inédita 0778 de @webtecnica (#3516).
+-- Número/carimbo reservados pelo mantenedor; fonte e autoria preservadas na história.
+--
+-- A retenção usa o knob existente da telemetria da IA: padrão 400, piso 100.
+-- A API é uma entrega parcial; a tela continua na issue #3201. O leitor corta
+-- a janela no instante agora - retenção e entrega recibos técnicos projetados.
+-- As linhas legadas podem conter texto livre de erro: esta poda NÃO é uma
+-- higienização de conteúdo nem substitui a projeção segura do leitor.
+--
+-- Função irmã da 0587, sem editar sua definição aplicada. Reaplicar não muda
+-- o piso, não seleciona organização/id e não produz auditoria quando não apagou.
+
+-- Índice de poda: o DELETE por idade é diário e cresceria com a tabela. O
+-- índice que já existe começa por `organization_id` (0721), e esta poda não tem
+-- seletor de organização — sem este, cada rodada varre a tabela inteira.
+create index if not exists idx_agent_turn_traces_expurgo_created_at
+  on public.agent_turn_traces (created_at);
+
+-- O expurgo do traço do turno vencido. Mesma forma da família da 0587:
+-- `security definer` SEM seletor de linha (nenhum parâmetro de organização,
+-- contato, conversa ou id — o único predicado vindo de fora é a idade), piso
+-- dentro do CORPO (vale para qualquer chamador, inclusive um `psql` na mão),
+-- lote com teto de 10000 e revogação de `public`/`anon`/`authenticated`.
+create or replace function public.fn_expurgar_traco_do_turno_vencido(
+  p_retencao_dias int default null,
+  p_limite int default null
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  -- 400 = o mesmo padrão de `AI_TELEMETRY_RETENTION_DAYS` (RETENCAO_TELEMETRIA_
+  -- DE_IA_DIAS_PADRAO) e 100 = o mesmo piso (RETENCAO_TELEMETRIA_DE_IA_DIAS_
+  -- PISO). Os números são repetidos aqui de propósito, como nas irmãs da 0587:
+  -- a função vale para chamador que não passou pelo TypeScript (o `psql` da
+  -- madrugada). O par SQL × TypeScript é medido em
+  -- `tests/unit/retencao-do-traco-do-turno.test.ts`.
+  v_dias int := greatest(coalesce(p_retencao_dias, 400), 100);
+  v_limite int := least(greatest(coalesce(p_limite, 1000), 1), 10000);
+  v_corte timestamptz := now() - make_interval(days => v_dias);
+  v_apagadas int;
+begin
+  -- O corte fica no `where` ANTES do `limit` (a lição da 0167): filtrar depois
+  -- faria um lote inteiro de linhas ainda válidas devolver 0 e o cron parar com
+  -- backlog atrás.
+  with vencidas as (
+    select t.id from public.agent_turn_traces t
+     where t.created_at < v_corte
+     order by t.created_at limit v_limite
+  )
+  delete from public.agent_turn_traces t using vencidas v where t.id = v.id;
+  get diagnostics v_apagadas = row_count;
+  return v_apagadas;
+end;
+$$;
+revoke execute on function public.fn_expurgar_traco_do_turno_vencido(int,int) from public, anon, authenticated;
+grant  execute on function public.fn_expurgar_traco_do_turno_vencido(int,int) to service_role;
+
+-- O relógio da poda é `created_at`, e quem lê o traço pergunta por ele. Dizer
+-- isso na coluna é o que impede a próxima pessoa de indexar/filtrar por
+-- `updated_at` (que muda no upsert de um turno repetido) achando que é o mesmo
+-- eixo. Dentro da guarda: num clone sem a tabela da 0721 o comentário não pode
+-- derrubar a atualização.
+do $$
+begin
+  if to_regclass('public.agent_turn_traces') is not null then
+    comment on column public.agent_turn_traces.created_at is
+      'Quando o turno gravou o traço. É o relógio de fn_expurgar_traco_do_turno_vencido (9021) e o eixo do leitor /api/v1/ai/turn-traces — NÃO confundir com updated_at, que o upsert reescreve quando o mesmo job regrava.';
+  end if;
+end
+$$;
+
+notify pgrst, 'reload schema';
+
+-- ---- claim livre exige motivo e CAS (migration 9017) ----
+-- manifest: Restringe a exceção de atribuição da 0776 ao claim para si com CAS (#3479). Transferência, roteamento e escrita sem lock otimista continuam exigindo visibilidade; preserva filtros de organização, elegibilidade e grants. Substitui na árvore final a proposta 0776, inédita na main e com timestamp colidido; seus bytes e autoria permanecem no ancestor original. A 9017 redefine a função completa, sem depender da proposta.
+-- 9017 — a conversa livre invisível só é assumida pelo claim com CAS.
+-- Reserva do alocador root: 9017 @ 20261026221200; população conferida antes da criação.
+-- Idempotente, mesma assinatura, sem mudança de dados ou da leitura em own.
+
+CREATE OR REPLACE FUNCTION public.fn_conversation_assign(p_organization_id uuid, p_conversation_id uuid, p_to_user_id uuid, p_reason text, p_expected_assignee uuid DEFAULT NULL::uuid, p_enforce_expected boolean DEFAULT false)
+ RETURNS SETOF conversations
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  -- Conversa fora da visibilidade de quem chama responde como conversa
+  -- inexistente (zero linhas). A regra fica no WHERE, com o dono da própria
+  -- linha (reavaliado na versão nova se houver espera), nunca um valor do
+  -- corpo. Service role (sem auth.uid) segue.
+  --
+  -- A EXCEÇÃO DA #3479: conversa SEM dono pode ser assumida por quem assume
+  -- para si. Sem ela o modo "Só os seus" se morde: a conversa que nasceu do
+  -- cadastro do contato tem dono nulo, o predicado do modo responde "não vejo"
+  -- para dono nulo, e o claim — a operação que daria dono a ela — era recusado,
+  -- com a tela dizendo "está com outro atendente" sobre uma conversa de
+  -- ninguém. O termo se limita sozinho: exige dono nulo E dono novo =
+  -- chamador, então conversa de colega (o caso que a 0685 protege), a
+  -- transferência para terceiro e o release continuam respondendo zero linhas
+  -- exatamente como antes.
+  select assigned_to_user_id into v_from
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+     and (
+       auth.uid() is null
+       or public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+       or (assigned_to_user_id is null and p_to_user_id = auth.uid()
+           and p_reason = 'claim' and p_enforce_expected)
+     )
+   for no key update;
+
+  if not found then
+    return;
+  end if;
+
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         -- Desnormalizado JUNTO com o dono, na mesma transação: nunca existe
+         -- uma janela em que id e nome discordam. NULL junto com o id quando
+         -- a atribuição é removida (release) — nunca sobra um nome órfão de
+         -- dono nenhum. Lido de auth.users porque quem chama esta função
+         -- (RPC) não necessariamente tem acesso ao Admin API — a definer
+         -- resolve por dentro.
+         assigned_to_user_name = case
+           when p_to_user_id is null then null
+           else (select raw_user_meta_data ->> 'full_name' from auth.users where id = p_to_user_id)
+         end,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         bot_silenced_until = case
+           when p_reason = 'routing'  then bot_silenced_until
+           when p_to_user_id is null  then (case when last_handoff_at is null
+                                                 then null
+                                                 else bot_silenced_until end)
+           else 'infinity'::timestamptz
+         end,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason);
+
+  return next v_conv;
+end;
+$function$;
+
+revoke all     on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean) from public, anon;
+grant  execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean) to authenticated, service_role;
+
+
+
+-- ---- propriedade da fila interna (migration 9020) ----
+-- manifest: A fila aceita gravação só de produtores internos; sessões mantêm leitura e comandos humanos delimitados, sem fabricar snapshots no enqueue.
+-- 9020 — propriedade da fila interna, sem mudar as transições de produto.
+--
+-- O cliente de sessão lê status; aprovar resposta e autorizar entrega continuam
+-- pelas RPCs SECURITY DEFINER já existentes, com os seus próprios guards.
+-- Service role e a role dedicada do worker conservam os grants próprios.
+-- Não altera policies, estados, índices, cron ou funções de negócio existentes.
+-- A coluna nova começa NULL em todo legado. A antiga chave no payload NÃO é
+-- origem autorizada e não é copiada nem limpa por reaplicação do baseline.
+
+alter table public.job_queue
+  add column if not exists catalog_presentation_snapshot jsonb;
+comment on column public.job_queue.catalog_presentation_snapshot is
+  'Estado dedicado da apresentação do catálogo com a identidade original da operação. Sem backfill do payload legado. Produzido por UPDATE interno sob o lease do job; não é input de enqueue.';
+
+revoke all on table public.job_queue from public, anon, authenticated;
+grant select on table public.job_queue to authenticated;
+grant select, insert, update, delete on table public.job_queue to service_role;
+
+-- Snapshot de execução não é input de enqueue, nem quando o enqueue vem do
+-- scheduler. O produtor legítimo congela o snapshot depois do claim por UPDATE
+-- do mesmo job running sob lease. JSON com a chave presente, mesmo null, recusa.
+create or replace function public.fn_job_snapshot_interno_no_enqueue()
+returns trigger
+language plpgsql
+security invoker
+set search_path = pg_catalog
+as $f$
+begin
+  if new.payload ? 'catalog_presentation_snapshot'
+     or new.catalog_presentation_snapshot is not null then
+    raise exception 'job_snapshot_internal' using errcode = '42501';
+  end if;
+  return new;
+end;
+$f$;
+
+-- Só o trigger usa esta função; nenhuma porta RPC ou grant novo de execução.
+revoke all on function public.fn_job_snapshot_interno_no_enqueue()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists trg_job_snapshot_interno_no_enqueue on public.job_queue;
+create trigger trg_job_snapshot_interno_no_enqueue
+  before insert on public.job_queue
+  for each row execute function public.fn_job_snapshot_interno_no_enqueue();
+
+-- O vínculo já existente é job_queue.contact_id → contacts.id (ON DELETE
+-- CASCADE). Anonimizar não apaga a linha: a virada limpa SÓ o novo estado,
+-- na org/contato da linha original, preservando status/IDs/lease e o vizinho.
+create or replace function public.fn_limpar_snapshot_catalogo_ao_anonimizar()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $f$
+begin
+  update public.job_queue
+     set catalog_presentation_snapshot = null
+   where organization_id = old.organization_id
+     and contact_id = old.id
+     and catalog_presentation_snapshot is not null;
+  return new;
+end;
+$f$;
+
+-- Sem parâmetros e sem RPC: usa a identidade OLD da linha que foi anonimizada.
+revoke all on function public.fn_limpar_snapshot_catalogo_ao_anonimizar()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists trg_limpar_snapshot_catalogo_ao_anonimizar on public.contacts;
+create trigger trg_limpar_snapshot_catalogo_ao_anonimizar
+  after update of is_anonymized on public.contacts
+  for each row when (new.is_anonymized and not old.is_anonymized)
+  execute function public.fn_limpar_snapshot_catalogo_ao_anonimizar();
+
+-- ---- runtime identity (migration 9024) ----
+-- manifest: system_version records bounded host observations of running services, separate from checkout and update intent.
+-- Nullable for compatibility. Old heartbeats explicitly clear the observation.
+alter table public.system_version
+  add column if not exists runtime_confirmation jsonb;
+comment on column public.system_version.runtime_confirmation is
+  'Authenticated host observation of compose services and immutable images; the API derives coverage, freshness and release identity.';
+
+-- ---- pedido restrito de força da atualização (migration 9025) ----
+-- manifest: Persiste no run a intenção restrita de refazer uma atualização; o default falso preserva pedidos antigos.
+-- Forward nova: não altera a migration autoral de runtime_confirmation.
+alter table public.system_update_runs
+  add column if not exists force_requested boolean not null default false;
+comment on column public.system_update_runs.force_requested is
+  'Pedido restrito de reaplicar a atualização pelo agente do host; ausência ou false preserva o caminho normal.';
+
+
+-- manifest: A vaga de número do plano deixa de ser ocupada por sessão que morreu SEM parear (#3416); quem tem número — FAILED inclusive — e quem tem conexão em curso continua contando.
+--
+-- 0809 — o slot do plano é do NÚMERO, não da linha (#3416). O corpo vigente
+-- fica AQUI, no fim do arquivo, como todos os apêndices: o `create or replace`
+-- da 0583 continua no lugar em que o dump o deixou e quem vale é o último.
+--
+-- A contagem era `archived_at is null and provider <> 'wacalls'` e tratava a
+-- sessão que nasceu de um QR que ninguém leu — `FAILED`, `phone_number` nulo —
+-- como o número ocupado da empresa; o número real seguinte era recusado com
+-- "Seu plano permite 1 número conectado". Agora a linha só ocupa vaga quando
+-- tem número pareado (a queda NÃO devolve o slot) ou quando é conexão em curso
+-- (`STARTING`/`SCAN_QR_CODE`) ou `WORKING` sem número gravado ainda — a vaga
+-- reservada, sem a qual abrir N QRs e parear todos daria N números com teto 1.
+-- Fora da conta fica só a linha MORTA (`FAILED`/`STOPPED`) SEM número.
+create or replace function public.fn_trava_canais_do_plano()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_limite integer;
+  v_em_uso integer;
+begin
+  if new.archived_at is not null or new.provider = 'wacalls' then
+    return new;
+  end if;
+  -- Só no WAHA: nos outros provedores o número não identifica a conexão, e a
+  -- linha sem número segue sendo uma conexão da empresa.
+  if new.provider = 'waha' and new.phone_number is null and new.status in ('FAILED', 'STOPPED') then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' then
+    if old.archived_at is null
+       and old.provider <> 'wacalls'
+       and new.organization_id is not distinct from old.organization_id then
+      return new;
+    end if;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(new.organization_id, 'canais');
+  if v_limite is null then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text, 2281));
+
+  select count(*) into v_em_uso
+    from public.channel_sessions cs
+   where cs.organization_id = new.organization_id
+     and cs.archived_at is null
+     and cs.provider <> 'wacalls'
+     and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+     and cs.id <> new.id;
+
+  if v_em_uso >= v_limite then
+    raise exception 'limite_do_plano:canais:%', v_limite
+      using errcode = 'PT402',
+            detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_trava_canais_do_plano() from public, anon, authenticated;
+
+-- manifest: Reconectar uma conexão que morreu sem número volta a conferir a vaga de números do plano, como conectar um número novo já conferia (complemento da 0809, #3416).
+-- ---- reviver conexão sem número respeita a vaga do plano (migration 9036) ----
+-- 9036 — REVIVER UMA CONEXÃO SEM NÚMERO RESPEITA A VAGA DO PLANO.
+--
+-- A 0809 tirou da contagem a linha MORTA e SEM NÚMERO (`FAILED`/`STOPPED`,
+-- `phone_number` nulo): ela não ocupa vaga. Só que a vaga é conferida na
+-- CRIAÇÃO da linha (`fn_trava_canais_do_plano`), e há dois caminhos que trazem
+-- uma linha morta de volta sem criar nada — só trocam o `status`:
+--
+--   · o "Reconectar" (`app/api/v1/channel-sessions/[id]/reconnect/route.ts`);
+--   · os ramos de REUSO de `fn_reserve_channel_connection` (a linha de
+--     onboarding que já existe e o recibo que é retomado).
+--
+-- A regra fica inteira quando a conferência acompanha também esses dois
+-- caminhos: a linha que deixou de ocupar só volta a ocupar se houver vaga.
+--
+-- `fn_vaga_ao_reviver_canal(org, canal)` é o único lugar dessa conferência. Ela
+-- segura a MESMA trava consultiva da reserva e do gatilho (chave 2281), conta
+-- com a régua da 0809 e, havendo vaga, já TOMA a vaga (status `STARTING`) sob a
+-- mesma trava: conferir e tomar são um passo só.
+-- Sem vaga: PT402 `limite_do_plano:canais:<teto>`, o contrato que
+-- `lib/cobranca/limites.ts` traduz para 409 `plan_limit_reached`.
+--
+-- O que NÃO muda: número pareado (`FAILED` inclusive) e conexão em curso não
+-- passam pela conferência — reconectar um número que já é da empresa nunca é
+-- recusado, mesmo acima do teto. O gatilho NÃO passa a observar `status`: o
+-- espelho do webhook não pode virar PT402 no meio de uma reconexão já pareada
+-- (é o motivo escrito na 0809). A conferência mora em quem DECIDE reviver.
+--
+-- `fn_reserve_channel_connection` é o corpo da 0233 com UMA linha a mais, antes
+-- do `update ... set status='STARTING'`. Grants iguais aos dela.
+-- Gate: `tests/invariants/cobranca-canais-reviver-respeita-vaga.test.ts`.
+-- Idempotente: `create or replace`. Sem BEGIN/COMMIT.
+-- ⚠️ ENTRA ANTES DO BLOCO DA VARREDURA anon: cria função.
+
+create or replace function public.fn_vaga_ao_reviver_canal(p_org uuid, p_canal uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_canal public.channel_sessions;
+  v_limite integer;
+  v_em_uso integer;
+begin
+  -- A MESMA trava de `fn_trava_canais_do_plano` e da reserva: contagem e
+  -- tomada da vaga nunca correm em paralelo com outra conexão da empresa.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text, 2281));
+
+  select * into v_canal
+    from public.channel_sessions
+   where organization_id = p_org and id = p_canal
+   for update;
+
+  -- Só interessa a linha que hoje NÃO ocupa vaga (WAHA morta e sem número, 0809) e
+  -- vai voltar a ocupar. Número pareado, conexão em curso, arquivada e voz
+  -- seguem como antes: reconectar um número que já é da empresa nunca é recusado.
+  if not found
+     or v_canal.archived_at is not null
+     or v_canal.provider <> 'waha'
+     or v_canal.phone_number is not null
+     or v_canal.status not in ('FAILED', 'STOPPED') then
+    return;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(p_org, 'canais');
+  if v_limite is not null then
+    select count(*) into v_em_uso
+      from public.channel_sessions cs
+     where cs.organization_id = p_org
+       and cs.archived_at is null
+       and cs.provider <> 'wacalls'
+       and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+       and cs.id <> p_canal;
+
+    if v_em_uso >= v_limite then
+      raise exception 'limite_do_plano:canais:%', v_limite
+        using errcode = 'PT402',
+              detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+    end if;
+  end if;
+
+  -- A vaga é TOMADA aqui, ainda dentro da trava: a linha passa a ser conexão
+  -- em curso, que ocupa. Conferir e tomar são um passo só.
+  update public.channel_sessions
+     set status = 'STARTING',
+         status_reason = 'connection_pending',
+         last_status_change_at = now()
+   where organization_id = p_org and id = p_canal;
+end;
+$$;
+
+revoke execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) to service_role;
+
+create or replace function public.fn_reserve_channel_connection(p_org uuid,p_key uuid,p_hash text,p_display_name text default null,p_onboarding boolean default false)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare receipt public.channel_connection_requests; channel public.channel_sessions; token uuid:=gen_random_uuid();
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'admin') or not public.fn_support_write_allowed(p_org)
+ then raise exception 'connection_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'connection_mfa_required' using errcode='42501';end if;
+ if p_key is null or p_hash is null or length(p_hash)<>64 or length(coalesce(p_display_name,''))>100 then
+  raise exception 'connection_invalid_request' using errcode='22023';end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_org::text,2281));
+ delete from public.channel_connection_requests where organization_id=p_org and idempotency_key=p_key
+  and state='succeeded' and updated_at<now()-interval '24 hours';
+ select * into receipt from public.channel_connection_requests where organization_id=p_org and idempotency_key=p_key for update;
+ if found then
+  if receipt.request_hash<>p_hash then raise exception 'idempotency_conflict' using errcode='22023';end if;
+  if receipt.state='succeeded' then
+   select * into channel from public.channel_sessions where organization_id=p_org and id=receipt.channel_session_id;
+   return jsonb_build_object('replay',true,'channel',to_jsonb(channel),'receipt_id',receipt.id);
+  end if;
+  if receipt.state='processing' and receipt.lease_until>now() then
+   raise exception 'connection_in_progress' using errcode='55P03';end if;
+  select * into channel from public.channel_sessions where organization_id=p_org and id=receipt.channel_session_id for update;
+  if not found then raise exception 'connection_reservation_missing' using errcode='P0002';end if;
+ else
+  if p_onboarding then
+   select * into channel from public.channel_sessions where organization_id=p_org and provider='waha'
+    and (metadata->>'onboarding'='true' or waha_session_name='org_'||left(p_org::text,8))
+    order by created_at limit 1 for update;
+  end if;
+  if channel.id is null then
+   insert into public.channel_sessions(organization_id,waha_session_name,display_name,engine,webhook_path_token,
+     webhook_secret_encrypted,status,last_status_change_at,consecutive_health_fails,daily_message_limit,metadata)
+   values(p_org,'org_'||left(replace(p_org::text,'-',''),8)||'_'||replace(gen_random_uuid()::text,'-',''),p_display_name,'NOWEB',
+     replace(gen_random_uuid()::text,'-',''),'\x00'::bytea,'STARTING',now(),0,250,
+     '{"ai_gate":"allowlist","ai_gate_mode":"pre_go_live","ai_test_phone_numbers":[]}'::jsonb
+     || case when p_onboarding then '{"onboarding":true}'::jsonb else '{}'::jsonb end) returning * into channel;
+  end if;
+  if exists(select 1 from public.channel_connection_requests where organization_id=p_org and channel_session_id=channel.id
+    and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
+  insert into public.channel_connection_requests(organization_id,idempotency_key,request_hash,channel_session_id)
+   values(p_org,p_key,p_hash,channel.id) returning * into receipt;
+ end if;
+ if exists(select 1 from public.channel_connection_requests where organization_id=p_org and channel_session_id=channel.id
+   and id<>receipt.id and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
+ update public.channel_connection_requests set state='processing',lease_token=token,lease_until=now()+interval '5 minutes',
+  remote_created=false,updated_at=now() where organization_id=p_org and id=receipt.id;
+ -- 9036: reviver a linha morta e sem número volta a ocupar a vaga do plano.
+ perform public.fn_vaga_ao_reviver_canal(p_org,channel.id);
+ update public.channel_sessions set status='STARTING',status_reason='connection_pending',last_status_change_at=now()
+  where organization_id=p_org and id=channel.id returning * into channel;
+ return jsonb_build_object('replay',false,'channel',to_jsonb(channel),'receipt_id',receipt.id,'lease_token',token);
+end;
+$$;
+revoke all on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) from public,anon;
+grant execute on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) to authenticated;
+
+-- ---- valor recorrente do negócio (migration 9028) ----
+-- manifest: **O negócio guarda o valor ÚNICO e o RECORRENTE (#3602, fatia 1).** `crm_leads.value_cents` continua sendo o valor único (setup, implantação, matrícula) e ganha três vizinhos: `recurring_value_cents` (bigint em centavos, MESMA régua do valor único), `recurring_period` (a v1 conhece `monthly`) e `recurring_months` (duração; nulo = sem prazo). Nada é somado e as três colunas nascem nulas — negócio de valor único fica idêntico ao de antes. Os CHECKs recusam mensalidade negativa, periodicidade fora de `monthly`, duração fora de 1..600 e o trio órfão. Painéis e previsão ficam para as fatias seguintes. Idempotente.
+--
+-- Bloco IDÊNTICO ao da migration 9028 (mesma ordem: colunas → CHECKs →
+-- comentários → privilégio → travas). Quem aplica a cadeia inteira e quem
+-- aplica só o baseline chegam ao mesmo schema.
+alter table public.crm_leads
+  add column if not exists recurring_value_cents bigint,
+  add column if not exists recurring_period      text,
+  add column if not exists recurring_months      integer;
+
+alter table public.crm_leads add column if not exists recurring_value_cents bigint;
+alter table public.crm_leads add column if not exists recurring_period      text;
+alter table public.crm_leads add column if not exists recurring_months      integer;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.crm_leads'::regclass
+       and conname  = 'crm_leads_recurring_value_cents_nao_negativo'
+  ) then
+    alter table public.crm_leads
+      add constraint crm_leads_recurring_value_cents_nao_negativo
+      check (recurring_value_cents is null or recurring_value_cents >= 0);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.crm_leads'::regclass
+       and conname  = 'crm_leads_recurring_period_conhecido'
+  ) then
+    alter table public.crm_leads
+      add constraint crm_leads_recurring_period_conhecido
+      check (recurring_period is null or recurring_period = 'monthly');
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.crm_leads'::regclass
+       and conname  = 'crm_leads_recurring_months_no_prazo'
+  ) then
+    alter table public.crm_leads
+      add constraint crm_leads_recurring_months_no_prazo
+      check (recurring_months is null or recurring_months between 1 and 600);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.crm_leads'::regclass
+       and conname  = 'crm_leads_recorrencia_coerente'
+  ) then
+    alter table public.crm_leads
+      add constraint crm_leads_recorrencia_coerente
+      check (
+        (recurring_value_cents is null
+          and recurring_period is null
+          and recurring_months is null)
+        or (recurring_value_cents is not null and recurring_period is not null)
+      );
+  end if;
+end
+$$;
+
+do $$
+begin
+  if to_regclass('public.crm_leads') is not null then
+    comment on column public.crm_leads.recurring_value_cents is
+      'Mensalidade do negócio em centavos (fatia 1 da #3602), separada do value_cents, que continua sendo o valor único (setup, implantação, matrícula). Nula = negócio sem recorrência.';
+    comment on column public.crm_leads.recurring_period is
+      'Periodicidade da recorrência; a v1 conhece monthly. Preenchida sempre que recurring_value_cents não é nulo (o CHECK crm_leads_recorrencia_coerente exige).';
+    comment on column public.crm_leads.recurring_months is
+      'Duração do contrato em meses (1..600). Nula = sem prazo, que NÃO é 12 meses: é contrato aberto.';
+  end if;
+end
+$$;
+
+grant select, insert, update, delete on public.crm_leads to authenticated;
+grant all on public.crm_leads to service_role;
+
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -61170,6 +63247,167 @@ comment on column public.crm_metas.periodo is
 comment on column public.crm_metas.alvo is
   'Quanto se quer atingir no indicador, naquele mês: nesta fatia, a QUANTIDADE de vendas ganhas. É o denominador que a tela de Desempenho não tinha.';
 
+-- ---- fila de proposta de campo do CARD lida num documento (migration 0772, #3316) ----
+-- manifest: lead_field_proposals — a IA lê um documento (voucher, bilhete,
+-- apólice) e propõe valores SÓ para `pipeline.settings.fields`; ninguém grava
+-- `crm_leads.custom_fields` sem confirmação humana. A tabela nasce aqui porque
+-- quem instala pelo kit self-host aplica SÓ o baseline e ficaria sem ela.
+--
+-- A ORDEM não é cosmética: `fn_proteger_tabelas_de_organizacao()` (chamada mais
+-- abaixo, depois das proteções) varre tabela com `organization_id` e SEM RLS
+-- ligada e lhe dá `tenant_isolation_<t>_all` só-tenancy — a policy que
+-- `tests/invariants/rbac-config-ia-canais.test.ts` reprova em tabela NOVA.
+-- Nascer COM RLS ligado é o que faz o gerador pular esta tabela, como pula as
+-- vizinhas. O `revoke … from anon` é o par obrigatório: o `alter default
+-- privileges` do topo deste arquivo dá ALL a `anon` em tabela nova.
+--
+-- O passo 5b da cascata de anonimização, que redige `trecho`/valores, está no
+-- corpo VIGENTE de `fn_lgpd_cascade_redact_contact` (acima), e a catraca
+-- `tests/invariants/cascata-lgpd-nao-encolhe.test.ts` guarda a entrada.
+
+create table if not exists public.lead_field_proposals (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid not null references public.crm_leads(id) on delete cascade,
+
+  -- QUAL campo do funil. A FORMA é a de `customFieldSchema.key` (letra inicial,
+  -- até 40, letras/números/underscore); o SERVIDOR decide se a chave está no
+  -- funil do negócio — o vocabulário é do dono, não desta tabela.
+  campo text not null,
+
+  -- O valor proposto e o que existia no card quando a proposta nasceu. jsonb,
+  -- porque o card é jsonb: número, booleano e lista chegam como são.
+  valor_proposto jsonb,
+  valor_anterior jsonb,
+
+  -- DE ONDE veio, para quem decide conferir em vez de acreditar. `trecho` é o
+  -- texto do documento daquele valor; sem ele a proposta nem nasce (régua do
+  -- servidor). `attachment_id` aponta para o documento ANEXADO AO NEGÓCIO
+  -- (`crm_lead_attachments`, #3229) — o arquivo que a pessoa abre na revisão.
+  trecho text,
+  attachment_id uuid references public.crm_lead_attachments(id) on delete set null,
+  proposed_by_agent_id uuid references public.ai_agents(id) on delete set null,
+  conversation_id uuid references public.conversations(id) on delete set null,
+
+  status text not null default 'pending',
+
+  -- Carimbados pelo BANCO, nunca pelo processo — mesma razão da 0123: instantes
+  -- comparados entre si vêm do mesmo relógio.
+  proposed_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  decided_at timestamptz,
+  decided_by_user_id uuid references auth.users(id) on delete set null,
+  -- Por que foi recusada. É o LAÇO DE RETORNO: proposta que o humano rejeita
+  -- diz onde a IA erra, e sem o motivo o sinal é só um número.
+  motivo_recusa text,
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.lead_field_proposals is
+  'Campo do CARD que a IA leu num documento (voucher, bilhete, apólice) e propôs — aguardando confirmação humana (issue #3316). NUNCA grava em crm_leads.custom_fields sozinha: quem grava é a confirmação, pela porta de edição que já existe. SEMPRE com prazo: proposta que ninguém decide vira badge permanente, que simula atenção e adia a decisão.';
+
+-- ⚠️ O COMMENT DA COLUNA DO PRAZO, DENTRO DA GUARDA.
+--
+-- `comment on column` numa tabela ausente é ERRO, e não aviso: num clone que
+-- aplica só parte das migrations (ou num `update.sh` interrompido), este comando
+-- abortaria a migration inteira por causa de uma frase de documentação. A guarda
+-- `to_regclass` deixa o comentário ser o que ele é — documentação —, e não um
+-- portão de schema. (`comment on table` acima é seguro porque a tabela acabou de
+-- ser criada neste mesmo arquivo.)
+do $$
+begin
+  if to_regclass('public.lead_field_proposals') is not null then
+    comment on column public.lead_field_proposals.expires_at is
+      'Prazo OBRIGATÓRIO da proposta — e prazo que ninguém cobra é pior que prazo nenhum. É aplicado em QUATRO lugares: a leitura da fila (GET .../field-proposals filtra expires_at > now), a decisão (POST recusa decidir vencida), o nascimento (a vencida que bloqueia o índice único parcial é encerrada) e a varredura (cron contact-proposals-watcher → vencePropostasDeCampo). Vencida = expires_at <= now().';
+    comment on column public.lead_field_proposals.trecho is
+      'Trecho do documento de onde o valor saiu — o que permite CONFERIR em vez de acreditar. É texto do documento SOBRE A PESSOA: redigido pela cascata de anonimização (fn_lgpd_cascade_redact_contact, passo 5b), junto com valor_proposto e valor_anterior.';
+  end if;
+end $$;
+
+create index if not exists lead_field_proposals_org_lead_idx
+  on public.lead_field_proposals(organization_id, lead_id);
+
+-- O worker de vencimento varre por aqui (status + prazo), o mesmo desenho da
+-- fila de contatos.
+create index if not exists lead_field_proposals_prazo_idx
+  on public.lead_field_proposals(status, expires_at);
+
+-- A FORMA da chave do funil (`customFieldSchema.key`): letra inicial, até 40
+-- caracteres, letras/números/underscore. Só a forma — a decisão de "isto está
+-- no funil?" é do servidor, que lê o funil do próprio negócio.
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_campo_check;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_campo_check check (campo ~ '^[A-Za-z][A-Za-z0-9_]{0,39}$');
+
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_status_check;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_status_check check (
+    status = any (array['pending', 'accepted', 'dismissed', 'expired']::text[])
+  );
+
+-- Prazo no futuro: proposta que nasce vencida vira item de caixa no primeiro
+-- tick e ninguém entende de onde veio.
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_prazo_no_futuro;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_prazo_no_futuro check (expires_at > proposed_at);
+
+-- Decisão e decisor andam juntos. Status decidido sem `decided_at` é registro
+-- que não sabe dizer quando aconteceu — e é essa pergunta que a auditoria faz.
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_decisao_datada;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_decisao_datada check (
+    (status = 'pending' and decided_at is null)
+    or (status <> 'pending' and decided_at is not null)
+  );
+
+-- ⚠️ ESTE ÍNDICE É A IDEMPOTÊNCIA — não é otimização.
+--
+-- O modelo vai reler o MESMO voucher em turnos seguidos. Sem ele, dez leituras
+-- viram dez linhas e a tela de revisão vira coluna de repetições. `where not
+-- exists` no código NÃO substitui: é check-then-act, e dois turnos
+-- concorrentes passam pela janela — o mesmo defeito que a 0027 matou nos
+-- contatos. PARCIAL: propostas decididas ficam como histórico e não bloqueiam
+-- a próxima leitura (o funil pode ter mudado, e o voucher novo é outro).
+create unique index if not exists uq_lead_field_proposals_uma_viva
+  on public.lead_field_proposals (organization_id, lead_id, campo)
+  where status = 'pending';
+
+alter table public.lead_field_proposals enable row level security;
+
+-- `anon` NÃO lê a fila: o `alter default privileges … grant all on tables to
+-- anon` do baseline alcança toda tabela nova, e a anon key vai para o browser.
+-- O `fn_proteger_tabelas_de_organizacao()` não cobre este caso porque ele só
+-- age em tabela SEM RLS — e esta nasce com RLS ligada (de propósito, para não
+-- receber a policy `for all` só-tenancy).
+revoke all on public.lead_field_proposals from anon;
+
+-- Leitura e escrita amarradas à visibilidade do NEGÓCIO pai: o `exists` em
+-- `crm_leads` roda sob a RLS dela, então quem não enxerga o negócio (escopo
+-- "só os seus") não enxerga nem mexe nas propostas dele. Escrita: `agent` para
+-- cima também na RLS — as rotas já exigem `agent`, e um `viewer` falando
+-- direto com o PostgREST não decide proposta nenhuma. `drop` + `create` com o
+-- MESMO nome, como a 0731: policies permissivas somam (OR), e uma esquecida
+-- reabriria o que as novas fecham.
+drop policy if exists tenant_isolation_lead_field_proposals_select on public.lead_field_proposals;
+create policy tenant_isolation_lead_field_proposals_select on public.lead_field_proposals
+  for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+      and exists (
+        select 1 from public.crm_leads l
+         where l.id = lead_field_proposals.lead_id
+           and l.organization_id = lead_field_proposals.organization_id
+      )
+  );
+
+-- A escrita é instalada somente na definição final da 0807, abaixo. Recriar
+-- aqui a policy intermediária da 0772 reabriria o WITH CHECK mais largo a
+-- cada update até a correção final. A migration histórica permanece intacta.
+
 -- ---- módulos instalados são reaplicados, depois de toda tabela do núcleo (migration 0340) ----
 --
 -- A provisionadora de cada módulo instalado roda de novo, sobre o núcleo já
@@ -61273,6 +63511,151 @@ create policy "user_orgs_update" on "public"."user_organizations" for update usi
 -- ---- grants da função nova (espelha o bloco da fn_is_platform_admin) ----
 revoke execute on function public.fn_is_platform_admin_full() from public, anon;
 grant execute on function public.fn_is_platform_admin_full() to authenticated, service_role;
+
+-- ---- grants explícitos das tabelas do apêndice (migration 9037) ----
+-- manifest: **Privilégios explícitos, por tabela e por papel, nas 48 tabelas do apêndice que dependiam do default ACL (#3140, decisão 219 = A).** A partir de 30/10/2026 a Supabase deixa de conceder privilégio automático em tabela nova de `public`; uma tabela criada sem `GRANT` próprio fica inalcançável pela Data API. Em vez de reabrir o default amplo (recusado no #3521 e no #3612), cada tabela recebe o que o uso legítimo pede: `service_role` com select/insert/update/delete; `authenticated` só com os comandos para os quais a RLS da tabela tem policy permissiva (28 com as quatro — uma delas, `automation_rule_runs`, por exceção declarada no bloco —, 1 com select/insert, 13 só com select, 6 sem nada); `anon` com nada — nenhuma delas tem policy que um visitante satisfaça. TRUNCATE, REFERENCES e TRIGGER saem dos três papéis. O estado final é o mesmo com ou sem o corte do provedor, porque cada tabela começa por `revoke all`. Tudo num bloco `do` só: o `update.sh` roda sem transação única, e revoke e grant em comandos soltos abririam uma janela de `permission denied` para o app no ar. Ficam de fora, de propósito: `modulo_secoes_lgpd` (fechada a todos, inclusive `service_role` — ADR-0002 D8) e as 7 tabelas que os módulos opcionais criam em tempo de execução (honorários, vendas): elas nascem dentro das funções provisionadoras e pedem `grant` lá dentro, em recorte próprio. O corpo do baseline (`ALTER DEFAULT PRIVILEGES … ON TABLES`) não muda. Espelho no apêndice do `supabase/baseline.sql`, logo antes da chamada final das travas de suporte; prova em `tests/invariants/grants-explicitos-das-tabelas-do-apendice.test.ts`.
+--
+-- Como a lista foi medida (num banco instalado do baseline, pelo test:db):
+--   - tabelas que o apêndice cria em `public` sem `grant … on public.<t>` próprio: 56;
+--   - 49 existem depois do install; as 7 restantes são as de módulo opcional;
+--   - para cada uma, o ACL atual (`aclexplode`) e as policies (`pg_policies`):
+--     o `authenticated` daqui é o ACL atual ∩ comandos com policy PERMISSIVA para
+--     `public`/`authenticated` (as `support_write_*` são restritivas e não contam);
+--   - escrita por `authenticated` nas 6 tabelas que perdem comando de escrita
+--     (calendar_connection_calendars, calendar_connections,
+--     calendar_locations [update/delete], system_update_runs, system_version,
+--     webhook_lead_captures): no código, só pelo cliente admin ou por função
+--     `security definer` (fn_google_*, fn_redigir_captacoes_do_contato_anonimizado).
+--
+-- Tabela nova no apêndice passa a precisar de `grant` próprio: o invariante acima
+-- reprova a que nascer sem ele e sem entrada na lista de exceções.
+
+do $grants_9037$
+begin
+  -- authenticated com as quatro: a RLS tem policy permissiva para cada comando.
+  revoke all on table public.account_plans from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.account_plans to authenticated, service_role;
+  revoke all on table public.ai_purpose_bindings from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.ai_purpose_bindings to authenticated, service_role;
+  revoke all on table public.attendant_availability from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.attendant_availability to authenticated, service_role;
+  revoke all on table public.automation_rules from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.automation_rules to authenticated, service_role;
+  revoke all on table public.calendar_appointments from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.calendar_appointments to authenticated, service_role;
+  revoke all on table public.calendar_availability_exceptions from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.calendar_availability_exceptions to authenticated, service_role;
+  revoke all on table public.calendar_event_types from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.calendar_event_types to authenticated, service_role;
+  revoke all on table public.contact_field_proposals from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.contact_field_proposals to authenticated, service_role;
+  revoke all on table public.crm_lead_attachments from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.crm_lead_attachments to authenticated, service_role;
+  revoke all on table public.crm_lead_reactivations from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.crm_lead_reactivations to authenticated, service_role;
+  revoke all on table public.crm_lead_risk_states from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.crm_lead_risk_states to authenticated, service_role;
+  revoke all on table public.crm_lead_scores from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.crm_lead_scores to authenticated, service_role;
+  revoke all on table public.demanda_conversas from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.demanda_conversas to authenticated, service_role;
+  revoke all on table public.demandas from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.demandas to authenticated, service_role;
+  revoke all on table public.external_db_connections from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.external_db_connections to authenticated, service_role;
+  revoke all on table public.financial_accounts from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.financial_accounts to authenticated, service_role;
+  revoke all on table public.financial_entries from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.financial_entries to authenticated, service_role;
+  revoke all on table public.lead_field_proposals from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.lead_field_proposals to authenticated, service_role;
+  revoke all on table public.meta_templates from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.meta_templates to authenticated, service_role;
+  revoke all on table public.org_guardrail_layers from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.org_guardrail_layers to authenticated, service_role;
+  revoke all on table public.org_voice_calls from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.org_voice_calls to authenticated, service_role;
+  revoke all on table public.payment_methods from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.payment_methods to authenticated, service_role;
+  revoke all on table public.phone_numbers from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.phone_numbers to authenticated, service_role;
+  revoke all on table public.recurring_entries from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.recurring_entries to authenticated, service_role;
+  revoke all on table public.voice_calls from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.voice_calls to authenticated, service_role;
+  revoke all on table public.voip_trunk_settings from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.voip_trunk_settings to authenticated, service_role;
+  revoke all on table public.webhook_sources from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.webhook_sources to authenticated, service_role;
+
+  -- A única exceção à régua: a RLS só tem policy permissiva de select, mas
+  -- `tests/invariants/webhooks-rls.test.ts` mede a recusa da escrita direta
+  -- como negação da RLS (0 linhas), não como falta de privilégio. Mantém as
+  -- quatro, como hoje, até essa medição ser revista.
+  revoke all on table public.automation_rule_runs from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.automation_rule_runs to authenticated, service_role;
+
+  -- authenticated lê e cria: não há policy permissiva de update/delete.
+  revoke all on table public.calendar_locations from anon, authenticated, service_role;
+  grant select, insert on table public.calendar_locations to authenticated;
+  grant select, insert, update, delete on table public.calendar_locations to service_role;
+
+  -- authenticated só lê: a escrita é do servidor (policy permissiva só de select).
+  revoke all on table public.calendar_connection_calendars from anon, authenticated, service_role;
+  grant select on table public.calendar_connection_calendars to authenticated;
+  grant select, insert, update, delete on table public.calendar_connection_calendars to service_role;
+  revoke all on table public.calendar_connections from anon, authenticated, service_role;
+  grant select on table public.calendar_connections to authenticated;
+  grant select, insert, update, delete on table public.calendar_connections to service_role;
+  revoke all on table public.calendar_resources from anon, authenticated, service_role;
+  grant select on table public.calendar_resources to authenticated;
+  grant select, insert, update, delete on table public.calendar_resources to service_role;
+  revoke all on table public.calendar_service_blocks from anon, authenticated, service_role;
+  grant select on table public.calendar_service_blocks to authenticated;
+  grant select, insert, update, delete on table public.calendar_service_blocks to service_role;
+  revoke all on table public.calendar_service_calendar_sources from anon, authenticated, service_role;
+  grant select on table public.calendar_service_calendar_sources to authenticated;
+  grant select, insert, update, delete on table public.calendar_service_calendar_sources to service_role;
+  revoke all on table public.calendar_service_occurrence_resources from anon, authenticated, service_role;
+  grant select on table public.calendar_service_occurrence_resources to authenticated;
+  grant select, insert, update, delete on table public.calendar_service_occurrence_resources to service_role;
+  revoke all on table public.calendar_service_occurrences from anon, authenticated, service_role;
+  grant select on table public.calendar_service_occurrences to authenticated;
+  grant select, insert, update, delete on table public.calendar_service_occurrences to service_role;
+  revoke all on table public.calendar_service_professionals from anon, authenticated, service_role;
+  grant select on table public.calendar_service_professionals to authenticated;
+  grant select, insert, update, delete on table public.calendar_service_professionals to service_role;
+  revoke all on table public.calendar_service_resources from anon, authenticated, service_role;
+  grant select on table public.calendar_service_resources to authenticated;
+  grant select, insert, update, delete on table public.calendar_service_resources to service_role;
+  revoke all on table public.calendar_service_schedule from anon, authenticated, service_role;
+  grant select on table public.calendar_service_schedule to authenticated;
+  grant select, insert, update, delete on table public.calendar_service_schedule to service_role;
+  revoke all on table public.channel_session_groups from anon, authenticated, service_role;
+  grant select on table public.channel_session_groups to authenticated;
+  grant select, insert, update, delete on table public.channel_session_groups to service_role;
+  revoke all on table public.conversation_assignment_events from anon, authenticated, service_role;
+  grant select on table public.conversation_assignment_events to authenticated;
+  grant select, insert, update, delete on table public.conversation_assignment_events to service_role;
+  revoke all on table public.webhook_lead_captures from anon, authenticated, service_role;
+  grant select on table public.webhook_lead_captures to authenticated;
+  grant select, insert, update, delete on table public.webhook_lead_captures to service_role;
+
+  -- Só do servidor: nenhuma policy permissiva para authenticated.
+  revoke all on table public.calendar_oauth_nonces from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.calendar_oauth_nonces to service_role;
+  revoke all on table public.crm_proposal_counters from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.crm_proposal_counters to service_role;
+  revoke all on table public.mfa_trusted_devices from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.mfa_trusted_devices to service_role;
+  revoke all on table public.modulos_instalados from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.modulos_instalados to service_role;
+  revoke all on table public.system_update_runs from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.system_update_runs to service_role;
+  revoke all on table public.system_version from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.system_version to service_role;
+end
+$grants_9037$;
 
 -- ---- travas do modo somente leitura do suporte, depois de toda tabela (migration 0274) ----
 --
@@ -62415,33 +64798,6 @@ create view public.external_db_connections_safe
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
 
--- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
--- Espelho idempotente da migration 0563. É este apêndice que chega a todo
--- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
--- re-aplica num banco existente; nenhum dos dois roda as migrations.
--- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
--- O status `personal` é saída própria de campanha — nunca `opted_out`, para
--- não inflar "pediu para parar".
-alter table public.contacts
-  add column if not exists is_personal boolean default false not null;
-
-comment on column public.contacts.is_personal is
-  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
-
-create index if not exists idx_contacts_org_personal
-  on public.contacts (organization_id)
-  where (is_personal = true);
-
-alter table public.campaign_recipients
-  drop constraint if exists campaign_recipients_status_check;
-
-alter table public.campaign_recipients
-  add constraint campaign_recipients_status_check check (status in (
-    'pending','queued','sending','sent','delivered','read','replied',
-    'failed','skipped','cancelled','opted_out','personal'
-  ));
-
-notify pgrst, 'reload schema';
 
 -- ---- APÊNDICE 0580: a chave do servidor MCP externo vira coluna cifrada ----
 -- Espelho idempotente da migration 0580. É este apêndice que chega a todo
@@ -63544,124 +65900,6 @@ alter table public.campaigns
 comment on column public.campaigns.velocidade is
   'gradual = uma mensagem por número a cada rodada (uma por minuto); rapida = rajada de várias por segundo, só com modelo aprovado (número oficial). Migration 0711.';
 
--- ---- traço do turno do agente (migration 0721) ----
--- manifest: traço do turno do agente — uma linha por execução, chave `job_id` (issue #2869).
-
--- ═══ O que esta tabela responde, e por que ela existe ═════════════════════════
---
--- O turno real do agente é auditável hoje em pedaços que moram longe um do
--- outro: `llm_calls` guarda cada chamada de modelo, `skill_activations` guarda
--- quais skills entraram, `event_log` guarda a cadeia de eventos. Nenhuma linha
--- responde "o que aconteceu NESTE turno": quais ferramentas o modelo chamou (e
--- qual falhou), qual janela de histórico foi carregada, quais fontes de
--- conhecimento estavam ligadas e como o turno terminou. Um turno que respondeu
--- errado só se explica lendo o código.
---
--- ═══ Por que tabela nova, e não `ai_agent_runs` ═══════════════════════════════
---
--- `ai_agent_runs` nasceu com a forma disso (0023) e o motor vivo NUNCA escreveu
--- nela: o único escritor é a prévia (`is_dry_run = true`), e por isso a aba
--- Execuções passou a ler `llm_calls` (medido: 0 linhas em produção com 130
--- chamadas `agent_turn`). Reaproveitá-la significaria decidir, de passagem, que
--- ela volta a ser a fonte do turno real — decisão do mantenedor, não nossa.
--- Esta tabela é ADITIVA: a tela de Execuções continua lendo o que já lê.
---
--- ═══ Por que SEM trigger de auditoria ════════════════════════════════════════
---
--- Toda outra tabela do módulo de IA audita cada linha. Aqui não, de propósito:
--- é uma escrita por TURNO, e o conteúdo do traço já é o registro do que
--- aconteceu. Auditar a auditoria dobraria o volume de `audit_log` sem responder
--- nenhuma pergunta nova. Se a política mudar, é um `create trigger` de uma linha.
---
--- ═══ O que esta fatia ainda NÃO grava ════════════════════════════════════════
---
--- O snapshot/hash da composição do prompt, os trechos de conhecimento
--- efetivamente recuperados, a janela de histórico REALMENTE carregada (a coluna
--- `historico_mensagens` existe para a fatia que medir isso, e nasce `null` em
--- vez de receber a janela PEDIDA, que é outra coisa) e a comparação entre a
--- resposta crua do modelo e o texto enviado ficam para as fatias seguintes. O
--- que esta já separa é prévia de turno real (`is_dry_run`).
-
-create table if not exists public.agent_turn_traces (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations (id) on delete cascade,
-  -- Turno real: `job_id` (o job da fila É o run). Prévia: `preview_run_id`.
-  -- Exatamente um dos dois — o CHECK abaixo é o que impede a linha órfã.
-  job_id uuid,
-  preview_run_id text,
-  conversation_id uuid,
-  contact_id uuid,
-  agent_id uuid,
-  agent_version_id uuid,
-  is_dry_run boolean not null default false,
-  status text not null check (status in ('completed', 'failed', 'aborted')),
-  abort_reason text,
-  error_code text,
-  error_message text,
-  provider text,
-  model text,
-  messages_sent integer not null default 0 check (messages_sent >= 0),
-  historico_mensagens integer check (historico_mensagens is null or historico_mensagens >= 0),
-  -- Agregados do job, somados na hora de gravar (não há segunda escrita).
-  tokens_in integer not null default 0 check (tokens_in >= 0),
-  tokens_out integer not null default 0 check (tokens_out >= 0),
-  cost_cents numeric not null default 0,
-  latency_ms integer not null default 0 check (latency_ms >= 0),
-  -- Skills ativadas no turno (`skill_activations` do mesmo job).
-  skills jsonb not null default '[]'::jsonb,
-  -- Ferramentas chamadas: nome, estado (ok|falhou|bloqueada), erro e duração.
-  ferramentas jsonb not null default '[]'::jsonb,
-  ferramentas_truncadas boolean not null default false,
-  -- Fontes de conhecimento ligadas ao agente, com versão e hash.
-  kb_sources jsonb not null default '[]'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint agent_turn_traces_chave check (
-    (job_id is not null and preview_run_id is null)
-    or (job_id is null and preview_run_id is not null)
-  )
-);
-
-comment on table public.agent_turn_traces is
-  'Uma linha por execução do agente (issue #2869): chave `job_id` no turno real, `preview_run_id` na prévia. Agrega tokens/custo/latência de `llm_calls` e as skills de `skill_activations` do mesmo job, e guarda o que só existe no turno: as ferramentas chamadas (nome, estado, erro, duração), a janela de histórico e as fontes de conhecimento ligadas. Escrita melhor-esforço pelo motor — falhar aqui nunca derruba o atendimento.';
-
--- A chave do turno real. Parcial de propósito: a prévia não tem job, e uma
--- coluna nula não colide no Postgres — sem o `where`, o upsert do turno real
--- não teria em que se apoiar (e o `on conflict` da gravação é o que torna a
--- repetição de um turno idempotente em vez de duplicar a linha).
-create unique index if not exists agent_turn_traces_job_idx
-  on public.agent_turn_traces (job_id) where job_id is not null;
-
-create index if not exists agent_turn_traces_org_created_idx
-  on public.agent_turn_traces (organization_id, created_at desc);
-
-create index if not exists agent_turn_traces_preview_idx
-  on public.agent_turn_traces (preview_run_id) where preview_run_id is not null;
-
--- O agregado do traço lê `skill_activations` pelo `job_id` a cada turno, e a
--- tabela só tinha índice por organização e por skill (0078). Sem isto, cada
--- turno paga uma varredura da tabela inteira para descobrir o que ele mesmo
--- acabou de gravar.
-create index if not exists idx_skill_activations_job
-  on public.skill_activations (job_id) where job_id is not null;
-
--- RLS: o traço é da organização e ninguém mais o lê. A leitura é do painel
--- (sessão do usuário, `authenticated`), por uma policy só de `select`. A
--- escrita é só do worker, que passa por fora do RLS: por isso `authenticated`
--- perde o grant de escrita (o molde de `automation_rodizio_atribuicoes`, 0692),
--- e `anon` não recebe nada em hipótese alguma: um traço carrega o texto do erro
--- e os ids das fontes de conhecimento.
-alter table public.agent_turn_traces enable row level security;
-
-drop policy if exists tenant_isolation_agent_turn_traces_all on public.agent_turn_traces;
-drop policy if exists tenant_isolation_agent_turn_traces_select on public.agent_turn_traces;
-create policy tenant_isolation_agent_turn_traces_select on public.agent_turn_traces
-  for select using (organization_id in (select public.fn_user_org_ids()));
-
-revoke all on public.agent_turn_traces from anon, authenticated;
-grant select on public.agent_turn_traces to authenticated;
-grant all on public.agent_turn_traces to service_role;
-
 -- ---- #3202: channel_sessions — a regra de escrita deixa de valer para a leitura (migration 0752) ----
 -- `for all` também vale para SELECT: fn_role_at_least (~4 ms) rodava por linha em todo embed de channel_sessions.
 drop policy if exists channel_sessions_tenant_write on public.channel_sessions;
@@ -63759,6 +65997,100 @@ create index if not exists idx_crm_leads_org_pipeline_position_id
 
 comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
+
+-- ---- vínculo e motivo legado das propostas de campos (migration 0807) ----
+-- manifest: lead_field_proposals: WITH CHECK exige negócio visível da mesma organização; motivos legados de contatos já anonimizados saem pelos vínculos direto e crm_lead_links, sem repetir a anonimização
+--
+-- 0807 — duas correções forward para clones que aplicaram a 0772 (#3476).
+-- A 0772 e a 0797 permanecem intactas: podem ter sido aplicadas no fork.
+--
+-- Provado no Postgres 17: INSERT sem RETURNING passava com orgA + leadB,
+-- porque a FK simples só conhece o id e o WITH CHECK omitia o vínculo que o
+-- USING já cobra. A MESMA régua passa a valer para a linha nova também.
+drop policy if exists tenant_isolation_lead_field_proposals_write on public.lead_field_proposals;
+create policy tenant_isolation_lead_field_proposals_write on public.lead_field_proposals
+  for all to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent')
+      and exists (
+        select 1 from public.crm_leads l
+         where l.id = lead_field_proposals.lead_id
+           and l.organization_id = lead_field_proposals.organization_id
+      )
+  )
+  with check (
+    organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent')
+      and exists (
+        select 1 from public.crm_leads l
+         where l.id = lead_field_proposals.lead_id
+           and l.organization_id = lead_field_proposals.organization_id
+      )
+  );
+
+-- Trocar a função na 0797 protege as próximas anonimizações, mas não visita
+-- quem a 0772 já marcou como anonimizado: o retry retorna antes da cascata.
+-- Cura só o motivo que ficou, com todos os vínculos escopados por organização.
+-- Não reescreve a decisão, o rótulo nem a data original do direito; contato
+-- vivo e proposta já limpa ficam intactos, inclusive na reaplicação.
+update public.lead_field_proposals p
+   set motivo_recusa = null,
+       updated_at = now()
+  from public.crm_leads l
+ where p.organization_id = l.organization_id
+   and p.lead_id = l.id
+   and p.motivo_recusa is not null
+   and (
+     exists (
+       select 1 from public.contacts c
+        where c.organization_id = p.organization_id
+          and c.id = l.contact_id
+          and c.is_anonymized
+     )
+     or exists (
+       select 1 from public.crm_lead_links vinculo
+       join public.contacts c
+         on c.id = vinculo.target_id
+        and c.organization_id = vinculo.organization_id
+        and c.is_anonymized
+        where vinculo.organization_id = p.organization_id
+          and vinculo.lead_id = p.lead_id
+          and vinculo.target_kind = 'contact'
+     )
+   );
+
+-- ---- catálogo: GPT-6.1 Terra (migration 9031) ----
+-- O dump --schema-only não traz seed pós-snapshot. Sem este apêndice, clones
+-- novos (install.sh) e clones atualizando (update.sh reaplica baseline.sql)
+-- ficam sem o gpt-6.1-terra em Provedores de IA e no seletor do agente.
+-- As DUAS tabelas com os MESMOS números (invariante catálogo×preço). Não mexe
+-- no padrão (segue gpt-5.6-terra). Fonte do preço no cabeçalho da migration.
+insert into public.ai_models
+  (provider, model_id, display_name, description, context_window,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('openai', 'gpt-6.1-terra', 'GPT-6.1 Terra',
+   'Intermediário da linha 6: mais capaz que o Luna, metade do preço do Sol.',
+   1050000, 100, 500, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  context_window = excluded.context_window,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  deprecated_at = null;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gpt-6.1-terra', 100, 500, 'catálogo 9031 — acima de 272k tokens de entrada, 200/750')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
 
 -- ---- skill ativada pela etiqueta: trigger 'tag' (migration 0794) ----
 alter table skill_activations

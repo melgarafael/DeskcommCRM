@@ -21,7 +21,8 @@
  *   3. se o terceiro NÃO documenta nada, a lacuna entra com motivo escrito.
  *      Número não medido não vira teto: vira lacuna declarada.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -146,10 +147,10 @@ function varrer(dir: string, achados: string[] = []): string[] {
   return achados;
 }
 
-function caminhosCom(padrao: RegExp): string[] {
-  return DIRS_DE_CODIGO.flatMap((d) => varrer(join(RAIZ, d)))
+function caminhosCom(padrao: RegExp, raiz = RAIZ): string[] {
+  return DIRS_DE_CODIGO.flatMap((d) => varrer(join(raiz, d)))
     .filter((c) => padrao.test(readFileSync(c, "utf8")))
-    .map((c) => c.slice(RAIZ.length + 1).replaceAll("\\", "/"));
+    .map((c) => c.slice(raiz.length + 1).replaceAll("\\", "/"));
 }
 
 /**
@@ -320,6 +321,25 @@ describe("nenhum identificador sem destino declarado", () => {
 });
 
 describe("a varredura é de classe: site novo de fronteira reprova", () => {
+  it.each(["app/api/novo/route.ts", "scripts/operacao.ts", "scripts/provas/nova.ts"])(
+    "encontra upload novo em %s; bancada em tests fica fora do código de produção",
+    (arquivo) => {
+      const raiz = mkdtempSync(join(tmpdir(), "fronteiras-de-producao-"));
+      try {
+        for (const dir of [...DIRS_DE_CODIGO, "tests/provas"]) mkdirSync(join(raiz, dir), { recursive: true });
+        mkdirSync(join(raiz, arquivo, ".."), { recursive: true });
+        writeFileSync(join(raiz, arquivo), "armazenamento.upload('chave', bytes);\n");
+        writeFileSync(join(raiz, "tests/provas/bancada.ts"), "armazenamento.upload('fixture', bytes);\n");
+        // Nem retirar scripts da varredura, nem ignorar scripts/provas passa.
+        // O site novo permanece fora do catálogo e seria recusado pelo gate.
+        expect(caminhosCom(/\.upload\(/, raiz)).toEqual([arquivo]);
+        expect(SITES.some((s) => s.arquivo === arquivo)).toBe(false);
+      } finally {
+        rmSync(raiz, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("todo `.upload(` do código de produção está registrado, e na fronteira certa", () => {
     const achados = caminhosCom(/\.upload\(/);
     const registrados = SITES.filter((s) => s.fronteira === "storage.chave-de-objeto").map((s) => s.arquivo);

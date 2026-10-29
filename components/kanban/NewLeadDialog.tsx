@@ -35,10 +35,13 @@ import {
 import type { Lead } from "@/lib/types/leads";
 import { createLeadSchema, type CreateLeadInput } from "@/lib/schemas/leads";
 import { camposExigidosNoDestino, validaCamposExigidos } from "@/lib/leads/campos-exigidos";
+import { lerRecorrenciaDoFormulario } from "@/lib/leads/valor-recorrente";
 import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
 import { MOEDA_PADRAO, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import type { Contact } from "@/lib/types/contacts";
+import { AbrirConversaAposSalvar } from "@/components/channels/AbrirConversaAposSalvar";
+import type { AlvoDeConversa } from "@/components/channels/SeletorDeCanalParaConversa";
 import { EcoDoValor } from "./EcoDoValor";
 import { SeletorDeContato } from "./SeletorDeContato";
 
@@ -47,6 +50,13 @@ interface FormShape {
   description: string;
   stage_id: string;
   valueReais: string;
+  /**
+   * O VALOR RECORRENTE e a duração (fatia 1 da #3602). Em texto, como o valor
+   * único: quem digita "1.500,00" ou "1500" precisa do mesmo parser que respeita
+   * a moeda da organização (`parseReaisToCents`).
+   */
+  valorRecorrenteReais: string;
+  recorrenciaMeses: string;
   tagsRaw: string;
   expected_close_date: string;
 }
@@ -101,6 +111,15 @@ export function NewLeadDialog({
   // Negócio NOVO nasce na moeda da organização (createLeadHandler).
   const moedaDoValor = org?.currency ?? MOEDA_PADRAO;
   const create = useCreateLead(pipelineId);
+  /**
+   * A CONVERSA A ABRIR DEPOIS DE CRIAR (#3483) — `null` = nada pendente.
+   *
+   * O trabalho de abrir (canais, claim, Inbox) mora em
+   * `AbrirConversaAposSalvar`, montado só quando há alvo: quem abre o diálogo
+   * para criar um negócio sem conversa não paga a leitura de canais, e o
+   * formulário continua sem depender de router/provider no render.
+   */
+  const [conversaAoCriar, setConversaAoCriar] = useState<AlvoDeConversa | null>(null);
   const initialStage = useMemo(() => defaultStageId(stages), [stages]);
   // Quem abre o diálogo já sabendo o contato (Inbox) não escolhe de novo.
   const [contato, setContato] = useState<Contact | null>(null);
@@ -125,6 +144,8 @@ export function NewLeadDialog({
   const [aviso, setAviso] = useState<{
     existente: NegocioAbertoExistente;
     valores: FormShape;
+    /** Quem confirmou pediu para abrir a conversa ao criar (#3483). */
+    abrir: boolean;
   } | null>(null);
 
   // O contato é o único campo deste diálogo que cria VÍNCULO, e o componente
@@ -155,6 +176,8 @@ export function NewLeadDialog({
       description: "",
       stage_id: initialStage,
       valueReais: "",
+      valorRecorrenteReais: "",
+      recorrenciaMeses: "",
       tagsRaw: "",
       expected_close_date: "",
     },
@@ -197,6 +220,11 @@ export function NewLeadDialog({
         settingsDoFunil: settings,
         destino: { stageId, desfecho: null },
         motivoDeGanho: null,
+        // O arquivo ainda não pode existir (#3433): o anexo é do negócio, e o
+        // negócio é o que este formulário vai criar. Sem isto, a etapa que pede
+        // documento deixava o botão "Criar lead" travado para sempre — o campo
+        // aparecia como faltando e não havia onde anexar.
+        semAnexosAinda: true,
       }).faltando,
     [settings, stageId, camposDoNegocio],
   );
@@ -208,31 +236,58 @@ export function NewLeadDialog({
    * se o segundo nasce é a pessoa, não o banco: a 0256 proíbe o bloqueio.
    */
   async function onSubmit(values: FormShape) {
+    await perguntarAntesDeGravar(values, false);
+  }
+
+  /**
+   * O "Salvar e iniciar conversa" (#3483): a MESMA criação, e depois a conversa
+   * do contato do negócio aberta no Inbox.
+   *
+   * ─── Por que ele passa pela mesma pergunta de duplicidade ────────────────
+   *
+   * Porque o caminho é o de criar, não um segundo caminho: um negócio aberto
+   * duplicado continua sendo a pergunta da #1751, e a intenção de abrir a
+   * conversa viaja junto com os valores para o "Criar mesmo assim" (nem a
+   * resposta se perde, nem a conversa deixa de abrir depois da confirmação).
+   *
+   * ─── Negócio sem pessoa não tem conversa ────────────────────────────────
+   *
+   * Abrir a thread 1:1 precisa de contato, e o funil aceita lead sem nenhum
+   * (automação e importação criam assim de propósito). Nesse caso o botão fica
+   * desabilitado com o motivo visível, em vez de virar um clique que não faz
+   * nada — a mesma régua do card, que diz POR QUE não dá para abrir.
+   */
+  async function onSubmitIniciandoConversa(values: FormShape) {
+    await perguntarAntesDeGravar(values, true);
+  }
+
+  /** A pergunta de duplicidade (#1751), com a intenção de abrir a conversa. */
+  async function perguntarAntesDeGravar(values: FormShape, abrir: boolean) {
     const idDoContato = contactId ?? contato?.id ?? null;
     const existente = negocioAbertoNoQuadro(leads ?? [], {
       pipelineId,
       contactId: idDoContato,
     });
     if (existente) {
-      setAviso({ existente, valores: values });
+      setAviso({ existente, valores: values, abrir });
       return;
     }
-    await gravar(values, false);
+    await gravar(values, false, abrir);
   }
 
   /** Quem confirmou o aviso: cria sem perguntar de novo (a pergunta já foi). */
   async function confirmarAviso() {
     if (!aviso) return;
-    const { valores } = aviso;
+    const { valores, abrir } = aviso;
     setAviso(null);
-    await gravar(valores, true);
+    await gravar(valores, true, abrir);
   }
 
   /**
    * A criação de fato. `avisoJaMostrado` é quem sabe se a pessoa JÁ viu a
    * duplicidade — é a única forma de não dizer a mesma coisa duas vezes.
    */
-  async function gravar(values: FormShape, avisoJaMostrado: boolean) {
+  async function gravar(values: FormShape, avisoJaMostrado: boolean, abrir: boolean) {
     // A régua da ETAPA (#1710) agora está visível no próprio formulário: se
     // ainda falta campo, a recusa sai daqui — sem ida e volta, e com a pessoa
     // no diálogo, o input na frente dela. O servidor segue perguntando a MESMA
@@ -259,6 +314,28 @@ export function NewLeadDialog({
       }
     }
 
+    // A MENSALIDADE (fatia 1 da #3602). Ela NÃO entra no `value_cents`: o valor
+    // único continua sendo o setup, e a soma dos dois é o número que ninguém
+    // consegue separar depois. A leitura dos dois campos é a régua COMPARTILHADA
+    // com os outros dois formulários (`lerRecorrenciaDoFormulario`): a moeda da
+    // organização decide a vírgula, e duração sem mensalidade é recusa.
+    const leitura = lerRecorrenciaDoFormulario(
+      values.valorRecorrenteReais,
+      values.recorrenciaMeses,
+      moedaDoValor,
+    );
+    if (!leitura.ok) {
+      form.setError(leitura.campo === "valor" ? "valorRecorrenteReais" : "recorrenciaMeses", {
+        message:
+          leitura.motivo === "valor_invalido"
+            ? t("Valor inválido")
+            : leitura.motivo === "duracao_invalida"
+              ? t("Duração inválida")
+              : t("Informe a mensalidade para usar a duração"),
+      });
+      return;
+    }
+
     const payload: Record<string, unknown> = {
       pipeline_id: pipelineId,
       stage_id: values.stage_id,
@@ -274,6 +351,13 @@ export function NewLeadDialog({
     if (idDoContato) payload.contact_id = idDoContato;
     if (values.description.trim()) payload.description = values.description.trim();
     if (valueCents !== null) payload.value_cents = valueCents;
+    if (leitura.trio.recurring_value_cents !== null) {
+      payload.recurring_value_cents = leitura.trio.recurring_value_cents;
+      payload.recurring_period = leitura.trio.recurring_period;
+      if (leitura.trio.recurring_months !== null) {
+        payload.recurring_months = leitura.trio.recurring_months;
+      }
+    }
     if (values.expected_close_date) payload.expected_close_date = values.expected_close_date;
     // Os campos que a etapa exige viajam NESTA criação (issue #3038): o
     // `createLeadSchema` os aceita e o `createLeadHandler` valida/grava o
@@ -322,6 +406,8 @@ export function NewLeadDialog({
         description: "",
         stage_id: initialStage,
         valueReais: "",
+        valorRecorrenteReais: "",
+        recorrenciaMeses: "",
         tagsRaw: "",
         expected_close_date: "",
       });
@@ -330,8 +416,18 @@ export function NewLeadDialog({
       setCamposDoNegocio({});
       onOpenChange(false);
     } catch {
-      // toast already shown
+      // toast already shown — e nada foi criado, então não há conversa a abrir.
+      return;
     }
+
+    // ─── ABRIR A CONVERSA DO NEGÓCIO RECÉM-CRIADO (#3483) ──────────────────
+    // Fora do `try` de propósito: o negócio JÁ existe, e uma falha ao abrir
+    // (sem sessão de canal, papel insuficiente) não pode ser contada como falha
+    // de criação — o toast de erro do `create` seria uma segunda mentira sobre
+    // a mesma escrita. `idDoContato` foi lido ANTES do reset que soltou o
+    // contato escolhido, senão o id sumiria junto com o estado.
+    if (!abrir || !idDoContato) return;
+    setConversaAoCriar({ contact_id: idDoContato });
   }
 
   // Negócio sem pessoa não tem para quem o WhatsApp falar nem com quem a
@@ -339,6 +435,24 @@ export function NewLeadDialog({
   // no meio da ligação e completa depois continua conseguindo, e a importação e
   // as automações seguem criando sem contato de propósito.
   const faltaContato = !contactId && !contato;
+
+  /**
+   * Dá para abrir a conversa ao salvar? Precisa de um CONTATO — a thread 1:1 é
+   * com uma pessoa — e, quando o contato foi escolhido AQUI (onde o telefone é
+   * conhecido), de telefone: é a mesma régua do card do funil. Contato vindo
+   * por `contactId` (o painel do Inbox) é o de uma conversa que já existe, e ali
+   * o telefone não se pergunta de novo.
+   *
+   * O motivo fica VISÍVEL no botão: um clique que não faz nada ensina que o
+   * sistema quebrou.
+   */
+  const semTelefoneNoContato = Boolean(contato) && !contato?.phone_number?.trim();
+  const podeIniciarConversa = !faltaContato && !semTelefoneNoContato;
+  const motivoSemConversa = faltaContato
+    ? t("Escolha um contato para abrir a conversa.")
+    : semTelefoneNoContato
+      ? t("Sem telefone no contato: cadastre um telefone para abrir a conversa.")
+      : null;
 
   function escolherContato(escolhido: Contact | null) {
     setContato(escolhido);
@@ -436,6 +550,52 @@ export function NewLeadDialog({
             </div>
           </div>
 
+          {/* A MENSALIDADE (fatia 1 da #3602) — ao lado do valor único, num
+              bloco próprio. Setup + mensalidade é o formato da maior parte do
+              que se vende aqui (agência, clínica, escola, software), e era
+              isso que ia para a descrição ou para uma etiqueta, onde nenhum
+              relatório enxerga. Opcional: quem vende uma vez só não preenche
+              nada e a tela fica como era. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="valorRecorrenteReais">
+                {t("Valor recorrente (mensal)")} ({simboloDaMoeda(moedaDoValor)})
+              </Label>
+              <Input
+                id="valorRecorrenteReais"
+                inputMode="decimal"
+                placeholder="0,00"
+                {...form.register("valorRecorrenteReais")}
+              />
+              {/* O eco é a MESMA promessa do valor único: dinheiro não é
+                  interpretado em silêncio. */}
+              <EcoDoValor
+                control={form.control}
+                moeda={moedaDoValor}
+                campo="valorRecorrenteReais"
+              />
+              {form.formState.errors.valorRecorrenteReais && (
+                <p className="text-xs text-error-fg">
+                  {form.formState.errors.valorRecorrenteReais.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recorrenciaMeses">{t("Duração (meses)")}</Label>
+              <Input
+                id="recorrenciaMeses"
+                inputMode="numeric"
+                placeholder={t("sem prazo")}
+                {...form.register("recorrenciaMeses")}
+              />
+              {form.formState.errors.recorrenciaMeses && (
+                <p className="text-xs text-error-fg">
+                  {form.formState.errors.recorrenciaMeses.message}
+                </p>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="tagsRaw">{t("Tags (separadas por vírgula)")}</Label>
             <Input
@@ -520,12 +680,29 @@ export function NewLeadDialog({
             >
               {t("Cancelar")}
             </Button>
+            {/* O CAMINHO DA #3483: criar o negócio e já cair na conversa do
+                contato dele. `handleSubmit` no clique porque a intenção viaja
+                no argumento — o mesmo formulário, dois desfechos, e nenhum
+                estado que possa sobrar para o próximo negócio. */}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={create.isPending || !stageId || !podeIniciarConversa}
+              title={motivoSemConversa ?? undefined}
+              onClick={form.handleSubmit((values) => void onSubmitIniciandoConversa(values))}
+            >
+              {t("Salvar e iniciar conversa")}
+            </Button>
             <Button type="submit" disabled={create.isPending || !stageId}>
               {create.isPending ? t("Criando…") : t("Criar lead")}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
+      {/* FORA do `DialogContent`: o formulário FECHA ao criar e a abertura da
+          conversa (com a escolha de canal, #2382) vem depois — aqui ela
+          sobrevive ao fechamento do cadastro. */}
+      {conversaAoCriar && <AbrirConversaAposSalvar alvo={conversaAoCriar} />}
     </Dialog>
   );
 }

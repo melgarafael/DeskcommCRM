@@ -333,6 +333,23 @@ export const contactsMergeSchema = z
 export type ContactsMergeInput = z.infer<typeof contactsMergeSchema>;
 
 /**
+ * POST /api/v1/contacts/duplicates/dismiss — "Não são a mesma empresa" (Spec 31, PR A).
+ *
+ * Exatamente DOIS ids, distintos. A organização não vem daqui: a rota a lê da sessão,
+ * e este schema não tem campo para ela (um `organization_id` no corpo é descartado).
+ * Comparar sem caixa: UUID é o mesmo id com maiúsculas ou minúsculas.
+ */
+export const contactsDismissDuplicateSchema = z
+  .object({
+    contact_ids: z.array(z.string().uuid()).length(2),
+  })
+  .refine((v) => v.contact_ids[0]?.toLowerCase() !== v.contact_ids[1]?.toLowerCase(), {
+    message: "Os dois contatos precisam ser diferentes.",
+    path: ["contact_ids"],
+  });
+export type ContactsDismissDuplicateInput = z.infer<typeof contactsDismissDuplicateSchema>;
+
+/**
  * POST /api/v1/contacts/bulk — as ações em lote da tela de Contatos (#2484, fatia F3).
  *
  * Só as três ações que têm caminho por CONTATO único, e nenhuma outra: a rota

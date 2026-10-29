@@ -44,6 +44,11 @@ interface Props {
   recursos: Recurso[];
   onEscolher: (recurso: Recurso) => void;
   disabled?: boolean;
+  /**
+   * Por que os botões estão desligados, quando o compositor sabe dizer
+   * (#3354: "há rascunho no campo, e a resposta rápida o substituiria").
+   */
+  dica?: string;
   /** O usuário logado — a memória do recolhimento é POR usuário (#3282). */
   usuarioId?: string | null;
   /**
@@ -57,6 +62,7 @@ export function BarraDeRecursos({
   recursos,
   onEscolher,
   disabled = false,
+  dica,
   usuarioId = null,
   storage,
 }: Props) {
@@ -98,7 +104,7 @@ export function BarraDeRecursos({
           data-recurso-id={recurso.id}
           data-recurso-tipo={ehRecursoDeAudio(recurso) ? "audio" : "texto"}
           onClick={() => onEscolher(recurso)}
-          title={t("Prepara no compositor — você revisa e envia")}
+          title={dica ?? t("Prepara no compositor — você revisa e envia")}
           className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
         >
           {ehRecursoDeAudio(recurso) ? `🎧 ${recurso.title}` : recurso.title}

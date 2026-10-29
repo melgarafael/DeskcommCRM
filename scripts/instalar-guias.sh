@@ -5,7 +5,7 @@
 ajuda() {
   cat <<'AJUDA'
 instalar-guias.sh — deixa os guias do assistente (deskcomm-instalar, deskcomm-cliente-novo,
-deskcomm-metricas, deskcomm-prompt, deskcomm-contribuir, deskcomm-doutrina) disponíveis
+deskcomm-metricas, deskcomm-prompt, deskcomm-contribuir, deskcomm-doutrina e deskcomm-curso) disponíveis
 em QUALQUER pasta, não só dentro de um clone do DeskcommCRM.
 
 ── Por que existe ────────────────────────────────────────────────────────────

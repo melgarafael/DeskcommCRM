@@ -153,6 +153,15 @@ export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
 /**
+ * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
+ * conexão quando um aparelho lê o código. A linha morta (`FAILED`/`STOPPED`)
+ * sem número, ali, é QR que ninguém leu e não ocupa a vaga do plano (#3416);
+ * nos outros provedores o número não identifica a conexão. É a mesma régua dos
+ * gatilhos `fn_trava_canais_do_plano` e `fn_vaga_ao_reviver_canal`.
+ */
+export const PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO: ChannelProvider = CHANNEL_PROVIDER_WAHA;
+
+/**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
  * "este canal serve para conversar?".
  *

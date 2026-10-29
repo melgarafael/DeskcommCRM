@@ -58,7 +58,7 @@
     { "id": "mcp-fila", "from": "pontemcp", "to": "filanegocio", "label": "organização + negócio após traduzir contato" },
     { "id": "mcp-escrita", "from": "filanegocio", "to": "leads", "label": "handlers nativos completos; updated_at ainda confere concorrência" },
     { "id": "mcp-audit", "from": "pontemcp", "to": "auditoria", "label": "mcp.tool_called: resultado e falha preservados" },
-    { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
+    { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action; frase genérica descartada preserva proposta e sequência" },
     { "id": "e2", "from": "ritual", "to": "checkpoints", "label": "grava o turno" },
     { "id": "e3", "from": "ritual", "to": "traces", "label": "registra portões e veto" },
     { "id": "e4", "from": "checkpoints", "to": "emissor", "label": "objeção NOVA (diff, não retrato)" },

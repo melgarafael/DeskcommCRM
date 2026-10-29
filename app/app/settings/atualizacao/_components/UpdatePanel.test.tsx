@@ -61,9 +61,7 @@ describe("tela de atualização — o botão não fica atrás do changelog", () 
     const changelog = screen.getByText("O que muda");
 
     expect(
-      Boolean(
-        botao.compareDocumentPosition(changelog) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ),
+      Boolean(botao.compareDocumentPosition(changelog) & Node.DOCUMENT_POSITION_FOLLOWING),
     ).toBe(true);
   });
 
@@ -79,9 +77,9 @@ describe("tela de atualização — o botão não fica atrás do changelog", () 
     const aviso = screen.getByText("Requer atenção", { exact: false });
     const botao = screen.getByRole("button", { name: "Atualizar agora" });
 
-    expect(
-      Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
+    expect(Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
   });
 
   it("o aviso de histórico incompleto continua ANTES do botão — com ele, o 'Requer atenção' pode estar faltando itens", () => {
@@ -93,9 +91,9 @@ describe("tela de atualização — o botão não fica atrás do changelog", () 
     const aviso = screen.getByText("Este histórico começa na versão", { exact: false });
     const botao = screen.getByRole("button", { name: "Atualizar agora" });
 
-    expect(
-      Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
+    expect(Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
   });
 });
 
@@ -248,9 +246,7 @@ describe("tela de atualização — a rodada conta a disputa do banco", () => {
   it("rodada medida SEM disputa: conta que foi de uma vez e não aponta log nenhum", () => {
     // O controle do issue: aviso sem motivo vira ruído, e quem para de ler o
     // ruído para de ler o aviso. Endereço de log é linha só quando há o que ler.
-    renderTela(
-      rodada({ rodada_do_banco: { disputa: false, retentativas: 0, passada: 1 } }),
-    );
+    renderTela(rodada({ rodada_do_banco: { disputa: false, retentativas: 0, passada: 1 } }));
 
     expect(screen.getByText(/atualizou de uma vez, na primeira passada/)).toBeInTheDocument();
     expect(screen.queryByText(/\.update\.log/)).not.toBeInTheDocument();
@@ -344,7 +340,9 @@ describe("tela de atualização — o aviso da volta automática (#2757)", () =>
     renderTela(volta({ volta_automatica: false }));
 
     expect(screen.queryByTestId("volta-automatica")).toBeNull();
-    expect(screen.getByText("Voltei o sistema para a versão", { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText("Voltei o sistema para a versão", { exact: false }),
+    ).toBeInTheDocument();
   });
 
   it("⭐ a volta que TERMINOU não oferece o botão de voltar — o alvo dele já é a versão no ar", () => {
@@ -370,9 +368,104 @@ describe("tela de atualização — o aviso da volta automática (#2757)", () =>
     // é o status, nunca a marca de autoria.
     renderTela(volta({ status: "failed" }));
 
-    expect(screen.getByRole("button", { name: "Voltar para a versão anterior" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Voltar para a versão anterior" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/que é a que está no ar agora/)).toBeNull();
     expect(screen.getByText(/o sistema pode estar rodando a versão/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * #3488 — O RETRATO VELHO NÃO FALA PELA INSTALAÇÃO.
+ *
+ * Medido em produção: o host parou de bater às 11h45 (DNS sem upstream), a
+ * v1.90.0 saiu às 14h07 e às 16h a tela dizia "Você está na versão v1.89.0 —
+ * É a mais recente. Não há nada a fazer." O retrato em `system_version` é o
+ * último que o heartbeat conseguiu gravar: `latest_version` vazio,
+ * `compare_failed` falso e `has_known_release` verdadeiro é, ao mesmo tempo, o
+ * estado de "conferi agora" e o de "parei de conferir há horas". A única
+ * válvula para dúvida era `agent_online`, e ela só abre às 24h.
+ *
+ * Os DOIS sentidos são o assunto — a tela não pode afirmar mais do que sabe,
+ * nem menos:
+ *
+ *   (a) retrato VELHO não pode dizer "é a mais recente";
+ *   (b) retrato FRESCO pode (o controle: sem ele, "nunca afirmar nada" também
+ *       passaria, e a tela ficaria inútil);
+ *   (c) retrato velho com versão nova ANUNCIADA não perde o botão — ali a
+ *       informação antiga ainda basta para agir.
+ */
+describe("tela de atualização — retrato velho do host (#3488)", () => {
+  const ULTIMA_BATIDA = "2026-10-26T14:45:02.000Z";
+
+  /** O estado exato de produção durante a janela das 4h15 de silêncio. */
+  const RETRATO_VELHO: SystemVersion = {
+    current_version: "1.89.0",
+    is_owner: true,
+    latest_version: "",
+    update_available: false,
+    has_known_release: true,
+    compare_failed: false,
+    // A válvula antiga: menos de 24h, então o agente ainda conta como "online".
+    agent_online: true,
+    agent_stale: true,
+    agent_last_seen_at: ULTIMA_BATIDA,
+    notes: null,
+    run: null,
+  };
+
+  it("⭐ (a) retrato velho NÃO diz 'é a mais recente' — diz que não sabe", () => {
+    renderTela(RETRATO_VELHO);
+
+    expect(screen.queryByText("É a mais recente. Não há nada a fazer.")).toBeNull();
+    expect(screen.queryByText(/Você está na versão/)).toBeNull();
+
+    expect(screen.getByText("Não sei se há versão nova")).toBeInTheDocument();
+    expect(screen.getByText(/não posso afirmar que esta é a mais recente/)).toBeInTheDocument();
+    // A idade da informação é dita, não escondida: a hora é a da última batida
+    // que o retrato registrou (renderizada no fuso de quem lê).
+    const d = new Date(ULTIMA_BATIDA);
+    const hora = `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`;
+    expect(screen.getByText(hora)).toBeInTheDocument();
+    // O retrato antigo orienta conferir a conexão; ainda não é agente offline.
+    expect(screen.queryByText(/hostgator-setup-kit\/update\.sh/)).toBeNull();
+    expect(screen.getByText(/verifique a conexão do servidor com a internet/)).toBeInTheDocument();
+  });
+
+  it("agente offline preserva o caminho manual, mesmo com retrato velho", () => {
+    renderTela({ ...RETRATO_VELHO, agent_online: false });
+
+    expect(screen.getByText("Atualização automática indisponível")).toBeInTheDocument();
+    expect(screen.getByText(/hostgator-setup-kit\/update\.sh/)).toBeInTheDocument();
+    expect(screen.queryByText("Não sei se há versão nova")).toBeNull();
+  });
+
+  it("⭐ (b) CONTROLE — retrato fresco PODE dizer 'é a mais recente'", () => {
+    renderTela({ ...RETRATO_VELHO, agent_stale: false });
+
+    expect(screen.getByText("É a mais recente. Não há nada a fazer.")).toBeInTheDocument();
+    expect(screen.queryByText("Não sei se há versão nova")).toBeNull();
+  });
+
+  it("(c) CONTROLE — retrato velho com versão nova anunciada mantém o botão", () => {
+    // O que o retrato velho não sustenta é "não há nada a fazer". Que existe uma
+    // versão mais nova, ele sustenta — e esconder o botão aqui tiraria a única
+    // saída de quem está atrasado.
+    renderTela({
+      ...RETRATO_VELHO,
+      latest_version: "1.90.0",
+      update_available: true,
+    });
+
+    expect(screen.getByRole("button", { name: "Atualizar agora" })).toBeInTheDocument();
+    expect(screen.queryByText("Não sei se há versão nova")).toBeNull();
+  });
+
+  it("retrato velho ainda diz qual é a versão instalada — só não afirma que ela é a última", () => {
+    renderTela(RETRATO_VELHO);
+
+    expect(screen.getByText(/Versão instalada:/)).toBeInTheDocument();
   });
 });
 
@@ -435,5 +528,190 @@ describe("tela de atualização — recusa por falta do código leva ao desafio"
 
     await screen.findByText("Não consegui iniciar a atualização", { exact: false });
     expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #2756 — o `--force` vira CLIQUE.
+ *
+ * A `Saida` já mostrava o comando de saída de um estado de falha; o que faltava
+ * era o botão que o executa. As quatro provas da issue, na ordem delas:
+ *
+ * 1. o botão aparece JUNTO do comando no estado de falha;
+ * 2. o clique manda `{ force: true }` — UMA chave, sem caminho nenhum do
+ *    cliente (o alvo é do SERVIDOR, e `route.test.ts` costura a outra ponta
+ *    com a MESMA frase literal);
+ * 3. os estados normais seguem com o "Atualizar agora" de sempre;
+ * 4. os dois testes do endpoint, que já existiam, continuam verdes.
+ */
+describe("tela de atualização — o botão de força (#2756)", () => {
+  function falha(overrides: Partial<NonNullable<SystemVersion["run"]>> = {}): SystemVersion {
+    return {
+      // Depois de uma falha o `git checkout` já tinha dado certo: o host
+      // reporta a versão ALVO, e ela É a mais recente — é este o estado que o
+      // 409 do caminho de atualizar barra e que só a força atravessa.
+      current_version: "1.5.0",
+      identity: {
+        status: "confirmed",
+        base_version: "1.5.0",
+        revision: "a".repeat(40),
+        customized: false,
+        confirmed_at: new Date().toISOString(),
+      },
+      force_update_supported: true,
+      is_owner: true,
+      latest_version: "1.5.0",
+      update_available: true,
+      agent_online: true,
+      notes: null,
+      run: {
+        id: "99999999-9999-4999-9999-999999999999",
+        status: "failed",
+        last_step: "app",
+        from_version: "1.4.2",
+        to_version: "1.5.0",
+        log_tail: "",
+        finished_at: null,
+        volta_automatica: false,
+        ...overrides,
+      },
+    };
+  }
+
+  function semMfa() {
+    vi.mocked(irAoDesafioDeMfa).mockReset();
+    vi.mocked(apiClient.post).mockReset();
+  }
+
+  it("⭐ estado de falha: 'Forçar atualização' fica JUNTO do comando de copia", () => {
+    renderTela(falha());
+
+    const botao = screen.getByRole("button", { name: "Forçar atualização" });
+    const comando = screen.getByText("bash hostgator-setup-kit/update.sh --to v1.4.2 --force");
+
+    // "Junto": o botão vem ANTES do `<code>` no mesmo bloco — é o clique daquela
+    // linha, não um atalho solto em outro canto da tela.
+    expect(Boolean(botao.compareDocumentPosition(comando) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
+    // E o botão de ATUALIZAR continua DESLIGADO aqui: sem força ele é o falso
+    // sucesso descrito no doc de `Saida`.
+    expect(screen.queryByRole("button", { name: "Atualizar agora" })).toBeNull();
+  });
+
+  it("⭐ o clique manda SÓ { force: true } — nenhum caminho vem do cliente", async () => {
+    semMfa();
+    vi.mocked(apiClient.post).mockResolvedValue({});
+    renderTela(falha());
+
+    fireEvent.click(screen.getByRole("button", { name: "Forçar atualização" }));
+
+    await waitFor(() =>
+      expect(apiClient.post).toHaveBeenCalledWith("/api/v1/system/update", { force: true }),
+    );
+    // O `--to` não viaja: quem o deriva é o servidor, a partir do run.
+    expect(vi.mocked(apiClient.post).mock.calls[0]?.[1]).toEqual({ force: true });
+  });
+
+  it("fora de release: o comando é o `--force` puro e o botão continua — é o caso em que a volta recusa", () => {
+    // `from_version` de instalação seguindo o repositório não é versão
+    // publicada: o `#2757` some (409 no servidor) e este aqui é o ÚNICO clique
+    // de saída, executando o `--force` sem `--to` que a tela mostra.
+    renderTela(falha({ from_version: "dev-abc1234" }));
+
+    expect(screen.getByRole("button", { name: "Forçar atualização" })).toBeInTheDocument();
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh --force")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+
+  it("a volta que TERMINOU também ganha o força — ali o comando é a saída clicável", () => {
+    // #3271 escondeu o "Voltar" neste ramo, mas o COMANDO continua na tela de
+    // propósito ("inclusive o código, que já foi trocado"). O força é o clique
+    // daquela linha; o "Voltar" segue fora.
+    renderTela(falha({ status: "failed_rolled_back", volta_automatica: true }));
+
+    expect(screen.getByRole("button", { name: "Forçar atualização" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+
+  it("CONTROLE — estado normal: nenhum 'Forçar', o 'Atualizar agora' de sempre", () => {
+    renderTela(CHANGELOG_LONGO);
+
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Atualizar agora" })).toBeInTheDocument();
+    expect(screen.queryByText("bash hostgator-setup-kit/update.sh --force")).toBeNull();
+  });
+
+  it("⭐ 'Forçar atualização' recusado por mfa_required leva ao código", async () => {
+    semMfa();
+    vi.mocked(apiClient.post).mockRejectedValue(
+      new ApiError(403, "mfa_required", undefined, "req-3", "Confirme o código."),
+    );
+    renderTela(falha());
+
+    fireEvent.click(screen.getByRole("button", { name: "Forçar atualização" }));
+
+    await waitFor(() => expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Não consegui iniciar a atualização", { exact: false })).toBeNull();
+  });
+
+  it("outra falha mostra a frase UMA vez — o força não repete o que o 'Voltar' já diz", async () => {
+    semMfa();
+    vi.mocked(apiClient.post).mockRejectedValue(
+      new ApiError(500, "internal_error", undefined, "req-4", "boom"),
+    );
+    renderTela(falha());
+
+    fireEvent.click(screen.getByRole("button", { name: "Forçar atualização" }));
+
+    await screen.findByText("Não consegui iniciar a atualização", { exact: false });
+    expect(
+      screen.getAllByText("Não consegui iniciar a atualização", { exact: false }),
+    ).toHaveLength(1);
+    expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
+  });
+  it("agente legado não recebe promessa de força pela tela", () => {
+    renderTela({ ...falha(), identity: undefined, force_update_supported: undefined });
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+    expect(
+      screen.getByText("bash hostgator-setup-kit/update.sh --to v1.4.2 --force"),
+    ).toBeInTheDocument();
+  });
+
+  it("sem anúncio do host confirmado não oferece força", () => {
+    renderTela({ ...falha(), force_update_supported: false });
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+  });
+
+  it("personalização não ganha força mesmo com capacidade anunciada", () => {
+    const dados = falha();
+    renderTela({
+      ...dados,
+      identity: { ...dados.identity!, customized: true },
+      manual_reconciliation_required: true,
+    });
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+  it("origem com sufixo usa o comando sem tag e não oferece volta para uma imagem inexistente", () => {
+    renderTela(falha({ from_version: "1.4.2-dev" }));
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh --force")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+
+  it("identidade moderna preserva o destino, a hora e o motivo da volta automática", () => {
+    const quando = "2026-10-20T12:13:00.000Z";
+    renderTela(
+      falha({ status: "failed_rolled_back", volta_automatica: true, finished_at: quando }),
+    );
+    const texto = screen.getByTestId("volta-automatica").textContent ?? "";
+    const d = new Date(quando);
+    expect(texto).toContain("voltou sozinho");
+    expect(texto).toContain("1.4.2");
+    expect(texto).toContain("1.5.0");
+    expect(texto).toContain(
+      `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`,
+    );
+    expect(texto).toContain("site não respondeu");
   });
 });

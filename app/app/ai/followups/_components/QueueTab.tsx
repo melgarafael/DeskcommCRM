@@ -36,6 +36,7 @@ import {
 import { Clock, MagnifyingGlass, Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { rotuloDoStatus, tomDoStatus } from "@/lib/followup/eventos-legiveis";
+import { statusCancelavel } from "@/lib/followup/vocabulario";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import {
@@ -73,8 +74,9 @@ const STATUS_OPTIONS: FollowupEnrollmentStatus[] = [
 // Aqui "vivo" INCLUI o dormente, e é o oposto de LIVE_STATUSES da reatividade:
 // quem espera a data do retorno tem de aparecer na fila. Um acompanhamento que
 // some da tela por 28 dias é uma ilha — ninguém sabe que ele existe nem o
-// cancela quando a cliente já voltou por outro caminho.
-const LIVE_ENROLLMENT_STATUSES = new Set(["active", "waiting_reply", "dormente", "paused_handoff", "paused_manual", "coletando"]);
+// cancela quando a cliente já voltou por outro caminho. A lista em si mora em
+// `STATUS_CANCELAVEIS` (lib/followup/vocabulario.ts), a mesma que o dossiê e a
+// rota leem desde o #3434: três cópias à mão foi o que deixou o dossiê de fora.
 
 /**
  * O que ainda dá para desmarcar.
@@ -86,9 +88,7 @@ const LIVE_ENROLLMENT_STATUSES = new Set(["active", "waiting_reply", "dormente",
  * linha errada em silêncio.
  */
 function podeCancelar(row: FollowupQueueRow): boolean {
-  return row.source === "enrollment"
-    ? LIVE_ENROLLMENT_STATUSES.has(row.status)
-    : row.status === "agendada";
+  return row.source === "enrollment" ? statusCancelavel(row.status) : row.status === "agendada";
 }
 
 function QueueStatusBadge({ status }: { status: string }) {

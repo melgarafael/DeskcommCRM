@@ -15,6 +15,7 @@ import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/Marca
 import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
+import { usePrefetchPorIntencao } from "@/hooks/navigation/prefetchPorIntencao";
 
 const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 
@@ -43,6 +44,13 @@ export function SidebarContent({
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const { user, activeOrg } = useAuth();
+  /**
+   * O menu não prefetcha sozinho (#3170): um render RSC por link do menu (19
+   * destinos × as duas instâncias, lateral e móvel), e eles disputam o servidor
+   * com o render que o clique pediu. O prefetch passa a ser
+   * por intenção (ponteiro/foco) — ver `hooks/navigation/prefetchPorIntencao.ts`.
+   */
+  const intencao = usePrefetchPorIntencao();
   const todos = sidebarGroups(
     user.is_platform_admin && !user.support,
     activeOrg?.role ?? null,
@@ -333,6 +341,7 @@ export function SidebarContent({
                       <li key={item.href}>
                         <Link
                           href={item.href}
+                          {...intencao(item.href)}
                           title={collapsed ? t(item.label) : undefined}
                           aria-current={isActive ? "page" : undefined}
                           onClick={onNavigate}
@@ -361,6 +370,7 @@ export function SidebarContent({
                     <li>
                       <Link
                         href={group.hub.href}
+                        {...intencao(group.hub.href)}
                         title={collapsed ? t(group.hub.label) : undefined}
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
@@ -387,6 +397,7 @@ export function SidebarContent({
         {rodape && (
           <Link
             href={rodape.href}
+            {...intencao(rodape.href)}
             title={collapsed ? t(rodape.label) : undefined}
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             onClick={onNavigate}

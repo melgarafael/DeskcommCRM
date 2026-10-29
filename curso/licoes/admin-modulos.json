@@ -1,0 +1,184 @@
+{
+  "id": "admin-modulos",
+  "titulo": "Módulos (Admin)",
+  "tela": "/admin/modulos",
+  "resumo": "Onde quem instalou o sistema acrescenta partes extras ao servidor, como Comandas e Honorários, que passam a valer para todas as empresas dele.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Módulos",
+      "objetivo": "Achar a tela de Módulos no Admin e reconhecer um módulo ainda não instalado e um já instalado.",
+      "papel": "admin",
+      "busca": [
+        "módulos do sistema",
+        "módulos da instalação",
+        "instalar comandas",
+        "instalar honorários",
+        "partes extras do sistema",
+        "admin módulos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "No Admin, o item \"Módulos\" do menu abre os \"Módulos da instalação\". Um módulo é uma parte extra do sistema, com lugar próprio para guardar os dados dele. Ele só ocupa espaço no servidor depois de instalado. E a instalação vale para todas as empresas deste servidor, não só para a sua clínica.",
+          "dica": "Só quem administra o servidor inteiro vê esta tela. Para os outros usuários, o endereço abre a página \"Acesso negado\". A faixa amarela \"Sem SMTP configurado\", no alto, é um aviso geral do Admin: o envio de e-mails ainda não está configurado. O item \"E-mail\" do menu leva ao ajuste.",
+          "rota": "/admin/modulos",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Módulos",
+                "exato": true
+              },
+              "rotulo": "Módulos no menu do Admin",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Módulos da instalação",
+                "exato": true
+              },
+              "rotulo": "Vale para o servidor inteiro",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Um módulo ainda não instalado",
+          "texto": "Cada módulo aparece num cartão com o nome e uma frase sobre o que ele faz. \"Honorários (advocacia)\" guarda o contrato de cobrança de cada caso e o calendário de parcelas: serve para escritórios de advocacia. Enquanto o módulo não está instalado, o cartão mostra o botão \"Instalar\" à direita.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "modulo-honorarios"
+              },
+              "rotulo": "Nome e o que o módulo faz",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "instalar-honorarios"
+              },
+              "rotulo": "Ainda não instalado",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Um módulo já instalado",
+          "texto": "\"Comandas\" guarda a comanda de cada atendimento: os itens, a forma de pagamento, as comissões e os pontos de fidelidade. Neste servidor ele já foi instalado, por isso o cartão mostra o selo verde \"Instalado\" e não tem mais o botão. O caixa da clínica funciona com ou sem este módulo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "modulo-financeiro"
+              },
+              "rotulo": "Módulo Comandas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Instalado",
+                "exato": true,
+                "dentro": {
+                  "testid": "modulo-financeiro"
+                }
+              },
+              "rotulo": "Já instalado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "instalar-um-modulo",
+      "titulo": "Instalando um módulo",
+      "objetivo": "Saber o que acontece ao clicar em \"Instalar\" e onde o módulo aparece para a equipe depois.",
+      "papel": "admin",
+      "busca": [
+        "como instalar um módulo",
+        "ativar comandas no sistema",
+        "onde aparece o módulo instalado",
+        "módulo suspenso",
+        "desinstalar módulo",
+        "honorários advocacia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Instalar",
+          "texto": "Para instalar, clique em \"Instalar\" no cartão do módulo. Enquanto o servidor prepara o espaço do módulo, o botão troca para \"Instalando…\" por alguns segundos (na foto ele ainda está parado). Não há versão para escolher nem empresa para marcar: um clique instala para o servidor inteiro. Instale só o que alguma empresa deste servidor vai usar. Esta tela não tem botão para desinstalar.",
+          "dica": "Se algo der errado, a mensagem aparece em vermelho no alto da lista e o botão volta a ficar disponível.",
+          "rota": "/admin/modulos",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "instalar-honorarios"
+              },
+              "rotulo": "Instala para todas as empresas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Depois de instalar",
+          "texto": "Quando a instalação termina, a lista se atualiza sozinha: o cartão ganha o selo \"Instalado\" e o botão some, como aconteceu aqui com \"Comandas\". Se um dia uma atualização do sistema não conseguir refazer o módulo, o selo vira \"Suspenso\", em vermelho, e as telas dele somem das empresas até a próxima atualização dar certo. Logo abaixo da descrição aparece o motivo, num texto técnico: copie e mande para quem cuida do seu servidor. Esta tela não tem botão para tentar de novo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "modulo-financeiro"
+              },
+              "rotulo": "Instalado, sem botão",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Onde a equipe encontra o módulo",
+          "texto": "Instalado, o módulo ganha uma tela dentro de cada empresa. A de \"Comandas\" fica no CRM: abra \"Ver tudo em CRM\" e procure a parte \"O dia a dia da venda\". Antes de instalar, esse cartão não aparece. O de \"Honorários\" aparece em \"Ver tudo em Análise\", na parte \"Dinheiro\". Se uma empresa escolheu um por um os itens do menu, a tela nova só aparece depois que alguém dela a marcar em Configurações, no \"Menu lateral\".",
+          "rota": "/app/crm",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "O dia a dia da venda",
+                "exato": true
+              },
+              "rotulo": "O dia a dia da venda",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Comandas",
+                "regex": true
+              },
+              "rotulo": "Tela que o módulo trouxe",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

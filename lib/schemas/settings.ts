@@ -12,6 +12,13 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { DIAS_MAXIMO_DO_RECORTE } from "@/lib/kanban/recorte-de-encerrados";
+import {
+  ICONES_DE_ATALHO,
+  MAX_ATALHOS,
+  modeloAceito,
+  TAMANHO_MAXIMO_DO_MODELO,
+  TAMANHO_MAXIMO_DO_ROTULO,
+} from "@/lib/leads/atalhos-do-card";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -456,6 +463,42 @@ export const pipelineConfigPatchSchema = z.object({
    * válido: um número escrito aqui e outro lá divergiriam no primeiro ajuste.
    */
   ocultar_encerrados_dias: z.number().int().min(0).max(DIAS_MAXIMO_DO_RECORTE).optional(),
+  /**
+   * OS ATALHOS DO CARD (issue #3487) — os botões que abrem outro sistema com o
+   * dado do cliente: `tel:` para o softphone do PABX, `https://…?cliente={{erp_id}}`
+   * para o app de pedidos.
+   *
+   * ─── A régua do ESQUEMA, e por que ela está aqui ──────────────────────────
+   *
+   * O `url` é digitado por uma pessoa e renderizado para outras: o valor vira
+   * `<a href>`, e `javascript:`/`data:` num href é execução de código a um
+   * clique. A allowlist (`tel:`, `http:`, `https:`) RECUSA NA GRAVAÇÃO, e a
+   * renderização revalida o que veio do banco (`lib/leads/atalhos-do-card.ts`,
+   * `atalhosParaExibir`) — o `settings` é jsonb, escrito também por script, seed
+   * e restauração de backup, e um valor posto por fora passaria por esta porta
+   * sem tocá-la.
+   *
+   * ⚠️ `refine` e não `z.enum`: a mensagem de erro precisa dizer QUAL regra
+   * caiu, e o formulário lê o `details` para marcar a linha errada.
+   *
+   * `atalhos` AUSENTE é o estado de todo funil instalado: nenhum botão, e o card
+   * continua idêntico ao de antes desta entrega.
+   */
+  atalhos: z
+    .array(
+      z.object({
+        rotulo: z.string().trim().min(1).max(TAMANHO_MAXIMO_DO_ROTULO),
+        icone: z.enum(ICONES_DE_ATALHO),
+        url: z
+          .string()
+          .trim()
+          .min(1)
+          .max(TAMANHO_MAXIMO_DO_MODELO)
+          .refine(modeloAceito, { message: "esquema_nao_permitido" }),
+      }),
+    )
+    .max(MAX_ATALHOS)
+    .optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 

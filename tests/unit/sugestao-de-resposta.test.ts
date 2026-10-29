@@ -166,6 +166,25 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
     }
   });
 
+  /**
+   * A CONFERÊNCIA DE AFIRMAÇÃO DE FATO (#2231) tem duas causas que se parecem
+   * e não são a mesma: o material CONTRADIZ o que a resposta dizia, ou o
+   * material simplesmente não apoia. Quem atende age igual nos dois casos, mas
+   * a frase não pode ser a mesma — e, até aqui, nenhum teste comparava as duas.
+   * Medido: invertendo os dois corpos em `motivoDoVeto`, os 24 casos da base
+   * seguiam verdes.
+   */
+  it("⛔ a afirmação CONTRADITA e a SEM APOIO não podem trocar de frase", () => {
+    const contradita = motivoDoVeto("factual_claim_contradicted")!;
+    const semApoio = motivoDoVeto("factual_claim_unsupported")!;
+
+    expect(contradita.texto).not.toBe(semApoio.texto);
+    expect(contradita.texto).toMatch(/CONTRADIZ/);
+    expect(contradita.texto).not.toMatch(/sem apoio/);
+    expect(semApoio.texto).toMatch(/sem apoio/);
+    expect(semApoio.texto).not.toMatch(/CONTRADIZ/);
+  });
+
   it("as causas DEFINITIVAS (opt-out, LGPD) não fingem ter ação local", () => {
     expect(motivoDoVeto("contato_bloqueado")!.acionavel).toBe(false);
     expect(motivoDoVeto("lgpd_anonymized")!.acionavel).toBe(false);

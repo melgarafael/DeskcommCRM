@@ -488,6 +488,9 @@ function SendEmailForm({
         )}
       </p>
       <p className="text-xs text-muted-foreground">
+        {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+      </p>
+      <p className="text-xs text-muted-foreground">
         {t(
           "A variável Resumo do negócio leva o nome da regra, o cliente, o telefone, o valor, a pontuação e um atalho para o negócio no CRM (quando a instalação tem endereço público), e nada do que foi conversado com o cliente. O resto do corpo vai como você escrever, inclusive as outras variáveis.",
         )}

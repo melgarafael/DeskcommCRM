@@ -12,6 +12,23 @@ describe("normalizeCnpj", () => {
     expect(normalizeCnpj("123")).toBeNull();
     expect(normalizeCnpj("00000000000000")).toBeNull();
   });
+  /**
+   * O caso que dava empresa fantasma: 14 dígitos, máscara certa, DV errado.
+   * Antes da régua de `isValidCnpj` isto entrava como CNPJ legítimo.
+   */
+  it("rejeita o dígito verificador errado (14 dígitos não bastam)", () => {
+    expect(normalizeCnpj("11.222.333/0001-00")).toBeNull();
+    expect(normalizeCnpj("11222333000100")).toBeNull();
+    expect(normalizeCnpj("11.222.333/0001-80")).toBeNull();
+  });
+  it("aceita CNPJ numérico sem máscara", () => {
+    expect(normalizeCnpj("11222333000181")).toBe("11222333000181");
+    expect(normalizeCnpj(11222333000181)).toBe("11222333000181");
+  });
+  /** O alfabético da Receita só entra quando `normalized_cnpj` deixar de ser `^\d{14}$`. */
+  it("recusa o CNPJ alfabético enquanto a coluna exigir 14 dígitos", () => {
+    expect(normalizeCnpj("12ABC34501DE35")).toBeNull();
+  });
   it("formatCnpj round-trip visual", () => {
     expect(formatCnpj("11222333000181")).toBe("11.222.333/0001-81");
   });

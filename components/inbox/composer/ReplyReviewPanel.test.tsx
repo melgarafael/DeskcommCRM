@@ -69,6 +69,55 @@ describe("o painel diz QUAL veto barrou a sugestão (issue #2975)", () => {
     expect(await screen.findByText(GENERICA)).toBeTruthy();
   });
 
+  /**
+   * UM CASO POR FAMÍLIA — inclusive a conferência de afirmação de fato (#2231),
+   * que é de onde a issue nasceu (triagem do #2959).
+   *
+   * O caso do ⭐ acima prova que o painel USA o mapa; estes provam que o mapa,
+   * lido pela tela, devolve a frase da FAMÍLIA CERTA. Sem eles, trocar dois
+   * corpos em `motivoDoVeto` passa despercebido: os 24 casos da base ficavam
+   * verdes com `factual_claim_contradicted` e `..._unsupported` invertidos.
+   *
+   * O `naoContem` é o que separa as duas famílias vizinhas (contradição × falta
+   * de apoio) e as definitivas das acionáveis: a frase do outro caso não pode
+   * aparecer no lugar.
+   */
+  const FAMILIAS: Array<[string, string, RegExp, RegExp]> = [
+    [
+      "contato bloqueado (opt-out)",
+      "contato_bloqueado",
+      /não receber mensagens/,
+      /CONTRADIZ|sem apoio/,
+    ],
+    ["LGPD anonimizado", "lgpd_anonymized", /anonimizado/, /CONTRADIZ|sem apoio/],
+    ["janela de 24h fechada", "messaging_window_closed", /janela de 24 horas/, /CONTRADIZ/],
+    ["promessa fora da tabela", "promise_out_of_table", /fora da tabela aprovada/, /CONTRADIZ/],
+    [
+      "#2231 afirmação CONTRADITA",
+      "factual_claim_contradicted",
+      /CONTRADIZ/,
+      /sem apoio no material de referência/,
+    ],
+    [
+      "#2231 afirmação SEM APOIO",
+      "factual_claim_unsupported",
+      /sem apoio no material de referência/,
+      /CONTRADIZ/,
+    ],
+    ["falha de geração", "generation_failed", /A geração da sugestão falhou/, /CONTRADIZ/],
+  ];
+
+  it.each(FAMILIAS)(
+    "família %s: o painel mostra a frase dela, e não a da vizinha",
+    async (_familia, codigo, contem, naoContem) => {
+      montar([draft({ error_code: codigo })]);
+
+      const causa = await screen.findByText(contem);
+      expect(causa.textContent).not.toMatch(naoContem);
+      expect(screen.queryByText(GENERICA)).toBeNull();
+    },
+  );
+
   it("CONTROLE: rascunho que não falhou não mostra causa nenhuma", async () => {
     montar([draft({ status: "pending", original_body: "Oi", error_code: "messaging_window_closed" })]);
 

@@ -12,7 +12,14 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { semSmtpNaInstalacao } from "@/lib/email/estado";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  runtimeIdentity,
+  runtimeConfirmationSchema,
+  newerOfficialRelease,
+  supportsForcedUpdate,
+} from "@/lib/system/runtime-identity";
 import { extractChangelogRange } from "@/lib/system/changelog";
+import { retratoDoHostVelho } from "@/lib/system/retrato";
 import {
   isRunStale,
   rodadaDoBancoDaLinha,
@@ -38,7 +45,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const { data: version, error: versionError } = await db
     .from("system_version")
     .select(
-      "current_version, latest_version, off_release, compare_failed, has_known_release, changelog_raw, agent_last_seen_at, updated_at",
+      "runtime_confirmation, current_version, latest_version, off_release, compare_failed, has_known_release, changelog_raw, agent_last_seen_at, updated_at",
     )
     .eq("id", 1)
     .maybeSingle();
@@ -46,11 +53,17 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // Sem checar o erro, uma falha de leitura vira `current = ""` em silêncio —
   // e mais abaixo isso poderia se disfarçar de "sem atualização disponível".
   if (versionError) {
-    logger.error("[system/version] leitura de system_version falhou", { error: versionError.message });
+    logger.error("[system/version] leitura de system_version falhou", {
+      error: versionError.message,
+    });
     return fail("internal_error", "Não consegui ler o estado da atualização.", 500);
   }
 
-  const current = version?.current_version ?? "";
+  const now = new Date();
+  const identity = runtimeIdentity(version?.runtime_confirmation, version?.agent_last_seen_at, now);
+  const observation = runtimeConfirmationSchema.safeParse(version?.runtime_confirmation);
+  const current =
+    identity.status === "legacy" ? (version?.current_version ?? "") : (identity.base_version ?? "");
 
   // `from_version`/`to_version`/`log_tail` NÃO são enfeite: numa falha, a
   // versão do `system_version` é o `git describe` do HOST, e o checkout já
@@ -72,65 +85,20 @@ export async function GET(_req: NextRequest): Promise<Response> {
     .maybeSingle();
 
   if (runError) {
-    logger.error("[system/version] leitura do run mais recente falhou", { error: runError.message });
+    logger.error("[system/version] leitura do run mais recente falhou", {
+      error: runError.message,
+    });
     return fail("internal_error", "Não consegui ler o estado da atualização.", 500);
   }
 
-  const now = new Date();
   const lastSeen = version?.agent_last_seen_at ? Date.parse(version.agent_last_seen_at) : NaN;
 
-  // A versão que a tela mostra é a do APP QUE ESTÁ RODANDO. Depois de um
-  // rollback, o host reporta a versão nova (o `git checkout` deu certo; quem
-  // não subiu foi o container), então `current_version` nomearia justamente a
-  // versão que quebrou. Quem sabe qual imagem voltou ao ar é o run.
-  //
-  // Mas o run só sabe disso ENQUANTO ninguém trocou o app por outro caminho — e
-  // trocar por outro caminho é o normal: `docker compose up -d`, deploy por CI,
-  // `update.sh` no terminal. Nenhum deles cria run. Sem fim de validade, um
-  // rollback de agosto seguia nomeando a versão no ar em setembro (medido em
-  // produção: o rodapé anunciava `3414a2df` oito dias e vários deploys depois).
-  //
-  // O desempate é temporal e vem do próprio banco: `system_version.updated_at`
-  // é gravado pelo agente do host a cada batida, e se ele é POSTERIOR ao fim do
-  // run, o agente viu o mundo mais recente. Sem o par de datas — run de um
-  // agente antigo, sem `finished_at` — fica valendo o run, que continua sendo a
-  // informação mais específica que a instalação tem.
-  const rollbackSuperado = rollbackFoiSuperado(
-    version?.updated_at,
-    run?.finished_at,
-    current,
-    run,
-  );
-  // A mesma prova vale para a TELA, não só para a versão exibida. Enquanto a
-  // falha é o run mais recente, a tela mostra o aviso dela sem o botão de
-  // atualizar — e o único jeito de trocar o run mais recente é justamente
-  // clicar nesse botão. Depois de um deploy por outro caminho, sai versão nova
-  // e o dono lê um aviso de dias atrás, sem saída pela tela (medido em
-  // produção: rollback de 13/09 bloqueando a 1.27.2 em 15/09, com a 1.23.0 no
-  // ar desde 14/09 via `update.sh` no terminal). Vale para `failed` também: o
-  // host reportar uma versão que o run não descreve é deploy posterior, e não o
-  // app preso na versão que quebrou.
-  //
-  // O segundo degrau é a VERSÃO QUE ESTE PROCESSO ESTÁ RODANDO, e ele alcança
-  // o caso que o
-  // primeiro deixa de fora por construção: reinstalar a MESMA versão que
-  // falhou. Ali o host volta a reportar `to_version` — uma das duas do run — e
-  // a prova temporal não separa nada. A imagem separa: num rollback de verdade
-  // quem responde é `from_version`; se quem responde é `to_version`, a versão
-  // nova subiu.
-  //
-  // A fonte é `APP_VERSION`, gravada DENTRO da imagem no build, e não
-  // `APP_IMAGE`: esta vem do `env_file: .env`, e no rollback do `agent.sh` o
-  // `.env` só é corrigido DEPOIS do `up -d` — o contêiner revertido responde
-  // nomeando a versão que falhou (ver o docblock de
-  // `rollbackDesmentidoPeloApp`). Medido em produção (18/09): a 1.33.0 falhou porque as imagens
-  // ainda não estavam no registry, meia hora depois o mesmo `update.sh --force`
-  // instalou a 1.33.0 com o app saudável, e a tela seguiu anunciando a falha —
-  // sem botão, bloqueando a 1.35.0 já publicada.
-  const falhaDesmentidaPeloApp = rollbackDesmentidoPeloApp(
-    run,
-    process.env.APP_VERSION,
-  );
+  // Legacy heartbeats retain their temporal guard, explicitly unverified.
+  // Modern observations require all applicable services, identity and freshness.
+  const rollbackSuperado =
+    identity.status === "legacy" &&
+    rollbackFoiSuperado(version?.updated_at, run?.finished_at, current, run);
+  const falhaDesmentidaPeloApp = rollbackDesmentidoPeloApp(run, process.env.APP_VERSION, identity);
   const falhaSuperada =
     (run?.status === "failed_rolled_back" || run?.status === "failed") &&
     (rollbackSuperado || falhaDesmentidaPeloApp);
@@ -158,6 +126,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // Janela de silêncio é uma coisa (`just_updated`, logo abaixo), afirmação de
   // versão é outra.
   const running =
+    identity.status === "legacy" &&
     run?.status === "failed_rolled_back" &&
     run.from_version &&
     !rollbackSuperado &&
@@ -166,7 +135,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
       : current;
 
   if (!user.is_platform_admin) {
-    return ok({ current_version: running, is_owner: false });
+    return ok({ current_version: running, is_owner: false, identity });
   }
 
   const latest = version?.latest_version ?? "";
@@ -178,7 +147,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // O limite inferior é `running`, NUNCA `current`: depois de um rollback,
   // `current` nomeia a versão que quebrou, e a faixa sairia vazia justamente
   // para quem mais precisa lê-la.
-  const faixa = latest ? extractChangelogRange(version?.changelog_raw ?? "", latest, running) : null;
+  const faixa = latest
+    ? extractChangelogRange(version?.changelog_raw ?? "", latest, running)
+    : null;
 
   // #2755 (item 3) — quem administra a instalação precisa VER que ela não envia
   // e-mail. Até aqui esse estado só existia no log do `update.sh`, e a tela de
@@ -195,7 +166,18 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   return ok({
     current_version: running,
+    identity,
+    runtime_services: observation.success ? observation.data.services : null,
+    official_latest_version: observation.success
+      ? (observation.data.published_release ?? "")
+      : (version?.latest_version ?? ""),
+    manual_reconciliation_required: identity.customized === true,
     is_owner: true,
+    force_update_supported: supportsForcedUpdate(
+      version?.runtime_confirmation,
+      version?.agent_last_seen_at,
+      now,
+    ),
     smtp_configured: smtpConfigurado,
     latest_version: latest,
     update_available:
@@ -207,12 +189,18 @@ export async function GET(_req: NextRequest): Promise<Response> {
       // versão confirmada é a antiga, em vez de afirmar a nova e não voltar
       // atrás nunca. `sucessoJaInstalado` fecha a janela sozinho passados
       // `RUN_STALE_AFTER_MS` do fim do run.
-      Boolean(latest) && latest !== running && !acabouDeInstalar,
-    off_release: version?.off_release ?? false,
+      Boolean(latest) &&
+      !acabouDeInstalar &&
+      (identity.status === "legacy"
+        ? latest !== running
+        : identity.status === "confirmed" && newerOfficialRelease(running, latest) === true),
+    off_release:
+      identity.status === "legacy" ? (version?.off_release ?? false) : identity.customized === true,
     // Sem isto, a tela lê "sem versão nova anunciada" como "você está em dia" —
     // e uma instalação atrasada cujo host não conseguiu comparar é informada de
     // que está atualizada, em silêncio.
-    compare_failed: version?.compare_failed ?? false,
+    compare_failed:
+      (version?.compare_failed ?? false) || !["legacy", "confirmed"].includes(identity.status),
     // Só importa quando `off_release` e sem `latest_version` — distingue "à
     // frente da última publicada" (existe release, já contida no HEAD) de
     // "este fork nunca teve release nenhuma". Default `true`: preserva "à
@@ -220,6 +208,21 @@ export async function GET(_req: NextRequest): Promise<Response> {
     // não tocada por nenhum heartbeat, coluna com o default da migration).
     has_known_release: version?.has_known_release ?? true,
     agent_online: !Number.isNaN(lastSeen) && now.getTime() - lastSeen < AGENT_OFFLINE_AFTER_MS,
+    // A IDADE DO RETRATO (#3488). `agent_online` sozinho não alcança: com 24h
+    // de paciência, o retrato fica quatro horas velho e a tela continua
+    // afirmando "é a mais recente" com convicção total. Este campo é a mesma
+    // informação com a régua da FRESCURA (`RETRATO_VELHO_APOS_MS`), que é a
+    // pergunta que a frase final faz de verdade: "conferi isso agora?".
+    //
+    // Vem separado de `agent_online` de propósito — os dois respondem coisas
+    // diferentes (24h = "posso atualizar sozinho?"; 30 min = "posso afirmar que
+    // está em dia?"), e juntá-los faria a tela ensinar o caminho manual a quem
+    // só precisava esperar a próxima batida.
+    agent_stale: retratoDoHostVelho(version?.agent_last_seen_at, now),
+    // Desde quando o retrato é o que é — a tela diz "sem notícias desde 14h45"
+    // em vez de um "não sei" sem idade, que não ajuda ninguém a decidir se
+    // espera mais cinco minutos ou chama quem cuida do servidor.
+    agent_last_seen_at: version?.agent_last_seen_at ?? null,
     // A janela em que a atualização TERMINOU e o host ainda não contou. É o que
     // deixa a tela dizer que o pedido terminou, em vez de cair no texto
     // genérico de quem nunca atualizou nada — e ela se fecha sozinha na batida

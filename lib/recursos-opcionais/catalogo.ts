@@ -29,7 +29,7 @@
  * Os textos são a CHAVE em português do dicionário (`lib/i18n/dicionario.ts`);
  * quem desenha passa por `t()`/`traduzir()`.
  */
-import type { Role } from "@/lib/auth/types";
+import { type Role, visibilidadeRestritaAoAtendente } from "@/lib/auth/types";
 import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
@@ -378,7 +378,7 @@ const DA_EMPRESA: RecursoOpcional[] = [
     padrao: "desligado",
     quemDecide: "manager",
     href: "/app/settings/atendimento",
-    ler: peloSettings((s) => s.visibility_mode === "own" || s.visibility_mode === "own_and_unassigned"),
+    ler: peloSettings((s) => visibilidadeRestritaAoAtendente(s.visibility_mode)),
   },
   {
     id: "assinatura_do_emissor",

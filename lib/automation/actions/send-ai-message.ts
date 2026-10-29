@@ -229,7 +229,15 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         serviceBoundary: boundary,
         proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },
         // Disparada por regra, ESCRITA pela IA: o carimbo segue a autoria (#652).
-        actor: { type: "webhook_source", id: ctx.ruleId, textoEscritoPelaIA: true },
+        // O `agent_id` é o agente publicado que escreveu (#3373) — sem ele, a
+        // assinatura `por_agente` (#3310) não tem como saber quem assina e caía
+        // no `nome_ia`, porque o `id` do ator é a REGRA, não o agente.
+        actor: {
+          type: "webhook_source",
+          id: ctx.ruleId,
+          textoEscritoPelaIA: true,
+          agent_id: agentId,
+        },
         requestId: `rule:${ctx.ruleId}`,
       },
       { conversation_id: conversationId, type: "text", body: texto } as Parameters<

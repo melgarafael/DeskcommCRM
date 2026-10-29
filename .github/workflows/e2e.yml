@@ -278,15 +278,15 @@ jobs:
     # superado é pulado ANTES de pedir vaga; o que já está na vaga é cancelado
     # pelo grupo. Um cobre o outro, e é por isso que os dois ficam.
     concurrency:
-      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     strategy:
       # Sem fail-fast: se a parte 1 quebrar, ainda quero saber se a 2 também.
       # Com ele ligado, o primeiro vermelho esconde o outro e o conserto vira
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4, 5, 6, 7]
+        parte: [1, 2, 3, 4, 5, 6, 7, 8]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -759,6 +759,29 @@ jobs:
     # NÃO MEDIDO: se as quatro passam na vizinhança da parte 7. Quem responde
     # é o e2e do PR que criou esta parte. Se uma delas falhar por vizinhança,
     # a troca mais barata medida é `capacidades-do-agente` → parte 6 (~1069s).
+    #
+    # ── 2026-10-26: o preparo não pode gastar a folga antes do nativo ──────
+    #
+    # Run 40361684172, head 8a063d8db: partes 1/3/4/5/6/7 verdes; a 2 foi
+    # cortada sem caso vermelho, com 674s de preparo + 1006s de suíte.
+    # Eram 99 casos verdes, 6 pulados e 2 pendentes (o rótulo 105 do reporter
+    # não é contagem de verdes). Faltavam só os dois últimos de `navegacao`.
+    # O main verde 40347496767 mediu os dois em 28,2s + 2,3s; a spec inteira,
+    # 12 casos, em 329,1s. Seus ~30s por login são a espera anti-replay TOTP
+    # do helper, preservada; o Redis ausente não explica essa cadência.
+    #
+    # Supabase levou 377–390s nas partes 1/2/4/6/7: três tentativas forçadas
+    # e suas esperas antes de liberar o fallback nativo. Na 2, só o caminho
+    # até ele custou 269s. O main verde levou 94–109s no mesmo passo. Agora
+    # o nativo é a PRIMEIRA tentativa, mantendo as quatro, esperas, pipefail
+    # e classificação de falha. Não é motivo para mudar teto nem orçamento.
+    #
+    # Só `navegacao` vai da 2 para a 7, parte comum com os mesmos seeds. No
+    # main medido: jobs 2/7 = 1401/965s; subtrair/somar os 329s da spec dá
+    # 1072/1294s ESTIMADOS. No run com pull limitado, a 7 terminou em 1225s,
+    # antes da mudança; liberar o nativo primeiro recupera folga também nela.
+    # NÃO MEDIDO aqui: a nova vizinhança e o tempo real após as duas mudanças.
+    # Quem os prova é o próximo e2e completo, sem rerodar o head antigo.
     env:
       # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
       INTERNAL_AGENT_RUN_STUB: "true"
@@ -791,7 +814,7 @@ jobs:
         contato-pessoal-sai-da-operacao.spec.ts
         confirmar-dado-do-contato.spec.ts
         credenciais-de-ia.spec.ts
-        risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
+        risk-radar.spec.ts invite-lifecycle.spec.ts
         agente-papeis-operador.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
@@ -921,13 +944,13 @@ jobs:
         agenda-kit-visual.spec.ts
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
+        celular-cabe-na-tela.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         aba-e-cookie-divergentes.spec.ts
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
-        navegacao.spec.ts
         menu-por-empresa-e-a-porta-de-volta.spec.ts
         icone-da-aba.spec.ts
       # `moeda-da-organizacao` entrou na PARTE_2 em 2026-09-04, ao lado de
@@ -1134,23 +1157,19 @@ jobs:
       # todas. Os 3 arquivos que o cancelamento impediu de medir vêm junto, porque
       # eles são justamente o fim da fila.
       SPECS_PARTE_3: >-
-        autonomia-assistida.spec.ts
         roteamento-por-canal.spec.ts
         whatsapp-pareamento-por-codigo.spec.ts
         central-avisos-destino.spec.ts
         agenda-google-sync.spec.ts
         agenda-servicos.spec.ts
-        encerramento-atendimento.spec.ts
         passagem-com-contexto.spec.ts
-        interface-por-vinculo.spec.ts
         pipelines-gestao.spec.ts
         qa-agente-usa-as-maos.spec.ts
         qa-selo-no-funil-usado.spec.ts
         qa-telas-descobertas-w4.spec.ts
         retorno-anti-morte.spec.ts
-        webhooks.spec.ts
+        traco-do-turno-leitor.spec.ts
         designer-de-automacoes.spec.ts
-        logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts
         inbox-tempo-real.spec.ts
@@ -1159,7 +1178,6 @@ jobs:
         organizacoes-criacao-convite-e-cache.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
         busca-na-conversa.spec.ts
-        moeda-da-organizacao.spec.ts
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         email-da-instalacao-pela-tela.spec.ts
         central-avisos-resolver-em-lote.spec.ts
@@ -1181,7 +1199,6 @@ jobs:
         fotos-no-catalogo.spec.ts
         catalogo-busca-no-catalogo-inteiro.spec.ts
         relatorio-por-etiqueta.spec.ts
-        integracao-dados-mysql-na-tela.spec.ts
         minhas-tarefas-no-celular.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
@@ -1432,7 +1449,6 @@ jobs:
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
         app-no-celular.spec.ts
-        celular-cabe-na-tela.spec.ts
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts
         cobranca-suspensao-e-limites.spec.ts
@@ -1475,8 +1491,45 @@ jobs:
         equipe-no-celular.spec.ts
         extensoes-versao.spec.ts
         ia-no-celular.spec.ts
+        navegacao.spec.ts
         prova-painel-provedores.spec.ts
         comercial-no-celular.spec.ts
+        propostas-de-campos-do-card.spec.ts
+      # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
+      # processo next start. As demais partes preservam a configuração WAHA.
+      #
+      # ─── PARTE 8 — nasceu em 2026-10-22 como 7 (#3128, @oianmaxdev; doc 182 A),
+      #     renumerada para 8 em 2026-10-24 (doc 199) porque o #3306 criou
+      #     uma 7ª parte COMUM nesse meio tempo ───
+      #
+      # É uma parte COMUM com dois desvios de ambiente, ambos presos à
+      # `meta-lead-submitted-causal` e não ao número 8:
+      #   - o passo "Isolar Graph e assinatura WAHA da parte causal" põe
+      #     `WAHA_WEBHOOK_REQUIRE_SIGNATURE=true`, `META_ADS_GRAPH_BASE_URL` no
+      #     dublê 127.0.0.1:3995 e `META_GRAPH_BASE_URL` numa porta que recusa;
+      #   - o passo "Semear funil de nascimento para a prova causal" roda
+      #     `scripts/seed-e2e-nascimento-do-lead.ts` além dos seeds de sempre.
+      # Os seeds comuns (`!= 4`) rodam aqui também. Um rebalanceamento pode
+      # TRAZER spec para esta parte, com orçamento medido, desde que a spec
+      # não poste no webhook do WAHA sem assinatura nem dependa do Graph real —
+      # para listar quem posta: `grep -lE 'webhooks/waha' tests/e2e/*.spec.ts
+      # tests/e2e/helpers/*.ts` (helper conta: `jev.ts` arrasta as jev-*).
+      # Pode também LEVAR a causal para outra parte: o `if: matrix.parte == N`
+      # dos dois passos acompanha a spec, e `tests/unit/e2e-cobertura-completa`
+      # reprova se a spec e os passos ficarem em partes diferentes.
+      # O relógio publicado em cada run separa preparo, suíte e total da parte.
+      # Toda admissão exige medir a composição; teto de caso não é duração medida.
+      SPECS_PARTE_8: >-
+        meta-lead-submitted-causal.spec.ts
+        atendimento-conjunto.spec.ts
+        autonomia-assistida.spec.ts
+        encerramento-atendimento.spec.ts
+        integracao-dados-mysql-na-tela.spec.ts
+        interface-por-vinculo.spec.ts
+        logo-moldura-no-tema-escuro.spec.ts
+        moeda-da-organizacao.spec.ts
+        webhooks.spec.ts
+        system-update.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -1793,6 +1846,19 @@ jobs:
       # endereçada por digest, então o que já veio de um registro não é
       # baixado de novo do outro.
       #
+      # Em 26/10/2026, partes 3 e 7 do run 40353735403 morreram antes dos
+      # testes: GHCR recusou com `toomanyrequests` e ECR com `Data limit
+      # exceeded`. Repetir o ECR na última tentativa não abria outra saída.
+      # O CLI pinado já tenta ECR, GHCR e Docker Hub quando o override está
+      # VAZIO, reaproveitando primeiro as imagens locais. O vazio explícito
+      # na tentativa limpa o GHCR que setup-cli exportou; só omitir a
+      # variável manteria o override e impediria o fallback nativo.
+      # A medição do run 40361684172 põe o nativo PRIMEIRO nesta correção: a
+      # parte 2 gastou 269s nas três tentativas forçadas e nas esperas até chegar
+      # ao caminho que funcionou. As tentativas 2/3 ainda oferecem os registros
+      # explícitos depois de uma falha transitória; a quarta libera de novo o
+      # nativo. O pin, as quatro tentativas e os backoffs continuam os mesmos.
+      #
       # `-x studio,postgres-meta`: menos imagens, menos requisições ao
       # registro. Nenhuma spec, script ou passo deste workflow fala com o
       # Studio (porta 54323) nem com o postgres-meta (que só o Studio usa):
@@ -1808,12 +1874,12 @@ jobs:
           mv supabase/migrations /tmp/migrations-off
           mkdir -p supabase/migrations
           esperas=(0 20 60 120)
-          registros=(ghcr.io public.ecr.aws ghcr.io public.ecr.aws)
+          registros=("" public.ecr.aws ghcr.io "")
           for tentativa in 1 2 3 4; do
             espera=${esperas[$((tentativa - 1))]}
             registro=${registros[$((tentativa - 1))]}
             if [ "$espera" -gt 0 ]; then
-              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro} — a anterior falhou baixando imagem do registro"
+              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro:-fallback nativo (ECR, GHCR e Docker Hub)} — a anterior falhou baixando imagem do registro"
               supabase stop --no-backup || true
               sleep "$espera"
             fi
@@ -1825,7 +1891,7 @@ jobs:
               exit 1
             fi
           done
-          echo "::error title=supabase start falhou 4 vezes baixando imagens::ghcr.io e public.ecr.aws recusaram o pull nas 4 tentativas (esperas de 20s, 60s e 120s). É limite de taxa ou rede do registro, não o PR — rerode a parte."
+          echo "::error title=supabase start falhou 4 vezes baixando imagens::GHCR, ECR e o fallback nativo com Docker Hub não concluíram o pull (esperas de 20s, 60s e 120s). O preparo falhou antes dos testes; confira os erros dos registros acima antes de rerodar."
           exit 1
 
       # O baseline é um dump `--schema-only`: ele USA os tipos das extensões
@@ -1920,6 +1986,24 @@ jobs:
       - name: Gerar o .env.e2e (ambiente da suíte)
         run: pnpm e2e:env
 
+      - name: Isolar Graph e assinatura WAHA da parte causal
+        if: matrix.parte == 8
+        run: |
+          set -euo pipefail
+          if grep -Eq '^[[:space:]]*(META_ADS_GRAPH_BASE_URL|META_GRAPH_BASE_URL|WAHA_WEBHOOK_REQUIRE_SIGNATURE)[[:space:]]*=' .env.e2e; then
+            echo '::error::.env.e2e contém configuração que teria precedência no next start causal'
+            exit 1
+          fi
+          grep -qx 'WAHA_API_BASE_URL=http://127.0.0.1:3999' .env.e2e || {
+            echo '::error::WAHA_API_BASE_URL da parte causal não é o dublê local'
+            exit 1
+          }
+          {
+            echo 'META_ADS_GRAPH_BASE_URL=http://127.0.0.1:3995'
+            echo 'META_GRAPH_BASE_URL=http://127.0.0.1:9'
+            echo 'WAHA_WEBHOOK_REQUIRE_SIGNATURE=true'
+          } >> "$GITHUB_ENV"
+
       # E publica o arquivo no ambiente do JOB, para que servidor e testes leiam
       # literalmente a mesma fonte.
       #
@@ -1940,6 +2024,19 @@ jobs:
       # bloco `env:` fixava e que o app recusa.
       - name: Publicar o .env.e2e no ambiente do job
         run: grep -vE '^[[:space:]]*(#|$)' .env.e2e >> "$GITHUB_ENV"
+
+      - if: matrix.parte == 1
+        name: Provar importação após chat inválido (HTTP e banco reais)
+        shell: bash
+        run: |
+          mkdir -p evidence/historico-chat-invalido
+          pnpm exec tsx scripts/provas/historico-chat-invalido.ts --executar-banco-local \
+            | tee evidence/historico-chat-invalido/recibo.jsonl
+
+      # Handler, JWT e Storage reais no stack já pronto; PDF local, sem IA paga.
+      - name: Provar isolamento do worker de derivação de mídia
+        if: matrix.parte == 1
+        run: pnpm exec tsx tests/provas/media-derive-isolamento.ts
 
       # `pnpm e2e:build`, não `pnpm build`: as três `NEXT_PUBLIC_*` são embutidas
       # no BUNDLE durante o build. Buildar com um env e trocar só no `next start`
@@ -2054,13 +2151,18 @@ jobs:
         timeout-minutes: 12
         run: |
           set -euo pipefail
+          source scripts/ci/apt-e2e-failover.sh
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          atualizar=""
           for tentativa in 1 2 3; do
-            if timeout -k 20 180 pnpm exec playwright install --with-deps chromium; then exit 0; fi
-            echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o browser não terminou em 180 s (espelho do apt travado?)"
-            sudo pkill -KILL -x apt-get || :
-            sudo dpkg --configure -a
+            if timeout -k 20 180 bash -c "${atualizar} pnpm exec playwright install --with-deps chromium" 2>&1 | tee "$log"; then exit 0; else codigos=("${PIPESTATUS[@]}"); fi
+            test "${codigos[1]}" -eq 0 || exit 1
+            recuperar_apt_e2e "${codigos[0]}" "$log" "$tentativa"
+            atualizar="sudo apt-get update -q --error-on=any &&"
+            echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o browser falhou no transporte APT (código ${codigos[0]}); cada tentativa tem limite de 180 s"
           done
-          echo "::error title=O preparo não instalou o browser::3 tentativas de 180 s sem terminar. É o espelho do apt, não o PR — rerode a parte."
+          echo "::error title=O preparo não instalou o browser::3 tentativas limitadas a 180 s falharam no transporte APT. Consulte a fonte e o erro nos logs acima."
           exit 1
 
       # Salva logo depois de instalar, e não no fim do job: o `actions/cache`
@@ -2104,20 +2206,23 @@ jobs:
         timeout-minutes: 12
         run: |
           set -euo pipefail
+          source scripts/ci/apt-e2e-failover.sh
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
           if ! command -v ffmpeg >/dev/null; then
             debs="$HOME/.cache/ffmpeg-apt"
             mkdir -p "$debs/partial"
             atualizar=""
             for tentativa in 1 2 3; do
-              if timeout -k 20 180 bash -c "${atualizar} sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=$debs/ ffmpeg"; then break; fi
-              echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o ffmpeg não terminou em 180 s (espelho do apt travado?)"
+              if timeout -k 20 180 bash -c "${atualizar} sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=$debs/ ffmpeg" 2>&1 | tee "$log"; then break; else codigos=("${PIPESTATUS[@]}"); fi
+              test "${codigos[1]}" -eq 0 || exit 1
+              recuperar_apt_e2e "${codigos[0]}" "$log" "$tentativa"
+              echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o ffmpeg falhou no transporte APT (código ${codigos[0]}); cada tentativa tem limite de 180 s"
               if [ "$tentativa" -eq 3 ]; then
-                echo "::error title=O preparo não instalou o ffmpeg::3 tentativas de 180 s sem terminar. É o espelho do apt, não o PR — rerode a parte."
+                echo "::error title=O preparo não instalou o ffmpeg::3 tentativas limitadas a 180 s falharam no transporte APT. Consulte a fonte e o erro nos logs acima."
                 exit 1
               fi
-              sudo pkill -KILL -x apt-get || :
-              sudo dpkg --configure -a
-              atualizar="sudo apt-get update -q &&"
+              atualizar="sudo apt-get update -q --error-on=any &&"
             done
           fi
           ffmpeg -hide_banner -encoders | grep -E ' (aac|libopus) '
@@ -2306,6 +2411,10 @@ jobs:
           cp .env.e2e .env.local
           pnpm exec tsx scripts/seed-e2e-credentials.ts
 
+      - if: matrix.parte == 8
+        name: Semear funil de nascimento para a prova causal
+        run: pnpm exec tsx scripts/seed-e2e-nascimento-do-lead.ts
+
       # `SUPABASE_DB_URL` no `.env.local` (e não só no `env:` do passo de teste):
       # `seed-e2e-escalacao.ts` abre um `pg.Pool` direto, e o `.env.local` é a
       # única fonte que ele lê. Sem a linha, o `pg` cai no default 5432 e morre
@@ -2386,6 +2495,7 @@ jobs:
             5) LISTA="$SPECS_PARTE_5" ;;
             6) LISTA="$SPECS_PARTE_6" ;;
             7) LISTA="$SPECS_PARTE_7" ;;
+            8) LISTA="$SPECS_PARTE_8" ;;
             *) echo "::error::parte ${{ matrix.parte }} sem lista"; exit 1 ;;
           esac
           # Falha alto se a variável vier vazia: sem isto, um typo no nome faria
@@ -2505,6 +2615,17 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+      - name: Gerar tipos do banco real para a prova CTWA
+        if: ${{ success() && matrix.parte == 8 }}
+        env:
+          CANDIDATO_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/gerar-tipos-do-banco-e2e.sh evidencia-gerada/tipos-do-banco meta_ctwa_click_dispatches
+      - name: Gerar tipos do banco real para a prova de atendimento conjunto
+        if: ${{ success() && matrix.parte == 3 }}
+        env:
+          CANDIDATO_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/gerar-tipos-do-banco-e2e.sh evidencia-gerada/tipos-do-banco conversation_participants
 
       # A EVIDÊNCIA VISUAL TAMBÉM QUANDO PASSA. As specs gravam capturas em
       # evidence/<feature>/ (doutrina de QA Visual, DoD 12); sem este passo elas
@@ -2729,7 +2850,7 @@ jobs:
                       dentro { exit }
                     ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
-          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; bloco SPECS_PARTE_7; } | sort -u | wc -l | tr -d " ")
+          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; bloco SPECS_PARTE_7; bloco SPECS_PARTE_8; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
           # E o recorte passa a ter CONTROLE, não só um piso.

@@ -24,7 +24,7 @@
  * a tela mostra. O envio (`useSendMessage`) é um espião só para provar que o
  * clique NÃO envia.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -380,5 +380,89 @@ describe("BarraDeRecursos — marcação e recolhimento na tela (#3282)", () => 
     gravarBarraAberta(window.localStorage, chaveDaBarra("u-1"), true);
     expect(lerBarraAberta(window.localStorage, chaveDaBarra("u-1"))).toBe(true);
     expect(lerBarraAberta(window.localStorage, chaveDaBarra("u-2"))).toBe(false);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * O RASCUNHO QUE JÁ ESTÁ NO CAMPO NÃO É APAGADO POR UM CLIQUE DA BARRA (#3354).
+ *
+ * O clique passa pelo `applyTemplate`, que ESCREVE POR CIMA do campo
+ * (`escreverNoCampo`) e, com mídia que aceita legenda, o ZERA (`setText("")`).
+ * O `/` não corre esse risco: o menu só abre quando o campo inteiro é o comando
+ * (`resolveSlash`), e o que ele troca é o próprio `/consulta`. A barra, sim: com
+ * uma frase escrita, um clique a apagava sem aviso e sem desfazer.
+ *
+ * Os casos (a), (b), (d) e (f) acima clicam na barra com o campo VAZIO — por
+ * isso nenhum deles via isso.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+describe("Composer + recursos pré-prontos: o rascunho que já está no campo (#3354)", () => {
+  const RASCUNHO = "Oi Ana, já confirmo o horário com a equipe";
+  const DICA_DE_SEMPRE = "Prepara no compositor — você revisa e envia";
+
+  function escrever(valor: string) {
+    const campo = screen.getByLabelText(/mensagem/i);
+    fireEvent.change(campo, { target: { value: valor } });
+    return campo;
+  }
+
+  it("(g) recurso de TEXTO com rascunho: o rascunho fica, e o botão diz por que está desligado", () => {
+    renderComposer();
+    const campo = escrever(RASCUNHO);
+
+    const botao = screen.getByRole("button", { name: /boas vindas/i });
+    fireEvent.click(botao);
+
+    // O que importa a quem atende: a frase escrita continua ali.
+    expect(campo).toHaveValue(RASCUNHO);
+    expect(botao).toBeDisabled();
+    expect(botao).toHaveAttribute("title", expect.stringContaining("substitui o texto do campo"));
+
+    // Enviou ou apagou o rascunho: a barra volta a valer.
+    escrever("");
+    expect(botao).toBeEnabled();
+  });
+
+  it.each([
+    ["IMAGEM", /tabela de preços/i],
+    ["ÁUDIO", /áudio preço/i],
+  ])(
+    "(h) recurso de %s com rascunho: o campo não é zerado e nada entra na fila",
+    async (_, nome) => {
+      renderComposer();
+      const campo = escrever(RASCUNHO);
+
+      fireEvent.click(screen.getByRole("button", { name: nome }));
+      // A mídia chega depois do `fetch` dos bytes: dá a vez a ele antes de olhar.
+      await act(async () => {
+        await new Promise((resolver) => setTimeout(resolver, 0));
+      });
+
+      expect(campo).toHaveValue(RASCUNHO);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/midias/"));
+    },
+  );
+
+  it("(i) campo vazio ou só com o `/` em curso: a barra segue ligada e troca o comando, como o menu", () => {
+    renderComposer();
+    const botao = screen.getByRole("button", { name: /boas vindas/i });
+    expect(botao).toBeEnabled();
+
+    escrever("/boa");
+    expect(botao).toBeEnabled();
+    fireEvent.click(botao);
+    expect(screen.getByLabelText(/mensagem/i)).toHaveValue("Oi Ana, tudo bem?");
+  });
+
+  it("(j) resposta barrada com texto no campo: a dica não manda apagar o que o campo travado não deixa", () => {
+    // O texto sugerido por integração (#1611) entra pelo `initialDraft`, e a
+    // janela de 24h pode estar fechada: o campo nasce travado, com texto.
+    renderComposer({ janelaFechada: "Janela de 24h fechada", initialDraft: RASCUNHO });
+
+    const botao = screen.getByRole("button", { name: /boas vindas/i });
+    expect(screen.getByLabelText(/mensagem/i)).toBeDisabled();
+    expect(botao).toBeDisabled();
+    // O motivo é a janela, não o rascunho: a dica continua a de sempre.
+    expect(botao).toHaveAttribute("title", DICA_DE_SEMPRE);
   });
 });

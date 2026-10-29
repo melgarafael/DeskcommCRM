@@ -63,6 +63,7 @@ import { ehContatoInterno, lerTagsInternas } from "@/lib/contacts/tags-internas"
 import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
 
 import { emitLeadActivity } from "./activity-emitter";
+import { removerProvaMetaLeadSubmitted } from "./prova-meta-lead-submitted";
 
 /**
  * O rótulo que aparece no card do funil quando o lead nasceu de um clique em
@@ -124,6 +125,8 @@ export interface DadosDoNascimento {
   contactId: string;
   /** conversa que originou — vai ao vínculo e ao registro. */
   conversationId: string;
+  /** O ingest de mensagem entrega a linha persistida; voz continua sem este ID. */
+  messageId?: string | null;
   /** nome do contato, para o título do card. */
   nomeDoContato: string | null;
   /** Rotulo/source/motivo do canal de origem -- default preserva o WhatsApp. */
@@ -481,26 +484,28 @@ export async function garantirLeadDaConversa(
   // advisory lock e devolve NULL quando já existe um aberto. O passo 2 fica
   // onde está: ele evita a ida ao banco no caso comum, que é a mensagem número
   // dez de uma conversa que já tem card.
-  const { data: novoId, error } = await db.rpc("fn_nascer_lead_da_conversa", {
-    p_org: organizationId,
-    p_contact: contactId,
-    p_pipeline: destino.pipelineId,
-    p_stage: destino.stageId,
-    p_title: titulo,
-    // A campanha ganha: quem montou a lista sabe de onde o card veio. Sem ela,
-    // vale a regra do upstream — anúncio mantém a origem do contato, e o resto
-    // usa `origem.source`.
-    p_source: marca ? marca.source : rotuloDeAnuncio ? contato!.source : origem.source,
-    p_source_metadata: marca
-      ? marca.source_metadata
-      : rotuloDeAnuncio
-        ? (contato!.source_metadata ?? {})
-        : {},
-    // O ponto ao lado do título só acende se a organização cadastrar este
-    // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
-    // funil) — a tag sempre entra; o destaque visual é opt-in do operador.
-    p_tags: rotuloDeAnuncio ? [rotuloDeAnuncio] : [],
-  });
+  const { data: novoId, error } = await db.rpc(
+    dados.messageId ? "fn_nascer_lead_da_mensagem" : "fn_nascer_lead_da_conversa",
+    {
+      p_org: organizationId,
+      p_contact: contactId,
+      p_pipeline: destino.pipelineId,
+      p_stage: destino.stageId,
+      p_title: titulo,
+      // A campanha ganha: quem montou a lista sabe de onde o card veio. Sem ela,
+      // vale a regra do upstream — anúncio mantém a origem do contato, e o resto
+      // usa `origem.source`.
+      p_source: marca ? marca.source : rotuloDeAnuncio ? contato!.source : origem.source,
+      p_source_metadata: removerProvaMetaLeadSubmitted(
+        marca ? marca.source_metadata : rotuloDeAnuncio ? (contato!.source_metadata ?? {}) : {},
+      ),
+      // O ponto ao lado do título só acende se a organização cadastrar este
+      // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
+      // funil) — a tag sempre entra; o destaque visual é opt-in do operador.
+      p_tags: rotuloDeAnuncio ? [rotuloDeAnuncio] : [],
+      ...(dados.messageId ? { p_message: dados.messageId, p_conversation: conversationId } : {}),
+    } as never,
+  );
 
   if (error) {
     return { criado: false, motivo: "erro", detalhe: error.message.slice(0, 120) };
@@ -558,24 +563,26 @@ export async function garantirLeadDaConversa(
   // conversa — o follow-up só existiria para formulário e API. `emit_event`
   // carimba a origem do atendimento quando o payload não traz uma; falha aqui
   // não desfaz o card.
-  const { error: erroEvento } = await db.rpc("emit_event", {
-    p_event_type: "lead.created",
-    p_entity_kind: "crm_lead",
-    p_entity_id: lead.id,
-    p_payload: {
-      pipeline_id: destino.pipelineId,
-      stage_id: destino.stageId,
-      conversation_id: conversationId,
-    },
-    p_metadata: { source: "nascimento-da-conversa" },
-    p_organization_id: organizationId,
-  });
-  if (erroEvento) {
-    logger.warn("nascimento-do-lead: evento lead.created não emitido", {
-      organization_id: organizationId,
-      lead_id: lead.id as string,
-      error: erroEvento.message.slice(0, 120),
+  if (!dados.messageId) {
+    const { error: erroEvento } = await db.rpc("emit_event", {
+      p_event_type: "lead.created",
+      p_entity_kind: "crm_lead",
+      p_entity_id: lead.id,
+      p_payload: {
+        pipeline_id: destino.pipelineId,
+        stage_id: destino.stageId,
+        conversation_id: conversationId,
+      },
+      p_metadata: { source: "nascimento-da-conversa" },
+      p_organization_id: organizationId,
     });
+    if (erroEvento) {
+      logger.warn("nascimento-do-lead: evento lead.created não emitido", {
+        organization_id: organizationId,
+        lead_id: lead.id as string,
+        error: erroEvento.message.slice(0, 120),
+      });
+    }
   }
 
   return {

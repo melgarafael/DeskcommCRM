@@ -67,6 +67,7 @@ import type { Logger } from '../obs/logger';
 import type { LlmEdgeConfig } from '../edge/llm/run-model-call';
 import { temIaDeSempre } from '../edge/llm/credentials';
 import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
+import { agentePorRemetente } from './sender-routing';
 import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
 import {
@@ -228,7 +229,29 @@ export async function resolveTurnAgent(
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
   const _consultarJev = deps.consultarJev ?? consultarJevNoRoteador;
 
+  // As duas marcas decidem o `catch`: sem o roteador carregado não se sabe se
+  // há regra por remetente, e cair no agente da sessão aí seria atender pelo
+  // agente errado justamente quando a regra existe.
+  let roteadorCarregado = false;
+  let temRegrasDeRemetente = false;
   try {
+    const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
+    roteadorCarregado = true;
+    temRegrasDeRemetente = router?.senderRoutes !== undefined &&
+      (!Array.isArray(router.senderRoutes) || router.senderRoutes.length > 0);
+    if (router && temRegrasDeRemetente) {
+      const { agentId, reserved } = await agentePorRemetente(db, input, router);
+      // O canal opera em modo de identidade: agentes internos nunca entram por
+      // classificação, campanha, sticky antigo ou fallback genérico.
+      const destino = agentId ?? router.fallbackAgentId;
+      const config = destino ? await _loadAgentById(db, input.tenantId, destino) : null;
+      if (!config) throw new Error('sender_route_agent_unpublished');
+      if (!agentId && reserved.has(config.agentId)) throw new Error('sender_route_reserved_fallback');
+      return {
+        config, routerId: router.id, intentName: agentId ? 'remetente_autorizado' : null,
+        confidence: null, outcome: agentId ? 'classified' : 'fallback',
+      };
+    }
     // ─── Degrau 0: a campanha que criou esta conversa ───
     //
     // ACIMA do roteador de propósito. O roteador é do NÚMERO e classifica
@@ -251,7 +274,6 @@ export async function resolveTurnAgent(
       });
     }
 
-    const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
     if (router === null) {
       return {
         config: await _loadAgentBySession(db, input.tenantId, input.channelSessionId),
@@ -444,12 +466,11 @@ export async function resolveTurnAgent(
     deps.log.warn('resolve-turn-agent: erro inesperado no router — turno cai no fluxo sem router', {
       error: err instanceof Error ? err.message : String(err),
     });
+    // Erro de identidade não pode abrir o atendimento genérico com ferramentas.
+    if (!roteadorCarregado || temRegrasDeRemetente) throw err;
     return {
       config: await _loadAgentBySession(db, input.tenantId, input.channelSessionId),
-      routerId: null,
-      intentName: null,
-      confidence: null,
-      outcome: 'classifier_failed',
+      routerId: null, intentName: null, confidence: null, outcome: 'classifier_failed',
     };
   }
 }

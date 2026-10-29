@@ -151,6 +151,13 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   // briefing diz MAIS que a conversa — diz o que a IA concluiu sobre a pessoa.
   // Um `viewer` que sondasse esta rota levaria 403 em toda abertura de conversa.
   "inbox.passagens.view": "agent",
+  // Quem participa da conversa (o cabeçalho do atendimento conjunto). `agent` e
+  // não `viewer` pelo mesmo motivo das notas e das passagens: é o piso de quem
+  // ATENDE. Reusar uma das duas permissões irmãs amarraria a lista a um recurso
+  // que não é dela; uma permissão própria deixa o gate correto no dia em que a
+  // lista mudar de piso. Sem ele, um `viewer` que abre QUALQUER conversa pede a
+  // lista e a rota respondia com `authz.denied` a cada abertura.
+  "inbox.participantes.view": "agent",
   "message-templates.view": "agent",
   "ai.agents.view": "manager",
   "ai.agents.write": "admin",

@@ -28,6 +28,38 @@ enter_project
 DUMP="${1:-}"
 [ -n "$DUMP" ] && [ -f "$DUMP" ] || die "Uso: restore.sh <arquivo-db-*.sql.gz>"
 
+# Confira os arquivos ANTES de escrever no banco ou limpar um volume. Descobrir
+# um .tgz cortado só no `tar xzf` já teria apagado as sessões/anexos anteriores;
+# e, com o banco restaurado, a guarda de banco vazio impediria repetir o script.
+# `gzip -t` percorre também o CRC: listar nomes no tar não basta para isso.
+WAHA_TAR="${DUMP/db-/waha-}"
+WAHA_TAR="${WAHA_TAR%.sql.gz}.tgz"
+STORAGE_TAR="$(dirname "$DUMP")/storage-$(basename "$DUMP" .sql.gz | sed 's/^db-//').tgz"
+
+conferir_snapshot() {
+  [ -f "$1" ] || return 0
+  # O GNU tar pode aceitar um gzip de texto curto como se fosse um tar vazio.
+  # Descompactar fora dele e listar o stdin faz o mesmo conteúdo ser recusado.
+  # Drene o padding depois do fim do tar: sem isso o gunzip pode receber SIGPIPE
+  # e o pipefail recusaria também um tar íntegro com blocos de preenchimento.
+  if ! gzip -t "$1" 2>/dev/null || ! gunzip -c "$1" 2>/dev/null | (
+    rc_tar=0
+    tar tf - >/dev/null 2>&1 || rc_tar=$?
+    cat >/dev/null || exit 1
+    exit "$rc_tar"
+  ); then
+    die "O snapshot $1 está corrompido, incompleto ou não é um tar.gz válido: nada foi restaurado nem apagado. Recupere uma cópia íntegra do backup antes de tentar de novo."
+  fi
+}
+
+if ! gzip -t "$DUMP" 2>/dev/null; then
+  die "O dump $DUMP está corrompido ou incompleto: nada foi restaurado nem apagado. Recupere uma cópia íntegra do backup antes de tentar de novo."
+fi
+conferir_snapshot "$WAHA_TAR"
+if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+  conferir_snapshot "$STORAGE_TAR"
+fi
+
 c_ylw "⚠ Isto vai restaurar o backup no banco em $NEXT_PUBLIC_SUPABASE_URL (só se ele estiver vazio)."
 c_ylw "⚠ O dump do backup.sh sai SEM --clean: ele não restaura por cima de um banco que já tem o schema."
 c_ylw "   Ele também traz auth, storage e extensões — os erros de \"already exists\" aparecem até em banco novo."
@@ -235,8 +267,6 @@ fi
 c_grn "✓ banco restaurado — $tabelas_conferidas tabela(s) de public/auth.users conferidas contra os COPY do dump ($linhas_conferidas linha(s))"
 
 # Restaura o estado das sessões do WhatsApp (WAHA) se o snapshot emparelhado existir
-WAHA_TAR="${DUMP/db-/waha-}"
-WAHA_TAR="${WAHA_TAR%.sql.gz}.tgz"
 if [ -f "$WAHA_TAR" ]; then
   step "Restaurando sessões do WhatsApp de $WAHA_TAR"
   vol="$(volume_waha_data)"
@@ -244,19 +274,19 @@ if [ -f "$WAHA_TAR" ]; then
   WAHA_FILE="$(basename "$WAHA_TAR")"
   docker run --rm -v "${vol}:/data" -v "${WAHA_DIR}:/in:ro" alpine:3.20 \
     sh -c "rm -rf /data/* && tar xzf /in/${WAHA_FILE} -C /data" \
-    && c_grn "✓ sessões do WhatsApp restauradas" || c_ylw "⚠ Falha ao restaurar sessões do WhatsApp"
+    && c_grn "✓ sessões do WhatsApp restauradas" \
+    || die "Falha ao restaurar sessões do WhatsApp. O banco JÁ foi restaurado; as sessões podem estar incompletas. Confira o volume antes de reiniciar o app — repetir este script não restaura por cima do banco."
 fi
 
 # Single-server: os anexos voltam junto com o banco (ver backup.sh).
 if [ "${SINGLE_SERVER:-0}" = "1" ]; then
-  STORAGE_TAR="$(dirname "$DUMP")/storage-$(basename "$DUMP" .sql.gz | sed 's/^db-//').tgz"
   if [ -f "$STORAGE_TAR" ]; then
     step "Restaurando os arquivos anexados de $STORAGE_TAR"
     docker run --rm -v "$(dir_do_supabase)/volumes/storage:/data" \
       -v "$(cd "$(dirname "$STORAGE_TAR")" && pwd):/in:ro" alpine:3.20 \
       sh -c "find /data -mindepth 1 -delete && tar xzf /in/$(basename "$STORAGE_TAR") -C /data" \
       && c_grn "✓ anexos restaurados" \
-      || die "Falha ao restaurar os anexos. O banco JÁ foi restaurado: repita o restore."
+      || die "Falha ao restaurar os anexos. O banco JÁ foi restaurado; os anexos podem estar incompletos. Confira o Storage antes de reiniciar o app — repetir este script não restaura por cima do banco."
   else
     c_ylw "⚠ Não achei $(basename "$STORAGE_TAR") ao lado do dump: o banco voltou, os ANEXOS não."
   fi

@@ -125,21 +125,70 @@ async function moverNo(page: Page, nodeId: string, x: number, y: number): Promis
   expect(perto(box), `o nó ${nodeId} não chegou a (${x}, ${y}): está em ${JSON.stringify(box)}`).toBe(true);
 }
 
+/**
+ * Liga duas bolinhas por arrasto e CONFERE que a aresta NASCEU.
+ *
+ * Isto não é zelo: é a mesma conferência que `moverNo` faz para o nó, aplicada
+ * à ligação, e pela mesma razão medida. Um gesto de ponteiro que o React Flow
+ * não recebe (o runner engasga no meio do movimento) não falha onde aconteceu —
+ * falha 40 linhas adiante, no Publicar, porque o grafo ficou sem a aresta que o
+ * publish exige. No run 35380905636 (parte 3, 26 min de job) este arquivo foi o
+ * único vermelho, e a mensagem era "o toast «Fluxo publicado.» não apareceu":
+ * o sintoma de um problema que não existia no produto.
+ *
+ * ⚠️ A conferência já existiu e foi RETIRADA em `708027af5b`, junto com o resto
+ * de `d2be226759`, com o argumento de que a causa raiz — o salto de zoom do
+ * canvas — tinha sido consertada na main (`12d79edf0`). Só que o salto de zoom
+ * explica o NÓ parar no lugar errado, que é exatamente o que `moverNo` confere
+ * (e cujo comentário mede: alvo (1288, 679), parou em (1210, 405)). Ele não
+ * explica o ponteiro não entregar o último movimento antes do `mouseUp`: isso é
+ * taxa de eventos, outro fenômeno, com outro conserto. Enquanto a contagem de
+ * arestas não for conferida, um gesto perdido continua chegando como "o publish
+ * RECUSOU o fluxo", que acusa o produto por um defeito do instrumento. Foi por
+ * isso que a issue #1218 pediu a causa: um vermelho que mente custa a rodada
+ * inteira, e ensina a re-rodar.
+ *
+ * Duas tentativas, e a segunda com o dobro de passos. Duas é o TETO porque
+ * arrastar de novo numa aresta que já nasceu (devagar, depois do `mouseUp`)
+ * criaria uma aresta DUPLICADA e o teste reprovaria por excesso, dizendo o
+ * contrário do que aconteceu — daí a contagem ser conferida ANTES de cada
+ * tentativa, e não só depois da primeira.
+ */
 async function ligar(page: Page, origem: string, destino: string, ramo?: string): Promise<void> {
   const seletor = ramo
     ? `.react-flow__node[data-id="${origem}"] .react-flow__handle.source[data-handleid="${ramo}"]`
     : `.react-flow__node[data-id="${origem}"] .react-flow__handle.source`;
-  const source = page.locator(seletor).first();
-  const target = page.locator(`.react-flow__node[data-id="${destino}"] .react-flow__handle.target`);
-  const sBox = await source.boundingBox();
-  const tBox = await target.boundingBox();
-  if (!sBox || !tBox) throw new Error(`handle não encontrado: ${origem}[${ramo}] -> ${destino}`);
-  await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
-  await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
-  await page.mouse.up();
-  await page.waitForTimeout(200);
+  const arestas = page.locator(".react-flow__edge");
+  const antes = await arestas.count();
+
+  for (const passos of [12, 24]) {
+    if ((await arestas.count()) > antes) return;
+    const source = page.locator(seletor).first();
+    const target = page.locator(`.react-flow__node[data-id="${destino}"] .react-flow__handle.target`);
+    const sBox = await source.boundingBox();
+    const tBox = await target.boundingBox();
+    if (!sBox || !tBox) throw new Error(`handle não encontrado: ${origem}[${ramo}] -> ${destino}`);
+    await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: passos });
+    await page.mouse.up();
+    try {
+      await expect(
+        arestas,
+        `a ligação ${origem}[${ramo ?? "saída única"}] → ${destino} não virou aresta`,
+      ).toHaveCount(antes + 1, { timeout: 8_000 });
+      return;
+    } catch {
+      // segunda tentativa; se ela também não criar a aresta, o erro abaixo diz
+      // exatamente o que faltou, em vez de reaparecer como recusa do Publicar.
+    }
+  }
+  throw new Error(
+    `a ligação ${origem}[${ramo ?? "saída única"}] → ${destino} não virou aresta em duas ` +
+      `tentativas (o canvas continua com ${antes}) — o gesto não chegou ao React Flow, ` +
+      `e a falha do Publicar logo abaixo seria do instrumento, não do produto`,
+  );
 }
 
 /**

@@ -137,6 +137,29 @@ export interface ActivityRow {
 }
 
 /**
+ * A proposta de campo lida num documento do negócio (`lead_field_proposals`,
+ * migration 0772).
+ *
+ * Entra porque a anonimização a REDIGE: `trecho`, `valor_proposto` e
+ * `valor_anterior` são conteúdo do documento de quem pediu o acesso. Sem esta
+ * coleta, o Art. 18 II devolveria um export sem exatamente o dado que a casa
+ * apaga — e a régua de `lgpd-exporta-o-que-redige` reprova por isso.
+ */
+export interface LeadFieldProposalRow {
+  id: string;
+  lead_id: string;
+  campo: string;
+  valor_proposto: unknown;
+  valor_anterior: unknown;
+  trecho: string | null;
+  attachment_id: string | null;
+  status: string;
+  proposed_at: string;
+  expires_at: string;
+  decided_at: string | null;
+}
+
+/**
  * O resumo que o agente guarda sobre o titular (`lead_checkpoints`).
  *
  * Entra porque a anonimização o REDIGE (migration 0391): o resumo corrido, os
@@ -516,6 +539,15 @@ export interface ProspectingCandidateRow {
   updated_at: string;
 }
 
+/** O clique do próprio titular e o resultado do envio à plataforma de anúncios. */
+export interface MetaCtwaClickRow {
+  ctwa_clid: string;
+  captured_at: string;
+  status: string;
+  attempted_at: string | null;
+  created_at: string;
+}
+
 /**
  * Uma campanha que falou com este titular (migration 0374).
  *
@@ -664,6 +696,7 @@ export interface ExportPayload {
    */
   honorarios_contratos: HonorariosContratoRow[];
   honorarios_parcelas: HonorariosParcelaRow[];
+  lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
@@ -686,6 +719,12 @@ export interface ExportPayload {
    */
   voice_calls: VoiceCallRow[];
   prospecting_candidates: ProspectingCandidateRow[];
+  /**
+   * O registro por clique é apagado na anonimização (0806), então também entra
+   * no acesso. Ausente quando vazio para preservar a cópia anterior de quem
+   * não tem cliques; tokens de claim e detalhes internos não são coletados.
+   */
+  meta_ctwa_click_dispatches?: MetaCtwaClickRow[];
   /**
    * Casos, linha do tempo do caso e demandas (migration 0280).
    *
@@ -1373,11 +1412,36 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // coletados: o contrato é `lead_id`, não `contact_id` direto.
   //
   // Módulo pode não estar instalado nesta instalação — a tabela então não
-  // existe (42P01) — e o bloco sai vazio nesse caso, sem falhar o export
+  // existe (42P01 no SQL, PGRST205 no PostgREST) — e o bloco sai vazio, sem falhar o export
   // inteiro por causa de um módulo que a organização nem ligou.
   let honorarios_contratos: HonorariosContratoRow[] = [];
   let honorarios_parcelas: HonorariosParcelaRow[] = [];
   const leadIds = leads.map((l) => l.id);
+
+  // Propostas de campos lidos no documento — a cascata da 0772 redige `trecho`
+  // e os valores, então o Art. 18 II tem de alcançá-las pela mesma porta dos
+  // outros dados do negócio: o `lead_id` já coletado. Tabela de módulo: num
+  // clone sem a migration ela não existe (42P01) e o bloco sai vazio.
+  let lead_field_proposals: LeadFieldProposalRow[] = [];
+  if (leadIds.length > 0) {
+    const { data, error } = await admin
+      .from("lead_field_proposals")
+      .select(
+        "id, lead_id, campo, valor_proposto, valor_anterior, trecho, attachment_id, status, proposed_at, expires_at, decided_at",
+      )
+      .eq("organization_id", organizationId)
+      .in("lead_id", leadIds)
+      .order("proposed_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      if (error.code !== "42P01") {
+        throw new Error(`lead_field_proposals_load_failed: ${error.message}`);
+      }
+    } else if (data) {
+      conferirTeto("lead_field_proposals", data, 500);
+      lead_field_proposals = data;
+    }
+  }
   if (leadIds.length > 0) {
     const { data, error } = await admin
       .from("honorarios_contratos")
@@ -1390,7 +1454,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     // novo, em vez de entregar ao titular um export sem o contrato como se fosse
     // completo (ADR-0002 D8 — seção de módulo ilegível nunca sai como completa).
     if (error) {
-      if (error.code !== "42P01") {
+      if (error.code !== "42P01" && error.code !== "PGRST205") {
         throw new Error(`honorarios_contratos_load_failed: ${error.message}`);
       }
     } else if (data) {
@@ -1838,6 +1902,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       // Uma falha não pode virar um relatório que diz que não guardamos dados.
       if (error) throw error;
       contact_field_proposals.push(...(data ?? []));
+      if (!data || data.length < 500) break;
+    }
+  }
+
+  // O clique liga o titular ao anúncio. A 0806 o apaga na anonimização; no
+  // acesso ele precisa aparecer, inclusive além da primeira página. A chave
+  // id ordena empates sem entregar o identificador interno no arquivo.
+  const meta_ctwa_click_dispatches: MetaCtwaClickRow[] = [];
+  if (contactId) {
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin
+        .from("meta_ctwa_click_dispatches")
+        .select("ctwa_clid, captured_at, status, attempted_at, created_at")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + 499);
+      if (error) throw error;
+      meta_ctwa_click_dispatches.push(...(data ?? []));
       if (!data || data.length < 500) break;
     }
   }
@@ -2309,6 +2392,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     messages_count_total,
     messages_recent,
     leads,
+    lead_field_proposals,
     honorarios_contratos,
     honorarios_parcelas,
     orders,
@@ -2325,6 +2409,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     appointment_notices,
     voice_calls,
     prospecting_candidates,
+    ...(meta_ctwa_click_dispatches.length > 0 ? { meta_ctwa_click_dispatches } : {}),
     cases,
     case_events,
     demandas,
@@ -2504,6 +2589,7 @@ function emptyPayload(
     messages_count_total: 0,
     messages_recent: [],
     leads: [],
+    lead_field_proposals: [],
     honorarios_contratos: [],
     honorarios_parcelas: [],
     orders: [],
