@@ -7,11 +7,10 @@ const state = vi.hoisted(() => ({
   edit: vi.fn(async () => undefined),
   remove: vi.fn(async () => undefined),
   audit: vi.fn(async () => undefined),
-  /** Provider do canal da conversa (o caso de telefone extra precisa de "waha"). */
+  /** Provider da sessão da conversa (a decisão do endereço não depende dele aqui). */
   provider: "canal-teste" as string,
-  /** Extras da ficha (`contact_phones`) e a última mensagem recebida, para o caso de telefone extra. */
-  extras: [] as Array<{ id: string }>,
-  ultimaRecebida: null as string | null,
+  /** Endereço da última mensagem recebida, que o módulo de canal devolve no caso de telefone extra. */
+  chat: null as string | null,
 }));
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
@@ -19,6 +18,9 @@ vi.mock("@/lib/auth/require-role", () => ({
   requireRole: async () => ({ ok: true, user: { id: "usuario-1", idioma: "pt-BR" }, org: { orgId: "org-1" } }),
 }));
 vi.mock("@/lib/audit", () => ({ audit: state.audit }));
+vi.mock("@/lib/channels/endereco-da-ultima-recebida", () => ({
+  enderecoDaUltimaRecebida: async () => state.chat,
+}));
 vi.mock("@/lib/channels", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   transportaMensagem: () => true,
@@ -37,14 +39,9 @@ vi.mock("@/lib/supabase/server", () => ({
       const q = {
         select: () => q, eq: () => q, is: () => q, order: () => q, limit: () => q,
         update: (update: Record<string, unknown>) => { state.calls.push({ table, update }); return q; },
-        // `await` direto: é como a leitura de extras e da última recebida chega.
+        // `await` direto (update sem leitura de volta).
         then: (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
-          Promise.resolve({
-            data: table === "contact_phones" ? state.extras
-              : table === "messages" ? (state.ultimaRecebida ? [{ external_id: state.ultimaRecebida }] : [])
-              : null,
-            error: null,
-          }).then(ok, falha),
+          Promise.resolve({ data: null, error: null }).then(ok, falha),
         maybeSingle: async () => ({ data: table === "messages"
           ? state.calls.some((c) => c.table === "messages" && c.update)
             ? { id: state.message?.id, body: state.message?.body, edited_at: "agora", revoked_at: null }
@@ -72,8 +69,7 @@ beforeEach(() => {
   state.remove.mockClear();
   state.audit.mockClear();
   state.provider = "canal-teste";
-  state.extras = [];
-  state.ultimaRecebida = null;
+  state.chat = null;
   state.message = {
     id, organization_id: "org-1", conversation_id: "conversa-1", channel_session_id: "sessao-1",
     external_id: "ABC", direction: "outbound", type: "text", status: "sent",
@@ -131,10 +127,8 @@ describe("alterar mensagem enviada", () => {
 });
 
 describe("alterar mensagem — ficha com telefone extra (Spec 31 B1)", () => {
-  it("num canal WAHA, a edição vai para o número que a pessoa escreveu (o extra)", async () => {
-    state.provider = "waha";
-    state.extras = [{ id: "extra-1" }];
-    state.ultimaRecebida = "false_5531988887777@c.us_3EB0XYZ";
+  it("com a ficha de telefone extra, a edição vai para o número que a pessoa escreveu", async () => {
+    state.chat = "5531988887777@c.us";
     const res = await PATCH(new NextRequest(url, {
       method: "PATCH", body: JSON.stringify({ text: "depois" }),
     }), ctx);

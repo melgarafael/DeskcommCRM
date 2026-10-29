@@ -62358,7 +62358,7 @@ grant all on public.crm_leads to service_role;
 do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
 -- ---- a ficha guarda vários telefones (migration 9041, Spec 31 parte B1) ----
--- manifest: **A ficha guarda vários telefones, e juntar duas fichas não perde mais o segundo número (Spec 31, parte B1).** Tabela tenant-aware nova `contact_phones` (telefones extras, na forma canônica, com tipo `fixo|celular|outro`, WhatsApp `sim|nao|nao_sei`, rótulo, origem e o `lid` do WhatsApp daquele número), RLS `tenant_isolation_contact_phones_all` e grants próprios; `contacts` ganha `phone_type` e `phone_whatsapp` (anuláveis), preenchidos por gatilho na gravação nova e, nas fichas que já existem, por um preenchimento que não mexe em `updated_at` (`WhatsApp = sim` quando a ficha tem mensagem RECEBIDA em canal WAHA ou `meta_cloud`). Funções puras `fn_telefone_canonico` (a regra de `canonicalPhoneBR`) e `fn_tipo_do_telefone`. **Um número, uma ficha viva:** dois gatilhos (`contacts` e `contact_phones`) com trava consultiva por organização e pela forma canônica recusam com 23505 o número (ou o `lid`) que já é principal ou extra de outra ficha viva — também na grafia sem o nono dígito; os pares "gêmeos" que já existem não são tocados (a regra vale para gravação nova; eles seguem em Duplicados pelo motivo `telefone`). `fn_upsert_wa_contact` procura também nos extras (`lid` → principal → extra) e, achada pelo extra, não sobrescreve o `waha_lid`/`waha_chat_id` do principal: o `lid` de quem escreveu fica com o extra. `fn_mesclar_contatos`: o principal de cada absorvida vira extra da ficha que fica (com tipo, WhatsApp e `lid`), o extra repetido sai antes do repontamento (não entra em `nao_repontado`) e `custom_fields` passa a ser herdado sem sobrescrever a ficha que fica. LGPD: a cascata apaga os extras e as variantes deles entram na supressão da prospecção e na redação das mensagens de grupo (`fn_redigir_conversas_ao_anonimizar`). As três funções reescritas partem da ÚLTIMA definição de cada uma no baseline; assinaturas, `search_path` e grants inalterados. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (cria função) e antes da chamada final das travas de suporte (cria tabela). Prova em `tests/invariants/ficha-com-varios-telefones.test.ts`.
+-- manifest: **A ficha guarda vários telefones, e juntar duas fichas não perde mais o segundo número (Spec 31, parte B1).** Tabela tenant-aware nova `contact_phones` (telefones extras, na forma canônica, com tipo `fixo|celular|outro`, WhatsApp `sim|nao|nao_sei`, rótulo, origem e o `lid` do WhatsApp daquele número), RLS (leitura por organização, escrita a partir de `agent`) e grants próprios; `contacts` ganha `phone_type` e `phone_whatsapp` (anuláveis), preenchidos por gatilho na gravação nova e, nas fichas que já existem, por um preenchimento que não mexe em `updated_at` (`WhatsApp = sim` quando a ficha tem mensagem RECEBIDA em canal WAHA ou `meta_cloud`). Funções puras `fn_telefone_canonico` (a regra de `canonicalPhoneBR`) e `fn_tipo_do_telefone`. **Um número, uma ficha viva:** dois gatilhos (`contacts` e `contact_phones`) com trava consultiva por organização e pela forma canônica recusam com 23505 o extra que repete o principal ou o extra de outra ficha viva (e o principal que repete um extra) — também na grafia sem o nono dígito; o par "gêmeo" entre dois principais segue aceito como hoje (a fusão por nono dígito e as importações nascem dele; ele aparece em Duplicados pelo motivo `telefone`). `fn_upsert_wa_contact` procura também nos extras (`lid` → principal → extra) e, achada pelo extra, não sobrescreve o `waha_lid`/`waha_chat_id` do principal: o `lid` de quem escreveu fica com o extra. `fn_mesclar_contatos`: o principal de cada absorvida vira extra da ficha que fica (com tipo, WhatsApp e `lid`), o extra repetido sai antes do repontamento (não entra em `nao_repontado`) e `custom_fields` passa a ser herdado sem sobrescrever a ficha que fica. LGPD: a cascata apaga os extras e as variantes deles entram na supressão da prospecção e na redação das mensagens de grupo (`fn_redigir_conversas_ao_anonimizar`). As três funções reescritas partem da ÚLTIMA definição de cada uma no baseline; assinaturas, `search_path` e grants inalterados. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (cria função) e antes da chamada final das travas de suporte (cria tabela). Prova em `tests/invariants/ficha-com-varios-telefones.test.ts`.
 --
 -- Por que o "um número, uma ficha" mora no banco e não no código: são mais de
 -- dez escritores de telefone (rotas, ingestões WAHA/Meta/Zernio, importações,
@@ -62440,7 +62440,7 @@ create table if not exists public.contact_phones (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   contact_id uuid not null references public.contacts(id) on delete cascade,
   phone_number text not null,
-  tipo text not null default 'outro',
+  tipo text not null,
   whatsapp text not null default 'nao_sei',
   rotulo text,
   origem text not null default 'manual',
@@ -62483,11 +62483,22 @@ create index if not exists idx_contacts_org_telefone_canonico
 
 alter table public.contact_phones enable row level security;
 
+-- Leitura para todo membro da organização; escrita a partir de `agent`, o mesmo
+-- piso do PATCH de contato (`requireRole("agent")`). Policy `for all` só de
+-- tenancy é a dívida que a 0150 congelou: um `viewer` falando direto com o
+-- PostgREST apagaria o telefone de uma ficha.
 drop policy if exists tenant_isolation_contact_phones_all on public.contact_phones;
-create policy tenant_isolation_contact_phones_all on public.contact_phones
+drop policy if exists tenant_isolation_contact_phones_read on public.contact_phones;
+create policy tenant_isolation_contact_phones_read on public.contact_phones
+  for select
+  using (organization_id in (select public.fn_user_org_ids()));
+drop policy if exists tenant_isolation_contact_phones_write on public.contact_phones;
+create policy tenant_isolation_contact_phones_write on public.contact_phones
   for all
-  using (organization_id in (select public.fn_user_org_ids()))
-  with check (organization_id in (select public.fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids())
+         and public.fn_role_at_least(organization_id, 'agent'))
+  with check (organization_id in (select public.fn_user_org_ids())
+              and public.fn_role_at_least(organization_id, 'agent'));
 
 do $grants_contact_phones$
 begin
@@ -62534,6 +62545,8 @@ begin
 
   if tg_op = 'INSERT' then
     new.created_at := now();
+    -- Sem tipo, o banco sugere pelo número (a mesma regra do principal).
+    new.tipo := coalesce(new.tipo, public.fn_tipo_do_telefone(new.phone_number));
   elsif new.phone_number is distinct from old.phone_number then
     -- O número mudou: tipo e WhatsApp voltam a ser os do número novo, salvo se
     -- quem gravou mandou os dois junto.
@@ -62593,10 +62606,9 @@ create trigger trg_contact_phones_um_numero_uma_ficha
 -- O lado do principal. Tipo e WhatsApp: na gravação nova o banco sugere; quando
 -- o número MUDA, os dois voltam a ser os do número novo, salvo se quem gravou os
 -- mandou junto. A regra "um número, uma ficha" só olha quando a forma canônica
--- muda: a promoção da grafia de 12 para 13 dígitos do MESMO número (o
--- `fn_upsert_wa_contact` faz isso) não é número novo, e os pares "gêmeos" que já
--- existem (mesmo número, grafias diferentes, duas fichas) não são recusados
--- aqui — eles aparecem em Duplicados pelo motivo `telefone`.
+-- muda (a promoção da grafia de 12 para 13 dígitos do MESMO número, que o
+-- `fn_upsert_wa_contact` faz, não é número novo) e compara com os EXTRAS de
+-- qualquer ficha: o par "gêmeo" entre dois principais segue como hoje.
 create or replace function public.fn_contacts_um_numero_uma_ficha()
 returns trigger
 language plpgsql
@@ -62636,16 +62648,14 @@ begin
   if v_canon is not null and (tg_op = 'INSERT' or v_canon is distinct from v_canon_antes) then
     perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
       'telefone:' || new.organization_id::text || ':' || v_canon, 0));
+    -- Só contra os EXTRAS. Principal × principal em grafias diferentes (o par
+    -- "gêmeo") continua aceito: a fusão por nono dígito, as importações e os
+    -- testes do update.sh nascem justamente desse par, e quem o resolve é a tela
+    -- Duplicados (motivo `telefone`). Recusá-lo aqui quebraria esses caminhos sem
+    -- impedir duplicata nova nenhuma que `uniq_contacts_org_phone` já não impeça.
     if exists (
       select 1 from public.contact_phones t
        where t.organization_id = new.organization_id and t.phone_number = v_canon
-    ) or exists (
-      select 1 from public.contacts c
-       where c.organization_id = new.organization_id
-         and c.is_merged_into is null
-         and c.id <> new.id
-         and c.phone_number is not null
-         and public.fn_telefone_canonico(c.phone_number) = v_canon
     ) then
       raise exception using errcode = '23505', message = 'telefone_de_outra_ficha';
     end if;

@@ -127,20 +127,20 @@ describe("GET /api/v1/contacts/[id] — telefones extras", () => {
     // fake os tenha guardado na ordem inversa.
     expect(corpo.data.additional_phones).toEqual([
       {
-        phone_number: "+5511988887777",
-        type: "celular",
-        whatsapp: "sim",
-        label: "Trabalho",
-        origin: "fusao",
-        created_at: "2026-10-02T10:00:00.000Z",
-      },
-      {
         phone_number: "+551133334444",
         type: "fixo",
         whatsapp: "nao_sei",
         label: null,
         origin: "manual",
         created_at: "2026-10-01T10:00:00.000Z",
+      },
+      {
+        phone_number: "+5511988887777",
+        type: "celular",
+        whatsapp: "sim",
+        label: "Trabalho",
+        origin: "fusao",
+        created_at: "2026-10-02T10:00:00.000Z",
       },
     ]);
   });

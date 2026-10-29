@@ -349,6 +349,15 @@ beforeAll(() => {
             values (v_org, v_contact, 'email', 'rls-invariant@exemplo.test', now() + interval '7 days');
         end if;
 
+        -- contact_phones (migration 9041): o segundo telefone da ficha. Número
+        -- diferente por organização (a regra "um número, uma ficha" é por
+        -- organização, então o mesmo número nas duas também passaria).
+        if not exists (select 1 from public.contact_phones where organization_id = v_org) then
+          insert into public.contact_phones (organization_id, contact_id, phone_number)
+            values (v_org, v_contact,
+                    '+55119' || lpad((abs(hashtext(v_org::text)) % 100000000)::text, 8, '0'));
+        end if;
+
         if not exists (select 1 from public.catalog_products where organization_id = v_org) then
           insert into public.catalog_products
             (organization_id, codigo, nome, preco_cents)
@@ -867,6 +876,9 @@ export const TABLES = [
   // escrevendo — mesmo eixo separado de `catalog_products` e
   // `external_db_connections`.
   "crm_metas",
+  // migration 9041 — o segundo telefone da ficha (Spec 31 B1). Leitura por
+  // organização; a escrita exige `agent`, o papel semeado aqui.
+  "contact_phones",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
