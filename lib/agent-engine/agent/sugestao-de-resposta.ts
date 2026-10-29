@@ -72,6 +72,16 @@ export interface MotivoDaFalha {
    * `false` quando caímos no genérico, e aí só o registro no servidor ajuda.
    */
   readonly acionavel: boolean;
+  /**
+   * Só nos vetos de ENVIO: a causa numa frase curta, sem instrução e sem ponto
+   * final. O painel a usa quando a sugestão pendente veio depois de uma versão
+   * barrada (doc de decisão 234), e ali `texto` mentiria — ele manda "gerar de
+   * novo" e diz "nada foi enviado" sobre uma sugestão que está sendo oferecida.
+   * Ausente nos códigos que não barram versão nenhuma: as paradas da geração
+   * (`no_candidate`, truncamento, teto) e `unknown_preview_tool`, que a prévia
+   * grava sem recusar envio algum.
+   */
+  readonly causa?: string;
 }
 
 /**
@@ -145,6 +155,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "contato_bloqueado":
       return {
         codigo,
+        causa: "o contato pediu para não receber mensagens (opt-out)",
         acionavel: false,
         texto:
           "O contato pediu para não receber mensagens (opt-out): o envio pelo automático fica bloqueado. Nada a enviar.",
@@ -156,6 +167,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
       // porque há o que fazer, e o texto diz o quê.
       return {
         codigo,
+        causa: "a conversa estava com a equipe, com o atendimento automático pausado",
         acionavel: true,
         texto:
           "A conversa está com a equipe: o atendimento automático está pausado. Use “Devolver ao automático” para a IA voltar a responder.",
@@ -163,12 +175,14 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "lgpd_anonymized":
       return {
         codigo,
+        causa: "o contato foi anonimizado (LGPD)",
         acionavel: false,
         texto: "Este contato foi anonimizado (LGPD) — é proibido enviar mensagens a ele.",
       };
     case "lgpd_missing_legal_basis":
       return {
         codigo,
+        causa: "não havia base legal (LGPD) registrada para o primeiro contato com este lead",
         acionavel: true,
         texto:
           "Não há base legal (LGPD) registrada para o primeiro contato com este lead. O time precisa regularizar o cadastro antes de abordar.",
@@ -176,6 +190,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "promise_out_of_table":
       return {
         codigo,
+        causa: "prometia um preço ou condição fora da tabela aprovada",
         acionavel: true,
         texto:
           "A resposta prometia um preço ou condição fora da tabela aprovada. Ajuste a tabela de promessas ou gere de novo sem a promessa.",
@@ -183,6 +198,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "promise_semantic":
       return {
         codigo,
+        causa: "continha uma promessa que o sistema não registrou",
         acionavel: true,
         texto:
           "A resposta continha uma promessa que o sistema não registrou (ex.: um retorno combinado). Marque o retorno ou gere de novo sem prometer.",
@@ -190,6 +206,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "case_promise_without_case":
       return {
         codigo,
+        causa: "prometia voltar a falar com o cliente sem deixar o retorno marcado no CRM",
         acionavel: true,
         texto:
           "A resposta prometeu voltar a falar com o cliente, mas não deixou o retorno marcado no CRM. Agende o retorno ou gere de novo sem a promessa.",
@@ -197,6 +214,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "internal_vocabulary_leak":
       return {
         codigo,
+        causa: "usava um termo interno que não pode chegar ao cliente",
         acionavel: true,
         texto:
           "A resposta usava um termo interno que não pode chegar ao cliente. Gere de novo — se repetir, ajuste o texto do agente.",
@@ -204,6 +222,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "clinical_claim":
       return {
         codigo,
+        causa: "fazia uma afirmação clínica, e a camada de afirmações clínicas está ligada",
         acionavel: true,
         texto:
           "A resposta fazia uma afirmação clínica, e a camada de afirmações clínicas está ligada nesta organização. Gere de novo sem o trecho.",
@@ -211,6 +230,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "agenda_stall_sem_ferramenta":
       return {
         codigo,
+        causa: "dependia de horário, e o agente não tem ferramenta de agenda ligada",
         acionavel: true,
         texto:
           "A resposta ia depender de horário, mas o agente não tem ferramenta de agenda ligada. Ligue a agenda no agente ou gere de novo sem horário.",
@@ -218,6 +238,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "disclosure_required":
       return {
         codigo,
+        causa: "não se apresentava como assistente virtual na primeira mensagem a um contato novo",
         acionavel: true,
         texto:
           "A primeira mensagem a um contato novo precisa se apresentar como assistente virtual. Ajuste o modelo de apresentação e gere de novo.",
@@ -225,6 +246,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "messaging_window_closed":
       return {
         codigo,
+        causa: "a janela de 24 horas com este contato estava fechada",
         acionavel: true,
         texto:
           "A janela de 24 horas com este contato fechou: o canal recusa texto livre. Responda com um modelo aprovado ou aguarde o contato escrever de novo.",
@@ -232,6 +254,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "factual_claim_contradicted":
       return {
         codigo,
+        causa: "afirmava um fato que o material de referência CONTRADIZ",
         acionavel: true,
         texto:
           "A resposta afirmava um fato que o material de referência CONTRADIZ. Nada foi enviado — confira a base de conhecimento e gere de novo.",
@@ -239,6 +262,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "factual_claim_unsupported":
       return {
         codigo,
+        causa: "afirmava um fato sem apoio no material de referência",
         acionavel: true,
         texto:
           "A resposta afirmava um fato sem apoio no material de referência. Nada foi enviado — confira a base de conhecimento e gere de novo.",
@@ -246,6 +270,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
     case "produto_nao_encontrado":
       return {
         codigo,
+        causa: "ia mostrar um produto que não foi encontrado no cadastro",
         acionavel: true,
         texto:
           "A resposta ia mostrar um produto que não foi encontrado no cadastro. Confira o produto e gere de novo.",

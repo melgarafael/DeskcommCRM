@@ -593,7 +593,8 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
  * (`components/kanban/MoveToOtherPipelineDialog`, o que `KanbanCardActions`
  * usa), que por sua vez reusa `useMoveLeadToPipeline` / `useDestinosDeFunil` e a
  * rota `POST /api/v1/leads/[id]/clone` — a rota cria o negócio no funil destino
- * (primeira etapa aberta) e encerra a origem com o motivo canônico.
+ * (na etapa de entrada escolhida, ou na primeira aberta quando ninguém escolhe,
+ * issue #3643) e encerra a origem com o motivo canônico.
  *
  * O portão é o do Kanban: `pipeline.move_card` (agent+) — a MESMA chave de
  * `usePermission` em `KanbanCardActions` e o mesmo piso que `POST /clone` exige

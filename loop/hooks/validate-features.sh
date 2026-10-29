@@ -25,8 +25,8 @@ git diff --cached --name-only -- plan/features.json | grep -qx 'plan/features.js
 # `new` = a versão que a main trouxe: a diferença era lida como edição do autor.
 # Medido: `git merge --no-commit --no-ff 1cd048310` (commit real da main que só
 # toca plan/features.json) → `git commit` recusado, blob do índice IDÊNTICO ao de
-# MERGE_HEAD, zero autoria minha. Mesma classe do guard de migration e do
-# freeze-invariants; irmão do caso 4/5 da issue #1161.
+# MERGE_HEAD, zero autoria minha. Mesma classe do guard de migration; irmão do
+# caso 4/5 da issue #1161.
 #
 # Vem ANTES do teste de criação da linha seguinte de propósito: a main criar o
 # arquivo depois do ponto da branch dispara o outro caminho falso — medido com o
@@ -44,8 +44,9 @@ git diff --cached --name-only -- plan/features.json | grep -qx 'plan/features.js
 # sonda do M3-PREMISSA), então naquele instante a referência ainda não existe e
 # esta guarda caía na verificação de sempre — punindo o merge inteiro como se a
 # main tivesse escrito o plano. O mesmo git entrega a outra ponta, NAQUELE
-# instante, em `GITHEAD_<sha>=<ref>`; é a MESMA fonte que o freeze-invariants
-# passou a usar na #374, com a mesma régua: uma ref só = um merge, duas ou mais
+# instante, em `GITHEAD_<sha>=<ref>`; é a MESMA fonte que o guard de invariantes
+# (então `freeze-invariants.sh`) passou a usar na #374, com a mesma régua: uma ref
+# só = um merge, duas ou mais
 # (octopus) = sem sinal conclusivo, `outro_lado` fica vazio e nada é inocentado.
 outro_lado=$(git rev-parse -q --verify MERGE_HEAD 2>/dev/null || true)
 if [ -z "$outro_lado" ]; then
@@ -61,7 +62,7 @@ fi
 # também se escreve à mão. Com só (a)-(c), um commit COMUM com
 # `GITHEAD_<um ancestral da main>=x` voltava o plano à versão daquele ancestral e
 # apagava features com exit 0 (medido, nas duas rotas). As duas condições que faltavam
-# são as 6 e 3 do freeze-invariants: (d) o índice é o que a main tem AGORA
+# são as 6 e 3 do guard de invariantes de então: (d) o índice é o que a main tem AGORA
 # (`origin/main`), não qualquer ancestral; (e) esta branch nunca tocou o arquivo
 # (`HEAD` == merge-base). Com as duas, o único conteúdo que o sinal libera é o da
 # ponta da main sobre uma branch que não mexeu no plano — que é o merge legítimo.

@@ -5892,5 +5892,21 @@
   "entraram": "已加入",
   "já estavam na base ou foram excluídas a pedido do titular": "已在库中或应数据主体要求被删除",
   "Sem nome da empresa.": "缺少公司名称。",
-  "Sem telefone válido.": "没有有效的电话号码。"
+  "Sem telefone válido.": "没有有效的电话号码。",
+  "Uma versão anterior desta sugestão foi barrada: {causa}. Confira antes de enviar.": "此建议的一个早期版本已被拦截：{causa}。发送前请确认。",
+  "o contato pediu para não receber mensagens (opt-out)": "该联系人要求不接收消息（opt-out）",
+  "a conversa estava com a equipe, com o atendimento automático pausado": "对话已交由团队处理，自动接待已暂停",
+  "o contato foi anonimizado (LGPD)": "该联系人已被匿名化（LGPD）",
+  "não havia base legal (LGPD) registrada para o primeiro contato com este lead": "没有为与该线索的首次联系登记法律依据（LGPD）",
+  "prometia um preço ou condição fora da tabela aprovada": "它承诺了超出已批准价目表的价格或条件",
+  "continha uma promessa que o sistema não registrou": "它包含一项系统未记录的承诺",
+  "prometia voltar a falar com o cliente sem deixar o retorno marcado no CRM": "它承诺会再联系客户，但没有在 CRM 中安排回访",
+  "usava um termo interno que não pode chegar ao cliente": "它使用了不能让客户看到的内部术语",
+  "fazia uma afirmação clínica, e a camada de afirmações clínicas está ligada": "它包含临床断言，而临床断言检查层已开启",
+  "dependia de horário, e o agente não tem ferramenta de agenda ligada": "它依赖具体时间，而智能体没有启用日程工具",
+  "não se apresentava como assistente virtual na primeira mensagem a um contato novo": "在发给新联系人的第一条消息中没有表明自己是虚拟助理",
+  "a janela de 24 horas com este contato estava fechada": "与该联系人的 24 小时窗口已关闭",
+  "afirmava um fato que o material de referência CONTRADIZ": "它陈述了一个与参考资料相矛盾的事实",
+  "afirmava um fato sem apoio no material de referência": "它陈述了一个在参考资料中没有依据的事实",
+  "ia mostrar um produto que não foi encontrado no cadastro": "它要展示的产品在登记中未找到"
 }

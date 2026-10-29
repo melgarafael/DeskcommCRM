@@ -190,6 +190,19 @@ function medir() {
   return { linhas: lerLinhas(cruas as ReadonlyArray<Record<string, unknown>>), cruas };
 }
 
+/**
+ * Só as linhas das demandas que ESTE arquivo semeou. O backfill antigo roda com
+ * `where true` sobre o banco inteiro, e a consulta também: contar sobre o banco
+ * faria o total depender do que mais existe nele (o molde, ou outro arquivo que
+ * divida o banco) — e não do que a semente montou. A derivada da conversa
+ * reaberta está no conjunto de propósito: quem a deixa de fora é a CONSULTA, não
+ * este filtro.
+ */
+function daSemente<T extends { readonly demanda_id: string }>(linhas: readonly T[]): T[] {
+  const semeadas = new Set(Object.values(DEMANDA));
+  return linhas.filter((l) => semeadas.has(l.demanda_id));
+}
+
 /** Retrato do que o diagnóstico NÃO pode mexer. */
 function retrato(): string {
   return sql(`
@@ -378,7 +391,10 @@ describe("o diagnóstico separa resíduo de demanda legítima numa instalação 
   });
 
   it("a contagem por categoria é a da semente, e a conversa reaberta fica FORA", () => {
-    const { linhas } = medir();
+    // Seis ids distintos e preenchidos: um filtro sobre conjunto vazio ou
+    // repetido deixaria as contagens abaixo verdes por não medir.
+    expect(new Set(Object.values(DEMANDA).filter((id) => id !== "")).size).toBe(6);
+    const linhas = daSemente(medir().linhas);
     const resumo = resumir(linhas);
     expect(resumo.total, "o universo contou a demanda com canal vivo").toBe(5);
     expect(resumo.porCategoria.derivada_limpa).toBe(1);
@@ -395,7 +411,7 @@ describe("o diagnóstico separa resíduo de demanda legítima numa instalação 
 
   it("a consulta é somente-leitura: roda em transação read only e não muda uma linha", () => {
     const antes = retrato();
-    const { linhas } = medir();
+    const linhas = daSemente(medir().linhas);
     const depois = retrato();
     expect(linhas.length).toBeGreaterThan(0);
     expect(depois, "o diagnóstico escreveu no banco").toBe(antes);
