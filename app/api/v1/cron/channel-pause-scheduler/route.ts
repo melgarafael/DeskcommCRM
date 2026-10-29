@@ -82,6 +82,7 @@ import {
 } from "@/lib/channels/agenda-de-pausa";
 import { sincronizarAvisoDoAgendador } from "@/lib/channels/aviso-do-agendador";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
+import { MOTIVO_DO_PULO, recursoLigado } from "@/lib/cron/recursos-ligados";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -441,6 +442,28 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const db = createAdminClient();
+
+  // #3694: sem janela viva (nada `scheduled`/`running` que já tenha começado),
+  // a batida saía vazia 120 de 120 vezes. A sonda é a MESMA condição de
+  // `aplicarAgendas` — inclusive `starts_at <= now()`, porque a rodada nunca lê
+  // a janela que ainda vai começar —, então nada fica de fora. O custo de
+  // perceber a abertura: até a validade da leitura compartilhada (45 s), no
+  // máximo um tique. Numa janela de manutenção programada isso é invisível.
+  if (!(await recursoLigado(db, "pausa_de_canal"))) {
+    const vazia: ResumoDaRodada = {
+      avaliadas: 0,
+      pausadas: 0,
+      retomadas: 0,
+      transferidas: 0,
+      iniciadas: 0,
+      encerradas: 0,
+      expiradas: 0,
+      semMudanca: 0,
+      falhas: 0,
+    };
+    return ok({ ...vazia, pulado: MOTIVO_DO_PULO }, { requestId });
+  }
+
   try {
     const resumo = await aplicarAgendasEavisar(db, new Date(), requestId);
     if (resumo.falhas > 0) {

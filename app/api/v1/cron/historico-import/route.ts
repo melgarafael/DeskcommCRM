@@ -38,6 +38,7 @@ import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { MARGEM_PARA_CHAMADA_MS, PRAZO_DA_CHAMADA_MS } from "@/lib/channels/historico/prazo";
 import { rodarUmaRodada, TETO_PADRAO } from "@/lib/channels/historico/rodada";
+import { MOTIVO_DO_PULO, recursoLigado } from "@/lib/cron/recursos-ligados";
 import { logger } from "@/lib/logger";
 import { STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -70,6 +71,19 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
+
+  // #3694: instalação sem importação `rodando` saía vazia 119 de 119 vezes. A
+  // sonda é a mesma condição da consulta abaixo (`status = 'rodando'`), e o
+  // filtro de organização operante continua sendo aplicado pela consulta real
+  // quando há importação — a sonda não decide quem opera, só se vale a pena
+  // perguntar.
+  if (!(await recursoLigado(admin, "historico"))) {
+    return ok(
+      { encontradas: 0, rodadas: 0, puladas: 0, falhas: 0, status: {}, pulado: MOTIVO_DO_PULO },
+      { requestId },
+    );
+  }
+
   const prazo = Date.now() + PRAZO_DA_CHAMADA_MS;
   const { data, error } = await admin
     .from("importacoes_de_historico")

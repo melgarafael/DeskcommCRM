@@ -21,6 +21,7 @@ import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { MOTIVO_DO_PULO, recursoLigado } from "@/lib/cron/recursos-ligados";
 
 export const dynamic = "force-dynamic";
 
@@ -128,9 +129,20 @@ async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   if (!autorizaCron(req)) return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
 
+  const admin = createAdminClient();
+
+  // #3694: instalação sem NENHUMA proposta em `enviando` saía vazia 117 de 117
+  // vezes. A sonda é a mesma condição da consulta abaixo (`status = 'enviando'`)
+  // — o corte de 5 min continua sendo da rodada real, porque a sonda sem ele é
+  // mais larga (a proposta recém-enviada também a liga). Esperar o TTL de 45 s
+  // aqui não custa nada: a proposta só é "presa" depois de 5 min.
+  if (!(await recursoLigado(admin, "propostas"))) {
+    return ok({ scanned: 0, revertidas: 0, organizations: 0, pulado: MOTIVO_DO_PULO }, { requestId });
+  }
+
   let result: RecuperarResult;
   try {
-    result = await recuperarPropostasTravadas(createAdminClient(), new Date(), requestId);
+    result = await recuperarPropostasTravadas(admin, new Date(), requestId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[proposta-travada] falhou", { error: detail, requestId });

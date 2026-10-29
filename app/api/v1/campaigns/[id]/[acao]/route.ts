@@ -22,6 +22,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
 import { requireRole } from "@/lib/auth/require-role";
+import { invalidarRecursosLigados } from "@/lib/cron/recursos-ligados";
 import {
   agendarAcao,
   cancelarAcao,
@@ -145,6 +146,15 @@ export async function POST(
   if (!desfecho.ok) {
     return fail(desfecho.codigo, t(desfecho.mensagem), desfecho.status, { requestId });
   }
+
+  // #3694: o cron da campanha sai cedo quando não há nada ligado, e a leitura
+  // dele é cacheada por 45 s (`lib/cron/recursos-ligados.ts`). Este é o único
+  // liga/desliga em que a espera apareceria na cara de quem clicou — quem
+  // aperta "Iniciar" espera o primeiro envio em minutos, não em minutos e meio.
+  // Invalidar aqui faz o tique seguinte já enxergar a campanha nova; o resto dos
+  // recursos (follow-up, fila, importação) liga por caminho que este processo
+  // não vê e fica com o TTL, que é curto de propósito.
+  invalidarRecursosLigados();
 
   if (acaoAuditada) {
     void audit({
