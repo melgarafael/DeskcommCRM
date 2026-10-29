@@ -71,9 +71,11 @@ export interface SendMessageInput {
    * curta por quem conhece o provider), e `url` é a mídia de um passo automático
    * (#2734, ampliada pelo #2972 para áudio, vídeo e documento), que o operador
    * aponta direto e o handler confere antes de buscar.
+   * `type: 'audio'` no `storagePath` é a nota de voz da resposta em áudio: o
+   * `body` é o texto falado, guardado no CRM e nunca mandado como legenda.
    */
   media?:
-    | { storagePath: string; mime: string }
+    | { storagePath: string; mime: string; type?: 'image' | 'audio' }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 
@@ -106,7 +108,7 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: 'image' as const,
+              type: input.media.type ?? ('image' as const),
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
             }

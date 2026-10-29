@@ -10,7 +10,8 @@
  */
 import { baseDaApiDoJev } from "@/lib/ai/decisao/cliente";
 import { caminhoDaProva, ORIGEM_PADRAO, type OrigemDoJev } from "@/lib/ai/decisao/origem";
-import { PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import { PROVEDOR_DA_VOZ, PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import { FalhaDaVoz, listarVozesPtBr } from "@/lib/agent-engine/edge/voz/sintese";
 import { motivoDaRecusaDeDestino } from "@/lib/automation/destinos-internos-autorizados";
 import { env } from "@/lib/env";
 
@@ -380,6 +381,30 @@ export async function validateCustomKey(
 }
 
 /**
+ * A chave do Google Cloud Text-to-Speech (resposta em áudio): lista as
+ * vozes pt-BR — chamada que não sintetiza nada. `models` leva os NOMES das vozes
+ * aceitas (`lib/agent-engine/edge/voz/vozes.ts`). O erro é só código e status,
+ * no mesmo vocabulário dos outros validadores; nunca a chave nem a resposta.
+ */
+export async function validateGoogleTtsKey(
+  apiKey: string,
+  deps: { fetchImpl?: typeof fetch } = {},
+): Promise<ValidationResult> {
+  try {
+    const vozes = await listarVozesPtBr(apiKey, { timeoutMs: TIMEOUT_MS, ...deps });
+    if (vozes.length === 0) return { ok: false, error: "sem_vozes_pt_br" };
+    return { ok: true, models: vozes.map((v) => v.nome) };
+  } catch (err) {
+    if (err instanceof FalhaDaVoz && err.code === "http" && err.status !== null) {
+      if (err.status === 401 || err.status === 403) return { ok: false, error: `auth_failed_${err.status}` };
+      return { ok: false, error: `provider_status_${err.status}` };
+    }
+    if (err instanceof FalhaDaVoz && err.code === "resposta_invalida") return { ok: false, error: "resposta_invalida" };
+    return { ok: false, error: "network_error" };
+  }
+}
+
+/**
  * Valida a CHAVE de qualquer natureza — de quem conversa E de quem só decide (o
  * Jev). Chave é chave: as duas se cadastram na mesma tela.
  *
@@ -413,6 +438,8 @@ export function validateProviderKey(
       return validateCustomKey(apiKey, baseUrl);
     case "typesafe":
       return validateTypeSafeKey(apiKey);
+    case PROVEDOR_DA_VOZ:
+      return validateGoogleTtsKey(apiKey);
     case PROVEDOR_POR_ASSINATURA:
       // NÃO É CHAVE. Este provedor nasce do login por PKCE no painel de
       // Credenciais, e a linha que ele grava em `ai_provider_credentials` guarda

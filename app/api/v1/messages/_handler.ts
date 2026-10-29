@@ -1143,7 +1143,11 @@ export async function sendMessageHandler(
             url: signed.signedUrl,
             mime: input.media_mime ?? "application/octet-stream",
             filename,
-            caption: corpoDoCanal(input.body ?? null),
+            // Nota de voz não tem legenda. O `body` de um áudio é o texto que
+            // ele fala (a resposta em áudio da IA): fica no CRM e no histórico,
+            // e um canal que mandasse a legenda junto entregaria a resposta
+            // duas vezes — em voz e por escrito.
+            caption: input.type === "audio" ? null : corpoDoCanal(input.body ?? null),
           },
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.

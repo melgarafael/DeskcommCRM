@@ -18,6 +18,7 @@ import type pg from 'pg';
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
+import { ehVozAceita } from '../edge/voz/vozes';
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -125,6 +126,18 @@ export interface PublishedAgentConfig {
    * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
    */
   mcpExternoNoAtendimento?: boolean;
+  /**
+   * `ai_agents.config.resposta_em_audio`: responde em áudio quando o cliente
+   * pede (`resposta-em-audio.ts`). Opcional porque nasce depois das fixtures;
+   * ausente = desligado.
+   */
+  respostaEmAudio?: boolean;
+  /**
+   * `ai_agents.config.voz_da_resposta_em_audio`: a voz escolhida para ESTE
+   * agente. `null`/ausente = a padrão da instalação. Valor fora da regra de
+   * `edge/voz/vozes.ts` vira `null` aqui e é recusado de novo no resolvedor.
+   */
+  vozDaRespostaEmAudio?: string | null;
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
@@ -206,6 +219,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     mcp_externo_no_atendimento?: unknown;
+    resposta_em_audio?: unknown;
+    voz_da_resposta_em_audio?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -275,6 +290,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
     // (sem filtro ⇒ entra em tudo), nunca uma mordaça acidental (#2679).
     filtroDePalavraChave: lerFiltroDePalavraChave(r.trigger_config),
+    respostaEmAudio: cfg.resposta_em_audio === true,
+    vozDaRespostaEmAudio: ehVozAceita(cfg.voz_da_resposta_em_audio) ? cfg.voz_da_resposta_em_audio : null,
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };

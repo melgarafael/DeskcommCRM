@@ -59,6 +59,7 @@ import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
 import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
+import { RespostaEmAudio } from "./RespostaEmAudio";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -1452,6 +1453,17 @@ export function AgentForm(props: Props) {
             <ServidorExternoNoAtendimento
               agentId={props.agent.id}
               inicial={(props.agent.config ?? {}).mcp_externo_no_atendimento}
+              disabled={disabled}
+            />
+          )}
+
+          {/* Resposta em áudio quando o cliente pede. Só admin grava; salva
+              em `ai_agents.config.resposta_em_audio`. */}
+          {isEdit && !readOnly && (
+            <RespostaEmAudio
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).resposta_em_audio}
+              vozInicial={(props.agent.config ?? {}).voz_da_resposta_em_audio}
               disabled={disabled}
             />
           )}

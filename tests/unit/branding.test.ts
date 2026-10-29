@@ -947,6 +947,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Requesty (roteador OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface.",
   },
+  "texttospeech.googleapis.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da Google Cloud Text-to-Speech que gera a nota de voz da resposta em áudio da IA (lib/agent-engine/edge/voz/sintese.ts). É o destino do request, liberado na allowlist de egress do runtime; sem GOOGLE_TTS_API_KEY nada é chamado.",
+  },
   "generativelanguage.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:

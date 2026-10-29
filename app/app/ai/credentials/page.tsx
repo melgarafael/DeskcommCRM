@@ -27,7 +27,7 @@ import { lerLoginCodex } from "@/lib/ai/credenciais/login-codex";
 import { lerOuCriarHostIdSiwc } from "@/lib/ai/credenciais/host-siwc";
 import { emitirEstado } from "@/lib/agenda/google/estado";
 import { env } from "@/lib/env";
-import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { PROVEDOR_DA_VOZ, PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tagDeIdioma } from "@/lib/i18n/datas";
@@ -72,7 +72,11 @@ export default async function CredentialsPage() {
   const linhaDeLogin = moduloLoginCodex
     ? (todas.find((c) => c.provider === PROVEDOR_POR_ASSINATURA) ?? null)
     : null;
-  const credentials = todas.filter((c) => c.provider !== PROVEDOR_POR_ASSINATURA);
+  // A chave de VOZ também não é chave de IA de conversa: ela mora no
+  // cartão "Voz e áudio" de IA › Provedores, com teste e vozes próprios.
+  const credentials = todas.filter(
+    (c) => c.provider !== PROVEDOR_POR_ASSINATURA && c.provider !== PROVEDOR_DA_VOZ,
+  );
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   // O par PKCE DESTA renderização: o link mostrado e o verifier do campo de
   // colagem nascem juntos — e só JUNTOS valem: o `code` que o navegador deixa

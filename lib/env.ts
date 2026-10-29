@@ -331,6 +331,15 @@ const schema = z.object({
   // da OpenAI da organização — assim como `TRANSCRIPTION_MODEL`. Leitura
   // tolerante em `idiomasDaTranscricao` (grafia errada não derruba o worker).
   TRANSCRIPTION_LANGUAGES: z.string().optional().default(""),
+  // Resposta da IA em áudio (`lib/agent-engine/agent/resposta-em-audio.ts`):
+  // RESERVA da instalação. A chave normal é a da organização, cadastrada
+  // em IA › Provedores › Voz e áudio, e a voz é a escolhida no agente — ambas
+  // vencem estas variáveis (`lib/agent-engine/edge/voz/credencial.ts`). Vazio =
+  // sem reserva. A voz aceita só pt-BR Standard (`pt-BR-Standard-A`…`-Z`,
+  // `lib/agent-engine/edge/voz/vozes.ts`); outra grafia é recusada e a resposta
+  // sai em texto. Vazio = `pt-BR-Standard-A`.
+  GOOGLE_TTS_API_KEY: z.string().optional().default(""),
+  GOOGLE_TTS_VOICE: z.string().optional().default(""),
   // Endereço da API do Jev (TypeSafe AI). Vazio é ausente: vale
   // https://api.typesafe.ai. Existe para o dublê do e2e — a CHAVE nunca vem
   // daqui, é por organização (BYOK). Quem lê é `baseDaApiDoJev()`, em

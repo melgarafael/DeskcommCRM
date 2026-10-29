@@ -19,6 +19,7 @@ import {
   AGENT_CONFIG_DEFAULTS,
   type AgentConfig,
 } from "@/lib/ai/guardrails-schema";
+import { estadoDaVoz } from "@/lib/ai/voz/credencial";
 
 export const dynamic = "force-dynamic";
 
@@ -192,6 +193,29 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (patch.guardrails !== undefined) update.guardrails = patch.guardrails;
 
   if (priorityPatch !== null) update.priority = priorityPatch;
+
+  // Resposta em áudio: LIGAR exige uma chave de voz utilizável — a da
+  // empresa, validada, em IA › Provedores, ou a da instalação. Sem ela a opção
+  // ligada seria uma promessa que o atendimento não cumpre. Desligar e trocar
+  // a voz passam sempre.
+  if (patch.config?.resposta_em_audio === true) {
+    let emUso: "organizacao" | "instalacao" | null;
+    try {
+      emUso = (await estadoDaVoz(admin, organizationId)).em_uso;
+    } catch {
+      return fail("internal_error", "Erro ao ler a configuração de voz.", 500, { requestId });
+    }
+    if (emUso === null) {
+      return fail(
+        "voz_nao_configurada",
+        t(
+          "A resposta em áudio precisa da chave do Google Cloud Text-to-Speech testada em IA › Provedores › Voz e áudio.",
+        ),
+        422,
+        { requestId },
+      );
+    }
+  }
 
   if (patch.config !== undefined) {
     const currentConfigRaw = (existing.config ?? {}) as Record<string, unknown>;

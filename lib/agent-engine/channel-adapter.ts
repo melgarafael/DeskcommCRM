@@ -51,9 +51,11 @@ export interface ChannelSendInput {
    * `url` é a mídia de um passo automático (#2734), apontada direto pelo operador.
    * Caminho, nunca bytes: quem assina a URL curta para o canal é o handler de
    * mensagens, como em toda mídia — e é ele que confere a URL antes de buscar.
+   * `type: 'audio'` é a nota de voz da resposta em áudio (`agent/resposta-em-audio.ts`);
+   * sem `type`, o arquivo do Storage é imagem, como sempre foi.
    */
   media?:
-    | { storagePath: string; mime: string }
+    | { storagePath: string; mime: string; type?: 'image' | 'audio' }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 

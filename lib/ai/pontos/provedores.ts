@@ -62,6 +62,20 @@ export interface ProvedorSuportado {
  */
 export const PROVEDOR_POR_ASSINATURA = "openai-assinatura";
 
+/**
+ * A VOZ DA RESPOSTA EM ÁUDIO — Google Cloud Text-to-Speech.
+ *
+ * Tem chave em `ai_provider_credentials` (mesma cifra, mesma view segura, mesma
+ * RLS das chaves de IA), mas NÃO conversa nem decide: fica FORA de `PROVEDORES`
+ * e de `PROVEDORES_DE_DECISAO`, e portanto fora de todo seletor de modelo, do
+ * cadastro genérico de Credenciais e do `z.enum(IDS_COM_CHAVE)` da rota de lá.
+ * Quem a lê e escreve é o cartão "Voz e áudio" de IA › Provedores
+ * (`lib/ai/voz/credencial.ts`) e o worker (`lib/agent-engine/edge/voz/credencial.ts`).
+ * Entra só no TIPO `ProvedorComChave`, como a assinatura, para o miolo de
+ * cifrar/rotacionar/validar (`lib/ai/credenciais/guardar.ts`) ser o mesmo.
+ */
+export const PROVEDOR_DA_VOZ = "google-tts";
+
 export const PROVEDORES = [
   {
     id: "anthropic",
@@ -240,7 +254,8 @@ export const PROVEDORES_COM_CHAVE = [...PROVEDORES, ...PROVEDORES_DE_DECISAO] as
  */
 export type ProvedorComChave =
   | (typeof PROVEDORES_COM_CHAVE)[number]["id"]
-  | typeof PROVEDOR_POR_ASSINATURA;
+  | typeof PROVEDOR_POR_ASSINATURA
+  | typeof PROVEDOR_DA_VOZ;
 
 export const IDS_COM_CHAVE = PROVEDORES_COM_CHAVE.map((p) => p.id) as unknown as readonly [
   ProvedorComChave,

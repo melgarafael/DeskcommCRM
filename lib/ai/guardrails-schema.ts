@@ -5,6 +5,7 @@
 import { z } from "zod";
 
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
+import { VOZ_ACEITA } from "@/lib/agent-engine/edge/voz/vozes";
 
 // ---------------------------------------------------------------------------
 // Models permitidos (Vercel AI Gateway)
@@ -162,6 +163,20 @@ export const agentConfigSchema = z.object({
    * Só quem é admin grava `config` (rota PATCH e RLS de `ai_agents`).
    */
   mcp_externo_no_atendimento: z.boolean().default(false),
+  /**
+   * Responde em ÁUDIO quando o cliente pede ou diz que não consegue ler
+   * (`lib/agent-engine/agent/resposta-em-audio.ts`). `false` (default) = só
+   * texto, como antes da opção existir. Ligar não basta sozinho: a instalação
+   * precisa de `GOOGLE_TTS_API_KEY`; sem ela a resposta sai em texto.
+   */
+  resposta_em_audio: z.boolean().default(false),
+  /**
+   * A voz da resposta em áudio DESTE agente — só o identificador
+   * (`pt-BR-Standard-A`…), nunca chave. Validada pela regra comum
+   * (`lib/agent-engine/edge/voz/vozes.ts`): valor fora dela é 422. `null`
+   * (default) = a voz padrão da instalação, Standard.
+   */
+  voz_da_resposta_em_audio: z.string().regex(VOZ_ACEITA).nullable().default(null),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -176,6 +191,8 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   voice_model: "gpt-realtime",
   aceita_comandos_celular: false,
   mcp_externo_no_atendimento: false,
+  resposta_em_audio: false,
+  voz_da_resposta_em_audio: null,
   sentiment_threshold: DEFAULT_SENTIMENT_THRESHOLD,
 };
 
@@ -202,6 +219,8 @@ export const agentConfigPatchSchema = agentConfigSchema
     voice_model: cfg.voice_model.removeDefault(),
     aceita_comandos_celular: cfg.aceita_comandos_celular.removeDefault(),
     mcp_externo_no_atendimento: cfg.mcp_externo_no_atendimento.removeDefault(),
+    resposta_em_audio: cfg.resposta_em_audio.removeDefault(),
+    voz_da_resposta_em_audio: cfg.voz_da_resposta_em_audio.removeDefault(),
     // Sem `.default()`, senão um PATCH de outra chave reescrevia o limiar de
     // todo agente que nunca o configurou — o mesmo defeito de #1631.
     sentiment_threshold: cfg.sentiment_threshold.removeDefault(),

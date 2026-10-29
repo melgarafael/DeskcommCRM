@@ -43,6 +43,7 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 
 import { CartaoDeMapas } from "./CartaoDeMapas";
+import { CartaoDeVoz } from "./CartaoDeVoz";
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
 
 interface Ponto {
@@ -248,6 +249,8 @@ export function PainelDeProvedores() {
           </section>
         ))}
       </div>
+
+      <CartaoDeVoz />
 
       <CartaoDeMapas />
     </div>

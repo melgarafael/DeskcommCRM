@@ -80,6 +80,17 @@ import { abreAvisoDoEspelhoRecusado, mirrorLeadStageToCrm } from '../edge/crm/mo
 import { insertInboxItem } from '../db/repository';
 import { criarConferidorDeAfirmacoes } from '@/lib/ai/decisao/afirmacao-de-fato';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { env } from '@/lib/env';
+import { criarSintetizador, type Sintetizar } from '../edge/voz/sintese';
+import { resolverVozDoTurno } from '../edge/voz/credencial';
+import {
+  INSTRUCAO_DE_AUDIO,
+  MIME_DA_VOZ,
+  caminhoDoAudio,
+  enviarComoAudio,
+  preferenciaDeAudio,
+  type GuardarAudio,
+} from './resposta-em-audio';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
@@ -1403,6 +1414,54 @@ export interface InboundTurnDeps {
    * organização e o egress com allowlist (`lib/ai/decisao/ponto.ts`).
    */
   jev?: DependenciasDoPonto;
+  /**
+   * A voz da resposta em áudio (`resposta-em-audio.ts`). Injetável só para
+   * teste (síntese e Storage dublês). Default = `GOOGLE_TTS_*` do ambiente e
+   * o bucket da conversa por service role.
+   */
+  voz?: VozDoTurno;
+}
+
+/** O que o turno precisa para responder em áudio. `sintetizar` nulo = voz indisponível. */
+export interface VozDoTurno {
+  sintetizar: Sintetizar | null;
+  motivo?: string;
+  guardar: GuardarAudio;
+}
+
+/**
+ * A voz do turno: a chave cifrada da ORGANIZAÇÃO (IA › Provedores › Voz e
+ * áudio), com `GOOGLE_TTS_API_KEY` só de reserva, e a voz do AGENTE
+ * (`edge/voz/credencial.ts`). Nunca lança: sem chave ou voz inválida, `sintetizar`
+ * nulo e o motivo — a resposta sai em texto.
+ */
+export async function vozDaOrganizacao(input: {
+  db: Queryable;
+  organizationId: string;
+  vozDoAgente: string | null;
+  log: Logger;
+}): Promise<VozDoTurno> {
+  const guardar: GuardarAudio = async (caminho, audio) => {
+    // `upsert`: o caminho é determinístico por (job, seq) — o replay de um job
+    // que caiu depois do upload reaproveita o arquivo em vez de duplicar.
+    const { error } = await createAdminClient()
+      .storage.from('whatsapp-media')
+      .upload(caminho, audio, { contentType: MIME_DA_VOZ, upsert: true });
+    if (error) throw new Error('voz_upload_falhou');
+  };
+  const lida = await resolverVozDoTurno({
+    db: input.db,
+    organizationId: input.organizationId,
+    vozDoAgente: input.vozDoAgente,
+    ambiente: env,
+  });
+  if (!lida.ok) return { sintetizar: null, motivo: lida.code, guardar };
+  input.log.info('resposta em áudio: voz resolvida', {
+    event: 'resposta_em_audio_voz',
+    origem_da_chave: lida.origem,
+    voz: lida.config.voz,
+  });
+  return { sintetizar: criarSintetizador(lida.config, { log: input.log }), guardar };
 }
 
 /** Checkpoint mais recente do lead — a memória que atravessa sessões. */
@@ -2882,6 +2941,30 @@ async function executarTurnoDoAgente(
   const mensagemDoJob =
     currentInboundText ?? latestInboundSignal(openingContext.context.messages);
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  // Resposta em áudio (`resposta-em-audio.ts`): decidida UMA vez por turno, pelo
+  // que o CLIENTE disse na janela do histórico. Só turno que responde a quem
+  // escreveu — o follow-up retoma conversa parada e segue em texto — e nunca no
+  // preview, que não tem canal nem conversa onde guardar o arquivo.
+  const vozDoTurno: VozDoTurno | null =
+    !preview &&
+    agentConfig?.respostaEmAudio === true &&
+    eTurnoDeResposta(liveJob()) &&
+    preferenciaDeAudio(openingContext.context.messages)
+      ? (deps.voz ??
+        (await vozDaOrganizacao({
+          db: pool,
+          organizationId: tenantId,
+          vozDoAgente: agentConfig?.vozDaRespostaEmAudio ?? null,
+          log: runLog,
+        })))
+      : null;
+  if (vozDoTurno !== null) {
+    runLog.info('resposta em áudio: cliente pediu áudio', {
+      event: 'resposta_em_audio_pedida',
+      voz_configurada: vozDoTurno.sintetizar !== null,
+    });
+  }
+
   // A GUARDA DO MENU DE ROBÔ (issue 3106): o casamento determinístico segue
   // existindo, mas NÃO passa a conversa quando o que casou é fala de automação do
   // outro lado — menu de opções numeradas ("4 - Falar com um atendente"), mensagem
@@ -4169,7 +4252,7 @@ async function executarTurnoDoAgente(
                 Math.floor(Math.random() * (pacingDoTurno?.knobs.jitterMaxMs ?? 800));
               const enviar = (
                 corpo: string,
-                media?: FotoParaEnvio,
+                media?: FotoParaEnvio | { storagePath: string; mime: string; type: 'audio' },
               ): Promise<ChannelSendResult> => {
                 seq += 1;
                 return liveChannel().send({
@@ -4188,6 +4271,43 @@ async function executarTurnoDoAgente(
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
               return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
                   corposEnviados.push(finalBody);
+                  // As bolhas de texto: o caminho de sempre, e o fallback da resposta em áudio.
+                  const emBolhas = (texto: string): Promise<ChannelSendResult> =>
+                    sendInBubbles(texto, {
+                      enabled: agentConfig?.splitMessages ?? false,
+                      maxChars: agentConfig?.splitMaxChars ?? 600,
+                      // O teto do turno vale para as bolhas: o que passa dele vai
+                      // junto na última.
+                      maxBubbles: Math.max(1, maxSendsPerTurn - seq),
+                      sleep,
+                      jitter,
+                      // A pausa humana do turno NÃO mora mais aqui: ela subiu para
+                      // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do
+                      // número) — issue #654. Neste ponto fica só o jitter anti-ban
+                      // entre bolhas.
+                      send: (bubble) => enviar(bubble),
+                    });
+                  // Resposta em áudio: a resposta inteira vira UMA nota de voz (sem bolhas —
+                  // áudio não se fatia), com o texto guardado no CRM como `body`. Com foto
+                  // de produto, ou qualquer falha antes do envio, sai o texto de sempre.
+                  if (vozDoTurno !== null && fotosDoProduto.length === 0) {
+                    return enviarComoAudio(finalBody, {
+                      sintetizar: vozDoTurno.sintetizar,
+                      ...(vozDoTurno.motivo !== undefined ? { motivoSemVoz: vozDoTurno.motivo } : {}),
+                      guardar: vozDoTurno.guardar,
+                      caminho: caminhoDoAudio({
+                        tenantId,
+                        conversationId: input.conversationId,
+                        jobId: liveJob().id,
+                        seq: seq + 1,
+                      }),
+                      enviarAudio: (caminho) =>
+                        enviar(finalBody, { storagePath: caminho, mime: MIME_DA_VOZ, type: 'audio' }),
+                      // O fallback manda o MESMO corpo que a cadeia aprovou.
+                      enviarTexto: emBolhas,
+                      log: runLog,
+                    });
+                  }
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
                   // medido ANTES DE CADA FOTO, depois do texto.
                   return enviarComFotos(finalBody, fotosDoProduto, {
@@ -4195,21 +4315,7 @@ async function executarTurnoDoAgente(
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
                     enviarFoto: (foto, legenda) => enviar(legenda, foto),
-                    enviarTexto: (texto) =>
-                      sendInBubbles(texto, {
-                        enabled: agentConfig?.splitMessages ?? false,
-                        maxChars: agentConfig?.splitMaxChars ?? 600,
-                        // O teto do turno vale para as bolhas: o que passa dele vai
-                        // junto na última.
-                        maxBubbles: Math.max(1, maxSendsPerTurn - seq),
-                        sleep,
-                        jitter,
-                        // A pausa humana do turno NÃO mora mais aqui: ela subiu para
-                        // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do
-                        // número) — issue #654. Neste ponto fica só o jitter anti-ban
-                        // entre bolhas.
-                        send: (bubble) => enviar(bubble),
-                      }),
+                    enviarTexto: emBolhas,
                   });
               });
             },
@@ -5259,7 +5365,10 @@ async function executarTurnoDoAgente(
     // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
     // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
     // split_messages está on — Onda 4). Vazios são omitidos.
-    const splitHint = instrucaoDeBolhas(agentConfig?.splitMessages ?? false);
+    // Em áudio a resposta sai numa nota de voz só: a instrução de bolhas daria
+    // ao modelo a regra contrária (parágrafos que viram mensagens).
+    const splitHint =
+      vozDoTurno !== null ? INSTRUCAO_DE_AUDIO : instrucaoDeBolhas(agentConfig?.splitMessages ?? false);
     // Spec 15: o `case_id` real do caso 'awaiting_lead' desta conversa, se houver — sem
     // isso o modelo nunca consegue chamar provide_case_update quando o lead simplesmente
     // responde (o caminho comum; case_reply_turn só cobre a AÇÃO do humano). Sufixo
