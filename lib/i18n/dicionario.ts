@@ -605,6 +605,18 @@ export const DICIONARIO: Traducoes = {
   "Sem WhatsApp": { es: "Sin WhatsApp" },
   "WhatsApp: não sabemos": { es: "WhatsApp: no sabemos" },
   "Veio da junção de fichas": { es: "Vino de la unión de fichas" },
+  // Spec 31 (B2): a tela de editar os telefones da ficha e a linha da resposta.
+  "Adicionar telefone": { es: "Agregar teléfono" },
+  "Digite o número do telefone.": { es: "Escriba el número de teléfono." },
+  "Este número já está em outra ficha.": { es: "Este número ya está en otra ficha." },
+  "Torne outro número principal antes de remover este.": {
+    es: "Haga principal otro número antes de quitar este.",
+  },
+  "Número inválido. Confira o DDD e tente de novo.": {
+    es: "Número no válido. Revise el código de área e inténtelo de nuevo.",
+  },
+  "A resposta sai por:": { es: "La respuesta sale por:" },
+  "A resposta sai pelo número principal": { es: "La respuesta sale por el número principal" },
   "Pontuação": { es: "Puntuación" },
   // #2642 — formulário da ação notify_team, depois do recorte: o destino é o
   // número de Avisos e não há mais escolha de pessoa nem de canal.

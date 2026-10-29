@@ -1367,6 +1367,14 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
   "ai.knowledge_source_reindexed",
+  // Telefones extras da ficha (Spec 31, B2). Código próprio, e não
+  // `contact.phone_added`, que é o evento de "a ficha vazia ganhou o principal"
+  // e tem consumidores próprios. O metadata leva ids, tipo e WhatsApp, nunca o
+  // número: a trilha é append-only e a cascata de LGPD não a alcança.
+  "contact.extra_phone_added",
+  "contact.extra_phone_updated",
+  "contact.extra_phone_removed",
+  "contact.primary_phone_changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

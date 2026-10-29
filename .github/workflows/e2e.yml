@@ -827,6 +827,7 @@ jobs:
         j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
         j20-elegibilidade-atendimento-manual.spec.ts
         juntar-contatos-duplicados.spec.ts
+        ficha-com-varios-telefones.spec.ts
         lote-no-quadro-do-funil.spec.ts
         quadro-do-funil-colunas.spec.ts
         motivos-de-perda-do-funil.spec.ts

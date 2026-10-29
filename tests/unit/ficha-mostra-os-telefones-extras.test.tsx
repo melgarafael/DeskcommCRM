@@ -1,9 +1,10 @@
 /**
- * A FICHA MOSTRA OS TELEFONES EXTRAS, SÓ LEITURA (Spec 31, B1, item 3).
+ * A FICHA MOSTRA OS TELEFONES EXTRAS (Spec 31, B1, item 3; tela de B2, item 7).
  *
  * Com extra, o bloco "Telefones" lista o principal e cada extra com tipo,
  * WhatsApp, rótulo e, quando veio de uma junção de fichas, a origem. Sem extra,
- * a linha "Telefone" segue como hoje, com o tipo ao lado do número.
+ * a linha "Telefone" segue como hoje, com o tipo ao lado do número. Quem tem
+ * papel `agent` ou acima vê as ações de editar; quem só lê, não.
  *
  * Mesmo molde de `ficha-mostra-a-origem-da-campanha.test.tsx`: a ficha renderiza
  * com um contato controlado pelo teste, e o controle de vacuidade garante que o
@@ -13,11 +14,12 @@
  * - Tirar o `BlocoDeTelefones` (a ficha volta a mostrar só o principal): o caso
  *   "mostra o extra" cai.
  * - Trocar o rótulo de origem `fusao` por nada: o caso "veio da junção" cai.
+ * - Editar o bloco (B2): os casos de papel e de "Tornar principal" abaixo caem.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ContactDetailClient } from "@/app/app/contacts/[id]/_client";
 import type { Contact } from "@/lib/types/contacts";
@@ -131,5 +133,57 @@ describe("a ficha do contato mostra os telefones extras", () => {
     expect(digitosDoTextoDe(linha)).toContain("5511999998888");
     expect(linha).toHaveTextContent("Celular");
     expect(screen.queryByText("Telefones", { selector: "dt" })).toBeNull();
+  });
+});
+
+describe("a ficha editável por papel (Spec 31, B2, item 7)", () => {
+  const extraBase = {
+    id: "ex-1",
+    phone_number: "+5521977776666",
+    type: "celular" as const,
+    whatsapp: "nao_sei" as const,
+    label: "Trabalho",
+    origin: "manual" as const,
+    created_at: "2026-10-02T10:00:00.000Z",
+  };
+  const papelOriginal = ORG.role;
+
+  afterEach(() => {
+    ORG.role = papelOriginal;
+  });
+
+  it("agent ou acima: o extra tem 'Tornar principal' e o principal não tem", () => {
+    ORG.role = "agent";
+    abrirFicha({ additional_phones: [extraBase] });
+
+    // Sabotagem: mostrar "Tornar principal" também no principal faz este caso contar dois botões.
+    expect(screen.getAllByRole("button", { name: "Tornar principal" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Adicionar telefone" })).toBeInTheDocument();
+  });
+
+  it("remover o principal com extra existente: botão desabilitado, com a dica", () => {
+    ORG.role = "agent";
+    abrirFicha({ additional_phones: [extraBase] });
+
+    // O primeiro "Remover" da lista é o do principal (ele vem antes dos extras).
+    const [removerDoPrincipal] = screen.getAllByRole("button", { name: "Remover" });
+    // Sabotagem: tirar o `disabled` do botão do principal faz este caso cair.
+    expect(removerDoPrincipal).toBeDisabled();
+    expect(
+      screen.getByText("Torne outro número principal antes de remover este."),
+    ).toBeInTheDocument();
+  });
+
+  it("só leitura (viewer): nenhuma ação de editar aparece", () => {
+    ORG.role = "viewer";
+    abrirFicha({ additional_phones: [extraBase] });
+
+    // Só o bloco de telefones: a ficha tem outros botões "Editar" fora dele.
+    const bloco = screen.getByText("Telefones", { selector: "dt" }).parentElement as HTMLElement;
+    // Sabotagem: deixar de checar o papel na ficha faz este caso encontrar botões.
+    expect(within(bloco).queryByRole("button", { name: "Tornar principal" })).toBeNull();
+    expect(within(bloco).queryByRole("button", { name: "Adicionar telefone" })).toBeNull();
+    expect(within(bloco).queryByRole("button", { name: "Editar" })).toBeNull();
+    expect(bloco).toHaveTextContent("Trabalho");
   });
 });
