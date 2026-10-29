@@ -263,10 +263,16 @@ describe("a conversa nova entra no funil", () => {
     settingsDaOrg = configurada;
     // simula lead aberto
     const adminComLead = {
-      ...admin,
+      ...(admin as Record<string, unknown>),
       from: (tabela: string) => {
         if (tabela === "crm_leads") {
-          const elo: any = {};
+          interface LeadElo {
+            select(colunas?: string): LeadElo;
+            eq(coluna: string, valor: unknown): LeadElo;
+            limit(n: number): LeadElo;
+            maybeSingle(): Promise<{ data: { id: string } | null; error: null }>;
+          }
+          const elo = {} as LeadElo;
           elo.select = () => elo;
           elo.eq = () => elo;
           elo.limit = () => elo;
