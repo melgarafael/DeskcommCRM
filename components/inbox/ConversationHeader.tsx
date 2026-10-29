@@ -339,15 +339,16 @@ export function ConversationHeader({
           </p>
         )}
         {/* Contato com telefone extra: diz por qual número a resposta sai. Sem
-            extra, nada muda na tela. No WAHA a resposta vai para o número por
-            onde chegou a última mensagem; nas outras integrações ela segue pelo
-            principal, e o aviso aparece quando a última chegou por um extra. */}
-        {endereco?.has_extras && c?.phone_number && endereco.provider === "waha" && endereco.phone_number && (
+            extra, nada muda na tela. No canal que responde pela última mensagem
+            recebida, a resposta vai para o número por onde ela chegou; nos outros
+            segue pelo principal, e o aviso aparece quando a última chegou por um
+            extra. */}
+        {endereco?.has_extras && c?.phone_number && endereco.follows_last_inbound && endereco.phone_number && (
           <p className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden" data-testid="resposta-sai-por">
             {t("A resposta sai por:")} {phoneForDisplay(endereco.phone_number)}
           </p>
         )}
-        {endereco?.has_extras && endereco.provider !== "waha" && ultimaVeioPorExtra && (
+        {endereco?.has_extras && !endereco.follows_last_inbound && ultimaVeioPorExtra && (
           <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 text-xs text-amber-700 dark:text-amber-400" data-testid="resposta-pelo-principal">
             <span>{t("A resposta sai pelo número principal")}</span>
             <Link href={`/app/contacts/${c?.id}`} className="font-medium underline underline-offset-2">
