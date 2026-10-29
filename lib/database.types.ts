@@ -14924,9 +14924,6 @@ export type Database = {
         Returns: number;
       };
       fn_contar_mensagem_ignorada: { Args: { p_org: string }; Returns: undefined };
-      // #3694 — a leitura compartilhada de "o que está ligado" nesta instalação
-      // (migration 9039). Devolve um jsonb com uma chave por recurso.
-      fn_cron_recursos_ligados: { Args: Record<PropertyKey, never>; Returns: Json };
       fn_contato_adicionar_etiquetas: {
         Args: { p_contato: string; p_etiquetas: string[]; p_org: string };
         Returns: Json;
@@ -15013,6 +15010,7 @@ export type Database = {
         Args: { p_actor: string; p_hash: string; p_key: string; p_request: Json };
         Returns: Json;
       };
+      fn_cron_recursos_ligados: { Args: Record<PropertyKey, never>; Returns: Json };
       fn_decrypt_oauth: { Args: { ciphertext: string }; Returns: string };
       fn_definir_aviso_de_agendamento: {
         Args: {
