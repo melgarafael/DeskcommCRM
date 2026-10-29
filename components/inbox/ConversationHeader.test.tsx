@@ -49,6 +49,11 @@ vi.mock("@/hooks/ai/useAutomaticoAtivo", () => ({
   useAutomaticoAtivo: () => ({ data: false }),
 }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
+// O número da resposta (Spec 31, B2) lê react-query; este arquivo não monta
+// `QueryClientProvider`. Sem resposta, o aviso "a resposta sai por" não aparece.
+vi.mock("@/hooks/inbox/useEnderecoDaResposta", () => ({
+  useEnderecoDaResposta: () => ({ data: undefined }),
+}));
 // A faixa da carteira (#2591) lê a carteira com react-query; este arquivo mede
 // a barra de ações, não a carteira (que tem arquivo próprio).
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));

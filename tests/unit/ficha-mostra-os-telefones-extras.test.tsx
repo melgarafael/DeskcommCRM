@@ -103,6 +103,7 @@ describe("a ficha do contato mostra os telefones extras", () => {
     abrirFicha({
       additional_phones: [
         {
+          id: "extra-1",
           phone_number: "+5521977776666",
           type: "celular",
           whatsapp: "nao_sei",
