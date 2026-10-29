@@ -15,7 +15,7 @@
  * atualizada = efeito. Chegar depois = 0 linhas = NADA acontece (nem timeline,
  * nem etapa, nem metadata). Um `select` seguido de `update` seria check-then-act
  * e duas entregas SIMULTÂNEAS passariam as duas pela janela — o mesmo defeito
- * que a 0027 matou nos contatos. O índice único da 9026 cobre o outro lado
+ * que a 0027 matou nos contatos. O índice único da 9043 cobre o outro lado
  * (reentrega que tenta CRIAR outra linha).
  *
  * ─── Por que a etapa de destino é `is_won` ──────────────────────────────────
@@ -36,8 +36,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { ApiError } from "@/lib/api/types";
 import { logger } from "@/lib/logger";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { encerraDemanda } from "@/lib/leads/encerramento";
 
 import { CHAVE_DO_METADADO, lerPagamentoDoMetadado, metadadoDoPagamento, valorEmTexto } from "./link";
 import type { Recebimento } from "./registrar";
@@ -48,12 +50,14 @@ export type MotivoDoNaoMovimento =
   | "negocio_encerrado"
   | "sem_etapa_de_ganho"
   | "ja_esta_la"
+  | "campos_obrigatorios"
   | "conflito_humano"
   | "falha_de_escrita";
 
 export type VereditoDoMovimento =
-  | { moveu: true; stageId: string; stageName: string }
-  | { moveu: false; motivo: MotivoDoNaoMovimento };
+  | { moveu: true }
+  /** `detalhe` só em `campos_obrigatorios`: a frase do que falta, a mesma do 422 das rotas. */
+  | { moveu: false; motivo: MotivoDoNaoMovimento; detalhe?: string };
 
 export type ResultadoDaConfirmacao =
   | { ok: true; efeito: "pago"; recebimento: Recebimento; movido: VereditoDoMovimento }
@@ -82,7 +86,7 @@ export async function confirmarPagamento(
   entrada: { provedor: string; externalId: string; quando: Date },
 ): Promise<ResultadoDaConfirmacao> {
   // ⚠️ O aviso chega SEM organização (não há sessão num webhook), então a busca
-  // é por (provedor, id externo) e o índice único da 9026 é por organização —
+  // é por (provedor, id externo) e o índice único da 9043 é por organização —
   // duas organizações da MESMA instalação poderiam, em tese, ter o mesmo id
   // externo se apontassem para a mesma conta do provedor. Ambiguidade aqui não
   // se resolve escolhendo: duas linhas com o mesmo id é conta compartilhada
@@ -199,20 +203,26 @@ async function atualizarMetadadoDaMensagem(admin: SupabaseClient, recebimento: R
     .eq("id", linha.id);
 }
 
-interface LeadLido {
-  id: string;
-  stage_id: string | null;
-  pipeline_id: string | null;
-  status: string;
-  contact_id: string | null;
-}
+/**
+ * O GANHO passa pelo MESMO fecho do botão "Marcar como ganho" (`encerraDemanda`):
+ * a régua de campos obrigatórios e de motivo de ganho do funil, a etapa `is_won`,
+ * a linha "Demanda encerrada" na timeline e a auditoria `lead.won`. O `status` e
+ * o evento `lead.won` são do trigger, como em todo ganho. Um segundo caminho de
+ * ganho aqui seria a porta de trás da régua — o defeito da #917 com outro nome.
+ *
+ * Quem pagou um negócio encerrado não reescreve o desfecho que alguém decidiu:
+ * negócio fechado na leitura é `negocio_encerrado`, e o fecho vai com
+ * `travaOtimista` — se alguém encerrar ou mexer no card antes da escrita, a
+ * decisão humana vence (`conflito_humano`).
+ */
+const ATOR_DO_AVISO = { type: "webhook_source", id: "pagamentos" } as const;
 
 async function moverParaGanho(admin: SupabaseClient, recebimento: Recebimento): Promise<VereditoDoMovimento> {
   if (!recebimento.lead_id) return { moveu: false, motivo: "sem_negocio" };
 
   const { data: leadBruto, error: erroDoLead } = await admin
     .from("crm_leads")
-    .select("id, stage_id, pipeline_id, status, contact_id")
+    .select("id, status")
     .eq("organization_id", recebimento.organization_id)
     .eq("id", recebimento.lead_id)
     .maybeSingle();
@@ -223,53 +233,38 @@ async function moverParaGanho(admin: SupabaseClient, recebimento: Recebimento): 
     });
     return { moveu: false, motivo: "falha_de_escrita" };
   }
-  const lead = leadBruto as LeadLido | null;
+  const lead = leadBruto as { id: string; status: string } | null;
   if (!lead) return { moveu: false, motivo: "sem_negocio" };
-  // Ganho ou perdido é HISTÓRICO: quem pagou um negócio já encerrado não
-  // reescreve o desfecho que alguém decidiu.
   if (lead.status !== "open") return { moveu: false, motivo: "negocio_encerrado" };
-  if (!lead.pipeline_id) return { moveu: false, motivo: "sem_etapa_de_ganho" };
 
-  const { data: etapaBruta, error: erroDaEtapa } = await admin
-    .from("crm_stages")
-    .select("id, name")
-    .eq("pipeline_id", lead.pipeline_id)
-    .eq("is_won", true)
-    .eq("is_archived", false)
-    .maybeSingle();
-  if (erroDaEtapa) {
-    logger.warn("[pagamentos.confirmar] etapa de ganho ilegível", {
-      organization_id: recebimento.organization_id,
-      pipeline_id: lead.pipeline_id,
-      codigo: erroDaEtapa.code ?? null,
-    });
-    return { moveu: false, motivo: "falha_de_escrita" };
-  }
-  const etapa = etapaBruta as { id: string; name: string } | null;
-  if (!etapa) return { moveu: false, motivo: "sem_etapa_de_ganho" };
-  if (lead.stage_id === etapa.id) return { moveu: false, motivo: "ja_esta_la" };
-
-  // Trava otimista pelo estágio de ORIGEM: se um humano moveu o card entre a
-  // leitura e a escrita, a decisão dele vence (o desenho de
-  // `appointment-stage-move.ts`).
-  const { data: movidas, error: erroDoMovimento } = await admin
-    .from("crm_leads")
-    .update({ stage_id: etapa.id })
-    .eq("organization_id", recebimento.organization_id)
-    .eq("id", lead.id)
-    .eq("stage_id", lead.stage_id)
-    .select("id");
-  if (erroDoMovimento) {
-    logger.error("[pagamentos.confirmar] etapa não gravada", {
+  try {
+    const { jaEstava } = await encerraDemanda(
+      admin,
+      { organization_id: recebimento.organization_id, actor: ATOR_DO_AVISO, requestId: `pagamento:${recebimento.id}` },
+      { leadId: lead.id, desfecho: "won", travaOtimista: true, payloadNaTimeline: { recebimento_id: recebimento.id } },
+    );
+    return jaEstava ? { moveu: false, motivo: "ja_esta_la" } : { moveu: true };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      // Funil sem etapa de ganho é estado legítimo: o pagamento fica registrado.
+      if (err.code === "pipeline_no_won_stage") return { moveu: false, motivo: "sem_etapa_de_ganho" };
+      if (err.code === "not_found") return { moveu: false, motivo: "sem_negocio" };
+      if (err.code === "state_conflict") return { moveu: false, motivo: "conflito_humano" };
+      if (err.code === "required_fields_missing") {
+        logger.warn("[pagamentos.confirmar] funil exige campos para ganhar; card não movido", {
+          organization_id: recebimento.organization_id,
+          lead_id: lead.id,
+        });
+        return { moveu: false, motivo: "campos_obrigatorios", detalhe: err.message };
+      }
+    }
+    logger.warn("[pagamentos.confirmar] ganho não gravado", {
       organization_id: recebimento.organization_id,
       lead_id: lead.id,
-      codigo: erroDoMovimento.code ?? null,
+      codigo: err instanceof ApiError ? err.code : null,
     });
     return { moveu: false, motivo: "falha_de_escrita" };
   }
-  if ((movidas ?? []).length === 0) return { moveu: false, motivo: "conflito_humano" };
-
-  return { moveu: true, stageId: etapa.id, stageName: etapa.name };
 }
 
 /**
@@ -285,7 +280,11 @@ async function registrarNaTimeline(
 ): Promise<void> {
   if (!recebimento.lead_id) return;
   const valor = valorEmTexto(recebimento.valor_cents, recebimento.moeda);
-  const sufixo = movido.moveu ? ` · negócio movido para ${movido.stageName}` : "";
+  const sufixo = movido.moveu
+    ? " · negócio marcado como ganho"
+    : movido.motivo === "campos_obrigatorios" && movido.detalhe
+      ? ` · negócio não movido: ${movido.detalhe}`
+      : "";
   const r = await emitLeadActivity(admin, {
     organizationId: recebimento.organization_id,
     leadId: recebimento.lead_id,

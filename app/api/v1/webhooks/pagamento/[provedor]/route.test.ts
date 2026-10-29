@@ -13,6 +13,12 @@ const h = vi.hoisted(() => ({
   aviso: vi.fn(),
   erro: vi.fn(),
   banco: undefined as unknown as BancoFalso,
+  auditorias: [] as Array<Record<string, unknown>>,
+}));
+vi.mock("@/lib/audit", () => ({
+  audit: async (entrada: Record<string, unknown>) => {
+    h.auditorias.push(entrada);
+  },
 }));
 vi.mock("@/lib/pagamentos/configuracao", () => ({
   configuracaoDoRecebimento: async () => ({ segredo: h.segredo, chave: "INFINITEPAY_WEBHOOK_SECRET" }),
@@ -94,6 +100,7 @@ beforeEach(() => {
   h.segredo = "segredo-de-teste-com-32-caracteres";
   h.permitido = true;
   h.baldes = [];
+  h.auditorias = [];
   m = {
     linhas: [pendente()],
     cas: { data: [{ id: REC }] },
@@ -212,5 +219,29 @@ describe("webhook do pagamento do cliente final", () => {
     });
     expect(r.status).toBe(400);
     expect(escritas()).toEqual([]);
+  });
+
+  it("⭐ pagamento confirmado entra na trilha de auditoria, com o provedor como ator", async () => {
+    const r = await entregar({ headers: { "x-webhook-token": "segredo-de-teste-com-32-caracteres" } });
+    expect(r.status).toBe(200);
+    const confirmacoes = h.auditorias.filter((a) => a.action === "pagamento.confirmado");
+    expect(confirmacoes).toHaveLength(1);
+    expect(confirmacoes[0]).toMatchObject({
+      action: "pagamento.confirmado",
+      actorUserId: null,
+      organizationId: ORG,
+      resourceType: "pagamento_recebimento",
+      resourceId: REC,
+      metadata: { actor_type: "webhook_source", provedor: "infinitepay" },
+    });
+  });
+
+  it("reentrega, assinatura inválida e id desconhecido não auditam confirmação nenhuma", async () => {
+    await entregar({ headers: { "x-webhook-token": "token-errado" } });
+    m.linhas = [];
+    await entregar({ headers: { "x-webhook-token": "segredo-de-teste-com-32-caracteres" } });
+    m.linhas = [pendente({ status: "paga", pago_em: new Date().toISOString() })];
+    await entregar({ headers: { "x-webhook-token": "segredo-de-teste-com-32-caracteres" } });
+    expect(h.auditorias.filter((a) => a.action === "pagamento.confirmado")).toEqual([]);
   });
 });

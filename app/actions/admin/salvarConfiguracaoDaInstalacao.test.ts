@@ -37,7 +37,7 @@ beforeEach(() => {
 
 describe("as chaves da cobrança só se escrevem pela tela de Cobrança", () => {
   it("controle: a sonda enxerga as sete chaves da cobrança (Stripe, Asaas e InfinitePay)", () => {
-    // Sete desde a migration 9026 (#3509): o segredo do webhook do link de
+    // Sete desde a migration 9043 (#3509): o segredo do webhook do link de
     // pagamento é da tela de Cobrança como as outras — e é justamente o que o
     // `it.each` abaixo garante, que a ação genérica não consiga escrevê-lo.
     expect(DA_COBRANCA).toHaveLength(7);

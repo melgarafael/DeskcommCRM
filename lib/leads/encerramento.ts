@@ -62,6 +62,13 @@ export interface EncerraDemandaInput {
   razaoNaTimeline?: string;
   /** Acrescentado ao `payload` da linha (ex.: para onde o negócio foi). */
   payloadNaTimeline?: Record<string, unknown>;
+  /**
+   * Para quem fecha SEM intenção humana (o aviso de pago do provedor): só fecha
+   * negócio ainda aberto e na etapa lida, e a condição vai no PRÓPRIO update.
+   * Se alguém encerrou ou mexeu no card nesse meio-tempo, 409 `state_conflict`
+   * e nada é escrito — a decisão humana vence. Os caminhos humanos não usam.
+   */
+  travaOtimista?: boolean;
 }
 
 export interface DemandaEncerrada {
@@ -83,10 +90,20 @@ function actorAuditPayload(actor: Actor): {
   };
 }
 
+function conflitoDeEstado(ctx: HandlerCtx): ApiError {
+  return new ApiError(
+    409,
+    "state_conflict",
+    undefined,
+    ctx.requestId,
+    traduzir("O negócio mudou enquanto era encerrado.", ctx.idioma ?? "pt-BR"),
+  );
+}
+
 /**
  * Fecha o negócio movendo-o para o estágio terminal do funil.
  *
- * ⚠️ SEM TRAVA OTIMISTA, de propósito (o comportamento que já existia): encerrar
+ * ⚠️ SEM TRAVA OTIMISTA por padrão (o comportamento que já existia): encerrar
  * é intenção explícita, e recusar porque o card se mexeu entre o clique e o
  * commit obrigaria a pessoa a repetir uma decisão que ela já tomou. O `status` e
  * o `closed_at` são do trigger `fn_crm_lead_close_on_stage` — não se escreve
@@ -134,6 +151,9 @@ export async function encerraDemanda(
 
   if ((lead as { status: string }).status === input.desfecho) {
     return { lead: lead as Record<string, unknown>, jaEstava: true };
+  }
+  if (input.travaOtimista && (lead as { status: string }).status !== "open") {
+    throw conflitoDeEstado(ctx);
   }
 
   const colunaTerminal = input.desfecho === "won" ? "is_won" : "is_lost";
@@ -257,11 +277,14 @@ export async function encerraDemanda(
     patch.won_reason = input.motivo.trim();
   }
 
-  const { error: updErr } = await supabase
+  const escrita = supabase
     .from("crm_leads")
     .update(patch)
     .eq("id", input.leadId)
     .eq("organization_id", ctx.organization_id);
+  const { data: alcancadas, error: updErr } = input.travaOtimista
+    ? await escrita.eq("status", "open").eq("stage_id", (lead as { stage_id: string }).stage_id).select("id")
+    : await escrita;
 
   if (updErr) {
     // Rede de segurança (#917) — mesma dos outros três caminhos (arrasto, lote,
@@ -276,6 +299,9 @@ export async function encerraDemanda(
       throw new ApiError(422, recusa.codigo, undefined, ctx.requestId, recusa.mensagem);
     }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
+  }
+  if (input.travaOtimista && (alcancadas ?? []).length === 0) {
+    throw conflitoDeEstado(ctx);
   }
 
   const { data: fresh } = await supabase

@@ -12977,6 +12977,9 @@ export const DICIONARIO: Traducoes = {
   "Pipeline não tem stage de fechamento como ganho.": {
     es: "El embudo no tiene una etapa de cierre para negocios ganados.",
   },
+  "O negócio mudou enquanto era encerrado.": {
+    es: "El negocio cambió mientras se cerraba.",
+  },
   "Pipeline não tem stage de fechamento como perda.": {
     es: "El embudo no tiene una etapa de cierre para negocios perdidos.",
   },

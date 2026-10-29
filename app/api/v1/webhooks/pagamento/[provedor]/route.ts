@@ -37,6 +37,7 @@ import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { fail, ok } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { logger } from "@/lib/logger";
 import { verificarAssinatura } from "@/lib/pagamentos/assinatura";
@@ -171,6 +172,24 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     // Reentrega do MESMO evento: 200 sem efeito. 409 faria o provedor insistir.
     return ok({ duplicado: true, status: r.status }, { requestId });
   }
+
+  // Só quem venceu o compare-and-set chega aqui: uma linha por pagamento.
+  await audit({
+    action: "pagamento.confirmado",
+    actorUserId: null,
+    organizationId: r.recebimento.organization_id,
+    resourceType: "pagamento_recebimento",
+    resourceId: r.recebimento.id,
+    requestId,
+    metadata: {
+      actor_type: "webhook_source",
+      provedor,
+      valor_cents: r.recebimento.valor_cents,
+      moeda: r.recebimento.moeda,
+      lead_id: r.recebimento.lead_id,
+      negocio: r.movido.moveu ? "movido" : r.movido.motivo,
+    },
+  });
 
   logger.info("[pagamentos.webhook] pagamento confirmado", {
     provedor,

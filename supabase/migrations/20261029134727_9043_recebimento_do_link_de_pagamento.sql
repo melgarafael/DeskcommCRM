@@ -1,6 +1,6 @@
 -- manifest: **O link de pagamento do cliente final passa a ser REGISTRADO na conversa (#3509, degrau 1).** Tabela `pagamento_recebimentos` — `pendente → paga | expirada | cancelada | estornada`, `provedor`, `external_id`, `valor_cents`, `conversa`/`mensagem`/`negócio` de origem — com RLS por organização (leitura e escrita para `agent+`, `anon` revogado) e índice único `(organization_id, provedor, external_id)` que é a IDEMPOTÊNCIA do aviso de pagamento. Nenhuma chamada ao provedor: a credencial é do dono da conta e não existe neste degrau.
 --
--- 9026 — registro do link e recebimento do aviso de "pago" (issue #3509).
+-- 9043 — registro do link e recebimento do aviso de "pago" (issue #3509).
 --
 -- ═══ O QUE ESTA MIGRATION ENTREGA, E O QUE ELA RECUSA ═══
 --

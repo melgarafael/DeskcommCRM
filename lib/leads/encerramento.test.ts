@@ -59,7 +59,8 @@ function makeDb({
 
     const builder = {
       select: () => {
-        operation = "select";
+        // `update(...).select("id")` continua sendo o update: devolve as linhas que ele alcançou.
+        if (operation !== "update") operation = "select";
         return builder;
       },
       update: (value: Row) => {
@@ -104,8 +105,10 @@ function makeDb({
             return resolve({ data: null, error: updateError });
           }
           const rows = tables[table] ?? [];
+          const alcancadas: Row[] = [];
           for (const row of rows) {
             if (filters.every(([column, value]) => row[column] === value)) {
+              alcancadas.push(row);
               Object.assign(row, patch);
               const stage = stages.find((candidate) => candidate.id === row.stage_id);
               if (stage?.is_won === true) {
@@ -117,6 +120,7 @@ function makeDb({
               }
             }
           }
+          return resolve({ data: alcancadas.map((row) => ({ id: row.id })), error: null });
         } else if (operation === "insert" && insertRow) {
           (tables[table] ??= []).push(insertRow);
         }
@@ -245,6 +249,50 @@ describe("encerraDemanda", () => {
     expect(result).toMatchObject({ jaEstava: true, lead });
     expect(db.updates).toEqual([]);
     expect(db.rpcs).toEqual([]);
+  });
+
+  it("o fecho humano (sem `travaOtimista`) segue sem trava: não filtra status nem etapa de origem", async () => {
+    const db = makeDb({ leads: [baseLead()], stages: baseStages() });
+    const filtrosDoUpdate: Array<[string, unknown]> = [];
+    const fromOriginal = db.client.from;
+    db.client.from = (table: string) => {
+      const b = fromOriginal(table);
+      const eqOriginal = b.eq;
+      let ehUpdate = false;
+      const updOriginal = b.update;
+      b.update = (v: Row) => ((ehUpdate = true), updOriginal(v));
+      b.eq = (c: string, v: unknown) => (ehUpdate && table === "crm_leads" && filtrosDoUpdate.push([c, v]), eqOriginal(c, v));
+      return b;
+    };
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+
+    expect(filtrosDoUpdate.map(([c]) => c).sort()).toEqual(["id", "organization_id"]);
+  });
+
+  it("com `travaOtimista`: negócio já PERDIDO na leitura do fecho → 409 state_conflict e nenhum update", async () => {
+    const db = makeDb({ leads: [baseLead({ status: "lost", stage_id: LOST_STAGE })], stages: baseStages() });
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won", travaOtimista: true }),
+    ).rejects.toMatchObject({ code: "state_conflict", status: 409 });
+    expect(db.updates).toEqual([]);
+  });
+
+  it("com `travaOtimista`: o card mudou entre a leitura e a escrita → o update não alcança linha e vira 409 state_conflict", async () => {
+    const db = makeDb({ leads: [baseLead()], stages: baseStages() });
+    // Um humano arrasta o card enquanto o fecho valida a régua (a leitura de settings do funil).
+    // Troca a LINHA (o dublê devolve a linha por referência ao fecho).
+    const fromOriginal = db.client.from;
+    db.client.from = (table: string) => {
+      if (table === "crm_pipelines") db.tables.crm_leads!.splice(0, 1, baseLead({ stage_id: LOST_STAGE, status: "lost" }));
+      return fromOriginal(table);
+    };
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won", travaOtimista: true }),
+    ).rejects.toMatchObject({ code: "state_conflict", status: 409 });
+    expect(db.tables.crm_leads?.[0]).toMatchObject({ stage_id: LOST_STAGE, status: "lost" });
   });
 
   // BUG REPRODUZIDO (crm.fabrasoftware.com.br): a recusa de

@@ -1373,6 +1373,12 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  // O link de pagamento do cliente final (#3509): registrar o link na conversa
+  // (`POST /conversations/[id]/pagamentos`) e o aviso do provedor que marca
+  // "pago" (`/webhooks/pagamento/[provedor]`). O metadata leva ids, provedor e
+  // valor — nunca o link: a trilha é append-only e a cascata de LGPD não a alcança.
+  "pagamento.link_registrado",
+  "pagamento.confirmado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

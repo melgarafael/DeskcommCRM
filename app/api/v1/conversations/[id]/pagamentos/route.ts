@@ -24,6 +24,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
@@ -98,6 +99,24 @@ export async function POST(req: NextRequest, ctx: Contexto) {
       provedor: d.provedor,
       reutilizado: r.reutilizado,
     });
+    // Clique repetido não registrou nada novo: a trilha já tem a primeira vez.
+    if (!r.reutilizado) {
+      await audit({
+        action: "pagamento.link_registrado",
+        actorUserId: authz.user.id,
+        organizationId: authz.org.orgId,
+        resourceType: "pagamento_recebimento",
+        resourceId: r.recebimento.id,
+        requestId,
+        metadata: {
+          conversation_id: conversationId,
+          message_id: d.mensagem_id,
+          provedor: d.provedor,
+          valor_cents: r.recebimento.valor_cents,
+          moeda: r.recebimento.moeda,
+        },
+      });
+    }
     // 200 mesmo no reutilizado: clicar duas vezes é o MESMO resultado, e o
     // cliente da tela não deve tratar a repetição como erro.
     return ok(

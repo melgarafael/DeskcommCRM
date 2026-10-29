@@ -6,17 +6,27 @@ const h = vi.hoisted(() => ({
   chamadas: [] as unknown[],
   resultado: {} as unknown,
   aviso: vi.fn(),
+  auditorias: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({
   requireRole: async () =>
     h.autorizado
-      ? { ok: true, org: { orgId: "cccccccc-0000-4000-8000-000000000001", role: "agent" } }
+      ? {
+          ok: true,
+          user: { id: "cccccccc-0000-4000-8000-0000000000ee" },
+          org: { orgId: "cccccccc-0000-4000-8000-000000000001", role: "agent" },
+        }
       : { ok: false, response: new Response("{}", { status: 403 }) },
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: h.aviso } }));
+vi.mock("@/lib/audit", () => ({
+  audit: async (entrada: Record<string, unknown>) => {
+    h.auditorias.push(entrada);
+  },
+}));
 vi.mock("@/lib/pagamentos/registrar", () => ({
   registrarLinkDoPagamento: async (_admin: unknown, entrada: unknown) => {
     h.chamadas.push(entrada);
@@ -69,6 +79,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.autorizado = true;
   h.chamadas = [];
+  h.auditorias = [];
   h.resultado = sucesso;
 });
 
@@ -128,5 +139,29 @@ describe("POST /conversations/[id]/pagamentos", () => {
 
     h.resultado = { ok: false, code: "validation_failed", status: 422, message: "link fora do corpo" };
     expect((await pedir()).status).toBe(422);
+  });
+
+  it("⭐ registrar o link entra na trilha de auditoria: quem, qual organização, qual recebimento", async () => {
+    expect((await pedir()).status).toBe(201);
+    expect(h.auditorias).toHaveLength(1);
+    expect(h.auditorias[0]).toMatchObject({
+      action: "pagamento.link_registrado",
+      actorUserId: "cccccccc-0000-4000-8000-0000000000ee",
+      organizationId: "cccccccc-0000-4000-8000-000000000001",
+      resourceType: "pagamento_recebimento",
+      resourceId: "cccccccc-0000-4000-8000-000000000005",
+    });
+    // O link não vai para a trilha: ela é append-only e a cascata de LGPD não a alcança.
+    expect(JSON.stringify(h.auditorias[0])).not.toContain(LINK);
+  });
+
+  it("clique repetido e recusa não auditam: nada novo foi registrado", async () => {
+    h.resultado = { ...sucesso, reutilizado: true };
+    await pedir();
+    h.resultado = { ok: false, code: "state_conflict", status: 409, message: "já registrado em outra conversa" };
+    await pedir();
+    h.autorizado = false;
+    await pedir();
+    expect(h.auditorias).toEqual([]);
   });
 });
