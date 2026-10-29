@@ -9176,6 +9176,7 @@ export const DICIONARIO: Traducoes = {
   "primeira mensagem enviada pelo celular": { es: "primer mensaje enviado desde el celular" },
   "primeira mensagem recebida no Instagram": { es: "primer mensaje recibido en Instagram" },
   "primeira mensagem recebida no Facebook": { es: "primer mensaje recibido en Facebook" },
+  "primeira mensagem recebida no Google Business": { es: "primer mensaje recibido en Google Business" },
   "primeira ligação recebida": { es: "primera llamada recibida" },
   "cliente conhecido voltou a escrever": { es: "un cliente conocido volvió a escribir" },
   "Mudou de estágio": { es: "Cambió de etapa" },
