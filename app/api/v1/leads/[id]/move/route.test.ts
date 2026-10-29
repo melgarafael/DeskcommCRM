@@ -398,6 +398,7 @@ describe("POST /api/v1/leads/[id]/move — exigir_quando (#3036)", () => {
         key: "condicao_pagamento",
         label: "Condição de pagamento",
         type: "text",
+        obrigatorio_em: { etapas: [STAGE_B] },
         exigir_quando: { campo: "tipo_cliente", operador: "igual", valor: "PJ" },
       },
     ],

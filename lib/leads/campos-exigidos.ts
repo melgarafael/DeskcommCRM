@@ -345,23 +345,18 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
 
   // ── 1. A RÉGUA DA ETAPA (#1536) — escopo e destino filtrados pelo recorte
   // compartilhado com a tela (`camposExigidosNoDestino`).
+  //
+  // A condição `exigir_quando` COMPÕE com a etapa: o campo só é exigido quando
+  // a etapa casa E (se houver condição) ela casa também. Fora das etapas de
+  // `obrigatorio_em` nada é cobrado por esta régua — nem por condição.
+  //
+  // A regra da #2728 fica intacta: campo escondido pela condição NÃO é cobrado
+  // (quem não vê não tem como preencher). Sem a marcação `exigido_pela_etapa`,
+  // que a inversão antiga usava.
   for (const campo of camposExigidosNoDestino(settings, entrada.destino)) {
-    if (visiveis.has(campo.key)) {
-      cobra(campo, false);
-      continue;
-    }
-    // Escondido pela condição, exigido pela etapa: a ETAPA vence, e a cobrança
-    // vai marcada para a tela poder explicar (ver o doc acima).
-    cobra(campo, true);
-  }
-
-  // ── 2. A RÉGUA DA CONDIÇÃO (#3036) — campo que o VALOR de outro campo exige.
-  for (const campo of camposComExigenciaCondicional(settings)) {
-    // Já cobrado pela etapa: uma linha só na lista, com o motivo mais forte.
-    if (faltando.some((c) => c.chave === campo.key)) continue;
-    // Escondido, a condição não cobra — a metade que preserva a #2728.
     if (!visiveis.has(campo.key)) continue;
-    if (!condicaoCasa(campo.exigir_quando, valores)) continue;
+    // `exigir_quando` compõe: se houver condição e ela não casar, não cobra.
+    if (campo.exigir_quando !== undefined && !condicaoCasa(campo.exigir_quando, valores)) continue;
     cobra(campo, false);
   }
 

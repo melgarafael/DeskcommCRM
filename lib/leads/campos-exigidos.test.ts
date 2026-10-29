@@ -230,7 +230,7 @@ describe("validaCamposExigidos — o que o funil exige", () => {
     ).toEqual([]);
   });
 
-  it("campo OCULTO pela condição e exigido pela ETAPA continua cobrado, e vem MARCADO (#3036)", () => {
+  it("campo OCULTO pela condição não é cobrado — a regra da #2728 fica intacta (#3036)", () => {
     const settings = {
       fields: [
         { key: "tipo_servico", label: "Tipo de serviço", type: "select" },
@@ -245,31 +245,17 @@ describe("validaCamposExigidos — o que o funil exige", () => {
     };
     const destino = { stageId: ETAPA_PROPOSTA };
 
-    // A ETAPA vence a condição: a regra foi ligada pelo dono do funil para a
-    // etapa, e ignorá-la porque outra regra escondeu o campo abriria um buraco
-    // de dado em silêncio. O marcador é o que a tela usa para DIZER por que
-    // está pedindo um campo que a condição esconde.
+    // A regra da #2728 fica como está: campo escondido pela condição NÃO é
+    // cobrado, mesmo que a etapa o exija. Quem não vê não tem como preencher.
     expect(
       validaCamposExigidos({
         lead: { custom_fields: { tipo_servico: "Limpeza" } },
         settingsDoFunil: settings,
         destino,
       }).faltando,
-    ).toEqual([
-      { chave: "outro_servico", rotulo: "Outro serviço (qual?)", tipo: "text", exigido_pela_etapa: true },
-    ]);
-
-    // Com o valor já gravado, o campo escondido passa: esconder não apaga, e o
-    // que está no registro satisfaz a exigência da etapa.
-    expect(
-      validaCamposExigidos({
-        lead: { custom_fields: { tipo_servico: "Limpeza", outro_servico: "Desinsetização" } },
-        settingsDoFunil: settings,
-        destino,
-      }).faltando,
     ).toEqual([]);
 
-    // Condição DENTRO e campo vazio: cobra, como sempre — e sem o marcador,
+    // Condição DENTRO e campo vazio: cobra, como sempre — sem marcador,
     // porque aqui a condição e a etapa concordam.
     expect(
       validaCamposExigidos({
@@ -311,6 +297,52 @@ describe("validaCamposExigidos — o que o funil exige", () => {
         lead: { custom_fields: { tipo_servico: "Limpeza" } },
         settingsDoFunil: settings,
         destino: { stageId: ETAPA_PROPOSTA },
+      }).faltando,
+    ).toEqual([]);
+  });
+
+  it("condição que casa NÃO cobra fora das etapas de `obrigatorio_em` — compõe com a etapa (#3036)", () => {
+    const settings = {
+      fields: [
+        { key: "tipo_cliente", label: "Tipo de cliente", type: "select" },
+        {
+          key: "condicao_pagamento",
+          label: "Condição de pagamento",
+          type: "text",
+          obrigatorio_em: { etapas: [ETAPA_PROPOSTA] },
+          exigir_quando: { campo: "tipo_cliente", igual: "PJ" },
+        },
+      ],
+    };
+    const lead = { custom_fields: { tipo_cliente: "PJ" } };
+    const OUTRA_ETAPA = "66666666-6666-4666-8666-666666666666";
+
+    // Na etapa declarada a condição casa e cobra — é o `exigir_quando` valendo.
+    expect(
+      validaCamposExigidos({
+        lead,
+        settingsDoFunil: settings,
+        destino: { stageId: ETAPA_PROPOSTA },
+      }).faltando.map((c) => c.chave),
+    ).toEqual(["condicao_pagamento"]);
+
+    // Fora dela, a ETAPA manda: a condição casar não basta para cobrar.
+    // Este é o par que o mantenedor mediu — sem ele, um lead PJ sem condição de
+    // pagamento não consegue nem ser movido para outra etapa.
+    expect(
+      validaCamposExigidos({
+        lead,
+        settingsDoFunil: settings,
+        destino: { stageId: OUTRA_ETAPA },
+      }).faltando,
+    ).toEqual([]);
+
+    // E o mesmo no fecho como perdido: a perda não é escrita que a condição atravessa.
+    expect(
+      validaCamposExigidos({
+        lead,
+        settingsDoFunil: settings,
+        destino: { stageId: OUTRA_ETAPA, desfecho: "lost" as const },
       }).faltando,
     ).toEqual([]);
   });
@@ -516,6 +548,7 @@ describe("validaCamposExigidos — exigir_quando, a obrigatoriedade por valor (#
         key: "condicao_pagamento",
         label: "Condição de pagamento",
         type: "text",
+        obrigatorio_em: { etapas: [FECHAMENTO] },
         exigir_quando: { campo: "tipo_cliente", operador: "igual", valor: "PJ" },
       },
     ],
@@ -555,6 +588,7 @@ describe("validaCamposExigidos — exigir_quando, a obrigatoriedade por valor (#
           key: "inscricao_estadual",
           label: "Inscrição estadual",
           type: "text",
+          obrigatorio_em: { etapas: [FECHAMENTO] },
           exigir_quando: { campo: "tipo_cliente", operador: "em", valor: ["PJ", "MEI"] },
         },
       ],
