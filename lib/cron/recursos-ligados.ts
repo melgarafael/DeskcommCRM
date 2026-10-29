@@ -11,7 +11,7 @@
  * própria tabela não economiza nada — a pergunta custa a mesma consulta.
  *
  * O que economiza é perguntar UMA vez por todas: uma chamada a
- * `fn_cron_recursos_ligados()` (migration 9039) por janela de cache, dentro do
+ * `fn_cron_recursos_ligados()` (migration 9044) por janela de cache, dentro do
  * processo do app, compartilhada pelas rotas que estiverem batendo naquele
  * instante. Instalação parada: ~1 ida ao banco a cada 45 s em vez de oito por
  * minuto.

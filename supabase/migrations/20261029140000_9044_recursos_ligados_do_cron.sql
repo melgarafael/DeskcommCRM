@@ -1,7 +1,7 @@
 -- manifest: **Uma leitura só de "o que está ligado" nesta instalação (#3694).** `fn_cron_recursos_ligados()` devolve, num `jsonb`, uma chave por recurso dizendo se existe TRABALHO para os crons de minuto que hoje consultam a própria tabela e voltam vazios numa instalação parada (campanha, replay de webhook, follow-up vencido, silêncio, fila do follow-up, janela de manutenção, importação de histórico, proposta presa). Medido pelo autor da issue: oito consultas por minuto, 100% vazias. Cada sonda é a MESMA condição da consulta real — ou um superconjunto dela —, então a função nunca responde "desligado" para algo que a rota faria; errar para "ligado" custa só a consulta que já se pagava. `security invoker` (o service_role já lê tudo o que ela lê), `stable`, EXECUTE revogado de public/anon/authenticated. Sem tabela, coluna ou dado novo; idempotente.
 
 -- ============================================================================
--- 9039 — O QUE ESTÁ LIGADO NESTA INSTALAÇÃO, NUMA LEITURA SÓ (#3694)
+-- 9044 — O QUE ESTÁ LIGADO NESTA INSTALAÇÃO, NUMA LEITURA SÓ (#3694)
 --
 -- Numa instalação sem campanha, sem importação, sem proposta presa e sem
 -- follow-up, oito rotas de cron consultavam o banco a cada minuto e voltavam

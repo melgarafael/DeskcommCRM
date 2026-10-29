@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 import { RECURSOS_DO_CRON } from "@/lib/cron/recursos-ligados";
 
 const RAIZ = join(__dirname, "..", "..");
-const MIGRATION = "supabase/migrations/20261029140000_9039_recursos_ligados_do_cron.sql";
+const MIGRATION = "supabase/migrations/20261029140000_9044_recursos_ligados_do_cron.sql";
 const ASSINATURA = "create or replace function public.fn_cron_recursos_ligados()";
 
 const migration = readFileSync(join(RAIZ, MIGRATION), "utf8");

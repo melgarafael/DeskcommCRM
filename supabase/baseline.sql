@@ -66141,8 +66141,8 @@ create unique index if not exists inbox_task_reminder_ocasiao_unique
   on public.agent_inbox_items (organization_id, ref_id, kind, para_user_id, task_reminder_due_at)
   where ref_kind = 'task' and task_reminder_due_at is not null and status <> 'resolved';
 
--- ---- o que está ligado nesta instalação, numa leitura só (migration 9039) ----
--- 9039 — O QUE ESTÁ LIGADO NESTA INSTALAÇÃO, NUMA LEITURA SÓ (#3694)
+-- ---- o que está ligado nesta instalação, numa leitura só (migration 9044) ----
+-- 9044 — O QUE ESTÁ LIGADO NESTA INSTALAÇÃO, NUMA LEITURA SÓ (#3694)
 --
 -- Oito crons de minuto consultavam a própria tabela e voltavam SEMPRE vazios
 -- numa instalação parada (medido pelo autor da issue: 8 consultas/min, todas
