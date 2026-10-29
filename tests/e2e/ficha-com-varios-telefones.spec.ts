@@ -199,8 +199,11 @@ test.describe("Ficha com vários telefones — editar pela tela", () => {
     await expect(removerDoPrincipal).toBeDisabled();
     await expect(page.getByText("Torne outro número principal antes de remover este.")).toBeVisible();
 
-    // O extra é a linha sem o selo "Principal".
-    const linhaDoExtra = blocoDeTelefones(page).getByRole("listitem").filter({ hasNotText: "Principal" });
+    // O extra é a linha sem o selo "Principal". `hasNotText` não serve: ele não diferencia
+    // maiúscula e casaria com o botão "Tornar principal", que só o extra tem.
+    const linhaDoExtra = blocoDeTelefones(page)
+      .getByRole("listitem")
+      .filter({ hasNot: page.getByText("Principal", { exact: true }) });
     const resposta = page.waitForResponse(
       (r) => r.url().includes("/primary") && r.request().method() === "POST",
     );
@@ -214,7 +217,9 @@ test.describe("Ficha com vários telefones — editar pela tela", () => {
 
     // Volta a troca: o número antigo volta a ser o principal, e o outro vira extra.
     await page.reload();
-    const linhaDoAntigo = blocoDeTelefones(page).getByRole("listitem").filter({ hasNotText: "Principal" });
+    const linhaDoAntigo = blocoDeTelefones(page)
+      .getByRole("listitem")
+      .filter({ hasNot: page.getByText("Principal", { exact: true }) });
     await expect(linhaDoAntigo).toHaveCount(1, { timeout: 20_000 });
     const resposta2 = page.waitForResponse(
       (r) => r.url().includes("/primary") && r.request().method() === "POST",
@@ -229,7 +234,9 @@ test.describe("Ficha com vários telefones — editar pela tela", () => {
     await abrirFicha(page, idFicha);
 
     // Depois da troca de principal o extra perdeu o rótulo: é a linha sem "Principal".
-    const linhaDoExtra = blocoDeTelefones(page).getByRole("listitem").filter({ hasNotText: "Principal" });
+    const linhaDoExtra = blocoDeTelefones(page)
+      .getByRole("listitem")
+      .filter({ hasNot: page.getByText("Principal", { exact: true }) });
     await expect(linhaDoExtra).toHaveCount(1, { timeout: 20_000 });
     const resposta = page.waitForResponse(
       (r) => r.url().includes("/phones/") && r.request().method() === "DELETE",
