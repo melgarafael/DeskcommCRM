@@ -18,7 +18,8 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { itemSchema, percentualDaComissao, totalDoItem } from "@/lib/financeiro/comanda";
+import { itemSchema, totalDoItem } from "@/lib/financeiro/comanda";
+import { percentualDoItem } from "@/lib/financeiro/comissao-do-item";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const { data: comanda } = await supabase
     .from("sales")
-    .select("id, status, number")
+    .select("id, status, number, attendant_user_id, calendar_appointments(owner_user_id)")
     .eq("id", id)
     .maybeSingle();
   if (!comanda) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
@@ -62,18 +63,18 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("conflict", "Só comanda aberta recebe item.", 409, { requestId });
   }
 
-  // Só regra EM VIGOR. Uma regra inativada continua na tabela para explicar o
-  // percentual de uma comanda antiga (é o motivo de ela inativar em vez de
-  // sumir), e deixá-la participar da resolução de hoje faria "desligar a regra"
-  // não desligar nada.
-  const { data: regras } = await supabase
-    .from("commission_rules")
-    .select("attendant_user_id, event_type_id, percent")
-    .eq("organization_id", org)
-    .eq("is_active", true);
+  // Sem atendente no corpo, vale o dono do agendamento da comanda e, sem ele, o
+  // da comanda (quem a abriu). Item sem atendente não gera comissão em
+  // `fn_finalizar_comanda`, e a tela do balcão não o manda. O dono vem antes de
+  // quem abriu porque a recepção abre a comanda do serviço que outro prestou.
+  const agendamento = Array.isArray(comanda.calendar_appointments)
+    ? comanda.calendar_appointments[0]
+    : comanda.calendar_appointments;
+  const atendente =
+    lido.data.attendant_user_id ?? agendamento?.owner_user_id ?? comanda.attendant_user_id ?? null;
 
-  const percent = percentualDaComissao(regras ?? [], {
-    attendantUserId: lido.data.attendant_user_id ?? null,
+  const percent = await percentualDoItem(supabase, org, {
+    attendantUserId: atendente,
     eventTypeId: lido.data.event_type_id ?? null,
   });
 
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       sale_id: id,
       event_type_id: lido.data.event_type_id ?? null,
       description: lido.data.description,
-      attendant_user_id: lido.data.attendant_user_id ?? null,
+      attendant_user_id: atendente,
       quantity: lido.data.quantity,
       unit_price_cents: lido.data.unit_price_cents,
       discount_cents: lido.data.discount_cents,

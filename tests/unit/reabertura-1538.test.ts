@@ -17,8 +17,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
+import type { Database } from "@/lib/database.types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   montaPayloadDoClone,
@@ -191,8 +192,13 @@ describe("a tripla da migration 0425 — coluna, FK e registro", () => {
     const manifest = readFileSync(join(raiz, "supabase", "migrations", "MANIFEST.md"), "utf8");
     expect(manifest).toContain("0425_retomada_como_novo_negocio");
 
-    const tipos = readFileSync(join(raiz, "lib", "database.types.ts"), "utf8");
-    const ocorrencias = tipos.split("retomado_de_lead_id").length - 1;
-    expect(ocorrencias).toBe(3);
+    // O gerador também cita a coluna em Relationships. O contrato são os
+    // três tipos do cliente, não a contagem de palavras no arquivo inteiro.
+    type Leads = Database["public"]["Tables"]["crm_leads"];
+    expectTypeOf<Leads["Row"]["retomado_de_lead_id"]>().toEqualTypeOf<string | null>();
+    expectTypeOf<Leads["Insert"]["retomado_de_lead_id"]>()
+      .toEqualTypeOf<string | null | undefined>();
+    expectTypeOf<Leads["Update"]["retomado_de_lead_id"]>()
+      .toEqualTypeOf<string | null | undefined>();
   });
 });

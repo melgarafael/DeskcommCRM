@@ -41,12 +41,25 @@
  *
  * ═══ A TRAVA DE "JÁ AVISADO" É O PRÓPRIO ITEM DA CENTRAL ═══
  *
- * Sem migration nova para estado: o item aberto com o mesmo `kind` e o mesmo
- * `ref_id` é o registro de que este prazo já pediu gente. É o mesmo desenho do
- * `proposal-promised-not-created`, e ele tem duas vantagens sobre uma coluna
- * nova: a leitura não depende de o aviso estar aberto (resolver o item na
- * Central não faz a rodada seguinte gritar de novo), e o histórico de "quando
- * este prazo gritou" fica onde a pessoa já olha.
+ * O estado de "já avisado" não mora em tabela à parte: o item da Central com a
+ * mesma `kind` e o mesmo `ref_id` é o registro de que este prazo já pediu
+ * gente. É o mesmo desenho do `proposal-promised-not-created`, e ele tem duas
+ * vantagens sobre uma coluna nova: a leitura não depende de o aviso estar
+ * aberto (resolver o item na Central não faz a rodada seguinte gritar de novo),
+ * e o histórico de "quando este prazo gritou" fica onde a pessoa já olha.
+ *
+ * ═══ E A TRAVA É DA OCASIÃO, NÃO DA TAREFA (#3639) ═══
+ *
+ * `kind + ref_id` dizia "esta tarefa já pediu gente", e uma tarefa pede gente
+ * mais de uma vez: quando OUTRO responsável assume e quando o prazo é ADIADO.
+ * Com a identidade no par, o aviso antigo cobria a situação nova — quem
+ * assumia nunca era avisado, e adiar para amanhã não rearmava a antecedência
+ * de amanhã. A identidade passa a ser a OCASIÃO (categoria + tarefa +
+ * responsável + prazo, `OcasiaoDoAviso`), lida de `para_user_id` (0689) e de
+ * `task_reminder_due_at` (9038) no item já gravado e da própria linha da
+ * tarefa na decisão. Voltar ao responsável/prazo ANTERIOR reencontra a ocasião
+ * antiga e não avisa de novo: a ocasião é a mesma, e o histórico fica onde
+ * está.
  *
  * ═══ WHATSAPP É CANAL OPCIONAL, E A GUARDA VEM ANTES DA CONSULTA ═══
  *
@@ -148,9 +161,94 @@ export interface LembreteDecidido {
   categoria: TipoDeAvisoDeTarefa;
 }
 
-/** A trava de "já avisado": o mesmo par que o item da Central grava. */
-export function chaveDoAviso(categoria: TipoDeAvisoDeTarefa, tarefaId: string): string {
-  return `${categoria}:${tarefaId}`;
+/**
+ * A OCASIÃO do aviso (#3639) — a identidade da trava.
+ *
+ * A mesma tarefa pode pedir gente mais de uma vez, e por motivos diferentes:
+ * outro responsável assumiu, ou o prazo foi adiado. A trava da #2529 era
+ * `kind + ref_id`, então o aviso ANTIGO cobria a situação NOVA: quem assumia
+ * nunca era avisado, e adiar não rearmava a antecedência nova.
+ *
+ * A ocasião é a categoria, a tarefa, QUEM recebeu e o PRAZO que motivou o
+ * aviso. Os quatro são lidos dos dois lados da trava — da linha da tarefa na
+ * decisão (`ocasiaoDaTarefa`) e do item já gravado na leitura
+ * (`ocasiaoDoAvisoSalvo`) —, e é por isso que a coluna `task_reminder_due_at`
+ * (9038) existe: o responsável já estava em `para_user_id` (0689), o prazo não
+ * estava em lugar nenhum.
+ */
+export interface OcasiaoDoAviso {
+  categoria: TipoDeAvisoDeTarefa;
+  tarefaId: string;
+  /** Quem recebeu — o mesmo `para_user_id` que o item da Central grava. */
+  responsavel: string | null;
+  /** O prazo que motivou o aviso, no instante normalizado; nulo = aviso legado. */
+  prazo: string | null;
+}
+
+/** O item já gravado, no recorte que a trava lê. */
+export interface AvisoGravado {
+  kind: string;
+  ref_id: string | null;
+  para_user_id: string | null;
+  task_reminder_due_at: string | null;
+}
+
+/**
+ * O prazo como CHAVE: o instante, e não o texto que veio do banco.
+ *
+ * `crm_tasks.due_date` volta do PostgREST com o deslocamento que o cliente
+ * mandou (`2026-10-28T15:30:00+00:00`), e o mesmo instante gravado uma vez com
+ * `+00:00` e outra com `Z` viraria DUAS ocasiões — o rearme do #3639 viraria
+ * aviso repetido a cada rodada, que é o defeito oposto ao que ele conserta.
+ *
+ * Data ilegível fica como veio: ela nunca decide o aviso (a régua
+ * `decidirLembreteDeTarefa` já a descarta), e inventar um instante para ela
+ * seria pior que repetir o texto — duas linhas tortas diferentes continuam
+ * sendo ocasiões diferentes, como devem.
+ */
+export function prazoDaOcasiao(prazo: string | null | undefined): string | null {
+  if (!prazo) return null;
+  const ms = Date.parse(prazo);
+  return Number.isNaN(ms) ? prazo : new Date(ms).toISOString();
+}
+
+/** A ocasião que a TAREFA pede AGORA — o lado da decisão. */
+export function ocasiaoDaTarefa(tarefa: TarefaLida, categoria: TipoDeAvisoDeTarefa): OcasiaoDoAviso {
+  return {
+    categoria,
+    tarefaId: tarefa.id,
+    responsavel: tarefa.assigned_to,
+    prazo: prazoDaOcasiao(tarefa.due_date),
+  };
+}
+
+/** A ocasião que um aviso JÁ GRAVADO registra — o lado da leitura. */
+export function ocasiaoDoAvisoSalvo(aviso: AvisoGravado): OcasiaoDoAviso | null {
+  // `ref_id` nulo é aviso sem referência (a varredura nem os traz, mas a
+  // função é pública): sem tarefa não há ocasião a comparar.
+  if (!aviso.ref_id) return null;
+  return {
+    categoria: aviso.kind as TipoDeAvisoDeTarefa,
+    tarefaId: aviso.ref_id,
+    responsavel: aviso.para_user_id,
+    prazo: prazoDaOcasiao(aviso.task_reminder_due_at),
+  };
+}
+
+/** A trava de "já avisado": a ocasião inteira, numa string. */
+export function chaveDoAviso(ocasiao: OcasiaoDoAviso): string {
+  // `|` não aparece em kind, uuid nem ISO-8601: a chave não vira ambígua.
+  return [ocasiao.categoria, ocasiao.tarefaId, ocasiao.responsavel ?? "", ocasiao.prazo ?? ""].join("|");
+}
+
+/** As ocasiões que já viraram item da Central — a leitura da trava, pura. */
+export function chavesJaAvisadas(avisos: readonly AvisoGravado[]): Set<string> {
+  const chaves = new Set<string>();
+  for (const aviso of avisos) {
+    const ocasiao = ocasiaoDoAvisoSalvo(aviso);
+    if (ocasiao) chaves.add(chaveDoAviso(ocasiao));
+  }
+  return chaves;
 }
 
 /**
@@ -187,7 +285,9 @@ export function lembretesDaRodada(
     const preferencia = input.preferencias.get(tarefa.assigned_to) ?? lerPreferenciaDeLembrete(undefined);
     const categoria = decidirLembreteDeTarefa(tarefa, agora, preferencia);
     if (!categoria) continue;
-    if (input.jaAvisados.has(chaveDoAviso(categoria, tarefa.id))) continue;
+    // A trava é da OCASIÃO (#3639): responsável novo ou prazo novo é aviso novo;
+    // a mesma ocasião não repete — nem depois de resolvida na Central (#2529).
+    if (input.jaAvisados.has(chaveDoAviso(ocasiaoDaTarefa(tarefa, categoria)))) continue;
     decididos.push({ tarefa, categoria });
   }
   return decididos;
@@ -199,6 +299,12 @@ export function lembretesDaRodada(
  * `para_user_id` é o responsável (0689): sem ele o aviso volta a ser da equipe
  * inteira, que é o defeito que o doc de decisão 162 fechou. O título é o nome
  * da tarefa (ver o comentário no insert).
+ *
+ * `task_reminder_due_at` (9038) é o PRAZO que originou o aviso, e é o que
+ * transforma o item na trava da OCASIÃO (#3639): a rodada seguinte compara este
+ * instante com o prazo atual da tarefa, e um prazo novo rearma o lembrete. A
+ * gravação e a leitura passam pela MESMA conta (`ocasiaoDaTarefa` /
+ * `ocasiaoDoAvisoSalvo`) — é o que o teste de ida-e-volta prende.
  */
 export function avisoDaCentral({ tarefa, categoria }: LembreteDecidido) {
   return {
@@ -209,6 +315,7 @@ export function avisoDaCentral({ tarefa, categoria }: LembreteDecidido) {
     title: textoDoAvisoDeTarefa(categoria, tarefa).corpo,
     ref_kind: "task",
     ref_id: tarefa.id,
+    task_reminder_due_at: prazoDaOcasiao(tarefa.due_date),
   };
 }
 
@@ -292,15 +399,18 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
   );
 
   // ─── A trava de "já avisado", lida do próprio item da Central ─────────────
+  //
+  // O recorte é a OCASIÃO (#3639), não o par `kind + ref_id`: o prazo que
+  // originou o aviso (`task_reminder_due_at`, 9038) e o responsável que o
+  // recebeu (`para_user_id`, 0689) vêm junto, senão o aviso antigo de um prazo
+  // ou de uma pessoa cobre o prazo/pessoa novo.
   const { data: avisos, error: erroAvisos } = await admin
     .from("agent_inbox_items")
-    .select("kind, ref_id")
+    .select("kind, ref_id, para_user_id, task_reminder_due_at")
     .in("ref_id", linhas.map((t) => t.id))
     .in("kind", [...TIPOS_DE_AVISO_DE_TAREFA]);
   if (erroAvisos) throw new Error(`query_avisos_failed: ${erroAvisos.message}`);
-  const jaAvisados = new Set(
-    (avisos ?? []).map((a) => chaveDoAviso(a.kind as TipoDeAvisoDeTarefa, a.ref_id as string)),
-  );
+  const jaAvisados = chavesJaAvisadas((avisos ?? []) as AvisoGravado[]);
 
   const decididos = lembretesDaRodada({ tarefas: linhas, preferencias, jaAvisados, membrosAtivos }, agora);
   let avisadas = 0;
@@ -310,8 +420,12 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
     const texto = textoDoAvisoDeTarefa(categoria, tarefa);
 
     // IN-APP: o item da Central do RESPONSÁVEL (`para_user_id`, 0689). A trava
-    // de "já avisado" mora nele — se o INSERT cair por corrida com outra rodada,
-    // o efeito é um segundo aviso, nunca um aviso perdido.
+    // de "já avisado" mora nele — e, desde a 9038, ele também REGISTRA a
+    // ocasião (o prazo que a motivou), então a rodada seguinte sabe distinguir
+    // "esta pessoa já foi avisada deste prazo" de "esta tarefa já avisou".
+    // Duas rodadas concorrentes na MESMA ocasião caem no índice único
+    // `inbox_task_reminder_ocasiao_unique`: a perdedora não é erro, é a trava
+    // trabalhando — o aviso já saiu pela vencedora.
     //
     // O título do item é o NOME DA TAREFA, e não a frase do push: a Central
     // mostra o título cru (dado de gente, `AgentInboxList.tsx`) e logo abaixo o
@@ -322,6 +436,10 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
       .from("agent_inbox_items")
       .insert(avisoDaCentral({ tarefa, categoria }));
     if (erroInbox) {
+      if (erroInbox.code === "23505") {
+        pular("corrida_na_mesma_ocasiao");
+        continue;
+      }
       logger.error("[task-reminder] aviso na Central falhou", {
         organization_id: tarefa.organization_id,
         task_id: tarefa.id,

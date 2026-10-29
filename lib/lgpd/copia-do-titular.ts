@@ -93,6 +93,8 @@ export const O_QUE_FICA = {
   leads: "as oportunidades abertas para ele: título, estado e valor",
   honorarios_contratos: "o contrato de honorários dele (sem a divisão interna do escritório)",
   honorarios_parcelas: "as parcelas que ele paga",
+  lead_field_proposals:
+    "os campos que a IA leu num documento do negocio dele e propos para o card (o documento e os valores ficam no anexo)",
   orders: "os pedidos dele na loja",
   activities: "o que foi registrado sobre ele e quando",
   checkpoints: "o resumo que a máquina fez da conversa com ele (LGPD art. 20)",
@@ -107,6 +109,8 @@ export const O_QUE_FICA = {
   voice_calls: "as chamadas de voz dele: número, duração e como terminaram",
   prospecting_candidates:
     "o dado público do negócio dele que originou a abordagem (origem dos dados, art. 19, II)",
+  meta_ctwa_click_dispatches:
+    "os cliques dele em anúncios que abriram uma conversa, quando foram recebidos e o resultado do envio à plataforma",
   cases:
     "que o atendimento dele parou e foi para a equipe: quando, por qual caminho e como terminou (o texto que a IA digitou ao abrir sai: `CAMPOS_DA_EQUIPE`)",
   case_events:

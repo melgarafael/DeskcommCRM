@@ -117,10 +117,18 @@
           "destaques": [
             {
               "alvo": {
+                "role": "link",
+                "nome": "Configurar responsáveis por número"
+              },
+              "rotulo": "Escolher responsáveis",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
                 "texto": "Conectado",
                 "exato": true,
                 "dentro": {
-                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                  "css": "div:has(> div.mt-auto):has(p:text-is('+551140028922'))"
                 }
               },
               "rotulo": "Situação do número",
@@ -131,7 +139,7 @@
                 "texto": "Ainda não verificado",
                 "exato": true,
                 "dentro": {
-                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                  "css": "div:has(> div.mt-auto):has(p:text-is('+551140028922'))"
                 }
               },
               "rotulo": "Última conferência",
@@ -142,19 +150,11 @@
                 "texto": "Usa todos os atendentes elegíveis da organização.",
                 "exato": true,
                 "dentro": {
-                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                  "css": "div:has(> div.mt-auto):has(p:text-is('+551140028922'))"
                 }
               },
               "rotulo": "Quem recebe as conversas",
               "tipo": "caixa"
-            },
-            {
-              "alvo": {
-                "role": "link",
-                "nome": "Configurar responsáveis por número"
-              },
-              "rotulo": "Escolher responsáveis",
-              "tipo": "seta"
             }
           ]
         },
@@ -242,7 +242,7 @@
                 "texto": "IA aberta ao público",
                 "exato": true,
                 "dentro": {
-                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                  "css": "div:has(> div.mt-auto):has(p:text-is('+551140028922'))"
                 }
               },
               "rotulo": "Responde a todos",
@@ -736,7 +736,7 @@
                 "nome": "Proteção de envio",
                 "exato": true,
                 "dentro": {
-                  "css": "div:has(> div.mt-auto button[aria-label='Excluir Recepção Bem Viver'])"
+                  "css": "div:has(> div.mt-auto):has(p:text-is('+551140028922'))"
                 }
               }
             },

@@ -180,6 +180,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     email: c.email,
     phone_number: c.phone_number,
     cpf: cpfs.get(c.id) ?? null,
+    birthdate: c.birthdate,
     tags: c.tags,
   }));
 

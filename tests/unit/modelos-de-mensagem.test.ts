@@ -127,4 +127,24 @@ describe("preencher modelo — {{nome}} pela régua de nomeDoContato", () => {
     expect(r.texto).toBe("Olá , tudo bem?");
     expect(r.lacunas).toEqual(["nome"]);
   });
+
+  it("com texto de reserva, o nome vazio sai a reserva e não vira lacuna", async () => {
+    const contato = {
+      id: "c-sem-nome",
+      organization_id: ORG_ID,
+      name: null,
+      display_name: "Contato 543134@lid",
+      phone_number: "+5511999998888",
+      email: null,
+    };
+    const db = comModelo('Olá {{nome|"aluno"}}, tudo bem?', contato);
+
+    const r = await preencherModeloDeMensagem(deps(db), {
+      templateId: "t-boasvindas",
+      contactId: "c-sem-nome",
+    });
+
+    expect(r.texto).toBe("Olá aluno, tudo bem?");
+    expect(r.lacunas).toEqual([]);
+  });
 });

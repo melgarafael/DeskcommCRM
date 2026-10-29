@@ -72,8 +72,14 @@ export function HistoricoDeEnvios({
   const paginas = Math.max(1, Math.ceil(total / TAMANHO_DA_PAGINA));
   const eventos = [
     { valor: "Purchase", rotulo: "Compra" },
+    { valor: "LeadSubmitted", rotulo: "Nascimento por anúncio" },
     ...regras.map((r) => ({ valor: r.eventName, rotulo: r.label })),
   ];
+  const rotuloVisivel = (evento: string) => {
+    if (!evento.startsWith("MetaEtapa:")) return t(rotuloDoEvento(evento, regras));
+    const nome = regras.find((r) => r.eventName === evento)?.label;
+    return nome ? `${t("Entrada na etapa")} ${nome}` : t("Entrada na etapa");
+  };
   const link = (pagina: number) => {
     const p = new URLSearchParams({
       aba: "historico",
@@ -129,7 +135,7 @@ export function HistoricoDeEnvios({
             <option value="">{t("Todos os eventos")}</option>
             {eventos.map((e) => (
               <option key={e.valor} value={e.valor}>
-                {t(e.rotulo)}
+                {rotuloVisivel(e.valor)}
               </option>
             ))}
           </select>
@@ -181,7 +187,7 @@ export function HistoricoDeEnvios({
                   <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 p-3 text-sm">
                     <div className="min-w-0">
                       <p className="font-medium">
-                        {t(rotuloDoEvento(l.evento, regras))}
+                        {rotuloVisivel(l.evento)}
                         <span className="ml-2 text-xs text-muted-foreground">
                           {l.plataforma === "google_ads"
                             ? "Google Ads"

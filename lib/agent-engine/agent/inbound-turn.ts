@@ -209,6 +209,7 @@ import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { esperarComoHumano, manterDigitando } from './atraso-humano';
 import { instrucaoDeBolhas, sendInBubbles, splitForSend } from './split-message';
+import { semConteudoVisivel } from './conteudo-visivel';
 import { formatarParaWhatsApp } from './formato-whatsapp';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
@@ -381,7 +382,11 @@ export const AGENT_TOOL_DEFS = {
           .string()
           .nullable()
           .optional()
-          .describe('próxima ação concreta combinada com o lead'),
+          .describe(
+            'próxima ação concreta combinada com o lead (o que e até quando; ex.: "enviar o ' +
+              'orçamento até sexta"). "Responder o cliente" não é próxima ação: é o que você já ' +
+              'faz a cada mensagem. Sem ação concreta, não envie este campo.',
+          ),
         reason: z.string().optional().describe('evidência curta do avanço (vai ao audit do CRM)'),
       })
       .passthrough(),
@@ -3799,8 +3804,9 @@ async function executarTurnoDoAgente(
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
         // min(1) no argumento, mas um `\n`/espaço passa e vira vazio depois do
         // trim/gates. Recusar aqui devolve ao modelo para reescrever — nunca
-        // manda bolha em branco.
-        if (body.trim() === '') {
+        // manda bolha em branco. "Em branco" inclui o que o `trim()` não tira:
+        // caractere de formatação invisível (U+200E e afins), spec 28.
+        if (semConteudoVisivel(body)) {
           return {
             ok: false,
             error: {

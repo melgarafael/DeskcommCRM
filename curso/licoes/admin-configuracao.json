@@ -1,0 +1,463 @@
+{
+  "id": "admin-configuracao",
+  "titulo": "Credenciais (Admin)",
+  "tela": "/admin/configuracao",
+  "resumo": "Onde quem instalou o sistema confere as senhas e chaves do servidor e preenche os contatos que todas as empresas veem: o e-mail de suporte e o do encarregado de dados.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Credenciais",
+      "objetivo": "Saber para que serve a tela de Credenciais do Admin, como ela se divide e o que dizem os selos de cada item.",
+      "papel": "admin",
+      "busca": [
+        "credenciais da instalação",
+        "senhas e chaves do servidor",
+        "configuração da instalação admin",
+        "onde vejo as chaves do sistema",
+        "arquivo de instalação do servidor",
+        "admin"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "No Admin, o item \"Credenciais\" do menu abre a \"Configuração da instalação\". Ela reúne o que este servidor precisa saber para funcionar: contatos, senhas e chaves. Vale para todas as empresas do servidor, não só para a sua clínica. O que dá para trocar aqui vale na hora, sem mexer no servidor.",
+          "rota": "/admin/configuracao",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Credenciais",
+                "exato": true
+              },
+              "rotulo": "Credenciais no menu do Admin",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Configuração da instalação",
+                "exato": true
+              },
+              "rotulo": "Vale para a instalação inteira",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Os quadros por assunto",
+          "texto": "A tela é dividida em quadros: \"E-mail\", \"Segurança e privacidade\", \"WhatsApp\", \"Banco de dados\", \"Fila de tarefas\" e \"Inteligência artificial\". Cada quadro tem uma frase que explica para que ele serve. O de e-mail vem primeiro, mas aqui dentro só ficou o e-mail de suporte. O que faz o sistema enviar convites e recuperação de senha fica na tela \"E-mail\", pelo link que aparece logo no topo do quadro.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "E-mail",
+                "exato": true
+              },
+              "rotulo": "Um quadro por assunto",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Segurança e privacidade",
+                "exato": true
+              },
+              "rotulo": "Segurança e privacidade",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Onde fica o envio de e-mail",
+          "texto": "A chave do serviço que envia os e-mails e o endereço remetente não ficam nesta tela. O link \"O serviço de envio de e-mail — próprio ou externo — fica em E-mail →\" leva para a tela \"E-mail\" do Admin, onde está tudo sobre como os e-mails saem. A faixa amarela \"Sem SMTP configurado\", no alto, é um aviso geral do Admin: o envio de e-mails ainda não está configurado. O item \"E-mail\" do menu leva ao ajuste.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "ponteiro-email"
+              },
+              "rotulo": "Leva para a tela E-mail",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "ponteiro-email"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "De onde vem cada valor",
+          "texto": "Ao lado do nome de cada item, um selo diz de onde vem o valor. \"Não configurado\", em amarelo: ninguém definiu ainda. \"Vem do arquivo de instalação do servidor\", em cinza: o valor foi escrito quando o servidor foi instalado. \"Definido aqui nesta tela\", em verde: alguém salvou o valor por esta tela, e ele vale no lugar do arquivo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Não configurado",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Ainda sem valor",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Vem do arquivo de instalação do servidor",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Veio da instalação",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contatos-da-instalacao",
+      "titulo": "Preenchendo os contatos da instalação",
+      "objetivo": "Cadastrar o e-mail de suporte e o e-mail do encarregado de dados, e saber voltar ao valor do arquivo de instalação.",
+      "papel": "admin",
+      "busca": [
+        "e-mail de suporte do sistema",
+        "cadastrar encarregado de dados dpo",
+        "contato da lgpd da instalação",
+        "onde muda o e-mail de ajuda",
+        "voltar ao padrão credenciais",
+        "admin"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O e-mail de suporte",
+          "texto": "\"E-mail de suporte\" é o endereço que o administrador de cada empresa vê quando precisa de ajuda com a conta: na tela de conta suspensa e na tela \"Plano e cobrança\" (enquanto a cobrança automática das empresas não estiver ligada). Se ninguém preencher, essas telas só dizem para falar com quem administra o sistema, sem endereço. Escreva o e-mail no campo.",
+          "rota": "/admin/configuracao",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "E-mail de suporte",
+                "exato": true
+              },
+              "valor": "suporte@clinicabemviver.com.br"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "E-mail de suporte",
+                "exato": true
+              },
+              "rotulo": "Endereço de ajuda",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-SUPPORT_EMAIL"
+              },
+              "rotulo": "Salvar este campo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-SUPPORT_EMAIL"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Salvo e valendo",
+          "texto": "Cada item tem o seu próprio botão \"Salvar\". Ao clicar, um aviso rápido confirma \"Pronto, já está valendo.\". Em seguida, a linha \"Agora:\" mostra o endereço gravado e o selo passa a dizer \"Definido aqui nesta tela\". Daqui em diante, este valor vale no lugar do que estiver no arquivo de instalação.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-SUPPORT_EMAIL"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "voltar-SUPPORT_EMAIL"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div > label[for='config-SUPPORT_EMAIL'])"
+              },
+              "rotulo": "E-mail de suporte gravado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Definido aqui nesta tela",
+                "exato": true
+              },
+              "rotulo": "Vale o que foi salvo aqui",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O encarregado de dados (DPO)",
+          "texto": "No quadro \"Segurança e privacidade\", \"E-mail do encarregado de dados (DPO)\" é o contato que a LGPD exige para pedidos de privacidade. Ele aparece nos documentos de privacidade e na entrega dos dados pedidos por um paciente, e recebe o aviso quando um pedido passa do prazo. Se a empresa preencheu o encarregado dela em Configurações, vale o dela. Este é o contato usado quando ela não preencheu. Escreva o e-mail e clique no \"Salvar\" ao lado dele.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "E-mail do encarregado de dados (DPO)",
+                "exato": true
+              },
+              "valor": "privacidade@clinicabemviver.com.br"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "E-mail do encarregado de dados (DPO)",
+                "exato": true
+              },
+              "rotulo": "Contato da LGPD",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-LGPD_DPO_EMAIL"
+              },
+              "rotulo": "Salvar este campo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-LGPD_DPO_EMAIL"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Voltar ao padrão",
+          "texto": "Depois que um item é salvo por aqui, aparece ao lado o botão \"Voltar ao padrão\". Ele serve para desfazer: apaga o que foi gravado nesta tela, e o sistema volta a usar o valor do arquivo de instalação do servidor.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-LGPD_DPO_EMAIL"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "voltar-LGPD_DPO_EMAIL"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "voltar-SUPPORT_EMAIL"
+              },
+              "rotulo": "Volta ao valor do arquivo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "voltar-SUPPORT_EMAIL"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "De volta ao valor do arquivo",
+          "texto": "Depois do clique, um aviso aparece por alguns segundos no canto de baixo da tela: \"Voltou para o valor do arquivo de instalação.\". Como nesta demonstração o arquivo não tem e-mail de suporte, a linha \"Agora:\" some e o selo volta a \"Não configurado\". O botão \"Voltar ao padrão\" também some até você salvar outra vez. Aqui desfizemos também o do encarregado de dados.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "voltar-LGPD_DPO_EMAIL"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "voltar-SUPPORT_EMAIL"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div > label[for='config-SUPPORT_EMAIL'])"
+              },
+              "rotulo": "De volta a \"Não configurado\"",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "itens-so-de-consulta",
+      "titulo": "Os itens que só se conferem",
+      "objetivo": "Entender por que a maioria das senhas e chaves aparece só para conferir e onde elas são trocadas.",
+      "papel": "admin",
+      "busca": [
+        "trocar senha do whatsapp do servidor",
+        "por que não consigo editar a chave",
+        "chave que tranca as credenciais",
+        "senha do banco de dados",
+        "conferir chave guardada no servidor",
+        "admin"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Guardado, mas sem campo",
+          "texto": "A maioria dos itens não tem campo para escrever. Eles servem para conferir: o selo diz se o valor existe, e a linha \"Guardado, terminando em\" mostra só os quatro últimos caracteres da senha, nunca ela inteira. Assim você confirma qual senha está em uso sem expô-la.",
+          "rota": "/admin/configuracao",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.space-y-2:has(> div > span:text-is('Chave que assina os documentos de privacidade'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div > span:text-is('Chave que tranca as credenciais'))"
+              },
+              "rotulo": "Item só para conferir",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O porquê de cada um",
+          "texto": "Embaixo de cada item, uma frase curta diz por que ele não se troca por aqui, seguida de \"por quê?\". Clique nela para ler a explicação completa. Na \"Chave que tranca as credenciais\", por exemplo: ela é a chave do cofre onde ficam as outras senhas, e por isso mora no arquivo do servidor, fora do banco de dados. Clique de novo, em \"ocultar\", para fechar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "por quê?",
+                "dentro": {
+                  "css": "div.space-y-2:has(> div > span:text-is('Chave que tranca as credenciais'))"
+                }
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.space-y-2:has(> div > span:text-is('Chave que assina os documentos de privacidade'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div > span:text-is('Chave que tranca as credenciais')) p.rounded-md"
+              },
+              "rotulo": "A explicação completa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "As senhas do WhatsApp",
+          "texto": "No quadro \"WhatsApp\", as duas senhas têm um par no programa que conecta o WhatsApp. Trocar só de um lado deixaria os dois falando senhas diferentes, e o WhatsApp cairia. Por isso a troca é feita no arquivo de instalação do servidor, seguida de reinício dos dois programas: um pedido para quem cuida da sua hospedagem.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "por quê?",
+                "dentro": {
+                  "css": "div.space-y-2:has(> div > span:text-is('Senha de acesso ao WhatsApp'))"
+                }
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.space-y-2:has(> div > span:text-is('Senha de conferência das mensagens recebidas'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Quadro do WhatsApp",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div > span:text-is('Senha de acesso ao WhatsApp')) p.rounded-md"
+              },
+              "rotulo": "Troca só no servidor",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Banco, fila e inteligência artificial",
+          "texto": "Os últimos quadros seguem a mesma ideia. O endereço e a senha do banco de dados aparecem com \"Necessária para o sistema ligar\": sem eles o sistema não abre nem esta tela. A senha da fila tem um par em outro programa. O \"Modo de distribuição das conversas da IA\" é lido por outro programa só quando ele liga. Todos se trocam no arquivo de instalação do servidor.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Inteligência artificial",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Banco de dados",
+                "exato": true
+              },
+              "rotulo": "Banco de dados",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Fila de tarefas",
+                "exato": true
+              },
+              "rotulo": "Fila de tarefas",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Inteligência artificial",
+                "exato": true
+              },
+              "rotulo": "Inteligência artificial",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

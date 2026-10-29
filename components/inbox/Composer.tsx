@@ -302,6 +302,28 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const respostaBarrada = isDisabled || (mode === "reply" && !!janelaFechada);
 
   /**
+   * O RASCUNHO QUE JÁ ESTÁ NO CAMPO (#3354).
+   *
+   * A barra de respostas rápidas entrega o recurso ao MESMO `applyTemplate` do
+   * `/` — e o `applyTemplate` SUBSTITUI o campo (`escreverNoCampo`) ou, com
+   * mídia que aceita legenda, o ZERA. Com uma frase escrita, um clique apagava
+   * o que o atendente tinha digitado, sem aviso e sem desfazer. Aqui a barra
+   * passa a ficar desligada enquanto houver rascunho, e o botão diz por quê.
+   *
+   * O `/` em curso NÃO conta: o menu só abre quando o campo inteiro é o comando
+   * (`resolveSlash`), e o que ele troca é o próprio `/consulta` — quem digitou
+   * uma frase jamais chega lá com o menu aberto. É a mesma régua do menu, e não
+   * `startsWith("/")`: um rascunho como `/ola, tudo bem?` tem espaço e continua
+   * sendo rascunho.
+   *
+   * Sem o termo `!respostaBarrada` a dica erraria a mão: com a janela de 24h
+   * fechada e um texto sugerido por integração (#1611) no campo, ela mandaria
+   * apagar um rascunho que o campo travado não deixa apagar. Ali o motivo é
+   * outro, e o `title` continua o de sempre.
+   */
+  const rascunhoNoCampo = !respostaBarrada && text.trim() !== "" && !slash.open;
+
+  /**
    * O curinga literal (#2744, opção A) — um SINAL IRMÃO do `janelaFechada`, e
    * não um termo a mais no `respostaBarrada`.
    *
@@ -892,7 +914,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         {mode === "reply" && (
           <BarraDeRecursos
             recursos={templates.data ?? []}
-            disabled={respostaBarrada}
+            disabled={respostaBarrada || rascunhoNoCampo}
+            dica={
+              rascunhoNoCampo
+                ? t(
+                    "A resposta rápida substitui o texto do campo. Envie ou apague o rascunho antes.",
+                  )
+                : undefined
+            }
             onEscolher={escolherRecurso}
             usuarioId={usuarioId}
           />

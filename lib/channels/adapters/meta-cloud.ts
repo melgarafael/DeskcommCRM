@@ -22,6 +22,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
+import { metaCloudTemplateOps } from "@/lib/channels/meta/templates";
 import { resolveMetaCreds } from "../meta/credentials";
 import type {
   ChannelAdapter,
@@ -372,4 +373,14 @@ export const metaCloudAdapter: ChannelAdapter = {
 
     return { externalId: body.messages?.[0]?.id ?? null };
   },
+
+  /**
+   * Gestão das definições aprovadas PELA TELA (#3635).
+   *
+   * Mora no adapter, e não na rota, pelo mesmo motivo de `sendTemplate`: a rota
+   * de modelos do canal oficial não sabe com quem fala — pede o que o canal
+   * oferece. O binding (`lib/channels/meta/templates.ts`) resolve a credencial
+   * da SESSÃO e a WABA dela; aqui é só a ligação com o seam.
+   */
+  templates: metaCloudTemplateOps,
 };

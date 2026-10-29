@@ -19,6 +19,11 @@ import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitte
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { valoresAntesDepois } from "@/lib/leads/valores-audit";
+import {
+  mencionaRecorrencia,
+  recorrenciaParaGravar,
+  type RecorrenciaNoPatch,
+} from "@/lib/leads/valor-recorrente";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
 import {
   camposQueMudaram,
@@ -52,6 +57,7 @@ import {
 import { motivosDaCategoria } from "@/lib/leads/motivos-de-perda-do-funil";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
+import { ocultarProvaMetaNaResposta, removerProvaMetaLeadSubmitted } from "@/lib/leads/prova-meta-lead-submitted";
 import { ehRecusaDaVisibilidadeDoFunil } from "@/lib/leads/recusa-da-visibilidade";
 
 type SB = SupabaseClient;
@@ -448,7 +454,7 @@ export async function listLeadsHandler(
     hasMore && last
       ? encLeadCursor({ created_at: String(last.created_at), id: String(last.id) })
       : null;
-  return { leads: page, cursor, has_more: hasMore };
+  return { leads: page.map(ocultarProvaMetaNaResposta), cursor, has_more: hasMore };
 }
 
 // ---------------------------------------------------------------------------
@@ -499,7 +505,7 @@ export async function getLeadHandler(
       traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
-  return data as Record<string, unknown>;
+  return ocultarProvaMetaNaResposta(data as Record<string, unknown>);
 }
 
 // ---------------------------------------------------------------------------
@@ -672,6 +678,12 @@ export async function createLeadHandler(
       settingsDoFunil: settingsDaCriacao,
       destino: { stageId: stage.id, desfecho: null },
       motivoDeGanho: null,
+      // O ARQUIVO não é cobrado aqui (#3433): o anexo mora em
+      // `crm_lead_attachments.lead_id` e só pode subir depois que o negócio
+      // existe. Sem esta opção, etapa que exige documento recusava TODA
+      // criação (422) sem caminho de saída. A exigência volta no próximo move,
+      // no lote ou no fechamento — lá `camposComAnexo` é lido de verdade.
+      semAnexosAinda: true,
     });
     if (vereditoDeCampos.faltando.length > 0) {
       const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, ctx.idioma);
@@ -741,6 +753,13 @@ export async function createLeadHandler(
       description: input.description ?? null,
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
+      // O VALOR RECORRENTE — as três colunas da fatia 1 da #3602, SEMPRE
+      // nomeadas (nulas quando o negócio não tem recorrência). `value_cents`
+      // acima segue sendo o valor ÚNICO: nada é somado, e é por isso que o card
+      // consegue escrever "R$ 3.000 + R$ 500/mês". A coerência do trio
+      // (recorrente nulo ⇒ periodicidade e duração nulas; recorrente sem
+      // periodicidade ⇒ mensal) é da régua pura, a MESMA que o PATCH usa.
+      ...recorrenciaParaGravar(input),
       currency,
       ...ownerPatch,
       assigned_at:
@@ -748,7 +767,7 @@ export async function createLeadHandler(
       expected_close_date: input.expected_close_date ?? null,
       tags: input.tags ?? [],
       source: input.source,
-      source_metadata: input.source_metadata ?? {},
+      source_metadata: removerProvaMetaLeadSubmitted(input.source_metadata),
       external_id: input.external_id ?? null,
       webhook_source_id: input.webhook_source_id ?? null,
       custom_fields: input.custom_fields ?? {},
@@ -862,7 +881,7 @@ export async function createLeadHandler(
     },
   });
 
-  return lead as Record<string, unknown>;
+  return ocultarProvaMetaNaResposta(lead as Record<string, unknown>);
 }
 
 // ---------------------------------------------------------------------------
@@ -951,6 +970,25 @@ export async function updateLeadHandler(
   if (input.description !== undefined) patch.description = input.description;
   if (input.contact_id !== undefined) patch.contact_id = input.contact_id;
   if (input.value_cents !== undefined) patch.value_cents = input.value_cents;
+  // O RECORRENTE SÓ É TOCADO quando a requisição o menciona (fatia 1 da #3602):
+  // um PATCH de título que carimbasse `null` nas três apagaria a mensalidade do
+  // negócio em silêncio. E, tocado, vai o TRIO coerente — mandar só
+  // `recurring_months` deixaria duração sem mensalidade no banco.
+  if (mencionaRecorrencia(input)) {
+    // A chave ausente vale o que a linha JÁ tem: o MCP e a REST mandam só o que
+    // mudou, e "a duração agora é 24" não pode apagar a mensalidade gravada.
+    const atual = existing as RecorrenciaNoPatch;
+    const valorDe = <K extends keyof RecorrenciaNoPatch>(k: K) =>
+      input[k] !== undefined ? input[k] : atual[k];
+    Object.assign(
+      patch,
+      recorrenciaParaGravar({
+        recurring_value_cents: valorDe("recurring_value_cents"),
+        recurring_period: valorDe("recurring_period"),
+        recurring_months: valorDe("recurring_months"),
+      }),
+    );
+  }
   if (input.currency !== undefined) patch.currency = input.currency;
   // Dono do negócio (0070): regra em lib/leads/owner-patch.ts, compartilhada
   // com create, bulk e MCP. owner_kind é DERIVADO — nunca lido do body.
@@ -1198,7 +1236,7 @@ export async function updateLeadHandler(
     },
   });
 
-  return (fresh ?? updated) as Record<string, unknown>;
+  return ocultarProvaMetaNaResposta((fresh ?? updated) as Record<string, unknown>);
 }
 
 // ---------------------------------------------------------------------------
@@ -1609,7 +1647,7 @@ export async function moveLeadHandler(
     },
   });
 
-  return finalLead;
+  return ocultarProvaMetaNaResposta(finalLead);
 }
 
 
@@ -1668,6 +1706,9 @@ export async function retomarLeadHandler(
     description?: string | null;
     contact_id?: string | null;
     value_cents?: number | null;
+    recurring_value_cents?: number | null;
+    recurring_period?: "monthly" | null;
+    recurring_months?: number | null;
     currency?: string | null;
     owner_user_id?: string | null;
     owner_agent_id?: string | null;
@@ -1707,7 +1748,7 @@ export async function retomarLeadHandler(
   if (jaErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, jaErr.message);
   }
-  if (jaRetomado) return jaRetomado as Record<string, unknown>;
+  if (jaRetomado) return ocultarProvaMetaNaResposta(jaRetomado as Record<string, unknown>);
 
   const { data: funil, error: funilErr } = await supabase
     .from("crm_pipelines")
@@ -1808,6 +1849,16 @@ export async function retomarLeadHandler(
     },
     ...(copia("description") ? { description: origemTipada.description ?? null } : {}),
     ...(copia("value_cents") ? { value_cents: origemTipada.value_cents ?? null } : {}),
+    // O RECORRENTE acompanha o valor único quando a retomada copia valores
+    // (fatia 1 da #3602): reabrir o negócio só com o setup entregaria um
+    // contrato pela metade, e a mensalidade sumiria sem erro nenhum.
+    ...(copia("value_cents") && origemTipada.recurring_value_cents != null
+      ? {
+          recurring_value_cents: origemTipada.recurring_value_cents,
+          recurring_period: origemTipada.recurring_period ?? "monthly",
+          recurring_months: origemTipada.recurring_months ?? null,
+        }
+      : {}),
     ...(copia("currency") && origemTipada.currency ? { currency: origemTipada.currency } : {}),
     ...(copia("expected_close_date")
       ? { expected_close_date: origemTipada.expected_close_date ?? null }
@@ -1829,11 +1880,20 @@ export async function retomarLeadHandler(
   // A RÉGUA DE CAMPOS OBRIGATÓRIOS (issue #1536): a retomada ENTRA numa etapa,
   // e a etapa exigente vale para ela como vale para o arrasto. Só conta o que o
   // negócio novo vai ter — os campos copiados da origem.
+  //
+  // O ARQUIVO não é cobrado (#2829, fatia 2): a retomada CRIA o negócio
+  // (`createLeadHandler` logo abaixo), e o anexo é do negócio que ainda vai
+  // nascer. Passar `semAnexosAinda` aqui é o que faz esta pergunta ser a MESMA
+  // do escritor — sem ela, a retomada recusava com 422 uma etapa que exige
+  // documento e o caminho do `createLeadHandler` (que pula o arquivo, #3433)
+  // nunca era alcançado. A cobrança volta no próximo move, no lote ou no
+  // fechamento, onde `camposComAnexo` é lido de verdade.
   const vereditoDeCampos = validaCamposExigidos({
     lead: { custom_fields: payload.custom_fields ?? {} },
     settingsDoFunil: settings,
     destino: { stageId: etapa.id, desfecho: null },
     motivoDeGanho: null,
+    semAnexosAinda: true,
   });
   if (vereditoDeCampos.faltando.length > 0) {
     const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, idioma);

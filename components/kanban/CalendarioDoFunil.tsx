@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { atalhosDoFunil } from "@/lib/leads/atalhos-do-card";
 import { camposDeDataDoNegocio, camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import {
   chaveDoDia,
@@ -371,6 +372,9 @@ export function CalendarioDoFunil({ pipelineId, pipeline: funil, stages, leads }
           fieldDefs={camposPorEscopo(camposDoFunil(funil.settings), "negocio")}
           stageName={stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"}
           ownerNames={ownerNames}
+          // O calendário já tem o funil em mão e NÃO está dentro da árvore do
+          // quadro — não há cache `["board", …]` para o dossiê ler (#3487).
+          atalhos={atalhosDoFunil(funil.settings)}
         />
       )}
     </div>

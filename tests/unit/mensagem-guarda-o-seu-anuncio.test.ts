@@ -15,6 +15,10 @@
  * A INGESTÃO grava o anúncio na própria mensagem (`metadata.anuncio`), nos três
  * transportes que sabem ler o clique — sem mexer no primeiro toque do contato,
  * e sem copiar o clique (`ctwa_clid`) nem o payload cru para cada mensagem.
+ * A única exceção é a âncora reservada `meta_ctwa_message_v1` (#3128): só a
+ * mensagem que TROUXE o clique a leva, só a ingestão (service role) escreve,
+ * e o gatilho do banco recusa quem mais tentar. É ela que liga o LeadSubmitted
+ * à mensagem que o provou.
  *
  * O que NÃO se prova aqui: o INSERT contra um Postgres real — o banco aqui é
  * de mentira.
@@ -141,7 +145,10 @@ describe("ingestão — a mensagem nascida de um clique guarda o SEU anúncio", 
       // Compacto de propósito: o clique identifica uma pessoa, e o cru já mora
       // no contato. Nada disso se repete em cada mensagem — o link e a imagem
       // entram (a inbox mostra o anúncio), o clique e o resto do payload não.
-      expect(JSON.stringify(metadata)).not.toContain("ARAk_clique_B");
+      // A âncora reservada da prova causal (#3128) é o ÚNICO lugar do clique.
+      const { meta_ctwa_message_v1: ancora, ...resto } = metadata ?? {};
+      expect(ancora).toEqual({ platform: "meta_ads", source_type: "ad", ctwa_clid: "ARAk_clique_B" });
+      expect(JSON.stringify(resto)).not.toContain("ARAk_clique_B");
       expect(JSON.stringify(metadata)).not.toContain("media_type");
     });
 

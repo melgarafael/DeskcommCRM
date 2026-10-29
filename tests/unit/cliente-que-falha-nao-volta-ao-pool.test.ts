@@ -132,11 +132,13 @@ describe('#2506 · queue.ts (claimJobs e completeJob)', () => {
   });
 
   it('claimJobs: caminho feliz devolve o job e solta o cliente SEM erro', async () => {
-    const cliente = clienteFalso(undefined, [['with dedup', [{ id: 'job-1' }]]]);
+    // Identifica a escrita do claim, sem depender de qual CTE abre a consulta.
+    const cliente = clienteFalso(undefined, [["set status = 'running'", [{ id: 'job-1' }]]]);
     const pool = poolFalso(cliente);
 
     const jobs = await claimJobs(pool, { workerId: 'w1', maxConcurrency: 2 });
 
+    expect(cliente.query).toHaveBeenCalledWith(expect.stringContaining("set status = 'running'"), [2, 'w1']);
     expect(jobs).toEqual([{ id: 'job-1' }]);
     expect(comandosDaTransacao(cliente)).toContain('commit');
     liberouSemErro(cliente);

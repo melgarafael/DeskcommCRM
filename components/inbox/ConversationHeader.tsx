@@ -38,6 +38,7 @@ import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
+import { ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -135,6 +136,18 @@ export function ConversationHeader({
   // dispara porque o botão nem é desenhado.
   const ehPessoal = c?.is_personal === true;
   const podeMarcarPessoal =
+    (user.is_platform_admin && !user.support) ||
+    (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
+  /**
+   * ATENDIMENTO CONJUNTO (#2542): quem pode CONVIDAR é o dono da conversa ou um
+   * gestor+ — exatamente o gate da rota. A tela não oferece o que a rota recusa:
+   * um botão que devolve 403 é pior que um botão que não existe, porque a pessoa
+   * descobre o limite depois de escolher o colega na lista. Não é gate de
+   * SEGURANÇA (esse mora na rota, que revalida papel e organização): é o mesmo
+   * desenho de `podeMarcarPessoal`, que também espelha a régua do servidor.
+   */
+  const podeConvidar =
+    isMineAssigned ||
     (user.is_platform_admin && !user.support) ||
     (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
   const marcarPessoal = useMarkPersonalContact(c?.id ?? "");
@@ -371,6 +384,18 @@ export function ConversationHeader({
           lastInboundAt={conversation.last_inbound_at}
           bloqueio={motivoDoContato(c, t)}
           encerrada={status === "closed"}
+        />
+        {/* ATENDIMENTO CONJUNTO (#2542): quem participa desta conversa, e a
+            porta para convidar mais um. Fica na barra de ações, junto das
+            outras ações do cabeçalho, e ANTES de "Assumir" porque ela responde
+            à pergunta que a barra faz primeiro: "quem mais está aqui comigo?".
+            O componente só desenha o botão para quem a rota aceitaria (dono ou
+            gestor+) e não desenha NADA quando não há participante nem permissão
+            de convidar — nenhum espaço vazio no cabeçalho de quem só foi ler. */}
+        <ParticipantesDaConversa
+          conversationId={conversation.id}
+          podeConvidar={podeConvidar}
+          atendenteId={user.id}
         />
         {isOpen && (
           <Button

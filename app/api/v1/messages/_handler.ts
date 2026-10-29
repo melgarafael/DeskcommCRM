@@ -662,9 +662,26 @@ export async function sendMessageHandler(
       // ENVIOU (`ai_agents.name`) — com dois agentes no mesmo número, o cliente
       // lia o nome de um e a conversa seguia com outro. `nome_ia` fica como
       // reserva (mensagem sem agente, leitura que falhou). Desligado, nem lê.
+      //
+      // #3373: o id do agente NÃO é o `id` do ator em todo caminho. O motor do
+      // turno põe o agente no `id` (`lib/agent-engine/edge/crm/send-message.ts`),
+      // mas a Prospecção põe o CANDIDATO no `id` e o agente em `agent_id`
+      // (`lib/prospecting/worker.ts`), e a ação "Mensagem escrita pela IA"
+      // dispara com um ator da regra cujo `id` é a própria regra
+      // (`lib/automation/actions/send-ai-message.ts`). Ler o `id` em todos eles
+      // assinava com o `nome_ia` — no primeiro caminho o id até casava com um
+      // `ai_agents.id` por acaso, mas não era a coluna que diz quem enviou. A
+      // coluna certa é `agent_id`; `?? id` é só a ponte do caminho do motor,
+      // que ainda não manda `agent_id`.
+      const idDoAgente =
+        ctx.actor.type === "ai_agent"
+          ? (ctx.actor.agent_id ?? ctx.actor.id)
+          : ctx.actor.type === "webhook_source"
+            ? (ctx.actor.agent_id ?? null)
+            : null;
       const nomeDoAgente =
-        origemDoEmissor === "ai" && configAss.porAgente && ctx.actor.type === "ai_agent"
-          ? await nomeDoAgenteDeIA(supabase, ctx.organization_id, ctx.actor.id)
+        origemDoEmissor === "ai" && configAss.porAgente && idDoAgente !== null
+          ? await nomeDoAgenteDeIA(supabase, ctx.organization_id, idDoAgente)
           : null;
       assinatura = linhaDeAssinatura(configAss, origemDoEmissor, nomeDoAtendente, nomeDoAgente);
     }
@@ -1363,7 +1380,15 @@ export async function sendMessageHandler(
     // a conversa contando a espera que a própria resposta acabou de encerrar.
     awaiting_since: c.last_inbound_at,
   };
-  if (ctx.actor.type === "user") {
+  // Resposta humana pela TELA ou envio EM NOME DE uma pessoa (#3421): as duas
+  // decisões são de gente da equipe, e a segunda gravava a linha sem calar a
+  // IA — ela respondia junto com o atendente. O envio em nome de atravessa a
+  // rota só com o escopo `messages:on_behalf` + membership validados
+  // (`app/api/v1/messages/route.ts:103-179`), que é a mesma certeza de "foi
+  // pessoa quem decidiu" que o `actor.type === "user"` tem. Mesmo carimbo,
+  // mesma janela, mesma régua de quem lê `bot_silenced_until`; quem NÃO traz
+  // `onBehalfOf` (automação, integração pura, agente) continua de fora.
+  if (ctx.actor.type === "user" || ctx.onBehalfOf) {
     const silenceUntil = extendBotSilence(c.bot_silenced_until, now);
     if (silenceUntil) conversationUpdate.bot_silenced_until = silenceUntil;
   }

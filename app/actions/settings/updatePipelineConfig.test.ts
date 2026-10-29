@@ -297,3 +297,81 @@ describe("updatePipelineConfig — o recorte de encerrados antigos do quadro (#2
     expect(h.gravou).toBeNull();
   });
 });
+
+describe("updatePipelineConfig — atalhos do card (#3487)", () => {
+  /**
+   * A PORTA DE GRAVAÇÃO. O `url` do atalho vira `<a href>` na tela de quem
+   * atende, e o `settings` do funil é jsonb: além deste caminho, ele é escrito
+   * por script, seed e restauração de backup. O que se prova aqui é o caminho da
+   * TELA — o schema recusa, a linha NÃO é tocada, e o operador recebe
+   * `validation_failed` (o veredito da server action; a tradução para HTTP é
+   * 422 na rota PATCH do funil, coberta em `app/api/v1/pipelines/[id]/route.test.ts`).
+   */
+  const LIGAR = { rotulo: "Ligar", icone: "telefone" as const, url: "tel:{{telefone}}" };
+
+  it.each([
+    "javascript:alert(document.cookie)",
+    "data:text/html,<script>alert(1)</script>",
+    "file:///etc/passwd",
+    "vbscript:msgbox(1)",
+  ])("recusa %j SEM gravar nada", async (url) => {
+    const r = await updatePipelineConfig(FUNIL, {
+      atalhos: [{ rotulo: "Armadilha", icone: "link", url }],
+    });
+    expect(r).toMatchObject({ ok: false, error: "validation_failed" });
+    // O que separa "recusou" de "recusou depois de escrever".
+    expect(h.gravou).toBeNull();
+  });
+
+  it.each(["https://{{lead.site}}/pedido", "https://erp.exemplo.com{{lead.x}}/p"])(
+    "recusa marcador no domínio (%j) SEM gravar nada",
+    async (url) => {
+      const r = await updatePipelineConfig(FUNIL, {
+        atalhos: [{ rotulo: "Pedido", icone: "link", url }],
+      });
+      expect(r).toMatchObject({ ok: false, error: "validation_failed" });
+      expect(h.gravou).toBeNull();
+    },
+  );
+
+  it("grava os três esquemas permitidos no settings do funil", async () => {
+    const atalhos = [
+      LIGAR,
+      { rotulo: "Tirar pedido", icone: "carrinho" as const, url: "https://pedidos.exemplo.com/?cliente={{erp_id}}" },
+      { rotulo: "Central", icone: "link" as const, url: "http://intranet.exemplo.com/" },
+    ];
+    expect(await updatePipelineConfig(FUNIL, { atalhos })).toEqual({ ok: true });
+    expect(h.gravou).toMatchObject({ settings: { atalhos } });
+    // O que já estava no settings continua lá: a action faz merge, não substitui.
+    expect((h.gravou as { settings: Record<string, unknown> }).settings.fields).toEqual(
+      h.settings.fields,
+    );
+  });
+
+  it("lista vazia grava `[]` — é assim que o botão sai do card", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], atalhos: [LIGAR] };
+    expect(await updatePipelineConfig(FUNIL, { atalhos: [] })).toEqual({ ok: true });
+    expect((h.gravou as { settings: Record<string, unknown> }).settings.atalhos).toEqual([]);
+  });
+
+  it("patch sem a chave não mexe no que está gravado", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], atalhos: [LIGAR] };
+    expect(await updatePipelineConfig(FUNIL, { won_reason_required: true })).toEqual({ ok: true });
+    expect((h.gravou as { settings: Record<string, unknown> }).settings.atalhos).toEqual([LIGAR]);
+  });
+
+  it("recusa mais de seis atalhos e ícone fora do catálogo", async () => {
+    const sete = Array.from({ length: 7 }, (_, i) => ({ ...LIGAR, rotulo: `A${i}` }));
+    expect(await updatePipelineConfig(FUNIL, { atalhos: sete })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+    expect(
+      await updatePipelineConfig(FUNIL, {
+        // `foguete` não está em ICONES_DE_ATALHO: a lista é fixa, do design system.
+        atalhos: [{ rotulo: "Abrir", icone: "foguete" as never, url: "https://x.exemplo.com/" }],
+      }),
+    ).toMatchObject({ ok: false, error: "validation_failed" });
+    expect(h.gravou).toBeNull();
+  });
+});

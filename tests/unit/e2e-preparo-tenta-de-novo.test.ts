@@ -54,13 +54,14 @@ function rodar(passo: string, roteiro: number[]) {
     "timeout",
     `echo "timeout $*" >> "${log}"
 rc=$(head -1 "${raiz}/roteiro"); sed -i.bak 1d "${raiz}/roteiro"
+if [ "$rc" != 0 ]; then echo 'Get:1 http://azure.archive.ubuntu.com/ubuntu/ noble InRelease'; fi
 if [ "$rc" = 0 ]; then printf '#!/bin/sh\\necho " A..... aac   AAC (Advanced Audio Coding)"\\necho " A..... libopus   libopus Opus"\\n' > "${bin}/ffmpeg"; chmod +x "${bin}/ffmpeg"; fi
 exit "$rc"`,
   );
   falso("sudo", `echo "sudo $*" >> "${log}"`);
   const r = spawnSync("bash", ["-e", "-c", scriptDoPasso(passo)], {
     // PATH mínimo: um ffmpeg da máquina de quem roda o teste pularia o laço.
-    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, HOME: raiz },
+    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, HOME: raiz, GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted" },
     encoding: "utf-8",
   });
   return {
@@ -81,7 +82,7 @@ describe("e2e.yml — o preparo não espera o espelho do apt para sempre", () =>
     expect(r.status, r.saida).toBe(0);
     const tentativas = r.chamadas.filter((c) => c.startsWith("timeout"));
     expect(tentativas).toHaveLength(3);
-    expect(tentativas[0]).toMatch(/^timeout -k \d+ \d+ pnpm exec playwright install --with-deps chromium$/);
+    expect(tentativas[0]).toMatch(/^timeout -k 20 180 bash -c\s+pnpm exec playwright install --with-deps chromium$/);
     expect(r.chamadas.filter((c) => c === "sudo dpkg --configure -a")).toHaveLength(2);
     expect(r.saida).toContain("::warning");
   });
@@ -101,7 +102,7 @@ describe("e2e.yml — o preparo não espera o espelho do apt para sempre", () =>
     expect(tentativas[0]).not.toContain("apt-get update");
     // Os .deb vão para a pasta que o cache do passo seguinte guarda — sem isso o cache fica vazio.
     expect(tentativas[0]).toContain(`apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=${r.home}/.cache/ffmpeg-apt/ ffmpeg`);
-    expect(tentativas[1]).toContain("sudo apt-get update -q && sudo apt-get install");
+    expect(tentativas[1]).toContain("sudo apt-get update -q --error-on=any && sudo apt-get install");
   });
 
   it("ffmpeg: travado nas 3 → vermelho com ::error::", () => {

@@ -47,6 +47,10 @@ async function abreConversa(page: Page, nome: string): Promise<string> {
   const { data } = (await r.json()) as { data: { conversation_id: string; contact_id: string } };
   conversas.push(data.conversation_id);
   contatos.push(data.contact_id);
+  // A abertura agora já assume para a sessão. A semente deste relatório
+  // precisa de conversa LIVRE; libera pela rota real antes do claim do caso.
+  const livre = await page.request.post(`/api/v1/conversations/${data.conversation_id}/release`, { data: {} });
+  expect(livre.ok(), `release da precondição livre: ${await livre.text()}`).toBe(true);
   return data.conversation_id;
 }
 

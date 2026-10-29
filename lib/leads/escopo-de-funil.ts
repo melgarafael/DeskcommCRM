@@ -69,6 +69,11 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // Não muda o card, mas pendura uma decisão humana nele — encher o funil da
   // Andrea de sugestões da IA é ocupar a atenção de quem cuida dele.
   crm_propose_reactivation: "funil_vem_do_lead",
+  // Propõe campos do CARD de um negócio lido num documento (#3316): recebe
+  // `leadId` e grava `lead_field_proposals` — a fila pendura no mesmo card, no
+  // MESMO funil. Sem classificação a vacuidade recusava a ferramenta: "não
+  // decidido" não é "não se aplica".
+  crm_propose_lead_fields_from_document: "funil_vem_do_lead",
   // Recebe lead_id direto — mesmo alvo de crm_update_lead: o funil sai do
   // negócio informado, uma consulta.
   crm_draft_proposal: "funil_vem_do_lead",

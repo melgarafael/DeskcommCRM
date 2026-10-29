@@ -382,6 +382,9 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
               <p className="text-xs text-muted-foreground">
                 {t("Use")} {"{{primeiro_nome}}"} {t("e")} {"{{nome}}"} {t("para personalizar.")}
               </p>
+              <p className="text-xs text-muted-foreground">
+                {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+              </p>
             </div>
           ) : (
             <div className="space-y-2">

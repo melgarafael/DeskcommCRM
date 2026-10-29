@@ -20,6 +20,7 @@ import type { Conversation } from "@/lib/types/messaging";
 import { normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
 import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
+import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
 
 /**
  * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
@@ -305,7 +306,41 @@ export async function listConversationsHandler(
         '"assigned_to=me" requer ator humano.',
       );
     }
-    query = query.eq("assigned_to_user_id", ctx.actor.id);
+    // "Minhas" é também o que eu PARTICIPO: o convite é da conversa e a aba Minhas
+    // é onde a convidada tem de achar — medido com navegador na mão no CR de 24/10
+    // (#2848). Sem isto, com `own_and_unassigned` ela nem alcança a aba "Todas" e a
+    // conversa não aparece em lugar nenhum: Fila 0, Minhas 0.
+    //
+    // Sem participações o predicado é o MESMO de antes (`.eq`), byte a byte: o `or`
+    // só nasce quando existe convite de pé, então quem não participa de nada mede o
+    // mesmo de sempre. Quando existe, o `or=` compõe por AND com os demais
+    // (organização, busca, cursor): o PostgREST junta parâmetros repetidos com E.
+    // ⚠️ Se esta pergunta falhar (banco fora, mock de teste sem `.is`), o caminho
+    // é o de SEMPRE (`.eq`): o filtro nunca muda de regra sozinho, só ganha as
+    // conversas de quem participa quando a pergunta responde.
+    let idsParticipadas: string[] = [];
+    try {
+      const participadas = await supabase
+        .from("conversation_participants")
+        .select("conversation_id")
+        .eq("organization_id", ctx.organization_id)
+        .eq("user_id", ctx.actor.id)
+        .is("left_at", null);
+      idsParticipadas = (participadas.data ?? []).map((r) => r.conversation_id);
+    } catch {
+      idsParticipadas = [];
+    }
+    if (idsParticipadas.length > 0) {
+      // ⚠️ participações ativas são convites manuais (poucas por pessoa) — daí
+      // entrarem juntas no `in()`. Se um dia alguém participar de centenas, este
+      // `or=` fica longo; aí o conserto é subquery via RPC — e nunca corte
+      // silencioso: um corte escondido manda a convidada voltar a não achar.
+      query = query.or(
+        `assigned_to_user_id.eq.${ctx.actor.id},id.in.(${idsParticipadas.join(",")})`,
+      );
+    } else {
+      query = query.eq("assigned_to_user_id", ctx.actor.id);
+    }
   } else if (q.assigned_to === "unassigned") {
     query = query.is("assigned_to_user_id", null);
   } else if (q.assigned_to) {
@@ -528,6 +563,10 @@ export async function patchConversationHandler(
   input: PatchConversationInput,
 ): Promise<Conversation> {
   const update: Record<string, unknown> = {};
+  const observed = input.status !== undefined
+    ? await getConversationHandler(supabase, ctx, conversationId)
+    : null;
+  if (observed) await exigirControleDaConversa(supabase, ctx, observed);
 
   /**
    * O ATALHO `status='claimed'` PASSA PELA RPC, e não escreve o dono aqui.
@@ -563,10 +602,9 @@ export async function patchConversationHandler(
   }
 
   if (input.status !== undefined) {
-    const observed = await getConversationHandler(supabase, ctx, conversationId);
     const { error: statusError } = await createAdminClient().rpc("fn_service_status", {
       p_org: ctx.organization_id, p_conversation: conversationId, p_status: input.status,
-      p_expected: input.expected_revision ?? observed.service_revision,
+      p_expected: input.expected_revision ?? observed?.service_revision,
     });
     // PT409: revisão obsoleta (migration 0514). 40001: contato trocou no meio, ou banco anterior à 0514.
     const conflito = statusError?.code === "PT409" || statusError?.code === "40001";

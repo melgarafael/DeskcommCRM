@@ -68,8 +68,13 @@ export type Actor =
    *
    * Sem este campo, o carimbo se decide só pelo tipo do ator, e a mensagem que a
    * IA escreveu aparece no balão como "Automação" e some de `envios_por_ia`.
+   *
+   * `agent_id` (#3373) é a linha em `ai_agents` do agente que ESCREVEU o texto
+   * — o mesmo campo do ator `ai_agent` e pela mesma razão: o `id` deste ator é
+   * a REGRA que disparou, e a assinatura `por_agente` (#3310) precisa do nome
+   * de quem escreveu, não do nome de quem mandou disparar.
    */
-  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true };
+  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string };
 
 export interface HandlerCtx {
   prospectingDelivery?: ProspectingDelivery;

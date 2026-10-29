@@ -1,0 +1,546 @@
+{
+  "id": "recursos-opcionais",
+  "titulo": "Recursos opcionais",
+  "tela": "/app/settings/recursos",
+  "resumo": "Uma lista única de tudo o que se liga e desliga no sistema: o que cada recurso faz, quem decide, se está ligado e o botão que leva até a tela onde ele se ajusta.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo os Recursos opcionais",
+      "objetivo": "Achar a tela, entender que ela só mostra e ler as partes de cada linha da lista.",
+      "papel": "admin",
+      "busca": [
+        "recursos opcionais",
+        "onde ligar e desligar",
+        "o que está ligado",
+        "funções extras do sistema",
+        "ativar recurso",
+        "lista de configurações"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" está o cartão \"Recursos opcionais\". Clique nele.",
+          "dica": "Só gerente ou administrador vê este cartão. Um atendente que abrir o endereço direto cai numa página de acesso negado.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/recursos']"
+              },
+              "rotulo": "Recursos opcionais",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/recursos']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma tela que só mostra",
+          "texto": "Aqui estão juntos os recursos que a sua empresa pode ligar e desligar, que antes ficavam espalhados por várias telas. Os que só quem administra o servidor configura, como o e-mail, não entram nesta lista. Esta tela não liga nada: ela mostra o estado de cada recurso e leva você até a tela dele pelo botão \"Ajustar\". É lá que a mudança é feita.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/recursos']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Recursos opcionais",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "header:has(> h1)"
+              },
+              "rotulo": "Tudo num lugar só",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Módulos desta instalação",
+                "exato": true
+              },
+              "rotulo": "Primeira parte da lista",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "As partes de uma linha",
+          "texto": "Cada recurso é uma linha. Em cima vem o nome e, logo abaixo, o que ele faz. A linha pequena diz quem pode mudar (aqui, \"Gerente ou administrador\") e como o recurso vem de fábrica (\"Padrão: desligado\"). À direita, o selo mostra como ele está agora na sua empresa, e o botão \"Ajustar\" abre a tela onde ele se liga.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='conversa_fica_com_quem_atendeu']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Gerente ou administrador · Padrão: desligado",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-recurso='conversa_fica_com_quem_atendeu']"
+                }
+              },
+              "rotulo": "Quem decide e como vem",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Desligado",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-recurso='conversa_fica_com_quem_atendeu']"
+                }
+              },
+              "rotulo": "Como está agora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ajustar: A conversa fica com quem atendeu",
+                "exato": true
+              },
+              "rotulo": "Leva à tela do recurso",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Ajustar: A conversa fica com quem atendeu",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Onde o recurso se liga de verdade",
+          "texto": "O \"Ajustar\" de \"A conversa fica com quem atendeu\" abre a tela \"Distribuição de atendimento\". Desça até a opção: para ligar, marque a caixa e clique em \"Salvar\", logo abaixo dela. O botão \"Salvar\" fica apagado até você marcar a caixa. Depois, a tela de Recursos opcionais passa a mostrar o selo \"Ligado\" nessa linha.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ajustar: A conversa fica com quem atendeu",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "fica-com-quem-atendeu"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has([data-testid='fica-com-quem-atendeu'])"
+              },
+              "rotulo": "A opção mora aqui",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "testid": "form-atendimento"
+                }
+              },
+              "rotulo": "Depois clique aqui",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ler-o-estado",
+      "titulo": "Ler o estado de cada recurso",
+      "objetivo": "Entender o que quer dizer cada selo: Ligado, Desligado, Varia em cada item e Veja na tela dele.",
+      "papel": "admin",
+      "busca": [
+        "o que significa ligado desligado",
+        "varia em cada item",
+        "veja na tela dele",
+        "recurso está ligado",
+        "como saber se está ativado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Ligado e Desligado",
+          "texto": "Na parte \"Da sua empresa\", o selo mostra o estado de cada recurso na sua empresa. \"Atendentes podem mexer na agenda dos colegas\" vem ligado de fábrica e continua \"Ligado\". \"Quem tem horário marcado vira cliente\" vem desligado e continua \"Desligado\". Para mudar qualquer um dos dois, use o \"Ajustar\" da linha.",
+          "rota": "/app/settings/recursos",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='colegas_mexem_na_agenda']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ligado",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-recurso='colegas_mexem_na_agenda']"
+                }
+              },
+              "rotulo": "Ligado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Desligado",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-recurso='cliente_pela_agenda']"
+                }
+              },
+              "rotulo": "Desligado",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Varia em cada item e Veja na tela dele",
+          "texto": "Alguns recursos não têm um estado só para a empresa toda. \"Avisar a equipe quando o negócio entra na etapa\" se liga em cada etapa do funil, por isso o selo diz \"Varia em cada item\". Já \"Reportar vendas à Meta\" mostra \"Veja na tela dele\": esta lista não consegue ler o estado dele, e só a tela do recurso sabe se está ligado.",
+          "dica": "Se aparecer \"Não consegui ler agora\", o sistema não conseguiu consultar o estado naquele momento. Não quer dizer que o recurso está desligado: recarregue a página.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='conversoes_meta']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Varia em cada item",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-recurso='etapa_avisa_na_central']"
+                }
+              },
+              "rotulo": "Vale por etapa",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Veja na tela dele",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-recurso='conversoes_meta']"
+                }
+              },
+              "rotulo": "Estado na tela do recurso",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os recursos de cada agente",
+          "texto": "A última parte, \"Em cada agente\", reúne o que se ajusta agente por agente de IA. Como cada agente pode estar de um jeito, o selo diz \"Varia em cada item\". \"Roteiro que não recomeça\" mostra \"Desligado por quem administra o servidor\": ele depende do módulo \"Fluxos de atendimento\", que o servidor não ligou, e por isso não tem botão \"Ajustar\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='roteiro_nao_recomeca']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Em cada agente",
+                "exato": true
+              },
+              "rotulo": "Ajustes dos agentes",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='roteiro_nao_recomeca']"
+              },
+              "rotulo": "Depende do servidor",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modulos-da-instalacao",
+      "titulo": "Módulos da instalação",
+      "objetivo": "Saber quais módulos o servidor liberou para a sua empresa e como chegar a um módulo disponível.",
+      "papel": "admin",
+      "busca": [
+        "módulo desligado",
+        "liberar módulo no servidor",
+        "desligado por quem administra o servidor",
+        "propostas não aparece",
+        "módulos disponíveis"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Módulos que o servidor decide",
+          "texto": "A primeira parte lista os módulos maiores do sistema, como \"Banco de dados externo\" e \"Fluxos de atendimento\". Quem decide se eles existem na sua instalação é quem administra o servidor, não a empresa. Desligado, o selo diz \"Desligado por quem administra o servidor\" e não há botão: para usar, peça a essa pessoa.",
+          "rota": "/app/settings/recursos",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Módulos desta instalação",
+                "exato": true
+              },
+              "rotulo": "Decisão do servidor",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='modulo:banco_externo']"
+              },
+              "rotulo": "Módulo desligado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Um módulo disponível",
+          "texto": "Nesta instalação, quem administra o servidor liberou \"Propostas comerciais\". O selo diz \"Disponível nesta instalação\" e aparece o botão \"Ajustar\", que leva à tela onde a empresa usa o módulo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='modulo:propostas']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='modulo:propostas']"
+              },
+              "rotulo": "Módulo liberado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ajustar: Propostas comerciais",
+                "exato": true
+              },
+              "rotulo": "Abre a tela do módulo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Ajustar: Propostas comerciais",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A chave da empresa",
+          "texto": "O botão abre \"Configurações › Propostas\". O servidor ter liberado não basta: a empresa ainda precisa ligar as propostas para si, nesta primeira chave (a de cima, ainda desligada), e clicar em \"Salvar\". A chave verde mais abaixo é outra coisa: só avisa a equipe no WhatsApp quando a IA rascunha uma proposta. O módulo \"Propostas\" deste curso ensina o resto.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ajustar: Propostas comerciais",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              },
+              "rotulo": "Chave da empresa",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Depois salve",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "As duas chaves na lista",
+          "texto": "De volta aos Recursos opcionais, a linha \"Proposta comercial da empresa\", na parte \"Da sua empresa\", mostra a chave da empresa: ela segue \"Desligado\" até alguém ligar e salvar. As propostas só funcionam com as duas ligadas, a do servidor e a da empresa. Se o servidor desligar o módulo, esta linha passa a dizer \"Desligado por quem administra o servidor\".",
+          "rota": "/app/settings/recursos",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='propostas_da_empresa']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='propostas_da_empresa']"
+              },
+              "rotulo": "Chave da empresa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "o-que-o-gerente-ve",
+      "titulo": "O que o gerente vê",
+      "objetivo": "Saber o que muda na tela para quem é gerente: a lista é a mesma, mas o botão Ajustar só aparece onde ele pode mexer.",
+      "papel": "manager",
+      "busca": [
+        "gerente não vê ajustar",
+        "permissão do gerente",
+        "sem botão ajustar",
+        "quem pode mudar recurso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O gerente também acha a tela",
+          "texto": "Entrando como gerente (aqui, o Carlos Mendes), o cartão \"Recursos opcionais\" também aparece em \"Configurações\", na parte \"Sua empresa\". Atendentes não veem este cartão.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/recursos']"
+              },
+              "rotulo": "Recursos opcionais",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/recursos']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Ajustar só onde ele decide",
+          "texto": "O gerente vê a lista inteira, mas o \"Ajustar\" só aparece onde ele pode mudar. \"Avisar a equipe quando o negócio entra na etapa\" é de \"Gerente ou administrador\" e tem o botão. \"Reportar vendas à Meta\" é do \"Administrador da empresa\" e fica sem botão: para mudar, peça a um administrador.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/recursos']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Recursos opcionais",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='conversoes_meta']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='etapa_avisa_na_central']"
+              },
+              "rotulo": "Gerente pode mudar: tem Ajustar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='conversoes_meta']"
+              },
+              "rotulo": "Só o administrador muda: sem botão",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Módulos para o gerente",
+          "texto": "Nos módulos vale a mesma regra. \"Propostas comerciais\" tem \"Ajustar\" para o gerente, porque a tela de Propostas aceita gerente. Os módulos desligados no servidor ficam sem botão para todo mundo.",
+          "rota": "/app/settings/recursos",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='modulo:propostas']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='modulo:propostas']"
+              },
+              "rotulo": "Disponível: tem Ajustar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='modulo:crm_b2b']"
+              },
+              "rotulo": "Desligado no servidor: sem botão",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

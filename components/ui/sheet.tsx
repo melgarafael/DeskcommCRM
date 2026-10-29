@@ -114,8 +114,13 @@ const SheetContent = React.forwardRef<
           não precisa mexer no desenho.
 
           `lg:m-0 lg:p-0` devolve o desktop idêntico ao que era.
+
+          `z-20`: o X vem ANTES do conteúdo no DOM, então qualquer faixa
+          `sticky z-10` do conteúdo (a da lateral do Inbox, #3585) pintava por
+          cima dele e engolia o toque. Acima das faixas, abaixo do próprio
+          Sheet (z-50).
         */}
-        <SheetPrimitive.Close className="absolute top-4 right-4 -m-3.5 rounded-sm p-3.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary lg:m-0 lg:p-0">
+        <SheetPrimitive.Close className="absolute top-4 right-4 z-20 -m-3.5 rounded-sm p-3.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary lg:m-0 lg:p-0">
           <X className="h-4 w-4" />
           <span className="sr-only">{t("Fechar")}</span>
         </SheetPrimitive.Close>

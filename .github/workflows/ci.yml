@@ -49,13 +49,13 @@ permissions:
 # ATUAL deixaria `invariants`/`e2e`/`imagens-ok` verdes sem ter medido nada.
 #
 #   pull_request   → cancela o job superado. Medição de head velho não vale nada.
-#   push na main   → não cancela (a rodada da main é a medição da árvore
-#                    integrada). Com grupo, um job PENDENTE da main é substituído
-#                    pelo mais novo — que roda e mede um superconjunto.
+#   push na main   → cancela também o job de teste substituído no mesmo grupo.
+#                    A medição integrada válida continua sendo a do head atual,
+#                    com os cinco checks obrigatórios SUCCESS; cancelado não prova.
 #   tag            → nunca. É a publicação da versão.
 #
-# Exceção: publish-image também cancela no push da main (lá o produto é
-# `latest`, que a rodada seguinte sobrescreve) — o porquê está no arquivo dele.
+# publish-image tem política própria para `latest`/tags, descrita no arquivo
+# dele. Esta mudança só alcança os quatro jobs pesados de TESTE; não a publicação.
 # O grupo é por PR (e não por branch) para reabrir um PR não colidir com o run
 # de outro que aponte para a mesma ref. Vigiado por
 # tests/unit/concorrencia-so-nos-jobs-pesados.test.ts.
@@ -84,6 +84,11 @@ permissions:
 # MESMO head continuam dividindo um grupo só. O custo é o run velho aprovado
 # rodar até o fim em paralelo, em vez de ser cancelado. A primeira tentativa
 # segue no grupo do PR, e o push novo continua cancelando o velho.
+#
+# Na main, tentativa >= 2 também usa o SHA do próprio evento no sufixo: rerun
+# antigo não cancela o head novo. A primeira tentativa conserva o grupo anterior
+# por workflow/job/perna/ref. Concurrency ordena entrada no grupo, não ancestrais;
+# esta política não converte cancelamento em prova nem dispensa os cinco gates.
 
 jobs:
   # A suíte de unit em SEIS partes paralelas (duas até 22/09/2026, três até
@@ -162,8 +167,8 @@ jobs:
     # porquê e a guarda contra fork: comentário do e2e-parte no e2e.yml.
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
     concurrency:
-      group: ${{ github.workflow }}-verify-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      group: ${{ github.workflow }}-verify-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     strategy:
       # Sem fail-fast: um vermelho numa parte não esconde o da outra.
       fail-fast: false
@@ -610,8 +615,8 @@ jobs:
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
     needs: [invariants-alcance]
     concurrency:
-      group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     strategy:
       # `false` e não o padrão (`true`): com `fail-fast`, a primeira major que
       # reprovasse CANCELARIA a outra e o relatório diria "cancelled" em vez de

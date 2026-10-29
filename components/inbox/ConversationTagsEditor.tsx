@@ -153,7 +153,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
         <Button
           size="sm"
           variant="outline"
-          className="h-7 px-2"
+          className="h-11 min-w-11 px-2 lg:h-7 lg:min-w-0"
           onClick={() => add(draft)}
           disabled={mutation.isPending || !draft.trim() || tags.length >= 20}
           aria-label={t("Adicionar tag")}

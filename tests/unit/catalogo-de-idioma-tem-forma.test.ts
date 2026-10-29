@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { format } from "date-fns";
-import { enUS, zhCN } from "date-fns/locale";
+import { enUS, tr, zhCN } from "date-fns/locale";
 import { describe, expect, it } from "vitest";
 
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { IDIOMA_PADRAO, IDIOMAS } from "@/lib/i18n/idiomas";
 import { REGISTRO_DE_IDIOMAS } from "@/lib/i18n/registro";
 
 /**
@@ -28,7 +28,7 @@ const RAIZ = join(__dirname, "..", "..");
 const PASTA = join(RAIZ, "lib", "i18n", "traducoes");
 
 /** Os `Locale` do date-fns de quem tem catálogo — só para o teste formatar. */
-const LOCALE_DO_CATALOGO: Record<string, typeof zhCN> = { "zh-CN": zhCN, en: enUS };
+const LOCALE_DO_CATALOGO: Record<string, typeof zhCN> = { "zh-CN": zhCN, en: enUS, tr };
 
 const catalogos = readdirSync(PASTA)
   .filter((arquivo) => arquivo.endsWith(".json"))
@@ -87,25 +87,68 @@ describe("todo catálogo de idioma", () => {
   });
 });
 
-describe("o catálogo não viaja para o navegador antes de ser servido", () => {
-  it("nenhum código de produto importa lib/i18n/traducoes", () => {
-    // Um idioma em construção não é servido a ninguém. Importar o catálogo
-    // numa tela poria centenas de KB no pacote de TODO usuário por uma língua
-    // que ninguém pode escolher. A carga entra com o leitor (fatia 4 do PROG-022).
-    const importadores: string[] = [];
+/** O único arquivo que pode importar um catálogo (ver o cabeçalho dele). */
+const LEITOR = "lib/i18n/catalogos.ts";
+
+const IMPORTACAO = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)["']([^"']+)["']/g;
+
+/**
+ * Os catálogos que uma fonte importa, pelo código do idioma.
+ *
+ * Pelo caminho RESOLVIDO, e não pelo texto do import: `./traducoes/tr.json`
+ * de dentro de `lib/i18n` não contém `i18n/traducoes/`, e passava pela versão
+ * anterior desta guarda. Cobre `from` (import e re-export), `import()`
+ * dinâmico e `require`.
+ */
+function catalogosImportados(caminho: string, fonte: string): string[] {
+  const codigos: string[] = [];
+  for (const [, alvo = ""] of fonte.matchAll(IMPORTACAO)) {
+    const resolvido = alvo.startsWith("@/")
+      ? join(RAIZ, alvo.slice(2))
+      : alvo.startsWith(".")
+        ? resolve(dirname(caminho), alvo)
+        : null;
+    if (!resolvido) continue;
+    const dentro = relative(PASTA, resolvido);
+    if (!dentro || dentro.startsWith("..") || isAbsolute(dentro)) continue;
+    codigos.push(dentro.replace(/\.json$/, ""));
+  }
+  return codigos;
+}
+
+describe("o catálogo só viaja para o navegador pelo leitor, e só o de quem aparece", () => {
+  it("o detector acha import estático, relativo e dinâmico", () => {
+    const em = (arquivo: string) => join(RAIZ, arquivo);
+    expect(catalogosImportados(em("app/x.tsx"), 'import en from "@/lib/i18n/traducoes/en.json";')).toEqual(["en"]);
+    expect(catalogosImportados(em("lib/i18n/x.ts"), 'import tr from "./traducoes/tr.json";')).toEqual(["tr"]);
+    expect(
+      catalogosImportados(em("lib/outro/x.ts"), 'const c = await import("../i18n/traducoes/zh-CN.json");'),
+    ).toEqual(["zh-CN"]);
+    expect(catalogosImportados(em("lib/i18n/x.ts"), 'import { a } from "./traducoes-util";')).toEqual([]);
+  });
+
+  it(`só ${LEITOR} importa catálogo, e nunca o de um idioma em construção`, () => {
+    // Um catálogo importado vai no pacote de TODO usuário. O de um idioma em
+    // construção não é servido a ninguém: seriam centenas de KB por uma língua
+    // que ninguém pode escolher. O de um idioma visível entra uma vez, pelo
+    // leitor — espalhado por telas, cada uma o arrastaria de novo.
+    const visiveis = new Set<string>(IDIOMAS);
+    const indevidos: string[] = [];
     const varrer = (pasta: string) => {
       for (const entrada of readdirSync(pasta, { withFileTypes: true })) {
         if (entrada.name === "node_modules" || entrada.name.startsWith(".")) continue;
         const caminho = join(pasta, entrada.name);
         if (entrada.isDirectory()) varrer(caminho);
         else if (/\.(ts|tsx|js|mjs)$/.test(entrada.name) && !/\.test\./.test(entrada.name)) {
-          if (/from\s+["'][^"']*i18n\/traducoes\//.test(readFileSync(caminho, "utf8"))) {
-            importadores.push(relative(RAIZ, caminho));
+          const rel = relative(RAIZ, caminho).split(sep).join("/");
+          for (const codigo of catalogosImportados(caminho, readFileSync(caminho, "utf8"))) {
+            if (!visiveis.has(codigo)) indevidos.push(`${rel} → ${codigo}.json (idioma em construção)`);
+            else if (rel !== LEITOR) indevidos.push(`${rel} → ${codigo}.json (só ${LEITOR} lê catálogo)`);
           }
         }
       }
     };
     for (const area of ["app", "components", "lib", "hooks", "workers"]) varrer(join(RAIZ, area));
-    expect(importadores).toEqual([]);
+    expect(indevidos).toEqual([]);
   });
 });

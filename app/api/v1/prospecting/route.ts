@@ -19,6 +19,11 @@ import { gerarPreviaDoCandidato } from "@/lib/prospecting/previa-gerar";
 import { enriquecerSitesPendentes } from "@/lib/prospecting/site-enrich";
 import { lerPersonalizacao } from "@/lib/prospecting/personalizar";
 import {
+  completarLinksDoContato,
+  contatoPrecisaDeLinks,
+  linksDoCandidato,
+} from "@/lib/prospecting/links-do-candidato";
+import {
   activateCampaign,
   adjustPace,
   configureCredential,
@@ -375,6 +380,49 @@ export async function POST(req: NextRequest) {
         operation: body.action,
         enriquecidos: enriquecido.enriquecidos,
         classes: enriquecido.classes,
+      };
+    } else if (body.action === "completar_fichas") {
+      // "Completar fichas" (spec 26 §3.3): para cada candidato da campanha que já tem
+      // contato, acrescenta à ficha os links que faltam (o que a pessoa digitou fica).
+      // Teto de 100 GRAVAÇÕES por clique: quem já está completo não escreve e não conta
+      // no teto, então clicar de novo avança. `faltam` = quem ainda precisa depois do
+      // teto, medido só por leitura (mesmo predicado da escrita). Ordem por id: a mesma
+      // em todo clique. Toda leitura e escrita filtra `organization_id` (fonte: a sessão).
+      const TETO_DE_GRAVACOES = 100;
+      const resumo = await withProspectingLock(pool, org, async (db) => {
+        const candidatos = (
+          await db.query<{ contact_id: string; data: Prospect }>(
+            "select contact_id, data from prospecting_candidates where organization_id=$1 and campaign_id=$2 and contact_id is not null order by id",
+            [org, body.id],
+          )
+        ).rows;
+        let completadas = 0;
+        let jaCompletas = 0;
+        let semLinks = 0;
+        let faltam = 0;
+        for (const candidato of candidatos) {
+          const links = linksDoCandidato(candidato.data);
+          if (Object.keys(links).length === 0) {
+            semLinks++;
+            continue;
+          }
+          if (completadas >= TETO_DE_GRAVACOES) {
+            if (await contatoPrecisaDeLinks(db, org, candidato.contact_id, links)) faltam++;
+            else jaCompletas++;
+            continue;
+          }
+          if (await completarLinksDoContato(db, org, candidato.contact_id, links)) completadas++;
+          else jaCompletas++;
+        }
+        return { completadas, ja_completas: jaCompletas, sem_links: semLinks, faltam };
+      });
+      result = resumo;
+      // Sem endereços na trilha: só contagens (o log não carrega dado de contato).
+      auditMetadata = {
+        operation: body.action,
+        completadas: resumo.completadas,
+        ja_completas: resumo.ja_completas,
+        sem_links: resumo.sem_links,
       };
     } else {
       result = await withProspectingLock(pool, org, async (db) => {

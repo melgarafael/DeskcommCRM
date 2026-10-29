@@ -33,6 +33,7 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => false,
 }));
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ prefetch: vi.fn() }),
   usePathname: () => "/app/inbox",
 }));
 vi.mock("@/components/connections/ConnectionHealthDot", () => ({

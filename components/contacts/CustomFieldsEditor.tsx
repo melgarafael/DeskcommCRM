@@ -135,6 +135,20 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
     onChange({ ...value, [key]: v });
   }
 
+  function gravarMoeda(key: string) {
+    const draft = rascunhosDeMoeda[key];
+    if (draft === undefined) return;
+    const raw = semAMoeda(draft, moedaDoCampo);
+    const centavos = raw === "" ? null : lerCampoDeMoeda(raw, moedaDoCampo);
+    if (centavos !== null) set(key, centavos / 100);
+    else if (raw === "") set(key, null);
+    setRascunhosDeMoeda((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
   /**
    * Os campos que ESTA vez aparecem — o filtro da condição (issue #2728).
    *
@@ -225,18 +239,11 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
                   inputMode="decimal"
                   value={rascunhosDeMoeda[f.key] ?? formatado}
                   onChange={(e) => setRascunhosDeMoeda((current) => ({ ...current, [f.key]: e.target.value }))}
-                  onBlur={() => {
-                    const draft = rascunhosDeMoeda[f.key];
-                    if (draft === undefined) return;
-                    const raw = semAMoeda(draft, moedaDoCampo);
-                    const centavos = raw === "" ? null : lerCampoDeMoeda(raw, moedaDoCampo);
-                    if (centavos !== null) set(f.key, centavos / 100);
-                    else if (raw === "") set(f.key, null);
-                    setRascunhosDeMoeda((current) => {
-                      const next = { ...current };
-                      delete next[f.key];
-                      return next;
-                    });
+                  onBlur={() => gravarMoeda(f.key)}
+                  onKeyDown={(e) => {
+                    // Enter envia o formulário sem tirar o foco. Entrega o
+                    // rascunho antes do submit, usando a mesma leitura do blur.
+                    if (e.key === "Enter") gravarMoeda(f.key);
                   }}
                   disabled={disabled}
                   placeholder={exemploDoCampoDeMoeda(moedaDoCampo)}

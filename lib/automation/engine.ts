@@ -24,6 +24,7 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { evaluateConditions, type Conditions } from "@/lib/automation/conditions";
+import { hidratarCamposDoFunil } from "@/lib/automation/campos-do-render";
 import { getAction } from "@/lib/automation/actions";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
@@ -34,6 +35,7 @@ import {
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -89,7 +91,7 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
           .maybeSingle()
       : { data: null };
     if (lead) {
-      context.lead = lead;
+      context.lead = ocultarProvaMetaNaResposta(lead as Record<string, unknown>);
       if (lead.contact_id) {
         const { data: contact } = await admin
           .from("contacts")
@@ -99,6 +101,11 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
           .maybeSingle();
         if (contact) context.contact = contact;
       }
+      // O rótulo das opções (#3605): o card guarda `paris-franca`, e é a
+      // DEFINIÇÃO do funil que diz o que o cliente deve ler. Vai no contexto
+      // porque quem renderiza (`lib/automation/template.ts`) é função pura — e
+      // porque o mesmo contexto serve às condições e às ações.
+      await hidratarCamposDoFunil(context, admin, org);
     }
   } else if (row.entity_kind === "contact" && row.entity_id) {
     const { data: contact } = await admin

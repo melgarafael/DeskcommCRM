@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const downloadMock = vi.fn();
+const storageFromMock = vi.fn(() => ({ download: downloadMock }));
 const updateEqMock = vi.fn();
+const updateFilterMock = vi.fn();
+let updateError: { message: string } | null = null;
+let updateRejection: Error | null = null;
 const messageRow = {
   id: "msg1",
   organization_id: "org1",
@@ -63,11 +67,16 @@ vi.mock("@/lib/supabase/admin", () => ({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chain: any = new Proxy(
             {
-              eq: () => chain,
+              eq: (coluna: string, valor: unknown) => {
+                updateFilterMock(coluna, valor);
+                return chain;
+              },
               neq: () => chain,
               select: () => chain,
               then: (onFulfilled: (v: unknown) => void, onRejected?: (e: unknown) => void) => {
-                const p = Promise.resolve({ data: [messageRow], error: null });
+                const p = updateRejection
+                  ? Promise.reject(updateRejection)
+                  : Promise.resolve({ data: [messageRow], error: updateError });
                 return p.then(onFulfilled, onRejected);
               },
             },
@@ -85,7 +94,7 @@ vi.mock("@/lib/supabase/admin", () => ({
       });
       return chain;
     },
-    storage: { from: () => ({ download: downloadMock }) },
+    storage: { from: storageFromMock },
   }),
 }));
 
@@ -112,6 +121,7 @@ import { deriveMessageMedia, MARCADOR_NAO_LIDA } from "@/workers/media-derive-wo
 import { deriveMediaText } from "@/lib/messaging/media/derive";
 import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
 import { resolveOrgLlmConfig, type OrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
+import { logger } from "@/lib/logger";
 
 function configResolvida(over: Partial<OrgLlmConfig> = {}): OrgLlmConfig {
   return {
@@ -147,7 +157,11 @@ function eventRow(attempts = 0) {
 describe("deriveMessageMedia", () => {
   beforeEach(() => {
     downloadMock.mockReset().mockResolvedValue({ data: new Blob([new Uint8Array([1, 2, 3])]), error: null });
+    storageFromMock.mockClear();
     updateEqMock.mockReset();
+    updateFilterMock.mockReset();
+    updateError = null;
+    updateRejection = null;
     inboxInsertMock.mockReset();
     messageRow.media_derived_status = null;
     messageRow.type = "audio";
@@ -194,6 +208,108 @@ describe("deriveMessageMedia", () => {
     expect(r.status).toBe("ok");
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({ media_derived_text: "transcrição do áudio real", media_derived_status: "ready" }),
+    );
+  });
+
+  it.each(["audio", "image", "document", "video"])(
+    "recusa caminho de outra organização antes dos efeitos privilegiados (%s)",
+    async (tipo) => {
+      messageRow.type = tipo;
+      messageRow.media_storage_path = "org2/conversa-alheia/arquivo-privado.ogg";
+      const resultado = await deriveMessageMedia(eventRow());
+      expect(downloadMock).not.toHaveBeenCalled();
+      expect(storageFromMock).not.toHaveBeenCalled();
+      expect(deriveMediaText).not.toHaveBeenCalled();
+      expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+      expect(updateEqMock).toHaveBeenCalledExactlyOnceWith({ media_derived_status: "skipped" });
+      expect(updateFilterMock.mock.calls).toEqual([["id", "msg1"], ["organization_id", "org1"]]);
+      expect(inboxInsertMock).not.toHaveBeenCalled();
+      expect(resultado).toEqual({
+        consumer_key: "media_derive_v1",
+        status: "skipped",
+        detail: "invalid_media_path",
+      });
+    },
+  );
+
+  it.each([
+    "org11/conversa/arquivo.ogg",
+    "org1/../org2/arquivo.ogg",
+    "org1/conversa/%2e%2e/arquivo.ogg",
+    "org1/conversa\\arquivo.ogg",
+    "org1//arquivo.ogg",
+    "org1/conversa/arquivo.ogg?download=1",
+    "org1/conversa/arquivo.ogg#fragmento",
+    "org1/conversa/arquivo.ogg ",
+  ])("marca só skipped para caminho ambíguo, sem baixar: %s", async (caminho) => {
+    messageRow.media_storage_path = caminho;
+    const resultado = await deriveMessageMedia(eventRow());
+    expect(downloadMock).not.toHaveBeenCalled();
+    expect(storageFromMock).not.toHaveBeenCalled();
+    expect(deriveMediaText).not.toHaveBeenCalled();
+    expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledExactlyOnceWith({ media_derived_status: "skipped" });
+    expect(updateFilterMock.mock.calls).toEqual([["id", "msg1"], ["organization_id", "org1"]]);
+    expect(inboxInsertMock).not.toHaveBeenCalled();
+    expect(resultado).toEqual({
+      consumer_key: "media_derive_v1", status: "skipped", detail: "invalid_media_path",
+    });
+  });
+
+  it.each(["error", "rejection"])("falha ao marcar skipped retorna error sem ecoar a causa externa (%s)", async (falha) => {
+    messageRow.media_storage_path = "org2/conversa-alheia/arquivo-privado.ogg";
+    const externo = "conteudo-externo-que-nao-deve-aparecer";
+    if (falha === "error") updateError = { message: externo };
+    else updateRejection = new Error(externo);
+    const aviso = vi.spyOn(logger, "warn");
+    const erro = vi.spyOn(logger, "error");
+    try {
+      const resultado = await deriveMessageMedia(eventRow());
+      expect(resultado).toEqual({ consumer_key: "media_derive_v1", status: "error", detail: "skip_status_update_failed" });
+      expect(JSON.stringify(resultado)).not.toContain(externo);
+      expect(updateEqMock).toHaveBeenCalledExactlyOnceWith({ media_derived_status: "skipped" });
+      expect(updateFilterMock.mock.calls).toEqual([["id", "msg1"], ["organization_id", "org1"]]);
+      expect(downloadMock).not.toHaveBeenCalled();
+      expect(storageFromMock).not.toHaveBeenCalled();
+      expect(deriveMediaText).not.toHaveBeenCalled();
+      expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+      expect(inboxInsertMock).not.toHaveBeenCalled();
+      expect(aviso).not.toHaveBeenCalled();
+      expect(erro).not.toHaveBeenCalled();
+    } finally {
+      aviso.mockRestore();
+      erro.mockRestore();
+    }
+  });
+
+  it.each([null, ""])("preserva markSkipped para mídia sem caminho (%s)", async (caminho) => {
+    messageRow.media_storage_path = caminho;
+    const resultado = await deriveMessageMedia(eventRow());
+    expect(downloadMock).not.toHaveBeenCalled();
+    expect(storageFromMock).not.toHaveBeenCalled();
+    expect(deriveMediaText).not.toHaveBeenCalled();
+    expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledExactlyOnceWith({ media_derived_status: "skipped" });
+    expect(updateFilterMock.mock.calls).toEqual([["id", "msg1"], ["organization_id", "org1"]]);
+    expect(resultado).toEqual({
+      consumer_key: "media_derive_v1", status: "skipped", detail: "no media",
+    });
+  });
+
+  it("preserva o caminho legítimo sem exigir pasta de conversa e ignora org do payload", async () => {
+    messageRow.type = "document";
+    messageRow.media_mime = "application/pdf";
+    messageRow.media_storage_path = "org1/proposta.pdf";
+    const evento = eventRow();
+    const resultado = await deriveMessageMedia({
+      ...evento,
+      payload: { ...evento.payload, organization_id: "org2" },
+    });
+    expect(resultado.status).toBe("ok");
+    expect(downloadMock).toHaveBeenCalledExactlyOnceWith("org1/proposta.pdf");
+    expect(deriveMediaText).toHaveBeenCalledOnce();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({ media_derived_status: "ready" }),
     );
   });
 

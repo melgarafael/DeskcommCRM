@@ -21,6 +21,7 @@ import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
 import { MOEDA_PADRAO, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
 import { ContactTagsEditor } from "@/components/inbox/ContactTagsEditor";
+import { lerRecorrenciaDoFormulario } from "@/lib/leads/valor-recorrente";
 import { EcoDoValor } from "./EcoDoValor";
 
 /**
@@ -34,6 +35,9 @@ interface FormShape {
   title: string;
   description: string;
   valueReais: string;
+  /** Mensalidade e duração do contrato (fatia 1 da #3602), em texto. */
+  valorRecorrenteReais: string;
+  recorrenciaMeses: string;
   expected_close_date: string;
 }
 
@@ -49,6 +53,11 @@ function centsToReais(cents: number | null | undefined): string {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
+/** Duração em meses como texto (`null` = sem prazo, que é o campo vazio). */
+function mesesComoTexto(meses: number | null | undefined): string {
+  return meses === null || meses === undefined ? "" : String(meses);
+}
+
 export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) {
   const t = useT();
   const org = useActiveOrg();
@@ -62,6 +71,8 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
       title: lead.title,
       description: lead.description ?? "",
       valueReais: centsToReais(lead.value_cents),
+      valorRecorrenteReais: centsToReais(lead.recurring_value_cents),
+      recorrenciaMeses: mesesComoTexto(lead.recurring_months),
       expected_close_date: lead.expected_close_date ?? "",
     },
   });
@@ -72,6 +83,8 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
         title: lead.title,
         description: lead.description ?? "",
         valueReais: centsToReais(lead.value_cents),
+        valorRecorrenteReais: centsToReais(lead.recurring_value_cents),
+        recorrenciaMeses: mesesComoTexto(lead.recurring_months),
         expected_close_date: lead.expected_close_date ?? "",
       });
     }
@@ -91,10 +104,37 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
       }
     }
 
+    // O RECORRENTE vai SEMPRE neste formulário, como o valor único: o diálogo
+    // manda o formulário inteiro, e é isso que faz apagar o campo LIMPAR a
+    // mensalidade (o `null` explícito é o "não tem mais"). A leitura é a régua
+    // compartilhada com a criação e com o dossiê.
+    // Apagar a mensalidade de um negócio que a TINHA leva a duração junto: é a
+    // regra 1 do trio, a mesma do servidor (`recorrenciaParaGravar`). Duração
+    // digitada num negócio que nunca teve mensalidade segue sendo recusa.
+    const apagouAMensalidade =
+      lead.recurring_value_cents != null && values.valorRecorrenteReais.trim() === "";
+    const leitura = lerRecorrenciaDoFormulario(
+      values.valorRecorrenteReais,
+      apagouAMensalidade ? "" : values.recorrenciaMeses,
+      moedaDoValor,
+    );
+    if (!leitura.ok) {
+      form.setError(leitura.campo === "valor" ? "valorRecorrenteReais" : "recorrenciaMeses", {
+        message:
+          leitura.motivo === "valor_invalido"
+            ? t("Valor inválido")
+            : leitura.motivo === "duracao_invalida"
+              ? t("Duração inválida")
+              : t("Informe a mensalidade para usar a duração"),
+      });
+      return;
+    }
+
     const patch: Record<string, unknown> = {
       title: values.title.trim(),
       description: values.description.trim() ? values.description.trim() : null,
       value_cents: valueCents,
+      ...leitura.trio,
       expected_close_date: values.expected_close_date || null,
     };
 
@@ -165,6 +205,47 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
                 type="date"
                 {...form.register("expected_close_date")}
               />
+            </div>
+          </div>
+
+          {/* A MENSALIDADE (fatia 1 da #3602): o negócio de setup + mensalidade
+              aparece com os dois valores no card, e este é o lugar de mudá-los.
+              Apagar o valor recorrente limpa periodicidade e duração junto. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="valorRecorrenteReais">
+                {t("Valor recorrente (mensal)")} ({simboloDaMoeda(moedaDoValor)})
+              </Label>
+              <Input
+                id="valorRecorrenteReais"
+                inputMode="decimal"
+                placeholder="0,00"
+                {...form.register("valorRecorrenteReais")}
+              />
+              <EcoDoValor
+                control={form.control}
+                moeda={moedaDoValor}
+                campo="valorRecorrenteReais"
+              />
+              {form.formState.errors.valorRecorrenteReais && (
+                <p className="text-xs text-error-fg">
+                  {form.formState.errors.valorRecorrenteReais.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recorrenciaMeses">{t("Duração (meses)")}</Label>
+              <Input
+                id="recorrenciaMeses"
+                inputMode="numeric"
+                placeholder={t("sem prazo")}
+                {...form.register("recorrenciaMeses")}
+              />
+              {form.formState.errors.recorrenciaMeses && (
+                <p className="text-xs text-error-fg">
+                  {form.formState.errors.recorrenciaMeses.message}
+                </p>
+              )}
             </div>
           </div>
 

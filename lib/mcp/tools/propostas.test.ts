@@ -318,13 +318,16 @@ describe("crm_draft_proposal", () => {
     expect((r as { proposal_id?: string }).proposal_id).toBeDefined();
   });
 
-  it("valid_until omitido: calcula no FUSO DA ORGANIZAÇÃO, não em UTC (D8)", async () => {
-    // 2026-06-16T23:30:00Z: em UTC ainda é 16/06, mas em Europe/Lisbon
-    // (verão europeu, UTC+1) já é 17/06. Com default_valid_days=15, o fuso
-    // importa: UTC daria 2026-07-01, Lisboa dá 2026-07-02.
+  it.each([
+    ["2026-06-16T23:30:00Z", "2026-07-02"],
+    ["2026-03-14T23:30:00Z", "2026-03-29"],
+    ["2026-10-11T00:30:00+01:00", "2026-10-26"],
+  ])("valid_until omitido: soma 15 dias no calendário da organização a partir de %s (D8)", async (iso, esperado) => {
+    // A ferramenta usa a mesma data da rota, inclusive quando os 15 dias
+    // atravessam a entrada ou a saída do horário de verão.
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(new Date("2026-06-16T23:30:00Z"));
+      vi.setSystemTime(new Date(iso));
       const mundo = montarMundoDeFerramenta({ fusoDaOrganizacao: "Europe/Lisbon" });
       const r = await crmDraftProposal.handler(
         {
@@ -337,7 +340,7 @@ describe("crm_draft_proposal", () => {
         mundo.ctx,
       );
       expect((r as { error?: string }).error).toBeUndefined();
-      expect(mundo.propostaCriada?.valid_until).toBe("2026-07-02");
+      expect(mundo.propostaCriada?.valid_until).toBe(esperado);
     } finally {
       vi.useRealTimers();
     }

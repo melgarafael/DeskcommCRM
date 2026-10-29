@@ -74,8 +74,19 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     await page.goto("/admin/sistema");
     const interruptor = page.getByRole("switch", { name: "Cobrança dos seus clientes" });
     await expect(interruptor).toHaveAttribute("aria-checked", "false");
+    const salvamento = page.waitForResponse(r => new URL(r.url()).pathname === "/admin/sistema" && r.request().method() === "POST");
     await interruptor.click();
     await expect(interruptor).toHaveAttribute("aria-checked", "true");
+    // O switch é otimista; navegar antes da resposta aborta a Server Action.
+    const respostaDoSalvamento = await salvamento;
+    expect(respostaDoSalvamento.status()).toBe(200);
+    // A transição reabilita o controle ao receber o resultado; o poll abaixo confirma a gravação.
+    await expect(interruptor).toBeEnabled();
+    await expect.poll(async () => {
+      const gravada = await db.from("platform_config").select("valor").eq("chave", "MODULO_COBRANCA").maybeSingle();
+      expect(gravada.error).toBeNull();
+      return gravada.data?.valor;
+    }).toBe("ligado");
     await expect(page.getByText(/Empresas que já existem ficam isentas/)).toBeVisible();
     await page.screenshot({ path: `${EVIDENCIA}/sistema-cobranca-ligada.png`, fullPage: true });
     await page.goto("/admin/dashboard");

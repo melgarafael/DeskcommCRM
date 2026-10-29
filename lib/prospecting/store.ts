@@ -19,11 +19,15 @@ import {
   type CampaignConfig,
   type CampaignPace,
   type SearchInput,
+  type BuscaDaPlanilha,
   type Prospect,
 } from "./schema";
 import { CanalReconectandoError, ProspectingError } from "./provider";
 import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
+import { linksDoCandidato } from "./links-do-candidato";
+import { aplicarLinks } from "@/lib/leads/links-de-contato";
+import { logger } from "@/lib/logger";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import {
   provedorDaOrganizacao,
@@ -35,7 +39,7 @@ export interface Campaign {
   id: string;
   organization_id: string;
   name: string;
-  search: SearchInput;
+  search: SearchInput | BuscaDaPlanilha;
   config: CampaignConfig | null;
   status: string;
   search_status: string;
@@ -206,8 +210,45 @@ export async function createSearch(
     ).rows[0]!;
   });
 }
+/**
+ * O ÚNICO lugar onde um candidato entra na base — a busca do provedor e a planilha passam
+ * por aqui, para não nascer a segunda verdade sobre "como um candidato é gravado".
+ *
+ * Fase pura do enriquecimento (spec 24, sem rede): agregador e sem-site já nascem
+ * resolvidos em `data.site`. O `website` cru é preservado — é a URL que a fase de rede vai
+ * buscar. O `on conflict do nothing` e o gatilho de supressão da LGPD (`return null`) são
+ * indistinguíveis por `rowCount`: quem chama conta "não entrou", sem separar o motivo.
+ * Não abre transação: quem chama decide.
+ */
+export async function gravarCandidatos(
+  db: pg.PoolClient,
+  org: string,
+  campaignId: string,
+  prospects: Prospect[],
+): Promise<{ inseridos: number; classesPuras: Record<string, number> }> {
+  let inseridos = 0;
+  const classesPuras: Record<string, number> = {};
+  const agoraIso = new Date().toISOString();
+  for (const p of prospects) {
+    const puro = vereditoPuro(p.website, agoraIso);
+    const data = puro ? { ...p, site: puro } : p;
+    const result = await db.query(
+      "insert into prospecting_candidates(organization_id,campaign_id,place_id,phone,data) values($1,$2,$3,$4,$5) on conflict do nothing",
+      [org, campaignId, p.key, p.phone, data],
+    );
+    const gravou = result.rowCount ?? 0;
+    inseridos += gravou;
+    if (gravou > 0 && puro) {
+      classesPuras[puro.classe] = (classesPuras[puro.classe] ?? 0) + 1;
+    }
+  }
+  return { inseridos, classesPuras };
+}
 export async function synchronizeSearch(db: pg.PoolClient, admin: SupabaseClient, c: Campaign) {
   if (!c.run_id) return;
+  // Campanha importada de planilha nasce `succeeded` e sem `run_id`; este ponto não a alcança,
+  // mas o tipo da união exige o guard para ler `limit`.
+  if ("origem" in c.search) return;
   // A escolha ATUAL desta organização (#1758), relida a cada tick — e não
   // necessariamente o provedor que lançou esta execução: nada aqui guarda quem
   // lançou. Trocar de provedor com uma busca em andamento faz o novo ler um id
@@ -231,33 +272,23 @@ export async function synchronizeSearch(db: pg.PoolClient, admin: SupabaseClient
   const dataset = run.defaultDatasetId ?? c.dataset_id;
   if (!dataset) throw new ProspectingError("Busca concluída sem resultado disponível.");
   const items = await provedor.readResults(key, dataset, c.search.limit);
-  let inserted = 0;
   let invalidos = 0;
-  const classesPuras: Record<string, number> = {};
-  const agoraIso = new Date().toISOString();
+  const validos: Prospect[] = [];
+  for (const item of items) {
+    const p = normalizeProspect(item);
+    if (!p) invalidos++;
+    else validos.push(p);
+  }
+  let inserted = 0;
+  let classesPuras: Record<string, number> = {};
   await db.query("begin");
   try {
-    for (const item of items) {
-      const p = normalizeProspect(item);
-      if (!p) {
-        invalidos++;
-        continue;
-      }
-      // Fase pura do enriquecimento (spec 24, sem rede): agregador e sem-site
-      // já nascem resolvidos em `data.site`. O `website` cru é preservado —
-      // é a URL que a fase de rede vai buscar.
-      const puro = vereditoPuro(p.website, agoraIso);
-      const data = puro ? { ...p, site: puro } : p;
-      const result = await db.query(
-        "insert into prospecting_candidates(organization_id,campaign_id,place_id,phone,data) values($1,$2,$3,$4,$5) on conflict do nothing",
-        [c.organization_id, c.id, p.key, p.phone, data],
-      );
-      const gravou = result.rowCount ?? 0;
-      inserted += gravou;
-      if (gravou > 0 && puro) {
-        classesPuras[puro.classe] = (classesPuras[puro.classe] ?? 0) + 1;
-      }
-    }
+    ({ inseridos: inserted, classesPuras } = await gravarCandidatos(
+      db,
+      c.organization_id,
+      c.id,
+      validos,
+    ));
     await db.query(
       "update prospecting_campaigns set search_status='succeeded',dataset_id=$3,cost_usd=$4,result_count=$5,skipped_count=$6,error=null,updated_at=now() where organization_id=$1 and id=$2",
       [
@@ -295,6 +326,75 @@ export async function synchronizeSearch(db: pg.PoolClient, admin: SupabaseClient
       requestId: `prospecting:search:${c.id}`,
     });
   }
+}
+/** O que o operador informa ao importar; o resto da `BuscaDaPlanilha` é fixo (`origem`). */
+export type CamposDaImportacao = Omit<BuscaDaPlanilha, "origem">;
+
+export interface ResultadoDaImportacao {
+  campaign: Campaign;
+  inseridos: number;
+  ja_na_base: number;
+  classesPuras: Record<string, number>;
+  repetida: boolean;
+}
+
+/**
+ * Cria a campanha a partir da planilha já lida e validada (`lerPlanilhaDeProspeccao`).
+ *
+ * A campanha nasce `succeeded`, sem `run_id`: não há busca a sincronizar, e daí em diante é o
+ * caminho de sempre (seleção, auditoria de site, prévia, agente, fila). Repetir o envio com o
+ * mesmo `request_id` devolve a campanha que já existe e não grava nada. Tudo numa transação:
+ * ou entram campanha e candidatos, ou nenhum dos dois. `ja_na_base` junta "o telefone já era
+ * candidato na organização" e "foi excluído a pedido do titular" — o banco não separa os dois.
+ */
+export async function importarPlanilha(
+  pool: pg.Pool,
+  org: string,
+  requestId: string,
+  campos: CamposDaImportacao,
+  prospects: Prospect[],
+): Promise<ResultadoDaImportacao> {
+  return withProspectingLock(pool, org, async (db) => {
+    const prior = await db.query<Campaign & { result_count: number | null; skipped_count: number | null }>(
+      "select * from prospecting_campaigns where organization_id=$1 and request_id=$2",
+      [org, requestId],
+    );
+    const existente = prior.rows[0];
+    if (existente) {
+      return {
+        campaign: existente,
+        inseridos: existente.result_count ?? 0,
+        ja_na_base: existente.skipped_count ?? 0,
+        classesPuras: {},
+        repetida: true,
+      };
+    }
+    const search: BuscaDaPlanilha = { origem: "planilha", ...campos };
+    await db.query("begin");
+    try {
+      const { rows } = await db.query<Campaign>(
+        "insert into prospecting_campaigns(organization_id,request_id,name,search,search_status) values($1,$2,$3,$4,'succeeded') returning *",
+        [org, requestId, campos.name, search],
+      );
+      const campaign = rows[0]!;
+      const { inseridos, classesPuras } = await gravarCandidatos(db, org, campaign.id, prospects);
+      await db.query(
+        "update prospecting_campaigns set result_count=$3,skipped_count=$4,updated_at=now() where organization_id=$1 and id=$2",
+        [org, campaign.id, inseridos, prospects.length - inseridos],
+      );
+      await db.query("commit");
+      return {
+        campaign,
+        inseridos,
+        ja_na_base: prospects.length - inseridos,
+        classesPuras,
+        repetida: false,
+      };
+    } catch (error) {
+      await db.query("rollback");
+      throw error;
+    }
+  });
 }
 /**
  * A SESSÃO VAI VOLTAR SOZINHA?
@@ -450,6 +550,24 @@ export async function triarCandidato(
 }
 
 /**
+ * Os `link_<tipo>` que o contato NOVO já nasce carregando (Spec 26 §3.2). Fail-open: o
+ * mapeador não deveria lançar, mas se algo escapar o contato nasce sem links e a criação
+ * segue. Devolve `undefined` quando não há link, para não mandar `custom_fields` vazio.
+ */
+function linksParaContatoNovo(p: Candidate): Record<string, unknown> | undefined {
+  try {
+    const campos = aplicarLinks({}, linksDoCandidato(p.data));
+    return Object.keys(campos).length > 0 ? campos : undefined;
+  } catch (error) {
+    logger.warn("[prospecting] mapeador de links falhou; o contato nasce sem links", {
+      candidate_id: p.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
+
+/**
  * A PEGADA DE UMA EMPRESA NO CRM: contato, negócio no funil e conversa.
  *
  * Era o corpo do laço de `activateCampaign`, que criava isso para TODA a fila no
@@ -501,6 +619,7 @@ export async function criarPegadaDoCandidato(
   });
   let contactId = contatoDaCampanha ?? p.contact_id;
   if (!contactId) {
+    const linksDoNovo = linksParaContatoNovo(p);
     const contact = await createContactHandler(admin, ctx, {
       name: p.data.name,
       display_name: p.data.name,
@@ -508,6 +627,7 @@ export async function criarPegadaDoCandidato(
       source: "prospecting",
       source_metadata: { campaign_id: c.id, place_id: p.data.key, maps_url: p.data.maps_url },
       consent: { legitimate_interest: { ref: config.legal_basis_ref } },
+      ...(linksDoNovo ? { custom_fields: linksDoNovo } : {}),
     });
     contactId = String(contact.contact.id);
     await db.query(
@@ -515,6 +635,10 @@ export async function criarPegadaDoCandidato(
       [org, p.id, contactId],
     );
   }
+  // Contato que já existe (criado antes, ou reaproveitado da campanha) NÃO é tocado aqui.
+  // Decisão do dono (spec 26 §7.1): ficha que já existe só recebe links pelo botão
+  // "Completar fichas"; preencher sozinho a cada envio traria de volta um link que a pessoa
+  // apagou. O contato novo, acima, continua nascendo com os links.
   let leadId = p.lead_id;
   if (!leadId) {
     const existing = await db.query(

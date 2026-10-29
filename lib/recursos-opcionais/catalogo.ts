@@ -29,7 +29,7 @@
  * Os textos são a CHAVE em português do dicionário (`lib/i18n/dicionario.ts`);
  * quem desenha passa por `t()`/`traduzir()`.
  */
-import type { Role } from "@/lib/auth/types";
+import { type Role, visibilidadeRestritaAoAtendente } from "@/lib/auth/types";
 import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
@@ -378,7 +378,7 @@ const DA_EMPRESA: RecursoOpcional[] = [
     padrao: "desligado",
     quemDecide: "manager",
     href: "/app/settings/atendimento",
-    ler: peloSettings((s) => s.visibility_mode === "own" || s.visibility_mode === "own_and_unassigned"),
+    ler: peloSettings((s) => visibilidadeRestritaAoAtendente(s.visibility_mode)),
   },
   {
     id: "assinatura_do_emissor",
@@ -459,6 +459,17 @@ const DA_EMPRESA: RecursoOpcional[] = [
     quemDecide: "admin",
     href: "/app/settings/tenant/agenda",
     ler: peloSettings((s) => objeto(s.crm)?.cliente_pela_agenda === true),
+  },
+  {
+    id: "cliente_pela_venda",
+    nome: "Quem já comprou volta pelo funil de clientes",
+    oQueFaz:
+      "Contato com negócio ganho e nenhum aberto entra no funil de clientes, não no de captação.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/atendimento",
+    ler: peloSettings((s) => objeto(s.crm)?.cliente_pela_venda === true),
   },
   {
     id: "colegas_mexem_na_agenda",

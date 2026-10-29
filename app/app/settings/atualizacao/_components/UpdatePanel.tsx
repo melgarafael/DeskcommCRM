@@ -165,6 +165,30 @@ export function UpdatePanel() {
     },
   });
 
+  // O atalho do estado de falha (#2756) — o MESMO endpoint de sempre, com um
+  // corpo de UMA chave. O cliente manda a intenção e nunca um comando: quem
+  // transforma `{ force: true }` no `--force` (e no `--to` da versão de onde a
+  // tentativa saiu) é o servidor, a partir do mesmo run que a tela leu para
+  // montar o comando visível logo abaixo do botão. O botão de ATUALIZAR segue
+  // fora deste estado de propósito: sem força ele é o falso sucesso que o doc
+  // de `Saida` descreve — este aqui não, porque o `--force` refaz backup, banco
+  // e conferência de verdade.
+  const forcar = useMutation({
+    mutationFn: async () => apiClient.post("/api/v1/system/update", { force: true }),
+    onSuccess: () => {
+      setErro(null);
+      queryClient.invalidateQueries({ queryKey: ["system-version"] });
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.code === "mfa_required") return irAoDesafioDeMfa();
+      const mensagem =
+        err instanceof ApiError && err.status === 409
+          ? t(err.message)
+          : t("Não consegui iniciar a atualização. Tente de novo em instantes.");
+      setErro(mensagem);
+    },
+  });
+
   // O app reinicia no meio da atualização: a requisição falhar aqui é
   // ESPERADA, não é erro. Só é erro de verdade se nunca houve run em curso.
   const rodando = data?.run?.status === "dispatched";
@@ -307,7 +331,10 @@ export function UpdatePanel() {
   if (data.just_updated) {
     const pedida = semV(data.run?.to_version);
     return (
-      <Layout semSmtp={semSmtp} titulo={`${t("A atualização para a versão")} ${pedida} ${t("terminou")}`}>
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${pedida} ${t("terminou")}`}
+      >
         <p className="text-sm">
           {t(
             "O servidor ainda não me confirmou em que versão ele voltou ao ar — a última versão que ele confirmou é a",
@@ -347,10 +374,75 @@ export function UpdatePanel() {
   // Falha já superada por um deploy posterior não é mais o estado do servidor:
   // mostrar o aviso dela (sem botão) travaria a próxima atualização pela tela.
   const falhaVigente = !data.run?.superseded;
+  const podeForcar =
+    data.force_update_supported === true &&
+    data.identity?.status === "confirmed" &&
+    data.identity.customized === false &&
+    !data.manual_reconciliation_required;
+  const podeVoltar =
+    data.identity?.status === "confirmed" &&
+    !data.manual_reconciliation_required &&
+    ehVersaoPublicada(data.run?.from_version) &&
+    !(data.run?.status === "failed_rolled_back" && data.run.volta_automatica);
+
+  if (
+    falhaVigente &&
+    data.identity &&
+    data.identity.status !== "legacy" &&
+    ["failed", "failed_rolled_back"].includes(data.run?.status ?? "")
+  ) {
+    return (
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}
+      >
+        <p className="text-sm">
+          {t(
+            "A última tentativa falhou. O estado instalado aparece na confirmação dos serviços acima.",
+          )}
+        </p>
+        {data.run?.status === "failed_rolled_back" && data.run.volta_automatica ? (
+          <AvisoVoltaAutomatica anterior={anterior} alvo={alvo} finishedAt={data.run.finished_at} />
+        ) : null}
+        <DetalhesTecnicos texto={data.run?.log_tail} />
+        {podeVoltar ? (
+          <BotaoVoltar
+            destino={anterior}
+            mutate={() => voltar.mutate()}
+            isPending={voltar.isPending}
+            erro={erro}
+          />
+        ) : (
+          <p className="mt-3 text-sm">
+            {t("Confira a execução e preserve as alterações próprias antes de trocar as imagens.")}
+          </p>
+        )}
+        {podeForcar ? (
+          <div className="mt-3">
+            <BotaoForcar
+              mutate={() => forcar.mutate()}
+              isPending={forcar.isPending}
+              erro={podeVoltar ? null : erro}
+            />
+            <Comando comando={comandoDeVolta(data.run?.from_version)} />
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">
+            {t(
+              "O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.",
+            )}
+          </p>
+        )}
+      </Layout>
+    );
+  }
 
   if (falhaVigente && data.run?.status === "failed_rolled_back") {
     return (
-      <Layout semSmtp={semSmtp} titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}>
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}
+      >
         {/* A VOLTA QUE NINGUÉM PEDIU (#2757).
             O agente do host devolve a versão sozinho quando o site não
             responde duas vezes seguidas logo depois da atualização — e até
@@ -362,17 +454,7 @@ export function UpdatePanel() {
             Só aparece quando NINGUÉM pediu o run — uma volta pedida pela tela
             continua dizendo "Voltei o sistema", que ali é verdade. */}
         {data.run.volta_automatica ? (
-          <p className="text-sm" data-testid="volta-automatica">
-            {t("O sistema voltou sozinho para a versão")} <strong>{anterior}</strong>
-            {data.run.finished_at ? (
-              <>
-                {" "}
-                {t("às")} <strong>{horaCurta(data.run.finished_at)}</strong>
-              </>
-            ) : null}
-            {t(", porque o site não respondeu logo depois da atualização para a versão")}{" "}
-            <strong>{alvo}</strong>.
-          </p>
+          <AvisoVoltaAutomatica anterior={anterior} alvo={alvo} finishedAt={data.run.finished_at} />
         ) : null}
         <p className={data.run.volta_automatica ? "mt-3 text-sm" : "text-sm"}>
           {t("Voltei o sistema para a versão")} {anterior},{" "}
@@ -423,6 +505,13 @@ export function UpdatePanel() {
                 }
               : undefined
           }
+          // O clique que executa o comando logo abaixo (#2756). Sem guarda de
+          // versão publicada de propósito: é o único caminho de saída numa
+          // instalação fora de release, onde o `voltar` acima recusa com 409 e
+          // o `comandoDeVolta` devolve `--force` sem `--to`.
+          forcar={
+            podeForcar ? { mutate: () => forcar.mutate(), isPending: forcar.isPending } : undefined
+          }
         />
       </Layout>
     );
@@ -438,14 +527,13 @@ export function UpdatePanel() {
     // comando de volta. A cópia alarmante erra para o lado de fazer conferir, e
     // o log logo abaixo explica em português quando foi só uma recusa.
     return (
-      <Layout semSmtp={semSmtp} titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}>
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}
+      >
         <p className="text-sm">
-          {t("E eu")} <strong>{t("não consegui")}</strong>{" "}
-          {t("voltar sozinho para a versão")} {anterior}:{" "}
-          {t(
-            "o sistema pode estar rodando a versão",
-          )}{" "}
-          {alvo}{" "}
+          {t("E eu")} <strong>{t("não consegui")}</strong> {t("voltar sozinho para a versão")}{" "}
+          {anterior}: {t("o sistema pode estar rodando a versão")} {alvo}{" "}
           {t(
             "com defeito, ou fora do ar. Seus dados estão intactos e a cópia de segurança feita antes da tentativa continua guardada no servidor.",
           )}
@@ -470,6 +558,11 @@ export function UpdatePanel() {
                   erro,
                 }
               : undefined
+          }
+          // Mesmo atalho do estado anterior (#2756): o comando logo abaixo é o
+          // alvo, e é o SERVIDOR que o deriva — a tela só manda `{ force: true }`.
+          forcar={
+            podeForcar ? { mutate: () => forcar.mutate(), isPending: forcar.isPending } : undefined
           }
         />
       </Layout>
@@ -498,6 +591,37 @@ export function UpdatePanel() {
     );
   }
 
+  if (data.identity && !["legacy", "confirmed"].includes(data.identity.status)) {
+    return (
+      <Layout semSmtp={semSmtp}>
+        <p>
+          {t(
+            "A execução dos serviços ainda não foi confirmada. Aguarde a próxima verificação do servidor.",
+          )}
+        </p>
+      </Layout>
+    );
+  }
+  if (data.manual_reconciliation_required) {
+    return (
+      <Layout semSmtp={semSmtp}>
+        <h2 className="font-semibold">{t("Instalação personalizada")}</h2>
+        <p className="mt-2 text-sm">
+          {t("Esta instalação preserva alterações próprias sobre a base oficial.")}
+        </p>
+        {data.update_available && (
+          <p className="mt-2 text-sm">
+            {t("Nova versão")} · {semV(data.latest_version)}
+          </p>
+        )}
+        <p className="mt-2 text-sm text-muted-foreground">
+          {t(
+            "Concilie as alterações antes de trocar as imagens. A versão publicada não substitui automaticamente esta instalação.",
+          )}
+        </p>
+      </Layout>
+    );
+  }
   if (!data.agent_online) {
     return (
       <Layout semSmtp={semSmtp} titulo={t("Atualização automática indisponível")}>
@@ -507,9 +631,6 @@ export function UpdatePanel() {
           )}
         </p>
         <Comando comando={COMANDO_MANUAL} />
-        <p className="mt-3 text-sm text-muted-foreground">
-          {t("Versão instalada:")} {versao}.
-        </p>
       </Layout>
     );
   }
@@ -526,10 +647,8 @@ export function UpdatePanel() {
           {t(
             ") com a última publicada — normalmente é internet instável ou falta de espaço em disco na hora da checagem.",
           )}{" "}
-          <strong>
-            {t("Não quer dizer que esteja desatualizado, nem que esteja em dia")}
-          </strong>
-          : {t("quer dizer que eu não sei.")}
+          <strong>{t("Não quer dizer que esteja desatualizado, nem que esteja em dia")}</strong>:{" "}
+          {t("quer dizer que eu não sei.")}
         </p>
         <p className="mt-3 text-sm">
           {t(
@@ -537,6 +656,46 @@ export function UpdatePanel() {
           )}
         </p>
         <Comando comando={COMANDO_MANUAL} />
+      </Layout>
+    );
+  }
+
+  // O RETRATO É VELHO DEMAIS PARA FALAR PELA INSTALAÇÃO (#3488).
+  //
+  // `agent_online` acima só abre às 24h — até lá, um retrato de horas atrás
+  // respondia com convicção total. Foi o que aconteceu em produção: o DNS da
+  // VPS caiu, o agente ficou 51 batidas sem postar, a v1.90.0 saiu no meio e a
+  // tela anunciava "É a mais recente. Não há nada a fazer." com o retrato das
+  // 11h45 (medido às 16h).
+  //
+  // A frase de baixo só é honesta DEPOIS de perguntar se a comparação foi feita
+  // há pouco: `latest_version` vazio num retrato velho não significa "não há
+  // nada publicado", significa "ninguém olhou há horas". É o mesmo princípio do
+  // ramo de `compare_failed`, com o silêncio no lugar da falha declarada.
+  //
+  // `!data.update_available` no gate de propósito: quando o retrato velho
+  // APONTA uma versão nova, a informação antiga ainda basta para agir — esconder
+  // o botão ali tiraria a saída justamente de quem está atrasado. O que ele não
+  // sustenta é a afirmação de que não há nada a fazer.
+  if (data.agent_stale && !data.update_available) {
+    return (
+      <Layout semSmtp={semSmtp} titulo={t("Não sei se há versão nova")}>
+        <p className="text-sm">
+          {t("O servidor não fala comigo desde")}{" "}
+          <strong>{horaCurta(data.agent_last_seen_at)}</strong>
+          {t(
+            ". É ele quem confere se saiu versão nova — então não posso afirmar que esta é a mais recente.",
+          )}
+        </p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          <strong>{t("Não quer dizer que esteja desatualizado, nem que esteja em dia")}</strong>:{" "}
+          {t("quer dizer que eu não sei.")}
+        </p>
+        <p className="mt-3 text-sm">
+          {t(
+            "Assim que ele voltar a falar comigo, esta tela se atualiza sozinha. Se demorar, verifique a conexão do servidor com a internet ou peça ajuda a quem cuida dele.",
+          )}
+        </p>
       </Layout>
     );
   }
@@ -570,8 +729,7 @@ export function UpdatePanel() {
             {t(
               "Este projeto ainda não tem nenhuma versão publicada para comparar com a sua instalação — normal em um fork novo ou recém-criado a partir do código-fonte.",
             )}{" "}
-            <strong>{t("Não há nada a atualizar agora")}</strong>,{" "}
-            {t("e isso não é um problema.")}
+            <strong>{t("Não há nada a atualizar agora")}</strong>, {t("e isso não é um problema.")}
           </p>
           <p className="mt-3 text-sm">
             {t(
@@ -606,7 +764,9 @@ export function UpdatePanel() {
     <Layout semSmtp={semSmtp} titulo={`${t("Versão")} ${nova} ${t("disponível")}`}>
       {data.off_release && (
         <p className="mb-4 rounded-md border border-warning bg-warning-bg p-3 text-sm text-warning-fg">
-          {t("Sua instalação está numa versão de desenvolvimento. Atualizar vai levá-la para a versão publicada")}{" "}
+          {t(
+            "Sua instalação está numa versão de desenvolvimento. Atualizar vai levá-la para a versão publicada",
+          )}{" "}
           {nova}.
         </p>
       )}
@@ -634,7 +794,9 @@ export function UpdatePanel() {
         <p className="mb-4 text-sm text-muted-foreground">
           {t("Este histórico começa na versão")} {data.notes.sections.at(-1)?.version}{" "}
           {t("e pode não alcançar a que você tem instalada")} ({versao}) —{" "}
-          {t("a última parte pode estar cortada. O texto completo está no arquivo CHANGELOG.md do projeto.")}
+          {t(
+            "a última parte pode estar cortada. O texto completo está no arquivo CHANGELOG.md do projeto.",
+          )}
         </p>
       )}
 
@@ -648,7 +810,11 @@ export function UpdatePanel() {
           só junta as versões presentes no texto: pode estar faltando aviso, e
           esse parágrafo é a única pista disso. */}
       <div className="mb-6">
-        <BotaoAtualizar mutate={() => atualizar.mutate()} isPending={atualizar.isPending} erro={erro} />
+        <BotaoAtualizar
+          mutate={() => atualizar.mutate()}
+          isPending={atualizar.isPending}
+          erro={erro}
+        />
       </div>
 
       {data.notes?.sections.length ? (
@@ -660,7 +826,7 @@ export function UpdatePanel() {
                   lista não virar um muro de texto num salto de várias versões.
                   Só o CORPO é recolhido — o aviso delas já está lá em cima. */}
               {i === 0 ? (
-                <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground">
+                <pre className="font-sans text-sm whitespace-pre-wrap text-muted-foreground">
                   {markdownParaTextoSimples(secao.body)}
                 </pre>
               ) : (
@@ -668,7 +834,7 @@ export function UpdatePanel() {
                   <summary className="cursor-pointer text-sm font-medium">
                     {t("Versão")} {secao.version}
                   </summary>
-                  <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-muted-foreground">
+                  <pre className="mt-2 font-sans text-sm whitespace-pre-wrap text-muted-foreground">
                     {markdownParaTextoSimples(secao.body)}
                   </pre>
                 </details>
@@ -733,7 +899,10 @@ function AguardandoOServidor({
         {t(" — ela se mexe sozinha assim que o servidor começar.")}
       </p>
       {segundos !== null && (
-        <p className="mt-3 text-sm tabular-nums text-muted-foreground" data-testid="espera-decorrida">
+        <p
+          className="mt-3 text-sm text-muted-foreground tabular-nums"
+          data-testid="espera-decorrida"
+        >
           {t("Esperando há")} {formataEspera(segundos)}.
         </p>
       )}
@@ -789,8 +958,10 @@ function BotaoAtualizar({
  * de atualizar fica desligado nos estados de falha: o que resolve ali é
  * `--force` com alvo na versão de onde se saiu — hoje, o botão "Voltar para a
  * versão anterior" (#2757), entregue como run quando há uma versão publicada
- * para onde voltar. O comando continua sempre presente: é o plano B do botão
- * e o caminho de quem prefere terminal.
+ * para onde voltar, e o "Forçar atualização" (#2756), que é o COMANDO logo
+ * abaixo executado sem terminal, e passa também onde a volta recusa. O comando
+ * continua sempre presente: é a transparência do que o botão faz, o plano B
+ * dele e o caminho de quem prefere terminal.
  */
 function Saida({
   botao,
@@ -800,6 +971,7 @@ function Saida({
   texto,
   comando,
   voltar,
+  forcar,
 }: {
   botao: boolean;
   mutate: () => void;
@@ -814,7 +986,14 @@ function Saida({
     isPending: boolean;
     erro: string | null;
   };
+  /** O clique de força deste estado (#2756), ao lado do comando que ele executa. */
+  forcar?: { mutate: () => void; isPending: boolean } | null;
 }) {
+  // O erro aparece UMA vez, e por quem estiver na tela: `BotaoAtualizar` e
+  // `BotaoVoltar` já o renderizam dentro de si. Sem nenhum dos dois ele morreria
+  // invisível — que é exatamente o caso do força sem volta (instalação fora de
+  // release) — e com os DOIS ele viraria frase repetida.
+  const erroDoForca = botao || voltar ? null : erro;
   return (
     <div className="mt-6 border-t pt-4">
       {botao && (
@@ -828,8 +1007,51 @@ function Saida({
         </div>
       )}
       <p className="text-sm text-muted-foreground">{texto}</p>
+      {forcar && (
+        <div className="mt-3">
+          <BotaoForcar mutate={forcar.mutate} isPending={forcar.isPending} erro={erroDoForca} />
+        </div>
+      )}
       <Comando comando={comando} />
     </div>
+  );
+}
+
+/**
+ * O atalho do comando que está logo abaixo (#2756).
+ *
+ * Dispara o MESMO `POST /system/update` do botão normal, com um corpo de uma
+ * chave: `{ force: true }`. O alvo (`--force` e, quando existe, `--to` da
+ * versão de onde a tentativa saiu) é resolvido no SERVIDOR, a partir do mesmo
+ * run que a tela leu — a tela não passa caminho nenhum, nem por aqui. Diferente
+ * do "Voltar para a versão anterior" (#2757), não pede versão publicada para
+ * trás: ele executa o `comandoDeVolta` que está embaixo, cuja outra metade é
+ * justamente o `--force` sem `--to` de uma instalação fora de release.
+ */
+function BotaoForcar({
+  mutate,
+  isPending,
+  erro,
+}: {
+  mutate: () => void;
+  isPending: boolean;
+  erro: string | null;
+}) {
+  const t = useT();
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={mutate} disabled={isPending}>
+          {isPending ? t("Forçando…") : t("Forçar atualização")}
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          {t(
+            "Rodo o comando de baixo por você, sem precisar abrir o terminal. Faço uma cópia de segurança dos seus dados antes.",
+          )}
+        </span>
+      </div>
+      {erro && <p className="mt-3 text-sm text-error-fg">{erro}</p>}
+    </>
   );
 }
 
@@ -846,7 +1068,7 @@ function DetalhesTecnicos({ texto }: { texto: string | undefined }) {
       <summary className="cursor-pointer px-3 py-2 text-sm text-muted-foreground">
         {t("Detalhes técnicos (útil se for pedir ajuda)")}
       </summary>
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-3 pb-3 font-mono text-xs text-muted-foreground">
+      <pre className="max-h-72 overflow-auto px-3 pb-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground">
         {texto}
       </pre>
     </details>
@@ -874,7 +1096,7 @@ function AvisoDeSmtp() {
       <p className="font-medium">⚠️ {t("Sem SMTP configurado")}</p>
       <p className="mt-1">
         {t(
-          "O serviço de login desta instalação não envia e-mail: \"esqueci a senha\" e a confirmação de cadastro não chegam. Configure o servidor de e-mail em /admin/email e, no servidor, rode bash hostgator-setup-kit/update.sh — é ele que leva o SMTP ao serviço de login.",
+          'O serviço de login desta instalação não envia e-mail: "esqueci a senha" e a confirmação de cadastro não chegam. Configure o servidor de e-mail em /admin/email e, no servidor, rode bash hostgator-setup-kit/update.sh — é ele que leva o SMTP ao serviço de login.',
         )}
       </p>
     </div>
@@ -904,6 +1126,7 @@ function Layout({
           {titulo ?? t("Atualização do sistema")}
         </h1>
       </header>
+      <InstalledVersion />
       {semSmtp ? <AvisoDeSmtp /> : null}
       <Card className="p-6">{children}</Card>
     </div>
@@ -921,12 +1144,39 @@ function Reiniciando({ semSmtp }: { semSmtp?: boolean }) {
   );
 }
 
+function AvisoVoltaAutomatica({
+  anterior,
+  alvo,
+  finishedAt,
+}: {
+  anterior: string;
+  alvo: string;
+  finishedAt?: string | null;
+}) {
+  const t = useT();
+  return (
+    <p className="text-sm" data-testid="volta-automatica">
+      {t("O sistema voltou sozinho para a versão")} <strong>{anterior}</strong>
+      {finishedAt ? (
+        <>
+          {" "}
+          {t("às")} <strong>{horaCurta(finishedAt)}</strong>
+        </>
+      ) : null}
+      {t(", porque o site não respondeu logo depois da atualização para a versão")}{" "}
+      <strong>{alvo}</strong>.
+    </p>
+  );
+}
+
 function Comando({ comando }: { comando: string }) {
   const t = useT();
   const [copiado, setCopiado] = useState(false);
   return (
     <div className="mt-3 flex items-center gap-2">
-      <code className="flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs">{comando}</code>
+      <code className="flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs">
+        {comando}
+      </code>
       <Button
         variant="outline"
         size="sm"
@@ -939,5 +1189,62 @@ function Comando({ comando }: { comando: string }) {
         {copiado ? t("Copiado") : t("Copiar")}
       </Button>
     </div>
+  );
+}
+
+/** Present in every branch: installed identity and update requests are separate. */
+function InstalledVersion() {
+  const t = useT();
+  const { data } = useSystemVersion();
+  if (!data) return null;
+  const identity = data.identity;
+  return (
+    <section className="rounded-md border p-3 text-sm" aria-label={t("Versão instalada")}>
+      <p className="font-medium">
+        {t("Versão instalada")}: {semV(data.current_version) || t("Ainda não confirmada")}
+        {identity?.customized === true ? ` · ${t("Personalizada")}` : ""}
+      </p>
+      {identity && identity.status !== "confirmed" && (
+        <p className="mt-1 text-muted-foreground">
+          {t(
+            identity.status === "divergent"
+              ? "Os serviços executam revisões diferentes"
+              : identity.status === "stale"
+                ? "A confirmação do servidor venceu"
+                : "Execução não confirmada",
+          )}
+        </p>
+      )}
+      {data.is_owner && data.runtime_services && identity?.status !== "confirmed" && (
+        <ul className="mt-2 space-y-1">
+          {data.runtime_services.map((service) => (
+            <li key={service.role} className="break-all">
+              <code>{service.role}</code>: {service.base_version || "?"} ·{" "}
+              {service.revision?.slice(0, 12) || "?"} ·{" "}
+              {t(
+                service.running && service.healthy && service.source_verified
+                  ? "Confirmado"
+                  : "Não confirmado",
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {data.is_owner && data.official_latest_version && (
+        <p className="mt-1">
+          {t("Última release oficial")}: {semV(data.official_latest_version)}
+        </p>
+      )}
+      {data.is_owner && identity?.revision && (
+        <p className="mt-1 break-all">
+          {t("Revisão")}: <code>{identity.revision}</code>
+        </p>
+      )}
+      {data.is_owner && identity?.confirmed_at && (
+        <p className="mt-1">
+          {t("Última confirmação")}: {new Date(identity.confirmed_at).toLocaleString()}
+        </p>
+      )}
+    </section>
   );
 }

@@ -1,0 +1,415 @@
+{
+  "id": "admin-email",
+  "titulo": "E-mail (Admin)",
+  "tela": "/admin/email",
+  "resumo": "Onde quem instalou o sistema escolhe por onde saem os e-mails de todas as empresas deste servidor: convites da equipe, entrega de dados da LGPD e avisos de prazo.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de E-mail",
+      "objetivo": "Saber para que serve a tela de E-mail do Admin, ler a situação atual do envio e reconhecer os dois caminhos possíveis.",
+      "papel": "admin",
+      "busca": [
+        "configurar e-mail do sistema",
+        "convite não chega no e-mail",
+        "servidor de e-mail smtp",
+        "por onde saem os e-mails",
+        "e-mail da instalação",
+        "admin"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "No Admin, o item \"E-mail\" do menu abre o servidor de e-mail desta instalação. Convite de equipe, entrega de dados pedidos pela LGPD e aviso de prazo saem por aqui. O que você configura nesta tela vale para todas as empresas do servidor, não só para a sua clínica. Enquanto o seu servidor de e-mail próprio não estiver salvo, pode aparecer no alto de todas as telas do Admin a tarja amarela \"Sem SMTP configurado\" (SMTP é o nome técnico de um servidor de e-mail). O atalho \"Configurar em /admin/email\" dela traz para cá.",
+          "rota": "/admin/email",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "E-mail",
+                "exato": true
+              },
+              "rotulo": "E-mail no menu do Admin",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Servidor de e-mail desta instalação",
+                "exato": true
+              },
+              "rotulo": "Vale para a instalação inteira",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Configurar em /admin/email",
+                "exato": true
+              },
+              "rotulo": "Atalho que traz para cá",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A situação do envio",
+          "texto": "No fim do quadro, ao lado dos botões, uma frase diz por onde o e-mail está saindo agora. Aqui ela avisa que nenhum caminho está configurado. Nesse caso, quem convida alguém para a equipe recebe um link para copiar e mandar à pessoa, em vez de o convite chegar na caixa de entrada dela. Quando o servidor próprio estiver salvo com o endereço e o e-mail do remetente preenchidos, a frase muda para \"Em uso: o e-mail está saindo por este servidor.\". Se o e-mail sair pelo serviço externo, ela avisa isso.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "smtp-estado"
+              },
+              "rotulo": "Por onde o e-mail sai agora",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os dois caminhos",
+          "texto": "Há dois jeitos de mandar e-mail. O primeiro é o seu próprio servidor de e-mail, no quadro de cima. O segundo é um \"Serviço externo de envio\", no quadro de baixo: uma empresa que entrega o e-mail por você. Basta um dos dois. Se os dois estiverem configurados, o servidor próprio tem preferência, mesmo que os dados dele estejam errados: o sistema não volta sozinho ao serviço externo. Por isso, depois de salvar o servidor próprio, teste sempre.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "email-servico-externo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "email-servico-externo"
+              },
+              "rotulo": "Serviço externo de envio",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "A frase cinza abaixo de \"Chave do serviço de e-mail\" diz que sem ela nenhum e-mail sai. Isso só vale quando o quadro do seu servidor próprio está vazio. Com o servidor próprio salvo, a chave não é necessária."
+        }
+      ]
+    },
+    {
+      "id": "servidor-proprio",
+      "titulo": "Cadastrando o seu servidor de e-mail",
+      "objetivo": "Preencher os dados do servidor de e-mail próprio e entender o que os botões \"Testar conexão\" e \"Salvar\" fazem.",
+      "papel": "admin",
+      "busca": [
+        "cadastrar servidor smtp",
+        "porta 587 starttls",
+        "senha do e-mail do sistema",
+        "remetente dos e-mails",
+        "testar conexão do e-mail",
+        "e-mail da clínica"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Endereço e porta",
+          "texto": "Os dados vêm de quem hospeda o seu e-mail (a empresa do seu domínio ou da sua caixa de e-mail). Em \"Endereço do servidor\", escreva só o nome do servidor, normalmente \"smtp.\" seguido do seu domínio: sem \"smtp://\" na frente e sem a porta no fim. Em \"Porta\", o número que o provedor informar. O mais comum é 587.",
+          "rota": "/admin/email",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "smtp-host"
+              },
+              "valor": "smtp.clinicabemviver.com.br"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "smtp-port"
+              },
+              "valor": "587"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "smtp-host"
+              },
+              "rotulo": "Endereço do servidor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "smtp-port"
+              },
+              "rotulo": "Porta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A segurança da conexão",
+          "texto": "Em \"Segurança\", escolha o tipo de proteção que o provedor indicar. A própria lista ajuda: \"STARTTLS\" normalmente combina com a porta 587, e \"TLS/SSL\" com a porta 465. \"Sem criptografia\" só serve para um servidor dentro da sua própria rede.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "testid": "smtp-security"
+              },
+              "opcao": "STARTTLS (normalmente a porta 587)"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "smtp-security"
+              },
+              "rotulo": "Tipo de proteção",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Usuário e senha",
+          "texto": "\"Usuário\" e \"Senha\" são os da conta de e-mail que vai enviar as mensagens: normalmente o próprio endereço e a senha dele. Atenção: alguns provedores (como Gmail e Outlook) não aceitam a senha normal aqui e pedem uma \"senha de app\", que você gera nas configurações de segurança da sua conta de e-mail. A senha é guardada cifrada e nunca volta a aparecer nesta tela. Depois de salva, o campo fica vazio: deixe assim para manter a senha, ou digite outra para trocar.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "smtp-username"
+              },
+              "valor": "nao-responda@clinicabemviver.com.br"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "smtp-password"
+              },
+              "valor": "senha-de-exemplo"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "smtp-username"
+              },
+              "rotulo": "Conta que envia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "smtp-password"
+              },
+              "rotulo": "Senha (fica escondida)",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Quem aparece como remetente",
+          "texto": "Os dois últimos campos dizem quem aparece como remetente. Em \"E-mail que aparece como remetente\", use de preferência o mesmo endereço da conta que envia (ou um que essa conta tenha permissão de usar), senão o seu servidor pode recusar a mensagem. \"Nome que aparece como remetente\" é um nome de reserva: convites e avisos da LGPD saem com o nome da marca da empresa.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "smtp-from-email"
+              },
+              "valor": "nao-responda@clinicabemviver.com.br"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "smtp-from-name"
+              },
+              "valor": "Clínica Bem Viver"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "smtp-from-email"
+              },
+              "rotulo": "E-mail do remetente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "smtp-from-name"
+              },
+              "rotulo": "Nome do remetente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar e testar",
+          "texto": "\"Salvar\" grava os dados. Assim que o endereço do servidor e o e-mail do remetente estiverem salvos, todos os e-mails passam a sair por este servidor, mesmo que algum dado esteja errado. \"Testar conexão\" entra no seu servidor com o usuário e a senha e avisa se deu certo, sem mandar e-mail nenhum. Atenção: o teste confere o que já está SALVO, não o que está digitado. Se nada foi salvo ainda, ele responde \"Preencha e salve o servidor e o remetente antes de testar.\". Se já havia um servidor salvo, ele testa o antigo. Por isso: salve primeiro e teste logo em seguida.",
+          "dica": "se o teste disser \"O servidor respondeu, mas recusou o usuário e a senha.\", confira a senha. Se disser \"Não foi possível falar com o servidor. Confira o endereço, a porta e a segurança.\", confira esses três e também a senha.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "smtp-salvar"
+              },
+              "rotulo": "Grava e passa a usar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "smtp-testar"
+              },
+              "rotulo": "Confere o que está salvo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "servico-externo",
+      "titulo": "Usando um serviço externo de envio",
+      "objetivo": "Configurar o serviço externo de envio em vez do servidor próprio e saber voltar ao valor do arquivo de instalação.",
+      "papel": "admin",
+      "busca": [
+        "serviço externo de e-mail",
+        "chave do serviço de e-mail",
+        "trocar remetente dos e-mails",
+        "voltar ao padrão e-mail",
+        "e-mail sem servidor próprio",
+        "admin"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os dois campos do serviço",
+          "texto": "O quadro \"Serviço externo de envio\" tem dois campos, e os dois precisam estar preenchidos para funcionar. Hoje o sistema funciona com o serviço Resend (resend.com): é dele a chave aceita aqui. \"Chave do serviço de e-mail\" é o código que a Resend te dá; ele fica escondido e, depois de salvo, só aparecem os quatro últimos caracteres. \"Endereço que aparece como remetente\" é o e-mail que seus clientes veem, e precisa ser de um domínio que você confirmou na Resend. O selo \"Não configurado\" ao lado de cada um diz que nada foi definido ainda. A frase cinza abaixo da chave só vale se você não tiver salvo o servidor próprio, no quadro de cima.",
+          "rota": "/admin/email",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "email-servico-externo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Chave do serviço de e-mail",
+                "exato": true
+              },
+              "rotulo": "Chave (fica escondida)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Endereço que aparece como remetente",
+                "exato": true
+              },
+              "rotulo": "Remetente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não configurado",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Ainda sem valor",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Salvando um campo",
+          "texto": "Cada campo tem o seu próprio botão \"Salvar\": escreva e clique no botão da mesma linha. Na hora aparece o aviso \"Pronto, já está valendo.\". O campo de digitar volta a ficar vazio e, logo acima dele, surge a linha \"Agora:\" com o valor gravado. O selo passa a dizer \"Definido aqui nesta tela\" e aparece o botão \"Voltar ao padrão\". O que você salva aqui vale no lugar do que estiver no arquivo de instalação do servidor.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "email-servico-externo"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Endereço que aparece como remetente",
+                "exato": true
+              },
+              "valor": "contato@clinicabemviver.com.br"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-RESEND_FROM_EMAIL"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "voltar-RESEND_FROM_EMAIL"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div > label[for='config-RESEND_FROM_EMAIL'])"
+              },
+              "rotulo": "Remetente gravado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Definido aqui nesta tela",
+                "exato": true
+              },
+              "rotulo": "Vale o que foi salvo aqui",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "voltar-RESEND_FROM_EMAIL"
+              },
+              "rotulo": "Voltar ao padrão",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "voltar-RESEND_FROM_EMAIL"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Voltar ao padrão",
+          "texto": "\"Voltar ao padrão\" apaga o que foi gravado nesta tela, e o sistema volta a usar o valor do arquivo de instalação do servidor. Aparece o aviso \"Voltou para o valor do arquivo de instalação.\". Como nesta demonstração o arquivo não tem esse valor, a linha \"Agora:\" some e o selo volta a \"Não configurado\". O botão \"Voltar ao padrão\" some até você salvar de novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "voltar-RESEND_FROM_EMAIL"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div > label[for='config-RESEND_FROM_EMAIL'])"
+              },
+              "rotulo": "De volta a \"Não configurado\"",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

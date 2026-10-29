@@ -4,7 +4,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "./helpers/test";
+import { strToU8, zipSync } from "fflate";
+import { test, expect, type Page, type Request as PedidoDeRede, type Response as RespostaDeRede } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
@@ -25,7 +26,9 @@ import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
  *   A-6  com o WhatsApp desconectado o documento cabe na tela e a faixa fica visível;
  *        numa tela longa, a barra de cima gruda abaixo da faixa;
  *   A-7  com o teclado aberto (modelo Android: a janela encolhe) o composer e o
- *        último balão continuam visíveis e a fileira de ações sai.
+ *        último balão continuam visíveis e a fileira de ações sai;
+ *   A-8  a ficha do contato, aberta pelo "Ficha", tem os botões e o campo de
+ *        etiqueta com 44px (antes `h-7`, 28px, por cima do primitivo).
  *
  * E o composer de toque (PR B da F2):
  *
@@ -51,7 +54,10 @@ import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
  * no `afterAll`); a conexão caída do A-6 nasce e morre dentro do próprio caso.
  */
 
-test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+// Trace/vídeo são opções de worker: ficam no topo, não dentro do describe.
+// Este arquivo baixa URLs assinadas; preservamos as capturas/assertivas, mas
+// não arquivamos a rede nem vídeos (inclusive nos casos anteriores).
+test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, trace: "off", video: "off" });
 test.describe.configure({ timeout: 120_000 });
 
 interface E2ECreds {
@@ -277,6 +283,47 @@ test.describe("atender pelo celular", () => {
     expect(assumir!.direita).toBeLessThanOrEqual(LARGURA);
     const maisAEsquerda = Math.min(...fileira.map((f) => f.esquerda));
     expect(Math.abs(assumir!.esquerda - maisAEsquerda), "Assumir não é o primeiro da fileira").toBeLessThanOrEqual(1);
+  });
+
+  // A FICHA DO CONTATO, aberta pelo "Ficha" no celular. Os primitivos já têm
+  // 44px abaixo de `lg` (`Button` e `Input`), mas a ficha os sobrescrevia com
+  // `h-7` — 28px em qualquer largura, porque o `twMerge` troca o `h-11` da
+  // variante pelo `h-7` do chamador. É a ficha lateral desenhada para mouse,
+  // que no celular abre numa folha e vira alvo de dedo. O gatilho da cor da
+  // etiqueta fica de fora: ele só existe para `manager+`, e este arquivo entra
+  // como `agent`.
+  test("A-8 a ficha do contato abre com alvos de 44px", async ({ page }) => {
+    await entrar(page);
+    await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+    await esperarConversa(page);
+
+    await page.getByRole("button", { name: "Ficha", exact: true }).tap();
+    const ficha = page.getByRole("dialog");
+    await expect(ficha.getByRole("button", { name: "Novo Lead", exact: true })).toBeVisible({ timeout: 20_000 });
+    await ficha.getByRole("button", { name: "Tags do contato", exact: true }).tap();
+    await expect(ficha.getByPlaceholder("Nova tag…").first()).toBeVisible();
+
+    const alvos = [
+      { nome: "Tags do contato", local: ficha.getByRole("button", { name: "Tags do contato", exact: true }), largura: false },
+      { nome: "Novo Lead", local: ficha.getByRole("button", { name: "Novo Lead", exact: true }), largura: false },
+      { nome: "Ver contato", local: ficha.getByRole("link", { name: "Ver contato" }), largura: false },
+      { nome: "Adicionar tag", local: ficha.getByRole("button", { name: "Adicionar tag", exact: true }), largura: true },
+      { nome: "Nova tag…", local: ficha.getByPlaceholder("Nova tag…"), largura: false },
+    ];
+    const pequenos: string[] = [];
+    for (const alvo of alvos) {
+      const n = await alvo.local.count();
+      expect(n, `"${alvo.nome}" não está na ficha`).toBeGreaterThan(0);
+      for (let i = 0; i < n; i++) {
+        await alvo.local.nth(i).scrollIntoViewIfNeeded();
+        const r = await alvo.local.nth(i).boundingBox();
+        expect(r, `"${alvo.nome}" #${i} sem caixa`).not.toBeNull();
+        if (r!.height < 44) pequenos.push(`${alvo.nome} #${i}: ${r!.height}px de altura`);
+        if (alvo.largura && r!.width < 44) pequenos.push(`${alvo.nome} #${i}: ${r!.width}px de largura`);
+      }
+    }
+    expect(pequenos, "alvo da ficha abaixo de 44px no celular").toEqual([]);
+    await page.screenshot({ path: path.join(EVIDENCE, "a8-ficha-alvos-de-toque.png") });
   });
 
   test("A-3 voltar pela tela não reabre a conversa no voltar do navegador", async ({ page }) => {
@@ -700,6 +747,230 @@ test.describe("atender pelo celular", () => {
       await page.screenshot({ path: path.join(EVIDENCE, "b6-teclado-sem-painel.png") });
     } finally {
       await page.setViewportSize({ width: LARGURA, height: ALTURA });
+    }
+  });
+});
+
+
+// Mesma bancada real de mídia do B-5, sem dublar rota, Storage ou download.
+test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
+  test("XLSX/PDF preservam nome com acento e bytes; MIME-only tem rótulo legível", async ({ page }) => {
+    const partes = {
+      "[Content_Types].xml": '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+      "_rels/.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+      "xl/workbook.xml": '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Controle" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      "xl/_rels/workbook.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+      "xl/worksheets/sheet1.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Controle sintético</t></is></c></row></sheetData></worksheet>',
+    };
+    const xlsx = Buffer.from(zipSync(Object.fromEntries(Object.entries(partes).map(([k, v]) => [k, strToU8(v)]))));
+    const arquivos = [
+      { nome: "Relatório sintético.xlsx", ext: "xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes: xlsx },
+      { nome: "Orçamento sintético.pdf", ext: "pdf", mime: "application/pdf", bytes: fs.readFileSync(path.join(process.cwd(), "tests/fixtures/sample-text.pdf")) },
+    ];
+    const mensagens: string[] = [];
+    const caminhos: string[] = [];
+    try {
+      for (const arquivo of arquivos) {
+        const id = randomUUID();
+        const caminho = `${orgId}/${conversa}/${id}.${arquivo.ext}`;
+        caminhos.push(caminho);
+        const upload = await db.storage.from("whatsapp-media").upload(caminho, arquivo.bytes, { contentType: arquivo.mime });
+        expect(upload.error).toBeNull();
+        mensagens.push(await insere("messages", {
+          id, organization_id: orgId, conversation_id: conversa, contact_id: contato, channel_session_id: canal,
+          type: "document", direction: "inbound", status: "received", sent_at: new Date().toISOString(),
+          media_mime: arquivo.mime, media_storage_path: caminho, media_size_bytes: arquivo.bytes.length,
+          metadata: { media_filename: arquivo.nome }, external_id: `documento-${id}`,
+        }));
+      }
+      // Objeto real com extensão genérica: a bolha tem mídia, mas só o MIME
+      // pode dizer XLSX. Não usamos o corpo para fabricar o rótulo esperado.
+      const semNome = randomUUID();
+      const caminhoSemNome = `${orgId}/${conversa}/${semNome}.bin`;
+      caminhos.push(caminhoSemNome);
+      const uploadSemNome = await db.storage.from("whatsapp-media").upload(caminhoSemNome, xlsx, { contentType: arquivos[0]!.mime });
+      expect(uploadSemNome.error).toBeNull();
+      mensagens.push(await insere("messages", {
+        id: semNome,
+        organization_id: orgId, conversation_id: conversa, contact_id: contato, channel_session_id: canal,
+        type: "document", direction: "inbound", status: "received", sent_at: new Date().toISOString(),
+        media_mime: arquivos[0]!.mime, media_storage_path: caminhoSemNome, media_size_bytes: xlsx.length,
+        metadata: {}, external_id: `mime-only-${SUFIXO}`,
+      }));
+      await entrar(page);
+      await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+      await esperarConversa(page);
+      const rotuloMime = page.getByText("Documento XLSX", { exact: true });
+      await expect(rotuloMime).toBeVisible();
+      const medirRotuloMime = () => rotuloMime.evaluate((rotulo) => ({
+        larguraVisivel: rotulo.clientWidth,
+        larguraDoTexto: rotulo.scrollWidth,
+        semTruncamento: rotulo.scrollWidth <= rotulo.clientWidth,
+      }));
+      await expect.poll(async () => (await medirRotuloMime()).semTruncamento, {
+        message: "o rótulo Documento XLSX precisa mostrar o formato inteiro no celular",
+      }).toBe(true);
+      const rotuloMimeMedido = await medirRotuloMime();
+      for (const [i, arquivo] of arquivos.entries()) {
+        await expect(page.getByText(arquivo.nome, { exact: true })).toBeVisible();
+        await expect(page.getByText(arquivo.nome, { exact: true })).toHaveAttribute("title", arquivo.nome);
+        const baixar = page.getByRole("link", { name: new RegExp(`^Baixar ${arquivo.nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) });
+        await expect(baixar).toHaveAttribute("href", `/api/v1/messages/${mensagens[i]}/media?baixar=1`);
+        // Controle do preview pela rota real: não pede o Content-Disposition de download.
+        const preview = await page.request.get(`/api/v1/messages/${mensagens[i]}/media`, { maxRedirects: 0 });
+        expect(preview.status()).toBe(302);
+        expect(new URL(preview.headers()["location"]!).searchParams.has("download")).toBe(false);
+        const contexto = page.context();
+        const medirAlvo = () => baixar.evaluate((link) => {
+          const r = link.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          const alvo = document.elementFromPoint(x, y);
+          const esquerda = Math.max(0, r.left);
+          const direita = Math.min(window.innerWidth, r.right);
+          const topo = Math.max(0, r.top);
+          const fundo = Math.min(window.innerHeight, r.bottom);
+          const temRecorte = direita > esquerda && fundo > topo;
+          const recorteX = temRecorte ? (esquerda + direita) / 2 : null;
+          const recorteY = temRecorte ? (topo + fundo) / 2 : null;
+          const alvoDoRecorte = recorteX !== null && recorteY !== null
+            ? document.elementFromPoint(recorteX, recorteY) : null;
+          const bolha = link.closest('[data-testid="message-bubble"]');
+          const menu = bolha?.querySelector('button[aria-label="Opções da mensagem"]');
+          const caixaDaBolha = bolha?.getBoundingClientRect();
+          const cartao = link.parentElement?.getBoundingClientRect();
+          const acerto = (elemento: Element | null | undefined) => {
+            if (!elemento) return [];
+            const caixa = elemento.getBoundingClientRect();
+            const cx = caixa.left + caixa.width / 2;
+            const cy = caixa.top + caixa.height / 2;
+            return [[20, 0], [-20, 0], [0, 20], [0, -20]].map(([dx, dy]) => {
+              const ponto = document.elementFromPoint(cx + dx!, cy + dy!);
+              return !!ponto && elemento.contains(ponto);
+            });
+          };
+          return {
+            x, y, largura: r.width, altura: r.height,
+            viewportLargura: window.innerWidth, viewportAltura: window.innerHeight,
+            visualLargura: window.visualViewport?.width ?? window.innerWidth,
+            visualAltura: window.visualViewport?.height ?? window.innerHeight,
+            centroNaViewport: x >= 0 && x < window.innerWidth && y >= 0 && y < window.innerHeight,
+            linkNoCentro: !!alvo && link.contains(alvo),
+            opcoesNoCentro: !!alvo?.closest('button[aria-label="Opções da mensagem"]'),
+            tagNoCentro: alvo?.tagName ?? null,
+            recorteX, recorteY,
+            linkNoCentroDoRecorte: !!alvoDoRecorte && link.contains(alvoDoRecorte),
+            opcoesNoCentroDoRecorte: !!alvoDoRecorte?.closest('button[aria-label="Opções da mensagem"]'),
+            tagNoCentroDoRecorte: alvoDoRecorte?.tagName ?? null,
+            acertoDoDownload: acerto(link),
+            acertoDoMenu: acerto(menu),
+            cartaoDentroDaBolha: !!cartao && !!caixaDaBolha
+              && cartao.left >= caixaDaBolha.left && cartao.right <= caixaDaBolha.right,
+            paginaSemOverflowHorizontal: document.documentElement.scrollWidth <= window.innerWidth,
+          };
+        });
+        type MedidaDoAlvo = Awaited<ReturnType<typeof medirAlvo>>;
+        const observado = {
+          rotuloMime: rotuloMimeMedido,
+          ponto: null as MedidaDoAlvo | null,
+          pontoDepois: null as MedidaDoAlvo | null,
+          paginasNovasNoContexto: 0,
+          toqueConcluiu: null as boolean | null,
+          eventoRecebido: null as boolean | null,
+          downloadNaPaginaOriginal: null as boolean | null,
+          respostas: [] as Array<{ tipo: "rota" | "storage"; status: number; attachment: boolean; parametroDownload: boolean; nomeNoParametro: boolean }>,
+          falhasDeRede: [] as Array<"rota" | "storage">,
+        };
+        // Só classificamos o fluxo deste objeto; nenhuma URL/token vai ao diagnóstico.
+        const tipoDaUrl = (valor: string): "rota" | "storage" | null => {
+          try {
+            const u = new URL(valor);
+            if (u.pathname === `/api/v1/messages/${mensagens[i]}/media` && u.searchParams.get("baixar") === "1") return "rota";
+            if (u.pathname.endsWith(`/whatsapp-media/${caminhos[i]}`)) return "storage";
+          } catch { /* URL inválida não deve acabar no relatório de erro. */ }
+          return null;
+        };
+        const respostaDoGesto = (r: RespostaDeRede) => {
+          const tipo = tipoDaUrl(r.url());
+          if (!tipo) return;
+          const headers = r.headers();
+          let destino: URL | null = null;
+          try { destino = new URL(headers.location ?? r.url(), r.url()); } catch { /* Só registramos flags. */ }
+          observado.respostas.push({
+            tipo, status: r.status(),
+            attachment: /^attachment(?:;|$)/i.test(headers["content-disposition"] ?? ""),
+            parametroDownload: destino?.searchParams.has("download") ?? false,
+            nomeNoParametro: destino?.searchParams.get("download") === arquivo.nome,
+          });
+        };
+        const falhaDoGesto = (r: PedidoDeRede) => {
+          const tipo = tipoDaUrl(r.url());
+          if (tipo) observado.falhasDeRede.push(tipo);
+        };
+        const novaPagina = () => { observado.paginasNovasNoContexto += 1; };
+        contexto.on("response", respostaDoGesto);
+        contexto.on("requestfailed", falhaDoGesto);
+        contexto.on("page", novaPagina);
+        try {
+          await baixar.scrollIntoViewIfNeeded();
+          // Observação, sem impedir o tap de rolar e escolher um ponto visível.
+          // O download real abaixo continua sendo a condição de sucesso.
+          observado.ponto = await medirAlvo();
+          // Espera ambas as operações e prioriza o erro do gesto, para o
+          // timeout do evento não esconder um toque interceptado.
+          const [evento, toque] = await Promise.allSettled([
+            contexto.waitForEvent("download", { predicate: (d) => tipoDaUrl(d.url()) !== null, timeout: 30_000 }),
+            baixar.tap({ timeout: 30_000 }),
+          ]);
+          observado.toqueConcluiu = toque.status === "fulfilled";
+          observado.eventoRecebido = evento.status === "fulfilled";
+          if (toque.status === "rejected") throw toque.reason;
+          if (evento.status === "rejected") throw evento.reason;
+          const download = evento.value;
+          observado.downloadNaPaginaOriginal = download.page() === page;
+          expect(download.suggestedFilename()).toBe(arquivo.nome);
+          expect((await download.failure()) === null).toBe(true);
+          const salvo = await download.path();
+          expect(Boolean(salvo)).toBe(true);
+          // Booleano evita despejar bytes ou URL assinada em caso de falha.
+          expect(fs.readFileSync(salvo!).equals(arquivo.bytes)).toBe(true);
+          // Os dois alvos mantêm ao menos 44px úteis; o nome/bytes acima só
+          // passam depois do tap nativo, nunca por um ponto forçado.
+          expect(observado.ponto?.largura).toBeGreaterThanOrEqual(44);
+          expect(observado.ponto?.altura).toBeGreaterThanOrEqual(44);
+          expect(observado.ponto?.acertoDoDownload).toEqual([true, true, true, true]);
+          expect(observado.ponto?.acertoDoMenu).toEqual([true, true, true, true]);
+          expect(observado.ponto?.centroNaViewport).toBe(true);
+          expect(observado.ponto?.cartaoDentroDaBolha).toBe(true);
+          expect(observado.ponto?.paginaSemOverflowHorizontal).toBe(true);
+        } finally {
+          try { observado.pontoDepois = await medirAlvo(); } catch { /* Página pode ter fechado; sem registrar erro cru. */ }
+          contexto.off("response", respostaDoGesto);
+          contexto.off("requestfailed", falhaDoGesto);
+          contexto.off("page", novaPagina);
+          const nomeDoRecibo = `documento-download-${i + 1}-observado.json`;
+          const recibo = JSON.stringify(observado, null, 2);
+          const saida = test.info().outputPath(nomeDoRecibo);
+          fs.mkdirSync(path.dirname(saida), { recursive: true });
+          fs.writeFileSync(saida, recibo);
+          // O reporter=list não persiste attachment.body. Arquivo físico na
+          // falha e no coletor de sucesso, sempre só flags/medidas sanitizadas.
+          const evidencia = path.join("evidence", "documento-3511-01a178b3");
+          fs.mkdirSync(evidencia, { recursive: true });
+          await page.screenshot({ path: path.join(evidencia, `documento-download-${i + 1}-antes-limpeza.png`) });
+          fs.writeFileSync(path.join(evidencia, nomeDoRecibo), recibo);
+          await test.info().attach(`documento-download-${i + 1}-observado`, { path: saida, contentType: "application/json" });
+        }
+      }
+      fs.mkdirSync("evidence/documento-3511-01a178b3", { recursive: true });
+      await page.screenshot({ path: "evidence/documento-3511-01a178b3/documentos-no-inbox.png" });
+    } finally {
+      // Uma falha de limpeza não pode impedir a tentativa da outra.
+      const limpezas = await Promise.allSettled([
+        mensagens.length ? db.from("messages").delete().eq("organization_id", orgId).in("id", mensagens) : Promise.resolve({ error: null }),
+        caminhos.length ? db.storage.from("whatsapp-media").remove(caminhos) : Promise.resolve({ error: null }),
+      ]);
+      expect(limpezas.every((r) => r.status === "fulfilled" && r.value.error === null), "a prova precisa limpar seus recursos sintéticos").toBe(true);
     }
   });
 });

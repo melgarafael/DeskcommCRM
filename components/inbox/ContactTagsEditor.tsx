@@ -238,7 +238,7 @@ export function ContactTagsEditor(props: Props) {
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 px-2"
+          className="h-11 min-w-11 px-2 lg:h-7 lg:min-w-0"
           onClick={() => add(draft)}
           disabled={pendente || !draft.trim() || tags.length >= 20}
           aria-label={t("Adicionar tag")}

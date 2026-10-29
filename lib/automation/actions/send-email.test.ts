@@ -261,6 +261,23 @@ describe("send_email no schema", () => {
 });
 
 describe("a automação dispara send_email", () => {
+  it.each([
+    { nome: null, esperado: "aluno" },
+    { nome: "Ana Souza", esperado: "Ana" },
+  ])("reserva chega ao transporte com nome=$nome", async ({ nome, esperado }) => {
+    const contact = { ...(contexto().contact as Record<string, unknown>), name: nome };
+    const r = await acao()!.execute(ctx({ contact }), {
+      ...CONFIG,
+      assunto: 'Olá {{primeiro_nome|"aluno"}}',
+      corpo: 'Oi {{primeiro_nome|"aluno"}}!',
+    });
+
+    expect(r.status).toBe("success");
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(enviar.mock.calls[0]![0].subject).toBe(`Olá ${esperado}`);
+    expect(enviar.mock.calls[0]![0].text).toBe(`Oi ${esperado}!`);
+  });
+
   it("destinatário e variáveis já resolvidos no envio", async () => {
     enviar.mockResolvedValue({ ok: true, id: "e-mail-1", via: "resend" });
 

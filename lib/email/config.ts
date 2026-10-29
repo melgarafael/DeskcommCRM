@@ -121,21 +121,38 @@ export async function lerSmtp(): Promise<{ config: SmtpConfig; bancoRespondeu: b
 export async function saveSmtpConfig(input: Omit<SmtpConfig, "source"> & { updatedBy: string }) {
   const admin = createAdminClient();
   let encrypted: string | null = null;
-  if (input.password) encrypted = await encryptWebhookSecret(admin, input.password);
-  else {
-    const { data } = await admin
+
+  if (input.password) {
+    encrypted = await encryptWebhookSecret(admin, input.password);
+
+    if (!encrypted) {
+      return {
+        ok: false as const,
+        error: "A cifra está indisponível nesta instalação; a senha não foi gravada.",
+      };
+    }
+  } else {
+    const { data, error } = await admin
       .from("platform_smtp_settings")
       .select("smtp_password_encrypted")
       .eq("id", 1)
       .maybeSingle();
+
+    if (error) {
+      logger.error("[email.config] falha ao recuperar senha SMTP existente", {
+        code: error.code,
+      });
+
+      return {
+        ok: false as const,
+        error: MENSAGEM_DA_FALHA_AO_SALVAR_SMTP,
+      };
+    }
+
     encrypted =
-      (data as { smtp_password_encrypted?: string | null } | null)?.smtp_password_encrypted ?? null;
+      (data as { smtp_password_encrypted?: string | null } | null)
+        ?.smtp_password_encrypted ?? null;
   }
-  if (input.password && !encrypted)
-    return {
-      ok: false as const,
-      error: "A cifra está indisponível nesta instalação; a senha não foi gravada.",
-    };
   const { error } = await admin.from("platform_smtp_settings").upsert(
     {
       id: 1,

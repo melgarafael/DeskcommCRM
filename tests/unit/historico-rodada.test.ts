@@ -78,7 +78,7 @@ const DIA = 86_400;
 type Linha = Record<string, unknown>;
 
 /** Banco em memória com as regras de que o desfecho depende: a unique
- * (organization_id, external_id) e a chave da conversa 1:1. */
+ * (organization_id, external_id), o formato do telefone e a chave da conversa 1:1. */
 function bancoDeMentira() {
   const importacoes = new Map<string, Linha>();
   const messages: Linha[] = [];
@@ -104,6 +104,9 @@ function bancoDeMentira() {
         return Promise.resolve({ data: apagados.has(args.p_telefone as string) || apagados.has(args.p_lid as string), error: null });
       }
       if (fn === "fn_upsert_wa_contact") {
+        if (args.p_phone != null && !/^\+\d{8,15}$/.test(String(args.p_phone))) {
+          return Promise.resolve({ data: null, error: { code: "23514", message: 'new row for relation "contacts" violates check constraint "contacts_phone_e164_format"' } });
+        }
         const chave = `${args.p_kind}:${args.p_kind === "lid" ? args.p_lid : args.p_phone}`;
         if (!contatos.has(chave)) contatos.set(chave, `ct-${contatos.size + 1}`);
         return Promise.resolve({ data: contatos.get(chave), error: null });
@@ -289,6 +292,35 @@ beforeEach(() => {
 });
 
 describe("rodarUmaRodada", () => {
+  it.each(["0@s.whatsapp.net", "0@c.us"])("ignora avisos de %s e importa os chats seguintes (#3519)", async (chat) => {
+    canal.chats.unshift({ id: chat, ultimaEm: agora });
+    canal.mensagens[chat] = [
+      { id: `false_${chat}_AVISO`, from: chat, fromMe: false, body: "Aviso do WhatsApp", timestamp: agora - DIA },
+    ];
+    const db = bancoDeMentira();
+    novaImportacao(db);
+
+    // O primeiro lote só encontra o aviso. A retomada precisa alcançar telefone e LID.
+    const primeira = await rodarUmaRodada(db.admin as never, IMP, { conversas: 1, mensagens: 300 });
+    expect(primeira).toEqual({ status: "rodando", gravadas: 0, existentes: 0 });
+    expect(db.importacoes.get(IMP)).toMatchObject({
+      cursor: { indiceConversa: 1, offsetMensagens: 0 },
+      mensagens_ignoradas: 1,
+      erro: null,
+    });
+    expect(db.rpcs.filter((x) => x.fn === "fn_upsert_wa_contact")).toHaveLength(0);
+
+    expect(await rodarUmaRodada(db.admin as never, IMP, SEM_TETO)).toEqual({ status: "concluida", gravadas: 4, existentes: 0 });
+    expect(db.importacoes.get(IMP)).toMatchObject({ status: "concluida", mensagens_gravadas: 4, mensagens_ignoradas: 3, erro: null });
+    expect(db.messages.map((m) => m.external_id).sort()).toEqual([`false_${TEL}_A1`, "A2", `false_${LID}_B1`, "B2"].sort());
+    const contatos = db.rpcs.filter((x) => x.fn === "fn_upsert_wa_contact").map((x) => x.args);
+    expect(contatos).toContainEqual(expect.objectContaining({ p_kind: "phone", p_phone: "+5511900000001" }));
+    expect(contatos).toContainEqual(expect.objectContaining({ p_kind: "lid", p_lid: "111111111111111", p_phone: "+5511900000002" }));
+    expect(contatos.every((c) => c.p_chat_id !== chat)).toBe(true);
+    expect(espioes.dispatch).not.toHaveBeenCalled();
+    expect(espioes.posEntrada).not.toHaveBeenCalled();
+  });
+
   it("grava contato, conversa e mensagens marcadas como histórico, e conclui", async () => {
     const db = bancoDeMentira();
     novaImportacao(db);
