@@ -18,7 +18,7 @@ const MIGRATION = join(
   process.cwd(),
   "supabase",
   "migrations",
-  "20261029134727_9043_recebimento_do_link_de_pagamento.sql",
+  "20261029134727_9047_recebimento_do_link_de_pagamento.sql",
 );
 const BASELINE = join(process.cwd(), "supabase", "baseline.sql");
 
@@ -127,10 +127,10 @@ describe("valor em texto", () => {
  * este arquivo). Este par é o que impede as duas de divergirem em silêncio.
  */
 describe("vocabulário: SQL e TypeScript dizem a mesma lista", () => {
-  it("os cinco estados do CHECK da migration 9043 são os do TypeScript", () => {
+  it("os cinco estados do CHECK da migration 9047 são os do TypeScript", () => {
     const sql = readFileSync(MIGRATION, "utf8");
     const bloco = /pagamento_recebimentos_status_check check \(\s*status = any \(array\[([\s\S]*?)\]::text\[\]\)/.exec(sql);
-    expect(bloco, "o CHECK de status sumiu da migration 9043").not.toBeNull();
+    expect(bloco, "o CHECK de status sumiu da migration 9047").not.toBeNull();
     const doSql = [...bloco![1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
     expect(doSql).toEqual([...SITUACOES_DO_RECEBIMENTO].sort());
   });

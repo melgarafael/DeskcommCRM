@@ -28,7 +28,7 @@ export function ehProvedorDeRecebimento(bruto: string): bruto is ProvedorDeReceb
 
 /**
  * O estado do recebimento — o MESMO vocabulário do CHECK da tabela (migration
- * 9043). Duas listas existem porque o banco precisa recusar sozinho (um `psql`
+ * 9047). Duas listas existem porque o banco precisa recusar sozinho (um `psql`
  * na mão não passa por este arquivo); o par é medido em
  * `lib/pagamentos/vocabulario.test.ts`.
  */

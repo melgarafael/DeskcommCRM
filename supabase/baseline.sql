@@ -66060,14 +66060,14 @@ update public.lead_field_proposals p
      )
    );
 
--- ---- recebimento do link de pagamento do cliente final (migration 9043, #3509) ----
+-- ---- recebimento do link de pagamento do cliente final (migration 9047, #3509) ----
 -- Apêndice idempotente, espelho VERBATIM de
--- `supabase/migrations/20261029134727_9043_recebimento_do_link_de_pagamento.sql`.
+-- `supabase/migrations/20261029134727_9047_recebimento_do_link_de_pagamento.sql`.
 -- Não cria função (o bloco da VARREDURA anon não é afetado) e não devolve `anon`:
 -- a tabela nasce fechada para a anon key, que vai para o browser.
 -- Espelho conferido por `tests/unit/apendice-do-baseline-nao-diverge-da-cadeia.test.ts`.
 --
--- 9043 — registro do link e recebimento do aviso de "pago" (issue #3509).
+-- 9047 — registro do link e recebimento do aviso de "pago" (issue #3509).
 --
 -- ═══ O QUE ESTA MIGRATION ENTREGA, E O QUE ELA RECUSA ═══
 --
@@ -66286,7 +66286,7 @@ create policy tenant_isolation_pagamento_recebimentos_write on public.pagamento_
       )
   );
 
--- ⚠️ AS TRÊS TRAVAS DO SUPORTE, DEPOIS DA TABELA (9043, #3509).
+-- ⚠️ AS TRÊS TRAVAS DO SUPORTE, DEPOIS DA TABELA (9047, #3509).
 -- A última chamada de fn_aplicar_travas_de_suporte() do arquivo ocorre ANTES
 -- desta tabela nascer; sem esta linha ela fica sem support_write_insert/update/
 -- delete e o invariante de travas reprova (medido: 369 contra 372).

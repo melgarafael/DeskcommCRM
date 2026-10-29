@@ -15,7 +15,7 @@
  * atualizada = efeito. Chegar depois = 0 linhas = NADA acontece (nem timeline,
  * nem etapa, nem metadata). Um `select` seguido de `update` seria check-then-act
  * e duas entregas SIMULTÂNEAS passariam as duas pela janela — o mesmo defeito
- * que a 0027 matou nos contatos. O índice único da 9043 cobre o outro lado
+ * que a 0027 matou nos contatos. O índice único da 9047 cobre o outro lado
  * (reentrega que tenta CRIAR outra linha).
  *
  * ─── Por que a etapa de destino é `is_won` ──────────────────────────────────
@@ -86,7 +86,7 @@ export async function confirmarPagamento(
   entrada: { provedor: string; externalId: string; quando: Date },
 ): Promise<ResultadoDaConfirmacao> {
   // ⚠️ O aviso chega SEM organização (não há sessão num webhook), então a busca
-  // é por (provedor, id externo) e o índice único da 9043 é por organização —
+  // é por (provedor, id externo) e o índice único da 9047 é por organização —
   // duas organizações da MESMA instalação poderiam, em tese, ter o mesmo id
   // externo se apontassem para a mesma conta do provedor. Ambiguidade aqui não
   // se resolve escolhendo: duas linhas com o mesmo id é conta compartilhada

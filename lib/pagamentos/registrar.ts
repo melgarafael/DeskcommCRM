@@ -27,7 +27,7 @@
  * Clicar duas vezes no botão (ou o retry da tela) não pode dar 409 nem duplicar:
  * se a mesma mensagem já tem aquele pagamento, o resultado é o mesmo registro,
  * com `reutilizado: true`. A chave é o índice único
- * `(organization_id, provedor, external_id)` da 9043 — o mesmo que faz o aviso
+ * `(organization_id, provedor, external_id)` da 9047 — o mesmo que faz o aviso
  * repetido do provedor não criar linha nova.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
