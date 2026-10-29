@@ -3448,6 +3448,10 @@ Cobertura: inbox-enrichment-route.test.ts e inbox-demandas-abertas.test.tsx.
 ### Auditoria do site na fila (spec 24) `[P1]`
 
 Candidatos com `data.site` exibem veredito, raio-X, estratégia e score na fila de Prospecção e no painel do Inbox; a fila ordena por score; reanálise e prévia por candidato. Cobertura: `tests/e2e/prospeccao-auditoria-do-site.spec.ts` (valores exatos: veredito, motivo, KPI médio, reordenação) + unit de classificação/estratégia/score com sabotagem. Reanálise (fetch real) e prévia (LLM) fora do e2e de propósito. Evidência: `evidence/prospeccao-auditoria-do-site/fila-com-auditoria.png`.
+
+### Prospecção a partir da própria planilha (spec 30) `[P1]`
+
+No cartão "1. Encontrar empresas", a aba "Usar minha planilha" recebe um `.csv` ou `.xlsx` (primeira aba, até 500 empresas, colunas obrigatórias: nome da empresa e telefone), pede o nome da campanha, o público e "De onde veio esta lista?" e cria uma campanha em rascunho, sem busca paga e sem chave de provedor. A tela mostra o resumo ("N linhas · X entraram · Y já estavam na base ou foram excluídas a pedido do titular · Z recusadas") e a lista das recusadas com o número da linha e o motivo; a campanha aparece em "Suas campanhas" com o rótulo "Planilha". Quem já é contato do CRM não é abordado, e reenviar o mesmo arquivo não duplica. Cobertura: `tests/e2e/prospeccao-por-planilha.spec.ts` (5 linhas: 3 entram, 1 sem telefone, 1 repetida), unit de leitura/rota e invariante de isolamento e supressão (`tests/invariants/prospeccao-planilha-isolamento-e-supressao.test.ts`). Evidência: o relatório do Playwright no CI do PR. Mapa: prospeccao-nativa.
 ## J28 — Uma pessoa assume uma conversa que a IA passou `[P0]` (2026-09-18)
 
 **Por que P0:** é a jornada em que o cliente mais sente a diferença entre um CRM com IA e

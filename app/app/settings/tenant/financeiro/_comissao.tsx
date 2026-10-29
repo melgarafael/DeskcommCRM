@@ -24,7 +24,8 @@ export type Regra = {
   percent: number;
 };
 
-export type Pessoa = { user_id: string; name: string | null; email: string | null };
+/** O formato de `/api/v1/team/assignable`: o nome vem em `full_name`. */
+export type Pessoa = { user_id: string; full_name: string | null };
 export type Servico = { id: string; name: string };
 
 export function RegrasDeComissao({
@@ -68,7 +69,7 @@ export function RegrasDeComissao({
 
   const nomeDaPessoa = (id: string) => {
     const p = pessoas.find((x) => x.user_id === id);
-    return p?.name ?? p?.email ?? t("alguém");
+    return p?.full_name ?? t("alguém");
   };
   const nomeDoServico = (id: string) => servicos.find((x) => x.id === id)?.name ?? t("um serviço");
 
@@ -112,7 +113,7 @@ export function RegrasDeComissao({
             <option value="">{t("Qualquer pessoa")}</option>
             {pessoas.map((p) => (
               <option key={p.user_id} value={p.user_id}>
-                {p.name ?? p.email}
+                {p.full_name ?? t("alguém")}
               </option>
             ))}
           </select>

@@ -44,6 +44,7 @@ import { GET, POST } from "./route";
 import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
+import { withProspectingLock } from "@/lib/prospecting/store";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
@@ -83,6 +84,7 @@ describe("POST /api/v1/prospecting por token", () => {
   it.each([
     ["start", { action: "start", id: ID, config: CONFIG }],
     ["resume", { action: "resume", id: ID }],
+    ["completar_fichas", { action: "completar_fichas", id: ID }],
   ])("%s responde 403 sem tocar no banco", async (_nome, body) => {
     const res = await POST(tokenPost(body));
     expect(res.status).toBe(403);
@@ -392,5 +394,137 @@ describe("GET /api/v1/prospecting: configured segue o provedor (#2942)", () => {
   it("escolha desconhecida sem chave: configured=false e a lista responde 200", async () => {
     deps.pool.mockReturnValue(poolCom(false, { prospecting: { provider: "nao-existe" } }));
     expect(await configured()).toBe(false);
+  });
+});
+
+describe("POST /api/v1/prospecting completar_fichas (sessão de admin)", () => {
+  const ORG = "99999999-9999-4999-8999-999999999999";
+  const CAMPANHA = "22222222-2222-4222-8222-222222222222";
+  const COM_REDES = { website: "https://clinica.test/", socials: ["https://instagram.com/clinica"] };
+  const SO_SITE = { website: "https://ja.test/" };
+
+  type Chamada = { text: string; params: unknown[] };
+
+  /**
+   * Banco de mentira do lock: devolve os candidatos da campanha e diz, por contato, se o
+   * `update` escreveria (`precisam`). Registra cada SQL com os parâmetros, para o teste
+   * provar o filtro de organização pelo que foi chamado.
+   */
+  function bancoDeCompletar(
+    candidatos: { contact_id: string; data: object }[],
+    precisam: Set<string>,
+  ): Chamada[] {
+    const chamadas: Chamada[] = [];
+    const db = {
+      query: vi.fn(async (text: string, params: unknown[] = []) => {
+        chamadas.push({ text, params });
+        if (text.includes("from prospecting_candidates"))
+          return { rows: candidatos, rowCount: candidatos.length };
+        if (text.includes("update public.contacts"))
+          return { rows: [], rowCount: precisam.has(params[1] as string) ? 1 : 0 };
+        if (text.includes("select 1 from public.contacts"))
+          return {
+            rows: precisam.has(params[1] as string) ? [{ "?column?": 1 }] : [],
+            rowCount: 0,
+          };
+        return { rows: [], rowCount: 0 };
+      }),
+    };
+    vi.mocked(withProspectingLock).mockImplementation(
+      (async (_pool: unknown, _org: unknown, fn: (d: unknown) => Promise<unknown>) =>
+        fn(db)) as never,
+    );
+    return chamadas;
+  }
+
+  function completar(corpo: Record<string, unknown> = {}) {
+    return new NextRequest("http://localhost/api/v1/prospecting", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "completar_fichas", id: CAMPANHA, ...corpo }),
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: "u-1", idioma: "pt" },
+      org: { orgId: ORG },
+    } as never);
+  });
+
+  it("aceita por sessão de admin e devolve as contagens", async () => {
+    bancoDeCompletar(
+      [
+        { contact_id: "contato-1", data: COM_REDES },
+        { contact_id: "contato-2", data: SO_SITE },
+        { contact_id: "contato-3", data: {} },
+      ],
+      new Set(["contato-1"]),
+    );
+    const res = await POST(completar());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: unknown };
+    expect(body.data).toEqual({ completadas: 1, ja_completas: 1, sem_links: 1, faltam: 0 });
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "prospecting.changed",
+        organizationId: ORG,
+        resourceId: CAMPANHA,
+        metadata: { operation: "completar_fichas", completadas: 1, ja_completas: 1, sem_links: 1 },
+      }),
+    );
+  });
+
+  it("a trilha de auditoria não leva endereço nenhum", async () => {
+    bancoDeCompletar([{ contact_id: "contato-1", data: COM_REDES }], new Set(["contato-1"]));
+    await POST(completar());
+    const trilha = JSON.stringify(vi.mocked(audit).mock.calls[0]![0]);
+    expect(trilha).not.toContain("https://");
+    expect(trilha).not.toContain("instagram.com");
+  });
+
+  it("com 101 contatos que precisam: grava 100 e devolve faltam 1", async () => {
+    const candidatos = Array.from({ length: 101 }, (_, i) => ({
+      contact_id: `contato-${i}`,
+      data: SO_SITE,
+    }));
+    const chamadas = bancoDeCompletar(
+      candidatos,
+      new Set(candidatos.map((c) => c.contact_id)),
+    );
+    const res = await POST(completar());
+    const body = (await res.json()) as { data: unknown };
+    expect(body.data).toEqual({ completadas: 100, ja_completas: 0, sem_links: 0, faltam: 1 });
+    expect(chamadas.filter((c) => c.text.includes("update public.contacts"))).toHaveLength(100);
+  });
+
+  it("toda leitura e escrita de contato filtra organization_id, vindo da sessão", async () => {
+    const candidatos = Array.from({ length: 101 }, (_, i) => ({
+      contact_id: `contato-${i}`,
+      data: SO_SITE,
+    }));
+    const chamadas = bancoDeCompletar(
+      candidatos,
+      new Set(candidatos.map((c) => c.contact_id)),
+    );
+    await POST(completar());
+    const contatos = chamadas.filter(
+      (c) => c.text.includes("public.contacts") || c.text.includes("prospecting_candidates"),
+    );
+    expect(contatos.length).toBeGreaterThan(100);
+    for (const c of contatos) {
+      expect(c.text).toContain("organization_id");
+      expect(c.params[0]).toBe(ORG);
+    }
+    const lista = chamadas.find((c) => c.text.includes("from prospecting_candidates"));
+    expect(lista?.params).toEqual([ORG, CAMPANHA]);
+  });
+
+  it("organization_id no corpo é recusado com 422 e não toca no banco", async () => {
+    const chamadas = bancoDeCompletar([], new Set());
+    const res = await POST(completar({ organization_id: "outra-org" }));
+    expect(res.status).toBe(422);
+    expect(chamadas).toHaveLength(0);
   });
 });

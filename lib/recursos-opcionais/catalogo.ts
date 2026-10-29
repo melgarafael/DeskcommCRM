@@ -461,6 +461,17 @@ const DA_EMPRESA: RecursoOpcional[] = [
     ler: peloSettings((s) => objeto(s.crm)?.cliente_pela_agenda === true),
   },
   {
+    id: "cliente_pela_venda",
+    nome: "Quem já comprou volta pelo funil de clientes",
+    oQueFaz:
+      "Contato com negócio ganho e nenhum aberto entra no funil de clientes, não no de captação.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/atendimento",
+    ler: peloSettings((s) => objeto(s.crm)?.cliente_pela_venda === true),
+  },
+  {
     id: "colegas_mexem_na_agenda",
     nome: "Atendentes podem mexer na agenda dos colegas",
     oQueFaz: "Qualquer atendente marca e remarca na agenda de outro.",

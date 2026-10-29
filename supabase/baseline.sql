@@ -67813,3 +67813,52 @@ on conflict (model) do update set
   completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
   notes = excluded.notes,
   superseded_at = null;
+
+-- ---- lembrete de tarefa rearma na ocasião nova (migration 9038) ----
+-- manifest: **O lembrete de tarefa rearma na OCASIÃO, não na tarefa (#3639).** `agent_inbox_items.task_reminder_due_at timestamptz null` guarda o PRAZO que originou o aviso `task_due`/`task_overdue`; com `para_user_id` (0689) fecha a identidade — categoria + tarefa + responsável + prazo —, então responsável novo ou prazo novo rearma, e a rodada repetida sem mudança continua silenciosa (#2529). `inbox_task_reminder_ocasiao_unique` fecha a corrida de duas rodadas sobre a mesma ocasião.
+-- 9038 — O LEMBRETE DE TAREFA REARMA NA OCASIÃO (#3639)
+--
+-- A trava de "já avisado" é o próprio item da Central (#2529): `kind + ref_id`
+-- dizia "esta tarefa já pediu gente" — e uma tarefa pede gente mais de uma
+-- vez, quando outro responsável assume ou o prazo é adiado. A coluna guarda o
+-- prazo que motivou o aviso; com `para_user_id` (0689) a ocasião fica completa.
+-- O porquê inteiro, e por que NÃO uma revisão incrementada na tarefa, estão no
+-- cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.agent_inbox_items
+  add column if not exists task_reminder_due_at timestamptz null;
+comment on column public.agent_inbox_items.task_reminder_due_at is
+  'Prazo que originou o aviso de lembrete de tarefa. Com categoria, ref_id e para_user_id forma a OCASIÃO do aviso: prazo novo ou responsável novo rearma; mesma ocasião não repete (#3639, #2529).';
+-- Backfill best-effort dos avisos legados: o prazo ATUAL da tarefa.
+update public.agent_inbox_items as aviso
+   set task_reminder_due_at = tarefa.due_date
+  from public.crm_tasks as tarefa
+ where aviso.ref_kind = 'task'
+   and aviso.kind in ('task_due', 'task_overdue')
+   and aviso.ref_id = tarefa.id
+   and aviso.task_reminder_due_at is null
+   and tarefa.due_date is not null;
+-- Dedupe ANTES do índice único (o update.sh reaplica em banco que já duplicou).
+-- O índice deixa o `resolved` de fora: sem isso a repetida resolvida seguia
+-- dentro dele e a criação do índice falhava.
+with repetidas as (
+  select id,
+         row_number() over (
+           partition by organization_id, ref_id, kind, para_user_id, task_reminder_due_at
+           order by created_at, id
+         ) as posicao
+    from public.agent_inbox_items
+   where ref_kind = 'task'
+     and task_reminder_due_at is not null
+)
+update public.agent_inbox_items as aviso
+   set status = 'resolved',
+       resolved_at = coalesce(aviso.resolved_at, now())
+  from repetidas
+ where aviso.id = repetidas.id
+   and repetidas.posicao > 1
+   and aviso.status <> 'resolved';
+create unique index if not exists inbox_task_reminder_ocasiao_unique
+  on public.agent_inbox_items (organization_id, ref_id, kind, para_user_id, task_reminder_due_at)
+  where ref_kind = 'task' and task_reminder_due_at is not null and status <> 'resolved';

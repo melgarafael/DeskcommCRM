@@ -44,6 +44,18 @@ export const DOMINIOS_AGREGADORES = [
   "wa.me",
 ] as const;
 
+/**
+ * Redes sociais reconhecidas pelo host, com o tipo de link que lhes cabe na ficha
+ * (Spec 26). Separada de `DOMINIOS_AGREGADORES` de propósito: o LinkedIn não é
+ * agregador, e pô-lo ali mudaria `ehAgregador` para quem já o usa (a prévia e o
+ * veredito do site). Instagram e Facebook seguem nas duas listas, como antes.
+ */
+export const DOMINIOS_DE_REDE = [
+  ["instagram.com", "instagram"],
+  ["facebook.com", "facebook"],
+  ["linkedin.com", "linkedin"],
+] as const;
+
 /** Assinatura de construtor pronto por URL final → rótulo único. */
 const CONSTRUTORES_POR_URL: ReadonlyArray<readonly [string, string]> = [
   [".wixsite.com", "Wix"],
