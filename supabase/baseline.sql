@@ -66159,6 +66159,11 @@ create table if not exists public.avisos (
   expira_em timestamptz,
   created_at timestamptz not null default now()
 );
+-- Índice da leitura quente: os publicados de uma organização, mais recentes
+-- primeiro. Espelha a migration da 9043 — instalação nova e atualização
+-- precisam nascer com o mesmo schema.
+create index if not exists avisos_org_publicar_idx
+  on public.avisos (organization_id, publicar_em desc);
 alter table public.avisos enable row level security;
 revoke all on public.avisos from public, anon, authenticated;
 grant select, insert, update, delete on public.avisos to service_role;

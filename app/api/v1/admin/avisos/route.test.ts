@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarPushDaOrg } from "@/lib/notifications/web_push";
 
@@ -17,6 +18,7 @@ import { POST } from "./route";
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/notifications/web_push", () => ({
   enviarPushDaOrg: vi.fn(async () => undefined),
@@ -59,6 +61,7 @@ const CORPO_VALIDO = { titulo: "Manutenção às 22h", corpo: "O WhatsApp fica ~
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(requireSupportWrite).mockResolvedValue(null);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     org: { orgId: ORG },
@@ -118,6 +121,24 @@ describe("POST /api/v1/admin/avisos", () => {
     const resposta = await POST(pedido(CORPO_VALIDO));
 
     expect(resposta.status).toBe(403);
+    expect(banco.insert).not.toHaveBeenCalled();
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it("recusa em acompanhamento somente leitura, antes de gravar e de empurrar", async () => {
+    // `support_readonly` enxerga a empresa mas não escreve: o aviso sairia como
+    // push para todos em nome do cliente. A guarda de efeito vem antes do RBAC
+    // e do admin client, e é o que este caso mede (ordem, não só status).
+    vi.mocked(requireSupportWrite).mockResolvedValue(
+      new Response(JSON.stringify({ error: "forbidden" }), { status: 403 }),
+    );
+    const banco = bancoQueSalva(avisoSalvo());
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const resposta = await POST(pedido(CORPO_VALIDO));
+
+    expect(resposta.status).toBe(403);
+    expect(requireRole).not.toHaveBeenCalled();
     expect(banco.insert).not.toHaveBeenCalled();
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
   });

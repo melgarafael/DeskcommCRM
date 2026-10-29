@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarPushDaOrg } from "@/lib/notifications/web_push";
 
@@ -22,6 +23,12 @@ function normalizarData(valor: string | null | undefined): string | null {
 }
 
 export async function POST(req: NextRequest) {
+  // Guarda de EFEITO do acompanhamento administrativo: em `support_readonly` o
+  // aviso sairia como push para a empresa inteira em nome do cliente. Ela não
+  // substitui o RBAC abaixo — soma.
+  const suporteNegado = await requireSupportWrite();
+  if (suporteNegado) return suporteNegado;
+
   const requestId = randomUUID();
 
   const auth = await requireRole("admin", { requestId });
