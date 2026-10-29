@@ -15256,6 +15256,11 @@ export const DICIONARIO: Traducoes = {
   "colunas": { es: "columnas" },
   "campos": { es: "campos" },
   "respostas rápidas": { es: "respuestas rápidas" },
+  // Recusa do import de blueprint (#1995): a marca entra por `.replace("{marca}")`
+  // DEPOIS desta tradução — por isso o marcador é `{marca}` e não o nome do produto.
+  "Este arquivo não é um blueprint do {marca}.": {
+    es: "Este archivo no es un blueprint de {marca}.",
+  },
   "tipos de compromisso": { es: "tipos de cita" },
   "cadências em rascunho": { es: "cadencias en borrador" },
   "criada agora": { es: "creada ahora" },

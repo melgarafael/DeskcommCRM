@@ -25,14 +25,17 @@ const h = vi.hoisted(() => ({
   apoio: vi.fn(),
   audit: vi.fn(),
   from: vi.fn(),
+  marca: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.guard }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: h.apoio }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/branding/saida", () => ({ marcaDaSaida: h.marca }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: h.from }) }));
 
 import { POST } from "@/app/api/v1/message-templates/importar/route";
+import { FORMATO_DO_BLUEPRINT } from "@/lib/templates/blueprint";
 
 const ORG = "c7d40000-0000-4000-8000-000000000011";
 const USER = "c7d40000-0000-4000-8000-000000000012";
@@ -74,7 +77,8 @@ function banco(inicial: Linha[] = []) {
 
 function blueprint(itens: Linha[], cabecalho: Linha = {}) {
   return {
-    formato: "deskcomm.blueprint",
+    // A constante, não o literal: o arquivo e o teste têm de andar juntos.
+    formato: FORMATO_DO_BLUEPRINT,
     versao: 1,
     tipo: "respostas_rapidas",
     gerado_em: "2026-10-27T12:00:00.000Z",
@@ -100,6 +104,10 @@ beforeEach(() => {
   });
   h.apoio.mockResolvedValue(null);
   h.audit.mockResolvedValue(undefined);
+  // Marca de TERCEIRO de propósito: se a rota voltar a escrever o nome do
+  // produto no código, esta asserção não casa — é o que impede a recusa de
+  // batizar a instalação do revendedor com a marca da casa.
+  h.marca.mockResolvedValue({ nome: "Acme CRM" });
 });
 
 describe("POST /message-templates/importar", () => {
@@ -191,11 +199,18 @@ describe("POST /message-templates/importar", () => {
 
     const naoEhBlueprint = await POST(pedido({ itens: [{ titulo: "x" }] }));
     expect(naoEhBlueprint.status).toBe(422);
-    expect((await naoEhBlueprint.json()).error.message).toMatch(/não é um blueprint/);
+    const recusa = await naoEhBlueprint.json();
+    expect(recusa.error.message).toMatch(/não é um blueprint/);
+    // A recusa cita a marca RESOLVIDA da organização — nem literal no código,
+    // nem nome da instalação quando o revendedor tem o dele.
+    expect(recusa.error.message).toContain("Acme CRM");
+    expect(h.marca).toHaveBeenCalledWith(ORG);
 
     const outroTipo = await POST(pedido(blueprint([{ titulo: "x" }], { tipo: "funis_e_etapas" })));
     expect(outroTipo.status).toBe(422);
     expect((await outroTipo.json()).error.message).toMatch(/não é de respostas rápidas/);
+    // Só a recusa de formato paga a leitura da marca.
+    expect(h.marca).toHaveBeenCalledTimes(1);
 
     expect(db.inserts).toHaveLength(0);
   });

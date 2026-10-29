@@ -50,8 +50,18 @@
  */
 import { z } from "zod";
 
-/** O que o envelope diz de si mesmo: quem lê pode recusar antes de entender. */
-export const FORMATO_DO_BLUEPRINT = "deskcomm.blueprint";
+/**
+ * O que o envelope diz de si mesmo: quem lê pode recusar antes de entender.
+ *
+ * SEM marca, e isso é escolha, não descuido: o arquivo atravessa instalações —
+ * a de origem pode ser a de um revendedor com nome próprio. Um rótulo derivado
+ * de `branding()` faria o blueprint exportado por uma clínica não ser
+ * reconhecido pela instalação de destino (o `formato` é comparado por
+ * igualdade, ver `lerBlueprintDeRespostasRapidas`), e o sintoma seria "arquivo
+ * inválido" para um arquivo correto. Como a string é nova, ela nasce neutra em
+ * vez de entrar na lista congelada da catraca de marca.
+ */
+export const FORMATO_DO_BLUEPRINT = "respostas-rapidas.blueprint";
 /** A versão do FORMATO. Arquivo de outra versão é recusado com o número na mão. */
 export const VERSAO_DO_BLUEPRINT = 1;
 /** O tipo de configuração que este envelope carrega. Um tipo por arquivo. */

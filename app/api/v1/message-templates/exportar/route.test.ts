@@ -125,7 +125,10 @@ describe("GET /message-templates/exportar", () => {
     expect(res.status).toBe(200);
 
     const corpo = await res.json();
-    expect(corpo.formato).toBe("deskcomm.blueprint");
+    // O rótulo de formato é CONTRATO do arquivo: ele atravessa instalações, então
+    // tem de ser estável e não pode sair da marca desta instalação. Literal aqui
+    // de propósito — o teste é a trava contra troca acidental do rótulo.
+    expect(corpo.formato).toBe("respostas-rapidas.blueprint");
     expect(corpo.versao).toBe(1);
     expect(corpo.tipo).toBe("respostas_rapidas");
     expect(typeof corpo.gerado_em).toBe("string");

@@ -45,6 +45,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { marcaDaSaida } from "@/lib/branding/saida";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
@@ -64,11 +65,18 @@ export const dynamic = "force-dynamic";
  */
 const TAMANHO_MAXIMO = 2 * 1024 * 1024;
 
-/** Cada motivo de recusa tem a sua mensagem: "inválido" não ensina ninguém. */
+/**
+ * Cada motivo de recusa tem a sua mensagem: "inválido" não ensina ninguém.
+ *
+ * `{marca}` NÃO é preenchido aqui — a chave precisa chegar inteira em
+ * `traduzir()` para casar com o dicionário; quem cola o nome é o chamador, com
+ * `.replace("{marca}", …)` depois de traduzir. Escrever o nome do produto
+ * direto aqui batizaria a instalação do revendedor com a marca da casa.
+ */
 function mensagemDoMotivo(motivo: MotivoDeRecusa): string {
   switch (motivo) {
     case "formato":
-      return "Este arquivo não é um blueprint do Deskcomm.";
+      return "Este arquivo não é um blueprint do {marca}.";
     case "versao":
       return "Este blueprint é de outra versão do formato — esta instalação lê a versão 1.";
     case "tipo":
@@ -109,7 +117,14 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const lido = lerBlueprintDeRespostasRapidas(bruto);
   if (!lido.ok) {
-    return fail("validation_failed", t(mensagemDoMotivo(lido.motivo)), 422, {
+    // A marca é resolvida só quando a recusa a cita (formato): a pilha
+    // organização → instalação → `.env` custa uma leitura, e versão/tipo/itens
+    // não precisam dela. Ordem obrigatória: `traduzir()` na chave intacta e só
+    // depois `.replace("{marca}", …)` — inverter faria a chave não casar com o
+    // dicionário e a recusa sairia em português para quem lê em espanhol.
+    const marca = lido.motivo === "formato" ? (await marcaDaSaida(authz.org.orgId)).nome : "";
+    const recusa = t(mensagemDoMotivo(lido.motivo)).replace("{marca}", marca);
+    return fail("validation_failed", recusa, 422, {
       requestId,
       details: lido.detalhes,
     });
