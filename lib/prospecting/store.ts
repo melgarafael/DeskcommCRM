@@ -28,7 +28,6 @@ import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
-import { logger } from "@/lib/logger";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import {
   provedorDaOrganizacao,
