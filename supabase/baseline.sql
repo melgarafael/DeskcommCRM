@@ -25313,10 +25313,21 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(p_org::text || ':' || p_contact::text, 0));
 
   select id into v_id
-    from public.crm_leads
-   where organization_id = p_org
-     and contact_id = p_contact
-     and status = 'open'
+    from public.crm_leads l
+   where l.organization_id = p_org
+     and l.status = 'open'
+     and (
+       l.contact_id = p_contact
+       or exists (
+         select 1
+           from public.crm_lead_links k
+          where k.lead_id = l.id
+            and k.organization_id = l.organization_id
+            and k.target_kind = 'contact'
+            and k.link_kind = 'related'
+            and k.target_id = p_contact
+       )
+     )
    limit 1;
 
   -- NULL significa "já existe", e quem chama traduz isso para `ja_existe`. Não é
@@ -37925,10 +37936,21 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(p_org::text || ':' || p_contact::text, 0));
 
   select id into v_id
-    from public.crm_leads
-   where organization_id = p_org
-     and contact_id = p_contact
-     and status = 'open'
+    from public.crm_leads l
+   where l.organization_id = p_org
+     and l.status = 'open'
+     and (
+       l.contact_id = p_contact
+       or exists (
+         select 1
+           from public.crm_lead_links k
+          where k.lead_id = l.id
+            and k.organization_id = l.organization_id
+            and k.target_kind = 'contact'
+            and k.link_kind = 'related'
+            and k.target_id = p_contact
+       )
+     )
    limit 1;
 
   -- NULL significa "já existe", e quem chama traduz isso para `ja_existe`. Não é

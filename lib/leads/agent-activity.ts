@@ -52,13 +52,40 @@ export async function emitAgentActivityForContact(
 ): Promise<AgentActivityResult> {
   const { pool, organizationId, contactId } = input;
 
-  const { rows } = await pool.query<LeadCandidate>(
+  const { rows: ownRows } = await pool.query<LeadCandidate & { own: boolean }>(
     `select l.id, l.organization_id, l.pipeline_id, l.status,
-            l.last_activity_at, l.created_at
+            l.last_activity_at, l.created_at, true as own
        from crm_leads l
       where l.organization_id = $1 and l.contact_id = $2`,
     [organizationId, contactId],
   );
+
+  // Fatia 1a da #3669: o contato pode ser RELACIONADO a um negócio aberto
+  // (crm_lead_links target_kind='contact', link_kind='related'). Esses negócios
+  // também contam, mas só quando o contato não tem negócio aberto próprio —
+  // quem decide a prioridade é o resolveActiveLeadForContact (marcador `own`).
+  const { rows: relatedRows } = await pool.query<LeadCandidate & { own: boolean }>(
+    `select l.id, l.organization_id, l.pipeline_id, l.status,
+            l.last_activity_at, l.created_at, false as own
+       from crm_leads l
+       join crm_lead_links k
+         on k.lead_id = l.id and k.organization_id = l.organization_id
+      where l.organization_id = $1
+        and k.target_kind = 'contact'
+        and k.link_kind = 'related'
+        and k.target_id = $2`,
+    [organizationId, contactId],
+  );
+
+  // Dedup por id: o negócio próprio vence se aparecer nas duas listas.
+  const porId = new Map<string, LeadCandidate>();
+  for (const r of [...ownRows, ...relatedRows]) {
+    const existente = porId.get(r.id);
+    if (!existente || (r as { own?: boolean }).own) {
+      porId.set(r.id, r);
+    }
+  }
+  const rows = [...porId.values()];
 
   const { rows: defaults } = await pool.query<{ id: string }>(
     `select id from crm_pipelines
