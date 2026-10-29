@@ -1,0 +1,344 @@
+{
+  "id": "pessoas",
+  "titulo": "Pessoas",
+  "tela": "/app/people",
+  "resumo": "As pessoas que decidem dentro das empresas clientes: em que empresa trabalham, com que cargo, e por quais telefones se fala com elas.",
+  "licoes": [
+    {
+      "id": "pessoas-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Pessoas",
+      "objetivo": "Entender a diferença entre pessoa e contato, procurar alguém e ler a ficha da pessoa.",
+      "papel": "agent",
+      "busca": [
+        "pessoas",
+        "decisor",
+        "quem decide na empresa",
+        "contato da empresa",
+        "cargo",
+        "pessoa com vários telefones",
+        "b2b"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Pessoas não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Pessoas\". O caminho completo é: CRM › Ver tudo em CRM › Pessoas.",
+          "dica": "O cartão só existe quando quem administra o servidor liga o módulo \"Empresas e pessoas (venda para empresas)\", em Administração › Sistema › Módulos opcionais. É o mesmo módulo da tela de Empresas.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Pessoas",
+                "regex": true
+              },
+              "rotulo": "Abrir as Pessoas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Pessoas",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Pessoa não é contato",
+          "rota": "/app/people",
+          "texto": "Uma pessoa é alguém que trabalha numa empresa cliente, como o gerente de RH que contrata o programa de saúde. Um contato é um número de telefone, aquele que conversa no WhatsApp. Uma pessoa pode ter vários telefones, e cada telefone é um contato ligado a ela. Por isso a lista mostra o nome, o e-mail e quando o cadastro mudou, mas não o telefone: os números ficam em Contatos.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Pessoas",
+                "exato": true
+              },
+              "rotulo": "Quem decide",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Decisores e contatos — telefones ficam em Contatos.",
+                "exato": true
+              },
+              "rotulo": "Telefone fica em Contatos",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Procurar uma pessoa",
+          "texto": "A caixa de busca procura pelo nome ou pelo e-mail. Escreva \"Marcos\" e clique no nome para abrir a ficha.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por nome ou e-mail"
+              },
+              "valor": "Marcos"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar por nome ou e-mail"
+              },
+              "rotulo": "Nome ou e-mail",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Marcos Teixeira",
+                "exato": true,
+                "literal": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Marcos Teixeira",
+            "exato": true,
+            "literal": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "A ficha da pessoa",
+          "rota": "/app/people/f1a02003-0000-4000-8000-000000000003",
+          "texto": "\"Empresas\" mostra onde a pessoa trabalha e o cargo dela. \"Telefones (contacts)\" lista os números ligados a ela: o Marcos tem o celular e o fixo do RH. Clique na empresa para abrir a ficha dela, ou num número para abrir aquele contato.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "CONSTRUTORA HORIZONTE AZUL",
+                "exato": true,
+                "literal": true
+              },
+              "rotulo": "Onde trabalha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Gerente de RH",
+                "exato": true
+              },
+              "rotulo": "Cargo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "+5511976541003",
+                "exato": true,
+                "literal": true
+              },
+              "rotulo": "Celular",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "+551133224410",
+                "exato": true,
+                "literal": true
+              },
+              "rotulo": "Fixo do RH",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Pessoa sem empresa e sem telefone",
+          "rota": "/app/people/f1a02008-0000-4000-8000-000000000008",
+          "texto": "A Beatriz foi cadastrada à mão, com nome e e-mail. Por isso a ficha avisa \"Sem vínculo empresarial.\" e \"Nenhum telefone vinculado.\". Quem liga uma pessoa a uma empresa e a um telefone é a importação de planilha, em Importações.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Sem vínculo empresarial.",
+                "exato": true
+              },
+              "rotulo": "Sem empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Nenhum telefone vinculado.",
+                "exato": true
+              },
+              "rotulo": "Sem telefone",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pessoas-cadastrar-uma-pessoa",
+      "titulo": "Cadastrar uma pessoa",
+      "objetivo": "Cadastrar uma pessoa pela tela e saber quando é melhor trazê-la por planilha.",
+      "papel": "manager",
+      "busca": [
+        "nova pessoa",
+        "cadastrar pessoa",
+        "cadastrar decisor",
+        "adicionar contato da empresa",
+        "ligar pessoa à empresa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o cadastro",
+          "rota": "/app/people",
+          "texto": "Clique em \"Nova pessoa\", no alto da tela.",
+          "dica": "Só gerente ou administrador consegue cadastrar. Quem é atendente vê o botão, mas o cadastro é recusado.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova pessoa",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova pessoa",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome e e-mail",
+          "texto": "O formulário pede o nome completo, que é obrigatório, e o e-mail. Preencha e clique em \"Criar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova pessoa",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "n": 0,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "valor": "Patrícia Gomes"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "n": 1,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "valor": "patricia.gomes@horizonteazul.exemplo.com.br"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "n": 0,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Nome completo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "textbox",
+                "n": 1,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "E-mail",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar",
+            "exato": true,
+            "dentro": {
+              "role": "dialog"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A pessoa entrou, ainda sem empresa",
+          "texto": "A Patrícia aparece no alto da lista. Este formulário não liga a pessoa a uma empresa nem a um telefone: a ficha dela vai dizer \"Sem vínculo empresarial.\". Para isso, traga a pessoa numa planilha em Importações, com a empresa, o cargo e o telefone na mesma linha.",
+          "dica": "A importação não reaproveita uma pessoa cadastrada aqui: ela cria outra com o mesmo nome. Se a pessoa vai entrar por planilha, cadastre-a só por lá.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "link",
+                "nome": "Patrícia Gomes",
+                "exato": true,
+                "literal": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Patrícia Gomes",
+                "exato": true,
+                "literal": true
+              },
+              "rotulo": "Pessoa nova",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
