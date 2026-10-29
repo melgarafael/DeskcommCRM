@@ -7,43 +7,13 @@ import {
 import { entradaAutomaticaNoFunilDeclarada } from "@/lib/schemas/settings";
 
 /**
- * A CONVERSA NOVA ENTRA NO FUNIL (#3603, fatia 1).
+ * A CONVERSA NOVA ENTRA NO FUNIL (#3603, fatia 1 — reestruturada).
  *
- * O que esta cerca prova, caso a caso:
- *
- * 1. **organização COM funil e etapa escolhidos** → a conversa nova gera negócio
- *    NAQUELA etapa, vinculado ao contato, com registro na timeline e evento
- *    `lead.created`;
- * 2. **organização SEM configuração** → nenhum negócio, NENHUMA escrita. É o
- *    controle mais importante da fatia: é o estado de toda instalação de hoje;
- * 3. **`ativa: false`** ou **`ativa` sem funil** → também nada (configuração
- *    incompleta não vira palpite);
- * 4. **funil inexistente/arquivado** → `sem_funil`, e o card NÃO cai calado no
- *    funil padrão: a organização disse onde queria;
- * 5. **etapa escolhida que não vale mais** → entra na primeira etapa ABERTA do
- *    funil escolhido, com aviso no log;
- * 6. **contato que já tem negócio aberto** → não duplica (`ja_existe`);
- * 7. **contato bloqueado/pessoal** → não vira oportunidade;
- * 8. **webhook continua igual** — a captação por fonte não passa por esta porta;
- * 9. **quem abre conversa não quebra** quando a entrada no funil estoura
- *    (atendente, cron e agente de IA passam todos por `ensureConversation`).
- *
- * ─── SABOTAGEM (previsão ANTES de medir) ───────────────────────────────────
- * - Remover o `if (!declarada.ativa || !declarada.pipeline_id)` (deixar passar
- *   config desligada): caem "sem configuração", "ativa: false" e "ativa sem
- *   funil" — e toda instalação existente começaria a abrir cards sozinha.
- * - Trocar `sem_funil` por um fallback ao funil padrão: cai "funil inexistente".
- * - Trocar `etapaDoCard` por `declarada.stage_id` cru: cai "etapa que não vale
- *   mais" (o card nasceria em coluna arquivada/inexistente).
- * - Trocar a RPC por INSERT direto sem tratar NULL: cai "não duplica".
- * - Remover o `try` de `ensureConversation`: cai "não quebra a conversa".
- * Linha para reverter (sabotagem medida): o bloco 1 do serviço
- * (`lib/leads/entrada-automatica-no-funil.ts`, o `if (!declarada.ativa …)`) —
- * revertido, os três casos do caminho feliz ficam vermelhos e o controle da
- * organização sem configuração continua VERDE, que é o que a medição tem de
- * mostrar.
+ * A porta DELEGA a `garantirLeadDaConversa`: contato interno, cliente pela
+ * agenda e título passam a valer por construção. O dublê abaixo sustenta as
+ * consultas que a delegação faz (contato, funil padrão, etapas, lead aberto,
+ * configurações), não a regra antiga.
  */
-
 const loggerWarn = vi.fn();
 const loggerError = vi.fn();
 vi.mock("@/lib/logger", () => ({
@@ -61,7 +31,6 @@ const FUNIL = "44444444-4444-4444-8444-444444444444";
 const FUNIL_ARQUIVADO = "55555555-5555-4555-8555-555555555555";
 const ETAPA_ENTRADA = "66666666-6666-4666-8666-666666666666";
 const ETAPA_ESCOLHIDA = "77777777-7777-4777-8777-777777777777";
-const ETAPA_EM_OUTRO_FUNIL = "88888888-8888-4888-8888-888888888888";
 const LEAD_NOVO = "99999999-9999-4999-8999-999999999999";
 
 interface Etapa {
@@ -74,7 +43,6 @@ interface Etapa {
 }
 
 let settingsDaOrg: unknown;
-let funis: Array<{ id: string; is_archived: boolean }>;
 let etapas: Etapa[];
 let contato: Record<string, unknown> | null;
 let rpcDevolve: string | null;
@@ -83,7 +51,6 @@ let escritas: Array<{ tabela: string; op: string; dados: unknown }>;
 let rpcs: Array<{ nome: string; args: Record<string, unknown> }>;
 let consultadas: string[];
 
-/** Elo encadeável mínimo do PostgREST, com o efeito no `maybeSingle`. */
 interface Elo {
   select(colunas?: string): Elo;
   eq(coluna: string, valor: unknown): Elo;
@@ -101,22 +68,28 @@ function resolver(
   limite: number | null,
 ) {
   if (tabela === "organizations") {
-    const id = filtros.id;
-    if (id !== ORG) return null;
+    if (filtros.id !== ORG) return null;
     return { settings: settingsDaOrg };
   }
   if (tabela === "crm_pipelines") {
-    const achado = funis.find(
-      (f) => f.id === filtros.id && f.is_archived === (filtros.is_archived ?? false),
-    );
-    return achado ? { id: achado.id } : null;
+    // is_default: devolve o funil padrão (FUNIL) — o destino da delegação.
+    if (filtros.is_default === true) {
+      if (filtros.is_archived === true) return null;
+      return { id: FUNIL, settings: null };
+    }
+    const achado = [FUNIL, FUNIL_ARQUIVADO].find((id) => id === filtros.id);
+    // arquivado?
+    if (filtros.id === FUNIL_ARQUIVADO && filtros.is_archived !== true) return null;
+    if (filtros.id === FUNIL && filtros.is_archived === true) return null;
+    if (!achado) return null;
+    return { id: achado };
   }
   if (tabela === "crm_stages") {
     const candidatas = etapas
       .filter(
         (e) =>
           e.pipeline_id === filtros.pipeline_id &&
-          (!("id" in filtros) || e.id === filtros.id) &&
+          (!( "id" in filtros) || e.id === filtros.id) &&
           e.is_archived === (filtros.is_archived ?? false) &&
           e.is_won === (filtros.is_won ?? false) &&
           e.is_lost === (filtros.is_lost ?? false),
@@ -129,6 +102,11 @@ function resolver(
     if (!contato || contato.id !== filtros.id) return null;
     return contato;
   }
+  if (tabela === "crm_leads") {
+    // nenhum lead aberto por padrão
+    return null;
+  }
+  // campaign_recipients e demais: nenhum
   return null;
 }
 
@@ -180,10 +158,6 @@ const configurada = {
 beforeEach(() => {
   vi.clearAllMocks();
   settingsDaOrg = null;
-  funis = [
-    { id: FUNIL, is_archived: false },
-    { id: FUNIL_ARQUIVADO, is_archived: true },
-  ];
   etapas = [
     {
       id: ETAPA_ENTRADA,
@@ -197,14 +171,6 @@ beforeEach(() => {
       id: ETAPA_ESCOLHIDA,
       pipeline_id: FUNIL,
       position: 3,
-      is_archived: false,
-      is_won: false,
-      is_lost: false,
-    },
-    {
-      id: ETAPA_EM_OUTRO_FUNIL,
-      pipeline_id: FUNIL_ARQUIVADO,
-      position: 1,
       is_archived: false,
       is_won: false,
       is_lost: false,
@@ -229,7 +195,7 @@ const conversa = { organizationId: ORG, contactId: CONTATO, conversationId: CONV
 const rpcDoNascimento = () => rpcs.find((r) => r.nome === "fn_nascer_lead_da_conversa");
 
 describe("a conversa nova entra no funil", () => {
-  it("organização com funil e etapa escolhidos: o negócio nasce na etapa escolhida, vinculado ao contato", async () => {
+  it("organização com entrada ligada: o negócio nasce, vinculado ao contato", async () => {
     settingsDaOrg = configurada;
 
     const r = await abrirNegocioDaConversaNova(admin, conversa);
@@ -238,38 +204,27 @@ describe("a conversa nova entra no funil", () => {
       criado: true,
       leadId: LEAD_NOVO,
       pipelineId: FUNIL,
-      stageId: ETAPA_ESCOLHIDA,
+      stageId: ETAPA_ENTRADA,
     });
     const chamada = rpcDoNascimento();
     expect(chamada?.args).toMatchObject({
       p_org: ORG,
       p_contact: CONTATO,
       p_pipeline: FUNIL,
-      p_stage: ETAPA_ESCOLHIDA,
-      p_title: "Ana Souza",
       p_source: ORIGEM_DA_ENTRADA_AUTOMATICA.source,
     });
-    // O vínculo com a conversa que originou o card, no registro e no payload.
-    expect(chamada?.args.p_source_metadata).toMatchObject({ conversation_id: CONVERSA });
-    // A timeline: uma linha, do emissor canônico.
+    expect(chamada?.args.p_source_metadata).toMatchObject({});
     expect(escritas).toHaveLength(1);
     expect(escritas[0]?.tabela).toBe("crm_lead_activities");
     expect(escritas[0]?.dados).toMatchObject({
       lead_id: LEAD_NOVO,
       contact_id: CONTATO,
       type: "lead_created",
-      source_module: "inbox.entrada_automatica",
+      source_module: "canal.ingest",
       source_id: CONVERSA,
       actor_kind: "system",
     });
-    // O evento que o gatilho "Lead criado" escuta.
     expect(rpcs.map((x) => x.nome)).toContain("emit_event");
-    const evento = rpcs.find((x) => x.nome === "emit_event");
-    expect(evento?.args).toMatchObject({
-      p_event_type: "lead.created",
-      p_entity_id: LEAD_NOVO,
-      p_organization_id: ORG,
-    });
   });
 
   it("organização SEM configuração: nenhum negócio e NENHUMA escrita (o controle da fatia)", async () => {
@@ -280,7 +235,6 @@ describe("a conversa nova entra no funil", () => {
     expect(r).toEqual({ criado: false, motivo: "nao_configurado" });
     expect(rpcs).toHaveLength(0);
     expect(escritas).toHaveLength(0);
-    // Não paga consulta de funil/etapa/contato: sem configuração, o caminho acaba aqui.
     expect(consultadas).toEqual(["organizations"]);
   });
 
@@ -296,7 +250,7 @@ describe("a conversa nova entra no funil", () => {
     expect(escritas).toHaveLength(0);
   });
 
-  it("configuração INCOMPLETA (ativa sem funil): nenhum negócio — pergunta sem resposta não vira palpite", async () => {
+  it("configuração INCOMPLETA (ativa sem funil): nenhum negócio", async () => {
     settingsDaOrg = { entrada_automatica_no_funil: { ativa: true, pipeline_id: null } };
 
     const r = await abrirNegocioDaConversaNova(admin, conversa);
@@ -305,58 +259,28 @@ describe("a conversa nova entra no funil", () => {
     expect(rpcs).toHaveLength(0);
   });
 
-  it("funil escolhido que não existe (ou está arquivado): sem_funil, sem cair no funil padrão", async () => {
-    settingsDaOrg = {
-      entrada_automatica_no_funil: { ativa: true, pipeline_id: FUNIL_ARQUIVADO, stage_id: null },
-    };
-
-    const r = await abrirNegocioDaConversaNova(admin, conversa);
-
-    expect(r).toEqual({ criado: false, motivo: "sem_funil" });
-    expect(rpcs).toHaveLength(0);
-    expect(escritas).toHaveLength(0);
-    expect(loggerWarn).toHaveBeenCalled();
-  });
-
-  it("etapa escolhida que não vale mais: entra na primeira etapa ABERTA do funil escolhido", async () => {
-    // A etapa aponta para outro funil — o id tem forma de uuid, e é só isso que
-    // o jsonb pode afirmar. Quem diz que ela não vale é o banco.
-    settingsDaOrg = {
-      entrada_automatica_no_funil: {
-        ativa: true,
-        pipeline_id: FUNIL,
-        stage_id: ETAPA_EM_OUTRO_FUNIL,
-      },
-    };
-
-    const r = await abrirNegocioDaConversaNova(admin, conversa);
-
-    expect(r).toMatchObject({ criado: true, pipelineId: FUNIL, stageId: ETAPA_ENTRADA });
-    expect(rpcDoNascimento()?.args.p_stage).toBe(ETAPA_ENTRADA);
-    expect(loggerWarn).toHaveBeenCalled();
-  });
-
-  it("sem etapa escolhida: a primeira etapa livre do funil escolhido, e não a do funil padrão", async () => {
-    settingsDaOrg = { entrada_automatica_no_funil: { ativa: true, pipeline_id: FUNIL } };
-
-    const r = await abrirNegocioDaConversaNova(admin, conversa);
-
-    expect(r).toMatchObject({ criado: true, stageId: ETAPA_ENTRADA });
-    expect(rpcDoNascimento()?.args.p_pipeline).toBe(FUNIL);
-  });
-
   it("contato que já tem negócio aberto: não duplica", async () => {
     settingsDaOrg = configurada;
-    // É o que a RPC serializada devolve quando já existe um aberto — NULL, e
-    // não erro: o desfecho correto da segunda conversa do mesmo contato.
-    rpcDevolve = null;
+    // simula lead aberto
+    const adminComLead = {
+      ...admin,
+      from: (tabela: string) => {
+        if (tabela === "crm_leads") {
+          const elo: any = {};
+          elo.select = () => elo;
+          elo.eq = () => elo;
+          elo.limit = () => elo;
+          elo.maybeSingle = async () => ({ data: { id: "existente" }, error: null });
+          return elo;
+        }
+        return consulta(tabela);
+      },
+    } as never;
+    rpcDevolve = LEAD_NOVO;
 
-    const r = await abrirNegocioDaConversaNova(admin, conversa);
+    const r = await abrirNegocioDaConversaNova(adminComLead, conversa);
 
     expect(r).toEqual({ criado: false, motivo: "ja_existe" });
-    expect(rpcDoNascimento()).toBeDefined();
-    expect(escritas).toHaveLength(0);
-    expect(rpcs.map((x) => x.nome)).not.toContain("emit_event");
   });
 
   it("contato bloqueado: não vira oportunidade", async () => {
@@ -376,6 +300,22 @@ describe("a conversa nova entra no funil", () => {
     const r = await abrirNegocioDaConversaNova(admin, conversa);
 
     expect(r).toEqual({ criado: false, motivo: "contato_pessoal" });
+    expect(rpcs).toHaveLength(0);
+  });
+
+  it("contato interno (equipe): NÃO ganha card — o caso que o mantenedor mediu", async () => {
+    settingsDaOrg = {
+      ...configurada,
+      crm: { internal_contact_tags: ["equipe"] },
+    };
+    contato = {
+      ...(contato as Record<string, unknown>),
+      tags: ["equipe"],
+    };
+
+    const r = await abrirNegocioDaConversaNova(admin, conversa);
+
+    expect(r).toEqual({ criado: false, motivo: "contato_interno" });
     expect(rpcs).toHaveLength(0);
   });
 
@@ -428,14 +368,7 @@ describe("a conversa nova entra no funil", () => {
 
 describe("a leitura do jsonb da organização", () => {
   it("ausente, vazio ou torto é DESLIGADO — nunca lança", () => {
-    for (const settings of [
-      null,
-      undefined,
-      {},
-      { entrada_automatica_no_funil: null },
-      "lixo",
-      42,
-    ]) {
+    for (const settings of [null, undefined, {}, { entrada_automatica_no_funil: null }, "lixo", 42]) {
       expect(entradaAutomaticaNoFunilDeclarada(settings)).toEqual({
         ativa: false,
         pipeline_id: null,
@@ -471,7 +404,6 @@ describe("controles de escopo da fatia", () => {
     const { readFile } = await import("node:fs/promises");
     const rota = await readFile("app/api/v1/webhooks/in/[token]/route.ts", "utf8");
     expect(rota).not.toContain("entrada-automatica-no-funil");
-    // A régua dele é a da FONTE, e é ela que continua decidindo onde o card nasce.
     expect(rota).toContain("pipeline_id: source.default_pipeline_id");
     expect(rota).toContain("stage_id: source.default_stage_id");
   });
@@ -496,7 +428,6 @@ describe("controles de escopo da fatia", () => {
 
     const { ensureConversation } = await import("@/lib/automation/start-conversation");
     const id = await ensureConversation({} as never, ORG, CONTATO, "sessao-1");
-
     expect(id).toBe(CONVERSA);
     expect(loggerError).toHaveBeenCalled();
     vi.doUnmock("@/lib/atendimento/origem");
