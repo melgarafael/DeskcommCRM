@@ -1641,7 +1641,9 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         {
           admin,
           organizationId: item.organization_id,
-          ruleId: `followup:${item.enrollment_id}`,
+          // Follow-up não é regra de automação: não inventamos `ruleId` de regra
+          // (o anti-laço do motor descarta eventos com `caused_by_rule`).
+          ruleId: "",
           ruleName: "Fluxo de follow-up",
           event: {} as EventRow,
           context,

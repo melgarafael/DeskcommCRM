@@ -86,7 +86,8 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     // 0.05× só no gpt-6.1-sol e no gpt-6.1-terra.
     ["gpt-6-astra", 1000, 5000, 100, 1250, 1250],
     ["gpt-6.1-sol", 200, 1000, 10, 250, 250],
-    ["gpt-6.1-terra", 100, 500, 5, 125, 125],
+    // Terra: helpers usam 1M de entrada (>272k), logo entrada/cache estão na faixa longa.
+    ["gpt-6.1-terra", 200, 500, 10, 250, 250],
     ["gpt-6-luna", 10, 50, 1, 12.5, 12.5],
     ["gpt-5.6-terra", 200, 1200, 20, 250, 250],
     ["gpt-5.6-sol", 400, 2000, 40, 500, 500],

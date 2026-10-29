@@ -28,7 +28,7 @@ const FILTROS = new Set(["eq", "neq", "is", "in", "or", "not"]);
 
 export function bancoFalso(
   responder: (cadeia: Cadeia) => Resposta = () => ({}),
-  responderRpc: (nome: string, args: Record<string, unknown>) => Resposta = () => ({}),
+  responderRpc: (nome: string, args: Record<string, unknown>, cadeia: Cadeia) => Resposta = () => ({}),
 ) {
   const cadeias: Cadeia[] = [];
   const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
@@ -56,9 +56,20 @@ export function bancoFalso(
         resolver(cadeia).then(ok, erro);
       return builder;
     },
-    async rpc(nome: string, args: Record<string, unknown>) {
+    rpc(nome: string, args: Record<string, unknown>) {
       rpcs.push({ nome, args });
-      return { data: null, error: null, ...responderRpc(nome, args) };
+      // RPC tabular também aceita filtros e modificadores antes do await.
+      const cadeia: Cadeia = { tabela: nome, passos: [] };
+      const builder: Record<string, unknown> = {};
+      for (const metodo of ENCADEIAM) {
+        builder[metodo] = (...valores: unknown[]) => {
+          cadeia.passos.push({ metodo, args: valores });
+          return builder;
+        };
+      }
+      builder.then = (ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) =>
+        Promise.resolve({ data: null, error: null, ...responderRpc(nome, args, cadeia) }).then(ok, erro);
+      return builder;
     },
   };
   return { cliente, cadeias, rpcs };
