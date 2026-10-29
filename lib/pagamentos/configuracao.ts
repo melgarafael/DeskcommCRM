@@ -19,7 +19,17 @@
  */
 import { valorDaInstalacao } from "@/lib/instalacao/config";
 
-/** A chave no catálogo da instalação. Uma só, e é ela que a tela mostra. */
+/**
+ * A chave no catálogo da instalação. Uma só, e é ela que a tela mostra.
+ *
+ * O nome dela aparece ESCRITO de novo no call site de `configuracaoDoRecebimento`,
+ * de propósito: a cerca `painel-nao-promete-o-que-nao-cumpre` procura
+ * `valorDaInstalacao("<CHAVE>")` no código de produção, e uma leitura por
+ * constante é invisível para ela — a chave ficaria marcada como editável na tela
+ * sem que ninguém conseguisse provar que o motor a lê. É a mesma razão do literal
+ * em `lib/cobranca/configuracao.ts`. O `satisfies` logo abaixo amarra os dois: se
+ * esta constante mudar, o build acusa antes de a chave sair de sincronia.
+ */
 export const CHAVE_DO_SEGREDO = "INFINITEPAY_WEBHOOK_SECRET";
 
 export interface ConfiguracaoDoRecebimento {
@@ -30,7 +40,7 @@ export interface ConfiguracaoDoRecebimento {
 }
 
 export async function configuracaoDoRecebimento(): Promise<ConfiguracaoDoRecebimento> {
-  const v = await valorDaInstalacao(CHAVE_DO_SEGREDO);
+  const v = await valorDaInstalacao("INFINITEPAY_WEBHOOK_SECRET" satisfies typeof CHAVE_DO_SEGREDO);
   const valor = v.fonte === "banco" ? v.valor : null;
   const limpo = typeof valor === "string" ? valor.trim() : "";
   // Segredo curto é segredo adivinhado: o HMAC do aviso vale o tamanho da chave.
