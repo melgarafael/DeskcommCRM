@@ -2,10 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
 /**
- * "TORNAR PRINCIPAL" (Spec 31, parte B2 — migration 9043).
+ * "TORNAR PRINCIPAL" (Spec 31, parte B2 — migration 9044).
  *
  * A troca precisa ser UMA operação: feita em dois passos pela rota, o principal
- * novo colidiria com o próprio extra na regra "um número, uma ficha" (9041), e
+ * novo colidiria com o próprio extra na regra "um número, uma ficha" (9043), e
  * um processo que caísse no meio deixaria a ficha sem o número antigo.
  */
 

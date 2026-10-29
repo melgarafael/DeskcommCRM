@@ -813,7 +813,7 @@ export async function patchContactHandler(
     patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
   }
   // Tipo e WhatsApp do principal (Spec 31, B2). Ausentes não entram no patch: o
-  // gatilho do banco recalcula só o que a pessoa não fixou (ver a migration 9041).
+  // gatilho do banco recalcula só o que a pessoa não fixou (ver a migration 9043).
   if (input.phone_type !== undefined) patch.phone_type = input.phone_type;
   if (input.phone_whatsapp !== undefined) patch.phone_whatsapp = input.phone_whatsapp;
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
