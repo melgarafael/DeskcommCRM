@@ -16,7 +16,12 @@ import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { chaveDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { normalizarTag, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
+import { sugestoesDeEtiqueta } from "@/lib/contacts/etiquetas";
+import {
+  normalizarTag,
+  normalizarTags,
+  TAMANHO_MAXIMO_DA_TAG,
+} from "@/lib/contacts/tag-normalizada";
 
 /**
  * O alvo do editor — e ele é a ÚNICA coisa que decide para onde a etiqueta vai.
@@ -91,7 +96,12 @@ export function ContactTagsEditor(props: Props) {
   const rotuloVazio = noNegocio ? t("Sem tags no negócio.") : t("Sem tags no contato.");
   const rotuloCampo = noNegocio ? t("Adicionar tag ao negócio") : t("Adicionar tag ao contato");
   const { definirCor } = useDefinirCorDaEtiqueta();
-  const { data: vocabulary } = useContactTagVocabulary(orgId);
+  const { data: vocabulary, isError: erroNoVocabulario } = useContactTagVocabulary(orgId);
+  // #2855 — com texto, pergunta também ao vocabulário inteiro (curado + em uso,
+  // sem o teto de contatos lidos). Sem texto é a MESMA chave da linha acima:
+  // uma requisição só.
+  const { data: encontradas, isError: erroNaBusca } = useContactTagVocabulary(orgId, draft.trim());
+  const vocabularyError = erroNoVocabulario || erroNaBusca;
   // A cor de quem JÁ está no contato vem do MESMO mapa que o chip usa (#2771):
   // uma leitura só, sem pergunta por tag, e o gatilho abre já com o tom atual
   // marcado — abrir a paleta de uma etiqueta colorida como se ela não tivesse
@@ -149,10 +159,22 @@ export function ContactTagsEditor(props: Props) {
   // E o chip MOSTRA a forma normalizada, não a que a fonte mandou: o rótulo
   // precisa ser o que o clique grava mesmo que a lista chegue crua (a rota a
   // normaliza hoje, mas a fonte está marcada para trocar).
-  const jaTem = new Set(tags.map(normalizarTag));
-  const suggestions = [...new Set((vocabulary ?? []).map(normalizarTag))]
-    .filter((v) => v && !jaTem.has(v))
-    .slice(0, 8);
+  //
+  // #3180 — e o texto digitado ENTRA no filtro, com a MESMA chave larga da
+  // busca (sem caixa, sem acento, casando no meio da palavra) que a ficha do
+  // contato já usa (#2732): `sugestoesDeEtiqueta`. Sem texto, a lista sai na
+  // ordem da FONTE — as mais usadas primeiro —, nunca reordenada no alfabeto.
+  // #2855 — o que a busca no vocabulário inteiro achou entra DEPOIS das em uso:
+  // a ordem por uso do #3180 continua valendo para o que já estava na lista.
+  const conhecidas = normalizarTags([
+    ...(vocabulary ?? []),
+    ...(draft.trim() ? (encontradas ?? []) : []),
+  ]);
+  const suggestions = sugestoesDeEtiqueta({
+    conhecidas,
+    selecionadas: tags,
+    digitado: draft,
+  });
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-border p-2">
@@ -216,7 +238,7 @@ export function ContactTagsEditor(props: Props) {
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 px-2"
+          className="h-11 min-w-11 px-2 lg:h-7 lg:min-w-0"
           onClick={() => add(draft)}
           disabled={pendente || !draft.trim() || tags.length >= 20}
           aria-label={t("Adicionar tag")}
@@ -225,6 +247,7 @@ export function ContactTagsEditor(props: Props) {
         </Button>
       </div>
 
+      {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
       {suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {suggestions.map((tag) => (

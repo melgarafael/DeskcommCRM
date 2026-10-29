@@ -166,7 +166,7 @@ Quando o humano clica **"Não consigo → escalar"**, o caso vira `escalated` e 
 A ferramenta nativa `request_human_handoff` aceita `motivo_codigo` opcional:
 `requested_human` para pedido de atendente e `critical_stage` quando a etapa exige
 finalização pela equipe (por exemplo, concluir um agendamento com os dados já
-coletados). Ausente, preserva `requested_human`; mencionar agendamento por si só
+coletados). Ausente, registra `low_confidence` (o assistente não resolveu sozinho, #3310): o pedido do cliente vem com `requested_human` explícito; mencionar agendamento por si só
 não é razão para encaminhar. O código classifica o briefing, a passagem e o aviso
 da Central, sem escolher destino nem alterar as condições do handoff. `por_que`
 continua sendo a justificativa em texto, com `reason` como sinônimo legado.
@@ -263,12 +263,18 @@ Reusa o shell `app/app/ai/inbox/` (assistente), **seção/tab própria "Casos"**
 - **Clareza (requisito):** o estado do caso é sempre visível (esperando você / esperando cliente / resolvido / escalado). A UI não deixa ambíguo de quem é a bola.
 - **Quem é avisado fora da tela, e quando** *(migration 0292, tela `/app/ai/cases/avisos`)*:
   - **existe**: uma mensagem no WhatsApp de um número da equipe, **na ABERTURA do caso**, uma vez por caso. É opt-in de quem administra (`config_aviso_de_caso.ligado`), sai fora do horário comercial de propósito (a janela protege o cliente, e a equipe é interna) e o registro de cada tentativa fica em `entregas_de_aviso_de_caso`;
-  - **existe**: o vigia `case-stale-watcher`, que cobra até três vezes **na Central** o caso que ninguém abriu;
+  - **existe**: o vigia `case-stale-watcher`, que cobra **na Central** o caso que espera a equipe. Desde a migration 0766 o relógio e o limite valem **por espera** (recomeçam quando o caso volta do cliente), e a cadência é da organização (`organizations.lembrete_caso_*`, cartão na própria Central, só para quem administra; padrão: ligado, 24 h, três avisos). Para ver o que está em vigor: `grep -n 'make_interval' supabase/migrations/*_0766_*.sql`;
   - **NÃO existe**: re-notificação quando o cliente responde e o caso volta de `awaiting_lead` para `awaiting_human`. O aviso não se repete, e a tela do aviso diz isso com essas palavras. Quem quiser acompanhar a volta usa a Central.
 
 - Rota API: `POST /api/v1/ai/cases/[id]/reply` — molde `app/api/v1/leads/[id]/win/route.ts`: `requireRole("agent", {requestId, resource})` (valida JWT via `getUser()`, org do cookie validado — nunca do body), Zod no body, `audit(...)`, `ok()`/`fail()`, `X-Request-Id`. **Sem rate-limit** (rota autenticada de staff, não pública — doutrina: rate-limit só em rota pública). `GET /api/v1/ai/cases` e `GET /api/v1/ai/cases/[id]` (detalhe + timeline) seguem o molde de `app/api/v1/ai/inbox/route.ts`.
 
 ---
+
+
+### Detalhes em telas estreitas
+
+No celular, a lista e o detalhe ocupam a largura disponível em etapas distintas. Selecionar um Caso abre o detalhe, inclusive por link direto; “Voltar aos casos” conserva o filtro e devolve o foco à origem, ou à aba ativa quando não há botão de origem. A altura segue o contrato de viewport e rodapé nativo do inbox; o conteúdo do detalhe tem rolagem própria, com a volta fora dessa área. No desktop, lista e detalhe permanecem lado a lado. A decisão continua antes da conversa interna no DOM; abrir, ler e voltar não enviam uma resposta, não chamam a IA e não mudam o estado do Caso.
+
 
 ## 10. Riscos e questões abertas
 1. ~~Qual handoff é o canônico do engine~~ — **RESOLVIDO (§7):** `performHumanHandoff` (`human-handoff.ts:149`).

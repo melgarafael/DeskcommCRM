@@ -51,6 +51,7 @@ import {
 import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { TRIGGER_LABELS, ACTION_LABELS, type TriggerEvent, type ActionType } from "./labels";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
+import { EtapaDeQualquerFunil } from "./EtapaDeQualquerFunil";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
@@ -140,9 +141,8 @@ const AGENDAMENTO_FIELDS: CuratedField[] = [
   { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
 ];
 
-// ponytail: etapa de destino usa o funil default (cobre o caso comum de 1
-// funil); se o produto ganhar múltiplos funis relevantes aqui, trocar por um
-// seletor de funil antes do de etapa.
+// A etapa de destino lista as etapas de todos os funis, agrupadas
+// (`EtapaDeQualquerFunil`); antes, só as do funil padrão.
 export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "lead.created": LEAD_FIELDS,
   "lead.stage_changed": [...LEAD_FIELDS, STAGE_FIELD],
@@ -302,10 +302,6 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const { data: pipelinesRes } = usePipelines();
   const { data: sourcesRes } = useWebhookSources();
   const webhookSources = sourcesRes?.data ?? [];
-  const defaultPipeline =
-    pipelinesRes?.data?.find((p) => p.is_default) ?? pipelinesRes?.data?.[0] ?? null;
-  const { data: boardRes } = usePipelineStages(defaultPipeline?.id ?? null);
-  const stages = boardRes?.data?.stages ?? [];
   // As etapas do funil escolhido no bloco de TEMPO (#2483): segundo consumidor
   // do MESMO hook, com o funil do formulário em vez do padrão.
   const { data: boardDoTempo } = usePipelineStages(configDoTempo.pipeline_id || null);
@@ -864,21 +860,10 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                       </SelectContent>
                     </Select>
                     {OPS_SEM_VALOR.has(cond.op) ? null : curated?.kind === "stage" ? (
-                      <Select
+                      <EtapaDeQualquerFunil
                         value={cond.value}
-                        onValueChange={(v) => updateCondition(idx, { value: v })}
-                      >
-                        <SelectTrigger className="flex-1 basis-40">
-                          <SelectValue placeholder={t("Etapa")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {stages.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={(v) => updateCondition(idx, { value: v })}
+                      />
                     ) : (
                       <Input
                         className="flex-1 basis-40"

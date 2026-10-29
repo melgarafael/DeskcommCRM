@@ -616,6 +616,29 @@ gravar_modelos_do_gotrue() {  # gravar_modelos_do_gotrue <.env do Supabase> <htt
     [ -n "$valor" ] || valor="${base}${caminho}"
     set_env_var "$env_sb" "$chave" "$valor"
   done
+  # O ASSUNTO dos dois e-mails. O GoTrue não o tira do molde: lê de uma
+  # configuração própria (`GOTRUE_MAILER_SUBJECTS_*`), e sem ela manda o padrão
+  # dele, em inglês — « Confirm Your Signup », « Reset Your Password » — por cima
+  # do corpo em português. Na nuvem quem grava é o marca-emails.sh
+  # (`mailer_subjects_*`); no single-server, ninguém gravava.
+  #
+  # SEM a marca, de propósito: o `APP_NAME` do .env do app ainda não existe
+  # quando o instalador passa por aqui, e é só a semente — a marca de um
+  # revendedor mora no banco (`platform_branding`). Um assunto com o nome do
+  # produto vazaria nos e-mails dele. O texto é o título do molde
+  # (`lib/email/templates/acesso-gotrue.ts`). Valor já presente manda, como no
+  # molde: o assunto que o operador escreveu fica.
+  for chave in GOTRUE_MAILER_SUBJECTS_CONFIRMATION GOTRUE_MAILER_SUBJECTS_RECOVERY; do
+    [ -z "$(valor_do_env "$env_sb" "$chave")" ] || continue
+    valor="${!chave:-}"
+    if [ -z "$valor" ]; then
+      case "$chave" in
+        *CONFIRMATION) valor="Confirme seu e-mail" ;;
+        *) valor="Redefinir sua senha" ;;
+      esac
+    fi
+    set_env_var "$env_sb" "$chave" "$valor"
+  done
   return 0
 }
 
@@ -1506,6 +1529,157 @@ restaurar_versao_anterior() {  # → 0 sempre (rollback que falha não mata a vo
   return 0
 }
 
+# ── A vigília do app DEPOIS de uma atualização (#2757) ─────────────────────
+#
+# O buraco que isto fecha: o `update.sh` devolve os SERVIÇOS em qualquer
+# saída (o `trap restaurar_servicos`) e o `agent.sh` devolve a IMAGEM quando o
+# run termina com erro — mas os dois dependem de alguém CONSTATAR a falha
+# enquanto ela acontece. Quando o app cai DEPOIS disso, quem mais precisa de
+# saída é justamente o dono com o painel em 502: o botão de voltar não responde
+# porque está dentro do app que parou.
+#
+# O agente é a única peça que roda fora do app (cron de 5 min), então é ele
+# que fica de vigília. Duas marcas em disco, estado da VPS, ao lado do
+# `.update.log` de sempre:
+#
+#   .update-vigia            duas linhas: epoch UTC + a versão de onde se saiu;
+#   .update-vigia-falhas     quantos healthchecks seguidos falharam.
+#
+# O que a vigília NÃO faz: decidir sozinha. Ela só existe enquanto a última
+# transição foi uma atualização (a marca nasce lá) e dentro da janela daqui
+# embaixo — uma queda dias depois não é mais "logo após a atualização", e
+# voltar a versão por conta própria nesse caso deixaria o dono sem saber por
+# que o sistema voltou atrás sozinho.
+VIGIA_ARQUIVO=".update-vigia"
+VIGIA_FALHAS_ARQUIVO=".update-vigia-falhas"
+# Janela de 2 horas = 24 ciclos de cron. Folgada de propósito: uma atualização
+# que derruba o app costuma derrubar na largada (primeiros requests, cron que
+# roda pela primeira vez na versão nova), e o rollback só devolve versão — o
+# banco continua no schema novo, que a versão anterior atende.
+VIGIA_JANELA_SEGUNDOS=$((2 * 60 * 60))
+# N — quantos healthchecks SEGUIDOS precisam falhar antes da volta.
+#
+# Escolhido com os números do próprio kit, não no chute:
+#
+#   * 1 não basta: o cron roda de 5 em 5 minutos e o app REINICIA durante
+#     qualquer atualização (~30–90 s). Uma sonda perdida no reinício é o caso
+#     normal, não defeito — e rollback sobre atualização que deu certo é um
+#     estorno sem motivo.
+#   * 2 é a primeira falha que sobrevive a um intervalo inteiro de cron: ~10
+#     minutos de app fora do ar, medidos de ponta a ponta, e ainda dentro do
+#     que a própria issue chamou de "em até um ciclo do agente".
+#   * 3+ custaria +5 min de apagão real a cada degrau, e nada compra: a
+#     atualização acabou de provar o app saudável (o `wait_app_healthy` do
+#     update.sh), então falha que atravessa duas sondas 5 min separadas é a
+#     release, não um solavanco do Docker.
+VIGIA_FALHAS_SEGUIDAS=2
+
+# A marca que autoriza a volta automática. Chamada pelo `update.sh` no único
+# ponto em que a atualização já se comprometeu (preflight passou) — antes
+# disso nada foi tocado e não há o que desfazer.
+#
+# Só arma com nome de VERSÃO PUBLICADA: instalação fora de release não tem tag
+# para onde voltar, e `update.sh --to <sha>` tentaria puxar uma imagem com o
+# SHA no lugar da versão — o caminho que termina em "não consegui puxar".
+vigia_armar() {  # vigia_armar <versão que estava no ar antes desta atualização>
+  local de="${1:-}" arq tmp
+  [[ "$de" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]] || return 0
+  arq="${PROJECT_DIR:?}/${VIGIA_ARQUIVO}"
+  tmp="${arq}.tmp.$$"
+  printf '%s\n%s\n' "$(date -u +%s)" "$de" > "$tmp" 2>/dev/null || return 0
+  mv "$tmp" "$arq" 2>/dev/null || return 0
+  # Marca nova zera a contagem: as falhas da atualização ANTERIOR não podem
+  # entrar na conta desta.
+  vigia_zerar
+  return 0
+}
+
+# A marca lida. Ecoa a versão para a qual ainda dá para voltar, ou VAZIO.
+#
+# Marca velha (fora da janela) é APAGADA aqui, e não só ignorada: uma marca
+# que sobrevivesse viraria rollback de madrugada sobre uma queda que ninguém
+# relaciona com a atualização de semanas atrás. Quem define a validade é esta
+# função, para todo chamador valer a MESMA janela.
+vigia_ler() {  # ecoa <versão> | vazio
+  local arq="${PROJECT_DIR:?}/${VIGIA_ARQUIVO}" epoch de agora
+  [ -f "$arq" ] || return 0
+  epoch="$(sed -n '1p' "$arq" 2>/dev/null || true)"
+  de="$(sed -n '2p' "$arq" 2>/dev/null || true)"
+  case "$epoch" in ''|*[!0-9]*) vigia_encerrar; return 0 ;; esac
+  [ -n "$de" ] || { vigia_encerrar; return 0; }
+  agora="$(date -u +%s)"
+  if [ $((agora - epoch)) -gt "$VIGIA_JANELA_SEGUNDOS" ]; then
+    vigia_encerrar
+    return 0
+  fi
+  printf '%s' "$de"
+}
+
+# Uma falha a mais. Ecoa o total de falhas SEGUIDAS registrado até agora.
+# `|| true` em tudo: isto roda no caminho de um app fora do ar, em que o disco
+# cheio é justamente uma das causas — a vigência não pode morrer por não
+# conseguir anotar que o app morreu.
+vigia_falhou() {  # ecoa <contador>
+  local arq="${PROJECT_DIR:?}/${VIGIA_FALHAS_ARQUIVO}" n
+  n="$(cat "$arq" 2>/dev/null || true)"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$arq" 2>/dev/null || true
+  printf '%s' "$n"
+}
+
+# O app respondeu: a contagem recomeça. A marca continua de pé — a janela de
+# validade é quem encerra a vigília, não um healthcheck bom isolado.
+vigia_zerar() {
+  rm -f "${PROJECT_DIR:?}/${VIGIA_FALHAS_ARQUIVO}" 2>/dev/null || true
+  return 0
+}
+
+# Fim da vigília (marca + contador), por qualquer motivo.
+vigia_encerrar() {
+  rm -f "${PROJECT_DIR:?}/${VIGIA_ARQUIVO}" "${PROJECT_DIR:?}/${VIGIA_FALHAS_ARQUIVO}" 2>/dev/null || true
+  return 0
+}
+
+# O app está no ar no caminho que o DONO usa?
+#
+# É a mesma rota que o `healthcheck.sh` mostra ( `/api/v1/health`), batida
+# pelo endereço público — e o caminho público entra de propósito: o defeito
+# que a volta automática existe para encerrar é o 502 que o dono vê no
+# navegador, e ele é do app OU do proxy na frente dele; os dois são "o sistema
+# está fora". `--max-time` fecha o outro buraco medido (#1955): um `docker`
+# travado no resolver segurava o diagnóstico para sempre, e um agente preso
+# não vigia nada.
+#
+# ─── Quem decide é o CORPO, não o código HTTP (#2757) ────────────────────────
+# A rota responde **503** sempre que um dos serviços que ela vigia está `down`
+# (WAHA, Redis, Supabase) — é o diagnóstico dela, não sinal de que o site caiu.
+# Com `curl -f` esse 503 contava como falha, e uma queda do WhatsApp de ~10
+# minutos depois de uma atualização que deu certo fazia o sistema voltar de
+# versão: backup, migration e ~2 min fora do ar para consertar nada. Pior: a
+# mensagem que o mantenedor mediu é que `curl -f` também reprova qualquer
+# 5xx/4xx — e o 503 do PROXY (Traefik sem rota) e o 404 `page not found` dele
+# têm significados opostos ao 503 da rota com o mesmo código.
+#
+# Então: **no ar** = a resposta veio do próprio sistema, o que se reconhece
+# pela forma que só ele produz — o JSON `{"data":{"status":"healthy|degraded|
+# unhealthy","version":...}}`. Vale para qualquer código HTTP (200, 503).
+# **Fora** = conexão recusada, tempo esgotado, ou resposta que não tem esse
+# JSON: 502/504 do proxy, `404 page not found` do Traefik, 503 do proxy.
+# Sem `jq`, que pode não existir na VPS: são duas buscas de texto ancoradas na
+# chave, e `status` só casa com o vocabulário da rota (`ok`/`down` dos checks
+# não casam) — um HTML de proxy não tem nenhuma das duas.
+app_esta_no_ar() {
+  local url="${NEXT_PUBLIC_APP_URL:-}" corpo
+  [ -n "$url" ] || return 1
+  # Sem `-f` de propósito: ele converteria o 503 da própria rota em falha, que
+  # é exatamente o defeito acima. O `--max-time` segue sendo o prazo.
+  corpo="$(curl -sS --max-time 20 "${url%/}/api/v1/health" 2>/dev/null)" || return 1
+  printf '%s' "$corpo" \
+    | grep -Eq '"status"[[:space:]]*:[[:space:]]*"(healthy|degraded|unhealthy)"' || return 1
+  printf '%s' "$corpo" | grep -Eq '"version"[[:space:]]*:'
+}
+
 # ── O diagnóstico que TODO run deixa para trás (#1955, critério 5) ──────────
 #
 # Escrito por um gatilho no TOPO do update.sh (cobre os caminhos que morrem
@@ -1812,6 +1986,95 @@ wait_app_healthy() {
   return 1
 }
 
+# ── #2945: a rota PÚBLICA do Supabase no proxy do operador ──────────────────
+#
+# A pergunta: com `REVERSE_PROXY=traefik`, as etiquetas do proxy da hospedagem
+# (#2099) entregam `/auth/v1/*` ao Envoy do Supabase — e não ao app?
+#
+# Até o #2933 quem respondia isso era, SEM QUERER, o `v_sb_key()` do install.sh:
+# a fase 2 batia em `${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, a URL
+# PÚBLICA, e o 404 do app (Traefik sem as etiquetas) virava "chave inválida". O
+# #2933 corrigiu a pergunta da chave para o gateway INTERNO
+# (`SUPABASE_INTERNAL_URL`) — certo atrás de Cloudflare laranja, que é o padrão
+# do kit — e com isso a instalação perdeu a ÚNICA prova de que a rota pública
+# existe: sem as etiquetas, ela termina verde e o erro só aparece no primeiro
+# login. Esta sonda é a prova de volta, agora explícita e no FIM da instalação,
+# quando o app já está no ar e o domínio já responde.
+#
+# A distinção que faz a prova valer: 200 é o GoTrue respondendo (a rota
+# chegou); a ASSINATURA do app é a etiqueta que não pegou. E ela tem DUAS
+# formas, que querem dizer a mesma coisa — o Traefik entregou `/auth/v1/*` ao
+# CRM: o 404 do app, e o 3xx que aponta para `/login`. O segundo é o que
+# aparece numa instalação REAL atrás do Traefik da hospedagem, medido pelo
+# mantenedor: `curl -s -o /dev/null -w '%{http_code} %{redirect_url}'
+# https://DOMINIO/rest/v2/organizations` devolve `307 https://DOMINIO/login?...`
+# — quem recebeu o pedido foi o app, e é ele que manda para a tela de login.
+# Como a sonda NÃO segue redirecionamento, é esse 307 cru que ela vê no
+# cenário do #2099: lido como "código desconhecido", ele custava as 10
+# tentativas (30 s) e parava a instalação pela mensagem genérica, em vez da
+# mensagem certa. Um 3xx que NÃO vai para `/login` não é assinatura nenhuma: é
+# falha transitória, como as outras.
+#
+# Só a assinatura para a instalação, e ela para já na PRIMEIRA resposta — não
+# se repete tentativa contra quem já respondeu. As demais falhas (000, 5xx, o
+# 521 do Cloudflare laranja) ganham novas tentativas, porque o certificado de
+# um domínio recém-apontado leva um ou dois minutos para sair — e, esgotadas,
+# devolvem 2: o chamador AVISA e SEGUE, que uma instalação certa não pode cair
+# por um `curl` que não provou nada (medido atrás do Coolify).
+#
+# Só o modo traefik a usa: no Caddy o `Caddyfile.single-server` já roteia as
+# seis prefixos do Supabase (o autor do #2945 registrou que ali não é urgente).
+#
+# Devolve: 0 provado (2xx do GoTrue); 1 PARA a instalação (a assinatura do app,
+# ou faltou URL/chave para sondar); 2 NÃO PROVEI (quem chama avisa e segue) —
+# a mesma convenção de três respostas do `is_already_in_head` (0 sim, 1 não,
+# 2 não sei). Quem chama mostra o diagnóstico devolvido aqui com `die` (1) ou
+# com `c_ylw` (2).
+#
+# O `curl` é o mesmo das outras provas HTTP do kit (a chave vai no cabeçalho
+# `apikey` do próprio curl, então aparece no argv dele; tudo bem, porque a anon
+# key é pública por desenho).
+sondar_rota_publica_do_supabase() {  # <URL pública> <anon key> [tentativas] [intervalo_s]
+  local base="${1:-}" anon="${2:-}" tentativas="${3:-10}" intervalo="${4:-3}"
+  if [ -z "$base" ] || [ -z "$anon" ]; then
+    printf '%s' "$(t "Não sei sondar a rota pública do Supabase sem a URL do domínio e a anon key. Confira NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY no .env.")"
+    return 1
+  fi
+  local rota="${base%/}/auth/v1/settings" resposta='' code='' destino='' i=0 assinatura=0
+  while [ "$i" -lt "$tentativas" ]; do
+    # `%{redirect_url}` junto do código: sem seguir o redirecionamento, o 3xx do
+    # app só se distingue de outro qualquer pelo DESTINO — e é o destino
+    # `/login` que diz "quem respondeu foi o CRM". O `|| resposta='000'` é o
+    # 000 de sempre (curl que não falou com ninguém), com o nome que o resto do
+    # kit usa para esse caso.
+    resposta="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 -H "apikey: $anon" "$rota" 2>/dev/null)" || resposta='000'
+    code="${resposta%% *}"
+    destino="${resposta#* }"
+    case "$code" in
+      2*) return 0 ;;
+      404) assinatura=1 ;;
+      3*) case "$destino" in
+            */login | */login\?*) assinatura=1 ;;
+          esac ;;
+    esac
+    [ "$assinatura" = 1 ] && break
+    i=$((i+1))
+    [ "$i" -lt "$tentativas" ] && sleep "$intervalo"
+  done
+  if [ "$assinatura" = 1 ]; then
+    # O que a mensagem mostra no {2}: o código, e — no 3xx — o caminho do
+    # destino sem a query, que muda a cada chamada e não ajuda ninguém.
+    local devolveu="$code"
+    case "$code" in
+      3*) devolveu="$code para ${destino%%\?*}" ;;
+    esac
+    printf '%s' "$(t "A rota pública do Supabase não pegou no Traefik: {1} devolveu {2}, e quem respondeu foi o CRM, não o GoTrue do Supabase. As etiquetas de /auth/v1/* não chegaram ao Envoy (issue #2099) — sem elas a instalação termina verde e o login só falha no primeiro acesso. Confira REVERSE_PROXY=traefik no .env e as etiquetas de hostgator-setup-kit/supabase-single-server.override.yml, e rode a instalação de novo." "$rota" "$devolveu")"
+    return 1
+  fi
+  printf '%s' "$(t "Não consegui provar a rota pública do Supabase: {1} devolveu {2}, e o esperado era 200 do GoTrue. A instalação segue, porque isso costuma ser o domínio ainda sem certificado/DNS. Se o login falhar, pode ser a rota do Supabase no Traefik que não pegou (issue #2099): confira REVERSE_PROXY=traefik no .env, o cadeado de {3} e as etiquetas de hostgator-setup-kit/supabase-single-server.override.yml." "$rota" "$code" "$base")"
+  return 2
+}
+
 # Código de saída de quem RECUSOU antes de tocar em qualquer coisa — distinto
 # de "falhei no meio" (1). O agent.sh usa isso para não desfazer uma
 # atualização que nunca começou: reiniciar o container e reescrever o .env
@@ -1948,6 +2211,33 @@ enter_project() {
 # conexão que os chamadores já tratam.
 url_do_schema() {
   printf '%s' "${SUPABASE_DB_ADMIN_URL:-${SUPABASE_DB_URL:?sem connection string de banco no .env — rode o install.sh}}"
+}
+
+# ── A conexão de RESTORE é a MESMA da ATUALIZAÇÃO: a conta do dono (#2381) ──
+#
+# O backup sai SEM dono (`pg_dump --no-owner --no-privileges`, backup.sh) e a
+# atualização reaplica o baseline por `url_do_schema` — no single-server, a
+# string de `SUPABASE_DB_URL`, que é a role `postgres`. Restaurar por OUTRA
+# conta deixava os objetos com outro dono: esta função montava, no
+# single-server, um `postgresql://supabase_admin:...` com a senha do `.env` do
+# Supabase, e — como o dump volta sem dono — as tabelas e funções de `public`
+# passavam a pertencer a quem restaurou. A atualização seguinte então não
+# conseguia reaplicar o banco: medição do mantenedor em 22/10
+# (`supabase/postgres` 17.6.1.136, dump do backup.sh, `restore.sh` deste PR e o
+# baseline reaplicado como `postgres`), restaurando por `supabase_admin` deram
+# 2.714 erros `must be owner` (todos em objetos admin_*); pela conta `postgres`,
+# 0.
+#
+# Por isso o restore usa a MESMA conta da atualização — `url_do_schema`, o dono
+# correto —, e os objetos voltam com o dono que a atualização espera.
+# `SUPABASE_DB_ADMIN_URL`, se declarada, já vence nos dois (o `url_do_schema` a
+# prefere a `SUPABASE_DB_URL`): quem a declarou não muda de comportamento.
+#
+# A função continua existindo — em vez de `url_do_schema` direto no restore.sh —
+# para que a razão de a conta do restore ter de ser a mesma da atualização fique
+# num só lugar, ao lado de quem a usa.
+url_do_restore() {
+  url_do_schema
 }
 
 # psql efêmero via container (não exige psql no host). Usa a conexão de schema:

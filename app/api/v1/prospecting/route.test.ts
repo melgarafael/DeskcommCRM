@@ -40,7 +40,7 @@ vi.mock("@/lib/agent-engine/agent/abordagem-de-formulario", () => ({
   gerarAbordagemDeFormulario: deps.generate,
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
@@ -350,5 +350,47 @@ describe("POST /api/v1/prospecting prever_abordagem sem contato", () => {
     // O log NÃO pode carregar o texto da mensagem (LGPD: conteúdo do cliente).
     expect(deps.warn).toHaveBeenCalled();
     expect(JSON.stringify(deps.warn.mock.calls)).not.toContain("Olá! Vi o site de vocês.");
+  });
+});
+
+describe("GET /api/v1/prospecting: configured segue o provedor (#2942)", () => {
+  function poolCom(chaveSalva: boolean, settings: unknown) {
+    return {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("from prospecting_settings"))
+          return { rows: chaveSalva ? [{ organization_id: ID }] : [] };
+        if (sql.includes("from organizations")) return { rows: [{ settings, locale: null }] };
+        return { rows: [] };
+      }),
+    };
+  }
+  async function configured() {
+    const res = await GET(
+      new NextRequest("http://localhost/api/v1/prospecting", {
+        headers: { authorization: "Bearer dsk_abc" },
+      }),
+    );
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: { configured: boolean } }).data.configured;
+  }
+
+  it("local-http sem chave salva: configured=true (a URL é da instalação)", async () => {
+    deps.pool.mockReturnValue(poolCom(false, { prospecting: { provider: "local-http" } }));
+    expect(await configured()).toBe(true);
+  });
+
+  it("Apify (sem escolha) sem chave salva: configured=false, como sempre", async () => {
+    deps.pool.mockReturnValue(poolCom(false, {}));
+    expect(await configured()).toBe(false);
+  });
+
+  it("Apify com chave salva: configured=true", async () => {
+    deps.pool.mockReturnValue(poolCom(true, {}));
+    expect(await configured()).toBe(true);
+  });
+
+  it("escolha desconhecida sem chave: configured=false e a lista responde 200", async () => {
+    deps.pool.mockReturnValue(poolCom(false, { prospecting: { provider: "nao-existe" } }));
+    expect(await configured()).toBe(false);
   });
 });

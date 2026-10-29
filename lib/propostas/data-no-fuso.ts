@@ -22,8 +22,12 @@ export function anoNoFuso(instante: Date, fuso: string): number {
 }
 
 export function somarDiasNoFuso(instante: Date, dias: number, fuso: string): string {
-  const futuro = new Date(instante.getTime() + dias * 24 * 60 * 60 * 1000);
-  return dataIsoNoFuso(futuro, fuso);
+  // A validade conta dias de calendário, não blocos de 24h: em Lisboa,
+  // atravessar o horário de verão perto da meia-noite mudava o prazo em um dia.
+  // UTC é só a âncora para somar ao DIA LOCAL; não reconverta esta data ao fuso.
+  const futuro = new Date(`${dataIsoNoFuso(instante, fuso)}T00:00:00.000Z`);
+  futuro.setUTCDate(futuro.getUTCDate() + dias);
+  return futuro.toISOString().slice(0, 10);
 }
 
 /** `organizations.timezone` não tem CHECK — nunca lança, degrada para o padrão. */

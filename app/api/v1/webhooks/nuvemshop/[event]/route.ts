@@ -147,14 +147,42 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     console.error("[nuvemshop.webhook] webhook_events_log insert failed", insertErr.message);
   }
 
+  // ── O CATÁLOGO NUNCA CHEGAVA AO ACERVO ────────────────────────────────────
+  //
+  // Dois desencontros no mesmo caminho, e cada um sozinho já bastava para o
+  // material do agente ficar vazio para sempre:
+  //
+  //  1. NOME. Produto virava `nuvemshop.product_created|updated|deleted` pelo
+  //     mapeamento genérico, e o indexador (`workers/rag-indexer.handler.ts`)
+  //     escuta `nuvemshop.product_synced` — um nome que NINGUÉM emitia. Os
+  //     três nomes de produto também não tinham consumidor nenhum.
+  //  2. CAMPO. `fonteDoEvento` lê `payload.product_id`, e o corpo cru da
+  //     plataforma traz `id`. Mesmo com o nome certo, o evento morreria em
+  //     `evento_sem_product_id`.
+  //
+  // Medido numa instalação real: integração `healthy`, 8 webhooks
+  // assinados, 879 produtos na loja e ZERO no acervo. O modo de falha é mudo —
+  // conexão saudável, auditoria limpa, acervo vazio.
+  //
+  // O nome do evento de produto passa a ser o que o indexador escuta, e o
+  // payload ganha `product_id` normalizado SEM perder o corpo original.
+  const ehProduto = event.startsWith("product/");
   // event_type for event_log must match `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`.
   // Map e.g. "order/created" -> "nuvemshop.order_created".
-  const eventLogType = `nuvemshop.${event.replace("/", "_")}`;
+  const eventLogType = ehProduto
+    ? "nuvemshop.product_synced"
+    : `nuvemshop.${event.replace("/", "_")}`;
   const { error: emitErr } = await admin.rpc("emit_event", {
     p_event_type: eventLogType,
     p_entity_kind: "nuvemshop_webhook",
     p_entity_id: null,
-    p_payload: body as unknown as Record<string, unknown>,
+    p_payload: ehProduto
+      ? ({
+          ...(body as unknown as Record<string, unknown>),
+          product_id: String((body as { id?: unknown }).id ?? ""),
+          acao: event.slice("product/".length),
+        } as Record<string, unknown>)
+      : (body as unknown as Record<string, unknown>),
     p_metadata: { external_id: externalId, store_id: storeId },
     p_organization_id: integration.organization_id,
   });

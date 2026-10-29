@@ -39,7 +39,7 @@ import {
   type EventoDeEnrollment,
   type NoDoDossie,
 } from "@/lib/followup/eventos-legiveis";
-import { DESFECHOS } from "@/lib/followup/vocabulario";
+import { DESFECHOS, statusCancelavel } from "@/lib/followup/vocabulario";
 import { useFollowupEnrollment, useIntervirNoFollowup } from "@/hooks/followup/useFollowupEnrollment";
 import { useCancelFollowupEnrollment } from "@/hooks/followup/useFollowupQueue";
 import { useT } from "@/hooks/i18n/useT";
@@ -52,8 +52,9 @@ interface Props {
 }
 
 const PAUSAVEL = new Set(["active", "waiting_reply"]);
-/** Pausado por uma pessoa também se cancela — sem ter de retomar antes só para encerrar. */
-const CANCELAVEL = new Set(["active", "waiting_reply", "paused_handoff", "paused_manual"]);
+// Pausado por uma pessoa também se cancela — sem ter de retomar antes só para
+// encerrar. A lista (e `dormente`/`coletando`, que a fila e a rota já aceitavam)
+// mora em `STATUS_CANCELAVEIS`: era aqui que a terceira cópia ficava para trás.
 
 function absoluta(iso: string | null, locale: Locale): string {
   if (!iso) return "—";
@@ -192,7 +193,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
   const podePausar = canWrite && PAUSAVEL.has(data.status);
   const podeRetomar = canWrite && data.status === "paused_manual";
   const podeMexerNoRelogio = canWrite && PAUSAVEL.has(data.status);
-  const podeCancelar = canWrite && CANCELAVEL.has(data.status);
+  const podeCancelar = canWrite && statusCancelavel(data.status);
 
   const pular = (edgeId?: string) => {
     intervir.mutate({ id, acao: "skip", body: edgeId ? { edge_id: edgeId } : {} });

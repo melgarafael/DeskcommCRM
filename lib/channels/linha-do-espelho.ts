@@ -117,3 +117,48 @@ export async function definicaoNaConexao<R>(
   );
   return rows[0] ?? null;
 }
+
+/**
+ * TODAS as definições espelhadas que valem para uma conexão — a lista que a
+ * campanha oferece para escolher. Mesma regra de `linhaDoEspelho`, para a lista:
+ * as linhas da própria conexão e, se o número é o oficial direto, as linhas sem
+ * conexão da conta dele. Quando o mesmo nome + idioma aparece nos dois lugares,
+ * vale a da conexão (é a que o envio vai conferir).
+ */
+export async function modelosDaConexao<T extends { name: string; language: string }>(
+  db: SupabaseClient,
+  colunas: string,
+  chave: { organizationId: string; channelSessionId: string },
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const base = () =>
+    db
+      .from("meta_templates")
+      .select(colunas)
+      .eq("organization_id", chave.organizationId)
+      .order("name", { ascending: true });
+
+  const daConexao = await base().eq("channel_session_id", chave.channelSessionId);
+  if (daConexao.error) return { data: [], error: daConexao.error };
+  const lista = (daConexao.data ?? []) as unknown as T[];
+
+  const { data: sessao, error: erroDaSessao } = await db
+    .from("channel_sessions")
+    .select("provider, meta_waba_id")
+    .eq("organization_id", chave.organizationId)
+    .eq("id", chave.channelSessionId)
+    .maybeSingle();
+  if (erroDaSessao) return { data: [], error: erroDaSessao };
+  const oficial = sessao as { provider?: string; meta_waba_id?: string | null } | null;
+  if (oficial?.provider !== CHANNEL_PROVIDER_META || !oficial.meta_waba_id) {
+    return { data: lista, error: null };
+  }
+
+  const semConexao = await base().is("channel_session_id", null).eq("waba_id", oficial.meta_waba_id);
+  if (semConexao.error) return { data: [], error: semConexao.error };
+  const ja = new Set(lista.map((l) => `${l.name} ${l.language}`));
+  for (const linha of (semConexao.data ?? []) as unknown as T[]) {
+    if (!ja.has(`${linha.name} ${linha.language}`)) lista.push(linha);
+  }
+  lista.sort((a, b) => a.name.localeCompare(b.name) || a.language.localeCompare(b.language));
+  return { data: lista, error: null };
+}

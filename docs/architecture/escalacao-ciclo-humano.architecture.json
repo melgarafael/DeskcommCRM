@@ -633,6 +633,22 @@
       "type": "service",
       "label": "followup-turn: o passo 'Classificar (IA)' do follow-up (lib/ai/decisao/followup.ts)",
       "sublabel": "só com resposta ao envio do fluxo: a mesma pergunta da IA de sempre (followup_classify), em paralelo — as saídas do passo como opções, sem 'nenhuma', só o texto digitado pelo cliente por scrubMessage (mídia não sai); SÓ OBSERVA nesta versão: a saída que move o fluxo é sempre a da IA de sempre, e ninguém espera por ele"
+    },
+    {
+      "id": "lembreteConfig",
+      "lane": "humano",
+      "col": 5,
+      "type": "ui",
+      "label": "Central › Lembrete de caso parado",
+      "sublabel": "quem administra liga/desliga e escolhe intervalo (1–168 h) e avisos por espera (1–10); default 24 h e 3 (migration 0766, ideia do #2584)"
+    },
+    {
+      "id": "casoCobranca",
+      "lane": "motor",
+      "col": 5,
+      "type": "worker",
+      "label": "cron case-stale-watcher (1o braco)",
+      "sublabel": "fn_casos_parados_para_lembrar: o aviso N vence em espera_desde + N x intervalo; o relogio e o teto valem por espera (trg_caso_marca_inicio_da_espera)"
     }
   ],
   "edges": [
@@ -1471,6 +1487,21 @@
       "from": "prazoConfig",
       "to": "atendimentoManual",
       "label": "manual_reply_silence_minutes (5 min a 24 h; null = 60): quanto a IA fica calada depois de uma resposta pelo celular — lido a cada pausa por lerPrazoDoSilencioManualMinutos (diagnóstico de @gaberaldo-svg, #2005)"
+    },
+    {
+      "from": "lembreteConfig",
+      "to": "casoCobranca",
+      "label": "organizations.lembrete_caso_* — a cadência que o vigia lê; trilha em ai.lembrete_de_caso_configurado"
+    },
+    {
+      "from": "casoCobranca",
+      "to": "casos",
+      "label": "lê os vencidos e sobe cobrancas_na_espera (esta espera) e followup_attempts (vida do caso)"
+    },
+    {
+      "from": "casoCobranca",
+      "to": "central",
+      "label": "abre o aviso case_stale — um aberto por caso; o último diz que é o último"
     }
   ],
   "cards": [

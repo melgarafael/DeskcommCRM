@@ -99,6 +99,13 @@ export function etiquetaExistentePara(
  * oferece o que existe, que é o ponto da issue. Com texto, filtra por trecho da
  * chave (`includes`) — "cli" encontra "cliente pagante" —, descarta o que já
  * está no contato e nunca repete pela chave.
+ *
+ * ⚠️ A ORDEM É A DA FONTE, e quem a decide é quem chama (#3180): com o campo
+ * vazio, o que aparece são as primeiras da lista que chegou. `conhecidas` tem de
+ * vir ordenada por USO — `/api/v1/contact-tags` e `/api/v1/conversation-tags`
+ * entrega as mais usadas primeiro —, nunca reordenada aqui no alfabeto: uma
+ * etiqueta que a organização quase não usa não merece o primeiro lugar só por
+ * começar com "a".
  */
 export function sugestoesDeEtiqueta(args: {
   conhecidas: readonly string[];

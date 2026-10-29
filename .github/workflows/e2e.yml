@@ -278,15 +278,15 @@ jobs:
     # superado é pulado ANTES de pedir vaga; o que já está na vaga é cancelado
     # pelo grupo. Um cobre o outro, e é por isso que os dois ficam.
     concurrency:
-      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     strategy:
       # Sem fail-fast: se a parte 1 quebrar, ainda quero saber se a 2 também.
       # Com ele ligado, o primeiro vermelho esconde o outro e o conserto vira
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4, 5, 6]
+        parte: [1, 2, 3, 4, 5, 6, 7, 8]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -713,6 +713,75 @@ jobs:
     #     do corte, que conta no ARQUIVO da saída da suíte, não no log do job.
     #   · Controle positivo obrigatório antes de concluir ausência: rodar a sonda
     #     contra um corte conhecido (job 105911210567, do #1294) e ver 1.
+
+    # ── 2026-10-22: uma SÉTIMA parte comum, porque seis não cabem mais ──────
+    #
+    # ESCOPO DA MEDIÇÃO: os 12 runs verdes mais recentes do e2e, com as seis
+    # partes em `success` (72 jobs), do 39782452161 ao 39805877223. Duração
+    # por caso lida das linhas do reporter `list`. O corte efetivo é
+    # TETO − MARGEM = 1680s desde o T0 do job, e o orçamento é 1440s.
+    #
+    # O gatilho (b) acima não disparou, mas a cauda já encosta no corte:
+    #   · parte 5: 1678s de preparo+suíte no run 39800815100, a 2s do corte;
+    #   · parte 3: 1660s no run 39805397917, o do #3275, que leva a
+    #     `prova-painel-provedores` (239s estáveis) da 6 para a 3;
+    #   · partes 1, 2 e 6: acima do orçamento de 1440s em 9 a 12 dos 12 runs.
+    # Com seis partes, as cinco comuns somam 5526s de suíte estimada (listas
+    # com o #3275), média de 1105s. O melhor rearranjo achado entre elas
+    # (busca exaustiva de 1 e 2 movimentos, mais extensão gulosa) ainda deixa
+    # a mais cheia em ~1120s, e a parte 4 não recebe spec comum (bloco de
+    # 2026-09-19).
+    #
+    # Quatro specs vão para a PARTE_7, escolhidas pelo relógio entre as que
+    # não citam WAHA, Graph nem webhook: `prova-painel-provedores` (da 6, 239s),
+    # `agente-novo-e-uso` (da 1, 125s), `capacidades-do-agente` (da 2, 94s) e
+    # `extensoes-versao` (da 5, 51s). Medianas por spec dos 12 runs.
+    #
+    #   parte │ suíte antes (mediana medida) │ suíte depois (estimada) │ total depois (estimado)
+    #     1   │            1158s             │          1023s          │         1395s
+    #     2   │            1129s             │          1042s          │         1419s
+    #     3   │             901s             │           912s          │         1276s
+    #     4   │              47s             │            46s          │          460s
+    #     5   │            1084s             │          1066s          │         1434s
+    #     6   │            1209s             │           975s          │         1312s
+    #     7   │               —              │           539s          │          876s
+    #
+    # "Depois" é estimativa: overhead mediano da parte + soma das medianas das
+    # specs da lista; o total soma o preparo mediano da parte (na 7, o da 6).
+    # Antes e depois são réguas diferentes (mediana da suíte medida × soma de
+    # medianas por spec): os 11s a mais da 3 não são carga que ela ganhou.
+    # No pior caso (soma dos máximos por spec + preparo máximo), nenhuma
+    # parte passa de 1627s, contra 1816s da parte 3 com o #3275 e sem esta
+    # mudança.
+    #
+    # O custo: mais um job por run, ~6 min de preparo de runner a mais.
+    #
+    # NÃO MEDIDO: se as quatro passam na vizinhança da parte 7. Quem responde
+    # é o e2e do PR que criou esta parte. Se uma delas falhar por vizinhança,
+    # a troca mais barata medida é `capacidades-do-agente` → parte 6 (~1069s).
+    #
+    # ── 2026-10-26: o preparo não pode gastar a folga antes do nativo ──────
+    #
+    # Run 40361684172, head 8a063d8db: partes 1/3/4/5/6/7 verdes; a 2 foi
+    # cortada sem caso vermelho, com 674s de preparo + 1006s de suíte.
+    # Eram 99 casos verdes, 6 pulados e 2 pendentes (o rótulo 105 do reporter
+    # não é contagem de verdes). Faltavam só os dois últimos de `navegacao`.
+    # O main verde 40347496767 mediu os dois em 28,2s + 2,3s; a spec inteira,
+    # 12 casos, em 329,1s. Seus ~30s por login são a espera anti-replay TOTP
+    # do helper, preservada; o Redis ausente não explica essa cadência.
+    #
+    # Supabase levou 377–390s nas partes 1/2/4/6/7: três tentativas forçadas
+    # e suas esperas antes de liberar o fallback nativo. Na 2, só o caminho
+    # até ele custou 269s. O main verde levou 94–109s no mesmo passo. Agora
+    # o nativo é a PRIMEIRA tentativa, mantendo as quatro, esperas, pipefail
+    # e classificação de falha. Não é motivo para mudar teto nem orçamento.
+    #
+    # Só `navegacao` vai da 2 para a 7, parte comum com os mesmos seeds. No
+    # main medido: jobs 2/7 = 1401/965s; subtrair/somar os 329s da spec dá
+    # 1072/1294s ESTIMADOS. No run com pull limitado, a 7 terminou em 1225s,
+    # antes da mudança; liberar o nativo primeiro recupera folga também nela.
+    # NÃO MEDIDO aqui: a nova vizinhança e o tempo real após as duas mudanças.
+    # Quem os prova é o próximo e2e completo, sem rerodar o head antigo.
     env:
       # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
       INTERNAL_AGENT_RUN_STUB: "true"
@@ -745,11 +814,11 @@ jobs:
         contato-pessoal-sai-da-operacao.spec.ts
         confirmar-dado-do-contato.spec.ts
         credenciais-de-ia.spec.ts
-        risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
-        agente-novo-e-uso.spec.ts
+        risk-radar.spec.ts invite-lifecycle.spec.ts
         agente-papeis-operador.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
+        mfa-dispositivo-confiavel.spec.ts
         agenda-tela-do-produto.spec.ts
         notificacoes-diz-o-que-falta.spec.ts
         notificacoes-tela-bloqueada.spec.ts
@@ -759,6 +828,7 @@ jobs:
         j20-elegibilidade-atendimento-manual.spec.ts
         juntar-contatos-duplicados.spec.ts
         lote-no-quadro-do-funil.spec.ts
+        quadro-do-funil-colunas.spec.ts
         motivos-de-perda-do-funil.spec.ts
         importar-leads-planilha.spec.ts
         relatorio-de-atividades.spec.ts
@@ -858,7 +928,6 @@ jobs:
         central-de-avisos-capacidades.spec.ts
         escalacao-ciclo.spec.ts
         distribuicao-atendimento.spec.ts
-        capacidades-do-agente.spec.ts
         cobranca-revendedor.spec.ts
         escopo-de-funil-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
@@ -875,13 +944,13 @@ jobs:
         agenda-kit-visual.spec.ts
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
+        celular-cabe-na-tela.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         aba-e-cookie-divergentes.spec.ts
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
-        navegacao.spec.ts
         menu-por-empresa-e-a-porta-de-volta.spec.ts
         icone-da-aba.spec.ts
       # `moeda-da-organizacao` entrou na PARTE_2 em 2026-09-04, ao lado de
@@ -1088,23 +1157,19 @@ jobs:
       # todas. Os 3 arquivos que o cancelamento impediu de medir vêm junto, porque
       # eles são justamente o fim da fila.
       SPECS_PARTE_3: >-
-        autonomia-assistida.spec.ts
         roteamento-por-canal.spec.ts
         whatsapp-pareamento-por-codigo.spec.ts
         central-avisos-destino.spec.ts
         agenda-google-sync.spec.ts
         agenda-servicos.spec.ts
-        encerramento-atendimento.spec.ts
         passagem-com-contexto.spec.ts
-        interface-por-vinculo.spec.ts
         pipelines-gestao.spec.ts
         qa-agente-usa-as-maos.spec.ts
         qa-selo-no-funil-usado.spec.ts
         qa-telas-descobertas-w4.spec.ts
         retorno-anti-morte.spec.ts
-        webhooks.spec.ts
+        traco-do-turno-leitor.spec.ts
         designer-de-automacoes.spec.ts
-        logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts
         inbox-tempo-real.spec.ts
@@ -1113,7 +1178,6 @@ jobs:
         organizacoes-criacao-convite-e-cache.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
         busca-na-conversa.spec.ts
-        moeda-da-organizacao.spec.ts
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         email-da-instalacao-pela-tela.spec.ts
         central-avisos-resolver-em-lote.spec.ts
@@ -1135,7 +1199,7 @@ jobs:
         fotos-no-catalogo.spec.ts
         catalogo-busca-no-catalogo-inteiro.spec.ts
         relatorio-por-etiqueta.spec.ts
-        integracao-dados-mysql-na-tela.spec.ts
+        minhas-tarefas-no-celular.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
@@ -1266,6 +1330,12 @@ jobs:
       # posição na lista NÃO decide a ordem de execução — no job 108983924934
       # ela rodou em 39º de 77, e a parte inteira passou (77 passed). Medido:
       # 16,1 s de caso.
+      #
+      # `reenvio-pelo-celular` entrou em 2026-10-21 (F2 da ADR-0006, PR C). Semeia
+      # o próprio canal (desativado, depois em STARTING), contato, conversa e
+      # mensagens pelo service role e apaga tudo no fim, inclusive o aviso que o
+      # cron `recover-stuck-messages` abre para a conversa dele. Não depende de
+      # WAHA nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_5: >-
         extensoes-da-instalacao.spec.ts
         admin-credencial-google.spec.ts
@@ -1277,6 +1347,7 @@ jobs:
         funil-arquivado-volta-pela-tela.spec.ts
         inbox-selecionada-no-escuro.spec.ts
         inbox-anuncio-de-origem.spec.ts
+        campanha-com-modelo-aprovado.spec.ts
         followup-builder.spec.ts
         followup-journey.spec.ts
         followup-dossie.spec.ts
@@ -1285,7 +1356,6 @@ jobs:
         qa-l12-funil.spec.ts
         i18n-espanhol-na-tela.spec.ts
         extensoes-declarativas.spec.ts
-        extensoes-versao.spec.ts
         marca-logo.spec.ts
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
@@ -1296,6 +1366,7 @@ jobs:
         buffer-ssr-caixa-orfa.spec.ts
         contadores-do-menu.spec.ts
         honorarios-instalar-e-pagar.spec.ts
+        reenvio-pelo-celular.spec.ts
 
       # ─── PARTE 6 — nasceu em 2026-09-28, e o orçamento de 24 min a pediu ───
       #
@@ -1363,14 +1434,25 @@ jobs:
       # service role, sobe o dublê em 127.0.0.1:3995 (nenhuma outra spec desta
       # parte o sobe) e devolve as chaves da instalação no `finally`.
       # PREVISÃO, não medida: ~1,5 min de caso.
+      # `prova-painel-provedores` SAIU daqui em 2026-10-22 (o #3275 a levou para a PARTE_3 e, no mesmo dia, ela foi para a PARTE_7 comum). Medido
+      # no run 39712337810 (main, dc921fa33, verde): a suíte da parte 6 levou
+      # 20,2 min e o job 26,7 min de 30 — o #3133 e o #3191 foram cortados nela
+      # ("a parte cresceu", 1266s e 1286s de suíte, zero vermelho). A parte 3
+      # levou 12,7 min. A spec soma 235s de caso e só depende do seed do
+      # catálogo, que roda em toda parte `!= 4`. PREVISÃO: ~16,5 min nas duas.
+      #
+      # `contatos-em-cartao-no-celular` entrou em 2026-10-21 (F3 da ADR-0006):
+      # a lista de contatos a 390px, com toque emulado e login `agent`. Semeia
+      # dois contatos pelo service role e os apaga no fim; não depende de WAHA
+      # nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
         app-no-celular.spec.ts
-        celular-cabe-na-tela.spec.ts
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts
         cobranca-suspensao-e-limites.spec.ts
+        contatos-em-cartao-no-celular.spec.ts
         filtro-por-marcador-pela-tela.spec.ts
         fonte-de-captacao-assina-os-envios.spec.ts
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
@@ -1378,7 +1460,6 @@ jobs:
         modulo-de-dados-na-ficha-do-contato.spec.ts
         painel-de-configuracao-da-instalacao.spec.ts
         protecao-de-envio-nao-congela-o-padrao.spec.ts
-        prova-painel-provedores.spec.ts
         qa-l12-inbox.spec.ts
         recursos-opcionais.spec.ts
         redes-sociais-volta-nao-desloga.spec.ts
@@ -1387,6 +1468,68 @@ jobs:
         suspensao-administrativa.spec.ts
         integracao-dados-fontes-liberadas.spec.ts
         atender-pelo-celular.spec.ts
+
+      # ─── PARTE 7 — nasceu em 2026-10-22, uma parte COMUM ───
+      #
+      # O porquê e os números estão no bloco "2026-10-22: uma SÉTIMA parte
+      # comum", no cabeçalho do job. Ela é comum de verdade: recebe os seeds
+      # de passo (`!= 4`) e nenhum passo `if: matrix.parte == 7` muda o
+      # ambiente dela. Spec que exija ambiente próprio (dublê no lugar do
+      # Graph, assinatura do WAHA ligada, seed extra) não entra aqui: ganha
+      # parte própria, com número seguinte.
+      #
+      # As specs desta parte vieram de partes diferentes, por tempo de
+      # execução, ou nasceram aqui; a lista abaixo é a fonte, e este
+      # comentário não a enumera para não envelhecer a cada spec nova. A
+      # regra de entrada: cada uma semeia o que usa ou só lê os seeds de
+      # passo (ex.: o catálogo da OpenRouter que `seed-e2e-catalogo-openrouter`
+      # semeia em toda parte comum), e nenhuma cita WAHA, Graph ou webhook.
+      SPECS_PARTE_7: >-
+        celular-toque-nos-controles.spec.ts
+        agente-novo-e-uso.spec.ts
+        capacidades-do-agente.spec.ts
+        equipe-no-celular.spec.ts
+        extensoes-versao.spec.ts
+        ia-no-celular.spec.ts
+        navegacao.spec.ts
+        prova-painel-provedores.spec.ts
+        comercial-no-celular.spec.ts
+        propostas-de-campos-do-card.spec.ts
+      # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
+      # processo next start. As demais partes preservam a configuração WAHA.
+      #
+      # ─── PARTE 8 — nasceu em 2026-10-22 como 7 (#3128, @oianmaxdev; doc 182 A),
+      #     renumerada para 8 em 2026-10-24 (doc 199) porque o #3306 criou
+      #     uma 7ª parte COMUM nesse meio tempo ───
+      #
+      # É uma parte COMUM com dois desvios de ambiente, ambos presos à
+      # `meta-lead-submitted-causal` e não ao número 8:
+      #   - o passo "Isolar Graph e assinatura WAHA da parte causal" põe
+      #     `WAHA_WEBHOOK_REQUIRE_SIGNATURE=true`, `META_ADS_GRAPH_BASE_URL` no
+      #     dublê 127.0.0.1:3995 e `META_GRAPH_BASE_URL` numa porta que recusa;
+      #   - o passo "Semear funil de nascimento para a prova causal" roda
+      #     `scripts/seed-e2e-nascimento-do-lead.ts` além dos seeds de sempre.
+      # Os seeds comuns (`!= 4`) rodam aqui também. Um rebalanceamento pode
+      # TRAZER spec para esta parte, com orçamento medido, desde que a spec
+      # não poste no webhook do WAHA sem assinatura nem dependa do Graph real —
+      # para listar quem posta: `grep -lE 'webhooks/waha' tests/e2e/*.spec.ts
+      # tests/e2e/helpers/*.ts` (helper conta: `jev.ts` arrasta as jev-*).
+      # Pode também LEVAR a causal para outra parte: o `if: matrix.parte == N`
+      # dos dois passos acompanha a spec, e `tests/unit/e2e-cobertura-completa`
+      # reprova se a spec e os passos ficarem em partes diferentes.
+      # O relógio publicado em cada run separa preparo, suíte e total da parte.
+      # Toda admissão exige medir a composição; teto de caso não é duração medida.
+      SPECS_PARTE_8: >-
+        meta-lead-submitted-causal.spec.ts
+        atendimento-conjunto.spec.ts
+        autonomia-assistida.spec.ts
+        encerramento-atendimento.spec.ts
+        integracao-dados-mysql-na-tela.spec.ts
+        interface-por-vinculo.spec.ts
+        logo-moldura-no-tema-escuro.spec.ts
+        moeda-da-organizacao.spec.ts
+        webhooks.spec.ts
+        system-update.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -1703,6 +1846,19 @@ jobs:
       # endereçada por digest, então o que já veio de um registro não é
       # baixado de novo do outro.
       #
+      # Em 26/10/2026, partes 3 e 7 do run 40353735403 morreram antes dos
+      # testes: GHCR recusou com `toomanyrequests` e ECR com `Data limit
+      # exceeded`. Repetir o ECR na última tentativa não abria outra saída.
+      # O CLI pinado já tenta ECR, GHCR e Docker Hub quando o override está
+      # VAZIO, reaproveitando primeiro as imagens locais. O vazio explícito
+      # na tentativa limpa o GHCR que setup-cli exportou; só omitir a
+      # variável manteria o override e impediria o fallback nativo.
+      # A medição do run 40361684172 põe o nativo PRIMEIRO nesta correção: a
+      # parte 2 gastou 269s nas três tentativas forçadas e nas esperas até chegar
+      # ao caminho que funcionou. As tentativas 2/3 ainda oferecem os registros
+      # explícitos depois de uma falha transitória; a quarta libera de novo o
+      # nativo. O pin, as quatro tentativas e os backoffs continuam os mesmos.
+      #
       # `-x studio,postgres-meta`: menos imagens, menos requisições ao
       # registro. Nenhuma spec, script ou passo deste workflow fala com o
       # Studio (porta 54323) nem com o postgres-meta (que só o Studio usa):
@@ -1718,12 +1874,12 @@ jobs:
           mv supabase/migrations /tmp/migrations-off
           mkdir -p supabase/migrations
           esperas=(0 20 60 120)
-          registros=(ghcr.io public.ecr.aws ghcr.io public.ecr.aws)
+          registros=("" public.ecr.aws ghcr.io "")
           for tentativa in 1 2 3 4; do
             espera=${esperas[$((tentativa - 1))]}
             registro=${registros[$((tentativa - 1))]}
             if [ "$espera" -gt 0 ]; then
-              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro} — a anterior falhou baixando imagem do registro"
+              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro:-fallback nativo (ECR, GHCR e Docker Hub)} — a anterior falhou baixando imagem do registro"
               supabase stop --no-backup || true
               sleep "$espera"
             fi
@@ -1735,7 +1891,7 @@ jobs:
               exit 1
             fi
           done
-          echo "::error title=supabase start falhou 4 vezes baixando imagens::ghcr.io e public.ecr.aws recusaram o pull nas 4 tentativas (esperas de 20s, 60s e 120s). É limite de taxa ou rede do registro, não o PR — rerode a parte."
+          echo "::error title=supabase start falhou 4 vezes baixando imagens::GHCR, ECR e o fallback nativo com Docker Hub não concluíram o pull (esperas de 20s, 60s e 120s). O preparo falhou antes dos testes; confira os erros dos registros acima antes de rerodar."
           exit 1
 
       # O baseline é um dump `--schema-only`: ele USA os tipos das extensões
@@ -1830,6 +1986,24 @@ jobs:
       - name: Gerar o .env.e2e (ambiente da suíte)
         run: pnpm e2e:env
 
+      - name: Isolar Graph e assinatura WAHA da parte causal
+        if: matrix.parte == 8
+        run: |
+          set -euo pipefail
+          if grep -Eq '^[[:space:]]*(META_ADS_GRAPH_BASE_URL|META_GRAPH_BASE_URL|WAHA_WEBHOOK_REQUIRE_SIGNATURE)[[:space:]]*=' .env.e2e; then
+            echo '::error::.env.e2e contém configuração que teria precedência no next start causal'
+            exit 1
+          fi
+          grep -qx 'WAHA_API_BASE_URL=http://127.0.0.1:3999' .env.e2e || {
+            echo '::error::WAHA_API_BASE_URL da parte causal não é o dublê local'
+            exit 1
+          }
+          {
+            echo 'META_ADS_GRAPH_BASE_URL=http://127.0.0.1:3995'
+            echo 'META_GRAPH_BASE_URL=http://127.0.0.1:9'
+            echo 'WAHA_WEBHOOK_REQUIRE_SIGNATURE=true'
+          } >> "$GITHUB_ENV"
+
       # E publica o arquivo no ambiente do JOB, para que servidor e testes leiam
       # literalmente a mesma fonte.
       #
@@ -1850,6 +2024,19 @@ jobs:
       # bloco `env:` fixava e que o app recusa.
       - name: Publicar o .env.e2e no ambiente do job
         run: grep -vE '^[[:space:]]*(#|$)' .env.e2e >> "$GITHUB_ENV"
+
+      - if: matrix.parte == 1
+        name: Provar importação após chat inválido (HTTP e banco reais)
+        shell: bash
+        run: |
+          mkdir -p evidence/historico-chat-invalido
+          pnpm exec tsx scripts/provas/historico-chat-invalido.ts --executar-banco-local \
+            | tee evidence/historico-chat-invalido/recibo.jsonl
+
+      # Handler, JWT e Storage reais no stack já pronto; PDF local, sem IA paga.
+      - name: Provar isolamento do worker de derivação de mídia
+        if: matrix.parte == 1
+        run: pnpm exec tsx tests/provas/media-derive-isolamento.ts
 
       # `pnpm e2e:build`, não `pnpm build`: as três `NEXT_PUBLIC_*` são embutidas
       # no BUNDLE durante o build. Buildar com um env e trocar só no `next start`
@@ -1908,6 +2095,10 @@ jobs:
       # Só em máquina do GitHub: no executor próprio o runner é um contêiner
       # com apt e `sudo` próprios, e lá o passo segue como era (NÃO MEDIDO se
       # o espelho pesa naquela máquina).
+      #
+      # As três linhas `Acquire::*` são de outro defeito, o da TRAVA (ver o
+      # bloco antes de "Instalar o browser"): sem dado por 30 s, o apt larga a
+      # conexão e tenta de novo, em vez de esperar a do espelho para sempre.
       - name: Apontar o cache do apt para uma pasta cacheável
         if: runner.environment == 'github-hosted'
         id: debs
@@ -1915,13 +2106,14 @@ jobs:
           set -euo pipefail
           pasta="$HOME/.cache/playwright-apt"
           mkdir -p "$pasta/partial"
-          printf 'Dir::Cache::Archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\n' "$pasta" \
+          printf 'Dir::Cache::Archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\nAcquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' "$pasta" \
             | sudo tee /etc/apt/apt.conf.d/99-debs-do-playwright >/dev/null
           pw=$(pnpm exec playwright --version | awk '{print $2}')
           : "${ImageOS:?runner do GitHub sem ImageOS — a chave do cache ficaria sem a imagem}"
           : "${ImageVersion:?runner do GitHub sem ImageVersion}"
           echo "prefixo=playwright-apt-${ImageOS}-pw${pw}-" >> "$GITHUB_OUTPUT"
           echo "imagem=${ImageVersion}" >> "$GITHUB_OUTPUT"
+          echo "os=${ImageOS}" >> "$GITHUB_OUTPUT"
 
       - name: Restaurar os .deb do browser
         if: runner.environment == 'github-hosted'
@@ -1932,8 +2124,46 @@ jobs:
           key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
           restore-keys: ${{ steps.debs.outputs.prefixo }}
 
+      # ─── O espelho do apt às vezes TRAVA, e aí não é lentidão ─────────────
+      #
+      # Medido em 23/10/2026 sobre 42 runs (281 partes): o passo abaixo e o do
+      # ffmpeg são BIMODAIS. Saudáveis, o browser leva no máximo 53 s e o ffmpeg
+      # 17 s; fora disso, nada entre 1 e 10 min — o passo trava de 653 s a
+      # 1.511 s e o teto do job cancela a parte sem rodar caso nenhum. Foram 2
+      # de 281 no browser e 9 de 38 no ffmpeg (só a parte 6 instala ffmpeg).
+      # No log do run 39965635473 (parte 7) o `apt-get update` recebe os
+      # `InRelease` do `azure.archive.ubuntu.com` e fica 24,5 min sem imprimir
+      # mais uma linha até o cancelamento.
+      #
+      # Nem toda "trava" é trava. No run 39981658310 (parte 6, o PR que trouxe
+      # este laço) o índice desceu a 11,8 MB/s e os .deb do ffmpeg a ~60 kB/s:
+      # 62,8 MB nesse ritmo são ~17 min, e as 3 tentativas morreram no meio.
+      # Contra espelho LENTO tentar de novo não salva; o que salva é não
+      # descer do espelho — por isso o ffmpeg ganhou cache de .deb próprio
+      # (abaixo), como o browser já tinha.
+      #
+      # Travado não destrava esperando: cada tentativa ganha 180 s (3× o pior
+      # caso saudável) e a seguinte abre conexões novas com o espelho. Morta a
+      # tentativa, um `apt-get` órfão e um `dpkg` interrompido são o que
+      # quebraria a próxima — daí o `pkill` e o `dpkg --configure -a`. O
+      # `timeout-minutes` do passo é o cinto, caso o próprio laço trave.
       - name: Instalar o browser
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          source scripts/ci/apt-e2e-failover.sh
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          atualizar=""
+          for tentativa in 1 2 3; do
+            if timeout -k 20 180 bash -c "${atualizar} pnpm exec playwright install --with-deps chromium" 2>&1 | tee "$log"; then exit 0; else codigos=("${PIPESTATUS[@]}"); fi
+            test "${codigos[1]}" -eq 0 || exit 1
+            recuperar_apt_e2e "${codigos[0]}" "$log" "$tentativa"
+            atualizar="sudo apt-get update -q --error-on=any &&"
+            echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o browser falhou no transporte APT (código ${codigos[0]}); cada tentativa tem limite de 180 s"
+          done
+          echo "::error title=O preparo não instalou o browser::3 tentativas limitadas a 180 s falharam no transporte APT. Consulte a fonte e o erro nos logs acima."
+          exit 1
 
       # Salva logo depois de instalar, e não no fim do job: o `actions/cache`
       # comum só grava se o job passar, e a parte que estoura o teto — a que
@@ -1944,6 +2174,66 @@ jobs:
         with:
           path: ~/.cache/playwright-apt/*.deb
           key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
+
+      # O B-5 de `atender-pelo-celular` (parte 6) gera um ogg/opus com o ffmpeg,
+      # e o app — `next start` NESTE executor, não a imagem — converte com ele
+      # para AAC (`?formato=aac`, F2 da ADR-0006). O executor não traz ffmpeg
+      # garantido: instala, e a sonda reprova ALTO se faltar um dos dois
+      # encoders, em vez de o B-5 cair por um motivo que não é o produto.
+      #
+      # Mesmo laço do browser (a trava e a medição estão no bloco dele). A 1ª
+      # tentativa não roda `apt-get update`: o `--with-deps` do passo anterior
+      # acabou de atualizar os índices, e um update a menos é uma ida a menos
+      # ao espelho que trava. `-q` e não `-qq`: com `-qq` o log do run
+      # 39942328361 ficou 22,7 min mudo, sem dizer se travou no índice ou no
+      # download.
+      #
+      # Os .deb do ffmpeg (87 pacotes, 62,8 MB) moram numa pasta só deles, com
+      # cache próprio: a chave do browser é escrita por qualquer parte, e só a
+      # parte 6 tem o ffmpeg. Mesmo raciocínio da pasta do browser — o apt
+      # confere cada .deb restaurado contra o índice e só desce o que mudou.
+      - name: Restaurar os .deb do ffmpeg
+        if: matrix.parte == 6 && runner.environment == 'github-hosted'
+        id: debs-ffmpeg
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ffmpeg-apt/*.deb
+          key: ffmpeg-apt-${{ steps.debs.outputs.os }}-${{ steps.debs.outputs.imagem }}
+          restore-keys: ffmpeg-apt-${{ steps.debs.outputs.os }}-
+
+      - name: Instalar o ffmpeg e sondar os encoders (áudio no celular, F2)
+        if: matrix.parte == 6
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          source scripts/ci/apt-e2e-failover.sh
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          if ! command -v ffmpeg >/dev/null; then
+            debs="$HOME/.cache/ffmpeg-apt"
+            mkdir -p "$debs/partial"
+            atualizar=""
+            for tentativa in 1 2 3; do
+              if timeout -k 20 180 bash -c "${atualizar} sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=$debs/ ffmpeg" 2>&1 | tee "$log"; then break; else codigos=("${PIPESTATUS[@]}"); fi
+              test "${codigos[1]}" -eq 0 || exit 1
+              recuperar_apt_e2e "${codigos[0]}" "$log" "$tentativa"
+              echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o ffmpeg falhou no transporte APT (código ${codigos[0]}); cada tentativa tem limite de 180 s"
+              if [ "$tentativa" -eq 3 ]; then
+                echo "::error title=O preparo não instalou o ffmpeg::3 tentativas limitadas a 180 s falharam no transporte APT. Consulte a fonte e o erro nos logs acima."
+                exit 1
+              fi
+              atualizar="sudo apt-get update -q --error-on=any &&"
+            done
+          fi
+          ffmpeg -hide_banner -encoders | grep -E ' (aac|libopus) '
+          test "$(ffmpeg -hide_banner -encoders | grep -cE ' (aac|libopus) ')" -ge 2
+
+      - name: Guardar os .deb do ffmpeg
+        if: matrix.parte == 6 && runner.environment == 'github-hosted' && steps.debs-ffmpeg.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/ffmpeg-apt/*.deb
+          key: ffmpeg-apt-${{ steps.debs.outputs.os }}-${{ steps.debs.outputs.imagem }}
 
       # `.env.local` é CÓPIA do `.env.e2e`, não uma terceira redação dele.
       #
@@ -2121,6 +2411,10 @@ jobs:
           cp .env.e2e .env.local
           pnpm exec tsx scripts/seed-e2e-credentials.ts
 
+      - if: matrix.parte == 8
+        name: Semear funil de nascimento para a prova causal
+        run: pnpm exec tsx scripts/seed-e2e-nascimento-do-lead.ts
+
       # `SUPABASE_DB_URL` no `.env.local` (e não só no `env:` do passo de teste):
       # `seed-e2e-escalacao.ts` abre um `pg.Pool` direto, e o `.env.local` é a
       # única fonte que ele lê. Sem a linha, o `pg` cai no default 5432 e morre
@@ -2200,6 +2494,8 @@ jobs:
             4) LISTA="$SPECS_PARTE_4" ;;
             5) LISTA="$SPECS_PARTE_5" ;;
             6) LISTA="$SPECS_PARTE_6" ;;
+            7) LISTA="$SPECS_PARTE_7" ;;
+            8) LISTA="$SPECS_PARTE_8" ;;
             *) echo "::error::parte ${{ matrix.parte }} sem lista"; exit 1 ;;
           esac
           # Falha alto se a variável vier vazia: sem isto, um typo no nome faria
@@ -2319,6 +2615,17 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+      - name: Gerar tipos do banco real para a prova CTWA
+        if: ${{ success() && matrix.parte == 8 }}
+        env:
+          CANDIDATO_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/gerar-tipos-do-banco-e2e.sh evidencia-gerada/tipos-do-banco meta_ctwa_click_dispatches
+      - name: Gerar tipos do banco real para a prova de atendimento conjunto
+        if: ${{ success() && matrix.parte == 3 }}
+        env:
+          CANDIDATO_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/gerar-tipos-do-banco-e2e.sh evidencia-gerada/tipos-do-banco conversation_participants
 
       # A EVIDÊNCIA VISUAL TAMBÉM QUANDO PASSA. As specs gravam capturas em
       # evidence/<feature>/ (doutrina de QA Visual, DoD 12); sem este passo elas
@@ -2543,7 +2850,7 @@ jobs:
                       dentro { exit }
                     ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
-          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; } | sort -u | wc -l | tr -d " ")
+          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; bloco SPECS_PARTE_7; bloco SPECS_PARTE_8; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
           # E o recorte passa a ter CONTROLE, não só um piso.

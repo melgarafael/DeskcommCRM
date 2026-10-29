@@ -40,7 +40,7 @@
  * não-cromática que o design system já usa nos estados.
  */
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -99,6 +99,9 @@ export const CHAVES_COM_NOME_DE_ETIQUETA = [
   ["board"],
 ] as const;
 
+const DESTINO_INEXISTENTE =
+  "Essa etiqueta não existe. Juntar só leva para uma etiqueta que já existe; para dar um nome novo, use Renomear.";
+
 /** Cada recusa do servidor vira uma frase que diz O QUE FAZER. */
 const ERRO_EM_PORTUGUES: Record<string, string> = {
   validation_failed: "Confira a etiqueta, o novo nome e a cor.",
@@ -106,9 +109,10 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
   unauthenticated: "Sua sessão expirou. Entre de novo.",
   mfa_required: "Confirme o segundo fator para mudar as etiquetas.",
   forbidden_tenant: "Você não está em nenhuma organização ativa.",
+  destino_inexistente: DESTINO_INEXISTENTE,
 };
 
-export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idioma: Idioma }) {
+export function PainelDeTags({ tags, idioma, paginado = false }: { tags: LinhaDeVocabulario[]; idioma: Idioma; paginado?: boolean }) {
   const t = (texto: string) => traduzir(texto, idioma);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -136,10 +140,33 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
    * Compara com `destinos`, que já exclui a própria etiqueta: mudar só a caixa
    * ("cliente" → "Cliente") é renome, não junção.
    */
-  const destinoJaExiste =
-    acao === "renomear" &&
-    destino.trim().length > 0 &&
-    destinos.some((linha) => linha.tag.toLowerCase() === destino.trim().toLowerCase());
+  const nomeDigitado = destino.trim().toLowerCase();
+  // #2855 — com a lista paginada, o nome pode estar em OUTRA página: pergunta ao
+  // servidor pela mesma busca da tela (curado + em uso + regras). Serve ao aviso
+  // de renomear (#2801) e à junção, que só aceita destino que existe.
+  const { data: achadasNoServidor } = useQuery({
+    queryKey: ["tags-vocabulario-busca", nomeDigitado],
+    enabled: paginado && nomeDigitado.length > 0 && (acao === "renomear" || acao === "juntar"),
+    staleTime: 30_000,
+    queryFn: async ({ signal }): Promise<LinhaDeVocabulario[]> => {
+      const resposta = await fetch(
+        "/api/v1/tags/vocabulario?busca=" + encodeURIComponent(destino.trim()),
+        { signal },
+      );
+      if (!resposta.ok) throw new Error(`busca_do_destino_${resposta.status}`);
+      return ((await resposta.json()) as { data?: LinhaDeVocabulario[] }).data ?? [];
+    },
+  });
+  const outraEtiqueta = (linha: LinhaDeVocabulario) =>
+    linha.tag.toLowerCase() === nomeDigitado && linha.tag.toLowerCase() !== alvo?.tag.toLowerCase();
+  const nomeJaExiste =
+    nomeDigitado.length > 0 &&
+    (destinos.some(outraEtiqueta) || (achadasNoServidor ?? []).some(outraEtiqueta));
+  const destinoJaExiste = acao === "renomear" && nomeJaExiste;
+  // Só acusa depois que o servidor respondeu: enquanto a busca corre, não há
+  // como saber, e o servidor recusa de novo no POST (`destino_inexistente`).
+  const destinoDaJuncaoInexistente =
+    paginado && acao === "juntar" && achadasNoServidor !== undefined && nomeDigitado.length > 0 && !nomeJaExiste;
 
   function abrir(linha: LinhaDeVocabulario, qual: AcaoDeVocabulario) {
     setAlvo(linha);
@@ -256,66 +283,72 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
   return (
     <div className="flex flex-col gap-4">
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <caption className="sr-only">{t("Etiquetas da organização e onde são usadas")}</caption>
-          <thead className="bg-muted/50 text-left">
-            <tr>
-              <th className="p-3 font-medium">{t("Etiqueta")}</th>
-              <th className="p-3 font-medium">{t("Contatos")}</th>
-              <th className="p-3 font-medium">{t("Leads")}</th>
-              <th className="p-3 font-medium">{t("Conversas")}</th>
-              <th className="p-3 font-medium">{t("Regras de agente")}</th>
-              <th className="p-3 font-medium">{t("Ações")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tags.map((linha) => (
-              <tr key={linha.tag} className="border-t border-border/60">
-                <td className="p-3">
-                  {/* A cor do SERVIDOR, não a do cache do chip: esta lista acabou
-                      de ler o vocabulário, e mostrar o que a outra leitura
-                      devolveu seria a tela discordando de si mesma por alguns
-                      segundos. */}
-                  <ChipDeEtiqueta tag={linha.tag} cor={linha.cor} />
-                  {!linha.no_vocabulario && (
-                    // Em uso e fora do vocabulário curado: existe em algum
-                    // registro sem passar por nenhuma tela de cadastro. Dar cor
-                    // (o botão ao lado) traz a etiqueta para o vocabulário —
-                    // escolher como ela aparece É curá-la.
-                    <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                      {t("em uso, fora do vocabulário")}
-                    </span>
-                  )}
-                </td>
-                <td className="p-3 tabular-nums">{linha.uso_em_contatos}</td>
-                <td className="p-3 tabular-nums">{linha.uso_em_leads}</td>
-                <td className="p-3 tabular-nums">{linha.uso_em_conversas}</td>
-                <td className="p-3 tabular-nums">
-                  {linha.em_regras > 0 ? (
-                    <span className="font-medium">{linha.em_regras}</span>
-                  ) : (
-                    <span className="text-muted-foreground">0</span>
-                  )}
-                </td>
-                <td className="flex flex-wrap gap-2 p-3">
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "definir_cor")}>
-                    {t("Cor")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "renomear")}>
-                    {t("Renomear")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "juntar")}>
-                    {t("Juntar")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => abrir(linha, "excluir")}>
-                    {t("Excluir")}
-                  </Button>
-                </td>
+        {/* O Card corta o que passa da borda, e no celular a tabela passava:
+            Renomear, Juntar e Excluir sumiam sem barra de rolagem. Abaixo de
+            `md` saem as três colunas de contagem; o invólucro rola se ainda
+            assim não couber, em vez de cortar. */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <caption className="sr-only">{t("Etiquetas da organização e onde são usadas")}</caption>
+            <thead className="bg-muted/50 text-left">
+              <tr>
+                <th className="p-3 font-medium">{t("Etiqueta")}</th>
+                <th className="p-3 font-medium">{t("Contatos")}</th>
+                <th className="p-3 font-medium max-md:hidden">{t("Leads")}</th>
+                <th className="p-3 font-medium max-md:hidden">{t("Conversas")}</th>
+                <th className="p-3 font-medium max-md:hidden">{t("Regras de agente")}</th>
+                <th className="p-3 font-medium">{t("Ações")}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {tags.length >= TETO_DA_LISTA && (
+            </thead>
+            <tbody>
+              {tags.map((linha) => (
+                <tr key={linha.tag} className="border-t border-border/60">
+                  <td className="p-3">
+                    {/* A cor do SERVIDOR, não a do cache do chip: esta lista acabou
+                        de ler o vocabulário, e mostrar o que a outra leitura
+                        devolveu seria a tela discordando de si mesma por alguns
+                        segundos. */}
+                    <ChipDeEtiqueta tag={linha.tag} cor={linha.cor} />
+                    {!linha.no_vocabulario && (
+                      // Em uso e fora do vocabulário curado: existe em algum
+                      // registro sem passar por nenhuma tela de cadastro. Dar cor
+                      // (o botão ao lado) traz a etiqueta para o vocabulário —
+                      // escolher como ela aparece É curá-la.
+                      <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {t("em uso, fora do vocabulário")}
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3 tabular-nums">{linha.uso_em_contatos}</td>
+                  <td className="p-3 tabular-nums max-md:hidden">{linha.uso_em_leads}</td>
+                  <td className="p-3 tabular-nums max-md:hidden">{linha.uso_em_conversas}</td>
+                  <td className="p-3 tabular-nums max-md:hidden">
+                    {linha.em_regras > 0 ? (
+                      <span className="font-medium">{linha.em_regras}</span>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </td>
+                  <td className="flex flex-wrap gap-2 p-3">
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "definir_cor")}>
+                      {t("Cor")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "renomear")}>
+                      {t("Renomear")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "juntar")}>
+                      {t("Juntar")}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => abrir(linha, "excluir")}>
+                      {t("Excluir")}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!paginado && tags.length >= TETO_DA_LISTA && (
           <p className="border-t border-border/60 p-3 text-sm text-muted-foreground">
             {t(
               "Mostrando as 500 primeiras etiquetas em ordem alfabética. Se a que você procura não está aqui, arrume primeiro as que aparecem.",
@@ -366,6 +399,17 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
           ) : acao === "juntar" ? (
             <div className="flex flex-col gap-2">
               <Label htmlFor="destino-da-juncao">{t("Etiqueta de destino")}</Label>
+              {paginado ? <>
+                <Input id="destino-da-juncao" list="destinos-da-juncao" value={destino}
+                  onChange={e=>setDestino(e.target.value)} maxLength={60}
+                  placeholder={t("Digite o nome exato da etiqueta de destino")}/>
+                <datalist id="destinos-da-juncao">{destinos.map(linha=><option key={linha.tag} value={linha.tag}/>)}</datalist>
+                {destinoDaJuncaoInexistente && (
+                  <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                    {t(DESTINO_INEXISTENTE)}
+                  </p>
+                )}
+              </> :
               <select
                 id="destino-da-juncao"
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -378,7 +422,7 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
                     {linha.tag}
                   </option>
                 ))}
-              </select>
+              </select>}
             </div>
           ) : acao === "definir_cor" ? (
             <div className="flex flex-col gap-3">
@@ -451,7 +495,11 @@ export function PainelDeTags({ tags, idioma }: { tags: LinhaDeVocabulario[]; idi
           <div className="flex gap-2">
             <Button
               onClick={enviar}
-              disabled={ocupado || (acao !== "excluir" && acao !== "definir_cor" && destino.trim().length === 0)}
+              disabled={
+                ocupado ||
+                destinoDaJuncaoInexistente ||
+                (acao !== "excluir" && acao !== "definir_cor" && destino.trim().length === 0)
+              }
               variant={acao === "excluir" ? "destructive" : "default"}
             >
               {ocupado ? t("Aplicando...") : t("Confirmar")}

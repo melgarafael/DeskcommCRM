@@ -22,6 +22,7 @@ function formatError(err: unknown, t: (texto: string) => string): string {
 }
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
 import { CalendarioDoFunil } from "@/components/kanban/CalendarioDoFunil";
+import { ListaDoFunil } from "@/components/kanban/ListaDoFunil";
 import { FilterBar } from "@/components/kanban/FilterBar";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
@@ -36,15 +37,41 @@ import {
 import { Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
+import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { cn } from "@/lib/utils";
+
+/**
+ * AS TRÊS VISÕES DO FUNIL (#2770, #3172).
+ *
+ * Quadro é o padrão — é o que todo mundo já conhece, e a aba nova não pode
+ * sequestrar a tela de quem só quer mover card.
+ */
+type Visao = "quadro" | "calendario" | "lista";
+
+/**
+ * A VISÃO PEDIDA NA URL (#3172, item 4 do CR).
+ *
+ * `?visao=lista` é a forma de chegar na Lista SEM passar pelo quadro: o link
+ * colado no chat, o favorito do navegador, o F5. Sem isso, a única porta para
+ * a aba seria a leitura cara que ela existe para não pagar.
+ *
+ * Valor fora das três cai no quadro, como um `modo` de etiqueta fora dos dois
+ * cai no `e` (`lib/kanban/filters.ts`): a URL é deep-link, e um parâmetro colado
+ * à mão não derruba a tela.
+ */
+function visaoDoParam(bruto: string | null): Visao {
+  return bruto === "lista" || bruto === "calendario" ? bruto : "quadro";
+}
 
 export function PipelinePageClient({
   pipelineId,
   initialName,
   role,
   funis,
+  funilInicial,
+  etapasIniciais,
 }: {
   pipelineId: string;
   initialName: string;
@@ -55,30 +82,103 @@ export function PipelinePageClient({
    * cabeçalho; sem ele o quadro não sabe que existem outros funis.
    */
   funis: Array<{ id: string; name: string }>;
+  /**
+   * O FUNIL, da leitura leve — `crm_pipelines` menos os negócios (#3172, item 4
+   * do CR). É dele que a aba Lista tira o `settings` da ficha e o vocabulário,
+   * sem depender do quadro: um funil com milhares de negócios não pode ter a
+   * lista refém da leitura que estoura o `statement_timeout`.
+   */
+  funilInicial: Pipeline;
+  /** As etapas vivas, na mesma leitura leve — a lista mostra o nome de cada uma. */
+  etapasIniciais: Stage[];
 }) {
   const t = useT();
-  const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
+  /**
+   * A VISÃO DO FUNIL (#2770, #3172, item 4 do CR).
+   *
+   * Nasce na URL (`?visao=`) e continua sendo OLHAR MOMENTÂNEO: trocar de aba
+   * não é navegar, e o quadro volta no lugar onde ficou. O que mudou com o item
+   * 4 é que ela passou a ser DIZÍVEL — o endereço da lista é compartilhável e
+   * sobrevive ao F5 —, e é por ele que se chega na aba sem passar pelo quadro.
+   *
+   * `lista` é a terceira aba (#3172): uma linha por negócio, paginada no banco
+   * pela rota `…/leads`. Ela NÃO reaproveita a lista que o quadro já leu — é
+   * justamente o funil grande, que não cabe numa leitura só, que ela existe
+   * para atender.
+   */
+  const searchParams = useSearchParams();
+  const visaoDaUrl = visaoDoParam(searchParams.get("visao"));
+  const [visao, setVisao] = useState<Visao>(visaoDaUrl);
+  /**
+   * O ajuste de estado no RENDER quando a URL muda — o mesmo padrão que o
+   * `NewLeadDialog` usa para o contato dele. Um link para o MESMO funil com
+   * `?visao=lista` é navegação de cliente: o componente não desmonta, o
+   * `useState` inicial não roda de novo, e sem esta comparação a URL diria
+   * "lista" enquanto a tela mostrasse o quadro — uma mentira com cara de link
+   * quebrado. Em `useEffect` seria um render a mais com a tela errada na tela.
+   */
+  const [visaoDaUrlAnterior, setVisaoDaUrlAnterior] = useState(visaoDaUrl);
+  if (visaoDaUrl !== visaoDaUrlAnterior) {
+    setVisaoDaUrlAnterior(visaoDaUrl);
+    setVisao(visaoDaUrl);
+  }
+  /**
+   * ⚠️ A LEITURA CARA SÓ QUANDO ELA É A RESPOSTA (#3172, item 4 do CR).
+   *
+   * O quadro lê o funil INTEIRO; a lista existe para não lê-lo. Com a Lista
+   * aberta, `enabled: false` desliga a consulta do quadro — e com ela o canal
+   * de realtime e a rede de segurança —, e o que a tela paga é a página da
+   * rota `…/leads` mais as duas consultas leves do server component.
+   *
+   * Quadro e Calendário continuam exatamente como hoje: as duas olham o mesmo
+   * funil, e uma delas (o quadro) é quem alimenta o calendário.
+   */
+  const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(
+    pipelineId,
+    searchParams.get("lead"),
+    { enabled: visao !== "lista" },
+  );
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
   const setFilters = useCallback(
     (next: LeadFilters) => {
-      const qs = filtersToParams(next);
+      const p = new URLSearchParams(filtersToParams(next));
+      /**
+       * A VISÃO ATRAVESSA A REESCRITA DO FILTRO: ela mora na mesma query string,
+       * e `filtersToParams` monta a string do zero. Digitar na busca com a
+       * Lista aberta apagaria o `?visao=lista` — e o ajuste do render lá em
+       * cima leria isso como "pediram o quadro", devolvendo o quadro no meio da
+       * digitação.
+       */
+      const visaoPedida = searchParams.get("visao");
+      if (visaoPedida) p.set("visao", visaoPedida);
+      const qs = p.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [router, pathname],
+    [router, pathname, searchParams],
+  );
+  /**
+   * Trocar de visão ESCREVE na URL (#3172, item 4 do CR): é o que faz o
+   * endereço da Lista ser compartilhável e sobreviver ao F5. O quadro é o
+   * padrão e não ganha parâmetro — link antigo não muda de significado.
+   *
+   * Os DEMAIS parâmetros ficam onde estão: trocar de visão não é reescrever a
+   * consulta (o filtro e o `?lead=` seguem valendo quando se volta ao quadro).
+   */
+  const mudarVisao = useCallback(
+    (proxima: Visao) => {
+      setVisao(proxima);
+      const p = new URLSearchParams(searchParams.toString());
+      if (proxima === "quadro") p.delete("visao");
+      else p.set("visao", proxima);
+      const qs = p.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
-  /**
-   * A visão do funil (#2770). Quadro é o padrão — é o que todo mundo já
-   * conhece, e a aba nova não pode sequestrar a tela de quem só quer mover
-   * card. O estado é LOCAL e não vai na URL: diferente do filtro (que é
-   * compartilhável e sobrevive a um refresh), a vista é um olhar momentâneo —
-   * e o quadro de volta no mesmo lugar onde ficou é o que se espera ao voltar.
-   */
-  const [visao, setVisao] = useState<"quadro" | "calendario">("quadro");
 
   /**
    * Motivo e categoria da perda (#1537): a categoria NÃO vem no lead — ela é
@@ -164,9 +264,7 @@ export function PipelinePageClient({
         */}
         <h1
           className={
-            podeTrocar
-              ? "sr-only"
-              : "min-w-0 truncate text-2xl font-semibold tracking-tight"
+            podeTrocar ? "sr-only" : "min-w-0 truncate text-2xl font-semibold tracking-tight"
           }
         >
           {nomeAtual}
@@ -181,17 +279,13 @@ export function PipelinePageClient({
             <SelectTrigger
               aria-label={`${t("Trocar de funil")}: ${nomeAtual}`}
               data-testid="trocar-funil"
-              className="h-auto w-auto min-w-0 max-w-full gap-1.5 border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight shadow-none focus:ring-1 focus:ring-ring sm:max-w-[60%] [&>span]:truncate"
+              className="h-auto w-auto max-w-full min-w-0 gap-1.5 border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight shadow-none focus:ring-1 focus:ring-ring sm:max-w-[60%] [&>span]:truncate"
             >
               <SelectValue placeholder={nomeAtual} />
             </SelectTrigger>
             <SelectContent>
               {funis.map((f) => (
-                <SelectItem
-                  key={f.id}
-                  value={f.id}
-                  data-testid={`trocar-funil-opcao-${f.id}`}
-                >
+                <SelectItem key={f.id} value={f.id} data-testid={`trocar-funil-opcao-${f.id}`}>
                   {f.name}
                 </SelectItem>
               ))}
@@ -199,10 +293,15 @@ export function PipelinePageClient({
           </Select>
         )}
         {/*
-          A TERCEIRA ABA DO FUNIL (#2770), ao lado do quadro. O seletor fica no
+          AS ABAS DO FUNIL (#2770, #3172), ao lado do quadro. O seletor fica no
           cabeçalho e não dentro do conteúdo: quem troca de visão está mudando
           COMO olha o funil, e a pergunta é anterior a qualquer filtro ou card —
           é a mesma lógica do interruptor Lista/Calendário da tela de Tarefas.
+          As três olham o MESMO funil e não discordam sobre quem está nele.
+
+          A troca passa por `mudarVisao` e não por `setVisao`: a visão é da URL
+          (#3172, item 4 do CR), e é o endereço que faz a aba ser alcançável sem
+          passar pelo quadro.
         */}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
@@ -210,7 +309,7 @@ export function PipelinePageClient({
               type="button"
               data-testid="visao-quadro"
               aria-pressed={visao === "quadro"}
-              onClick={() => setVisao("quadro")}
+              onClick={() => mudarVisao("quadro")}
               className={cn(
                 "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
                 visao === "quadro"
@@ -222,9 +321,23 @@ export function PipelinePageClient({
             </button>
             <button
               type="button"
+              data-testid="visao-lista"
+              aria-pressed={visao === "lista"}
+              onClick={() => mudarVisao("lista")}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                visao === "lista"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t("Lista")}
+            </button>
+            <button
+              type="button"
               data-testid="visao-calendario"
               aria-pressed={visao === "calendario"}
-              onClick={() => setVisao("calendario")}
+              onClick={() => mudarVisao("calendario")}
               className={cn(
                 "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
                 visao === "calendario"
@@ -235,20 +348,36 @@ export function PipelinePageClient({
               {t("Calendário")}
             </button>
           </div>
-          <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
+          {/* O portão do diálogo é a EXISTÊNCIA DE ETAPA, não a de quadro: numa
+              tela aberta direto na Lista (#3172, item 4 do CR) não há quadro, e
+              um botão apagado ao lado de uma lista que abriu seria dizer que a
+              aba não funciona. As etapas vêm da leitura leve. */}
+          <Button
+            onClick={() => setNewOpen(true)}
+            disabled={etapasIniciais.length === 0}
+            className="shrink-0"
+          >
             <Plus size={16} className="mr-2" /> {t("Novo Lead")}
           </Button>
         </div>
       </header>
-      {data && (
+      {etapasIniciais.length > 0 && (
         <NewLeadDialog
           open={newOpen}
           onOpenChange={setNewOpen}
           pipelineId={pipelineId}
-          stages={data.stages}
+          stages={data?.stages ?? etapasIniciais}
           // #1751: o quadro é a lista que o diálogo confere ANTES de criar —
-          // é ela que faz o aviso de negócio duplicado existir sem rede.
-          leads={data.leads}
+          // é ela que faz o aviso de negócio duplicado existir sem rede. Quem
+          // abre a tela DIRETO na Lista (#3172, item 4 do CR) não tem essa
+          // lista, e quem avisa é o servidor (`meta.avisos`) — o mesmo caminho
+          // de quem abre pelo Inbox, que também abre sem o quadro em mãos.
+          leads={data?.leads ?? []}
+          // #3038: os campos que a etapa exige são preenchidos no PRÓPRIO
+          // formulário — a lista sai do `settings` que o quadro já tem em mãos.
+          // Na Lista o quadro não carrega (#3172): o funil da leitura leve já
+          // traz os `settings`, então o bloco de campos exigidos continua vivo.
+          settings={data?.pipeline.settings ?? funilInicial.settings}
         />
       )}
       <FilterBar
@@ -257,7 +386,28 @@ export function PipelinePageClient({
         leads={data?.leads ?? []}
         settings={data?.pipeline.settings}
       />
-      {error ? (
+      {visao === "lista" ? (
+        /**
+         * ⭐ A LISTA NÃO ESPERA O QUADRO (#3172, item 4 do CR) — e é por isso
+         * que este ramo vem ANTES dos do quadro.
+         *
+         * Antes, os ramos de erro e de carregamento do quadro vinham primeiro: a
+         * lista só aparecia depois que a leitura do funil INTEIRO terminasse —
+         * e num funil com milhares de negócios ela é justamente a que estoura o
+         * `statement_timeout`. A aba que existe para não pagar essa leitura
+         * estava atrás dela.
+         *
+         * O que ela recebe vem da leitura LEVE (funil e etapas sem negócio
+         * nenhum, do server component): nenhum `data` do quadro é consultado
+         * aqui, e por isso o quadro pode estar carregando, ter falhado ou nem
+         * ter sido pedido — a lista é a mesma. Também NÃO recebe
+         * `filteredLeads`: ela pagina no banco a partir da página 1, e o filtro
+         * em memória da barra não tem o que filtrar antes de a página chegar
+         * (fatia 2 leva os filtros para a consulta — ver o cabeçalho de
+         * `ListaDoFunil`).
+         */
+        <ListaDoFunil pipelineId={pipelineId} pipeline={funilInicial} stages={etapasIniciais} />
+      ) : error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           {t("Não consegui carregar este funil:")} {formatError(error, t)}
         </div>

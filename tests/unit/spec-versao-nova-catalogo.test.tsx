@@ -81,6 +81,8 @@ function skillComVersaoNova(): InstalledSkill {
       matcher_mudou: true,
       any_adicionadas: ["agendamento", "reatendimento"],
       any_removidas: ["legado"],
+      tags_adicionadas: [],
+      tags_removidas: [],
       corpo_mudou: true,
       linhas_adicionadas: 12,
       linhas_removidas: 3,

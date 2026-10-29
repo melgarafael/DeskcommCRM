@@ -65,6 +65,13 @@ interface Props {
     /** A cor do TEMA ESCURO (#2482) — o par; `null` = só a cor acima pinta. */
     readonly accent_dark_hex: string | null;
     readonly logo_path: string | null;
+    /**
+     * O remetente do e-mail de AUTOMAÇÃO (#3287, fatia 1) — nome de exibição e
+     * "responder para". `null` = a organização não configurou, e o e-mail sai
+     * com o remetente da plataforma.
+     */
+    readonly email_from_name: string | null;
+    readonly email_reply_to: string | null;
   };
   /** A linha da marca da INSTALAÇÃO — a camada logo abaixo desta. */
   readonly instalacao: LinhaDaInstalacao;
@@ -143,6 +150,11 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
   const [nome, setNome] = useState(gravada.app_name ?? "");
   const [hex, setHex] = useState(gravada.accent_hex ?? "");
   const [hexEscuro, setHexEscuro] = useState(gravada.accent_dark_hex ?? "");
+  // O remetente do e-mail de AUTOMAÇÃO (#3287, fatia 1). Fora da pilha de marca
+  // de propósito: ele não pinta tela nenhuma, então não entra no `resolverMarca`
+  // nem na prévia — só no `Salvar`.
+  const [remetenteNome, setRemetenteNome] = useState(gravada.email_from_name ?? "");
+  const [responderPara, setResponderPara] = useState(gravada.email_reply_to ?? "");
   const [erroTecnico, setErroTecnico] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -151,6 +163,12 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
   const hexValido = hexLimpo.length === 0 || ehHexValido(hexLimpo);
   const hexEscuroLimpo = hexEscuro.trim();
   const hexEscuroValido = hexEscuroLimpo.length === 0 || ehHexValido(hexEscuroLimpo);
+  const remetenteNomeLimpo = remetenteNome.trim();
+  const responderParaLimpo = responderPara.trim();
+  // Mesmo piso do schema (`marcaDaOrganizacaoSchema`) — a tela avisa antes de
+  // salvar em vez de deixar a ação devolver `validation_failed` genérico.
+  const responderParaValido =
+    responderParaLimpo.length === 0 || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(responderParaLimpo);
 
   // As duas camadas de baixo, montadas uma vez. `abaixo` sozinho responde "o que
   // aparece se eu não definir nada"; com a camada da organização na frente,
@@ -255,12 +273,18 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
     evento.preventDefault();
     setErroTecnico(null);
 
-    // Os dois campos vazios = "volte ao que vem do sistema". A action traduz esse
+    // Os campos vazios = "volte ao que vem do sistema". A action traduz esse
     // par de `null` em apagar a chave inteira, e não em gravar um envelope vazio.
     const lido = marcaDaOrganizacaoSchema.safeParse({
       app_name: nomeLimpo.length > 0 ? nomeLimpo : null,
       accent_hex: hexLimpo.length > 0 ? hexLimpo : null,
       accent_dark_hex: hexEscuroLimpo.length > 0 ? hexEscuroLimpo : null,
+      // O remetente da automação (#3287, fatia 1). Vão SEMPRE, mesmo quando a
+      // pessoa só mexeu na cor: o `Save` da marca substitui o objeto `branding`
+      // inteiro (só o `logo_path` é preservado no banco), então omitir um campo
+      // aqui o APAGARIA em silêncio no próximo salvamento de qualquer outro.
+      email_from_name: remetenteNomeLimpo.length > 0 ? remetenteNomeLimpo : null,
+      email_reply_to: responderParaLimpo.length > 0 ? responderParaLimpo : null,
     });
     if (!lido.success) {
       toast.error(t("Confira os campos: algum valor não está no formato esperado."));
@@ -450,6 +474,63 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
       </Card>
 
       {/*
+        O remetente do e-mail de AUTOMAÇÃO (#3287, fatia 1). Fica na MESMA tela
+        da marca porque, para quem administra a empresa, é a mesma pergunta
+        ("como a minha empresa aparece"); o que o separa é o ALCANCE — estes dois
+        campos só tocam o e-mail que as regras mandam ao cliente final, e o
+        endereço de ENVIO (o domínio) continua sendo o do sistema. O SMTP próprio
+        da organização é a fatia 2 e ainda não aparece aqui.
+      */}
+      <Card className="space-y-4 p-6">
+        <h2 className="text-base font-semibold tracking-tight text-text">
+          {t("Como seus e-mails saem")}
+        </h2>
+        <p className="text-sm text-text-muted">
+          {t(
+            "Vale para os e-mails que as automações enviam ao seu cliente. O endereço de envio continua sendo o do sistema — o que muda é o nome que aparece e para onde vai a resposta.",
+          )}
+        </p>
+
+        <div className="space-y-2">
+          <Label htmlFor="org_email_from_name">{t("Nome de exibição")}</Label>
+          <Input
+            id="org_email_from_name"
+            value={remetenteNome}
+            onChange={(e) => setRemetenteNome(e.target.value)}
+            // O placeholder é o nome EM VIGOR sem esta camada, igual ao campo de
+            // cima: é assim que o campo vazio responde "e se eu não preencher?".
+            placeholder={semAOrganizacao.name}
+            maxLength={120}
+            autoComplete="off"
+          />
+          <p className="text-xs text-text-muted">
+            {t("É o que o cliente lê como remetente. Deixe em branco para usar o do sistema.")}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="org_email_reply_to">{t("Responder para")}</Label>
+          <Input
+            id="org_email_reply_to"
+            value={responderPara}
+            onChange={(e) => setResponderPara(e.target.value)}
+            placeholder="contato@suaempresa.com"
+            spellCheck={false}
+            autoComplete="off"
+            aria-invalid={!responderParaValido}
+          />
+          {!responderParaValido ? (
+            <span className="text-sm text-error-fg">
+              {t("Use um endereço de e-mail como contato@suaempresa.com")}
+            </span>
+          ) : null}
+          <p className="text-xs text-text-muted">
+            {t("Para onde vai a resposta do cliente. Deixe em branco para usar o endereço do sistema.")}
+          </p>
+        </div>
+      </Card>
+
+      {/*
         O LAÇO DE RETORNO desta feature (invariante 7 do Sistema Vivo).
 
         Sem este bloco, a pessoa que colasse um amarelo e visse outro tom nos
@@ -530,6 +611,11 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
             )}
           </li>
           <li>
+            {t(
+              "O envio continua saindo pelo servidor de e-mail do sistema: o endereço do remetente (o domínio) não muda, e um servidor de e-mail próprio da sua empresa ainda não é configurável por aqui.",
+            )}
+          </li>
+          <li>
             {/*
               O campo e a lei são do PAÍS da organização, não do idioma da tela
               (#2503): em Portugal a dica tem de dizer "Denominação social" e
@@ -561,7 +647,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
         {erroTecnico ? (
           <span className="font-mono text-xs text-text-muted">{erroTecnico}</span>
         ) : null}
-        <Button type="submit" disabled={isPending || !hexValido || !hexEscuroValido}>
+        <Button type="submit" disabled={isPending || !hexValido || !hexEscuroValido || !responderParaValido}>
           {isPending ? t("Salvando…") : t("Salvar")}
         </Button>
       </div>

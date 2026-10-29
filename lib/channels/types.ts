@@ -6,6 +6,7 @@
 import type { SendMessageInput } from "@/lib/schemas";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type { OutboundMedia } from "@/lib/waha/media-send";
+import type { TemplateContract } from "@/lib/channels/meta/template-contract";
 import type { ContatoDoAparelho } from "@/lib/waha/client";
 
 // O tipo do contato do aparelho ATRAVESSA o seam como tipo só (o import some na
@@ -531,6 +532,13 @@ export interface ChannelAdapter {
     language: string;
     /** Valores dos `{{n}}`, na ordem em que a definição os declara. */
     values: Record<string, string>;
+    /**
+     * O contrato que o pré-voo conferiu (`conferirDefinicao`), quando o espelho
+     * tem a definição. O transporte que precisa ORDENAR os valores — modelo
+     * nomeado, texto do cabeçalho, sufixo de link de botão — lê a ordem daqui.
+     * `null`/ausente: modelo fora do espelho, e vale a ordem numérica das chaves.
+     */
+    contrato?: TemplateContract | null;
   }): Promise<{ externalId: string | null }>;
 }
 

@@ -25,7 +25,7 @@ import type { User } from "@supabase/supabase-js";
 import { fail, type ApiError } from "@/lib/api/wrappers";
 import { EscritaDePlatformAdminNegada } from "@/lib/auth/recusa-de-escrita-de-admin";
 import { safeNext } from "@/lib/auth/safe-next";
-import { mfaEmDivida } from "@/lib/auth/server";
+import { mfaEmDividaEstrita } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 
 export interface PlatformAdminInfo {
@@ -124,7 +124,7 @@ export async function requirePlatformAdminEscrita(): Promise<PlatformAdminContex
   if (ctx.platformAdmin.scope !== "full") {
     throw new EscritaDePlatformAdminNegada("forbidden_scope");
   }
-  if (await mfaEmDivida()) {
+  if (await mfaEmDividaEstrita()) {
     throw new EscritaDePlatformAdminNegada("mfa_required");
   }
   return ctx;

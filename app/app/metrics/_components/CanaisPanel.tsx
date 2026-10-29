@@ -28,6 +28,9 @@ import { useT } from "@/hooks/i18n/useT";
 import { useChannelMetrics } from "@/hooks/metrics/useChannelMetrics";
 import { formatarDuracao, rotuloCanal, totalDeConversas } from "@/lib/metrics/canais";
 
+/** A mesma célula do ranking de `MetricsClient`: "Rótulo valor" no cartão do celular. */
+const CELULA_DE_NUMERO = "text-right tabular-nums max-md:p-0 max-md:text-left max-md:before:mr-1 max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]";
+
 interface Props {
   /** O filtro de atendente da página (`null` = todos); a RLS escopa quem olha. */
   owner: string | null;
@@ -74,8 +77,8 @@ export function CanaisPanel({ owner }: Props) {
         {canais.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("Sem atividade no período.")}</p>
         ) : (
-          <Table>
-            <TableHeader>
+          <Table className="max-md:block">
+            <TableHeader className="max-md:hidden">
               <TableRow>
                 <TableHead>{t("Canal")}</TableHead>
                 <TableHead className="text-right">{t("Conversas")}</TableHead>
@@ -83,22 +86,27 @@ export function CanaisPanel({ owner }: Props) {
                 <TableHead className="text-right">{t("Sem resposta")}</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-md:block">
               {canais.map((c) => (
-                <TableRow key={c.channel_session_id}>
-                  <TableCell className="font-medium">
+                <TableRow
+                  key={c.channel_session_id}
+                  className="max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:py-2"
+                >
+                  <TableCell className="font-medium max-md:col-span-2 max-md:p-0">
                     {rotuloCanal(c, t)}
                     {c.is_archived ? (
                       <span className="text-muted-foreground"> ({t("arquivado")})</span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell data-rotulo={t("Conversas")} className={CELULA_DE_NUMERO}>
                     {c.conversations_handled}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell data-rotulo={t("1ª resposta (média)")} className={CELULA_DE_NUMERO}>
                     {formatarDuracao(c.avg_first_response_seconds)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{c.sem_resposta}</TableCell>
+                  <TableCell data-rotulo={t("Sem resposta")} className={CELULA_DE_NUMERO}>
+                    {c.sem_resposta}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

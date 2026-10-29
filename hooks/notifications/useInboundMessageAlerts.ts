@@ -167,6 +167,11 @@ export function useInboundMessageAlerts(): void {
         openConversationId: getOpenConversationId(conversationId),
         tabFocused: tabFocused(),
         tipo: (payload as { tipo?: unknown }).tipo,
+        // O acervo importado chega por INSERT nesta tabela igual a mensagem
+        // nova (o push do servidor não sai — 0760 —, este aviso não passa pelo
+        // banco e saía para cada linha antiga). A marca viaja na própria linha:
+        // é a única coisa que distingue passado de agora aqui.
+        metadata: row.metadata,
       })
     ) {
       return;

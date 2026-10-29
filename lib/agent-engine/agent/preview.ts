@@ -1,3 +1,4 @@
+import { comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 /** Preview is an execution policy of the real turn, never a simulated queue job. */
 import type pg from 'pg';
 import { hasOpenCaseForContact } from './human-cases';
@@ -160,6 +161,7 @@ export async function previewGateContext(
     // Um Testar que arma diferente da produção faz quem afina o prompt testar contra
     // outro sistema — o mesmo motivo do `agenda` logo acima.
     clinicalClaimEnforced: camadaLigada((await lerCamadasDaOrg(db, org)).afirmacao_clinica, false),
+    commercialRestrictionEnforced: await comercialExigeHumano(db, org),
   };
 }
 export const SCENARIO_READS = new Set([
@@ -418,6 +420,12 @@ export function applyPreviewPolicy(
               );
               if (result.veto) {
                 p.result.impediments.push({ code: result.veto.code, message: result.veto.message });
+                if (result.veto.code === 'commercial_requires_human' &&
+                    !p.result.proposals.some((x) => x.tool === 'crm_request_human_handoff')) {
+                  p.result.proposals.push({ tool: 'crm_request_human_handoff', arguments: {
+                    reason: 'Valores e negociação: atendimento exclusivamente humano.',
+                  } });
+                }
                 return {
                   ok: false,
                   error: { code: result.veto.code, message: result.veto.message },

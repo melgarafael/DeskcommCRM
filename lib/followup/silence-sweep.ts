@@ -531,7 +531,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       const { data, error } = await admin
         .from("conversations")
         .select(
-          "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata), organizations:organization_id(status)",
+          "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata), organizations:organization_id(status, settings)",
         )
         .eq("organization_id", orgId).eq("demandas.organization_id", orgId)
         .eq("contacts.organization_id", orgId).eq("sessao.organization_id", orgId)
@@ -552,7 +552,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         last_outbound_at?: string | null;
         contacts: ContactEmbed;
         sessao: { metadata: Record<string, unknown> | null } | null;
-        organizations: { status: string | null } | null;
+        organizations: { status: string | null; settings?: unknown } | null;
       };
       const cutoff = new Date(cutoffIso).getTime();
       const desde = desdeIso ? new Date(desdeIso).getTime() : null;
@@ -599,6 +599,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
               assigneeKind: null,
               botSilencedUntil: null,
               aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
+              contactTags: row.contacts?.tags ?? null,
+              orgSettings: row.organizations?.settings,
               agora,
               ttlMs,
             }),

@@ -23,6 +23,10 @@ vi.mock('@/lib/atendimento/fronteira-server', () => ({
 vi.mock('@/lib/agent-engine/agent/human-handoff', async importOriginal => ({
   ...await importOriginal<Record<string, unknown>>(), isLeadInHandoff: mocks.handoff,
 }));
+// A restrição comercial (#2877) fica fora do que este arquivo mede: desligada.
+vi.mock('@/lib/escalacao/assunto-comercial', async importOriginal => ({
+  ...await importOriginal<Record<string, unknown>>(), comercialExigeHumano: vi.fn(async () => false),
+}));
 vi.mock('@/lib/agent-engine/guardrails/camadas-da-org', () => ({
   lerCamadasDaOrg: vi.fn(async () => ({})), camadaLigada: vi.fn(() => false),
 }));

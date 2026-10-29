@@ -250,7 +250,8 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
     mode: z.literal('text'),
     body: z.string().min(1).max(4000),
     /**
-     * #2734 — MÍDIA OPCIONAL (imagem ou PDF) por URL. Presente, o `body` vira a
+     * #2734 — MÍDIA OPCIONAL (imagem, vídeo, áudio ou documento, #2972) por URL.
+     * Presente, o `body` vira a
      * LEGENDA. Opcional de propósito: os grafos publicados não têm a chave e
      * continuam válidos byte a byte (o `strictObject` só recusa o que ELE não
      * conhece; um campo novo e opcional é aceito pelos antigos).
@@ -700,9 +701,32 @@ export const flowSettingsSchema = z.strictObject({
   /**
    * Palavras/expressões que LIGAM este fluxo: quando a mensagem do cliente
    * contém uma delas, o MOTOR inicia o fluxo (entrada por gatilho, sem depender
-   * do modelo). Vazio/ausente = o fluxo só começa por `flow_start` ou roteador.
+   * do modelo). Vazio/ausente = este fluxo só começa por `etapas_do_funil`, pelo
+   * roteador ou encadeado no fim de outro — `flow_start` não existe no código,
+   * e citá-lo aqui prometia uma entrada que ninguém podia configurar.
    */
   gatilhos: z.array(z.string().min(1).max(60)).max(30).optional(),
+  /**
+   * As ETAPAS DO FUNIL que LIGAM este roteiro: quando o card do contato está
+   * numa delas, o MOTOR começa o roteiro no próximo turno daquela conversa —
+   * a entrada por etapa, irmã da palavra-gatilho, e sem depender da mensagem.
+   *
+   * ⚠️ POR QUE AQUI (no `settings` do grafo) E NÃO EM `trigger_config`. Para o
+   * follow-up, a entrada por etapa mora no gatilho (`kind: 'stage_change'`,
+   * `lib/followup/gatilho-etapa.ts`, event-driven). No roteiro de atendimento
+   * isso é impossível por construção: o CHECK
+   * `followup_flow_pointers_roteiro_so_manual` (0394) obriga
+   * `trigger_config->>'kind' = 'manual'` na superfície `atendimento`, e o
+   * publicador devolve 422 a qualquer outro kind. O `settings` é o lugar do
+   * vocabulário do roteiro (é onde já vivem `gatilhos`, `expira_em_horas` e
+   * `pode_recomecar`), é versionado junto do grafo e passa pelo schema.
+   *
+   * O id é o da ETAPA (`crm_stages.id`) — o mesmo que `crm_leads.stage_id`, que
+   * é o que o turno lê. A etapa já identifica o funil, então não há par
+   * (funil, etapa) a guardar; o nome do funil existe na tela, para distinguir
+   * etapas homônimas de funis diferentes. Vazio/ausente = nenhuma etapa liga.
+   */
+  etapas_do_funil: z.array(z.string().min(1).max(64)).max(30).optional(),
   /**
    * Em quantas horas SEM mensagem do cliente o roteiro em andamento expira
    * (0397, `fn_encerrar_roteiros_vencidos`). Ausente = 72 h. Sem prazo, um

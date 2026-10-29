@@ -11,6 +11,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { apiClient } from "@/lib/api/client";
 import type { ContagemDaCampanha, TaxasDaCampanha } from "@/lib/campanhas/metricas";
+import type { FonteDaCampanha } from "@/lib/campanhas/modelo";
 import type { StatusDaCampanha } from "@/lib/campanhas/tipos";
 
 export interface CampanhaDaLista {
@@ -27,6 +28,9 @@ export interface CampanhaDaLista {
   cancelled_at: string | null;
   created_at: string;
   created_by: string | null;
+  /** Migration 0710: `template` = modelo aprovado pelo número oficial. */
+  message_mode?: "text" | "template";
+  provider_template_name?: string | null;
 }
 
 export interface CampanhaDetalhada extends CampanhaDaLista {
@@ -45,11 +49,19 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   prepared_at: string | null;
   paused_at: string | null;
   failure_code: string | null;
+  /** A frase do motivo, quando a campanha parou sozinha por uma falha do envio inteiro. */
+  failure_detail?: string | null;
+  provider_template_language?: string | null;
+  provider_template_variables?: Record<string, FonteDaCampanha>;
   intervalo_segundos: number | null;
   janela_inicio_hora: number | null;
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
+  /** Migration 0711: `rapida` = tudo de uma vez pelo número oficial; `gradual` = uma por minuto. */
+  velocidade?: "gradual" | "rapida";
+  /** Migration 0765: texto sai em balões, um por parágrafo. */
+  split_messages?: boolean;
 }
 
 export interface Destinatario {
@@ -61,6 +73,8 @@ export interface Destinatario {
   eligibility_status: string;
   exclusion_reason: string | null;
   legenda_da_exclusao: string | null;
+  /** A frase da falha (em português; a tela traduz), quando a plataforma disse por quê. */
+  motivo_da_falha?: string | null;
   sent_at: string | null;
   delivered_at: string | null;
   read_at: string | null;
@@ -184,6 +198,12 @@ export function usePreviaDaAudiencia() {
       audience_filter: Record<string, unknown>;
       message_body: string;
       campaign_id?: string;
+      modelo?: {
+        channel_session_id: string;
+        name: string;
+        language: string;
+        variables: Record<string, FonteDaCampanha>;
+      };
     }) => (await apiClient.post<{ data: PreviaDaAudiencia }>("/api/v1/campaigns/preview", corpo)).data,
     onError: (err) => showApiError(err),
   });
@@ -209,5 +229,44 @@ export function useEditarCampanha(id: string) {
       void qc.invalidateQueries({ queryKey: ["campanhas"] });
     },
     onError: (err) => showApiError(err),
+  });
+}
+
+/** Uma variável de um modelo, como a campanha a mostra (rota `campaigns/modelos`). */
+export interface VariavelDoModelo {
+  chave: string;
+  rotulo: string;
+  tipo: "texto" | "midia" | "sufixo_de_link" | "cupom" | "nao_suportada";
+  origens: FonteDaCampanha["kind"][];
+  contexto_antes: string;
+  contexto_depois: string;
+}
+
+export interface ModeloParaCampanha {
+  name: string;
+  language: string;
+  status: string;
+  category: string | null;
+  aprovado: boolean;
+  parameter_format: string | null;
+  components: unknown;
+  saved_values: Record<string, string>;
+  variaveis: VariavelDoModelo[];
+}
+
+/**
+ * O que uma campanha pode mandar pelo número escolhido: o modo dele e, no
+ * oficial, os modelos espelhados da conexão. `enabled` só com número escolhido.
+ */
+export function useModelosDaCampanha(channelSessionId: string) {
+  return useQuery({
+    queryKey: ["campanhas", "modelos", channelSessionId],
+    enabled: channelSessionId !== "",
+    queryFn: async () =>
+      (
+        await apiClient.get<{ data: { modo: "text" | "template" | null; modelos: ModeloParaCampanha[] } }>(
+          `/api/v1/campaigns/modelos?channel_session_id=${encodeURIComponent(channelSessionId)}`,
+        )
+      ).data,
   });
 }

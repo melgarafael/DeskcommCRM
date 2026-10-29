@@ -74,7 +74,7 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const inviterName = ctx.fullName ?? ctx.email ?? "Um colega";
   // Fora do laço: a marca é a mesma para o lote inteiro (mesma organização).
-  const marca = await marcaDaSaida(ctx.orgId);
+  const marca = await marcaDaSaida(ctx.orgId, { semMemo: true });
 
   let sent = 0;
   let failed = 0;

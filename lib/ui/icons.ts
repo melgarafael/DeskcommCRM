@@ -46,6 +46,9 @@ export {
   Dot,
   // actions
   ArrowBendUpLeft,
+  // encaminhar (#2835): a seta espelhada do "Responder" — mesma família,
+  // mesmo peso, para os dois gestos da bolha lerem como par.
+  ArrowBendUpRight,
   // videochamada (#2440): ícone de câmera, não Video (que no Phosphor é a
   // janela de player) — junto do Phone do DialButton, a família é a mesma.
   VideoCamera,
@@ -119,6 +122,8 @@ export {
   GitBranch,
   Flag,
   TreeStructure,
+  // reordenar por arrastar e soltar (#3244): a alça da lista de respostas rápidas
+  DotsSixVertical as DragHandle,
   // misc
   DotsThree,
   CaretDown,
@@ -154,4 +159,10 @@ export {
   ArrowsOutSimple,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
+  // atalhos do card (#3487): carrinho do app de pedidos e o link genérico.
+  // `LinkSimple` entra apelidado de `LinkIcon` porque `Link` é o do `next/link`
+  // em quase toda tela — dois identificadores iguais no mesmo import seriam
+  // erro de compilação na primeira tela que precisasse dos dois.
+  ShoppingCart,
+  LinkSimple as LinkIcon,
 } from "@phosphor-icons/react/dist/ssr";

@@ -30,6 +30,35 @@ export class ProspectingError extends Error {
     super(message);
   }
 }
+/**
+ * O CANAL SAIU DE `WORKING` POR INSTANTES — reconexão, NÃO defeito de configuração.
+ *
+ * A sessão cai e volta em segundos (a queda de rede é do transporte, não do
+ * operador). O tick lia essa situação pelo mesmo `status !== "WORKING"` que
+ * serve para canal arquivado e para canal que exige modelo aprovado, e lançava
+ * tudo no escopo `campanha` — que é o escopo que o tick usa para PAUSAR a fila.
+ *
+ * Efeito medido (issue #3073): a sessão caiu às 08:14:57 e voltou em segundos;
+ * às 08:15:00 a campanha foi para `paused` com a mensagem de configuração, a
+ * sessão voltou a `WORKING` e a campanha ficou parada até alguém notar — o dia
+ * de envio seguinte foi perdido.
+ *
+ * Aqui a falha é declarada TRANSITÓRIA: o tick ADIA o próximo envio
+ * (`next_send_at`, o mesmo mecanismo que ele já usa para janela fechada, teto
+ * diário e ritmo) em vez de pausar. `retomarEmMs` é curto de propósito — a
+ * sessão costuma voltar antes disso, e um adiamento curto não troca a cadência
+ * da campanha (o intervalo configurado continua valendo no próximo envio).
+ */
+export class CanalReconectandoError extends ProspectingError {
+  constructor(
+    message: string,
+    public retomarEmMs = 60_000,
+  ) {
+    super(message, 409);
+    this.name = "CanalReconectandoError";
+  }
+}
+
 const runSchema = z.object({
   data: z.object({
     id: z.string(),

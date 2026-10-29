@@ -1,0 +1,383 @@
+{
+  "id": "trunk-sip",
+  "titulo": "Trunk SIP",
+  "tela": "/app/settings/voip-trunk",
+  "resumo": "Onde você guarda os dados da linha de telefone contratada com um provedor, para a IA fazer ligações de voz, e pega o bloco de configuração que vai para o servidor.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela do Trunk SIP",
+      "objetivo": "Achar a tela e saber para que serve cada campo do cadastro do provedor de telefone.",
+      "papel": "admin",
+      "busca": [
+        "trunk sip",
+        "ligação de voz pela ia",
+        "configurar telefone",
+        "provedor de telefonia",
+        "linha telefônica no sistema",
+        "credenciais sip"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Dados e acesso\" está o cartão \"Trunk SIP\". Clique nele.",
+          "dica": "Só o administrador vê este cartão. A telefonia é um recurso opcional do servidor: esta tela só tem uso se quem instalou o sistema ligou a parte de telefone.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/voip-trunk']"
+              },
+              "rotulo": "Trunk SIP",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/voip-trunk']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "texto": "Para a IA fazer ligações de voz, a empresa contrata uma linha com um provedor de telefone pela internet (o \"provedor SIP\"). Aqui você guarda os dados de acesso dessa linha. Salvar aqui não liga nada sozinho: depois, quem cuida do servidor precisa colar um bloco de configuração no servidor de telefone, como diz o texto do topo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/voip-trunk']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Trunk SIP",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^Credenciais de registro",
+                "regex": true
+              },
+              "rotulo": "A ligação com o servidor é feita à mão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(#host)"
+              },
+              "rotulo": "Dados do provedor",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os dados da linha",
+          "texto": "Os quatro primeiros campos vêm do provedor, quando você contrata a linha. \"Host\" é o endereço do provedor (o texto cinza no campo é só um exemplo). \"Porta\" já vem com 5060, o número mais comum; só mude se o provedor pedir. \"Usuário\" e \"Senha\" são o login da sua linha.",
+          "dica": "A senha fica guardada trancada: depois de salva, a tela mostra só os quatro últimos caracteres.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#host"
+              },
+              "rotulo": "Endereço do provedor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#port"
+              },
+              "rotulo": "Porta (normalmente 5060)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#username"
+              },
+              "rotulo": "Login da linha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#password"
+              },
+              "rotulo": "Senha da linha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Campo opcional, chave e Salvar",
+          "texto": "\"From-domain (opcional)\" só é preenchido se o provedor exigir: normalmente é o endereço público do seu servidor. A chave \"Ativo\" diz se as ligações que o sistema faz saem por esta linha. Desligada, os dados ficam guardados e o sistema para de ligar por ela; as ligações recebidas não mudam, porque dependem do que foi colado no servidor. O botão \"Salvar\" grava tudo.",
+          "dica": "Na primeira vez a senha é obrigatória: sem ela, o sistema avisa e não salva. Depois, para salvar qualquer mudança (até desligar \"Ativo\"), digite a senha de novo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#from_domain"
+              },
+              "rotulo": "Só se o provedor pedir",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#is_active"
+              },
+              "rotulo": "Ativo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cadastrar-o-provedor",
+      "titulo": "Cadastrar e alterar o provedor",
+      "objetivo": "Salvar os dados da linha, pegar o bloco para o servidor e alterar um dado depois.",
+      "papel": "admin",
+      "busca": [
+        "cadastrar provedor sip",
+        "salvar senha do telefone",
+        "bloco pjsip para o servidor",
+        "trocar porta do provedor",
+        "configurar ligação da ia",
+        "copiar configuração do telefone"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Preencha com os dados do provedor",
+          "texto": "Copie para a tela o que o provedor enviou: o endereço em \"Host\", o login em \"Usuário\" e a senha em \"Senha\". Aqui a porta ficou com 5060 e o \"From-domain (opcional)\" ficou vazio. Depois clique em \"Salvar\".",
+          "rota": "/app/settings/voip-trunk",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#host"
+              },
+              "valor": "sip.provedor-exemplo.com.br"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#username"
+              },
+              "valor": "bemviver-recepcao"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#password"
+              },
+              "valor": "Bv2026#4821"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#host"
+              },
+              "rotulo": "Endereço do provedor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#username"
+              },
+              "rotulo": "Login",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#password"
+              },
+              "rotulo": "Senha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O bloco para o servidor",
+          "texto": "Logo depois de salvar aparece o quadro \"Cole em asterisk/pjsip.conf\". É o texto que quem cuida do servidor cola no arquivo de configuração do telefone. Clique em \"Copiar\" e mande para essa pessoa agora: ele leva a senha e só aparece neste momento.",
+          "dica": "Se o botão disser que não conseguiu copiar, selecione o texto do quadro e copie à mão.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Cole em asterisk/pjsip.conf",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar",
+                "exato": true
+              },
+              "rotulo": "Copiar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(pre) pre"
+              },
+              "rotulo": "Bloco para o servidor",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A senha fica guardada",
+          "texto": "No cadastro, ao lado de \"Senha\", agora aparece \"configurada, termina em 4821\": são os quatro últimos caracteres da senha salva. O campo voltou a ficar vazio, porque a senha nunca é mostrada inteira de novo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.flex.flex-col:has(> #password)"
+              },
+              "rotulo": "Senha salva: só os 4 últimos aparecem",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Ao voltar à tela",
+          "texto": "Quando você abre a tela de novo, os dados salvos aparecem preenchidos, mas o quadro do bloco não volta: sem a senha inteira, ele não pode ser montado outra vez. A senha continua guardada; o campo fica vazio.",
+          "rota": "/app/settings/voip-trunk",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#host"
+              },
+              "rotulo": "Dados salvos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "label[for='password']"
+              },
+              "rotulo": "Senha guardada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Alterar um dado",
+          "texto": "Para mudar um dado, como a porta, troque o campo, digite a senha da linha de novo e clique em \"Salvar\". O quadro \"Cole em asterisk/pjsip.conf\" aparece outra vez, já com a mudança e com a senha. Copie e mande de novo para quem cuida do servidor: a mudança só vale para as ligações depois que ele colar o bloco novo.",
+          "dica": "Digite a senha sempre que salvar uma mudança, mesmo com o texto cinza \"Deixe em branco para manter a atual\" no campo. Hoje, salvar com a senha em branco mostra \"Erro interno. Tente de novo em instantes.\" e não grava nada; tentar de novo não adianta, só digitar a senha.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#port"
+              },
+              "valor": "5080"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#password"
+              },
+              "valor": "Bv2026#4821"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Cole em asterisk/pjsip.conf",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar",
+                "exato": true
+              },
+              "rotulo": "Copiar de novo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(pre) pre"
+              },
+              "rotulo": "Bloco novo, com a porta 5080",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

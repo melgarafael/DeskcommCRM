@@ -14,8 +14,11 @@
  *  - F1/F3: a catraca recusa modelo sem ferramentas no ponto que cria o lead;
  *  - F2: a tela de execuções abre e responde "está tudo bem?".
  */
+import { createClient } from "@supabase/supabase-js";
+
 import { expect, test } from "./helpers/test";
 
+import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
 import { PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
 
 import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
@@ -186,31 +189,66 @@ test("as duas telas têm porta na navegação — pelo hub de IA", async ({ page
 });
 
 test("instalação sem agente publicado: os dois pontos principais são EDITÁVEIS", async ({ page }) => {
-  // O estado de quem acabou de instalar: nenhuma versão de agente publicada.
-  // Antes deste caso, o painel mostrava `agent_turn` e `operator_turn` sem
-  // seletor, com a frase "usa o modelo definido na versão publicada do agente"
-  // e um link para configurar num lugar vazio — a primeira tela da feature,
-  // travada no primeiro uso. `mandadoPeloAgente` era incondicional; agora
-  // depende de existir publicação, que é a mesma condição do resolvedor.
-  const semPublicado = await page.evaluate(async () => {
-    const r = await fetch("/api/v1/ai/providers");
-    const j = await r.json();
-    const p = (j?.data?.pontos ?? []) as Array<{ id: string; mandadoPeloAgente: boolean }>;
-    return {
-      agent_turn: p.find((x) => x.id === "agent_turn")?.mandadoPeloAgente,
-      operator_turn: p.find((x) => x.id === "operator_turn")?.mandadoPeloAgente,
-      total: p.length,
-    };
+  // A PRECONDIÇÃO é montada aqui, e não herdada da ordem da suíte. Outras specs
+  // publicam agente nesta mesma org e não despublicam (`inbox-quem-manda` publica
+  // o default de propósito). Na parte 6 nenhuma delas rodava antes deste caso;
+  // levado para a parte 3, ele ficou vermelho (run 39774289053) sem defeito no
+  // produto. Arquivar — e não zerar `published_version_id` — porque devolver a
+  // publicação dispara `trg_agent_legacy_published`, que abre aviso na Central;
+  // `archived_at` só move a revisão. A rota ignora arquivado, como o resolvedor.
+  const env = carregarEnvLocal();
+  const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
-  // Controle positivo: sem pontos, as duas asserções abaixo passariam vazias.
-  expect(semPublicado.total).toBeGreaterThan(20);
-  expect(semPublicado.agent_turn, "agent_turn continua travado sem agente publicado").toBe(false);
-  expect(semPublicado.operator_turn, "operator_turn continua travado sem agente publicado").toBe(false);
+  const orgId = (creds as CredsE2E & { org_id?: string }).org_id;
+  if (!orgId) throw new Error(".e2e-creds.json sem org_id");
+  const { data: publicados, error: erroLeitura } = await admin
+    .from("ai_agents")
+    .select("id")
+    .eq("organization_id", orgId)
+    .is("archived_at", null)
+    .not("published_version_id", "is", null);
+  if (erroLeitura) throw new Error(`ai_agents: ${erroLeitura.message}`);
+  const arquivados = ((publicados ?? []) as Array<{ id: string }>).map((a) => a.id);
+  if (arquivados.length > 0) {
+    const { error } = await admin
+      .from("ai_agents")
+      .update({ archived_at: new Date().toISOString() })
+      .in("id", arquivados);
+    if (error) throw new Error(`arquivar publicados: ${error.message}`);
+  }
+  try {
+    // O estado de quem acabou de instalar: nenhuma versão de agente publicada.
+    // Antes deste caso, o painel mostrava `agent_turn` e `operator_turn` sem
+    // seletor, com a frase "usa o modelo definido na versão publicada do agente"
+    // e um link para configurar num lugar vazio — a primeira tela da feature,
+    // travada no primeiro uso. `mandadoPeloAgente` era incondicional; agora
+    // depende de existir publicação, que é a mesma condição do resolvedor.
+    const semPublicado = await page.evaluate(async () => {
+      const r = await fetch("/api/v1/ai/providers");
+      const j = await r.json();
+      const p = (j?.data?.pontos ?? []) as Array<{ id: string; mandadoPeloAgente: boolean }>;
+      return {
+        agent_turn: p.find((x) => x.id === "agent_turn")?.mandadoPeloAgente,
+        operator_turn: p.find((x) => x.id === "operator_turn")?.mandadoPeloAgente,
+        total: p.length,
+      };
+    });
+    // Controle positivo: sem pontos, as duas asserções abaixo passariam vazias.
+    expect(semPublicado.total).toBeGreaterThan(20);
+    expect(semPublicado.agent_turn, "agent_turn continua travado sem agente publicado").toBe(false);
+    expect(semPublicado.operator_turn, "operator_turn continua travado sem agente publicado").toBe(false);
 
-  await page.goto("/app/ai/providers");
-  await page.waitForSelector('[data-testid="painel-de-provedores"]');
-  await page.click('[data-testid="avancado-atender"]');
-  // E a prova PELA TELA: o seletor de provedor daquele ponto existe e responde.
-  await expect(page.locator('[data-testid="provider-agent_turn"]')).toBeVisible();
-  await page.screenshot({ path: "evidence/provedores/08-sem-agente-publicado-destravado.png", fullPage: true });
+    await page.goto("/app/ai/providers");
+    await page.waitForSelector('[data-testid="painel-de-provedores"]');
+    await page.click('[data-testid="avancado-atender"]');
+    // E a prova PELA TELA: o seletor de provedor daquele ponto existe e responde.
+    await expect(page.locator('[data-testid="provider-agent_turn"]')).toBeVisible();
+    await page.screenshot({ path: "evidence/provedores/08-sem-agente-publicado-destravado.png", fullPage: true });
+  } finally {
+    if (arquivados.length > 0) {
+      const { error } = await admin.from("ai_agents").update({ archived_at: null }).in("id", arquivados);
+      if (error) throw new Error(`devolver os publicados: ${error.message}`);
+    }
+  }
 });

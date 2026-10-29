@@ -114,6 +114,7 @@ interface Linha {
   body: string | null;
   type: string;
   created_at: string;
+  updated_at: string;
   [k: string]: unknown;
 }
 
@@ -245,7 +246,11 @@ function banco(linhas: Linha[]) {
           const enc: Record<string, unknown> = { error: null };
           enc.eq = () => enc;
           enc.in = () => enc;
-          enc.then = (ok: (v: unknown) => unknown) => Promise.resolve(ok({ error: null }));
+          // A pausa termina o UPDATE com `select("id")` e confere as linhas
+          // afetadas (#534): o dublê devolve a linha, como o supabase-js.
+          enc.select = () => enc;
+          enc.then = (ok: (v: unknown) => unknown) =>
+            Promise.resolve(ok({ data: [{ id: "conversa-1" }], error: null }));
           return enc;
         },
       };
@@ -315,6 +320,9 @@ const envioQueSaiuSemId = (over: Partial<Linha> = {}): Linha => ({
   body: TEXTO,
   type: "chat",
   created_at: new Date(Date.now() - 4_000).toISOString(),
+  // A janela do eco mede `updated_at` desde o reenvio (#3192); sem a coluna no
+  // dublê, o filtro `gte` comparava "undefined" e passava por acidente.
+  updated_at: new Date(Date.now() - 4_000).toISOString(),
   ...over,
 });
 

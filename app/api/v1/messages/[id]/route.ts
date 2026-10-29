@@ -133,7 +133,18 @@ async function alterar(req: NextRequest, ctx: Ctx, acao: "edit" | "revoke"): Pro
     action: acao === "edit" ? "message.edited" : "message.revoked",
     actorUserId: authz.user.id, organizationId: authz.org.orgId,
     resourceType: "message", resourceId: id, requestId,
-    metadata: { conversation_id: message.conversation_id },
+    metadata: {
+      conversation_id: message.conversation_id,
+      direction: message.direction,
+      external_id: message.external_id,
+      // O CORPO NÃO ENTRA AQUI, de propósito: `api_audit_log` é append-only, com
+      // retenção de 5 anos, e sobrevive ao apagamento da organização — copiar o
+      // texto criaria dado pessoal fora do alcance da cascata de anonimização. A
+      // trilha guarda o EVENTO (quem apagou, qual mensagem, quando, e que o
+      // conteúdo foi preservado); o texto fica na linha, onde a retenção e o
+      // pedido de LGPD o alcançam.
+      conteudo_preservado: true,
+    },
   });
   return ok(updated, { requestId });
 }

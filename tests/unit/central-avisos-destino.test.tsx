@@ -23,6 +23,11 @@ describe("Central: navegação separada da resolução", () => {
     // Sem resposta de sucesso, o item continua aberto: não há remoção otimista.
     expect(screen.getByText(item.title)).toBeVisible();
   });
+  it("o link do destino tem 44px de altura no celular", () => {
+    render(<AgentInboxList canResolve />);
+    // O size `sm` dá `h-11`, mas o `h-auto` do link o derruba; o piso volta só abaixo de md.
+    expect(screen.getByRole("link", { name: "Abrir conversa" }).className.split(/\s+/)).toContain("max-md:min-h-11");
+  });
   it("resolvido mantém contexto e reabertura independente", () => {
     dados({ ...item, status: "resolved" }); render(<AgentInboxList canResolve />);
     expect(screen.getByRole("link")).toBeVisible(); fireEvent.click(screen.getByRole("button", { name: "Reabrir" }));

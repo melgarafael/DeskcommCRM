@@ -54,7 +54,35 @@ export type MirrorReason =
   | 'crm_error'
   | 'crm_unavailable';
 
-export type MirrorResult = { ok: true } | { ok: false; reason: MirrorReason; detail: string };
+export type MirrorResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: MirrorReason;
+      detail: string;
+      /**
+       * O NOME da etapa de destino no funil do DONO (issue #3148), quando o
+       * resolvedor o conhece.
+       *
+       * ⚠️ Distinto do passo interno do agente: `toStage`/`update.transition.to`
+       * é vocabulário da máquina de estados do atendimento ("lost",
+       * "qualifying"), enquanto `stageName` é o rótulo que o dono cadastrou no
+       * quadro ("Perdido", "Proposta enviada"). O aviso da Central nomeia a etapa
+       * do funil; o passo interno só serve ao log e ao ramo de incidente.
+       *
+       * Ausente na recusa de ESCOPO, que decide ANTES de ler as etapas — e é
+       * exatamente por isso que o aviso tem um texto de reserva legível, sem
+       * vazar o rótulo interno.
+       */
+      stageName?: string;
+      /**
+       * O NEGÓCIO (`crm_leads.id`) que o sync resolveu para o contato, quando
+       * chegou a resolver. É ele — e não o contato — que o aviso da Central
+       * referencia: a Central procura `ref_kind = 'lead'` em `crm_leads`, e com o
+       * id do contato o aviso abria "Este contexto não está disponível".
+       */
+      negocioId?: string;
+    };
 
 /**
  * Os não-movimentos que são ESTADO LEGÍTIMO do produto: warn no log do run, sem
@@ -94,6 +122,27 @@ export interface AvisoDoEspelho {
 const DEDUPE_DO_ESPELHO: InboxDedupe = 'kind_ref_e_titulo';
 
 /**
+ * COMO O AVISO NOMEIA A ETAPA DE DESTINO — o nome que está no funil do DONO.
+ *
+ * ⚠️ NUNCA o passo interno do agente (issue #3148). Medido na issue: a Central
+ * abria `...deveria ir para "lost"`, e quem lê o aviso conhece só o nome que ele
+ * mesmo cadastrou no quadro ("Perdido"). O passo interno é vocabulário da máquina
+ * de estados do atendimento — serve ao `runLog.warn` (`to_stage`) e ao ramo de
+ * INCIDENTE, que é diagnóstico de quem depura, e nunca ao texto para humano.
+ *
+ * Sem nome resolvido, o aviso fala da etapa por extenso em vez de vazar o rótulo
+ * interno ou sair vazio. Acontece na recusa de ESCOPO, que decide ANTES de ler as
+ * etapas — não há consulta nova ao CRM só para nomear (ver `sincronizaEstagioDoAgente`).
+ *
+ * O nome entra como ESTÁ cadastrado (respeita maiúscula/acento do tenant): traduzir
+ * ou normalizar aqui seria inventar um rótulo que o dono não reconhece no quadro.
+ */
+function etapaComoOChamadorLe(etapaDoFunil: string | undefined): string {
+  const nome = etapaDoFunil?.trim();
+  return nome !== undefined && nome.length > 0 ? `"${nome}"` : 'a etapa de destino do funil';
+}
+
+/**
  * QUAL aviso o não-movimento produz — a decisão, separada de quem a grava.
  *
  * ⚠️ Ela mora AQUI, e não no `inbound-turn`, por um motivo medido: enquanto o
@@ -112,10 +161,24 @@ const DEDUPE_DO_ESPELHO: InboxDedupe = 'kind_ref_e_titulo';
 export function avisoDoEspelhoRecusado(input: {
   motivo: MirrorReason;
   detalhe: string;
-  /** A etapa para onde o assistente quis levar o negócio. */
+  /**
+   * O PASSO INTERNO do agente para onde ele quis levar o negócio
+   * (`update.transition.to`: "lost", "qualifying").
+   *
+   * ⚠️ NÃO é o texto para humano (issue #3148): os avisos de estado legítimo
+   * nomeiam a etapa do funil via `etapaDoFunil`. Este campo fica para o ramo de
+   * INCIDENTE, onde o rótulo interno é diagnóstico de quem depura o funil quebrado.
+   */
   etapaDeDestino: string;
+  /**
+   * O NOME da etapa no funil do DONO (issue #3148) — o que o aviso mostra.
+   *
+   * Ausente quando o resolvedor não o conhece (recusa de ESCOPO, que decide antes
+   * de ler as etapas): cai no texto de reserva legível, nunca no passo interno.
+   */
+  etapaDoFunil?: string;
 }): AvisoDoEspelho | null {
-  const { motivo, detalhe, etapaDeDestino } = input;
+  const { motivo, detalhe, etapaDeDestino, etapaDoFunil } = input;
 
   if (motivo === 'fora_do_escopo') {
     // Aviso PRÓPRIO, e não o de falha: nada quebrou — a regra funcionou. Dizer
@@ -125,7 +188,7 @@ export function avisoDoEspelhoRecusado(input: {
     return {
       title: 'O assistente quis organizar um negócio de um funil que não é dele',
       body:
-        `O assistente concluiu que este negócio deveria ir para "${etapaDeDestino}", ` +
+        `O assistente concluiu que este negócio deveria ir para ${etapaComoOChamadorLe(etapaDoFunil)}, ` +
         `mas ele não cuida do funil onde o negócio está (${detalhe}). ` +
         `Ninguém mexeu no card. Se ele deveria cuidar desse funil, marque isso na ` +
         `configuração do assistente; se não, não há nada a fazer.`,
@@ -149,7 +212,7 @@ export function avisoDoEspelhoRecusado(input: {
     return {
       title: 'O assistente quis marcar um negócio como perdido — e isso exige um motivo',
       body:
-        `O assistente concluiu que este negócio deveria ir para "${etapaDeDestino}", ` +
+        `O assistente concluiu que este negócio deveria ir para ${etapaComoOChamadorLe(etapaDoFunil)}, ` +
         `que no seu funil é uma etapa de perda. Perder um negócio exige um motivo, e o ` +
         `motivo é a razão que quem está no negócio reconhece — o assistente não inventa ` +
         `uma. Ninguém mexeu no card: ele continua onde estava. Se o negócio realmente se ` +
@@ -176,7 +239,7 @@ export function avisoDoEspelhoRecusado(input: {
     return {
       title: 'O assistente quis mover um negócio — o funil exige campos antes',
       body:
-        `O assistente concluiu que este negócio deveria ir para "${etapaDeDestino}", ` +
+        `O assistente concluiu que este negócio deveria ir para ${etapaComoOChamadorLe(etapaDoFunil)}, ` +
         `mas o seu funil exige o preenchimento de alguns campos antes de entrar nela. ` +
         `${detalhe} Ninguém mexeu no card: ele continua onde estava. Abra o negócio, ` +
         `preencha o que falta no dossiê e mova o card normalmente.`,
@@ -188,6 +251,10 @@ export function avisoDoEspelhoRecusado(input: {
 
   return {
     title: 'Espelho de stage no CRM falhou — funil possivelmente inconsistente',
+    // ⚠️ AQUI o passo interno PODE continuar (issue #3148): este é o ramo de
+    // INCIDENTE, e `lead_state avançou para "lost"` é diagnóstico de quem depura
+    // — qual passo do agente pediu o movimento e não foi atendido. O texto de
+    // humano dos três avisos de estado legítimo é que nunca mostra o rótulo interno.
     body: `lead_state avançou para "${etapaDeDestino}" no harness, mas crm_move_lead_stage falhou (${motivo}: ${detalhe}). Reconcilie o stage no CRM manualmente.`,
     // Incidente TAMBÉM deduplica: o funil quebrado se repete a cada turno, e mil
     // cópias do mesmo incidente escondem o resto da Central tão bem quanto mil
@@ -211,20 +278,32 @@ export async function abreAvisoDoEspelhoRecusado(
   db: Parameters<typeof insertInboxItem>[0],
   tenantId: string,
   input: {
-    leadId: string;
+    /**
+     * O NEGÓCIO que o espelho resolveu (`MirrorResult.negocioId`). Ausente quando
+     * o sync não chegou a resolver um (banco fora, exceção): aí o aviso sai SEM
+     * referência — o id do contato com o rótulo `lead` apontava para uma linha
+     * que não existe em `crm_leads`, e referência errada é pior que nenhuma.
+     */
+    negocioId?: string;
     motivo: MirrorReason;
     detalhe: string;
-    /** A etapa para onde o assistente quis levar o negócio. */
+    /**
+     * O PASSO INTERNO do agente (`update.transition.to`) — só diagnóstico de
+     * incidente, nunca o texto para humano (issue #3148).
+     */
     etapaDeDestino: string;
+    /** O NOME da etapa no funil do dono — o que o aviso mostra (issue #3148). */
+    etapaDoFunil?: string;
   },
 ): Promise<void> {
   const aviso = avisoDoEspelhoRecusado(input);
   // `null` é warn-only: estado legítimo do produto não vira item na Central.
   if (aviso === null) return;
+  const ref = input.negocioId !== undefined ? { refKind: 'lead', refId: input.negocioId } : {};
   await insertInboxItem(
     db,
     tenantId,
-    { kind: 'other', title: aviso.title, body: aviso.body, refKind: 'lead', refId: input.leadId },
+    { kind: 'other', title: aviso.title, body: aviso.body, ...ref },
     aviso.dedupe,
   );
 }
@@ -306,14 +385,19 @@ export async function mirrorLeadStageToCrm(
       },
     };
     const t = traduz[r.motivo];
+    // O nome da etapa do FUNIL acompanha a recusa quando o resolvedor o conhece
+    // (issue #3148) — é ele que o aviso da Central mostra. Sem isto, o caller só
+    // teria o passo interno (`toStage`) à mão e o difundiria ao dono.
+    const comNome = r.stageName !== undefined ? { stageName: r.stageName } : {};
+    const negocio = r.leadId !== undefined ? { negocioId: r.leadId } : {};
     // O `detalhe` do sync VENCE o texto genérico da tabela quando existe: ele
     // sabe QUAL dos dois casos de escopo aconteceu, e o dono precisa dessa
     // diferença para saber se marca um funil ou não faz nada.
-    if (t && r.detalhe) return { ok: false, reason: t.reason, detail: r.detalhe };
+    if (t && r.detalhe) return { ok: false, reason: t.reason, detail: r.detalhe, ...negocio, ...comNome };
     // Motivo desconhecido NÃO pode virar warn-only silencioso: rótulo novo sem
     // tradução aqui é bug de programação, e o inbox é onde ele aparece.
-    if (!t) return { ok: false, reason: 'crm_error', detail: `motivo não traduzido: ${r.motivo}` };
-    return { ok: false, ...t };
+    if (!t) return { ok: false, reason: 'crm_error', detail: `motivo não traduzido: ${r.motivo}`, ...negocio };
+    return { ok: false, ...t, ...negocio, ...comNome };
   } catch (err) {
     return {
       ok: false,

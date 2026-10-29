@@ -119,6 +119,12 @@ const TABELAS_NA_CASCATA = [
   // `lgpd-cascata-alcanca-quem-guarda-pessoa.test.ts` (FK para `contacts` +
   // coluna de nome-de-PII), e nulificar não perde nada operacional.
   "channel_session_groups",
+  // 0772 (#3316) — a fila de proposta de campo do card lida num documento. O
+  // passo 5b redige `trecho`, `valor_proposto` e `valor_anterior` (o mesmo
+  // tratamento do `custom_fields` do próprio negócio, passo 5): campo, status
+  // e decisão permanecem, o conteúdo identificável sai. Alcança por vínculo do
+  // lead com o contato (crm_leads + crm_lead_links), como os passos 4 e 5.
+  "lead_field_proposals",
 ] as const;
 
 /**
@@ -135,6 +141,7 @@ const TIPOS_RESERVADOS = [
   "contact.birthday", //             0551
   "contact.phone_added", //          0670
   "conversation.autonomous_turn_revoked", //0594 — revogação nativa, sessão não pode forjar
+  "lead.date_field_due", //          0743
   "message.received", //             herdado
 ] as const;
 

@@ -249,7 +249,7 @@ beforeEach(() => {
     sent_via: "crm",
     type: "audio",
     media_mime: "audio/ogg",
-    media_storage_path: "org1/conv1/msg1.ogg",
+    media_storage_path: `${ORG}/${CONV}/msg1.ogg`,
     media_derived_status: null,
     metadata: null,
     created_at: "2026-10-03T21:00:00.000Z",

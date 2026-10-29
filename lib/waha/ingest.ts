@@ -32,6 +32,7 @@ import { getWahaClient } from "@/lib/waha/client";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
+import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
@@ -40,6 +41,8 @@ import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { semAssinatura } from "@/lib/messaging/assinatura";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
+import { fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
+import { emitirFalhaDeEntrega, telefoneDoEmbed, type EmbedDoContato } from "@/lib/messaging/falha-de-entrega";
 import type { WahaEnvelope, WahaPayload } from "@/lib/waha/envelope";
 import { bareWaMessageId, chatIdFromWaMessageId, wahaEchoExternalIds } from "@/lib/waha/message-id";
 import { logger } from "@/lib/logger";
@@ -115,16 +118,33 @@ const STATUS_DE_ENVIO_NOSSO = ["queued", "sending", "sent", "delivered", "read"]
  * A mensagem `fromMe` que chegou é o eco de um envio que ESTE CRM acabou de
  * fazer — e não alguém digitando no celular?
  *
- * A prova exigida é forte: uma linha nossa na MESMA conversa, ainda sem
- * `external_id` (portanto sem o carimbo do canal), com o MESMO corpo, dentro da
- * janela, e em um dos estados em que a linha SAIU (`STATUS_DE_ENVIO_NOSSO` —
- * `sent` inclusive, ver o #3138). Qualquer uma dessas faltando, a resposta é
- * "não sei" — e "não sei" silencia, porque é o desfecho seguro do lado do
- * atendente humano (#371).
+ * A prova exigida é forte: uma linha nossa na MESMA conversa, com o MESMO corpo,
+ * dentro da janela, e UMA destas duas marcas:
+ *
+ *   - ainda SEM `external_id`, num dos estados em que a linha saiu
+ *     (`STATUS_DE_ENVIO_NOSSO` — `sent` inclusive, #3138), ou
+ *   - já com `external_id` igual a um dos ids que o CANAL entregou nesta mensagem
+ *     — o carimbo do envio (#3165).
+ *
+ * Qualquer uma dessas faltando, a resposta é "não sei" — e "não sei" silencia,
+ * porque é o desfecho seguro do lado do atendente humano (#371).
  *
  * Mídia não tem corpo comparável (o eco traz `media_url`, não texto): ali a
  * prova cai para "existe envio nosso em voo do mesmo tipo na janela", que é mais
  * permissivo e assumidamente mais fraco.
+ *
+ * ⚠️ A SEGUNDA marca existe porque a janela não é só "antes de o envio confirmar":
+ * o carimbo pode cair DURANTE a ingestão — depois da re-checagem pós-insert e
+ * antes desta decisão (#3165). Sem ela, a linha já `sent` não é vista, o eco volta
+ * a ser lido como resposta pelo celular e a IA pausa por 1 h (o relato do #3138,
+ * com o estado final de uma linha só, a nossa, já com o id).
+ *
+ * E o que fecha essa janela é a LEITURA ÚNICA: o id e o texto saem da MESMA linha
+ * do MESMO instante, então nenhuma escrita pode cair "entre" as duas perguntas.
+ * Duas consultas em sequência — o id numa, o texto na outra — ENCOLHEM a janela e
+ * não a fecham: o carimbo que cai entre elas faz a IA pausar de novo.
+ * `lib/waha/ingest-eco-carimbado-no-meio.test.ts` é a catraca, e ele carimba o id
+ * depois de CADA leitura da janela, não num ponto só.
  */
 async function ehEcoDeEnvioNosso(
   admin: Admin,
@@ -135,7 +155,7 @@ async function ehEcoDeEnvioNosso(
   const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
   const { data, error } = await admin
     .from("messages")
-    .select("id, body, type")
+    .select("id, body, type, external_id, status")
     .eq("organization_id", organizationId)
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
@@ -154,15 +174,23 @@ async function ehEcoDeEnvioNosso(
     // integração deixa de ser reconhecida como envio NOSSO, o eco do próprio
     // envio vira "resposta pelo celular" e cala a IA por três horas.
     .in("sent_via", ["ai", "user", "automation", "system"])
-    // Sem `external_id` = o id do canal ainda não está gravado nesta linha. É
-    // esta a janela exata em que o eco é indistinguível de digitação humana.
-    .is("external_id", null)
-    // O `status` NÃO separa "em voo" de "saiu": `sent` sem id é desfecho
-    // declarado dos dois caminhos que enviam por nós, e exigir só
-    // `queued|sending` fazia o eco DELES ser lido como pessoa (ver
-    // `STATUS_DE_ENVIO_NOSSO`, issue #3138).
+    // ⚠️ O `external_id` NÃO é filtro aqui, de propósito (#3165): as duas marcas
+    // da prova — id nulo (em voo) e id igual ao que o canal entregou (carimbado
+    // durante a ingestão) — são decididas sobre a MESMA linha desta leitura, no
+    // corpo do laço. Filtrar por id no SQL exigiria OU duas consultas (a janela
+    // que este conserto fecha: o carimbo cai entre elas) OU um `.or()` de DSL que
+    // a consulta não precisa para ser correta.
+    //
+    // O `status` estreita o conjunto: `sent` entra porque é o status que o envio
+    // grava JUNTO do id (`marcarEnviada`); `queued`/`sending` são o "em voo" de
+    // sempre. Qual status vale para qual das duas marcas é o laço abaixo — aqui é
+    // só o recorte de linhas que a decisão pode usar.
     .in("status", STATUS_DE_ENVIO_NOSSO)
-    .gte("created_at", desde)
+    // `updated_at`, e não `created_at`: o reenvio (`POST /messages/{id}/retry`)
+    // põe na fila uma linha criada há muito tempo, e o eco dele tem de casar do
+    // mesmo jeito. Para o envio novo dá no mesmo (`updated_at` nasce igual a
+    // `created_at` e só cresce), então a janela só fica mais larga, nunca mais estreita.
+    .gte("updated_at", desde)
     .limit(20);
 
   if (error) {
@@ -173,8 +201,42 @@ async function ehEcoDeEnvioNosso(
   }
 
   const corpo = (p.body ?? "").trim();
+  // As formas que o id desta mensagem pode ter no banco: o composto que o webhook
+  // entregou e a cauda que o envio grava (`marcarEnviada` → `canonicalExternalId`).
+  // Mesmo par que a re-checagem pós-insert usa, algumas linhas acima.
+  //
+  // Payload sem id (não é o caso deste caminho — `fromMe` traz o composto, e a
+  // re-checagem acima já depende disso) não casa ninguém: a lista fica vazia e a
+  // MARCA 2 não dispara.
+  const idDoEco = p.id ?? null;
+  const caudaDoEco = idDoEco === null ? null : bareWaMessageId(idDoEco);
+  const idsDaMensagem = idDoEco === null ? [] : caudaDoEco === idDoEco ? [idDoEco] : [idDoEco, caudaDoEco];
+
   for (const linha of data ?? []) {
-    const l = linha as { body: string | null; type?: string | null };
+    const l = linha as {
+      body: string | null;
+      type?: string | null;
+      external_id?: string | null;
+      status?: string | null;
+    };
+
+    // ── MARCA 2 (#3165): o CARIMBO do envio já está NESTA linha, com o id do
+    // canal que acabou de chegar. É a MESMA mensagem — e é prova mais forte que a
+    // de baixo, porque o id do canal não se repete entre mensagens: o corpo nem
+    // precisa ser comparado.
+    //
+    // A leitura é UMA só (o `.in("status", …)` e o `.select` acima), então esta
+    // pergunta e a comparação de corpo abaixo leem o MESMO retrato: o carimbo que
+    // cair no meio da ingestão aparece aqui, e não escapa para o lado de fora da
+    // janela como escapava quando o filtro era `.is("external_id", null)` no SQL.
+    if (l.external_id != null && idsDaMensagem.includes(l.external_id)) return true;
+
+    // ── MARCA 1: linha ainda SEM id, num status de `STATUS_DE_ENVIO_NOSSO` (o
+    // filtro do SQL acima; `sent` sem id é o #3138). Linha com id que NÃO é desta mensagem (outro envio
+    // nosso, na mesma janela) não entra: ela nunca foi a janela do eco DESTA
+    // mensagem, e era exatamente o que o `is null` do SQL garantia.
+    if (l.external_id != null) continue;
+
     if (p.type && p.type !== "chat") {
       // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
       // possível. Mais fraco, e escrito para ninguém supor o contrário.
@@ -287,6 +349,10 @@ export function parseChatId(chatId: string): ChatIdentity {
     // `replace(/^\+/, "")` fica: é ancorado em `^`, casa 1 caractere, O(1) — não é
     // o que o CodeQL apontou.
     const digits = semSufixoDeChat(chatId).replace(/^\+/, "");
+    // Mesma faixa de `telefoneDoJid` e do CHECK contacts_phone_e164_format.
+    // Avisos do WhatsApp (0@s.whatsapp.net) não são contatos discáveis: o
+    // importador deve ignorá-los, em vez de abortar no upsert com telefone +0.
+    if (!/^\d{8,15}$/.test(digits)) return { kind: "unknown", phone: null, lid: null };
     return { kind: "phone", phone: "+" + digits, lid: null };
   }
   return { kind: "unknown", phone: null, lid: null };
@@ -483,12 +549,12 @@ export function resolveMessageType(p: WahaPayload): string {
   return "text";
 }
 
-function notifyNameOf(p: WahaPayload): string | null {
+export function notifyNameOf(p: WahaPayload): string | null {
   return p._data?.notifyName ?? p._data?.pushName ?? null;
 }
 
 /** Corpo textual: WAHA nem sempre preenche `body` em cartões de contato NOWEB. */
-function bodyOf(p: WahaPayload): string | null {
+export function bodyOf(p: WahaPayload): string | null {
   if (p.body) return p.body;
   const msg = p._data?.message;
   if (!msg || typeof msg !== "object") return null;
@@ -600,26 +666,87 @@ const TELEFONE_DE_REMETENTE = /^\+\d{8,15}$/;
  */
 export function remetenteDoGrupo(p: WahaPayload): RemetenteDeGrupo | null {
   const autorBruto = primeiroTexto(p.participant, p.author, p._data?.key?.participant);
+  const { lid, phone } = identidadeDoParticipante(autorBruto, primeiroTexto(p._data?.key?.participantAlt));
+  const nome = notifyNameOf(p)?.trim().slice(0, 200) || null;
+
+  if (!nome && !phone && !lid) return null;
+  return { name: nome, phone, lid };
+}
+
+/**
+ * Um JID de PARTICIPANTE → `{ lid, phone }`, pela régua do remetente.
+ *
+ * Existe separado porque a MENÇÃO de grupo (#3566) precisa exatamente disto: o
+ * `mentionedJid` do Baileys é a mesma forma de JID que o autor da mensagem, com
+ * o mesmo sufixo de dispositivo possível, e a informação disponível é a mesma —
+ * identificador opaco quando é `@lid`, número quando é `@c.us`/`@s.whatsapp.net`.
+ * Duas leituras do mesmo campo divergiriam no dia em que o WhatsApp mudasse o
+ * formato; aqui é uma só.
+ *
+ * Quem chama decide o que fazer com o resultado: `remetenteDoGrupo` usa o
+ * `nome` do payload, e a menção não tem nome no payload — o rótulo dela vem do
+ * contato no CRM (`lib/grupos/ingest.ts`).
+ */
+function identidadeDoParticipante(
+  jidBruto: string | null,
+  altBruto: string | null,
+): { lid: string | null; phone: string | null } {
   // Sufixo de DISPOSITIVO (`:4`, `:12`...) que o WhatsApp multi-device às vezes
   // ancora antes do `@` — `123456:4@lid` e `5511999990000:12@s.whatsapp.net`
   // são o MESMO lid/telefone de sempre, só que com o dispositivo colado. Sem
   // remover, o teto de dígitos de `LID_DE_REMETENTE`/`TELEFONE_DE_REMETENTE`
-  // reprova os dois e o remetente do grupo se perde.
-  const autor = autorBruto ? autorBruto.replace(/:\d+@/, "@") : null;
+  // reprova os dois e o participante se perde.
+  const autor = jidBruto ? jidBruto.replace(/:\d+@/, "@") : null;
   // Teto antes de qualquer varredura: é campo de fora, como o `from`.
   const id = autor && autor.length <= 128 ? parseChatId(autor) : null;
 
   const doAutor = id?.kind === "phone" ? canonicalPhoneBR(id.phone) : null;
-  const doAlt = telefoneDoJid(primeiroTexto(p._data?.key?.participantAlt));
+  const doAlt = telefoneDoJid(altBruto);
   const telefone = [doAutor, doAlt ? canonicalPhoneBR(doAlt) : null].find(
     (t): t is string => !!t && TELEFONE_DE_REMETENTE.test(t),
   );
   const lid = id?.kind === "lid" && LID_DE_REMETENTE.test(id.lid) ? id.lid : null;
-  const nome = notifyNameOf(p)?.trim().slice(0, 200) || null;
-
-  if (!nome && !telefone && !lid) return null;
-  return { name: nome, phone: telefone ?? null, lid };
+  return { lid: lid ?? null, phone: telefone ?? null };
 }
+
+/**
+ * QUEM FOI MENCIONADO numa mensagem de grupo (#3566) — a lista que faltava
+ * guardar. O texto do WhatsApp traz a menção como `@<lid>`, e a lista real está
+ * no `contextInfo.mentionedJid` do Baileys (o mesmo lugar de onde a citação já
+ * é lida).
+ *
+ * Cada entrada passa pelo MESMO leitor de JID do remetente
+ * (`identidadeDoParticipante`) e sai no MESMO formato (`{ name, phone, lid }`,
+ * `lib/messaging/remetente-de-grupo.ts`), com `name` nulo: o payload não traz
+ * nome por menção, e o rótulo é resolvido no ingest de grupo pelo contato do
+ * CRM.
+ *
+ * Nunca lança e nunca derruba a mensagem: campo de fora, forma variável. Lista
+ * ausente, item de outro tipo e JID irreconhecível são simplesmente ignorados.
+ * Teto de 50 entradas porque é o limite prático do WhatsApp numa mensagem — e
+ * porque lista de fora sem teto é lista que cresce com o payload.
+ */
+export function mencoesDoGrupo(p: WahaPayload): RemetenteDeGrupo[] {
+  const contexto = contextoDoBaileys(p);
+  const lista = contexto?.mentionedJid;
+  if (!Array.isArray(lista)) return [];
+  const mencoes: RemetenteDeGrupo[] = [];
+  const vistos = new Set<string>();
+  for (const item of lista) {
+    if (typeof item !== "string") continue;
+    const { lid, phone } = identidadeDoParticipante(item, null);
+    // Sem lid e sem telefone não há como resolver nada depois — guardar
+    // `{ name: null, phone: null, lid: null }` só encheria o metadata.
+    if (lid === null && phone === null) continue;
+    const chave = lid !== null ? `lid:${lid}` : `phone:${phone}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    mencoes.push({ name: null, phone, lid });
+    if (mencoes.length >= 50) break;
+  }
+  return mencoes;
+}
+
 
 /**
  * O chat de GRUPO de uma mensagem `fromMe`, ou null.
@@ -676,6 +803,10 @@ async function ingerirMensagemDeGrupo(
       sentAt: dataDoTimestamp(p.timestamp, now),
       // `fromMe`: quem escreveu é o dono do número — o `pushName` é o da loja.
       remetente: direction === "inbound" ? remetenteDoGrupo(p) : null,
+      // #3566 — quem foi mencionado vai junto, nas duas direções: a lista está
+      // no payload de qualquer mensagem de grupo, e o eco de um envio nosso
+      // também tem as menções que o celular escreveu.
+      mencoes: mencoesDoGrupo(p),
       rawType: p.type ?? null,
     });
   } catch (err) {
@@ -841,12 +972,16 @@ function textoNaoVazio(v: unknown): string | null {
  * linhas para uma reação) e ainda carimbaria a conversa. A linha certa é a do
  * ramo `message.reaction`, ligada ao alvo.
  */
-function ehReacao(p: WahaPayload): boolean {
+export function ehReacao(p: WahaPayload): boolean {
   return p.type === "reaction" || objetoSimples(p.reaction) !== null;
 }
 
 /**
  * O `contextInfo` do Baileys — o id cru da citada e a mensagem citada inteira.
+ *
+ * É daqui também que sai a LISTA DE MENÇÕES (`mentionedJid`, #3566): o mesmo
+ * objeto, lido por `mencoesDoGrupo`. Por isso o nome é do CONTEXTO e não da
+ * citação — quem lê só metade do que mora ali nomeia o campo pela metade.
  *
  * O formato varia: `extendedTextMessage.contextInfo` é o caso do texto (o
  * medido em produção), uma resposta com mídia carrega o dela em
@@ -854,7 +989,7 @@ function ehReacao(p: WahaPayload): boolean {
  * Varrer os valores evita acoplar a leitura a uma lista de tipos que o WhatsApp
  * muda sem avisar.
  */
-function contextoDaCitacao(p: WahaPayload): Record<string, unknown> | null {
+function contextoDoBaileys(p: WahaPayload): Record<string, unknown> | null {
   const msg = objetoSimples(p._data?.message);
   if (!msg) return null;
   const direto = objetoSimples(msg.contextInfo);
@@ -878,7 +1013,7 @@ function contextoDaCitacao(p: WahaPayload): Record<string, unknown> | null {
  */
 function citacaoDoPayload(p: WahaPayload): { id: string; texto: string | null } | null {
   const direto = objetoSimples(p.replyTo);
-  const contexto = contextoDaCitacao(p);
+  const contexto = contextoDoBaileys(p);
   const id = textoNaoVazio(direto?.id) ?? textoNaoVazio(contexto?.stanzaId);
   if (!id) return null;
   const citada = objetoSimples(contexto?.quotedMessage);
@@ -949,6 +1084,24 @@ async function resolverMensagemCitada(
     logger.warn("waha.ingest: não consegui ler a mensagem citada por sufixo", { detail: erroSufixo.message });
   }
   return (porSufixo as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * A forma em que a ENTRADA grava `messages.external_id`: o id completo do webhook
+ * (`false_<chat>_<id>`). Fonte única, usada por `handleInbound` e pelo importador
+ * de histórico: as duas trilhas gravam a MESMA string, senão a unique não recusa
+ * a segunda linha e a mensagem duplica.
+ */
+export function externalIdDeEntrada(p: WahaPayload): string | null {
+  return p.id ?? null;
+}
+
+/**
+ * A forma em que a SAÍDA (eco do celular) grava `messages.external_id`: o bare id
+ * (#196, #1855). Fonte única, ver `externalIdDeEntrada`.
+ */
+export function externalIdDeSaida(p: WahaPayload): string | null {
+  return p.id ? bareWaMessageId(p.id) : null;
 }
 
 async function handleInbound(
@@ -1045,7 +1198,7 @@ async function handleInbound(
       conversation_id: conversationId,
       channel_session_id: session.id,
       contact_id: contactId,
-      external_id: p.id,
+      external_id: externalIdDeEntrada(p),
       type: resolveMessageType(p),
       direction: "inbound",
       status: "delivered",
@@ -1067,6 +1220,7 @@ async function handleInbound(
         // O anúncio DESTA mensagem vai junto — o contato guarda só o primeiro, e
         // quem volta por outro anúncio precisa deixar rastro. Ver `metadataDoAnuncio`.
         ...metadataDoAnuncio(atribuicao),
+        ...ancoraCtwaDaMensagem(atribuicao),
         // Nome original do anexo (#2613). Só quando há nome: a chave nunca é
         // gravada vazia, e gravação é de linha NOVA (o INSERT é o único caminho
         // que escreve `metadata` aqui), então nada do que já está é sobrescrito.
@@ -1425,7 +1579,7 @@ async function handleOutboundFromUserPhone(
   //
   // Mesmo par de candidatos que o `handleAck` usa — cobre NOWEB (bare) e WEBJS
   // (full) sem depender do engine.
-  const bare = bareWaMessageId(p.id);
+  const bare = externalIdDeSaida(p);
   const idCandidates = bare === p.id ? [p.id] : [p.id, bare];
   const { data: jaRegistrada } = await admin
     .from("messages")
@@ -1681,15 +1835,23 @@ async function handleOutboundFromUserPhone(
   }
 }
 
+/**
+ * O aviso de entrega do WhatsApp só faz o status ANDAR PARA A FRENTE
+ * (`sending < sent < delivered < read`), com a mesma régua do canal Zernio
+ * (`lib/channels/zernio/ingest.ts`). A rede não garante a ordem dos avisos: uma
+ * rajada de avisos antigos, reenviada numa reconexão, não pode fazer uma
+ * mensagem lida voltar a "entregue" nem devolver uma enviada a "enviando".
+ *
+ * A condição mora NO PRÓPRIO UPDATE (`.in("status", …)`), sobre a linha vigente;
+ * não se lê o status antes para depois escrever. E as horas de entrega e de
+ * leitura são gravadas uma vez só (`is null`). Uma confirmação do aparelho
+ * (ACK 2/3) recupera `failed`, como na main: a falha pode ter sido um timeout
+ * antes da confirmação. ACK 0/1 não prova entrega e não recupera a falha.
+ */
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
   if (!p.id) return;
   const ack = p.ack ?? 0;
-  const status = ackToStatus(ack);
   const now = new Date().toISOString();
-
-  const update: Record<string, unknown> = { ack, status };
-  if (ack >= 2) update.delivered_at = now;
-  if (ack >= 3) update.read_at = now;
 
   // O ack do WAHA 2026.x vem como `{fromMe}_{chatId}_{bareId}`. O NOWEB grava
   // `external_id` = bareId (id interno), o WEBJS grava o `_serialized` completo.
@@ -1697,11 +1859,116 @@ async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promis
   // inbound (que é full e sustenta o dedup 23505).
   const bare = bareWaMessageId(p.id);
   const candidates = bare === p.id ? [p.id] : [p.id, bare];
-  await admin
+
+  if (ack < 0) {
+    await marcarAckDeErro(admin, session, candidates, now);
+    return;
+  }
+
+  // ack 0 (pendente) e ausente não mudam o status: `ackToStatus` devolve null.
+  const status = ackToStatus(ack);
+  if (status === null) return;
+
+  // Estados que ainda estão ANTES do novo na ordem. `failed` também pode
+  // avançar para entregue/lida: a confirmação do aparelho prevalece sobre o
+  // timeout/erro anterior. O ACK 1, só do servidor, não prova essa entrega.
+  const antes =
+    status === "read" ? ["sending", "sent", "delivered", "failed"]
+    : status === "delivered" ? ["sending", "sent", "failed"]
+    : ["sending"];
+  const { error } = await admin
     .from("messages")
-    .update(update)
+    .update({ ack, status })
     .eq("organization_id", session.organization_id)
-    .in("external_id", candidates);
+    .in("external_id", candidates)
+    .in("status", antes);
+  if (error) {
+    logger.warn("waha.ingest: aviso de entrega não gravado", { detail: error.message });
+  }
+
+  // Ordem das horas: entregue antes de lido. "Lido sem entregue antes" carimba
+  // as duas com o mesmo `now`, como o Zernio. Cada coluna só recebe a primeira.
+  if (ack >= 2) await carimbarUmaVez(admin, session, candidates, "delivered_at", now);
+  if (ack >= 3) await carimbarUmaVez(admin, session, candidates, "read_at", now);
+}
+
+async function carimbarUmaVez(
+  admin: Admin,
+  session: Session,
+  candidates: string[],
+  coluna: "delivered_at" | "read_at",
+  quando: string,
+): Promise<void> {
+  // Só carimbar depois de a linha avançar: se o UPDATE de status falhou, uma
+  // linha ainda `failed` não ganha hora de entrega sem mudar seu estado.
+  const { error } = await admin
+    .from("messages")
+    .update({ [coluna]: quando })
+    .eq("organization_id", session.organization_id)
+    .in("external_id", candidates)
+    .neq("status", "failed")
+    .is(coluna, null);
+  if (error) {
+    logger.warn("waha.ingest: hora do aviso não gravada", { detail: error.message, coluna });
+  }
+}
+
+/**
+ * ack = -1: o WhatsApp recusou a mensagem DEPOIS de o transporte tê-la aceitado.
+ * Só vale para o que nunca foi confirmado como entregue (`sending`/`sent`); uma
+ * linha `delivered`/`read` não muda e não emite nada, porque o aparelho já
+ * confirmou. Vira `failed` com `ack_error` — nunca volta a `sending`, o que
+ * faria o `recover-stuck-messages` abrir o alerta "não chegou ao cliente" com a
+ * orientação errada. Não abre aviso na Central: a falha aparece na bolha e no
+ * evento `message.failed`.
+ */
+async function marcarAckDeErro(
+  admin: Admin,
+  session: Session,
+  candidates: string[],
+  now: string,
+): Promise<void> {
+  const frase = fraseDaFalhaDeCanal("ack_error");
+  const { data, error } = await admin
+    .from("messages")
+    .update({
+      ack: -1,
+      status: "failed",
+      error_code: "ack_error",
+      error_message: frase,
+      updated_at: now,
+    })
+    .eq("organization_id", session.organization_id)
+    .in("external_id", candidates)
+    .in("status", ["sending", "sent"])
+    .select("id, conversation_id, contact_id, sent_via, contacts:contact_id(phone_number)");
+  if (error) {
+    logger.warn("waha.ingest: aviso de erro não gravado", { detail: error.message });
+    return;
+  }
+  // Só as linhas que ESTE aviso marcou: emitir por linha que não casou seria
+  // evento de uma falha que não aconteceu aqui.
+  const linhas = (data ?? []) as unknown as Array<{
+    id: string;
+    conversation_id: string | null;
+    contact_id: string | null;
+    sent_via: string | null;
+    contacts: EmbedDoContato;
+  }>;
+  for (const linha of linhas) {
+    await emitirFalhaDeEntrega(admin, {
+      organizationId: session.organization_id,
+      source: "waha-ack-webhook",
+      falha: {
+        message_id: linha.id,
+        conversation_id: linha.conversation_id,
+        contact_id: linha.contact_id,
+        contact: telefoneDoEmbed(linha.contacts),
+        sent_via: linha.sent_via,
+        erro: { codigo: "ack_error", titulo: frase },
+      },
+    });
+  }
 }
 
 /**
@@ -1865,14 +2132,23 @@ async function handleMessageEdited(
  *
  * A linha NÃO é removida: sumir com ela apagaria o contexto das vizinhas — uma
  * resposta passaria a responder ao nada — e o histórico de quem atendeu. O
- * corpo também não é limpo aqui: quem decide o que mostrar é a tela, e apagar o
- * texto no banco impediria o próprio atendente de entender, depois, o que tinha
- * sido combinado antes do arrependimento.
+ * corpo também não é limpo aqui: quem decide o que MOSTRAR é a régua da tela
+ * (`lib/messaging/apagada.ts`), e apagar o texto no banco destruiria o registro
+ * do que foi combinado — que é justamente o que o pedido de LGPD precisa
+ * alcançar.
+ *
+ * A revogação que chega por AQUI é a que ninguém mais registra: quem apaga no
+ * aplicativo não passa por tela nenhuma, então sem esta trilha um pedido de
+ * LGPD/RGPD pergunta "quando e como esta mensagem foi apagada" e não há
+ * resposta. Vai para a auditoria o EVENTO (ids, direção e o fato de o conteúdo
+ * estar preservado) — nunca o corpo, que `api_audit_log` guardaria por 5 anos
+ * fora do alcance da cascata de anonimização.
  */
 async function handleMessageRevoked(
   admin: Admin,
   session: Session,
   p: WahaPayload,
+  requestId: string,
 ): Promise<void> {
   if (!p.revokedMessageId) return;
 
@@ -1891,11 +2167,50 @@ async function handleMessageRevoked(
         ? depois.fromMe
         : undefined;
 
-  await admin
+  const { data: apagadas, error: erroDoCarimbo } = await admin
     .from("messages")
     .update({ revoked_at: new Date().toISOString() })
     .eq("organization_id", session.organization_id)
-    .in("external_id", formasDaMensagemOriginal(p.revokedMessageId, chat, fromMe));
+    .in("external_id", formasDaMensagemOriginal(p.revokedMessageId, chat, fromMe))
+    // Só a linha que AINDA não estava apagada. O WAHA ecoa o que o próprio
+    // número faz: apagar pela tela do CRM carimba a linha na rota (e audita
+    // `message.revoked`, com o ator) e, depois, o eco `message.revoked` chega
+    // aqui. Sem este filtro o eco recarimbava a hora e gravava uma segunda
+    // trilha dizendo que alguém apagou pelo celular — numa tabela append-only.
+    // Pelo mesmo filtro, a reentrega do mesmo evento não duplica a trilha.
+    .is("revoked_at", null)
+    .select("id, conversation_id, direction, external_id");
+  if (erroDoCarimbo) {
+    // Sem este ramo o evento "some" em silêncio e a mensagem apagada segue
+    // legível como se ninguém tivesse apagado — o modo de falha que este arquivo
+    // já pagou caro em outros lugares.
+    logger.warn("[waha] message.revoked não carimbou a linha", {
+      request_id: requestId,
+      error: erroDoCarimbo.message,
+    });
+    return;
+  }
+  // Uma trilha por linha carimbada AGORA: `direction` diz quem apagou (recebida
+  // é o contato; enviada é o próprio número, apagando pelo aplicativo do
+  // WhatsApp). O eco de um apagar feito pela tela não chega até aqui, porque a
+  // rota já carimbou a linha. Limite conhecido: se o eco chegar ANTES de a rota
+  // carimbar (a rota carimba logo depois de o WAHA responder), sai uma trilha
+  // aqui além da `message.revoked` da rota — a do ator vem dela.
+  for (const linha of apagadas ?? []) {
+    await audit({
+      action: "message.revoked_in_channel",
+      organizationId: session.organization_id,
+      resourceType: "message",
+      resourceId: linha.id,
+      requestId,
+      metadata: {
+        conversation_id: linha.conversation_id,
+        direction: linha.direction,
+        external_id: linha.external_id,
+        conteudo_preservado: true,
+      },
+    });
+  }
 }
 
 /**
@@ -1999,7 +2314,7 @@ export async function dispatchWahaEvent(
   } else if (eventType === "message.edited") {
     await handleMessageEdited(admin, session, payload);
   } else if (eventType === "message.revoked") {
-    await handleMessageRevoked(admin, session, payload);
+    await handleMessageRevoked(admin, session, payload, requestId);
   } else if (eventType === "message.reaction") {
     await handleReaction(admin, session, payload);
   } else if (eventType === "session.status" || eventType === "state.change") {

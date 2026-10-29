@@ -72,7 +72,7 @@ export interface ConferenciaDeSaida {
    * a tela deixa de encontrar o estado e mostra "carregando…" para sempre —
    * aconteceu ao escrever isto, e o teste de componente pegou.
    */
-  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | null;
+  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | "restricao_comercial" | null;
 }
 
 /**
@@ -192,6 +192,22 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     },
     porQueNaoSeDesliga: "",
     camada: "afirmacao_clinica",
+  },
+  {
+    nome: "commercial_restriction",
+    rotulo: "Deixar valores e negociação com a equipe",
+    oQueProtege:
+      "Quando ligada, o assistente não fala de preço, desconto, parcelamento nem forma de " +
+      "pagamento: o pedido vai direto para uma pessoa da equipe, o cliente é avisado, e a " +
+      "resposta do assistente que tocar nesses assuntos não sai.",
+    escolha: {
+      custo:
+        "Não custa nada e reconhece frases em português e espanhol. Vale para a organização " +
+        "inteira, e pode mandar à equipe uma pergunta que não era sobre preço.",
+      consultaModelo: false,
+    },
+    porQueNaoSeDesliga: "",
+    camada: "restricao_comercial",
   },
   {
     nome: "agenda_stall",

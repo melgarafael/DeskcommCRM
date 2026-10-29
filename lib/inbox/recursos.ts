@@ -58,6 +58,14 @@ export interface Recurso {
   title: string;
   body: string;
   midias?: readonly MidiaDeTemplate[] | null;
+  /**
+   * A MARCAÇÃO "Mostrar na barra do Inbox" (#3282) — `message_templates.mostrar_na_barra`.
+   *
+   * Opcional e lida como ligada por ausência, pela mesma razão de `midias`: linha
+   * anterior à migration 0742 e fixture sem a chave são "aparece na barra", que é
+   * o comportamento de sempre. Só o `false` EXPLÍCITO esconde.
+   */
+  mostrar_na_barra?: boolean | null;
 }
 
 /** O recurso é de ÁUDIO? A resposta sai da mídia, não de uma coluna `tipo`. */
@@ -65,4 +73,20 @@ export function ehRecursoDeAudio(recurso: {
   midias?: readonly MidiaDeTemplate[] | null;
 }): boolean {
   return midiaDeAudioDe(recurso.midias) !== undefined;
+}
+
+/**
+ * OS RECURSOS QUE A BARRA DO INBOX MOSTRA (#3282).
+ *
+ * A régua é "ausência = mostra": `mostrar_na_barra` é `true` por padrão, e uma
+ * organização que nunca mexeu na marcação (nem fixture anterior à coluna, que
+ * chega SEM a chave) continua com tudo na barra, como hoje. Só o `false`
+ * explícito tira o botão — e ele continua no atalho `/`, que chama esta função
+ * não: o `/` lista TODAS as respostas de propósito.
+ *
+ * Função pura e exportada porque é ELA que o teste da barra prende; o filtro não
+ * pode morar dentro do JSX sem um lugar único onde a sabotagem o desligue.
+ */
+export function recursosDaBarra(recursos: readonly Recurso[]): Recurso[] {
+  return recursos.filter((recurso) => recurso.mostrar_na_barra !== false);
 }

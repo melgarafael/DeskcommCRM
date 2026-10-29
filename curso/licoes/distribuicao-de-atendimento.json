@@ -1,0 +1,964 @@
+{
+  "id": "distribuicao-de-atendimento",
+  "titulo": "Distribuição de atendimento",
+  "tela": "/app/settings/atendimento",
+  "resumo": "Onde você decide quem da equipe recebe cada cliente novo, o que cada atendente enxerga e quando a IA volta a responder.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela",
+      "objetivo": "Achar a tela de Distribuição de atendimento e reconhecer as decisões que ficam nela.",
+      "papel": "admin",
+      "busca": [
+        "distribuição de atendimento",
+        "quem recebe o cliente",
+        "dividir clientes entre atendentes",
+        "configurações",
+        "rodízio",
+        "fila de atendimento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Clique em \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" fica o cartão \"Distribuição de atendimento\". Clique nele para abrir a tela.",
+          "dica": "Só gerente e administrador abrem esta tela. Um atendente que tentar entrar recebe a página de acesso negado.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Configurações",
+                "exato": true
+              },
+              "rotulo": "Configurações",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Distribuição de atendimento",
+                "regex": true
+              },
+              "rotulo": "Abrir Distribuição de atendimento",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Distribuição de atendimento",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "As duas decisões principais",
+          "texto": "No alto ficam as duas decisões que andam juntas. A primeira é quem recebe o cliente novo: alguém pega da fila ou o sistema entrega sozinho. A segunda é o que cada atendente enxerga: tudo, ou só a própria carteira. A opção marcada, com a borda colorida, é a que vale hoje. Numa instalação nova, ninguém recebe nada sozinho e o atendente vê os próprios clientes mais os que ainda não têm dono.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Distribuição de atendimento",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "form-atendimento"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='form-atendimento'] > :nth-child(1)"
+              },
+              "rotulo": "Quem recebe o cliente novo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='form-atendimento'] > :nth-child(2)"
+              },
+              "rotulo": "O que cada atendente enxerga",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quando a IA volta a responder",
+          "texto": "Descendo a tela, três quadros cuidam da passagem entre a IA e a equipe: se a IA volta sozinha quando a pessoa some, quanto tempo a IA espera quando alguém responde pelo celular, e se a conversa fica com quem respondeu. Logo abaixo deles fica o botão \"Salvar\", que grava tudo o que você mudou nesta parte de cima da tela.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "silencio-apos-resposta-pelo-celular"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "devolucao-ao-agente"
+              },
+              "rotulo": "A IA volta sozinha?",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "silencio-apos-resposta-pelo-celular"
+              },
+              "rotulo": "Espera depois do celular",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "conversa-fica-com-quem-atendeu"
+              },
+              "rotulo": "A conversa fica com quem respondeu?",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Regras de cada número",
+          "texto": "Em \"Responsáveis por número\" aparece um quadro para cada número ou rede social cadastrada na empresa. Aqui só existe o \"Recepção Bem Viver\". Nele você escolhe quem atende aquele número e se ele segue uma regra própria. Este quadro tem os próprios botões de salvar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Recepção Bem Viver"
+              },
+              "rotulo": "O número Recepção Bem Viver",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Assinatura e telefone do cliente",
+          "texto": "No fim da tela ficam mais duas escolhas. A primeira diz se o nome de quem escreveu aparece na mensagem que chega ao cliente. A segunda diz se o telefone que o cliente informa na conversa entra sozinho na ficha dele. As duas têm uma lição só delas no fim deste módulo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "telefone-de-ficha-vazia-estado"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "form-assinatura"
+              },
+              "rotulo": "Assinatura das mensagens",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "switch"
+              },
+              "rotulo": "Telefone entra sozinho na ficha",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quem-recebe-o-cliente-novo",
+      "titulo": "Quem recebe o cliente novo",
+      "objetivo": "Escolher entre a fila aberta, o rodízio e a entrega para quem tem menos conversas.",
+      "papel": "admin",
+      "busca": [
+        "rodízio de atendentes",
+        "distribuir clientes automaticamente",
+        "fila de atendimento",
+        "quem atende primeiro",
+        "dividir conversas",
+        "menos conversas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os três jeitos de distribuir",
+          "texto": "Esta escolha vale para a conversa que chega sem dono. Em \"Cada um pega o que quiser\", o cliente novo cai numa fila aberta e o primeiro atendente que clicar assume. É o jeito que vem marcado numa instalação nova. Nos outros dois, o sistema escolhe quem recebe, e ninguém precisa pegar da fila.",
+          "rota": "/app/settings/atendimento",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "opcao-modo-manual"
+              },
+              "rotulo": "Fila aberta (o padrão)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "opcao-modo-round_robin"
+              },
+              "rotulo": "Rodízio",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "opcao-modo-load"
+              },
+              "rotulo": "Para quem tem menos conversas",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "testid": "opcao-modo-round_robin"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Ligar o rodízio",
+          "texto": "Clique em \"Rodízio automático entre os atendentes\". Cada cliente novo vai para quem está há mais tempo sem receber, só entre os atendentes disponíveis, dentro do horário e com espaço na capacidade. Ao marcar, aparecem dois campos. \"Tentativas antes de desistir\" diz quantas vezes o sistema tenta de novo quando não há ninguém disponível. \"Espera entre tentativas (segundos)\" diz o intervalo entre uma tentativa e outra. Quando as tentativas acabam, a conversa fica na fila, aparece um aviso em \"Alertas\" e o sistema continua tentando, mais devagar, a cada 15 minutos.",
+          "dica": "Ninguém começa disponível. Antes de ligar o rodízio, abra \"Equipe\", aba \"Atendimento\", e marque \"Disponível\" para quem vai receber clientes. Sem isso, ninguém recebe nada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "opcao-modo-round_robin"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "opcao-modo-round_robin"
+              },
+              "rotulo": "Rodízio marcado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Tentativas antes de desistir"
+              },
+              "rotulo": "Quantas vezes tenta de novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Espera entre tentativas (segundos)"
+              },
+              "rotulo": "Intervalo entre tentativas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "opcao-modo-load"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Entregar para quem tem menos conversas",
+          "texto": "A terceira opção, \"Vai para quem tem menos conversas na mão\", entrega cada cliente novo para quem está com menos conversas em aberto. Se duas pessoas empatam, recebe quem está há mais tempo sem receber, como no rodízio. É a melhor escolha para equipe grande, onde uma pessoa sobrecarregada e outra parada custam caro. Os dois campos de tentativas continuam valendo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "opcao-modo-load"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "opcao-modo-load"
+              },
+              "rotulo": "Para quem tem menos conversas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar a escolha",
+          "texto": "Enquanto você não salva, aparece o aviso \"Há mudanças não salvas.\" ao lado do botão. Clique em \"Salvar\" para gravar. Aparece a mensagem \"Distribuição de atendimento salva.\" e a nova regra passa a valer para os próximos clientes que chegarem sem dono.",
+          "dica": "Se você sair da tela sem salvar, a mudança se perde.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Há mudanças não salvas.",
+                "exato": true,
+                "dentro": {
+                  "testid": "form-atendimento"
+                }
+              },
+              "rotulo": "Ainda não gravado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "o-que-cada-atendente-enxerga",
+      "titulo": "O que cada atendente enxerga",
+      "objetivo": "Decidir se o atendente vê os clientes de todo mundo ou só os dele, sem deixar a fila sem ninguém.",
+      "papel": "admin",
+      "busca": [
+        "atendente vê só os clientes dele",
+        "esconder clientes de outro atendente",
+        "carteira de clientes",
+        "privacidade entre atendentes",
+        "quem vê o quê",
+        "visibilidade"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Três níveis de visão",
+          "texto": "Esta escolha vale só para quem tem o papel de Atendente. Gerente e administrador continuam vendo tudo. Em \"Todos veem tudo\", qualquer atendente abre a conversa e o negócio de qualquer colega. Em \"Os seus, mais os que ainda não têm dono\", que vem marcado numa instalação nova, ele vê os próprios clientes e a fila de quem acabou de chegar. Em \"Só os seus\", ele vê apenas o que foi entregue a ele, nem a fila.",
+          "rota": "/app/settings/atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[data-testid='form-atendimento'] > :nth-child(2)"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "opcao-visibilidade-all"
+              },
+              "rotulo": "Todos veem tudo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "opcao-visibilidade-own_and_unassigned"
+              },
+              "rotulo": "Os seus e a fila (o padrão)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "opcao-visibilidade-own"
+              },
+              "rotulo": "Só os seus",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "testid": "opcao-visibilidade-own"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O aviso da combinação que trava tudo",
+          "texto": "Clique em \"Só os seus\". Com a distribuição em \"Cada um pega o que quiser\", aparece um aviso logo abaixo das opções: nenhum atendente enxerga a fila para pegar o cliente, então ninguém é atendido. A tela avisa antes de você salvar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "opcao-visibilidade-own"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "devolucao-ao-agente"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "opcao-visibilidade-own"
+              },
+              "rotulo": "Só os seus",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "aviso-combinacao-morta"
+              },
+              "rotulo": "Ninguém veria a fila",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Combine com o rodízio",
+          "texto": "Para usar \"Só os seus\", ligue uma distribuição automática. Suba até \"Quem recebe o cliente novo\" e clique em \"Rodízio automático entre os atendentes\": o sistema passa a entregar cada cliente novo a alguém, e o aviso some. \"Só os seus\" continua marcado mais abaixo. Depois, clique em \"Salvar\" no fim desta parte.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "opcao-modo-round_robin"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "opcao-modo-round_robin"
+              },
+              "rotulo": "Rodízio ligado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quando-a-ia-volta",
+      "titulo": "Quando a IA volta a responder",
+      "objetivo": "Ajustar quando a IA retoma uma conversa que estava com uma pessoa da equipe.",
+      "papel": "admin",
+      "busca": [
+        "ia voltar a responder sozinha",
+        "devolver conversa para a ia",
+        "ia parou de responder",
+        "responder pelo celular",
+        "silêncio da ia",
+        "conversa fica com o atendente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A IA volta sozinha?",
+          "texto": "Quando alguém assume uma conversa, a IA para de responder nela até a conversa ser devolvida. Se ninguém devolve, o cliente que escreve de novo fica sem resposta. Esta caixa vem desmarcada: a IA só volta quando alguém clica em \"Devolver ao automático\", no alto da conversa.",
+          "rota": "/app/settings/atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "devolucao-ao-agente"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "devolucao-ao-agente"
+              },
+              "rotulo": "Devolução para a IA",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "label:has([data-testid='devolver-sozinho'])"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Devolver depois de um tempo",
+          "texto": "Marque a caixa \"Devolver ao agente sozinho depois de um tempo sem resposta da equipe\". Aparece o campo \"Minutos sem resposta da equipe\", que já vem com 60. O tempo conta a partir do último sinal de uma pessoa na conversa: assumir, responder pela tela ou pelo celular. Passado esse tempo, a IA volta a atender, mas só onde há um agente de IA publicado.",
+          "dica": "O prazo vai de 5 minutos a 24 horas (1440 minutos).",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "label:has([data-testid='devolver-sozinho'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has([data-testid='devolver-sozinho'])"
+              },
+              "rotulo": "Caixa marcada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Minutos sem resposta da equipe"
+              },
+              "rotulo": "Depois de quantos minutos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quando alguém responde pelo celular",
+          "texto": "Se alguém da equipe responde o cliente direto pelo celular, fora do sistema, a IA fica calada naquela conversa por um tempo. Esse tempo é o deste campo, e o padrão é 60 minutos. Cada nova resposta pelo celular recomeça a contagem. Quem atende o dia inteiro pelo celular costuma preferir um prazo curto, como 15.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "silencio-apos-resposta-pelo-celular"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Minutos de silêncio da IA depois de uma resposta pelo celular"
+              },
+              "rotulo": "Minutos de silêncio (padrão 60)",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "A conversa fica com quem respondeu",
+          "texto": "Marque \"A conversa fica com quem atendeu\". Assim, quem responde pela Inbox uma conversa sem dono passa a ser o dono dela, e a IA fica calada até alguém devolver. E quando o cliente volta a escrever numa conversa encerrada, ela vai direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe. Clique em \"Salvar\" para gravar as mudanças.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "label:has([data-testid='fica-com-quem-atendeu'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has([data-testid='fica-com-quem-atendeu'])"
+              },
+              "rotulo": "Caixa marcada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "responsaveis-por-numero",
+      "titulo": "Responsáveis por número",
+      "objetivo": "Escolher quem atende cada número de WhatsApp e dar a ele uma regra própria.",
+      "papel": "admin",
+      "busca": [
+        "quem atende cada número",
+        "responsável pelo whatsapp",
+        "atendente de um número",
+        "dois números de whatsapp",
+        "regra por número",
+        "destino padrão"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O quadro do número",
+          "texto": "Cada número conectado tem um quadro com o nome dele. A frase no alto diz como ele está agora: \"Usa todos os atendentes elegíveis da organização.\" Ou seja, enquanto você não escolher ninguém, qualquer atendente que esteja disponível pode receber os clientes deste número.",
+          "dica": "Sem número conectado, aparece só o link \"Conecte um número para escolher os responsáveis.\".",
+          "rota": "/app/settings/atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "group",
+                "nome": "Recepção Bem Viver"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Recepção Bem Viver"
+              },
+              "rotulo": "Recepção Bem Viver",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "channel-routing-state"
+              },
+              "rotulo": "Como está agora",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "rotulo": "Como este número distribui"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma regra só para este número",
+          "texto": "Em \"Como este número distribui\", escolha \"Rodízio automático entre os atendentes\". A regra vale só para este número; os outros seguem a da organização. Atenção: com uma regra própria, só recebem os clientes deste número as pessoas que você marcar logo abaixo. Com uma regra escolhida, a lista \"Atendente de destino padrão\" fica liberada: se você escolher uma pessoa nela, todo cliente novo deste número vai direto para ela, sem passar pela distribuição. Se ela estiver indisponível ou com a capacidade cheia, a conversa espera por ela e não vai para outra pessoa.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Como este número distribui"
+              },
+              "opcao": "Rodízio automático entre os atendentes"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Como este número distribui"
+              },
+              "rotulo": "Regra deste número",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Atendente de destino padrão"
+              },
+              "rotulo": "Mandar tudo para uma pessoa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "checkbox",
+            "nome": "Ana Ribeiro",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Quem atende este número",
+          "texto": "Marque quem pode receber os clientes deste número. Aqui, Ana Ribeiro e Carlos Mendes. A Helena fica de fora: a distribuição automática não entrega a ela os clientes deste número.",
+          "dica": "Cuidado: salvar sem marcar ninguém deixa as conversas deste número paradas na fila.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Ana Ribeiro",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Carlos Mendes",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has(input[type=checkbox]):has-text('Ana Ribeiro')"
+              },
+              "rotulo": "Ana marcada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "label:has(input[type=checkbox]):has-text('Carlos Mendes')"
+              },
+              "rotulo": "Carlos marcado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "label:has(input[type=checkbox]):has-text('Helena Prado')"
+              },
+              "rotulo": "Helena fica de fora",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar responsáveis",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar os responsáveis",
+          "texto": "Clique em \"Salvar responsáveis\". Logo abaixo aparece \"Responsáveis salvos.\" e a frase do alto muda para \"Somente as pessoas selecionadas recebem este número.\". A partir de agora, a distribuição automática só entrega os clientes deste número para quem você marcou.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar responsáveis",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Responsáveis salvos.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "channel-routing-state"
+              },
+              "rotulo": "Agora só os marcados",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Responsáveis salvos.",
+                "exato": true
+              },
+              "rotulo": "Gravado",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Voltar ao padrão da organização",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Voltar ao padrão",
+          "texto": "Para desfazer tudo, clique em \"Voltar ao padrão da organização\". O número perde a regra própria e a lista de responsáveis, e volta a usar todos os atendentes e a distribuição da organização. A frase do alto volta a ser \"Usa todos os atendentes elegíveis da organização.\". Logo abaixo aparece de novo \"Responsáveis salvos.\", confirmando a mudança.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Voltar ao padrão da organização",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Usa todos os atendentes elegíveis da organização.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Voltar ao padrão da organização",
+                "exato": true
+              },
+              "rotulo": "Desfaz a regra do número",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "channel-routing-state"
+              },
+              "rotulo": "De volta ao padrão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Responsáveis salvos.",
+                "exato": true
+              },
+              "rotulo": "Gravado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "assinatura-e-telefone",
+      "titulo": "Assinatura das mensagens e telefone do cliente",
+      "objetivo": "Mostrar ao cliente quem escreveu cada mensagem e decidir se o telefone que ele informa entra sozinho na ficha.",
+      "papel": "admin",
+      "busca": [
+        "assinar mensagem com nome do atendente",
+        "nome do atendente na mensagem",
+        "nome da ia na mensagem",
+        "assinatura whatsapp",
+        "telefone na ficha do cliente",
+        "salvar telefone automático"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem fala aparece na mensagem?",
+          "texto": "Ligada, a assinatura põe em negrito, na primeira linha da mensagem que chega ao cliente, o nome de quem escreveu. \"Assinar as mensagens dos atendentes\" usa o nome de cada atendente. \"Assinar as mensagens da IA\" usa o \"Nome da IA\", que vem como \"Assistente Virtual\". Numa instalação nova, as duas vêm desligadas.",
+          "dica": "O histórico do sistema guarda o texto como foi escrito. Campanhas, lembretes e integrações não assinam.",
+          "rota": "/app/settings/atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "form-assinatura"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has([data-testid='assinatura-humanos'])"
+              },
+              "rotulo": "Assinar os atendentes",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "label:has([data-testid='assinatura-ia'])"
+              },
+              "rotulo": "Assinar a IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Nome da IA",
+                "exato": true
+              },
+              "rotulo": "Nome que a IA assina",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "label:has([data-testid='assinatura-ia'])"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A IA assina com o nome de cada agente",
+          "texto": "Marque \"Assinar as mensagens da IA\". Isso libera a última caixa, \"Assinar com o nome de cada agente\". Marcada, cada mensagem da IA leva o nome do agente que a escreveu, como está no cadastro dele; aqui seria \"Bia — Recepção virtual\". Depois, clique em \"Salvar assinatura\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "label:has([data-testid='assinatura-ia'])"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "label:has([data-testid='assinatura-por_agente'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has([data-testid='assinatura-ia'])"
+              },
+              "rotulo": "IA assinando",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "label:has([data-testid='assinatura-por_agente'])"
+              },
+              "rotulo": "Nome de cada agente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar assinatura",
+                "exato": true
+              },
+              "rotulo": "Salvar assinatura",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Telefone que entra sozinho na ficha",
+          "texto": "Às vezes o cliente diz o telefone dele na conversa, e o agente de IA anota. Com esta opção desligada, que é como ela vem, o número vira uma sugestão na ficha e espera alguém da equipe confirmar. Se ninguém decidir em 7 dias, a sugestão é descartada.",
+          "dica": "Só um administrador da empresa pode mudar esta opção. Para um gerente, a chave aparece travada.",
+          "rota": "/app/settings/atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Telefone informado pelo cliente entra sozinho na ficha sem número",
+                "exato": true
+              },
+              "rotulo": "A opção",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch"
+              },
+              "rotulo": "Liga e desliga",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "telefone-de-ficha-vazia-estado"
+              },
+              "rotulo": "Como está agora",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "switch"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Ligar a opção",
+          "texto": "Clique na chave. Ela salva na hora, sem botão de salvar, e aparece por alguns segundos o aviso \"Opção salva.\" no canto da tela. A frase abaixo passa a começar com \"Ligado:\". Ligada, quando a ficha do cliente está sem telefone e o agente de IA anota o número que ele disse, o número é gravado na hora. Se o cliente tem um negócio aberto, isso fica registrado no histórico dele. Um número que já está na ficha nunca é trocado sozinho: isso continua exigindo uma pessoa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "^Ligado:",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch"
+              },
+              "rotulo": "Ligada",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "telefone-de-ficha-vazia-estado"
+              },
+              "rotulo": "Agora ligada",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

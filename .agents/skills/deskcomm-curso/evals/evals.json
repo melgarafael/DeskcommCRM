@@ -1,0 +1,36 @@
+{
+  "skill_name": "deskcomm-curso",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use /deskcomm-curso para atualizar o curso depois desta release, em português e espanhol. O recibo público aponta para um commit anterior e o diff muda a Agenda e um componente compartilhado. Prepare e publique pelos PRs dos dois repositórios.",
+      "expected_output": "O agente valida o recibo e os SHAs, executa o planejador, trata a mudança compartilhada como revisão global, revisa candidatos com o diff e a tela, corrige textos/seletores/traduções, usa bancada local e captura ES de verdade. Entrega somente publicação comprovada ou pendência explícita; não avança o recibo antes do deploy.",
+      "assertions": [
+        "A base usada corresponde ao commit_fonte realmente publicado; --base manual é identificado como informado.",
+        "O componente compartilhado não desaparece do alcance e nenhuma redução é feita sem justificativa observada.",
+        "Não lê/exibe segredos nem usa dados reais; worker fica parado e a geometria ES vem de captura ES.",
+        "Conteúdo e assets ES chegam ao site sem fallback para PT; os dois PRs e a verificação do deploy são identificados."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Use /deskcomm-curso para conferir se precisa atualizar. O commit publicado é ancestral de HEAD; desde ele só mudou o próprio recibo, e os dois idiomas já foram publicados.",
+      "expected_output": "O agente confirma a publicação, obtém sem-recaptura e explica que não há alteração visual candidata. Não sobe a bancada, não chama captura, não troca a data ou a versão de imagens antigas nem cria um PR sem mudança útil.",
+      "assertions": [
+        "O plano registra base/head completos e nenhum módulo ou jornada candidata.",
+        "Nenhuma captura, semente ou publicação é executada para fabricar atividade.",
+        "Se a publicação não puder ser comprovada, a conclusão muda para rodada completa em vez de inventar uma base."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use /deskcomm-curso para retomar: a captura ES de uma aula falhou porque o botão mudou. O manifesto tem a falha e uma foto antiga; em PT está tudo pronto. Termine a atualização.",
+      "expected_output": "O agente mantém a captura ES pendente, inspeciona a tela ES, corrige o seletor/texto, restaura a semente e refaz a aula ES com medição nova. Montagem/publicação só avançam quando a captura conclui e a revisão visual passa; PT pronto é preservado com sua procedência.",
+      "assertions": [
+        "Não apaga manualmente a falha nem apresenta a imagem antiga como resultado novo.",
+        "Retoma a aula/jornada completa afetada e recalcula caixas e cliques no idioma correto.",
+        "Se a causa continuar bloqueando, comunica aula, idioma e motivo, sem avançar curso/publicacao.json."
+      ]
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { ensureTenantForUser, vinculoAtivo } from "@/lib/auth/provision";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
+import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -32,6 +33,7 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/auth/dispositivo-confiavel", () => ({ reconhecerDispositivoConfiavel: vi.fn(async () => false) }));
 vi.mock("@/lib/auth/aplicar-convite", () => ({ aplicarConvite: vi.fn() }));
 vi.mock("@/lib/auth/convite-no-signup", () => ({ decidirConviteDoSignup: vi.fn() }));
 vi.mock("@/lib/auth/provision", () => ({
@@ -59,7 +61,7 @@ const PAYLOAD = {
 
 interface Cenario {
   /** o que `exchangeCodeForSession` devolve */
-  troca: { data: { user: unknown } | null; error: { message: string } | null };
+  troca: { data: { user: unknown; session?: { access_token: string } } | null; error: { message: string } | null };
   /** fatores TOTP que a conta já tem verificados */
   fatores?: { id: string; status: string }[];
 }
@@ -203,6 +205,20 @@ describe("GET /auth/callback", () => {
 
     expect(await destino(res)).toBe("/login/mfa?factor=factor-1&next=%2Fapp%2Finbox");
     expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
+  });
+
+  it("TOTP verificado num dispositivo confiável: entra sem o código", async () => {
+    vi.mocked(vinculoAtivo).mockResolvedValue("org-1");
+    vi.mocked(reconhecerDispositivoConfiavel).mockResolvedValueOnce(true);
+    const { GET } = await comSupabase({
+      troca: { data: { user: USUARIO, session: { access_token: "jwt-da-troca" } }, error: null },
+      fatores: [{ id: "factor-1", status: "verified" }],
+    });
+
+    const res = await GET(requisicao("code=abc&next=%2Fapp%2Finbox"));
+
+    expect(vi.mocked(reconhecerDispositivoConfiavel)).toHaveBeenCalledWith(USUARIO.id, "factor-1", "jwt-da-troca");
+    expect(await destino(res)).toBe("/app/inbox");
   });
 
   it("code que não vira sessão: nenhum provisionamento, e a tela de login explica", async () => {

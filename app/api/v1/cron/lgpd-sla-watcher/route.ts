@@ -107,7 +107,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const marcaDe = async (orgId: string): Promise<MarcaDeSaida> => {
     const guardada = marcaPorOrg.get(orgId);
     if (guardada) return guardada;
-    const resolvida = await marcaDaSaida(orgId);
+    const resolvida = await marcaDaSaida(orgId, { semMemo: true });
     marcaPorOrg.set(orgId, resolvida);
     return resolvida;
   };

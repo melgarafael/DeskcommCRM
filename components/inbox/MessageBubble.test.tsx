@@ -25,6 +25,7 @@ import userEvent from "@testing-library/user-event";
 
 import { MessageBubble } from "./MessageBubble";
 import type { Message } from "@/lib/types/messaging";
+import { ApiError } from "@/lib/api/types";
 
 function msg(over: Partial<Message> = {}): Message {
   return {
@@ -145,14 +146,23 @@ describe("MessageBubble — ações sobre mensagem própria", () => {
     expect(screen.queryByRole("menuitem", { name: "Apagar para todos" })).not.toBeInTheDocument();
   });
 
-  it("mantém o texto apagado dentro da bolha do CRM sem mostrar o texto revogado pelo cliente", () => {
-    const { rerender } = render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
-    expect(screen.getByText("Esta mensagem foi apagada")).toBeInTheDocument();
+  it("apagada pelo ATENDENTE: cinza, diz quem apagou e mantém o texto visível só no CRM", () => {
+    render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo atendente")).toBeInTheDocument();
     expect(screen.getByText("valor combinado")).toBeInTheDocument();
     expect(screen.getByText("Visível só aqui no CRM")).toBeInTheDocument();
-    expect(screen.getByTestId("message-bubble").className).toContain("opacity-70");
-    rerender(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    const classes = screen.getByTestId("message-bubble").className;
+    // Cinza: a apagada sai das cores da direção — `bg-primary` é o envio vivo.
+    expect(classes).toContain("bg-muted/60");
+    expect(classes).not.toContain("bg-primary");
+  });
+
+  it("apagada pelo CONTATO: cinza, diz quem apagou e NÃO mostra o texto", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo contato")).toBeInTheDocument();
     expect(screen.queryByText("texto do cliente")).not.toBeInTheDocument();
+    expect(screen.queryByText("Visível só aqui no CRM")).not.toBeInTheDocument();
+    expect(screen.getByTestId("message-bubble").className).toContain("bg-muted/60");
   });
 
   it("põe o menu dentro da bolha sem ocupar uma coluna ao lado", () => {
@@ -398,5 +408,224 @@ describe("MessageBubble — remetente de grupo", () => {
       />,
     );
     expect(screen.queryByText("Maria · +5521999990000")).toBeNull();
+  });
+});
+
+/**
+ * A edição segue a mesma lei do composer no celular (F2): a tecla de retorno
+ * do teclado virtual quebra linha, e quem salva é o botão. Ctrl/Cmd+Enter
+ * salva sempre.
+ */
+describe("MessageBubble — editar pelo toque (F2)", () => {
+  it("ponteiro grosso: Enter quebra linha; Ctrl+Enter salva", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (q: string) => ({ matches: q.includes("coarse"), media: q }) as MediaQueryList,
+    );
+    try {
+      const user = userEvent.setup();
+      const onEditar = vi.fn(async () => undefined);
+      render(<MessageBubble message={msg({ external_id: "ABC", sent_at: new Date().toISOString() })}
+        onEditar={onEditar} />);
+      await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Editar mensagem" }));
+      const campo = screen.getByRole("textbox", { name: "Editar mensagem" });
+      expect(campo.className).toContain("text-base");
+      fireEvent.change(campo, { target: { value: "linha" } });
+      expect(fireEvent.keyDown(campo, { key: "Enter" })).toBe(true);
+      expect(onEditar).not.toHaveBeenCalled();
+      fireEvent.keyDown(campo, { key: "Enter", ctrlKey: true });
+      await waitFor(() => expect(onEditar).toHaveBeenCalledOnce());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("MessageBubble — mensagem que falhou", () => {
+  const agora = () => new Date().toISOString();
+
+  it("diz o motivo à vista e oferece tentar de novo quando nada saiu", async () => {
+    const onReenviar = vi.fn(async () => undefined);
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "storage_sign_failed", sent_by_user_id: "eu", updated_at: agora(),
+    })} viewerUserId="eu" onReenviar={onReenviar} />);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não conseguimos preparar o arquivo para envio.");
+    fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    await waitFor(() => expect(onReenviar).toHaveBeenCalledWith(false));
+  });
+
+  it("o texto cru do canal não aparece na linha visível", () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "canal_x_error", error_message: "fetch failed http://servico-interno:3000/api/sendText",
+      sent_by_user_id: "eu",
+    })} viewerUserId="eu" />);
+    expect(screen.getByTestId("motivo-da-falha")).not.toHaveTextContent("http");
+    expect(document.body.textContent).not.toContain("http://servico-interno");
+  });
+
+  // O tooltip do selo "Falhou" conta a MESMA frase da linha visível — antes
+  // ele mostrava o `error_message` cru. Sabotagem: pôr o `error_message` do
+  // transporte à frente da frase do código deixa este caso VERMELHO.
+  it("o tooltip do 'Falhou' diz a mesma frase da linha, sem o texto cru", async () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "channel_session_not_working",
+      error_message: "fetch failed http://servico-interno:3000/api/sendText",
+    })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    const dica = await screen.findByRole("tooltip");
+    const frase = "O número escolhido não está conectado no momento.";
+    expect(dica).toHaveTextContent(frase);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent(frase);
+    expect(document.body.textContent).not.toContain("servico-interno");
+  });
+
+  it("código sem frase + texto cru: a genérica no tooltip e na linha, sem o endereço", async () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "canal_x_error",
+      error_message: "fetch failed http://servico-interno:3000/api/sendText",
+    })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    const dica = await screen.findByRole("tooltip");
+    expect(dica).toHaveTextContent("Não foi possível enviar esta mensagem.");
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não foi possível enviar esta mensagem.");
+    expect(document.body.textContent).not.toContain("servico-interno");
+  });
+
+  it.each([
+    ["pre_go_live", "Envio automático bloqueado pelo modo de teste do canal."],
+    ["org_suspensa", "Envio automático bloqueado: a organização está suspensa."],
+    ["channel_archived", "Este número foi excluído da Central de Conexões."],
+  ])("frase nossa gravada no envio (%s) aparece no tooltip e na linha", async (error_code, frase) => {
+    render(<MessageBubble message={msg({ status: "failed", error_code, error_message: frase })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(frase);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent(frase);
+    expect(document.body.textContent).not.toContain("automação");
+  });
+
+  it("código sem frase cai na frase genérica", () => {
+    render(<MessageBubble message={msg({ status: "failed", error_code: "codigo_novo" })} />);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não foi possível enviar esta mensagem.");
+  });
+
+  it("quando pode ter chegado, o toque abre a confirmação antes de enviar", async () => {
+    const onReenviar = vi.fn(async () => undefined);
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "send_timeout", sent_by_user_id: "eu",
+    })} viewerUserId="eu" onReenviar={onReenviar} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(await screen.findByText(/Confira no WhatsApp do cliente antes de enviar de novo/)).toBeInTheDocument();
+    expect(onReenviar).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Enviar de novo" }));
+    await waitFor(() => expect(onReenviar).toHaveBeenCalledWith(true));
+  });
+
+  it("mensagem de pessoa parada sem conexão diz que NÃO foi enviada, e oferece tentar de novo", () => {
+    // Ninguém reenvia a mensagem do atendente quando o número volta: "Aguardando"
+    // seria uma promessa que não se cumpre.
+    render(<MessageBubble message={msg({
+      status: "queued", sent_via: "user", sent_by_user_id: "eu", updated_at: agora(),
+      metadata: { queued_reason: "channel_session_not_working" },
+    })} viewerUserId="eu" onReenviar={vi.fn(async () => undefined)} />);
+    expect(screen.getByText("Não enviada — sem conexão")).toBeInTheDocument();
+    expect(screen.queryByText("Aguardando conexão")).toBeNull();
+    expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
+  });
+
+  it("parada por falta de conexão da IA diz 'Aguardando conexão'; o envio normal não", () => {
+    const { unmount } = render(<MessageBubble message={msg({
+      status: "queued", sent_via: "ai", metadata: { queued_reason: "channel_session_not_working" },
+    })} />);
+    expect(screen.getByText("Aguardando conexão")).toBeInTheDocument();
+    unmount();
+    render(<MessageBubble message={msg({ status: "queued", metadata: { _optimistic: true }, updated_at: agora() })}
+      viewerUserId="eu" onReenviar={vi.fn(async () => undefined)} />);
+    expect(screen.queryByText("Aguardando conexão")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+  });
+
+  it("se a rota pede confirmação onde a bolha viu 'nada saiu', a confirmação abre", async () => {
+    const onReenviar = vi.fn(async () => {
+      throw new ApiError(409, "confirmacao_necessaria", undefined, "r", "Confirme antes de enviar de novo.");
+    });
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "storage_sign_failed", sent_by_user_id: "eu",
+    })} viewerUserId="eu" onReenviar={onReenviar} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(await screen.findByText(/Confira no WhatsApp do cliente antes de enviar de novo/)).toBeInTheDocument();
+    expect(onReenviar).toHaveBeenCalledWith(false);
+  });
+
+  it("mensagem da IA que falhou não tem botão", () => {
+    render(<MessageBubble message={msg({ status: "failed", error_code: "channel_disabled", sent_via: "ai" })}
+      viewerUserId="eu" onReenviar={vi.fn(async () => undefined)} podeReenviarDeOutros />);
+    expect(screen.getByTestId("motivo-da-falha")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+  });
+
+  it("sem quem reenvie (leitura do super-admin) não há botão", () => {
+    render(<MessageBubble message={msg({ status: "failed", error_code: "channel_disabled", sent_by_user_id: "eu" })} viewerUserId="eu" />);
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+  });
+});
+
+/**
+ * #3566 — MENÇÕES em grupo na bolha.
+ *
+ * O corpo que veio do WhatsApp fica cru no banco (`@75235009282237`); quem
+ * resolve é a tela, pela lista `metadata.mentions`. O que se mede aqui é a
+ * EXIBIÇÃO: nome para quem está no CRM, número para quem não está, e cada
+ * ocorrência pelo próprio LID.
+ */
+describe("MessageBubble — menções de grupo (#3566)", () => {
+  it("menção a contato do CRM aparece com o NOME", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          body: "oi @75235009282237, pode vir?",
+          metadata: { mentions: [{ lid: "75235009282237", phone: null, name: "Maria Exemplo" }] },
+        })}
+      />,
+    );
+    expect(screen.getByText("oi @Maria Exemplo, pode vir?")).toBeInTheDocument();
+    expect(screen.queryByText(/75235009282237/)).toBeNull();
+  });
+
+  it("menção a desconhecido continua com o número — o comportamento de hoje", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          body: "oi @99887766554433",
+          metadata: { mentions: [{ lid: "99887766554433", phone: null, name: null }] },
+        })}
+      />,
+    );
+    expect(screen.getByText("oi @99887766554433")).toBeInTheDocument();
+  });
+
+  it("duas menções no mesmo texto saem cada uma com o seu nome", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          body: "@11111111111111 e @22222222222222 e @11111111111111",
+          metadata: {
+            mentions: [
+              { lid: "11111111111111", phone: null, name: "João" },
+              { lid: "22222222222222", phone: null, name: "João Pedro" },
+            ],
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("@João e @João Pedro e @João")).toBeInTheDocument();
+  });
+
+  it("CONTROLE: mensagem sem menção é exibida byte a byte como veio", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", body: "bom dia, grupo", metadata: {} })} />);
+    expect(screen.getByText("bom dia, grupo")).toBeInTheDocument();
   });
 });

@@ -190,6 +190,11 @@ async function processOneRow(
   const { organizationId, userId, mapped } = ctx;
   const phoneE164 = mapped.phone ? normalizePhoneBR(mapped.phone) : null;
   const normalizedCnpj = mapped.cnpj ? normalizeCnpj(mapped.cnpj) : null;
+  // Documento informado e inválido não é ausência: cair no cache por nome
+  // juntaria empresas distintas e seus contatos sem avisar (#3497).
+  if (mapped.cnpj.trim() && !normalizedCnpj) {
+    return { status: "failed", error: "CNPJ inválido.", normalizedCnpj: null };
+  }
   const personName = mapped.person_name.trim();
   const trade =
     mapped.trade_name.trim() ||

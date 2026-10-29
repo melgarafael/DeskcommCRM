@@ -257,6 +257,8 @@ describe("GET /api/v1/ai/skills", () => {
           matcher_mudou: boolean;
           any_adicionadas: string[];
           any_removidas: string[];
+          tags_adicionadas: string[];
+          tags_removidas: string[];
           corpo_mudou: boolean;
           linhas_adicionadas: number;
           linhas_removidas: number;
@@ -273,6 +275,8 @@ describe("GET /api/v1/ai/skills", () => {
       matcher_mudou: true,
       any_adicionadas: ["entrega"],
       any_removidas: [],
+      tags_adicionadas: [],
+      tags_removidas: [],
       corpo_mudou: true,
       linhas_adicionadas: 1,
       linhas_removidas: 0,

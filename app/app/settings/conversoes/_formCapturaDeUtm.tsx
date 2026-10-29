@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import type { EstadoDaCaptura } from "@/lib/plataformas-de-anuncio/landing-config";
@@ -78,6 +79,7 @@ export function FormularioDeCapturaDeUtm({
   numerosConectados: string[];
 }) {
   const t = (texto: string) => traduzir(texto, idioma);
+  const telefoneExemplo = useTelefoneExemplo();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -139,7 +141,7 @@ export function FormularioDeCapturaDeUtm({
             list={`${plataforma}_captura_numeros_conectados`}
             value={numero}
             onChange={(e) => setNumero(e.target.value)}
-            placeholder="+5511999999999"
+            placeholder={telefoneExemplo}
           />
           {/* Os números conectados entram como SUGESTÃO, não como lista fechada:
               o número da landing page não precisa ser um canal do CRM. */}

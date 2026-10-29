@@ -98,7 +98,8 @@ function Linha({
         disabled={ocupada || !podeEditar}
         onClick={() => comBloqueio(() => aoAlternarConcluida(tarefa))}
         className={cn(
-          "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors",
+          // O `before` estende a área de toque a 44px sem crescer o desenho de 16px.
+          "relative mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors pointer-coarse:before:absolute pointer-coarse:before:-inset-3.5 pointer-coarse:before:content-['']",
           encerrada
             ? "border-primary bg-primary text-primary-foreground"
             : "border-muted-foreground/40 hover:border-primary",
@@ -159,11 +160,13 @@ function Linha({
       </div>
 
       {podeEditar ? (
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        // Escondidas até o hover SÓ onde existe hover: no toque elas ficavam
+        // invisíveis. Mesma regra de `components/kanban/KanbanCardActions.tsx`.
+        <div className="flex shrink-0 items-center gap-1 transition-opacity focus-within:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="md:h-7 md:w-7"
             aria-label={t("Editar a tarefa")}
             onClick={() => aoEditar(tarefa)}
           >
@@ -179,7 +182,7 @@ function Linha({
             <Button
               variant="destructive"
               size="sm"
-              className="h-7 px-2 text-[11px]"
+              className="px-2 text-[11px] md:h-7"
               disabled={ocupada}
               onClick={() => comBloqueio(() => aoApagar(tarefa))}
             >
@@ -189,7 +192,7 @@ function Linha({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="md:h-7 md:w-7"
               aria-label={t("Apagar a tarefa")}
               onClick={() => setConfirmando(true)}
               onBlur={() => setConfirmando(false)}

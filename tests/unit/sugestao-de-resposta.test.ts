@@ -166,6 +166,25 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
     }
   });
 
+  /**
+   * A CONFERÊNCIA DE AFIRMAÇÃO DE FATO (#2231) tem duas causas que se parecem
+   * e não são a mesma: o material CONTRADIZ o que a resposta dizia, ou o
+   * material simplesmente não apoia. Quem atende age igual nos dois casos, mas
+   * a frase não pode ser a mesma — e, até aqui, nenhum teste comparava as duas.
+   * Medido: invertendo os dois corpos em `motivoDoVeto`, os 24 casos da base
+   * seguiam verdes.
+   */
+  it("⛔ a afirmação CONTRADITA e a SEM APOIO não podem trocar de frase", () => {
+    const contradita = motivoDoVeto("factual_claim_contradicted")!;
+    const semApoio = motivoDoVeto("factual_claim_unsupported")!;
+
+    expect(contradita.texto).not.toBe(semApoio.texto);
+    expect(contradita.texto).toMatch(/CONTRADIZ/);
+    expect(contradita.texto).not.toMatch(/sem apoio/);
+    expect(semApoio.texto).toMatch(/sem apoio/);
+    expect(semApoio.texto).not.toMatch(/CONTRADIZ/);
+  });
+
   it("as causas DEFINITIVAS (opt-out, LGPD) não fingem ter ação local", () => {
     expect(motivoDoVeto("contato_bloqueado")!.acionavel).toBe(false);
     expect(motivoDoVeto("lgpd_anonymized")!.acionavel).toBe(false);
@@ -195,12 +214,24 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
     expect(motivo.texto).toMatch(/gere de novo/);
     expect(motivo.texto).not.toMatch(/configura|falhou|erro/i);
     // O código é contrato do motor: é o impedimento que a prévia grava quando o
-    // agente não propôs resposta. Se o nome mudar lá, este caso deixa de valer.
+    // agente não propôs resposta. Ele deixou de nascer no closure do turno
+    // (#3093): a decisão do desfecho saiu para o módulo puro
+    // `desfecho-da-previa.ts`, e é lá que o nome passa a valer. O motor continua
+    // sendo quem pergunta — sem a chamada, o código não chega à prévia.
     const motor = fs.readFileSync(
       path.join(__dirname, "../../lib/agent-engine/agent/inbound-turn.ts"),
       "utf8",
     );
-    expect(motor).toMatch(/code: 'no_candidate'/);
+    const desfecho = fs.readFileSync(
+      path.join(__dirname, "../../lib/agent-engine/agent/desfecho-da-previa.ts"),
+      "utf8",
+    );
+    expect(motor).toMatch(/desfechoSemCandidato\(\{/);
+    expect(desfecho).toMatch(/code: 'no_candidate'/);
+    // #3093: truncamento e teto de passos NÃO podem voltar a cair aqui — é o
+    // defeito que esta suíte existe para não deixar renascer.
+    expect(desfecho).toMatch(/code: 'output_truncated'/);
+    expect(desfecho).toMatch(/code: 'max_steps_exhausted'/);
   });
 
   it("CONTROLE: código desconhecido e ausente devolvem null — o genérico fica", () => {

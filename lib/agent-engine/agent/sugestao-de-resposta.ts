@@ -149,6 +149,17 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
         texto:
           "O contato pediu para não receber mensagens (opt-out): o envio pelo automático fica bloqueado. Nada a enviar.",
       };
+    case "atendimento_com_humano":
+      // #3310: NÃO é opt-out. A conversa foi passada para a equipe (ou alguém a
+      // pausou à mão) e o contato não pediu para sair — dizer "descadastrado"
+      // aqui faz quem atende abandonar um cliente vivo. `acionavel: true`
+      // porque há o que fazer, e o texto diz o quê.
+      return {
+        codigo,
+        acionavel: true,
+        texto:
+          "A conversa está com a equipe: o atendimento automático está pausado. Use “Devolver ao automático” para a IA voltar a responder.",
+      };
     case "lgpd_anonymized":
       return {
         codigo,
@@ -253,18 +264,33 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
         texto:
           "A geração da sugestão falhou, ou o contexto da conversa não pôde ser montado. Tente de novo; se repetir, o motivo ficou registrado no servidor.",
       };
-    case "no_candidate":
-      // A prévia terminou sem nenhum send_message aceito. Pode ser DECISÃO (ex.:
-      // a saudação automática do WhatsApp Business de quem foi abordado, ou só
-      // propor uma ação sem resposta) OU parada: texto solto fora do
-      // send_message, saída cortada no limite de tokens, passos esgotados. O
-      // código não distingue os dois, então o texto não culpa a configuração e
-      // também não afirma que foi decisão. A ação possível é gerar de novo.
+    case "max_steps_exhausted":
       return {
         codigo,
         acionavel: true,
         texto:
-          "O agente terminou sem propor uma resposta. Pode ter sido uma decisão (por exemplo, diante de uma mensagem automática) ou a geração ter parado antes da resposta. Se esperava uma, gere de novo; senão, não há nada a enviar.",
+          "O agente gastou o teto de passos da configuração em consultas e terminou sem propor uma resposta. Nada foi enviado. Gere de novo; se repetir, aumente \"Ações por atendimento\" no agente ou reduza o que ele precisa consultar antes de responder.",
+      };
+    case "output_truncated":
+      return {
+        codigo,
+        acionavel: true,
+        texto:
+          "A geração da sugestão foi cortada no limite de tamanho da resposta e parou antes de propor algo. Nada foi enviado ao cliente. Gere de novo; se repetir, reduza o que o agente precisa escrever de uma vez ou aumente o teto de tokens de saída do provedor.",
+      };
+    case "no_candidate":
+      // A prévia terminou sem nenhum send_message aceito e SEM causa de parada
+      // (#3093): truncamento, teto de passos e texto solto (este, depois da
+      // correção do turno mudo) ganharam código próprio. O que sobra é a
+      // DECISÃO — a saudação automática do WhatsApp Business de quem foi
+      // abordado (o caso do #3092), ou o agente que só propôs uma ação e não
+      // escreveu. Decisão não é defeito: o texto não culpa a configuração e
+      // oferece gerar de novo caso a pessoa esperasse uma resposta.
+      return {
+        codigo,
+        acionavel: true,
+        texto:
+          "O agente decidiu não responder: terminou sem propor uma resposta e sem nenhum impedimento no caminho. Se você esperava uma, gere de novo; senão, não há nada a enviar.",
       };
     default:
       return null;
@@ -278,6 +304,7 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
  */
 export const CODIGOS_DE_VETO_CONHECIDOS: readonly string[] = [
   "contato_bloqueado",
+  "atendimento_com_humano",
   "lgpd_anonymized",
   "lgpd_missing_legal_basis",
   "promise_out_of_table",
@@ -293,5 +320,44 @@ export const CODIGOS_DE_VETO_CONHECIDOS: readonly string[] = [
   "produto_nao_encontrado",
   "unknown_preview_tool",
   "generation_failed",
+  // #3093 — a parada da geração deixou de se chamar `no_candidate`: estes dois
+  // são o truncamento (`finish_reason = 'length'`) e o teto de `max_steps`.
+  "output_truncated",
+  "max_steps_exhausted",
   "no_candidate",
 ];
+
+/**
+ * O rascunho tem algo a OFERECER a quem atende?
+ *
+ * Decide o estado do `ai_reply_drafts` no fim da prévia (`reply-drafts.ts`), e
+ * o defeito que isto conserta é o caso 2 da issue #3093: o rascunho ia para
+ * `failed` sempre que o corpo ficava vazio — inclusive quando o agente tinha
+ * proposto uma ação e só não escreveu (registrar a proposta, passar para a
+ * equipe, etiquetar). O painel então dizia "Não foi possível concluir a
+ * sugestão" para um desfecho que deu certo, e a proposta registrada aparecia
+ * como falha da geração.
+ *
+ * `failed` continua sendo o desfecho certo quando NÃO há nada: nem resposta, nem
+ * proposta. Aí a frase da tela é a única pista de que a geração não entregou.
+ *
+ * A regra é a MESMA que o SQL usa (`reply-drafts.ts` passa este booleano como o
+ * parâmetro do `case`), para não haver duas versões dela em dois lugares.
+ *
+ * A proposta sozinha só conta quando o desfecho é a DECISÃO (`no_candidate`, ou
+ * nenhum impedimento). Um veto (opt-out, LGPD, janela de 24h), o truncamento ou
+ * o teto de passos seguidos de proposta continuam `failed`: o painel só mostra o
+ * motivo (`motivoDoVeto`) em `failed`, e em `pending` quem atende veria a lista
+ * de propostas sem saber por que não há resposta — o #2975 de volta.
+ */
+export function temOfertaAoAtendente(
+  body: string,
+  propostas: readonly unknown[] | null | undefined,
+  codigoDoImpedimento: string | null | undefined,
+): boolean {
+  return (
+    body.trim() !== "" ||
+    ((propostas?.length ?? 0) > 0 &&
+      (codigoDoImpedimento == null || codigoDoImpedimento === "no_candidate"))
+  );
+}

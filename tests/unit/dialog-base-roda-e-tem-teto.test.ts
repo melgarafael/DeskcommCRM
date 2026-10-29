@@ -94,6 +94,30 @@ describe("DialogContent base tem teto de altura (#2044)", () => {
   });
 });
 
+/**
+ * O TÍTULO QUEBRA PALAVRA SEM ESPAÇO.
+ *
+ * "Reconectar org_0d2089b5_f0c0c7fd51f8…" (o nome da sessão WAHA, quando o canal
+ * não tem nome amigável) é uma palavra só, sem ponto de quebra: o título passava
+ * da largura do modal, ficava cortado e o modal ganhava rolagem horizontal.
+ * `[overflow-wrap:anywhere]` e não `break-words`: só o `anywhere` reduz a largura
+ * mínima do item, e o `DialogContent` é `grid` — com `break-word` a coluna ainda
+ * alarga até caber a palavra inteira.
+ */
+describe("DialogTitle base quebra identificador longo", () => {
+  const fonte = fs.readFileSync(BASE, "utf8");
+  const literais = [...fonte.matchAll(/"([^"\n]*)"/g)].map((m) => m[1] ?? "");
+  const titulo = literais.find((literal) => {
+    const classes = new Set(literal.split(/\s+/));
+    return classes.has("text-lg") && classes.has("font-semibold");
+  });
+
+  it("o className BASE do título usa overflow-wrap:anywhere", () => {
+    expect(titulo, "nenhuma string reúne text-lg + font-semibold").toBeTruthy();
+    expect(new Set((titulo ?? "").split(/\s+/))).toContain("[overflow-wrap:anywhere]");
+  });
+});
+
 describe("o override por diálogo continua valendo (twMerge)", () => {
   it("`cn` mescla com tailwind-merge — classe do caller prevalece", () => {
     const codigoCn = fs.readFileSync(cn, "utf8");

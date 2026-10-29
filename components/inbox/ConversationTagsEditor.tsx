@@ -17,6 +17,7 @@ import {
   useConversationTagVocabulary,
 } from "@/hooks/inbox/useConversationTags";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
+import { sugestoesDeEtiqueta } from "@/lib/contacts/etiquetas";
 
 interface Props {
   conversationId: string;
@@ -32,7 +33,11 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   const [cor, setCor] = useState<string | null>(null);
   const mutation = useUpdateConversationTags();
   const { definirCor } = useDefinirCorDaEtiqueta();
-  const { data: vocabulary } = useConversationTagVocabulary(orgId);
+  const { data: vocabulary, isError: erroNoVocabulario } = useConversationTagVocabulary(orgId);
+  // #2855 — com texto, pergunta também ao vocabulário inteiro (curado + em uso).
+  // Sem texto é a MESMA chave da linha acima: uma requisição só.
+  const { data: encontradas, isError: erroNaBusca } = useConversationTagVocabulary(orgId, draft.trim());
+  const vocabularyError = erroNoVocabulario || erroNaBusca;
   // A cor de quem JÁ está na conversa vem do MESMO mapa que o chip usa (#2771):
   // uma leitura só, e o gatilho abre já com o tom atual marcado.
   const cores = useCoresDasEtiquetas();
@@ -74,7 +79,18 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
     apply(tags.filter((v) => v !== tag));
   }
 
-  const suggestions = (vocabulary ?? []).filter((v) => !tags.includes(v)).slice(0, 8);
+  // #3180 — o texto digitado ENTRA no filtro: a mesma chave larga da busca
+  // (`lib/contacts/etiquetas`), sem caixa e sem acento, casando no MEIO da
+  // palavra. Sem texto, as sugestões saem na ordem da FONTE — e a fonte
+  // (`GET /api/v1/conversation-tags`) entrega as mais usadas primeiro
+  // (`uso_em_conversas`), não as oito primeiras do alfabeto.
+  const suggestions = sugestoesDeEtiqueta({
+    // #2855 — o que a busca no vocabulário inteiro achou entra DEPOIS das mais
+    // usadas, sem repetir: a ordem por uso do #3180 segue valendo.
+    conhecidas: [...new Set([...(vocabulary ?? []), ...(draft.trim() ? (encontradas ?? []) : [])])],
+    selecionadas: tags,
+    digitado: draft,
+  });
 
   return (
     <section>
@@ -137,7 +153,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
         <Button
           size="sm"
           variant="outline"
-          className="h-7 px-2"
+          className="h-11 min-w-11 px-2 lg:h-7 lg:min-w-0"
           onClick={() => add(draft)}
           disabled={mutation.isPending || !draft.trim() || tags.length >= 20}
           aria-label={t("Adicionar tag")}
@@ -146,6 +162,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
         </Button>
       </div>
 
+      {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
       {suggestions.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {suggestions.map((tag) => (

@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Valores e negociação: atendimento humano",
+    "subtitle": "Regra explícita da organização, sem modelo na triagem detectada",
+    "output": "atendimento-comercial.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Operação"
+    },
+    {
+      "id": "core",
+      "label": "Núcleo"
+    },
+    {
+      "id": "data",
+      "label": "Registros"
+    }
+  ],
+  "mainPath": [
+    "config",
+    "inbound",
+    "human"
+  ],
+  "nodes": [
+    {
+      "id": "config",
+      "lane": "ui",
+      "col": 1,
+      "type": "service",
+      "label": "Agente › Segurança: camada restricao_comercial (org inteira)"
+    },
+    {
+      "id": "inbound",
+      "lane": "core",
+      "col": 2,
+      "type": "service",
+      "label": "Automático / assistido: triagem no handler antes do roteador; prévia só propõe"
+    },
+    {
+      "id": "human",
+      "lane": "data",
+      "col": 3,
+      "type": "service",
+      "label": "Aviso ao cliente, depois performHumanHandoff: briefing, fila, silêncio e crons"
+    },
+    {
+      "id": "model",
+      "lane": "core",
+      "col": 3,
+      "type": "service",
+      "label": "Pedidos fora do detector: modelo permanece sujeito a before_send"
+    },
+    {
+      "id": "gate",
+      "lane": "core",
+      "col": 4,
+      "type": "service",
+      "label": "commercial_restriction: corpo antes do disclosure, cadeia v10"
+    },
+    {
+      "id": "trace",
+      "lane": "ui",
+      "col": 5,
+      "type": "service",
+      "label": "Impedimento na prévia / before_send_traces e Inbox na operação"
+    }
+  ],
+  "edges": [
+    {
+      "id": "0",
+      "from": "config",
+      "to": "inbound",
+      "label": "regra ligada"
+    },
+    {
+      "id": "1",
+      "from": "inbound",
+      "to": "human",
+      "label": "pedido identificado"
+    },
+    {
+      "id": "2",
+      "from": "inbound",
+      "to": "model",
+      "label": "demais pedidos"
+    },
+    {
+      "id": "3",
+      "from": "config",
+      "to": "gate",
+      "label": "mesma regra"
+    },
+    {
+      "id": "4",
+      "from": "model",
+      "to": "gate",
+      "label": "candidato"
+    },
+    {
+      "id": "5",
+      "from": "gate",
+      "to": "human",
+      "label": "comercial barrado"
+    },
+    {
+      "id": "6",
+      "from": "gate",
+      "to": "trace",
+      "label": "veto registrado"
+    },
+    {
+      "id": "7",
+      "from": "human",
+      "to": "trace",
+      "label": "demanda visível"
+    },
+    {
+      "id": "8",
+      "from": "trace",
+      "to": "config",
+      "label": "revisão humana"
+    }
+  ]
+}

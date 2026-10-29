@@ -26,9 +26,23 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { CAMPOS_PROPONIVEIS, proporDadoDoContato, valorAceitavel } from "./proposta-de-dado";
+
+/**
+ * ⚠️ O CLIENT DE SERVIÇO É DUBLADO AQUI (#3283).
+ *
+ * O caminho da captura automática passou a EMITIR `contact.phone_added`
+ * (`createAdminClient().rpc("emit_event", …)`) — e os casos abaixo exercitam,
+ * justamente, o desfecho "gravou sozinho". Sem o dublê, um clone com `.env` de
+ * verdade emitiria um evento REAL no Supabase de quem roda a suíte (`unit` não é
+ * sandbox de produção), e no CI a chamada morreria no host-placeholder do setup,
+ * deixando um aviso de `fetch failed` no log de um caso que é verde.
+ */
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({ rpc: async () => ({ data: null, error: null }) }),
+}));
 
 // --------------------------------------------------------------------------
 // A fronteira do BANCO, lida da árvore

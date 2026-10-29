@@ -449,3 +449,22 @@ describe("Receitas prontas — o que vai para o PUT", () => {
     );
   });
 });
+
+describe("Receitas prontas — o filtro de campo do WordPress", () => {
+  it("campo de TEXTO oferece só Nenhum e Contém (o schema da receita recusa 'Igual')", async () => {
+    renderComQuery([INSTANCIA_WORDPRESS], true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Editar/i }));
+    });
+    const grupo = screen.getByRole("group", { name: "Quartos" });
+    await act(async () => {
+      fireEvent.change(within(grupo).getByLabelText("Tipo"), { target: { value: "texto" } });
+    });
+
+    const opcoes = Array.from(
+      (within(grupo).getByLabelText("Filtro") as HTMLSelectElement).options,
+    ).map((o) => o.value);
+    expect(opcoes).toEqual(["nenhum", "contem"]);
+  });
+});

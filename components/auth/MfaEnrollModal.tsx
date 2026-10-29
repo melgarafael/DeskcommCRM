@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { TOTPInput } from "@/components/auth/TOTPInput";
 import { RecoveryCodesPanel } from "@/components/auth/RecoveryCodesPanel";
 import { enrollMfa } from "@/app/actions/auth/enrollMfa";
 import { confirmMfaEnroll } from "@/app/actions/auth/confirmMfaEnroll";
+import { AvisoSemResposta, useEnvioComTeto } from "@/components/auth/teto-da-espera";
 
 type Step = "intro" | "scan" | "codes";
 
@@ -33,46 +34,55 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const { pendente: isPending, semResposta, enviar } = useEnvioComTeto();
 
   // Auto-start enrollment when entering scan step.
   useEffect(() => {
     if (step !== "scan" || enrollState) return;
-    startTransition(async () => {
-      const res = await enrollMfa();
-      if (!res.ok) {
-        setError(res.message ?? t("Não foi possível iniciar a configuração."));
-        setStep("intro");
-        return;
-      }
-      setEnrollState({
-        factor_id: res.factor_id,
-        qr_data_url: res.qr_data_url,
-        uri: res.uri,
-        secret: res.secret,
-      });
-    });
-  }, [step, enrollState, t]);
+    void enviar(
+      () => enrollMfa(),
+      (res) => {
+        if (!res.ok) {
+          // O `message` é o texto cru do GoTrue, em inglês (« A factor with the friendly name … already
+          // exists ») — a tela o mostrava em todo idioma. Fica a frase do produto; o motivo segue no retorno da action.
+          setError(t("Não foi possível iniciar a configuração."));
+          setStep("intro");
+          return;
+        }
+        setEnrollState({
+          factor_id: res.factor_id,
+          qr_data_url: res.qr_data_url,
+          uri: res.uri,
+          secret: res.secret,
+        });
+      },
+      // Sem resposta, volta ao começo, como no ramo `!res.ok`: o passo do QR
+      // ficaria em "Gerando QR code..." sem nada para clicar.
+      () => setStep("intro"),
+    );
+  }, [step, enrollState, t, enviar]);
 
   const submitCode = (codeArg?: string) => {
     if (!enrollState) return;
     const finalCode = codeArg ?? code;
     if (finalCode.length !== 6) return;
     setError(null);
-    startTransition(async () => {
-      const res = await confirmMfaEnroll(finalCode, enrollState.factor_id);
-      if (!res.ok) {
-        if (res.error === "verify_failed" || res.error === "invalid_code") {
-          setError(t("Código inválido. Tente novamente."));
-        } else {
-          setError(res.message ?? t("Falha ao confirmar. Tente novamente."));
+    void enviar(
+      () => confirmMfaEnroll(finalCode, enrollState.factor_id),
+      (res) => {
+        if (!res.ok) {
+          if (res.error === "verify_failed" || res.error === "invalid_code") {
+            setError(t("Código inválido. Tente novamente."));
+          } else {
+            setError(t("Falha ao confirmar. Tente novamente."));
+          }
+          setCode("");
+          return;
         }
-        setCode("");
-        return;
-      }
-      setRecoveryCodes(res.recovery_codes);
-      setStep("codes");
-    });
+        setRecoveryCodes(res.recovery_codes);
+        setStep("codes");
+      },
+    );
   };
 
   return (
@@ -111,6 +121,7 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
                 {error}
               </div>
             )}
+            {semResposta && <AvisoSemResposta />}
             <Button
               type="button"
               className="w-full"
@@ -178,6 +189,7 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
                       {error}
                     </div>
                   )}
+                  {semResposta && <AvisoSemResposta />}
                   <Button
                     type="button"
                     className="w-full"

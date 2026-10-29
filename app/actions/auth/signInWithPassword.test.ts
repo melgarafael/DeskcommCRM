@@ -10,6 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel";
 
 vi.mock("next/headers", () => ({ headers: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -18,6 +20,7 @@ vi.mock("@/lib/audit", async (orig) => ({
   audit: vi.fn(async () => undefined),
 }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("@/lib/auth/dispositivo-confiavel", () => ({ reconhecerDispositivoConfiavel: vi.fn(async () => false) }));
 
 const signIn = vi.fn(async () => ({
   data: { user: null, session: null },
@@ -80,5 +83,35 @@ describe("signInWithPassword — teto de tentativas", () => {
     // Nenhuma das dez foi barrada: se o sucesso contasse, a 6ª seria.
     expect(resultados.filter((r) => r?.error === "rate_limited")).toHaveLength(0);
     expect(signIn).toHaveBeenCalledTimes(10);
+  });
+});
+
+describe("signInWithPassword — dispositivo confiável", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.mocked(headers).mockResolvedValue({ get: () => null } as never);
+    vi.mocked(createClient).mockResolvedValue({
+      auth: {
+        signInWithPassword: vi.fn(async () => ({
+          data: { user: { id: "u1" }, session: { access_token: "jwt-novo" } },
+          error: null,
+        })),
+        mfa: { listFactors: vi.fn(async () => ({ data: { totp: [{ id: "f1", status: "verified" }] } })) },
+      },
+    } as never);
+  });
+
+  it("conta com fator, navegador sem confiança: pede o código", async () => {
+    const { signInWithPassword } = await import("./signInWithPassword");
+    const r = await signInWithPassword({ email: "dono@example.com", password: "senha-certa-123" });
+    expect(r?.error).toBe("mfa_required");
+  });
+
+  it("conta com fator, navegador confiável: entra sem o código, com a sessão NOVA", async () => {
+    vi.mocked(reconhecerDispositivoConfiavel).mockResolvedValueOnce(true);
+    const { signInWithPassword } = await import("./signInWithPassword");
+    await signInWithPassword({ email: "dona@example.com", password: "senha-certa-123" }, "/app/inbox");
+    expect(vi.mocked(reconhecerDispositivoConfiavel)).toHaveBeenCalledWith("u1", "f1", "jwt-novo");
+    expect(vi.mocked(redirect)).toHaveBeenCalledWith("/app/inbox");
   });
 });

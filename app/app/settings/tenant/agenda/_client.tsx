@@ -8,8 +8,9 @@ import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
 import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
 import { ConfiguracaoDoServico } from "@/components/agenda/ConfiguracaoDoServico";
 
+import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
-import { parseReaisToCents } from "@/lib/money";
+import { MOEDA_PADRAO, parseReaisToCents } from "@/lib/money";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -393,6 +394,11 @@ export function TiposDeAgendamentoClient({
 }) {
   const t = useT();
   const router = useRouter();
+  // A moeda da organização é a régua do preço padrão digitado aqui (#3367).
+  // O leitor de sessão devolve a MESMA coluna que `moedaDaOrganizacao` lê no
+  // servidor (`organizations.currency`), e cai no padrão fora do provider —
+  // mesma degradação das outras telas de dinheiro.
+  const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
   const [criando, setCriando] = React.useState(false);
   const [serviceDraft, setServiceDraft] = React.useState(false);
   /**
@@ -758,7 +764,10 @@ export function TiposDeAgendamentoClient({
                         default_price_cents: (() => {
                           const bruto = String(dados.get("default_price_cents") ?? "").trim();
                           if (bruto === "") return null;
-                          const cents = parseReaisToCents(bruto);
+                          // Lido pela régua da moeda da organização (#3367): em
+                          // dólar `1,300` é mil e trezentos, e o preço sugerido
+                          // que a comanda recebe nasce no mesmo centavo.
+                          const cents = parseReaisToCents(bruto, moeda);
                           return cents === null ? null : cents;
                         })(),
                         reminder_enabled: dados.get("reminder_enabled") === "on",

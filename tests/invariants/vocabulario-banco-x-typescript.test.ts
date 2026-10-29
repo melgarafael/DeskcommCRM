@@ -414,6 +414,37 @@ const PARES: Array<{
     simbolo: "ERROS_DA_ENTREGA_DE_AVISO",
   },
   {
+    tabela: "entregas_de_aviso_de_agendamento",
+    coluna: "status",
+    // Migration 0707, no MESMO commit: um status só no CHECK seria linha que a
+    // tela não rotula; só no TypeScript, `23514` no UPDATE depois do envio.
+    arquivo: "lib/agenda/vocabulario-do-aviso-de-agendamento.ts",
+    simbolo: "STATUS_DA_ENTREGA_DE_AGENDAMENTO",
+  },
+  {
+    tabela: "entregas_de_aviso_de_agendamento",
+    coluna: "tipo",
+    // Migration 0707: aviso de um evento, ou o resumo das 7h.
+    arquivo: "lib/agenda/vocabulario-do-aviso-de-agendamento.ts",
+    simbolo: "TIPOS_DA_ENTREGA_DE_AGENDAMENTO",
+  },
+  {
+    tabela: "entregas_de_aviso_de_agendamento",
+    coluna: "evento",
+    // Migration 0707: os três eventos da agenda que o aviso escuta. Coluna
+    // `null`-ável (o resumo não tem evento), CHECK na forma `IS NULL OR`.
+    arquivo: "lib/agenda/vocabulario-do-aviso-de-agendamento.ts",
+    simbolo: "EVENTOS_DO_AVISO_DE_AGENDAMENTO",
+  },
+  {
+    tabela: "entregas_de_aviso_de_agendamento",
+    coluna: "erro_codigo",
+    // Migration 0707: o MESMO vocabulário do aviso de caso — mesmo canal, mesmo
+    // transporte, mesmas causas.
+    arquivo: "lib/escalacao/vocabulario-do-aviso.ts",
+    simbolo: "ERROS_DA_ENTREGA_DE_AVISO",
+  },
+  {
     tabela: "team_invites",
     coluna: "role",
     // lib/schemas/team.ts → ROLES (tupla `as const`). O `z.enum(ROLES)` das
@@ -501,6 +532,24 @@ const PARES: Array<{
     // viraria linha que o banco recusa num caminho que ninguém exercita em dev.
     arquivo: "lib/campanhas/tipos.ts",
     simbolo: "STATUS_DO_DESTINATARIO",
+  },
+  {
+    tabela: "campaigns",
+    coluna: "message_mode",
+    // lib/campanhas/tipos.ts → MODOS_DA_MENSAGEM. Migration 0710 (#1330, fatia
+    // 4): o número oficial manda modelo aprovado, e o despacho escolhe o
+    // caminho por esta coluna. Um modo só no TypeScript viraria `23514` ao
+    // salvar a campanha; só no CHECK, campanha que o despacho não sabe mandar.
+    arquivo: "lib/campanhas/tipos.ts",
+    simbolo: "MODOS_DA_MENSAGEM",
+  },
+  {
+    tabela: "campaigns",
+    coluna: "velocidade",
+    // lib/campanhas/tipos.ts → VELOCIDADES_DA_CAMPANHA. Migration 0711: o
+    // despacho escolhe rajada ou uma-por-rodada por esta coluna.
+    arquivo: "lib/campanhas/tipos.ts",
+    simbolo: "VELOCIDADES_DA_CAMPANHA",
   },
   {
     tabela: "external_db_connections",

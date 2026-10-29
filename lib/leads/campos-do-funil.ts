@@ -64,6 +64,25 @@ export function camposDeDataDoNegocio(
 }
 
 /**
+ * Os campos do NEGÓCIO que guardam ARQUIVO (#2829) — o `type: "file"` do funil.
+ *
+ * O anexo NÃO mora em `crm_leads.custom_fields`: mora em `crm_lead_attachments`,
+ * uma linha por arquivo, presa a `lead_id` + `field_key`. Quem lê o card precisa
+ * da DEFINIÇÃO (chave e rótulo) para saber quais campos desenhar — inclusive os
+ * VAZIOS, que aparecem como tal —, e é por isso que esta lista sai do funil e
+ * não da tabela de anexos.
+ *
+ * Só o escopo do negócio: arquivo de CONTATO não tem onde ser pendurado (a
+ * tabela exige `lead_id`), e `CustomFieldsEditor` já diz isso na ficha do
+ * contato em vez de oferecer um uploader que não salvaria.
+ */
+export function camposDeArquivoDoNegocio(
+  settings: Record<string, unknown> | null | undefined,
+): CustomFieldDef[] {
+  return camposPorEscopo(camposDoFunil(settings), "negocio").filter((campo) => campo.type === "file");
+}
+
+/**
  * A chave está declarada neste funil como campo do CONTATO? É a recusa do
  * servidor para o gatilho por data — a mesma regra do seletor, pela porta da API.
  * Chave não declarada não é recusada: o `custom_fields` do negócio aceita chave
