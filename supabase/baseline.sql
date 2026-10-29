@@ -4791,12 +4791,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
--- ============================================================================
--- COMPLEMENTO DO BASELINE (não capturado pelo dump --schema public):
+-- =====================================================================-- COMPLEMENTO DO BASELINE (não capturado pelo dump --schema public):
 --   storage buckets + policies (migrations 0014/0017) e realtime publication.
 --   Aplicar DEPOIS do schema public (dependem de public.user_organizations).
--- ============================================================================
-
+-- =====================================================================
 -- ---- storage: bucket ai-policy + policies (migration 0014) ----
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -6308,15 +6306,13 @@ create policy "user_orgs_select" on public.user_organizations
     or public.fn_is_platform_admin()
   );
 
--- ============================================================================
--- Dumps do Supabase zeram o search_path (set_config('search_path','',false));
+-- =====================================================================-- Dumps do Supabase zeram o search_path (set_config('search_path','',false));
 -- os apêndices da fusão criam objetos NÃO-qualificados — restaura o público.
 select pg_catalog.set_config('search_path', 'public, extensions', false);
 
 -- APÊNDICE 0050_agent_harness (fusão Vendaval) — idempotente, espelho exato da
 -- migration 20260719000000 (kit self-host aplica via install.sh/update.sh).
--- ============================================================================
-
+-- =====================================================================
 -- 0050_agent_harness — schema do motor SDR (harness) portado do Vendaval para o
 -- banco do CRM (fusão). Mapeamento canônico (lib/agent-engine/PORT-NOTES.md):
 --   tenants → organizations · tenant_id → organization_id · leads → contacts ·
@@ -6327,12 +6323,10 @@ select pg_catalog.set_config('search_path', 'public, extensions', false);
 -- is_anonymized / conversations.bot_silenced_until já existem).
 -- Idempotente (if not exists / or replace / do $$); SEM begin/commit; psql puro.
 
--- ============================================================================
--- Escalação humana do RUNTIME (ex-inbox_items do Vendaval; a UI lê daqui).
+-- =====================================================================-- Escalação humana do RUNTIME (ex-inbox_items do Vendaval; a UI lê daqui).
 -- organization_id NULL = plataforma (ex.: infra) — visível só ao service role.
 -- Kind já inclui 'judge_unaligned' (extensão da 0025 do Vendaval, embutida).
--- ============================================================================
-create table if not exists agent_inbox_items (
+-- =====================================================================create table if not exists agent_inbox_items (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references organizations(id) on delete cascade,
   kind text not null check (kind in
@@ -6349,10 +6343,8 @@ create table if not exists agent_inbox_items (
 create index if not exists idx_agent_inbox_items_open on agent_inbox_items (organization_id, created_at desc)
   where status = 'open';
 
--- ============================================================================
--- 0002 — fila durável FOR UPDATE SKIP LOCKED com lane por contact_id.
--- ============================================================================
-create table if not exists job_queue (
+-- =====================================================================-- 0002 — fila durável FOR UPDATE SKIP LOCKED com lane por contact_id.
+-- =====================================================================create table if not exists job_queue (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   contact_id uuid references contacts(id) on delete cascade, -- NULL para watchdog/flywheel (jobs sem contato)
@@ -6385,11 +6377,9 @@ create unique index if not exists uniq_job_queue_one_running_per_contact on job_
 create unique index if not exists uniq_job_queue_source_event on job_queue (organization_id, source_event_id)
   where source_event_id is not null;
 
--- ============================================================================
--- 0003 — ledger de envio idempotente. Uma linha por mensagem `seq` do turno; `id`
+-- =====================================================================-- 0003 — ledger de envio idempotente. Uma linha por mensagem `seq` do turno; `id`
 -- É a idempotency_key da tentativa LÓGICA (re-attempt após 'failed' rotaciona o id).
--- ============================================================================
-create table if not exists send_ledger (
+-- =====================================================================create table if not exists send_ledger (
   id uuid primary key default gen_random_uuid(), -- a idempotency_key da tentativa lógica corrente
   organization_id uuid not null references organizations(id) on delete cascade,
   contact_id uuid references contacts(id) on delete cascade,
@@ -6415,13 +6405,11 @@ create table if not exists send_ledger (
 -- O throttle/spinning da cadeia before_send consulta envios recentes por org.
 create index if not exists idx_send_ledger_recent on send_ledger (organization_id, created_at desc);
 
--- ============================================================================
--- Imutabilidade compartilhada das tabelas *_versions: conteúdo publicado é
+-- =====================================================================-- Imutabilidade compartilhada das tabelas *_versions: conteúdo publicado é
 -- imutável — mudança = versão nova; rollback = mover o ponteiro. DELETE fica de
 -- fora de propósito (o cascade de organizations precisa passar; versão apontada
 -- é protegida pelo FK do ponteiro correspondente).
--- ============================================================================
-create or replace function fn_agent_versions_immutable() returns trigger
+-- =====================================================================create or replace function fn_agent_versions_immutable() returns trigger
 language plpgsql as $fn$
 begin
   -- `skill_versions.pointer_id` só existe em instalações legadas. Quando o
@@ -6443,13 +6431,11 @@ $fn$;
 revoke execute on function public.fn_agent_versions_immutable()
   from public, anon, authenticated, service_role;
 
--- ============================================================================
--- 0004 — playbook em camadas versionado + carga por ponteiro. 1 linha por CAMADA
+-- =====================================================================-- 0004 — playbook em camadas versionado + carga por ponteiro. 1 linha por CAMADA
 -- (platform|tenant|campaign); o runtime carrega por ponteiro no início de cada
 -- run: trocar versão/rollback = mover ponteiro, sem restart. Camada platform é
 -- global (organization_id NULL); tenant/campaign pertencem a uma org.
--- ============================================================================
-create table if not exists playbook_versions (
+-- =====================================================================create table if not exists playbook_versions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references organizations(id) on delete cascade, -- NULL = plataforma (global)
   layer text not null check (layer in ('platform', 'tenant', 'campaign')),
@@ -6481,12 +6467,10 @@ create unique index if not exists uniq_playbook_pointers_org
 create unique index if not exists uniq_playbook_pointers_platform
   on playbook_pointers (layer) where organization_id is null;
 
--- ============================================================================
--- 0005 + 0012 — espelho de saúde da sessão WAHA + circuito de saúde do número.
+-- =====================================================================-- 0005 + 0012 — espelho de saúde da sessão WAHA + circuito de saúde do número.
 -- status_changed_at só avança quando o status MUDA (métrica "tempo no estado").
 -- Os holds de status e de saúde coexistem — job retido sob QUALQUER hold.
--- ============================================================================
-create table if not exists channel_session_health (
+-- =====================================================================create table if not exists channel_session_health (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   channel_session_id uuid not null references channel_sessions(id) on delete cascade,
@@ -6518,12 +6502,10 @@ create table if not exists watchdog_cursors (
   updated_at timestamptz not null default now()
 );
 
--- ============================================================================
--- 0006 — toda chamada de modelo (custo, cache, atribuição); agregado mensal =
+-- =====================================================================-- 0006 — toda chamada de modelo (custo, cache, atribuição); agregado mensal =
 -- enforcement do budget. Credenciais BYOK são do CRM (ai_provider_credentials) —
 -- org_llm_credentials do Vendaval NÃO foi portada.
--- ============================================================================
-create table if not exists llm_calls (
+-- =====================================================================create table if not exists llm_calls (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   contact_id uuid references contacts(id) on delete set null,
@@ -6542,12 +6524,10 @@ create table if not exists llm_calls (
 );
 create index if not exists idx_llm_calls_org_time on llm_calls (organization_id, created_at);
 
--- ============================================================================
--- 0007 — artefato durável do loop do agente: cada run fecha escrevendo um
+-- =====================================================================-- 0007 — artefato durável do loop do agente: cada run fecha escrevendo um
 -- checkpoint; o run seguinte do MESMO contato abre lendo o mais recente —
 -- sessões descartáveis, artefatos duráveis. Conteúdo validado por Zod no handler.
--- ============================================================================
-create table if not exists lead_checkpoints (
+-- =====================================================================create table if not exists lead_checkpoints (
   id uuid primary key default gen_random_uuid(),
   -- ordem de escrita estrita (created_at pode empatar) — abertura lê por seq.
   seq bigint generated always as identity,
@@ -6563,11 +6543,9 @@ create table if not exists lead_checkpoints (
 create index if not exists idx_lead_checkpoints_latest
   on lead_checkpoints (organization_id, contact_id, seq desc);
 
--- ============================================================================
--- 0008 — estado do funil por contato. O modelo MARCA avanços via tool; quem
+-- =====================================================================-- 0008 — estado do funil por contato. O modelo MARCA avanços via tool; quem
 -- valida a transição é a máquina de estados NO CÓDIGO — o CHECK é backstop.
--- ============================================================================
-create table if not exists lead_state (
+-- =====================================================================create table if not exists lead_state (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   contact_id uuid not null references contacts(id) on delete cascade,
@@ -6595,11 +6573,9 @@ create table if not exists lead_state_transitions (
 create index if not exists idx_lead_state_transitions_contact
   on lead_state_transitions (organization_id, contact_id, seq desc);
 
--- ============================================================================
--- 0009 — métricas de 1ª classe persistidas. Labels SÓ com ids/contagens — PII
+-- =====================================================================-- 0009 — métricas de 1ª classe persistidas. Labels SÓ com ids/contagens — PII
 -- jamais entra. organization_id NULL = plataforma.
--- ============================================================================
-create table if not exists metrics (
+-- =====================================================================create table if not exists metrics (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references organizations(id) on delete cascade, -- null = plataforma
   name text not null,
@@ -6610,12 +6586,10 @@ create table if not exists metrics (
 create index if not exists idx_metrics_name_time on metrics (name, created_at desc);
 create index if not exists idx_metrics_org_name_time on metrics (organization_id, name, created_at desc);
 
--- ============================================================================
--- 0010 + 0011 + 0012 — knobs anti-ban por número/sessão + ledger de pacing.
+-- =====================================================================-- 0010 + 0011 + 0012 — knobs anti-ban por número/sessão + ledger de pacing.
 -- Coluna NULL = default conservador no código (knobs, nunca constantes). O cap
 -- diário ABSOLUTO não mora aqui: fonte única é channel_sessions.daily_message_limit.
--- ============================================================================
-create table if not exists channel_knobs (
+-- =====================================================================create table if not exists channel_knobs (
   organization_id uuid not null references organizations(id) on delete cascade,
   channel_session_id uuid not null references channel_sessions(id) on delete cascade,
   throttle_ms integer,                -- intervalo mínimo entre envios do número
@@ -6670,12 +6644,10 @@ create table if not exists outbound_copies (
 create index if not exists idx_outbound_copies_session
   on outbound_copies (organization_id, channel_session_id, sent_at desc);
 
--- ============================================================================
--- 0013 — cron persistente POR CONTATO. Irmão da fila: a fila processa AGORA, o
+-- =====================================================================-- 0013 — cron persistente POR CONTATO. Irmão da fila: a fila processa AGORA, o
 -- cron AGENDA e, no disparo, ENFILEIRA um job em job_queue. Sobrevive a restart
 -- porque TODO o estado mora aqui.
--- ============================================================================
-create table if not exists cron_jobs (
+-- =====================================================================create table if not exists cron_jobs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   contact_id uuid not null references contacts(id) on delete cascade,
@@ -6708,12 +6680,10 @@ create table if not exists cron_jobs (
 create index if not exists idx_cron_jobs_due on cron_jobs (next_run_at)
   where enabled = true;
 
--- ============================================================================
--- 0014 — templates de re-entrada versionados + ponteiro. Uma versão guarda N
+-- =====================================================================-- 0014 — templates de re-entrada versionados + ponteiro. Uma versão guarda N
 -- VARIANTES pt-br de spinning; a re-entrada determinística envia a variante
 -- DIRETO pela cadeia de guardrails, sem LLM — custo $0.
--- ============================================================================
-create table if not exists reentry_template_versions (
+-- =====================================================================create table if not exists reentry_template_versions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   variants text[] not null check (array_length(variants, 1) >= 1),
@@ -6731,14 +6701,12 @@ create table if not exists reentry_template_pointers (
   updated_at timestamptz not null default now()
 );
 
--- ============================================================================
--- 0015 + 0016 — memória durável por contato. O ÍNDICE (headlines) é injetado no
+-- =====================================================================-- 0015 + 0016 — memória durável por contato. O ÍNDICE (headlines) é injetado no
 -- sufixo do prompt com orçamento fixo; o CORPO vem sob demanda. Hard cap imposto
 -- na ESCRITA (recusa nota que estouraria) — sem truncamento silencioso.
 -- Nota de um contato NUNCA aparece em run de outro (query sempre filtra
 -- organization_id + contact_id de fonte confiável).
--- ============================================================================
-create table if not exists lead_notes (
+-- =====================================================================create table if not exists lead_notes (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   contact_id uuid not null references contacts(id) on delete cascade,
@@ -6755,13 +6723,11 @@ create table if not exists lead_notes (
 create index if not exists idx_lead_notes_contact
   on lead_notes (organization_id, contact_id, created_at);
 
--- ============================================================================
--- 0017 — playbooks SITUACIONAIS como skills versionadas com disclosure
+-- =====================================================================-- 0017 — playbooks SITUACIONAIS como skills versionadas com disclosure
 -- progressivo: só name+description (o ÍNDICE) reside no prompt; o body carrega
 -- SÓ quando o matcher if-then DETERMINÍSTICO dispara. platform = global
 -- (organization_id NULL, ex.: "STOP ambíguo"/compliance).
--- ============================================================================
-create table if not exists skill_versions (
+-- =====================================================================create table if not exists skill_versions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references organizations(id) on delete cascade, -- NULL = plataforma (global)
   name text not null check (length(name) > 0),
@@ -6788,11 +6754,9 @@ create unique index if not exists uniq_skill_pointers_org
 create unique index if not exists uniq_skill_pointers_platform
   on skill_pointers (name) where organization_id is null;
 
--- ============================================================================
--- 0018 — tabela de preços/promessas versionada por ponteiro (anti-"vendo por
+-- =====================================================================-- 0018 — tabela de preços/promessas versionada por ponteiro (anti-"vendo por
 -- R$1"): o gate before_send carrega por ponteiro sob o lock de cada tentativa.
--- ============================================================================
-create table if not exists promise_table_versions (
+-- =====================================================================create table if not exists promise_table_versions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   -- { minPriceCents?, maxDiscountPercent?, maxInstallments? } — shape validado no
@@ -6814,12 +6778,10 @@ create table if not exists promise_table_pointers (
 create unique index if not exists uniq_promise_table_pointers_org
   on promise_table_pointers (organization_id);
 
--- ============================================================================
--- 0019 — template de disclosure "assistente virtual" versionado por ponteiro
+-- =====================================================================-- 0019 — template de disclosure "assistente virtual" versionado por ponteiro
 -- (disclosure by design — CDC hoje / PL 2338 amanhã). Injetado na 1ª mensagem
 -- (modo inject) ou exigido do modelo (modo veto).
--- ============================================================================
-create table if not exists disclosure_template_versions (
+-- =====================================================================create table if not exists disclosure_template_versions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   body text not null, -- texto pt-br do disclosure
@@ -6839,13 +6801,11 @@ create table if not exists disclosure_template_pointers (
 create unique index if not exists uniq_disclosure_template_pointers_org
   on disclosure_template_pointers (organization_id);
 
--- ============================================================================
--- 0021 — trace de auditoria da cadeia before_send por tentativa: array de gates
+-- =====================================================================-- 0021 — trace de auditoria da cadeia before_send por tentativa: array de gates
 -- avaliados + gate/código do veto (null = passou). Escrita autônoma (fora da tx
 -- serializada) — a auditoria do veto SOBREVIVE ao rollback. PII fora: só
 -- gate/verdict/code/detail — o CORPO da mensagem NUNCA entra aqui.
--- ============================================================================
-create table if not exists before_send_traces (
+-- =====================================================================create table if not exists before_send_traces (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   job_id uuid not null references job_queue(id) on delete cascade, -- RUN = job_queue.id
@@ -6860,12 +6820,10 @@ create table if not exists before_send_traces (
 create index if not exists idx_before_send_traces_run
   on before_send_traces (organization_id, job_id, created_at);
 
--- ============================================================================
--- 0023 — vereditos dos judges em produção, batch offline (NUNCA inline por
+-- =====================================================================-- 0023 — vereditos dos judges em produção, batch offline (NUNCA inline por
 -- mensagem). Idempotente/resumível: unique (dataset, trace_id, dimension) +
 -- on conflict do nothing. PII fora do DB: só metadata/proveniência anonimizada.
--- ============================================================================
-create table if not exists flywheel_judge_verdicts (
+-- =====================================================================create table if not exists flywheel_judge_verdicts (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   dataset text not null,               -- namespace da proveniência (replay)
@@ -6887,12 +6845,10 @@ create index if not exists idx_flywheel_judge_verdicts_run
 create index if not exists idx_flywheel_judge_verdicts_dataset
   on flywheel_judge_verdicts (dataset, dimension);
 
--- ============================================================================
--- 0024 — CANDIDATOS de melhoria propostos pelo distiller isolado. NUNCA aplica:
+-- =====================================================================-- 0024 — CANDIDATOS de melhoria propostos pelo distiller isolado. NUNCA aplica:
 -- aplicar é o merge sob gate humano. Este é o ÚNICO store de escrita do distiller
 -- (anti "curator-takeover"). Cada proposta REFERENCIA a evidência que a motivou.
--- ============================================================================
-create table if not exists flywheel_distiller_proposals (
+-- =====================================================================create table if not exists flywheel_distiller_proposals (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   run_id uuid not null,
@@ -6908,13 +6864,11 @@ create index if not exists idx_flywheel_distiller_proposals_run
 create index if not exists idx_flywheel_distiller_proposals_dataset
   on flywheel_distiller_proposals (dataset, type);
 
--- ============================================================================
--- 0025 — MANUTENÇÃO do judge: rotaciona casos frescos julgados em produção para
+-- =====================================================================-- 0025 — MANUTENÇÃO do judge: rotaciona casos frescos julgados em produção para
 -- um POOL de alinhamento (candidatos a novo lote de labels humanos no drift).
 -- A unique é o DEDUP da rotação. (A extensão de kind 'judge_unaligned' já está
 -- embutida no CHECK de agent_inbox_items acima.)
--- ============================================================================
-create table if not exists judge_alignment_pool (
+-- =====================================================================create table if not exists judge_alignment_pool (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   dataset text not null,
@@ -6927,12 +6881,10 @@ create unique index if not exists uq_judge_alignment_pool_key
 create index if not exists idx_judge_alignment_pool_dim
   on judge_alignment_pool (organization_id, dimension);
 
--- ============================================================================
--- 0026 — knobs de re-entrada (timing de follow-up + segmentação) versionados +
+-- =====================================================================-- 0026 — knobs de re-entrada (timing de follow-up + segmentação) versionados +
 -- ponteiro. O 1º alvo concreto do flywheel: timing não é constante nem env —
 -- é config versionada por org, otimizável e rollbackável pelo ponteiro.
--- ============================================================================
-create table if not exists reentry_knob_versions (
+-- =====================================================================create table if not exists reentry_knob_versions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   -- { follow_up_window_hours: number>0, enabled_segments: string[] } — shape
@@ -6952,8 +6904,7 @@ create table if not exists reentry_knob_pointers (
   updated_at timestamptz not null default now()
 );
 
--- ============================================================================
--- RLS — padrão do repo: tenant_isolation_<tabela>_all via fn_user_org_ids() +
+-- =====================================================================-- RLS — padrão do repo: tenant_isolation_<tabela>_all via fn_user_org_ids() +
 -- revoke de anon. Nas tabelas com organization_id nullable (agent_inbox_items,
 -- playbook_versions/pointers, skill_versions/pointers, metrics) a MESMA policy
 -- serve: `null in (...)` nunca é true ⇒ linhas de plataforma são visíveis só ao
@@ -6962,8 +6913,7 @@ create table if not exists reentry_knob_pointers (
 -- A enumeração que morava AQUI virou a função sem parâmetro logo abaixo
 -- (migration 0325) — ela é chamada em cada um dos três pontos onde havia laço,
 -- e de novo no fim do arquivo.
--- ============================================================================
-
+-- =====================================================================
 -- ---- proteções de tabela de organização: o laço vira função (migration 0325) ----
 --
 -- ADR-0002, D5: "Essas rotinas saem do laço do baseline para funções sem
@@ -7247,11 +7197,9 @@ $$;
 comment on function public.fn_publish_ai_agent_version(uuid, uuid, uuid) is
   'EPIC-13 S-13.06 (fixed in 0026): compares channel_sessions.status against WORKING (uppercase), matching channel_sessions_status_check. 0024/0025 compared against lowercase working and always raised channel_session_offline.';
 
--- ============================================================================
--- 0053 — Operação Visível F3: rastro de aplicação de proposta do flywheel
+-- =====================================================================-- 0053 — Operação Visível F3: rastro de aplicação de proposta do flywheel
 -- (applied_at/applied_version_id/applied_by; null = pendente). Idempotente.
--- ============================================================================
-alter table flywheel_distiller_proposals
+-- =====================================================================alter table flywheel_distiller_proposals
   add column if not exists applied_at timestamptz,
   add column if not exists applied_version_id uuid references ai_agent_versions(id) on delete set null,
   add column if not exists applied_by uuid;
@@ -13525,8 +13473,7 @@ where unread_count_for_assignee <> coalesce((
 notify pgrst, 'reload schema';
 
 -- ---- contato: última atividade carimbada por mensagem (migration 0162) ----
--- ============================================================================
--- 0162 — Mensagem de conversa carimba `contacts.last_activity_at`.
+-- =====================================================================-- 0162 — Mensagem de conversa carimba `contacts.last_activity_at`.
 --
 -- A lista /app/contacts mostra "Última atividade" de `contacts.last_activity_at`,
 -- denormalizado hoje só pelo trigger de `crm_lead_activities`. Mensagens de
@@ -13534,8 +13481,7 @@ notify pgrst, 'reload schema';
 -- `conversations.last_message_at` — mas o contato ficava parado (— ou data velha).
 --
 -- O relógio do LEAD continua na lista positiva da 0079; aqui só o contato.
--- ============================================================================
-
+-- =====================================================================
 create or replace function public.fn_mark_conversation_message(
   p_conv uuid, p_direction text, p_preview text, p_at timestamptz
 ) returns void language plpgsql security definer set search_path = public as $$
@@ -32874,8 +32820,7 @@ create trigger trg_platform_smtp_settings_updated_at
   for each row execute function public.fn_set_updated_at();
 
 -- ---- ai_agents.channel + phone_numbers (migration 0347) ----
--- ============================================================
--- 0347_modulo_voip — ai_agents.channel, phone_numbers, fn_resolve_inbound_number
+-- =====================================================-- 0347_modulo_voip — ai_agents.channel, phone_numbers, fn_resolve_inbound_number
 --
 -- RECOMPOSTA. Esta migration existiu no PR #677 como 0232_modulo_voip e foi
 -- apagada por acidente no commit 97eed0955 (que unificou crm_calls em
@@ -32883,8 +32828,7 @@ create trigger trg_platform_smtp_settings_updated_at
 -- e quem aplica as migrations em ordem nunca receberia phone_numbers.
 -- O corpo abaixo é o bloco do apêndice, que já descartava crm_calls (ver
 -- 0348_voice_calls_sip). Renumerada para acima do máximo da main.
--- ============================================================
-
+-- =====================================================
 --
 -- SIP/Asterisk + IA de voz via OpenAI Realtime. Segue os mesmos padrões de
 -- conversations/messages: RLS por tenant via fn_user_org_ids(), audit
@@ -51554,8 +51498,7 @@ comment on column public.cobranca_assinaturas.checkout_sessao_id is
 
 notify pgrst, 'reload schema';
 
--- ============================================================================
--- 0644 — as cópias de skill editadas antes do #1960 voltam a apontar o
+-- =====================================================================-- 0644 — as cópias de skill editadas antes do #1960 voltam a apontar o
 -- catálogo (issue #1974). Bloco IDÊNTICO, linha a linha, ao da migration
 -- `20261011210004_0644_copias_antigas_de_skill_reconstroem_o_vinculo_com_o_catalogo.sql`
 -- (`tests/unit/copias-antigas-de-skill-reconstruem-o-vinculo.test.ts` prende os
@@ -51563,8 +51506,7 @@ notify pgrst, 'reload schema';
 -- anon por ordem de apêndice, não por necessidade. Instalação nova roda sobre
 -- `skill_versions` vazia (no-op); instalação que atualiza cura as cópias da
 -- janela do defeito. Reaplicável: a segunda passada não acha candidata nenhuma.
--- ============================================================================
-do $$
+-- =====================================================================do $$
 declare
   v_alteradas integer;
 begin
@@ -56820,8 +56762,7 @@ notify pgrst,'reload schema';
 -- ---- #2529: o aviso da Central com destinatário (migration 0689) ----
 -- manifest: **O aviso da Central pode ter DONO (#2529, doc de decisão 162, caminho A).** `agent_inbox_items.para_user_id uuid null references auth.users(id) on delete cascade`: nulo é o aviso da EMPRESA (todos os avisos de hoje, sem backfill); preenchido, só aquela pessoa o vê. O cron `task-reminder` grava o responsável da tarefa ali, e a leitura da Central (lista e contador do sino), o "Marcar todos resolvidos" e o resolver de um aviso passam a enxergar `para_user_id is null or para_user_id = <quem pediu>` — o colega não vê o aviso de prazo do outro, e o "Marcar todos" de um não resolve o do outro. Sem índice: a leitura já filtra por organização e status, e a coluna só recorta o que sobra. Idempotente (`add column if not exists`); o mesmo bloco entra no fim do `baseline.sql`, antes da VARREDURA anon.
 
--- ============================================================================
--- 0689 — O AVISO DA CENTRAL COM DESTINATÁRIO (#2529, doc 162)
+-- =====================================================================-- 0689 — O AVISO DA CENTRAL COM DESTINATÁRIO (#2529, doc 162)
 --
 -- Até aqui todo aviso da Central era da ORGANIZAÇÃO: a tabela não tinha campo
 -- de pessoa. O lembrete de prazo da tarefa (0655) nasce ligado para toda tarefa
@@ -56832,8 +56773,7 @@ notify pgrst,'reload schema';
 -- A coluna é opcional de propósito: nulo é exatamente o comportamento de hoje
 -- (aviso da empresa). `on delete cascade` porque um aviso pessoal de quem saiu
 -- da instalação não tem mais leitor — ficaria aberto para ninguém.
--- ============================================================================
-
+-- =====================================================================
 alter table public.agent_inbox_items
   add column if not exists para_user_id uuid null references auth.users(id) on delete cascade;
 
@@ -59804,8 +59744,7 @@ notify pgrst, 'reload schema';
 -- ---- publicar membro de roteador sem número próprio (migration 0749, #3284) ----
 -- Substitui o corpo do bloco da 0592 acima (a última definição vence). Mesma
 -- definição da migration, byte a byte.
--- ============================================================================
--- 2026-10-22 — 0749: PUBLICAR MEMBRO DE ROTEADOR SEM NÚMERO PRÓPRIO
+-- =====================================================================-- 2026-10-22 — 0749: PUBLICAR MEMBRO DE ROTEADOR SEM NÚMERO PRÓPRIO
 --
 -- O defeito: o editor de um especialista que é membro de um roteador de
 -- intenções avisava que "o campo de número não se aplica", mas o botão
@@ -59841,8 +59780,7 @@ notify pgrst, 'reload schema';
 -- dizia que publicar com NULL é sempre recusado: reescrito no fim. Idempotente.
 -- Gates: `tests/invariants/rascunho-de-agente-sem-numero.test.ts`,
 -- `tests/invariants/membro-de-roteador-sem-numero-nao-atende.test.ts`.
--- ============================================================================
-
+-- =====================================================================
 create or replace function public.fn_publish_ai_agent_version(
   p_org_id uuid,
   p_agent_id uuid,
@@ -66674,6 +66612,65 @@ grant  execute on function public.fn_crm_lead_close_on_stage() to authenticated,
 
 revoke execute on function public.fn_validate_lost_reason_required() from public, anon;
 grant  execute on function public.fn_validate_lost_reason_required() to authenticated, service_role;
+-- ---- "Tornar principal" (migration 9042, Spec 31 parte B2) ----
+-- manifest: **"Tornar principal" troca um telefone extra pelo principal numa operação só (Spec 31, parte B2, item 6).** Função `fn_tornar_telefone_principal(p_org, p_contato, p_extra)`: o extra vira `contacts.phone_number` levando tipo, WhatsApp e o `lid` dele; o principal antigo vira extra (origem `manual`) levando os dele. Numa transação, com a ficha travada, e na ordem que a regra "um número, uma ficha" (9041) aceita: o extra sai antes de o principal mudar, e o principal antigo entra como extra depois. `waha_chat_id` sai do `source_metadata` (era o chat do número antigo). SECURITY INVOKER: quem chama é a rota pela sessão do usuário, e a RLS de `contacts` e `contact_phones` vale; a rota exige papel `agent`. Recusa (`P0002`) extra que não é desta ficha, ficha mesclada ou anonimizada. Idempotente: `create or replace` + revoke/grant. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon. Prova em `tests/invariants/tornar-telefone-principal.test.ts`.
+create or replace function public.fn_tornar_telefone_principal(p_org uuid, p_contato uuid, p_extra uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_ficha record;
+  v_extra record;
+begin
+  select c.id, c.phone_number, c.phone_type, c.phone_whatsapp,
+         nullif(pg_catalog.regexp_replace(coalesce(c.source_metadata->>'waha_lid', ''), '@.*$', ''), '') as lid
+    into v_ficha
+    from public.contacts c
+   where c.id = p_contato and c.organization_id = p_org
+     and c.is_merged_into is null and c.is_anonymized = false
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'contato_indisponivel';
+  end if;
+
+  select t.id, t.phone_number, t.tipo, t.whatsapp, t.wa_lid
+    into v_extra
+    from public.contact_phones t
+   where t.id = p_extra and t.organization_id = p_org and t.contact_id = p_contato
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'telefone_extra_indisponivel';
+  end if;
+
+  -- O extra sai ANTES: senão o principal novo colidiria com ele mesmo.
+  delete from public.contact_phones where id = v_extra.id and organization_id = p_org;
+
+  update public.contacts set
+    phone_number = v_extra.phone_number,
+    phone_type = v_extra.tipo,
+    phone_whatsapp = v_extra.whatsapp,
+    source_metadata = (source_metadata - 'waha_lid' - 'waha_chat_id')
+      || case when v_extra.wa_lid is not null
+              then pg_catalog.jsonb_build_object('waha_lid', v_extra.wa_lid)
+              else '{}'::jsonb end,
+    updated_at = now()
+  where id = p_contato and organization_id = p_org;
+
+  if v_ficha.phone_number is not null then
+    insert into public.contact_phones
+      (organization_id, contact_id, phone_number, tipo, whatsapp, origem, wa_lid)
+    values
+      (p_org, p_contato, public.fn_telefone_canonico(v_ficha.phone_number),
+       coalesce(v_ficha.phone_type, public.fn_tipo_do_telefone(v_ficha.phone_number)),
+       coalesce(v_ficha.phone_whatsapp, 'nao_sei'), 'manual', v_ficha.lid);
+  end if;
+end;
+$$;
+
+revoke execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) from public, anon;
+grant execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) to authenticated, service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -67446,8 +67443,7 @@ on conflict (id) do update
 
 -- ---- meta mensal por indicador (migration 0756, #3025, fatia 1) ----
 -- manifest: **Meta mensal de um indicador, por organização (#3025, fatia 1: quantidade de vendas ganhas).** A tabela nova `crm_metas` guarda o ALVO da empresa — `organization_id`, `periodo` (sempre o 1º dia do mês na data de calendário), `indicador` (`vendas_ganhas` nesta fatia), `pipeline_id` opcional (nulo = a empresa inteira) e `alvo` (quantidade). A leitura é org-scoped sem gate de papel (a tela de Desempenho mostra a meta da empresa a qualquer membro); a ESCRITA é `manager+` com auditoria, pela Server Action `definirMetaMensal`. Aditiva e idempotente: o mesmo bloco entra no fim do `baseline.sql`, que é o arquivo que o kit self-host aplica.
--- ============================================================================
--- 0756 — META MENSAL POR INDICADOR (#3025, fatia 1)
+-- =====================================================================-- 0756 — META MENSAL POR INDICADOR (#3025, fatia 1)
 --
 -- ─── O que faltava ──────────────────────────────────────────────────────────
 -- A tela Desempenho mostrava só o REALIZADO: contagens por atendente e as
@@ -67481,8 +67477,7 @@ on conflict (id) do update
 -- `fn_role_at_least` linha a linha e estoura o statement_timeout da tela.
 -- Apagar meta fica FORA desta fatia (não há policy de `delete` e o comando não
 -- é concedido a `authenticated`): corrigir é gravar de novo por cima.
--- ============================================================================
-
+-- =====================================================================
 create table if not exists public.crm_metas (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
