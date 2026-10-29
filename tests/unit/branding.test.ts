@@ -937,6 +937,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da OpenRouter nos três caminhos que falam com ela (runtime, catálogo de modelos e prova de crédito). O `HTTP-Referer` da atribuição NÃO mora aqui — sai de env (OPENROUTER_APP_URL), e quem o defende é tests/unit/openrouter-atribuicao.test.ts.",
   },
+  "models.dev": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "catálogo público consultado pelo cron para descobrir IDs nativos, preços e capacidades da OpenAI e Anthropic. É destino fixo de leitura de metadados, sem credenciais nem dados de organizações; não é domínio de uma instalação ou revendedor.",
+  },
   "api.deepseek.com": {
     categoria: "FORNECEDOR",
     motivo:

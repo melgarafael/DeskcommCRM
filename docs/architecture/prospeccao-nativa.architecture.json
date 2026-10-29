@@ -166,6 +166,11 @@
       "label": "busca com teto"
     },
     {
+      "from": "operator",
+      "to": "candidates",
+      "label": "planilha (CSV/XLSX)"
+    },
+    {
       "from": "discovery",
       "to": "candidates",
       "label": "normalizar e deduplicar"

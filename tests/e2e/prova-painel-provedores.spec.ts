@@ -20,6 +20,7 @@ import { expect, test } from "./helpers/test";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
 import { PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
+import { FONTE_MODELS_DEV, sincronizarModelosNativos } from "@/lib/ai/catalogo/models-dev";
 
 import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 
@@ -120,6 +121,86 @@ test("F3 — a OpenRouter é oferecida e seus modelos estão no seletor", async 
   const quantos = await page.getByRole("option").count();
   expect(quantos, "o seletor não trouxe modelos da OpenRouter").toBeGreaterThan(50);
   await page.screenshot({ path: "evidence/provedores/04-modelos-openrouter.png", fullPage: true });
+});
+
+test("novos modelos nativos sincronizados chegam ao seletor sem mudar o padrão", async ({
+  page,
+}) => {
+  const env = carregarEnvLocal();
+  const url = env.NEXT_PUBLIC_SUPABASE_URL!;
+  if (!["localhost", "127.0.0.1"].includes(new URL(url).hostname)) {
+    throw new Error("A prova do catálogo exige banco local");
+  }
+  const admin = createClient(url, env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const sufixo = Date.now().toString(36);
+  const modelos = [
+    {
+      provider: "openai",
+      id: `gpt-prova-${sufixo}`,
+      name: `OpenAI recém-descoberto ${sufixo}`,
+      option: /OpenAI \(GPT\)/,
+    },
+    {
+      provider: "anthropic",
+      id: `claude-prova-${sufixo}`,
+      name: `Claude recém-descoberto ${sufixo}`,
+      option: /Anthropic/,
+    },
+  ];
+  const fonte = Object.fromEntries(
+    modelos.map((m) => [
+      m.provider,
+      {
+        models: {
+          [m.id]: {
+            id: m.id,
+            name: m.name,
+            tool_call: true,
+            modalities: { input: ["text", "image"], output: ["text"] },
+            limit: { context: 200_000 },
+            cost: { input: 1, output: 5 },
+          },
+        },
+      },
+    ]),
+  );
+  try {
+    expect(await sincronizarModelosNativos(admin, async () => fonte)).toMatchObject({
+      gravados: 2,
+    });
+    await page.goto("/app/ai/providers");
+    await page.waitForSelector('[data-testid="painel-de-provedores"]');
+    const padraoAnterior = await page.evaluate(
+      async () => (await (await fetch("/api/v1/ai/providers")).json()).data.padrao,
+    );
+    for (const m of modelos) {
+      await page.getByTestId("padrao-provider").click();
+      await page.getByRole("option", { name: m.option }).click();
+      await page.getByTestId("padrao-modelo").click();
+      await page.getByRole("option", { name: m.name, exact: true }).click();
+      await expect(page.getByTestId("padrao-modelo")).toHaveText(m.name);
+      await page.screenshot({
+        path: `evidence/provedores/catalogo-nativo-${m.provider}.png`,
+        fullPage: true,
+      });
+    }
+    const padraoDepois = await page.evaluate(
+      async () => (await (await fetch("/api/v1/ai/providers")).json()).data.padrao,
+    );
+    expect(padraoDepois).toEqual(padraoAnterior);
+  } finally {
+    const { error } = await admin
+      .from("ai_models")
+      .delete()
+      .eq("source", FONTE_MODELS_DEV)
+      .in(
+        "model_id",
+        modelos.map((m) => m.id),
+      );
+    if (error) throw new Error(`limpeza dos modelos da prova: ${error.message}`);
+  }
 });
 
 test("F1 — trocar o modelo GRAVA, e a tela passa a mostrar o novo", async ({ page }) => {

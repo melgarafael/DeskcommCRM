@@ -1367,6 +1367,8 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
   "ai.knowledge_source_reindexed",
+  "ai_models.synced",
+  "ai_models.sync_failed",
   // "Não são a mesma empresa" (Spec 31, PR A): o par de fichas sugerido pelo nome
   // saiu da lista para a organização toda. A trilha guarda só os dois ids — nunca
   // nome nem telefone —, porque a pergunta que se faz depois é "quem tirou esta

@@ -626,6 +626,7 @@ export type Database = {
           resolved_at: string | null;
           severity: string;
           status: string;
+          task_reminder_due_at: string | null;
           title: string;
         };
         ComputedFields: never;
@@ -643,6 +644,7 @@ export type Database = {
           resolved_at?: string | null;
           severity?: string;
           status?: string;
+          task_reminder_due_at?: string | null;
           title: string;
         };
         Update: {
@@ -659,6 +661,7 @@ export type Database = {
           resolved_at?: string | null;
           severity?: string;
           status?: string;
+          task_reminder_due_at?: string | null;
           title?: string;
         };
         Relationships: [
