@@ -1163,6 +1163,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "agregador de bio-links: marca agregador sem fetch. Nunca chamado, nunca exibido.",
   },
+  "linkedin.com": {
+    categoria: "RECONHECIMENTO",
+    motivo:
+      "rede social reconhecida pelo host no mapeador de links da prospecção (Spec 26, `DOMINIOS_DE_REDE`). Nunca chamada, nunca exibida: o endereço entra na aba Links, que mostra o rótulo traduzido.",
+  },
   "sites.google.com": {
     categoria: "RECONHECIMENTO",
     motivo:
@@ -1374,6 +1379,10 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): agregador de bio-links,
       // marca agregador sem fetch — nunca chamado, nunca exibido.
       "linkbio.co",
+      // Decisão escrita (Spec 26, mapeador de links da prospecção): rede social
+      // reconhecida pelo host — nunca chamada, nunca exibida (a aba Links mostra
+      // o rótulo traduzido).
+      "linkedin.com",
       // Link que abre o pino que o CLIENTE mandou (`lib/messaging/localizacao.ts`).
       // Mesma natureza do `wa.me` abaixo: o produto não fala com o host, quem
       // abre é o celular do atendente. Crescimento escrito, como a regra pede.

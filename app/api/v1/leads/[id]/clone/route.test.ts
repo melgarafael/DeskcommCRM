@@ -571,6 +571,45 @@ describe("POST /api/v1/leads/[id]/clone", () => {
     expect(origemIntocada.pipeline_id).toBe(P1);
   });
 
+  it("o campo de ARQUIVO exigido no destino não trava o clone (#2829)", async () => {
+    // O clone CRIA o negócio no destino, e o anexo mora em
+    // `crm_lead_attachments.lead_id` — só pode ser enviado DEPOIS que o negócio
+    // existe. Cobrar o arquivo na pré-checagem recusava a troca de funil para
+    // sempre (422 sem caminho de saída), e a #3433 já tinha fixado a regra: a
+    // criação não cobra documento, a primeira entrada é que cobra.
+    const base = seed();
+    db = fakeDb({
+      ...base,
+      crm_pipelines: (base.crm_pipelines ?? []).map((funil) =>
+        funil.id === P2
+          ? {
+              ...funil,
+              settings: {
+                fields: [
+                  {
+                    key: "voucher",
+                    label: "Voucher da emissão",
+                    type: "file",
+                    obrigatorio_em: { etapas: [S2_B] },
+                  },
+                ],
+              },
+            }
+          : funil,
+      ),
+    });
+    vi.mocked(createClient).mockResolvedValue(db.client);
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2, stage_id: S2_B }), params);
+
+    expect(response.status).toBe(201);
+    // O negócio nasceu no destino — e sem anexo nenhum, que é o único estado
+    // possível neste instante.
+    const clone = (db.tables.crm_leads ?? []).find((linha) => linha.pipeline_id === P2) as Row;
+    expect(clone?.stage_id).toBe(S2_B);
+  });
+
   it("o clone passa quando o campo exigido já vem preenchido da origem", async () => {
     // O mesmo funil exigente, e o mesmo destino: o que muda é o VALOR. O
     // controle negativo fica vazio sem ele — sem este caso, um gate que

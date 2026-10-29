@@ -54,6 +54,8 @@ import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
+import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
+import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
 interface Props {
   contactId: string;
@@ -148,6 +150,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   }
 
   const contact = q.data.data;
+  const linksDoContato = linksParaExibir(contact.custom_fields);
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
   // Gerente e dono marcam/desmarcam pessoal (spec 21, decisão 1, D3) — e este
@@ -433,6 +436,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                   {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
                 </dd>
               </div>
+              {linksDoContato.length > 0 && (
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Links")}</dt>
+                  <dd className="mt-1">
+                    <ListaDeLinks links={linksDoContato} />
+                  </dd>
+                </div>
+              )}
               {/*
                 A data gravada pelo "Editar contato" (e pela proposta aprovada),
                 enxergada aqui — é ela que o cron `contact-birthdays` lê para

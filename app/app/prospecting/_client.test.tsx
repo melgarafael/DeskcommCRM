@@ -191,6 +191,35 @@ describe("A4: contador da verificação e o sem-site derivado", () => {
   });
 });
 
+describe("Completar fichas: o botão ao lado de Verificar agora", () => {
+  it("chama a ação da campanha e mostra quantas fichas foram completadas", async () => {
+    api.post.mockResolvedValueOnce({
+      data: { completadas: 2, ja_completas: 0, sem_links: 0, faltam: 0 },
+    });
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Completar fichas" }));
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/prospecting", {
+        action: "completar_fichas",
+        id: COMPLETA,
+      }),
+    );
+    expect(await screen.findByText("Fichas completadas: 2.")).toBeVisible();
+    expect(screen.queryByText(/Clique de novo/)).toBeNull();
+  });
+
+  it("com fichas sobrando, pede para clicar de novo", async () => {
+    api.post.mockResolvedValueOnce({
+      data: { completadas: 100, ja_completas: 0, sem_links: 0, faltam: 5 },
+    });
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Completar fichas" }));
+    expect(
+      await screen.findByText("Fichas completadas: 100. Clique de novo para continuar."),
+    ).toBeVisible();
+  });
+});
+
 describe("A2: o aviso da prévia e a troca de campanha", () => {
   it("a falha da prévia fica na janela e não vira aviso geral da página", async () => {
     api.post.mockRejectedValueOnce(new Error("A IA demorou demais."));

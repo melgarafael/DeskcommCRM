@@ -244,12 +244,22 @@ export async function POST(
     //
     // O `settings` perguntado é o do funil de DESTINO: é onde o negócio entra. O
     // `pipelineOrigem` logo acima é o da origem, e serviria à pergunta errada.
+    //
+    // O ARQUIVO não é cobrado aqui (#2829, fatia 2): este é um caminho de
+    // CRIAÇÃO — o negócio do destino ainda não existe, e o anexo mora em
+    // `crm_lead_attachments.lead_id`, que só pode receber upload depois. Sem
+    // `semAnexosAinda` a pergunta era mais dura que a do escritor logo abaixo
+    // (`createLeadHandler` já a faz com a opção, #3433): trocar de funil para uma
+    // etapa que exige documento respondia 422 para sempre, e o clone nunca
+    // acontecia. A cobrança volta no próximo move, no lote ou no fechamento —
+    // lá `camposComAnexo` é lido do banco.
     const settingsDoDestino = await settingsDoFunil(supabase, destino.etapa.pipeline_id);
     const vereditoDeCampos = validaCamposExigidos({
       lead: { custom_fields: (origem as OrigemParaClonar).custom_fields ?? {} },
       settingsDoFunil: settingsDoDestino,
       destino: { stageId: destino.etapa.id, desfecho: null },
       motivoDeGanho: null,
+      semAnexosAinda: true,
     });
     if (vereditoDeCampos.faltando.length > 0) {
       const recusaDeCampos = recusaDeCamposObrigatorios(
