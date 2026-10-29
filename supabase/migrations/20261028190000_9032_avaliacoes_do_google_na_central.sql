@@ -1,3 +1,4 @@
+-- manifest: Soma 'googlebusiness' ao vocabulário de `conversations_channel_check`, no bloco único do baseline, para a avaliação do Perfil da Empresa entrar na Central reusando `conversations`/`messages` sem uma segunda lista de avaliações; a constraint recusaria o INSERT com 23514 e a sincronização morreria do lado de fora. Sem tabela, coluna ou função nova — logo sem grant a acrescentar. Idempotente (drop if exists + add).
 -- Avaliações do Google (Perfil da Empresa) entram na Central como conversa.
 --
 -- ─── Por que este arquivo existe ───────────────────────────────────────────
