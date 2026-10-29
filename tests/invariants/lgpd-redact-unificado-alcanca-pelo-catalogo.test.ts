@@ -387,6 +387,7 @@ const DEZ_E_UM = [
  */
 beforeAll(() => {
   sql("select public.fn_financeiro_provisionar();");
+  sql("select public.fn_ouvidoria_provisionar();");
 });
 
 describe("LGPD: redact unificado — catálogo de FKs com decisão escrita", () => {

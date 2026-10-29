@@ -39,6 +39,7 @@ const PROTOCOLO_A = "OUV-20261028-AAAABBBB";
 const PROTOCOLO_B = "OUV-20261028-AAAABBBB";
 
 beforeAll(() => {
+  sql(`select public.fn_ouvidoria_provisionar();`);
   sql(`insert into auth.users (id, email) values
       ('${adminA}', 'ouv-admin-a@invariant.test'),
       ('${agentA}', 'ouv-agent-a@invariant.test'),

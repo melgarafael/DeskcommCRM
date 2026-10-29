@@ -15597,6 +15597,7 @@ export type Database = {
         Returns: Json;
       };
       fn_honorarios_provisionar: { Args: Record<PropertyKey, never>; Returns: undefined };
+      fn_ouvidoria_provisionar: { Args: Record<PropertyKey, never>; Returns: undefined };
       fn_is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       fn_is_platform_admin_full: { Args: Record<PropertyKey, never>; Returns: boolean };
       fn_lead_adicionar_etiquetas: {
