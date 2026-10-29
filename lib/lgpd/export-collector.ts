@@ -1230,7 +1230,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
-  // (9041) Os telefones extras da ficha, com o `lid` de cada número. Vêm ANTES da
+  // (9043) Os telefones extras da ficha, com o `lid` de cada número. Vêm ANTES da
   // busca de mensagens de grupo, que casa pelo número e pelo `lid` de cada um. A
   // consulta filtra organização e ficha: o cliente é o administrador (sem RLS).
   let telefonesExtras: ContactPhoneSnapshot[] = [];
@@ -1865,7 +1865,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // Duas consultas (telefone, lid) em vez de um `or` sobre caminho JSON: cada
   // uma é um filtro simples, e a união por id desfaz a mensagem que casa as duas.
   const porId = new Map<string, MessageRow>();
-  // (9041) O principal E os extras, cada um com as variantes do nono dígito; e o
+  // (9043) O principal E os extras, cada um com as variantes do nono dígito; e o
   // `lid` do principal junto com o de cada extra. Sem extra, é a busca de antes.
   const telefones = [
     ...new Set([

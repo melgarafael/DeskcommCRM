@@ -541,7 +541,7 @@ end; $$;
 
 -- ── 7. A fusão guarda os números e os campos ──────────────────────────────
 -- A ÚLTIMA definição do baseline, com os passos 4b e 6b e a herança de
--- `custom_fields` marcados com (9041). Nada mais muda.
+-- `custom_fields` marcados com (9043). Nada mais muda.
 CREATE OR REPLACE FUNCTION public.fn_mesclar_contatos(p_organization_id uuid, p_contato_principal uuid, p_contatos_secundarios uuid[])
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -669,7 +669,7 @@ begin
    where organization_id = p_organization_id
      and is_merged_into = any(p_contatos_secundarios);
 
-  -- 4b · (9041) Os telefones extras das absorvidas que repetem o número ou o
+  -- 4b · (9043) Os telefones extras das absorvidas que repetem o número ou o
   --     `lid` da ficha que fica saem ANTES do repontamento: o repetido não é
   --     registro perdido, é o mesmo número, e não pode cair no
   --     `unique_violation` do laço nem ser contado em `nao_repontado`. Os
@@ -776,7 +776,7 @@ begin
   -- isto o WhatsApp do perdedor fica órfão — `fn_upsert_wa_contact` filtra
   -- `is_merged_into is null`, não acharia mais ninguém e criaria um contato
   -- novo na mensagem seguinte, refazendo a duplicata que acabou de ser desfeita.
-  -- (9041) Primeiro o `lid` da absorvida cujo telefone vira o principal: o
+  -- (9043) Primeiro o `lid` da absorvida cujo telefone vira o principal: o
   -- número e o WhatsApp dele andam juntos.
   select c.source_metadata->>'waha_lid' into v_lid from public.contacts c
    where c.id = any(p_contatos_secundarios)
@@ -804,7 +804,7 @@ begin
      where o.organization_id = p_organization_id and o.is_merged_into is null
        and o.id <> p_contato_principal and o.email_normalized = lower(btrim(v_email))
   ) then v_email := null; end if;
-  -- (9041) Pela forma canônica e olhando os extras: o número que já é extra de
+  -- (9043) Pela forma canônica e olhando os extras: o número que já é extra de
   -- alguém (inclusive da ficha que fica) não pode virar principal — a regra
   -- "um número, uma ficha" recusaria e a fusão inteira cairia.
   if v_telefone is not null and (exists (
@@ -831,7 +831,7 @@ begin
        and o.id <> p_contato_principal and o.social_identity = v_social
   ) then v_social := null; end if;
 
-  -- (9041) `custom_fields`: a chave que a ficha que fica não tem entra; em
+  -- (9043) `custom_fields`: a chave que a ficha que fica não tem entra; em
   -- chave repetida vence a ficha que fica e, entre absorvidas, a primeira
   -- (por `created_at, id`, a ordem de todo o resto). Antes, o que estava na
   -- absorvida ficava só na lápide.
@@ -889,7 +889,7 @@ begin
     updated_at = now()
   where id = p_contato_principal and organization_id = p_organization_id;
 
-  -- 6b · (9041) O telefone principal de cada absorvida vira telefone extra da
+  -- 6b · (9043) O telefone principal de cada absorvida vira telefone extra da
   --     ficha que fica, com tipo, WhatsApp e o `lid` dela — sem isto, a próxima
   --     mensagem daquele número não acha ficha viva e abre uma terceira. Fica de
   --     fora o número que a ficha que fica já tem (principal ou extra) e o de
@@ -966,7 +966,7 @@ $function$;
 
 -- ── 8. LGPD: os extras entram na anonimização ─────────────────────────────
 -- As duas, a partir da ÚLTIMA definição do baseline; o que muda está marcado
--- com (9041).
+-- com (9043).
 create or replace function public.fn_redigir_conversas_ao_anonimizar()
 returns trigger
 language plpgsql
@@ -1067,7 +1067,7 @@ begin
     and social_identity is not null;
 
   -- Mensagens de grupo escritas pelo titular (0482, ver o cabeçalho daquele bloco).
-  -- (9041) O principal E os telefones extras. O gatilho roda no `update` da
+  -- (9043) O principal E os telefones extras. O gatilho roda no `update` da
   -- ficha, ANTES de `fn_lgpd_cascade_redact_contact` apagar os extras: é por
   -- isso que eles ainda estão aqui para serem lidos.
   select coalesce(array_agg(distinct v), '{}') into v_variantes
@@ -1185,7 +1185,7 @@ begin
     end if;
   end loop;
 
-  -- (9041) As variantes do principal E dos telefones extras, lidas ANTES de
+  -- (9043) As variantes do principal E dos telefones extras, lidas ANTES de
   -- apagar os extras (passo 1b): o candidato da prospecção casado pelo número
   -- extra também é da pessoa que pediu para ser esquecida.
   select coalesce(array_agg(distinct v), '{}')
@@ -1230,7 +1230,7 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('contacts', v_count);
 
-  -- 1b. contact_phones (9041) — os telefones extras, com o `lid` de cada um.
+  -- 1b. contact_phones (9043) — os telefones extras, com o `lid` de cada um.
   -- Depois do passo 1: o gatilho de redação das mensagens de grupo, que roda
   -- no `update` acima, ainda precisava lê-los.
   delete from contact_phones

@@ -4,7 +4,7 @@
  */
 import type { ContactType } from "@/lib/schemas/contacts";
 
-/** Vocabulários da Spec 31 (migration 9041): o banco recusa outro valor. */
+/** Vocabulários da Spec 31 (migration 9043): o banco recusa outro valor. */
 export type TipoDeTelefone = "fixo" | "celular" | "outro";
 export type WhatsappDoTelefone = "sim" | "nao" | "nao_sei";
 export type OrigemDoTelefone = "manual" | "fusao" | "importacao" | "prospeccao" | "whatsapp";

@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 /**
- * A FICHA GUARDA VÁRIOS TELEFONES (Spec 31, parte B1 — migration 9041).
+ * A FICHA GUARDA VÁRIOS TELEFONES (Spec 31, parte B1 — migration 9043).
  *
  * O defeito medido: a mesma empresa fala por dois números. Juntar as duas fichas
  * deixava o número da absorvida só na lápide, e a próxima mensagem dele abria

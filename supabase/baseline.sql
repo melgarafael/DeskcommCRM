@@ -62357,7 +62357,7 @@ grant all on public.crm_leads to service_role;
 
 do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
--- ---- a ficha guarda vários telefones (migration 9041, Spec 31 parte B1) ----
+-- ---- a ficha guarda vários telefones (migration 9043, Spec 31 parte B1) ----
 -- manifest: **A ficha guarda vários telefones, e juntar duas fichas não perde mais o segundo número (Spec 31, parte B1).** Tabela tenant-aware nova `contact_phones` (telefones extras, na forma canônica, com tipo `fixo|celular|outro`, WhatsApp `sim|nao|nao_sei`, rótulo, origem e o `lid` do WhatsApp daquele número), RLS (leitura por organização, escrita a partir de `agent`) e grants próprios; `contacts` ganha `phone_type` e `phone_whatsapp` (anuláveis), preenchidos por gatilho na gravação nova e, nas fichas que já existem, por um preenchimento que não mexe em `updated_at` (`WhatsApp = sim` quando a ficha tem mensagem RECEBIDA em canal WAHA ou `meta_cloud`). Funções puras `fn_telefone_canonico` (a regra de `canonicalPhoneBR`) e `fn_tipo_do_telefone`. **Um número, uma ficha viva:** dois gatilhos (`contacts` e `contact_phones`) com trava consultiva por organização e pela forma canônica recusam com 23505 o extra que repete o principal ou o extra de outra ficha viva (e o principal que repete um extra) — também na grafia sem o nono dígito; o par "gêmeo" entre dois principais segue aceito como hoje (a fusão por nono dígito e as importações nascem dele; ele aparece em Duplicados pelo motivo `telefone`). `fn_upsert_wa_contact` procura também nos extras (`lid` → principal → extra) e, achada pelo extra, não sobrescreve o `waha_lid`/`waha_chat_id` do principal: o `lid` de quem escreveu fica com o extra. `fn_mesclar_contatos`: o principal de cada absorvida vira extra da ficha que fica (com tipo, WhatsApp e `lid`), o extra repetido sai antes do repontamento (não entra em `nao_repontado`) e `custom_fields` passa a ser herdado sem sobrescrever a ficha que fica. LGPD: a cascata apaga os extras e as variantes deles entram na supressão da prospecção e na redação das mensagens de grupo (`fn_redigir_conversas_ao_anonimizar`). As três funções reescritas partem da ÚLTIMA definição de cada uma no baseline; assinaturas, `search_path` e grants inalterados. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (cria função) e antes da chamada final das travas de suporte (cria tabela). Prova em `tests/invariants/ficha-com-varios-telefones.test.ts`.
 --
 -- Por que o "um número, uma ficha" mora no banco e não no código: são mais de
@@ -62901,7 +62901,7 @@ end; $$;
 
 -- ── 7. A fusão guarda os números e os campos ──────────────────────────────
 -- A ÚLTIMA definição do baseline, com os passos 4b e 6b e a herança de
--- `custom_fields` marcados com (9041). Nada mais muda.
+-- `custom_fields` marcados com (9043). Nada mais muda.
 CREATE OR REPLACE FUNCTION public.fn_mesclar_contatos(p_organization_id uuid, p_contato_principal uuid, p_contatos_secundarios uuid[])
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -63029,7 +63029,7 @@ begin
    where organization_id = p_organization_id
      and is_merged_into = any(p_contatos_secundarios);
 
-  -- 4b · (9041) Os telefones extras das absorvidas que repetem o número ou o
+  -- 4b · (9043) Os telefones extras das absorvidas que repetem o número ou o
   --     `lid` da ficha que fica saem ANTES do repontamento: o repetido não é
   --     registro perdido, é o mesmo número, e não pode cair no
   --     `unique_violation` do laço nem ser contado em `nao_repontado`. Os
@@ -63136,7 +63136,7 @@ begin
   -- isto o WhatsApp do perdedor fica órfão — `fn_upsert_wa_contact` filtra
   -- `is_merged_into is null`, não acharia mais ninguém e criaria um contato
   -- novo na mensagem seguinte, refazendo a duplicata que acabou de ser desfeita.
-  -- (9041) Primeiro o `lid` da absorvida cujo telefone vira o principal: o
+  -- (9043) Primeiro o `lid` da absorvida cujo telefone vira o principal: o
   -- número e o WhatsApp dele andam juntos.
   select c.source_metadata->>'waha_lid' into v_lid from public.contacts c
    where c.id = any(p_contatos_secundarios)
@@ -63164,7 +63164,7 @@ begin
      where o.organization_id = p_organization_id and o.is_merged_into is null
        and o.id <> p_contato_principal and o.email_normalized = lower(btrim(v_email))
   ) then v_email := null; end if;
-  -- (9041) Pela forma canônica e olhando os extras: o número que já é extra de
+  -- (9043) Pela forma canônica e olhando os extras: o número que já é extra de
   -- alguém (inclusive da ficha que fica) não pode virar principal — a regra
   -- "um número, uma ficha" recusaria e a fusão inteira cairia.
   if v_telefone is not null and (exists (
@@ -63191,7 +63191,7 @@ begin
        and o.id <> p_contato_principal and o.social_identity = v_social
   ) then v_social := null; end if;
 
-  -- (9041) `custom_fields`: a chave que a ficha que fica não tem entra; em
+  -- (9043) `custom_fields`: a chave que a ficha que fica não tem entra; em
   -- chave repetida vence a ficha que fica e, entre absorvidas, a primeira
   -- (por `created_at, id`, a ordem de todo o resto). Antes, o que estava na
   -- absorvida ficava só na lápide.
@@ -63249,7 +63249,7 @@ begin
     updated_at = now()
   where id = p_contato_principal and organization_id = p_organization_id;
 
-  -- 6b · (9041) O telefone principal de cada absorvida vira telefone extra da
+  -- 6b · (9043) O telefone principal de cada absorvida vira telefone extra da
   --     ficha que fica, com tipo, WhatsApp e o `lid` dela — sem isto, a próxima
   --     mensagem daquele número não acha ficha viva e abre uma terceira. Fica de
   --     fora o número que a ficha que fica já tem (principal ou extra) e o de
@@ -63326,7 +63326,7 @@ $function$;
 
 -- ── 8. LGPD: os extras entram na anonimização ─────────────────────────────
 -- As duas, a partir da ÚLTIMA definição do baseline; o que muda está marcado
--- com (9041).
+-- com (9043).
 create or replace function public.fn_redigir_conversas_ao_anonimizar()
 returns trigger
 language plpgsql
@@ -63427,7 +63427,7 @@ begin
     and social_identity is not null;
 
   -- Mensagens de grupo escritas pelo titular (0482, ver o cabeçalho daquele bloco).
-  -- (9041) O principal E os telefones extras. O gatilho roda no `update` da
+  -- (9043) O principal E os telefones extras. O gatilho roda no `update` da
   -- ficha, ANTES de `fn_lgpd_cascade_redact_contact` apagar os extras: é por
   -- isso que eles ainda estão aqui para serem lidos.
   select coalesce(array_agg(distinct v), '{}') into v_variantes
@@ -63545,7 +63545,7 @@ begin
     end if;
   end loop;
 
-  -- (9041) As variantes do principal E dos telefones extras, lidas ANTES de
+  -- (9043) As variantes do principal E dos telefones extras, lidas ANTES de
   -- apagar os extras (passo 1b): o candidato da prospecção casado pelo número
   -- extra também é da pessoa que pediu para ser esquecida.
   select coalesce(array_agg(distinct v), '{}')
@@ -63590,7 +63590,7 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('contacts', v_count);
 
-  -- 1b. contact_phones (9041) — os telefones extras, com o `lid` de cada um.
+  -- 1b. contact_phones (9043) — os telefones extras, com o `lid` de cada um.
   -- Depois do passo 1: o gatilho de redação das mensagens de grupo, que roda
   -- no `update` acima, ainda precisava lê-los.
   delete from contact_phones

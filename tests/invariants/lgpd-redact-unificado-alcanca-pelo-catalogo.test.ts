@@ -250,7 +250,7 @@ const DECISOES: Record<string, Decisao> = {
   contact_phones: {
     decidida: "redigir",
     caminho: "cascata",
-    razao: "9041 (Spec 31 B1): os telefones extras e o `lid` do WhatsApp de cada um — apagados no passo 1b de fn_lgpd_cascade_redact_contact, depois do gatilho de grupo que ainda os lê.",
+    razao: "9043 (Spec 31 B1): os telefones extras e o `lid` do WhatsApp de cada um — apagados no passo 1b de fn_lgpd_cascade_redact_contact, depois do gatilho de grupo que ainda os lê.",
   },
   contact_field_proposals: {
     decidida: "redigir",
