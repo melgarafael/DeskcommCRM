@@ -206,6 +206,17 @@ export function usePaisDaOrgAtiva(): string | null {
 }
 
 /**
+ * O idioma padrão da organização ativa (`organizations.locale`, o que o
+ * instalador grava), tolerante como o leitor de país: fora do provider, `null`.
+ * NÃO é o idioma da interface (`useIdioma`), que segue a preferência de quem opera.
+ */
+export function useLocaleDaOrgAtiva(): string | null {
+  const ctx = useContext(Ctx);
+  const orgId = ctx?.activeOrg?.orgId;
+  return ctx?.user.organizations?.find((m) => m.organization_id === orgId)?.locale ?? null;
+}
+
+/**
  * A moeda da organização ativa (`organizations.currency`) — a do campo
  * personalizado de moeda. Tolerante como o leitor de país: fora do provider,
  * `null`, e quem lê cai no `MOEDA_PADRAO`.

@@ -1880,11 +1880,20 @@ export async function retomarLeadHandler(
   // A RÉGUA DE CAMPOS OBRIGATÓRIOS (issue #1536): a retomada ENTRA numa etapa,
   // e a etapa exigente vale para ela como vale para o arrasto. Só conta o que o
   // negócio novo vai ter — os campos copiados da origem.
+  //
+  // O ARQUIVO não é cobrado (#2829, fatia 2): a retomada CRIA o negócio
+  // (`createLeadHandler` logo abaixo), e o anexo é do negócio que ainda vai
+  // nascer. Passar `semAnexosAinda` aqui é o que faz esta pergunta ser a MESMA
+  // do escritor — sem ela, a retomada recusava com 422 uma etapa que exige
+  // documento e o caminho do `createLeadHandler` (que pula o arquivo, #3433)
+  // nunca era alcançado. A cobrança volta no próximo move, no lote ou no
+  // fechamento, onde `camposComAnexo` é lido de verdade.
   const vereditoDeCampos = validaCamposExigidos({
     lead: { custom_fields: payload.custom_fields ?? {} },
     settingsDoFunil: settings,
     destino: { stageId: etapa.id, desfecho: null },
     motivoDeGanho: null,
+    semAnexosAinda: true,
   });
   if (vereditoDeCampos.faltando.length > 0) {
     const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, idioma);
