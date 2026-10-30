@@ -2,7 +2,7 @@
  * POST /api/v1/contacts/[id]/phones/[phoneId]/primary — "Tornar principal" (Spec 31, B2, item 6).
  *
  * Troca o extra pelo principal numa operação só (`fn_tornar_telefone_principal`,
- * migration 9044). Extra que não é desta ficha, ou ficha mesclada/anonimizada → 404.
+ * migration 9048). Extra que não é desta ficha, ou ficha mesclada/anonimizada → 404.
  * Sessão + papel `agent` + `requireSupportWrite` antes do efeito.
  */
 import { randomUUID } from "node:crypto";

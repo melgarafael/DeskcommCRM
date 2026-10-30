@@ -64167,7 +64167,7 @@ create trigger trg_contato_anonimizado_esquece_o_endereco
 
 notify pgrst, 'reload schema';
 
--- ---- "Tornar principal" (migration 9044, Spec 31 parte B2) ----
+-- ---- "Tornar principal" (migration 9048, Spec 31 parte B2) ----
 -- manifest: **"Tornar principal" troca um telefone extra pelo principal numa operação só (Spec 31, parte B2, item 6).** Função `fn_tornar_telefone_principal(p_org, p_contato, p_extra)`: o extra vira `contacts.phone_number` levando tipo, WhatsApp e o `lid` dele; o principal antigo vira extra (origem `manual`) levando os dele. Numa transação, com a ficha travada, e na ordem que a regra "um número, uma ficha" (9043) aceita: o extra sai antes de o principal mudar, e o principal antigo entra como extra depois. `waha_chat_id` sai do `source_metadata` (era o chat do número antigo). SECURITY INVOKER: quem chama é a rota pela sessão do usuário, e a RLS de `contacts` e `contact_phones` vale; a rota exige papel `agent`. Recusa (`P0002`) extra que não é desta ficha, ficha mesclada ou anonimizada. Idempotente: `create or replace` + revoke/grant. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon. Prova em `tests/invariants/tornar-telefone-principal.test.ts`.
 create or replace function public.fn_tornar_telefone_principal(p_org uuid, p_contato uuid, p_extra uuid)
 returns void

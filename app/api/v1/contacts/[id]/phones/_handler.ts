@@ -277,7 +277,7 @@ export async function removerTelefoneExtra(ctx: TelefoneCtx, phoneId: string): P
 
 /**
  * `POST /contacts/{id}/phones/{phoneId}/primary`: a troca numa operação só, na
- * função `fn_tornar_telefone_principal` (migration 9044). `P0002` = o extra não é
+ * função `fn_tornar_telefone_principal` (migration 9048). `P0002` = o extra não é
  * desta ficha, ou a ficha não está viva.
  */
 export async function tornarTelefonePrincipal(ctx: TelefoneCtx, phoneId: string): Promise<void> {
