@@ -11,6 +11,7 @@
  * `organizations` é a do admin da plataforma (ver o comentário em
  * `app/actions/settings/updateTenant.ts`). Quem chama já decidiu a autorização.
  */
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { paisesOferecidos } from "@/lib/legal/perfil-do-pais";
 import type { TenantInput } from "@/lib/schemas/settings";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -43,6 +44,9 @@ export async function gravarDadosCadastrais(
       privacy_policy_url: dados.privacy_policy_url ?? null,
     })
     .eq("id", orgId);
+  // #3696: nome, idioma, fuso, moeda e país viajam no snapshot de cada membro.
+  // Aqui, e não em quem chama: a tela do tenant e a gestão da plataforma passam por este ponto.
+  invalidarOrg(orgId);
   if (error) {
     // CNPJ é único na instalação: dois tenants com o mesmo documento é erro de
     // cadastro, e a mensagem precisa dizer isso em vez do texto do Postgres.

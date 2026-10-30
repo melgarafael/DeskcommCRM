@@ -547,11 +547,11 @@ describe("POST /api/v1/conversations/bulk", () => {
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledTimes(2);
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: ORG_A }),
-      { conversationId: CONV_A },
+      { conversationId: CONV_A, expectedAssignee: USER },
     );
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: ORG_A }),
-      { conversationId: CONV_A2 },
+      { conversationId: CONV_A2, expectedAssignee: USER },
     );
   });
 

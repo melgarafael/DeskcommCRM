@@ -255,6 +255,21 @@ describe("MessageBubble — rótulo de origem", () => {
     expect(screen.getByText("IA")).toBeInTheDocument();
   });
 
+  it("#3649: IA com o nome do agente gravado mostra 'IA · <nome>'", () => {
+    render(<MessageBubble message={msg({ sent_via: "ai", metadata: { ai_actor_name: " Bia da Locação " } })} />);
+    expect(screen.getByText("IA · Bia da Locação")).toBeInTheDocument();
+  });
+
+  it("#3649: só `ai_actor_name` vale — apelido em metadata é entrada do cliente e não vira nome", () => {
+    render(
+      <MessageBubble
+        message={msg({ sent_via: "ai", metadata: { agent_name: "Forjado", ai_agent_name: "Forjado" } })}
+      />,
+    );
+    expect(screen.getByText("IA")).toBeInTheDocument();
+    expect(screen.queryByText(/Forjado/)).not.toBeInTheDocument();
+  });
+
   it("mensagem recebida (inbound) não leva rótulo de origem", () => {
     render(
       <MessageBubble message={msg({ sent_via: "external_device", direction: "inbound" })} />,

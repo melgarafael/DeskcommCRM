@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { trocarIdiomaPelaTela } from "./helpers/idioma";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, { auth: { persistSession: false } });
 const password = `Local-${randomUUID()}!`;
@@ -130,9 +131,8 @@ test("agent abre contexto, volta ainda aberto, resolve e reabre; RLS e menu ocul
     await expect(row(page, `${prefix} própria`).getByRole("link")).toBeVisible();
     for (const suffix of ["sem responsável", "outro atendente", "outra organização"]) await expect(row(page, `${prefix} ${suffix}`).getByRole("link")).toHaveCount(0);
   }
-  const idioma = await db.auth.admin.updateUserById(users[0]!.id, { user_metadata: { locale: "es" } });
-  if (idioma.error) throw idioma.error;
-  await page.reload();
+  // Pela tela: o idioma viaja no cache curto da autorização (#3696), e quem invalida é o `trocarIdioma`.
+  await trocarIdiomaPelaTela(page, "es");
   await expect(row(page, "Conversa própria").getByRole("link", { name: "Abrir conversación" })).toBeVisible();
   await expect(row(page, "Referência removida")).toContainText("Este contexto no está disponible para ti");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -166,4 +166,65 @@ test("viewer continua sem acesso à API Central e bearer não autentica", async 
   const anonymous = await playwright.request.newContext();
   try { expect((await anonymous.get(`${new URL(page.url()).origin}/api/v1/ai/inbox`, { headers: { Authorization: "Bearer dsk_fake" } })).status()).toBe(401); }
   finally { await anonymous.dispose(); }
+});
+
+// Mesmo fixture, organização própria desta spec; nada muda na organização comum do CI.
+test("devolver ao automático recusa colega e respeita o CAS real do banco", async ({ page, browser }) => {
+  test.setTimeout(180_000);
+  const evidencia = "evidence/atendimento-cercas";
+  mkdirSync(evidencia, { recursive: true });
+  const org = orgs[0]!;
+  const conversa = conversations[2]!;
+  const colega = users.find(u => u.role === "other")!;
+  const atendente = users.find(u => u.role === "agent")!;
+  const preparar = async () => {
+    expect((await db.from("contacts").update({ force_human: true }).eq("organization_id", org).eq("id", contacts[2]!)).error).toBeNull();
+    expect((await db.from("conversations").update({
+      assigned_to_user_id: colega.id, assignee_kind: "user", status: "claimed", bot_silenced_until: "infinity",
+    }).eq("organization_id", org).eq("id", conversa)).error).toBeNull();
+  };
+  const estado = async () => {
+    const r = await db.from("conversations").select("assigned_to_user_id,assignee_kind,bot_silenced_until")
+      .eq("organization_id", org).eq("id", conversa).single();
+    expect(r.error).toBeNull();
+    return r.data;
+  };
+  // all permite enxergar o colega; isso não concede o direito de liberar o dono.
+  expect((await db.from("organizations").update({ settings: { visibility_mode: "all" } }).eq("id", org)).error).toBeNull();
+  const contexto = await browser.newContext();
+  try {
+    await preparar();
+    const conflito = await db.rpc("fn_conversation_assign", {
+      p_organization_id: org, p_conversation_id: conversa, p_to_user_id: null,
+      p_reason: "release", p_expected_assignee: atendente.id, p_enforce_expected: true,
+    });
+    expect(conflito.error).toBeNull();
+    expect(conflito.data, "o CAS perdido é SETOF vazio, sem erro").toEqual([]);
+    expect(await estado()).toMatchObject({ assigned_to_user_id: colega.id, bot_silenced_until: "infinity" });
+
+    await login(page, "agent");
+    await page.goto(`/app/inbox/${conversa}`);
+    const resposta = page.waitForResponse(r => r.url().endsWith(`/conversations/${conversa}/reactivate-bot`) && r.request().method() === "POST");
+    await page.getByTestId("devolver-ao-automatico").click();
+    expect((await resposta).status()).toBe(403);
+    await expect(page.getByText("Esta conversa é de outro atendente. Peça a um gerente ou assuma a conversa.")).toBeVisible();
+    expect(await estado()).toMatchObject({ assigned_to_user_id: colega.id, bot_silenced_until: "infinity" });
+    await page.screenshot({ path: `${evidencia}/devolucao-colega-recusada.png`, fullPage: true });
+
+    // Controle pelo mesmo botão: a pessoa dona da conversa consegue devolver.
+    const propria = await contexto.newPage();
+    await login(propria, "other");
+    await propria.goto(`/app/inbox/${conversa}`);
+    const devolvida = propria.waitForResponse(r => r.url().endsWith(`/conversations/${conversa}/reactivate-bot`) && r.request().method() === "POST");
+    await propria.getByTestId("devolver-ao-automatico").click();
+    expect((await devolvida).status()).toBe(200);
+    await expect.poll(estado).toMatchObject({ assigned_to_user_id: null, assignee_kind: "ai", bot_silenced_until: null });
+    const contato = await db.from("contacts").select("force_human").eq("organization_id", org).eq("id", contacts[2]!).single();
+    expect(contato.error).toBeNull();
+    expect(contato.data!.force_human).toBe(false);
+    await propria.screenshot({ path: `${evidencia}/devolucao-pelo-dono.png`, fullPage: true });
+  } finally {
+    await contexto.close();
+    expect((await db.from("organizations").update({ settings: { visibility_mode: "own_and_unassigned" } }).eq("id", org)).error).toBeNull();
+  }
 });
