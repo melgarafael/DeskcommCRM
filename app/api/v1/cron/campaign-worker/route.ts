@@ -22,7 +22,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { rodarUmaRodadaDeCampanha } from "@/lib/campanhas/rodada";
-import { MOTIVO_DO_PULO, recursoLigado } from "@/lib/cron/recursos-ligados";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -34,21 +34,12 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
-  const admin = createAdminClient();
+  // O PISO OCIOSO (#3731): instalação sem campanha em `running`/`scheduled` não
+  // tem o que esta rodada faça. A saída vem antes da primeira consulta da
+  // rodada; o portão responde de um retrato em memória.
+  if (await recursoOcioso("campanhas")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
-  // #3694: instalação sem campanha nenhuma (ou com a agendada ainda no futuro)
-  // sai por aqui, sem tocar o PostgREST. A leitura é compartilhada com os
-  // outros crons de minuto e custa uma ida ao banco por janela de 45 s — quem
-  // aperta "Iniciar" invalida a leitura no evento, então a campanha nova é
-  // pega no tique seguinte.
-  if (!(await recursoLigado(admin, "campanhas"))) {
-    return ok(
-      { enviadas: 0, pulados: 0, concluidas: 0, promovidas: 0, detalhe: MOTIVO_DO_PULO },
-      { requestId },
-    );
-  }
-
-  const r = await rodarUmaRodadaDeCampanha(admin);
+  const r = await rodarUmaRodadaDeCampanha(createAdminClient());
 
   if (r.enviadas > 0 || r.pulados > 0 || r.concluidas > 0 || r.promovidas > 0) {
     void audit({

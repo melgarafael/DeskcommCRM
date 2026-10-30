@@ -235,6 +235,14 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
         texto:
           "A resposta ia depender de horário, mas o agente não tem ferramenta de agenda ligada. Ligue a agenda no agente ou gere de novo sem horário.",
       };
+    case "registro_afirmado_sem_efeito":
+      return {
+        codigo,
+        causa: "dizia que o interesse do cliente foi registrado, mas nada foi gravado neste turno",
+        acionavel: true,
+        texto:
+          "A resposta dizia que o interesse do cliente foi registrado, mas a ferramenta de registro não gravou nada neste turno. Nada foi enviado — ligue a criação de negócio no agente ou gere de novo com o registro de fato.",
+      };
     case "disclosure_required":
       return {
         codigo,
@@ -338,6 +346,7 @@ export const CODIGOS_DE_VETO_CONHECIDOS: readonly string[] = [
   "internal_vocabulary_leak",
   "clinical_claim",
   "agenda_stall_sem_ferramenta",
+  "registro_afirmado_sem_efeito",
   "disclosure_required",
   "messaging_window_closed",
   "factual_claim_contradicted",

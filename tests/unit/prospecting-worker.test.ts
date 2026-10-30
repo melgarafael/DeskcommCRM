@@ -351,11 +351,13 @@ describe("gradual outreach", () => {
         website: "https://example.test/",
         site: {
           ver: 1,
+          // Domínio morto é o veredito PROVADO de "não abre" (#3723): 503 seria
+          // medição barrada, que não se cita.
           classe: "fora-do-ar",
-          problemas: ["http-503"],
+          problemas: ["dns-morto"],
           checklist: { tem: [], falta: [] },
           final_url: "https://example.test/",
-          http_status: 503,
+          http_status: null,
           tempo_ms: 300,
           conteudo_resumo: "Página de erro do servidor",
           pagespeed: null,

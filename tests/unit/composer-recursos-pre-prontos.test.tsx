@@ -99,6 +99,8 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
   useMessageTemplates: () => ({ data: RECURSOS, isLoading: false }),
 }));
 vi.mock("@/hooks/inbox/useDraftReply", () => ({
@@ -118,7 +120,8 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 
 import { Composer } from "@/components/inbox/Composer";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
-import { ehRecursoDeAudio, recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import {
   RECURSOS_VISIVEIS_RECOLHIDA,
   chaveDaBarra,
@@ -159,21 +162,23 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
 
-describe("ehRecursoDeAudio (a régua do 🎧 da barra)", () => {
+describe("a régua do tipo (ex-`ehRecursoDeAudio`, #3009)", () => {
   it("quem decide é o CAMINHO, não o `media_mime` da linha", () => {
     // A coluna é gravável pelo PostgREST: um `.ogg` com `media_mime` mentiroso
     // continua sendo áudio (o caminho foi gravado pelo upload), e um `.jpg`
     // marcado como áudio continua sendo imagem.
     expect(
-      ehRecursoDeAudio({
+      lerRespostaRapidaGravada({
+        body: "",
         midias: [{ storage_path: AUDIO_PATH, media_mime: "image/jpeg", media_size_bytes: 1 }],
       }),
-    ).toBe(true);
+    ).toMatchObject({ ok: true, tipo: "audio", audios: 1, imagens: 0 });
     expect(
-      ehRecursoDeAudio({
+      lerRespostaRapidaGravada({
+        body: "Olha a tabela",
         midias: [{ storage_path: IMAGEM_PATH, media_mime: "audio/ogg", media_size_bytes: 1 }],
       }),
-    ).toBe(false);
+    ).toMatchObject({ ok: true, tipo: "texto+imagem", audios: 0, imagens: 1 });
   });
 });
 

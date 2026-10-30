@@ -4,13 +4,18 @@
  *
  * Um caso por rota, dois lados cada:
  *
- *   desligado → ZERO consulta ao PostgREST (é o defeito da issue: oito
+ *   desligado → ZERO consulta ao PostgREST (é o defeito da issue: seis
  *               consultas por minuto, todas vazias);
  *   ligado    → a rodada de verdade roda (o gate não pode calar quem tem
  *               trabalho — esse é o erro que seria pior que a consulta vazia).
  *
  * O gate em si é mockado aqui: o que se mede é a decisão da ROTA. O relógio, o
  * cache e a invalidação estão em `cron-recursos-ligados.test.ts`.
+ *
+ * `campaign-worker` e `historico-import` NÃO estão aqui: os dois ficaram com o
+ * piso ocioso do #3731, que já cobria esses recursos quando este ramo foi
+ * mesclado com a main. Quem mede essas duas rotas é
+ * `tests/unit/piso-ocioso-dos-crons.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -94,11 +99,9 @@ vi.mock("@/lib/followup/atendimento", () => ({ encerrarRoteirosVencidos: async (
 vi.mock("@/lib/channels/aviso-do-agendador", () => ({ sincronizarAvisoDoAgendador: async () => undefined }));
 vi.mock("@/lib/channels/central-de-pausa", () => ({ sincronizarAvisoDePausa: async () => undefined }));
 
-import { GET as campaignWorker } from "@/app/api/v1/cron/campaign-worker/route";
 import { GET as webhookReplay } from "@/app/api/v1/cron/webhook-replay/route";
 import { GET as followupFlowWorker } from "@/app/api/v1/cron/followup-flow-worker/route";
 import { GET as channelPauseScheduler } from "@/app/api/v1/cron/channel-pause-scheduler/route";
-import { GET as historicoImport } from "@/app/api/v1/cron/historico-import/route";
 import { GET as propostaTravada } from "@/app/api/v1/cron/proposta-travada/route";
 
 type Rota = (req: NextRequest) => Promise<Response>;
@@ -114,23 +117,6 @@ beforeEach(() => {
   estado.consultas = {};
   estado.rpcs = [];
   estado.rodada = 0;
-});
-
-describe("campaign-worker", () => {
-  it("desligado: sai cedo, sem NENHUM from() ao PostgREST", async () => {
-    estado.ligado.campanhas = false;
-    const dados = await dadosDe(await chamar(campaignWorker, "campaign-worker"));
-
-    expect(dados).toMatchObject({ enviadas: 0, detalhe: "recurso_desligado" });
-    expect(estado.rodada).toBe(0);
-    expect(estado.consultas).toEqual({});
-  });
-
-  it("ligado: a rodada de campanha roda", async () => {
-    estado.ligado.campanhas = true;
-    await chamar(campaignWorker, "campaign-worker");
-    expect(estado.rodada).toBe(1);
-  });
 });
 
 describe("webhook-replay", () => {
@@ -188,22 +174,6 @@ describe("channel-pause-scheduler", () => {
     estado.ligado.pausa_de_canal = true;
     await chamar(channelPauseScheduler, "channel-pause-scheduler");
     expect(estado.consultas.channel_schedules).toBeGreaterThan(0);
-  });
-});
-
-describe("historico-import", () => {
-  it("desligado: sai cedo, sem NENHUM from() ao PostgREST", async () => {
-    estado.ligado.historico = false;
-    const dados = await dadosDe(await chamar(historicoImport, "historico-import"));
-
-    expect(dados).toMatchObject({ encontradas: 0, pulado: "recurso_desligado" });
-    expect(estado.consultas).toEqual({});
-  });
-
-  it("ligado: lê as importações `rodando`", async () => {
-    estado.ligado.historico = true;
-    await chamar(historicoImport, "historico-import");
-    expect(estado.consultas.importacoes_de_historico).toBeGreaterThan(0);
   });
 });
 

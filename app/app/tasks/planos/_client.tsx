@@ -45,6 +45,7 @@ import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
 import type { PassoDePlano, PlanoDeTarefas } from "@/lib/tarefas/plano";
 import { explicarRecusaDoPlano, frasePrazoDoPasso } from "@/lib/tarefas/recusa-do-plano";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 const CHAVE_DA_CONSULTA = ["settings", "task-plans"] as const;
 
@@ -394,7 +395,7 @@ function Editor({
                     <SelectItem value="dono_do_lead">{t("Dono do negócio")}</SelectItem>
                     {(members ?? []).map((m) => (
                       <SelectItem key={m.user_id} value={m.user_id}>
-                        {m.full_name ?? m.user_id.slice(0, 8)}
+                        {rotuloDoMembro(m, t)}
                       </SelectItem>
                     ))}
                   </SelectContent>

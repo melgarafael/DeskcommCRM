@@ -134,6 +134,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     oQueFaz:
       "Conecta a assinatura do ChatGPT (o mesmo login do Codex): cada empresa conecta a própria conta, em Credenciais, com a chave de API da mesma empresa como reserva. Desligado por padrão.",
   },
+  setores: {
+    nome: "Setores de atendimento",
+    oQueFaz: "Agrupa os atendentes da Equipe por área e filtra a aba Atendimento por setor. Não muda quem recebe as conversas.",
+  },
 };
 
 /**
