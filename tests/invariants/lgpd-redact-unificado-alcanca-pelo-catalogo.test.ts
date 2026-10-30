@@ -247,6 +247,11 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "0184: title, description, notes, location_details e cancellation_reason são texto livre que nomeia a pessoa (queixa clínica numa clínica); gatilho da virada, com google/meet no mesmo acorde.",
   },
+  contact_phones: {
+    decidida: "redigir",
+    caminho: "cascata",
+    razao: "9043 (Spec 31 B1): os telefones extras e o `lid` do WhatsApp de cada um — apagados no passo 1b de fn_lgpd_cascade_redact_contact, depois do gatilho de grupo que ainda os lê.",
+  },
   contact_field_proposals: {
     decidida: "redigir",
     caminho: "gatilho",

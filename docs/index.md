@@ -67,6 +67,7 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 | [`specs/03`](specs/03-spec-whatsapp-waha.md) | WAHA — fila outbound, warm-up, spinning, crons |
 | [`specs/04`](specs/04-spec-pipeline-attendance.md) | Pipeline e atendimento |
 | [`specs/05`](specs/05-spec-ai-rag-handoff.md) | IA, RAG, gatilhos de handoff |
+| [`specs/catalogo-de-modelos-nativos.md`](specs/catalogo-de-modelos-nativos.md) | Descoberta diária de modelos OpenAI/Anthropic, preservação de escolhas e falhas de catálogo |
 | [`specs/06`](specs/06-spec-nuvemshop-lgpd.md) | Nuvemshop + LGPD |
 | [`specs/07`](specs/07-spec-events-workers.md) | **`event_log`, workers, claim atômico, backoff/DLQ** |
 | [`specs/08`](specs/08-spec-deploy-observability.md) | Deploy e observabilidade |

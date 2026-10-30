@@ -61,6 +61,15 @@ function banco(opcoes: {
         maybeSingle: vi.fn(async () => ({ data: { country: opcoes.pais ?? null }, error: null })),
       };
     }
+    // Spec 31 B1: a pré-checagem de telefone extra lê `contact_phones`. Sem
+    // extra no banco do teste a lista volta vazia — o mesmo que a base antiga.
+    if (tabela === "contact_phones") {
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        in: vi.fn(async () => ({ data: [], error: null })),
+      };
+    }
     expect(tabela).toBe("contacts");
     const consulta = {
       select: vi.fn().mockReturnThis(),

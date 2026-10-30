@@ -173,5 +173,22 @@
   "^NutriVida Consultório.*IA Budget": "^NutriVida Consultório.*Presupuesto IA",
   "^Tag: convenio": "^Etiqueta: convenio",
   "Responsável:": "Responsable:",
-  "^(Hoje|Ontem)$": "^(Hoy|Ayer)$"
+  "^(Hoje|Ontem)$": "^(Hoy|Ayer)$",
+  "^Fluxos de atendimento ": "^Flujos de atención ",
+  "^Uso e orçamento ": "^Uso y presupuesto ",
+  "^Prospecção Busque": "^Prospección ",
+  "^Campanhas ": "^Campañas ",
+  "^Produtos ": "^Productos ",
+  "^Etapas do funil ": "^Etapas del embudo ",
+  "^Roteadores ": "^Enrutadores ",
+  "^Credenciais ": "^Credenciales ",
+  "^Conhecimento ": "^Conocimiento ",
+  "^Memória ": "^Memoria ",
+  "^Provedores ": "^Proveedores ",
+  "v2 ativa": "v2 activa",
+  "v3 ativa": "v3 activa",
+  "^\\d+/200 linhas$": "^\\d+/200 líneas$",
+  "O padrão recomendado para conversar com o cliente": "La opción recomendada por defecto para conversar con el cliente",
+  "Há uma versão nova": "Hay una versión nueva",
+  "Reativação de pacientes do pilates (cópia)": "Reactivación de pacientes de pilates (cópia)"
 }

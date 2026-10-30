@@ -61,6 +61,7 @@ import { nomeDoAgenteDeIA } from "@/lib/messaging/nome-do-agente-de-ia";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enderecoDaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 import type { Message } from "@/lib/types/messaging";
 
 type SB = SupabaseClient;
@@ -933,12 +934,23 @@ export async function sendMessageHandler(
   // (`conversations.channel_session_id` é NOT NULL com FK ON DELETE RESTRICT),
   // e ainda assim mantido para não trocar o desfecho desse ramo defensivo.
   const adapter = getAdapter(c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER);
+  // Ficha com telefone extra: a resposta volta pelo número que a pessoa escreveu.
+  // A porta de canal decide quem tem isso. A organização vem de `ctx` (fonte
+  // confiável), não do corpo.
+  const ultimoRecebidoChatId = await enderecoDaUltimaRecebida(supabase, {
+    provider: c.channel_sessions?.provider,
+    isGroup: c.is_group,
+    organizationId: ctx.organization_id,
+    conversationId: c.id,
+    contactId: c.contact_id,
+  });
   const chatId = adapter.resolveRecipient({
     isGroup: c.is_group,
     groupChatId: c.group_chat_id,
     phoneNumber: c.contacts?.phone_number,
     waIdentity: c.contacts?.wa_identity,
     waLid: c.contacts?.wa_lid,
+    ultimoRecebidoChatId,
   });
 
   // Releitura no sink: o operador pode ter fechado o canal enquanto o modelo

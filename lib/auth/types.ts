@@ -270,6 +270,18 @@ export interface ActiveOrg {
    */
   cliente_pela_agenda?: boolean;
   /**
+   * A regra "cliente pela venda" está ligada nesta organização
+   * (`organizations.settings.crm.cliente_pela_venda`, #3644)?
+   *
+   * Contato com negócio GANHO e nenhum aberto conta como cliente, e a conversa
+   * nova nasce no funil de clientes em vez do de captação. Opcional pelo mesmo
+   * motivo de `cliente_pela_agenda`: só o layout de `/app` preenche, e ausente é
+   * desligado. Serve ao MESMO par de controles (marcar um funil como de
+   * clientes e o selo do quadro), que passam a fazer sentido com qualquer uma
+   * das duas regras.
+   */
+  cliente_pela_venda?: boolean;
+  /**
    * Os módulos opcionais LIGADOS na instalação (`lib/instalacao/modulos.ts`).
    * É da instalação, não da organização — mora aqui porque este é o contexto
    * que o layout de `/app` entrega à casca. Ausente vale como nenhum: a porta

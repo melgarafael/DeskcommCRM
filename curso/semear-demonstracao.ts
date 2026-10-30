@@ -17,7 +17,7 @@
  * Recusa qualquer Supabase que não seja local. Rode com o worker PARADO: com ele
  * de pé, as mensagens semeadas acordam a IA. Horários são relativos ao seed.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { type User, createClient } from "@supabase/supabase-js";
@@ -1075,8 +1075,24 @@ export async function semearBase(): Promise<Contexto> {
   };
 }
 
+/**
+ * A semente de um módulo fica no banco depois da aula dele, e uma linha que sobra
+ * pode mudar a tela de outro módulo (o acervo de Conhecimento apagava o aviso de
+ * "sem acervo" da aula de Agentes). A base não conhece as tabelas de cada módulo,
+ * então quem sabe o que apagar é a própria semente: a que exporta `limpar` tem a
+ * limpeza chamada antes de QUALQUER aula. Cada `limpar` apaga só as próprias linhas.
+ */
+async function limparSementesDeModulo(ctx: Contexto) {
+  const pasta = path.join(path.dirname(new URL(import.meta.url).pathname), "semear");
+  for (const arquivo of readdirSync(pasta).filter((f) => f.endsWith(".ts")).sort()) {
+    const semente = (await import(path.join(pasta, arquivo))) as { limpar?: (c: Contexto) => Promise<void> };
+    if (typeof semente.limpar === "function") await semente.limpar(ctx);
+  }
+}
+
 async function rodar() {
   const ctx = await semearBase();
+  await limparSementesDeModulo(ctx);
   const modulo = process.argv[2];
   if (!modulo || modulo === "inbox") return;
   if (!/^[a-z0-9-]+$/.test(modulo)) throw new Error(`módulo inválido: ${modulo}`);
