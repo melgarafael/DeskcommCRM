@@ -63,8 +63,18 @@ let estadoAtual: Record<string, unknown>;
  */
 function clienteFalso(): unknown {
   return {
-    from: () => ({
+    from: (tabela: string) => ({
       select: () => {
+        if (tabela === "contact_phones") {
+          // A recusa de apagar o principal (`primary_phone_has_extras`) consulta os
+          // extras antes do UPDATE. Este teste não tem extra: a lista vem vazia, e
+          // o PATCH segue como antes.
+          const chainExtras = {
+            eq: () => chainExtras,
+            limit: async () => ({ data: [], error: null }),
+          };
+          return chainExtras;
+        }
         const chain = {
           eq: () => chain,
           maybeSingle: async () => ({ data: estadoAtual, error: null }),

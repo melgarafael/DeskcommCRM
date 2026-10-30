@@ -46,6 +46,7 @@ import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { useEnderecoDaResposta } from "@/hooks/inbox/useEnderecoDaResposta";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 
 interface Props {
@@ -152,6 +153,11 @@ export function ConversationHeader({
     (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
   const marcarPessoal = useMarkPersonalContact(c?.id ?? "");
   const desmarcarPessoal = useUnmarkPersonalContact(c?.id ?? "");
+
+  // Para qual número a resposta sai (Spec 31, B2). Fica ANTES do retorno de
+  // leitura-só, porque a ordem dos hooks não pode mudar entre renderizações.
+  const enderecoDaResposta = useEnderecoDaResposta(conversation.id, conversation.last_inbound_at ?? null);
+  const endereco = enderecoDaResposta.data?.data ?? null;
 
   /**
    * QUEM MANDA, uma pergunta com uma resposta.
@@ -322,6 +328,15 @@ export function ConversationHeader({
           // do fio, e o número continua na Ficha.
           <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground max-md:hidden">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
+          </p>
+        )}
+        {/* Contato com telefone extra: diz por qual número a resposta sai. Sem
+            extra, nada muda na tela. No canal que responde pela última mensagem
+            recebida, a resposta vai para o número por onde ela chegou; nos outros
+            segue pelo principal, e a linha não aparece. */}
+        {endereco?.has_extras && c?.phone_number && endereco.follows_last_inbound && endereco.phone_number && (
+          <p className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden" data-testid="resposta-sai-por">
+            {t("A resposta sai por:")} {phoneForDisplay(endereco.phone_number)}
           </p>
         )}
       </div>

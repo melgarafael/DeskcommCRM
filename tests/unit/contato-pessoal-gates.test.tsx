@@ -67,6 +67,10 @@ vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
+// O endereço da resposta busca com useQuery; sem telefone extra, nada aparece.
+vi.mock("@/hooks/inbox/useEnderecoDaResposta", () => ({
+  useEnderecoDaResposta: () => ({ data: undefined }),
+}));
 // O atendimento conjunto (#2542) desenha no cabeçalho e lê react-query (exigiria
 // QueryClientProvider). Este arquivo mede o gate do BOTÃO PESSOAL; a lista de
 // participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.
