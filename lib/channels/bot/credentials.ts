@@ -2,7 +2,7 @@
  * Credencial do bot do Telegram — **por sessão**, como os demais canais.
  *
  * O token do @BotFather vive cifrado em `channel_sessions.telegram_token_encrypted`
- * (migration 0773), pelas MESMAS RPCs de cifra do resto do repo
+ * (migration 0810), pelas MESMAS RPCs de cifra do resto do repo
  * (`fn_encrypt_oauth`/`fn_decrypt_oauth`, ver `lib/webhooks/secrets.ts`). Não há
  * fallback por variável de ambiente: diferente do canal oficial, aqui o token é
  * a IDENTIDADE do bot — um `.env` compartilhado faria toda organização falar

@@ -9601,7 +9601,7 @@ alter table public.channel_sessions
   add column if not exists datafy_waba_id text,
   add column if not exists datafy_token_encrypted bytea;
 
--- telegram (migration 0773, bot do @BotFather — issue #3440) — as colunas do
+-- telegram (migration 0810, bot do @BotFather — issue #3440) — as colunas do
 -- provider novo nascem ANTES das constraints abaixo, que as referenciam.
 alter table public.channel_sessions
   add column if not exists telegram_bot_id text,
@@ -9613,7 +9613,7 @@ alter table public.channel_sessions
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
   -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'telegram'
-  -- (0773) somados AQUI — UM bloco só por constraint (não duplicar drop+add
+  -- (0810) somados AQUI — UM bloco só por constraint (não duplicar drop+add
   -- por migration).
   check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text]));
 
@@ -9629,7 +9629,7 @@ alter table public.channel_sessions
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
     (provider = 'datafy'     and datafy_phone_number_id is not null) or
-    -- Bot do Telegram (migration 0773): endereça pelo id do robô.
+    -- Bot do Telegram (migration 0810): endereça pelo id do robô.
     (provider = 'telegram'   and telegram_bot_id      is not null)
   );
 
@@ -69389,7 +69389,7 @@ create index if not exists idx_crm_leads_org_pipeline_position_id
 comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
 
--- ---- canal do bot do Telegram (migration 0773, issue #3440) ----
+-- ---- canal do bot do Telegram (migration 0810, issue #3440) ----
 -- manifest: **Bot do Telegram na caixa de entrada (#3440, fatia T1).** `channel_sessions` ganha `telegram_bot_id` (o `sessionRef` do canal, e a chave de `contacts.social_identity = telegram:<robô>:<usuário>`) e `telegram_token_encrypted` (token do @BotFather cifrado por `fn_encrypt_oauth`, nunca devolvido à tela); `'telegram'` entra no vocabulário de `channel_sessions.provider`, no ramo do `channel_sessions_provider_ref_check` que exige o id do robô e em `conversations_channel_check`; e nasce o índice único parcial `channel_sessions_telegram_bot_id_ativo_unique` (molde da 0165): dois canais ATIVOS não apontam para o mesmo bot, senão os webhooks disputam `setWebhook` e a caixa de uma organização recebe a conversa da outra. O contato não tem telefone — identidade social opaca, molde da 0368 —, e por isso o provider fica FORA de `PROVIDERS_DE_TELEFONE` (lição do #3358/#3364). Grupos, mídia, edição e IA sobre o canal ficam para a T2. Aditiva e idempotente; as três constraints seguem em bloco ÚNICO (as duas de `channel_sessions` no trecho do dump, a de `conversations` no apêndice da 0368) e este bloco só acrescenta índice, comentários e as colunas.
 --
 -- ─── Por que os `comment on column` vêm DEPOIS do índice ─────────────────────

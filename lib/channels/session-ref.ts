@@ -42,7 +42,7 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     case "waha":
       return session.waha_session_name;
     // O bot do Telegram não endereça por telefone: o id do robô é a chave que a
-    // Bot API conhece e que a sessão guarda (migration 0773).
+    // Bot API conhece e que a sessão guarda (migration 0810).
     case "telegram":
       return session.telegram_bot_id;
     // O `accountId` que o provider devolve ao conectar a WABA. NÃO é o
