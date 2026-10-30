@@ -37,7 +37,7 @@ import {
   type DecisaoDeTranscricao,
   type OrigemDaTranscricao,
 } from "@/lib/messaging/media/escada-de-transcricao";
-import type { TranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { TranscriptionTooLargeError, type TranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { validarParProvedorModelo } from "@/lib/ai/par-provedor-modelo";
 import { reagirAConclusaoDeDerivacao } from "@/lib/escalacao/handoff-tecnico";
@@ -231,7 +231,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
   // derivação é `failed` + a razão, gravada em `metadata.media_derived_motivo`,
   // que é o que o operador lê antes de sair mexendo em Provedores de IA.
   const markFailed = async (motivo: string) => {
-    await admin.from("messages")
+    return admin.from("messages")
       .update({
         media_derived_text: MARCADOR_NAO_LIDA,
         media_derived_status: "failed",
@@ -521,6 +521,20 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     }
     return { consumer_key, status: "ok" };
   } catch (err) {
+    if (err instanceof TranscriptionTooLargeError) {
+      const motivo = "o áudio excede o limite de 25 MB da transcrição pela OpenRouter e não foi enviado ao serviço";
+      try {
+        const { error } = await markFailed(motivo);
+        if (error) return { consumer_key, status: "error", detail: "failed_status_update_failed" };
+      } catch {
+        return { consumer_key, status: "error", detail: "failed_status_update_failed" };
+      }
+      await avisarMidiaNaoLida(
+        msg.organization_id, rotuloDoTipo, motivo,
+        "Envie um áudio menor, de até 25 MB, para que o conteúdo possa ser transcrito.",
+      );
+      return { consumer_key, status: "skipped", detail: "transcription_audio_too_large" };
+    }
     const detail = err instanceof Error ? err.message : String(err);
     if (row.attempts >= DRAIN_MAX_ATTEMPTS - 1) {
       logger.error("[media-derive] failed permanently", { message_id: msg.id, detail });
@@ -651,11 +665,10 @@ function buildDeriveDeps(
   // O gate de orçamento do seam, não uma cópia: mesmo veredito, mesmo item
   // `budget_exceeded` na Central, mesma linha `orcamento_esgotado` em
   // Execuções. Vale para toda chamada de LLM cobrada por token que este
-  // worker faz — a visão e o degrau 3 da transcrição (o modelo de conversa da
-  // organização). Os degraus 1 e 2 da transcrição ficam fora: o custo deles é
-  // nulo (o serviço tem preço próprio, que o sistema não conhece), então
-  // nunca entram na soma que o teto compara, e o degrau 1 pode ser o serviço
-  // da própria instalação, que não é gasto da organização.
+  // worker faz — a visão e o degrau 4 da transcrição (o modelo de conversa da
+  // organização). Os serviços dos degraus 1 a 3 conservam o comportamento
+  // anterior, sem este gate de LLM. O custo informado pela OpenRouter pode
+  // entrar na soma de gastos; sua ausência continua null, sem estimativa.
   const barradoPeloTeto = async (d: {
     tipo: "imagem" | "áudio";
     oQueNaoSaiu: string;
@@ -900,10 +913,10 @@ function buildDeriveDeps(
   //
   // Só o degrau 1 (o serviço de transcrição do `.env`) aponta para um
   // endereço configurado à mão — por isso é o único que ainda passa pela
-  // recusa de destino interno antes da chave sair. Os degraus 2 e 3 vão para
+  // recusa de destino interno antes da chave sair. Os degraus 2, 3 e 4 vão para
   // o endereço público do provedor com a chave da própria organização.
   // `semTranscricao` continua sendo o fallback de quem não é áudio (vídeo e
-  // imagem têm o caminho deles), porque o degrau 4 `nada` já foi tratado no
+  // imagem têm o caminho deles), porque o degrau 5 `nada` já foi tratado no
   // corpo do handler — lá em cima, com `failed` + motivo.
   //
   // Todo degrau que transcreve passa por `comCustoRegistrado`: a chamada paga
@@ -920,7 +933,7 @@ function buildDeriveDeps(
       model: decisao.anuncio.modelId ?? "desconhecido",
       origem: decisao.origem,
     });
-  // O degrau 3 é o modelo de conversa da organização: chamada de LLM cobrada
+  // O degrau 4 é o modelo de conversa da organização: chamada de LLM cobrada
   // por token, então passa pelo teto antes de o áudio sair, como a visão.
   const transcriberDoModelo = (servico: TranscriptionProvider): TranscriptionProvider => ({
     transcribe: async (audio, mime) => {
@@ -969,8 +982,8 @@ interface ChamadaDeMidia {
   latency_ms: number;
   /**
    * Na transcrição, o degrau da escada que ouviu o áudio. É o que separa a
-   * linha de custo nulo por construção (degraus 1 e 2, serviço sem tokens) da
-   * linha de LLM sem preço conhecido (degrau 3), que acende o aviso.
+   * ausência de custo informado por serviço (degraus 1 a 3) do preço de LLM
+   * desconhecido (degrau 4), que acende o aviso.
    */
   origem_da_escolha?: OrigemDaTranscricao;
   /** Ausente = `ok`. */
@@ -1075,12 +1088,12 @@ function registrarChamadaDeMidia(
  * destino não aceito, teto de gasto) ficam FORA deste embrulho, então não
  * gravam linha de custo.
  *
- * Dois tipos de cobrança passam aqui. O modelo de conversa (degrau 3) é LLM
+ * Dois tipos de cobrança passam aqui. O modelo de conversa (degrau 4) é LLM
  * cobrado por token e devolve o uso (`transcribeMedindo`): a linha leva tokens
  * e o custo da tabela de preços, nulo só quando o modelo não está nela. O
- * serviço `/v1/audio/transcriptions` (degraus 1 e 2) tem preço próprio, que o
- * sistema não conhece, e não devolve tokens que se leiam aqui: custo nulo,
- * nunca 0.
+ * serviço `/v1/audio/transcriptions` (degraus 1 a 3) usa o custo informado
+ * pela API quando disponível. Sem esse dado, fica null; não se estima preço
+ * por tokens nem se inventa zero.
  */
 function comCustoRegistrado(
   servico: TranscriptionProvider,
@@ -1097,13 +1110,16 @@ function comCustoRegistrado(
       const inicio = Date.now();
       let texto: string;
       let uso: TokenUsage | null = null;
+      let custoInformado: number | null | undefined;
       try {
         if (servico.transcribeMedindo) {
-          ({ texto, uso } = await servico.transcribeMedindo(audio, mime));
+          ({ texto, uso, custoCents: custoInformado } = await servico.transcribeMedindo(audio, mime));
         } else {
           texto = await servico.transcribe(audio, mime);
         }
       } catch (err) {
+        // Limite recusado antes do fetch não é chamada paga nem falha da API.
+        if (err instanceof TranscriptionTooLargeError) throw err;
         registrarChamadaDeMidia(ctx.admin, ctx.orgId, () =>
           linhaDeFalha(err, {
             purpose: PONTO_TRANSCRICAO_DE_AUDIO,
@@ -1124,7 +1140,7 @@ function comCustoRegistrado(
         output_tokens: uso?.outputTokens ?? 0,
         cache_read_tokens: uso?.cacheReadTokens ?? 0,
         cache_write_tokens: uso?.cacheWriteTokens ?? 0,
-        cost_cents: uso ? costCents(ctx.model, uso) : null,
+        cost_cents: custoInformado !== undefined ? custoInformado : uso ? costCents(ctx.model, uso) : null,
         latency_ms: Date.now() - inicio,
       }));
       return texto;

@@ -9,6 +9,7 @@ import { aplicarConvite } from "@/lib/auth/aplicar-convite";
 import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
 import { safeNext } from "@/lib/auth/safe-next";
 import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { audit } from "@/lib/audit";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { env } from "@/lib/env";
@@ -139,6 +140,11 @@ export async function GET(request: NextRequest) {
   }
 
   const usuario = data.user;
+
+  // Entrar de novo é o jeito que a pessoa tem de "atualizar" o que vê. O cache
+  // curto de autorização só é derrubado por quem escreve PELO APP; vínculo
+  // gravado por fora (seed, worker, SQL) esperaria o TTL. Um MISS por login.
+  invalidarUsuario(usuario.id);
 
   // O Google autentica com dois fatores (e a conta pode tê-los). O login por
   // senha NÃO deixa passar quem tem TOTP verificado sem o segundo fator

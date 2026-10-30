@@ -22,6 +22,7 @@ import * as path from "node:path";
 import { test, expect, type Page } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { esperarCacheCurtoVencer, esperarEscritaDeFora } from "./helpers/cache-curto";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
@@ -193,6 +194,8 @@ test("documento inválido avisa no campo; corrigir permite criar e vazio continu
 
 // Perfil real da organização: a tela e a rota devem concordar fora do Brasil.
 test("documento segue Portugal: CPF brasileiro não passa como NIF", async ({ page }) => {
+  // Até dois TTLs do cache curto (#3696): um para o país novo chegar, outro na limpeza.
+  test.setTimeout(150_000);
   const conexao = credenciaisSupabaseDeTeste();
   const db = createClient(conexao.url, conexao.serviceRole, { auth: { persistSession: false } });
   const anterior = await db.from("organizations").select("country").eq("id", creds.org_id).single();
@@ -202,11 +205,17 @@ test("documento segue Portugal: CPF brasileiro não passa como NIF", async ({ pa
   let contatoId: string | undefined;
   try {
     await login(page);
-    await page.goto("/app/contacts");
-    await page.getByRole("button", { name: "Novo contato", exact: true }).click();
     const dialogo = page.getByRole("dialog", { name: "Novo contato", exact: true });
-    await dialogo.getByLabel("Nome", { exact: true }).fill(`Documento PT ${sufixo}`);
     const documento = dialogo.getByLabel(/NIF/);
+    // O país foi gravado direto no banco, e os casos anteriores desta conta já
+    // aqueceram o snapshot da empresa no cache curto (#3696): ele chega à tela
+    // quando a entrada vence, não na recarga seguinte.
+    await esperarEscritaDeFora(async () => {
+      await page.goto("/app/contacts");
+      await page.getByRole("button", { name: "Novo contato", exact: true }).click();
+      await expect(documento).toBeVisible({ timeout: 3_000 });
+    });
+    await dialogo.getByLabel("Nome", { exact: true }).fill(`Documento PT ${sufixo}`);
     await documento.fill("52998224725");
     await documento.press("Tab");
     await expect(dialogo.getByRole("alert")).toHaveText("NIF inválido");
@@ -223,5 +232,7 @@ test("documento segue Portugal: CPF brasileiro não passa como NIF", async ({ pa
   } finally {
     if (contatoId) expect((await page.request.delete(`/api/v1/contacts/${contatoId}`)).ok()).toBe(true);
     expect((await db.from("organizations").update({ country: anterior.data!.country }).eq("id", creds.org_id)).error).toBeNull();
+    // A próxima spec desta conta não pode herdar o "PT" que ficou no cache.
+    await esperarCacheCurtoVencer();
   }
 });

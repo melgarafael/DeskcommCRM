@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 /**
@@ -89,5 +89,76 @@ describe("GET /api/v1/health — o endereço interno não sai para quem não tem
     // verboso, o operador perderia o diagnóstico e ninguém notaria — o caso
     // acima ficaria verde do mesmo jeito.
     expect(corpo).toContain(HOST_VAZADO);
+  });
+});
+
+describe("GET /api/v1/health — indisponibilidade do projeto Supabase", () => {
+  beforeEach(() => vi.resetModules());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("522 vira projeto_indisponivel, não tempo_esgotado", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("", { status: 522 })));
+    const { GET } = await import("./route");
+    const { NextRequest } = await import("next/server");
+    const { data } = await (await GET(new NextRequest("https://crm.exemplo.com.br/api/v1/health"))).json();
+    expect(data.checks.supabase.status).toBe("down");
+    expect(data.checks.supabase.reason).toBe("projeto_indisponivel");
+  });
+
+  it("PGRST002 no corpo vira projeto_indisponivel", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ code: "PGRST002", message: "Could not query the database for the schema cache. Retrying." }), {
+          status: 503,
+        }),
+      ),
+    );
+    const { GET } = await import("./route");
+    const { NextRequest } = await import("next/server");
+    const { data } = await (await GET(new NextRequest("https://crm.exemplo.com.br/api/v1/health"))).json();
+    expect(data.checks.supabase.status).toBe("down");
+    expect(data.checks.supabase.reason).toBe("projeto_indisponivel");
+  });
+
+  it("timeout puro continua tempo_esgotado", async () => {
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+    const { GET } = await import("./route");
+    const { NextRequest } = await import("next/server");
+    const { data } = await (await GET(new NextRequest("https://crm.exemplo.com.br/api/v1/health"))).json();
+    expect(data.checks.supabase.status).toBe("down");
+    expect(data.checks.supabase.reason).toBe("tempo_esgotado");
+  });
+});
+
+describe("GET /api/v1/health — corpo cortado no meio não vira timeout", () => {
+  beforeEach(() => vi.resetModules());
+  afterEach(() => vi.unstubAllGlobals());
+
+  function corpoCortado() {
+    return new ReadableStream({
+      start(c) {
+        c.error(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }));
+      },
+    });
+  }
+
+  async function checkComResposta(res: () => Response) {
+    vi.stubGlobal("fetch", () => Promise.resolve(res()));
+    const { GET } = await import("./route");
+    const { NextRequest } = await import("next/server");
+    const { data } = await (await GET(new NextRequest("https://crm.exemplo.com.br/api/v1/health"))).json();
+    return data.checks.supabase;
+  }
+
+  it("200 com o corpo cortado mantém o motivo de alcance da conexão", async () => {
+    const supabase = await checkComResposta(() => new Response(corpoCortado(), { status: 200 }));
+    expect(supabase.status).toBe("down");
+    expect(supabase.reason).toBe("host_inalcancavel");
+  });
+
+  it("500 com o corpo cortado continua sendo a resposta que chegou", async () => {
+    const supabase = await checkComResposta(() => new Response(corpoCortado(), { status: 500 }));
+    expect(supabase.status).toBe("down");
+    expect(supabase.reason).toBe("resposta_inesperada");
   });
 });

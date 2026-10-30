@@ -101,6 +101,14 @@ export interface RecipientInput {
    * `waIdentity.startsWith("lid:")` — justo o caso que a regra protege.
    */
   waLid?: string | null | undefined;
+  /**
+   * Endereço (chat) da última mensagem RECEBIDA na conversa, só quando a ficha
+   * tem telefone extra. Com dois números na mesma ficha, responder pelo principal
+   * sairia por número que a pessoa não usou nesta conversa; a resposta vai, então,
+   * pelo número que ela escreveu. Vem preenchido só nesse caso: ficha sem extra
+   * segue pela regra de sempre (`waLid`, depois o principal).
+   */
+  ultimoRecebidoChatId?: string | null;
 }
 
 /** Contato compartilhado (vcard) — só `kind: "contact"`. */

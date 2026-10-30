@@ -553,3 +553,53 @@ describe("POST/DELETE contatos-relacionados — o escritor da #3083 F1", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #3669 F1 — o NÚMERO e a CONVERSA de cada pessoa. Com o comprador e o fixo da
+ * loja na mesma lista, o número é o que distingue um do outro, e a conversa é o
+ * atalho. Os campos são AUSENTES quando não há valor: é por isso que as
+ * asserções acima, escritas antes deles, seguem valendo sem mudança.
+ */
+describe("GET contatos-relacionados — o número e a conversa (#3669 F1)", () => {
+  it("⭐ devolve o telefone e a conversa MAIS RECENTE da pessoa, só da própria organização", async () => {
+    montarBanco({
+      crm_leads: [{ id: LEAD, organization_id: ORG_A }],
+      crm_lead_links: [link(MARIA, { metadata: { papel: "Comprador" } })],
+      contacts: [contato(MARIA, ORG_A, { name: "Maria Silva", phone_number: "+5511987654321" })],
+      conversations: [
+        { id: "conv-antiga", organization_id: ORG_A, contact_id: MARIA, last_message_at: "2026-10-01T10:00:00Z" },
+        { id: "conv-recente", organization_id: ORG_A, contact_id: MARIA, last_message_at: "2026-10-29T10:00:00Z" },
+        // Linha forjada de outro tenant com o mesmo contato: a mais recente de
+        // todas, e mesmo assim não pode virar o atalho.
+        { id: "conv-de-la", organization_id: ORG_B, contact_id: MARIA, last_message_at: "2026-10-30T10:00:00Z" },
+      ],
+    });
+
+    const { data } = await corpo(await chamar());
+
+    expect(data).toEqual([
+      {
+        contact_id: MARIA,
+        nome: "Maria Silva",
+        papel: "Comprador",
+        anonimizado: false,
+        telefone: "+5511987654321",
+        conversa_id: "conv-recente",
+      },
+    ]);
+  });
+
+  it("anonimizado não mostra número, mesmo que a redação não tenha rodado", async () => {
+    montarBanco({
+      crm_leads: [{ id: LEAD, organization_id: ORG_A }],
+      crm_lead_links: [link(ANON)],
+      contacts: [contato(ANON, ORG_A, { name: "Cliente Anonimizado #8", is_anonymized: true, phone_number: "+5511900000000" })],
+    });
+
+    const { data } = await corpo(await chamar());
+
+    expect(data).toEqual([
+      { contact_id: ANON, nome: "Cliente Anonimizado #8", papel: null, anonimizado: true },
+    ]);
+  });
+});

@@ -37,6 +37,7 @@ const ORDEM_ESPERADA = [
   "clinical_claim",
   "commercial_restriction",
   "agenda_stall",
+  "registro_sem_efeito",
   "disclosure",
 ] as const;
 
@@ -68,8 +69,8 @@ describe("forma da cadeia before_send", () => {
     // O par (tamanho, versão) é o que amarra os dois. Acrescentar um gate sem
     // bumpar deixa o trace de auditoria mentindo sobre qual cadeia rodou — e o
     // trace é justamente a prova que as Fases 0–2 usam para dizer "não regrediu".
-    expect(BEFORE_SEND_GATES).toHaveLength(14);
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(10);
+    expect(BEFORE_SEND_GATES).toHaveLength(15);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(11);
   });
 
   it("internal_vocabulary roda ANTES do disclosure — inspeciona o texto do modelo, não o emendado", () => {
@@ -99,5 +100,13 @@ describe("forma da cadeia before_send", () => {
   it("nenhum gate repetido — nome duplicado quebraria a leitura do trace", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(new Set(nomes).size).toBe(nomes.length);
+  });
+
+  it("registro_sem_efeito fica entre agenda_stall e o disclosure — texto do modelo, nunca o emendado", () => {
+    // #3333. A mesma razão da agenda: o disclosure pode EMENDAR o corpo, e a afirmação que
+    // este gate julga ("já registrei seu interesse") é a que o MODELO escreveu.
+    const nomes = BEFORE_SEND_GATES.map((g) => g.name);
+    expect(nomes.indexOf("registro_sem_efeito")).toBe(nomes.indexOf("agenda_stall") + 1);
+    expect(nomes.indexOf("registro_sem_efeito")).toBeLessThan(nomes.indexOf("disclosure"));
   });
 });

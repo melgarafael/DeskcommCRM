@@ -33,6 +33,7 @@ import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
 import { escritaCabeNoTurno } from "./escopo-das-escritas";
+import type { DesfechoDaEscrita, EfeitoDasEscrituras } from "./efeito-das-escritas";
 import {
   chaveDaEscritaDoNegocio,
   criarFilaDeEscritasDoNegocio,
@@ -96,6 +97,21 @@ export interface PickToolsInput {
    * é síncrono.
    */
   servidorMcpExterno?: ServidorMcpExternoMontado;
+  /**
+   * O PREDICADO ÚNICO do efeito deste turno (#3333) — ver
+   * `lib/ai/runtime/efeito-das-escritas.ts`.
+   *
+   * Esta ponte é o ÚNICO ponto que sabe o desfecho de uma escrita (ela decide o `success`
+   * do audit depois do escopo de contato, do negócio do turno, do escopo de funil, da
+   * recusa do handler e da escrita sem desfecho). Por isso é ELA que responde à pergunta
+   * "esta ação já produziu efeito?", uma vez por saída, em vez de cada call site
+   * reimplementar "deu certo?".
+   *
+   * Ausente = ninguém pergunta: um chamador que não conhece o campo simplesmente não
+   * registra desfecho. A direção segura aqui é NÃO registrar — o que desarma um gate,
+   * nunca libera uma escrita.
+   */
+  efeitos?: EfeitoDasEscrituras;
 }
 
 /**
@@ -213,6 +229,20 @@ function wrapMcpTool(
 ): Tool {
   const inputSchema = shapeToZodObject(def.inputSchema as Record<string, z.ZodTypeAny>);
 
+  // ── A RESPOSTA ÚNICA PARA "ESTA AÇÃO JÁ PRODUZIU EFEITO?" (#3333) ────────
+  //
+  // Toda saída desta ponte que ENCERRA uma escrita passa por aqui, com o MESMO
+  // desfecho que já vai para o `api_audit_log`: o efeito não é uma segunda
+  // opinião sobre "deu certo?", é a que já existe, publicada para quem produz a
+  // fala (`guardrails/before-send.ts`, gate `registro_sem_efeito`).
+  //
+  // Leitura (`read`) não registra: ela não cria registro nenhum, e o predicado é
+  // sobre o que passou a existir.
+  const anotarEfeito = (desfecho: DesfechoDaEscrita): void => {
+    if (def.category === "read") return;
+    input.efeitos?.registrar(def.name, desfecho);
+  };
+
   return tool({
     description: def.description,
     inputSchema,
@@ -286,6 +316,7 @@ function wrapMcpTool(
               success: false,
               errorMessage: `contato_da_conversa:${escopo.motivo}`,
             });
+            anotarEfeito("falhou");
             return escopo;
           }
         }
@@ -325,6 +356,7 @@ function wrapMcpTool(
               success: false,
               errorMessage: `negocio_da_conversa:${alvo.motivo}`,
             });
+            anotarEfeito("falhou");
             return { permitido: false, motivo: alvo.motivo, mensagem: alvo.mensagem };
           }
           if (alvo.trocado) {
@@ -408,6 +440,7 @@ function wrapMcpTool(
           // Devolve TEXTO em vez de lançar: o modelo lê, entende por que foi
           // recusado e segue a conversa. Uma exceção viraria erro de execução e
           // o turno morreria — para o cliente, o assistente teria emudecido.
+          anotarEfeito("falhou");
           return { permitido: false, motivo: veredito.motivo, mensagem: explicacao };
         }
 
@@ -477,6 +510,7 @@ function wrapMcpTool(
             success: false,
             errorMessage: `contato_da_conversa:${recusa}`,
           });
+          anotarEfeito("falhou");
           return result;
         }
 
@@ -492,6 +526,8 @@ function wrapMcpTool(
             : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           ...(termoBuscado === null ? {} : { termo: termoBuscado }),
         });
+        // O MESMO critério do audit: vazio declarado não é efeito (#484).
+        anotarEfeito(motivoDoVazio === null ? "produziu_efeito" : "falhou");
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : "unknown_error";
@@ -503,6 +539,10 @@ function wrapMcpTool(
           success: false,
           errorMessage: message,
         });
+        // Escrita sem desfecho NÃO é falha: ninguém sabe se ela aconteceu. O predicado
+        // guarda a diferença (`incerto`) porque o ensino do veto muda — em `falhou` a fala
+        // pode dizer "não registrei"; em `incerto` ela não pode afirmar nem negar.
+        anotarEfeito(err instanceof EscritaDoNegocioSemDesfechoError ? "incerto" : "falhou");
         if (err instanceof EscritaDoNegocioSemDesfechoError) {
           logger.error("escrita do negócio sem desfecho; novas escritas recusadas", {
             tool_name: def.name,

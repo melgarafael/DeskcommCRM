@@ -188,7 +188,16 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
 
 function toTriggerConfig(form: TriggerFormState): Record<string, unknown> {
   const cancelOnReply = form.cancelOnReply ? { cancel_on_reply: true } : {};
-  if (form.kind === "appointment_no_show") return {kind:"appointment_no_show",params:{event_type_ids:form.eventTypeIds}};
+  // ⚠️ ESTE TIPO GRAVA O INTERRUPTOR LIGADO, SEMPRE. A tela o mostra ligado
+  // (e travado) porque neste gatilho não há escolha a fazer — quem marca a
+  // consulta é o atendimento, e a sequência de falta só existe para o silêncio
+  // de quem não compareceu (`lib/followup/modelos/clinica.ts`). Faltava a outra
+  // metade: o valor visível não entrava no `trigger_config`, e para o motor
+  // (`cancel_on_reply ?? false`) o fluxo seguia disparando por cima do paciente
+  // que respondeu «quero remarcar» — issue #3400. O `true` é LITERAL e não
+  // `form.cancelOnReply` de propósito: trocar o tipo para este gatilho dentro do
+  // painel não mexe no interruptor, e a verdade gravada é a constante da tela.
+  if (form.kind === "appointment_no_show") return {kind:"appointment_no_show",params:{event_type_ids:form.eventTypeIds},cancel_on_reply:true};
   if (form.kind === "manual") return { kind: "manual", ...cancelOnReply };
 
   if (form.kind === "stage_change") {
@@ -687,6 +696,13 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
 
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor="trigger-cancel-on-reply">{t("Cancelar se o lead responder")}</Label>
+            {/* ⚠️ NÃO DESTRAVE ESTE INTERRUPTOR NO GATILHO DE FALTA. Ele é a
+                única coisa travada do painel porque não há escolha: a sequência
+                de falta só existe para o silêncio de quem não compareceu. O
+                valor que ele mostra vai no `trigger_config` (`toTriggerConfig`)
+                e, em fluxo antigo que ainda não tem o campo, o motor o lê como
+                `true` (`lib/followup/reactivity.ts`) — destravar aqui sem mudar
+                aqueles dois deixaria a tela mentindo de novo (#3400). */}
             <Switch
               id="trigger-cancel-on-reply"
               checked={form.kind === "appointment_no_show" || form.cancelOnReply}

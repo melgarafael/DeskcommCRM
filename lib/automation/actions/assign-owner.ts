@@ -16,6 +16,7 @@
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /** O que `fn_automation_rodizio_atribuir` devolve: quem recebeu, ou o motivo de ninguém. */
 type DesfechoDoRodizio =
@@ -41,9 +42,12 @@ async function executarRodizio(ctx: ActionCtx, leadId: string): Promise<ActionRe
   const desfecho = data as DesfechoDoRodizio | null;
   if (desfecho && "user_id" in desfecho) {
     const { data: pessoa } = await ctx.admin.auth.admin.getUserById(desfecho.user_id);
-    // ponytail: sem nome no perfil, o começo do id — o dono já foi gravado, e a
+    // ponytail: sem nome no perfil, o rótulo da régua (#3023) — o dono já foi gravado, e a
     // frase é informação: falhar aqui esconderia uma atribuição que aconteceu.
-    const nome = (pessoa?.user?.user_metadata?.full_name as string | undefined) ?? desfecho.user_id.slice(0, 8);
+    const nome = rotuloDoMembro({
+      full_name: pessoa?.user?.user_metadata?.full_name as string | undefined,
+      user_id: desfecho.user_id,
+    });
     return {
       type: "assign_owner",
       status: "success",

@@ -222,6 +222,18 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     camada: null,
   },
   {
+    nome: "registro_sem_efeito",
+    rotulo: "Conferir a escrita antes de afirmar registro",
+    oQueProtege:
+      "Recusa a confirmação de registro quando a ferramenta não confirmou nenhuma escrita " +
+      "neste turno. O controle ainda não identifica a qual item cada escrita se refere.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "É a mesma promessa vazia do 'vou pedir pro responsável': o cliente fica esperando um " +
+      "contato que nunca acontece. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
     nome: "disclosure",
     rotulo: "Dizer que é um assistente quando perguntam",
     oQueProtege: "Se o cliente pergunta se está falando com um robô, a resposta não pode enganar.",
