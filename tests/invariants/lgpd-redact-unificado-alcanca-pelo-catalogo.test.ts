@@ -303,6 +303,16 @@ const DECISOES: Record<string, Decisao> = {
     razao: "Doc 199 (pergunta 2 = A): ctwa_clid liga a pessoa ao anúncio em que clicou na Meta; fn_apaga_cliques_ctwa_de_contato_anonimizado (0806) APAGA as linhas do contato na virada de is_anonymized. Custo aceito: clique antigo reenviado pela Meta seria contado de novo.",
   },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
+  automation_rule_contact_claims: {
+    decidida: "manter",
+    razao:
+      "Trava de corrida do dreno da automacao (#3267): guarda so identificadores (organizacao, regra, contato, evento) e o dado pessoal mora em `contacts`, que a cascata anonimiza. Apagar a linha aqui nao protege ninguem e destruiria a prova de que a regra ja executou — a chave unica e o proprio registro da corrida.",
+  },
+  automation_rule_runs: {
+    decidida: "manter",
+    razao:
+      "Recibo da execucao da regra automatica (#3267 acrescentou o `contact_id`, com `on delete set null` de proposito: o recibo sobrevive ao expurgo do contato). Guarda status, erro e o resultado das acoes — so as falhas vao detalhadas —, e o dado pessoal mora em `contacts`, que a cascata anonimiza. Apagar o recibo destruiria a prova de que a regra executou, que e justamente o que a opcao \"no maximo uma vez por contato\" precisa auditar; a coluna do contato zera sozinha no expurgo.",
+  },
   before_send_traces: {
     decidida: "manter",
     razao: "Traço de decisão do gate de envio (vetoed_gate/vetoed_code) para auditoria de POR QUE a mensagem não saiu; é código de vocabulário, não o conteúdo enviado — o corpo mora em messages.",

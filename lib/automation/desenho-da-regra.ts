@@ -107,6 +107,15 @@ export function oDesenhoEditaAsCondicoes(conditions: Conditions): boolean {
 export type TelaDoGatilho = {
   /** `null` = qualquer fonte de formulário. */
   fonte: string | null;
+  /**
+   * "No máximo uma vez por contato" (#2974), do gatilho de contato novo.
+   *
+   * Booleano — e a tela GRAVA os dois valores, não só o ligado: se ela omitisse
+   * o `false`, um `true` gravado antes sobreviveria ao `configAoSalvarDaTela`
+   * (que faz merge com a configuração guardada) e o operador não conseguiria
+   * DESLIGAR a opção.
+   */
+  umaVezPorContato: boolean;
   data: { pipeline_id: string; campo: string; dias: string };
   tempo: { dias: string; direcao: DirecaoDoSilencio; proteger_pela_agenda: boolean };
 };
@@ -231,8 +240,13 @@ export function telaDoGatilho(config: unknown): TelaDoGatilho {
     config && typeof config === "object" && !Array.isArray(config)
       ? (config as Record<string, unknown>).webhook_source_id
       : undefined;
+  const limite =
+    config && typeof config === "object" && !Array.isArray(config)
+      ? (config as Record<string, unknown>).uma_vez_por_contato
+      : undefined;
   return {
     fonte: typeof fonte === "string" ? fonte : null,
+    umaVezPorContato: limite === true,
     data: data
       ? { pipeline_id: data.pipeline_id, campo: data.campo, dias: String(data.dias) }
       : { pipeline_id: "", campo: "", dias: DIAS_PADRAO },
@@ -279,9 +293,24 @@ export function triggerConfigDaTela(
     });
   }
   if (evento === "lead.created") {
-    return configAoSalvarDaTela({ ...base, configDaTela: { webhook_source_id: tela.fonte } });
+    return configAoSalvarDaTela({
+      ...base,
+      configDaTela: {
+        webhook_source_id: tela.fonte,
+        // Sempre gravado, ligado OU desligado (#2974): ver o comentário de
+        // `TelaDoGatilho.umaVezPorContato` — omitir o `false` impediria
+        // desligar a opção, porque `configAoSalvarDaTela` faz merge com o que
+        // está guardado.
+        uma_vez_por_contato: tela.umaVezPorContato,
+      },
+    });
   }
-  return {};
+  // Gatilho sem configuração própria: nada é inventado aqui, mas o que a tela
+  // NÃO desenha não pode sumir no salvar — `configAoSalvarDaTela` com
+  // `configDaTela` vazio devolve a configuração guardada quando o gatilho é o
+  // mesmo (é assim que um "uma vez por contato" ligado pela API sobrevive) e
+  // `{}` quando o gatilho mudou, que é o comportamento de sempre.
+  return configAoSalvarDaTela({ ...base, configDaTela: {} });
 }
 
 /* ───────────────────────── regra → desenho ───────────────────────── */

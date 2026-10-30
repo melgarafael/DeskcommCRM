@@ -26,6 +26,11 @@ vi.mock("@/hooks/inbox/useContinuarPorOutroNumero", () => ({
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ data: [], isLoading: false }),
 }));
+// A prévia do número para onde a transferência leva (#3642) só pergunta com um
+// atendente escolhido; aqui ninguém escolhe atendente, então ela não responde.
+vi.mock("@/hooks/inbox/useNumeroDaTransferencia", () => ({
+  useNumeroDaTransferencia: () => ({ data: null }),
+}));
 vi.mock("@/hooks/inbox/useTransferConversation", () => ({
   useTransferConversation: () => ({ mutate: vi.fn(), isPending: false }),
 }));

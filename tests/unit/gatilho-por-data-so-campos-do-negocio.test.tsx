@@ -158,6 +158,7 @@ describe("os seletores de 'Campo de data' não oferecem campo do contato", () =>
           evento: GATILHO_DE_DATA_DO_FUNIL,
           tela: {
             fonte: null,
+            umaVezPorContato: false,
             data: { pipeline_id: FUNIL, campo: "", dias: "3" },
             tempo: { dias: "7", direcao: "da_equipe", proteger_pela_agenda: false },
           },

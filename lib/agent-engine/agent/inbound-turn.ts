@@ -203,7 +203,13 @@ import {
   nomesDasFerramentas,
   runBeforeSend,
   tipoDeEnvio,
+  type GateContext,
+  VETOS_IRREVOGAVEIS,
 } from '../guardrails/before-send';
+// #3333 — o predicado único do efeito, do lado de quem PERGUNTA. Do lado de quem RESPONDE é
+// a ponte das tools MCP (`lib/ai/runtime/tools.ts`), que recebe este mesmo coletor.
+import { criarEfeitoDasEscrituras } from '@/lib/ai/runtime/efeito-das-escritas';
+import { ferramentasDeRegistroDoAgente } from '../guardrails/registro-sem-efeito';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
@@ -227,7 +233,7 @@ import {
   type BriefingDaPassagem,
 } from '@/lib/escalacao/briefing-da-passagem';
 import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
-import { CORRECAO_DO_TURNO_MUDO, turnoMudoPedeCorrecao } from './turno-mudo';
+import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } from './turno-mudo';
 import {
   desfechoSemCandidato,
   previaPedeCorrecaoDoTurnoMudo,
@@ -2247,6 +2253,7 @@ async function executarTurnoDoAgente(
   // horas por dia em que um PR reprova por causa do relógio de parede.
   const clock = deps.clock ?? ((): Date => new Date());
   const inicioDoProcessamento = performance.now();
+  let duracaoDosClassificadoresMs = 0;
   const contextKnobs = {
     historyLimit: deps.knobs.historyLimit,
     maxTokens: deps.knobs.maxContextTokens,
@@ -3305,6 +3312,9 @@ async function executarTurnoDoAgente(
   // equipe. Os dois dizem que o silêncio foi decisão — só sem eles o motor pede a
   // correção do turno que terminou sem falar com o cliente (ver depois da chamada principal).
   let tentativasDeEnvio = 0;
+  // Veto que manda PARAR (stop/LGPD): pedir a correção seria pedir ao modelo que
+  // tente de novo o que a cadeia proíbe — ver `VETOS_IRREVOGAVEIS`.
+  let vetoIrrevogavel = false;
   let passouParaAEquipe = false;
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
@@ -3471,6 +3481,22 @@ async function executarTurnoDoAgente(
   // Lido pelo `casePromiseGate` (#1873): true só depois de `schedule_followup` AGENDAR com
   // sucesso neste turno. Libera apenas a promessa de retorno do próprio assistente.
   let followupAgendadoNesteTurno = false;
+  // ── O PREDICADO ÚNICO DO EFEITO (#3333) ────────────────────────────────────────────────
+  //
+  // Uma instância por turno. A ponte das tools MCP (`buildMcpTurnTools` → `pickToolsFromMcp`
+  // → `wrapMcpTool`) anota o desfecho de cada escrita — o MESMO que já vai para o
+  // `api_audit_log` —, e o gate `registro_sem_efeito` pergunta, no momento do envio, se a
+  // ação que a fala anuncia produziu efeito. É o MESMO objeto dos dois lados: não existe
+  // segunda cópia de "deu certo?" em lugar nenhum.
+  //
+  // `active`/`ferramentas` no molde do `agenda` logo abaixo: a família é única
+  // (`ESCRITAS_QUE_REGISTRAM_O_INTERESSE`) e o veto só nomeia ferramenta que o agente TEM.
+  const efeitosDoTurno = criarEfeitoDasEscrituras();
+  const registroDoTurno = (): NonNullable<GateContext['registro']> => {
+    const ferramentas =
+      agentConfig === null ? [] : ferramentasDeRegistroDoAgente(agentConfig.toolIds);
+    return { active: ferramentas.length > 0, ferramentas, efeitos: efeitosDoTurno };
+  };
   const outcomes: ChannelSendResult[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -3732,6 +3758,7 @@ async function executarTurnoDoAgente(
           return passarComercialParaEquipe(chain.code);
         }
         if (chain.status === 'vetoed') {
+          if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
           return { ok: false, error: { code: chain.code, message: chain.message } };
         }
         const outcome = chain.outcome;
@@ -4087,6 +4114,10 @@ async function executarTurnoDoAgente(
               disponivel: rawTools.schedule_followup !== undefined,
               agendadoNesteTurno: followupAgendadoNesteTurno,
             },
+            // #3333 — o gate lê o predicado único do efeito no momento do envio (as tools do
+            // modelo rodam em passos anteriores do MESMO loop, então o coletor já está certo
+            // aqui). `registroDoTurno()` devolve o MESMO `efeitosDoTurno` que a ponte alimenta.
+            registro: registroDoTurno(),
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
               : {}),
@@ -4354,6 +4385,7 @@ async function executarTurnoDoAgente(
             ) {
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
             }
+            if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
             // modelo o vê no turno seguinte. NÃO é exceção — não derruba o run.
             return { ok: false, error: { code: chain.code, message: chain.message } };
@@ -4944,7 +4976,9 @@ async function executarTurnoDoAgente(
           },
           configDoTurno,
           runLog,
-          preview ? { readOnly: true } : undefined,
+          // #3333 — o MESMO coletor que o gate lê. A ponte anota o desfecho de cada escrita
+          // (o `success` do audit), e `registroDoTurno()` o entrega ao `before-send`.
+          preview ? { readOnly: true, efeitos: efeitosDoTurno } : { readOnly: false, efeitos: efeitosDoTurno },
         );
         if (mcp !== null) {
           mcpCleanup = mcp.cleanup;
@@ -5036,7 +5070,15 @@ async function executarTurnoDoAgente(
         execute: async () => ({ ok: true, notes: preview.notes ?? [] }),
       };
     const previewContext = preview
-      ? await previewGateContext(pool, preview, runLog, clock())
+      ? {
+          ...(await previewGateContext(pool, preview, runLog, clock())),
+          // #3333 — a MESMA armação do turno real (`registroDoTurno`), e o MESMO coletor que
+          // a ponte das tools alimenta neste turno de prévia. `previewGateContext` monta o
+          // contexto antes de as tools rodarem, então o gate lê o coletor já preenchido no
+          // momento do envio. Sem isto, quem afina o prompt no Testar testaria contra outro
+          // sistema — o mesmo motivo do `agenda` em `preview.ts`.
+          registro: registroDoTurno(),
+        }
       : null;
     const previewTools =
       preview && previewContext
@@ -5168,6 +5210,7 @@ async function executarTurnoDoAgente(
       manipulacaoLigada,
       ultimaMensagemDoCliente: skillSignal,
     });
+    const inicioDosClassificadores = performance.now();
     const [stageResultado, jailbreakVerdict, manipulacaoDoJev] = await Promise.all([
       deps.knobs.stageClassifier !== undefined && vaiClassificar.estagio
         ? classifyStage(
@@ -5210,6 +5253,7 @@ async function executarTurnoDoAgente(
       await gravarOJev(await perguntaAoJev, null, 'none');
       throw err;
     });
+    duracaoDosClassificadoresMs = Math.round(performance.now() - inicioDosClassificadores);
 
     stageSuggestion = stageResultado;
     if (stageSuggestion !== null) {
@@ -5477,7 +5521,7 @@ async function executarTurnoDoAgente(
     // revelar. Só com texto solto: silêncio sem texto é decisão já tomada, e
     // pedir de novo pagaria uma chamada de modelo para ouvir a mesma coisa.
     let correcaoTruncou = false;
-    // A correção também pode gastar o teto dela (3 passos) só em consultas: na
+    // A correção também pode gastar o teto dela (PASSOS_DA_CORRECAO) só em consultas: na
     // prévia isso é a mesma falha do teto da primeira chamada, não decisão.
     let tetoNaCorrecao = false;
     const correcaoDoTurnoMudoPedida =
@@ -5491,6 +5535,7 @@ async function executarTurnoDoAgente(
           liveJob().kind === 'inbound_turn' &&
           turnoMudoPedeCorrecao({
             tentativasDeEnvio,
+            vetoIrrevogavel,
             enviadas: outcomes.length,
             turnoDescartado,
             passouParaAEquipe,
@@ -5516,7 +5561,9 @@ async function executarTurnoDoAgente(
           system,
           messages: [...openingMessages, ...turn.result.responseMessages, pedidoDeCorrecao],
           tools,
-          maxSteps: Math.min(maxSteps, 3),
+          // Teto em `PASSOS_DA_CORRECAO` (turno-mudo.ts) — o MESMO número mede
+          // `tetoNaCorrecao` logo abaixo; dois literais já divergiram (6 aqui, 3 lá).
+          maxSteps: Math.min(maxSteps, PASSOS_DA_CORRECAO),
           ...(agentConfig !== null
             ? {
                 model: agentConfig.model,
@@ -5534,7 +5581,7 @@ async function executarTurnoDoAgente(
       correcaoTruncou = correcao.result.finishReason === 'length';
       tetoNaCorrecao = tetoDePassosAtingido({
         passosUsados: correcao.result.steps?.length ?? 0,
-        maxSteps: Math.min(maxSteps, 3),
+        maxSteps: Math.min(maxSteps, PASSOS_DA_CORRECAO),
         finishReason: correcao.result.finishReason,
       });
       mensagensDoTurno = [...mensagensDoTurno, pedidoDeCorrecao, ...correcao.result.responseMessages];
@@ -6166,6 +6213,8 @@ async function executarTurnoDoAgente(
       kind: liveJob().kind,
       messages_sent: outcomes.length,
       model: turn.model,
+      duracao_do_turno_ms: Math.round(performance.now() - inicioDoProcessamento),
+      classificadores_ms: duracaoDosClassificadoresMs,
     });
   } finally {
     // Turno que terminou sem enviar (veto, handoff, erro) também para de renovar.

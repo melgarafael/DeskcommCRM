@@ -550,6 +550,16 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                   {contact.birthdate ? contact.birthdate.split("-").reverse().join("/") : "—"}
                 </dd>
               </div>
+              {(contact.zip_code || contact.street || contact.city || contact.state) && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Endereço")}</dt>
+                  <dd className="mt-1">
+                    {[contact.street, contact.number, contact.complement, contact.district, contact.city, contact.state, contact.zip_code]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </dd>
+                </div>
+              )}
               {/*
                 A origem sai do `source_metadata` quando ele tem algo melhor a
                 dizer, e cai na coluna `source` quando não tem. Antes esta linha

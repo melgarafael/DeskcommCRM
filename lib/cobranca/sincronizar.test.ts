@@ -4,8 +4,9 @@ import { argumentos, bancoFalso, filtros, operacao, type BancoFalso, type Cadeia
 
 import type { AdaptadorDeCobranca, Situacao } from "@/lib/cobranca/provedores/contrato";
 
-const h = vi.hoisted(() => ({ audit: vi.fn() }));
+const h = vi.hoisted(() => ({ audit: vi.fn(), invalidarOrg: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/auth/cache-curto", () => ({ invalidarOrg: h.invalidarOrg }));
 vi.mock("@/lib/cobranca/provedores", () => ({
   adaptador: () => {
     throw new Error("use deps.adaptador no teste");
@@ -234,6 +235,8 @@ describe("sincronizar", () => {
     expect(filtros(fechou!)).toEqual([["eq", "organization_id", ORG], ["eq", "kind", "cobranca"], ["is", "ref_kind", null], ["eq", "status", "open"]]);
     expect(rpcs("fn_reativar_organizacao")[0]?.args).toEqual({ p_org: ORG, p_kind_exigido: "cobranca", p_ator: null });
     expect(acoes()).toEqual(["cobranca.estado_mudou", "cobranca.org_reativada"]);
+    // O snapshot de autorização em cache cai junto — no processo onde a régua roda.
+    expect(h.invalidarOrg).toHaveBeenCalledWith(ORG);
   });
 
   it("limite passado, aviso final de 49 h e leitura fresca: suspende, registra 'suspensa' e audita", async () => {
@@ -244,6 +247,7 @@ describe("sincronizar", () => {
     expect(rpcs("fn_suspender_organizacao")).toEqual([]);
     expect(rpcs("fn_cobranca_registrar_aviso")[0]?.args).toMatchObject({ p_aviso: "suspensa", p_severidade: "critical" });
     expect(acoes()).toContain("cobranca.org_suspensa");
+    expect(h.invalidarOrg).toHaveBeenCalledWith(ORG);
   });
 
   it("⭐ pagou entre a decisão e a suspensão (a função SQL recusa): nada de suspensa, de audit nem de e-mail", async () => {
