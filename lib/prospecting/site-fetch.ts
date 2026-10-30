@@ -39,6 +39,15 @@ import {
   type ErroDeRede,
   type SiteEnrichment,
 } from "@/lib/prospecting/site-classify";
+import {
+  conteudoDoTitulo,
+  conteudosDeH1H2,
+  descricaoComConteudoAntes,
+  descricaoComNomeAntes,
+  semBlocosDeScript,
+  semTags,
+  temLinkComHrefHttp,
+} from "@/lib/prospecting/leitura-do-html";
 import { LIMITE_TENTATIVAS } from "@/lib/prospecting/site-efetivo";
 
 const TIMEOUT_MS = 8000;
@@ -262,30 +271,23 @@ async function httpsAbre(
   }
 }
 
-function extrairPrimeiro(html: string, padrao: RegExp): string | null {
-  const m = padrao.exec(html);
-  return m?.[1] ? m[1].replace(/\s+/g, " ").trim() || null : null;
+function normalizar(texto: string | null): string | null {
+  return texto ? texto.replace(/\s+/g, " ").trim() || null : null;
 }
 
 function montarResumo(html: string): string | null {
   const partes: string[] = [];
-  const titulo = extrairPrimeiro(html, /<title[^>]*>(.*?)<\/title>/is);
+  const titulo = normalizar(conteudoDoTitulo(html));
   if (titulo) partes.push(`Título: ${titulo}`);
   const descricao =
-    extrairPrimeiro(html, /<meta[^>]+name=["']description["\'][^>]+content=["'](.*?)["']/is) ??
-    extrairPrimeiro(html, /<meta[^>]+content=["'](.*?)["\'][^>]+name=["']description["']/is);
+    normalizar(descricaoComNomeAntes(html)) ?? normalizar(descricaoComConteudoAntes(html));
   if (descricao) partes.push(`Descrição: ${descricao}`);
-  const cabecalhos = [...html.matchAll(/<h[12][^>]*>(.*?)<\/h[12]>/gis)]
-    .map((m) => (m[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+  const cabecalhos = conteudosDeH1H2(html)
+    .map((c) => semTags(c).replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 6);
   if (cabecalhos.length > 0) partes.push(`Cabeçalhos: ${cabecalhos.join(" | ")}`);
-  const corpo = html
-    .replace(/<(script|style|noscript)[^>]*>.*?<\/\1>/gis, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MAX_CHARS_RESUMO);
+  const corpo = textoVisivel(html).slice(0, MAX_CHARS_RESUMO);
   if (corpo) partes.push(`Trecho: ${corpo}`);
   if (partes.length === 0) return null;
   return partes.join("\n").slice(0, MAX_CHARS_RESUMO);
@@ -297,9 +299,7 @@ function montarResumo(html: string): string | null {
  * conta `<script>` e markup de construtor como se fosse conteúdo.
  */
 export function textoVisivel(html: string): string {
-  return (html || "")
-    .replace(/<(script|style|noscript)[^>]*>.*?<\/\1>/gis, " ")
-    .replace(/<[^>]+>/g, " ")
+  return semTags(semBlocosDeScript(html || ""))
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -422,7 +422,7 @@ export async function auditarSite(
       // redireciona) e a copy não pode afirmar o que não é.
       problemas.push((await httpsAbre(busca.finalUrl, fetchFn, verificar)) ? "http-sem-redirecionar" : "sem-https");
     }
-    else if (/(?:\ssrc=["']http:\/\/|<link[^>]+href=["']http:\/\/)/i.test(html)) problemas.push("conteudo-misto");
+    else if (/\ssrc=["']http:\/\//i.test(html) || temLinkComHrefHttp(html)) problemas.push("conteudo-misto");
     if (!minusculo.includes("viewport")) problemas.push("nao-mobile");
     if (html.trim().length < MINIMO_CHARS_PAGINA_REAL) problemas.push("quase-vazia");
     const construtor = detectarConstrutor(busca.finalUrl, html);

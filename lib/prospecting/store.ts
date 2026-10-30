@@ -23,6 +23,13 @@ import {
   type Prospect,
 } from "./schema";
 import { CanalReconectandoError, ProspectingError } from "./provider";
+import type {
+  LeituraComMotivos,
+  LinhaExcluida,
+  MotivoDeExclusao,
+  PreviaDaImportacao,
+} from "./importacao-previa";
+import { montarPrevia, motivosDe, resumoVazio } from "./importacao-previa";
 import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
@@ -336,6 +343,104 @@ export interface ResultadoDaImportacao {
   ja_na_base: number;
   classesPuras: Record<string, number>;
   repetida: boolean;
+  /** Quem ficou de fora, com o motivo — a mesma lista da prévia. */
+  fora: LinhaExcluida[];
+  resumo: Record<MotivoDeExclusao, number>;
+  total_linhas: number;
+}
+
+/** O mínimo do `pg` que a prévia usa: serve o `Pool` (rota) e o `PoolClient` (dentro do lock). */
+type Consulta = {
+  query<R extends pg.QueryResultRow = pg.QueryResultRow>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<pg.QueryResult<R>>;
+};
+
+/**
+ * OS TELEFONES DA PLANILHA QUE JÁ SÃO CONTATO DO CRM — nas duas tabelas e nas duas grafias.
+ *
+ * "Já é contato" tem de valer para quem entrou à mão, para quem veio de outra campanha e para
+ * quem está em `contact_phones` (ficha com vários telefones). A comparação passa por
+ * `phoneLookupVariants` porque o MESMO celular está gravado com e sem o nono dígito em caminhos
+ * diferentes: comparar a string crua faz o operador abordar de novo alguém que já é cliente.
+ */
+async function telefonesQueSaoContato(
+  db: Consulta,
+  org: string,
+  phones: string[],
+): Promise<Set<string>> {
+  const variantes = [...new Set(phones.flatMap((p) => phoneLookupVariants(p)))];
+  if (variantes.length === 0) return new Set();
+  const { rows } = await db.query<{ phone: string }>(
+    `select c.phone_number as phone
+       from contacts c
+      where c.organization_id = $1 and c.phone_number = any($2::text[])
+        and c.is_merged_into is null
+     union
+     select cp.phone_number as phone
+       from contact_phones cp
+       join contacts c on c.id = cp.contact_id and c.organization_id = cp.organization_id
+      where cp.organization_id = $1 and cp.phone_number = any($2::text[])
+        and c.is_merged_into is null`,
+    [org, variantes],
+  );
+  const conhecidos = new Set(rows.map((r) => r.phone));
+  return new Set(phones.filter((p) => phoneLookupVariants(p).some((v) => conhecidos.has(v))));
+}
+
+/**
+ * OS TELEFONES QUE FORAM APAGADOS A PEDIDO DO TITULAR (supressão da LGPD).
+ *
+ * A comparação é o MESMO hmac do gatilho `prospecting_refuse_erased`
+ * (`20260921030200_0370_prospeccao_anonimizacao.sql`): o token é pseudônimo, salgado por linha,
+ * e só o servidor consegue reproduzi-lo. Não há tabela de supressão para "esquecer" de consultar —
+ * a fonte é a própria linha anonimizada em `prospecting_candidates`.
+ *
+ * Por que perguntar antes de inserir, se o gatilho já recusa: o gatilho é a garantia (fila
+ * nenhuma recebe quem pediu para sair), mas ele devolve `null` em silêncio. Sem esta consulta o
+ * operador vê o número na planilha, o número não entra e a tela diz "já estava na base" — a
+ * supressão some justamente de quem precisa vê-la.
+ */
+async function telefonesSuprimidos(
+  db: Consulta,
+  org: string,
+  phones: string[],
+): Promise<Set<string>> {
+  if (phones.length === 0) return new Set();
+  const { rows } = await db.query<{ phone: string }>(
+    `select t.phone
+       from unnest($2::text[]) as t(phone)
+      where exists (
+        select 1 from prospecting_candidates p
+         where p.organization_id = $1
+           and p.suppression_salt is not null
+           and p.suppression_phone = hmac(convert_to(t.phone,'UTF8'), p.suppression_salt, 'sha256')
+      )`,
+    [org, phones],
+  );
+  return new Set(rows.map((r) => r.phone));
+}
+
+/**
+ * A PRÉVIA: o que entra e o que fica de fora, com o motivo de cada exclusão.
+ *
+ * Não escreve nada e não abre transação — é o mesmo cálculo que a importação faz dentro do
+ * lock (`importarPlanilha`), chamado por fora só para mostrar antes de confirmar. As duas
+ * chamadas usam `montarPrevia`, então a prévia não pode prometer um número que a escrita
+ * não cumpre.
+ */
+export async function previaDaPlanilha(
+  db: Consulta,
+  org: string,
+  planilha: LeituraComMotivos,
+): Promise<PreviaDaImportacao> {
+  const phones = planilha.candidatos.map((c) => c.prospect.phone);
+  const [contatos, suprimidos] = await Promise.all([
+    telefonesQueSaoContato(db, org, phones),
+    telefonesSuprimidos(db, org, phones),
+  ]);
+  return montarPrevia(planilha, { contatos, suprimidos });
 }
 
 /**
@@ -344,15 +449,19 @@ export interface ResultadoDaImportacao {
  * A campanha nasce `succeeded`, sem `run_id`: não há busca a sincronizar, e daí em diante é o
  * caminho de sempre (seleção, auditoria de site, prévia, agente, fila). Repetir o envio com o
  * mesmo `request_id` devolve a campanha que já existe e não grava nada. Tudo numa transação:
- * ou entram campanha e candidatos, ou nenhum dos dois. `ja_na_base` junta "o telefone já era
- * candidato na organização" e "foi excluído a pedido do titular" — o banco não separa os dois.
+ * ou entram campanha e candidatos, ou nenhum dos dois.
+ *
+ * A classificação (contatos do CRM e supressão da LGPD) roda AQUI DENTRO, sob o lock da
+ * organização: entre a prévia que o operador viu e o clique em "Importar" alguém pode ter
+ * cadastrado o telefone ou pedido a exclusão. Só o que `montarPrevia` deixou entrar vai para a
+ * tabela — e o gatilho do banco continua sendo a segunda barreira de quem pediu para sair.
  */
 export async function importarPlanilha(
   pool: pg.Pool,
   org: string,
   requestId: string,
   campos: CamposDaImportacao,
-  prospects: Prospect[],
+  planilha: LeituraComMotivos,
 ): Promise<ResultadoDaImportacao> {
   return withProspectingLock(pool, org, async (db) => {
     const prior = await db.query<Campaign & { result_count: number | null; skipped_count: number | null }>(
@@ -367,9 +476,13 @@ export async function importarPlanilha(
         ja_na_base: existente.skipped_count ?? 0,
         classesPuras: {},
         repetida: true,
+        fora: [],
+        resumo: resumoVazio(),
+        total_linhas: (existente.result_count ?? 0) + (existente.skipped_count ?? 0),
       };
     }
-    const search: BuscaDaPlanilha = { origem: "planilha", ...campos };
+    const previa = await previaDaPlanilha(db, org, planilha);
+    const search: BuscaDaPlanilha = { origem: "importacao", ...campos };
     await db.query("begin");
     try {
       const { rows } = await db.query<Campaign>(
@@ -377,18 +490,29 @@ export async function importarPlanilha(
         [org, requestId, campos.name, search],
       );
       const campaign = rows[0]!;
-      const { inseridos, classesPuras } = await gravarCandidatos(db, org, campaign.id, prospects);
+      const { inseridos, classesPuras } = await gravarCandidatos(
+        db,
+        org,
+        campaign.id,
+        previa.entram.map((c) => c.prospect),
+      );
+      // `skipped_count` é toda linha lida que não entrou: as que a prévia já explicava e a que
+      // o `unique` de telefone/identificador barrou (reimportação da mesma lista).
+      const foraDaBase = previa.total_linhas - inseridos;
       await db.query(
         "update prospecting_campaigns set result_count=$3,skipped_count=$4,updated_at=now() where organization_id=$1 and id=$2",
-        [org, campaign.id, inseridos, prospects.length - inseridos],
+        [org, campaign.id, inseridos, foraDaBase],
       );
       await db.query("commit");
       return {
         campaign,
         inseridos,
-        ja_na_base: prospects.length - inseridos,
+        ja_na_base: foraDaBase,
         classesPuras,
         repetida: false,
+        fora: previa.fora,
+        resumo: motivosDe(previa.fora),
+        total_linhas: previa.total_linhas,
       };
     } catch (error) {
       await db.query("rollback");
