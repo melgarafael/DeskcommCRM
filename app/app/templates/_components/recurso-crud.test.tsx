@@ -5,7 +5,7 @@
  *
  * A tela NÃO nasce aqui: a categoria `respostas-rapidas`
  * (`app/app/templates/_components/TemplatesClient.tsx:187`) e o formulário
- * (`TemplateFormDialog.tsx`) já trazem o modo TEXTO/ÁUDIO, o campo de atalho, a
+ * (`TemplateFormDialog.tsx`) já trazem as seções de texto, imagem e áudio (#3009), o campo de atalho, a
  * dica das variáveis e o interruptor "Mostrar na barra do Inbox" — tudo isso
  * entrou com o PR #2847 (`MERGED`, merge `e85fd2b5e7`) e com o #3282. O que
  * faltava era PROVA de que o caminho da TELA satisfaz os critérios da issue:
@@ -154,7 +154,8 @@ import { DELETE, PATCH } from "@/app/api/v1/message-templates/[id]/route";
 import { TemplatesClient } from "@/app/app/templates/_components/TemplatesClient";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
 import type { MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
-import { ehRecursoDeAudio, recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import { payloadDeUso } from "@/lib/inbox/template-vars";
 import type { MidiaDeTemplate } from "@/lib/templates/midias";
 
@@ -216,8 +217,15 @@ function banco() {
     let colunasDeVolta = "id";
     let teto = Number.POSITIVE_INFINITY;
 
+    // Coluna jsonb (`midias`) chega ao `.eq` como TEXTO JSON — é assim que a rota
+    // de PATCH confere a lista esperada (#3009). O PostgREST compara o jsonb; o
+    // dublê compara a serialização.
+    const igual = (atual: unknown, valor: unknown) =>
+      typeof atual === "object" && atual !== null && typeof valor === "string"
+        ? JSON.stringify(atual) === valor
+        : atual === valor;
     const casam = (base: Linha[]) =>
-      base.filter((l) => filtros.every(([coluna, valor]) => l[coluna as keyof Linha] === valor));
+      base.filter((l) => filtros.every(([coluna, valor]) => igual(l[coluna as keyof Linha], valor)));
 
     const executar = (): Array<Record<string, unknown>> => {
       if (apagar) {
@@ -397,7 +405,7 @@ describe("criar o recurso pela tela (#2833)", () => {
     await waitFor(() => expect(screen.getByText("Nenhuma resposta rápida ainda.")).toBeInTheDocument());
 
     abrirNovo();
-    fireEvent.click(screen.getByRole("button", { name: "Áudio" }));
+    // Sem seletor de modo desde a #3009: o áudio é uma seção do formulário.
     fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Áudio boas-vindas" } });
     fireEvent.change(document.getElementById("tpl-audio")!, {
       target: { files: [new File([new Uint8Array([1, 2, 3])], "voz.ogg", { type: "audio/ogg" })] },
@@ -410,7 +418,8 @@ describe("criar o recurso pela tela (#2833)", () => {
     expect(h.uploads[0]!.templateId).toBe(h.linhas[0]!.id);
 
     const lista = await listar();
-    expect(ehRecursoDeAudio(lista[0]!)).toBe(true);
+    // O tipo do recurso é lido pela régua única de `resposta-rapida.ts` (#3009).
+    expect(lerRespostaRapidaGravada(lista[0]!)).toMatchObject({ ok: true, tipo: "audio" });
     expect(recursosDaBarra(lista)).toHaveLength(1);
 
     montarBarra(lista);

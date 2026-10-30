@@ -51,7 +51,21 @@ export const DICIONARIO: Traducoes = {
   "Adicionar número do remetente": { es: "Añadir número del remitente" },
   "Escolha abaixo um fallback público diferente dos agentes reservados. Salve antes de testar. O teste de classificação de texto não simula o número de origem.": { es: "Elija abajo un agente público de reserva distinto de los agentes reservados. Guarde antes de probar. La prueba de clasificación de texto no simula el número de origen." },
   "Agente por número do remetente": { es: "Agente por número del remitente" },
+  "Não foi possível concluir a ação. Confira o código técnico nos detalhes.": { es: "No se pudo completar la acción. Revisa el código técnico en los detalles." },
   "Mensagens da conversa": { es: "Mensajes de la conversación" },
+  // Número do atendente no envio (#3642) — a recusa de quem tem número próprio e
+  // tenta responder pelo de outra pessoa, e a da leitura que não pôde ser feita.
+  "Esta conversa está no número de outro atendente, e você tem número próprio. Responda ao cliente pela conversa do seu número, ou peça que esta seja transferida para você.": {
+    es: "Esta conversación está en el número de otro atendente, y tienes un número propio. Respóndele al cliente desde la conversación de tu número, o pide que esta te sea transferida.",
+  },
+  "Não foi possível conferir o número desta conversa. Nada foi enviado.": {
+    es: "No fue posible verificar el número de esta conversación. No se envió nada.",
+  },
+  // O aviso do diálogo de Transferir e a prévia que o alimenta (#3642, doc 237, 2-A).
+  "A conversa vai continuar pelo número de {nome} ({numero}).": {
+    es: "La conversación va a continuar por el número de {nome} ({numero}).",
+  },
+  "Destino inválido.": { es: "Destino inválido." },
   "Novas mensagens · Ir para o fim": { es: "Mensajes nuevos · Ir al final" },
   // Versão anterior barrada na prévia (doc de decisão 234): a moldura e as causas de `motivoDoVeto`.
   "Uma versão anterior desta sugestão foi barrada: {causa}. Confira antes de enviar.": { es: "Una versión anterior de esta sugerencia fue bloqueada: {causa}. Revísala antes de enviar." },
@@ -65,6 +79,7 @@ export const DICIONARIO: Traducoes = {
   "usava um termo interno que não pode chegar ao cliente": { es: "usaba un término interno que no puede llegar al cliente" },
   "fazia uma afirmação clínica, e a camada de afirmações clínicas está ligada": { es: "hacía una afirmación clínica, y la capa de afirmaciones clínicas está activada" },
   "dependia de horário, e o agente não tem ferramenta de agenda ligada": { es: "dependía de un horario, y el agente no tiene la herramienta de agenda activada" },
+  "dizia que o interesse do cliente foi registrado, mas nada foi gravado neste turno": { es: "decía que el interés del cliente quedó registrado, pero no se guardó nada en este turno" },
   "não se apresentava como assistente virtual na primeira mensagem a um contato novo": { es: "no se presentaba como asistente virtual en el primer mensaje a un contacto nuevo" },
   "a janela de 24 horas com este contato estava fechada": { es: "la ventana de 24 horas con este contacto estaba cerrada" },
   "afirmava um fato que o material de referência CONTRADIZ": { es: "afirmaba un hecho que el material de referencia CONTRADICE" },
@@ -124,6 +139,19 @@ export const DICIONARIO: Traducoes = {
     es: "En la Lista, estos filtros todavía no se aplican: {filtros}. En el Tablero sí funcionan.",
   },
   "Nenhum negócio com este filtro.": { es: "Ningún negocio con este filtro." },
+  // #2974 — o limite "no máximo uma vez por contato": o controle na gaveta da
+  // automação, a recusa do schema (que a gaveta mostra em toast) e a frase que
+  // a aba Atividade usa para a decisão de pular o contato.
+  "Rodar no máximo uma vez por contato": { es: "Ejecutar como máximo una vez por contacto" },
+  "Ligado, esta automação roda uma única vez para cada contato: se ele voltar pelo mesmo anúncio, a sequência não repete. A execução fica registrada na aba Atividade, e a próxima entrada deste contato só registra que a regra foi pulada.": {
+    es: "Activado, esta automatización se ejecuta una sola vez por contacto: si vuelve por el mismo anuncio, la secuencia no se repite. La ejecución queda registrada en la pestaña Actividad, y la próxima entrada de este contacto solo registra que se omitió la regla.",
+  },
+  "A opção “uma vez por contato” só aceita ligado ou desligado.": {
+    es: "La opción “una vez por contacto” solo acepta activado o desactivado.",
+  },
+  "Esta automação está configurada para rodar no máximo uma vez por contato, e este contato já passou por ela. Nada foi enviado agora e nada será.": {
+    es: "Esta automatización está configurada para ejecutarse como máximo una vez por contacto, y este contacto ya pasó por ella. No se envió nada ahora y nada se enviará.",
+  },
   "Há um ajuste proporcional esperando pagamento. Escolher outro plano cancela esse ajuste.": { es: "Hay un ajuste proporcional esperando el pago. Elegir otro plan cancela ese ajuste." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos e tente novamente.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos e inténtalo de nuevo." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos." },
@@ -1753,6 +1781,8 @@ export const DICIONARIO: Traducoes = {
 
   // ─── Inbox: caixa bloqueada até assumir (#3012) ───
   "Assuma esta conversa para responder.": { es: "Asume esta conversación para responder." },
+  // ─── Inbox: arquivo arrastado para o compositor (#3708) ───
+  "Solte o arquivo para anexar": { es: "Suelta el archivo para adjuntarlo" },
   "Bloquear a caixa de mensagem até o atendente assumir a conversa": {
     es: "Bloquear el cuadro de mensaje hasta que el agente asuma la conversación",
   },
@@ -3033,6 +3063,14 @@ export const DICIONARIO: Traducoes = {
   "A IA escolhe a hora": { es: "La IA elige el momento" },
   "Como calcular a espera": { es: "Cómo calcular la espera" },
   "Duração (minutos)": { es: "Duración (minutos)" },
+  // Duração escolhida na marcação (#3709) — o campo do painel, com o valor do
+  // serviço como padrão.
+  "O padrão é a duração do serviço. Mude se este atendimento precisar de mais ou menos tempo.": {
+    es: "El valor por defecto es la duración del servicio. Cámbialo si esta atención necesita más o menos tiempo.",
+  },
+  "Escolha uma duração entre 5 e 1440 minutos.": {
+    es: "Elige una duración entre 5 y 1440 minutos.",
+  },
   "Mínimo (min)": { es: "Mínimo (min)" },
   "Máximo (min)": { es: "Máximo (min)" },
   "Orientação (opcional)": { es: "Orientación (opcional)" },
@@ -4759,14 +4797,17 @@ export const DICIONARIO: Traducoes = {
   "Transforma o áudio que o cliente mandou em texto que o agente lê.": {
     es: "Transforma el audio que envió el cliente en texto que el agente lee.",
   },
-  "Este ponto não tem modelo escolhido no painel: quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos três, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes.": {
-    es: "Este punto no tiene un modelo elegido en el panel: quien escucha el audio es la escalera de transcripción, y decide en cada nota de voz. Primero el servicio de esta instalación (TRANSCRIPTION_API_KEY); si no, la clave de OpenAI con el modelo de transcripción de siempre (whisper-1, o lo que traiga TRANSCRIPTION_MODEL); y cuando no hay ninguna clave de OpenAI, el modelo de conversación de la organización — siempre que declare la capacidad de audio, que es como una organización solo con Gemini transcribe. Sin ninguno de los tres, el audio no se convierte en texto, y el motivo aparece aquí. Por eso fijar un proveedor aquí borraría los escalones siguientes.",
+  "Este ponto não tem modelo escolhido no painel: quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); se a conversa da organização for OpenRouter, a própria OpenRouter transcreve com a mesma chave; e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos quatro, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes.": {
+    es: "Este punto no tiene un modelo elegido en el panel: quien escucha el audio es la escalera de transcripción, y decide en cada nota de voz. Primero el servicio de esta instalación (TRANSCRIPTION_API_KEY); si no, la clave de OpenAI con el modelo de transcripción de siempre (whisper-1, o lo que traiga TRANSCRIPTION_MODEL); si la conversación de la organización es OpenRouter, la propia OpenRouter transcribe con la misma clave; y cuando no hay ninguna clave de OpenAI, el modelo de conversación de la organización — siempre que declare la capacidad de audio, que es como una organización solo con Gemini transcribe. Sin ninguno de los cuatro, el audio no se convierte en texto, y el motivo aparece aquí. Por eso fijar un proveedor aquí borraría los escalones siguientes.",
   },
   "o serviço de transcrição configurado nesta instalação (TRANSCRIPTION_API_KEY) é o que ouve os áudios": {
     es: "el servicio de transcripción configurado en esta instalación (TRANSCRIPTION_API_KEY) es el que escucha los audios",
   },
   "a chave OpenAI desta organização ou instalação usa o padrão de transcrição de sempre": {
     es: "la clave de OpenAI de esta organización o instalación usa el estándar de transcripción de siempre",
+  },
+  "o provedor de conversa desta organização é a OpenRouter, que transcreve na própria API com a mesma chave": {
+    es: "el proveedor de conversación de esta organización es OpenRouter, que transcribe en la propia API con la misma clave",
   },
   "o modelo de conversa da organização declara a capacidade audio e transcreve com a própria chave": {
     es: "el modelo de conversación de la organización declara la capacidad audio y transcribe con su propia clave",
@@ -9967,6 +10008,7 @@ export const DICIONARIO: Traducoes = {
     es: "Informe de exportación disponible (expira en 72h).",
   },
   "Baixar PDF": { es: "Descargar PDF" },
+  "Baixar arquivo de dados (data.json)": { es: "Descargar archivo de datos (data.json)" },
   "Linha do tempo SLA": { es: "Línea de tiempo SLA" },
   "SLA não definido.": { es: "SLA no definido." },
   "ID completo": { es: "ID completo" },
@@ -11303,6 +11345,9 @@ export const DICIONARIO: Traducoes = {
     es: "audio pendiente; tú decides cuándo enviar",
   },
   "Remover áudio pendente": { es: "Quitar audio pendiente" },
+  "Remover áudio": { es: "Quitar audio" },
+  "Desfazer remoção do áudio": { es: "Deshacer la eliminación del audio" },
+  "O áudio será removido ao salvar.": { es: "El audio se eliminará al guardar." },
   "Não foi possível preparar o áudio do recurso.": {
     es: "No se pudo preparar el audio del recurso.",
   },
@@ -11314,6 +11359,21 @@ export const DICIONARIO: Traducoes = {
   "O áudio precisa ter até 16 MB.": { es: "El audio no debe superar los 16 MB." },
   "Cada resposta rápida tem no máximo 5 mídias.": {
     es: "Cada respuesta rápida admite un máximo de 5 medios.",
+  },
+  // ── Conteúdos independentes da resposta rápida (#3009) ─────────────────────
+  // O texto deixou de ser obrigatório e o áudio deixou de ser um modo: as
+  // frases abaixo são as do formulário e as duas recusas da régua
+  // (`lib/inbox/resposta-rapida.ts`), que a barra, o envio e o cadastro leem.
+  "Texto, imagem e áudio são opcionais: preencha o que a resposta leva.": {
+    es: "El texto, la imagen y el audio son opcionales: completa lo que lleve la respuesta.",
+  },
+  "Resposta rápida de imagem": { es: "Respuesta rápida de imagen" },
+  "Resposta rápida sem conteúdo": { es: "Respuesta rápida sin contenido" },
+  "A resposta rápida não tem conteúdo: escreva um texto, escolha uma imagem ou um áudio.": {
+    es: "La respuesta rápida no tiene contenido: escribe un texto, elige una imagen o un audio.",
+  },
+  "Uma resposta rápida leva no máximo um áudio. O restante vai em texto ou em imagem.": {
+    es: "Una respuesta rápida lleva como máximo un audio. El resto va en texto o en imagen.",
   },
   "A mídia passou do tamanho máximo aceito.": {
     es: "El medio supera el tamaño máximo aceptado.",
@@ -11434,6 +11494,16 @@ export const DICIONARIO: Traducoes = {
   "A imagem precisa ser JPG ou PNG.": { es: "La imagen debe ser JPG o PNG." },
   "Imagem não encontrada.": { es: "Imagen no encontrada." },
   "As imagens mudaram. Recarregue a página.": { es: "Las imágenes cambiaron. Recargue la página." },
+  "As mídias mudaram. Recarregue a página.": { es: "Los archivos cambiaron. Recargue la página." },
+  "Não foi possível confirmar a gravação. Recarregue a página antes de tentar de novo.": {
+    es: "No se pudo confirmar que se guardó. Recargue la página antes de volver a intentarlo.",
+  },
+  "Áudio carregado nesta edição. Escolha outro arquivo para substituir.": {
+    es: "Audio cargado en esta edición. Elija otro archivo para sustituirlo.",
+  },
+  "A resposta já foi criada. Confira a lista antes de tentar novamente.": {
+    es: "La respuesta ya se creó. Revise la lista antes de volver a intentarlo.",
+  },
   "Só manager+ altera template compartilhado.": { es: "Solo manager+ modifica la plantilla compartida." },
   "Apenas versões 'draft' podem ser editadas.": { es: "Solo se pueden editar las versiones 'draft'." },
   "Arquivo acima de 50MB.": { es: "El archivo supera los 50MB." },

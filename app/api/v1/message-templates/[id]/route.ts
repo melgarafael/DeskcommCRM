@@ -33,12 +33,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * recupera, linha apontando para arquivo sumido é tela quebrada.
  */
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { fail, ok, noContent } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { updateTemplateSchema } from "@/lib/schemas/templates";
+import { snapshotDeMidiasSchema, updateTemplateSchema } from "@/lib/schemas/templates";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
@@ -96,8 +97,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   }
   if (!linha) return fail("not_found", t("Template não encontrado."), 404, { requestId });
 
-  const atuais = ((linha as { midias: MidiaDeTemplate[] | null }).midias ?? []) as MidiaDeTemplate[];
-  const novas = parsed.data.midias;
+  const atuais = (linha as { midias: MidiaDeTemplate[] }).midias;
+  const { midias_esperadas: esperadas, ...campos } = parsed.data;
+  if (!snapshotDeMidiasSchema.safeParse(atuais).success || (esperadas !== undefined && !isDeepStrictEqual(atuais, esperadas))) {
+    return fail("conflict", t("As mídias mudaram. Recarregue a página."), 409, { requestId });
+  }
+  const novas = campos.midias;
   let removidas: string[] = [];
   let mantidas: MidiaDeTemplate[] | undefined;
   if (novas !== undefined) {
@@ -116,24 +121,31 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     mantidas = conferida.mantidas;
   }
 
-  const { data, error } = await supabase
+  const { data, error, count } = await Promise.resolve(supabase
     .from("message_templates")
     // `midias` sai da LINHA conferida, nunca do corpo: o mime e o tamanho de
     // cada imagem são do upload que conferiu os bytes.
     .update({
-      ...parsed.data,
+      ...campos,
       ...(mantidas ? { midias: mantidas } : {}),
       updated_at: new Date().toISOString(),
-    })
+    }, { count: "exact" })
     .eq("id", id)
     .eq("organization_id", org.orgId)
+    // Todos os escritores da lista usam a mesma precondição, inclusive o PATCH
+    // legado sem snapshot esperado. O valor bruto é JSONB, não objeto implícito.
+    .eq("midias", JSON.stringify(atuais))
     .select(COLS)
-    .single();
-  if (error || !data) return fail("not_found", t("Template não encontrado."), 404, { requestId });
+    .maybeSingle()).catch(() => ({ data: null, error: { message: "write_failed" }, count: null }));
+  if (error || (!data && count !== 0)) {
+    return fail("internal_error", t("Não foi possível confirmar a gravação. Recarregue a página antes de tentar de novo."), 500, { requestId });
+  }
+  if (!data) return fail("conflict", t("As mídias mudaram. Recarregue a página."), 409, { requestId });
 
   // Só depois da linha gravada, e nunca derruba o PATCH: o pedido do operador
   // (remover a imagem) já foi atendido, o log é o que falta para a limpeza.
-  if (removidas.length) await apagarMidiasDoTemplate(removidas, requestId);
+  const apagaveis = removidas.filter((caminho) => midiaPertenceAoTemplate(caminho, org.orgId, id));
+  if (apagaveis.length) await apagarMidiasDoTemplate(apagaveis, requestId);
 
   void audit({
     action: "template.updated",
@@ -142,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     resourceType: "message_template",
     resourceId: data.id,
     requestId,
-    metadata: { fields: Object.keys(parsed.data), removidas: removidas.length },
+    metadata: { fields: Object.keys(campos), removidas: removidas.length },
   });
   return ok(data, { requestId });
 }

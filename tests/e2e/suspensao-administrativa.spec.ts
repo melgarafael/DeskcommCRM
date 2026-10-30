@@ -27,7 +27,7 @@
  * e o controle do gate pelo PostgREST no passo 2.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
@@ -328,3 +328,387 @@ test("suspender cala B pela tela; o hub atende quem ficou; reativar não solta r
     }
   }
 });
+
+// Opções que criam worker próprio ficam na instância, não em um describe.
+// O cenário usa sessões e links assinados reais, mantidos só em memória.
+const testDoPacote = test.extend({ trace: "off", video: "off" });
+testDoPacote.describe(
+  "o pacote manual do titular sai do Storage pelo navegador",
+  () => {
+    testDoPacote(
+      "dois downloads reais, isolamento, legado sem JSON e falha parcial",
+      async ({ page, browser, request }, testInfo) => {
+        testDoPacote.setTimeout(180_000);
+        expect(["127.0.0.1", "localhost"]).toContain(
+          new URL(credenciais.url).hostname,
+        );
+        const { iniciarFilhoDoPacote } = await import("./helpers/filho-do-pacote-lgpd");
+        const { z } = await import("zod");
+        const filhos: ReturnType<typeof iniciarFilhoDoPacote>[] = [];
+        const fimDaPreparacao = Date.now() + 90_000;
+        const pessoas: string[] = [],
+          orgs: string[] = [],
+          objetos: string[] = [];
+        const contextos: BrowserContext[] = [];
+        const bucket = db.storage.from("lgpd-exports");
+        const stamp = randomUUID().slice(0, 8);
+        const hash = (bytes: Buffer) =>
+          createHash("sha256").update(bytes).digest("hex");
+        let captura: Buffer | undefined;
+        const provas: Record<string, unknown>[] = [];
+        let falhou = false;
+
+        const criar = async (letra: string, usuario: string) => {
+          const org = await inserir("organizations", {
+            slug: `pacote-${letra.toLowerCase()}-${stamp}`,
+            legal_name: `Empresa sintética ${letra}`,
+            display_name: `Pacote ${letra} ${stamp}`,
+            onboarded_at: new Date().toISOString(),
+            country: "BR",
+            timezone: "America/Sao_Paulo",
+          });
+          orgs.push(org);
+          const vinculo = await db.from("user_organizations").insert({
+            organization_id: org,
+            user_id: usuario,
+            role: "admin",
+            accepted_at: new Date().toISOString(),
+          });
+          expect(vinculo.error).toBeNull();
+          const nome = `Titular sintético ${letra} ${stamp}`;
+          const contato = await inserir("contacts", {
+            organization_id: org,
+            name: nome,
+            display_name: nome,
+            email: null,
+          });
+          const pedido = await inserir("lgpd_requests", {
+            organization_id: org,
+            request_type: "data_request",
+            source: "manual",
+            contact_id: contato,
+            status: "received",
+            due_at: "2030-01-31",
+            request_payload: { customer: { name: nome } },
+          });
+          objetos.push(
+            `${org}/${pedido}/report.pdf`,
+            `${org}/${pedido}/data.json`,
+          );
+          // A aprovação é fixture explícita. Coleta, PDF, projeção, persistência e
+          // Storage são os do worker; sem destinatário, nenhum transporte é usado.
+          const prazoMs = Math.min(30_000, fimDaPreparacao - Date.now());
+          const filho = iniciarFilhoDoPacote(
+            [
+              "--max-old-space-size=768",
+              "--import",
+              "tsx",
+              "tests/e2e/helpers/gerar-pacote-lgpd-manual.ts",
+              "--gerar-pacote-manual",
+              JSON.stringify({ org, pedido, aprovador: usuario }),
+            ],
+            prazoMs,
+          );
+          filhos.push(filho);
+          const stdout = await filho.resultado;
+          const marcador = stdout.match(/^LGPD_MANUAL_PROOF=(.+)$/m);
+          if (!marcador?.[1])
+            throw new Error("A preparação não devolveu seu recibo técnico.");
+          expect(JSON.parse(marcador[1])).toEqual({
+            status: "ok",
+            detail: "pending_review_no_email",
+          });
+          const gerado = await db
+            .from("lgpd_requests")
+            .select("status, result")
+            .eq("organization_id", org)
+            .eq("id", pedido)
+            .single();
+          expect(gerado.error).toBeNull();
+          expect(gerado.data?.status).toBe("pending_review");
+          const result = z
+            .object({
+              pdf_path: z.string(),
+              json_path: z.string(),
+              sha256: z.string().regex(/^[a-f0-9]{64}$/),
+            })
+            .passthrough()
+            .parse(gerado.data?.result);
+          expect(result.pdf_path).toBe(`${org}/${pedido}/report.pdf`);
+          expect(result.json_path).toBe(`${org}/${pedido}/data.json`);
+          return { org, pedido, nome, result };
+        };
+        const contexto = async (email: string) => {
+          const ctx = await browser.newContext();
+          contextos.push(ctx);
+          const p = await ctx.newPage();
+          await entrar(p, email);
+          return p;
+        };
+        const bytesDaLigacao = async (url: string) => {
+          try {
+            return await request.get(url, { failOnStatusCode: false });
+          } catch {
+            throw new Error(
+              "Não foi possível ler o objeto assinado do Storage local.",
+            );
+          }
+        };
+        const baixar = async (rotulo: string, esperado: Buffer, nome: string) => {
+          const [download] = await Promise.all([
+            page.waitForEvent("download", { timeout: 15_000 }),
+            page.getByRole("link", { name: rotulo, exact: true }).click(),
+          ]);
+          expect(download.suggestedFilename()).toBe(nome);
+          const fluxo = await download.createReadStream();
+          if (!fluxo)
+            throw new Error("O navegador não entregou os bytes do download.");
+          const partes: Buffer[] = [];
+          for await (const parte of fluxo) partes.push(Buffer.from(parte));
+          const bytes = Buffer.concat(partes);
+          expect(hash(bytes)).toBe(hash(esperado));
+          expect(bytes.byteLength).toBe(esperado.byteLength);
+        };
+
+        try {
+          const adminA = await criarPessoa(`pacote-admin-a-${stamp}`);
+          pessoas.push(adminA.id);
+          const adminB = await criarPessoa(`pacote-admin-b-${stamp}`);
+          pessoas.push(adminB.id);
+          const viewer = await criarPessoa(`pacote-viewer-${stamp}`);
+          pessoas.push(viewer.id);
+          const a = await criar("A", adminA.id),
+            b = await criar("B", adminB.id);
+          const vinculo = await db.from("user_organizations").insert({
+            organization_id: a.org,
+            user_id: viewer.id,
+            role: "viewer",
+            accepted_at: new Date().toISOString(),
+          });
+          expect(vinculo.error).toBeNull();
+          const metadados = await db.storage.getBucket("lgpd-exports");
+          expect(metadados.error).toBeNull();
+          expect(metadados.data?.public).toBe(false);
+
+          await entrar(page, adminA.email);
+          const detalhe = `/api/v1/lgpd/requests/${a.pedido}`;
+          const positivo = await page.request.get(detalhe);
+          expect(positivo.status()).toBe(200);
+          const data = (await positivo.json()).data;
+          const pdfUrl = data.signed_pdf_url,
+            jsonUrl = data.signed_json_url;
+          if (typeof pdfUrl !== "string" || typeof jsonUrl !== "string")
+            throw new Error("O pacote não trouxe as duas ligações.");
+          if (pdfUrl === jsonUrl)
+            throw new Error(
+              "As ligações do pacote apontam para o mesmo arquivo.",
+            );
+          const pdf = await bytesDaLigacao(pdfUrl),
+            json = await bytesDaLigacao(jsonUrl);
+          expect(pdf.status()).toBe(200);
+          expect(json.status()).toBe(200);
+          expect(pdf.headers()["content-type"]).toContain("application/pdf");
+          expect(json.headers()["content-type"]).toContain("application/json");
+          const pdfBytes = await pdf.body(),
+            jsonBytes = await json.body();
+          expect(pdfBytes.subarray(0, 5).toString()).toBe("%PDF-");
+          expect(hash(pdfBytes)).toBe(a.result.sha256);
+          const arquivo = JSON.parse(jsonBytes.toString("utf8"));
+          expect(arquivo.contact.name).toBe(a.nome);
+          expect(arquivo.organization_id).toBe(a.org);
+          expect(jsonBytes.toString("utf8")).not.toContain(b.nome);
+
+          for (const [tipo, url, caminho, bytes] of [
+            ["pdf", pdfUrl, a.result.pdf_path, pdfBytes],
+            ["json", jsonUrl, a.result.json_path, jsonBytes],
+          ] as const) {
+            const nome = tipo === "pdf" ? "report.pdf" : "data.json";
+            const resposta = tipo === "pdf" ? pdf : json;
+            const disposicao = resposta.headers()["content-disposition"];
+            expect(disposicao).toMatch(/^attachment(?:;|$)/i);
+            expect(disposicao).toContain(nome);
+            const uri = new URL(url),
+              token = uri.searchParams.get("token");
+            expect(uri.searchParams.get("download")).toBe(nome);
+            const partes = token?.split(".");
+            if (!partes || partes.length !== 3 || !partes[1] || !partes[2])
+              throw new Error("A ligação não contém o JWT esperado.");
+            const claims = JSON.parse(
+              Buffer.from(partes[1], "base64url").toString("utf8"),
+            );
+            expect(claims.url).toBe(`lgpd-exports/${caminho}`);
+            expect(claims.exp - claims.iat).toBe(72 * 60 * 60);
+            const assinatura = partes[2];
+            uri.searchParams.set(
+              "token",
+              `${partes[0]}.${partes[1]}.${assinatura.startsWith("a") ? "b" : "a"}${assinatura.slice(1)}`,
+            );
+            const adulterada = await bytesDaLigacao(uri.toString());
+            expect(adulterada.status()).toBeGreaterThanOrEqual(400);
+            expect(adulterada.status()).toBeLessThan(500);
+            const publica = await request.get(
+              `${credenciais.url}/storage/v1/object/public/lgpd-exports/${caminho}`,
+            );
+            expect(publica.status()).toBeGreaterThanOrEqual(400);
+            expect(publica.status()).toBeLessThan(500);
+            provas.push({
+              tipo,
+              bytes: bytes.byteLength,
+              sha256: hash(bytes),
+              jwt_validade_segundos: claims.exp - claims.iat,
+              anexo: nome,
+              jwt_adulterado: adulterada.status(),
+              sem_assinatura: publica.status(),
+            });
+          }
+          expect(
+            (
+              await page.request.get(`/api/v1/lgpd/requests/${b.pedido}`)
+            ).status(),
+          ).toBe(404);
+          const pB = await contexto(adminB.email);
+          expect(
+            (
+              await pB.request.get(`/api/v1/lgpd/requests/${b.pedido}`)
+            ).status(),
+          ).toBe(200);
+          expect((await pB.request.get(detalhe)).status()).toBe(404);
+          const pViewer = await contexto(viewer.email);
+          expect((await pViewer.request.get(detalhe)).status()).toBe(403);
+          const anonimo = await browser.newContext();
+          contextos.push(anonimo);
+          expect(
+            (
+              await anonimo.request.get(new URL(detalhe, page.url()).href)
+            ).status(),
+          ).toBe(401);
+
+          await page.goto(`/app/lgpd/requests/${a.pedido}`);
+          const cabecalho = page
+            .getByRole("heading", {
+              name: `#${a.pedido.slice(0, 8)}`,
+              exact: true,
+            })
+            .locator("..");
+          await expect(
+            cabecalho.getByText("Revisão pendente", { exact: true }),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("link", { name: "Baixar PDF", exact: true }),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("link", {
+              name: "Baixar arquivo de dados (data.json)",
+              exact: true,
+            }),
+          ).toBeVisible();
+          await baixar("Baixar PDF", pdfBytes, "report.pdf");
+          await baixar("Baixar arquivo de dados (data.json)", jsonBytes, "data.json");
+          captura = await page.screenshot({ fullPage: true });
+
+          const atualizar = async (result: Record<string, unknown>) => {
+            const r = await db
+              .from("lgpd_requests")
+              .update({ result })
+              .eq("organization_id", a.org)
+              .eq("id", a.pedido);
+            expect(r.error).toBeNull();
+          };
+          // Registro inválido é fixture de contenção, não entrada disponível por HTTP.
+          await atualizar({ ...a.result, json_path: b.result.json_path });
+          const contido = await page.request.get(detalhe);
+          expect(contido.status()).toBe(200);
+          expect((await contido.json()).data.signed_json_url).toBeNull();
+          const { json_path: _semJson, ...legado } = a.result;
+          await atualizar(legado);
+          await page.reload();
+          await expect(
+            page.getByRole("link", { name: "Baixar PDF", exact: true }),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("link", {
+              name: "Baixar arquivo de dados (data.json)",
+              exact: true,
+            }),
+          ).toHaveCount(0);
+          await atualizar(a.result);
+          expect((await bucket.remove([a.result.json_path])).error).toBeNull();
+          await page.reload();
+          await expect(
+            page.getByRole("link", { name: "Baixar PDF", exact: true }),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("link", {
+              name: "Baixar arquivo de dados (data.json)",
+              exact: true,
+            }),
+          ).toHaveCount(0);
+          await baixar("Baixar PDF", pdfBytes, "report.pdf");
+        } catch (erro) {
+          falhou = true;
+          throw erro;
+        } finally {
+          // Junta os filhos próprios antes de iniciar a limpeza das fixtures.
+          for (const filho of filhos) await filho.encerrar();
+          const erros: string[] = [];
+          for (const ctx of contextos)
+            try {
+              await ctx.close();
+            } catch {
+              erros.push("contexto");
+            }
+          const limpar = async (
+            rotulo: string,
+            tarefa: () => PromiseLike<{ error: unknown }>,
+          ) => {
+            try {
+              if ((await tarefa()).error) erros.push(rotulo);
+            } catch {
+              erros.push(rotulo);
+            }
+          };
+          if (objetos.length)
+            await limpar("objetos próprios", () => bucket.remove(objetos));
+          for (const id of orgs)
+            await limpar("organização própria", () =>
+              db.from("organizations").delete().eq("id", id),
+            );
+          for (const id of pessoas)
+            await limpar("usuário próprio", () => db.auth.admin.deleteUser(id));
+          if (erros.length) {
+            if (falhou)
+              testInfo.annotations.push({
+                type: "cleanup",
+                description: erros.join(", "),
+              });
+            else throw new Error("A limpeza da prova não foi concluída.");
+          }
+        }
+        if (!captura)
+          throw new Error("A prova não produziu captura após os downloads.");
+        mkdirSync("evidence/lgpd-pacote-manual", { recursive: true });
+        writeFileSync(
+          "evidence/lgpd-pacote-manual/pacote-disponivel.png",
+          captura,
+        );
+        writeFileSync(
+          "evidence/lgpd-pacote-manual/recibo.json",
+          JSON.stringify(
+            {
+              escopo:
+                "worker, DB, Storage, JWT e downloads reais; aprovação é fixture; sem SMTP",
+              isolamento_http: "PASS",
+              viewer_http: 403,
+              anonimo_http: 401,
+              legado: "PASS",
+              falha_parcial: "PASS",
+              artefatos: provas,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      },
+    );
+  },
+);

@@ -18,6 +18,16 @@ export const midiaDoTemplateSchema = z.object({
   media_size_bytes: z.number().int().min(0),
 });
 
+/** Só precondição: conserva o JSON completo recebido da linha, sem autorizar caminhos. */
+export const snapshotDeMidiasSchema = z
+  .array(midiaDoTemplateSchema.passthrough())
+  .max(MAXIMO_DE_MIDIAS);
+
+export const camposDoUploadDeTemplateSchema = z.object({
+  substituir_audio: z.string().min(1).max(300).optional(),
+  midias_esperadas: snapshotDeMidiasSchema.optional(),
+});
+
 /**
  * Criação (#2833). `body` pode ser VAZIO porque um recurso de áudio é uma
  * linha sem texto: o conteúdo dele é o arquivo, que entra por
@@ -26,8 +36,8 @@ export const midiaDoTemplateSchema = z.object({
  *
  * O que a criação NÃO aceita continua não aceitando: `midias` no corpo — mídia
  * nova é só a que a rota de upload conferiu. Recurso de TEXTO sem mensagem
- * continua sendo recusado na TELA (o textarea é `required`), que é onde a
- * pessoa pode corrigir; a rota não tem como distinguir "texto vazio" de "áudio
+ * é recusado na TELA pela régua do conteúdo, onde a pessoa pode corrigir;
+ * a rota não tem como distinguir "texto vazio" de "áudio
  * a caminho" sem uma coluna `tipo`, que este PR justamente não tem.
  */
 export const createTemplateSchema = z.object({
@@ -57,11 +67,14 @@ export const updateTemplateSchema = z
     body: z.string().trim().max(4096),
     shortcut: z.string().trim().min(1).max(40).nullable(),
     midias: z.array(midiaDoTemplateSchema).max(MAXIMO_DE_MIDIAS).optional(),
+    midias_esperadas: snapshotDeMidiasSchema.optional(),
     /** "Mostrar na barra do Inbox" (#3282) — o liga/desliga da tela. */
     mostrar_na_barra: z.boolean().optional(),
   })
   .partial()
-  .refine((d) => Object.keys(d).length > 0, { message: "Informe ao menos um campo." });
+  .refine((d) => Object.keys(d).some((campo) => campo !== "midias_esperadas"), {
+    message: "Informe ao menos um campo.",
+  });
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 
 /**

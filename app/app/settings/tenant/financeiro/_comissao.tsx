@@ -113,7 +113,7 @@ export function RegrasDeComissao({
             <option value="">{t("Qualquer pessoa")}</option>
             {pessoas.map((p) => (
               <option key={p.user_id} value={p.user_id}>
-                {p.full_name ?? t("alguém")}
+                {p.full_name ?? t("Sem nome")}
               </option>
             ))}
           </select>

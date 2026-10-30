@@ -20,9 +20,12 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Quem grava é a própria linha, via RLS `message_templates_write` — o mesmo
  * gate do PATCH: dono do pessoal, manager+ no compartilhado. O upload
- * ADICIONA; remover é o PATCH, que manda a lista completa do que permanece.
+ * ADICIONA; `substituir_audio` troca uma entrada atual sem ocupar uma sexta
+ * vaga. Remover sem substituir é o PATCH. Os dois escritores comparam a lista
+ * inteira lida; o snapshot esperado também recusa uma edição já desatualizada.
  */
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
@@ -31,15 +34,19 @@ import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
+import { camposDoUploadDeTemplateSchema, snapshotDeMidiasSchema } from "@/lib/schemas/templates";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { apagarMidiasDoTemplate } from "@/lib/templates/midias-no-bucket";
 import {
   BUCKET_DAS_MIDIAS,
   MAXIMO_DE_MIDIAS,
   TAMANHO_MAXIMO_DO_AUDIO,
   type MidiaDeTemplate,
   extensaoDaMidia,
+  ehMidiaDeAudio,
   farejarTipoDeMidia,
+  midiaPertenceAoTemplate,
   prefixoDoTemplate,
   tetoDaMidia,
 } from "@/lib/templates/midias";
@@ -70,7 +77,6 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     .maybeSingle();
   if (erroLeitura) {
     logger.error("[message-templates/midias] falha ao ler o template", {
-      detalhe: erroLeitura.message,
       requestId,
     });
     return fail("internal_error", "Erro ao ler o template.", 500, { requestId });
@@ -81,18 +87,17 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     owner_user_id: string | null;
     midias: MidiaDeTemplate[] | null;
   };
-  const atuais = midias ?? [];
+  // O schema atual exige array não nulo. Um dado fora desse contrato não
+  // pode virar uma lista vazia e autorizar um upload sobre outra versão.
+  if (!snapshotDeMidiasSchema.safeParse(midias).success) {
+    return fail("conflict", t("As mídias mudaram. Recarregue a página."), 409, { requestId });
+  }
+  const atuais = midias as MidiaDeTemplate[];
   // A MESMA régua do POST de criação: compartilhado só por manager+. A RLS
   // barraria de qualquer forma; isto dá o erro claro ANTES de subir o arquivo.
   if (owner === null && !roleAtLeast(org.role, "manager")) {
     return fail("forbidden", t("Só manager+ altera template compartilhado."), 403, { requestId });
   }
-  if (atuais.length >= MAXIMO_DE_MIDIAS) {
-    return fail("validation_failed", t("Cada resposta rápida tem no máximo 5 mídias."), 422, {
-      requestId,
-    });
-  }
-
   // Recusa pelo Content-Length declarado ANTES de bufferizar o corpo (como a
   // rota de mídia da conversa). O teto daqui é o MAIOR dos dois (áudio, 16 MB)
   // mais a folga do multipart: o tipo ainda não foi farejado, e o teto por tipo
@@ -109,6 +114,37 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });
   }
+  const snapshot = form?.get("midias_esperadas");
+  let esperado: unknown = undefined;
+  if (snapshot !== null && snapshot !== undefined) {
+    if (typeof snapshot !== "string") return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
+    try {
+      esperado = JSON.parse(snapshot) as unknown;
+    } catch {
+      return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
+    }
+  }
+  const substituir = form?.get("substituir_audio");
+  const campos = camposDoUploadDeTemplateSchema.safeParse({
+    ...(substituir === null || substituir === undefined ? {} : { substituir_audio: substituir }),
+    ...(esperado === undefined ? {} : { midias_esperadas: esperado }),
+  });
+  if (!campos.success) return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
+  if (campos.data.midias_esperadas !== undefined && !isDeepStrictEqual(atuais, campos.data.midias_esperadas)) {
+    return fail("conflict", t("As mídias mudaram. Recarregue a página."), 409, { requestId });
+  }
+  const referencia = campos.data.substituir_audio;
+  const indice = referencia === undefined ? -1 : atuais.findIndex((m) => m.storage_path === referencia);
+  if (referencia !== undefined && (indice < 0 || atuais.filter((m) => m.storage_path === referencia).length !== 1)) {
+    return fail("conflict", t("As mídias mudaram. Recarregue a página."), 409, { requestId });
+  }
+  const anterior = indice < 0 ? undefined : atuais[indice];
+  if (anterior && (!midiaPertenceAoTemplate(anterior.storage_path, org.orgId, id) || !ehMidiaDeAudio(anterior))) {
+    return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
+  }
+  if (!anterior && atuais.length >= MAXIMO_DE_MIDIAS) {
+    return fail("validation_failed", t("Cada resposta rápida tem no máximo 5 mídias."), 422, { requestId });
+  }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const tipo = farejarTipoDeMidia(bytes);
   if (!tipo) {
@@ -121,6 +157,9 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
         details: { content_type_declarado: file.type || null },
       },
     );
+  }
+  if (anterior && !tipo.startsWith("audio/")) {
+    return fail("validation_failed", t("O arquivo precisa ser de áudio."), 422, { requestId });
   }
   // O teto é do TIPO já farejado: 5 MB para imagem, 16 MB para áudio — o teto de
   // imagem não serve para áudio, e é aqui que a diferença morde.
@@ -139,9 +178,10 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const admin = createAdminClient();
   const { error: erroUp } = await admin.storage
     .from(BUCKET_DAS_MIDIAS)
-    .upload(caminho, bytes, { contentType: tipo, upsert: false });
+    .upload(caminho, bytes, { contentType: tipo, upsert: false })
+    .catch(() => ({ error: { message: "upload_failed" } }));
   if (erroUp) {
-    logger.error("[message-templates/midias] upload falhou", { detalhe: erroUp.message, requestId });
+    logger.error("[message-templates/midias] upload falhou", { requestId });
     return fail("internal_error", "Erro ao subir a mídia.", 500, { requestId });
   }
 
@@ -150,31 +190,34 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     media_mime: tipo,
     media_size_bytes: file.size,
   };
-  const { data: gravada, error: erroGrava } = await supabase
+  const { data: gravada, error: erroGrava, count } = await Promise.resolve(supabase
     .from("message_templates")
-    .update({ midias: [...atuais, nova], updated_at: new Date().toISOString() })
+    .update({
+      midias: anterior ? atuais.map((m, i) => i === indice ? nova : m) : [...atuais, nova],
+      updated_at: new Date().toISOString(),
+    }, { count: "exact" })
     .eq("id", id)
     .eq("organization_id", org.orgId)
+    // JSON.stringify explícito: o SDK não serializa objetos no operador eq.
+    // A igualdade JSONB protege também os clientes legados durante esta escrita.
+    .eq("midias", JSON.stringify(atuais))
     .select("midias")
-    .maybeSingle();
-  if (erroGrava || !gravada) {
-    // RLS recusou o write (outro aba apagou, ou papel insuficiente). O arquivo
-    // já subiu: apagar aqui é o que impede órfão de upload fracassado.
-    const { error: erroRemove } = await admin.storage.from(BUCKET_DAS_MIDIAS).remove([caminho]);
-    if (erroRemove) {
-      logger.error("[message-templates/midias] falha ao limpar upload", {
-        detalhe: erroRemove.message,
-        requestId,
-      });
-    }
-    if (erroGrava) {
-      logger.error("[message-templates/midias] falha ao gravar", {
-        detalhe: erroGrava.message,
-        requestId,
-      });
-    }
-    return fail("internal_error", "Erro ao salvar a mídia.", 500, { requestId });
+    .maybeSingle()).catch(() => ({ data: null, error: { message: "write_failed" }, count: null }));
+  if (erroGrava || (!gravada && count !== 0)) {
+    // Erro de transporte ou confirmação ausente NÃO prova rollback. O UPDATE
+    // pode já ter ligado o objeto novo: conservar eventual órfão é preferível
+    // a apagar os bytes de uma referência válida. Não há reconciliação por SELECT.
+    logger.error("[message-templates/midias] gravação não confirmada", { requestId });
+    return fail("internal_error", t("Não foi possível confirmar a gravação. Recarregue a página antes de tentar de novo."), 500, { requestId });
   }
+  if (!gravada) {
+    // Só zero linhas confirmado pelo PostgREST permite limpar o upload próprio.
+    await apagarMidiasDoTemplate([caminho], requestId);
+    return fail("conflict", t("As mídias mudaram. Recarregue a página."), 409, { requestId });
+  }
+
+  // O arquivo anterior continua disponível até a nova referência persistir.
+  if (anterior) await apagarMidiasDoTemplate([anterior.storage_path], requestId);
 
   void audit({
     action: "template.media_added",
@@ -183,7 +226,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     resourceType: "message_template",
     resourceId: id,
     requestId,
-    metadata: { total: ((gravada as { midias: MidiaDeTemplate[] }).midias ?? []).length },
+    metadata: { total: ((gravada as { midias: MidiaDeTemplate[] }).midias ?? []).length, substituida: !!anterior },
   });
 
   return ok({ midias: (gravada as { midias: MidiaDeTemplate[] }).midias ?? [] }, { requestId });

@@ -11,6 +11,7 @@ import {
   SEM_PREFERENCIA_DE_IDIOMA,
   type ProfileInput,
 } from "@/lib/schemas/settings";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { resolveActiveOrg, loadAuthUser } from "@/lib/auth/server";
 
 export type UpdateProfileResult =
@@ -42,6 +43,8 @@ export async function updateProfile(input: ProfileInput): Promise<UpdateProfileR
       avatar_url: parsed.data.avatar_url ?? null,
     },
   });
+  // #3696: o `getUser` vai para o cache curto; outra sessão da pessoa leria o metadata velho.
+  invalidarUsuario(authUser.id);
   if (error) {
     return { ok: false, error: error.message };
   }

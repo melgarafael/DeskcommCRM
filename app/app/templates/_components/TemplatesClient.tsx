@@ -30,7 +30,7 @@ import {
   useMoverTemplate,
   type MessageTemplate,
 } from "@/hooks/inbox/useMessageTemplates";
-import { ehRecursoDeAudio } from "@/lib/inbox/recursos";
+import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import { TemplateFormDialog } from "./TemplateFormDialog";
 
 const TEMPLATES_KEY = CHAVE_DOS_TEMPLATES;
@@ -192,6 +192,21 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                   // resposta COMPARTILHADA exige manager+, e o `agent` que
                   // arrastasse uma veria o soltar ser recusado pela policy.
                   const podeMover = canModify(template);
+                  /**
+                   * A MESMA régua da barra e do envio (#3009). Aqui ela vira
+                   * ETIQUETA: quantas mídias de cada tipo a resposta leva — e o
+                   * texto do lugar do corpo quando a resposta é só mídia. Antes
+                   * eram dois `if` de áudio, que escondiam a imagem de uma
+                   * resposta de áudio+imagem.
+                   */
+                  const leitura = lerRespostaRapidaGravada(template);
+                  const descricao = !leitura.ok
+                    ? t("Resposta rápida sem conteúdo")
+                    : leitura.texto.trim() !== ""
+                      ? leitura.texto
+                      : leitura.audios > 0
+                        ? t("Resposta rápida de áudio")
+                        : t("Resposta rápida de imagem");
                   return (
                     <Draggable
                       key={template.id}
@@ -223,25 +238,22 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                                 <Badge variant={template.owner_user_id ? "neutral" : "default"}>
                                   {t(template.owner_user_id ? "Pessoal" : "Compartilhado")}
                                 </Badge>
-                                {ehRecursoDeAudio(template) && (
+                                {leitura.ok && leitura.audios > 0 && (
                                   <Badge variant="neutral">🎧 {t("Áudio")}</Badge>
                                 )}
                                 {/* A resposta rápida que leva imagem do próprio operador
                                     (#2526) se anuncia na lista: sem isto, quem usa o menu
                                     "/" do composer não tem como saber qual script não é
-                                    só texto até escolher. */}
-                                {!ehRecursoDeAudio(template) &&
-                                  template.midias &&
-                                  template.midias.length > 0 && (
-                                    <Badge variant="neutral">
-                                      {t("Imagens")} {template.midias.length}
-                                    </Badge>
-                                  )}
+                                    só texto até escolher. Com a régua da #3009, a
+                                    resposta que leva os DOIS anuncia os dois. */}
+                                {leitura.ok && leitura.imagens > 0 && (
+                                  <Badge variant="neutral">
+                                    {t("Imagens")} {leitura.imagens}
+                                  </Badge>
+                                )}
                               </div>
                               <p className="line-clamp-2 text-sm text-muted-foreground">
-                                {ehRecursoDeAudio(template)
-                                  ? t("Resposta rápida de áudio")
-                                  : template.body}
+                                {descricao}
                               </p>
                             </div>
                           </div>

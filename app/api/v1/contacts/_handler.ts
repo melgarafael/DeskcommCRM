@@ -27,7 +27,7 @@ import {
 } from "@/lib/contacts/conflito-unico";
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
-import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
+import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
 import type {
   ContactCreate,
   ContactPatch,
@@ -688,16 +688,21 @@ export async function createContactHandler(
   }
 
   const contact = created as Contact;
-  if (contact.phone_number) {
-    try {
-      const sessionId = await sessaoProntaParaEnvio(supabase, ctx.organization_id);
-      if (sessionId) {
-        await ensureConversation(supabase, ctx.organization_id, contact.id, sessionId);
-      }
-    } catch {
-      // conversa no create é best-effort; o contato já existe
-    }
-  }
+  // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
+  //
+  // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
+  // `lib/contacts/conversa-ao-criar.ts`. Aqui só se diz QUAL porta está
+  // criando. A chamada é best-effort e não lança: o contato já está gravado, e
+  // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
+  // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
+  // porta.
+  await abrirConversaDoContatoNovo(supabase, {
+    porta: "manual",
+    organizationId: ctx.organization_id,
+    contactId: contact.id,
+    phoneNumber: contact.phone_number,
+    requestId: ctx.requestId,
+  });
 
   await supabase
     .rpc("emit_event", {
