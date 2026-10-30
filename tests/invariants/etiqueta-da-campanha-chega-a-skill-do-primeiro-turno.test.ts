@@ -132,7 +132,7 @@ beforeAll(async () => {
     [OUTRA_ORG, "etiqueta-da-campanha-b"],
   ]) {
     await pool.query(
-      `insert into organizations(id, slug, legal_name, display_name) values ($1::uuid, $2, $2, $2)`,
+      `insert into organizations(id, slug, legal_name, display_name) values ($1::uuid, $2::text, $2::text, $2::text)`,
       [id, nome],
     );
   }
@@ -142,7 +142,7 @@ beforeAll(async () => {
     [SESSAO, ORG],
   );
   await pool.query(
-    `insert into crm_pipelines(id, organization_id, name, slug) values ($1, $2, 'Funil', $1::text)`,
+    `insert into crm_pipelines(id, organization_id, name, slug) values ($1::uuid, $2, 'Funil', $1::text)`,
     [FUNIL, ORG],
   );
   await pool.query(
