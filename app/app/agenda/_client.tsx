@@ -935,6 +935,7 @@ export function AgendaClient({
                   resolverResponsavelDoPainel({ pessoas, donoId: tipo.donoId, usuarioId })
                 }
                 tipo={tipo.nome}
+                tipoId={tipo.id}
                 duracaoMin={duracaoDoCompromisso ?? tipo.duracaoMin}
                 /*
                   A DURAÇÃO É ESCOLHIDA AQUI, E SÓ AQUI (issue #3709).

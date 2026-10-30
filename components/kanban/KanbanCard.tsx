@@ -52,6 +52,12 @@ interface KanbanCardProps {
   /** Repassados ao menu de ações ("Mover para…"). */
   etapas?: Stage[];
   onMoverPara?: (lead: Lead, stageId: string) => void;
+  /**
+   * Quadro de funil arquivado (#1298): o card é só leitura. Sem arraste, sem
+   * menu de ações, sem caixa de seleção e sem abrir o dossiê (que tem ações
+   * de escrita próprias).
+   */
+  somenteLeitura?: boolean;
 }
 
 function formatValor(cents: number | null, currency: string | null): string | null {
@@ -85,6 +91,7 @@ export function KanbanCard({
   onOpen,
   etapas,
   onMoverPara,
+  somenteLeitura = false,
 }: KanbanCardProps) {
   const t = useT();
   const value = formatValor(card.valueCents, card.currency);
@@ -144,7 +151,7 @@ export function KanbanCard({
   const handleClick = (e: MouseEvent<HTMLDivElement>) => decidirClique(e);
 
   return (
-    <Draggable draggableId={card.id} index={index}>
+    <Draggable draggableId={card.id} index={index} isDragDisabled={somenteLeitura}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
@@ -202,27 +209,31 @@ export function KanbanCard({
                   opacidade, nunca por `hidden`. `focus:opacity-100` no próprio
                   input: uma caixa invisível e tabulável seria armadilha de
                   teclado. */}
-              <input
-                type="checkbox"
-                checked={Boolean(isSelected)}
-                aria-label={`${t("Selecionar")}: ${card.title}`}
-                onClick={(e) => {
-                  // O card inteiro tem onClick (abre o dossiê): sem parar a
-                  // propagação, marcar a caixa abriria o dossiê por cima.
-                  e.stopPropagation();
-                  onSelect?.(card.id, e.shiftKey ? "intervalo" : "alterna");
-                }}
-                onChange={() => {
-                  /* estado vem de `isSelected`; quem decide é o onClick acima */
-                }}
-                className={cn(
-                  "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
-                  "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
-                  isSelected || isSelecting
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100",
-                )}
-              />
+              {/* No funil arquivado a caixa some de vez: seleção só existe
+                  para a ação em lote, e escrever ali é o que o arquivo proíbe (#1298). */}
+              {!somenteLeitura && (
+                <input
+                  type="checkbox"
+                  checked={Boolean(isSelected)}
+                  aria-label={`${t("Selecionar")}: ${card.title}`}
+                  onClick={(e) => {
+                    // O card inteiro tem onClick (abre o dossiê): sem parar a
+                    // propagação, marcar a caixa abriria o dossiê por cima.
+                    e.stopPropagation();
+                    onSelect?.(card.id, e.shiftKey ? "intervalo" : "alterna");
+                  }}
+                  onChange={() => {
+                    /* estado vem de `isSelected`; quem decide é o onClick acima */
+                  }}
+                  className={cn(
+                    "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
+                    "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
+                    isSelected || isSelecting
+                      ? "opacity-100"
+                      : "opacity-0 group-hover:opacity-100",
+                  )}
+                />
+              )}
               {card.canonicalTag && (
                 <span
                   className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
@@ -257,12 +268,14 @@ export function KanbanCard({
                 </button>
               </h3>
             </div>
-            <KanbanCardActions
-              lead={lead}
-              pipelineId={pipelineId}
-              etapas={etapas}
-              onMoverPara={onMoverPara}
-            />
+            {!somenteLeitura && (
+              <KanbanCardActions
+                lead={lead}
+                pipelineId={pipelineId}
+                etapas={etapas}
+                onMoverPara={onMoverPara}
+              />
+            )}
           </div>
 
           {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe.

@@ -12,6 +12,7 @@
  * classificar IP (`recusarSSRF`, `enderecoInterno`) mora em `site-fetch.ts`
  * (server-only) — nunca importar aquele de componente client.
  */
+import { conteudoDoTitulo, temDescricaoLonga } from "@/lib/prospecting/leitura-do-html";
 
 
 /**
@@ -253,15 +254,11 @@ export function montarChecklist(
       // caracteres reprovava marca de 7 letras ("VittaSP"), que é o nome que a
       // empresa escolheu — e a falta ia citada na primeira mensagem (caso A).
       (() => {
-        const m = /<title[^>]*>(.*?)<\/title>/is.exec(fonte);
-        const texto = (m?.[1] ?? "").replace(/\s+/g, " ").trim();
+        const texto = (conteudoDoTitulo(fonte) ?? "").replace(/\s+/g, " ").trim();
         return texto.length > 0 && !TITULOS_VAZIOS.has(texto.toLowerCase());
       })(),
     ],
-    [
-      "description",
-      /<meta[^>]+name=["']description["\'][^>]+content=["'](.{30,})["']/i.test(fonte),
-    ],
+    ["description", temDescricaoLonga(fonte)],
     ["favicon", /rel=["'](?:shortcut )?icon/i.test(minusculo)],
   ];
   return {

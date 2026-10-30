@@ -62,6 +62,7 @@ import {
   resumoDaJornada,
   ROTULOS_DOS_DIAS,
 } from "@/lib/agenda/editor-de-jornada";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /**
  * Os rótulos da semana vêm de `lib/agenda/editor-de-jornada` — a MESMA fonte do
@@ -635,7 +636,7 @@ export function AttendantsClient({ canManage, organizationTimezone, setoresLigad
     () =>
       (avail.data?.data ?? []).map((a) => ({
         userId: a.user_id,
-        name: a.name ?? a.email ?? a.user_id.slice(0, 8),
+        name: rotuloDoMembro({ full_name: a.name, email: a.email, user_id: a.user_id }, t),
         email: a.email,
         availability: a,
         sectorId: a.sector_id ?? null,
