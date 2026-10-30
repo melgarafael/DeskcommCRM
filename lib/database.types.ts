@@ -5800,6 +5800,13 @@ export type Database = {
       contacts: {
         Row: {
           address_book_name: string | null;
+          city: string | null;
+          complement: string | null;
+          district: string | null;
+          number: string | null;
+          state: string | null;
+          street: string | null;
+          zip_code: string | null;
           ai_authorized_at: string | null;
           ai_authorized_reason: string | null;
           ai_opt_out: boolean;
@@ -5855,6 +5862,13 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           address_book_name?: string | null;
+          city?: string | null;
+          complement?: string | null;
+          district?: string | null;
+          number?: string | null;
+          state?: string | null;
+          street?: string | null;
+          zip_code?: string | null;
           ai_authorized_at?: string | null;
           ai_authorized_reason?: string | null;
           ai_opt_out?: boolean;
@@ -5909,6 +5923,13 @@ export type Database = {
         };
         Update: {
           address_book_name?: string | null;
+          city?: string | null;
+          complement?: string | null;
+          district?: string | null;
+          number?: string | null;
+          state?: string | null;
+          street?: string | null;
+          zip_code?: string | null;
           ai_authorized_at?: string | null;
           ai_authorized_reason?: string | null;
           ai_opt_out?: boolean;

@@ -45,6 +45,14 @@ interface FormShape {
   phone_number?: string;
   /** `AAAA-MM-DD` — a MESMA forma de `contactPatchSchema` e da coluna do banco. */
   birthdate?: string;
+  // Endereço (issue 3494)
+  zip_code?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  district?: string;
+  city?: string;
+  state?: string;
   /**
    * Issue 3005: o papel do contato. O `Select` abaixo grava aqui; o valor sai
    * no PATCH como `contact_type` — é o único caminho de escrita do tipo pela ficha.
@@ -54,6 +62,16 @@ interface FormShape {
   tags?: string[];
   custom_fields?: Record<string, unknown>;
 }
+
+const CAMPOS_DO_ENDERECO = [
+  "zip_code",
+  "street",
+  "number",
+  "complement",
+  "district",
+  "city",
+  "state",
+] as const;
 
 /** O rótulo de cada tipo, na língua da tela — a chave é o valor da coluna. */
 const ROTULO_DO_TIPO: Record<ContactType, string> = {
@@ -99,6 +117,13 @@ export function EditContactDialog({
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
       birthdate: contact.birthdate ?? "",
+      zip_code: contact.zip_code ?? "",
+      street: contact.street ?? "",
+      number: contact.number ?? "",
+      complement: contact.complement ?? "",
+      district: contact.district ?? "",
+      city: contact.city ?? "",
+      state: contact.state ?? "",
       // O tipo vem da COLUNA; ausente (cache antigo) cai no default do banco,
       // que é 'cliente' — a mesma leitura do selo do painel.
       contact_type: contact.contact_type ?? "cliente",
@@ -125,6 +150,13 @@ export function EditContactDialog({
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
         birthdate: contact.birthdate ?? "",
+        zip_code: contact.zip_code ?? "",
+        street: contact.street ?? "",
+        number: contact.number ?? "",
+        complement: contact.complement ?? "",
+        district: contact.district ?? "",
+        city: contact.city ?? "",
+        state: contact.state ?? "",
         contact_type: contact.contact_type ?? "cliente",
         tags: contact.tags,
         custom_fields: contact.custom_fields ?? {},
@@ -188,6 +220,14 @@ export function EditContactDialog({
     // exigem), então o diálogo não normaliza nada — o que se digita é o que se
     // grava, e a ficha recarregada mostra a MESMA string.
     if (values.birthdate?.trim()) payload.birthdate = values.birthdate.trim();
+    // Endereço (issue 3494): manda o que foi preenchido e `null` no campo que a
+    // ficha tinha e foi esvaziado — sem isso, apagar só o Complemento e salvar
+    // deixava o valor antigo no banco (medido na prova pela tela do #3670).
+    for (const campo of CAMPOS_DO_ENDERECO) {
+      const valor = values[campo]?.trim();
+      if (valor) payload[campo] = valor;
+      else if (contact[campo]) payload[campo] = null;
+    }
     // O TIPO (issue 3005): sempre no payload, porque é ele que o `Select`
     // acabou de mostrar — quem abriu a ficha como cliente e salvou continua
     // cliente; quem trocou para fornecedor grava fornecedor.
@@ -240,6 +280,37 @@ export function EditContactDialog({
           <div className="space-y-2">
             <Label htmlFor="ec-birthdate">{t("Data de nascimento")}</Label>
             <Input id="ec-birthdate" type="date" {...form.register("birthdate")} />
+          </div>
+          {/* Endereço (issue 3494) */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ec-zip">{t("CEP")}</Label>
+              <Input id="ec-zip" {...form.register("zip_code")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-state">{t("UF")}</Label>
+              <Input id="ec-state" {...form.register("state")} />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="ec-street">{t("Logradouro")}</Label>
+              <Input id="ec-street" {...form.register("street")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-number">{t("Número")}</Label>
+              <Input id="ec-number" {...form.register("number")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-complement">{t("Complemento")}</Label>
+              <Input id="ec-complement" {...form.register("complement")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-district">{t("Bairro")}</Label>
+              <Input id="ec-district" {...form.register("district")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-city">{t("Cidade")}</Label>
+              <Input id="ec-city" {...form.register("city")} />
+            </div>
           </div>
           {/*
             O TIPO DE CONTATO (issue 3005, fatia 1). Não é campo de formulário
