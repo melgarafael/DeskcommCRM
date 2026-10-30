@@ -433,6 +433,14 @@ export const AUDIT_ACTIONS = [
   // linha de lugar" — o conteúdo não foi tocado nenhuma vez (é o que a issue
   // pede: preservar os cadastros).
   "template.reordered",
+  // GRUPOS de respostas rápidas (#3245): criar/renomear/reordenar/apagar um
+  // grupo não é `template.updated` — o ato muda a ESTRUTURA da equipe (as
+  // etapas que todos veem), não o texto de uma resposta. O audit responde
+  // "quem reorganizou nossa lista?", que é outra pergunta.
+  "template_group.created",
+  "template_group.updated",
+  "template_group.deleted",
+  "template_group.reordered",
   "auth.signup_requested",
   "auth.signup_failed",
   "auth.signup_confirmed",
@@ -1375,6 +1383,13 @@ export const AUDIT_ACTIONS = [
   // cala a cobrança da organização inteira, e "quem desligou, e quando" só tem
   // resposta na trilha — a coluna guarda só o valor de agora.
   "ai.lembrete_de_caso_configurado",
+  // Setores de atendimento (migration 0801): cadastro e vínculo atendente →
+  // setor, feitos por manager+ na Equipe › Setores. O vínculo não guarda
+  // histórico — "quem estava no setor que foi apagado" só a trilha responde.
+  "attendant.sector_created",
+  "attendant.sector_updated",
+  "attendant.sector_deleted",
+  "attendant.sector_assigned",
   // Materiais do acervo (criar, enviar arquivo, editar, arquivar, reindexar).
   // O metadata leva só ids e contagens: o texto do material nunca entra — a
   // tabela é append-only e a cascata de LGPD não a alcança. Criar e enviar

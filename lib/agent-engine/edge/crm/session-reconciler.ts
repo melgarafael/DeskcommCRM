@@ -27,7 +27,8 @@
  */
 import type pg from 'pg';
 
-import { canonicalWahaExternalId, parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
+import { canonicalWahaExternalId, chatIdFromWaMessageId, parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
+import { chatIndividualDaMensagem } from '@/lib/waha/ultima-recebida';
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
 import { canalDesativado } from '@/lib/channels/desativado';
 
@@ -133,6 +134,18 @@ export async function reconcileSessions(
       }
     }
 
+    // ZERO LINHAS PARA ESCREVER NÃO É UMA ESCRITA (#3695). O `where` abaixo já
+    // traz `status is distinct from $2`, então o banco devolvia 0 linhas — mas a
+    // INSTRUÇÃO era emitida assim mesmo a cada tick de ~30 s (274 vezes em 2h19
+    // medidas na issue), com parse, plano e varredura para não mudar nada. A
+    // leitura acima já responde a mesma pergunta: `nossas` é EXATAMENTE o
+    // conjunto que o `where` alcança (mesmo `waha_session_name`, mesmo
+    // `archived_at is null`). O `is distinct from` continua no `where` como
+    // trava de corrida: outra instância pode ter mudado a linha entre o select
+    // e o update.
+
+    if (nossas.every((nossa) => nossa.status === nextStatus)) continue;
+
     const { rows } = await pool.query<{ id: string; status: string }>(
       `update channel_sessions
           set status = $2, updated_at = now()
@@ -159,6 +172,8 @@ interface QueuedRow {
   organization_id: string;
   /** A limpeza do eco só procura na conversa da própria mensagem. */
   conversation_id: string;
+  /** Ficha da mensagem: a regra do telefone extra parte dela. */
+  contact_id: string | null;
   body: string | null;
   waha_session_name: string;
   wa_identity: string | null;
@@ -177,14 +192,62 @@ interface QueuedRow {
  * `wa_lid` na frente pelo motivo da 0122: `wa_identity` é GERADA com o telefone
  * antes do lid, então o contato @lid que ganhou número passa a bater na linha do
  * `phone:` e a conversa mudaria de canal no reenvio.
+ *
+ * `ultimoRecebido` é o chat da última mensagem recebida, só quando a ficha tem
+ * telefone extra (`ultimaRecebidaDaFicha`). Vem logo depois do grupo, como em
+ * `resolveWahaChatId`: sem isso o reenvio sairia pelo principal.
  */
-function chatIdOf(m: QueuedRow): string | null {
+function chatIdOf(m: QueuedRow, ultimoRecebido: string | null): string | null {
   if (m.is_group && m.group_chat_id) return m.group_chat_id;
+  if (ultimoRecebido) return ultimoRecebido;
   if (m.wa_lid) return `${m.wa_lid}@lid`;
   if (m.wa_identity?.startsWith('lid:')) return `${m.wa_identity.slice(4)}@lid`;
   if (m.wa_identity?.startsWith('phone:+')) return `${m.wa_identity.slice(7)}@c.us`;
   if (m.phone_number) return `${m.phone_number.replace('+', '')}@c.us`;
   return null;
+}
+
+/**
+ * O chat da última mensagem RECEBIDA da conversa, quando a ficha tem telefone
+ * extra. MESMA REGRA de `chatIdDaUltimaRecebida` (lib/waha/ultima-recebida.ts),
+ * em SQL, porque este processo tem só o `pg` cru. Ficha sem extra devolve null
+ * depois de UMA consulta barata e a regra de sempre segue.
+ *
+ * Qualquer erro vira null com `warn`: o reenvio não pode parar por isso.
+ */
+async function ultimaRecebidaDaFicha(
+  pool: pg.Pool,
+  m: QueuedRow,
+  log: Logger,
+): Promise<string | null> {
+  if (m.is_group || !m.contact_id) return null;
+  try {
+    const { rows: extras } = await pool.query(
+      `select 1 from contact_phones
+       where organization_id = $1 and contact_id = $2
+       limit 1`,
+      [m.organization_id, m.contact_id],
+    );
+    if (extras.length === 0) return null;
+    const { rows: recebidas } = await pool.query<{ external_id: string | null }>(
+      `select external_id from messages
+       where organization_id = $1 and conversation_id = $2
+         and direction = 'inbound' and external_id is not null
+       order by created_at desc
+       limit 1`,
+      [m.organization_id, m.conversation_id],
+    );
+    const externalId = recebidas[0]?.external_id;
+    if (!externalId) return null;
+    return chatIndividualDaMensagem(chatIdFromWaMessageId(externalId));
+  } catch (err) {
+    // Só a organização no log: o chat e o contato carregam telefone.
+    log.warn('watchdog: endereço da última recebida indisponível; segue pela regra de hoje', {
+      organization_id: m.organization_id,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+    return null;
+  }
 }
 
 /**
@@ -326,7 +389,7 @@ export async function redriveQueued(
   signal?: AbortSignal,
 ): Promise<number> {
   const { rows } = await pool.query<QueuedRow>(
-    `select m.id, m.organization_id, m.conversation_id, m.body, s.waha_session_name,
+    `select m.id, m.organization_id, m.conversation_id, m.contact_id, m.body, s.waha_session_name,
             c.wa_identity, c.wa_lid, c.phone_number, v.is_group, v.group_chat_id
      from messages m
      join channel_sessions s on s.id = m.channel_session_id and s.organization_id = m.organization_id
@@ -381,7 +444,7 @@ export async function redriveQueued(
     // o recibo; só o próximo item é recusado, e a mensagem recusada continua
     // `queued` para o tique do processo que subir depois.
     if (signal?.aborted) break;
-    const chatId = chatIdOf(m);
+    const chatId = chatIdOf(m, await ultimaRecebidaDaFicha(pool, m, log));
     if (chatId === null || m.body === null) {
       log.warn('watchdog: queued sem destino/corpo — pulada', { message_id: m.id });
       continue;

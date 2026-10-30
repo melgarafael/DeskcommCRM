@@ -44,6 +44,7 @@ import { fetchParaDestinoDaOrganizacao } from "@/lib/automation/destinos-interno
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enderecoDaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 import { audit } from "@/lib/audit";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import type { McpContext } from "@/lib/mcp/types";
@@ -474,13 +475,14 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       const { data: convRaw } = await admin
         .from("conversations")
         .select(
-          `id, group_chat_id, is_group, contacts:contact_id(phone_number, wa_identity, wa_lid), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS})`,
+          `id, contact_id, group_chat_id, is_group, contacts:contact_id(phone_number, wa_identity, wa_lid), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS})`,
         )
         .eq("id", run.conversation_id)
         .eq("organization_id", run.organization_id)
         .maybeSingle();
       const conv = convRaw as unknown as {
         id: string;
+        contact_id: string | null;
         group_chat_id: string | null;
         is_group: boolean;
         contacts: { phone_number: string | null; wa_identity: string | null; wa_lid: string | null } | null;
@@ -490,12 +492,22 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         // Mesmo seam do handler de envio: quem sabe de que coluna sai o ref da
         // sessão, e como o telefone vira endereço, é `lib/channels/`.
         waSessionName = conv.channel_sessions ? resolveSessionRef(conv.channel_sessions) : null;
+        // Ficha com telefone extra: a resposta volta pelo número que a pessoa
+        // escreveu. A porta de canal decide quem tem isso.
+        const ultimoRecebidoChatId = await enderecoDaUltimaRecebida(admin, {
+          provider: conv.channel_sessions?.provider,
+          isGroup: conv.is_group,
+          organizationId: run.organization_id,
+          conversationId: conv.id,
+          contactId: conv.contact_id,
+        });
         chatId = getAdapter(conv.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER).resolveRecipient({
           isGroup: conv.is_group,
           groupChatId: conv.group_chat_id,
           phoneNumber: conv.contacts?.phone_number,
           waIdentity: conv.contacts?.wa_identity,
           waLid: conv.contacts?.wa_lid,
+          ultimoRecebidoChatId,
         });
       }
 

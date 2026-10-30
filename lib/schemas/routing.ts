@@ -280,6 +280,51 @@ export const availabilityPatchSchema = z
 export type AvailabilityPatch = z.infer<typeof availabilityPatchSchema>;
 
 /**
+ * Setores de atendimento (migration 0801). Os limites são os CHECKs da tabela
+ * `attendant_sectors` — o Zod recusa antes, com mensagem para a pessoa, o que o
+ * banco recusaria com um erro de constraint.
+ */
+export const SETOR_NOME_MAX = 60;
+export const SETOR_DESCRICAO_MAX = 280;
+
+export const sectorCreateSchema = z
+  .object({
+    name: z.string().trim().min(1, "Dê um nome ao setor.").max(SETOR_NOME_MAX),
+    description: z
+      .string()
+      .trim()
+      .max(SETOR_DESCRICAO_MAX)
+      .nullable()
+      .optional()
+      .transform((v) => (v ? v : null)),
+  })
+  .strict();
+export type SectorCreate = z.infer<typeof sectorCreateSchema>;
+
+export const sectorPatchSchema = z
+  .object({
+    name: z.string().trim().min(1, "Dê um nome ao setor.").max(SETOR_NOME_MAX),
+    description: z
+      .string()
+      .trim()
+      .max(SETOR_DESCRICAO_MAX)
+      .nullable()
+      .transform((v) => (v ? v : null)),
+  })
+  .partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Informe ao menos um campo (name ou description).",
+  });
+export type SectorPatch = z.infer<typeof sectorPatchSchema>;
+
+/** PUT do setor de um atendente. `null` = tirar do setor ("sem setor"). */
+export const sectorAssignmentSchema = z
+  .object({ sector_id: z.string().uuid().nullable() })
+  .strict();
+export type SectorAssignment = z.infer<typeof sectorAssignmentSchema>;
+
+/**
  * Corpo do PATCH de `/api/v1/settings/routing/channels` (regras POR NÚMERO,
  * issue #2331). `distribution_mode` e `default_assignee_user_id` são OPCIONAIS:
  * a tela que só mexe nos responsáveis continua mandando o mesmo corpo, e o

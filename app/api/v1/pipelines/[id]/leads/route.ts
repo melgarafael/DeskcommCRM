@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/pipelines/[id]/leads?page=&per_page=
+ * GET /api/v1/pipelines/[id]/leads?page=&per_page=&owner=&status=
  *
  * A página da LISTA do funil (#3172, fatia 1): uma fatia dos negócios do funil,
  * lida do banco com `range`, mais o `meta` que diz qual página é e se há
@@ -21,9 +21,19 @@
  * faz o corte ser de verdade é o índice `idx_crm_leads_org_pipeline_position_id`
  * (migration 0739), sobre as MESMAS colunas que o `select` filtra e ordena.
  *
+ * ─── Os filtros da barra (fatia 2, primeira parte) ─────────────────────────
+ *
+ * `owner` e `status` — os MESMOS valores que a barra escreve na URL do funil —
+ * entram na consulta, ANTES do `range`. Filtrar a página depois de lida
+ * esconderia os negócios das páginas seguintes: com "Responsável: Ana", a
+ * página 1 mostraria só os da Ana que caíram nela. Valor que não se entende é
+ * 422, nunca o funil inteiro com cara de filtrado. A regra de cada valor mora
+ * em `lib/kanban/filtros-da-lista.ts`.
+ *
  * ─── O que esta fatia NÃO faz ──────────────────────────────────────────────
  *
- * Filtros combináveis e ordenação por cabeçalho (fatia 2), escolha de colunas,
+ * Busca, etiqueta, atrasados, motivo e categoria (o resto da fatia 2; a tela
+ * avisa quando um deles está ativo), ordenação por cabeçalho, escolha de colunas,
  * seleção em lote e visões salvas (fatia 3). A ordem é a do quadro
  * (`position_in_stage`), a mesma que o operador já vê nas colunas — ordenar por
  * outra coluna sem a tela que a pede seria contrato sem chamador.
@@ -41,6 +51,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { donoDoFiltro, lerFiltrosDaLista } from "@/lib/kanban/filtros-da-lista";
 import { createClient } from "@/lib/supabase/server";
 import type { Lead } from "@/lib/types/leads";
 
@@ -95,6 +106,15 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const porPagina = porPaginaPedido(params.get("per_page"));
   const de = (pagina - 1) * porPagina;
 
+  const lidos = lerFiltrosDaLista(params);
+  if (!lidos.ok) {
+    return fail("validation_failed", t("Parâmetros inválidos."), 422, {
+      requestId,
+      details: { [lidos.campo]: ["valor desconhecido"] },
+    });
+  }
+  const filtros = lidos.filtros;
+
   const supabase = await createClient();
 
   const { data: funil, error: funilErr } = await supabase
@@ -125,12 +145,24 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // DEPOIS de o banco filtrar e ordenar tudo, e cada linha passa por
   // `fn_can_view_lead`), que é exatamente o problema que a issue mede — 19 s num
   // funil migrado, até estourar o `statement_timeout` do papel `authenticated`.
-  const { data, error } = await supabase
+  let consulta = supabase
     .from("crm_leads")
     .select("*")
     .eq("pipeline_id", pipelineId)
     .eq("organization_id", orgId)
-    .neq("status", "archived")
+    .neq("status", "archived");
+  // Os filtros da barra (fatia 2): na consulta, para o `range` cortar o que JÁ
+  // passou no filtro. "Sem responsável" é sem dono NENHUM — negócio com agente
+  // tem dono, a mesma regra do quadro.
+  if (filtros.status) consulta = consulta.eq("status", filtros.status);
+  if (filtros.owner) {
+    const dono = donoDoFiltro(filtros.owner);
+    consulta =
+      dono === "ninguem"
+        ? consulta.is("owner_user_id", null).is("owner_agent_id", null)
+        : consulta.eq(dono.coluna, dono.id);
+  }
+  const { data, error } = await consulta
     .order("position_in_stage")
     // O DESEMPATE (`.order("id")`). Sem ele, dois negócios com a MESMA
     // `position_in_stage` — o lote que gravou a mesma posição em N linhas, ou

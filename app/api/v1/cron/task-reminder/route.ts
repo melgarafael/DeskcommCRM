@@ -88,6 +88,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
 import { espacarEnvio } from "@/lib/automation/throttle";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { logger } from "@/lib/logger";
@@ -499,14 +500,25 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
         // organização — a cerca do lembrete de compromisso, na prática: sem o
         // recorte por org esta linha viria a organização A mandando mensagem
         // para contato de B.
+        // Contato FUNDIDO não é alvo (ele aponta para o vencedor): o mesmo filtro
+        // da busca de contato por telefone.
         const { data } = await admin
           .from("contacts")
           .select("id")
           .eq("organization_id", tarefa.organization_id)
           .in("phone_number", variantes)
+          .is("is_merged_into", null)
           .limit(1)
           .maybeSingle();
         contatoId = (data as { id: string } | null)?.id ?? null;
+        // Sem principal com o número, a ficha que o tem como EXTRA recebe o lembrete.
+        // Erro de leitura aqui não derruba a rodada inteira: vira "sem contato".
+        if (!contatoId) {
+          const donos = await contatosDonosDosExtras(admin, tarefa.organization_id, variantes).catch(
+            () => new Map<string, string>(),
+          );
+          contatoId = [...donos.values()][0] ?? null;
+        }
       }
 
       const decisao = decidirWhatsappDoLembrete({

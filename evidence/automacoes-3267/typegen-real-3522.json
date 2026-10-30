@@ -1,0 +1,48 @@
+{
+  "candidate_head": "d4c35ceb0c37c7065e38f84c83c02788b36f4585",
+  "merge_head_before_typegen": "3b3bec7d66acea1299fb09baaea8797c7b691913",
+  "main": "3b3bec7d66acea1299fb09baaea8797c7b691913",
+  "source_3476": "c8a88405eb0206bd1fe2aee628d52aeda38424f9",
+  "cli_version": "2.122.0",
+  "baseline_sha256": "10a5f50a2bf91dced7fb46882e6a819aea58008c9ad584ab286c5bb6ebce8c5e",
+  "prelude_sha256": "62afc1fa29248f8c5d9318b882489894aab92adb1d6716d7b2e39e4e06d3eb3c",
+  "test_db_harness_sha256": "3277cb141360716ced4157721dd568ae82fbfb496929534fba0d3ad079a071ba",
+  "remote_script_sha256": "1778421ea236f63bea0d82465e78cdcccdc0831d6addb6f8ba80a98c84b0ff04",
+  "baseline_install": "PASS",
+  "baseline_update": "PASS",
+  "raw_outputs_equal": true,
+  "raw_sha256": "61e2c820c02edfe9ba4bbfc60560b2d72b249ec4999702d8f15b8dc6ba272abc",
+  "formatted_sha256": "618a34e7d7f4a5f94d3c0d0b5472fe971e48ca8b736860b18860bdcf88fd2959",
+  "format_command": "pnpm exec prettier <raw> --parser typescript --config .prettierrc",
+  "candidate_state": "merge em andamento; HEAD e MERGE_HEAD declarados, baseline combinado capturado antes da geração",
+  "postgres": "17.11",
+  "image": "pgvector/pgvector:pg17",
+  "image_id": "sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d",
+  "limits": {
+    "memory_bytes": 1073741824,
+    "cpu": 1,
+    "bind": "127.0.0.1"
+  },
+  "cleanup": {
+    "exit": 0,
+    "container_remaining": false,
+    "port_remaining": false
+  },
+  "contract_proof": {
+    "source_main": "3b3bec7d66acea1299fb09baaea8797c7b691913",
+    "tables": 207,
+    "functions": 248,
+    "added_tables": ["automation_rule_contact_claims"],
+    "changed_tables": ["automation_rule_runs"],
+    "lead_field_proposals": "byte-equivalent AST member",
+    "other_public_contracts": "identical",
+    "contact_id": "Row nullable; Insert/Update optional nullable"
+  },
+  "local_tests": {
+    "files": 22,
+    "passed": 217,
+    "workers": 1,
+    "heap_mib": 1536
+  },
+  "browser_limit": "somente coleção real Playwright com valores sintéticos; navegação e imagem ainda pendentes do CI"
+}

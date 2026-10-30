@@ -125,7 +125,12 @@ interface ConversaRow {
 
 export async function devolverAtendimentoAoAgente(
   deps: RetomadaDeps,
-  input: { conversationId: string; origem?: OrigemDaRetomada },
+  input: {
+    conversationId: string;
+    origem?: OrigemDaRetomada;
+    /** Dono autorizado pela rota; ausente nos chamadores automáticos. null é uma precondição. */
+    expectedAssignee?: string | null;
+  },
 ): Promise<RetomadaResultado> {
   const { supabase, organizationId } = deps;
 
@@ -138,6 +143,11 @@ export async function devolverAtendimentoAoAgente(
   if (convErr) return { ok: false, erro: "conversation_not_found", detalhe: convErr.message };
   if (!convData) return { ok: false, erro: "conversation_not_found" };
   const conv = convData as unknown as ConversaRow;
+  // A autorização da rota não se transfere para quem assumiu depois dela.
+  // Recusa antes da primeira escrita no contato, inclusive quando estava vaga.
+  if (input.expectedAssignee !== undefined && conv.assigned_to_user_id !== input.expectedAssignee) {
+    return { ok: false, erro: "assignment_conflict" };
+  }
 
   // (0) A TRAVA PERMANENTE (issue 2379) — ANTES de ler continuidade e, sobretudo,
   // antes de escrever qualquer coisa. `contacts.ai_opt_out` diz que este contato
@@ -198,22 +208,25 @@ export async function devolverAtendimentoAoAgente(
     input.conversationId,
   );
 
-  // (1) Solta o dono humano pela regra que já existe (UPDATE + evento de
-  // atribuição na MESMA transação). `p_enforce_expected: false` porque soltar é
-  // idempotente por natureza: se outro release ganhou a corrida, o estado final
-  // é o mesmo que queríamos.
+  // (1) Solta somente o dono que a rota autorizou. A RPC compara sob lock
+  // da linha; perder a comparação retorna SETOF vazio, sem erro SQL. A ausência
+  // desse recibo também recusa antes dos efeitos de retomada. Cron/tool sem
+  // precondição explícita conservam o contrato de liberação anterior.
   if (conv.assigned_to_user_id !== null) {
-    const { error: releaseErr } = await supabase.rpc("fn_conversation_assign", {
+    const exigeDono = input.expectedAssignee !== undefined;
+    const { data: liberadas, error: releaseErr } = await supabase.rpc("fn_conversation_assign", {
       p_organization_id: organizationId,
       p_conversation_id: input.conversationId,
       p_to_user_id: null,
       p_reason: "release",
-      p_expected_assignee: null,
-      p_enforce_expected: false,
+      p_expected_assignee: exigeDono ? input.expectedAssignee : null,
+      p_enforce_expected: exigeDono,
     });
-    if (releaseErr) {
+    const recibo = Array.isArray(liberadas) && liberadas.length === 1 &&
+      (liberadas[0] as { id?: unknown } | null)?.id === input.conversationId;
+    if (releaseErr || (exigeDono && !recibo)) {
       await restaurarTrava(deps, conv.contact_id, travaEstavaLigada);
-      return { ok: false, erro: "assignment_conflict", detalhe: releaseErr.message };
+      return { ok: false, erro: "assignment_conflict", ...(releaseErr ? { detalhe: releaseErr.message } : {}) };
     }
   }
 
