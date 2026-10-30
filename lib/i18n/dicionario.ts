@@ -643,7 +643,6 @@ export const DICIONARIO: Traducoes = {
     es: "Número no válido. Revise el código de área e inténtelo de nuevo.",
   },
   "A resposta sai por:": { es: "La respuesta sale por:" },
-  "A resposta sai pelo número principal": { es: "La respuesta sale por el número principal" },
   "Pontuação": { es: "Puntuación" },
   // #2642 — formulário da ação notify_team, depois do recorte: o destino é o
   // número de Avisos e não há mais escolha de pessoa nem de canal.

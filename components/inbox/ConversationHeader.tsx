@@ -45,7 +45,7 @@ import { ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNa
 import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
-import { phoneForDisplay, samePhone } from "@/lib/channels/phone-variants";
+import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { useEnderecoDaResposta } from "@/hooks/inbox/useEnderecoDaResposta";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 
@@ -158,14 +158,6 @@ export function ConversationHeader({
   // leitura-só, porque a ordem dos hooks não pode mudar entre renderizações.
   const enderecoDaResposta = useEnderecoDaResposta(conversation.id, conversation.last_inbound_at ?? null);
   const endereco = enderecoDaResposta.data?.data ?? null;
-  // A última mensagem chegou por um extra: o número de resposta não é o principal.
-  const ultimaVeioPorExtra = Boolean(
-    endereco &&
-      endereco.via === "ultima_recebida" &&
-      endereco.phone_number &&
-      c?.phone_number &&
-      !samePhone(endereco.phone_number, c.phone_number),
-  );
 
   /**
    * QUEM MANDA, uma pergunta com uma resposta.
@@ -341,19 +333,10 @@ export function ConversationHeader({
         {/* Contato com telefone extra: diz por qual número a resposta sai. Sem
             extra, nada muda na tela. No canal que responde pela última mensagem
             recebida, a resposta vai para o número por onde ela chegou; nos outros
-            segue pelo principal, e o aviso aparece quando a última chegou por um
-            extra. */}
+            segue pelo principal, e a linha não aparece. */}
         {endereco?.has_extras && c?.phone_number && endereco.follows_last_inbound && endereco.phone_number && (
           <p className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden" data-testid="resposta-sai-por">
             {t("A resposta sai por:")} {phoneForDisplay(endereco.phone_number)}
-          </p>
-        )}
-        {endereco?.has_extras && !endereco.follows_last_inbound && ultimaVeioPorExtra && (
-          <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 text-xs text-amber-700 dark:text-amber-400" data-testid="resposta-pelo-principal">
-            <span>{t("A resposta sai pelo número principal")}</span>
-            <Link href={`/app/contacts/${c?.id}`} className="font-medium underline underline-offset-2">
-              {t("Tornar principal")}
-            </Link>
           </p>
         )}
       </div>

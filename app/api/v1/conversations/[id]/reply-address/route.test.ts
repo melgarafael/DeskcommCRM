@@ -4,6 +4,7 @@
  * ─── SABOTAGEM (o que faz este arquivo ficar vermelho) ─────────────────────
  * - Devolver sempre o principal (ignorar o chat): o caso "@c.us → +digitos" cai.
  * - Não converter `@c.us` em `+<digitos>` (devolver o chat cru): o mesmo caso cai.
+ * - Aceitar o `@c.us` sem conferir que o número é da ficha: o caso do número que a ficha já não tem cai.
  * - Procurar o `@lid` sem olhar o extra (só o principal): o caso "@lid do extra" cai.
  * - Ficha sem extra usando o chat mesmo assim: o caso "via principal" cai.
  */
@@ -100,6 +101,26 @@ describe("GET /api/v1/conversations/[id]/reply-address", () => {
       phone_number: "+5511999998888",
       via: "principal",
       has_extras: false,
+      follows_last_inbound: true,
+    });
+  });
+
+  it("última recebida @c.us de um número que a ficha já não tem → principal, sem anunciar o número solto", async () => {
+    vi.mocked(enderecoDaUltimaRecebida).mockResolvedValue("5521977776666@c.us");
+    const { cliente } = fakeSupabase({
+      principal: { phone_number: "+5511999998888" },
+      extras: [{ phone_number: "+5515999998888", wa_lid: null }],
+    });
+    vi.mocked(createClient).mockResolvedValue(cliente as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(req(), CONTEXTO);
+    const corpo = (await res.json()) as { data: Record<string, unknown> };
+
+    expect(corpo.data).toEqual({
+      phone_number: "+5511999998888",
+      via: "principal",
+      has_extras: true,
       follows_last_inbound: true,
     });
   });
