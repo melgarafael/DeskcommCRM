@@ -31,8 +31,60 @@ import { timingSafeEqual } from "node:crypto";
 /** O cabeçalho que o Telegram devolve com o `secret_token` do `setWebhook`. */
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
 
-/** Base da Bot API. Host público, um só para o mundo — não é configuração. */
-export const TELEGRAM_API_BASE = "https://api.telegram.org";
+/**
+ * O host da Bot API. Público e um só para o mundo — por isso o padrão é o real,
+ * e a instalação que não configura nada continua falando com ele.
+ *
+ * O override por `TELEGRAM_API_BASE_URL` existe pela mesma razão do
+ * `META_GRAPH_BASE_URL` e do `ZERNIO_API_BASE_URL`: sem um host apontável não
+ * há prova em tela do canal (receptor local), e o caminho de envio fica
+ * coberto só por dublê de `fetch`. É decisão da INSTALAÇÃO, não da organização —
+ * o token vai no CAMINHO de cada chamada (`/bot<token>/<método>`), então deixá-lo
+ * por tenant mandaria o segredo de um pelo host que o outro escolheu.
+ */
+const BASE_PADRAO_DA_BOT_API = "https://api.telegram.org";
+
+/** A variável que aponta a base para outro lugar (prova em tela, homólogo). */
+const CHAVE_DA_BASE = "TELEGRAM_API_BASE_URL";
+
+/**
+ * A base da Bot API **desta instalação**, sem barra no fim.
+ *
+ * `||` e não `??`, com o `trim()` junto — a diferença é o bug inteiro: o
+ * `.env.example` entrega a chave VAZIA, e string vazia é valor para o `??`.
+ * Valor sem esquema absoluto (`api.telegram.org`) montaria `/bot<token>/…` sem
+ * host e o `fetch` lançaria `TypeError: Failed to parse URL`; os dois casos caem
+ * no host real em vez de virar exceção.
+ */
+export function telegramApiBase(): string {
+  const daVariavel = process.env[CHAVE_DA_BASE]?.trim();
+  if (!daVariavel) return BASE_PADRAO_DA_BOT_API;
+  const aceita = baseAceita(daVariavel);
+  if (aceita) return aceita;
+  // Recusa ABERTA no log, fechada na ação: o valor ruim não derruba o envio e
+  // não some em silêncio — é a mesma doutrina de `hostAceito` na Graph.
+  console.warn(
+    `[telegram] ${CHAVE_DA_BASE}="${daVariavel}" não é uma base http(s) absoluta — usando a Bot API real.`,
+  );
+  return BASE_PADRAO_DA_BOT_API;
+}
+
+/** O que a variável aponta, ou `null` quando não serve como base. */
+function baseAceita(valor: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(valor);
+  } catch {
+    return null;
+  }
+  // `new URL` aceita `ftp:` e `file:`; destino de chamada que aceitasse isso é
+  // pior do que não ter override.
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (!url.hostname) return null;
+  // Consulta e fragmento não fazem parte de uma base; barra no fim é aparada
+  // para não virar `//bot<token>` depois.
+  return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
+}
 
 /**
  * O update veio do Telegram DESTA sessão?
@@ -79,7 +131,11 @@ export type TelegramRead =
  * no `unique (organization_id, external_id)` e a segunda seria descartada como
  * duplicata — mensagem de um cliente sumindo com o carimbo de "já estava aqui".
  */
-export function telegramExternalId(botId: string, chatId: string, messageId: number | string): string {
+export function telegramExternalId(
+  botId: string,
+  chatId: string,
+  messageId: number | string,
+): string {
   return `tg:${botId}:${chatId}:${messageId}`;
 }
 
@@ -155,8 +211,17 @@ export function readTelegramUpdate(payload: unknown, botId: string): TelegramRea
   // anexo em silêncio. Fica para a T2, declarado.
   const text = texto(m.text);
   if (!text) {
-    const tipoDeMidia = ["photo", "document", "audio", "voice", "video", "video_note", "sticker", "location", "contact"]
-      .find((k) => m[k] !== undefined);
+    const tipoDeMidia = [
+      "photo",
+      "document",
+      "audio",
+      "voice",
+      "video",
+      "video_note",
+      "sticker",
+      "location",
+      "contact",
+    ].find((k) => m[k] !== undefined);
     return { ok: false, motivo: "sem_interesse", detalhe: tipoDeMidia ?? "sem_texto" };
   }
 

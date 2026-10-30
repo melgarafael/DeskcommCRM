@@ -19,7 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
-import { TELEGRAM_API_BASE } from "./webhook";
+import { telegramApiBase } from "./webhook";
 
 export interface TelegramCredentials {
   /** `channel_sessions.telegram_bot_id` — o `sessionRef` deste canal. */
@@ -40,7 +40,7 @@ export interface TelegramCredsLookup {
  * fora daqui espalharia o segredo por call sites que ninguém revisa.
  */
 export function telegramApiUrl(token: string, method: string): string {
-  return `${TELEGRAM_API_BASE}/bot${token}/${method}`;
+  return `${telegramApiBase()}/bot${token}/${method}`;
 }
 
 /** Resposta crua da Bot API: `{ ok, result }` ou `{ ok: false, description, error_code }`. */
