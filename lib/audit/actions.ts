@@ -1394,6 +1394,18 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  // A ativação do módulo de Ouvidoria (#3611, migration 9030) — ligar a porta
+  // que aceita manifestação confidencial, e desligá-la. Metadata leva só o
+  // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
+  // append-only e a cascata de LGPD não alcança.
+  "settings.ouvidoria_updated",
+  // A mudança de STATUS de uma manifestação (#3611, fatia 3). O metadata leva
+  // `de`, `para`, `reabertura` e — só quando existe — o motivo da reabertura.
+  // NUNCA o texto do relato: `api_audit_log` é append-only e a cascata de LGPD
+  // não a alcança, então o dado sigiloso da ouvidoria não entra aqui. Este
+  // código é o que faz a falta de UPDATE para `authenticated` na 9030 ser
+  // aceitável: a única porta da escrita deixa rastro.
+  "ouvidoria.status_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
