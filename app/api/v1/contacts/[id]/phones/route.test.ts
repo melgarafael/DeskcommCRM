@@ -148,7 +148,7 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
   it("organização fora do Brasil: número nacional é recusado (não vira +55) e nada é gravado", async () => {
     vi.mocked(createClient).mockResolvedValue(
       fakeSupabase({
-        organizations: { data: { country: "US" } },
+        organizations: { data: { country: "PT" } },
         "contacts.select": { data: FICHA_SEM_PRINCIPAL },
       }) as never,
     );
@@ -165,18 +165,18 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
   it("organização fora do Brasil: número já em E.164 é aceito como veio", async () => {
     vi.mocked(createClient).mockResolvedValue(
       fakeSupabase({
-        organizations: { data: { country: "US" } },
+        organizations: { data: { country: "PT" } },
         "contacts.select": { data: FICHA_SEM_PRINCIPAL },
         "contacts.update": { data: null, error: null },
       }) as never,
     );
     const { POST } = await import("./route");
 
-    const res = await POST(reqPost({ phone_number: "+14155551234" }), CONTEXTO);
+    const res = await POST(reqPost({ phone_number: "+351912345678" }), CONTEXTO);
 
     expect(res.status).toBeLessThan(300);
     const gravacao = chamadas.find((c) => c.tabela === "contacts" && c.op === "update");
-    expect((gravacao?.valores as { phone_number?: string })?.phone_number).toBe("+14155551234");
+    expect((gravacao?.valores as { phone_number?: string })?.phone_number).toBe("+351912345678");
   });
 
   it("número que já é de outra ficha (23505) → 409 phone_in_use, e sem audit", async () => {
