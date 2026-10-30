@@ -69657,7 +69657,7 @@ $recibos_9018$;
 
 
 -- ============================================================================
--- 9043 — O AVISO ESCRITO PELO ADMIN (#1418, fatia 1)
+-- 9050 — O AVISO ESCRITO PELO ADMIN (#1418, fatia 1)
 --
 -- Não cria função, então pode ficar depois da VARREDURA anon.
 -- Até aqui todo push do produto nascia de evento de sistema (`kinds.ts`); esta
@@ -69675,7 +69675,7 @@ create table if not exists public.avisos (
   created_at timestamptz not null default now()
 );
 -- Índice da leitura quente: os publicados de uma organização, mais recentes
--- primeiro. Espelha a migration da 9043 — instalação nova e atualização
+-- primeiro. Espelha a migration da 9050 — instalação nova e atualização
 -- precisam nascer com o mesmo schema.
 create index if not exists avisos_org_publicar_idx
   on public.avisos (organization_id, publicar_em desc);
