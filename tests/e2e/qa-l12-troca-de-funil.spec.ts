@@ -143,6 +143,8 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
     const dossie = page.getByRole("dialog");
     await expect(dossie).toBeVisible({ timeout: 30_000 });
     await page.waitForLoadState("networkidle").catch(() => {});
+    // A linha do tempo carrega depois do diálogo abrir: esperar o texto, não ler uma vez só.
+    await expect(dossie, "o clone precisa dizer de onde veio").toContainText("Veio", { timeout: 30_000 });
     const textoClone = await dossie.innerText();
     registra(`#936 · dossiê do CLONE = ${JSON.stringify(textoClone.slice(0, 900))}`);
     expect(textoClone, "o clone precisa dizer de onde veio").toContain("Veio");
