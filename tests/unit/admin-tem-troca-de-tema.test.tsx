@@ -12,9 +12,9 @@
  * primeiro não é um caso raro — o `install.sh` cria o dono da instalação como
  * platform admin, então é a primeira tela de muita gente numa VPS nova.
  *
- * Por que o teste é sobre a TARJA e não sobre o `AdminShell`: o `AdminShell` não
- * tem barra de topo no desktop (o único `<header>` dele é `lg:hidden`), e a tarja
- * do Modo Plataforma é o único elemento persistente do topo em todas as larguras.
+ * Por que o teste é sobre a TARJA e não sobre o `AdminShell`: o `AdminShell` tem
+ * barra de topo nas duas larguras desde que ganhou a busca (⌘K), mas a troca de
+ * tema continua morando na tarja do Modo Plataforma, que é onde ela foi posta.
  * Se alguém mover o controle para outro lugar, este teste fica vermelho e a
  * mudança passa a ser deliberada — que é o ponto.
  *

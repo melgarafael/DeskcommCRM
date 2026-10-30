@@ -2208,6 +2208,76 @@ export const DICIONARIO: Traducoes = {
   // aqui mudaria a tela de quem usa em portugues — que e o unico jeito de
   // esta feature piorar alguma coisa.
   "Buscar...": { es: "Buscar..." },
+  // ─── Busca do painel do administrador (⌘K) ─────────────────────────────────
+  // Mesma paleta do app, outra fonte: os destinos de `lib/admin/navegacao.ts`.
+  // As descrições existem para a busca achar por INTENÇÃO ("smtp" → E-mail,
+  // "chave" → Credenciais), não só pelo nome da tela — quem não sabe o nome
+  // continua sem achar sem elas.
+  //
+  // Os rótulos de grupo reaproveitam chaves que já existiam ("Clientes",
+  // "Canais", "Plataforma"); só "Operação" era nova.
+  Operação: { es: "Operación" },
+  "Buscar telas da instalação": { es: "Buscar pantallas de la instalación" },
+  "Telas da instalação": { es: "Pantallas de la instalación" },
+  "Buscar telas da instalação (ex: credenciais, smtp, módulos, lgpd)...": {
+    es: "Buscar pantallas de la instalación (ej.: credenciales, smtp, módulos, lgpd)...",
+  },
+  "Visão geral da instalação: números do dia e saúde dos serviços": {
+    es: "Visión general de la instalación: números del día y salud de los servicios",
+  },
+  "Conversas de todas as empresas da instalação numa caixa só": {
+    es: "Conversaciones de todas las empresas de la instalación en una sola bandeja",
+  },
+  "Incidentes da plataforma e o que foi feito em cada um": {
+    es: "Incidentes de la plataforma y lo que se hizo en cada uno",
+  },
+  "Trilha de auditoria: quem fez o quê e quando": {
+    es: "Rastro de auditoría: quién hizo qué y cuándo",
+  },
+  "Pedidos de titular: exportar, anonimizar e prazos": {
+    es: "Solicitudes de titular: exportar, anonimizar y plazos",
+  },
+  "Empresas da instalação: criar, listar e abrir cada uma": {
+    es: "Empresas de la instalación: crear, listar y abrir cada una",
+  },
+  "Usuários da instalação e os papéis de cada um": {
+    es: "Usuarios de la instalación y los roles de cada uno",
+  },
+  "Quem tem poder de plataforma nesta instalação": {
+    es: "Quién tiene poder de plataforma en esta instalación",
+  },
+  "Consumo de IA e de mensagens por empresa": {
+    es: "Consumo de IA y de mensajes por empresa",
+  },
+  "App OAuth do Google: cliente e segredo para a agenda": {
+    es: "App OAuth de Google: cliente y secreto para la agenda",
+  },
+  "App da Meta: chave secreta e token do webhook do WhatsApp oficial": {
+    es: "App de Meta: clave secreta y token del webhook del WhatsApp oficial",
+  },
+  "Servidor SMTP: host, porta, remetente e senha": {
+    es: "Servidor SMTP: host, puerto, remitente y contraseña",
+  },
+  "Endereços da rede interna liberados para a instalação": {
+    es: "Direcciones de la red interna liberadas para la instalación",
+  },
+  "Nome, logo e cores da instalação": {
+    es: "Nombre, logo y colores de la instalación",
+  },
+  "Quem pode criar conta nesta instalação": {
+    es: "Quién puede crear cuenta en esta instalación",
+  },
+  "Chaves e segredos guardados da instalação": {
+    es: "Claves y secretos guardados de la instalación",
+  },
+  "Ligar e desligar módulos e comportamentos da instalação": {
+    es: "Activar y desactivar módulos y comportamientos de la instalación",
+  },
+  "Catálogo de extensões do servidor": { es: "Catálogo de extensiones del servidor" },
+  "Instalar e ligar módulos opcionais (honorários, cobrança…)": {
+    es: "Instalar y activar módulos opcionales (honorarios, cobro…)",
+  },
+  "Planos e cobrança do revendedor": { es: "Planes y cobro del revendedor" },
   "Menu do usuário": { es: "Menú del usuario" },
   Sair: { es: "Cerrar sesión" },
   "Central de avisos": { es: "Central de avisos" },
@@ -2589,6 +2659,25 @@ export const DICIONARIO: Traducoes = {
     es: "Déjalo en blanco para que el agente responda a todo. Si lo llenas, solo responderá cuando el mensaje contenga alguna de esas palabras. Sepáralas con una barra vertical (|). Acepta expresiones regulares, para quien ya las conozca.",
   },
   "Quantos atendimentos ao mesmo tempo": { es: "Cuántas atenciones al mismo tiempo" },
+  // ─── Público do agente (#3722) ───
+  "Público do agente": { es: "Público del agente" },
+  "Em branco, ele atende todo mundo. Preenchido, ele só atende quem cumpre TODOS os critérios — e quem tem um item de \"não atender\" fica de fora mesmo que cumpra os de \"atender\".": {
+    es: "En blanco, atiende a todo el mundo. Relleno, solo atiende a quien cumple TODOS los criterios, y quien tiene un elemento de \"no atender\" queda fuera aunque cumpla los de \"atender\".",
+  },
+  "Atender só quem tem estas etiquetas": { es: "Atender solo a quien tiene estas etiquetas" },
+  "Não atender quem tem estas etiquetas": { es: "No atender a quien tiene estas etiquetas" },
+  "Ex.: cliente ativo, contrato": { es: "Ej.: cliente activo, contrato" },
+  "Atender só quem está nestes funis": { es: "Atender solo a quien está en estos embudos" },
+  "Não atender quem está nestes funis": { es: "No atender a quien está en estos embudos" },
+  "Estar no funil é ter um negócio ABERTO nele. Quem ainda não tem card não entra em \"só estes funis\".": {
+    es: "Estar en el embudo es tener un negocio ABIERTO en él. Quien todavía no tiene tarjeta no entra en \"solo estos embudos\".",
+  },
+  "Estar no funil é ter um negócio ABERTO nele. Quem ainda não tem card NÃO é barrado por esta lista.": {
+    es: "Estar en el embudo es tener un negocio ABIERTO en él. Quien todavía no tiene tarjeta NO queda excluido por esta lista.",
+  },
+  "Com dois agentes neste número, atende o primeiro na ordem de prioridade que aceita o contato. Se nenhum aceitar, o sistema não responde: a mensagem fica na caixa de entrada para uma pessoa.": {
+    es: "Con dos agentes en este número, atiende el primero en el orden de prioridad que acepta al contacto. Si ninguno lo acepta, el sistema no responde: el mensaje queda en la bandeja de entrada para una persona.",
+  },
   "Um de cada vez por conversa": { es: "Una a la vez por conversación" },
   "Um de cada vez por cliente": { es: "Una a la vez por cliente" },
   "Só atender em horário de funcionamento": { es: "Atender solo en horario de funcionamiento" },
@@ -6345,6 +6434,24 @@ export const DICIONARIO: Traducoes = {
   "vence em": { es: "vence en" },
   "Escolha o que dispara a automação": { es: "Elige qué dispara la automatización" },
   "Escolha o funil e o campo de data": { es: "Elige el embudo y el campo de fecha" },
+  "A data do atendimento não foi gravada: o evento que disparou a regra não trouxe um compromisso. Use esta ação no gatilho “Quando alguém comparecer ao compromisso”.": {
+    es: "No se guardó la fecha de la cita: el evento que activó la regla no trajo una cita. Usa esta acción con el disparador «Cuando alguien asista a la cita».",
+  },
+  "A data do atendimento não foi gravada: o horário do compromisso veio num formato que não deu para ler.": {
+    es: "No se guardó la fecha de la cita: el horario de la cita llegó en un formato que no se pudo leer.",
+  },
+  "A data do atendimento não foi gravada: o compromisso não está ligado a um contato, então não havia negócio onde gravar.": {
+    es: "No se guardó la fecha de la cita: la cita no está vinculada a un contacto, así que no había negocio donde guardarla.",
+  },
+  "A data do atendimento não foi gravada: o contato não tem negócio aberto no funil escolhido. Esta ação não cria negócio.": {
+    es: "No se guardó la fecha de la cita: el contacto no tiene un negocio abierto en el embudo elegido. Esta acción no crea negocios.",
+  },
+  "A data do atendimento não foi gravada: o campo escolhido não é mais um campo de data do negócio neste funil. Abra a automação e escolha o campo de novo.": {
+    es: "No se guardó la fecha de la cita: el campo elegido ya no es un campo de fecha del negocio en este embudo. Abre la automatización y elige el campo de nuevo.",
+  },
+  "A data do atendimento não foi gravada: o negócio não existe mais nesta organização.": {
+    es: "No se guardó la fecha de la cita: el negocio ya no existe en esta organización.",
+  },
   "Nenhuma condição completa: roda em todo evento": { es: "Ninguna condición completa: se ejecuta en todo evento" },
   "A IA decide": { es: "La IA decide" },
   "Hoje este passo só se edita pela API": { es: "Hoy este paso solo se edita por la API" },
@@ -10184,8 +10291,13 @@ export const DICIONARIO: Traducoes = {
   // A gaveta do arquivo (#979) — a porta de volta do funil arquivado.
   "Funis arquivados": { es: "Embudos archivados" },
   "Tirar do arquivo": { es: "Desarchivar" },
-  "Funil arquivado não aparece na lista nem recebe negócio novo. Traga de volta para usar outra vez, ou exclua de vez para liberar o nome.": {
-    es: "El embudo archivado no aparece en la lista ni recibe negocios nuevos. Desarchívalo para usarlo otra vez, o elimínalo definitivamente para liberar el nombre.",
+  "Funil arquivado não aparece na lista nem recebe negócio novo. Abrir é leitura: nada muda até você tirar do arquivo. Traga de volta para usar outra vez, ou exclua de vez para liberar o nome.": {
+    es: "El embudo archivado no aparece en la lista ni recibe negocios nuevos. Abrirlo es solo lectura: nada cambia hasta que lo desarchives. Desarchívalo para usarlo otra vez, o elimínalo definitivamente para liberar el nombre.",
+  },
+  // #1298 — abrir o funil arquivado sem passar pelo arquivo.
+  "sem tirar do arquivo": { es: "sin desarchivar" },
+  "Este funil está arquivado: o quadro abre em leitura, e nada aqui grava até você tirá-lo do arquivo em Funis.": {
+    es: "Este embudo está archivado: el tablero se abre en modo lectura y nada aquí se guarda hasta que lo desarchives en Embudos.",
   },
   "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, a exclusão é recusada e ele continua arquivado.": {
     es: "Esta acción no se puede deshacer: el embudo y sus etapas desaparecen. Si ya recibió negocios, no se puede eliminar y sigue archivado.",
@@ -14563,6 +14675,12 @@ export const DICIONARIO: Traducoes = {
   "Campo de data": { es: "Campo de fecha" },
   "Escolha o campo": { es: "Elige el campo" },
   "Faltam N dias": { es: "Faltan N días" },
+  // #3726 — o gatilho de aniversário passou a ter N de antecedência; sem estas
+  // duas linhas o campo sairia em português para quem escolheu espanhol.
+  "Dias de antecedência": { es: "Días de antelación" },
+  "O aviso sai N dias antes da data de nascimento, sempre às 9h no fuso da organização. Deixe 0 para avisar no próprio dia. Cada contato recebe um aviso por ano, por automação.": {
+    es: "El aviso se envía N días antes de la fecha de nacimiento, siempre a las 9 h en la zona horaria de la organización. Deja 0 para avisar el mismo día. Cada contacto recibe un aviso por año, por automatización.",
+  },
   "O aviso sai no dia em que faltarem N dias para a data, uma vez por negócio. Para avisar DEPOIS da data, use N negativo — -60 confirma a entrega 60 dias após o casamento.": {
     es: "El aviso se envía cuando faltan N días para la fecha, una sola vez por negocio. Para avisar DESPUÉS de la fecha, usa un N negativo: con -60 se confirma la entrega 60 días después de la boda.",
   },
@@ -17537,6 +17655,22 @@ export const DICIONARIO: Traducoes = {
     es: "Cada aplicación crea las tareas del plan en orden y no duplica — la marca de la aplicación es la prueba.",
   },
 
+  // ─── Gravar a data do atendimento no card (#3727) ───
+  // A ação nasce colada no gatilho de data do funil (#989): a frase de apoio do
+  // formulário cita o rótulo daquele gatilho como ele aparece na tela, para o
+  // operador reconhecer a segunda regra que vai montar.
+  "Gravar a data do atendimento num campo do negócio": {
+    es: "Guardar la fecha de la cita en un campo del negocio",
+  },
+  "Data do atendimento": { es: "Fecha de la cita" },
+  "Grava a data do atendimento neste campo. Quem conta os dias é a regra “Quando faltarem N dias para uma data do funil”, com N negativo para agir depois do atendimento.": {
+    es: "Guarda la fecha de la cita en este campo. Quien cuenta los días es la regla «Cuando falten N días para una fecha del embudo», con N negativo para actuar después de la cita.",
+  },
+  "Este funil não tem campo de data do negócio. Crie um nas configurações do funil para usar esta ação.": {
+    es: "Este embudo no tiene campo de fecha del negocio. Crea uno en la configuración del embudo para usar esta acción.",
+  },
+  "Escolha o campo de data": { es: "Elige el campo de fecha" },
+
   // ─── Seletor de canal ao iniciar conversa nova (#2382) ───
   "Escolha o canal para iniciar a conversa": { es: "Elige el canal para iniciar la conversación" },
   "A conversa fica vinculada ao canal escolhido, e as próximas mensagens saem por ele.": { es: "La conversación queda vinculada al canal elegido, y los próximos mensajes salen por él." },
@@ -18150,6 +18284,10 @@ export const DICIONARIO: Traducoes = {
   "o endereço do Google abre sem cadeado (o site tem versão segura, mas não leva para ela)": { es: "la dirección de Google abre sin candado (el sitio tiene versión segura, pero no redirige a ella)" },
   "certificado de segurança inválido ou vencido (o navegador mostra alerta antes de abrir)": { es: "certificado de seguridad inválido o vencido (el navegador muestra una alerta antes de abrir)" },
   "o site não abre": { es: "el sitio no abre" },
+  "não deu para abrir o site daqui (bloqueio ao nosso acesso ou rede instável) — não é defeito do site": { es: "no se pudo abrir el sitio desde aquí (bloqueo a nuestro acceso o red inestable) — no es un defecto del sitio" },
+  "o servidor do site barrou o nosso acesso automático (proteção anti-robô) — para quem visita, o site abre": { es: "el servidor del sitio bloqueó nuestro acceso automático (protección anti-robot) — para quien lo visita, el sitio abre" },
+  "a nossa rede não conseguiu abrir o site a tempo — não é prova de que ele esteja fora do ar": { es: "nuestra red no logró abrir el sitio a tiempo — no es prueba de que esté caído" },
+  "O endereço do site NÃO EXISTE MAIS (domínio pode ter expirado) — quem clica no link do Google não chega a lugar nenhum. Abra como AVISO de cortesia e ofereça um endereço novo, rápido: a marca perde quem pesquisa todos os dias.": { es: "La dirección del sitio YA NO EXISTE (el dominio puede haber expirado) — quien hace clic en el enlace de Google no llega a ningún lado. Abre con un AVISO de cortesía y ofrece una dirección nueva, rápido: la marca pierde cada día a quien busca." },
   "o endereço do site não existe mais (domínio pode ter expirado)": { es: "la dirección del sitio ya no existe (el dominio puede haber expirado)" },
   "não abre direito no celular": { es: "no se ve bien en el celular" },
   "muito lento para carregar": { es: "tarda mucho en cargar" },
@@ -18234,6 +18372,13 @@ export const DICIONARIO: Traducoes = {
   "site em ordem": { es: "sitio en orden" },
   "sem site próprio": { es: "sin sitio propio" },
   "site com problemas": { es: "sitio con problemas" },
+  "site não medido": { es: "sitio sin medir" },
+  "Site não medido": { es: "Sitio sin medir" },
+  "não medido, sem citar na abordagem": { es: "sin medir, sin citar en el contacto" },
+  "Não deu para abrir o site daqui (bloqueio ao nosso acesso automático ou rede instável), então NÃO há defeito medido para citar. Aborde pelo que é público e comprovado — nota, avaliações, presença — e não fale do site.": { es: "No se pudo abrir el sitio desde aquí (bloqueo a nuestro acceso automático o red inestable), así que NO hay defecto medido para citar. Aborda por lo que es público y comprobado — nota, reseñas, presencia — y no hables del sitio." },
+  "Aborde sem citar o site. Para ter diagnóstico, rode \"Reanalisar site\" de outra rede ou noutro dia.": { es: "Aborda sin citar el sitio. Para tener diagnóstico, ejecuta \"Reanalizar sitio\" desde otra red u otro día." },
+  "Aguardar a reverificação automática; se esgotar as tentativas, o veredito fica \"não medido\" e a abordagem segue sem citar o site.": { es: "Esperar la nueva verificación automática; si se agotan los intentos, el veredicto queda \"sin medir\" y el abordaje sigue sin citar el sitio." },
+  "Checklist não medido: a página é montada por JavaScript e o HTML baixado não traz o conteúdo. Não cite estes itens.": { es: "Lista sin medir: la página se arma con JavaScript y el HTML descargado no trae el contenido. No cites estos puntos." },
   "sem sinais positivos": { es: "sin señales positivas" },
   "verificação pendente": { es: "verificación pendiente" },
 
@@ -18430,6 +18575,38 @@ export const DICIONARIO: Traducoes = {
   "Parâmetro inválido.": {
     es: "Parámetro no válido.",
   },
+  // Setores de atendimento (migration 0801) — Equipe › Setores e a coluna Setor.
+  "Nome do setor": { es: "Nombre del sector" },
+  "Ex.: Comercial, Suporte, Financeiro": { es: "Ej.: Ventas, Soporte, Finanzas" },
+  "Novo setor": { es: "Nuevo sector" },
+  "Agrupe os atendentes por área. Depois de criar, escolha o setor de cada atendente na aba Atendimento.": { es: "Agrupa a los asesores por área. Después de crearlo, elige el sector de cada asesor en la pestaña Atención." },
+  "Criar setor": { es: "Crear sector" },
+  "Setores": { es: "Sectores" },
+  "Erro ao carregar os setores.": { es: "Error al cargar los sectores." },
+  "Nenhum setor cadastrado ainda.": { es: "Todavía no hay sectores registrados." },
+  "1 atendente": { es: "1 asesor" },
+  "atendentes": { es: "asesores" },
+  "Editar setor": { es: "Editar sector" },
+  "Apagar setor": { es: "Eliminar sector" },
+  "Os atendentes deste setor ficam sem setor. Jornada, carga e conversas deles não mudam.": { es: "Los asesores de este sector quedan sin sector. Su jornada, carga y conversaciones no cambian." },
+  "Sem setor": { es: "Sin sector" },
+  "Cadastre setores na aba Setores": { es: "Registra sectores en la pestaña Sectores" },
+  "Setor de": { es: "Sector de" },
+  "Setor": { es: "Sector" },
+  "Filtrar por setor": { es: "Filtrar por sector" },
+  "Todos os setores": { es: "Todos los sectores" },
+  "Nenhum atendente neste setor.": { es: "Ningún asesor en este sector." },
+  "Setor criado.": { es: "Sector creado." },
+  "Setor atualizado.": { es: "Sector actualizado." },
+  "Setor apagado.": { es: "Sector eliminado." },
+  "Setor do atendente atualizado.": { es: "Sector del asesor actualizado." },
+  "Já existe um setor com este nome.": { es: "Ya existe un sector con este nombre." },
+  "Setor não encontrado.": { es: "Sector no encontrado." },
+  // O módulo opcional dos setores (doc 213) em /admin/sistema e em Recursos opcionais.
+  "Setores de atendimento": { es: "Sectores de atención" },
+  "Agrupa os atendentes da Equipe por área e filtra a aba Atendimento por setor. Não muda quem recebe as conversas.": { es: "Agrupa a los asesores del Equipo por área y filtra la pestaña Atención por sector. No cambia quién recibe las conversaciones." },
+  "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. O setor não muda quem recebe as conversas. Desligado, a aba e a coluna somem; os setores já cadastrados ficam guardados.": { es: "Activado, cada empresa obtiene en Equipo la pestaña Sectores, para agrupar a los asesores por área, y la pestaña Atención pasa a mostrar y filtrar el sector de cada uno. El sector no cambia quién recibe las conversaciones. Desactivado, la pestaña y la columna desaparecen; los sectores ya registrados quedan guardados." },
+  "Não cria porta no menu do CRM: ele libera uma aba em": { es: "No crea entrada en el menú del CRM: habilita una pestaña en" },
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
   },
@@ -18492,6 +18669,59 @@ export const DICIONARIO: Traducoes = {
   },
   "Botões no card do negócio que abrem outro sistema com o dado do cliente já preenchido. Aceitam tel:, http:// e https://. Marcadores: {{telefone}}, {{nome}}, {{primeiro_nome}}, {{email}} e {{documento}}; campos personalizados entram como {{chave}}, {{lead.chave}} ou {{contact.chave}}.": {
     es: "Botones en la tarjeta del negocio que abren otro sistema con el dato del cliente ya rellenado. Aceptan tel:, http:// y https://. Marcadores: {{telefone}}, {{nome}}, {{primeiro_nome}}, {{email}} y {{documento}}; los campos personalizados entran como {{chave}}, {{lead.chave}} o {{contact.chave}}.",
+  },
+
+  // ─── Grupos de respostas rápidas (#3245) ─────────────────────────────────
+  "Novo grupo": { es: "Nuevo grupo" },
+  "Sem grupo": { es: "Sin grupo" },
+  "Nenhuma resposta neste grupo.": { es: "Ninguna respuesta en este grupo." },
+  "Renomear grupo": { es: "Renombrar grupo" },
+  "Excluir grupo": { es: "Eliminar grupo" },
+  "Mover grupo para cima": { es: "Mover grupo hacia arriba" },
+  "Mover grupo para baixo": { es: "Mover grupo hacia abajo" },
+  "Grupos organizam as respostas por etapa da venda. Eles são opcionais.": {
+    es: "Los grupos organizan las respuestas por etapa de la venta. Son opcionales.",
+  },
+  "Nome do grupo": { es: "Nombre del grupo" },
+  "Atendimento inicial": { es: "Atención inicial" },
+  "Grupo criado.": { es: "Grupo creado." },
+  "Grupo renomeado.": { es: "Grupo renombrado." },
+  "Grupo excluído. As respostas dele continuam na lista.": {
+    es: "Grupo eliminado. Sus respuestas siguen en la lista.",
+  },
+  "Grupo (opcional)": { es: "Grupo (opcional)" },
+  "Organize as respostas por etapa da venda. Sem grupo, ela continua na lista de sempre.": {
+    es: "Organiza las respuestas por etapa de la venta. Sin grupo, sigue en la lista de siempre.",
+  },
+  "Já existe um grupo com esse nome.": { es: "Ya existe un grupo con ese nombre." },
+  "Grupo não encontrado.": { es: "Grupo no encontrado." },
+  "Grupo que não pertence a esta organização.": {
+    es: "Grupo que no pertenece a esta organización.",
+  },
+  // Frases de `lib/erros/para-operador.ts` (#3747): o que a tela diz quando o
+  // banco recusa. O texto do Postgres não passa daqui — ele nomeia constraint,
+  // relação e coluna, e é assunto do log, não do toast.
+  "Sua conta não tem permissão para salvar esta configuração.": {
+    es: "Tu cuenta no tiene permiso para guardar esta configuración.",
+  },
+  "Já existe um registro com esses dados.": { es: "Ya existe un registro con esos datos." },
+  "O registro referenciado não existe mais. Atualize a página.": {
+    es: "El registro referenciado ya no existe. Actualiza la página.",
+  },
+  "Falta um campo obrigatório. Preencha e salve de novo.": {
+    es: "Falta un campo obligatorio. Complétalo y guarda de nuevo.",
+  },
+  "Um dos valores enviados não é aceito pelo servidor.": {
+    es: "Uno de los valores enviados no es aceptado por el servidor.",
+  },
+  "A gravação demorou mais que o esperado e nada foi salvo. Tente de novo.": {
+    es: "La grabación tardó más de lo esperado y no se guardó nada. Inténtalo de nuevo.",
+  },
+  "A cor da marca precisa ser um hexadecimal de seis dígitos, como #1a2b3c.": {
+    es: "El color de la marca debe ser un hexadecimal de seis dígitos, como #1a2b3c.",
+  },
+  "O caminho do logo não é aceito. Envie a imagem de novo.": {
+    es: "La ruta del logo no es aceptada. Vuelve a subir la imagen.",
   },
 };
 

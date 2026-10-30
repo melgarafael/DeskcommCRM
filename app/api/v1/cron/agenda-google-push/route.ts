@@ -2,9 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { googlePushCandidates } from "@/lib/agenda/google/candidates";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { reconcileAppointment } from "@/lib/agenda/google/sync-executor";
+import { ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 export const dynamic = "force-dynamic";
 async function executar(req: NextRequest) {
   if (!autorizaCron(req))
@@ -12,6 +14,12 @@ async function executar(req: NextRequest) {
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },
     );
+  // O PISO OCIOSO (#3731): sem compromisso que `googlePushCandidates` pegaria
+  // (o mesmo `or`, sem filtro de status da conexão — a rota também não tem), a
+  // leitura de pendências volta vazia em toda instalação que nunca usou a agenda
+  // Google. Sai antes dela, pelo retrato em memória. Conexão que precisa de
+  // atenção NÃO faz pular: o compromisso dela ainda recebe o aviso do executor.
+  if (await recursoOcioso("agenda_google_push")) return ok({ pulado: "recurso_ocioso" });
   const db = createAdminClient();
   const { data, error } = await googlePushCandidates(db);
   if (error)

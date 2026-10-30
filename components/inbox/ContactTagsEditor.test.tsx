@@ -203,3 +203,92 @@ describe("ContactTagsEditor — sugestões filtram pelo digitado (#3180)", () =>
     expect(sugestao("carteira-andreia")).toBeNull();
   });
 });
+
+/**
+ * CRIAR É A ÚLTIMA OPÇÃO, E SÓ QUANDO O TEXTO NÃO EXISTE AINDA (#3180,
+ * critério 3) — o espelho do editor da conversa no CONTATO/NEGÓCIO.
+ *
+ * A duplicação que a issue descreve nasce exatamente aqui: com
+ * `carteira-andreia` na lista, quem digita "Carteira-Andréia" de memória e
+ * aperta Enter criava a variante. A régua é a mesma dos dois editores, e é a
+ * da ficha do contato (`etiquetaParaGravar`, #2732): a EXISTENTE vence.
+ */
+describe("ContactTagsEditor — criar só o que não existe (#3180)", () => {
+  beforeEach(() => {
+    papel = "manager";
+    vi.clearAllMocks();
+    vocabularioRef.current = [];
+  });
+  afterEach(() => cleanup());
+
+  const campo = () => screen.getByLabelText("Adicionar tag ao contato");
+  const sugestao = (tag: string) => screen.queryByRole("button", { name: `+ ${tag}` });
+  const opcaoDeCriar = () => screen.queryByRole("button", { name: /^Criar «/ });
+  /** Os chips da lista, na ordem em que a tela os desenha. */
+  const opcoes = () =>
+    screen
+      .getAllByRole("button")
+      .map((b) => (b.textContent ?? "").replace(/\s+/g, " ").trim())
+      .filter((rotulo) => rotulo.startsWith("+ ") || rotulo.startsWith("Criar «"));
+
+  it("o Enter APLICA a etiqueta existente quando o texto casa por caixa e acento", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia", "carteira-danilo"];
+    renderEditor();
+
+    await user.type(campo(), "CARTEIRA-ANDRÉIA{Enter}");
+
+    expect(mutateSpy).toHaveBeenCalledTimes(1);
+    expect(mutateSpy).toHaveBeenCalledWith({ tags: ["carteira-andreia"] });
+  });
+
+  it("a opção de criar vem por ÚLTIMO, depois das que casam", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia", "carteira-danilo"];
+    renderEditor();
+
+    await user.type(campo(), "carteira");
+
+    expect(sugestao("carteira-andreia")).not.toBeNull();
+    expect(sugestao("carteira-danilo")).not.toBeNull();
+    expect(opcoes()).toEqual([
+      "+ carteira-andreia",
+      "+ carteira-danilo",
+      "Criar «carteira»",
+    ]);
+  });
+
+  it("com correspondência exata a opção de criar não aparece", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia"];
+    renderEditor();
+
+    await user.type(campo(), "Carteira-Andreia");
+
+    expect(sugestao("carteira-andreia")).not.toBeNull();
+    expect(opcaoDeCriar()).toBeNull();
+  });
+
+  it("clicar em Criar «…» grava a etiqueta nova, pela régua do banco", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia"];
+    renderEditor();
+
+    await user.type(campo(), "Indicação de Parceiro");
+    const criar = opcaoDeCriar();
+    expect(criar).not.toBeNull();
+
+    await user.click(criar as HTMLElement);
+
+    expect(mutateSpy).toHaveBeenCalledWith({ tags: ["indicação de parceiro"] });
+  });
+
+  it("não oferece criar uma etiqueta que o contato já tem", async () => {
+    const user = userEvent.setup();
+    renderEditor(["vip"]);
+
+    await user.type(campo(), "VIP");
+
+    expect(opcaoDeCriar()).toBeNull();
+  });
+});

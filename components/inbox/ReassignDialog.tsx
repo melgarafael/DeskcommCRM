@@ -28,7 +28,7 @@ import { useNumeroDaTransferencia } from "@/hooks/inbox/useNumeroDaTransferencia
 import { useTransferConversation } from "@/hooks/inbox/useTransferConversation";
 import { nomeDoCanal } from "@/lib/channels/estado";
 import { outrosNumerosDoContato } from "@/lib/inbox/outros-numeros";
-import { rotuloDoAtendente } from "@/lib/users/rotulo-do-atendente";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 export type AbaDeTransferencia = "atendente" | "numero";
 
@@ -187,11 +187,12 @@ export function ReassignDialog({
                 {options.map((m) => (
                   <SelectItem key={m.user_id} value={m.user_id}>
                     {/*
-                      O rótulo único (#3023): sem nome cadastrado, a linha diz
-                      "Atendente sem nome" — nunca os primeiros dígitos do
-                      `user_id`, que não identificam ninguém para quem transfere.
+                      O rótulo único (#3023): nome, senão e-mail, senão
+                      "Atendente" + sufixo do hash do `user_id` — nunca os
+                      dígitos do `user_id`, que não identificam ninguém para
+                      quem transfere e vazam identificador interno para a tela.
                     */}
-                    {rotuloDoAtendente(m.full_name, t)}
+                    {rotuloDoMembro(m, t)}
                     <span className="ml-1 text-muted-foreground">
                       · {t(ROLE_LABEL[m.role] ?? m.role)}
                     </span>
@@ -207,7 +208,7 @@ export function ReassignDialog({
             {numeroNovo && destino && (
               <p className="text-xs text-muted-foreground" role="status" data-testid="aviso-numero-da-transferencia">
                 {t("A conversa vai continuar pelo número de {nome} ({numero}).")
-                  .replace("{nome}", rotuloDoAtendente(destino.full_name, t))
+                  .replace("{nome}", rotuloDoMembro(destino, t))
                   .replace("{numero}", numeroNovo.phone_number?.trim() || nomeDoCanal(numeroNovo, t))}
               </p>
             )}

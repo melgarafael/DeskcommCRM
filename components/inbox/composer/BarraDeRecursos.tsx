@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { secoesDeRespostas, type GrupoDeRespostas } from "@/lib/templates/grupos";
 import {
   lerRespostaRapidaGravada,
   type ConteudoDeRespostaRapida,
@@ -74,6 +75,11 @@ interface Props {
    * resolve o `localStorage` do navegador; `null` é "sem memória".
    */
   storage?: StorageLeve | null;
+  /**
+   * Os GRUPOS de respostas rápidas (#3245). Vazio/ausente = o recurso não
+   * existe para esta empresa, e a barra é a de hoje, byte a byte.
+   */
+  grupos?: GrupoDeRespostas[] | null;
 }
 
 /**
@@ -106,6 +112,7 @@ export function BarraDeRecursos({
   dica,
   usuarioId = null,
   storage,
+  grupos = null,
 }: Props) {
   const t = useT();
   const guarda = storage === undefined ? armazenamentoDoNavegador() : storage;
@@ -130,37 +137,14 @@ export function BarraDeRecursos({
     gravarBarraAberta(guarda, chave, proxima);
   }
 
-  return (
-    <div
-      data-testid="barra-de-recursos"
-      role="toolbar"
-      aria-label={t("Respostas rápidas")}
-      className="mb-1.5 flex flex-wrap items-center gap-1"
-    >
-      {visiveis.map((recurso) => {
-        // A régua decide o rótulo, o `data-recurso-tipo` e o motivo do título —
-        // os três leem a MESMA leitura, e o envio lê a mesma função.
-        const leitura = lerRespostaRapidaGravada(recurso);
-        // O bloqueio do compositor e a invalidade do conteúdo são informações
-        // diferentes: quando coexistem, nenhuma pode esconder a outra.
-        const motivos = [dica, leitura.ok ? undefined : t(leitura.motivo)].filter(
-          (motivo): motivo is string => motivo !== undefined,
-        );
-        return (
-          <button
-            key={recurso.id}
-            type="button"
-            disabled={disabled}
-            data-recurso-id={recurso.id}
-            data-recurso-tipo={leitura.ok ? leitura.tipo : "invalida"}
-            onClick={() => onEscolher(recurso)}
-            title={motivos.length ? motivos.join(" — ") : t("Prepara no compositor — você revisa e envia")}
-            className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            {rotuloDoBotao(leitura, recurso.title)}
-          </button>
-        );
-      })}
+  // Sem grupo, o caminho é o de hoje: `secoesDeRespostas` devolve `null` e a
+  // barra desenha a lista plana do MESMO markup (o componente abaixo é o que
+  // ela sempre foi). Com grupo, cada grupo vira um rótulo seguido dos botões
+  // dele — e o recolhimento continua valendo, porque as seções saem dos
+  // recursos JÁ recortados (`visiveis`).
+  const secoes = secoesDeRespostas(visiveis, grupos);
+  const controles = (
+    <>
       {restantes > 0 && (
         <button
           type="button"
@@ -181,6 +165,101 @@ export function BarraDeRecursos({
           {t("menos")}
         </button>
       )}
+    </>
+  );
+
+  if (secoes) {
+    return (
+      <div
+        data-testid="barra-de-recursos"
+        role="toolbar"
+        aria-label={t("Respostas rápidas")}
+        className="mb-1.5 flex flex-wrap items-center gap-1"
+      >
+        {secoes
+          .filter((secao) => secao.respostas.length > 0)
+          .map((secao) => (
+            <span
+              key={secao.grupo?.id ?? "sem-grupo"}
+              data-secao-de-recursos={secao.grupo?.id ?? "sem-grupo"}
+              className="inline-flex flex-wrap items-center gap-1"
+            >
+              <span className="px-1 text-[11px] font-medium text-muted-foreground">
+                {secao.grupo ? secao.grupo.name : t("Sem grupo")}
+              </span>
+              {secao.respostas.map((recurso) => (
+                <BotaoDeRecurso
+                  key={recurso.id}
+                  recurso={recurso}
+                  disabled={disabled}
+                  dica={dica}
+                  onEscolher={onEscolher}
+                />
+              ))}
+            </span>
+          ))}
+        {controles}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="barra-de-recursos"
+      role="toolbar"
+      aria-label={t("Respostas rápidas")}
+      className="mb-1.5 flex flex-wrap items-center gap-1"
+    >
+      {visiveis.map((recurso) => (
+        <BotaoDeRecurso
+          key={recurso.id}
+          recurso={recurso}
+          disabled={disabled}
+          dica={dica}
+          onEscolher={onEscolher}
+        />
+      ))}
+      {controles}
     </div>
+  );
+}
+
+/**
+ * O botão de UM recurso — o mesmo markup na barra plana e nas seções. Extraído
+ * para a barra agrupada não divergir da plana em rótulo, `title` ou atributo de
+ * teste que um e2e procura.
+ */
+function BotaoDeRecurso({
+  recurso,
+  disabled,
+  dica,
+  onEscolher,
+}: {
+  recurso: Recurso;
+  disabled: boolean;
+  dica?: string;
+  onEscolher: (recurso: Recurso) => void;
+}) {
+  const t = useT();
+  // A régua decide o rótulo, o `data-recurso-tipo` e o motivo do título — os
+  // três leem a MESMA leitura, e o envio lê a mesma função (#3009).
+  const leitura = lerRespostaRapidaGravada(recurso);
+  // O bloqueio do compositor e a invalidade do conteúdo são informações
+  // diferentes: quando coexistem, nenhuma pode esconder a outra.
+  const motivos = [dica, leitura.ok ? undefined : t(leitura.motivo)].filter(
+    (motivo): motivo is string => motivo !== undefined,
+  );
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      data-recurso-id={recurso.id}
+      data-recurso-tipo={leitura.ok ? leitura.tipo : "invalida"}
+      onClick={() => onEscolher(recurso)}
+      title={motivos.length ? motivos.join(" — ") : t("Prepara no compositor — você revisa e envia")}
+      className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+    >
+      {rotuloDoBotao(leitura, recurso.title)}
+    </button>
   );
 }

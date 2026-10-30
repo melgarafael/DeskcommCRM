@@ -272,11 +272,13 @@ export function safePublicLink(value: string | null): string | undefined {
 /** Public business context shared by prospecting and the Inbox; no raw provider payload. */
 export const siteEnrichmentSchema = z.object({
   ver: z.literal(1),
-  classe: z.enum(["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar"]),
+  classe: z.enum(["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar", "nao-medido"]),
   problemas: z.array(z.string().max(60)).max(20),
   checklist: z.object({
     tem: z.array(z.string().max(30)).max(12),
     falta: z.array(z.string().max(30)).max(12),
+    // Página montada por JavaScript: o checklist não pôde ser medido (#3723).
+    inconclusivo: z.boolean().optional(),
   }),
   final_url: z.string().max(500).nullable(),
   http_status: z.number().int().min(100).max(599).nullable(),

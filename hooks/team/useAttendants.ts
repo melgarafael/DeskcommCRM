@@ -33,9 +33,11 @@ export interface AttendantAvailability {
    * `is_available` + jornada (`estaDePlantao`), e nada aqui desliga a chave.
    */
   present: boolean;
+  /** Setor do atendente (migration 0801). `null` = sem setor. */
+  sector_id: string | null;
 }
 
-const ATTENDANTS_KEY = ["team", "attendants"] as const;
+export const ATTENDANTS_KEY = ["team", "attendants"] as const;
 const ROUTING_KEY = ["settings", "routing"] as const;
 
 /** Disponibilidade + carga da equipe (org-wide, agent+). */

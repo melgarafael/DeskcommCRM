@@ -43,6 +43,7 @@ import { snapshotDeMidiasSchema, updateTemplateSchema } from "@/lib/schemas/temp
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
+import { grupoDaOrganizacao } from "@/lib/templates/grupo-da-resposta";
 import { apagarMidiasDoTemplate } from "@/lib/templates/midias-no-bucket";
 import {
   conferirMidias,
@@ -52,7 +53,7 @@ import {
 
 export const dynamic = "force-dynamic";
 const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, midias, mostrar_na_barra, created_by_user_id, created_at, updated_at, ordem";
+  "id, organization_id, owner_user_id, title, body, shortcut, midias, mostrar_na_barra, grupo_id, created_by_user_id, created_at, updated_at, ordem";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -82,6 +83,21 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   }
 
   const supabase = await createClient();
+
+  // O GRUPO (#3245): `undefined` não mexe no vínculo; `null` DESVINCULA (volta
+  // à lista plana); um id só vale se for de grupo da organização ativa.
+  if (parsed.data.grupo_id !== undefined) {
+    try {
+      if (!(await grupoDaOrganizacao(supabase, org.orgId, parsed.data.grupo_id))) {
+        return fail("validation_failed", t("Dados inválidos."), 422, {
+          requestId,
+          details: { grupo_id: [t("Grupo que não pertence a esta organização.")] },
+        });
+      }
+    } catch {
+      return fail("internal_error", "Erro ao atualizar template.", 500, { requestId });
+    }
+  }
 
   // A lista ATUAL vem antes do update: é dela que sai o diff. Sem esta leitura
   // um PATCH que só remove apagaria o arquivo errado — ou nenhum.

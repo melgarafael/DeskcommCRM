@@ -12,6 +12,7 @@ import {
   useUpdateRouting,
   type AttendantAvailability,
 } from "@/hooks/team/useAttendants";
+import { useAssignSector, useSectors, type Sector } from "@/hooks/team/useSectors";
 import { estaDePlantao } from "@/lib/routing/eligibility";
 import {
   ROUTING_MODES,
@@ -61,6 +62,7 @@ import {
   resumoDaJornada,
   ROTULOS_DOS_DIAS,
 } from "@/lib/agenda/editor-de-jornada";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /**
  * Os rótulos da semana vêm de `lib/agenda/editor-de-jornada` — a MESMA fonte do
@@ -80,6 +82,58 @@ interface Attendant {
   name: string;
   email: string | null;
   availability: AttendantAvailability;
+  sectorId: string | null;
+}
+
+/** Valor do filtro de setor: todos, sem setor, ou o id de um setor. */
+const TODOS_OS_SETORES = "__todos__";
+const SEM_SETOR = "__sem_setor__";
+
+/**
+ * O setor da pessoa, na mesma linha da jornada e da capacidade. Gerente escolhe
+ * na hora; quem só lê vê o nome. Setor apagado em outra aba não vira id cru na
+ * tela: sem nome conhecido, a célula diz "Sem setor", que é o que o banco diz
+ * depois do `on delete cascade` do vínculo.
+ */
+function SectorCell({
+  attendant,
+  sectors,
+  canManage,
+}: {
+  attendant: Attendant;
+  sectors: Sector[];
+  canManage: boolean;
+}) {
+  const t = useT();
+  const assign = useAssignSector();
+  const atual = sectors.find((s) => s.id === attendant.sectorId) ?? null;
+  if (!canManage) {
+    return <span className="text-sm">{atual?.name ?? t("Sem setor")}</span>;
+  }
+  if (sectors.length === 0) {
+    return <span className="text-xs text-muted-foreground">{t("Cadastre setores na aba Setores")}</span>;
+  }
+  return (
+    <Select
+      value={atual?.id ?? SEM_SETOR}
+      disabled={assign.isPending}
+      onValueChange={(v) =>
+        assign.mutate({ userId: attendant.userId, sectorId: v === SEM_SETOR ? null : v })
+      }
+    >
+      <SelectTrigger className="h-8 w-[160px]" aria-label={`${t("Setor de")} ${attendant.name}`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SEM_SETOR}>{t("Sem setor")}</SelectItem>
+        {sectors.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 /**
@@ -98,6 +152,21 @@ interface Attendant {
  * o roteamento aceitando a qualquer hora — é dito por extenso no diálogo, onde
  * há espaço para as duas metades.
  */
+/**
+ * O fuso ao lado do resumo da jornada, só quando ele difere do da organização.
+ * A janela é avaliada no fuso de CADA pessoa (`schedule.timezone`), e quem lê a
+ * tabela pensa no da organização: "seg 08:00–18:00" de quem está em outro fuso
+ * é outro instante. Igual ao da organização, o sufixo seria ruído.
+ */
+export function fusoNoResumo(
+  windows: ScheduleWindow[],
+  fusoDaPessoa: string | undefined,
+  fusoDaOrganizacao: string | undefined,
+): string {
+  if (windows.length === 0 || !fusoDaPessoa || fusoDaPessoa === fusoDaOrganizacao) return "";
+  return ` (${fusoDaPessoa})`;
+}
+
 function summarizeSchedule(windows: ScheduleWindow[], t: (texto: string) => string): string {
   if (windows.length === 0) return t("Não publicado");
   return windows.map((w) => `${t(DOW_LABELS[w.dow] ?? "")} ${w.start}–${w.end}`).join(", ");
@@ -545,29 +614,42 @@ function RoutingCard({ canManage }: { canManage: boolean }) {
 interface Props {
   canManage: boolean;
   organizationTimezone?: string;
+  /** Módulo opcional `setores` (doc 213). Desligado: sem coluna, sem filtro, sem leitura. */
+  setoresLigado: boolean;
 }
 
 /** No celular o cabeçalho some: o rótulo da coluna vem do `data-rotulo` da célula. */
 const ROTULO_NO_CELULAR =
   "max-md:before:mr-1.5 max-md:before:text-xs max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]";
 
-export function AttendantsClient({ canManage, organizationTimezone }: Props) {
+export function AttendantsClient({ canManage, organizationTimezone, setoresLigado }: Props) {
   const t = useT();
   const avail = useAttendants();
   const patch = useUpdateAvailability();
   const [scheduleFor, setScheduleFor] = useState<Attendant | null>(null);
+  const [filtroSetor, setFiltroSetor] = useState<string>(TODOS_OS_SETORES);
+  const sectorsQuery = useSectors(setoresLigado);
+  const sectors = useMemo(() => sectorsQuery.data?.data ?? [], [sectorsQuery.data]);
   const now = useMemo(() => new Date(), []);
 
   const attendants: Attendant[] = useMemo(
     () =>
       (avail.data?.data ?? []).map((a) => ({
         userId: a.user_id,
-        name: a.name ?? a.email ?? a.user_id.slice(0, 8),
+        name: rotuloDoMembro({ full_name: a.name, email: a.email, user_id: a.user_id }, t),
         email: a.email,
         availability: a,
+        sectorId: a.sector_id ?? null,
       })),
     [avail.data],
   );
+
+  const visiveis = attendants.filter((a) => {
+    if (filtroSetor === TODOS_OS_SETORES) return true;
+    const temSetorConhecido = sectors.some((s) => s.id === a.sectorId);
+    if (filtroSetor === SEM_SETOR) return !temSetorConhecido;
+    return a.sectorId === filtroSetor;
+  });
 
   const isLoading = avail.isLoading;
   const isError = avail.isError;
@@ -592,6 +674,27 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
               "Status, carga e capacidade de cada atendente — e a jornada semanal que decide os horários oferecidos na Agenda. Sem ela ninguém consegue marcar.",
             )}
           </p>
+          {sectors.length > 0 ? (
+            <div className="mt-3 flex items-center gap-2">
+              <Label htmlFor="filtro-setor" className="text-xs">
+                {t("Setor")}
+              </Label>
+              <Select value={filtroSetor} onValueChange={setFiltroSetor}>
+                <SelectTrigger id="filtro-setor" className="h-8 w-[200px]" aria-label={t("Filtrar por setor")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TODOS_OS_SETORES}>{t("Todos os setores")}</SelectItem>
+                  <SelectItem value={SEM_SETOR}>{t("Sem setor")}</SelectItem>
+                  {sectors.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
         </div>
 
         {isLoading ? (
@@ -611,6 +714,7 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
             <TableHeader className="max-md:hidden">
               <TableRow>
                 <TableHead>{t("Atendente")}</TableHead>
+                {setoresLigado ? <TableHead>{t("Setor")}</TableHead> : null}
                 <TableHead>Status</TableHead>
                 <TableHead>{t("Carga")}</TableHead>
                 <TableHead>{t("Capacidade")}</TableHead>
@@ -619,7 +723,14 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
               </TableRow>
             </TableHeader>
             <TableBody className="max-md:block">
-              {attendants.map((a) => {
+              {visiveis.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={(canManage ? 6 : 5) + (setoresLigado ? 1 : 0)} className="text-sm text-muted-foreground">
+                    {t("Nenhum atendente neste setor.")}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {visiveis.map((a) => {
                 const capacity = a.availability?.capacity ?? 5;
                 const load = a.availability?.current_load ?? 0;
                 const windows = a.availability?.schedule?.windows ?? [];
@@ -634,6 +745,14 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
                         <div className="text-xs text-muted-foreground">{a.email}</div>
                       ) : null}
                     </TableCell>
+                    {setoresLigado ? (
+                      <TableCell
+                        data-rotulo={t("Setor")}
+                        className={`max-md:flex max-md:items-center max-md:p-0 ${ROTULO_NO_CELULAR}`}
+                      >
+                        <SectorCell attendant={a} sectors={sectors} canManage={canManage} />
+                      </TableCell>
+                    ) : null}
                     <TableCell className="max-md:p-0">
                       <div className="flex flex-col items-start gap-1.5">
                         <StatusBadge attendant={a} now={now} />
@@ -673,7 +792,10 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
                       className={`text-sm text-muted-foreground max-md:flex max-md:basis-full max-md:items-center max-md:p-0 ${ROTULO_NO_CELULAR}`}
                     >
                       <div className="flex items-center gap-2">
-                        <span>{summarizeSchedule(windows, t)}</span>
+                        <span>
+                          {summarizeSchedule(windows, t)}
+                          {fusoNoResumo(windows, a.availability?.schedule?.timezone, organizationTimezone)}
+                        </span>
                         {canManage ? (
                           <Button
                             variant="ghost"

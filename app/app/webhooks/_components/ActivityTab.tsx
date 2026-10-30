@@ -193,6 +193,20 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
    */
   plano_nao_encontrado:
     "O plano não foi aplicado: o plano escolhido nesta regra não existe mais na lista da organização. Abra a automação e escolha outro plano.",
+  /* #3727 — a ação set_lead_date_field: os seis motivos nascem em
+     lib/automation/actions/set-lead-date-field.ts como `detail.reason`. */
+  sem_compromisso:
+    "A data do atendimento não foi gravada: o evento que disparou a regra não trouxe um compromisso. Use esta ação no gatilho “Quando alguém comparecer ao compromisso”.",
+  data_do_compromisso_ilegivel:
+    "A data do atendimento não foi gravada: o horário do compromisso veio num formato que não deu para ler.",
+  sem_contato:
+    "A data do atendimento não foi gravada: o compromisso não está ligado a um contato, então não havia negócio onde gravar.",
+  sem_negocio_aberto:
+    "A data do atendimento não foi gravada: o contato não tem negócio aberto no funil escolhido. Esta ação não cria negócio.",
+  campo_nao_e_data:
+    "A data do atendimento não foi gravada: o campo escolhido não é mais um campo de data do negócio neste funil. Abra a automação e escolha o campo de novo.",
+  sem_negocio:
+    "A data do atendimento não foi gravada: o negócio não existe mais nesta organização.",
   /* #1970 — a ação ai_decide. Estes quatro nascem aqui em lib/automation/actions/ai-decide.ts
      e chegam ao run por `detail.reason`/`action.error` (mesmo casal de canais da guarda). */
   custo_de_token_nao_registrado:

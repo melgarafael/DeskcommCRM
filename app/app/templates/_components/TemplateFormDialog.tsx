@@ -10,6 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -21,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import type { MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import type { GrupoDeRespostas, MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
 import { lerRespostaRapida } from "@/lib/inbox/resposta-rapida";
 import { useUploadTemplateMedia } from "@/hooks/templates/useUploadTemplateMedia";
 import {
@@ -40,7 +47,16 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   canShare: boolean;
   template?: MessageTemplate | null;
+  /**
+   * Os grupos da organização (#3245). Vazio = o recurso não existe para esta
+   * empresa, e o campo de grupo NEM APARECE — o "opcional" chega até o
+   * formulário: quem nunca criou grupo vê o formulário de sempre.
+   */
+  grupos?: GrupoDeRespostas[];
 }
+
+/** O valor do seletor para "sem grupo" — o Radix não aceita item de valor vazio. */
+const SEM_GRUPO = "__sem_grupo__";
 
 interface CreateInput {
   title: string;
@@ -49,6 +65,8 @@ interface CreateInput {
   shared?: boolean;
   /** "Mostrar na barra do Inbox" (#3282) — ausente é ligado. */
   mostrar_na_barra?: boolean;
+  /** O grupo (#3245) — `null` é sem grupo, a lista plana. */
+  grupo_id?: string | null;
 }
 
 interface UpdateInput {
@@ -60,6 +78,8 @@ interface UpdateInput {
   midias_esperadas: MidiaDeTemplate[];
   /** "Mostrar na barra do Inbox" (#3282). */
   mostrar_na_barra?: boolean;
+  /** O grupo (#3245): `null` desvincula. */
+  grupo_id?: string | null;
 }
 
 /**
@@ -97,7 +117,7 @@ interface UpdateInput {
  *            contra a prop `template`: no retry depois de um upload que falhou,
  *            o form já sabe que a imagem removida saiu.
  */
-export function TemplateFormDialog({ open, onOpenChange, canShare, template }: Props) {
+export function TemplateFormDialog({ open, onOpenChange, canShare, template, grupos = [] }: Props) {
   const t = useT();
   const isEdit = !!template;
   const [title, setTitle] = React.useState("");
@@ -109,6 +129,8 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
    * comportamento de quem já usava o produto.
    */
   const [mostrarNaBarra, setMostrarNaBarra] = React.useState(true);
+  /** O grupo escolhido (#3245). `SEM_GRUPO` = lista plana, o estado de sempre. */
+  const [grupoId, setGrupoId] = React.useState<string>(SEM_GRUPO);
   // O arquivo de áudio escolhido NESTA edição; quando null, o recurso continua
   // com o áudio que já tem em `midias` (`audioAtual`).
   const [arquivo, setArquivo] = React.useState<File | null>(null);
@@ -166,6 +188,7 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
     setShared(template ? template.owner_user_id === null : false);
     // Ausente = ligado: linha anterior à coluna (e template recém-criado) aparece.
     setMostrarNaBarra(template ? template.mostrar_na_barra !== false : true);
+    setGrupoId(template?.grupo_id ?? SEM_GRUPO);
     setArquivo(null);
     setRemoverAudio(false);
     setMidiasGravadas((template?.midias ?? []) as MidiaDeTemplate[]);
@@ -293,6 +316,7 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
           body,
           shortcut: shortcut.trim() || null,
           mostrar_na_barra: mostrarNaBarra,
+          grupo_id: grupoId === SEM_GRUPO ? null : grupoId,
           midias_esperadas: persistidas,
           ...(listaFinal.length !== persistidas.length ? { midias: listaFinal } : {}),
         });
@@ -323,6 +347,7 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
           shortcut: shortcut.trim() || undefined,
           shared: canShare ? shared : false,
           mostrar_na_barra: mostrarNaBarra,
+          grupo_id: grupoId === SEM_GRUPO ? null : grupoId,
         });
         // A partir daqui o template JÁ existe: deixar o diálogo aberto faria o
         // próximo clique criar um segundo. O `finally` fecha mesmo quando o
@@ -514,6 +539,30 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
                   : t("O áudio fica na biblioteca e entra no Inbox na fila de anexos, como o `/`.")}
             </p>
           </div>
+          {/* O GRUPO (#3245) — campo só existe quando a organização tem grupo.
+              Sem grupo cadastrado, o formulário é o de sempre: o "opcional"
+              vale também para o desenho, não só para o dado. */}
+          {grupos.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="tpl-grupo">{t("Grupo (opcional)")}</Label>
+              <Select value={grupoId} onValueChange={setGrupoId}>
+                <SelectTrigger id="tpl-grupo">
+                  <SelectValue placeholder={t("Sem grupo")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SEM_GRUPO}>{t("Sem grupo")}</SelectItem>
+                  {grupos.map((grupo) => (
+                    <SelectItem key={grupo.id} value={grupo.id}>
+                      {grupo.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t("Organize as respostas por etapa da venda. Sem grupo, ela continua na lista de sempre.")}
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="tpl-shortcut">{t("Atalho (opcional)")}</Label>
             <Input

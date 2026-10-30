@@ -29,7 +29,7 @@ import {
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
-import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
+import { useGruposDeRespostas, useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
@@ -255,6 +255,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const upload = useUploadMedia();
   const createNote = useCreateNote();
   const templates = useMessageTemplates();
+  // Os GRUPOS (#3245) — vazio é o caso de quem nunca criou grupo, e aí a barra
+  // e o slash-menu são exatamente os de antes.
+  const grupos = useGruposDeRespostas();
   const slash = resolveSlash(text);
   // O Esc/escolha vale só para o `/` em curso: saiu do `/` por QUALQUER caminho
   // (digitado ou escrito pelo `applyTemplate`, inclusive o clique da barra com o
@@ -942,6 +945,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           open={menuOpen}
           query={slash.query}
           templates={templates.data ?? []}
+          grupos={grupos.data ?? []}
           onPick={applyTemplate}
           onClose={() => setMenuDismissed(true)}
         />
@@ -1071,6 +1075,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         {mode === "reply" && (
           <BarraDeRecursos
             recursos={templates.data ?? []}
+            grupos={grupos.data ?? []}
             disabled={respostaBarrada || rascunhoNoCampo}
             dica={
               rascunhoNoCampo

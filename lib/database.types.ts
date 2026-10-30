@@ -2497,6 +2497,75 @@ export type Database = {
           },
         ];
       };
+      attendant_sector_members: {
+        Row: {
+          created_at: string;
+          organization_id: string;
+          sector_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          organization_id: string;
+          sector_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          organization_id?: string;
+          sector_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendant_sector_members_organization_id_sector_id_fkey";
+            columns: ["organization_id", "sector_id"];
+            isOneToOne: false;
+            referencedRelation: "attendant_sectors";
+            referencedColumns: ["organization_id", "id"];
+          },
+        ];
+      };
+      attendant_sectors: {
+        Row: {
+          created_at: string;
+          description: string | null;
+          id: string;
+          name: string;
+          organization_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          name: string;
+          organization_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          name?: string;
+          organization_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendant_sectors_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       automation_rodizio_atribuicoes: {
         Row: {
           created_at: string;
@@ -10520,11 +10589,48 @@ export type Database = {
           },
         ];
       };
+      message_template_groups: {
+        Row: {
+          created_at: string;
+          id: string;
+          name: string;
+          ordem: number;
+          organization_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          id?: string;
+          name: string;
+          ordem?: number;
+          organization_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          name?: string;
+          ordem?: number;
+          organization_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "message_template_groups_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       message_templates: {
         Row: {
           body: string;
           created_at: string;
           created_by_user_id: string | null;
+          grupo_id: string | null;
           id: string;
           midias: NonNullable<Json>;
           mostrar_na_barra: boolean;
@@ -10540,6 +10646,7 @@ export type Database = {
           body: string;
           created_at?: string;
           created_by_user_id?: string | null;
+          grupo_id?: string | null;
           id?: string;
           midias?: NonNullable<Json>;
           mostrar_na_barra?: boolean;
@@ -10554,6 +10661,7 @@ export type Database = {
           body?: string;
           created_at?: string;
           created_by_user_id?: string | null;
+          grupo_id?: string | null;
           id?: string;
           midias?: NonNullable<Json>;
           mostrar_na_barra?: boolean;
@@ -10565,6 +10673,13 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "message_templates_grupo_fkey";
+            columns: ["organization_id", "grupo_id"];
+            isOneToOne: false;
+            referencedRelation: "message_template_groups";
+            referencedColumns: ["organization_id", "id"];
+          },
           {
             foreignKeyName: "message_templates_organization_id_fkey";
             columns: ["organization_id"];
