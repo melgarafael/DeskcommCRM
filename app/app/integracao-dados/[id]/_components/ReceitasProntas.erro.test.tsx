@@ -18,6 +18,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api/types";
 
+// R5b: o seletor de destino do interesse lê funis e etapas; aqui não interessa.
+vi.mock("@/hooks/campanhas/useDestinoDaCampanha", () => ({
+  useFunis: () => ({ data: [] }),
+  useEtapas: () => ({ data: [] }),
+}));
 vi.mock("@/hooks/external-db/useReceitasDaConexao", () => ({
   useReceitasDaConexao: vi.fn(),
   salvarReceitas: vi.fn(),

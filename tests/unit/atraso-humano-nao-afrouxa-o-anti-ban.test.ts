@@ -186,7 +186,10 @@ describe("fiação — a espera humana é paga UMA vez por turno", () => {
     expect(doSendMessage).toBeGreaterThan(-1);
     const i = FONTE_INBOUND.indexOf("send: (finalBody: string) =>", doSendMessage);
     expect(i).toBeGreaterThan(-1);
-    const janela = FONTE_INBOUND.slice(i, i + 2400);
+    // 2500, não 2400: a foto por URL (R4) rastreia `foto_enviada` no mesmo callback e a
+    // âncora `sendInBubbles(` ficou ~20 caracteres mais longe. A janela continua sendo o
+    // callback do `send`; o que ela protege (jitter presente, pausa humana ausente) não mudou.
+    const janela = FONTE_INBOUND.slice(i, i + 2500);
     // Os dois convivem: o jitter é throttle anti-ban entre mensagens físicas, o
     // atraso humano é a pausa do turno. Perder o primeiro é afrouxar o anti-ban.
     // Desde a 0499 o jitter LÊ os knobs da conexão (throttleMs + jitterMaxMs,

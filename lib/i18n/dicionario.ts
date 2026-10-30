@@ -15418,6 +15418,20 @@ export const DICIONARIO: Traducoes = {
     es: "No hay recetas registradas todavía. Agrega una para que el asistente consulte la base de datos de origen.",
   },
   "Prefixo das tabelas": { es: "Prefijo de las tablas" },
+  "Para onde vai o interesse do cliente": { es: "A dónde va el interés del cliente" },
+  "Quando o cliente se interessar por um item, o agente abre o negócio neste funil e etapa. Sem escolha, ele passa a conversa para a equipe.": {
+    es: "Cuando el cliente se interese por un artículo, el agente abre el negocio en este embudo y etapa. Sin elección, pasa la conversación al equipo.",
+  },
+  "Funil do interesse": { es: "Embudo del interés" },
+  "Etapa do interesse": { es: "Etapa del interés" },
+  "Sem funil (passar para a equipe)": { es: "Sin embudo (pasar al equipo)" },
+  "Falta escolher a etapa: sem ela, o interesse continua indo para a equipe.": {
+    es: "Falta elegir la etapa: sin ella, el interés sigue yendo al equipo.",
+  },
+  "O funil ou a etapa escolhidos para o interesse do cliente não existem ou não estão ativos.": {
+    es: "El embudo o la etapa elegidos para el interés del cliente no existen o no están activos.",
+  },
+  "Escolha um funil e uma etapa ativos.": { es: "Elige un embudo y una etapa activos." },
   "O prefixo aparece antes de _posts no banco do WordPress (padrão wp_).": {
     es: "El prefijo va antes de _posts en la base de WordPress (por defecto wp_).",
   },

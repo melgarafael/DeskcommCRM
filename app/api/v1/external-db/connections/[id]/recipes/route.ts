@@ -24,6 +24,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { atualizarReceitasSchema, ErroDeFixosInvalidos, validarFixosDaReceita, lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
+import { primeiroDestinoInvalido } from "@/lib/external-db/receitas/destino-no-banco";
 import { receitaDe } from "@/lib/external-db/receitas/registro";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -143,6 +144,18 @@ export async function PUT(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   if (erroConexao) return fail("internal_error", "Erro ao ler a conexão.", 500, { requestId });
   if (!conexao) return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
+
+  // R5b: o funil e a etapa de destino do interesse têm de existir NESTA organização,
+  // estar ativos e a etapa ser do funil. A organização vem da sessão, nunca do corpo.
+  const destinoRuim = await primeiroDestinoInvalido(admin, activeOrg.orgId, receitas);
+  if (destinoRuim !== null) {
+    return fail(
+      "validation_failed",
+      t("O funil ou a etapa escolhidos para o interesse do cliente não existem ou não estão ativos."),
+      422,
+      { requestId, details: { fieldErrors: { destino_do_interesse: [t("Escolha um funil e uma etapa ativos.")] } } },
+    );
+  }
 
   // Se alguma receita só aceita mysql, a conexão deve ser mysql.
   let receitasIncompativeis = false;
