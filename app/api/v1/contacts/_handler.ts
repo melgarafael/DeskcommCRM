@@ -249,9 +249,34 @@ export async function listContactsHandler(
         !digits.startsWith("55") && (digits.length === 10 || digits.length === 11)
           ? `55${digits}`
           : digits;
+      // Os critérios de TELEFONE do principal, reaproveitados para o extra abaixo.
+      const criteriosDeTelefone = [`phone_number.imatch.${s}`];
       for (const v of phoneLookupVariants(base)) {
         const d = v.replace(/\D/g, "");
-        if (d && d !== digits) orParts.push(`phone_number.ilike.%${d}%`);
+        if (d && d !== digits) {
+          orParts.push(`phone_number.ilike.%${d}%`);
+          criteriosDeTelefone.push(`phone_number.ilike.%${d}%`);
+        }
+      }
+      // Ficha cujo TELEFONE EXTRA casa o termo também entra na busca: sem isto, o
+      // número que não é o principal não acharia a pessoa que o tem. A consulta
+      // aos extras é do mesmo jeito filtrada por organização; a ficha continua
+      // passando pelo filtro de lápide e de pessoal da listagem.
+      //
+      // Só quando o termo TEM CARA DE TELEFONE (dígitos e a pontuação de número):
+      // texto com letras e dígitos ("a,organization_id.eq.000…") não é busca de
+      // número, e uma consulta a mais por termo hostil é o que a cerca da busca
+      // (`busca-de-contatos-normaliza-termo`) conta.
+      if (/^[\d\s()+.-]+$/.test(q.search.trim())) {
+        const { data: extras } = await supabase
+          .from("contact_phones")
+          .select("contact_id")
+          .eq("organization_id", ctx.organization_id)
+          .or(criteriosDeTelefone.join(","));
+        const idsDeExtras = [
+          ...new Set(((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id)),
+        ];
+        if (idsDeExtras.length > 0) orParts.push(`id.in.(${idsDeExtras.join(",")})`);
       }
     }
     if (digits.length === 11) {

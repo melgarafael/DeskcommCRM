@@ -62,6 +62,7 @@
  */
 import { audit as auditReal } from "@/lib/audit";
 import type { ContatoDoAparelho } from "@/lib/channels";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { nomeGravavel } from "@/lib/contacts/nome-da-agenda";
 import { ORIGEM_AGENDA_DO_CELULAR } from "@/lib/leads/origem-do-contato";
@@ -461,6 +462,12 @@ export function criarDepsDeAgenda(
       const achados = new Set<string>();
       for (const r of data ?? []) {
         for (const v of phoneLookupVariants((r as { phone_number: string }).phone_number)) achados.add(v);
+      }
+      // Número que é EXTRA de uma ficha viva também já é contato da org: sem isto a
+      // agenda criava uma ficha nova por cima dele (o banco recusaria com 23505).
+      const extras = await contatosDonosDosExtras(admin, organizationId, variantes);
+      for (const numero of extras.keys()) {
+        for (const v of phoneLookupVariants(numero)) achados.add(v);
       }
       return achados;
     },

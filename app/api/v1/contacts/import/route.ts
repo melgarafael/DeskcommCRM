@@ -36,6 +36,7 @@ import {
 } from "@/lib/contacts/csv";
 import { contactCreateSchemaDoPais } from "@/lib/schemas";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { createClient } from "@/lib/supabase/server";
 
@@ -206,6 +207,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       for (const v of phoneLookupVariants((r as { phone_number: string }).phone_number)) {
         existentes.add(`tel:${v}`);
       }
+    }
+    // Número que é EXTRA de uma ficha viva já é contato da org: conta como
+    // duplicado aqui, em vez de chegar ao insert e cair no 23505 do banco.
+    const donosDosExtras = await contatosDonosDosExtras(supabase, orgId, lookup);
+    for (const numero of donosDosExtras.keys()) {
+      for (const v of phoneLookupVariants(numero)) existentes.add(`tel:${v}`);
     }
   }
   if (emails.length > 0) {

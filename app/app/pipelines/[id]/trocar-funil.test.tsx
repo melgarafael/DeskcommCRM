@@ -256,7 +256,7 @@ describe("a terceira aba do funil (Lista)", () => {
     expect(screen.getByTestId("lista-do-funil")).toBeTruthy();
     // A página 1 é o que a lista pede ao montar; sem `?page=` a lista não é
     // paginada — é o quadro com outra cara.
-    expect(useLeadsPaginados).toHaveBeenLastCalledWith("p-1", 1);
+    expect(useLeadsPaginados).toHaveBeenLastCalledWith("p-1", 1, {});
     expect(screen.getByText("Negócio A")).toBeTruthy();
     expect(screen.getByText("Negócio B")).toBeTruthy();
   });
@@ -267,7 +267,7 @@ describe("a terceira aba do funil (Lista)", () => {
     await userEvent.click(screen.getByTestId("visao-lista"));
     await userEvent.click(screen.getByRole("button", { name: "Próxima" }));
 
-    expect(useLeadsPaginados).toHaveBeenLastCalledWith("p-1", 2);
+    expect(useLeadsPaginados).toHaveBeenLastCalledWith("p-1", 2, {});
   });
 
   it("⭐ a tela diz a página ATUAL, e não promete um total exato", async () => {
