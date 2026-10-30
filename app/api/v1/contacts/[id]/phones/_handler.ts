@@ -16,7 +16,13 @@ import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
 import { ApiError } from "@/lib/api/types";
 import { canonicalPhoneBR, normalizePhoneBR } from "@/lib/channels/phone-variants";
-import type { TelefoneExtraCreate, TelefoneExtraPatch } from "@/lib/schemas/contacts";
+import { PAIS_PADRAO, perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
+import {
+  mensagemDoTelefone,
+  PHONE_REGEX,
+  type TelefoneExtraCreate,
+  type TelefoneExtraPatch,
+} from "@/lib/schemas/contacts";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -106,20 +112,40 @@ async function fichaViva(ctx: TelefoneCtx): Promise<{ id: string; phone_number: 
     .maybeSingle();
   if (error) throw erroDeBanco(ctx, error.message);
   if (!data) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, traduzir("Contato não encontrado.", idioma(ctx)));
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Contato não encontrado.", idioma(ctx)),
+    );
   }
   return data as { id: string; phone_number: string | null };
 }
 
-function numeroCanonico(ctx: TelefoneCtx, bruto: string): string {
-  const e164 = normalizePhoneBR(bruto);
+/**
+ * O número no formato E.164, pela MESMA régua do `PATCH /contacts/{id}` (`telefoneDoPais`):
+ * no Brasil o nacional ganha o +55; fora dele só vale quem já veio em E.164. Sem isso, numa
+ * organização estrangeira `1123456789` virava `+551123456789`, e o telefone de outro país
+ * era gravado como brasileiro.
+ */
+async function numeroCanonico(ctx: TelefoneCtx, bruto: string): Promise<string> {
+  const perfil = await perfilDaOrganizacao(ctx.supabase, ctx.organizationId);
+  const brasileiro = perfil.codigo === PAIS_PADRAO;
+  const e164 = brasileiro
+    ? normalizePhoneBR(bruto)
+    : PHONE_REGEX.test(bruto.trim())
+      ? bruto.trim()
+      : null;
   if (!e164) {
     throw new ApiError(
       422,
       "invalid_phone",
       undefined,
       ctx.requestId,
-      traduzir("Telefone inválido. Informe DDD e número.", idioma(ctx)),
+      brasileiro
+        ? traduzir("Telefone inválido. Informe DDD e número.", idioma(ctx))
+        : mensagemDoTelefone(perfil),
     );
   }
   return e164;
@@ -167,7 +193,7 @@ export async function adicionarTelefone(
   input: TelefoneExtraCreate,
 ): Promise<{ became_primary: true } | TelefoneExtraApi> {
   const ficha = await fichaViva(ctx);
-  const numero = numeroCanonico(ctx, input.phone_number);
+  const numero = await numeroCanonico(ctx, input.phone_number);
 
   if (!ficha.phone_number) {
     // Só os campos que vieram: o que não veio, o gatilho do banco preenche.
@@ -196,7 +222,10 @@ export async function adicionarTelefone(
   }
 
   if (canonicalPhoneBR(ficha.phone_number) === numero) {
-    throw erroDeNumeroEmUso(ctx, traduzir("Este número já é o principal desta ficha.", idioma(ctx)));
+    throw erroDeNumeroEmUso(
+      ctx,
+      traduzir("Este número já é o principal desta ficha.", idioma(ctx)),
+    );
   }
 
   const linha: Record<string, unknown> = {
