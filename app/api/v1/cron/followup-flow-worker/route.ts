@@ -221,9 +221,9 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  // A invalidação vem DEPOIS do dreno de propósito: a batida seguinte relê os
-  // recursos (esta criou `followup_turn`, que liga `fila_followup`) e já entra
-  // no tick sem esperar a janela vencer.
+  // Depois de TODAS as etapas que criam trabalho — varredura, tick e dreno —,
+  // uma invalidação só cobre a batida inteira: a seguinte relê os recursos e
+  // entra no tick sem esperar a janela vencer.
   if (houveMovimento) invalidarRecursosLigados();
 
   return ok(
