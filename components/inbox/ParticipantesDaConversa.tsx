@@ -29,6 +29,7 @@ import {
   useParticipantesDaConversa,
   useRemoverParticipante,
 } from "@/hooks/inbox/useParticipantesDaConversa";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /**
  * ATENDIMENTO CONJUNTO no cabeçalho (issue #2542, fatia 4).
@@ -153,7 +154,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
           aria-label={t("Quem participa desta conversa")}
         >
           {lista.map((p) => {
-            const nome = nomeDe(p.user_id) ?? `${t("Atendente")} ${p.user_id.slice(0, 8)}`;
+            const nome = nomeDe(p.user_id) ?? rotuloDoMembro({ user_id: p.user_id }, t);
             const avatar = (
               <Avatar
                 key={p.id}
@@ -227,7 +228,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
                   const jaParticipa = idsQueParticipam.has(m.user_id);
                   return (
                     <SelectItem key={m.user_id} value={m.user_id} disabled={jaParticipa}>
-                      {m.full_name ?? `${t("Atendente")} ${m.user_id.slice(0, 8)}`}
+                      {rotuloDoMembro(m, t)}
                       {jaParticipa && (
                         <span className="ml-1 text-muted-foreground">· {t("Já participa")}</span>
                       )}

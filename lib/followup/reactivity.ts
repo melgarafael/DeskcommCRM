@@ -173,6 +173,15 @@ export interface ReactivitySummary {
 function parseCancelOnReply(raw: unknown): boolean {
   const parsed = triggerConfigSchema.safeParse(raw);
   if (!parsed.success) return false;
+  // ⚠️ `appointment_no_show` CANCELA MESMO SEM O CAMPO GRAVADO — é o único
+  // gatilho em que a tela não oferece escolha (o interruptor nasce ligado e
+  // travado; ver `TriggerConfigControl.tsx`), e todo fluxo salvo pela tela até a
+  // #3400 está no banco SEM o campo. Persistir `true` só no próximo salvamento
+  // consertaria o futuro e deixaria esses fluxos roteando por cima de quem
+  // acabou de responder. Aqui o ausente significa `true`; `false` DECLARADO
+  // (API, importação, portabilidade) continua respeitado — default não
+  // sequestra configuração.
+  if (parsed.data.kind === "appointment_no_show") return parsed.data.cancel_on_reply ?? true;
   return parsed.data.cancel_on_reply ?? false;
 }
 

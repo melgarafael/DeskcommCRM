@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowRight, Archive, Check, Pause, Robot, X } from "@/lib/ui/icons";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface Props {
   /** Quantas conversas estão marcadas. Zero = a barra não existe. */
@@ -201,7 +202,7 @@ export function BarraDeAcoesEmLote({
                 <SelectContent>
                   {lista.map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.full_name ?? m.user_id}
+                      {rotuloDoMembro(m, t)}
                     </SelectItem>
                   ))}
                 </SelectContent>

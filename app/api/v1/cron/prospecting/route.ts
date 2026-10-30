@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { ok, fail } from "@/lib/api/wrappers";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tickProspecting } from "@/lib/prospecting/worker";
 import { logger } from "@/lib/logger";
@@ -13,6 +14,11 @@ async function handle(req: NextRequest) {
   const requestId = randomUUID();
   if (!autorizaCron(req))
     return fail("forbidden", "Credencial de execução inválida.", 403, { requestId });
+  // O PISO OCIOSO (#3731). Sem campanha de prospecção na instalação — o caso
+  // comum de quem nunca ligou o recurso —, a rodada saía do banco com a mesma
+  // resposta a cada minuto. A saída fica ANTES de qualquer consulta da rodada;
+  // o portão responde de um retrato em memória (ver lib/cron/piso-ocioso.ts).
+  if (await recursoOcioso("prospeccao")) return ok({ pulado: "recurso_ocioso" }, { requestId });
   try {
     return ok(await tickProspecting(getRequestPool(), createAdminClient()), { requestId });
   } catch (err) {

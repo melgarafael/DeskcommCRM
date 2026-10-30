@@ -38,6 +38,7 @@ import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { MARGEM_PARA_CHAMADA_MS, PRAZO_DA_CHAMADA_MS } from "@/lib/channels/historico/prazo";
 import { rodarUmaRodada, TETO_PADRAO } from "@/lib/channels/historico/rodada";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -70,6 +71,11 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
+  // O PISO OCIOSO (#3731): a rodada de todo minuto lia `importacoes_de_historico`
+  // só para receber lista vazia em quem nunca importou o histórico. Com o portão,
+  // a instalação sem importação `rodando` sai antes dessa leitura — ver
+  // lib/cron/piso-ocioso.ts para o sinal e o custo dele.
+  if (await recursoOcioso("historico")) return ok({ pulado: "recurso_ocioso" }, { requestId });
   const prazo = Date.now() + PRAZO_DA_CHAMADA_MS;
   const { data, error } = await admin
     .from("importacoes_de_historico")
