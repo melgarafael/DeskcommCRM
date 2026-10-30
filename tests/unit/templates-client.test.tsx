@@ -15,7 +15,12 @@ vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
   // A chave é exportada pelo módulo real e usada pela tela e pela mutação de
   // ordem (#3244): sem ela aqui, o import da tela quebra antes de renderizar.
   CHAVE_DOS_TEMPLATES: ["message-templates"],
+  CHAVE_DOS_GRUPOS: ["message-template-groups"],
   useMoverTemplate: () => ({ mutate: vi.fn(), isPending: false }),
+  // A reordenação de GRUPO (#3245) — sem grupo, a tela não a chama.
+  useMoverGrupo: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  // Sem grupo (#3245): a tela cai na lista plana, o caminho destes casos.
+  useGruposDeRespostas: () => ({ data: [] }),
   useMessageTemplates: () => ({
     data: [
       { id: "1", title: "Meu Pessoal", body: "Oi {{primeiro_nome}}", shortcut: "oi", owner_user_id: "u1" },

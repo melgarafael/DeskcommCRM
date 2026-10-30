@@ -4,6 +4,19 @@ Em **CRM → Prospecção**, um administrador configura a chave Apify, pesquisa 
 
 A busca é paga pelo saldo da conta Apify: limite de até 100 empresas e teto de US$ 0,50 a US$ 10 por execução. A quantidade pode ser menor. O enriquecimento consulta e-mails comerciais e redes do site, sem buscar pessoas físicas ou decisores. Chave cifrada por `fn_encrypt_oauth`, indisponível aos papéis do navegador. Não existe chave obrigatória no `.env`.
 
+### Lista própria (planilha)
+
+Se você já tem a lista de empresas (de uma feira, de uma associação, de uma planilha antiga), não precisa pagar uma busca: em **CRM → Prospecção**, no cartão "1. Encontrar empresas", abra a aba **Usar minha planilha**. Essa aba não depende da chave Apify nem de qualquer provedor de busca.
+
+- **Arquivo:** `.csv` ou `.xlsx` (só a primeira aba), com até **500 empresas**. Use "Baixar modelo" para ver o formato.
+- **Colunas obrigatórias:** o nome da empresa (`empresa`, `nome`, `nome fantasia`, `razão social`…) e o telefone (`telefone`, `celular`, `whatsapp`…). Opcionais: `site`, `segmento`, `cidade` (ou `endereço`), `email`, `instagram`/`facebook`/`linkedin`. Os nomes das colunas valem com ou sem acento, em maiúscula ou minúscula, e também em espanhol.
+- **Telefone:** brasileiro com DDD, com ou sem máscara, ou internacional com `+`. Linha sem telefone válido, sem nome ou com telefone repetido no arquivo é recusada, e a tela mostra o número da linha e o motivo para você corrigir e enviar de novo.
+- **De onde veio esta lista?** é obrigatório e fica registrado na campanha, para o caso de um titular perguntar de onde veio o dado dele.
+- **Quem já é contato do CRM não é abordado**, como em qualquer campanha. Quem já estava na sua lista de prospecção também não entra de novo.
+- **Enviar o mesmo arquivo duas vezes não duplica** a campanha nem as empresas.
+- **LGPD:** quem foi anonimizado a pedido do titular não volta por planilha, mesmo que o telefone venha escrito de outro jeito.
+- Nenhuma abordagem começa nesta etapa: a planilha vira uma campanha em preparação, e daí em diante é o caminho de sempre (seleção das empresas, avaliação do site, prévia, agente, ritmo e fila).
+
 ## Campanha
 
 Depois da pesquisa, defina agente, conexão, funil, etapa de entrada, etapa de qualificados, oferta, critérios, ritmo e referência real da avaliação de legítimo interesse. O agente precisa estar publicado, automático, com a ferramenta `crm_move_lead_stage` e acesso ao funil. Ele precisa atender o canal selecionado ou ser membro do roteador com continuidade ativa. O roteador pode encaminhar uma mudança de assunto para outro agente.

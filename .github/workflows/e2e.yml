@@ -836,6 +836,7 @@ jobs:
         qa-l12-troca-de-funil.spec.ts
         qa-l12-agente-ia.spec.ts
         prospeccao-auditoria-do-site.spec.ts
+        prospeccao-por-planilha.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava
@@ -1530,6 +1531,7 @@ jobs:
         moeda-da-organizacao.spec.ts
         webhooks.spec.ts
         system-update.spec.ts
+        respostas-rapidas-conteudos.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

@@ -128,10 +128,51 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
   // campanha AGORA, em vez de esperar o tick. Fechada a token: quem dispara
   // gasta rede e é uma pessoa revisando a fila.
   z.object({ action: z.literal("verificar_sites"), id: z.string().uuid() }).strict(),
+  // "Completar fichas" (spec 26 §3.3): acrescenta à ficha dos contatos JÁ EXISTENTES
+  // da campanha o link que falta (o que a pessoa digitou fica). Fechada a token:
+  // escreve no CRM, e quem decide é uma pessoa com sessão.
+  z.object({ action: z.literal("completar_fichas"), id: z.string().uuid() }).strict(),
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;
 export type SearchInput = z.infer<typeof searchSchema>;
+/**
+ * O que a campanha importada de planilha guarda em `prospecting_campaigns.search` (jsonb).
+ * `avaliar_site`/`gerar_previa` são as mesmas chaves da busca (`opcoesDoPreparo`); `name` e
+ * `niche` são os que o resto da esteira lê. NÃO guarda o nome do arquivo (pode conter nome
+ * de pessoa) nem linha de dado. `origem_da_lista` é o "de onde veio esta lista" da LGPD.
+ */
+export interface BuscaDaPlanilha {
+  origem: "planilha";
+  name: string;
+  niche: string;
+  arquivo_bytes: number;
+  linhas: number;
+  origem_da_lista: string;
+  avaliar_site: boolean;
+  gerar_previa: boolean;
+}
+const CAIXA_DO_FORMULARIO = z
+  .enum(["true", "false"])
+  .default("true")
+  .transform((v) => v === "true");
+/**
+ * Os campos de TEXTO do formulário multipart da importação (o arquivo vai à parte). Estrito:
+ * campo a mais — `organization_id` inclusive — é 422, nada daqui vira organização.
+ * `gerar_previa` só vale com `avaliar_site` (sem veredito do site não há em que ancorá-la).
+ */
+export const importarPlanilhaCamposSchema = z
+  .object({
+    request_id: z.string().uuid(),
+    name: z.string().trim().min(2).max(120),
+    niche: z.string().trim().min(2).max(120),
+    origem_da_lista: z.string().trim().min(3).max(500),
+    avaliar_site: CAIXA_DO_FORMULARIO,
+    gerar_previa: CAIXA_DO_FORMULARIO,
+  })
+  .strict()
+  .transform((c) => ({ ...c, gerar_previa: c.avaliar_site && c.gerar_previa }));
+export type ImportarPlanilhaCampos = z.output<typeof importarPlanilhaCamposSchema>;
 /** Motivo gravado quando o operador desmarca uma empresa na preparação da campanha. */
 export const RAZAO_NAO_SELECIONADA = "Não selecionada pelo operador.";
 /**
@@ -179,7 +220,7 @@ export interface Prospect {
  * admite. `55` fica de fora desse ramo de propósito: brasileiro truncado (com `+`,
  * mas curto demais) não vira estrangeiro. Qualquer outra coisa segue `null`.
  */
-function normalizeProspectPhone(raw: string): string | null {
+export function normalizeProspectPhone(raw: string): string | null {
   let digits = raw.replace(/\D/g, "");
   if (!raw.startsWith("+") && [10, 11].includes(digits.length)) digits = `55${digits}`;
   if (/^55\d{10,11}$/.test(digits)) return `+${digits}`;

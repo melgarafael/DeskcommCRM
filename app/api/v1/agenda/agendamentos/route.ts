@@ -17,6 +17,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
+import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN } from "@/lib/agenda/duracao-escolhida";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
@@ -92,6 +93,15 @@ const marcarSchema = z.object({
   description: z.string().max(2000).optional(),
   location_details: z.string().max(300).optional(),
   guest_email: emailDoConvidado.optional(),
+  /**
+   * A duração DESTE atendimento, em minutos (issue #3709) — ausente, a do tipo.
+   *
+   * A faixa é a dos moldes (`lib/agenda/duracao-escolhida.ts`), e recusar aqui
+   * é o que impede um valor absurdo de virar um bloco de três minutos ou de
+   * 25 horas. O handler confere de novo porque a ferramenta MCP o chama sem
+   * passar por este schema.
+   */
+  duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
   participant_name: z.string().trim().min(1).max(120).optional(),
   participants: z.array(z.string().trim().min(1).max(120)).min(1).max(20).optional(),
   expected_service_revision: z.number().int().positive().optional(),
@@ -103,7 +113,7 @@ const alterarSchema = z
     revision: z.number().int().positive().optional(),
     outcome_message_id: z.string().uuid().optional(),
     confirmation_next_at: z.string().datetime({ offset: true }).optional(),
-    /** Remarcar: o novo início. A duração vem do tipo, como na criação. */
+    /** Remarcar: o novo início. O FIM conserva o comprimento do bloco que já existe (#3709). */
     starts_at: z.string().datetime({ offset: true }).optional(),
     /**
      * `rescheduled` NÃO entra aqui: remarcar se pede mandando `starts_at`, e é

@@ -15,6 +15,8 @@ const SEM_VARIAVEIS = "22222222-2222-4222-8222-222222222222";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
   useMessageTemplates: () => ({ data: [], isLoading: false, isError: false }),
 }));
 // Um campo do NEGÓCIO e um do CONTATO (#2791): o envio lê só

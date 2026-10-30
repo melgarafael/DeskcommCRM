@@ -9,6 +9,7 @@ import {
   motivoDoVeto,
   sugestaoParaMostrar,
 } from "@/lib/agent-engine/agent/sugestao-de-resposta";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 
 /**
  * Os dois defeitos medidos em produção em 2026-09-12, na tela de atendimento.
@@ -163,6 +164,27 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
       expect(motivo!.codigo).toBe(codigo);
       expect(motivo!.texto.length, `texto curto demais em ${codigo}`).toBeGreaterThan(30);
       expect(typeof motivo!.acionavel).toBe("boolean");
+    }
+  });
+
+  /**
+   * `causa` vai no aviso de versão barrada (doc 234), sobre uma sugestão que
+   * está sendo OFERECIDA: frase curta, sem instrução e sem ponto (a moldura põe
+   * o seu). Quem não barra versão nenhuma não tem causa — um veto novo sem ela
+   * sumiria do aviso em silêncio, por isso a lista dos sem-causa é fechada.
+   */
+  it("só os vetos de envio têm causa, e a causa não manda agir", () => {
+    const semCausa = CODIGOS_DE_VETO_CONHECIDOS.filter((c) => !motivoDoVeto(c)!.causa);
+    expect(semCausa.sort()).toEqual(
+      ["generation_failed", "max_steps_exhausted", "no_candidate", "output_truncated", "unknown_preview_tool"],
+    );
+    for (const codigo of CODIGOS_DE_VETO_CONHECIDOS) {
+      const causa = motivoDoVeto(codigo)!.causa;
+      if (!causa) continue;
+      expect(causa, codigo).not.toMatch(/gere de novo|nada foi enviado|confira|ajuste|\.$/i);
+      // A tela passa a causa por `t(motivo.causa)`, forma que a guarda do
+      // espanhol não resolve: a cobertura no dicionário é cobrada aqui.
+      expect(DICIONARIO[causa]?.es, `sem espanhol para a causa de ${codigo}`).toBeTruthy();
     }
   });
 

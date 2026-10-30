@@ -433,6 +433,14 @@ export const AUDIT_ACTIONS = [
   // linha de lugar" — o conteúdo não foi tocado nenhuma vez (é o que a issue
   // pede: preservar os cadastros).
   "template.reordered",
+  // GRUPOS de respostas rápidas (#3245): criar/renomear/reordenar/apagar um
+  // grupo não é `template.updated` — o ato muda a ESTRUTURA da equipe (as
+  // etapas que todos veem), não o texto de uma resposta. O audit responde
+  // "quem reorganizou nossa lista?", que é outra pergunta.
+  "template_group.created",
+  "template_group.updated",
+  "template_group.deleted",
+  "template_group.reordered",
   "auth.signup_requested",
   "auth.signup_failed",
   "auth.signup_confirmed",
@@ -915,6 +923,10 @@ export const AUDIT_ACTIONS = [
   // "Cliente pela agenda" ligada ou desligada (migration 0262). Ligar reescreve
   // etiquetas de toda a organização; metadata leva as contagens.
   "crm.cliente_pela_agenda_alterado",
+  // #3644 — "quem já comprou volta pelo funil de clientes" ligada/desligada, e a
+  // janela de pós-venda junto. Muda em que funil nasce o negócio de quem já é
+  // cliente, e se ele nasce: é decisão de configuração, não operação de tela.
+  "crm.cliente_pela_venda_alterado",
   // A lista de etiquetas de contato INTERNO (#2353) mudou. Decisão de
   // configuração da organização que muda o que vira card no funil e o que a IA
   // responde: "desde quando a equipe parou de virar lead?" só tem resposta aqui.
@@ -1367,6 +1379,8 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
   "ai.knowledge_source_reindexed",
+  "ai_models.synced",
+  "ai_models.sync_failed",
   // "Não são a mesma empresa" (Spec 31, PR A): o par de fichas sugerido pelo nome
   // saiu da lista para a organização toda. A trilha guarda só os dois ids — nunca
   // nome nem telefone —, porque a pergunta que se faz depois é "quem tirou esta

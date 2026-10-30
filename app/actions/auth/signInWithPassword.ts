@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loginSchema, type LoginInput } from "@/lib/auth/schemas";
 import { audit, hashEmail } from "@/lib/audit";
 import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import {
   authRateLimited,
   contaBloqueadaPorFalhas,
@@ -87,6 +88,11 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
     });
     return { ok: false, error: "invalid_credentials" };
   }
+
+  // Entrar de novo é o jeito que a pessoa tem de "atualizar" o que vê. O cache
+  // curto de autorização só é derrubado por quem escreve PELO APP; vínculo
+  // gravado por fora (seed, worker, SQL) esperaria o TTL. Um MISS por login.
+  invalidarUsuario(data.user.id);
 
   // MFA gating — if the user has any verified TOTP factor enrolled, they must
   // complete the challenge in /login/mfa before reaching the app.

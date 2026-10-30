@@ -9,7 +9,7 @@ import {
   resolveActiveOrg,
 } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, roleAtLeast, type VisibilityMode } from "@/lib/auth/types";
-import { clientePelaAgendaLigado } from "@/lib/schemas/settings";
+import { clientePelaAgendaLigado, clientePelaVendaLigado } from "@/lib/schemas/settings";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { ProvedorDeCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { AppShell } from "./_components/AppShell";
@@ -179,6 +179,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       cliente_pela_agenda: clientePelaAgendaLigado(orgRow?.settings),
+      // #3644 — a regra da venda também decide se o funil de clientes está em
+      // uso: o menu e o selo do quadro não podem sumir de uma organização que
+      // roteia por ela. Mesma linha de `settings`, nenhuma consulta a mais.
+      cliente_pela_venda: clientePelaVendaLigado(orgRow?.settings),
       modulos_ligados: modulos,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos),

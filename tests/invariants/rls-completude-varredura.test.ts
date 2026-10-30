@@ -79,6 +79,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
+  { tabela: "automation_rule_contact_claims", razao: "tests/invariants/automation-claims-so-servidor.test.ts (migration 0740, #3267) — tabela exclusiva do servidor: RLS de pe e NENHUMA policy, anon/authenticated sem privilegio (nem da propria org, recusado por JWT), service_role com select/insert para o dreno." },
   { tabela: "prospecting_settings", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_campaigns", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_candidates", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
@@ -364,6 +365,17 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "conversa e as mensagens dela, o dono não lê a linha alheia, um membro de " +
       "outra organização lê 0 nos dois sentidos e INSERT direto de authenticated " +
       "dá permission denied. Migration 0661 (issue #2542).",
+  },
+  {
+    tabela: "message_template_groups",
+    razao:
+      "tests/invariants/grupos-de-resposta-rapida-rls.test.ts (migration 0808, #3245) — " +
+      "leitura positiva dos quatro papéis na organização própria e ZERO do vizinho " +
+      "(linha real semeada noutra organização, com controle de que ela existe); " +
+      "agent e viewer sem INSERT/UPDATE/DELETE efetivo; manager cria, renomeia e apaga; " +
+      "anon com permission denied por GRANT ausente; GRANT explícito a authenticated " +
+      "conferido no catálogo; FK composta recusa resposta apontando para grupo de outra " +
+      "organização e on delete set null (grupo_id) devolve a resposta à lista plana sem apagá-la.",
   },
   {
     tabela: "avisos",

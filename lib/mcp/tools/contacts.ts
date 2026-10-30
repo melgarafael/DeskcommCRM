@@ -8,6 +8,7 @@
  * de cookie).
  */
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   listContactsHandler,
@@ -17,6 +18,46 @@ import type { McpToolDefinition } from "../types";
 import { CAMPOS_PROPONIVEIS, proporDadoDoContato } from "@/lib/contacts/proposta-de-dado";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { audit } from "@/lib/audit";
+
+/**
+ * Os telefones da ficha para a IA (Spec 31, B1): o tipo e o WhatsApp do
+ * principal, e os extras com a MESMA forma da API (`GET /api/v1/contacts/{id}`).
+ * O cliente aqui é o administrador do MCP (service role, sem RLS): o filtro de
+ * organização é explícito nas duas leituras, e `wa_lid` fica de fora.
+ */
+async function telefonesDaFichaParaIa(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contactId: string,
+) {
+  const { data: principal } = await supabase
+    .from("contacts")
+    .select("phone_type, phone_whatsapp")
+    .eq("organization_id", organizationId)
+    .eq("id", contactId)
+    .maybeSingle();
+  const { data: extras, error } = await supabase
+    .from("contact_phones")
+    .select("phone_number, tipo, whatsapp, rotulo, origem, created_at")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contactId);
+  if (error) throw new Error(`contact_phones: ${error.message}`);
+  // Ordenado por created_at na memória: a leitura é pequena (poucos números por
+  // ficha) e a ordem fica explícita aqui, como na API.
+  const ordenados = [...(extras ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return {
+    phone_type: principal?.phone_type ?? null,
+    phone_whatsapp: principal?.phone_whatsapp ?? null,
+    additional_phones: ordenados.map((e) => ({
+      phone_number: e.phone_number,
+      type: e.tipo,
+      whatsapp: e.whatsapp,
+      label: e.rotulo,
+      origin: e.origem,
+      created_at: e.created_at,
+    })),
+  };
+}
 
 const searchInputShape = {
   query: z.string().min(1).max(200).describe("Termo de busca (nome, email ou telefone)."),
@@ -160,12 +201,14 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
           "não é sua para abrir e nada se escreve para ele; siga a conversa com quem está falando.",
       };
     }
+    const telefones = await telefonesDaFichaParaIa(ctx.supabase, ctx.organizationId, contact.id);
     return {
       id: contact.id,
       name: contact.name,
       display_name: contact.display_name,
       email: contact.email,
       phone: contact.phone_number,
+      ...telefones,
       tags: contact.tags ?? [],
       source: contact.source,
       consent: contact.consent ?? {},

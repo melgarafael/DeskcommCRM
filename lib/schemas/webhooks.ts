@@ -639,6 +639,7 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirConfigDoGatilhoDeData)
   .superRefine(exigirConfigDosGatilhosDeTempo)
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(recusarLimitePorContatoTorto)
   .superRefine(recusarLacoDeLead);
 
 function exigirIdDaFonteWebhook(
@@ -654,6 +655,30 @@ function exigirIdDaFonteWebhook(
       message: "Escolha uma fonte de formulário válida.",
     });
   }
+}
+
+/**
+ * "No máximo uma vez por contato" (#2974) é LIGADO/DESLIGADO — booleano.
+ *
+ * O motor lê a chave com `=== true` (`regraRodaUmaVezPorContato`), então um
+ * `"sim"` ou um `1` gravado por outra porta seria silenciosamente DESLIGADO: a
+ * tela diria que a regra roda uma vez por contato e ela rodaria sempre. Recusar
+ * na porta é o único desfecho honesto, como nas demais chaves do gatilho.
+ *
+ * Ausente (ou `null`, que é o mesmo "não configurado") passa: é o comportamento
+ * de antes desta feature.
+ */
+function recusarLimitePorContatoTorto(
+  regra: { trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const valor = regra.trigger_config?.uma_vez_por_contato;
+  if (valor === undefined || valor === null || typeof valor === "boolean") return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["trigger_config", "uma_vez_por_contato"],
+    message: "A opção “uma vez por contato” só aceita ligado ou desligado.",
+  });
 }
 
 /**
@@ -734,6 +759,7 @@ export const updateAutomationRuleSchema = z
     exigirConfigDosGatilhosDeTempo(patch as { trigger_event: string; trigger_config?: Record<string, unknown> }, ctx);
   })
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(recusarLimitePorContatoTorto)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarSessao, invalidarUsuario, sessaoDosCookies } from "@/lib/auth/cache-curto";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -20,6 +21,12 @@ export async function POST() {
   const { data: session, error } = await createAdminClient().rpc("fn_end_support", { p_actor: user.id, p_session: sessionId });
   if (error) return fail("upstream_unavailable", "Não foi possível encerrar o acompanhamento. Tente novamente.", 503, { requestId });
   const store = await cookies();
+  // #3696: sair do acompanhamento é uma REVOGAÇÃO — o contexto de suporte em
+  // cache desta identidade/sessão cai na hora, e a próxima requisição volta a
+  // ser a do próprio admin.
+  invalidarUsuario(user.id);
+  const sessaoAtual = sessaoDosCookies(store.getAll());
+  if (sessaoAtual) invalidarSessao(sessaoAtual.chave);
   store.delete(IMPERSONATE_COOKIE_NAME);
   if (session?.previous_organization_id) store.set("active_org", session.previous_organization_id,
     { httpOnly: true, secure: cookieSecure(), sameSite: "strict", path: "/", maxAge: 60*60*24*30 });

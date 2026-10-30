@@ -15,8 +15,9 @@ ser fonte sem ninguém decidir isso.
 ## Mapas
 
 | arquivo | escopo |
-| `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 |---|---|
+| `catalogo-de-modelos.architecture.json` | descoberta diária de modelos nativos OpenAI/Anthropic via Models.dev, conciliação OpenRouter, seletores e auditoria |
+| `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 | `nomes-internos-das-conexoes.architecture.json` | renomeação interna dos canais — cartões de WhatsApp, parceiro e redes sociais → rota tenant-aware → `channel_sessions.display_name` → cartões e seletores, com auditoria e sem alterar o nome público no provedor |
 | `conversoes-de-anuncios.architecture.json` | Purchase, etapas e LeadSubmitted por clique CTWA; entrega, livro de cliques e reprocessamento |
 | `prospeccao-nativa.architecture.json` | busca comercial, fila gradual, configuração conversacional persistente, sandbox e assistente de voz opcional |
