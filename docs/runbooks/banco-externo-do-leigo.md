@@ -167,8 +167,10 @@ Crie o funil antes, no menu **"Funis"**, com o botão "Novo funil" (ou "Criar me
 
 **Com escolha:** o agente cria o negócio no funil e na etapa escolhidos, com a referência do item (por exemplo, `wordpress-conteudo:4821`). Essa referência fica na descrição do negócio e em um campo próprio.
 
-- **Mesmo cliente, mesmo item:** se o cliente repetir o interesse no mesmo item e o negócio ainda estiver aberto, **não** nasce outro negócio. O sistema devolve o que já existe e deixa uma nota na linha do tempo: "O cliente voltou a demonstrar interesse em" seguido da referência.
+- **Mesmo cliente, mesmo item:** se o cliente repetir o interesse no mesmo item e o negócio ainda estiver aberto, **não** nasce outro negócio. O sistema devolve o que já existe e deixa uma nota na linha do tempo: "O cliente voltou a demonstrar interesse em" seguido da referência. Isso vale desde que o funil do interesse seja o mesmo e o agente passe o contato da própria conversa: se você mudar o funil na receita entre um interesse e outro, nasce um negócio novo.
 - **Negócio já ganho ou perdido:** não impede um novo interesse.
+
+> **Vale com uma única receita ativa de cada tipo.** Imóveis e veículos, por exemplo, podem ser duas receitas do mesmo tipo ("Conteúdo do WordPress"). Se as duas estiverem ativas com funis diferentes, ou com o mesmo funil em etapas diferentes, o sistema não sabe para qual mandar: **todo** interesse vai para a equipe e nenhum negócio nasce. Deixe uma só receita ativa daquele tipo com destino, ou repita **o mesmo funil e a mesma etapa** nas duas.
 
 > O funil escolhido tem de estar entre os funis que o agente pode mexer (seção 8). Se não estiver, o sistema recusa a criação do negócio e a tela **não avisa** isso hoje. Veja a seção 11.
 
@@ -254,7 +256,8 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 | Mensagem ao agente: "não há receita ativa nesta conexão." | Nenhuma receita está ativa. (A mensagem cita "Integração de dados › Receitas prontas"; no menu, é "Dados externos".) | Abra a conexão e ative a receita ("Ativa"), ou crie uma em **"Adicionar receita"**. |
 | Mensagem ao agente: "não foi possível abrir a conexão." | A conexão não abriu. Vale também quando o módulo está desligado (a ferramenta de receitas não mostra o motivo). | Confira se a conexão está ativa ("Conexão ativa") e se o módulo está ligado. |
 | O interesse vai para a equipe, e não cai no funil. | Nenhum funil de destino está escolhido, ou o funil escolhido foi apagado ou arquivado. | Escolha o funil e a etapa na receita. Se o funil foi arquivado, escolha outro. Enquanto isso, a equipe recebe a conversa na **"Central de avisos"**. |
-| O agente diz que registrou o interesse, e o negócio não aparece no funil. | Medido no ambiente de teste (seção 13). Causas possíveis: o funil não está em "Em que negócios ele pode mexer", ou o agente não tinha o código do item na conversa. | Confira, nesta ordem: (1) o funil está marcado em "Em que negócios ele pode mexer"; (2) o agente escreve "cód." junto de cada item; (3) o negócio no menu "Funis". Se nada disso resolver, passe a conversa para a equipe e avise o suporte. |
+| O interesse vai para a equipe mesmo com o funil escolhido. | Há mais de uma receita **ativa do mesmo tipo** com destinos diferentes, ou a receita está desativada. | Deixe uma única receita ativa daquele tipo com destino, ou repita **o mesmo funil e a mesma etapa** em todas. Confira também se a receita está **"Ativa"** (seção 6). |
+| O agente diz que registrou o interesse, e o negócio não aparece no funil. | Medido no ambiente de teste (seção 13). Causas possíveis: o funil não está em "Em que negócios ele pode mexer", ou o agente não tinha o código do item na conversa. | Confira, nesta ordem: (1) o funil está marcado em "Em que negócios ele pode mexer"; (2) o agente escreve "cód." junto de cada item; (3) a receita está "Ativa" na conexão (seção 6); (4) o negócio no menu "Funis". Se nada disso resolver, passe a conversa para a equipe e avise o suporte. |
 
 ---
 
