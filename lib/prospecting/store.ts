@@ -693,6 +693,10 @@ export async function criarPegadaDoCandidato(
   // apagou. O contato novo, acima, continua nascendo com os links.
   // As etiquetas do ramo ficam no CONTATO antes da primeira mensagem: a skill que entra pela
   // etiqueta precisa delas já no primeiro turno (spec 27, fatia 1). Ausente = nada muda.
+  // Diferente dos links acima, roda TAMBÉM no contato reaproveitado da campanha: a gravação é
+  // fail-open, e o reenvio é o que recupera uma primeira tentativa que falhou. A junção não
+  // duplica etiqueta. O custo conhecido: etiqueta que um humano apagou volta no próximo envio
+  // da MESMA campanha.
   if (config.contact_tags?.length)
     await marcarEtiquetasDaCampanha(admin, org, c.id, contactId, config.contact_tags);
   let leadId = p.lead_id;
@@ -1062,9 +1066,10 @@ export async function adjustPace(pool: pg.Pool, org: string, id: string, pace: C
 }
 
 /**
- * Troca as etiquetas de contato de uma campanha PAUSADA (spec 27). Só o contato criado daqui
- * em diante recebe a nova lista: quem já foi abordado não é reescrito. O `where` repete a
- * régua de `adjust_pace` (organização, id, pausada, com configuração) e o `||` troca só a chave.
+ * Troca as etiquetas de contato de uma campanha PAUSADA (spec 27). A nova lista vale para os
+ * próximos envios: o contato criado daqui em diante a recebe, e o que a campanha já criou a
+ * recebe de novo no reenvio (a junção é idempotente e é a única recuperação se a primeira
+ * gravação falhou). O `where` repete a régua de `adjust_pace` (organização, id, pausada, com configuração) e o `||` troca só a chave.
  */
 export const AJUSTE_DE_ETIQUETAS_SQL =
   "update prospecting_campaigns set config = config || jsonb_build_object('contact_tags', $3::jsonb), updated_at = now() where organization_id = $1 and id = $2 and status = 'paused' and config is not null returning id";

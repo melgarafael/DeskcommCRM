@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 import type { PreviaSalva } from "@/lib/prospecting/previa";
-import { normalizarTags } from "@/lib/contacts/tag-normalizada";
+import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 
 /**
  * Os dois números do RITMO da campanha, com os mesmos limites no início e no
@@ -31,7 +31,7 @@ export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
  */
 export const CONTACT_TAGS_MAXIMO = 5;
 const contactTagsSchema = z
-  .array(z.string().max(200))
+  .array(z.string().max(TAMANHO_MAXIMO_DA_TAG))
   .max(CONTACT_TAGS_MAXIMO)
   .transform((tags) => normalizarTags(tags));
 
