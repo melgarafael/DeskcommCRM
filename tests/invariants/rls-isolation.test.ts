@@ -477,6 +477,17 @@ beforeAll(() => {
             returning id into v_event_type;
         end if;
 
+        -- migration 0771 (#3414) — a lista de espera do "quero encaixe". Guarda
+        -- observacoes (texto livre da recepção) e o pedido de qual serviço a
+        -- pessoa quer: vazar a linha entrega ao vizinho quem da outra empresa
+        -- está esperando encaixe, para quê e com que urgência. A linha dos dois
+        -- tenants é real, para o caso de isolamento ter controle positivo.
+        if not exists (select 1 from public.calendar_waitlist where organization_id = v_org) then
+          insert into public.calendar_waitlist
+            (organization_id, contact_id, event_type_id, observacoes, urgencia)
+          values (v_org, v_contact, v_event_type, 'RLS invariant encaixe', 0);
+        end if;
+
         if not exists (select 1 from public.commission_rules where organization_id = v_org) then
           insert into public.commission_rules
             (organization_id, attendant_user_id, event_type_id, percent)
@@ -879,6 +890,11 @@ export const TABLES = [
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",
+  // migration 0771 (#3414) — a lista de espera do encaixe. `observacoes` é
+  // texto livre da recepção: vazar a linha entrega ao vizinho quem da outra
+  // empresa espera vaga, para qual serviço e com que urgência. Leitura e
+  // escrita org-scoped (a escrita ainda exige `agent`, medido na rota).
+  "calendar_waitlist",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

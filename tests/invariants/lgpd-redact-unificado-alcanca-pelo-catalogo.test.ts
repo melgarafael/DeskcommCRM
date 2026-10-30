@@ -247,6 +247,11 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "0184: title, description, notes, location_details e cancellation_reason são texto livre que nomeia a pessoa (queixa clínica numa clínica); gatilho da virada, com google/meet no mesmo acorde.",
   },
+  calendar_waitlist: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "0771: `observacoes` é texto livre da recepção (\"prefere manhã, falar com a Ana\") na inscrição do encaixe; gatilho da virada de is_anonymized, o mesmo gancho de crm_tasks. Janelas, antecedência, urgência e status ficam: são parâmetro de operação, não identificação — e a linha some sozinha com o contato pela FK.",
+  },
   contact_phones: {
     decidida: "redigir",
     caminho: "cascata",

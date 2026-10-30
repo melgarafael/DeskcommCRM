@@ -200,6 +200,67 @@ create policy calendar_waitlist_write on public.calendar_waitlist
     or ((organization_id in (select public.fn_user_org_ids()))
         and public.fn_role_at_least(organization_id, 'agent'))
   );
-revoke all on public.calendar_waitlist from anon;
+revoke all on table public.calendar_waitlist from anon, authenticated, service_role;
+grant select, insert, update, delete on table public.calendar_waitlist to authenticated;
+grant select, insert, update, delete on table public.calendar_waitlist to service_role;
+
+-- ─── 4 · as travas do modo somente leitura do suporte (0274) ──────────────
+-- Depois do grant e depois de toda tabela: a regra de
+-- `fn_aplicar_travas_de_suporte()` é "RLS ligada + `organization_id` + gravável
+-- por `authenticated`". É o grant acima que põe `calendar_waitlist` no escopo, e
+-- é esta chamada que cria as TRÊS restritivas — `support_write_insert`,
+-- `support_write_update` e `support_write_delete` — já na PRIMEIRA aplicação.
+-- Sem ela a instalação nova nasce sem as travas e só a primeira atualização as
+-- cria: medido por
+-- `tests/invariants/travas-de-suporte-cobrem-toda-tabela-na-instalacao.test.ts`
+-- ("após UMA aplicação"), que reprovou esta migration com `calendar_waitlist`
+-- como a única tabela fora do conjunto.
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
+-- ─── 5 · LGPD: anonimizar o contato apaga o texto livre da inscrição ──────
+-- `observacoes` é texto livre da recepção ("prefere manhã, falar com a Ana") e
+-- `contact_id` é FK para `contacts`: sem este passo a anonimização devolveria
+-- SUCESSO, o SLA de D+15 seria marcado como cumprido e a observação continuaria
+-- legível — o modo de falha mudo que
+-- `tests/invariants/lgpd-redact-unificado-alcanca-pelo-catalogo.test.ts` vigia.
+--
+-- TRIGGER e não passo dentro de `fn_lgpd_cascade_redact_contact`, pela mesma
+-- razão escrita na 0184 e na 0391: aquela função vem do dump e um passo novo
+-- exigiria carregar uma cópia inteira dela; a virada de `is_anonymized` é o
+-- último fato da anonimização, roda na MESMA transação e alcança QUALQUER
+-- caminho que anonimize um contato.
+--
+-- O que FICA: serviço, profissional, janelas, antecedência, validade, urgência
+-- e status. São parâmetro de operação — que houve um pedido de encaixe, para
+-- quê e até quando —, não identificação; e a linha some sozinha com o contato
+-- pela FK `on delete cascade`.
+create or replace function public.fn_redigir_espera_do_contato_anonimizado()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  update public.calendar_waitlist
+     set observacoes = null
+   where organization_id = new.organization_id
+     and contact_id = new.id;
+  return new;
+end;
+$$;
+
+-- Função de trigger não exige EXECUTE de quem dispara o UPDATE, então revogar
+-- das três origens não a quebra — e a mantém fora da lista congelada de
+-- exceções do invariante de hardening.
+revoke execute on function public.fn_redigir_espera_do_contato_anonimizado()
+  from public, anon, authenticated;
+grant  execute on function public.fn_redigir_espera_do_contato_anonimizado() to service_role;
+
+drop trigger if exists trg_redigir_espera_ao_anonimizar on public.contacts;
+create trigger trg_redigir_espera_ao_anonimizar
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized is true and old.is_anonymized is distinct from true)
+  execute function public.fn_redigir_espera_do_contato_anonimizado();
 
 notify pgrst, 'reload schema';
