@@ -16,7 +16,7 @@
 --
 -- Cada rota perguntando "tem trabalho?" à própria tabela não economiza nada:
 -- a pergunta custa a mesma consulta. O que economiza é perguntar UMA vez por
--- todas — uma ida ao banco por janela de cache (45 s, `MEMO_MS` em
+-- todas — uma ida ao banco por janela de cache (45 s, `VALIDADE_MS` em
 -- `lib/cron/recursos-ligados.ts`), em vez de oito por minuto.
 --
 -- ─── A régua: nunca dizer "desligado" para quem tem trabalho ────────────────
@@ -34,8 +34,12 @@
 --                      espera de 2 min de propósito: um superconjunto. A linha
 --                      que voltou continua `error` até ser processada, e a
 --                      janela de espera é MENOR que o passo do cron.
---   followup          = inscrição vencida e sem lease, de organização ativa —
---                      a mesma condição da CTE de `fn_claim_due_followup_enrollments`
+--   followup          = inscrição vencida, sem lease, de organização operante —
+--                      a MESMA condição da CTE de `fn_claim_due_followup_enrollments`
+--                      (migration 0501), que desde então também exige
+--                      `organizations.status = 'active'`. Os dois lados andam
+--                      juntos: sonda mais estreita que o claim cala o motor em
+--                      silêncio, e é por isso que o teste do par compara as duas.
 --   followup_silencio = pointer `active` (o que `runSilenceSweep` varre)
 --   fila_followup     = job `followup_turn` `pending` (o dreno de texto fixo)
 --   pausa_de_canal    = janela `scheduled`/`running` já começada

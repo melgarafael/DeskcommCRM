@@ -30,7 +30,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { recursoLigado } from "@/lib/cron/recursos-ligados";
+import { invalidarRecursosLigados, recursoLigado } from "@/lib/cron/recursos-ligados";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest, type TickSummary } from "@/lib/followup/engine";
@@ -108,6 +108,22 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
+  // ─── QUEM CRIA TRABALHO AVISA (#3694) ──────────────────────────────────────
+  //
+  // A leitura dos recursos vale 45 s. Para o que NASCE FORA deste processo
+  // (gatilho no banco, `agent-worker` em outro contêiner) o atraso é o preço
+  // declarado do cache — no máximo um tique, porque o cron é de minuto. Para o
+  // que nasce AQUI, não: esta mesma batida inscreve contatos (varredura de
+  // silêncio) e enfileira `followup_turn` (tick), e a batida seguinte tem de
+  // enxergar isso na hora. Sem a invalidação, o cache responde o retrato de
+  // ANTES do trabalho que esta rota acabou de criar — e o motor fica parado o
+  // resto da janela, que é exatamente "sair cedo atrasando trabalho real".
+  //
+  // Medido no e2e `followup-journey.spec.ts`: o enrollment nascia na varredura e
+  // os POSTs seguintes (mais rápidos que os 45 s) liam `followup: false` do
+  // cache e devolviam 200 sem reclamar a inscrição.
+  let houveMovimento = Boolean(summary.claimed || summary.advanced || summary.scheduled);
+
   // Só audita tick que MEXEU em alguma coisa. Auditar toda batida enchia o
   // api_audit_log — que é append-only e tem retenção de 5 anos — de linhas
   // vazias: numa instalação parada, medido nesta VPS, 95% das entradas eram
@@ -156,6 +172,7 @@ async function handle(req: NextRequest): Promise<Response> {
       // enrollment concluído, o mesmo anti-padrão que este arquivo já existe
       // para evitar (ver "Audit log" no CLAUDE.md, o histórico do
       // routing-worker/attendant-heartbeat).
+      if (sweepSummary.enrolled) houveMovimento = true;
       if (sweepSummary.enrolled || sweepSummary.pointers_gated_out || sweepSummary.skipped_existing) {
         void audit({
           action: "followup.silence_sweep_run",
@@ -203,6 +220,11 @@ async function handle(req: NextRequest): Promise<Response> {
       logger.error("[followup-flow-worker.cron] enviarTextoFixoPendente threw", { error: detail, requestId });
     }
   }
+
+  // A invalidação vem DEPOIS do dreno de propósito: a batida seguinte relê os
+  // recursos (esta criou `followup_turn`, que liga `fila_followup`) e já entra
+  // no tick sem esperar a janela vencer.
+  if (houveMovimento) invalidarRecursosLigados();
 
   return ok(
     {

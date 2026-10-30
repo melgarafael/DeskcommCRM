@@ -64,6 +64,34 @@ describe("fn_cron_recursos_ligados: banco e TypeScript com o mesmo vocabulário"
   });
 });
 
+describe("a sonda do follow-up casa com o claim que ela substitui", () => {
+  it("os dois filtram (ou não) o status da organização juntos", () => {
+    // A falha SILENCIOSA da peça inteira mora aqui: sonda mais ESTREITA que o
+    // claim para de reclamar inscrição vencida sem dizer nada (a rota devolve
+    // 200). Mais LARGA é inofensiva — só paga a consulta que já se pagava.
+    // Hoje o claim de `fn_claim_due_followup_enrollments` exige organização
+    // operante (0501), e a sonda acompanha. Se um dos dois mudar sozinho, este
+    // caso acusa antes de a produção parar.
+    const inicio = baseline.lastIndexOf("create or replace function fn_claim_due_followup_enrollments");
+    expect(inicio).toBeGreaterThan(0);
+    const claim = baseline.slice(inicio, baseline.indexOf("$$;", inicio));
+    const sonda = migration.slice(migration.indexOf("'followup', exists"), migration.indexOf("'followup_silencio'"));
+
+    const claimFiltraOrg = /organizations/.test(claim);
+    const sondaFiltraOrg = /organizations/.test(sonda);
+    expect(sondaFiltraOrg, "sonda e claim discordam sobre a organização operante").toBe(claimFiltraOrg);
+
+    // E a parte que os dois têm em comum: status vivo, vencido e sem lease.
+    // Comparados sem espaço: o claim escreve a lista colada (`'active','waiting_reply'`)
+    // e a sonda escreve com espaço — a régua é o CONJUNTO, não a diagramação.
+    const semEspaco = (texto: string) => texto.replace(/\s+/g, "");
+    for (const condicao of ["'active','waiting_reply','dormente'", "next_eval_at<=now()", "claimed_until"]) {
+      expect(semEspaco(claim)).toContain(condicao);
+      expect(semEspaco(sonda)).toContain(condicao);
+    }
+  });
+});
+
 describe("migration x baseline.sql: o kit self-host recebe a MESMA função", () => {
   it("o apêndice do baseline traz o corpo idêntico ao da migration", () => {
     const noBaseline = baseline.lastIndexOf(ASSINATURA);

@@ -30,13 +30,20 @@
  * ─── Custo de perceber o recurso ligado ─────────────────────────────────────
  *
  * `VALIDADE_MS` = 45 s, dentro da faixa que a issue pede (30–60 s): um recurso
- * que liga é percebido no máximo um tique depois (o cron é de minuto). Para o
- * caminho em que a espera aparece na cara de quem clicou — o botão "Iniciar"
- * da campanha —, o evento INVALIDA a leitura (`invalidarRecursosLigados()` em
- * `app/api/v1/campaigns/[id]/[acao]/route.ts`), e o tique seguinte já vê a
- * campanha nova. Os demais recursos ligam por caminho que este processo não
- * vê (trigger do banco no follow-up, worker em outro contêiner na fila); para
- * eles o teto é o TTL, que é curto de propósito.
+ * que liga é percebido no máximo um tique depois (o cron é de minuto). Para os
+ * caminhos em que a espera apareceria na cara de quem agiu, o evento INVALIDA a
+ * leitura (`invalidarRecursosLigados()`):
+ *
+ *   - o botão "Iniciar"/"Agendar" da campanha
+ *     (`app/api/v1/campaigns/[id]/[acao]/route.ts`);
+ *   - a inscrição manual num fluxo de follow-up (`lib/followup/enroll.ts`);
+ *   - a própria rota do follow-up, quando o tick reclamou/avançou ou a varredura
+ *     de silêncio inscreveu alguém — o trabalho que ELA criou não pode ficar
+ *     invisível para a batida seguinte.
+ *
+ * Os demais recursos ligam por caminho que este processo não vê (trigger do
+ * banco no follow-up, worker em outro contêiner na fila); para eles o teto é o
+ * TTL, que é curto de propósito.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 

@@ -13,6 +13,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runFollowupTick, createSupabaseAdminClient } from "@/lib/followup/engine";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
+import { esquecerLeituraDosRecursos } from "@/lib/cron/recursos-ligados";
 
 vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: "dev-secret", INTERNAL_CRON_SECRET: "" } }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
@@ -36,6 +37,9 @@ function req(headers: Record<string, string> = {}): NextRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // A leitura dos recursos é memoizada no processo (#3694): sem esquecer entre
+  // casos, um teste herdaria o retrato do anterior.
+  esquecerLeituraDosRecursos();
 });
 
 describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
@@ -64,8 +68,18 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     const { POST } = await import("@/app/api/v1/cron/followup-flow-worker/route");
     const res = await POST(req({ authorization: "Bearer dev-secret" }));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: typeof summary & { confirmation_sweep: unknown } };
-    expect(body.data).toEqual({ ...summary, confirmation_sweep: { ok: true, avisos: 0 } });
+    const body = (await res.json()) as {
+      data: typeof summary & { confirmation_sweep: unknown; recursos: Record<string, boolean> };
+    };
+    // `recursos` (#3694) diz se o gate deixou o tick rodar. O dublê de `rpc`
+    // desta suíte devolve `{ data: 0 }`, que não é o `jsonb` do contrato — e
+    // corpo fora do contrato vale LIGADO de propósito (fail-open): o gate nunca
+    // é o motivo de um recurso parar em silêncio.
+    expect(body.data).toEqual({
+      ...summary,
+      confirmation_sweep: { ok: true, avisos: 0 },
+      recursos: { followup: true, followup_silencio: true, fila_followup: true },
+    });
     expect(vi.mocked(createSupabaseAdminClient)).toHaveBeenCalledWith(expect.anything());
     expect(vi.mocked(createAdminClient)).toHaveBeenCalled();
     expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
@@ -139,7 +153,11 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
       expect(vi.mocked(runFollowupTick)).toHaveBeenCalledTimes(1);
       expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
       const body = (await res.json()) as { data: Record<string, unknown> };
-      expect(body.data).toEqual({ ...summary, confirmation_sweep: { ok: false, erro } });
+      expect(body.data).toEqual({
+        ...summary,
+        confirmation_sweep: { ok: false, erro },
+        recursos: { followup: true, followup_silencio: true, fila_followup: true },
+      });
       expect(logErro).toHaveBeenCalledWith(
         expect.stringContaining("fn_appointment_confirmation_sweep"),
         expect.objectContaining({ error: erro }),
