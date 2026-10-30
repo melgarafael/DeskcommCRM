@@ -188,6 +188,7 @@ import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
 import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import {
+  gatilhoDaAtivacao,
   latestInboundSignal,
   recentInboundSignal,
   loadSkills,
@@ -3585,8 +3586,14 @@ async function executarTurnoDoAgente(
   if (!preview) {
     try {
       const rows: Array<[string, string | null, string]> = [
+        // Entrou pela ETIQUETA → `tag`; pela palavra → `hard`, como sempre (spec 27, fatia 4).
         ...skillMatch.matched.map(
-          (s) => [s.name, s.versionId, 'hard'] as [string, string | null, string],
+          (s) =>
+            [s.name, s.versionId, gatilhoDaAtivacao(skillMatch.motivos.get(s))] as [
+              string,
+              string | null,
+              string,
+            ],
         ),
         ...skillMatch.missCandidates.map(
           (m) => [m.skill, null, 'probe'] as [string, string | null, string],

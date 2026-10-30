@@ -43,6 +43,11 @@ export interface TurnPreview {
   /** Null means a scenario, never a synthetic identifier passed to SQL. */
   contactId: string | null;
   channelId: string | null;
+  /**
+   * Etiquetas SIMULADAS da conversa (spec 27, fatia 3): o Testar as passa ao matcher de skills
+   * no lugar das etiquetas reais, que a prévia não tem. Ausente = nenhuma.
+   */
+  tags?: string[];
   gateContext?: GateContext;
   result: PreviewResult;
 }

@@ -26,6 +26,7 @@ import {
 import {
   activateCampaign,
   adjustPace,
+  adjustTags,
   configureCredential,
   createSearch,
   descartarDesmarcadas,
@@ -218,6 +219,11 @@ export async function POST(req: NextRequest) {
       });
       result = next;
       // O histórico precisa dizer DE QUANTO PARA QUANTO — só o nome da ação não diz.
+      auditMetadata = { operation: body.action, previous, next };
+    } else if (body.action === "adjust_tags") {
+      // Mesma régua do ritmo (spec 27): só campanha pausada, e a auditoria diz de quanto para quanto.
+      const { previous, next } = await adjustTags(pool, org, body.id, body.contact_tags);
+      result = next;
       auditMetadata = { operation: body.action, previous, next };
     } else if (body.action === "select") {
       result = await withProspectingLock(pool, org, async (db) => {

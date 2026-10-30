@@ -133,6 +133,8 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
   const [message, setMessage] = React.useState("");
   const [contactName, setContactName] = React.useState("");
   const [contactPhone, setContactPhone] = React.useState("");
+  // Etiquetas SIMULADAS da conversa (spec 27): texto separado por vírgula; o servidor normaliza.
+  const [contactTags, setContactTags] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
 
@@ -165,6 +167,11 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           ...(contactPhone.trim() ? { phone: contactPhone.trim() } : {}),
         };
       }
+      const etiquetasSimuladas = contactTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag !== "");
+      if (etiquetasSimuladas.length) body.sample_tags = etiquetasSimuladas;
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
@@ -251,6 +258,22 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
               disabled={pending || readOnly}
             />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="test-tags">{t("Etiquetas da conversa (simulação)")}</Label>
+          <Input
+            id="test-tags"
+            value={contactTags}
+            onChange={(e) => setContactTags(e.target.value)}
+            placeholder={t("Ex.: estetica, vip")}
+            disabled={pending || readOnly}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Separe por vírgula. As skills com estas etiquetas entram neste teste, como entrariam numa conversa com elas.",
+            )}
+          </p>
         </div>
 
         <Button onClick={handleRun} disabled={pending || readOnly} className="self-start">

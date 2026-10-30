@@ -88,6 +88,8 @@ A opção de parar de receber ("responda PARAR") é oferecida na **primeira mens
 
 **Ajustar o ritmo depois de iniciada.** Com a campanha **pausada**, o administrador troca o limite por dia (1 a 50) e o intervalo (5 a 1440 minutos) em **Editar ritmo**, ao lado de **Retomar fila**; a ação é `adjust_pace` em `POST /api/v1/prospecting` (issue #2095). O valor novo vale a partir do próximo envio. Só esses dois campos mudam: conexão, agente, funil, base legal e instrução da campanha seguem fixos depois de iniciada. A mudança entra em `api_audit_log` com o ritmo anterior e o novo.
 
+**Etiquetas do contato na abordagem (spec 27).** O passo de configuração tem **Etiquetas do contato**, pré-preenchido com o nicho da busca (até 5). Ao abordar uma empresa, a campanha grava essas etiquetas no contato antes da primeira mensagem, pela mesma junção da ação `add_tag`, e anuncia `contact.tag_added` quando alguma é nova. Assim, a skill com `any_tags` entra desde a primeira resposta. Falha ao gravar a etiqueta não derruba a abordagem: vai para o log e a empresa segue. Campanha sem a chave na configuração não grava nada. A troca depois de iniciada é a ação `adjust_tags` em `POST /api/v1/prospecting`, só com a campanha pausada, fechada ao token e auditada com a lista anterior e a nova; ela vale para os contatos criados dali em diante, e ainda não tem tela.
+
 ## Operação e recuperação
 
 - Scheduler chama `/api/v1/cron/prospecting` a cada minuto, com segredo interno. Atualize a imagem do scheduler junto da aplicação. Em desenvolvimento, `pnpm dev:crons` inclui a mesma rota.

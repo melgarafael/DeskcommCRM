@@ -69719,3 +69719,10 @@ begin
   end if;
 end;
 $recibos_9018$;
+
+-- ---- skill ativada pela etiqueta: trigger 'tag' (migration 0794) ----
+alter table skill_activations
+  drop constraint if exists skill_activations_trigger_check;
+
+alter table skill_activations
+  add constraint skill_activations_trigger_check check (trigger in ('hard', 'probe', 'tag'));

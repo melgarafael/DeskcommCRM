@@ -237,11 +237,28 @@ export interface SkillMissCandidate {
   reason: 'probe_matched_without_hard_match';
 }
 
+/**
+ * Por onde a skill entrou no turno (spec 27, fatia 4): pela palavra da mensagem (`any_keywords`)
+ * ou pela etiqueta da conversa/contato/negócio (`any_tags`). Quando os dois casam, vale `etiqueta`.
+ */
+export type MotivoDoMatch = 'palavra' | 'etiqueta';
+
+/**
+ * O valor que `skill_activations.trigger` grava para um match: `tag` quando entrou pela etiqueta
+ * (CHECK da migration 0794), `hard` quando entrou pela palavra — como sempre. Sem motivo (skill
+ * que não casou) cai em `hard`, que é o valor de antes.
+ */
+export function gatilhoDaAtivacao(motivo: MotivoDoMatch | undefined): 'hard' | 'tag' {
+  return motivo === 'etiqueta' ? 'tag' : 'hard';
+}
+
 export interface SkillMatchResult {
   /** skills com hard-match — os corpos que serão injetados no turno. */
   matched: LoadedSkill[];
   /** near-misses: probe disparou sem hard-match — candidatos ao golden set. */
   missCandidates: SkillMissCandidate[];
+  /** O motivo de cada skill de `matched`. Aditivo: quem lê só `matched` não muda. */
+  motivos: ReadonlyMap<LoadedSkill, MotivoDoMatch>;
 }
 
 /**
@@ -266,16 +283,19 @@ export function matchSkills(
   const etiquetas = new Set(tags.map((t) => normalize(t.trim())).filter((t) => t !== ''));
   const matched: LoadedSkill[] = [];
   const missCandidates: SkillMissCandidate[] = [];
+  const motivos = new Map<LoadedSkill, MotivoDoMatch>();
   const hit = (keywords: readonly string[]): boolean => keywords.some((k) => norm.includes(normalize(k)));
   for (const skill of skills) {
     const porEtiqueta = (skill.matcher.any_tags ?? []).some((t) => etiquetas.has(normalize(t.trim())));
     if (porEtiqueta || (temTexto && hit(skill.matcher.any_keywords))) {
       matched.push(skill);
+      // Etiqueta vence palavra quando os dois casam: é a telemetria que separa o `tag` do `hard`.
+      motivos.set(skill, porEtiqueta ? 'etiqueta' : 'palavra');
     } else if (temTexto && skill.matcher.probe_keywords !== undefined && hit(skill.matcher.probe_keywords)) {
       missCandidates.push({ skill: skill.name, reason: 'probe_matched_without_hard_match' });
     }
   }
-  return { matched, missCandidates };
+  return { matched, missCandidates, motivos };
 }
 
 /**

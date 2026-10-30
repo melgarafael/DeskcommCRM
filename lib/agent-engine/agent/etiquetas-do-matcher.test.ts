@@ -69,4 +69,40 @@ describe('etiquetasParaOMatcher', () => {
     expect(log.warn).toHaveBeenCalledTimes(1);
     expect(log.warn.mock.calls[0]?.[1]).toEqual({ erro: 'conexão caiu' });
   });
+
+  // ─── Spec 27, fatia 2: a etiqueta do NEGÓCIO também ativa a skill ───────────────────────
+  const sqlDaConsulta = async (): Promise<string> => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ tags: ['odonto'] }] });
+    await etiquetasParaOMatcher(poolCom(query), 'org-1', 'conv-1', comEtiqueta, undefined, logFalso());
+    return (query.mock.calls[0] as [string, unknown[]])[0];
+  };
+
+  it('(e) lê os negócios do CONTATO DA CONVERSA, e só os da mesma organização da conversa', async () => {
+    const sql = await sqlDaConsulta();
+    expect(sql).toContain('from crm_leads l');
+    expect(sql).toContain('l.contact_id = cv.contact_id');
+    // Duas subconsultas de negócio (os abertos e o mais recente): as duas filtram a organização.
+    expect(sql.match(/l\.organization_id = cv\.organization_id/g)).toHaveLength(2);
+    // A subconsulta de "já existe aberto" também filtra a organização: negócio de outra org não a apaga.
+    expect(sql.match(/a\.organization_id = cv\.organization_id/g)).toHaveLength(1);
+  });
+
+  it('(f) negócio ABERTO tem prioridade; sem aberto, o mais recente', async () => {
+    const sql = await sqlDaConsulta();
+    expect(sql).toContain("l.status = 'open'");
+    expect(sql).toContain('not exists');
+    expect(sql).toContain('order by l.created_at desc');
+    expect(sql).toContain('limit 1');
+  });
+
+  it('(g) a consulta final segue filtrada pela organização da conversa, nunca pelo corpo do pedido', async () => {
+    const sql = await sqlDaConsulta();
+    expect(sql).toContain('where cv.organization_id = $1 and cv.id = $2');
+  });
+
+  it('(h) soma as etiquetas da conversa, do contato e do negócio que a consulta devolve', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ tags: ['odonto', 'vip', 'lead-quente'] }] });
+    const out = await etiquetasParaOMatcher(poolCom(query), 'org-1', 'conv-1', comEtiqueta, undefined, logFalso());
+    expect(out).toEqual(['odonto', 'vip', 'lead-quente']);
+  });
 });
