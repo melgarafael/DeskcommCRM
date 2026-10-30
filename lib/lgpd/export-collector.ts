@@ -43,6 +43,17 @@ export interface ContactSnapshot {
    * Brasil o arquivo fica guardado sem ser enviado, e o PDF não lê este campo.
    */
   address_book_name: string | null;
+  /**
+   * Endereço da pessoa física (issue #3494). A anonimização o apaga
+   * (`trg_contato_anonimizado_esquece_o_endereco`), então o titular o recebe.
+   */
+  zip_code: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
   email: string | null;
   phone_number: string | null;
   cpf_present: boolean;
@@ -1155,7 +1166,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, address_book_name, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
+        "id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -1210,6 +1221,13 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         name: data.name ?? null,
         display_name: data.display_name ?? null,
         address_book_name: data.address_book_name ?? null,
+        zip_code: data.zip_code ?? null,
+        street: data.street ?? null,
+        number: data.number ?? null,
+        complement: data.complement ?? null,
+        district: data.district ?? null,
+        city: data.city ?? null,
+        state: data.state ?? null,
         email: data.email ?? null,
         phone_number: data.phone_number ?? null,
         cpf_present: Boolean(data.cpf_encrypted),

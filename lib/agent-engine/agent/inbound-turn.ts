@@ -2247,6 +2247,7 @@ async function executarTurnoDoAgente(
   // horas por dia em que um PR reprova por causa do relógio de parede.
   const clock = deps.clock ?? ((): Date => new Date());
   const inicioDoProcessamento = performance.now();
+  let duracaoDosClassificadoresMs = 0;
   const contextKnobs = {
     historyLimit: deps.knobs.historyLimit,
     maxTokens: deps.knobs.maxContextTokens,
@@ -5168,6 +5169,7 @@ async function executarTurnoDoAgente(
       manipulacaoLigada,
       ultimaMensagemDoCliente: skillSignal,
     });
+    const inicioDosClassificadores = performance.now();
     const [stageResultado, jailbreakVerdict, manipulacaoDoJev] = await Promise.all([
       deps.knobs.stageClassifier !== undefined && vaiClassificar.estagio
         ? classifyStage(
@@ -5210,6 +5212,7 @@ async function executarTurnoDoAgente(
       await gravarOJev(await perguntaAoJev, null, 'none');
       throw err;
     });
+    duracaoDosClassificadoresMs = Math.round(performance.now() - inicioDosClassificadores);
 
     stageSuggestion = stageResultado;
     if (stageSuggestion !== null) {
@@ -6166,6 +6169,8 @@ async function executarTurnoDoAgente(
       kind: liveJob().kind,
       messages_sent: outcomes.length,
       model: turn.model,
+      duracao_do_turno_ms: Math.round(performance.now() - inicioDoProcessamento),
+      classificadores_ms: duracaoDosClassificadoresMs,
     });
   } finally {
     // Turno que terminou sem enviar (veto, handoff, erro) também para de renovar.

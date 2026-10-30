@@ -49,7 +49,7 @@ import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+  "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
 
 interface CursorPayload {
   sort: string | null;
@@ -638,6 +638,13 @@ export async function createContactHandler(
     created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     name: input.name ?? null,
     display_name: input.display_name ?? null,
+    zip_code: input.zip_code ?? null,
+    street: input.street ?? null,
+    number: input.number ?? null,
+    complement: input.complement ?? null,
+    district: input.district ?? null,
+    city: input.city ?? null,
+    state: input.state ?? null,
     email: input.email ?? null,
     phone_number: input.phone_number ? canonicalPhoneBR(input.phone_number) : null,
     birthdate: input.birthdate ?? null,
@@ -801,6 +808,13 @@ export async function patchContactHandler(
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.display_name !== undefined) patch.display_name = input.display_name;
+  if (input.zip_code !== undefined) patch.zip_code = input.zip_code;
+  if (input.street !== undefined) patch.street = input.street;
+  if (input.number !== undefined) patch.number = input.number;
+  if (input.complement !== undefined) patch.complement = input.complement;
+  if (input.district !== undefined) patch.district = input.district;
+  if (input.city !== undefined) patch.city = input.city;
+  if (input.state !== undefined) patch.state = input.state;
   // `email_normalized` NÃO entra no patch — é `GENERATED ALWAYS AS
   // (lower(trim(email))) STORED` (baseline.sql:1349), e o Postgres RECUSA
   // qualquer atribuição a coluna gerada (SQLSTATE 428C9), abortando o UPDATE

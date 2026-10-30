@@ -35,6 +35,12 @@ export function ReplyReviewPanel({
   // A causa do veto, em linguagem de quem opera (issue #2975): sem código
   // conhecido, a frase genérica de sempre continua sendo a verdade.
   const motivo = draft ? motivoDoVeto(draft.error_code) : null;
+  // Pendente COM texto e COM código de veto de envio (doc de decisão 234): a
+  // prévia barrou uma versão anterior e a sugestão oferecida veio depois. Só os
+  // vetos de envio têm `causa`; paradas e `unknown_preview_tool` não barram
+  // versão nenhuma. O aviso não diz que ESTE texto é a reescrita: o rascunho
+  // grava só `impediments[0]`, e a barrada pode ter sido outra mensagem.
+  const barrada = draft?.status === "pending" && draft.original_body?.trim() ? motivo : null;
   async function generate() {
     setNotice(null);
     setBusy(true);
@@ -120,6 +126,14 @@ export function ReplyReviewPanel({
               "Aprovar envia somente este texto. Não altera dados, agenda ou a autonomia do agente.",
             )}
           </p>
+          {barrada?.causa && (
+            <p className="text-xs text-muted-foreground">
+              {t("Uma versão anterior desta sugestão foi barrada: {causa}. Confira antes de enviar.").replace(
+                "{causa}",
+                t(barrada.causa),
+              )}
+            </p>
+          )}
           {body && (
             <Textarea
               aria-label={t("Resposta sugerida")}

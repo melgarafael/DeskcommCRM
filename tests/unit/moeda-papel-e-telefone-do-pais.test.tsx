@@ -236,10 +236,7 @@ describe("3. o exemplo de telefone é do país da organização", () => {
   it("nenhuma tela escreve um telefone de exemplo em duro", () => {
     const RAIZ = join(__dirname, "..", "..");
     // Cada exceção com o motivo. SÓ ENCOLHE.
-    const EXCECOES: Record<string, string> = {
-      "components/connections/TemplatesParceiroClient.tsx":
-        "« +595… » no botão de telefone dos modelos do parceiro do Paraguai: o parceiro opera lá, o número do botão é dele",
-    };
+    const EXCECOES: Record<string, string> = {};
     const achados: string[] = [];
     const visita = (dir: string) => {
       for (const nome of readdirSync(dir)) {

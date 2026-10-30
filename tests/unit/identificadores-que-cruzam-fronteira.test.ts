@@ -182,7 +182,12 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // ASSINATURA dos bytes, nunca pelo content-type que o cliente diz.
   { arquivo: "app/api/v1/message-templates/[id]/midias/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/cron/contact-avatars/route.ts", fronteira: "storage.chave-de-objeto" },
-  { arquivo: "app/api/v1/channels/partner/templates/media/route.ts", fronteira: "storage.chave-de-objeto" },
+  // #3635: o upload do cabeçalho saiu da rota do parceiro para `lib/` quando o
+  // canal oficial direto passou a gerenciar modelo pela tela — a lógica é a
+  // mesma, e as duas rotas (`partner/templates/media` e `templates/media`) são só
+  // o handler. A chave é a de antes: `{org}/templates/{uuid}.{jpg|png}`, com a
+  // extensão vinda da ASSINATURA dos bytes.
+  { arquivo: "lib/channels/templates-midia.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/settings/sons/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/marca/logo/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/conversations/[id]/media/route.ts", fronteira: "storage.chave-de-objeto" },
