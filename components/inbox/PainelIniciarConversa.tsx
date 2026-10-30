@@ -64,13 +64,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
-import { ApiError } from "@/lib/api/types";
-import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { normalizePhoneBR, phoneForDisplay, samePhone } from "@/lib/channels/phone-variants";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { assumirConversaAoAbrir } from "@/lib/inbox/assumir-conversa-ao-abrir";
 import { ChatCircle, UserCircle, Users } from "@/lib/ui/icons";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
-import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { useContactList } from "@/hooks/contacts/useContactList";
 import { useT } from "@/hooks/i18n/useT";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
@@ -313,37 +311,15 @@ export function IniciarConversaDialog({
        * `useContinuarPorOutroNumero`). Recusa (409) significa que a conversa
        * reaberta já tinha dono: aí não se rouba atendimento de ninguém, e a
        * conversa segue aberta na tela.
+       *
+       * A chamada mora em `lib/inbox/assumir-conversa-ao-abrir` desde a #3483:
+       * o cadastro de contato e de negócio pedem o MESMO claim depois de
+       * salvar, e duas cópias divergiriam no dia em que a regra ganhasse um
+       * detalhe. Os desfechos são os de antes — `true` = a conversa é sua;
+       * `false` = sem dono seu, e a primeira mensagem não sai: não se fala na
+       * conversa de outro atendente, nem numa que a IA ainda atende.
        */
-      let assumiu = true;
-      try {
-        await apiClient.post(`/api/v1/conversations/${conversationId}/claim`, {
-          expected_assignee: null,
-        });
-      } catch (err) {
-        // Só o 409 é "já tinha dono" — e o dono pode ser você (a conversa
-        // fechada reabre com o dono antigo). Qualquer outra recusa (papel,
-        // servidor, rede) deixa a conversa SEM dono e com o bot ligado. Nos
-        // dois casos sem dono seu, a primeira mensagem não sai: não se fala
-        // na conversa de outro atendente, nem numa que a IA ainda atende.
-        // Mesma régua de `useContinuarPorOutroNumero`.
-        if (!(err instanceof ApiError && err.status === 409)) {
-          assumiu = false;
-          showApiError(err);
-        } else {
-          const conversa = await apiClient
-            .get<{ data: ConversationWithContact }>(`/api/v1/conversations/${conversationId}`)
-            .then((r) => r.data)
-            .catch(() => null);
-          assumiu = conversa?.assigned_to_user_id === user.id;
-          if (!assumiu) {
-            toast.info(
-              `${t("A conversa neste número está com")} ${
-                conversa?.assigned_to_user_name ?? t("outro atendente")
-              }.`,
-            );
-          }
-        }
-      }
+      const assumiu = await assumirConversaAoAbrir(conversationId, { userId: user.id, t });
 
       const texto = primeiraMensagem.current.trim();
       if (texto && assumiu) {

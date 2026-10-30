@@ -21,7 +21,8 @@ import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
 import { RetomarComoNovoNegocioDialog } from "./RetomarComoNovoNegocioDialog";
-import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { atalhosDoFunil } from "@/lib/leads/atalhos-do-card";
+import { camposPorEscopo, camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -400,6 +401,9 @@ export function KanbanBoard({
           ownerNames={ownerNames}
           etapas={data.stages}
           onMudarEtapa={(stageId) => aoMoverPelaLista(leadDoDossie, stageId)}
+          // Os atalhos do card (#3487) saem do `settings` do funil que este
+          // quadro já carregou — nenhuma chamada nova.
+          atalhos={atalhosDoFunil(data.pipeline.settings ?? null)}
         />
       )}
 

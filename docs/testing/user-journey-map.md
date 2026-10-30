@@ -10,6 +10,8 @@
 
 ## Convenções
 
+Atendimento conjunto (#2542/#2848): a repetição com gestor, convidada, colega sem convite e viewer está **pendente**, junto da organização vizinha e da remoção/reentrada entre sessões abertas. Escopo, controles e limites medidos em [atendimento-conjunto-2848.md](atendimento-conjunto-2848.md); ainda não é prova visual verde.
+
 - `[P0]` primeira impressão — bug aqui é vergonha pública; prioridade máxima.
 - `[P1]` rotina diária do operador/atendente.
 - `[P2]` exploração/edge.
@@ -271,7 +273,7 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 |---|------|-------------|
 | J5.1 | Admin convida atendente pela UI (sem Resend) | UI diz a verdade + accept_url copiável |
 | J5.2 | Convidado abre link, cria sessão, aceita | vira membro agent, cai no inbox |
-| J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática; a autorização dos anexos e da reprodução AAC também é conferida pela rota real em `tests/e2e/inbox-scope.spec.ts`, com recursos sintéticos de duas organizações. **Cobertura preparada; execução real pendente no CI.** O teste de rota com Storage dublê está em `tests/unit/midia-da-mensagem-isolamento.test.ts` |
+| J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática; a leitura de mídia também é exercitada pela rota real em `tests/e2e/inbox-scope.spec.ts`, com recursos sintéticos. **Execução confirmada:** [CI de 2026-10-26, parte 1](https://github.com/melgarafael/DeskcommCRM/actions/runs/40415056701/job/121895249691), caso de mídia em 5,5s, sem repetição. O teste de rota com Storage dublê está em `tests/unit/midia-da-mensagem-isolamento.test.ts` |
 | J5.4 | Atendente dá claim numa conversa da fila | claim ok; 2º atendente levando 409 amigável |
 | J5.5 | Transferir conversa pra colega | imediata, contador de não-lidas zera pro novo dono |
 | J5.6 | Atendente tenta ver billing/api-tokens | 403 página amigável |
@@ -713,6 +715,7 @@ num job que já leva meia hora.
 | J12.8 | O push sai pelo funil, e no modo oculto sem corpo nem ícone | `lib/notifications/web_push.test.ts`, `tests/unit/push-sai-so-pelo-funil.test.ts` | PASS (unit) |
 | J12.9 | Sair, desligar os alertas e «Sair de todos os dispositivos» encerram o push; «Sair» desconecta TODOS os aparelhos (o `signOut()` do auth-js é `global`) e por isso apaga as inscrições de todos eles — achado da prova pela tela do #3113: só a do aparelho que saiu era apagada; com o push de mensagem desligado, os outros pushes aparecem desligados e travados, e o aparelho não volta a se inscrever | `lib/notifications/push_client.test.ts`, `app/app/settings/notifications/_client.test.tsx`, `hooks/auth/AuthProvider.signOut.test.tsx`, `app/actions/settings/signOutEverywhere.test.ts`, `app/actions/auth/signOut.test.ts`; sem e2e (o CI não tem VAPID, não há inscrição) | PASS (unit) |
 | J12.10 | Recarregar Configurações › Notificações com a permissão do navegador concedida deixa os interruptores de Push usáveis; com ela negada, o aviso de bloqueio aparece sem erro de hidratação — achado da prova pela tela do #3113: o snapshot de servidor da permissão era o valor real, e os seis ficavam `disabled` para sempre (e #418 a cada carga com permissão negada) | `app/app/settings/notifications/_client.hidratacao.test.tsx` (HTML do servidor + `hydrateRoot`) | PASS (unit) |
+| J12.11 | A tela de atualização distingue retrato recente, retrato antigo e agente offline; uma versão nova já anunciada permanece disponível | `tests/e2e/system-update.spec.ts`, caso «retrato antigo informa a última conferência sem antecipar o comando manual»; login e API reais, idade preparada somente na fixture, screenshots anexadas | PREPARADO — execução real pendente no CI; [contrato e limites](atualizacao-retrato-host.md) |
 
 **Por que J12.5 não é `e2e`, medido e não suposto.** Ela nasceu como asserção
 `toBeEnabled()` na spec, e não podia viver lá. Medido no Chromium do Playwright,
@@ -3445,6 +3448,10 @@ Cobertura: inbox-enrichment-route.test.ts e inbox-demandas-abertas.test.tsx.
 ### Auditoria do site na fila (spec 24) `[P1]`
 
 Candidatos com `data.site` exibem veredito, raio-X, estratégia e score na fila de Prospecção e no painel do Inbox; a fila ordena por score; reanálise e prévia por candidato. Cobertura: `tests/e2e/prospeccao-auditoria-do-site.spec.ts` (valores exatos: veredito, motivo, KPI médio, reordenação) + unit de classificação/estratégia/score com sabotagem. Reanálise (fetch real) e prévia (LLM) fora do e2e de propósito. Evidência: `evidence/prospeccao-auditoria-do-site/fila-com-auditoria.png`.
+
+### Prospecção a partir da própria planilha (spec 30) `[P1]`
+
+No cartão "1. Encontrar empresas", a aba "Usar minha planilha" recebe um `.csv` ou `.xlsx` (primeira aba, até 500 empresas, colunas obrigatórias: nome da empresa e telefone), pede o nome da campanha, o público e "De onde veio esta lista?" e cria uma campanha em rascunho, sem busca paga e sem chave de provedor. A tela mostra o resumo ("N linhas · X entraram · Y já estavam na base ou foram excluídas a pedido do titular · Z recusadas") e a lista das recusadas com o número da linha e o motivo; a campanha aparece em "Suas campanhas" com o rótulo "Planilha". Quem já é contato do CRM não é abordado, e reenviar o mesmo arquivo não duplica. Cobertura: `tests/e2e/prospeccao-por-planilha.spec.ts` (5 linhas: 3 entram, 1 sem telefone, 1 repetida), unit de leitura/rota e invariante de isolamento e supressão (`tests/invariants/prospeccao-planilha-isolamento-e-supressao.test.ts`). Evidência: o relatório do Playwright no CI do PR. Mapa: prospeccao-nativa.
 ## J28 — Uma pessoa assume uma conversa que a IA passou `[P0]` (2026-09-18)
 
 **Por que P0:** é a jornada em que o cliente mais sente a diferença entre um CRM com IA e
@@ -3976,3 +3983,164 @@ Realtime perdia o toast; ausência de botão durante reload ainda vazio não pro
 estado. O runner foi corrigido e as tentativas/capturas antigas foram conservadas
 com esses limites. O manager original não foi promovido, os guards do produto
 não foram alterados e os recursos exclusivos foram removidos ao fim.
+
+
+## Preferências e textos da operação — resgate #3402/#3405/#3458
+
+Estado: a primeira execução real do CI encontrou quatro falhas nas jornadas
+novas. As fixtures e o loader foram corrigidos; a nova execução ainda está
+pendente. Testes dirigidos e coleção do Playwright não são prova de UX. Contratos, consumidores
+compartilhados, transporte sintético e limites em
+[antigos-core-3402-3405-3458.md](antigos-core-3402-3405-3458.md).
+
+| Origem | Jornada preparada | Evidência a recolher |
+| --- | --- | --- |
+| #3402 | Número e Não lidos por organização, recarga, A/B/A, removido e armazenamento bloqueado | `inbox-busca-e-filtros-dizem-a-verdade.spec.ts`; PNG em `evidence/antigos-core-3402/` |
+| #3405 | Resposta rápida criada pela tela e texto recebido por HTTP; campanha prepara reserva e nome no snapshot real | `qa-l12-inbox.spec.ts` e `campanha-com-modelo-aprovado.spec.ts`; PNG em `evidence/antigos-core-3405/` |
+| #3458 | Par handler/ferramenta com resposta LLM sintética, SQL real e o card após genérica, concreta, preservação e null | `qa-l12-funil.spec.ts`; PNG em `evidence/antigos-core-3458/` |
+
+## Lote de correções de acesso, documento e atendimento (2026-10-26)
+
+**Preparado; NÃO EXECUTADO neste lote no navegador nem em Postgres local.**
+Os specs existentes no CI usam usuários sintéticos, app e banco reais. O CI
+publica a evidência nova em `evidence/lote-bugfixes-01a178b3/` somente se a parte
+passar. Este documento não afirma que capturas já existam.
+
+| Jornada | Instrumento preparado |
+|---|---|
+| Rascunho preservado, apagar religa, `/` substitui e recurso com imagem abre prévia sem enviar | `inbox-responder-citando.spec.ts`, upload real no Storage e contagem de mensagens |
+| CPF inválido após blur, corrigir e criar; vazio opcional; organização PT confere NIF em vez de CPF | `contato-salva-email.spec.ts`, cliques reais e POST do formulário |
+| Dois CNPJs informados inválidos não criam empresas, pessoas ou contatos de mesmo nome | `importar-leads-planilha.spec.ts`, API multipart real, lote/linhas e tabelas relidas |
+| Em Só os seus, abrir conversa livre assume; repetir abertura e dois claims 409 não repetem auditoria, evento nem atividade | `inbox-responder-citando.spec.ts`, sessão agent real e quatro contagens no banco |
+| Exceção SQL só para claim próprio com CAS, transferência recusada, dois tenants e dois claims concorrentes com um vencedor | `assumir-conversa-livre-claim-cas.test.ts`, invariante Postgres, sem alterar a cerca de transferência anterior |
+| Conta nova por convite, alternar cadastro/login sem perder token, confirmar no Mailpit e entrar só na equipe convidada | `invite-lifecycle.spec.ts`, conta ausente antes, token_hash de confirmação, assinatura adulterada não preenche e-mail, vínculo agent único e convite aceito; até quatro capturas |
+
+Os registros anteriores de #3475 permanecem acima com seu head efetivamente
+medido. Não provam este lote. As ofertas de campanha são capacidade nova do
+#3503 e permanecem fora desta integração; não há receiver LLM ou prova de MCP
+neste recorte. Não houve execução de build, typecheck, DB, Docker ou browser local.
+A aprovação continua dependendo dos checks obrigatórios e da inspeção dos
+artefatos produzidos no head do lote.
+
+
+## Nome e rótulo do documento recebido — adaptação #3511 (2026-10-26)
+
+**Prova real confirmada no head `20e366d6f`.** A
+[parte 6 do CI de 2026-10-27](https://github.com/melgarafael/DeskcommCRM/actions/runs/40449568814/job/122009511765)
+passou os 87 casos, incluindo o documento em 11,4s, sobre o checkout de merge
+`28912fdea8ad75e5114f48ba073c2c56428dfa7f`. O agregador E2E e as sete partes
+passaram. A composição posterior com `main@f44736e7b` mantém o código e o caso
+do documento byte a byte; seus checks próprios ainda precisam confirmar o conjunto.
+
+O caso de `atender-pelo-celular.spec.ts` usa banco e Storage reais, a conta agent
+e a conversa sintética do spec. XLSX/PDF com nomes acentuados são salvos por
+toque nativo, com `suggestedFilename` e bytes completos conferidos. A rota de
+preview é relida sem pedir download. Uma terceira mensagem sem nome usa objeto
+real de extensão genérica `.bin` e mostra `Documento XLSX` pelo MIME; a medição
+física confirmou 124px visíveis para 124px de texto. Os unitários mantêm os
+controles discriminantes sem path; o E2E precisa do objeto para montar a bolha.
+Nenhuma rota, resposta ou Storage foi dublado nesse caso.
+
+Os três PNGs e os dois JSONs em `evidence/documento-3511-01a178b3/` foram
+recolhidos do artefato e inspecionados. Cada download mede área de 44×44px,
+quatro pontos livres no download e quatro no menu, centro na viewport de
+390×844, cartão contido e página sem overflow horizontal. O toque concluiu e
+a cadeia observada foi rota302 → Storage200. Nomes arbitrários longos mantêm
+truncamento e título integral. As capturas e recibos físicos são preservados
+antes da limpeza dos recursos sintéticos.
+
+O CI já executa o spec na parte 6; a distribuição não mudou. Trace/vídeo são
+opções de worker e ficam desligados neste arquivo para não arquivar URLs
+assinadas; as capturas e assertivas antigas permanecem, mas suas falhas não
+terão trace/vídeo. Não foi medido download na janela anterior à persistência
+do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
+substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
+relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
+## Transcrição pelo serviço da OpenRouter — adaptação #3408 (2026-10-27)
+
+**Prova real confirmada no head `081d4b2a`.** A
+[parte 6 do CI de 2026-10-27](https://github.com/melgarafael/DeskcommCRM/actions/runs/40451116611/job/122021774747)
+passou os 87 casos; o caso próprio de STT concluiu em 6,0s, sobre o checkout de
+merge `988212603648ff7f5bacc2a045e66302927aa1d1`. PNG e recibo físico foram
+baixados e inspecionados. Essa prova fica distinta do E2E global, que falhou
+na parte 1 no passo herdado de prova do hotfix. O novo candidato compõe o
+reparo dessa bancada e do catálogo por merge normal do #3544; seus checks
+próprios ainda precisam confirmar o conjunto.
+
+O caso de `atender-pelo-celular.spec.ts` usa tenant sintético próprio,
+credencial cifrada pelo helper canônico e OGG/Opus válido gerado pelo ffmpeg
+da parte 6. Processor de entrada, eventos persistidos, handlers de persistência
+e derivação, banco e Storage são reais. Somente os servidores HTTP de origem
+da mídia e do fornecedor são sintéticos, locais e explícitos. O transporte
+continua passando pelo egress canônico; fetch global não foi substituído.
+
+O JSON confirmou bytes iguais no Storage, multipart com arquivo/modelo/idioma,
+texto e estado `ready`, e custo informado de 0,0508 centavos persistido. Houve
+uma chamada positiva e um controle de redirecionamento recusado, com zero
+requisições ao destino recusado. O controle do conversor antigo recusou OGG
+antes do HTTP. O PNG mostra um manager lendo no painel o anúncio do modelo e
+a razão da escolha; não mede edição de credencial. O recibo contém apenas
+indicadores e medidas, sem chave ou URL. Os recursos próprios foram limpos.
+
+Os unitários cobrem 25 MB somente nesse fornecedor, ausência/invalidade do custo
+e erro/rejeição da gravação do estado terminal. O teto global continua 50 MiB.
+A guarda atual do worker e seu tratamento terminal foram preservados; o reparo
+da bancada não altera o produto STT já provado neste head.
+
+**Limites:** não mede aceitação, qualidade ou latência da OpenRouter pública,
+pareamento WhatsApp, webhook HTTP/HMAC, agendador ou turno do agente. Handlers
+são chamados sobre os eventos da própria mensagem, sem drenar a fila global.
+Não houve provedor pago nem runtime/DB/browser local. Coleta e unidades não
+contam como execução dessa jornada. O aceite do conjunto depende dos cinco
+checks obrigatórios e da inspeção dos novos artefatos.
+## O pacote do titular no caminho manual — resgate #3543
+
+**PREPARADO, não executado contra app/Storage/navegador nesta rodada.** O caso
+independente de `suspensao-administrativa.spec.ts` prepara dois pedidos próprios
+com o worker real, sem e-mail, e mede dois downloads, bytes/hash, JWT72h,
+isolamento HTTP, legado sem JSON e arquivo ausente. Aprovação é fixture; não
+mede SMTP, PAdES com chave real nem esperar o prazo expirar. Captura e recibo
+só serão escritos em `evidence/lgpd-pacote-manual/` após asserções e limpeza.
+
+A rota continua admin+, mas seu viewer403 não é prova de ACL admin-only no
+Storage. A policy observada noSQL é mais ampla; a auditoria desse acesso direto
+é separada. Contrato, instrumentos e limites:
+[pacote-lgpd-manual.md](pacote-lgpd-manual.md).
+
+## Respostas rápidas com conteúdos combinados — adaptação #3538
+
+**Preparado para o CI; sem execução local de navegador ou banco.** A fonte de
+@webtecnica (`48895c6f`) é preservada na composição. Destino: **núcleo**, pois
+cadastro, edição e uso de respostas rápidas pertencem ao atendimento comum.
+
+`respostas-rapidas-conteudos.spec.ts`, no CI canônico, prepara uma organização e uma
+sessão manager novas, cadastra as sete combinações pela tela e usa os botões do
+Inbox com prévia e confirmação. App, autenticação, PostgREST, Storage, pipeline
+de envio e bytes são reais; somente o transporte do fornecedor usa um receptor
+HTTP local explicitamente sintético. Não mede pareamento, conversão de áudio
+nem entrega no WhatsApp público.
+
+O mesmo caso prepara substituição de áudio no teto5, remoção junto de imagem,
+recusa que conserva o arquivo anterior, remoção pendente/desfazer/cancelar,
+conflito de edição e controles de isolamento de arquivos. Os testes dirigidos
+de rota, formulário e SDK também cobrem confirmação perdida: conservar o
+objeto é preferível a deixar uma referência sem bytes. Uma criação cujo upload
+falhou pode permanecer vazia e recuperável na lista; o diálogo fecha e orienta
+a conferi-la antes de repetir. O uso de conteúdo vazio continua recusado.
+
+Todos os novos fluxos da tela enviam o snapshot esperado e consomem a lista
+fresca. Compatibilidade de clientes antigos sem snapshot cobre somente a
+janela entre leitura e escrita da rota; escrita direta permitida por RLS não
+ganha garantia global de concorrência. Sem nova revisão monotônica, schema,
+RLS, bucket ou configuração. O laço de retorno usa o erro visível, a lista
+recarregada e a edição existente; mutações confirmadas seguem na auditoria de
+templates. A regra herdada de legenda após falha parcial de envio está fora
+deste recorte.
+
+PNG e recibo sanitizado são gravados em `evidence/respostas-rapidas-3538/`
+e anexados por arquivo ao resultado Playwright, inclusive na falha. O recibo
+vem antes da limpeza e recebe seu resultado ao final; falha de evidência também
+reprova, depois da tentativa de limpeza. Trace e vídeo ficam desligados apenas
+nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
+sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
+depende do CI do candidato e da inspeção das capturas produzidas.

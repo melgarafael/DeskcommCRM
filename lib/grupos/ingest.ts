@@ -20,8 +20,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
+import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { grupoLiberaIa } from "@/lib/grupos/ia-no-grupo";
 import { logger } from "@/lib/logger";
+import { CHAVE_DAS_MENCOES } from "@/lib/messaging/mencoes-de-grupo";
 import { remetenteDeGrupoSchema, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 
@@ -37,6 +40,13 @@ export interface EntradaDeGrupo {
   mediaMime: string | null;
   sentAt: string;
   remetente: RemetenteDeGrupo | null;
+  /**
+   * #3566 — quem foi MENCIONADO, lido do payload pelo MESMO leitor de JID do
+   * remetente. Chega com `name: null` (o payload não traz nome por menção) e o
+   * rótulo é preenchido aqui, pelo contato do CRM. Lista vazia/ausente é
+   * mensagem sem menção — e aí `metadata` sai exatamente como saía antes.
+   */
+  mencoes?: RemetenteDeGrupo[];
   rawType: string | null;
   /**
    * O provedor anunciou mídia mas não mandou a URL. A conversa individual grava
@@ -86,6 +96,19 @@ export interface IngestDeGrupoDb {
    * logo não há turno a pedir.
    */
   inserirMensagem(row: Record<string, unknown>): Promise<{ status: "ok" | "duplicada"; messageId: string | null }>;
+  /**
+   * #3566 — o RÓTULO de cada menção, pelo contato do CRM.
+   *
+   * Uma leitura por mensagem com menção, e nenhuma quando não há. A correlação é
+   * a MESMA que o `group_sender` documenta em `lib/messaging/remetente-de-grupo.ts`:
+   * `contacts.wa_lid` (o identificador opaco) ou `contacts.phone_number` nas duas
+   * grafias do nono dígito — a régua do `uniq_contacts_org_wa_lid` e do
+   * `CONTATO_DO_PEER` (`lib/wacalls/events-bridge.ts`).
+   *
+   * Não acha: devolve a menção como veio (sem nome), e a tela mostra o número —
+   * o comportamento de hoje, que é melhor do que inventar um nome.
+   */
+  rotulosDasMencoes(org: string, mencoes: RemetenteDeGrupo[]): Promise<RemetenteDeGrupo[]>;
   /**
    * Conversa de grupo FECHADA (closed/resolved/archived) volta a `open` quando chega
    * mensagem nova — o que a conversa individual faz em `fn_service_inbound`, que pula grupos.
@@ -156,6 +179,10 @@ export async function gravarMensagemDeGrupo(
   // Remetente fora do formato NÃO derruba a mensagem: ela entra sem `group_sender`
   // e a tela mostra "Participante". Perder a mensagem por causa do rótulo seria pior.
   const remetente = e.direction === "inbound" && e.remetente ? remetenteDeGrupoSchema.safeParse(e.remetente) : null;
+  // #3566 — o rótulo das menções, pelo contato do CRM. Consulta só quando a
+  // mensagem menciona alguém: mensagem sem menção não paga leitura nenhuma e
+  // grava `metadata` sem a chave, byte a byte como antes.
+  const mencoes = e.mencoes?.length ? await db.rotulosDasMencoes(e.organizationId, e.mencoes) : [];
   const agora = new Date().toISOString();
   const resultado = await db.inserirMensagem({
     organization_id: e.organizationId,
@@ -173,8 +200,12 @@ export async function gravarMensagemDeGrupo(
     sent_at: e.sentAt,
     delivered_at: e.direction === "inbound" ? agora : null,
     metadata: {
+      // `body` NÃO é reescrito (#3566): o texto cru do provedor fica com o
+      // `@<lid>` e quem resolve é a exibição (`textoComMencoesResolvidas`). O
+      // metadata só acrescenta a lista que faltava.
       raw_type: e.rawType,
       ...(remetente?.success ? { group_sender: remetente.data } : {}),
+      ...(mencoes.length > 0 ? { [CHAVE_DAS_MENCOES]: mencoes } : {}),
     },
   });
   if (resultado.status === "duplicada") return "duplicada";
@@ -369,6 +400,61 @@ export function criarIngestDeGrupoDb(admin: SupabaseClient): IngestDeGrupoDb {
         }
       }
       return { status: "ok", messageId: id };
+    },
+
+    async rotulosDasMencoes(org, mencoes) {
+      const lids = [...new Set(mencoes.map((m) => m.lid).filter((l): l is string => l !== null))];
+      const telefones = [...new Set(mencoes.flatMap((m) => (m.phone ? phoneLookupVariants(m.phone) : [])))];
+      if (lids.length === 0 && telefones.length === 0) return mencoes;
+
+      const nomePorLid = new Map<string, string>();
+      const nomePorTelefone = new Map<string, string>();
+      const lerContatos = async (coluna: "wa_lid" | "phone_number", valores: string[]) => {
+        if (valores.length === 0) return;
+        const { data, error } = await admin
+          .from("contacts")
+          .select("name, display_name, phone_number, wa_lid")
+          .eq("organization_id", org)
+          .in(coluna, valores)
+          // Contato fundido em outro não é a ficha que a tela mostra: o rótulo
+          // tem de ser o do sobrevivente, como no `CONTATO_DO_PEER`.
+          .is("is_merged_into", null)
+          .limit(200);
+        // Leitura que falhou NÃO derruba a mensagem: a menção entra sem rótulo
+        // (a tela mostra o número, como hoje) e fica o rastro de por quê.
+        if (error) {
+          logger.warn("[grupos.ingest] rótulo de menção não lido", {
+            organization_id: org,
+            coluna,
+            causa: error.message,
+          });
+          return;
+        }
+        for (const linha of (data ?? []) as Array<{
+          name: string | null;
+          display_name: string | null;
+          phone_number: string | null;
+          wa_lid: string | null;
+        }>) {
+          const nome = nomeDoContato(linha);
+          if (!nome) continue;
+          if (linha.wa_lid) nomePorLid.set(linha.wa_lid, nome);
+          if (linha.phone_number) {
+            for (const variante of phoneLookupVariants(linha.phone_number)) nomePorTelefone.set(variante, nome);
+          }
+        }
+      };
+      // Duas leituras, uma por chave indexada (`uniq_contacts_org_wa_lid` e o
+      // índice de `phone_number`) — e não um `.or()` com valor de fora montado
+      // em string, que é o tipo de SQL colado que esta base evita.
+      await lerContatos("wa_lid", lids);
+      await lerContatos("phone_number", telefones);
+
+      return mencoes.map((m) => {
+        const porLid = m.lid !== null ? nomePorLid.get(m.lid) : undefined;
+        const porTelefone = m.phone !== null ? nomePorTelefone.get(canonicalPhoneBR(m.phone)) : undefined;
+        return { ...m, name: m.name ?? porLid ?? porTelefone ?? null };
+      });
     },
 
     async reabrirSeFechada(org, conversationId, messageId, quando) {

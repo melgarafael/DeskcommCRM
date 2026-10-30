@@ -44,6 +44,13 @@ beforeAll(async () => {
       `insert into channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted, status)
        values ($1, $2, $3, '\\x00'::bytea, 'WORKING')`, [id, org, `claim-hold-${id}`],
     );
+    // Estes casos medem retenção e espaçamento, sem cruzar a janela noturna.
+    // Só a fixture usa 24h UTC; os defaults e a regra de horário ficam intactos.
+    await pool.query(
+      `insert into channel_knobs
+         (organization_id, channel_session_id, window_start_hour, window_end_hour, timezone, allow_sunday)
+       values ($1, $2, 0, 24, 'UTC', true)`, [org, id],
+    );
   }
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id)
@@ -65,6 +72,7 @@ afterAll(async () => {
   await pool.query(`delete from job_queue where organization_id = any($1::uuid[])`, [ORGS]);
   await pool.query(`delete from channel_session_health where organization_id = any($1::uuid[])`, [ORGS]);
   await pool.query(`delete from conversations where organization_id = any($1::uuid[])`, [ORGS]);
+  await pool.query(`delete from channel_knobs where organization_id = any($1::uuid[])`, [ORGS]);
   await pool.query(`delete from channel_sessions where organization_id = any($1::uuid[])`, [ORGS]);
   await pool.query(`delete from contacts where organization_id = any($1::uuid[])`, [ORGS]);
   await pool.query(`delete from organizations where id = any($1::uuid[])`, [ORGS]);

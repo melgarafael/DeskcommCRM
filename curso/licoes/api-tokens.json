@@ -130,8 +130,8 @@
             },
             {
               "alvo": {
-                "texto": "^\\d{2}/\\d{2}/\\d{4}$",
-                "regex": true,
+                "role": "cell",
+                "n": 4,
                 "dentro": {
                   "css": "tr:has-text('Agenda online do site')"
                 }

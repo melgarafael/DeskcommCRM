@@ -25,6 +25,11 @@ import {
 } from "@/lib/leads/next-action";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
 import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/dados-do-contato";
+import {
+  anexarAnexosAosNegocios,
+  type LinhaDoAnexoNoQuadro,
+} from "@/lib/kanban/anexos-no-card";
+import { camposDeArquivoDoNegocio } from "@/lib/leads/campos-do-funil";
 import { diasDeRecorte, recortaEncerradosAntigos } from "@/lib/kanban/recorte-de-encerrados";
 import { anexarTarefasAosNegocios, type LinhaDaTarefaNoQuadro } from "@/lib/kanban/tarefas-no-quadro";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
@@ -32,6 +37,7 @@ import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const dynamic = "force-dynamic";
 
@@ -476,6 +482,49 @@ async function withTarefas(
   };
 }
 
+/**
+ * Anexa a cada negócio do quadro o que os campos `file` do funil têm (#2829).
+ *
+ * Uma leitura de `crm_lead_attachments` para o quadro inteiro, em lotes de ids
+ * como as outras etapas: o card não pode custar uma consulta por negócio.
+ *
+ * Funil SEM campo `file` sai daqui sem consultar nada — o `file` é a única forma
+ * de haver anexo de campo personalizado, e quem nunca criou um não paga nem a
+ * ida ao banco nem um byte na resposta.
+ *
+ * Erro de leitura derruba o quadro com 500, como as outras etapas: um quadro que
+ * escondesse o anexo em silêncio diria "nenhum documento" justamente no dia em
+ * que não sabe — e é a trava de etapa seguinte (fatia 2 da #2829) que vai
+ * depender desta contagem para deixar o negócio andar.
+ */
+async function withAnexos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  leads: Lead[],
+  campos: ReturnType<typeof camposDeArquivoDoNegocio>,
+): Promise<{ leads: Lead[]; error: string | null }> {
+  if (leads.length === 0 || campos.length === 0) return { leads, error: null };
+
+  const leadIds = leads.map((l) => l.id);
+  const chaves = campos.map((campo) => campo.key);
+
+  const { data, error } = await buscaEmLotes(leadIds, (lote) =>
+    supabase
+      .from("crm_lead_attachments")
+      .select("lead_id, field_key, id, file_name, mime_type, file_size, created_at")
+      .eq("organization_id", organizationId)
+      .in("lead_id", lote)
+      .in("field_key", chaves)
+      .order("created_at", { ascending: true }),
+  );
+  if (error) return { leads, error: error.message };
+
+  return {
+    leads: anexarAnexosAosNegocios(leads, (data ?? []) as LinhaDoAnexoNoQuadro[], campos) as Lead[],
+    error: null,
+  };
+}
+
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
@@ -603,10 +652,24 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsComTarefas.error, 500, { requestId });
   }
 
-  const leadsComConversa = await withConversas(
+  // Os anexos dos campos `file` (#2829) entram ANTES da conversa e dos
+  // marcadores, que seguem sendo a última etapa vigiada pelas cercas do quadro
+  // (`kanban-atalho-conversa`, `funil-mostra-dados-do-cliente`). Cada etapa só
+  // acrescenta o próprio campo ao lead, então a ordem não muda o resultado.
+  const leadsComAnexos = await withAnexos(
     supabase,
     (pipeline as Pipeline).organization_id,
     leadsComTarefas.leads,
+    camposDeArquivoDoNegocio((pipeline as Pipeline).settings),
+  );
+  if (leadsComAnexos.error) {
+    return fail("internal_error", leadsComAnexos.error, 500, { requestId });
+  }
+
+  const leadsComConversa = await withConversas(
+    supabase,
+    (pipeline as Pipeline).organization_id,
+    leadsComAnexos.leads,
   );
   if (leadsComConversa.error) {
     return fail("internal_error", leadsComConversa.error, 500, { requestId });
@@ -624,7 +687,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const board: BoardData = {
     pipeline: pipeline as Pipeline,
     stages: (stages ?? []) as Stage[],
-    leads: leadsComMarcadores.leads,
+    leads: leadsComMarcadores.leads.map(
+      (lead) =>
+        ocultarProvaMetaNaResposta(lead as unknown as Record<string, unknown>) as unknown as Lead,
+    ),
   };
 
   return ok(board, { requestId });

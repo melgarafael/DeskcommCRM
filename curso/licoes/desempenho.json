@@ -72,7 +72,7 @@
       },
       {
        "alvo": {
-        "css": "div.flex-wrap:has(> input[aria-label^='Horas de silêncio'])"
+        "css": "div.flex-wrap:has(> input[aria-label='Horas de silêncio até considerar a conversa perdida'])"
        },
        "rotulo": "Régua do silêncio",
        "tipo": "caixa"
@@ -308,7 +308,7 @@
      "destaques": [
       {
        "alvo": {
-        "css": "div.flex-wrap:has(> input[aria-label^='Horas de silêncio'])"
+        "css": "div.flex-wrap:has(> input[aria-label='Horas de silêncio até considerar a conversa perdida'])"
        },
        "rotulo": "Horas até contar como perdida",
        "tipo": "caixa"
@@ -339,7 +339,7 @@
      "destaques": [
       {
        "alvo": {
-        "css": "div.flex-wrap:has(> input[aria-label^='Horas de silêncio'])"
+        "css": "div.flex-wrap:has(> input[aria-label='Horas de silêncio até considerar a conversa perdida'])"
        },
        "rotulo": "Novo número de horas",
        "tipo": "caixa"
@@ -384,7 +384,7 @@
      "destaques": [
       {
        "alvo": {
-        "css": "div.flex-wrap:has(> input[aria-label^='Horas de silêncio'])"
+        "css": "div.flex-wrap:has(> input[aria-label='Horas de silêncio até considerar a conversa perdida'])"
        },
        "rotulo": "Régua salva",
        "tipo": "caixa"

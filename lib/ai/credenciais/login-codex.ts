@@ -293,6 +293,7 @@ export async function renovarComTravaDeBanco(p: {
     provider: PROVEDOR_POR_ASSINATURA,
     apiKey: JSON.stringify(renovados),
     label: ROTULO_DO_LOGIN_CODEX,
+    manterModelos: true,
   });
   if (!gravado.ok) return { ok: false, motivo: "falha" };
 

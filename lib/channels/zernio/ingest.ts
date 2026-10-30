@@ -33,6 +33,7 @@ import { emitirTelefoneGanho } from "@/lib/contacts/telefone-ganho";
 
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
+import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
@@ -533,7 +534,10 @@ async function upsertContact(
   // (`fn_upsert_wa_contact`, #3315) faz: quando ela preenche a ficha vazia, este
   // `update` já não casa linha nenhuma e não emite; quando ela não preenche (ou
   // `kind` é lid), quem preenche é este update, e só ele emite.
-  if (msg.identity.phone) {
+  // Achada pelo EXTRA (`contact_phones`): o número não é o principal da ficha, e
+  // gravá-lo aqui o promoveria a principal — o banco recusaria com 23505 e a
+  // ingestão cairia. Ficha dona de extra sem principal é caso raro; não grava.
+  if (msg.identity.phone && !existente?.achado_pelo_extra) {
     const telefone = canonicalPhoneBR(msg.identity.phone);
     const { data: afetadas } = await admin
       .from("contacts")
@@ -672,6 +676,7 @@ async function insertMessage(
             ? { location: msg.location }
             : {}),
         ...anuncio,
+        ...(msg.direction === "inbound" ? ancoraCtwaDaMensagem(extrairAtribuicaoMeta(msg.referral)) : {}),
       },
       ...(msg.sentAt ? { sent_at: msg.sentAt } : {}),
     })

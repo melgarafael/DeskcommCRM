@@ -206,7 +206,8 @@
             },
             {
               "alvo": {
-                "css": "tbody"
+                "css": "tbody tr",
+                "n": 0
               },
               "rotulo": "Só os eventos dela",
               "tipo": "caixa"

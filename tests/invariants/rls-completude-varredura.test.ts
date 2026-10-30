@@ -76,9 +76,11 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   ...["calendar_resources", "calendar_service_schedule", "calendar_service_professionals", "calendar_service_resources", "calendar_service_calendar_sources", "calendar_service_occurrences", "calendar_service_occurrence_resources", "calendar_service_blocks"].map(tabela => ({ tabela, razao: "tests/invariants/agenda-servicos.test.ts — oito tabelas com linhas positivas no tenant próprio, JWT authenticated de duas organizações e contagem zero do vizinho; INSERT/UPDATE/DELETE diretos recusados mesmo para manager. As RPCs mantêm ator, revisão e FKs compostas." })),
+  ...["attendant_sectors", "attendant_sector_members"].map(tabela => ({ tabela, razao: "tests/invariants/setores-de-atendimento.test.ts — JWT authenticated de duas organizações: cada uma lê só as próprias linhas (controle positivo nos dois lados); INSERT/DELETE diretos recusados até para manager; FK composta recusa setor de outra organização." })),
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
+  { tabela: "automation_rule_contact_claims", razao: "tests/invariants/automation-claims-so-servidor.test.ts (migration 0740, #3267) — tabela exclusiva do servidor: RLS de pe e NENHUMA policy, anon/authenticated sem privilegio (nem da propria org, recusado por JWT), service_role com select/insert para o dreno." },
   { tabela: "prospecting_settings", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_campaigns", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_candidates", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
@@ -267,6 +269,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "da organização viraram venda, e quem o lê é o servidor com o admin client " +
       "filtrando organization_id à mão (a tela `/app/settings/conversoes`).",
   },
+  { tabela: "meta_ctwa_click_dispatches", razao: "tests/invariants/meta-lead-por-clique.test.ts — deny-all como ad_conversion_dispatches (doc 199): anon e authenticated levam `permission denied` ao ler, inserir, alterar e apagar; service_role lê (controle positivo). Livro dos cliques CTWA; só o servidor lê, filtrando organization_id à mão." },
   {
     tabela: "ad_hierarchy_cache",
     razao:
@@ -354,6 +357,26 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "(a leitura é de admin; por isso não cabe em TABLES, cujo usuário semeado é " +
       "agent), promovido a admin passa a ler (controle), e UPDATE/INSERT/DELETE " +
       "pela sessão e qualquer leitura por anon dão permission denied. Migration 0510.",
+  },
+  {
+    tabela: "conversation_participants",
+    razao:
+      "tests/invariants/atendimento-conjunto-participantes.test.ts — dois tenants " +
+      "por JWT (agent): o convidado LÊ a própria participação e passa a ver a " +
+      "conversa e as mensagens dela, o dono não lê a linha alheia, um membro de " +
+      "outra organização lê 0 nos dois sentidos e INSERT direto de authenticated " +
+      "dá permission denied. Migration 0661 (issue #2542).",
+  },
+  {
+    tabela: "message_template_groups",
+    razao:
+      "tests/invariants/grupos-de-resposta-rapida-rls.test.ts (migration 0808, #3245) — " +
+      "leitura positiva dos quatro papéis na organização própria e ZERO do vizinho " +
+      "(linha real semeada noutra organização, com controle de que ela existe); " +
+      "agent e viewer sem INSERT/UPDATE/DELETE efetivo; manager cria, renomeia e apaga; " +
+      "anon com permission denied por GRANT ausente; GRANT explícito a authenticated " +
+      "conferido no catálogo; FK composta recusa resposta apontando para grupo de outra " +
+      "organização e on delete set null (grupo_id) devolve a resposta à lista plana sem apagá-la.",
   },
 ];
 

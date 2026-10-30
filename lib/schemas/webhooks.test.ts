@@ -300,3 +300,45 @@ describe("assign_owner: atendente fixo ou rodízio", () => {
     expect(patch.success).toBe(false);
   });
 });
+
+// #2974 — "no máximo uma vez por contato". O motor lê a chave com `=== true`;
+// um valor torto gravado por outra porta seria silenciosamente DESLIGADO (a tela
+// diria uma coisa e a regra faria outra), então a porta recusa.
+describe("trigger_config.uma_vez_por_contato: ligado/desligado, nunca outra coisa", () => {
+  const criar = (trigger_config: Record<string, unknown>) =>
+    createAutomationRuleSchema.safeParse({
+      name: "Boas-vindas",
+      trigger_event: "lead.created",
+      conditions: [],
+      actions: [{ type: "add_tag", config: { tags: ["novo"] } }],
+      trigger_config,
+    });
+
+  it("aceita ligado, desligado e a chave ausente (o comportamento de antes)", () => {
+    expect(criar({ uma_vez_por_contato: true }).success).toBe(true);
+    expect(criar({ uma_vez_por_contato: false }).success).toBe(true);
+    expect(criar({}).success).toBe(true);
+    // `null` é "não configurado", o mesmo que ausente.
+    expect(criar({ uma_vez_por_contato: null }).success).toBe(true);
+  });
+
+  it("recusa string e número, apontando a chave", () => {
+    const texto = criar({ uma_vez_por_contato: "sim" });
+    expect(texto.success).toBe(false);
+    expect(texto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+    expect(texto.error?.issues[0]?.message).toBe(
+      "A opção “uma vez por contato” só aceita ligado ou desligado.",
+    );
+
+    const numero = criar({ uma_vez_por_contato: 1 });
+    expect(numero.success).toBe(false);
+    expect(numero.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+  });
+
+  it("o PATCH passa pela mesma régua", () => {
+    expect(updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: true } }).success).toBe(true);
+    const torto = updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: "1" } });
+    expect(torto.success).toBe(false);
+    expect(torto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+  });
+});

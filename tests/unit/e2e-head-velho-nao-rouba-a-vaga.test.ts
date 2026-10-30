@@ -194,7 +194,10 @@ afterAll(() => {
  * (a) do #2449 pedia e a medição recusou.
  */
 const CHAVE_ESPERADA =
-  "${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}";
+  "${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}" +
+  // O segmento adicional só vale no rerun da main. PR e primeira tentativa
+  // mantêm a chave anterior; a igualdade inteira continua fechada.
+  "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}";
 
 describe("a chave da concorrência é por número do PR — sem o SHA do head (#2449)", () => {
   it("o grupo existe e continua nomeando o PR — guarda de vacuidade", () => {

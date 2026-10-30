@@ -7,13 +7,14 @@
  * Pré-requisito: `.e2e-creds.json` (o rbac-roles.spec já roda o seed; aqui só lê).
  */
 import { randomInt, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "./helpers/test";
+import { test, expect, type Page, type Response as BrowserResponse } from "./helpers/test";
 
-import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { credenciaisSupabaseDeTeste, destinoEhLocal } from "../../scripts/lib/env-de-teste";
 
 interface E2ECreds {
   org_id: string;
@@ -301,3 +302,310 @@ test.describe("G4-02 — inbox com escopo", () => {
     await expect(page.getByText(/fora do seu acesso/i)).toBeVisible({ timeout: 15_000 });
   });
 });
+
+/**
+ * #3483: os dois cadastros chegam ao Inbox pelo seu pai real. Cada caso usa
+ * uma organização própria em `own`: não muda o modo de leitura do seed comum.
+ * Os canais são linhas sintéticas, mas formulário, HTTP, atribuição e RLS são
+ * reais. Não há envio de mensagem nem dependência de pareamento de telefone.
+ */
+for (const origem of ["contato", "negocio"] as const) {
+  for (const quantidadeDeCanais of [1, 2] as const) {
+    test(`cadastro de ${origem}, ${quantidadeDeCanais} canal(is): salva, assume e abre em own`, async ({
+      page,
+    }) => {
+      expect(destinoEhLocal(credenciais.url), "esta semeadura só pode usar Supabase local").toBe(
+        true,
+      );
+      const marcador = randomUUID().replaceAll("-", "");
+      const usuarios: string[] = [];
+      let organizacao = "";
+      const nome = `Contato cadastro ${marcador.slice(0, 8)}`;
+      const titulo = `Negócio em edição ${marcador.slice(0, 8)}`;
+      const descricao = "Condição combinada antes do subcadastro";
+      const telefone = `+55119${randomInt(10000000, 100000000)}`;
+      const posts: Array<{ caminho: string; corpo: Record<string, unknown> }> = [];
+      page.on("request", (pedido) => {
+        if (pedido.method() !== "POST") return;
+        const caminho = new URL(pedido.url()).pathname;
+        if (caminho === "/api/v1/conversations/open-with-contact" || caminho.endsWith("/claim")) {
+          posts.push({ caminho, corpo: pedido.postDataJSON() as Record<string, unknown> });
+        }
+      });
+      const esperarPost = (caminho: string): Promise<BrowserResponse> =>
+        page.waitForResponse(
+          (resposta) =>
+            resposta.request().method() === "POST" && new URL(resposta.url()).pathname === caminho,
+        );
+
+      try {
+        for (const papel of ["atendente", "colega"]) {
+          const { data, error } = await db.auth.admin.createUser({
+            email: `cadastro-${papel}-${marcador}@invariant.test`,
+            password: creds.password,
+            email_confirm: true,
+            user_metadata: { full_name: `Pessoa ${papel} da prova` },
+          });
+          expect(error, "os usuários sintéticos precisam existir").toBeNull();
+          expect(data.user).not.toBeNull();
+          usuarios.push(data.user!.id);
+        }
+        const atendente = usuarios[0]!;
+        const colega = usuarios[1]!;
+        organizacao = await insere("organizations", {
+          slug: `cad-${marcador}`,
+          legal_name: `Cadastro ${marcador} LTDA`,
+          display_name: "Organização da prova de cadastro",
+          onboarded_at: new Date().toISOString(),
+          settings: { visibility_mode: "own" },
+        });
+        const { error: vinculosErro } = await db.from("user_organizations").insert(
+          usuarios.map((user_id) => ({
+            user_id,
+            organization_id: organizacao,
+            role: "agent",
+            accepted_at: new Date().toISOString(),
+          })),
+        );
+        expect(vinculosErro).toBeNull();
+        const funil = await insere("crm_pipelines", {
+          organization_id: organizacao,
+          name: "Funil da prova de cadastro",
+          slug: "cadastro-prova",
+        });
+        await insere("crm_stages", {
+          organization_id: organizacao,
+          pipeline_id: funil,
+          name: "Entrada da prova",
+          slug: "entrada",
+          position: 1000,
+        });
+        const canais: string[] = [];
+        for (let i = 1; i <= quantidadeDeCanais; i++) {
+          canais.push(
+            await insere("channel_sessions", {
+              organization_id: organizacao,
+              waha_session_name: `cadastro-${marcador}-${i}`,
+              display_name: `Canal ${i} da prova`,
+              phone_number: `+551198765430${i}`,
+              status: "WORKING",
+              webhook_secret_encrypted: "\\x00",
+            }),
+          );
+        }
+        const contatoDoColega = await insere("contacts", {
+          organization_id: organizacao,
+          name: "Contato já atendido pelo colega",
+          phone_number: `${telefone.slice(0, -1)}${(Number(telefone.at(-1)) + 1) % 10}`,
+        });
+        const conversaDoColega = await insere("conversations", {
+          organization_id: organizacao,
+          contact_id: contatoDoColega,
+          channel_session_id: canais[0],
+          assigned_to_user_id: colega,
+          assignee_kind: "user",
+          bot_silenced_until: "infinity",
+          status: "open",
+        });
+        const controleAntes = await db
+          .from("conversations")
+          .select("*")
+          .eq("organization_id", organizacao)
+          .eq("id", conversaDoColega)
+          .single();
+        expect(controleAntes.error).toBeNull();
+
+        await login(page, `cadastro-atendente-${marcador}@invariant.test`);
+        await page.goto(origem === "contato" ? "/app/contacts" : `/app/pipelines/${funil}`);
+        if (origem === "negocio") {
+          await page.getByRole("button", { name: "Novo Lead", exact: true }).click();
+          const negocio = page.getByRole("dialog", { name: "Novo Lead", exact: true });
+          await negocio.getByLabel("Título", { exact: true }).fill(titulo);
+          await negocio.getByLabel("Descrição", { exact: true }).fill(descricao);
+          await negocio.getByLabel(/^Valor \(/).fill("123,45");
+          await negocio.getByRole("button", { name: "Criar contato", exact: true }).click();
+        } else {
+          await page.getByRole("button", { name: "Novo contato", exact: true }).click();
+        }
+        const cadastro = page.getByRole("dialog", { name: "Novo contato", exact: true });
+        await cadastro.getByLabel("Nome", { exact: true }).fill(nome);
+        await cadastro.getByLabel(/^Telefone/).fill(telefone);
+        const contatoSalvo = esperarPost("/api/v1/contacts");
+        // Com um canal, o contato avulso já abre assim que o POST termina.
+        // Os observadores precisam existir antes desse primeiro clique.
+        const abertura = esperarPost("/api/v1/conversations/open-with-contact");
+        const claim = page.waitForResponse(
+          (resposta) =>
+            resposta.request().method() === "POST" &&
+            new URL(resposta.url()).pathname.endsWith("/claim"),
+        );
+        if (origem === "negocio") {
+          await expect(
+            cadastro.getByRole("button", { name: "Salvar e iniciar conversa", exact: true }),
+          ).toHaveCount(0);
+          await cadastro.getByRole("button", { name: "Criar contato", exact: true }).click();
+        } else {
+          await cadastro
+            .getByRole("button", { name: "Salvar e iniciar conversa", exact: true })
+            .click();
+        }
+        const respostaContato = await contatoSalvo;
+        expect(respostaContato.status()).toBe(201);
+        const contatoId = ((await respostaContato.json()) as { data: { contact: { id: string } } })
+          .data.contact.id;
+        expect(contatoId).toBeTruthy();
+
+        let negocioId: string | null = null;
+        if (origem === "negocio") {
+          const negocio = page.getByRole("dialog", { name: "Novo Lead", exact: true });
+          await expect(negocio.getByLabel("Título", { exact: true })).toHaveValue(titulo);
+          await expect(negocio.getByLabel("Descrição", { exact: true })).toHaveValue(descricao);
+          await expect(negocio.getByLabel(/^Valor \(/)).toHaveValue("123,45");
+          const antes = await db
+            .from("crm_leads")
+            .select("id", { count: "exact", head: true })
+            .eq("organization_id", organizacao)
+            .eq("title", titulo);
+          expect(antes.error).toBeNull();
+          expect(antes.count).toBe(0);
+          expect(posts).toEqual([]);
+          const leadSalvo = esperarPost("/api/v1/leads");
+          await negocio
+            .getByRole("button", { name: "Salvar e iniciar conversa", exact: true })
+            .click();
+          const respostaLead = await leadSalvo;
+          expect(respostaLead.status()).toBe(201);
+          negocioId = ((await respostaLead.json()) as { data: { id: string } }).data.id;
+          const persistido = await db
+            .from("crm_leads")
+            .select("contact_id, title, description, value_cents, owner_user_id, owner_kind")
+            .eq("organization_id", organizacao)
+            .eq("id", negocioId)
+            .single();
+          expect(persistido.error).toBeNull();
+          expect(persistido.data).toEqual({
+            contact_id: contatoId,
+            title: titulo,
+            description: descricao,
+            value_cents: 12345,
+            owner_user_id: atendente,
+            owner_kind: "user",
+          });
+        }
+        const canalEscolhido = canais[quantidadeDeCanais - 1]!;
+        if (quantidadeDeCanais === 2) {
+          const escolha = page.getByRole("dialog", {
+            name: "Escolha o canal para iniciar a conversa",
+            exact: true,
+          });
+          await expect(escolha).toBeVisible();
+          expect(posts).toEqual([]);
+          await escolha.getByRole("radio", { name: /Canal 2 da prova/ }).check();
+          await escolha.getByRole("button", { name: "Iniciar conversa", exact: true }).click();
+        }
+        const respostaAbertura = await abertura;
+        expect(respostaAbertura.status()).toBe(200);
+        const conversaId = (
+          (await respostaAbertura.json()) as { data: { conversation_id: string } }
+        ).data.conversation_id;
+        // O claim do cliente preserva o CAS: o servidor já atribuiu ao abrir.
+        expect((await claim).status()).toBe(409);
+        expect(posts).toEqual([
+          {
+            caminho: "/api/v1/conversations/open-with-contact",
+            corpo: {
+              contact_id: contatoId,
+              ...(origem === "contato" ? { phone_number: telefone } : {}),
+              channel_session_id: canalEscolhido,
+            },
+          },
+          {
+            caminho: `/api/v1/conversations/${conversaId}/claim`,
+            corpo: { expected_assignee: null },
+          },
+        ]);
+        await page.waitForURL(
+          (url) => url.pathname === "/app/inbox" && url.searchParams.get("id") === conversaId,
+        );
+        await expect(page.getByRole("heading", { name: nome, exact: true })).toBeVisible();
+        await expect(page.getByTestId("canal-da-conversa")).toHaveText(
+          `Canal ${quantidadeDeCanais} da prova`,
+        );
+        await expect(page.getByTestId("comando-da-conversa")).toContainText(
+          "Pessoa atendente da prova",
+        );
+        const leitura = await page.request.get(`/api/v1/conversations/${conversaId}`);
+        expect(leitura.status()).toBe(200);
+        const conversa = ((await leitura.json()) as { data: Record<string, unknown> }).data;
+        expect(conversa).toMatchObject({
+          contact_id: contatoId,
+          channel_session_id: canalEscolhido,
+          assigned_to_user_id: atendente,
+          assignee_kind: "user",
+          bot_silenced_until: "infinity",
+        });
+        const foraDoEscopo = await page.request.get(`/api/v1/conversations/${conversaDoColega}`);
+        expect(foraDoEscopo.status()).toBe(404);
+        await expect
+          .poll(async () => {
+            const auditoria = await db
+              .from("api_audit_log")
+              .select("id", { count: "exact", head: true })
+              .eq("organization_id", organizacao)
+              .eq("resource_id", conversaId)
+              .eq("action", "conversation.claimed");
+            expect(auditoria.error).toBeNull();
+            return auditoria.count;
+          })
+          .toBe(1);
+        const controleDepois = await db
+          .from("conversations")
+          .select("*")
+          .eq("organization_id", organizacao)
+          .eq("id", conversaDoColega)
+          .single();
+        expect(controleDepois.error).toBeNull();
+        expect(controleDepois.data).toEqual(controleAntes.data);
+        const evidencias = path.join(process.cwd(), "evidence/cadastro-conversa");
+        fs.mkdirSync(evidencias, { recursive: true });
+        const arquivo = `${origem}-${quantidadeDeCanais}-canais`;
+        await page.screenshot({ path: path.join(evidencias, `${arquivo}.png`), fullPage: true });
+        fs.writeFileSync(
+          path.join(evidencias, `${arquivo}.json`),
+          JSON.stringify(
+            {
+              head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+              run_id: process.env.GITHUB_RUN_ID ?? null,
+              origem,
+              quantidadeDeCanais,
+              organizacao,
+              atendente,
+              contatoId,
+              negocioId,
+              conversaId,
+              canalEscolhido,
+              atribuicao: conversa.assigned_to_user_id,
+              claim_cliente: 409,
+              auditoria_claim: 1,
+              conversa_do_colega: 404,
+              controle_inalterado: true,
+            },
+            null,
+            2,
+          ),
+        );
+      } finally {
+        const falhas: string[] = [];
+        if (organizacao) {
+          const { error } = await db.from("organizations").delete().eq("id", organizacao);
+          if (error) falhas.push("organização da prova de cadastro");
+        }
+        for (const id of usuarios) {
+          const { error } = await db.auth.admin.deleteUser(id);
+          if (error) falhas.push("usuário da prova de cadastro");
+        }
+        expect(falhas, "a prova deve limpar apenas seus próprios recursos").toEqual([]);
+      }
+    });
+  }
+}

@@ -450,13 +450,31 @@ describe("rodada: campanha de texto em balões (#3329)", () => {
   });
 
   it("⭐ cada balão entra no ledger no instante em que saiu: o throttle do próximo envio conta do último", async () => {
-    mundo.knobs = { ...PACING_DEFAULTS, throttleMs: 30, jitterMaxMs: 0 };
-    await rodarUmaRodadaDeCampanha(cenario(true, null), AGORA);
-    const ledger = (mundo.ledger.get("principal") ?? []).map((d) => d.getTime() - AGORA.getTime());
-    expect(ledger).toHaveLength(3);
-    expect(ledger[0]).toBe(0);
-    expect(ledger[1]).toBeGreaterThanOrEqual(30);
-    expect(ledger[2]! - ledger[1]!).toBeGreaterThanOrEqual(30);
+    // Mede o ledger e a espera, sem depender do arredondamento entre o timer
+    // do host e Date.now() (o CI já observou 29 ms num setTimeout de 30 ms).
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(AGORA);
+    try {
+      mundo.knobs = { ...PACING_DEFAULTS, throttleMs: 30, jitterMaxMs: 0 };
+      const rodada = rodarUmaRodadaDeCampanha(cenario(true, null), AGORA);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mundo.ledger.get("principal")).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(29);
+      expect(mundo.ledger.get("principal")).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mundo.ledger.get("principal")).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(29);
+      expect(mundo.ledger.get("principal")).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await rodada;
+      const ledger = (mundo.ledger.get("principal") ?? []).map((d) => d.getTime() - AGORA.getTime());
+      expect(ledger).toHaveLength(3);
+      expect(ledger[0]).toBe(0);
+      expect(ledger[1]).toBeGreaterThanOrEqual(30);
+      expect(ledger[2]! - ledger[1]!).toBeGreaterThanOrEqual(30);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("desligada: um balão só, com o texto inteiro", async () => {

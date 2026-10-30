@@ -89,7 +89,7 @@
           "destaques": [
             {
               "alvo": {
-                "css": "table:has(th:text-is('In-app'))"
+                "css": "table:has([data-testid='alerts-toggle'], [data-testid='alerts-enable'])"
               },
               "rotulo": "Um tipo de aviso por linha",
               "tipo": "caixa"
@@ -131,9 +131,7 @@
           "destaques": [
             {
               "alvo": {
-                "role": "switch",
-                "nome": "Nova mensagem via push",
-                "exato": true
+                "css": "[data-testid='alerts-toggle'], [data-testid='alerts-enable']"
               },
               "rotulo": "Chave geral do Push",
               "tipo": "caixa"

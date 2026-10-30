@@ -1447,11 +1447,17 @@ export function AgentForm(props: Props) {
           )}
 
           {/* Servidor MCP externo no atendimento (#2147). Só admin vê e
-              grava; salva em `ai_agents.config.mcp_externo_no_atendimento`. */}
+              grava; salva em `ai_agents.config.mcp_externo_no_atendimento`.
+              A ESCOLHA das ferramentas do servidor (#3586) vai para o
+              `tool_ids` da versão, pelo mesmo salvar do resto do formulário —
+              por isso o cartão recebe o valor e o setter do formulário, como o
+              `ToolPicker` acima. */}
           {isEdit && !readOnly && (
             <ServidorExternoNoAtendimento
               agentId={props.agent.id}
               inicial={(props.agent.config ?? {}).mcp_externo_no_atendimento}
+              toolIds={form.tool_ids}
+              onChangeToolIds={(ids) => patch({ tool_ids: ids })}
               disabled={disabled}
             />
           )}

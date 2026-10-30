@@ -294,6 +294,15 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     stage_id: "",
   });
   const [webhookSourceId, setWebhookSourceId] = React.useState(QUALQUER_FONTE);
+  /**
+   * "No máximo uma vez por contato" (#2974), do gatilho de contato novo.
+   *
+   * A opção é gravada LIGADA ou DESLIGADA (o schema recusa qualquer outra
+   * coisa), então o estado é booleano e o `false` também vai para a API: sem
+   * isso o `merge` do `configAoSalvarDaTela` faria um `true` guardado
+   * sobreviver, e o operador não conseguiria desligar.
+   */
+  const [umaVezPorContato, setUmaVezPorContato] = React.useState(false);
 
   const create = useCreateAutomationRule();
   const update = useUpdateAutomationRule();
@@ -326,6 +335,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     setActions((rule?.actions as ActionItem[] | undefined) ?? []);
     const sourceId = rule?.trigger_config?.webhook_source_id;
     setWebhookSourceId(typeof sourceId === "string" ? sourceId : QUALQUER_FONTE);
+    setUmaVezPorContato(rule?.trigger_config?.uma_vez_por_contato === true);
     // A configuração salva volta pelo MESMO leitor que a varredura usa: se ela
     // não reconhece o que está guardado, a tela não inventa nada e o operador
     // reescolhe — em vez de a tela mostrar um funil que o cron ignora.
@@ -461,9 +471,24 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 gatilhoDaTela: triggerEvent,
                 configDaTela: {
                   webhook_source_id: webhookSourceId === QUALQUER_FONTE ? null : webhookSourceId,
+                  // Ligado OU desligado, sempre gravado (#2974): omitir o
+                  // `false` faria o merge abaixo manter um `true` guardado e a
+                  // opção não poderia ser desligada pela tela.
+                  uma_vez_por_contato: umaVezPorContato,
                 },
               })
-            : {},
+            : // Gatilho sem configuração própria: `configDaTela` vazio devolve o
+              // que está guardado quando o gatilho não mudou — é assim que uma
+              // opção gravada pela API (o "uma vez por contato", #2974, cujo
+              // controle só é desenhado no gatilho de contato novo) sobrevive a
+              // abrir e salvar nesta gaveta em vez de sumir. Trocando o gatilho,
+              // o resultado é `{}`, como sempre foi.
+              configAoSalvarDaTela({
+                gatilhoDaRegra: rule?.trigger_event,
+                configDaRegra: rule?.trigger_config,
+                gatilhoDaTela: triggerEvent,
+                configDaTela: {},
+              }),
     };
     const parsed = createAutomationRuleSchema.safeParse(payload);
     if (!parsed.success) {
@@ -551,6 +576,20 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {t("Escolha uma fonte para limitar esta automação a um formulário. Qualquer fonte mantém o comportamento geral.")}
+                </p>
+                {/* #2974 — o limite por contato. Fica no gatilho de contato novo,
+                    que é o caso relatado (o lead volta pelo mesmo anúncio e
+                    recebia a sequência inteira outra vez). */}
+                <label className="mt-3 flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={umaVezPorContato}
+                    onChange={(e) => setUmaVezPorContato(e.target.checked)}
+                  />
+                  {t("Rodar no máximo uma vez por contato")}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t("Ligado, esta automação roda uma única vez para cada contato: se ele voltar pelo mesmo anúncio, a sequência não repete. A execução fica registrada na aba Atividade, e a próxima entrada deste contato só registra que a regra foi pulada.")}
                 </p>
               </div>
             ) : null}

@@ -110,6 +110,21 @@ export interface ParametrosDaConsulta {
   ownerUserId?: string | null;
   de: Date;
   ate: Date;
+  /**
+   * A duração escolhida para ESTE atendimento, em minutos — ausente, a do tipo
+   * (issue #3709).
+   *
+   * Desce até `horariosLivres` como o comprimento de cada slot, e portanto é
+   * ela que decide o que está livre: pedir 90 minutos e receber a lista dos
+   * slots de 30 faria a tela oferecer um horário que a escrita precisa recusar.
+   *
+   * ⚠️ NÃO VALE PARA `service_enabled`. Ali quem manda no comprimento é a
+   * agenda do SERVIÇO (`calendar_service_schedule.duration_minutes`, com
+   * capacidade e ocorrências), e sobrepor uma duração avulsa à reserva
+   * quebraria a conta de vagas. A rota e o handler recusam a escolha nesse
+   * caminho em vez de ignorá-la em silêncio.
+   */
+  duracaoMin?: number | null;
   /** INJETADO, como em `horariosLivres`. Relógio lido aqui dentro é o defeito que `janela-do-canal.ts` documenta. */
   agora: Date;
   /**
@@ -227,6 +242,12 @@ export async function horariosLivresDaOrg(
 
   if (tipo.service_enabled) {
     try {
+      // ⚠️ `params.duracaoMin` NÃO entra aqui de propósito: num serviço o
+      // comprimento é da agenda publicada (`calendar_service_schedule`), e a
+      // reserva tem capacidade e ocorrência — ver o aviso no parâmetro. Quem
+      // recusa a escolha nesse caminho é a ESCRITA (`_handler.ts`), que é onde
+      // ignorar em silêncio viraria um compromisso com duração diferente da
+      // anunciada.
       const service = await lerServico(supabase, organizationId, tipo.id);
       if (!service) throw new Error("Serviço não encontrado.");
       const result = await consultarServico(supabase, organizationId, service, { de: params.de, ate: params.ate, agora: params.agora, ownerUserId: params.ownerUserId });
@@ -378,6 +399,9 @@ export async function horariosLivresDaOrg(
       intervaloMin: tipo.slot_interval_minutes,
       janelaDias: tipo.booking_window_days,
     },
+    // A escolha da tela entra no MOTOR, e não só no INSERT: é o comprimento do
+    // slot que decide se um horário está livre (issue #3709).
+    duracaoMin: params.duracaoMin ?? null,
     de: params.de,
     ate: params.ate,
     agora: params.agora,

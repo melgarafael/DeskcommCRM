@@ -8,6 +8,167 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.94.0] — 2026-10-27
+
+### Adicionado
+
+- **O Inbox lembra o número e o Não lidos que você escolheu** Quem atende um setor com um número só precisava escolher o número e ligar **Não lidos** toda vez que recarregava o Inbox. Agora os dois filtros ficam lembrados neste navegador, separados por organização: ao reabrir, o Inbox volta como você deixou. Desligar o filtro apaga a lembrança. Busca e etiqueta continuam valendo só para a visita. Não é preciso mexer em nada na VPS. Crédito: @xxfabioxx12 (#3402).
+
+- **Cadastrar contato ou negócio agora pode já abrir a conversa** Quem cadastra um contato ou um negócio e atende em seguida tinha de sair da tela, ir ao
+  Inbox, clicar em "Iniciar conversa" e procurar o contato de novo. Agora os dois cadastros
+  têm o botão **"Salvar e iniciar conversa"**: ele salva e cai direto na conversa daquele
+  contato, já atribuída a quem cadastrou — o mesmo caminho do Inbox (escolha de canal,
+  `open-with-contact` e `claim`), então a conversa não nasce órfã.
+
+  Quem só quer cadastrar continua com o botão de sempre, que não abre conversa nenhuma. E a
+  permissão não muda de lado: sem papel de atendente o servidor recusa, a tela mostra o
+  motivo e não navega. Contato sem telefone não abre conversa 1:1, e a tela diz por quê.
+
+  Contribuição de @webtecnica (#3528).
+
+- **Texto de reserva para variáveis das mensagens** Agora dá para escrever `{{primeiro_nome|"aluno"}}` numa mensagem: se o contato não tiver o dado, sai o texto entre aspas ("Oi aluno!") em vez de a variável ficar vazia ou a pessoa ficar de fora. Vale nas respostas rápidas do Inbox, nos modelos de resposta, no WhatsApp e no e-mail das automações, no texto do follow-up e na campanha de texto livre. Aspas retas ou curvas, de 1 a 100 caracteres, sem chaves nem aspas dentro. Com o dado preenchido, a reserva é ignorada; quem não usa `|` não percebe nenhuma mudança. Nada muda na VPS. Crédito: @xxfabioxx12 (#3405).
+
+### Corrigido
+
+- **Criar contato durante outro cadastro preserva o rascunho** Ao criar um contato dentro de um negócio ou agendamento, o contato volta selecionado
+  e os dados ainda em edição são preservados. No negócio, "Salvar e iniciar conversa"
+  continua disponível depois de concluir o cadastro. O cadastro avulso de contato
+  também conserva esse atalho.
+
+  Adaptação da contribuição de @webtecnica (#3528).
+
+- **A faixa de conexão caída respeita as regras de acesso da sessão** A faixa de conexão caída passa a consultar os canais com a identidade da pessoa
+  conectada, aplicando as mesmas regras de acesso no banco que a listagem de
+  canais já usa.
+
+  No produto padrão, a visibilidade continua sendo por organização. Esta correção
+  não cria uma divisão de canais por atendente. O cenário da instalação adaptada
+  relatado no issue #3088 ainda depende de conferir a regra específica usada ali.
+
+  Não é preciso alterar a configuração da instalação.
+
+  Contribuição de @webtecnica (Refs #3088).
+
+- **O card do negócio não mostra mais "Propõe: Responder o cliente"** A próxima ação que o agente escrevia sem dizer nada — "Responder o cliente", "Atender o lead" — não vira mais proposta no card do funil. O agente já responde a cada mensagem, então a frase ocupava a faixa do card no lugar de "esfriando", da proposta de retomada e da probabilidade, e aprovar aquilo contava como atividade do negócio no radar de risco. Essas frases genéricas são descartadas na gravação, preservando uma proposta anterior, e o agente recebe orientação para propor uma ação concreta. O filtro reconhece uma lista curta de expressões em português e espanhol; não avalia o conteúdo de toda proposta. A ação concreta e a limpeza da proposta continuam como antes, e nada a fazer na atualização. As propostas vazias que já estão gravadas seguem no card até alguém aprovar, ignorar ou o agente reescrever. Crédito: @webtecnica (#3458).
+
+## [1.93.0] — 2026-10-27
+
+### Adicionado
+
+- **Atendimento conjunto — convide colegas para a mesma conversa** Até agora uma conversa tinha **um** responsável: ou você assumia (e o outro saía), ou você passava (e você saía). As situações que pedem **dois perfis na mesma conversa** — fechamento com comercial e técnico, escalonamento sem trocar de mão, treinamento ao vivo, supervisão, dois departamentos — não tinham caminho: a transferência é mão única e a nota interna é contexto, não co-atendimento.
+
+  Esta entrega abre o **atendimento conjunto**. No **cabeçalho da conversa** aparecem **quem já participa** — avatares e nomes — e o botão **Convidar**, que abre o seletor com os colegas da sua organização. O convidado passa a ver a conversa e as mensagens dela e pode responder **junto** — sem entrar no lugar de ninguém; a lista do cabeçalho se atualiza no instante do convite.
+
+  Quem convida é o **responsável pela conversa** ou um **gestor**. Só entra quem é membro ativo da mesma organização com papel de atendente ou acima — `viewer` e gente de outra organização ficam de fora: o seletor não oferece quem já participa, e a rota recusa o resto com o motivo dito na tela.
+
+  **O que NÃO muda:** o **dono da conversa continua o mesmo**. Convidar não é assumir: quem responde pela conversa (e pode fechá-la ou transferi-la) segue sendo quem era antes do convite. É exatamente isso que permite o cenário em que o N1 continua atendendo enquanto o N2 entra para ajudar.
+
+  **O que o convidado NÃO vê:** as **notas internas**, os **rascunhos** e as **passagens** continuam pertencendo ao operador que conduz a conversa. O convite divide o **atendimento** (as mensagens da conversa), não a cozinha: as três policies continuam presas a `fn_can_view_conversation`, que não conhece participante.
+
+  O convite é **interno**: nada sai para o WhatsApp do cliente. Na auditoria ficam registrados os dois fatos, com quem foi convidado — `conversation.invited` e `conversation.participant_removed`. O **aviso para o convidado** (notificação) é fatia seguinte desta issue e ainda não está aqui.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#2542).
+
+- **LeadSubmitted por clique CTWA recebido** Cada clique CTWA válido recebido pode gerar um LeadSubmitted próprio, mesmo quando o contato já tem um lead aberto, sem criar outro card. O envio continua desligado por padrão e respeita a ativação da organização. Repetições do mesmo clique e cliques já enviados pelo mecanismo anterior não geram uma segunda conversão. Quando um cliente pede para ser apagado, os registros de clique dele são apagados junto. Quando pede acesso aos próprios dados, recebe também seus cliques, datas e estado do envio, sem os dados internos de processamento.
+
+  Crédito: @oianmaxdev.
+
+- **Traço do turno tem prazo e leitor técnico pela API** O traço do turno passa a seguir a retenção já configurada para a telemetria da IA. Gerentes podem consultar seus recibos técnicos pela API, com datas validadas, limite de retenção explícito e sem devolver mensagens livres de erro. A tela permanece como entrega posterior da issue #3201.
+
+### Corrigido
+
+- **O cartão do documento diz "Documento XLSX" quando não há nome, e o download usa o nome original** O cartão de documento do Inbox tinha duas pontas soltas depois da entrega que passou a mostrar o nome original. A primeira: sem nome guardado — anexo de antes da ingestão, ou canal que não manda o nome — o cartão mostrava só `XLSX`, que se lê como se fosse o título do arquivo. Agora diz `Documento XLSX`, com a extensão identificada como extensão, como a issue pede.
+
+  A segunda: o nome aparecia na tela e morria no arquivo salvo. O ícone de download do cartão virou um link próprio (`?baixar=1`), e a rota de mídia devolve o arquivo nomeado — pela URL assinada quando a mídia já está no Storage, pelo `Content-Disposition` (com `filename` simples e `filename*` para acento) na janela em que o worker ainda não persistiu os bytes. A área do cartão continua abrindo a mídia como antes, então quem lê um PDF em aba nova não passou a baixá-lo.
+
+  Sem nome guardado, nada é inventado: nem no rótulo, nem no nome do arquivo. Não há como preencher os anexos antigos — o caminho no Storage é canônico (`{organização}/{conversa}/{mensagem}.{ext}`) e o provedor não reenvia o nome depois do webhook —, então eles ficam com `Documento XLSX` e baixam sem nome, como hoje.
+
+  No celular, o cartão também respeita a largura da bolha e separa a área de
+  toque do download do menu da mensagem. Os dois controles continuam acessíveis
+  sem que um cubra o outro; o nome completo permanece no título e nos links.
+
+- **CNPJ com dígito verificador errado deixa de ser aceito no cadastro de empresa** O cadastro de empresa conferia apenas o tamanho do CNPJ: quatorze dígitos e máscara correta bastavam, mesmo com o dígito verificador errado. Um número como `11.222.333/0001-00` era aceito, e o erro só aparecia depois, no enriquecimento pela BrasilAPI. A conferência do dígito não comprova existência ou situação cadastral na Receita.
+
+  Agora o CNPJ passa pela mesma régua que a cobrança já usa no documento do pagador: o módulo 11 da Receita, que confere os dois dígitos verificadores e recusa sequência repetida. Quem digita certo não vê diferença; quem digita errado recebe "CNPJ inválido" no ato, em vez de descobrir dias depois.
+
+  Na importação, a linha com CNPJ informado e inválido é marcada como falha antes de criar empresa, pessoa ou contato. O número errado não é tratado como campo vazio nem agrupa empresas pelo nome. CNPJ em branco continua opcional.
+
+  Nada muda para os cadastros que já existem: nenhuma empresa é tocada e nenhuma coluna mudou. O CNPJ alfanumérico da Receita continua recusado por enquanto — a coluna do banco exige quatorze dígitos e aceitá-lo pede migration própria.
+
+  Contribuição de @webtecnica (#3497).
+
+- **CPF com dígito errado passa a ser avisado no próprio campo do contato** Quem digitava um CPF errado no cadastro de contato não recebia sinal nenhum enquanto digitava: o campo aceitava, e a frase "CPF inválido" só aparecia no rodapé do diálogo depois do clique em criar — longe do campo que causou o problema. Na prática, dava a impressão de que a tela não validava nada.
+
+  Agora a conferência acontece no próprio campo, quando a pessoa sai dele. A mensagem nasce embaixo do input, o campo fica marcado como inválido para leitores de tela, e nada é enviado até o documento estar certo. A régua é a do país da organização, como já era no servidor: organização brasileira confere o dígito verificador do CPF, e o mesmo mecanismo serve a qualquer perfil que declare o seu documento.
+
+  O campo continua opcional: em branco, passa como antes. Nenhum dado existente muda e nenhuma configuração é necessária.
+
+  Contribuição de @webtecnica (#3498).
+
+- **Histórico do WhatsApp continua após conversas de avisos** A importação de conversas antigas ignora identificadores sem telefone válido,
+  como a conta de avisos do WhatsApp, e segue com as demais conversas. Telefones
+  válidos e LIDs continuam sendo importados. A atualização não exige configuração
+  adicional. Correção: @claudioghirellifh; relato: @franklinferre.
+
+- **A barra de respostas rápidas do Inbox não apaga mais o texto já digitado no campo** Com uma frase escrita no campo de resposta, clicar num botão da barra de
+  respostas rápidas trocava essa frase pelo texto da resposta — e, quando a
+  resposta tinha imagem ou áudio, esvaziava o campo e abria a prévia do anexo, sem
+  aviso e sem desfazer. Agora, enquanto houver rascunho no campo, a barra fica
+  desligada e o botão explica o motivo ao passar o mouse: envie ou apague o
+  rascunho antes. Campo vazio e o atalho `/` continuam funcionando como antes, e a
+  nota interna não muda.
+
+- **Quem alterna entre criar conta e entrar conserva o convite para a equipe** O convite acompanha os dois caminhos, e o login preenche o e-mail convidado. Quem cria a conta depois de passar pelo login continua entrando na equipe que convidou, sem abrir outra empresa por engano. A página do convite destaca **Criar minha conta**, com **Já tenho conta? Entrar** logo abaixo, em português e espanhol. Os envios consultam a marca atual; os links de convite e dos relatórios de dados são protegidos ao montar o e-mail, e o aviso de envio desligado deixa de registrar destinatário, assunto e prévia. Nada precisa ser feito na VPS. Contribuição de @vitorlacerdadigital (#2649).
+
+- **Leitura automática de mídia confere a organização do arquivo** A leitura automática dos anexos confere se o arquivo pertence à organização
+  da mensagem antes de baixá-lo ou gerar texto. Caminhos inválidos são recusados
+  sem acessar o arquivo. A atualização não exige configuração adicional.
+
+- **Teste de retenção independe do horário de execução** A fixture de retenção usa canais sintéticos com janela explícita de 24 horas em UTC para medir o espaçamento de cinco minutos em qualquer horário do CI. A configuração e a janela de envio das instalações permanecem iguais.
+
+- **No modo Só os seus, iniciar conversa assume o atendimento livre para quem clicou** Um atendente que cadastrava um contato novo e iniciava a conversa podia receber
+  “está com outro atendente” sobre um atendimento sem dono. Agora a sessão de quem
+  clicou pode assumir a conversa livre e passar a vê-la. Conversa de colega não é
+  tomada e integração por token não assume em nome de uma pessoa.
+
+  A atribuição usa os mesmos efeitos de Assumir: sincroniza um negócio aberto sem
+  responsável quando permitido, registra auditoria, evento e a troca de comando
+  na linha do tempo. Uma tentativa posterior de assumir não repete esses efeitos.
+  Se outro atendente assumir antes, a disputa não tira a conversa dele.
+  Transferência e roteamento continuam exigindo visibilidade.
+
+  Nenhuma configuração nova. Contribuição de @webtecnica (#3479 / #3493).
+
+- **Segurança da fila interna de trabalho** As permissões da fila interna de trabalho foram reforçadas, preservando as ações de atendimento, aprovação de respostas e agenda. A atualização chega pelo procedimento normal, sem configuração adicional.
+
+- **A tela de atualização informa quando a última conferência ficou antiga** Após mais de 30 minutos sem notícias do servidor, a tela de atualização deixa de afirmar que a versão instalada é a mais recente e mostra a hora da última conferência, com orientação para verificar a conexão. Uma atualização já anunciada continua disponível, e o caminho manual do agente offline é preservado. Não é preciso mudar a configuração da instalação. Crédito: @webtecnica.
+
+## [1.92.0] — 2026-10-27
+
+### Adicionado
+
+- **Dados lidos de documentos podem ser revisados antes de preencher o card** O assistente pode propor valores para os campos do negócio a partir de um
+  documento que leu. O dossiê mostra o valor atual, a proposta e o trecho de origem;
+  quem atende confirma, corrige ou descarta cada campo. As sugestões vencem após
+  sete dias. A confirmação conserva os números mostrados e a anonimização também
+  remove o motivo livre de recusa. Contribuição de @webtecnica, adaptada pela
+  manutenção a partir do PR #3471.
+
+- **O curso ganha histórias visuais para apresentar o sistema por tipo de negócio** O material público reúne exemplos de atendimento em dez setores, com cenas para
+  apresentar ao cliente e links para aprender a montar cada operação. As imagens
+  mostram o sistema real com dados fictícios e distinguem os roteiros das provas
+  separadas do agente. Essa ampliação do curso não exige atualizar ou configurar a
+  instalação do CRM.
+
+### Corrigido
+
+- **Acesso à mídia das conversas respeita a organização ativa** A leitura dos anexos e a reprodução de áudio conferem a organização da mídia
+  antes de liberar o acesso. A atualização não exige configuração adicional.
+
+- **A validade padrão da proposta respeita os dias de calendário no horário de verão** Propostas criadas pelo agente ou pela API sem uma validade explícita passam a contar o prazo configurado em dias de calendário no fuso da organização. Quando o prazo atravessava a entrada ou a saída do horário de verão, uma proposta criada perto da meia-noite podia vencer um dia antes ou depois. Não é preciso mudar a configuração da instalação. Crédito: @samirhvbr.
+
 ## [1.91.0] — 2026-10-26
 
 ### ⚠️ Requer atenção
@@ -13054,7 +13215,10 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.91.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.94.0...HEAD
+[1.94.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.93.0...v1.94.0
+[1.93.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.92.0...v1.93.0
+[1.92.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.91.0...v1.92.0
 [1.91.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.90.0...v1.91.0
 [1.90.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.89.0...v1.90.0
 [1.89.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.88.0...v1.89.0

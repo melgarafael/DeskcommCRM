@@ -135,10 +135,12 @@ mesmo cron e com o piso também dentro do banco:
 
 | chave | default | o que faz |
 |---|---|---|
-| `AI_TELEMETRY_RETENTION_DAYS` | `400` | `llm_calls`, `metrics`, `skill_activations`, `ai_router_decisions`. Piso de **100** dias. |
+| `AI_TELEMETRY_RETENTION_DAYS` | `400` | `llm_calls`, `metrics`, `skill_activations`, `ai_router_decisions` e o traço do turno (`agent_turn_traces`, 9021). Piso de **100** dias. |
 | `PACING_LEDGER_RETENTION_DAYS` | `2` | `pacing_ledger`. Piso de **2**; o último envio de cada número nunca sai. |
 | `OUTBOUND_COPIES_RETENTION_DAYS` | `30` | `outbound_copies`. Piso de **7**; as últimas que o anti-repetição compara nunca saem. |
 | `LEAD_CHECKPOINT_RETENTION_DAYS` | `180` | `lead_checkpoints` já superados. Piso de **30**; o vigente de cada atendimento nunca sai. |
+
+O traço do turno tem um [leitor técnico pela API](../specs/leitor-tecnico-do-traco-do-turno.md), restrito a gerentes da organização. Ele explicita o limite consultável e projeta recibos sem mensagens livres de erro. É uma entrega parcial: a tela permanece na issue #3201; uma lista vazia não prova que houve expurgo.
 
 `event_log` não tem poda, de propósito: é o livro-razão que impede os gatilhos
 de tempo de reenviarem WhatsApp.
@@ -179,7 +181,26 @@ psql "$SUPABASE_DB_URL" -c \
     where relname in ('job_queue','api_audit_log','send_ledger','before_send_traces');"
 ```
 
-## 5. Se ainda não fechar
+## 5. Quando o compute Nano do plano grátis não basta
+
+O sintoma não é lentidão, é indisponibilidade: o projeto fica fora do ar **sem ninguém usando**, toda chamada a
+`/rest/v1` responde `522` ou `503 PGRST002`, e o `/api/v1/health` diz `supabase: down` com
+`reason: projeto_indisponivel`.
+
+**O que foi medido, e em quantas instalações.** Uma instalação, em 29/10, no compute Nano (0,5 GB): ~6 h fora do ar,
+que só voltou com *Restart project*. O schema tinha 213 tabelas, 584 funções, 684 policies, 759 índices e 222
+triggers; a introspecção do schema cache do PostgREST leva ~722 ms com o banco saudável, contra o `statement_timeout`
+de 8 s do papel `authenticator`. Naquela instalação, a Nano entrou em swap, esgotou o *Disk IO Budget*, e essa
+consulta passou do teto: o cache se perdeu e o PostgREST ficou em laço. **Não está medido** se a Nano falha assim
+em toda instalação: o plano grátis continua sendo o caminho documentado de instalação.
+
+**Se acontecer com você:** *Restart project* devolve o serviço. Se voltar a cair parado, subir o compute para
+**Micro (1 GB)** é o próximo passo a testar: dá o dobro de memória à introspecção. **Não está medido que resolva:**
+na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*. Antes de trocar, confirme que é este ramo e não o
+replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
+`supabase-compute-insuficiente-free.md`.
+
+## 6. Se ainda não fechar
 
 Abra uma issue com: a saída dos três comandos da seção 1, a janela de tempo que
 elas cobrem, e o painel **Usage** do Supabase no mesmo período. Medição sem a

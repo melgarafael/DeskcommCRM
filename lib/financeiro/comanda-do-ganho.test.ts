@@ -65,6 +65,8 @@ function bancoFalso(opcoes: {
   falhaCancelamento?: { message: string } | null;
   falhaRpc?: boolean;
   numero?: number;
+  /** Regras de comissão em vigor; sem elas o item entra com 0%. */
+  regras?: Registro[];
 } = {}) {
   const escritas: { tabela: string; dados: Registro }[] = [];
   const rpcs: { fn: string; args: Registro }[] = [];
@@ -102,6 +104,7 @@ function bancoFalso(opcoes: {
         return resposta(opcoes.comandaExistente ?? { id: COMANDA, number: opcoes.numero ?? 7 });
       }
       if (tabela === "organizations") return resposta({ currency: "BRL" });
+      if (tabela === "commission_rules") return resposta(opcoes.regras ?? []);
       throw new Error(`consulta inesperada no teste: ${tabela}`);
     };
     const c: Record<string, unknown> = {};
@@ -157,6 +160,22 @@ const entrada = (sobrescrita: Partial<Parameters<typeof comandaDoGanho>[1]> = {}
 });
 
 describe("comandaDoGanho", () => {
+  it("o item do ganho leva o percentual da regra do atendente, e 0 sem regra", async () => {
+    const com = bancoFalso({
+      regras: [{ attendant_user_id: USER, event_type_id: null, percent: 12.5 }],
+    });
+    await comandaDoGanho(com.supabase, entrada());
+    expect(com.escritas.find((e) => e.tabela === "sale_items")?.dados).toMatchObject({
+      commission_percent: 12.5,
+    });
+
+    const sem = bancoFalso();
+    await comandaDoGanho(sem.supabase, entrada());
+    expect(sem.escritas.find((e) => e.tabela === "sale_items")?.dados).toMatchObject({
+      commission_percent: 0,
+    });
+  });
+
   it("ganho com valor e contato: abre a comanda com o valor e o contato do negócio e grava o vínculo", async () => {
     const falso = bancoFalso();
 

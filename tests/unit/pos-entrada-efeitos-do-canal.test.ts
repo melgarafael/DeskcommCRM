@@ -592,6 +592,46 @@ describe("despacho do agente", () => {
 });
 
 describe("nascimento do lead", () => {
+  it("sem ID retornado do INSERT ainda tenta abrir demanda sem fabricar prova CTWA", async () => {
+    await rodar({ messageId: null });
+
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+    expect(garantirLeadDaConversa).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: "org-1",
+        contactId: "contato-1",
+        conversationId: "conversa-1",
+        messageId: null,
+      }),
+    );
+    expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+  });
+
+  it("uma nova tentativa apos falha do nascimento preserva a mesma identidade", async () => {
+    garantirLeadDaConversa
+      .mockRejectedValueOnce(new Error("falha transitoria") as never)
+      .mockResolvedValueOnce({ criado: false, motivo: "ja_existe" } as never);
+
+    await expect(rodar({ messageId: null })).resolves.toBeUndefined();
+    await expect(rodar({ messageId: null })).resolves.toBeUndefined();
+
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(2);
+    for (const numero of [1, 2]) {
+      expect(garantirLeadDaConversa).toHaveBeenNthCalledWith(
+        numero,
+        expect.anything(),
+        expect.objectContaining({
+          organizationId: "org-1",
+          contactId: "contato-1",
+          conversationId: "conversa-1",
+          messageId: null,
+        }),
+      );
+    }
+    expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+  });
+
   it("leva o nome do contato para batizar o card", async () => {
     await rodar({ nomeDoContato: "Marcela" });
     expect(garantirLeadDaConversa).toHaveBeenCalledWith(

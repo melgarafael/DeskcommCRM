@@ -9,7 +9,7 @@ const MENSAGEM = "44444444-4444-4444-8444-444444444444";
 const estado = vi.hoisted(() => ({
   mensagem: {} as Record<string, unknown>,
   filtros: [] as Array<[string, unknown]>,
-  assinar: vi.fn(async (_path: string, _ttl: number) => ({
+  assinar: vi.fn(async (_path: string, _ttl: number, _opcoes?: { download: string }) => ({
     data: { signedUrl: "https://storage.example/signed/midia" }, error: null,
   })),
   baixar: vi.fn(async (_path: string) => ({ data: new Blob(["ogg"]), error: null })),
@@ -94,16 +94,16 @@ describe("mídia da mensagem respeita o namespace autorizado", () => {
     const resposta = await pedir();
     expect(resposta.status).toBe(302);
     expect(estado.assinar).toHaveBeenCalledExactlyOnceWith(
-      `${ORG}/${CONVERSA}/entrada.ogg`, VALIDADE_DO_LINK_DE_MIDIA_S,
+      `${ORG}/${CONVERSA}/entrada.ogg`, VALIDADE_DO_LINK_DE_MIDIA_S, undefined,
     );
     expect(estado.filtros).toContainEqual(["organization_id", ORG]);
     expect(estado.baixar).not.toHaveBeenCalled();
     expect(estado.buscarNoCanal).not.toHaveBeenCalled();
   });
 
-  it("mensagem legível com objeto de outra organização não alcança o assinador", async () => {
+  it.each(["", "?baixar=1"])("mensagem legível com objeto de outra organização não alcança o assinador (%s)", async (formato) => {
     estado.mensagem.media_storage_path = `${OUTRA_ORG}/${CONVERSA}/entrada.ogg`;
-    const resposta = await pedir();
+    const resposta = await pedir(formato);
     expect(estado.assinar).not.toHaveBeenCalled();
     expect(estado.baixar).not.toHaveBeenCalled();
     expect(estado.buscarNoCanal).not.toHaveBeenCalled();
@@ -124,6 +124,7 @@ describe("mídia da mensagem respeita o namespace autorizado", () => {
     `${ORG}/${MENSAGEM}.pdf`,
     `${ORG}/${CONVERSA}/out-${MENSAGEM}.png`,
     `${ORG}/${CONVERSA}/catalogo-${MENSAGEM}.jpg`,
+    `${ORG}/${CONVERSA}/${MENSAGEM}.bin`,
     `${ORG}/${CONVERSA}/2026/foto..final.jpg`,
     `${ORG}/${CONVERSA}/ação da clínica.pdf`,
     `${ORG}/${CONVERSA}/relatório\u00a0final.pdf`,
@@ -131,7 +132,19 @@ describe("mídia da mensagem respeita o namespace autorizado", () => {
     estado.mensagem.media_storage_path = caminho;
     const resposta = await pedir();
     expect(resposta.status).toBe(302);
-    expect(estado.assinar).toHaveBeenCalledExactlyOnceWith(caminho, VALIDADE_DO_LINK_DE_MIDIA_S);
+    expect(estado.assinar).toHaveBeenCalledExactlyOnceWith(caminho, VALIDADE_DO_LINK_DE_MIDIA_S, undefined);
+  });
+
+  it("download autorizado preserva o nome nas opções, sem trocá-lo pelo caminho", async () => {
+    estado.mensagem.metadata = { media_filename: "Orçamento ação.xlsx" };
+    const resposta = await pedir("?baixar=1");
+    expect(resposta.status).toBe(302);
+    expect(estado.assinar).toHaveBeenCalledExactlyOnceWith(
+      `${ORG}/${CONVERSA}/entrada.ogg`, VALIDADE_DO_LINK_DE_MIDIA_S,
+      { download: "Orçamento ação.xlsx" },
+    );
+    expect(estado.baixar).not.toHaveBeenCalled();
+    expect(estado.buscarNoCanal).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -157,7 +170,7 @@ describe("mídia da mensagem respeita o namespace autorizado", () => {
     `${ORG}/${CONVERSA}/entrada\u0000.ogg`,
   ])("recusa caminho não canônico antes de acessar o Storage: %j", async (caminho) => {
     estado.mensagem.media_storage_path = caminho;
-    for (const formato of ["", "?formato=aac"]) {
+    for (const formato of ["", "?baixar=1", "?formato=aac"]) {
       const resposta = await pedir(formato);
       expect(resposta.status).toBe(404);
       expect(resposta.headers.get("location")).toBeNull();

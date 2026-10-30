@@ -180,25 +180,21 @@
             {
               "acao": "rolar",
               "alvo": {
-                "role": "switch",
-                "nome": "Ligação recebida via push",
-                "exato": true
+                "css": "[data-testid='alerts-toggle'], [data-testid='alerts-enable']"
               }
             }
           ],
           "destaques": [
             {
               "alvo": {
-                "css": "tr:has([aria-label='Nova mensagem via push'])"
+                "css": "tr:has([data-testid='alerts-toggle'], [data-testid='alerts-enable'])"
               },
               "rotulo": "Linha Nova mensagem",
               "tipo": "caixa"
             },
             {
               "alvo": {
-                "role": "switch",
-                "nome": "Nova mensagem via push",
-                "exato": true
+                "css": "[data-testid='alerts-toggle'], [data-testid='alerts-enable']"
               },
               "rotulo": "Push de mensagem nova",
               "tipo": "seta"

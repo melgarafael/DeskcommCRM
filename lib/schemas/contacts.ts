@@ -71,6 +71,15 @@ export const contactCreateSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // Endereço da pessoa física (issue 3494): os mesmos campos que entrega e
+  // cobrança precisam, espelhando `companies`.
+  zip_code: z.string().max(16).optional().nullable(),
+  street: z.string().max(300).optional().nullable(),
+  number: z.string().max(40).optional().nullable(),
+  complement: z.string().max(120).optional().nullable(),
+  district: z.string().max(120).optional().nullable(),
+  city: z.string().max(120).optional().nullable(),
+  state: z.string().max(2, "UF com 2 letras (ex.: SP)").optional().nullable(),
   // O papel do contato (issue 3005): ausente = o default do BANCO ('cliente'),
   // e por isso `contactPatchSchema` também o deixa opcional — um PATCH que só
   // troca o nome não reescreve o tipo de um fornecedor.
@@ -331,6 +340,23 @@ export const contactsMergeSchema = z
     path: ["secondary_contact_ids"],
   });
 export type ContactsMergeInput = z.infer<typeof contactsMergeSchema>;
+
+/**
+ * POST /api/v1/contacts/duplicates/dismiss — "Não são a mesma empresa" (Spec 31, PR A).
+ *
+ * Exatamente DOIS ids, distintos. A organização não vem daqui: a rota a lê da sessão,
+ * e este schema não tem campo para ela (um `organization_id` no corpo é descartado).
+ * Comparar sem caixa: UUID é o mesmo id com maiúsculas ou minúsculas.
+ */
+export const contactsDismissDuplicateSchema = z
+  .object({
+    contact_ids: z.array(z.string().uuid()).length(2),
+  })
+  .refine((v) => v.contact_ids[0]?.toLowerCase() !== v.contact_ids[1]?.toLowerCase(), {
+    message: "Os dois contatos precisam ser diferentes.",
+    path: ["contact_ids"],
+  });
+export type ContactsDismissDuplicateInput = z.infer<typeof contactsDismissDuplicateSchema>;
 
 /**
  * POST /api/v1/contacts/bulk — as ações em lote da tela de Contatos (#2484, fatia F3).

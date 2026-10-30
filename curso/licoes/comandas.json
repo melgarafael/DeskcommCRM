@@ -1,0 +1,294 @@
+{
+  "id": "comandas",
+  "titulo": "Comandas",
+  "tela": "/app/comandas",
+  "resumo": "O balcão da clínica: cada comanda junta o que foi feito no atendimento, quanto o paciente paga e como pagou.",
+  "licoes": [
+    {
+      "id": "comandas-conhecendo-o-balcao",
+      "titulo": "Conhecendo o balcão",
+      "objetivo": "Saber onde ficam as comandas, ler a lista e abrir uma comanda para ver o que foi cobrado.",
+      "papel": "agent",
+      "busca": [
+        "comanda",
+        "comandas",
+        "balcão",
+        "conta do paciente",
+        "o que o paciente pagou",
+        "comanda finalizada",
+        "comanda cancelada"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Comandas não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Comandas\". O caminho completo é: CRM › Ver tudo em CRM › Comandas.",
+          "dica": "O cartão só aparece se quem administra o servidor instalou o módulo \"Comandas\" (Admin › Módulos). Quem só tem permissão de leitura abre a tela para conferir, mas não lança nada.",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Ver tudo em CRM", "exato": true },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "link", "nome": "^Comandas", "regex": true },
+              "rotulo": "Abrir as Comandas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "^Comandas", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "A lista do balcão",
+          "rota": "/app/comandas",
+          "texto": "À esquerda fica a lista de comandas, a mais nova em cima. Cada linha mostra o número, a situação e o valor. \"Aberta\" ainda está recebendo itens. \"Finalizada\" já foi paga. \"Cancelada\" foi desfeita antes de ser paga. À direita aparece a comanda que você escolher na lista. Para começar uma comanda do zero, use \"Nova comanda\".",
+          "destaques": [
+            {
+              "alvo": { "testid": "lista-de-comandas" },
+              "rotulo": "As comandas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Nova comanda", "exato": true },
+              "rotulo": "Começar uma",
+              "tipo": "seta"
+            },
+            {
+              "alvo": { "texto": "Escolha uma comanda à esquerda.", "exato": true },
+              "rotulo": "A comanda aberta aparece aqui",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": { "testid": "comanda-41" }
+        },
+        {
+          "id": "p3",
+          "titulo": "Por dentro de uma comanda",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "comanda-41" } },
+            { "acao": "aguardar", "alvo": { "testid": "total-da-comanda" } }
+          ],
+          "texto": "Clique numa comanda para abri-la. No alto vêm o número e a situação. Embaixo, cada linha é um item cobrado, com o valor, e no fim vem o total. Esta já foi finalizada: ninguém muda mais os itens, e o dinheiro já entrou na conta da forma de pagamento escolhida.",
+          "dica": "Se uma comanda finalizada saiu errada, um gerente ou administrador a estorna: aparece para ele o campo \"Motivo do estorno\" e o botão \"Estornar\". O motivo é obrigatório.",
+          "destaques": [
+            {
+              "alvo": { "texto": "Consulta com a nutricionista", "exato": true },
+              "rotulo": "Um item",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "testid": "total-da-comanda" },
+              "rotulo": "O total",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "comandas-lancar-e-fechar",
+      "titulo": "Lançar itens e fechar a comanda",
+      "objetivo": "Acrescentar um serviço a uma comanda aberta, conferir o total e fechar com a forma de pagamento.",
+      "papel": "agent",
+      "busca": [
+        "lançar na comanda",
+        "incluir item na comanda",
+        "fechar comanda",
+        "finalizar comanda",
+        "forma de pagamento",
+        "cancelar comanda",
+        "forma de pagamento sem conta de destino"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a comanda do atendimento",
+          "rota": "/app/comandas",
+          "texto": "A comanda #43 está aberta: o paciente fez a sessão de fisioterapia e ainda está no balcão. Clique nela para abrir.",
+          "destaques": [
+            {
+              "alvo": { "testid": "comanda-43" },
+              "rotulo": "A comanda aberta",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "testid": "comanda-43" }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que já foi lançado",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "comanda-43" } },
+            { "acao": "aguardar", "alvo": { "testid": "item-servico" } }
+          ],
+          "texto": "A comanda mostra o que já foi lançado e o total até agora. Como ela ainda está aberta, aparecem embaixo os campos para lançar mais um item. Em \"Serviço\", escolha um serviço da clínica, ou deixe \"Avulso\" para lançar algo que não é um serviço cadastrado, como um produto vendido no balcão.",
+          "destaques": [
+            {
+              "alvo": { "texto": "Sessão de fisioterapia", "exato": true, "dentro": { "css": "tbody" } },
+              "rotulo": "Já lançado",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "testid": "total-da-comanda" },
+              "rotulo": "Total até agora",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "testid": "item-servico" },
+              "rotulo": "Qual serviço",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Lançar um serviço",
+          "antes": [
+            { "acao": "selecionar", "alvo": { "testid": "item-servico" }, "opcao": "Aula de pilates" }
+          ],
+          "texto": "Escolhendo \"Aula de pilates\", a \"Descrição\" e o \"Valor\" se preenchem sozinhos com o nome e o preço do serviço. Os dois podem ser mudados antes de incluir, por exemplo para dar um desconto. Com \"Avulso\", você escreve os dois. Depois, clique em \"Incluir\".",
+          "destaques": [
+            {
+              "alvo": { "testid": "item-descricao" },
+              "rotulo": "O que foi feito",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "testid": "item-valor" },
+              "rotulo": "Quanto custa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "testid": "incluir-item" },
+              "rotulo": "Lançar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "testid": "incluir-item" }
+        },
+        {
+          "id": "p4",
+          "titulo": "O total muda na hora",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "incluir-item" } },
+            { "acao": "aguardar", "alvo": { "texto": "Aula de pilates", "exato": true, "dentro": { "css": "tbody" } } }
+          ],
+          "texto": "A aula de pilates entrou na lista e o total já soma os dois itens. Lançou errado? Enquanto a comanda estiver aberta, o \"×\" no fim da linha tira o item.",
+          "destaques": [
+            {
+              "alvo": { "texto": "Aula de pilates", "exato": true, "dentro": { "css": "tbody" } },
+              "rotulo": "Item novo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "testid": "total-da-comanda" },
+              "rotulo": "Total novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Remover item", "exato": true, "n": 1 },
+              "rotulo": "Tirar o item",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Fechar a comanda",
+          "antes": [
+            { "acao": "selecionar", "alvo": { "testid": "forma-de-pagamento" }, "opcao": "Pix" }
+          ],
+          "texto": "Na hora de pagar, escolha em \"Forma de pagamento\" como o paciente pagou e clique em \"Finalizar\". O dinheiro entra na conta ligada a essa forma (o Pix cai na conta do banco) e a comanda não muda mais. Se a forma escolhida ainda não tiver conta, aparece em vermelho: \"Esta forma de pagamento ainda não tem conta de destino. Defina em Configurações › Financeiro.\", e a comanda não fecha até você definir.",
+          "dica": "\"Cancelar comanda\" desfaz uma comanda aberta que não vai ser paga, por exemplo uma lançada em dobro. Atenção: vale na hora, sem pergunta de confirmação.",
+          "destaques": [
+            {
+              "alvo": { "testid": "forma-de-pagamento" },
+              "rotulo": "Como pagou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "testid": "finalizar-comanda" },
+              "rotulo": "Fechar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": { "testid": "cancelar-comanda" },
+              "rotulo": "Desfazer",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": { "testid": "finalizar-comanda" }
+        }
+      ]
+    },
+    {
+      "id": "comandas-atendimentos-sem-comanda",
+      "titulo": "Cobrar os atendimentos que ficaram sem comanda",
+      "objetivo": "Conferir os atendimentos da agenda que já aconteceram e ninguém cobrou, e faturar vários de uma vez.",
+      "papel": "agent",
+      "busca": [
+        "atendimentos sem comanda",
+        "faturar atendimentos",
+        "faturar em lote",
+        "esqueceram de cobrar",
+        "sem preço no serviço",
+        "cobrar sessões da agenda"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que ninguém cobrou",
+          "rota": "/app/comandas",
+          "texto": "Embaixo da lista fica \"Atendimentos sem comanda\": os atendimentos da agenda dos últimos 30 dias que já aconteceram, não foram cancelados nem tiveram falta, e ainda não viraram comanda. Nada vem marcado: você confere e marca o que vai cobrar. O atendimento de um serviço sem preço aparece com o aviso \"sem preço no serviço\" e não pode ser marcado. Abra uma comanda à mão para ele, ou ponha o preço no serviço em Configurações › Tipos de agendamento.",
+          "destaques": [
+            {
+              "alvo": { "role": "heading", "nome": "Atendimentos sem comanda", "exato": true },
+              "rotulo": "Esquecidos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "testid": "pendente-f1b00007-0000-4000-8000-000000000001" },
+              "rotulo": "Marcar para cobrar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "sem preço no serviço",
+                "exato": true,
+                "dentro": { "css": "li:has([data-testid='pendente-f1b00007-0000-4000-8000-000000000003'])" }
+              },
+              "rotulo": "Não dá para marcar",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": { "testid": "pendente-f1b00007-0000-4000-8000-000000000001" }
+        },
+        {
+          "id": "p2",
+          "titulo": "Faturar de uma vez",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "pendente-f1b00007-0000-4000-8000-000000000001" } },
+            { "acao": "click", "alvo": { "testid": "pendente-f1b00007-0000-4000-8000-000000000002" } },
+            { "acao": "selecionar", "alvo": { "testid": "forma-do-lote" }, "opcao": "Pix" }
+          ],
+          "texto": "Marque os atendimentos que vai cobrar e escolha a forma de pagamento. O botão \"Faturar\" mostra a soma do que está marcado. Ao clicar, o sistema abre e fecha uma comanda para cada atendimento, com o preço do serviço. Confira antes: não dá para desfazer tudo de uma vez. Cada comanda errada precisa ser estornada, uma por uma, por um gerente.",
+          "destaques": [
+            {
+              "alvo": { "testid": "forma-do-lote" },
+              "rotulo": "Como pagaram",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "testid": "faturar-lote" },
+              "rotulo": "Cobrar os marcados",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "testid": "faturar-lote" }
+        }
+      ]
+    }
+  ]
+}

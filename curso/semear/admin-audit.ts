@@ -22,8 +22,29 @@ export const EVENTO = {
 } as const;
 const DIA = 60 * 24;
 
+/**
+ * A lição "Eventos mais antigos" mostra o "Carregar mais", que só existe com mais de 50 eventos.
+ * Numa bancada nova o registro ainda não acumulou isso: 50 edições de contato da Ana, mais
+ * antigas que os seis eventos acima, garantem a segunda página. Mesmo formato do PATCH de contato.
+ */
+const ANTIGOS = Array.from({ length: 50 }, (_, i) => `ad100000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`);
+
+async function semearAntigos(c: Contexto) {
+  const existentes = exigir(await c.db.from("api_audit_log").select("id").in("id", ANTIGOS), "eventos antigos") as Array<{ id: string }>;
+  const novos = ANTIGOS.filter((id) => !existentes.some((x) => x.id === id)).map((id) => {
+    const i = ANTIGOS.indexOf(id);
+    return {
+      id, organization_id: c.org, action: "contact.updated", actor_user_id: c.pessoa.ana, created_at: ha((10 + i) * DIA),
+      resource_type: "contact", resource_id: contatoId((i % 12) + 1), request_id: null,
+      metadata: { fields: [i % 2 ? "tags" : "email"] },
+    };
+  });
+  if (novos.length) semErro(await c.db.from("api_audit_log").insert(novos), "eventos antigos do registro");
+}
+
 export async function semear(c: Contexto) {
   const { db, org, pessoa, agenteId } = c;
+  await semearAntigos(c);
   const ids = Object.values(EVENTO);
   const existentes = exigir(await db.from("api_audit_log").select("id").in("id", ids), "eventos existentes") as Array<{ id: string }>;
   if (existentes.length === ids.length) return;

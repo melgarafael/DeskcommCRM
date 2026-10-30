@@ -401,12 +401,17 @@ export function PipelinePageClient({
          * nenhum, do server component): nenhum `data` do quadro é consultado
          * aqui, e por isso o quadro pode estar carregando, ter falhado ou nem
          * ter sido pedido — a lista é a mesma. Também NÃO recebe
-         * `filteredLeads`: ela pagina no banco a partir da página 1, e o filtro
-         * em memória da barra não tem o que filtrar antes de a página chegar
-         * (fatia 2 leva os filtros para a consulta — ver o cabeçalho de
-         * `ListaDoFunil`).
+         * `filteredLeads`: ela pagina no banco, e filtrar em memória uma página
+         * esconderia os negócios das seguintes. Recebe a ESCOLHA da barra
+         * (`filters`), e a leva para a consulta (#3172, fatia 2 — ver o
+         * cabeçalho de `ListaDoFunil`).
          */
-        <ListaDoFunil pipelineId={pipelineId} pipeline={funilInicial} stages={etapasIniciais} />
+        <ListaDoFunil
+          pipelineId={pipelineId}
+          pipeline={funilInicial}
+          stages={etapasIniciais}
+          filtros={filters}
+        />
       ) : error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           {t("Não consegui carregar este funil:")} {formatError(error, t)}

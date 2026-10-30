@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "titulo": "Curso visual — atualização por mudanças do produto",
+  "descricao": "Infraestrutura de documentação, fora do runtime da VPS. A IA revisa candidatos por diff; a fotografia usa apenas a bancada fictícia e a publicação só avança depois da prova no domínio público. Falhas persistidas bloqueiam imagens antigas e retornam à recaptura.",
+  "lanes": [
+    {
+      "id": "fontes",
+      "label": "Fonte e publicação"
+    },
+    {
+      "id": "manutencao",
+      "label": "Manutenção com IA"
+    },
+    {
+      "id": "captura",
+      "label": "Bancada e fotografia"
+    },
+    {
+      "id": "saida",
+      "label": "Curso público"
+    }
+  ],
+  "mainPath": [
+    "fonte",
+    "plano",
+    "skill",
+    "bancada",
+    "fotos",
+    "manifesto",
+    "exportar",
+    "site",
+    "prova"
+  ],
+  "nodes": [
+    {
+      "id": "fonte",
+      "lane": "fontes",
+      "label": "Git + curso/publicacao.json",
+      "sublabel": "Commits exatos e recibo da publicação comprovada",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "plano",
+      "lane": "manutencao",
+      "label": "curso/planejar-atualizacao.ts",
+      "sublabel": "Candidatos, razões e pendências; não decide cobertura exata",
+      "type": "lib",
+      "dot": "violet"
+    },
+    {
+      "id": "skill",
+      "lane": "manutencao",
+      "label": "deskcomm-curso · Claude e Codex",
+      "sublabel": ".agents/skills/deskcomm-curso/SKILL.md + espelho gerado .claude/skills",
+      "type": "lib",
+      "dot": "violet"
+    },
+    {
+      "id": "bancada",
+      "lane": "captura",
+      "label": "App real + Supabase local",
+      "sublabel": "Baseline, dono de teste e sementes fictícias; worker parado",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "fotos",
+      "lane": "captura",
+      "label": "capturar.ts + capturar-jornadas.ts",
+      "sublabel": "Idioma real, JPEG, destaques e cliques medidos por idioma",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "manifesto",
+      "lane": "captura",
+      "label": "curso/manifesto.ts",
+      "sublabel": "Invalidação antes da rodada, progresso atômico e falhas persistidas",
+      "type": "lib",
+      "dot": "violet"
+    },
+    {
+      "id": "exportar",
+      "lane": "saida",
+      "label": "curso/exportar-capturas.ts",
+      "sublabel": "Conjunto completo validado e preparado no repositório do site",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "site",
+      "lane": "saida",
+      "label": "deskcomm.com.br/curso · /es/curso",
+      "sublabel": "Leitura, busca, simulador e demonstrações do deskcomm-site",
+      "type": "ui",
+      "dot": "emerald"
+    },
+    {
+      "id": "prova",
+      "lane": "saida",
+      "label": "Testes + revisão visual + checks",
+      "sublabel": "Falha volta à aula; recibo só depois do deploy conferido",
+      "type": "lib",
+      "dot": "blue"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "fonte",
+      "to": "plano",
+      "label": "diferença desde a fonte publicada"
+    },
+    {
+      "id": "e2",
+      "from": "plano",
+      "to": "skill",
+      "label": "alcance inferido exige revisão IA"
+    },
+    {
+      "id": "e3",
+      "from": "skill",
+      "to": "bancada",
+      "label": "corrige aulas e prepara o cenário"
+    },
+    {
+      "id": "e4",
+      "from": "bancada",
+      "to": "fotos",
+      "label": "conta e interface no idioma pedido"
+    },
+    {
+      "id": "e5",
+      "from": "fotos",
+      "to": "manifesto",
+      "label": "cada foto concluída libera sua pendência"
+    },
+    {
+      "id": "e6",
+      "from": "manifesto",
+      "to": "exportar",
+      "label": "somente conjunto completo sem falhas"
+    },
+    {
+      "id": "e7",
+      "from": "exportar",
+      "to": "site",
+      "label": "imagens e geometria preparadas para PR"
+    },
+    {
+      "id": "e8",
+      "from": "site",
+      "to": "prova",
+      "label": "leitura, simulador e cenas no browser"
+    },
+    {
+      "id": "e9",
+      "from": "prova",
+      "to": "fonte",
+      "label": "deploy conferido atualiza o recibo"
+    },
+    {
+      "id": "e10",
+      "from": "manifesto",
+      "to": "skill",
+      "label": "falha bloqueia publicação e exige nova captura"
+    }
+  ]
+}

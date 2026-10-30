@@ -20,6 +20,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "./helpers/test";
+import { createClient } from "@supabase/supabase-js";
+import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { esperarCacheCurtoVencer, esperarEscritaDeFora } from "./helpers/cache-curto";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
@@ -116,4 +119,120 @@ test("o e-mail digitado na tela do contato fica salvo", async ({ page }) => {
   ).toBe(EMAIL.toLowerCase());
 
   await page.screenshot({ path: "evidence/spec-17/contato-com-email-salvo.png", fullPage: true });
+});
+
+test("documento inválido avisa no campo; corrigir permite criar e vazio continua opcional (#3496)", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/app/contacts");
+  const criados: string[] = [];
+  const documentosEnviados: unknown[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST" && new URL(req.url()).pathname === "/api/v1/contacts") {
+      documentosEnviados.push((req.postDataJSON() as { cpf?: string }).cpf);
+    }
+  });
+  try {
+    await page.getByRole("button", { name: "Novo contato", exact: true }).click();
+    const dialogo = page.getByRole("dialog", { name: "Novo contato", exact: true });
+    await dialogo.getByLabel("Nome", { exact: true }).fill(`Documento corrigido ${sufixo}`);
+    await dialogo.getByLabel("Email", { exact: true }).fill(`documento.${sufixo}@example.test`);
+    const documento = dialogo.getByLabel(/CPF/);
+    await documento.fill("123.456.789-00");
+    await documento.press("Tab");
+    await expect(dialogo.getByRole("alert")).toHaveText("CPF inválido");
+    await expect(documento).toHaveAttribute("aria-invalid", "true");
+    await expect(documento).toHaveAttribute("aria-describedby", "cpf-erro");
+    fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
+    await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/documento-invalido-junto-do-campo.png" });
+    await dialogo.getByRole("button", { name: "Criar contato", exact: true }).click();
+    await expect(dialogo).toBeVisible();
+    await expect(dialogo.getByRole("alert")).toHaveText("CPF inválido");
+
+    await documento.fill("529.982.247-25");
+    await documento.press("Tab");
+    await expect(dialogo.getByRole("alert")).toHaveCount(0);
+    const salvo = page.waitForResponse(
+      (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/v1/contacts",
+    );
+    await dialogo.getByRole("button", { name: "Criar contato", exact: true }).click();
+    const resposta = await salvo;
+    expect(resposta.status()).toBe(201);
+    criados.push(
+      ((await resposta.json()) as { data: { contact: { id: string } } }).data.contact.id,
+    );
+    await expect(dialogo).not.toBeVisible();
+    // A tentativa inválida não chegou à rota: só o documento corrigido saiu.
+    expect(documentosEnviados).toEqual(["529.982.247-25"]);
+
+    await page.getByRole("button", { name: "Novo contato", exact: true }).click();
+    await dialogo.getByLabel("Nome", { exact: true }).fill(`Sem documento ${sufixo}`);
+    await dialogo.getByLabel("Email", { exact: true }).fill(`sem.documento.${sufixo}@example.test`);
+    await dialogo.getByLabel(/CPF/).focus();
+    await dialogo.getByLabel(/CPF/).press("Tab");
+    await expect(dialogo.getByRole("alert")).toHaveCount(0);
+    const salvoSemDocumento = page.waitForResponse(
+      (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/v1/contacts",
+    );
+    await dialogo.getByRole("button", { name: "Criar contato", exact: true }).click();
+    const semDocumento = await salvoSemDocumento;
+    expect(semDocumento.status()).toBe(201);
+    criados.push(
+      ((await semDocumento.json()) as { data: { contact: { id: string } } }).data.contact.id,
+    );
+    await expect(dialogo).not.toBeVisible();
+    expect(documentosEnviados).toEqual(["529.982.247-25", undefined]);
+    await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/contatos-criados-apos-validacao.png" });
+  } finally {
+    for (const id of criados) {
+      const removido = await page.request.delete(`/api/v1/contacts/${id}`);
+      expect(removido.ok(), "limpeza do contato do próprio caso").toBe(true);
+    }
+  }
+});
+
+// Perfil real da organização: a tela e a rota devem concordar fora do Brasil.
+test("documento segue Portugal: CPF brasileiro não passa como NIF", async ({ page }) => {
+  // Até dois TTLs do cache curto (#3696): um para o país novo chegar, outro na limpeza.
+  test.setTimeout(150_000);
+  const conexao = credenciaisSupabaseDeTeste();
+  const db = createClient(conexao.url, conexao.serviceRole, { auth: { persistSession: false } });
+  const anterior = await db.from("organizations").select("country").eq("id", creds.org_id).single();
+  expect(anterior.error).toBeNull();
+  const alterado = await db.from("organizations").update({ country: "PT" }).eq("id", creds.org_id);
+  expect(alterado.error).toBeNull();
+  let contatoId: string | undefined;
+  try {
+    await login(page);
+    const dialogo = page.getByRole("dialog", { name: "Novo contato", exact: true });
+    const documento = dialogo.getByLabel(/NIF/);
+    // O país foi gravado direto no banco, e os casos anteriores desta conta já
+    // aqueceram o snapshot da empresa no cache curto (#3696): ele chega à tela
+    // quando a entrada vence, não na recarga seguinte.
+    await esperarEscritaDeFora(async () => {
+      await page.goto("/app/contacts");
+      await page.getByRole("button", { name: "Novo contato", exact: true }).click();
+      await expect(documento).toBeVisible({ timeout: 3_000 });
+    });
+    await dialogo.getByLabel("Nome", { exact: true }).fill(`Documento PT ${sufixo}`);
+    await documento.fill("52998224725");
+    await documento.press("Tab");
+    await expect(dialogo.getByRole("alert")).toHaveText("NIF inválido");
+    await expect(documento).toHaveAttribute("aria-invalid", "true");
+    await documento.fill("123456789");
+    await documento.press("Tab");
+    await expect(dialogo.getByRole("alert")).toHaveCount(0);
+    const salvo = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/v1/contacts");
+    await dialogo.getByRole("button", { name: "Criar contato", exact: true }).click();
+    const resposta = await salvo;
+    expect(resposta.status()).toBe(201);
+    contatoId = ((await resposta.json()) as { data: { contact: { id: string } } }).data.contact.id;
+    await expect(dialogo).not.toBeVisible();
+  } finally {
+    if (contatoId) expect((await page.request.delete(`/api/v1/contacts/${contatoId}`)).ok()).toBe(true);
+    expect((await db.from("organizations").update({ country: anterior.data!.country }).eq("id", creds.org_id)).error).toBeNull();
+    // A próxima spec desta conta não pode herdar o "PT" que ficou no cache.
+    await esperarCacheCurtoVencer();
+  }
 });

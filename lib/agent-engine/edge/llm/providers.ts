@@ -215,11 +215,12 @@ export function modeloOpenAIRaciocina(modelId: string): boolean {
 }
 
 /**
- * Da linha 6 em diante nenhum modelo lista `minimal`, e só `gpt-6-luna` e `gpt-6-sol`
- * listam `none` (doc oficial de cada id em 11/10/2026: o gpt-6.1-sol diz "`none` and
- * `minimal` reasoning efforts are not supported", o gpt-6-astra lista low…max, o
- * gpt-6-luna lista none, low…max; o @ai-sdk/openai declara as mesmas listas em
- * `supportedReasoningEfforts`). Mandar o knob como está seria 400 em toda resposta.
+ * Da linha 6 em diante nenhum modelo lista `minimal`, e só `gpt-6-luna`, `gpt-6-sol` e
+ * `gpt-6.1-terra` listam `none` (doc oficial de cada id em 11/10/2026: o gpt-6.1-sol diz
+ * "`none` and `minimal` reasoning efforts are not supported", o gpt-6-astra lista
+ * low…max, o gpt-6-luna lista none, low…max; o @ai-sdk/openai declara as mesmas listas
+ * em `supportedReasoningEfforts`. O gpt-6.1-terra, em 27/10/2026, lista none, low…max).
+ * Mandar o knob como está seria 400 em toda resposta.
  *
  * `none`/`minimal` é pedido de velocidade, então vira `none` onde ele existe e `low`
  * onde não existe. `minimal` NÃO vira `low` no Luna: medido acima, lá `low` é mais
@@ -233,7 +234,7 @@ function esforcoAceitoPeloModelo(
   const id = modelId.toLowerCase();
   const major = /^gpt-(\d+)/.exec(id)?.[1];
   if (major === undefined || Number(major) < 6) return esforco;
-  const aceitaNone = id === 'gpt-6-luna' || id === 'gpt-6-sol';
+  const aceitaNone = id === 'gpt-6-luna' || id === 'gpt-6-sol' || id === 'gpt-6.1-terra';
   return aceitaNone ? 'none' : 'low';
 }
 
@@ -264,6 +265,15 @@ function comEsforcoDeRaciocinio(inner: typeof fetch, esforco: EsforcoDeRaciocini
   };
 }
 
+/** Mesmo transporte contido para chat e serviços do provedor, inclusive redirects. */
+export function fetchDoProvedor(endpoint: string, allowedHosts: readonly string[] = []): typeof fetch {
+  const allow = buildAllowlist([endpoint, ...allowedHosts]);
+  return (input, init) => {
+    const url = typeof input === 'string' || input instanceof URL ? input : input.url;
+    return allowlistedFetch(url, init, { allowlist: allow });
+  };
+}
+
 /**
  * Providers reais do lançamento. Sonnet (Anthropic) é o default RECOMENDADO —
  * recomendação vive em .env.example/docs; o id do modelo é sempre config da org.
@@ -288,13 +298,7 @@ export function createDefaultRegistry(opts?: {
   const extra = opts?.allowedHosts ?? [];
   const esforcoOpenAI =
     opts?.openaiReasoningEffort !== undefined ? opts.openaiReasoningEffort : esforcoDeRaciocinioOpenAI();
-  const contain = (endpoint: string): typeof fetch => {
-    const allow = buildAllowlist([endpoint, ...extra]);
-    return (input, init) => {
-      const url = typeof input === 'string' || input instanceof URL ? input : input.url;
-      return allowlistedFetch(url, init, { allowlist: allow });
-    };
-  };
+  const contain = (endpoint: string): typeof fetch => fetchDoProvedor(endpoint, extra);
   return {
     anthropic: (apiKey, modelId) =>
       createAnthropic({ apiKey, fetch: contain(ANTHROPIC_ENDPOINT) })(modelId),

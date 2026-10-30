@@ -24,7 +24,9 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { evaluateConditions, type Conditions } from "@/lib/automation/conditions";
+import { hidratarCamposDoFunil } from "@/lib/automation/campos-do-render";
 import { getAction } from "@/lib/automation/actions";
+import { falhaDeExecucaoParaRecibo, resultadosParaRecibo } from "@/lib/automation/resultado-para-recibo";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { regraDoEvento } from "@/lib/automation/gatilho-de-data-do-funil";
@@ -34,6 +36,7 @@ import {
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -89,7 +92,7 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
           .maybeSingle()
       : { data: null };
     if (lead) {
-      context.lead = lead;
+      context.lead = ocultarProvaMetaNaResposta(lead as Record<string, unknown>);
       if (lead.contact_id) {
         const { data: contact } = await admin
           .from("contacts")
@@ -99,6 +102,11 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
           .maybeSingle();
         if (contact) context.contact = contact;
       }
+      // O rótulo das opções (#3605): o card guarda `paris-franca`, e é a
+      // DEFINIÇÃO do funil que diz o que o cliente deve ler. Vai no contexto
+      // porque quem renderiza (`lib/automation/template.ts`) é função pura — e
+      // porque o mesmo contexto serve às condições e às ações.
+      await hidratarCamposDoFunil(context, admin, org);
     }
   } else if (row.entity_kind === "contact" && row.entity_id) {
     const { data: contact } = await admin
@@ -211,6 +219,202 @@ async function contatoDoEvento(
 }
 
 /**
+ * A REGRA PEDIU "NO MÁXIMO UMA VEZ POR CONTATO"? (#2974)
+ *
+ * Chave do `trigger_config`, booleana (o schema da API recusa o resto). Ausente
+ * ou `false` = o comportamento de sempre — a regra roda em todo evento que casa
+ * —, e é isso que faz esta entrega não mexer com quem não ligou a opção.
+ */
+export function regraRodaUmaVezPorContato(rule: Pick<RuleRow, "trigger_config">): boolean {
+  return rule.trigger_config?.uma_vez_por_contato === true;
+}
+
+/**
+ * O contato hidratado no CONTEXTO — o do lead do evento, do compromisso, do
+ * aniversário.
+ *
+ * É o segundo caminho, e existe porque `contatoDoEvento` só olha o payload
+ * (`contact_id`/`conversation_id`): um `lead.created` traz o contato PELO LEAD,
+ * e sem este fallback a opção seria silenciosamente inútil justamente no
+ * gatilho de contato novo, que é o caso da issue.
+ */
+function contatoDoContexto(context: Record<string, unknown>): string | null {
+  const id = (context.contact as { id?: unknown } | undefined)?.id;
+  return typeof id === "string" ? id : null;
+}
+
+/**
+ * O ESTADO PERSISTIDO: esta regra já tem execução registrada para este contato?
+ *
+ * A pergunta vai ao BANCO, nunca a uma memória do processo — é o que faz a
+ * decisão sobreviver a reinício do worker (e a decisão de um evento alcançar o
+ * próximo, que chega numa execução nova). Qualquer linha da regra com este
+ * `contact_id` conta: a opção é "no máximo UMA VEZ", não "até conseguir" — o
+ * modo por intervalo (horas/dias) é a outra fatia da issue, e é lá que "tentar
+ * de novo depois" mora.
+ *
+ * FAIL-OPEN na leitura: se a consulta falhar, a regra roda como sempre rodou.
+ * Negar por erro de leitura esconderia automação legítima sem deixar rastro do
+ * porquê; o erro sai no log.
+ *
+ * Ela é o CAMINHO RÁPIDO, não o árbitro da corrida: o caso comum é o contato que
+ * JÁ executou, e aí a regra morre aqui, sem tocar no banco de novo. Quem decide a
+ * corrida entre dois drenos simultâneos é a RESERVA
+ * (`reservarExecucaoPorContato`), tomada depois das condições e antes de
+ * executar — consultar e depois executar são dois passos, e entre eles cabia
+ * outro dreno.
+ */
+async function regraJaRodouParaOCntato(
+  admin: SupabaseClient,
+  organizationId: string,
+  ruleId: string,
+  contactId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("automation_rule_runs")
+    // `limit(1)` + lista, NUNCA `maybeSingle()`: um contato pode ter VÁRIAS
+    // linhas desta regra (cada mensagem dele que casou deixa uma, inclusive a
+    // da própria decisão de bloqueio), e o `maybeSingle` do PostgREST responde
+    // ERRO quando há mais de uma — erro que, no fail-open, voltaria a rodar a
+    // regra que deveria estar bloqueada.
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("rule_id", ruleId)
+    .eq("contact_id", contactId)
+    .limit(1);
+  if (error) {
+    logger.warn(
+      "[automation.engine] não foi possível conferir o limite por contato — a regra segue (fail-open)",
+      { rule_id: ruleId, organization_id: organizationId, error: error.message },
+    );
+    return false;
+  }
+  return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * A RESERVA NO BANCO — a chave (regra, contato) tomada ANTES de executar (#2974).
+ *
+ * A leitura acima é o CAMINHO RÁPIDO, e não o árbitro: ela responde "esta regra
+ * já rodou para este contato?" sobre o estado que EXISTE, e o caso comum (o
+ * contato que já executou) morre ali, sem chegar aqui. O que ela não faz é
+ * RESERVAR: consultar e depois executar são dois passos, e entre eles cabe
+ * outro dreno. O laço do worker e o cron drenam o `event_log` em paralelo e,
+ * numa instalação sem worker, o dreno roda dentro da própria requisição de
+ * captação — dois `lead.created` do MESMO contato (o "reenviou porque demorou"
+ * da issue) chegam aos dois drenos ao mesmo tempo, os dois leem "nunca rodou",
+ * os dois executam, e a sequência sai duas vezes.
+ *
+ * Aqui a decisão é ATÔMICA: `insert ... on conflict do nothing` sobre a chave
+ * única `(organization_id, rule_id, contact_id)` — que é o que
+ * `.upsert(…, { ignoreDuplicates: true })` manda no fio (`on_conflict=` +
+ * `resolution=ignore-duplicates`). Quem consegue o insert
+ * executa; quem não consegue não executa e só registra o bloqueio. Não há
+ * janela entre decidir e executar, porque a decisão É a escrita.
+ *
+ * FAIL-OPEN no erro que NÃO é a chave tomada (banco fora do ar, por exemplo):
+ * negar por erro de escrita esconderia automação legítima sem deixar rastro do
+ * porquê — a mesma doutrina da leitura acima, e o log diz que foi isso. A chave
+ * já tomada NÃO é erro: com `ignoreDuplicates` o PostgREST responde 201 com
+ * lista vazia, e é por aí que "não reservei" chega.
+ */
+async function reservarExecucaoPorContato(
+  admin: SupabaseClient,
+  row: EventRow,
+  rule: RuleRow,
+  contactId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("automation_rule_contact_claims")
+    .upsert(
+      {
+        organization_id: row.organization_id,
+        rule_id: rule.id,
+        contact_id: contactId,
+        event_id: row.id,
+      },
+      { onConflict: "organization_id,rule_id,contact_id", ignoreDuplicates: true },
+    )
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    logger.warn(
+      "[automation.engine] não foi possível reservar a execução única do contato — a regra segue (fail-open)",
+      { rule_id: rule.id, organization_id: row.organization_id, error: error.message },
+    );
+    return true;
+  }
+  // Lista vazia = a chave já era de outro dreno (foi `on conflict do nothing`),
+  // e o `maybeSingle` traduz isso em `data` nulo. Ninguém executa duas vezes.
+  return data !== null;
+}
+
+/**
+ * A DECISÃO DE NÃO RODAR, gravada com a razão (#2974).
+ *
+ * Mesmo desenho de `registrarAdiamento`: um run que registra o que aconteceu em
+ * vez de o evento sumir sem deixar linha. Aqui nada foi tentado e nada vai
+ * chegar — por isso as ações saem como `skipped` com `error:
+ * uma_vez_por_contato`, e o agregador (`statusDoRun`, o MESMO do run normal)
+ * fecha o estado como `failed`: a doutrina do motor é que `skipped` conta junto
+ * de `failed`, porque as duas significam "não saiu, e a fila não resolve
+ * sozinha". Sem esta linha, "não apareceu nada na Atividade" e "a regra não
+ * rodou" voltariam a ser a mesma tela — o defeito que originou o `adiado`
+ * (migration 0175).
+ *
+ * Não mexe em `run_count`/`last_run_at`: a regra NÃO rodou, e o contador
+ * informativo não pode dizer que sim.
+ */
+async function registrarBloqueioPorLimite(
+  admin: SupabaseClient,
+  row: EventRow,
+  rule: RuleRow,
+  contactId: string,
+): Promise<void> {
+  const results: ActionResultDetail[] = (rule.actions ?? []).map((action) => ({
+    type: action.type,
+    status: "skipped" as const,
+    error: "uma_vez_por_contato",
+  }));
+  const { error } = await admin.from("automation_rule_runs").insert({
+    organization_id: row.organization_id,
+    rule_id: rule.id,
+    event_id: row.id,
+    contact_id: contactId,
+    status: statusDoRun(results),
+    actions_result: resultadosParaRecibo(results),
+  });
+  if (error) {
+    logger.error("[automation.engine] não foi possível registrar o bloqueio por contato", {
+      rule_id: rule.id,
+      organization_id: row.organization_id,
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * O estado do run a partir do desfecho de cada ação.
+ *
+ * Esta função é a única fonte da regra: o run normal e o registro da decisão de
+ * bloqueio por contato passam os dois por ela. A doutrina inteira está no
+ * comentário do call site, em `runAutomationForEvent`.
+ */
+export function statusDoRun(
+  results: readonly ActionResultDetail[],
+): "success" | "partial" | "failed" | "adiado" {
+  const naoEnviadas = results.filter((r) => r.status === "failed" || r.status === "skipped").length;
+  const adiados = results.filter((r) => r.status === "postponed").length;
+  return naoEnviadas > 0
+    ? naoEnviadas === results.length
+      ? "failed"
+      : "partial"
+    : adiados > 0
+      ? "adiado"
+      : "success";
+}
+
+/**
  * Verdadeiro quando o evento é de um contato pessoal (spec 21, caminho 8).
  *
  * Fail-open de propósito: sem conseguir resolver o contato, a regra segue o
@@ -305,6 +509,28 @@ export async function runAutomationForEvent(
     | { source_metadata?: Record<string, unknown> | null }
     | undefined;
   const webhookSourceId = lead?.source_metadata?.webhook_source_id;
+
+  // ═══ "NO MÁXIMO UMA VEZ POR CONTATO" (#2974) ═══
+  //
+  // O contato do evento vem do PAYLOAD (`contatoDoEvento`) e, se o payload não
+  // o traz, do contexto hidratado — o lead, o compromisso, o aniversário. Sem
+  // contato resolvível não há o que contar, e aí a regra segue como sempre foi
+  // (fail-open, declarado no gate abaixo): calar por falta de leitura
+  // esconderia automação legítima, e é o mesmo desfecho do evento de contato
+  // pessoal indisponível.
+  const contatoIdDoEvento = (await contatoDoEvento(admin, row)) ?? contatoDoContexto(context);
+  // A pergunta ao banco é feita UMA vez por regra, antes do filtro (o filtro é
+  // síncrono e não pode esperar): quem já rodou para este contato está aqui.
+  const jaRodouParaOCntato = new Map<string, boolean>();
+  for (const rule of matched) {
+    if (!regraRodaUmaVezPorContato(rule) || !contatoIdDoEvento) continue;
+    jaRodouParaOCntato.set(
+      rule.id,
+      await regraJaRodouParaOCntato(admin, row.organization_id, rule.id, contatoIdDoEvento),
+    );
+  }
+
+  const barradasPeloLimite: RuleRow[] = [];
   const applicable = matched.filter((rule) => {
     const configuredSourceId = rule.trigger_config?.webhook_source_id;
     if (
@@ -314,10 +540,43 @@ export async function runAutomationForEvent(
     ) {
       return false;
     }
-    return evaluateConditions(rule.conditions ?? [], context);
+    if (!evaluateConditions(rule.conditions ?? [], context)) return false;
+    if (regraRodaUmaVezPorContato(rule)) {
+      if (!contatoIdDoEvento) {
+        // FAIL-OPEN: sem contato resolvível a regra segue como hoje e o run
+        // grava `contact_id` nulo — que é o rastro de que a conferência não
+        // pôde ser feita.
+        logger.warn(
+          "[automation.engine] regra 'uma vez por contato' sem contato resolvível — segue como sempre (fail-open)",
+          {
+            rule_id: rule.id,
+            organization_id: row.organization_id,
+            event_id: row.id,
+            event_type: row.event_type,
+          },
+        );
+        return true;
+      }
+      if (jaRodouParaOCntato.get(rule.id) === true) {
+        barradasPeloLimite.push(rule);
+        return false;
+      }
+    }
+    return true;
   });
+
+  // A decisão fica REGISTRADA, ainda que nada tenha rodado: quem montou a regra
+  // precisa ver na aba Atividade que ela pulou este contato de propósito.
+  for (const rule of barradasPeloLimite) {
+    if (contatoIdDoEvento) await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento);
+  }
+
   if (!applicable.length) {
-    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
+    return {
+      consumer_key: AUTOMATION_CONSUMER_KEY,
+      status: "ok",
+      detail: barradasPeloLimite.length ? "uma_vez_por_contato" : "no_match",
+    };
   }
 
   // Pré-checagem de postpone (throttle etc.): all-or-nothing ANTES de executar
@@ -341,7 +600,45 @@ export async function runAutomationForEvent(
     }
   }
 
-  for (const rule of applicable) {
+  // ═══ A RESERVA ANTES DE EXECUTAR (#2974) ═══
+  //
+  // A pré-checagem de adiamento acima vem ANTES de propósito: o adiamento devolve
+  // o evento para a hora marcada (`retry_at`), e reservar antes disso consumiria
+  // a única execução do contato sem nada ter saído — a regra esperaria a janela
+  // e, quando ela reabrisse, encontraria a própria reserva e não rodaria nunca.
+  //
+  // Daqui para baixo a chave (regra, contato) está tomada, e o SEGUNDO dreno do
+  // mesmo contato não executa: ele registra o bloqueio e o evento segue sem nada
+  // sair. Sem contato resolvível não há chave a tomar, e aí não há o que reservar
+  // (fail-open já declarado no filtro acima).
+  const barradasPelaReserva: RuleRow[] = [];
+  if (contatoIdDoEvento) {
+    for (const rule of applicable) {
+      if (!regraRodaUmaVezPorContato(rule)) continue;
+      if (!(await reservarExecucaoPorContato(admin, row, rule, contatoIdDoEvento))) {
+        barradasPelaReserva.push(rule);
+      }
+    }
+    for (const rule of barradasPelaReserva) {
+      await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento);
+    }
+  }
+
+  const paraExecutar = applicable.filter((rule) => !barradasPelaReserva.includes(rule));
+  if (!paraExecutar.length) {
+    // Toda regra que casou perdeu a corrida pela chave do contato. O desfecho é o
+    // MESMO do bloqueio decidido na leitura (`detail: uma_vez_por_contato`) — a
+    // diferença é só onde a corrida foi decidida: lá, sobre o estado gravado;
+    // aqui, no próprio insert. O que a Atividade mostra são as linhas de bloqueio
+    // gravadas acima.
+    return {
+      consumer_key: AUTOMATION_CONSUMER_KEY,
+      status: "ok",
+      detail: "uma_vez_por_contato",
+    };
+  }
+
+  for (const rule of paraExecutar) {
     const results: ActionResultDetail[] = [];
     // O índice é o da lista INTEIRA — a posição do resultado em
     // `actions_result` e parte do id da entrega do webhook (#1529).
@@ -377,11 +674,7 @@ export async function runAutomationForEvent(
           ),
         );
       } catch (err) {
-        results.push({
-          type: action.type,
-          status: "failed",
-          error: err instanceof Error ? err.message : String(err),
-        });
+        results.push(falhaDeExecucaoParaRecibo(action.type, err));
       }
     }
 
@@ -418,24 +711,22 @@ export async function runAutomationForEvent(
     // A ordem importa: falha (+ skip) vence adiamento. Uma regra em que uma
     // ação falhou/pulou e outra ficou esperando é `partial` — quem lê precisa
     // saber que algo quebrou, não que está tudo a caminho.
-    const naoEnviadas = results.filter((r) => r.status === "failed" || r.status === "skipped").length;
-    const adiados = results.filter((r) => r.status === "postponed").length;
-    const status =
-      naoEnviadas > 0
-        ? naoEnviadas === results.length
-          ? "failed"
-          : "partial"
-        : adiados > 0
-          ? "adiado"
-          : "success";
+    // (A regra em si vive em `statusDoRun`, porque o registro da decisão de
+    // bloqueio por contato — #2974 — também precisa dela: duas cópias da mesma
+    // régua divergem no primeiro conserto que só um lado recebe.)
+    const status = statusDoRun(results);
     const { data: runRow, error: runErr } = await admin
       .from("automation_rule_runs")
       .insert({
         organization_id: row.organization_id,
         rule_id: rule.id,
         event_id: row.id,
+        // O contato da execução (#2974): é esta linha que barra a segunda
+        // passagem do MESMO contato por esta regra. Nulo quando o evento não
+        // deixa resolvê-lo — e nulo não casa com nada, que é o fail-open.
+        contact_id: contatoIdDoEvento,
         status,
-        actions_result: results,
+        actions_result: resultadosParaRecibo(results),
       })
       .select("id")
       .maybeSingle();
