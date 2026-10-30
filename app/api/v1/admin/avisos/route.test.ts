@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
+import { type ApiError } from "@/lib/api/wrappers";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarPushDaOrg } from "@/lib/notifications/web_push";
@@ -129,8 +130,14 @@ describe("POST /api/v1/admin/avisos", () => {
     // `support_readonly` enxerga a empresa mas não escreve: o aviso sairia como
     // push para todos em nome do cliente. A guarda de efeito vem antes do RBAC
     // e do admin client, e é o que este caso mede (ordem, não só status).
+    // `requireSupportWrite` devolve `NextResponse<ApiError>` (é o `fail()` que a
+    // rota repassa). O dublê espelha o corpo e o status reais para o 403 testado
+    // aqui ser o mesmo objeto que a produção entrega, não um Response genérico.
     vi.mocked(requireSupportWrite).mockResolvedValue(
-      new Response(JSON.stringify({ error: "forbidden" }), { status: 403 }),
+      NextResponse.json<ApiError>(
+        { error: { code: "forbidden", message: "Acompanhamento somente leitura." } },
+        { status: 403 },
+      ),
     );
     const banco = bancoQueSalva(avisoSalvo());
     vi.mocked(createAdminClient).mockReturnValue(banco as never);
