@@ -3,6 +3,7 @@
  *
  * ─── SABOTAGEM (o que faz este arquivo ficar vermelho) ─────────────────────
  * - Trocar `normalizePhoneBR` por `raw` na rota/handler: o caso "inválido → 422" cai.
+ * - Voltar a validar só pela régua brasileira (sem `perfilDaOrganizacao`): o caso "fora do Brasil" cai.
  * - Tirar o `error.code === "23505"` do insert: o caso "409 phone_in_use" cai.
  * - Gravar o número também como extra quando a ficha não tem principal (ou
  *   não gravar o principal): o caso "sem principal" cai.
@@ -18,7 +19,12 @@ import { audit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
 
 const { chamadas } = vi.hoisted(() => ({
-  chamadas: [] as Array<{ tabela: string; op: string; filtros: Array<[string, unknown]>; valores?: unknown }>,
+  chamadas: [] as Array<{
+    tabela: string;
+    op: string;
+    filtros: Array<[string, unknown]>;
+    valores?: unknown;
+  }>,
 }));
 
 vi.mock("@/lib/impersonate/support", () => ({
@@ -48,9 +54,15 @@ type Resultado = { data?: unknown; error?: { code?: string; message: string } | 
 function fakeSupabase(resultados: Record<string, Resultado>) {
   return {
     from: (tabela: string) => {
-      const chamada = { tabela, op: "select", filtros: [] as Array<[string, unknown]>, valores: undefined as unknown };
+      const chamada = {
+        tabela,
+        op: "select",
+        filtros: [] as Array<[string, unknown]>,
+        valores: undefined as unknown,
+      };
       chamadas.push(chamada);
-      const resolver = () => resultados[`${tabela}.${chamada.op}`] ?? resultados[tabela] ?? { data: null, error: null };
+      const resolver = () =>
+        resultados[`${tabela}.${chamada.op}`] ?? resultados[tabela] ?? { data: null, error: null };
       const q: Record<string, unknown> = {
         select: () => q,
         insert: (v: unknown) => {
@@ -133,6 +145,40 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
     expect(chamadas.some((c) => c.op === "insert" || c.op === "update")).toBe(false);
   });
 
+  it("organização fora do Brasil: número nacional é recusado (não vira +55) e nada é gravado", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({
+        organizations: { data: { country: "US" } },
+        "contacts.select": { data: FICHA_SEM_PRINCIPAL },
+      }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(reqPost({ phone_number: "1123456789" }), CONTEXTO);
+    const corpo = (await res.json()) as { error: { code: string } };
+
+    expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("invalid_phone");
+    expect(chamadas.some((c) => c.op === "insert" || c.op === "update")).toBe(false);
+  });
+
+  it("organização fora do Brasil: número já em E.164 é aceito como veio", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({
+        organizations: { data: { country: "US" } },
+        "contacts.select": { data: FICHA_SEM_PRINCIPAL },
+        "contacts.update": { data: null, error: null },
+      }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(reqPost({ phone_number: "+14155551234" }), CONTEXTO);
+
+    expect(res.status).toBeLessThan(300);
+    const gravacao = chamadas.find((c) => c.tabela === "contacts" && c.op === "update");
+    expect((gravacao?.valores as { phone_number?: string })?.phone_number).toBe("+14155551234");
+  });
+
   it("número que já é de outra ficha (23505) → 409 phone_in_use, e sem audit", async () => {
     vi.mocked(createClient).mockResolvedValue(
       fakeSupabase({
@@ -163,7 +209,10 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
     expect(res.status).toBe(200);
     expect(corpo.data).toEqual({ became_primary: true });
     const atualizacao = chamadas.find((c) => c.tabela === "contacts" && c.op === "update");
-    expect(atualizacao?.valores).toMatchObject({ phone_number: "+5511999998888", phone_type: "celular" });
+    expect(atualizacao?.valores).toMatchObject({
+      phone_number: "+5511999998888",
+      phone_type: "celular",
+    });
     expect(chamadas.some((c) => c.tabela === "contact_phones" && c.op === "insert")).toBe(false);
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "contact.primary_phone_changed" }),
@@ -180,7 +229,12 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
     const { POST } = await import("./route");
 
     const res = await POST(
-      reqPost({ phone_number: "+55 11 98888-7777", type: "celular", whatsapp: "sim", label: "Trabalho" }),
+      reqPost({
+        phone_number: "+55 11 98888-7777",
+        type: "celular",
+        whatsapp: "sim",
+        label: "Trabalho",
+      }),
       CONTEXTO,
     );
     const corpo = (await res.json()) as { data: Record<string, unknown> };

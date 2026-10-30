@@ -258,7 +258,7 @@ function normalizarTelefoneBR(valor: string): string {
  * do E.164 do perfil (sem o `+55`), em vez de escrito à mão: um exemplo
  * cravado envelhece calado no dia em que o perfil mudar.
  */
-function mensagemDoTelefone(perfil: PerfilDoPais): string {
+export function mensagemDoTelefone(perfil: PerfilDoPais): string {
   if (perfil.codigo !== PAIS_PADRAO) {
     return `Telefone deve estar em formato E.164 (${perfil.telefoneExemplo})`;
   }
