@@ -482,6 +482,22 @@ const acoesFixas = [
       plano_id: z.string().trim().min(1).max(64),
     }),
   }),
+  // #3727 — a PONTE para o gatilho de data do funil (#989): grava a data do
+  // atendimento num campo de DATA do negócio, e é a regra "Quando faltarem N
+  // dias para uma data do funil" (com N negativo) que manda a mensagem N dias
+  // depois. Dois campos e nada mais: o `pipeline_id` é o funil dono do campo (é
+  // ele que a varredura consulta) e o `campo` é a CHAVE em
+  // `pipelines.settings.fields`, nunca o rótulo — o mesmo par que o
+  // `trigger_config` do gatilho de data guarda. Quem espera NÃO é esta ação:
+  // ela grava e sai na hora do comparecimento, e por isso não segura a vaga de
+  // "um follow-up vivo por contato".
+  z.object({
+    type: z.literal("set_lead_date_field"),
+    config: z.object({
+      pipeline_id: z.string().uuid(),
+      campo: z.string().trim().min(1).max(80),
+    }),
+  }),
   // #2642 — a ação que avisa a EQUIPE na virada para ganho. O recorte do
   // mantenedor no PR #2834 deixou UM caminho: o WhatsApp para o número que o
   // ADMIN já registrou em Avisos. Por isso a configuração é só isto — não tem
@@ -639,6 +655,7 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirConfigDoGatilhoDeData)
   .superRefine(exigirConfigDosGatilhosDeTempo)
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(recusarLimitePorContatoTorto)
   .superRefine(recusarLacoDeLead);
 
 function exigirIdDaFonteWebhook(
@@ -654,6 +671,30 @@ function exigirIdDaFonteWebhook(
       message: "Escolha uma fonte de formulário válida.",
     });
   }
+}
+
+/**
+ * "No máximo uma vez por contato" (#2974) é LIGADO/DESLIGADO — booleano.
+ *
+ * O motor lê a chave com `=== true` (`regraRodaUmaVezPorContato`), então um
+ * `"sim"` ou um `1` gravado por outra porta seria silenciosamente DESLIGADO: a
+ * tela diria que a regra roda uma vez por contato e ela rodaria sempre. Recusar
+ * na porta é o único desfecho honesto, como nas demais chaves do gatilho.
+ *
+ * Ausente (ou `null`, que é o mesmo "não configurado") passa: é o comportamento
+ * de antes desta feature.
+ */
+function recusarLimitePorContatoTorto(
+  regra: { trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const valor = regra.trigger_config?.uma_vez_por_contato;
+  if (valor === undefined || valor === null || typeof valor === "boolean") return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["trigger_config", "uma_vez_por_contato"],
+    message: "A opção “uma vez por contato” só aceita ligado ou desligado.",
+  });
 }
 
 /**
@@ -734,6 +775,7 @@ export const updateAutomationRuleSchema = z
     exigirConfigDosGatilhosDeTempo(patch as { trigger_event: string; trigger_config?: Record<string, unknown> }, ctx);
   })
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(recusarLimitePorContatoTorto)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

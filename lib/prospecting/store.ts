@@ -9,7 +9,7 @@ import { createLeadSchema } from "@/lib/schemas/leads";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { capabilitiesOf } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
-import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { decryptWebhookSecret, encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import {
   campaignConfigSchema,
@@ -532,10 +532,19 @@ export async function triarCandidato(
   p: Candidate,
 ): Promise<{ motivo: string } | { contatoDaCampanha: string | null }> {
   if (!p.phone) return { motivo: "Sem telefone brasileiro válido." };
-  const known = await db.query(
+  let known = await db.query(
     "select id from contacts where organization_id=$1 and phone_number=any($2::text[])",
     [org, phoneLookupVariants(p.phone)],
   );
+  // Sem principal com o número, conta como existente a ficha que o tem como EXTRA
+  // (`contact_phones`, forma canônica). Sem isto, a prospecção criava um contato
+  // novo por cima de um atendimento que já existe no CRM.
+  if (known.rows.length === 0) {
+    known = await db.query(
+      "select cp.contact_id as id from contact_phones cp join contacts c on c.id = cp.contact_id and c.organization_id = cp.organization_id where cp.organization_id=$1 and cp.phone_number=$2 and c.is_merged_into is null limit 1",
+      [org, canonicalPhoneBR(p.phone)],
+    );
+  }
   let contactId = p.contact_id;
   if (known.rows.length && !contactId) {
     const owned = await db.query(

@@ -11,6 +11,7 @@ import { z } from "zod";
 import { ehToolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools/catalog";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
+import { TETO_DO_PUBLICO } from "@/lib/agent-engine/agent/publico-do-gatilho";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
 
 /**
@@ -46,8 +47,28 @@ const triggerConfigSchema = z
           .nullable()
           .optional()
           .default(null),
+        // PÚBLICO DO AGENTE (#3722). Quatro listas opcionais, no jsonb da
+        // versão — sem coluna nova, sem migration. Sem estas linhas o schema
+        // `.strict()` RECUSA o payload da tela (o campo chegaria como chave
+        // desconhecida) e o operador não conseguiria salvar o público.
+        // `include_` = só atende quem cumpre; `exclude_` = não atende quem
+        // cumpre, e a exclusão vence. A régua de decisão mora em
+        // `lib/agent-engine/agent/publico-do-gatilho.ts`.
+        include_tags: z.array(z.string().trim().min(1).max(60)).max(TETO_DO_PUBLICO).default([]),
+        exclude_tags: z.array(z.string().trim().min(1).max(60)).max(TETO_DO_PUBLICO).default([]),
+        include_pipeline_ids: z.array(UUID).max(TETO_DO_PUBLICO).default([]),
+        exclude_pipeline_ids: z.array(UUID).max(TETO_DO_PUBLICO).default([]),
       })
-      .default({ ignore_groups: true, ignore_self: true, keyword_regex: null, business_hours: null }),
+      .default({
+        ignore_groups: true,
+        ignore_self: true,
+        keyword_regex: null,
+        business_hours: null,
+        include_tags: [],
+        exclude_tags: [],
+        include_pipeline_ids: [],
+        exclude_pipeline_ids: [],
+      }),
     concurrency: z.enum(["one_per_conversation", "one_per_contact"]).default("one_per_conversation"),
   })
   .strict();

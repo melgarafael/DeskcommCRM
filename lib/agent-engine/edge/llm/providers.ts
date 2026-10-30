@@ -265,6 +265,15 @@ function comEsforcoDeRaciocinio(inner: typeof fetch, esforco: EsforcoDeRaciocini
   };
 }
 
+/** Mesmo transporte contido para chat e serviços do provedor, inclusive redirects. */
+export function fetchDoProvedor(endpoint: string, allowedHosts: readonly string[] = []): typeof fetch {
+  const allow = buildAllowlist([endpoint, ...allowedHosts]);
+  return (input, init) => {
+    const url = typeof input === 'string' || input instanceof URL ? input : input.url;
+    return allowlistedFetch(url, init, { allowlist: allow });
+  };
+}
+
 /**
  * Providers reais do lançamento. Sonnet (Anthropic) é o default RECOMENDADO —
  * recomendação vive em .env.example/docs; o id do modelo é sempre config da org.
@@ -289,13 +298,7 @@ export function createDefaultRegistry(opts?: {
   const extra = opts?.allowedHosts ?? [];
   const esforcoOpenAI =
     opts?.openaiReasoningEffort !== undefined ? opts.openaiReasoningEffort : esforcoDeRaciocinioOpenAI();
-  const contain = (endpoint: string): typeof fetch => {
-    const allow = buildAllowlist([endpoint, ...extra]);
-    return (input, init) => {
-      const url = typeof input === 'string' || input instanceof URL ? input : input.url;
-      return allowlistedFetch(url, init, { allowlist: allow });
-    };
-  };
+  const contain = (endpoint: string): typeof fetch => fetchDoProvedor(endpoint, extra);
   return {
     anthropic: (apiKey, modelId) =>
       createAnthropic({ apiKey, fetch: contain(ANTHROPIC_ENDPOINT) })(modelId),

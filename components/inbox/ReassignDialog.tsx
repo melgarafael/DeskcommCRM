@@ -24,7 +24,9 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useContinuarPorOutroNumero } from "@/hooks/inbox/useContinuarPorOutroNumero";
+import { useNumeroDaTransferencia } from "@/hooks/inbox/useNumeroDaTransferencia";
 import { useTransferConversation } from "@/hooks/inbox/useTransferConversation";
+import { nomeDoCanal } from "@/lib/channels/estado";
 import { outrosNumerosDoContato } from "@/lib/inbox/outros-numeros";
 import { rotuloDoAtendente } from "@/lib/users/rotulo-do-atendente";
 
@@ -85,6 +87,10 @@ export function ReassignDialog({
   const [paraSessao, setParaSessao] = useState<string>("");
 
   const options = (members.data ?? []).filter((m) => m.user_id !== user.id);
+  // #3642 (doc 237, 2-A): avisar ANTES de confirmar quando a conversa vai trocar
+  // de número — o vendedor novo fala de um número que o cliente ainda não conhece.
+  const numeroNovo = useNumeroDaTransferencia(conversationId, toUserId, open).data ?? null;
+  const destino = options.find((m) => m.user_id === toUserId);
   const numeros = numero ? outrosNumerosDoContato(sessoes, numero.channelSessionId) : [];
   const temAbaNumero = numero != null && numeros.length > 0;
   const abaAtual = temAbaNumero ? aba : "atendente";
@@ -196,6 +202,13 @@ export function ReassignDialog({
             {!members.isLoading && options.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 {t("Nenhum outro atendente disponível nesta organização.")}
+              </p>
+            )}
+            {numeroNovo && destino && (
+              <p className="text-xs text-muted-foreground" role="status" data-testid="aviso-numero-da-transferencia">
+                {t("A conversa vai continuar pelo número de {nome} ({numero}).")
+                  .replace("{nome}", rotuloDoAtendente(destino.full_name, t))
+                  .replace("{numero}", numeroNovo.phone_number?.trim() || nomeDoCanal(numeroNovo, t))}
               </p>
             )}
           </div>

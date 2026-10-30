@@ -290,6 +290,7 @@ export default async function AgendaPage() {
         // os horários oferecidos vinham da jornada de outra pessoa.
         donoId: t.default_owner_user_id ?? null,
         servicoColetivo: t.service_enabled && t.booking_mode !== "individual",
+        servico: t.service_enabled,
         // O LOCAL DE VERDADE. O `select` acima já trazia `location_kind` e
         // `location_details`, e o mapeamento os descartava — então o painel caía
         // no default de parâmetro e toda clínica de toda instalação lia

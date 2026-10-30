@@ -61,6 +61,15 @@ function banco(opcoes: {
         maybeSingle: vi.fn(async () => ({ data: { country: opcoes.pais ?? null }, error: null })),
       };
     }
+    // Spec 31 B1: a pré-checagem de telefone extra lê `contact_phones`. Sem
+    // extra no banco do teste a lista volta vazia — o mesmo que a base antiga.
+    if (tabela === "contact_phones") {
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        in: vi.fn(async () => ({ data: [], error: null })),
+      };
+    }
     expect(tabela).toBe("contacts");
     const consulta = {
       select: vi.fn().mockReturnThis(),
@@ -91,7 +100,7 @@ function banco(opcoes: {
     return consulta;
   });
   vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
-  return { tentativas, rpc };
+  return { tentativas, rpc, from };
 }
 
 async function importar(linhas: string[]): Promise<Resumo> {
@@ -413,5 +422,46 @@ describe("POST /api/v1/contacts/import — o CPF grava os DOIS campos ou nenhum 
     // Os DOIS ausentes: é a paridade que o CHECK cobra.
     expect(db.tentativas[0]).not.toHaveProperty("cpf_hash");
     expect(db.tentativas[0]).not.toHaveProperty("cpf_encrypted");
+  });
+});
+
+/**
+ * #3718 — CRIAR CONTATO ABRE CONVERSA? ESTA PORTA NÃO, E ISSO É REGRA.
+ *
+ * A criação unitária (`POST /api/v1/contacts`) abre a conversa do contato novo.
+ * A importação em lote não abre — a decisão é uma só e mora em
+ * `lib/contacts/conversa-ao-criar.ts`, consultada aqui com a porta
+ * `importacao_csv`. O que se mede: a consulta acontece e responde ANTES de
+ * qualquer leitura, então a planilha cheia custa ZERO por este caminho. Se
+ * alguém "consertar" a importação abrindo conversa para todos, este teste cai —
+ * e cai junto o `expect(tabela).toBe("contacts")` do banco falso, que não
+ * conhece `channel_sessions` de propósito.
+ *
+ * O preço que a regra evita, para ficar registrado no teste que o protege: até
+ * 500 linhas por arquivo (`CSV_MAX_DATA_ROWS`), cada uma custaria 1–2 SELECT em
+ * `channel_sessions` + RPC `fn_service_begin` (lock, leituras e INSERT em
+ * `conversations`) — ~2.500 statements e 500 conversas `open` na caixa de
+ * entrada.
+ */
+describe("POST /api/v1/contacts/import — não abre conversa para o lote (#3718)", () => {
+  it("contato importado com telefone: nenhuma leitura de sessão e nenhuma abertura de conversa", async () => {
+    const db = banco();
+
+    const resumo = await importar([`Ana,${PHONE},`]);
+
+    expect(resumo).toEqual({ total_linhas: 1, imported: 1, skipped_duplicates: 0, errors: [] });
+    // O falso só conhece `organizations`, `contact_phones` e `contacts` — uma
+    // consulta a `channel_sessions` estouraria dentro do `from`, aqui.
+    const tabelas = db.from.mock.calls.map(([tabela]) => tabela);
+    expect(tabelas).not.toContain("channel_sessions");
+    // E nenhuma conversa é aberta: a única RPC do caminho é o `emit_event`.
+    expect(db.rpc.mock.calls.map(([nome]) => nome)).toEqual(["emit_event"]);
+  });
+
+  it("a regra é a MESMA das duas portas: só a porta unitária responde que abre", async () => {
+    const { abreConversaAoCriar } = await import("@/lib/contacts/conversa-ao-criar");
+
+    expect(abreConversaAoCriar("importacao_csv")).toBe(false);
+    expect(abreConversaAoCriar("manual")).toBe(true);
   });
 });
