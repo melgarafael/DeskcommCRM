@@ -34,6 +34,7 @@ import type { ServidorMcpExterno } from "@/lib/mcp/servidor-externo/registro";
 import { definirFerramentasRemotas } from "@/lib/mcp/tools/externo";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import type { McpContext } from "@/lib/mcp/types";
+import { ehLeituraRemota } from "@/lib/mcp/servidor-externo/leitura-remota";
 
 const ORG = "bcc12320-f555-4fef-8d90-38a0ac5950e0";
 const CONTATO = "11111111-1111-4111-8111-111111111111";
@@ -185,6 +186,17 @@ describe("remota classificada como escrita cai na conferência de escopo do turn
   it("sem contato, a mesma leitura remota monta (a recusa não é geral demais)", () => {
     const montadas = montar({ escolha: toolIdRemoto("erp_consultar_pedido", "leitura") });
     expect(montadas.erp_consultar_pedido).toBeDefined();
+  });
+
+  it("só a remota classificada como leitura leva a marca que a prévia libera", () => {
+    // `preview.ts` executa a remota só com esta marca: a escolha "leitura" sem
+    // `readOnlyHint` e a escolha "escrita" saem SEM ela, e seguem fechadas lá.
+    const leitura = montar({ escolha: toolIdRemoto("erp_consultar_pedido", "leitura") });
+    const semHint = montar({ escolha: toolIdRemoto("erp_faturar_pedido", "leitura") });
+    const escrita = montar({ escolha: toolIdRemoto("erp_consultar_pedido", "escrita") });
+    expect(ehLeituraRemota(leitura.erp_consultar_pedido)).toBe(true);
+    expect(ehLeituraRemota(semHint.erp_faturar_pedido)).toBe(false);
+    expect(ehLeituraRemota(escrita.erp_consultar_pedido)).toBe(false);
   });
 });
 

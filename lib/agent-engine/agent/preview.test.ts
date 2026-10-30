@@ -4,6 +4,7 @@ import { tool } from '../edge/llm/run-model-call';
 import { z } from 'zod';
 import { applyPreviewPolicy, newPreviewResult, scenarioContext, type TurnPreview } from './preview';
 import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send';
+import { marcarLeituraRemota } from '@/lib/mcp/servidor-externo/leitura-remota';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
 const gate = (): GateContext => ({
@@ -97,6 +98,42 @@ describe('preview policy shares gates and contains side effects', () => {
     await execute(tools, 'hidden_mutation');
     expect(spy).not.toHaveBeenCalled();
     expect(p.result.impediments[0]?.code).toBe('unknown_preview_tool');
+  });
+  it('runs only the remote MCP tool pickToolsFromMcp classified as read', async () => {
+    // O catálogo de um servidor MCP externo (#2147) chega ao turno pelo nome que o
+    // servidor anuncia; sem isto a prévia — que é também o rascunho do modo
+    // assistido — recusava `buscar_produtos` como `unknown_preview_tool`.
+    // A marca é do OBJETO: o `tool_ids` dizer "leitura" não basta (o servidor pode
+    // não ter declarado readOnlyHint), e um nome nativo não vira leitura remota.
+    const p = preview(),
+      leitura = vi.fn().mockResolvedValue({ itens: [] }),
+      semHint = vi.fn(),
+      nativo = vi.fn();
+    (p.agent as { toolIds: string[] }).toolIds = [
+      'mcp_externo:leitura:buscar_produtos',
+      'mcp_externo:leitura:cancelar_pedido',
+      'mcp_externo:leitura:hidden_mutation',
+    ];
+    const tools = applyPreviewPolicy(
+      {
+        buscar_produtos: marcarLeituraRemota(definition(leitura)),
+        cancelar_pedido: definition(semHint),
+        hidden_mutation: definition(nativo),
+      },
+      p,
+      gate(),
+      () => [],
+    );
+    await execute(tools, 'buscar_produtos', { body: 'colar 925' });
+    await execute(tools, 'cancelar_pedido');
+    await execute(tools, 'hidden_mutation');
+    expect(leitura).toHaveBeenCalledOnce();
+    expect(semHint).not.toHaveBeenCalled();
+    expect(nativo).not.toHaveBeenCalled();
+    expect(p.result.impediments.map((i) => i.message)).toEqual([
+      'cancelar_pedido',
+      'hidden_mutation',
+    ]);
   });
   it('does not mutate the original gate context when disclosure amends a body', () => {
     const ctx = {

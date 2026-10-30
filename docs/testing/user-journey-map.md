@@ -4056,3 +4056,52 @@ terão trace/vídeo. Não foi medido download na janela anterior à persistênci
 do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
 substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
 relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
+
+## Consultas MCP no Testar e no assistido — resgate #3564 (2026-10-27)
+
+Fonte preservada: `8088f3a65e3e3cece8d7427487ec4725f9aa23e8`, de @Denispds.
+Uma consulta externa escolhida como leitura pelo administrador e declarada
+`readOnlyHint` pelo servidor era recusada como ferramenta desconhecida na prévia.
+O montador agora marca o objeto final, e a política reconhece essa identidade;
+os wrappers do inbound preservam o objeto até essa decisão. Escritas, cópias e
+nomes colidentes continuam sujeitos às guardas existentes.
+
+**PASS da composição inprocess, sem prova de rota HTTP ou UX.** A bancada
+reservada aplicou o baseline canônico em PG17 nos modos INSTALL e UPDATE com
+`ON_ERROR_STOP`, moldes de uma/duas aplicações e banco novo por arquivo. Rodaram
+somente `pg-como-supabase.test.ts` e `mcp-previa-composta.test.ts`, um worker:
+33/33 antes dos controles causais (20,178s de processo) e 33/33 após restaurar
+os hashes (20,036s). No GREEN final, os 12 casos novos somaram 12,496s;
+os 21 controles do adapter somaram 0,556s. Não foi executada a suíte DB inteira.
+O unitário recortado e seus dois vizinhos passaram 34/34 antes da bancada.
+
+| Caminho medido | Resultado observado no código final |
+|---|---|
+| Testar e rascunho assistido | motor real → pick/wrappers/policy reais, mesma referência marcada → SDK e socket HTTP reais → candidata com o texto recebido |
+| Hint ausente/falso ou escolha de escrita | impedimento antes de chamar a ferramenta no servidor |
+| Cópia deliberada e nome nativo colidente | cópia sem autoridade pela marca; implementação nativa preservada; nenhuma chamada remota |
+| Sem escolha/opção, identidade divergente e contato de outra organização | descoberta/execução recusadas nos pontos correspondentes |
+| Recusa do fornecedor | chamada observada, sem candidata de consulta bem-sucedida |
+| Instrumento | bytes cifrados comparados, carga/descriptografia reais, token de leitura revogado, auditoria real e estado operacional do cliente preservado |
+
+As sabotagens tiveram RED reais, com as previsões originais preservadas:
+remover a marca deu 5 falhas/7 passes, em vez de 4/8, pois o controle de recusa
+também deixou de alcançar o socket. Substituir a conferência da marca por
+`!catalog` deu 7 falhas/5 passes: além dos controles de classificação, o mutante
+amplo liberou `send_message` sem o tratamento da prévia e atingiu o veto
+`preview_operational_job_forbidden`. Não se alteraram asserções para acertar a
+contagem; os hashes foram restaurados antes do novo GREEN separado.
+
+O adapter PG existente foi mantido. Só o teste novo traduz `api_tokens.scopes`
+para JSONB e conserva bytea no formato wire em um pool separado; o pool do motor,
+o token e a criptografia permanecem reais. Provider do modelo e fornecedor MCP
+são sintéticos explícitos; a exceção de transporte fica na junta existente do
+teste para seu próprio socket efêmero. AntiSSRF produtivo permanece intacto.
+Não foram medidos PostgREST, Auth, RLS, rotas HTTP, interface, ERP ou modelo
+público. Os cinco checks do novo head remoto continuam obrigatórios e pendentes
+até sua própria execução; este registro não é um E2E global verde.
+
+O retorno usa os consumidores existentes: `mcp.tool_called` na auditoria e
+impedimentos no resultado da prévia ajudam o operador a revisar as escolhas em
+Capacidades e a configuração do servidor externo. A próxima execução relê essa
+configuração; não há novo subsistema, tela, rota ou autorização de escrita.

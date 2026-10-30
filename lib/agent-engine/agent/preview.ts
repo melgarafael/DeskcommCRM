@@ -27,6 +27,7 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { loadDisclosureTemplate, countPriorAcceptedSends } from '../guardrails/disclosure/template';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
+import { ehLeituraRemota } from '@/lib/mcp/servidor-externo/leitura-remota';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
@@ -308,7 +309,11 @@ export function applyPreviewPolicy(
       const catalog = getToolByName(name);
       if (
         nativeRead ||
-        (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name)))
+        (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name))) ||
+        // #2147 — leitura de servidor MCP externo: só o objeto que
+        // `pickToolsFromMcp` marcou (marca do admin E `readOnlyHint` do
+        // servidor). Nome igual ou marca no `tool_ids` não bastam.
+        (!catalog && ehLeituraRemota(definition))
       )
         return [name, definition];
       return [
