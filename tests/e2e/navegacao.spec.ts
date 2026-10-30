@@ -13,8 +13,8 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "./helpers/test";
 
-import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
-import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
+import { lerCreds, loginComoAdmin, loginComoDono } from "./helpers/login-admin";
+import { afirmarAdminDeTenantPuro, afirmarDonoDoServidor } from "./utils/precondicao";
 
 let creds = lerCreds();
 const EVIDENCE = path.join(process.cwd(), ".superpowers", "evidence");
@@ -290,5 +290,93 @@ test.describe("navegação agrupada", () => {
     // CANAIS é todo manager+/admin: o título não pode sobrar sozinho.
     await expect(sidebar(page).getByRole("heading", { name: "Canais" })).toHaveCount(0);
     await expect(sidebar(page).getByRole("heading", { name: "Atendimento" })).toBeVisible();
+  });
+
+  test("a equipe carregada no Inbox continua legível em Financeiro e Faturamento sem recarregar", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    // Comissão só existe com o módulo instalado. Usa a porta canônica do dono,
+    // como a spec de Honorários; instalar no banco efêmero não se desfaz.
+    // As specs da PARTE_7 compartilham esse banco: as seguintes verão o módulo
+    // instalado. Este caso não mede uma instalação virgem do Financeiro.
+    const credenciaisDoDono = lerCreds();
+    await afirmarDonoDoServidor(credenciaisDoDono.users.dono!.email);
+    await loginComoDono(page, credenciaisDoDono);
+    await page.goto("/admin/modulos");
+    const modulo = page.getByTestId("modulo-financeiro");
+    await expect(modulo).toBeVisible();
+    const instalar = page.getByTestId("instalar-financeiro");
+    if (await instalar.isVisible()) await instalar.click();
+    await expect(modulo.getByText("Instalado", { exact: true })).toBeVisible({ timeout: 30_000 });
+
+    // A jornada medida é de administrador de tenant, com autenticação real.
+    // Depois do Inbox só há cliques em Link, mantendo o QueryClient da casca.
+    await loginAdmin(page);
+    const equipeRecebida = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/v1/team/assignable" && r.request().method() === "GET",
+    );
+    await page.goto("/app/inbox");
+    await page.getByRole("tab", { name: /^Todas/ }).click();
+    await expect(page.getByLabel("Filtrar por atendente")).toBeVisible();
+    const resposta = await equipeRecebida;
+    expect(resposta.ok()).toBe(true);
+    const { data: equipe } = (await resposta.json()) as {
+      data: Array<{ user_id: string; full_name: string | null }>;
+    };
+    expect(Array.isArray(equipe)).toBe(true);
+    const pessoa = equipe.find((m) => m.full_name === "E2E Admin");
+    expect(pessoa, "o seed canônico precisa oferecer o admin na equipe real").toBeDefined();
+    const inicioDoDocumento = await page.evaluate(() => performance.timeOrigin);
+    const erros: string[] = [];
+    page.on("pageerror", (erro) => erros.push(erro.message));
+
+    await page.getByRole("link", { name: "Configurações", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\/settings$/);
+    await page.locator('a[href="/app/settings/tenant/financeiro"]').click();
+    await expect(page).toHaveURL(/\/app\/settings\/tenant\/financeiro$/);
+    await expect(page.getByRole("heading", { name: "Comissão", exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel("Pessoa").locator(`option[value="${pessoa!.user_id}"]`),
+    ).toHaveText("E2E Admin");
+    await expect(page.getByText("Algo deu errado", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(inicioDoDocumento);
+    await page.screenshot({
+      path: path.join("evidence", "financeiro-cache", "nav-inbox-financeiro-equipe.png"),
+      fullPage: true,
+    });
+
+    await sidebar(page).getByRole("link", { name: "Ver tudo em Análise", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\/analise$/);
+    const relatorioRecebido = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/v1/reports/financeiro" &&
+        r.request().method() === "GET",
+    );
+    await page.locator('a[href="/app/faturamento"]').click();
+    await expect(page).toHaveURL(/\/app\/faturamento$/);
+    const relatorio = await relatorioRecebido;
+    expect(relatorio.ok()).toBe(true);
+    const { data: totais } = (await relatorio.json()) as {
+      data: { por_profissional: Array<{ attendant_user_id: string | null }> };
+    };
+    await expect(
+      page.getByRole("heading", { name: "Comissão por pessoa", exact: true }),
+    ).toBeVisible();
+    // O período pode estar vazio. Nomes de responsáveis só são comprovados
+    // aqui quando o relatório real tem essa linha; o unitário cobre os demais.
+    for (const linha of totais.por_profissional) {
+      const nome = equipe.find((m) => m.user_id === linha.attendant_user_id)?.full_name;
+      if (nome)
+        await expect(page.getByRole("cell", { name: nome, exact: true }).first()).toBeVisible();
+    }
+    await expect(page.getByText("Algo deu errado", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(inicioDoDocumento);
+    expect(erros).toEqual([]);
+    await page.screenshot({
+      path: path.join("evidence", "financeiro-cache", "nav-inbox-faturamento-equipe.png"),
+      fullPage: true,
+    });
   });
 });

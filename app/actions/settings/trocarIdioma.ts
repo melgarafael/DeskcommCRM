@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
@@ -38,6 +39,8 @@ export async function trocarIdioma(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ data: { locale: idioma } });
+  // #3696: o `getUser` vai para o cache curto; outra sessão da pessoa leria o metadata velho.
+  invalidarUsuario(authUser.id);
   if (error) return { ok: false, error: error.message };
 
   const hdrs = await headers();

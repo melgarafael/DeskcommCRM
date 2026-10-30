@@ -32,6 +32,7 @@ import { filtrarToolsComCallbackDesabilitado } from '@/lib/followup/callback-pol
 import type { Logger } from '../../obs/logger';
 import type { CrmEdgeConfig } from './mcp-client';
 import type { PublishedAgentConfig } from '../../agent/agent-config';
+import type { EfeitoDasEscrituras } from '@/lib/ai/runtime/efeito-das-escritas';
 
 /**
  * Tools do catálogo que jamais entram num turno do engine (ver doc acima).
@@ -71,7 +72,18 @@ export async function buildMcpTurnTools(
   },
   agentConfig: PublishedAgentConfig,
   log: Logger,
-  options?: { readOnly: boolean },
+  options?: {
+    readOnly: boolean;
+    /**
+     * O PREDICADO ÚNICO do efeito do turno (#3333): esta função é quem alimenta, porque é
+     * a ponte que executa a escrita e decide o desfecho. Quem lê é o gate
+     * `registro_sem_efeito` — o turno passa o MESMO coletor para os dois lados.
+     *
+     * Ausente = ninguém pergunta (operador, chamador antigo): nenhum desfecho é registrado,
+     * e o gate fica desarmado. Nunca o contrário.
+     */
+    efeitos?: EfeitoDasEscrituras;
+  },
 ): Promise<McpTurnTools | null> {
   const callbackFiltered = filtrarToolsComCallbackDesabilitado(
     agentConfig.toolIds,
@@ -179,6 +191,7 @@ export async function buildMcpTurnTools(
     capacidadesLigadas: await capacidadesDaOrganizacao(cfg.supabase, ids.organizationId),
     ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
     ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
+    ...(options?.efeitos ? { efeitos: options.efeitos } : {}),
   });
 
   return {
