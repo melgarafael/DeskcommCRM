@@ -99,7 +99,7 @@ async function negocio(
                            created_at, closed_at, lost_reason)
      values ($1, $2, $3, $4, 'Negócio', $5, $6::text, $7, $8,
              case when $6::text = 'open' then null else $8::timestamptz end,
-             case when $6::text = 'lost' then 'teste' else null end)`,
+             case when $6::text = 'lost' then 'other' else null end)`,
     [randomUUID(), ORG, FUNIL, ETAPA, contactId, status, tags, criadoEm],
   );
 }
