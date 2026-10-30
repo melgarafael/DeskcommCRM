@@ -125,7 +125,12 @@ it("no caminho com evidências, mensagem e contexto seguem sendo dados que não 
     {
       candidate: "Matrícula grátis!",
       commercialEvidence: [
-        { origem: "conhecimento", referencia: "fonte:trecho", titulo: "Oferta", conteudo: "Matrícula grátis no anual." },
+        {
+          origem: "conhecimento",
+          referencia: "fonte:trecho",
+          titulo: "Oferta",
+          conteudo: "Matrícula grátis no anual.",
+        },
       ],
     },
     deps,
@@ -279,6 +284,6 @@ describe("parsePromiseClassification — retornoSoDoAssistente (degrade fechado)
   });
 
   it("a instrução pergunta o campo e o pede no JSON", () => {
-    expect(PROMISE_SEMANTIC_INSTRUCTION).toContain('"retornoSoDoAssistente": true|false');
+    expect(PROMISE_SEMANTIC_INSTRUCTION).toMatch(/"retornoSoDoAssistente":\s*true\|false/);
   });
 });

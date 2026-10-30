@@ -46,14 +46,16 @@ const TARGET = `(?:${TARGET_WORDS.join("|")})`;
 const gap = (n: number): string => `[^.!?\\n]{0,${n}}?`;
 
 /**
- * Monta os 7 padrões de promessa-de-humano em cima de um ALVO (`target`)
+ * Monta os padrões de promessa-de-humano em cima de um ALVO (`target`)
  * substituível — o TARGET genérico por padrão, ou o TARGET estendido com
  * nome(s) próprio(s) do tenant (ver `detectHumanPromise`).
  */
 function buildPatterns(target: string): RegExp[] {
   return [
     // (1a) encaminhar/passar/acionar/... → alvo humano: "encaminhar pro setor", "acionar o responsavel".
-    new RegExp(`\\b(?:encaminh|repass|transfer|acion|escal|direcion|pass|cham)\\w*${gap(20)}\\b${target}\\b`),
+    new RegExp(
+      `\\b(?:encaminh|repass|transfer|acion|escal|direcion|pass|cham)\\w*${gap(20)}\\b${target}\\b`,
+    ),
     // (1a-bis) mesmo verbo de encaminhamento, mas o ALVO é retomado por PRONOME (eles/elas)
     // em vez do substantivo — achado na prova E2E da Wave 7 real: "já passo o pedido pra
     // eles resolverem" escapava (1a) porque "eles" não é TARGET). Exige um verbo de
@@ -65,14 +67,30 @@ function buildPatterns(target: string): RegExp[] {
     ),
     // (1b) verbo de CONSULTA + "com" + alvo humano: "verificar com a equipe", "falar com o pessoal".
     //      Exige "com <humano>": "verificar seu pedido no sistema" (sem "com equipe") NÃO casa.
-    new RegExp(`\\b(?:verific|fal|confer|confirm|consult|alinh|valid|chec)\\w*${gap(15)}\\bcom\\b${gap(15)}\\b${target}\\b`),
+    new RegExp(
+      `\\b(?:verific|fal|confer|confirm|consult|alinh|valid|chec)\\w*${gap(15)}\\bcom\\b${gap(15)}\\b${target}\\b`,
+    ),
     // (1c) pedir/solicitar pra/ao alvo humano: "vou pedir pra equipe liberar".
-    new RegExp(`\\b(?:ped|solicit)\\w*${gap(12)}\\b(?:pra|para|pro|ao|aos|a|as|com)\\b${gap(10)}\\b${target}\\b`),
+    new RegExp(
+      `\\b(?:ped|solicit)\\w*${gap(12)}\\b(?:pra|para|pro|ao|aos|a|as|com)\\b${gap(10)}\\b${target}\\b`,
+    ),
     // (2) "<alvo humano> vai/pode <resolver/retornar/...>": "nosso time vai resolver", "um responsavel vai te retornar".
     //     "nossa equipe ESTA a disposicao" NÃO casa ("esta" fora do grupo vai/vao/pode).
     new RegExp(
       `\\b${target}\\b${gap(20)}\\b(?:vai|vao|ira|irao|pode|podem|poderao)\\b${gap(10)}` +
         `(?:\\b(?:te|lhe|se|nos)\\b\\s*)?(?:resolv|retorn|respond|liber|analis|verific|cuid|assum|atend|entr|aprov|confirm|contat|ajud)\\w*`,
+    ),
+    // Contato declarado com o cliente, inclusive pronome que retoma a equipe
+    // da frase anterior: "eles te retornam", "a equipe vai te ligar".
+    new RegExp(
+      `\\b(?:${target}|eles|elas)\\b${gap(20)}\\b(?:te|lhe)\\s+` +
+        `(?:lig|retorn|respond|contat|procur)\\w*`,
+    ),
+    // Retorno anunciado com prazo explícito, sem pronome do cliente:
+    // "o responsável retorna em 10 minutos". Rotina sem prazo não casa.
+    new RegExp(
+      `\\b${target}\\b${gap(20)}\\b(?:retorna|responde|liga|contata)\\b\\s+` +
+        `\\b(?:em|daqui a|ate)\\s+(?:\\d+\\s+(?:minutos?|horas?|dias?)|hoje|amanha)\\b`,
     ),
     // (2b) "quem resolve/cuida ... e o nosso time": "isso quem resolve e o nosso time".
     new RegExp(
@@ -104,10 +122,7 @@ const PATTERNS: readonly RegExp[] = buildPatterns(TARGET);
 
 /** Minúsculas + remove diacríticos (NFD) — casa acento/caixa uniformemente. */
 function normalize(body: string): string {
-  return body
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+  return body.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
 /** Escapa metacaracteres de regex — nome próprio vira literal, nunca sintaxe. */
@@ -117,19 +132,30 @@ function escapeRegex(word: string): string {
 
 /**
  * Pergunta de consentimento ("quer que eu encaminhe para a equipe?") ainda não é
- * operação executada. A isenção vale para a mensagem INTEIRA, nunca frase a
- * frase: basta uma frase com operação alegada, prazo ou retorno anunciado
- * ("O responsável retorna em 10 minutos") para a análise voltar ao texto todo.
+ * operação executada. A isenção só vale para a própria frase de consentimento;
+ * as demais frases continuam analisadas e podem conter compromisso real.
  */
 function soPedeConsentimento(text: string): boolean {
-  const frases = text.split(/(?<=[.!?\n])/).map((f) => f.trim()).filter(Boolean);
-  return frases.length > 0 && frases.every((f) =>
-    f.endsWith("?") &&
-    /^(?:(?:voce|vc)\s+)?(?:quer|gostaria|prefere|deseja|autoriza|posso|podemos)\b/.test(f) &&
-    /\b(?:encaminh|transfer|pass|fal|consult|verific|cham)\w*/.test(f) &&
-    !/\b(?:ja|vou|vamos|vai|vao|ira|irao|transferi|encaminhei|registrei|acabei)\b/.test(f) &&
-    !/\b(?:hoje|amanha|agora|logo|ate|minutos?|horas?|semana|dias?|\d+\s*h|\d{1,2}:\d{2})\b/.test(f) &&
-    !/\b(?:te|lhe)\s+(?:lig|retorn|respond|contat|procur|cham|d[ae])\w*|\bretorn\w*|\bentr\w*\s+em\s+contato/.test(f));
+  const frases = text
+    .split(/(?<=[.!?\n])/)
+    .map((f) => f.trim())
+    .filter(Boolean);
+  return (
+    frases.length > 0 &&
+    frases.every(
+      (f) =>
+        f.endsWith("?") &&
+        /^(?:(?:voce|vc)\s+)?(?:quer|gostaria|prefere|deseja|autoriza|posso|podemos)\b/.test(f) &&
+        /\b(?:encaminh|transfer|pass|fal|consult|verific|cham)\w*/.test(f) &&
+        !/\b(?:ja|vou|vamos|vai|vao|ira|irao|transferi|encaminhei|registrei|acabei)\b/.test(f) &&
+        !/\b(?:hoje|amanha|logo|ate|minutos?|horas?|semana|dias?|\d+\s*h|\d{1,2}:\d{2})\b/.test(
+          f,
+        ) &&
+        !/\b(?:te|lhe)\s+(?:lig|retorn|respond|contat|procur|cham|d[ae])\w*|\bretorn\w*|\bentr\w*\s+em\s+contato/.test(
+          f,
+        ),
+    )
+  );
 }
 
 /**
@@ -152,9 +178,16 @@ function soPedeConsentimento(text: string): boolean {
 export function detectHumanPromise(body: string, extraHumanNames?: readonly string[]): boolean {
   if (body.trim() === "") return false;
   const text = normalize(body);
-  if (soPedeConsentimento(text)) return false;
+  // Consentimento só isenta a própria frase. Uma explicação ao lado não cria
+  // compromisso; uma promessa em outra frase continua exigindo operação real.
+  const frases = text
+    .split(/(?<=[.!?\n])/)
+    .map((f) => f.trim())
+    .filter(Boolean);
+  const analisadas = frases.filter((frase) => !soPedeConsentimento(frase));
+  if (analisadas.length === 0) return false;
   if (extraHumanNames === undefined || extraHumanNames.length === 0) {
-    return PATTERNS.some((re) => re.test(text));
+    return analisadas.some((frase) => PATTERNS.some((re) => re.test(frase)));
   }
   const names = Array.from(
     new Set(
@@ -163,7 +196,8 @@ export function detectHumanPromise(body: string, extraHumanNames?: readonly stri
         .filter((w) => /^[a-z]{3,}$/.test(w) && !TARGET_WORD_SET.has(w)),
     ),
   );
-  if (names.length === 0) return PATTERNS.some((re) => re.test(text));
+  if (names.length === 0) return analisadas.some((frase) => PATTERNS.some((re) => re.test(frase)));
   const extendedTarget = `(?:${TARGET_WORDS.join("|")}|${names.map(escapeRegex).join("|")})`;
-  return buildPatterns(extendedTarget).some((re) => re.test(text));
+  const patterns = buildPatterns(extendedTarget);
+  return analisadas.some((frase) => patterns.some((re) => re.test(frase)));
 }
