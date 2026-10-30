@@ -52,6 +52,14 @@ export const createTemplateSchema = z.object({
    * quando o operador desmarca.
    */
   mostrar_na_barra: z.boolean().optional(),
+  /**
+   * O GRUPO da resposta rápida (#3245) — `null`/ausente é "sem grupo", a lista
+   * plana de sempre. O id é conferido na ROTA contra os grupos da organização
+   * ativa (a FK composta do banco é a segunda barreira, não a primeira
+   * mensagem): um id de outra organização sai como 422 com a frase que
+   * interessa, e não como erro de constraint.
+   */
+  grupo_id: z.string().trim().min(1).max(64).nullable().optional(),
 });
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 
@@ -70,6 +78,12 @@ export const updateTemplateSchema = z
     midias_esperadas: snapshotDeMidiasSchema.optional(),
     /** "Mostrar na barra do Inbox" (#3282) — o liga/desliga da tela. */
     mostrar_na_barra: z.boolean().optional(),
+    /**
+     * O GRUPO da resposta rápida (#3245). `null` DESVINCULA (volta à lista
+     * plana); ausente não mexe no vínculo — é o que permite um PATCH de corpo
+     * não tirar a resposta do grupo por omissão.
+     */
+    grupo_id: z.string().trim().min(1).max(64).nullable().optional(),
   })
   .partial()
   .refine((d) => Object.keys(d).some((campo) => campo !== "midias_esperadas"), {
@@ -94,3 +108,29 @@ export const moverTemplateSchema = z.object({
   depois_de: z.string().trim().min(1).max(64).nullable(),
 });
 export type MoverTemplateInput = z.infer<typeof moverTemplateSchema>;
+
+/**
+ * O GRUPO de respostas rápidas (#3245) — nome, e só.
+ *
+ * O limite de 60 é o mesmo `check` do banco: recusar aqui é a mensagem que a
+ * pessoa consegue consertar; o CHECK é a segunda barreira, para o corpo que não
+ * passa por esta rota.
+ */
+export const createGrupoSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+});
+export type CreateGrupoInput = z.infer<typeof createGrupoSchema>;
+
+/** Renomear (#3245): só o nome. A ordem tem rota própria, como a das respostas. */
+export const updateGrupoSchema = createGrupoSchema;
+export type UpdateGrupoInput = z.infer<typeof updateGrupoSchema>;
+
+/**
+ * A REORDENAÇÃO do grupo (#3245) — o mesmo contrato da resposta rápida: a tela
+ * manda o VIZINHO da esquerda (`depois_de`), `null` é a primeira posição, e a
+ * conta da posição é do servidor (`lib/templates/ordem.ts`).
+ */
+export const moverGrupoSchema = z.object({
+  depois_de: z.string().trim().min(1).max(64).nullable(),
+});
+export type MoverGrupoInput = z.infer<typeof moverGrupoSchema>;

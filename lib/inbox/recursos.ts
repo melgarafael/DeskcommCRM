@@ -69,6 +69,15 @@ export interface Recurso {
    * o comportamento de sempre. Só o `false` EXPLÍCITO esconde.
    */
   mostrar_na_barra?: boolean | null;
+  /**
+   * O GRUPO do recurso (#3245) — `message_templates.grupo_id`.
+   *
+   * Opcional e lido como "sem grupo" por ausência, pela mesma razão das outras
+   * duas: linha anterior à migration 0808 e fixture sem a chave aparecem na
+   * lista plana, que é o comportamento de sempre. A barra só desenha seções
+   * quando existe PELO MENOS UM grupo cadastrado (`grupos.length > 0`).
+   */
+  grupo_id?: string | null;
 }
 
 /**

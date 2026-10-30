@@ -2,9 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { refreshCatalog, syncCalendar } from "@/lib/agenda/google/calendar-executor";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { janelaDaRodada, LOTE_DE_CONEXOES } from "@/lib/agenda/google/rodizio-de-conexoes";
+import { ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 export const dynamic = "force-dynamic";
 /** O mesmo prazo que a RPC dá à agenda que falhou (`sync_next_attempt_at` + 15 min). */
 const RECUO_DO_CATALOGO_MS = 15 * 60_000;
@@ -14,6 +16,11 @@ async function executar(req: NextRequest) {
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },
     );
+  // O PISO OCIOSO (#3731): instalação sem conexão Google saudável não tem
+  // calendário a sincronizar, e a rodada de todo minuto ia ao banco (contagem +
+  // leitura das conexões) só para descobrir isso. A saída vem antes das duas,
+  // pelo retrato em memória de lib/cron/piso-ocioso.ts.
+  if (await recursoOcioso("agenda_google")) return ok({ pulado: "recurso_ocioso" });
   const db = createAdminClient();
   // ─── O RODÍZIO, SEM CARIMBAR NADA (#3695) ─────────────────────────────────
   //

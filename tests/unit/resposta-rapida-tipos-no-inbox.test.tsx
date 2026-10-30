@@ -56,6 +56,8 @@ vi.mock("@/hooks/templates/useUploadTemplateMedia", () => ({
   useUploadTemplateMedia: () => ({ mutateAsync: h.subirTemplate, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
   useMessageTemplates: () => ({ data: RECURSOS, isLoading: false }),
 }));
 vi.mock("@/hooks/inbox/useDraftReply", () => ({

@@ -2976,6 +2976,34 @@ async function executarTurnoDoAgente(
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
   }
 
+  // O PÚBLICO DO AGENTE (#3722) — a segunda régua de ENTRADA, ao lado do
+  // filtro de palavra-chave e pelo mesmo motivo: ela decide se o MODELO entra,
+  // nunca se a pessoa é ouvida. As detecções determinísticas acima (pedido de
+  // humano, opt-out) já rodaram — quem escreveu "SAIR" segue registrado mesmo
+  // que nenhum agente atenda este público.
+  //
+  // SILÊNCIO, e o genérico NÃO assume: `config` já veio `null` da seleção
+  // (`escolherAgenteDoNumero`), e sem esta guarda o turno seguiria no agente
+  // genérico — que não tem público nenhum e voltaria a vender para o cliente
+  // com contrato, que é o defeito da issue com outro nome. O turno termina sem
+  // modelo, sem caso e sem aviso; a mensagem continua na caixa de entrada, onde
+  // o operador vê e responde à mão (a mesma defesa do filtro de palavra-chave).
+  //
+  // Vale em TODO turno — resposta e follow-up —, ao contrário da janela
+  // horária: um follow-up armado antes de o contato virar cliente também
+  // calaria pelo mesmo critério.
+  if (
+    !preview &&
+    'silencioPeloPublico' in routed &&
+    routed.silencioPeloPublico === true
+  ) {
+    runLog.info('turno pulado — nenhum agente publicado neste número atende ao público deste contato (#3722)', {
+      kind: liveJob().kind,
+      conversation_id: input.conversationId,
+    });
+    return;
+  }
+
   // O FILTRO DE PALAVRA-CHAVE da versão publicada (#2679) — DEPOIS das duas
   // detecções determinísticas acima (pedido de humano e opt-out ambíguo) e
   // ANTES do gate da janela logo abaixo: a mesma ordem do modo assistido, onde

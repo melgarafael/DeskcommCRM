@@ -10,6 +10,7 @@ import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
 import { conditionsSchema } from "@/lib/automation/conditions";
+import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
@@ -482,6 +483,22 @@ const acoesFixas = [
       plano_id: z.string().trim().min(1).max(64),
     }),
   }),
+  // #3727 — a PONTE para o gatilho de data do funil (#989): grava a data do
+  // atendimento num campo de DATA do negócio, e é a regra "Quando faltarem N
+  // dias para uma data do funil" (com N negativo) que manda a mensagem N dias
+  // depois. Dois campos e nada mais: o `pipeline_id` é o funil dono do campo (é
+  // ele que a varredura consulta) e o `campo` é a CHAVE em
+  // `pipelines.settings.fields`, nunca o rótulo — o mesmo par que o
+  // `trigger_config` do gatilho de data guarda. Quem espera NÃO é esta ação:
+  // ela grava e sai na hora do comparecimento, e por isso não segura a vaga de
+  // "um follow-up vivo por contato".
+  z.object({
+    type: z.literal("set_lead_date_field"),
+    config: z.object({
+      pipeline_id: z.string().uuid(),
+      campo: z.string().trim().min(1).max(80),
+    }),
+  }),
   // #2642 — a ação que avisa a EQUIPE na virada para ganho. O recorte do
   // mantenedor no PR #2834 deixou UM caminho: o WhatsApp para o número que o
   // ADMIN já registrou em Avisos. Por isso a configuração é só isto — não tem
@@ -640,7 +657,33 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirConfigDosGatilhosDeTempo)
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
+  .superRefine(recusarAntecedenciaTorta)
   .superRefine(recusarLacoDeLead);
+
+/**
+ * "Dias de antecedência" do aniversário (#3726) é um inteiro de 0 a 365.
+ *
+ * A varredura lê a chave com `configDoAniversario`, que devolve `null` para
+ * qualquer coisa que não seja inteiro na faixa — e uma regra dessas seria salva
+ * e nunca dispararia, com a tela dizendo que foi salva. Recusar na porta é o
+ * único desfecho honesto, como nas demais chaves do gatilho.
+ *
+ * Ausente passa: é o `{}` de toda regra criada antes desta feature, que
+ * continua valendo com 0 (no dia).
+ */
+function recusarAntecedenciaTorta(
+  regra: { trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const config = regra.trigger_config;
+  if (!config || !("dias_antecedencia" in config)) return;
+  if (configDoAniversario(config)) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["trigger_config", "dias_antecedencia"],
+    message: "Escolha entre 0 e 365 dias de antecedência (0 = no dia do aniversário).",
+  });
+}
 
 function exigirIdDaFonteWebhook(
   regra: { trigger_config?: Record<string, unknown> },
@@ -760,6 +803,7 @@ export const updateAutomationRuleSchema = z
   })
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
+  .superRefine(recusarAntecedenciaTorta)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

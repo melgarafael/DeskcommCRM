@@ -99,6 +99,9 @@ vi.mock("@/lib/api/client", async () => {
     apiClient: {
       get: async (url: string) => {
         h.disco.push(`GET ${url}`);
+        // Os grupos (#3245) são do mesmo módulo de recursos; esta organização
+        // não tem nenhum — é o estado de quem nunca usou o recurso opcional.
+        if (url.includes("/message-template-groups")) return { data: [] };
         return ler(await GET(pedido("GET", url)));
       },
       post: async (url: string, corpo: unknown) => {
@@ -429,7 +432,7 @@ describe("criar o recurso pela tela (#2833)", () => {
     // CRITÉRIO DA ISSUE: a tela prepara, não envia. Todo pedido que ela fez foi
     // ao módulo de recursos — nenhum caminho de mensagem foi tocado.
     expect(h.disco.length).toBeGreaterThan(0);
-    expect(h.disco.every((pedido) => pedido.includes("/message-templates"))).toBe(true);
+    expect(h.disco.every((pedido) => /\/message-template(s|-groups)\b/.test(pedido))).toBe(true);
   });
 });
 

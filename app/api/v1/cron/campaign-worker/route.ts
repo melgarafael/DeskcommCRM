@@ -22,6 +22,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { rodarUmaRodadaDeCampanha } from "@/lib/campanhas/rodada";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,11 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // O PISO OCIOSO (#3731): instalação sem campanha em `running`/`scheduled` não
+  // tem o que esta rodada faça. A saída vem antes da primeira consulta da
+  // rodada; o portão responde de um retrato em memória.
+  if (await recursoOcioso("campanhas")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const r = await rodarUmaRodadaDeCampanha(createAdminClient());
 

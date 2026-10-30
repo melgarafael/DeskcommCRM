@@ -71,7 +71,12 @@ vi.mock("@/hooks/inbox/useMessageTemplates", async () => {
   const real = await vi.importActual<typeof import("@/hooks/inbox/useMessageTemplates")>(
     "@/hooks/inbox/useMessageTemplates",
   );
-  return { ...real, useMessageTemplates: () => ({ data: h.listaDaTela, isLoading: false }) };
+  return {
+    ...real,
+    useMessageTemplates: () => ({ data: h.listaDaTela, isLoading: false }),
+    // Sem grupo (#3245): a tela é a lista plana, que é o caminho medido aqui.
+    useGruposDeRespostas: () => ({ data: [] }),
+  };
 });
 vi.mock("@hello-pangea/dnd", () => ({
   DragDropContext: ({
