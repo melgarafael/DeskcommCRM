@@ -52,11 +52,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Quanto o fluxo espera DEPOIS do retorno antes de retomar. Um dia: o tempo de a
- * pessoa ler e responder ao que foi prometido. Menos que isso, o fluxo emendaria
- * uma mensagem na outra no mesmo dia — o bombardeio que a regra existe para evitar.
+ * Quanto o fluxo espera DEPOIS do retorno antes de retomar. Uma hora evita uma
+ * mensagem emendada com a promessa e ainda permite o follow-up de silêncio de
+ * uma hora que o operador configurou.
  */
-export const FOLGA_DEPOIS_DO_RETORNO_MS = 24 * 3_600_000;
+export const FOLGA_DEPOIS_DO_RETORNO_MS = 3_600_000;
 
 export function reavaliarDepoisDoRetorno(quandoDoRetorno: string): string {
   return new Date(Date.parse(quandoDoRetorno) + FOLGA_DEPOIS_DO_RETORNO_MS).toISOString();
@@ -127,7 +127,7 @@ function retornosJaDisparados(admin: SupabaseClient, orgId: string, agora: Date)
  * acabara de sair (issue #2907).
  *
  * `agora` é injetável só para o teste provar a janela; a regra é a mesma dos
- * dois lados — um dia depois do retorno (`FOLGA_DEPOIS_DO_RETORNO_MS`).
+ * dois lados — uma hora depois do retorno (`FOLGA_DEPOIS_DO_RETORNO_MS`).
  */
 export async function contatosQueORetornoSegura(
   admin: SupabaseClient,

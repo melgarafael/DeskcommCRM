@@ -20,7 +20,7 @@ import { createSupabaseSilenceSweepDb } from "./silence-sweep";
  * ## A regra, a mesma dos dois lados
  *
  * `retorno-segura-o-fluxo.ts` já segura a inscrição que JÁ ESTAVA andando até
- * `FOLGA_DEPOIS_DO_RETORNO_MS` (1 dia) depois do retorno. O que faltava era a
+ * `FOLGA_DEPOIS_DO_RETORNO_MS` (1 hora) depois do retorno. O que faltava era a
  * mesma folga valer para a inscrição NOVA: o corte de silêncio que a varredura
  * respeita passa a incluir o retorno RECÉM-EXECUTADO, lido da mesma linha de
  * `cron_jobs` que sabe quando ele saiu (`enabled=false`, `last_error` nulo — o
@@ -30,13 +30,13 @@ import { createSupabaseSilenceSweepDb } from "./silence-sweep";
  * ## O que este arquivo prova
  *
  * A régua de produção (`createSupabaseSilenceSweepDb(...).loadContatosComRetornoVivo`,
- * sobre o PostgREST): o contato com retorno disparado há 2 h entra no corte; o
- * vivo continua entrando; o disparado há 30 h sai (a folga venceu); a linha
+ * sobre o PostgREST): o contato com retorno disparado há 30 min entra no corte; o
+ * vivo continua entrando; o disparado há 2 h sai (a folga venceu); a linha
  * desabilitada ANTES da hora (cancelada por opt-out/handoff, que o scheduler faz
  * sem `cancelled_at`) não conta como retorno saído; e a régua que o Postgres
  * recebe — `kind='at'`, `job_kind='followup_turn'`, `enabled=false`, sem
  * `cancelled_at`, sem `last_error`, sem turno de passo de fluxo, com
- * `next_run_at` na janela de um dia.
+ * `next_run_at` na janela de uma hora.
  *
  * ## O que NÃO prova
  *
@@ -74,21 +74,21 @@ function fakeAdmin(respostas: Linha[][]) {
 }
 
 const AGORA = Date.now();
-/** `next_run_at` relativo ao agora do teste — a folga é de 1 dia, então 2 h e 30 h são longe das bordas. */
+/** `next_run_at` relativo ao agora do teste — 30 min e 2 h ficam longe da borda de 1 h. */
 const quando = (deslocamentoMs: number) => new Date(AGORA - deslocamentoMs).toISOString();
 
 const HORA = 3_600_000;
 
 describe("o retorno já executado segura a inscrição NOVA (issue #2907)", () => {
-  it("⭐ disparado há 2 h ainda segura; vivo segura; fora da folga e ainda não vencido NÃO seguram", async () => {
+  it("⭐ disparado há 30 min ainda segura; vivo segura; após 1 h não segura", async () => {
     const { admin } = fakeAdmin([
       // 1ª consulta: retornos VIVOS (agendados, `enabled=true`).
       [{ contact_id: "c-vivo", next_run_at: quando(-6 * HORA) }],
       // 2ª consulta: retornos já DISPARADOS. O fake devolve tudo — quem corta a
-      // janela de um dia é a régua; o Postgres já corta antes (ver o teste seguinte).
+      // janela de uma hora é a régua; o Postgres já corta antes (ver o teste seguinte).
       [
-        { contact_id: "c-recente", next_run_at: quando(2 * HORA) },
-        { contact_id: "c-antigo", next_run_at: quando(30 * HORA) },
+        { contact_id: "c-recente", next_run_at: quando(30 * 60_000) },
+        { contact_id: "c-antigo", next_run_at: quando(2 * HORA) },
         { contact_id: "c-desabilitado-antes-da-hora", next_run_at: quando(-3 * HORA) },
         { contact_id: null, next_run_at: quando(1 * HORA) },
       ],
@@ -103,7 +103,7 @@ describe("o retorno já executado segura a inscrição NOVA (issue #2907)", () =
     expect(segura.size).toBe(2);
   });
 
-  it("a régua que o Postgres recebe: um dia de janela, e só o one-shot de retorno já disparado", async () => {
+  it("a régua que o Postgres recebe: uma hora de janela, e só o one-shot de retorno já disparado", async () => {
     const { admin, consultas } = fakeAdmin([
       [],
       [{ contact_id: "c-recente", next_run_at: quando(2 * HORA) }],
