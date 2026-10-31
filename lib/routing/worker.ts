@@ -38,6 +38,7 @@ export type RoutingOutcome =
   | "skipped_unsupported_mode"
   | "requeued_no_eligible"
   | "skipped_invalid_channel"
+  | "skipped_invalid_sector"
   | "skipped_conv_missing"
   | "skipped_invalid_payload"
   | "skipped_contato_pessoal"
@@ -69,6 +70,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_unsupported_mode: 0,
   requeued_no_eligible: 0,
   skipped_invalid_channel: 0,
+  skipped_invalid_sector: 0,
   skipped_conv_missing: 0,
   skipped_invalid_payload: 0,
   skipped_contato_pessoal: 0,
@@ -226,9 +228,22 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const efetivo = resolverRoteamentoPorNumero(config, regraDoNumero);
 
   const alreadyAssigned = Boolean(conv.assigned_to_user_id);
-  // O destino padrão NÃO depende da lista de elegíveis do modo: é entrega
-  // direta. Por isso só carregamos elegíveis quando o modo vai distribuir.
-  const viaDestinoPadrao = !alreadyAssigned && Boolean(efetivo.defaultAssigneeUserId);
+  /**
+   * (migration 9062) A FILA da conversa. Quando existe, ela manda em QUEM pode
+   * receber — é o que transforma "setor que agrupa" em "fila que distribui".
+   * Sem fila (`null`), tudo abaixo é o comportamento de sempre, byte a byte.
+   */
+  const sectorId = strOrNull((conv as { sector_id?: unknown }).sector_id);
+  /**
+   * O destino padrão NÃO depende da lista de elegíveis do modo: é entrega
+   * direta. Mas ele não pode furar a fila: se a conversa tem fila e o destino
+   * padrão do número não é membro dela, o destino padrão não vale aqui (a fila
+   * é a regra mais específica) e o modo distribui normalmente. Sem esta
+   * checagem, o claim recusaria (candidate_not_in_sector) e a conversa
+   * ficaria girando em backoff para sempre.
+   */
+  const viaDestinoPadrao = !alreadyAssigned && Boolean(efetivo.defaultAssigneeUserId)
+    && (!sectorId || await ehMembroDaFila(admin, orgId, sectorId, efetivo.defaultAssigneeUserId as string));
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
   if (
     !alreadyAssigned &&
@@ -236,11 +251,18 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     (efetivo.mode === "round_robin" || efetivo.mode === "load")
   ) {
     try {
-      eligibles = await loadEligibleAttendants(admin, orgId, now, {
-        kind: "conversation_channel",
-        channelSessionId: conv.channel_session_id,
-      });
+      eligibles = await loadEligibleAttendants(admin, orgId, now, sectorId
+        ? { kind: "sector", sectorId, channelSessionId: conv.channel_session_id }
+        : { kind: "conversation_channel", channelSessionId: conv.channel_session_id });
     } catch (error) {
+      if (error instanceof InvalidRoutingSector) {
+        // A fila sumiu entre o enfileiramento e o processamento. A conversa não
+        // perde nada: o `set null` da FK já a deixou sem fila; o próximo evento
+        // a distribui pelo caminho de sempre.
+        await notice(orgId, conversationId, "invalid_sector");
+        await markDone(event, "skipped_invalid_sector");
+        return "skipped_invalid_sector";
+      }
       if (!(error instanceof InvalidRoutingChannel)) throw error;
       await notice(orgId, conversationId, "invalid_channel");
       await markDone(event, "skipped_invalid_channel");
@@ -292,9 +314,13 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       }
       if (result !== "assigned") {
         if (
-          !["candidate_revoked", "candidate_not_allowed", "capacity_changed"].includes(
-            String(result),
-          )
+          ![
+            "candidate_revoked",
+            "candidate_not_allowed",
+            "capacity_changed",
+            // (9062) a fila mudou entre a leitura e o claim: reenfileira, não quebra.
+            "candidate_not_in_sector",
+          ].includes(String(result))
         ) {
           throw new Error("routing_claim_invalid_result");
         }
@@ -439,6 +465,31 @@ function strOrNull(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
   return t.length > 0 ? t : null;
+}
+
+/**
+ * A pessoa atende esta fila? (migration 9062)
+ *
+ * Pergunta única usada para decidir se o destino padrão do número vale dentro
+ * da fila. A mesma regra está no claim (`fn_channel_routing_claim`): aqui é
+ * para NÃO montar um claim que o banco vai recusar; lá é a garantia de que
+ * nenhum caminho entrega fora da fila.
+ */
+export async function ehMembroDaFila(
+  admin: Pick<SupabaseClient, "from">,
+  orgId: string,
+  sectorId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("attendant_sector_members")
+    .select("user_id")
+    .eq("organization_id", orgId)
+    .eq("sector_id", sectorId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return Boolean(data);
 }
 
 /**

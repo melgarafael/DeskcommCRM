@@ -20,6 +20,7 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async (
 import * as setores from "@/app/api/v1/attendants/sectors/route";
 import * as setor from "@/app/api/v1/attendants/sectors/[id]/route";
 import * as vinculo from "@/app/api/v1/attendants/sector/[user_id]/route";
+import * as filaDaConversa from "@/app/api/v1/conversations/[id]/sector/route";
 
 const ID = "44444444-4444-4444-8444-444444444444";
 const req = (method: string, body?: unknown) =>
@@ -39,7 +40,17 @@ describe("módulo setores desligado: as rotas não existem", () => {
     ["POST /sectors", () => setores.POST(req("POST", { name: "Suporte" }))],
     ["PATCH /sectors/[id]", () => setor.PATCH(req("PATCH", { name: "X" }), { params: Promise.resolve({ id: ID }) })],
     ["DELETE /sectors/[id]", () => setor.DELETE(req("DELETE"), { params: Promise.resolve({ id: ID }) })],
-    ["PUT /sector/[user_id]", () => vinculo.PUT(req("PUT", { sector_id: ID }), { params: Promise.resolve({ user_id: ID }) })],
+    ["PUT /sector/[user_id]", () => vinculo.PUT(req("PUT", { sector_ids: [ID] }), { params: Promise.resolve({ user_id: ID }) })],
+    // (9062) A fila de uma conversa é superfície do MESMO módulo: desligado, a
+    // rota que grava o destino não existe — nem para ler, nem para escrever.
+    [
+      "PUT /conversations/[id]/sector",
+      () => filaDaConversa.PUT(req("PUT", { sector_id: ID }), { params: Promise.resolve({ id: ID }) }),
+    ],
+    [
+      "GET /conversations/[id]/sector",
+      () => filaDaConversa.GET(req("GET"), { params: Promise.resolve({ id: ID }) }),
+    ],
   ];
 
   for (const [nome, chamar] of casos) {

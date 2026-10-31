@@ -133,6 +133,12 @@ export const AUDIT_ACTIONS = [
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
   "conversation.tags_changed",
+  // (migration 9062) Mudar a FILA de uma conversa é decisão auditável: quem
+  // escolheu, de qual fila para qual, e se aquilo disparou redistribuição. Sem
+  // esta ação, mover uma conversa de setor não deixaria rastro — e "por que
+  // esta conversa do comercial foi parar no financeiro?" é pergunta de
+  // operação, não de curiosidade.
+  "conversation.sector_changed",
   // Atendimento conjunto (issue #2542): convidar alguém para a MESMA conversa
   // e tirar o participante são decisões auditáveis, com o `user_id` alvo no
   // metadata. O convidado entra sem herdar o dono — por isso a trilha precisa

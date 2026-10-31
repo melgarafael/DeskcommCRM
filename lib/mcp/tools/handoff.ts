@@ -26,7 +26,7 @@ import {
   type TriggerHandoffResult,
 } from "@/lib/ai/handoff/orchestrator";
 import { motivoCodigoDoTexto } from "@/lib/escalacao/passagem";
-import { loadEligibleAttendants } from "@/lib/routing/eligibles";
+import { loadEligibleAttendants, InvalidRoutingSector } from "@/lib/routing/eligibles";
 import { selectRoundRobin } from "@/lib/routing/decide";
 import { getQueuePosition } from "@/lib/routing/queue";
 import { logger } from "@/lib/logger";
@@ -93,7 +93,7 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
     // Conversation must belong to org (defense in depth — service role bypassa RLS).
     const { data: conv, error: convErr } = await ctx.supabase
       .from("conversations")
-      .select("id, organization_id, contact_id, channel_session_id, awaiting_since")
+      .select("id, organization_id, contact_id, channel_session_id, awaiting_since, sector_id")
       .eq("organization_id", ctx.organizationId)
       .eq("id", input.conversation_id)
       .maybeSingle();
@@ -157,9 +157,23 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
     if (result.triggered) {
       const now = new Date();
       // INB-12: mesmos elegíveis do worker de roteamento (G5) — um algoritmo só.
-      const eligibles = await loadEligibleAttendants(ctx.supabase, ctx.organizationId, now, {
-        kind: "conversation_channel", channelSessionId: conv.channel_session_id,
-      });
+      // (9062) Com fila na conversa, o escopo é a FILA: o handoff da IA não
+      // entrega a quem não atende o setor que a pessoa escolheu. Sem fila, o
+      // escopo é o de sempre (o número).
+      const sectorId = (conv as { sector_id?: string | null }).sector_id ?? null;
+      let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>>;
+      try {
+        eligibles = await loadEligibleAttendants(ctx.supabase, ctx.organizationId, now, sectorId
+          ? { kind: "sector", sectorId, channelSessionId: conv.channel_session_id }
+          : { kind: "conversation_channel", channelSessionId: conv.channel_session_id });
+      } catch (error) {
+        if (!(error instanceof InvalidRoutingSector)) throw error;
+        // A fila sumiu no meio do caminho: a FK já deixou a conversa sem fila.
+        // Segue pelo caminho de sempre em vez de falhar o handoff.
+        eligibles = await loadEligibleAttendants(ctx.supabase, ctx.organizationId, now, {
+          kind: "conversation_channel", channelSessionId: conv.channel_session_id,
+        });
+      }
       const picked =
         input.target_user_id && eligibles.some((e) => e.userId === input.target_user_id)
           ? input.target_user_id
