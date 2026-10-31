@@ -220,7 +220,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
         ],
         REGUA_DO_PRODUTO,
       ),
-    [nomeLimpo, hexLimpo, hexEscuroLimpo, gravada.logo_path, abaixo],
+    [nomeLimpo, hexLimpo, hexEscuroLimpo, gravada.logo_path, gravada.logo_dark_path, abaixo],
   );
 
   // A MESMA serialização, com o MESMO escopo, que o layout de `/app` roda no
