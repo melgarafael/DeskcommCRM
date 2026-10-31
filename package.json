@@ -47,7 +47,8 @@
     "curso:planejar": "tsx curso/planejar-atualizacao.ts",
     "curso:capturar": "tsx curso/capturar.ts",
     "curso:jornadas": "tsx curso/capturar-jornadas.ts",
-    "curso:montar": "tsx curso/montar.ts"
+    "curso:montar": "tsx curso/montar.ts",
+    "medir:acervo-waha": "tsx scripts/medir-acervo-waha.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.78",
