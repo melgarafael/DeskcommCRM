@@ -1,0 +1,26 @@
+# docker-compose.supabase-rede.yml — liga o CRM à rede de um Supabase self-hosted no mesmo host
+#
+# Problema: com o Supabase rodando em outro compose no mesmo servidor, o
+# SUPABASE_DB_URL aponta para o nome do contêiner (`supabase-db`), que só resolve
+# dentro da rede desse compose. Ligar à mão (`docker network connect`) some a cada
+# `up -d` que recria o contêiner — inclusive o da atualização pela tela, que então
+# vê o worker cair e faz rollback.
+#
+# Entra por dc() do hostgator-setup-kit/_common.sh, e SÓ quando SUPABASE_DOCKER_NETWORK
+# está no .env e a rede existe (rede_do_supabase_ok).
+#
+# Uso manual (o kit já faz sozinho):
+#   SUPABASE_DOCKER_NETWORK=supabase_default \
+#   docker compose -f docker-compose.prod.yml -f docker-compose.supabase-rede.yml up -d
+services:
+  app:
+    networks: [supabase]
+  worker:
+    networks: [supabase]
+  scheduler:
+    networks: [supabase]
+
+networks:
+  supabase:
+    external: true
+    name: ${SUPABASE_DOCKER_NETWORK}
