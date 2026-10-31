@@ -20,7 +20,9 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { ingestTelegramInbound } from "./bot/ingest";
+import { TELEGRAM_SECRET_HEADER, verifyTelegramSecretToken } from "./bot/webhook";
+import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_TELEGRAM, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -86,7 +88,11 @@ export function acceptsInboundWebhook(provider: string): boolean {
   // O canal Datafy é opcional da instalação: desligado, a entrada dele não
   // existe — nem para quem tem o token de uma sessão gravada antes.
   if (provider === CHANNEL_PROVIDER_DATAFY) return canalGraphParceiroLigado();
-  return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
+  return (
+    provider === CHANNEL_PROVIDER_ZERNIO ||
+    provider === CHANNEL_PROVIDER_SOCIAL ||
+    provider === CHANNEL_PROVIDER_TELEGRAM
+  );
 }
 
 /** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
@@ -95,6 +101,14 @@ export function verifyInboundWebhookSignature(provider: string, raw: string, hea
   // Cada canal assina do seu jeito; o esquema do Datafy está em `graph-parceiro/webhook`.
   if (provider === CHANNEL_PROVIDER_DATAFY) {
     return verifyGraphPartnerSignature(raw, headers.get(HEADER_ASSINATURA), headers.get(HEADER_TIMESTAMP), secret);
+  }
+  // ─── A EXCEÇÃO DECLARADA: o Telegram não assina o corpo ───────────────────
+  //
+  // Ele manda o `secret_token` que NÓS inventamos no `setWebhook` de volta
+  // no cabeçalho de todo update. É o mesmo nível de prova do HMAC — desde
+  // que comparado em tempo constante (`verifyTelegramSecretToken`).
+  if (provider === CHANNEL_PROVIDER_TELEGRAM) {
+    return verifyTelegramSecretToken(headers.get(TELEGRAM_SECRET_HEADER), secret);
   }
   return verifyZernioSignature(raw, headers.get("x-zernio-signature"), secret);
 }
@@ -194,6 +208,8 @@ export async function handleInboundWebhook(
       return zernioInbound(admin, input);
     case CHANNEL_PROVIDER_DATAFY:
       return datafyInbound(admin, input);
+    case CHANNEL_PROVIDER_TELEGRAM:
+      return telegramInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -454,4 +470,36 @@ async function datafyInbound(
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+/**
+ * O bot do Telegram entra por aqui.
+ *
+ * Duas diferenças em relação aos outros canais, e só duas: (1) a prova de
+ * origem é o `secret_token` do cabeçalho, não um HMAC do corpo; (2) o update
+ * pode ser de um chat que não é conversa (canal, grupo de outro robô) — e aí o
+ * desfecho é `ignored`, não erro. O `bot_id` vem da SESSÃO, nunca do corpo.
+ */
+async function telegramInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+): Promise<InboundWebhookOutcome> {
+  if (!verifyInboundWebhookSignature(input.session.provider, input.rawBody, input.headers, input.secret)) {
+    return { ok: false, code: "unauthorized", message: "bad_signature" };
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(input.rawBody);
+  } catch {
+    return { ok: false, code: "invalid_json", message: "invalid_json" };
+  }
+
+  const resultado = await ingestTelegramInbound(admin, {
+    organizationId: input.session.organization_id,
+    channelSessionId: input.session.id,
+    payload,
+  });
+
+  return { ok: true, body: { ...resultado } };
 }
