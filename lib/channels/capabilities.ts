@@ -33,6 +33,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // É a linha que conversa com um APARELHO pareado: a agenda salva no
     // celular está lá dentro, e o `contacts/all` a devolve paginada (#2736).
     phonebook: true,
+    // Status é do WhatsApp com aparelho atrás: só a linha por QR tem o
+    // endpoint de publicação. Ver `publishStatus` em `./types`.
+    statusUpdates: true,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -50,6 +53,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
+    // A API oficial não tem endpoint de Status: o gesto só existe no app do
+    // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
+    // um botão que sempre falha (ver `publishStatus` em `./types`).
+    statusUpdates: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -87,6 +94,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
+    // A API oficial não tem endpoint de Status: o gesto só existe no app do
+    // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
+    // um botão que sempre falha (ver `publishStatus` em `./types`).
+    statusUpdates: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -101,6 +112,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
+    // A API oficial não tem endpoint de Status: o gesto só existe no app do
+    // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
+    // um botão que sempre falha (ver `publishStatus` em `./types`).
+    statusUpdates: false,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -124,6 +139,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
+    // A API oficial não tem endpoint de Status: o gesto só existe no app do
+    // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
+    // um botão que sempre falha (ver `publishStatus` em `./types`).
+    statusUpdates: false,
   },
 };
 

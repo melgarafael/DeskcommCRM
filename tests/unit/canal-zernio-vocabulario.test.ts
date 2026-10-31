@@ -38,6 +38,9 @@ describe("capabilities do canal intermediado", () => {
       // A agenda do aparelho só existe para quem conversa com o aparelho
       // (#2736); o canal oficial não lê agenda nenhuma de celular.
       phonebook: false,
+      // Status é do APP do WhatsApp: a API oficial não tem o endpoint, então
+      // nem o canal intermediado (que espelha a Meta) publica Status (#3397).
+      statusUpdates: false,
     });
   });
 

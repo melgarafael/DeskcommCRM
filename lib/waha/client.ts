@@ -1212,6 +1212,45 @@ export class WahaClient {
     }
     return res.json();
   }
+
+  /**
+   * Publica uma imagem no STATUS do número (#3397): `POST /api/{session}/status/image`.
+   *
+   * O corpo não tem destinatário — Status não se endereça, se PUBLICA. O que
+   * escolhe quem vê é `contacts`: uma lista de JIDs, ou vazia/ausente para o
+   * número inteiro. Numa sessão NOWEB a lista só é honrada com o acervo do
+   * histórico ligado (`noweb.store`), e sem ele o provedor responde 400 — por
+   * isso quem chama decide o público ANTES, e a ferramenta explica o que falta
+   * em vez de ligar o acervo por conta própria (decisão da #999).
+   *
+   * Teto de MÍDIA, como `sendMedia`: o provedor grava o arquivo antes de
+   * responder, e o teto de texto cortaria uma publicação legítima.
+   */
+  async sendStatusImage(
+    session: string,
+    imagem: { mimetype: string; data: string; caption?: string; contacts?: string[] },
+  ): Promise<unknown> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/status/image`,
+      {
+        method: "POST",
+        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: { mimetype: imagem.mimetype, filename: "status", data: imagem.data },
+          ...(imagem.caption ? { caption: imagem.caption } : {}),
+          // Lista vazia NÃO vai no corpo: no provedor ela e a ausência são a
+          // mesma coisa, e mandar `contacts: []` sugeriria um público que não
+          // existe. Quem quer todos diz `todos` na camada de cima.
+          ...(imagem.contacts?.length ? { contacts: imagem.contacts } : {}),
+        }),
+      },
+      TETO_DE_MIDIA_MS,
+    );
+    if (!res.ok) {
+      throw new Error(`waha_status_${res.status}`);
+    }
+    return res.json();
+  }
 }
 
 /**

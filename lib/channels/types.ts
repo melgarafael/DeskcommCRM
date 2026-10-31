@@ -77,6 +77,20 @@ export interface ChannelCapabilities {
    * presença do método `listPhonebook` no adapter.
    */
   phonebook: boolean;
+  /**
+   * O canal publica STATUS (o recado de imagem que some em 24 horas)?
+   *
+   * Nasce de uma diferença de plataforma, não de gosto: o Status é do app do
+   * WhatsApp, e só quem fala com um APARELHO pareado tem o endpoint que publica
+   * nele. A API oficial (a Meta e os intermediários que a espelham) não tem o
+   * gesto — não é restrição de janela nem de template, é ausência de rota.
+   *
+   * É a resposta declarativa que a tela e a ferramenta consultam ANTES de
+   * oferecer a publicação; quem executa confirma de novo pela presença de
+   * `publishStatus` no adapter. Canal que responde `false` não é erro: é o
+   * canal dizendo que a operação não existe ali.
+   */
+  statusUpdates: boolean;
 }
 
 /**
@@ -193,6 +207,33 @@ export interface OutboundEnvelope extends ChannelTenantScope {
    * `undefined` = envio solto, que é o caso comum.
    */
   replyToExternalId?: string | null;
+}
+
+/**
+ * Quem vê a publicação de Status — e a omissão é o desenho.
+ *
+ * `todos` precisa ser dito (`{ tipo: "todos" }`), nunca deduzido de uma lista
+ * vazia: no transporte, lista vazia e "sem lista" são a MESMA coisa, e o
+ * acidente que isso cria é a peça de marketing aparecendo para o número
+ * inteiro sem ninguém ter pedido. Forçar a escolha explícita deixa o default
+ * do produto fora do alcance de um array que veio vazio por engano.
+ */
+export type PublicoDoStatus =
+  | { tipo: "contatos"; /** Só dígitos, E.164 sem `+` (oito a quinze). */ numeros: string[] }
+  | { tipo: "todos" };
+
+/** O que a publicação de Status leva — ver `ChannelAdapter.publishStatus`. */
+export interface PublishStatusInput extends ChannelTenantScope {
+  /** Identificador da sessão/número no provider (WAHA: nome da sessão). */
+  sessionRef: string;
+  imagem: {
+    mime: "image/jpeg" | "image/png";
+    /** Base64 sem o prefixo `data:`. */
+    base64: string;
+  };
+  /** Legenda curta que acompanha a imagem. */
+  legenda?: string;
+  publico: PublicoDoStatus;
 }
 
 /**
@@ -441,6 +482,29 @@ export interface ChannelAdapter {
     recipient: string | null;
     externalId: string;
   }): Promise<void>;
+
+  /**
+   * Publica uma IMAGEM no Status do número (#3397) — o recado que some em 24h,
+   * visível só para o público escolhido.
+   *
+   * Existe porque Status NÃO é mensagem: não tem destinatário, não abre
+   * conversa, não entra no histórico de ninguém e não aceita texto solto. Quem
+   * publica escolhe um PÚBLICO — a lista de telefones ou o número inteiro —, e
+   * quem sabe montar esse endereço é o canal, não a feature. Antes disto a
+   * publicação existia como chamada direta ao provedor, fora do seam, e por
+   * isso (a) só funcionava no transporte que ela nomeava e (b) não passava
+   * pelas mesmas travas dos outros envios.
+   *
+   * OPCIONAL como os demais: o Status é do WhatsApp, não do produto. Quem não
+   * publica Status não implementa e a capability `statusUpdates` responde
+   * `false` — quem chama pergunta a ela (ou testa a presença deste método) em
+   * vez de perguntar QUAL provider é, que é o que o lint de canal proíbe.
+   *
+   * LANÇA quando o transporte recusa: aqui não há mensagem de cliente para
+   * salvar, então falha silenciosa seria pior — o operador acharia que a peça
+   * foi ao ar.
+   */
+  publishStatus?(input: PublishStatusInput): Promise<{ externalId: string | null }>;
 
   /**
    * A conexão está de pé AGORA? Pergunta feita ao transporte, não ao banco.
