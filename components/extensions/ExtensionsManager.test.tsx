@@ -64,6 +64,7 @@ function installation(overrides: Partial<InstalledExtensionView> = {}): Installe
     enabled: false,
     revision: 1,
     configuration: { density: "comfortable", show_description: true },
+    theme_palette: null,
     compatible: true,
     compatibility_reason: null,
     installation_revision: 1,
