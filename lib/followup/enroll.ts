@@ -10,6 +10,7 @@ import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
+import { invalidarRecursosLigados } from "@/lib/cron/recursos-ligados";
 import {
   createSupabaseFollowupGateDb,
   resolveAgentForAutomaticTrigger,
@@ -158,6 +159,13 @@ export async function enrollFollowupFlow(
       status: 500,
     };
   }
+
+  // #3694: o cron do follow-up sai cedo quando não há inscrição vencida, e a
+  // leitura dos recursos vale 45 s. Quem acabou de inscrever espera o fluxo
+  // COMEÇAR agora, não no próximo minuto — o mesmo motivo que faz o botão
+  // "Iniciar" da campanha invalidar a leitura. Uma linha aqui economiza até 45 s
+  // entre "inscrevi" e "o motor pegou".
+  invalidarRecursosLigados();
 
   if (input.actorUserId) {
     void audit({

@@ -65549,6 +65549,97 @@ begin
 end;
 $$;
 
+-- ⚠️ ENTRA ANTES DO BLOCO DA VARREDURA anon: cria função.
+-- ---- o que está ligado nesta instalação, numa leitura só (migration 9044) ----
+-- 9044 — O QUE ESTÁ LIGADO NESTA INSTALAÇÃO, NUMA LEITURA SÓ (#3694)
+--
+-- Oito crons de minuto consultavam a própria tabela e voltavam SEMPRE vazios
+-- numa instalação parada (medido pelo autor da issue: 8 consultas/min, todas
+-- vazias). `fn_cron_recursos_ligados()` responde "tem trabalho?" para todos
+-- eles num `jsonb`, e o app lê UMA vez por janela de 45 s
+-- (`lib/cron/recursos-ligados.ts`), compartilhada entre as rotas.
+--
+-- Cada chave é a condição EXATA da consulta que ela substitui, ou um
+-- superconjunto dela (`webhook_events_log`): o erro aceitável é "ligado" —
+-- que só custa a consulta que já se pagava —, nunca "desligado" para quem
+-- tem trabalho, porque a rota que sai cedo por engano para em SILÊNCIO.
+-- O porquê inteiro está no cabeçalho da migration.
+--
+-- `security invoker`: o service_role já lê tudo o que ela lê. `create or
+-- replace`, re-aplicável pelo update.sh; sem tabela, coluna ou dado novo.
+create or replace function public.fn_cron_recursos_ligados()
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select jsonb_build_object(
+    -- Campanha: a rodada só age em `running` e em `scheduled` vencida.
+    'campanhas', exists (
+      select 1
+        from public.campaigns c
+       where c.status = 'running'
+          or (c.status = 'scheduled' and c.scheduled_at is not null and c.scheduled_at <= now())
+    ),
+    -- Webhook: superconjunto de propósito — sem o corte de `ESPERA_MS`, para
+    -- que a linha recém-arquivada nunca fique invisível para o replay.
+    'webhook_replay', exists (
+      select 1
+        from public.webhook_events_log w
+       where w.provider = 'waha'
+         and w.status = 'error'
+         and w.error_message like 'transitoria:%'
+    ),
+    -- Follow-up: a condição da CTE `fila` do claim, incluindo o lease e a
+    -- organização operante (migration 0501).
+    'followup', exists (
+      select 1
+        from public.followup_enrollments e
+       where e.status in ('active', 'waiting_reply', 'dormente')
+         and e.next_eval_at <= now()
+         and (e.claimed_until is null or e.claimed_until < now())
+         and exists (
+           select 1 from public.organizations o
+            where o.id = e.organization_id
+              and o.status = 'active'
+         )
+    ),
+    -- Silêncio: o sweep varre por pointer ativo.
+    'followup_silencio', exists (
+      select 1 from public.followup_flow_pointers p where p.status = 'active'
+    ),
+    -- A fila do follow-up (dreno de texto fixo sem agent-worker).
+    'fila_followup', exists (
+      select 1
+        from public.job_queue j
+       where j.kind = 'followup_turn'
+         and j.status = 'pending'
+    ),
+    -- A janela de manutenção: `aplicarAgendas` só lê o que já começou.
+    'pausa_de_canal', exists (
+      select 1
+        from public.channel_schedules s
+       where s.status in ('scheduled', 'running')
+         and s.starts_at <= now()
+    ),
+    -- A importação do histórico do WhatsApp (#999).
+    'historico', exists (
+      select 1 from public.importacoes_de_historico i where i.status = 'rodando'
+    ),
+    -- A proposta que ficou presa em `enviando`.
+    'propostas', exists (
+      select 1 from public.crm_proposals p where p.status = 'enviando'
+    )
+  );
+$$;
+
+comment on function public.fn_cron_recursos_ligados() is
+  'O que está LIGADO nesta instalação: uma chave por recurso dos crons de minuto (#3694). Cada chave é a condição exata da consulta que ela substitui — ou um superconjunto dela —, porque "desligado" por engano para uma rota em silêncio. Quem não tem nada a fazer sai cedo sem tocar o PostgREST.';
+
+revoke execute on function public.fn_cron_recursos_ligados() from public, anon, authenticated;
+grant execute on function public.fn_cron_recursos_ligados() to service_role;
+
 -- ---- pessoa física: endereço no contato (migration 9041, issue #3494) ----
 -- Espelho idempotente da 9041. Os mesmos campos de `companies`, agora em
 -- `contacts`, para entrega e cobrança.

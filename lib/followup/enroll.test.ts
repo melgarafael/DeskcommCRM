@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
+import { esquecerLeituraDosRecursos, recursoLigado } from "@/lib/cron/recursos-ligados";
+
 import { enrollFollowupFlow } from "./enroll";
 import { flowGraphSchema } from "./graph-schema";
 
@@ -103,6 +105,45 @@ describe("enrollFollowupFlow", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("flow_not_active");
+  });
+
+  it("inscrição invalida a leitura dos recursos do cron — quem inscreve espera o fluxo começar agora (#3694)", async () => {
+    // O cron do follow-up sai cedo quando não há inscrição vencida, e a leitura
+    // vale 45 s. Se a inscrição não avisasse, o contato recém-inscrito ficaria
+    // parado no nó trigger até a janela vencer — até 45 s de espera que o
+    // operador vê como "inscrevi e nada aconteceu".
+    esquecerLeituraDosRecursos();
+    let leituras = 0;
+    const db = {
+      rpc: () => {
+        leituras += 1;
+        return Promise.resolve({ data: {}, error: null });
+      },
+    } as never;
+
+    // Primeira leitura: instalação sem inscrição vencida.
+    expect(await recursoLigado(db, "followup", 0)).toBe(true); // corpo vazio = ligado (fail-open)
+    expect(leituras).toBe(1);
+
+    const supabase = fakeDb({
+      id: POINTER,
+      organization_id: ORG,
+      status: "active",
+      active_version_id: VERSION,
+    });
+    const result = await enrollFollowupFlow(supabase as never, {
+      organizationId: ORG,
+      pointerId: POINTER,
+      contactId: CONTACT,
+      actorUserId: null,
+      requestId: "r1",
+    });
+    expect(result.ok).toBe(true);
+
+    // Mesma janela de 45 s: sem a invalidação, a leitura seria servida pelo
+    // retrato de antes da inscrição (uma ida ao banco, não duas).
+    await recursoLigado(db, "followup", 1);
+    expect(leituras).toBe(2);
   });
 
   it("recusa roteiro de atendimento — ele começa na conversa, não por inscrição", async () => {
