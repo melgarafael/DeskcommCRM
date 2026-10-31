@@ -72,6 +72,13 @@ export interface DrainKnobs {
    * Ausente = `new Date()`.
    */
   clock?: () => Date;
+  /**
+   * Avisa o laço da fila que há job NOVO — corta a soneca dele (#3688). O drain
+   * roda no MESMO worker do laço, então o aviso é uma promessa local, não fila
+   * nem polling. Ausente onde não há laço para acordar (CLI, testes): quem
+   * enfileira não pode depender de existir alguém dormindo.
+   */
+  acordarFila?: () => void;
 }
 
 /** Default de `allowlistTtlMs` (21 dias) para testes que omitem o knob. */
@@ -605,6 +612,11 @@ async function processEvent(
     ...(runAfter !== undefined ? { runAfter } : {}),
   });
   log.info('drain: job de turno enfileirado', { event_id: event.id, job_id: job.id, deduped });
+  // A soneca do laço da fila sai na hora (#3688): sem este aviso o job esperaria
+  // até o fim do teto do recuo (quando ligado), e é a PRIMEIRA resposta de um lead que escreveu
+  // depois de um período parado que paga a conta. Depois do enfileiramento, e só
+  // nele: avisar antes deixaria o laço consultar o relógio e não ver o job.
+  knobs.acordarFila?.();
   return 'processado';
 }
 
