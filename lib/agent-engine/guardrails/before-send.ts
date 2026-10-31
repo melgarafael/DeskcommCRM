@@ -72,7 +72,7 @@ import {
 import type { DisclosureMode } from './disclosure/template';
 import { escalateLgpdVeto, isLegalBasisValid } from './lgpd/legal-basis';
 import type { LgpdInput } from './lgpd/legal-basis';
-import { detectHumanPromise } from './human-promise';
+import { detectHumanHandoffPromise, detectHumanPromise } from './human-promise';
 import { detectarPromessaDeRetornoDoAssistente } from './retorno-do-assistente';
 import { detectarAfirmacaoDeRegistro } from './registro-sem-efeito';
 import type { EfeitoDasEscrituras, LeituraDoEfeito } from '@/lib/ai/runtime/efeito-das-escritas';
@@ -578,17 +578,30 @@ export const casePromiseGate: Gate = {
     // assistente, e o `schedule_followup` é o compromisso que o cliente espera.
     const promessaDoAssistente =
       !lexico && (ctx.semanticPromise?.retornoSoDoAssistente === true || retornoLexico);
+    // #3725: o léxico de humano tem DUAS famílias, e só uma pede caso humano. A de
+    // AÇÃO ("já encaminhei para a equipe") envolve alguém agora; a de RETORNO ("nossa
+    // equipe vai te responder outro dia") é promessa de VOLTAR A FALAR. Mandar abrir
+    // caso humano para a segunda era o que ensinava o fail-safe a inventar atendente
+    // para um cliente que só havia respondido "Não".
+    const handoffExplicito = lexico
+      ? detectHumanHandoffPromise(ctx.body, ctx.humanPromiseExtraTargets)
+      : false;
+    const soRetornoDeHumano = lexico && !handoffExplicito;
     if (promessaDoAssistente && ctx.followup?.agendadoNesteTurno === true) return { pass: true };
     return {
       pass: false,
       code: 'case_promise_without_case',
       reason:
-        promessaDoAssistente && ctx.followup?.disponivel === true
+        (promessaDoAssistente || soRetornoDeHumano) && ctx.followup?.disponivel === true
           ? 'Você prometeu voltar a falar com o cliente, mas não deixou o retorno marcado. ' +
             'Chame a tool schedule_followup (agendando o retorno) OU open_human_case ' +
             '(descrevendo o que precisa) OU reformule a mensagem sem prometer retorno.'
-          : 'Você prometeu envolver um humano mas não abriu um caso. Chame a tool ' +
-            'open_human_case (descrevendo o que precisa) OU reformule a mensagem sem prometer humano.',
+          : soRetornoDeHumano
+            ? 'Você prometeu que a equipe responde depois, mas não deixou o retorno marcado. ' +
+              'Reformule a mensagem sem prometer retorno (não há retorno agendável neste turno) ' +
+              'OU chame a tool open_human_case se a conversa precisa mesmo de uma pessoa agora.'
+            : 'Você prometeu envolver um humano mas não abriu um caso. Chame a tool ' +
+              'open_human_case (descrevendo o que precisa) OU reformule a mensagem sem prometer humano.',
     };
   },
 };
