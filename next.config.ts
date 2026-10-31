@@ -73,6 +73,10 @@ const nextConfig: NextConfig = {
     ],
   },
   reactStrictMode: true,
+  // Build local numa VPS pequena: a checagem de tipos do `next build` não cabe
+  // em ~4 GB de RAM. Só pula com `DESKCOMM_BUILD_SEM_TIPOS=1` explícito; o CI
+  // e a imagem oficial continuam checando (e `pnpm typecheck` segue no `verify`).
+  typescript: { ignoreBuildErrors: process.env.DESKCOMM_BUILD_SEM_TIPOS === "1" },
   poweredByHeader: false,
   // typedRoutes moved out of experimental in Next 15.5+
   typedRoutes: true,
