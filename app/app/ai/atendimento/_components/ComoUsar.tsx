@@ -70,7 +70,7 @@ export function ComoUsar({ t }: { t: Traduzir }) {
 
         <p>
           {t(
-            "As respostas ficam nos campos do cliente e aparecem na ficha dele e na conversa. O que o cliente já respondeu não é perguntado de novo, em nenhum roteiro.",
+            "As respostas ficam nos campos do cliente e aparecem na ficha dele e na conversa. Quando você marca a pergunta para o negócio, o valor vai para o card do negócio aberto — e a pergunta é refeita a cada novo negócio. O que o cliente já respondeu não é perguntado de novo.",
           )}
         </p>
       </div>
