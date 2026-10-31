@@ -90,6 +90,11 @@ export default async function MarcaDaOrganizacaoPage() {
           // a URL pronta do servidor faria a tela ter uma segunda regra de
           // montagem, e a que divergisse seria a que ninguém abre.
           logo_path: gravada?.logo_path ?? null,
+          // O PAR do logo (#3793): a chave `logo_dark_path` de
+          // `settings.branding`. Desce porque a prévia escura e o campo do logo
+          // escuro precisam saber que existe arte escura gravada — a barra
+          // lateral já a lê, e a tela mostrava outra coisa.
+          logo_dark_path: gravada?.logo_dark_path ?? null,
           // O remetente da AUTOMAÇÃO (#3287, fatia 1): os dois campos que a tela
           // grava junto da marca e lê de volta para preencher os inputs.
           email_from_name: gravada?.email_from_name ?? null,
