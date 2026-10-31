@@ -587,6 +587,15 @@ const schema = z.object({
   GOOGLE_ADS_OAUTH_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_ADS_OAUTH_CLIENT_SECRET: z.string().optional().default(""),
 
+  // Google Business (Perfil da Empresa) — app OAuth da INSTALAÇÃO (#3510).
+  // A política da API exige que quem lê avaliação em nome de um negócio use o
+  // PRÓPRIO projeto do Google Cloud; um provedor não pode emprestar o dele.
+  // Por isso o par é por instalação, como o da Agenda e o do Ads. Ausente = o
+  // recurso não some: a tela diz quais nomes faltam
+  // (`lib/channels/google-business/avaliacoes.ts`).
+  GOOGLE_BUSINESS_OAUTH_CLIENT_ID: z.string().optional().default(""),
+  GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET: z.string().optional().default(""),
+
   // Nuvemshop — opcional (template genérico open-source). Só exigidas quando
   // NUVEMSHOP_ENABLED=true; o runtime já degrada via getConfig()==null.
   NUVEMSHOP_APP_ID: z.string().optional().default(""),

@@ -225,6 +225,12 @@ export default async function PrivacyPage() {
               "enviar ao Google Ads as vendas que um anúncio trouxe, para que ele aprenda com elas, criar e listar ações de conversão e ler as métricas das campanhas da própria conta de anúncios.",
             )}
           </li>
+          <li>
+            <strong>{t("Google Business:")}</strong>{" "}
+            {t(
+              "ler as avaliações do Perfil da Empresa no Google (nota e texto), para mostrá-las na Central de atendimento e permitir que a equipe responda por lá. Só as avaliações do negócio conectado são lidas, e a resposta é enviada em nome da própria conta conectada.",
+            )}
+          </li>
         </ul>
         <p>
           {t(

@@ -962,6 +962,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da API Gemini (visão e tradução). Domínio do fornecedor, sem alternativa que não seja proxy nosso.",
   },
+  "mybusiness.googleapis.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint do My Business API v4 (`https://mybusiness.googleapis.com/v4`, em `lib/channels/google-business/cliente.ts`): é o DESTINO do GET `accounts/{conta}/locations/{local}/reviews` que traz as avaliações do Perfil da Empresa para a Central (#3510). O projeto Google é da própria instalação; o domínio é do fornecedor. Trocar pelo domínio do revendedor faria a leitura não chegar a lugar nenhum, e a tela ficaria dizendo que o Google recusou.",
+  },
   "graph.facebook.com": {
     categoria: "FORNECEDOR",
     motivo:
