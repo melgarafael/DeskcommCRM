@@ -7,6 +7,8 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, politicaDaEmpresa, type PapelMinimoDeMfa } from "@/lib/auth/politica-mfa";
 import { listarDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
+import { bloqueioDeChamadasLigado } from "@/lib/organizacao/bloqueio-de-chamadas";
+import { BloqueioDeChamadas } from "./_bloqueioDeChamadas";
 import { SecurityClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -48,6 +50,7 @@ export default async function SecurityPage() {
 
   let papelMinimo: PapelMinimoDeMfa = "none";
   let diasDeCarencia = 0;
+  let chamadasBloqueadas = false;
   if (org) {
     const { data } = await createAdminClient()
       .from("organizations")
@@ -61,6 +64,7 @@ export default async function SecurityPage() {
     // organização que exige.
     papelMinimo = cfg.papelMinimo ?? (empresaExigeMfa(data?.settings) ? "admin" : "none");
     diasDeCarencia = cfg.diasDeCarencia;
+    chamadasBloqueadas = bloqueioDeChamadasLigado(data?.settings);
   }
 
   // A mesma função que o layout usa para decidir o bloqueio — a tela não pode
@@ -95,6 +99,8 @@ export default async function SecurityPage() {
         dispositivos={dispositivos}
         semCodigos={semCodigos}
       />
+
+      {org?.role === "admin" && <BloqueioDeChamadas ligado={chamadasBloqueadas} />}
     </div>
   );
 }
