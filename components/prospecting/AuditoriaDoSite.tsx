@@ -5,10 +5,12 @@ import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import {
+  pontuarCompletudeDoSite,
   descreverProblema,
   type ClasseDeSite,
   type ItemDoRaioX,
 } from "@/lib/prospecting/site-classify";
+import { safePublicLink } from "@/lib/prospecting/schema";
 import {
   montarEstrategia,
   rotuloDaClasse,
@@ -39,6 +41,7 @@ export function AuditoriaDoSite({
   nicho,
   status,
   sobrescritaVocabulario,
+  fontes,
 }: {
   site: AuditoriaDoSiteDados;
   nota: number | null;
@@ -49,6 +52,7 @@ export function AuditoriaDoSite({
   status: string;
   /** Sobrescrita de vocabulário da org. Ausente = mapa base. */
   sobrescritaVocabulario?: Record<string, string> | null;
+  fontes?: { website?: string | null; mapsUrl?: string | null; finalUrl?: string | null };
 }) {
   const t = useT();
   const locale = useLocaleDeData();
@@ -72,6 +76,9 @@ export function AuditoriaDoSite({
     },
     t,
   );
+  const completude = pontuarCompletudeDoSite(site.checklist);
+  const siteFonte = safePublicLink(fontes?.finalUrl ?? fontes?.website ?? null);
+  const mapsFonte = safePublicLink(fontes?.mapsUrl ?? null);
   return (
     <div className="mt-3 space-y-3 border-t pt-3">
       <div>
@@ -90,6 +97,23 @@ export function AuditoriaDoSite({
           </p>
         )}
       </div>
+      <section aria-label={t("Completude do site")}>
+        <h5 className="font-medium">
+          {t("Completude do site")}: {completude.valor}% ({completude.presentes}/{completude.total})
+        </h5>
+        <p className="text-xs text-muted-foreground">
+          {t("Itens técnicos encontrados no site; não mede interesse de compra.")}
+        </p>
+      </section>
+      {(siteFonte || mapsFonte) && (
+        <div className="text-xs">
+          <h5 className="font-medium">{t("Fontes públicas consultadas")}</h5>
+          <div className="mt-1 flex flex-wrap gap-3">
+            {siteFonte && <a className="underline" href={siteFonte} target="_blank" rel="noreferrer">{t("Site auditado")}</a>}
+            {mapsFonte && <a className="underline" href={mapsFonte} target="_blank" rel="noreferrer">{t("Google Maps")}</a>}
+          </div>
+        </div>
+      )}
       {site.problemas.length > 0 && (
         <ul className="list-disc space-y-1 pl-4 text-xs">
           {site.problemas.map((problema) => (

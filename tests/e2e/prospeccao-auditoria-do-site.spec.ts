@@ -75,7 +75,10 @@ const SITE_QUENTE = {
   ver: 1,
   classe: "sem-site",
   problemas: [],
-  checklist: { tem: [], falta: ["whatsapp", "tel"] },
+  checklist: {
+    tem: [],
+    falta: ["whatsapp", "tel", "mailto", "social", "endereco", "mapa", "fotos", "titulo", "description", "favicon"],
+  },
   final_url: null,
   http_status: null,
   tempo_ms: 0,
@@ -88,7 +91,10 @@ const SITE_FRIO = {
   ver: 1,
   classe: "site-ok",
   problemas: [],
-  checklist: { tem: ["tel"], falta: [] },
+  checklist: {
+    tem: ["whatsapp", "tel", "mailto", "social", "endereco", "mapa", "fotos", "titulo", "description", "favicon"],
+    falta: [],
+  },
   final_url: "https://fria-qa.test/",
   http_status: 200,
   tempo_ms: 300,
@@ -169,12 +175,12 @@ test.describe("Auditoria do site na fila de prospecção (#2703)", () => {
 
     // 1. veredito + motivo do score no candidato certo (40+30+30=100).
     await expect(linhaQuente.getByText("Sem site próprio", { exact: true })).toBeVisible();
-    await expect(linhaQuente.getByText("Score 100", { exact: true })).toBeVisible();
+    await expect(linhaQuente.getByText("Prioridade 100", { exact: true })).toBeVisible();
     await expect(linhaQuente.getByText("nota alta + volume de avaliações", { exact: true })).toBeVisible();
-    await expect(linhaFria.getByText("Score 21", { exact: true })).toBeVisible();
+    await expect(linhaFria.getByText("Prioridade 21", { exact: true })).toBeVisible();
 
     // 2. KPI é a média dos exibidos: (100+21)/2 = 60.5 → 61.
-    await expect(page.getByText("Score médio", { exact: true })).toBeVisible();
+    await expect(page.getByText("Prioridade média", { exact: true })).toBeVisible();
     await expect(page.getByText("61", { exact: true }).first()).toBeVisible();
 
     // 3. ordenação por score põe o quente primeiro (antes: o frio, mais recente).
@@ -199,6 +205,11 @@ test.describe("Auditoria do site na fila de prospecção (#2703)", () => {
     // rede/IA: fora do e2e).
     await linhaQuente.getByRole("button", { name: "Ver detalhes" }).click();
     const dialogo = page.getByRole("dialog");
+    await expect(dialogo.getByText("Completude do site: 0% (0/10)")).toBeVisible();
+    await expect(dialogo.getByRole("link", { name: "Site auditado" })).toHaveAttribute(
+      "href",
+      "https://vitta-qa.test/",
+    );
     await expect(dialogo.getByRole("button", { name: "Reanalisar site" })).toBeEnabled();
     // A campanha semeada não tem agente e a organização de teste não tem agente
     // padrão: o servidor não teria quem escrevesse a prévia, então o botão fica
