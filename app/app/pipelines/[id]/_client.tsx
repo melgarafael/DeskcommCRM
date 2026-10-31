@@ -448,7 +448,7 @@ export function PipelinePageClient({
       </header>
       {arquivado && (
         <p
-          className="rounded-md border border-border bg-surface-muted/40 p-3 text-sm leading-relaxed text-text-muted"
+          className="rounded-md border border-border bg-surface-elevated/40 p-3 text-sm leading-relaxed text-text-muted"
           data-testid="funil-arquivado-aviso"
         >
           {t(
