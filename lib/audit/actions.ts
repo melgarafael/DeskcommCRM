@@ -1232,6 +1232,13 @@ export const AUDIT_ACTIONS = [
   // regra consulta o modelo.
   "settings.automation_ai_decide_updated",
 
+  // A entrada automática da conversa nova no funil (#3603): o funil e a etapa
+  // escolhidos pela organização, gravados em
+  // `organizations.settings.entrada_automatica_no_funil`. A trilha é a única
+  // resposta para "quem mudou o funil de entrada?" — a partir desta chave, toda
+  // conversa nova passa a gerar (ou a deixar de gerar) negócio sozinha.
+  "settings.entrada_automatica_no_funil_updated",
+
   // Planos de tarefa (#1752): a lista `settings.task_plans` mudou pela rota
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
