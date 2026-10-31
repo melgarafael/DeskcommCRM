@@ -32,6 +32,7 @@ import {
   recusasDePadrao,
 } from "@/lib/leads/padrao-do-campo";
 import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
+import { canonizaOpcoesDoFunil } from "@/lib/leads/opcao-do-campo-no-servidor";
 import {
   RECUSA_RETOMADA_ETAPA_INDISPONIVEL,
   RECUSA_RETOMADA_LEAD_ABERTO,
@@ -59,6 +60,7 @@ import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
 import { ocultarProvaMetaNaResposta, removerProvaMetaLeadSubmitted } from "@/lib/leads/prova-meta-lead-submitted";
 import { ehRecusaDaVisibilidadeDoFunil } from "@/lib/leads/recusa-da-visibilidade";
+import { posicaoDeEntradaNaEtapa } from "@/lib/kanban/entrada-na-etapa";
 
 type SB = SupabaseClient;
 
@@ -581,6 +583,14 @@ export async function createLeadHandler(
      * quando alguém editar o campo na ficha.
      */
     exigirPadraoDoCampo?: boolean;
+    /**
+     * `true` SÓ no webhook de captação (#3508): o valor que não casa com
+     * nenhuma opção do campo de seleção entra COMO VEIO, em vez de recusar a
+     * criação. O que casa é gravado pelo `value` da opção em qualquer caminho —
+     * esta opção só decide o destino do que não casa, e recusar perderia o lead
+     * do formulário (a mesma decisão do #2295 e do #2730).
+     */
+    manterForaDaLista?: boolean;
   } = {},
 ): Promise<Record<string, unknown>> {
   // Validate stage belongs to pipeline within active org.
@@ -615,19 +625,50 @@ export async function createLeadHandler(
   // As DUAS réguas desta criação leem o MESMO `settings` de funil — os campos
   // exigidos (#2295, logo abaixo) e o PADRÃO do valor (#2730) — então a linha é
   // perguntada UMA vez só. E nenhuma quando não há o que perguntar: o webhook de
-  // captação, isento das duas, continua sem tocar em `crm_pipelines`, byte a
-  // byte como antes. O valor herdado de outro negócio não é julgado (ver
-  // `custom_fields_da_origem`), só o que difere dele.
+  // captação, isento das duas, só lê o funil quando traz `custom_fields`, por
+  // causa da régua de opção abaixo. O valor herdado de outro negócio não é
+  // julgado (ver `custom_fields_da_origem`), só o que difere dele.
+  //
+  // A OPÇÃO do campo de seleção (#3508) é a TERCEIRA régua a ler este `settings`
+  // — e a razão de a leitura agora acontecer também na captação: um formulário
+  // que manda "sao paulo" tem de gravar o `value` da opção (`sp`), e para isso
+  // é preciso conhecer a lista. Fora da lista, a captação grava o cru (ver
+  // `manterForaDaLista`); API e MCP recusam.
+  const camposDoCorpo = input.custom_fields ?? {};
+  const recorteInicial =
+    input.custom_fields_da_origem !== undefined
+      ? camposQueMudaram(camposDoCorpo, input.custom_fields_da_origem)
+      : camposDoCorpo;
+  const settingsDaCriacao =
+    opcoes.exigirCamposDaEtapa !== false || Object.keys(recorteInicial).length > 0
+      ? await settingsDoFunil(supabase, input.pipeline_id)
+      : null;
+
+  // ── A OPÇÃO DO CAMPO DE SELEÇÃO (#3508) — o que veio vira o `value` ────────
+  //
+  // A régua é a MESMA da ficha (`lib/leads/campos-pesquisaveis`, via
+  // `opcao-do-campo-no-servidor`): casa por `value`, `label` ou apelido, sem
+  // caixa, acento nem espaço, e grava o `value` da opção. O que não casa é
+  // recusado com 422 `custom_field_value_not_in_list` — exceto na captação, que
+  // passa `manterForaDaLista` (recusar perderia o lead do formulário).
+  //
+  // ANTES do padrão, de propósito: o que a próxima régua tem de julgar é o que
+  // VAI ser gravado (`sp`), não o texto que chegou (`São Paulo`).
+  if (Object.keys(recorteInicial).length > 0) {
+    const { mudados } = canonizaOpcoesDoFunil(settingsDaCriacao, recorteInicial, ctx, opcoes);
+    if (Object.keys(mudados).length > 0) {
+      input = { ...input, custom_fields: { ...input.custom_fields, ...mudados } };
+    }
+  }
+
+  // O recorte do PADRÃO é o mesmo do início, recalculado sobre o que passou a
+  // ser gravado — a diferença é só o `value` canônico dos campos que casaram.
   const camposAJulgar =
-    opcoes.exigirPadraoDoCampo === false || !input.custom_fields
+    opcoes.exigirPadraoDoCampo === false
       ? {}
       : input.custom_fields_da_origem !== undefined
         ? camposQueMudaram(input.custom_fields, input.custom_fields_da_origem)
-        : input.custom_fields;
-  const settingsDaCriacao =
-    opcoes.exigirCamposDaEtapa !== false || Object.keys(camposAJulgar).length > 0
-      ? await settingsDoFunil(supabase, input.pipeline_id)
-      : null;
+        : input.custom_fields ?? {};
 
   // ── O PADRÃO (#2730) — o valor do campo tem de CASAR antes de nascer ─────
   //
@@ -699,19 +740,33 @@ export async function createLeadHandler(
 
   if (input.contact_id) await contatoDaOrgOrThrow(supabase, ctx, input.contact_id);
 
-  // next position_in_stage = MAX + 1000.
-  const { data: maxRow, error: maxErr } = await supabase
+  // ── ONDE UM CARD NOVO ENTRA NA COLUNA (issue #3461, item 1) ────────────────
+  //
+  // Era `MAX + 1000`: o card nascia ABAIXO de todos os outros, e a conversa
+  // iniciada no Inbox aparecia no fim da coluna. Agora ele entra ACIMA do
+  // primeiro (`posicaoDeEntradaNaEtapa`, MIN − 1000) — a régua que a resposta
+  // rápida já usa desde a migration 0729. A leitura continua sendo UMA linha
+  // pela mesma coluna; só muda a ponta.
+  const { data: primeiraRow, error: primeiraErr } = await supabase
     .from("crm_leads")
     .select("position_in_stage")
     .eq("stage_id", input.stage_id)
-    .order("position_in_stage", { ascending: false })
+    // O segundo argumento EXPLÍCITO (e não o default do supabase-js): os fakes
+    // `FakeQuery` das suítes de invariante leem `opts.ascending` sem guarda, e
+    // um `.order(col)` de um argumento só os derruba com `Cannot read
+    // properties of undefined (reading 'ascending')` — um vermelho que aparece
+    // em arquivo FORA do diff e some da vista de quem revisa. `true` é o mesmo
+    // que o default fazia: o primeiro card da coluna é o de MENOR posição.
+    .order("position_in_stage", { ascending: true })
     .limit(1)
     .maybeSingle();
 
-  if (maxErr) {
-    throw new ApiError(500, "internal_error", undefined, ctx.requestId, maxErr.message);
+  if (primeiraErr) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, primeiraErr.message);
   }
-  const nextPos = maxRow?.position_in_stage ? Number(maxRow.position_in_stage) + 1000 : 1000;
+  const nextPos = posicaoDeEntradaNaEtapa(
+    primeiraRow?.position_in_stage == null ? null : Number(primeiraRow.position_in_stage),
+  );
 
   // Nascer com dono e sem owner_kind é drift silencioso (o CHECK aceita kind
   // null): o lead teria dono e sumiria do filtro e das métricas por kind.
@@ -893,6 +948,7 @@ export async function updateLeadHandler(
   ctx: HandlerCtx,
   leadId: string,
   input: UpdateLeadInput,
+  opcoes: { manterForaDaLista?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   // `*` e nao lista explicita DE PROPOSITO: `camposAlterados` compara o patch
   // contra isto, e uma lista fixa faria todo campo NOVO do patch cair contra
@@ -940,9 +996,20 @@ export async function updateLeadHandler(
     );
     if (Object.keys(alterados).length > 0) {
       const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+      // ── A OPÇÃO (#3508) — a mesma régua da criação, no MESMO recorte ──────
+      //
+      // Só o que MUDOU é julgado (ver o bloco acima), e o que casa vira o
+      // `value` da opção. O que não casa: 422 aqui, e `manterForaDaLista` na
+      // captação. Roda ANTES do padrão porque o padrão tem de julgar o valor que
+      // será gravado, não o texto que chegou.
+      const { mudados } = canonizaOpcoesDoFunil(settingsDoEdicao, alterados, ctx, opcoes);
+      if (Object.keys(mudados).length > 0) {
+        input = { ...input, custom_fields: { ...input.custom_fields, ...mudados } };
+      }
       const recusas = recusasDePadrao(
         defsDoPadraoDoFunil(settingsDoEdicao, "negocio"),
-        alterados,
+        // O `value` canônico já aplicado é o que a próxima régua lê.
+        camposQueMudaram(input.custom_fields, (existing as { custom_fields?: unknown }).custom_fields),
         testaComPrazo,
       );
       if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
@@ -1245,7 +1312,7 @@ export async function updateLeadHandler(
 
 export interface MoveLeadAdminInput {
   to_stage_id: string;
-  /** Optional fractional position. If omitted, append at end (max + 1000). */
+  /** Posição fracionária opcional. Sem ela: outra etapa entra no TOPO (min − 1000, #3461); a mesma etapa vai para o fim (max + 1000). */
   position_in_stage?: number;
   reason?: string;
   /**
@@ -1355,14 +1422,32 @@ export async function moveLeadHandler(
 
   let position = input.position_in_stage;
   if (position === undefined) {
-    const { data: maxRow } = await supabase
+    // ── SEM POSIÇÃO: A ENTRADA VAI PARA O TOPO (issue #3461, item 1) ────────
+    //
+    // Este é o caminho de quem move etapa SEM passar pelo quadro — a tool MCP
+    // `crm_move_lead_stage`, a ação `create_or_move_lead` e o espelho de etapa
+    // do agente. Era `MAX + 1000` (fim da coluna) e é por isso que a conversa
+    // transferida pelo Inbox aparecia no fim. Agora a etapa de DESTINO manda o
+    // primeiro card, e a entrada fica acima dele.
+    //
+    // A MESMA ETAPA fica de fora de propósito: mover para onde o card já está
+    // é reordenação sem alvo — não há "chegada" a homenagear, e mandá-lo ao
+    // topo transformaria um reordenar em "pular para o começo". Continua no
+    // fim, como era.
+    const mesmaEtapaJa = stage.id === lead.stage_id;
+    const { data: ponta } = await supabase
       .from("crm_leads")
       .select("position_in_stage")
       .eq("stage_id", input.to_stage_id)
-      .order("position_in_stage", { ascending: false })
+      .order("position_in_stage", { ascending: mesmaEtapaJa ? false : true })
       .limit(1)
       .maybeSingle();
-    position = maxRow?.position_in_stage ? Number(maxRow.position_in_stage) + 1000 : 1000;
+    const valorDaPonta = ponta?.position_in_stage == null ? null : Number(ponta.position_in_stage);
+    position = mesmaEtapaJa
+      ? valorDaPonta == null
+        ? 1000
+        : valorDaPonta + 1000
+      : posicaoDeEntradaNaEtapa(valorDaPonta);
   }
 
   // ── A MESMA ETAPA É REORDENAÇÃO, NÃO ENTRADA ────────────────────────────────
@@ -1880,11 +1965,20 @@ export async function retomarLeadHandler(
   // A RÉGUA DE CAMPOS OBRIGATÓRIOS (issue #1536): a retomada ENTRA numa etapa,
   // e a etapa exigente vale para ela como vale para o arrasto. Só conta o que o
   // negócio novo vai ter — os campos copiados da origem.
+  //
+  // O ARQUIVO não é cobrado (#2829, fatia 2): a retomada CRIA o negócio
+  // (`createLeadHandler` logo abaixo), e o anexo é do negócio que ainda vai
+  // nascer. Passar `semAnexosAinda` aqui é o que faz esta pergunta ser a MESMA
+  // do escritor — sem ela, a retomada recusava com 422 uma etapa que exige
+  // documento e o caminho do `createLeadHandler` (que pula o arquivo, #3433)
+  // nunca era alcançado. A cobrança volta no próximo move, no lote ou no
+  // fechamento, onde `camposComAnexo` é lido de verdade.
   const vereditoDeCampos = validaCamposExigidos({
     lead: { custom_fields: payload.custom_fields ?? {} },
     settingsDoFunil: settings,
     destino: { stageId: etapa.id, desfecho: null },
     motivoDeGanho: null,
+    semAnexosAinda: true,
   });
   if (vereditoDeCampos.faltando.length > 0) {
     const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, idioma);

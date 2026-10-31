@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { generateRecoveryCodes, hashRecoveryCode } from "@/lib/auth/recovery-codes";
 import { sessionAal } from "@/lib/auth/server";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 
 export type ConfirmMfaEnrollResult =
   | { ok: true; recovery_codes: string[] }
@@ -95,6 +96,8 @@ export async function confirmMfaEnroll(
     });
     return { ok: false, error: "verify_failed", message: verifyErr.message };
   }
+  // As outras sessões da pessoa passam a dever a prova agora, não em 30 s.
+  invalidarUsuario(user.id);
 
   // Substitui o conjunto anterior: os códigos mostrados agora são os únicos que valem.
   const admin = createAdminClient();

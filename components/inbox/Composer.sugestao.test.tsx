@@ -71,6 +71,9 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
 }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
   useMessageTemplates: () => ({ data: [], isLoading: false }),
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos, que é
+  // o caminho que estes casos medem.
+  useGruposDeRespostas: () => ({ data: [] }),
 }));
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ data: [] }),

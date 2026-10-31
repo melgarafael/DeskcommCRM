@@ -597,10 +597,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     };
     try {
       if (Object.keys(campos).length > 0 || tituloMudou) {
-        await updateLeadHandler(admin, ctxDoLead, lead.id, {
-          ...(tituloMudou && mapped.name ? { title: mapped.name } : {}),
-          ...(Object.keys(campos).length > 0 ? { custom_fields: campos } : {}),
-        });
+        await updateLeadHandler(
+          admin,
+          ctxDoLead,
+          lead.id,
+          {
+            ...(tituloMudou && mapped.name ? { title: mapped.name } : {}),
+            ...(Object.keys(campos).length > 0 ? { custom_fields: campos } : {}),
+          },
+          // #3508: o formulário é de terceiro e a lista do funil é nossa — o
+          // valor que não casa entra como veio, em vez de transformar o card
+          // num loop de retry de quem integra.
+          { manterForaDaLista: true },
+        );
       }
       if (etapaAlvo) {
         await moveLeadHandler(admin, ctxDoLead, lead.id, { to_stage_id: etapaAlvo });
@@ -1032,10 +1041,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     };
     try {
       if (Object.keys(campos).length > 0 || tituloMudou) {
-        await updateLeadHandler(admin, ctxDoCard, cardAberto.id, {
-          ...(tituloMudou && mapped.name ? { title: mapped.name } : {}),
-          ...(Object.keys(campos).length > 0 ? { custom_fields: campos } : {}),
-        });
+        await updateLeadHandler(
+          admin,
+          ctxDoCard,
+          cardAberto.id,
+          {
+            ...(tituloMudou && mapped.name ? { title: mapped.name } : {}),
+            ...(Object.keys(campos).length > 0 ? { custom_fields: campos } : {}),
+          },
+          // #3508: mesma exceção do reenvio — o card que já existe é atualizado
+          // sem recusar o valor que não está na lista do funil.
+          { manterForaDaLista: true },
+        );
       }
       if (etapaDestino) {
         await moveLeadHandler(admin, ctxDoCard, cardAberto.id, { to_stage_id: etapaDestino });
@@ -1102,8 +1119,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       leadInput,
       // O lead de formulário entra no funil mesmo com campo exigido em branco
       // (#2295) e mesmo com valor fora do `padrao` do campo (#2730): ver as
-      // duas opções no handler.
-      { exigirCamposDaEtapa: false, exigirPadraoDoCampo: false },
+      // duas opções no handler. E `manterForaDaLista` (#3508) é a terceira: o
+      // valor que não casa com a opção entra como veio; o que casa vira o
+      // `value` da opção.
+      { exigirCamposDaEtapa: false, exigirPadraoDoCampo: false, manterForaDaLista: true },
     );
   } catch (err) {
     if (err instanceof ApiError) {

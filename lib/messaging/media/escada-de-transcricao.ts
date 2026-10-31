@@ -13,6 +13,13 @@
  * `null` legítimo no fim que o chamador grava como `failed` + motivo — nunca
  * silêncio, nunca nulo.
  *
+ *  0. **ElevenLabs Scribe escolhido pela organização** — a única escolha que o
+ *     painel oferece neste ponto (menu de `transcricao_de_audio` em
+ *     `lib/ai/pontos/registro.ts`; o outro item é "Automático", a escada daqui
+ *     para baixo). Vem antes de tudo porque é escolha EXPLÍCITA de quem
+ *     administra a organização, para ESTE ponto. Sem chave do ElevenLabs
+ *     utilizável o degrau não existe e a escada segue — nunca um áudio mudo
+ *     por causa de uma escolha que não pode ser cumprida.
  *  1. **Serviço de transcrição da instalação** (`TRANSCRIPTION_API_KEY`) — a
  *     escolha EXPLÍCITA de transcrição do `.env`. Ignorá-la em silêncio para
  *     falar com o modelo de conversa seria trocar o fornecedor de quem já
@@ -25,11 +32,23 @@
  *     transcrevia pela OpenAI não troca de fornecedor — nem de conta que paga —
  *     numa atualização. Vale para nota de voz e para a trilha de áudio do
  *     vídeo, que usa o mesmo transcriber.
- *  3. **Modelo de conversa da organização, quando declarar `audio`** — paga
+ *  3. **Provedor de conversa OpenRouter** (#3382) — a própria OpenRouter
+ *     transcreve, em `/audio/transcriptions` da MESMA chave e do MESMO
+ *     endpoint da conversa. Existe porque o degrau 4 nunca funcionou para
+ *     ela: o caminho de chat do `@ai-sdk/openai` recusa a parte `audio/ogg`
+ *     ANTES de a chamada sair (`audio content parts with media type audio/ogg
+ *     functionality not supported`), então numa instalação só-OpenRouter
+ *     TODA nota de voz terminava `failed`. O OpenRouter tem serviço de
+ *     transcrição próprio — o mantenedor provou `openai/whisper-large-v3`
+ *     funcionando —, e ele é OpenAI-compatível, então não precisa de SDK
+ *     novo. Vem ANTES do modelo de conversa: depois dele, o degrau 4 só
+ *     responde para quem conversa com um provedor que de fato aceita áudio na
+ *     entrada (Gemini, modelo OpenAI de áudio).
+ *  4. **Modelo de conversa da organização, quando declarar `audio`** — paga
  *     com a mesma credencial BYOK da conversa, que a organização já validou.
  *     É o degrau da #2171: a organização SEM chave OpenAI passa a ouvir o
  *     áudio. `transcreveAudio` é o registro de capacidades (`capabilities.ts`).
- *  4. **Nada** — resposta legítima, com o motivo. É o que o item 2 da issue
+ *  5. **Nada** — resposta legítima, com o motivo. É o que o item 2 da issue
  *     pede: hoje "ninguém tentou" e "tentou e não deu" são o mesmo nulo.
  *
  * ── Quem ANUNCIA esta escada (#2190) ────────────────────────────────────────
@@ -56,10 +75,16 @@
 import { generateText } from "ai";
 
 import { transcreveAudio } from "@/lib/agent-engine/edge/llm/capabilities";
-import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
+import {
+  OPENROUTER_ENDPOINT,
+  cabecalhosDeAtribuicaoOpenRouter,
+  createDefaultRegistry,
+  fetchDoProvedor,
+} from "@/lib/agent-engine/edge/llm/providers";
 import { env } from "@/lib/env";
 
 import type { TranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { elevenLabsTranscriptionProvider } from "@/lib/messaging/media/transcription-elevenlabs";
 import {
   apiTranscriptionProvider,
   idiomasDaTranscricao,
@@ -95,17 +120,36 @@ export interface AnuncioDaTranscricao {
  * precisa de tradução: `tests/unit/i18n-provedores-e-pontos.test.ts` cobra.
  */
 export const MOTIVOS_DA_TRANSCRICAO = {
+  elevenlabsEscolhido:
+    "a organização escolheu o ElevenLabs (Scribe) para ouvir os áudios, com a chave do ElevenLabs dela",
   servicoDaInstalacao:
     "o serviço de transcrição configurado nesta instalação (TRANSCRIPTION_API_KEY) é o que ouve os áudios",
   chaveOpenai: "a chave OpenAI desta organização ou instalação usa o padrão de transcrição de sempre",
   modeloDaOrganizacao:
     "o modelo de conversa da organização declara a capacidade audio e transcreve com a própria chave",
+  openrouterDaConversa:
+    "o provedor de conversa desta organização é a OpenRouter, que transcreve na própria API com a mesma chave",
   semModeloDeConversa:
     "não consegui resolver o modelo de conversa desta organização e não há chave OpenAI para transcrever",
   modeloSemAudio:
     "o modelo de conversa da organização não declara a capacidade audio, e não há chave OpenAI para o serviço de transcrição",
   ninguem: "não há chave OpenAI nem modelo de conversa com capacidade audio nesta organização",
 } as const;
+
+/**
+ * O modelo que a OpenRouter transcreve no degrau 3 (#3382), no formato
+ * `familia/modelo` que o catálogo dela exige — `whisper-1`, o default dos
+ * degraus OpenAI-compatíveis, não existe lá. `openai/whisper-large-v3` é o id
+ * que o mantenedor mediu funcionando em `/audio/transcriptions` da própria
+ * OpenRouter.
+ *
+ * Fixo de propósito: `TRANSCRIPTION_MODEL` é o knob do SERVIÇO da instalação
+ * (degrau 1), escrito para outro serviço — mandá-lo para a OpenRouter
+ * trocaria um modelo que funciona por um id que o catálogo dela não tem.
+ */
+export const MODELO_DE_TRANSCRICACAO_OPENROUTER = "openai/whisper-large-v3";
+/** Multipart oficial: 25 MB. O teto global do Storage continua 50 MiB. */
+export const LIMITE_MULTIPART_OPENROUTER_BYTES = 25_000_000;
 
 /** O modelo de CONVERSA da organização, já resolvido pelo worker. */
 export interface ConversaDaOrganizacao {
@@ -199,8 +243,25 @@ export async function decidirTranscricao(entrada: {
   conversa?: ConversaDaOrganizacao | null;
   idiomas?: readonly string[];
   chaveOpenai?: () => Promise<string | null>;
+  /**
+   * Degrau 0. Thunk como `chaveOpenai`: só quem tem o binding do ponto sabe se a
+   * organização escolheu o Scribe, e a credencial só é LIDA nesse caso. `null` =
+   * não escolheu, ou escolheu sem chave utilizável.
+   */
+  elevenlabsEscolhido?: () => Promise<{ apiKey: string; modelId: string } | null>;
 }): Promise<DecisaoDeTranscricao> {
   const idiomas = entrada.idiomas ?? idiomasDaTranscricao(env.TRANSCRIPTION_LANGUAGES);
+
+  // 0 · ElevenLabs Scribe escolhido no painel — escolha explícita para o ponto.
+  const scribe = entrada.elevenlabsEscolhido ? await entrada.elevenlabsEscolhido() : null;
+  if (scribe) {
+    return {
+      origem: "elevenlabs_escolhido",
+      transcriber: elevenLabsTranscriptionProvider({ apiKey: scribe.apiKey, model: scribe.modelId }),
+      motivo: MOTIVOS_DA_TRANSCRICAO.elevenlabsEscolhido,
+      anuncio: { provider: "elevenlabs", modelId: scribe.modelId },
+    };
+  }
 
   // 1 · Serviço de transcrição da instalação — escolha explícita.
   const servico = env.TRANSCRIPTION_API_KEY;
@@ -247,8 +308,39 @@ export async function decidirTranscricao(entrada: {
     };
   }
 
-  // 3 · Modelo de conversa da organização que declara a capacidade `audio`.
+  // 3 · Provedor de conversa OpenRouter — a própria OpenRouter transcreve, na
+  //     MESMA conta e no MESMO endpoint da conversa (#3382). ANTES do degrau 4
+  //     de propósito: o caminho de chat do `@ai-sdk/openai` recusa a parte
+  //     `audio/ogg` antes de a chamada sair, então quem conversa pela
+  //     OpenRouter nunca chegou a usar o modelo de conversa para áudio — era
+  //     `failed` em toda nota de voz. O serviço de transcrição deles é
+  //     OpenAI-compatível (`/audio/transcriptions`), então é o MESMO
+  //     transcriber dos degraus 1 e 2, só que com a chave da conversa.
   const conversa = entrada.conversa;
+  if (conversa?.apiKey && (conversa.provider ?? "").toLowerCase() === "openrouter") {
+    const endpoint = conversa.baseUrl || OPENROUTER_ENDPOINT;
+    return {
+      origem: "padrao_openrouter",
+      transcriber: apiTranscriptionProvider({
+        apiKey: conversa.apiKey,
+        baseUrl: endpoint,
+        model: MODELO_DE_TRANSCRICACAO_OPENROUTER,
+        languages: idiomas,
+        // Opcional na OpenRouter e só de atribuição (ranking/estatística de
+        // les): os valores saem da INSTALAÇÃO, nunca literais aqui
+        // (`providers.ts` é quem os lê).
+        headers: cabecalhosDeAtribuicaoOpenRouter(),
+        maxAudioBytes: LIMITE_MULTIPART_OPENROUTER_BYTES,
+        medirCustoEmUsd: true,
+      }, fetchDoProvedor(endpoint)),
+      motivo: MOTIVOS_DA_TRANSCRICAO.openrouterDaConversa,
+      // É ESTE anúncio — e não `whisper-1` — que a tela mostra: o provedor é
+      // o da conversa, e o modelo é o do serviço de transcrição deles.
+      anuncio: { provider: "openrouter", modelId: MODELO_DE_TRANSCRICACAO_OPENROUTER },
+    };
+  }
+
+  // 4 · Modelo de conversa da organização que declara a capacidade `audio`.
   if (
     conversa?.apiKey &&
     conversa.modelId &&
@@ -270,7 +362,7 @@ export async function decidirTranscricao(entrada: {
     };
   }
 
-  // 4 · Nada — e o motivo é do caso, não um "deu erro" genérico.
+  // 5 · Nada — e o motivo é do caso, não um "deu erro" genérico.
   const motivo = !conversa
     ? MOTIVOS_DA_TRANSCRICAO.semModeloDeConversa
     : conversa.modelId && !transcreveAudio(conversa.provider, conversa.modelId)

@@ -15,7 +15,11 @@ import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agen
  * atendimento; (4) spinning (F2-12); (5) promise determinística (F4-01); (6) promise
  * semântica (F4-02); (6.5) case promise — anti-alucinação de casos humanos (spec 15 §10.2,
  * Wave 4); (6.7) internal_vocabulary — vazamento de vocabulário interno ao cliente
- * (`docs/doctrine/separacao-fala-e-operacao.md`); (7) disclosure
+ * (`docs/doctrine/separacao-fala-e-operacao.md`); (6.93) horario_da_agenda — dia+horário
+ * escrito ao cliente só sai se a agenda o devolveu neste turno (#3596); (6.95)
+ * registro_sem_efeito — "já registrei seu interesse" só sai com a escrita de registro tendo
+ * produzido efeito no turno (#3333);
+ * (7) disclosure
  * (F4-05). A ordem é código-constante DE PROPÓSITO, não config de
  * runtime: "stop primeiro" é invariante de segurança (regra dura nº 2) e mudar a ordem sem
  * bumpar a versão quebra o CI — deixá-la mutável em disco seria um footgun.
@@ -70,6 +74,8 @@ import { escalateLgpdVeto, isLegalBasisValid } from './lgpd/legal-basis';
 import type { LgpdInput } from './lgpd/legal-basis';
 import { detectHumanPromise } from './human-promise';
 import { detectarPromessaDeRetornoDoAssistente } from './retorno-do-assistente';
+import { detectarAfirmacaoDeRegistro } from './registro-sem-efeito';
+import type { EfeitoDasEscrituras, LeituraDoEfeito } from '@/lib/ai/runtime/efeito-das-escritas';
 import { detectarVazamentoInterno, renderVetoDeVazamento } from './vazamento-interno';
 import { detectarAfirmacaoClinica, renderVetoDeAfirmacaoClinica } from './afirmacao-clinica';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
@@ -84,6 +90,7 @@ import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
 // segundo caminho de envio que não passa pelo gate de elegibilidade, e é ele que
 // barra o texto FIXO do worker e o modelo aprovado.
 import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
+import { avaliarHorarios, type HorariosDaAgenda } from './horario-da-agenda';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
@@ -310,6 +317,11 @@ export interface GateContext {
    */
   agenda?: { active: boolean; ferramentas: readonly string[]; toolCalledThisTurn: boolean };
   /**
+   * Arma o `horarioDaAgendaGate`: o que as tools de agenda DEVOLVERAM neste turno (não só
+   * se foram chamadas). Ausente = no-op. Ver `horario-da-agenda.ts`.
+   */
+  horariosDaAgenda?: HorariosDaAgenda;
+  /**
    * Retorno marcado pelo próprio assistente, para o `casePromiseGate` (#1873). Ausente =
    * nenhum alívio: o gate exige caso como sempre, e o veto não cita follow-up.
    *
@@ -324,6 +336,23 @@ export interface GateContext {
    * não põe ninguém da empresa para trabalhar.
    */
   followup?: { disponivel: boolean; agendadoNesteTurno: boolean };
+  /**
+   * Arma o `registroSemEfeitoGate` (#3333). Ausente = no-op — mesma direção segura de
+   * `internalVocabularyEnforced` e `agenda` (caller que não conhece o campo não arma nada).
+   *
+   * `ferramentas` é a lista da família `ESCRITAS_QUE_REGISTRAM_O_INTERESSE`
+   * (`registro-sem-efeito.ts`) que ESTE agente tem. Vazia ou `active: false` = desarmado: sem
+   * ferramenta de registro não existe cura, e o veto só puniria o agente por uma capacidade
+   * que o dono não ligou.
+   *
+   * `efeitos` é o PREDICADO ÚNICO do turno (`lib/ai/runtime/efeito-das-escritas.ts`), o MESMO
+   * coletor que a ponte das tools alimenta quando uma escrita termina. O gate não pergunta
+   * "a ferramenta foi chamada?" (foi o que o `agendaStallGate` faz, e é suficiente lá porque
+   * consultar já resolve a promessa): pergunta **"a ação produziu efeito?"** — uma chamada
+   * recusada pelo escopo de funil, pelo escopo do contato, pelo handler ou que estourou no
+   * meio deixa o registro sem existir, e é exatamente esse turno que precisa mudar a fala.
+   */
+  registro?: { active: boolean; ferramentas: readonly string[]; efeitos: EfeitoDasEscrituras };
 }
 
 /**
@@ -369,6 +398,21 @@ export interface Gate {
  * `before_send_traces` — o rótulo do motivo é contrato.
  */
 export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno' | 'atendimento_com_humano';
+
+/**
+ * Os códigos de veto que mandam PARAR, não reescrever: o gate `stop` (regra dura nº 2) e o
+ * `lgpd`. Reescrever o texto não muda o veredito deles, e o `reason` de cada um diz "encerre o
+ * turno sem tentar de novo". Quem decide se vale pedir outra tentativa ao modelo (a correção do
+ * turno mudo, `turno-mudo.ts`) consulta esta lista — e não a da cadeia inteira, porque os vetos
+ * de ENSINO (agenda_stall, promessa…) são exatamente os que uma nova tentativa conserta.
+ */
+export const VETOS_IRREVOGAVEIS: ReadonlySet<string> = new Set<MotivoDoStop | 'lgpd_anonymized' | 'lgpd_missing_legal_basis'>([
+  'contato_bloqueado',
+  'contato_interno',
+  'atendimento_com_humano',
+  'lgpd_anonymized',
+  'lgpd_missing_legal_basis',
+]);
 
 /** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
 const stopGate: Gate = {
@@ -743,6 +787,33 @@ const AGENDA_CONFIRMED_PATTERN =
   /\b(agendamento|hor[aá]rio|encaixe|vaga|visita)\b[^.!?\n]{0,30}\b(esta|está|ficou|fica|segue)\b[^.!?\n]{0,20}\b(confirmad[oa]|agendad[oa]|marcad[oa]|certinh[oa])\b/i;
 
 /**
+ * A MESMA afirmação consumada com o particípio ABRENDO a frase — a ordem invertida do
+ * `AGENDA_CONFIRMED_PATTERN` acima ("Confirmado: manicure dia 29/10 às 9h", "Confirmado,
+ * a 9h está livre pra manicure na quinta, dia 29/10"). Medido no rig de aceite 2026-10-25:
+ * o teste 10 do salão ("Quero remarcar o que marquei ontem") falhou SEIS vezes seguidas
+ * (v10..v15 do prompt) e, em TODAS, o turno final mandou exatamente esta forma — "Confirmado:
+ * [serviço] dia [data] às [hora]" — com a agenda parada no dia antigo. O padrão acima não
+ * casava porque exige o substantivo de agenda ANTES de "está/ficou" ANTES do particípio;
+ * aqui o particípio vem primeiro e o "substantivo" é a própria data/hora.
+ *
+ * O corte é o mesmo do resto do gate: ancorado nas frases medidas, e exige os DOIS
+ * marcadores na mesma frase — dia (data numérica ou dia da semana) E hora. Um só não basta:
+ * "Confirmado! Te chamo amanhã" é compromisso de mensagem e "Confirmado: te ligo às 14h"
+ * é retorno — nenhum dos dois afirma horário de agenda consumado (bordas presas no
+ * `gate-agenda-stall.test.ts`). Roda sobre o texto JÁ sem acento (`semAcento`); as variantes
+ * acentuadas seguem por segurança, como no padrão irmão.
+ */
+const AGENDA_CONFIRMADO_INVERTIDO_PATTERN = new RegExp(
+  String.raw`\b(confirmad[oa]|agendad[oa]|marcad[oa]|certinh[oa])\b` +
+    // dia na mesma frase (data numérica OU dia da semana) — lookahead, porque a ordem
+    // entre dia e hora varia ("dia 29/10 às 9h" vs "a 9h ... na quinta, dia 29/10").
+    String.raw`(?=[^.!?\n]{0,80}\b(?:segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo|amanh[ãa]|hoje|dia\s+\d{1,2}\s*[/\-]\s*\d{1,2})\b)` +
+    // e a hora, dentro da mesma janela de 80 chars da frase.
+    String.raw`[^.!?\n]{0,80}?\b\d{1,2}(?::\d{2}|h\b)`,
+  'i',
+);
+
+/**
  * `\b` do JS é ASCII-only ("word char" = `[A-Za-z0-9_]`): `á` não conta como letra
  * pra ele. Isso faz `\best[aá]\b` NUNCA casar "está" (acentuado) seguido de espaço —
  * o `á` fica "sem fronteira" com o espaço seguinte (nem um nem outro é \w) e o `\b`
@@ -795,7 +866,9 @@ export const agendaStallGate: Gate = {
     const bodySemAcento = semAcento(ctx.body);
     const stall =
       AGENDA_STALL_PATTERN.test(bodySemAcento) || AGENDA_STALL_VER_PATTERN.test(bodySemAcento);
-    const confirmedSemChecar = AGENDA_CONFIRMED_PATTERN.test(bodySemAcento);
+    const confirmedSemChecar =
+      AGENDA_CONFIRMED_PATTERN.test(bodySemAcento) ||
+      AGENDA_CONFIRMADO_INVERTIDO_PATTERN.test(bodySemAcento);
     if (!stall && !confirmedSemChecar) return { pass: true };
     return {
       pass: false,
@@ -822,6 +895,120 @@ export const agendaStallGate: Gate = {
     };
   },
 };
+
+/**
+ * Gate de HORÁRIO SEM FONTE — todo dia+horário escrito ao cliente veio da agenda neste
+ * turno, e "está agendada" só sai depois de a marcação gravar. Regra pura em
+ * `horario-da-agenda.ts`; aqui só a ligação com a cadeia. Posição 6.93: logo depois do
+ * `agendaStallGate` (a família da agenda fica junta) e antes do `registroSemEfeitoGate` e do
+ * `disclosureGate` — precisa ver o texto do MODELO, antes de o disclosure emendar o corpo.
+ */
+export const horarioDaAgendaGate: Gate = {
+  name: 'horario_da_agenda',
+  evaluate: (ctx) => {
+    const v = avaliarHorarios(ctx.body, ctx.now, ctx.horariosDaAgenda);
+    return v.pass ? { pass: true } : { pass: false, code: v.code, reason: v.reason };
+  },
+};
+
+/**
+ * Gate 6.95 — REGISTRO AFIRMADO SEM EFEITO (#3333): sem nenhum efeito confirmado
+ * da ferramenta neste turno, a afirmação correspondente é recusada. O coletor
+ * agrega nomes de ferramentas; não vincula a fala a um objeto específico.
+ *
+ * ─── O defeito, medido ───────────────────────────────────────────────────────
+ *
+ * Imobiliária montada do zero no ambiente de teste: o agente mostra os imóveis, o cliente diz
+ * "tenho interesse nesse", e o agente responde "já registrei seu interesse" sem chamar
+ * `crm_create_lead`. O negócio não nasce, e o cliente fica esperando um contato que ninguém
+ * vai fazer. Com `gpt-5.6-luna`: 4 tentativas, 3 configurações de prompt, e em todas o texto
+ * afirmou o registro sem a ferramenta. Ensinar no prompt (o bloco fixo do R5, #3328) reduz o
+ * erro, mas — palavras do próprio relato — "ensino não é garantia: depende do modelo". É
+ * exatamente o mesmo diagnóstico que criou o `agendaStallGate`: instrução em texto não basta,
+ * a cura é determinística.
+ *
+ * ─── O que este gate NÃO é ──────────────────────────────────────────────────
+ *
+ * Não é uma checagem a mais espalhada. Ele lê o PREDICADO ÚNICO do turno
+ * (`lib/ai/runtime/efeito-das-escritas.ts`), que a ponte das tools alimenta com o MESMO
+ * desfecho que já vai para o `api_audit_log`. A pergunta é uma só — **"esta ação já produziu
+ * efeito?"** — e é feita no único caminho por onde a fala do modelo sai: esta cadeia. Um
+ * turno em que `crm_create_lead` foi recusado pelo escopo de funil tem o registro AUSENTE e
+ * `efeitos.produziuEfeito(...) === false`, mesmo tendo havido chamada; um turno em que a
+ * escrita ficou sem desfecho é `incerto`, e nem afirmar nem negar cabe à fala.
+ *
+ * ─── As três respostas, e por que o ensino muda com elas ────────────────────
+ *
+ *  - `nao_tentada` → "você afirmou sem chamar a ferramenta": o caminho é chamar.
+ *  - `falhou` → "a ferramenta falhou, o registro NÃO existe": o caminho é dizer a verdade
+ *    (chamar de novo, ou passar para a equipe) — nunca repetir a afirmação.
+ *  - `incerto` → "ficou sem desfecho": não se afirma sucesso nem se repete a escrita; pede
+ *    conferência humana. É o que a própria mensagem de `EscritaDoNegocioSemDesfechoError` já
+ *    manda o modelo fazer.
+ *
+ * Posição 6.95 de `BEFORE_SEND_GATES`: DEPOIS do `agendaStallGate` e do
+ * `horarioDaAgendaGate` (que também só lê o texto do modelo), e ANTES do
+ * `disclosureGate`, pela mesma razão dele — o disclosure pode EMENDAR o corpo, e este gate
+ * precisa julgar o texto do MODELO.
+ */
+export const registroSemEfeitoGate: Gate = {
+  name: 'registro_sem_efeito',
+  evaluate: (ctx) => {
+    const registro = ctx.registro;
+    if (registro === undefined || !registro.active || registro.ferramentas.length === 0) {
+      return { pass: true };
+    }
+    if (!detectarAfirmacaoDeRegistro(ctx.body)) return { pass: true };
+    // O PREDICADO ÚNICO. Uma pergunta para TODA a família: basta uma escrita de registro ter
+    // produzido efeito para a fala ter lastro.
+    if (registro.ferramentas.some((f) => registro.efeitos.produziuEfeito(f))) return { pass: true };
+    const desfechos = registro.ferramentas.map((f) => registro.efeitos.desfechoDe(f));
+    // A pior leitura vence: um erro posterior não apaga um efeito (o predicado é monotônico),
+    // mas uma INCERTEZA em qualquer membro da família impede afirmar sucesso.
+    const desfecho: LeituraDoEfeito = desfechos.includes('incerto')
+      ? 'incerto'
+      : desfechos.includes('falhou')
+        ? 'falhou'
+        : 'nao_tentada';
+    return {
+      pass: false,
+      code: 'registro_afirmado_sem_efeito',
+      reason: renderVetoDeRegistroSemEfeito(desfecho, nomesDasFerramentas(registro.ferramentas)),
+      // Rótulo, nunca o corpo (sem PII) — o trace e o log leem daqui.
+      detail: { desfecho },
+    };
+  },
+};
+
+/**
+ * O erro de ensino do `registroSemEfeitoGate` — o texto que o MODELO lê na mensagem da
+ * cadeia. Ele sempre oferece as duas saídas honestas: registrar de fato, ou dizer a verdade e
+ * passar para a equipe. Nomear a ferramenta da família que o agente TEM (a lista chega
+ * pronta) evita o segundo defeito do `agendaStallGate`: ensinar ferramenta que ele não tem.
+ */
+function renderVetoDeRegistroSemEfeito(desfecho: LeituraDoEfeito, ferramentas: string): string {
+  const caminhoHonesto =
+    'Diga ao cliente o que é verdade — o interesse ainda NÃO está registrado — e chame a ' +
+    'ferramenta agora, respondendo com base no retorno dela. Se não conseguir registrar, ' +
+    'diga que vai passar para a equipe em vez de afirmar que está feito.';
+  if (desfecho === 'incerto') {
+    return (
+      `Você disse que o interesse foi registrado, mas ${ferramentas} ficou SEM DESFECHO ` +
+      'confirmado neste turno: não se sabe se gravou. Não afirme sucesso nem repita a escrita ' +
+      '— peça à equipe para conferir e diga ao cliente que você vai confirmar.'
+    );
+  }
+  if (desfecho === 'falhou') {
+    return (
+      `Você afirmou que o interesse foi registrado, mas ${ferramentas} FALHOU neste turno ` +
+      `(recusa ou erro), então o registro não existe. ${caminhoHonesto}`
+    );
+  }
+  return (
+    `Você afirmou que registrou o interesse sem ter chamado ${ferramentas} NESTE turno. ` +
+    caminhoHonesto
+  );
+}
 
 /**
  * Gate de disclosure (F4-05; blueprint 5.7) — garante que a PRIMEIRA mensagem outbound a um
@@ -985,7 +1172,11 @@ const spinningGate: Gate = {
  * muda o destino de nenhum envio de quem não ligou.
  */
 // v10: restrição comercial explícita da organização, antes de qualquer emenda do corpo.
-export const BEFORE_SEND_CHAIN_VERSION = 10;
+// v11 (#3333): afirmar que o interesse foi registrado só sai com a escrita de registro tendo
+// PRODUZIDO EFEITO no turno (gate `registro_sem_efeito`, lendo o predicado único do efeito).
+// v12 (#3596): insere `horarioDaAgendaGate` entre `agenda_stall` e `registro_sem_efeito` —
+// dia+horário escrito ao cliente só sai se uma ferramenta de agenda o devolveu neste turno.
+export const BEFORE_SEND_CHAIN_VERSION = 12;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1037,6 +1228,9 @@ export const factualClaimGate: Gate = {
  *         câncer escritos pelo modelo; só arma com a camada `afirmacao_clinica` ligada;
  *   (6.9) agenda_stall — "vou verificar/confirmar horário" sem ter chamado a ferramenta de
  *         agenda neste turno; antes do disclosure pelo mesmo motivo do internal_vocabulary;
+ *   (6.93) horario_da_agenda — dia+horário citado que nenhuma ferramenta de agenda devolveu
+ *         neste turno, ou "está agendado" sem a marcação ter gravado (#3596);
+ *   (6.95) registro_sem_efeito — "já registrei" sem a escrita de registro ter efeito (#3333);
  *   (8) disclosure — 1ª mensagem se apresenta como assistente virtual (F4-05).
  * (O anti-jailbreak F4-04 é INBOUND advisório, não gate de before_send — não entra aqui.)
  */
@@ -1054,6 +1248,8 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   clinicalClaimGate,
   commercialRestrictionGate,
   agendaStallGate,
+  horarioDaAgendaGate,
+  registroSemEfeitoGate,
   disclosureGate,
 ];
 
@@ -1205,8 +1401,12 @@ export interface RunBeforeSendArgs {
    * no-op (retrocompatível com todo caller que não conhece agenda, ex.: `followup-turn.ts`).
    */
   agenda?: GateContext['agenda'];
+  /** Ver `GateContext.horariosDaAgenda`. Ausente = gate no-op. */
+  horariosDaAgenda?: GateContext['horariosDaAgenda'];
   /** Ver `GateContext.followup`. Ausente = o `casePromiseGate` não alivia nada. */
   followup?: GateContext['followup'];
+  /** Coletor do mesmo turno: sem efeito confirmado, não afirmar registro. */
+  registro?: GateContext['registro'];
   /**
    * Pausa humana do turno, paga ANTES de o guardrail tomar conexão/transação
    * (issue #654) — o porquê está no corpo de `runBeforeSend`. Ausente (default)
@@ -1541,7 +1741,9 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
       commercialRestrictionEnforced: restricaoComercial,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
+      ...(args.horariosDaAgenda !== undefined ? { horariosDaAgenda: args.horariosDaAgenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
+      ...(args.registro !== undefined ? { registro: args.registro } : {}),
     };
 
     const { body: evaluatedBody, trace: traceDaCadeia, veto, throttleWaitMs } = evaluateBeforeSend(ctx, gates);

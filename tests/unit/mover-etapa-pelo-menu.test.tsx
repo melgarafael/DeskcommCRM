@@ -110,8 +110,8 @@ const ETAPAS = [
 const MOVIDO = lead("l-1", "s-1", 1000);
 const VISIVEL_NO_CONTATO = lead("l-2", "s-2", 1000);
 // O filtro da página esconde este card: ele está no cache do quadro e fora das
-// props. É ele quem define o fim da etapa (#2545).
-const ESCONDIDO_NO_CONTATO = lead("l-3", "s-2", 5000);
+// props. É ele quem define o topo da etapa (#2545, #3461).
+const ESCONDIDO_NO_CONTATO = lead("l-3", "s-2", -5000);
 
 let qc: QueryClient;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -172,7 +172,7 @@ afterEach(() => {
 });
 
 describe("Mover para… no menu do card", () => {
-  it("lista as outras etapas e manda o move para o fim da etapa INTEIRA, com o updated_at do card", async () => {
+  it("lista as outras etapas e manda o move para o TOPO da etapa INTEIRA (#3461), com o updated_at do card", async () => {
     const user = userEvent.setup();
     montar();
     await abrirMenuDoMovido(user);
@@ -186,7 +186,7 @@ describe("Mover para… no menu do card", () => {
     expect(move?.url).toBe(`/api/v1/leads/${MOVIDO.id}/move`);
     expect(move?.corpo).toEqual({
       stage_id: "s-2",
-      position_in_stage: 6000,
+      position_in_stage: -6000,
       expected_updated_at: UPDATED_AT,
     });
   });

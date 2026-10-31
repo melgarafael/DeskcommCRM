@@ -6,6 +6,7 @@ import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/
 import { loadAuthUser, mfaEmDividaEstrita, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
@@ -41,6 +42,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     p_previous: previous?.orgId ?? null, p_mode: input.data.access_mode, p_ttl: IMPERSONATE_TTL_SECONDS,
   });
   if (error || !id) return fail("state_conflict", "Não foi possível iniciar. Confira o acesso e o estado da organização.", 409, { requestId });
+  // #3696: `loadAuthUser` acabou de ler "sem acompanhamento" para este admin
+  // (a checagem de `user.support` acima); o contexto novo precisa valer já.
+  invalidarUsuario(ctx.user.id);
   const { data: session } = await admin.from("platform_support_sessions").select("expires_at, access_mode")
     .eq("id", id).eq("actor_user_id", ctx.user.id).eq("organization_id", tenantId).single();
   if (!session) return fail("upstream_unavailable", "Acompanhamento iniciado. Recarregue para confirmar o estado.", 503, { requestId });

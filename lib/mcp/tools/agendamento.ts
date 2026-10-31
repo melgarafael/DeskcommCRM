@@ -307,7 +307,14 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
     "Se ele for false, o atendente ainda não publicou os horários dele — não invente horários e " +
     "não diga que está lotado; avise que alguém da equipe confirma. " +
     "Se `fuso_suposto` for true, o fuso da agenda não foi escolhido por ninguém, veio do padrão: " +
-    "ofereça o horário pedindo confirmação em vez de afirmar.",
+    "ofereça o horário pedindo confirmação em vez de afirmar. " +
+    "REMARCAR — a cliente JÁ tem compromisso e pede outro dia ou hora: localize primeiro com " +
+    "`crm_list_appointments` (sem `dia` para esta conversa) e, com o horário livre daqui, feche " +
+    "com a pergunta de ação — \"Vou mudar sua [serviço] para [dia] às [hora] — posso aplicar?\" — " +
+    "nunca \"quer confirmar?\": perguntar de novo transforma o próximo turno em confirmação de " +
+    "presença. Quando ela aceitar, MOVE na MESMA resposta com `crm_reschedule_appointment` " +
+    "(id do passo 1 + `inicio` copiado daqui) ANTES de falar com ela — oferecer o horário de " +
+    "novo deixa a agenda no dia antigo.",
   inputSchema: horariosLivresShape,
   category: "read",
   requiresRole: "agent",
@@ -477,7 +484,11 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
     "COM ele e ocupa o tempo de um atendente. O mesmo cliente pode ter os dois. " +
     "USE ANTES DE MARCAR e antes de cobrar: cliente que já tem consulta marcada não deve " +
     "receber oferta de horário como se não tivesse, nem ser cobrado como se estivesse parado." +
-    " Em conversa de atendimento, lista apenas os compromissos do contato desta conversa.",
+    " Em conversa de atendimento, lista apenas os compromissos do contato desta conversa." +
+    " Na REMARCAR esta lista é o passo 1, NÃO o fim do turno: siga na mesma resposta com " +
+    "`crm_find_free_slots` do dia pedido e `crm_reschedule_appointment`, e SÓ ENTÃO responda à " +
+    "cliente — parar aqui com uma mensagem (\"tenho horário, quer confirmar?\") deixa a agenda " +
+    "no dia antigo com a conversa parecendo resolvida.",
   inputSchema: listarShape,
   category: "read",
   requiresRole: "agent",
@@ -724,6 +735,10 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
     "NÃO use para 'voltar a falar com o cliente depois' — isso é retorno, e a ferramenta é " +
     "`crm_schedule_followup`. A diferença: aqui as DUAS partes combinaram e alguém vai esperar; " +
     "lá é decisão interna nossa e o cliente não sabe de nada. " +
+    "⚠️ NÃO é para REMARCAR: se a cliente JÁ tem um compromisso marcado e pede outro dia ou " +
+    "hora, isso é `crm_reschedule_appointment` — aqui nasce um SEGUNDO compromisso e o antigo " +
+    "fica no lugar, com dois avisos contraditórios. Localize o id do compromisso com " +
+    "`crm_list_appointments` (sem `dia`) antes de mover. " +
     "Chame `crm_find_free_slots` ANTES e use um `starts_at` que veio de lá — marcar em horário que " +
     "não está livre é recusado, e a recusa manda você consultar de novo. " +
     "⚠️ Alguns atendimentos exigem que uma pessoa da equipe aprove: nesses, o horário fica " +
@@ -922,6 +937,10 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
     "JÁ disse o dia E a hora (\"quinta às 14h\", \"amanhã de manhã às 9\") e esse par ainda não " +
     "foi checado: aqui consulta e marcação são uma decisão só, e é o caminho preferido — " +
     "encerrar o turno com o horário apenas consultado deixa o cliente sem agendamento. " +
+    "⚠️ NÃO é para REMARCAR: se a cliente JÁ tem um compromisso marcado e pede outro dia ou " +
+    "hora, isso é `crm_reschedule_appointment` — aqui nasce um SEGUNDO compromisso e o antigo " +
+    "fica no lugar, com dois avisos contraditórios. Localize o id do compromisso com " +
+    "`crm_list_appointments` (sem `dia`) antes de mover. " +
     "Não use quando o cliente ainda não escolheu hora (aí é `crm_find_free_slots`) nem para " +
     "voltar a falar com ele depois (é `crm_schedule_followup`). " +
     "Se o horário NÃO estiver livre, NADA é marcado: a resposta traz `marcado: false` e a lista " +
@@ -1071,7 +1090,13 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
 };
 
 const remarcarShape = {
-  appointment_id: z.string().uuid(),
+  appointment_id: z
+    .string()
+    .uuid()
+    .describe(
+      "o compromisso, vindo de `crm_list_appointments` sem `dia` para esta conversa — " +
+        "um `dia` chutado devolve lista vazia e o compromisso não aparece.",
+    ),
   new_starts_at: z.string().datetime({ offset: true }).describe("o novo início, vindo de `crm_find_free_slots`"),
   notes: z.string().max(2000).optional(),
 };
@@ -1085,6 +1110,8 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     "continua um só e o lembrete é refeito sozinho. Se você cancelar e marcar, o cliente recebe " +
     "dois avisos contraditórios e a linha do tempo dele passa a contar que ele desistiu e voltou — " +
     "o que não aconteceu. " +
+    "O `appointment_id` vem de `crm_list_appointments` — chame sem `dia` para achar o " +
+    "compromisso desta conversa antes de mover. " +
     "Confirme o horário novo com `crm_find_free_slots` antes: horário indisponível é recusado.",
   inputSchema: remarcarShape,
   category: "write",

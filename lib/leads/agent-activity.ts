@@ -52,11 +52,25 @@ export async function emitAgentActivityForContact(
 ): Promise<AgentActivityResult> {
   const { pool, organizationId, contactId } = input;
 
+  // Os negócios em que o contato é o principal E os em que ele é pessoa
+  // relacionada (#3669; vínculo da #3083). Quem desempata é
+  // `resolveActiveLeadForContact`: o principal sempre vence, e o relacionado
+  // só conta quando não há negócio aberto próprio.
   const { rows } = await pool.query<LeadCandidate>(
     `select l.id, l.organization_id, l.pipeline_id, l.status,
-            l.last_activity_at, l.created_at
+            l.last_activity_at, l.created_at, 'principal' as via
        from crm_leads l
-      where l.organization_id = $1 and l.contact_id = $2`,
+      where l.organization_id = $1 and l.contact_id = $2
+     union all
+     select l.id, l.organization_id, l.pipeline_id, l.status,
+            l.last_activity_at, l.created_at, 'relacionado' as via
+       from crm_lead_links k
+       join crm_leads l on l.id = k.lead_id
+      where k.organization_id = $1
+        and k.target_kind = 'contact'
+        and k.link_kind = 'related'
+        and k.target_id = $2
+        and l.organization_id = $1`,
     [organizationId, contactId],
   );
 

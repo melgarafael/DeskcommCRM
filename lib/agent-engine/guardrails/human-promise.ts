@@ -90,6 +90,17 @@ function buildPatterns(target: string): RegExp[] {
       `\\b(?:est[aá]|ficou|fica|segue)\\b${gap(10)}\\bem\\b\\s+an[aá]lise\\b${gap(20)}` +
         `\\b(?:com|pela|pelo|do|da|na|no)\\b${gap(10)}\\b${target}\\b`,
     ),
+    // (2d) REPASSE ALEGADO SEM OBJETO, frase inteira: "Já encaminhei!", "Pronto, encaminhado!".
+    //      Sem objeto, o que foi repassado é o pedido do cliente — a alegação de que alguém
+    //      já foi acionado, ainda que o alvo só apareça na pergunta seguinte ("Quer que eu
+    //      avise a equipe?"), onde nenhuma regra o alcança. Ancorada no começo da frase:
+    //      "Já te encaminhei o link." tem objeto e "Seu pedido foi encaminhado." tem sujeito,
+    //      e nenhum dos dois casa. Não depende de `target`.
+    new RegExp(
+      `(?:^|[.!?\\n]\\s*)(?:(?:pronto|ok|certo|feito|perfeito)\\s*[,!]?\\s*)?(?:(?:eu\\s+)?(?:ja\\s+)?` +
+        `(?:encaminhei|repassei|transferi|acionei|escalei)|(?:ja\\s+)?(?:encaminhad|repassad|transferid|acionad|escalad)[oa])` +
+        `(?:\\s+(?:aqui|agora|internamente))?\\s*(?:[.!]|$)`,
+    ),
     // (3) deferir a TERCEIROS via subjuntivo 3ª pessoa do plural: "assim que liberarem eu te aviso".
     //     Não depende de `target` — não repetido no alvo estendido.
     new RegExp(
@@ -120,9 +131,39 @@ function escapeRegex(word: string): string {
  * operação executada. A isenção vale para a mensagem INTEIRA, nunca frase a
  * frase: basta uma frase com operação alegada, prazo ou retorno anunciado
  * ("O responsável retorna em 10 minutos") para a análise voltar ao texto todo.
+ *
+ * Única folga (issue #3725): UMA abertura antes das perguntas, se ela inteira for
+ * reconhecimento sem conteúdo ("Entendi!", "Sem problema, entendi!"). É lista
+ * FECHADA de propósito — falha fechada, como o §10.2 manda: qualquer outra
+ * abertura ("Já encaminhei.", "Vou anotar aqui.") devolve a análise à mensagem
+ * inteira. Três rodadas de lista de sinais de promessa (verbos, posição,
+ * marcadores de ação) acharam, cada uma, uma família nova que escapava.
+ * Ficam de fora "pode deixar" e "fica tranquilo": são garantia, não reconhecimento.
  */
+const RECONHECIMENTOS_SEM_CONTEUDO = new Set([
+  "entendi",
+  "entendido",
+  "certo",
+  "claro",
+  "ok",
+  "combinado",
+  "anotado",
+  "perfeito",
+  "beleza",
+  "tudo bem",
+  "tudo certo",
+  "sem problema",
+  "sem problemas",
+]);
+
+function ehReconhecimentoSemConteudo(frase: string): boolean {
+  const partes = frase.split(",").map((p) => p.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim());
+  return partes.every((p) => RECONHECIMENTOS_SEM_CONTEUDO.has(p));
+}
+
 function soPedeConsentimento(text: string): boolean {
-  const frases = text.split(/(?<=[.!?\n])/).map((f) => f.trim()).filter(Boolean);
+  const todas = text.split(/(?<=[.!?\n])/).map((f) => f.trim()).filter(Boolean);
+  const frases = todas.length > 1 && ehReconhecimentoSemConteudo(todas[0] ?? "") ? todas.slice(1) : todas;
   return frases.length > 0 && frases.every((f) =>
     f.endsWith("?") &&
     /^(?:(?:voce|vc)\s+)?(?:quer|gostaria|prefere|deseja|autoriza|posso|podemos)\b/.test(f) &&

@@ -20,6 +20,7 @@ import { CURATED_FIELDS, OP_LABELS, type Op } from "@/app/app/webhooks/_componen
 import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
 
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao } from "./visual";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /**
  * O que o canvas põe em cada caixa: os dados da regra mais o que é só de tela —
@@ -48,7 +49,7 @@ function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
   const { data: membros } = useAssignableMembers(true);
   const nomeDe = (userId: unknown) => {
     const membro = membros?.find((m) => m.user_id === userId);
-    return membro ? (membro.full_name ?? membro.user_id.slice(0, 8)) : null;
+    return membro ? rotuloDoMembro(membro, t) : null;
   };
   // #2041 — no rodízio, a caixa mostra a fila na ordem em vez de uma pessoa só.
   if (config.modo === "rodizio") {
@@ -93,6 +94,19 @@ function DescricaoDoPlano({ config }: { config: Record<string, unknown> }) {
   return <>{plano ? plano.nome : t("Escolha o plano de tarefas")}</>;
 }
 
+/** #3727 — a data do comparecimento no campo escolhido: o RÓTULO, não a chave. */
+function DescricaoDaDataDoAtendimento({ config }: { config: Record<string, unknown> }) {
+  const t = useT();
+  const { data: funis } = usePipelines();
+  const funil = funis?.data?.find((p) => p.id === config.pipeline_id);
+  const campo = funil
+    ? camposDoFunil(funil.settings ?? null).find((c) => c.key === cfg(config, "campo"))
+    : undefined;
+  if (!funil) return <>{t("Escolha o funil e o campo de data")}</>;
+  if (!campo) return <>{t("Escolha o campo de data")}</>;
+  return <>{`${funil.name} › ${campo.label}`}</>;
+}
+
 function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string, unknown> }) {
   const t = useT();
   switch (tipo as ActionType) {
@@ -129,6 +143,9 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
       const dias = typeof config.vence_em_dias === "number" ? config.vence_em_dias : 0;
       return <>{`${titulo} · ${dias ? `${t("vence em")} ${dias} ${dias === 1 ? t("dia") : t("dias")}` : t("vence hoje")}`}</>;
     }
+    // #3727 — sem caso, a caixa cairia no `tipo` cru (« set_lead_date_field »).
+    case "set_lead_date_field":
+      return <DescricaoDaDataDoAtendimento config={config} />;
   }
   return <>{tipo}</>;
 }

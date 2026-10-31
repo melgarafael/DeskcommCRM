@@ -238,7 +238,16 @@ export function MessageBubble({
       // o mesmo erro de #1046.
       return emNomeDe.token_name ? `${nome} · ${t("via")} ${emNomeDe.token_name}` : nome;
     }
-    if (message.sent_via === "ai") return "IA";
+    if (message.sent_via === "ai") {
+      // #3649: o nome do agente vem GRAVADO na linha, como o de `sent_on_behalf`.
+      // Só `ai_actor_name`: é o campo que o handler grava DEPOIS de
+      // `input.metadata`, então o cliente não o forja; outro apelido em
+      // `metadata` seria entrada do cliente. Sem nome (linha antiga), "IA".
+      // "IA" passa por `t()`; o nome do agente sai como cadastrado (#1046).
+      const gravado = message.metadata?.ai_actor_name;
+      const nome = typeof gravado === "string" ? gravado.trim() : "";
+      return nome ? `${t("IA")} · ${nome}` : "IA";
+    }
     // A REGRA falou, e não a IA: texto fixo de automação, follow-up ou lembrete
     // de agenda (#652). O ramo passou a existir porque o valor passou a ser
     // gravado — antes dele, um rótulo aqui seria promessa sem dado atrás.
@@ -453,7 +462,7 @@ export function MessageBubble({
         )}
         {senderLabel && (
           <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
-            {senderLabel === "IA" ? (
+            {message.sent_via === "ai" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
             {senderLabel && t(senderLabel)}
@@ -513,7 +522,7 @@ export function MessageBubble({
 
             {!hasMedia && mediaExpirada && (
               <div className={cn(message.body && "mb-1")}>
-                <MediaUnavailable kind={avisoDeExpiracao} />
+                <MediaUnavailable detalhe={avisoDeExpiracao} />
               </div>
             )}
 

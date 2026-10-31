@@ -162,10 +162,22 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     const fixas = CONFERENCIAS_DE_SAIDA.filter(
       (c) => c.escolha === null && c.escolhaEmOutraTela === undefined,
     );
-    // 10 das 11 hoje (subiu de 9/10 quando `agenda_stall` entrou na cadeia — ver
-    // `before-send.ts`). A contagem entra na asserção de propósito: se alguém tornar
-    // uma delas "configurável", este número muda e a mudança tem de ser deliberada.
-    expect(fixas).toHaveLength(10);
+    // O contrato é nominal: retirar uma conferência ou torná-la configurável
+    // precisa reprovar mesmo que outra seja acrescentada e a contagem não mude.
+    expect(fixas.map((c) => c.nome)).toEqual([
+      "stop",
+      "lgpd",
+      "pacing",
+      "messaging_window",
+      "spinning",
+      "promise",
+      "case_promise",
+      "internal_vocabulary",
+      "agenda_stall",
+      "horario_da_agenda",
+      "registro_sem_efeito",
+      "disclosure",
+    ]);
     for (const c of fixas) {
       const linha = screen.getByTestId(`conferencia-${c.nome}-fixa`);
       expect(linha.textContent).toContain("não se desliga");

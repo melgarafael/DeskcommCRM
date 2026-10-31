@@ -46,6 +46,7 @@ function store(prior: "nenhum" | "requested" | "accepted" | "vetoed" | "failed")
     rotate: vi.fn(async () => "ledger-rodado"),
     message: vi.fn(async () => null),
     update: vi.fn(async () => {}),
+    setMediaPath: vi.fn(async () => "unused-in-this-test"),
   };
 }
 

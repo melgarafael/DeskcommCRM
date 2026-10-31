@@ -20,6 +20,13 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ signOut: vi.fn() }),
 }));
 vi.mock("@/app/actions/settings/trocarIdioma", () => ({ trocarIdioma: vi.fn() }));
+// O UserMenu navega pelo `useRouter` (porta do modo administrador, #3608). Aqui ele
+// é renderizado fora do App Router, e o `useRouter` real estoura "invariant
+// expected app router to be mounted". Só o roteador é substituído: botões, Radix
+// e tradução seguem reais.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+}));
 vi.mock("@/components/theme/theme-toggle", () => ({ ThemeToggle: () => null }));
 
 afterEach(cleanup);

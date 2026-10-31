@@ -28,6 +28,7 @@ import { z } from 'zod';
 import type pg from 'pg';
 
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
+import { EVENTO_AVISO_HANDOFF, MARCA_EPISODIO_HANDOFF, MARCA_SOLICITACAO_HANDOFF } from '@/lib/escalacao/aviso-de-handoff';
 import {
   CHAVE_DO_HANDOFF_TECNICO,
   derivacaoPendenteDoGatilho,
@@ -457,7 +458,7 @@ export async function performHumanHandoff(
     : "{}";
 
   await guardServiceEffect();
-  await db.query(
+  const conversaSilenciada = await db.query<{ aviso_episodio: string }>(
     `update conversations
         set status = case when status = 'ai_handling' then 'pending' else status end,
             bot_silenced_until = $3,
@@ -467,13 +468,21 @@ export async function performHumanHandoff(
             -- das mensagens com que a reação compara (handoff-tecnico.ts).
             metadata = (coalesce(metadata, '{}'::jsonb) - $5::text)
                        || case when $6::jsonb = '{}'::jsonb then '{}'::jsonb
-                               else jsonb_set($6::jsonb, array[$5::text, 'marcado_em'], to_jsonb(now())) end,
+                               else jsonb_set($6::jsonb, array[$5::text, 'marcado_em'], to_jsonb(now())) end
+                       || jsonb_build_object($7::text,
+                            case when bot_silenced_until > now()
+                                      and metadata->>$7::text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+                                 then metadata->>$7::text else gen_random_uuid()::text end),
             active_ai_agent_id = null,
             active_intent = null,
             active_agent_set_at = null
-      where organization_id = $1 and id = $2`,
-    [ids.tenantId, ids.conversationId, SILENCE_INFINITY, opts.reason, CHAVE_DO_HANDOFF_TECNICO, marcaDaDerivacao],
+      where organization_id = $1 and id = $2
+      returning metadata->>$7::text as aviso_episodio`,
+    [ids.tenantId, ids.conversationId, SILENCE_INFINITY, opts.reason, CHAVE_DO_HANDOFF_TECNICO, marcaDaDerivacao, MARCA_EPISODIO_HANDOFF],
   );
+  // O UPDATE trava a linha: chamadas concorrentes no mesmo silêncio reutilizam
+  // o UUID. Depois de devolver ao automático (silêncio limpo), nasce outro episódio.
+  const episodioDoAviso = conversaSilenciada.rows[0]?.aviso_episodio ?? null;
 
   // (c) Cancela os crons PENDENTES do lead (follow-ups agendados — F3-01/02). Idempotente,
   // via o cancel compartilhado (mesma garantia que o opt-out irrevogável usa — F4-07).
@@ -565,10 +574,34 @@ export async function performHumanHandoff(
           set body = coalesce(i.body, '') || chr(10) || chr(10) || $3, severity = 'critical'
          from alvo where i.id = alvo.id
        returning i.id
+     ), criado as (
+       insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
+       select $1, 'handoff', 'critical', $2, $3, 'conversation', $4
+        where not exists (select 1 from alvo)
+       returning id
+     ), evento as (
+       -- Central e solicitação saem no MESMO commit. Sem opt-in, só a Central.
+       insert into event_log (id, organization_id, event_type, entity_kind, entity_id, payload, metadata)
+       select $5::uuid, $1, $6, 'conversation', $4,
+              jsonb_build_object('central_id', central.id), '{"source":"human_handoff"}'::jsonb
+         from (select id from adendo union all select id from criado) central
+        where $5::uuid is not null
+          and exists (select 1 from config_aviso_de_caso where organization_id = $1 and ligado)
+          -- Opção própria das transferências (ligada por padrão): a mesma régua de
+          -- avisoDeTransferenciaLigado — só o booleano false desliga.
+          and exists (select 1 from organizations where id = $1
+                        and (settings->'crm'->'avisar_transferencia_no_whatsapp') is distinct from 'false'::jsonb)
+          and exists (select 1 from conversations where organization_id = $1 and id = $4
+                        and metadata->>$8::text = $5::text
+                        and metadata->>$7::text is distinct from $5::text)
+       on conflict (id) do nothing returning id
      )
-     insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
-     select $1, 'handoff', 'critical', $2, $3, 'conversation', $4
-      where not exists (select 1 from alvo)`,
+     -- A poda normal de event_log não pode permitir outro aviso no mesmo episódio.
+     update conversations set metadata = coalesce(metadata, '{}'::jsonb)
+       || jsonb_build_object($7::text, $5::text)
+      where organization_id = $1 and id = $4
+        and metadata->>$8::text = $5::text
+        and exists (select 1 from evento)`,
     [
       ids.tenantId,
       // No idioma da ORGANIZAÇÃO, como o corpo: o título da Central sai como foi
@@ -580,6 +613,10 @@ export async function performHumanHandoff(
         ),
       await corpoDaCentral(db, ids.tenantId, opts),
       ids.conversationId,
+      episodioDoAviso,
+      EVENTO_AVISO_HANDOFF,
+      MARCA_SOLICITACAO_HANDOFF,
+      MARCA_EPISODIO_HANDOFF,
     ],
   );
 
