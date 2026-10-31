@@ -380,14 +380,21 @@ export function ProdutosClient({
         // Rota de API que devolve o arquivo com `content-disposition:
         // attachment` — é download, não navegação de página, e `<Link>` do Next
         // faria navegação de cliente para algo que não é tela.
-        <a
-          href="/api/v1/products/import"
-          download="modelo-catalogo.csv"
-          className="mb-4 inline-block text-xs text-muted-foreground underline"
-          data-testid="modelo-planilha"
-        >
-          {t("Baixar planilha modelo")}
-        </a>
+        <div className="mb-4">
+          <a
+            href="/api/v1/products/import"
+            download="modelo-catalogo.csv"
+            className="inline-block text-xs text-muted-foreground underline"
+            data-testid="modelo-planilha"
+          >
+            {t("Baixar planilha modelo")}
+          </a>
+          <p className="mt-1 break-words text-xs text-muted-foreground" data-testid="formato-da-foto">
+            {t(
+              "Na coluna foto, cole o link da imagem (JPG ou PNG, até 5 MB). Para até 5 fotos, separe os links com | — a primeira é a capa.",
+            )}
+          </p>
+        </div>
       ) : null}
 
       {resumo ? (
@@ -404,7 +411,7 @@ export function ProdutosClient({
           {resumo.erros.length > 0 ? (
             <div className="mt-3">
               <p className="font-medium">{t("Linhas que não entraram:")}</p>
-              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+              <ul className="mt-1 space-y-0.5 wrap-anywhere text-muted-foreground">
                 {resumo.erros.slice(0, 20).map((e) => (
                   <li key={`${e.linha}-${e.motivo}`}>
                     {t("Linha")} {e.linha}: {e.motivo}

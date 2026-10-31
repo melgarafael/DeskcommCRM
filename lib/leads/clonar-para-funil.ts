@@ -191,8 +191,8 @@ export function escolheEtapaDeDestino(
  *   nem nasceria;
  * - `status`/`lost_reason`/`closed_at` — o clone NASCE aberto (o banco fecha pelo
  *   trigger da etapa, que aqui é sempre uma etapa aberta);
- * - `position_in_stage` — quem posiciona é o handler de criação (MAX + 1000), que
- *   é quem conhece o fim da fila da etapa escolhida.
+ * - `position_in_stage` — quem posiciona é o handler de criação (MIN − 1000, o
+ *   TOPO da etapa — #3461), que é quem conhece a fila da etapa escolhida.
  *
  * ⚠️ `custom_fields` vem INTEIRO, inclusive chaves que o funil de destino não
  * declara em `settings.fields` — e já foi filtrado, por uma rodada que tratou a

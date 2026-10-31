@@ -18,6 +18,7 @@ import {
   buscarConhecimento,
   resolverAcervoDoAgente,
 } from "@/lib/ai/knowledge/busca";
+import { dataIsoNoFuso, fusoDaOrganizacao } from "@/lib/propostas/data-no-fuso";
 import type { McpToolDefinition } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -163,17 +164,24 @@ export const crmGetOrgMemory: McpToolDefinition<typeof lerMemoriaInputShape> = {
   name: "crm_get_org_memory",
   description:
     "Lê o que a empresa registrou sobre si mesma — políticas, combinados e aprendizados que " +
-    "valem para todo atendimento. Use antes de inventar regra de negócio.",
+    "valem para todo atendimento. Use antes de inventar regra de negócio. " +
+    "Anotação com `valid_until` é a que tem prazo: fora dele ela nem aparece aqui, porque " +
+    "já venceu (programação da semana passada, promoção que acabou).",
   inputSchema: lerMemoriaInputShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
+    // #2369 — o prazo é decidido no fuso da ORGANIZAÇÃO (`dataIsoNoFuso`, a régua
+    // de D8), e não em `new Date().toISOString()`: às 23h de domingo em São
+    // Paulo ainda é domingo, e a programação de domingo ainda vale.
+    const hoje = dataIsoNoFuso(new Date(), await fusoDaOrganizacao(ctx.supabase, ctx.organizationId));
     const { data, error } = await ctx.supabase
       .from("org_memory_entries")
-      .select("id, title, body, source, status, created_at, updated_at")
+      .select("id, title, body, source, status, created_at, updated_at, valid_until")
       .eq("organization_id", ctx.organizationId)
       .eq("status", "active")
+      .or(`valid_until.is.null,valid_until.gte.${hoje}`)
       .order("updated_at", { ascending: false })
       .limit(input.limite);
 
@@ -185,13 +193,21 @@ export const crmGetOrgMemory: McpToolDefinition<typeof lerMemoriaInputShape> = {
 const gravarMemoriaInputShape = {
   titulo: z.string().trim().min(3).max(200),
   corpo: z.string().trim().min(10).max(4000),
+  /**
+   * #2369 — último dia em que a anotação vale (`YYYY-MM-DD` no fuso da
+   * organização). Para conteúdo que envelhece sozinho — a programação desta
+   * semana, o cardápio de hoje. Ausente = sem prazo.
+   */
+  valido_ate: z.string().date().optional(),
 };
 
 export const crmSaveOrgMemory: McpToolDefinition<typeof gravarMemoriaInputShape> = {
   name: "crm_save_org_memory",
   description:
     "Registra um aprendizado que vale para toda a operação, não para um cliente só. Nasce com " +
-    "origem 'agent' para o humano distinguir o que a IA anotou do que ele mesmo escreveu.",
+    "origem 'agent' para o humano distinguir o que a IA anotou do que ele mesmo escreveu. " +
+    "Quando o conteúdo tem prazo (programação da semana, promoção do mês), mande `valido_ate`; " +
+    "depois dessa data ele deixa de ser lido sozinho.",
   inputSchema: gravarMemoriaInputShape,
   category: "write",
   // `ai_operator`: a rota equivalente (`ai/memory/entries` POST) exige `manager`
@@ -208,8 +224,9 @@ export const crmSaveOrgMemory: McpToolDefinition<typeof gravarMemoriaInputShape>
         body: input.corpo,
         source: "agent",
         status: "active",
+        valid_until: input.valido_ate ?? null,
       })
-      .select("id, title, status, created_at")
+      .select("id, title, status, created_at, valid_until")
       .single();
 
     if (error) throw new Error(`gravar_memoria_falhou: ${error.message}`);

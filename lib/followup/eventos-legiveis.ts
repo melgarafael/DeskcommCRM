@@ -613,6 +613,14 @@ export function descreveEvento(
         detalhe: "o follow-up existia para esse caso e parou junto com ele",
         ...motor,
       };
+    case "cancelled_by_stage_change":
+      return {
+        titulo: "Cancelado porque o negócio saiu da etapa",
+        // Sem nome de etapa no detalhe de propósito: o payload guarda o
+        // `to_stage_id`, e um uuid na tela é pior que a frase cobrindo o caso.
+        detalhe: "o toque era da etapa que armou este fluxo, e o card saiu dela",
+        ...motor,
+      };
     default:
       return { titulo: "Passo registrado pelo motor", detalhe: `código: ${evento.event_type}`, ...motor };
   }

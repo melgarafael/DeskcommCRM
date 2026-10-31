@@ -71,8 +71,10 @@ import { agentePorRemetente } from './sender-routing';
 import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
 import {
+  escolherAgenteDoNumero,
   loadPublishedAgentConfig,
   loadPublishedAgentConfigById,
+  type EscolhaDoNumero,
   type PublishedAgentConfig,
 } from './agent-config';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
@@ -108,6 +110,15 @@ export interface TurnAgentResolution {
    */
   destinationPipelineId?: string | null;
   destinationStageId?: string | null;
+  /**
+   * O PÚBLICO do agente barrou este contato (#3722) e nenhum outro agente do
+   * número o aceita. `config` vem `null` e o turno NÃO pode cair no agente
+   * genérico: ele termina sem modelo, sem caso e sem aviso, com o motivo no
+   * log. A mensagem continua na caixa de entrada — a mesma defesa do filtro de
+   * palavra-chave (`palavra-chave-do-gatilho.ts`), e o oposto do defeito da
+   * issue, em que o genérico assumia calado.
+   */
+  silencioPeloPublico?: boolean;
 }
 
 export interface ResolveTurnAgentDeps {
@@ -117,6 +128,12 @@ export interface ResolveTurnAgentDeps {
   loadActiveRouter?: typeof loadActiveRouter;
   loadPublishedAgentConfigById?: typeof loadPublishedAgentConfigById;
   loadPublishedAgentConfig?: typeof loadPublishedAgentConfig;
+  /**
+   * A escolha do agente do número (#3722). Default: a régua real, com público.
+   * Os testes que injetam só `loadPublishedAgentConfig` continuam valendo — a
+   * escolha é derivada dele, sem caminho paralelo.
+   */
+  escolherAgenteDoNumero?: typeof escolherAgenteDoNumero;
   classifyIntent?: typeof classifyIntent;
   /** O Jev ao lado do classificador (`lib/ai/decisao/roteador.ts`). */
   consultarJev?: typeof consultarJevNoRoteador;
@@ -225,7 +242,20 @@ export async function resolveTurnAgent(
   const inicioDoRoteamento = Date.now();
   const _loadActiveRouter = deps.loadActiveRouter ?? loadActiveRouter;
   const _loadAgentById = deps.loadPublishedAgentConfigById ?? loadPublishedAgentConfigById;
-  const _loadAgentBySession = deps.loadPublishedAgentConfig ?? loadPublishedAgentConfig;
+  // A ESCOLHA do agente do número, com o público (#3722). Quando o teste injeta
+  // só `loadPublishedAgentConfig`, ela é derivada dele — a régua do público não
+  // fica de fora da injeção, e não há segunda escolha.
+  const _escolherDoNumero: typeof escolherAgenteDoNumero =
+    deps.escolherAgenteDoNumero ??
+    (deps.loadPublishedAgentConfig !== undefined
+      ? async (db, org, sessao, contato) => ({
+          config: await deps.loadPublishedAgentConfig!(db, org, sessao, contato),
+          motivo: 'primeiro_da_fila' as const,
+        })
+      : escolherAgenteDoNumero);
+  /** O agente do número para ESTE contato, com o motivo (público incluído). */
+  const agenteDoNumero = (): Promise<EscolhaDoNumero> =>
+    _escolherDoNumero(db, input.tenantId, input.channelSessionId, input.leadId);
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
   const _consultarJev = deps.consultarJev ?? consultarJevNoRoteador;
 
@@ -275,12 +305,20 @@ export async function resolveTurnAgent(
     }
 
     if (router === null) {
+      const escolha = await agenteDoNumero();
+      if (escolha.motivo === 'publico_barrou') {
+        deps.log.info(
+          'turno sem agente — nenhum agente publicado no número aceita o público deste contato (#3722)',
+          { tenantId: input.tenantId, conversationId: input.conversationId, contactId: input.leadId },
+        );
+      }
       return {
-        config: await _loadAgentBySession(db, input.tenantId, input.channelSessionId),
+        config: escolha.config,
         routerId: null,
         intentName: null,
         confidence: null,
         outcome: 'no_router',
+        ...(escolha.motivo === 'publico_barrou' ? { silencioPeloPublico: true } : {}),
       };
     }
 
@@ -293,14 +331,24 @@ export async function resolveTurnAgent(
         // Regra 5: sem fallback declarado, quem atende é o agente publicado da
         // SESSÃO — o comportamento de antes do router existir. `null` aqui
         // (nenhum publicado) segue caindo no genérico, como sempre.
-        const daSessao = await _loadAgentBySession(db, input.tenantId, input.channelSessionId);
-        if (daSessao === null) {
+        const escolha = await agenteDoNumero();
+        if (escolha.motivo === 'publico_barrou') {
+          // #3722: o agente do número existe, mas o público dele barra este
+          // contato. O genérico NÃO assume — silêncio, como na regra do número.
+          deps.log.info('resolve-turn-agent: público do agente do número barrou o contato — turno silenciado', {
+            routerId: router.id,
+            outcome,
+            contactId: input.leadId,
+          });
+          return { config: null, routerId: router.id, intentName: null, confidence, outcome, silencioPeloPublico: true };
+        }
+        if (escolha.config === null) {
           deps.log.warn('resolve-turn-agent: router sem fallback e sessão sem agente publicado — turno cai no genérico', {
             routerId: router.id,
             outcome,
           });
         }
-        return { config: daSessao, routerId: router.id, intentName: null, confidence, outcome };
+        return { config: escolha.config, routerId: router.id, intentName: null, confidence, outcome };
       }
       const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
       if (config === null) {
@@ -468,9 +516,15 @@ export async function resolveTurnAgent(
     });
     // Erro de identidade não pode abrir o atendimento genérico com ferramentas.
     if (!roteadorCarregado || temRegrasDeRemetente) throw err;
+    // #3722: a escolha do número (com público) erra para FORA, como a leitura
+    // de antes: engolir o erro aqui devolveria `config: null`, e o turno cairia
+    // no agente genérico — que responde exatamente o contato que o público
+    // barra. Sem agente decidido, a fila re-tenta o job.
+    const escolha = await agenteDoNumero();
     return {
-      config: await _loadAgentBySession(db, input.tenantId, input.channelSessionId),
+      config: escolha.config,
       routerId: null, intentName: null, confidence: null, outcome: 'classifier_failed',
+      ...(escolha.motivo === 'publico_barrou' ? { silencioPeloPublico: true } : {}),
     };
   }
 }

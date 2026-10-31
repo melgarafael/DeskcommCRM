@@ -258,6 +258,8 @@ export const AUDIT_ACTIONS = [
   /** Provedor/modelo de um ponto do sistema que usa IA foi trocado no painel. */
   "ai.purpose_binding_updated",
   "ai.org_default_updated",
+  /** Voz da organização (voice_id/model_id do ElevenLabs) trocada no painel — plano de voz, Fase 7. */
+  "ai.voz_settings_updated",
   // Ligar/desligar uma das duas verificações que consultam modelo. Auditável
   // porque muda o que o sistema confere antes de falar com o cliente — e porque
   // custa dinheiro por mensagem.
@@ -1286,6 +1288,10 @@ export const AUDIT_ACTIONS = [
   // cliente precisa encontrar o ato administrativo que abriu a porta, e não só
   // as gravações que ela deixou passar.
   "crm.telefone_de_ficha_vazia_alterado",
+  "crm.nome_informado_alterado",
+  // O admin ligou/desligou o aviso das transferências para atendimento humano
+  // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
+  "crm.aviso_de_transferencia_alterado",
   // O admin da plataforma exportou o INVENTÁRIO das instalações em CSV (#2777).
   // É leitura, mas é leitura EM ESCALA DE PLATAFORMA: grava quem, quando, QUANTO
   // saiu, se o teto cortou e QUE filtros valiam — nunca o texto da busca, que é
@@ -1370,6 +1376,13 @@ export const AUDIT_ACTIONS = [
   // cala a cobrança da organização inteira, e "quem desligou, e quando" só tem
   // resposta na trilha — a coluna guarda só o valor de agora.
   "ai.lembrete_de_caso_configurado",
+  // Setores de atendimento (migration 0801): cadastro e vínculo atendente →
+  // setor, feitos por manager+ na Equipe › Setores. O vínculo não guarda
+  // histórico — "quem estava no setor que foi apagado" só a trilha responde.
+  "attendant.sector_created",
+  "attendant.sector_updated",
+  "attendant.sector_deleted",
+  "attendant.sector_assigned",
   // Materiais do acervo (criar, enviar arquivo, editar, arquivar, reindexar).
   // O metadata leva só ids e contagens: o texto do material nunca entra — a
   // tabela é append-only e a cascata de LGPD não a alcança. Criar e enviar

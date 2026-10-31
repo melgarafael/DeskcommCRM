@@ -22,6 +22,7 @@ import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 import { CalendarioDeTarefas } from "./CalendarioDeTarefas";
 import { FormularioDeTarefa } from "./FormularioDeTarefa";
 import { ListaDeTarefas } from "./ListaDeTarefas";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /** "aberto" não é uma situação do banco: é o filtro que a tela abre por padrão. */
 type FiltroDeSituacao = "aberto" | SituacaoDaTarefa;
@@ -123,7 +124,7 @@ export function TarefasClient({
                 .filter((m) => m.user_id !== usuario.id)
                 .map((m) => (
                   <SelectItem key={m.user_id} value={m.user_id}>
-                    {m.full_name ?? m.user_id.slice(0, 8)}
+                    {rotuloDoMembro(m, t)}
                   </SelectItem>
                 ))}
               <SelectItem value="ninguem">{t("Sem responsável")}</SelectItem>

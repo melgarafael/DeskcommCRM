@@ -2497,6 +2497,75 @@ export type Database = {
           },
         ];
       };
+      attendant_sector_members: {
+        Row: {
+          created_at: string;
+          organization_id: string;
+          sector_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          organization_id: string;
+          sector_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          organization_id?: string;
+          sector_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendant_sector_members_organization_id_sector_id_fkey";
+            columns: ["organization_id", "sector_id"];
+            isOneToOne: false;
+            referencedRelation: "attendant_sectors";
+            referencedColumns: ["organization_id", "id"];
+          },
+        ];
+      };
+      attendant_sectors: {
+        Row: {
+          created_at: string;
+          description: string | null;
+          id: string;
+          name: string;
+          organization_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          name: string;
+          organization_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          name?: string;
+          organization_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendant_sectors_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       automation_rodizio_atribuicoes: {
         Row: {
           created_at: string;
@@ -11406,6 +11475,7 @@ export type Database = {
           status: string;
           title: string;
           updated_at: string;
+          valid_until: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -11419,6 +11489,7 @@ export type Database = {
           status?: string;
           title: string;
           updated_at?: string;
+          valid_until?: string | null;
         };
         Update: {
           body?: string;
@@ -11431,6 +11502,7 @@ export type Database = {
           status?: string;
           title?: string;
           updated_at?: string;
+          valid_until?: string | null;
         };
         Relationships: [
           {
@@ -15238,7 +15310,9 @@ export type Database = {
       };
       fn_definir_carteira_do_cliente: {
         Args: {
-          p_actor: string;
+          // Nulo = o SISTEMA (#3514): só com `p_origem: "automacao"`, que a
+          // função exige e recusa a quem chega com ator.
+          p_actor: string | null;
           p_contact: string;
           p_dono: string;
           p_org: string;
@@ -15729,10 +15803,18 @@ export type Database = {
         Args: { p_conversation_id: string; p_organization_id: string; p_to_user_id: string };
         Returns: string;
       };
+      fn_conversa_que_continua: {
+        Args: { p_conversation_id: string; p_organization_id: string; p_user_id: string };
+        Returns: string;
+      };
       fn_org_operante: { Args: { p_org: string }; Returns: boolean };
       fn_org_parada_descarta_fila: { Args: { p_org: string }; Returns: undefined };
       fn_passagem_devolvida: {
         Args: { p_conversation_id: string; p_organization_id: string };
+        Returns: number;
+      };
+      fn_passar_conversas_do_contato: {
+        Args: { p_contact: string; p_dono: string; p_org: string };
         Returns: number;
       };
       fn_pgrst_recusar_replay_do_gateway: { Args: Record<PropertyKey, never>; Returns: undefined };

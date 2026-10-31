@@ -48,6 +48,7 @@ const ORDENACAO_POR_SCORE = `(least(greatest(coalesce((p.data->>'rating')::float
     * case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 0.4 else 0.3 end
   + case when coalesce((p.data->'site'->>'provisorio')::boolean, false) then 18
     else case coalesce(p.data->'site'->>'classe', '')
+      when 'nao-medido' then 18
       when 'sem-site' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
       when 'agregador' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
       when 'site-ruim' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 14 else 22 end

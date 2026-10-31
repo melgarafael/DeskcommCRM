@@ -208,19 +208,22 @@ describe("encerraDemanda", () => {
     expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE });
   });
 
-  it("move para o fim da stage, preserva a fonte única de evento e fecha como ganho", async () => {
+  it("entra no TOPO da stage (#3461), preserva a fonte única de evento e fecha como ganho", async () => {
+    // Dois já ganhos, o de MENOR posição no fim da lista: o encerrado entra um
+    // passo acima do primeiro da coluna (2000 − 1000), nunca abaixo do último.
     const db = makeDb({
       leads: [
         baseLead(),
         baseLead({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", stage_id: WON_STAGE, position_in_stage: 4000, status: "won" }),
+        baseLead({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", stage_id: WON_STAGE, position_in_stage: 2000, status: "won" }),
       ],
       stages: baseStages(),
     });
 
     const result = await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
 
-    expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE, position_in_stage: 5000 });
-    expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE, position_in_stage: 5000 });
+    expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE, position_in_stage: 1000 });
+    expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE, position_in_stage: 1000 });
     expect(db.rpcs).toEqual([]);
   });
 

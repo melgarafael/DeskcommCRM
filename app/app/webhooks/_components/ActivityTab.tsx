@@ -106,6 +106,14 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   sem_rodizio:
     "A automação foi alterada e não tem mais o rodízio que disparou esta ação. Nada foi atribuído.",
   lead_nao_encontrado: "O lead deste evento não foi encontrado nesta organização, então ninguém foi atribuído.",
+  /* #3514 — a passagem SDR → Closer. O negócio JÁ mudou de dono nestes dois
+     casos; a frase diz o que ficou para trás, senão a ação "falhou" esconde uma
+     troca que aconteceu. Emitidos como `error` literal por
+     lib/automation/actions/assign-owner.ts. */
+  carteira_nao_passou:
+    "O negócio passou para a pessoa escolhida, mas a carteira do cliente não: ela e as conversas que iam junto continuam com o dono anterior. A ficha do contato mostra quem é o dono agora.",
+  conversas_nao_passaram:
+    "O negócio passou para a pessoa escolhida, mas as conversas abertas do cliente que estavam com outra pessoa não foram transferidas: nenhuma mudou de dono. Transfira pela conversa, se precisar.",
   missing_input:
     "A ação não recebeu o que precisava (o lead do evento ou a pessoa configurada). Abra a automação e revise.",
   no_tags: "Esta ação não tem nenhuma etiqueta escolhida. Abra a automação e escolha pelo menos uma.",
@@ -193,6 +201,20 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
    */
   plano_nao_encontrado:
     "O plano não foi aplicado: o plano escolhido nesta regra não existe mais na lista da organização. Abra a automação e escolha outro plano.",
+  /* #3727 — a ação set_lead_date_field: os seis motivos nascem em
+     lib/automation/actions/set-lead-date-field.ts como `detail.reason`. */
+  sem_compromisso:
+    "A data do atendimento não foi gravada: o evento que disparou a regra não trouxe um compromisso. Use esta ação no gatilho “Quando alguém comparecer ao compromisso”.",
+  data_do_compromisso_ilegivel:
+    "A data do atendimento não foi gravada: o horário do compromisso veio num formato que não deu para ler.",
+  sem_contato:
+    "A data do atendimento não foi gravada: o compromisso não está ligado a um contato, então não havia negócio onde gravar.",
+  sem_negocio_aberto:
+    "A data do atendimento não foi gravada: o contato não tem negócio aberto no funil escolhido. Esta ação não cria negócio.",
+  campo_nao_e_data:
+    "A data do atendimento não foi gravada: o campo escolhido não é mais um campo de data do negócio neste funil. Abra a automação e escolha o campo de novo.",
+  sem_negocio:
+    "A data do atendimento não foi gravada: o negócio não existe mais nesta organização.",
   /* #1970 — a ação ai_decide. Estes quatro nascem aqui em lib/automation/actions/ai-decide.ts
      e chegam ao run por `detail.reason`/`action.error` (mesmo casal de canais da guarda). */
   custo_de_token_nao_registrado:

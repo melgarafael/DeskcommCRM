@@ -146,13 +146,14 @@ test("documento inválido avisa no campo; corrigir permite criar e vazio continu
     await expect(documento).toHaveAttribute("aria-describedby", "cpf-erro");
     fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/documento-invalido-junto-do-campo.png" });
-    await dialogo.getByRole("button", { name: "Criar contato", exact: true }).click();
-    await expect(dialogo).toBeVisible();
+    // Com o documento inválido o envio fica impedido (#3621): o botão nem aceita o clique.
+    await expect(dialogo.getByRole("button", { name: "Criar contato", exact: true })).toBeDisabled();
     await expect(dialogo.getByRole("alert")).toHaveText("CPF inválido");
 
     await documento.fill("529.982.247-25");
     await documento.press("Tab");
     await expect(dialogo.getByRole("alert")).toHaveCount(0);
+    await expect(dialogo.getByRole("button", { name: "Criar contato", exact: true })).toBeEnabled();
     const salvo = page.waitForResponse(
       (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/v1/contacts",
     );

@@ -94,8 +94,9 @@ const DISPENSADAS: Record<string, string> = {
     "bloco clicável ou dia escolhido: aí ela volta a medir o calendário, e precisa do módulo.",
   "agenda-kit-visual.spec.ts":
     "roda contra /vitrine-agenda, que PASSA o instante como fixture — é o padrão certo, " +
-    "não a exceção: por isso ela clica num `dia-2026-08-24` fixo e segue verde com essa " +
-    "data no passado.",
+    "não a exceção: por isso ela clica num `dia-2026-08-28` fixo e segue verde com essa " +
+    "data no passado do relógio real — e posterior ao agora da vitrine (26/08 14h37), " +
+    "porque horário anterior ao agora não é agendável (#3774).",
   "agenda-papel-de-leitura.spec.ts":
     "não escolhe dia nem bloco — conta a EXISTÊNCIA da camada de marcação, que é o gesto " +
     "de escrita que o `viewer` não pode ter: `toHaveCount(0)` para quem só lê e `> 0` para " +

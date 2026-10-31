@@ -78,10 +78,10 @@ export function EntregasDoAviso({
   return (
     <Card className="p-4">
       <div className="mb-3 space-y-1">
-        <h2 className="text-sm font-semibold">{t("Últimos avisos enviados")}</h2>
+        <h2 className="text-sm font-semibold">{t("Últimos avisos de casos")}</h2>
         <p className="text-xs text-muted-foreground">
           {t(
-            "O que saiu, o que não saiu e por quê. Esta lista é o registro do sistema — ela não some quando alguém resolve um alerta.",
+            "Esta lista registra avisos de casos. O resultado dos avisos de transferência para atendimento humano aparece no respectivo item da Central de alertas.",
           )}
         </p>
       </div>
@@ -92,7 +92,7 @@ export function EntregasDoAviso({
           data-testid="entregas-vazias"
         >
           {t(
-            "Nenhum aviso saiu ainda. Quando o assistente abrir um caso, a tentativa aparece aqui — inclusive se ela falhar.",
+            "Ainda não há avisos de casos nesta lista. As tentativas aparecem aqui quando o assistente abre um caso, inclusive se falharem.",
           )}
         </p>
       ) : (

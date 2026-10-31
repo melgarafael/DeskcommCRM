@@ -299,6 +299,43 @@ describe("assign_owner: atendente fixo ou rodízio", () => {
     const patch = updateAutomationRuleSchema.safeParse({ actions: [rodizio(fila), rodizio(fila)] });
     expect(patch.success).toBe(false);
   });
+
+  /*
+   * #3514 — as duas opções da passagem SDR → Closer. A regra que estes testes
+   * protegem é a de COMPATIBILIDADE: o payload que já está gravado em toda
+   * instalação não ganha chave nenhuma, e quem não marcou nada continua com o
+   * comportamento de antes. Por isso a asserção é de igualdade EXATA, e não de
+   * "contém": uma chave `contato: false` inventada pelo parse já seria uma
+   * mudança de contrato.
+   */
+  it("a passagem para o cliente é opt-in: sem as chaves, o config sai igual ao gravado", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID });
+  });
+
+  it("aceita as duas caixas e as devolve como vieram", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true, conversas: true });
+
+    // Uma caixa só também vale: quem quer o cliente sem mexer nas conversas.
+    const soContato = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true } }]);
+    expect(soContato.success && soContato.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true });
+  });
+
+  it("recusa valor que não é booleano, apontando a caixa", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, conversas: "sim" } }]);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.path).toEqual(["actions", 0, "config", "conversas"]);
+  });
+
+  it("no rodízio as caixas não existem: o parse as descarta (a vez é decidida no banco)", () => {
+    const fila = [{ user_id: UUID, pausado: false }];
+    const r = regra([{ type: "assign_owner", config: { modo: "rodizio", fila, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ modo: "rodizio", fila });
+  });
 });
 
 // #2974 — "no máximo uma vez por contato". O motor lê a chave com `=== true`;
