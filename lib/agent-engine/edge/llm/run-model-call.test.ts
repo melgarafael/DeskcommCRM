@@ -44,6 +44,9 @@ vi.mock("ai", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 vi.mock("@/lib/ai/credenciais/login-codex", () => ({
+  // #3371, fatia 4: o seam passou a renovar no 401 — o dublê do módulo tem de
+  // cobrir o símbolo novo, senão o import das duas funções quebra o teste.
+  renovarAssinaturaNoTurno: vi.fn(),
   lerLoginCodexRenovandoSeProxima: vi.fn(async () => ({
     access_token: "token-de-assinatura-de-teste",
     refresh_token: "refresh-de-teste",
@@ -209,7 +212,7 @@ describe("o ramo da assinatura (#2657): o modelo responde E o turno fecha", () =
  * da gravação de cache por TTL vem do `usage` CRU de cada passo
  * (`cache_creation.ephemeral_{5m,1h}_input_tokens`), e não do knob `cacheTtl`.
  */
-function poolDaAnthropic() {
+function poolDaAnthropic(provider = "anthropic", model = "claude-sonnet-5") {
   const inserts: Array<{ params: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     if (sql.includes("settings->'llm'")) {
@@ -217,8 +220,8 @@ function poolDaAnthropic() {
         rows: [
           {
             llm: {
-              provider: "anthropic",
-              default_model: "claude-sonnet-5",
+              provider,
+              default_model: model,
               params: {},
               enabled_models: [],
               monthly_budget_cents: null,
@@ -304,5 +307,16 @@ describe("o custo gravado lê a divisão da gravação de cache que a Anthropic 
     // Outro provedor, ou o campo sumiu: o milhão gravado vai todo a 1 h = US$ 4,00.
     const { resultado } = await rodarPelaAnthropic([null]);
     expect(resultado.costCents).toBeCloseTo(400, 6);
+  });
+});
+
+describe("Terra grava custo real por passo do seam", () => {
+  it("não confunde o total do tool loop com contexto longo e conserva cache cru", async () => {
+    const passo = {inputTokens:200_000,outputTokens:0,inputTokenDetails:{cacheReadTokens:100_000,cacheWriteTokens:0},raw:{input_tokens_details:{cached_tokens:100_000,cache_write_tokens:100_000}}};
+    vi.mocked(generateText).mockResolvedValue({text:"ok",usage:{inputTokens:400_000,outputTokens:0,inputTokenDetails:{cacheReadTokens:200_000,cacheWriteTokens:0}},steps:[{usage:passo},{usage:passo}],response:{id:"terra-test",modelId:"gpt-6.1-terra"},responseMessages:[],toolCalls:[],finishReason:"stop"} as never);
+    const {pool,inserts}=poolDaAnthropic("openai","gpt-6.1-terra");
+    const resultado = await runModelCall(pool,{openaiApiKey:"sk-de-teste",cacheTtl:"1h"},{tenantId:ORG,purpose:"agent_preview",messages:[{role:"user",content:"oi"}]},{registry:{openai:()=>({modelId:"gpt-6.1-terra",provider:"openai.responses",specificationVersion:"v3"})} as never});
+    expect(resultado.costCents).toBeCloseTo(26);
+    expect(inserts[0]?.params[11]).toBeCloseTo(26);
   });
 });

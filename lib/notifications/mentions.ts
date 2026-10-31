@@ -132,7 +132,13 @@ export function partesDoCorpo(body: string): ParteDoCorpo[] {
  * perda).
  */
 export function embutirMencoes(texto: string, mencoes: readonly MencaoEscolhida[]): string {
+  return aplicarMencoes(texto, mencoes).texto;
+}
+
+/** A poda e a gravação disputam as mesmas ocorrências, com o nome maior primeiro. */
+function aplicarMencoes(texto: string, mencoes: readonly MencaoEscolhida[]) {
   let saida = texto;
+  const encontradas = new Set<MencaoEscolhida>();
   // Nome mais longo primeiro: com "Ana" e "Ana Lima" escolhidas, "@Ana" casaria
   // dentro de "@Ana Lima" e o token da Ana cairia em cima da Ana Lima.
   const maisLongoPrimeiro = [...mencoes].sort((a, b) => b.nome.trim().length - a.nome.trim().length);
@@ -142,8 +148,9 @@ export function embutirMencoes(texto: string, mencoes: readonly MencaoEscolhida[
     const re = regexDaMencao(nome);
     if (!re.test(saida)) continue; // apagou ou reescreveu o nome: deixa como está
     saida = saida.replace(re, montarMencao(mencao));
+    encontradas.add(mencao);
   }
-  return saida;
+  return { texto: saida, encontradas };
 }
 
 /**
@@ -181,13 +188,17 @@ export function mencaoAindaNoTexto(texto: string, mencao: MencaoEscolhida): bool
  * "escolher Ana (pessoa 1), apagar, escolher Ana (pessoa 2)" gravava o id da
  * pessoa 1, e a notificação ia para quem não foi mencionado.
  *
- * Este é o veredito de presença, e não de posição: com N ocorrências no texto,
- * o pareamento ocorrência↔escolha continua sendo do `embutirMencoes` (garantia
- * 1 da docstring dele). Quem poda cedo não precisa saber em qual ocorrência a
- * escolha mora — só que ela ainda tem alguma.
+ * A precedência também é a da gravação: `@Ana Lima` escolhido consome essa
+ * ocorrência antes de `Ana`. Conferir presença de cada nome isoladamente
+ * conservava a Ana apagada dentro de Ana Lima; a escolha morta roubava a Ana
+ * escolhida depois (#2463, resíduo b).
+ *
+ * Ainda não rastreia posições na edição: apagar a primeira de duas menções
+ * homônimas segue ambíguo (#2463, resíduo a). Aqui vale a ordem da gravação.
  */
 export function podarMencoes(texto: string, mencoes: readonly MencaoEscolhida[]): MencaoEscolhida[] {
-  const restantes = mencoes.filter((mencao) => mencaoAindaNoTexto(texto, mencao));
+  const { encontradas } = aplicarMencoes(texto, mencoes);
+  const restantes = mencoes.filter((mencao) => encontradas.has(mencao));
   // Mesma referência quando nada saiu: o chamador pode usar isto num `setState`
   // a cada tecla sem re-renderizar por nada.
   return restantes.length === mencoes.length ? (mencoes as MencaoEscolhida[]) : restantes;

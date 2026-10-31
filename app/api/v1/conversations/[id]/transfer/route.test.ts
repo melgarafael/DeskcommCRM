@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 /**
  * POST /api/v1/conversations/[id]/transfer — o negócio ABERTO segue a conversa
@@ -44,6 +44,8 @@ const LEAD_ABERTO = "aaaaaaaa-7777-4000-8000-000000000001";
 const LEAD_ABERTO_2 = "aaaaaaaa-7777-4000-8000-000000000002";
 const LEAD_GANHO = "aaaaaaaa-7777-4000-8000-000000000003";
 const LEAD_DE_OUTRO_CONTATO = "aaaaaaaa-7777-4000-8000-000000000004";
+const NUMERO_ANTIGO = "aaaaaaaa-8888-4000-8000-000000000001";
+const NUMERO_NOVO = "aaaaaaaa-8888-4000-8000-000000000002";
 
 type Linha = Record<string, unknown>;
 
@@ -78,6 +80,12 @@ interface Estado {
   rlsRecusa: boolean;
   /** O card é ganho entre a leitura e a escrita: o UPDATE volta sem linha. */
   ganhoNoMeio: boolean;
+  /**
+   * #3642: o número para onde a troca leva a conversa (o que
+   * `fn_numero_da_transferencia` responderia). `null` = ela fica onde está.
+   */
+  numeroNovo: string | null;
+  sessoes: Linha[];
 }
 
 function conversa(extra: Linha = {}): Linha {
@@ -88,6 +96,7 @@ function conversa(extra: Linha = {}): Linha {
     status: "open",
     assigned_to_user_id: USER,
     assignee_kind: "user",
+    channel_session_id: NUMERO_ANTIGO,
     ...extra,
   };
 }
@@ -123,7 +132,9 @@ function clienteFalso(estado: Estado, rotulo: "sessao" | "admin") {
           ? estado.membros
           : tabela === "crm_leads"
             ? estado.leads
-            : [];
+            : tabela === "channel_sessions"
+              ? estado.sessoes
+              : [];
     const casa = (l: Linha) => filtros.every(([c, v]) => l[c] === v);
     const q = {
       select: () => q,
@@ -177,7 +188,11 @@ function clienteFalso(estado: Estado, rotulo: "sessao" | "admin") {
         const conv = estado.conversas.find((c) => c.id === params.p_conversation_id);
         if (!conv) return { data: [], error: null };
         conv.assigned_to_user_id = params.p_to_user_id as string;
+        if (estado.numeroNovo) conv.channel_session_id = estado.numeroNovo;
         return { data: [conv], error: null };
+      }
+      if (nome === "fn_numero_da_transferencia") {
+        return { data: estado.numeroNovo, error: null };
       }
       return { data: null, error: null };
     },
@@ -232,6 +247,8 @@ beforeEach(() => {
     leituraExplode: false,
     rlsRecusa: false,
     ganhoNoMeio: false,
+    numeroNovo: null,
+    sessoes: [],
   };
   vi.mocked(createClient).mockResolvedValue(clienteFalso(estado, "sessao") as unknown as SupabaseClient);
   vi.mocked(createAdminClient).mockReturnValue(
@@ -432,5 +449,119 @@ describe("POST /api/v1/conversations/[id]/transfer — o negócio aberto segue (
         }),
       }),
     );
+  });
+});
+
+describe("#3642 (doc 237, 2-A) — o número na transferência", () => {
+  it("a auditoria registra o número antigo e o novo quando a conversa troca de número", async () => {
+    estado.numeroNovo = NUMERO_NOVO;
+
+    const res = await transferir();
+
+    expect(res.status).toBe(200);
+    expect(metadataDaTransferencia()).toMatchObject({
+      numero_anterior: NUMERO_ANTIGO,
+      numero_novo: NUMERO_NOVO,
+    });
+  });
+
+  it("CONTROLE: a conversa que fica no mesmo número registra o mesmo número dos dois lados", async () => {
+    await transferir();
+
+    expect(metadataDaTransferencia()).toMatchObject({
+      numero_anterior: NUMERO_ANTIGO,
+      numero_novo: NUMERO_ANTIGO,
+    });
+  });
+
+  function previa(toUserId: string) {
+    return GET(
+      new NextRequest(
+        `http://localhost/api/v1/conversations/${CONV_A}/transfer?to_user_id=${toUserId}`,
+      ),
+      params,
+    );
+  }
+
+  it("a prévia do diálogo devolve o número para onde a conversa vai", async () => {
+    estado.numeroNovo = NUMERO_NOVO;
+    estado.sessoes = [
+      { id: NUMERO_NOVO, organization_id: ORG_A, display_name: "Vendas B", phone_number: "+5511988887777" },
+    ];
+
+    const res = await previa(DESTINO);
+
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as { data: { numero: Record<string, unknown> | null } };
+    expect(corpo.data.numero).toEqual({
+      channel_session_id: NUMERO_NOVO,
+      display_name: "Vendas B",
+      phone_number: "+5511988887777",
+    });
+    expect(estado.rpcs.find((r) => r.nome === "fn_numero_da_transferencia")?.params).toEqual({
+      p_organization_id: ORG_A,
+      p_conversation_id: CONV_A,
+      p_to_user_id: DESTINO,
+    });
+    // Só leitura: ninguém mudou de dono.
+    expect(estado.rpcs.some((r) => r.nome === "fn_conversation_assign")).toBe(false);
+  });
+
+  it("CONTROLE: quando a conversa fica onde está, a prévia diz `null`", async () => {
+    const res = await previa(DESTINO);
+    const corpo = (await res.json()) as { data: { numero: unknown } };
+    expect(corpo.data.numero).toBeNull();
+  });
+
+  it("conversa que quem pergunta não enxerga: 404, e a regra nem é consultada", async () => {
+    estado.conversas = [];
+
+    const res = await previa(DESTINO);
+
+    expect(res.status).toBe(404);
+    expect(estado.rpcs).toHaveLength(0);
+  });
+
+  it("destino que não é um id: 400", async () => {
+    const res = await previa("nao-e-uuid");
+    expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * #3732 — a troca de número vira LINHA DO TEMPO, não só auditoria.
+ *
+ * O #3658 gravava o par antigo/novo no `metadata` da auditoria (lido por
+ * `admin`), e a linha do tempo da conversa — onde quem atende olha — não dizia
+ * nada. Aqui a atividade da troca passa a dizer por qual número a conversa
+ * continua, com o nome de quem atende, e o par vai no payload.
+ */
+describe("#3732 — o número que mudou entra na linha do tempo", () => {
+  /** A atividade da troca de comando, como a rota a escreveu. */
+  function atividadeDaTroca(): { motivo?: string; payload?: Record<string, unknown> } {
+    const chamada = vi.mocked(registrarTrocaDeComando).mock.calls.at(-1);
+    return (chamada?.[0] ?? {}) as { motivo?: string; payload?: Record<string, unknown> };
+  }
+
+  it("quando a conversa troca de número, a linha diz por qual número ela continua", async () => {
+    estado.conversas = [conversa({ assigned_to_user_name: "Bruno Vendedor" })];
+    estado.numeroNovo = NUMERO_NOVO;
+
+    const res = await transferir();
+
+    expect(res.status).toBe(200);
+    expect(atividadeDaTroca().motivo).toContain("Continua pelo número de Bruno Vendedor");
+    expect(atividadeDaTroca().payload).toMatchObject({
+      to_user_id: DESTINO,
+      numero_anterior: NUMERO_ANTIGO,
+      numero_novo: NUMERO_NOVO,
+    });
+  });
+
+  it("CONTROLE: no mesmo número, a linha não promete troca nenhuma", async () => {
+    await transferir();
+
+    expect(atividadeDaTroca().motivo).not.toContain("Continua pelo número de");
+    expect(atividadeDaTroca().payload).not.toHaveProperty("numero_novo");
   });
 });

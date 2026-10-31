@@ -11,6 +11,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
@@ -80,6 +81,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     }
   }
 
+  // #3642 (doc 237, 2-A): o número em que a conversa estava ANTES da troca, para a
+  // auditoria registrar o antigo e o novo — a RPC devolve só a linha depois.
+  // Leitura pelo cliente da SESSÃO: é a mesma conversa que a RPC vai alcançar.
+  // Se falhar, a transferência segue e a auditoria só não leva o par.
+  const { data: antes } = await supabase
+    .from("conversations")
+    .select("channel_session_id")
+    .eq("id", id)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  const numeroAnterior = (antes as { channel_session_id: string | null } | null)?.channel_session_id;
+
   const { data, error } = await supabase.rpc("fn_conversation_assign", {
     p_organization_id: orgId,
     p_conversation_id: id,
@@ -125,6 +138,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       ...(input.reason ? { note: input.reason } : {}),
       negocio_aberto: sincronia.motivo,
       ...(sincronia.leadId ? { negocio_id: sincronia.leadId } : {}),
+      // O número segue o vendedor (#3642): o antigo e o novo, iguais quando a
+      // conversa ficou onde estava.
+      ...(numeroAnterior !== undefined
+        ? { numero_anterior: numeroAnterior, numero_novo: conv.channel_session_id }
+        : {}),
     },
   });
 
@@ -147,6 +165,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // sumia justamente para quem vai continuar o atendimento. O `reason` da
   // atividade é coberto pela cascata de anonimização da LGPD, que é o que
   // permite texto escrito por humano sobre um cliente morar ali.
+  //
+  // #3732: e a troca de número entra na MESMA linha. O #3658 gravava o par
+  // antigo/novo só na auditoria da rota — o histórico da conversa, que é onde
+  // quem atende olha, não dizia nada. Quando o número muda, a linha diz por qual
+  // número a conversa continua, com o nome de quem atende; o par vai no payload
+  // para a auditoria da atividade não depender de cruzar tabela.
+  const trocouDeNumero =
+    numeroAnterior !== undefined && numeroAnterior !== conv.channel_session_id;
+  const continuacao = trocouDeNumero
+    ? `Continua pelo número de ${conv.assigned_to_user_name?.trim() || "outro atendente"}`
+    : null;
   await registrarTrocaDeComando({
     supabase,
     organizationId: conv.organization_id,
@@ -156,11 +185,92 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     actor: { type: "user", id: user.id, role: authz.org.role },
     // Canônico em português: quem traduz é a LEITURA (`t(item.reason)`). Ver o
     // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
-    motivo: input.reason?.trim()
-      ? `Transferiu a conversa: ${input.reason.trim()}`
-      : "Transferiu a conversa para outro atendente",
-    payload: { to_user_id: input.to_user_id },
+    motivo: [
+      input.reason?.trim()
+        ? `Transferiu a conversa: ${input.reason.trim()}`
+        : "Transferiu a conversa para outro atendente",
+      ...(continuacao ? [continuacao] : []),
+    ].join(" · "),
+    payload: {
+      to_user_id: input.to_user_id,
+      ...(continuacao
+        ? {
+            numero_anterior: numeroAnterior,
+            numero_novo: conv.channel_session_id,
+          }
+        : {}),
+    },
   });
 
   return ok(conv, { requestId });
+}
+
+const previaSchema = z.object({ to_user_id: z.string().uuid() });
+
+/**
+ * GET /api/v1/conversations/[id]/transfer?to_user_id=<uuid> — o aviso do diálogo
+ * de Transferir (#3642, doc 237, escolha 2-A): por qual número a conversa vai
+ * continuar se for transferida para essa pessoa. `numero: null` = ela fica no
+ * número em que está.
+ *
+ * A resposta vem da MESMA função que a troca aplica
+ * (`fn_numero_da_transferencia`, migration 9039) — o aviso nunca diz um número
+ * enquanto a transferência grava outro. Só leitura: nada muda aqui.
+ */
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const requestId = randomUUID();
+  const { id } = await ctx.params;
+
+  const authz = await requireRole("agent", { requestId, resource: "conversations" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const orgId = authz.org.orgId; // fonte confiável (cookie validado), nunca a query
+
+  const parsed = previaSchema.safeParse({ to_user_id: req.nextUrl.searchParams.get("to_user_id") });
+  if (!parsed.success) {
+    return fail("invalid_request", t("Destino inválido."), 400, { requestId });
+  }
+
+  // Quem pergunta precisa enxergar a conversa: a leitura é pelo cliente da
+  // SESSÃO, com a RLS de sempre. Só depois o admin responde a regra.
+  const supabase = await createClient();
+  const { data: conversa, error: erroConversa } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("id", id)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (erroConversa) return fail("internal_error", erroConversa.message, 500, { requestId });
+  if (!conversa) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
+
+  if (!isServiceRoleConfigured()) return ok({ numero: null }, { requestId });
+
+  const admin = createAdminClient();
+  const { data: numeroId, error: erroNumero } = await admin.rpc("fn_numero_da_transferencia", {
+    p_organization_id: orgId,
+    p_conversation_id: id,
+    p_to_user_id: parsed.data.to_user_id,
+  });
+  if (erroNumero) return fail("internal_error", erroNumero.message, 500, { requestId });
+  if (!numeroId) return ok({ numero: null }, { requestId });
+
+  const { data: sessao, error: erroSessao } = await admin
+    .from("channel_sessions")
+    .select("id, display_name, phone_number")
+    .eq("organization_id", orgId)
+    .eq("id", numeroId as string)
+    .maybeSingle();
+  if (erroSessao) return fail("internal_error", erroSessao.message, 500, { requestId });
+
+  const linha = sessao as { id: string; display_name: string | null; phone_number: string | null } | null;
+  return ok(
+    {
+      numero: {
+        channel_session_id: numeroId as string,
+        display_name: linha?.display_name ?? null,
+        phone_number: linha?.phone_number ?? null,
+      },
+    },
+    { requestId },
+  );
 }

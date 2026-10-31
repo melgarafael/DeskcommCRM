@@ -220,7 +220,12 @@ describe("o switch e o botão de teste", () => {
 describe("a lista de entregas", () => {
   it("vazia, explica o que vai aparecer ali — e não finge que está tudo bem", () => {
     montar(estado());
-    expect(screen.getByTestId("entregas-vazias").textContent).toContain("inclusive se ela falhar");
+    const vazia = screen.getByTestId("entregas-vazias");
+    expect(vazia.textContent).toContain("Ainda não há avisos de casos nesta lista");
+    expect(vazia.textContent).toContain("inclusive se falharem");
+    expect(screen.getByRole("heading", { name: "Últimos avisos de casos" })).toBeInTheDocument();
+    expect(screen.getByText(/o resultado dos avisos de transferência para atendimento humano/i).textContent)
+      .toContain("respectivo item da Central de alertas");
   });
 
   it("mostra a situação, o destino MASCARADO e a frase do erro", () => {
@@ -249,9 +254,18 @@ describe("a lista de entregas", () => {
 });
 
 describe("o que a tela diz sem ninguém perguntar", () => {
-  it("avisa que o aviso NÃO se repete quando o caso volta a esperar", () => {
+  it("distingue o caso que não repete do novo episódio de transferência", () => {
     montar(estado());
-    expect(screen.getByText(/o aviso não se repete/i)).toBeInTheDocument();
+    expect(screen.getByText(/o aviso não se repete/i).textContent)
+      .toContain("Quando o cliente responde e o caso volta a esperar você");
+    const transferencia = screen.getByText(/nas transferências para atendimento humano/i);
+    expect(transferencia.textContent).toContain("uma tentativa de aviso por episódio");
+    expect(transferencia.textContent).toContain("sem resumo da conversa");
+    expect(transferencia.textContent).toContain(
+      "Depois de retomar o atendimento automático, uma nova transferência pode gerar outro aviso",
+    );
+    expect(transferencia.textContent).toContain("Consulte o resultado na Central de alertas");
+    expect(transferencia.textContent).toContain("responda ao cliente pelo CRM");
   });
 
   it("o laço de retorno sem amostra diz que não há amostra, e não mostra zero", () => {

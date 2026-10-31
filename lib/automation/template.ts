@@ -1,4 +1,5 @@
 import { resolveField } from "@/lib/automation/conditions";
+import { valorComRotulo } from "@/lib/automation/campos-do-render";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
 import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
 
@@ -37,7 +38,8 @@ export function marcacaoDoCrm(nome: string): boolean {
  * o caminho interno do banco. Só vale para nome SIMPLES (sem ponto) e só como
  * ÚLTIMO recurso: alias e caminho direto continuam ganhando, então nenhum
  * template que já funcionava muda de resultado. Lista (multiselect) sai
- * separada por vírgula, que é como a pessoa leria.
+ * separada por vírgula, que é como a pessoa leria — e, quando o funil declarou
+ * as opções, com o RÓTULO de cada uma (#3605, ver `valorComRotulo`).
  */
 function campoPersonalizadoDoLead(context: Record<string, unknown>, nome: string): unknown {
   // Alias é marcação do CRM e tem dono: contato sem nome fica vazio, não pega
@@ -49,8 +51,9 @@ function campoPersonalizadoDoLead(context: Record<string, unknown>, nome: string
   if (!campos || typeof campos !== "object" || Array.isArray(campos)) return undefined;
   // Só campo PRÓPRIO: `{{constructor}}` ou `{{toString}}` não podem puxar do protótipo.
   if (!Object.hasOwn(campos, nome)) return undefined;
-  const valor = (campos as Record<string, unknown>)[nome];
-  return Array.isArray(valor) ? valor.join(", ") : valor;
+  // A lista sai CRUA (array inclusive): quem junta e traduz é o `valorComRotulo`
+  // logo abaixo, com o separador e o rótulo que o domínio usa (#3605).
+  return (campos as Record<string, unknown>)[nome];
 }
 
 /**
@@ -62,6 +65,23 @@ function campoPersonalizadoDoLead(context: Record<string, unknown>, nome: string
  * apelido interno (decisão do mantenedor no PR #2439).
  */
 const SO_DA_EQUIPE = new Set(["contact.address_book_name"]);
+
+/**
+ * A chave do campo personalizado que `path` está pedindo — ou `null` quando a
+ * marcação não fala de campo personalizado.
+ *
+ * Três formas contam: o atalho (`{{destino}}`), o caminho do negócio
+ * (`{{lead.custom_fields.destino}}`) e o do contato, para campo de escopo
+ * `contato` (#2791). Alias de CRM (`{{nome}}`, `{{telefone}}`) NUNCA conta: o
+ * valor dele é do contato, e traduzi-lo por uma opção de campo homônimo
+ * trocaria o nome da pessoa pelo rótulo de um pacote.
+ */
+function chaveDoCampoPersonalizado(path: string): string | null {
+  if (!path.includes(".")) return ALIASES[path] === undefined ? path : null;
+  const [raiz, meio, chave] = path.split(".");
+  if (!chave || meio !== "custom_fields") return null;
+  return raiz === "lead" || raiz === "contact" ? chave : null;
+}
 
 /**
  * `formatarValor` recebe cada VALOR já resolvido, nunca o template: quem
@@ -82,8 +102,14 @@ export function renderTemplate(
       path === "nome" || path === "primeiro_nome"
         ? nomeDoContato(context.contact as ContatoNomeavel | undefined)
         : (resolveField(context, ALIASES[path] ?? path) ?? campoPersonalizadoDoLead(context, path));
+    // Campo de LISTA guarda o CÓDIGO da opção no card (`paris-franca`), e o
+    // cliente lê o rótulo (#3605). O mapa só existe quando quem montou o
+    // contexto o hidratou (`hidratarCamposDoFunil`); sem ele, o valor sai como
+    // sempre saiu — nenhuma mensagem que hoje está certa muda.
+    const chave = chaveDoCampoPersonalizado(path);
+    const legivel = chave === null ? resolved : valorComRotulo(context, chave, resolved);
     // `{{primeiro_nome}}` = primeira palavra do nome, como no Inbox e na campanha.
-    const texto = String(resolved ?? "");
+    const texto = String(legivel ?? "");
     const valor = path === "primeiro_nome" ? (texto.trim().split(/\s+/)[0] ?? "") : texto;
     // Sem o dado, a reserva que quem escreveu a mensagem deixou. Ela é texto do
     // operador (como o resto do corpo), não valor do contato: não passa por `formatarValor`.

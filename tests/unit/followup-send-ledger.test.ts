@@ -5,7 +5,7 @@ import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 type Store=Parameters<typeof sendWithLedger>[0];
 const intent={tenantId:'org',leadId:'contact',jobId:'job',seq:1,body:'Retomar consulta'};
 function store(status='requested',message:{id:string;status:string}|null=null):Store{
- return {create:vi.fn(async()=>{throw {code:'23505'};}),find:vi.fn(async()=>({id:'ledger-original',status:status as 'requested',crm_message_id:message?.id??null})),rotate:vi.fn(async()=> 'new-ledger'),message:vi.fn(async()=>message),update:vi.fn(async()=>{})};
+ return {create:vi.fn(async()=>{throw {code:'23505'};}),find:vi.fn(async()=>({id:'ledger-original',status:status as 'requested',crm_message_id:message?.id??null})),rotate:vi.fn(async()=> 'new-ledger'),message:vi.fn(async()=>message),update:vi.fn(async()=>{}),setMediaPath:vi.fn(async()=>'unused-in-this-test')};
 }
 it('executor novo reconhece aceito sem chamar transporte novamente',async()=>{
  const db=store('accepted',{id:'message',status:'sent'}),send=vi.fn();

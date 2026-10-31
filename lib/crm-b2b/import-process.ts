@@ -12,7 +12,8 @@ import {
   type SheetMatrix,
 } from "@/lib/crm-b2b/spreadsheet";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
-import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
+import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 
 type SB = SupabaseClient;
 
@@ -336,6 +337,24 @@ async function processOneRow(
       if (data) {
         existing = data as { id: string; person_id: string | null };
         break;
+      }
+    }
+
+    // Sem principal com o número: a ficha que o tem como EXTRA é o mesmo contato.
+    // Sem isto, o insert abaixo bateria no 23505 e a linha viraria "conflito".
+    if (!existing) {
+      const donaId = (await contatosDonosDosExtras(supabase, organizationId, [phoneE164])).get(
+        canonicalPhoneBR(phoneE164),
+      );
+      if (donaId) {
+        const { data } = await supabase
+          .from("contacts")
+          .select("id, person_id")
+          .eq("organization_id", organizationId)
+          .eq("id", donaId)
+          .is("is_merged_into", null)
+          .maybeSingle();
+        if (data) existing = data as { id: string; person_id: string | null };
       }
     }
 

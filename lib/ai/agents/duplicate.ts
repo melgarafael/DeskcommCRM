@@ -33,7 +33,7 @@ export const DUPLICATE_AGENT_COLUMNS =
  * basta, se o INSERT não a escreve a cópia nasce com o default do banco.
  */
 export const DUPLICATE_VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
 
 export type DuplicateAgentError =
   | "not_found"
@@ -101,6 +101,8 @@ export function versionPayloadFrom(src: Record<string, unknown>) {
     split_max_chars: src.split_max_chars,
     inbound_debounce_ms: src.inbound_debounce_ms ?? null,
     followup: src.followup,
+    voz_enabled: src.voz_enabled,
+    voz_quando: src.voz_quando,
     // ESCOPO. As duas faltavam — `pipeline_ids` desde a 0125, e o cabeçalho
     // deste arquivo já mandava ("coluna nova entra aqui E em
     // versionPayloadFrom"). O SELECT trazia a coluna e o INSERT não a escrevia:

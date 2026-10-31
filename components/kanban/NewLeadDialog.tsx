@@ -35,6 +35,7 @@ import {
 import type { Lead } from "@/lib/types/leads";
 import { createLeadSchema, type CreateLeadInput } from "@/lib/schemas/leads";
 import { camposExigidosNoDestino, validaCamposExigidos } from "@/lib/leads/campos-exigidos";
+import { lerRecorrenciaDoFormulario } from "@/lib/leads/valor-recorrente";
 import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
 import { MOEDA_PADRAO, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -49,6 +50,13 @@ interface FormShape {
   description: string;
   stage_id: string;
   valueReais: string;
+  /**
+   * O VALOR RECORRENTE e a duração (fatia 1 da #3602). Em texto, como o valor
+   * único: quem digita "1.500,00" ou "1500" precisa do mesmo parser que respeita
+   * a moeda da organização (`parseReaisToCents`).
+   */
+  valorRecorrenteReais: string;
+  recorrenciaMeses: string;
   tagsRaw: string;
   expected_close_date: string;
 }
@@ -168,6 +176,8 @@ export function NewLeadDialog({
       description: "",
       stage_id: initialStage,
       valueReais: "",
+      valorRecorrenteReais: "",
+      recorrenciaMeses: "",
       tagsRaw: "",
       expected_close_date: "",
     },
@@ -304,6 +314,28 @@ export function NewLeadDialog({
       }
     }
 
+    // A MENSALIDADE (fatia 1 da #3602). Ela NÃO entra no `value_cents`: o valor
+    // único continua sendo o setup, e a soma dos dois é o número que ninguém
+    // consegue separar depois. A leitura dos dois campos é a régua COMPARTILHADA
+    // com os outros dois formulários (`lerRecorrenciaDoFormulario`): a moeda da
+    // organização decide a vírgula, e duração sem mensalidade é recusa.
+    const leitura = lerRecorrenciaDoFormulario(
+      values.valorRecorrenteReais,
+      values.recorrenciaMeses,
+      moedaDoValor,
+    );
+    if (!leitura.ok) {
+      form.setError(leitura.campo === "valor" ? "valorRecorrenteReais" : "recorrenciaMeses", {
+        message:
+          leitura.motivo === "valor_invalido"
+            ? t("Valor inválido")
+            : leitura.motivo === "duracao_invalida"
+              ? t("Duração inválida")
+              : t("Informe a mensalidade para usar a duração"),
+      });
+      return;
+    }
+
     const payload: Record<string, unknown> = {
       pipeline_id: pipelineId,
       stage_id: values.stage_id,
@@ -319,6 +351,13 @@ export function NewLeadDialog({
     if (idDoContato) payload.contact_id = idDoContato;
     if (values.description.trim()) payload.description = values.description.trim();
     if (valueCents !== null) payload.value_cents = valueCents;
+    if (leitura.trio.recurring_value_cents !== null) {
+      payload.recurring_value_cents = leitura.trio.recurring_value_cents;
+      payload.recurring_period = leitura.trio.recurring_period;
+      if (leitura.trio.recurring_months !== null) {
+        payload.recurring_months = leitura.trio.recurring_months;
+      }
+    }
     if (values.expected_close_date) payload.expected_close_date = values.expected_close_date;
     // Os campos que a etapa exige viajam NESTA criação (issue #3038): o
     // `createLeadSchema` os aceita e o `createLeadHandler` valida/grava o
@@ -367,6 +406,8 @@ export function NewLeadDialog({
         description: "",
         stage_id: initialStage,
         valueReais: "",
+        valorRecorrenteReais: "",
+        recorrenciaMeses: "",
         tagsRaw: "",
         expected_close_date: "",
       });
@@ -506,6 +547,52 @@ export function NewLeadDialog({
                 type="date"
                 {...form.register("expected_close_date")}
               />
+            </div>
+          </div>
+
+          {/* A MENSALIDADE (fatia 1 da #3602) — ao lado do valor único, num
+              bloco próprio. Setup + mensalidade é o formato da maior parte do
+              que se vende aqui (agência, clínica, escola, software), e era
+              isso que ia para a descrição ou para uma etiqueta, onde nenhum
+              relatório enxerga. Opcional: quem vende uma vez só não preenche
+              nada e a tela fica como era. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="valorRecorrenteReais">
+                {t("Valor recorrente (mensal)")} ({simboloDaMoeda(moedaDoValor)})
+              </Label>
+              <Input
+                id="valorRecorrenteReais"
+                inputMode="decimal"
+                placeholder="0,00"
+                {...form.register("valorRecorrenteReais")}
+              />
+              {/* O eco é a MESMA promessa do valor único: dinheiro não é
+                  interpretado em silêncio. */}
+              <EcoDoValor
+                control={form.control}
+                moeda={moedaDoValor}
+                campo="valorRecorrenteReais"
+              />
+              {form.formState.errors.valorRecorrenteReais && (
+                <p className="text-xs text-error-fg">
+                  {form.formState.errors.valorRecorrenteReais.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recorrenciaMeses">{t("Duração (meses)")}</Label>
+              <Input
+                id="recorrenciaMeses"
+                inputMode="numeric"
+                placeholder={t("sem prazo")}
+                {...form.register("recorrenciaMeses")}
+              />
+              {form.formState.errors.recorrenciaMeses && (
+                <p className="text-xs text-error-fg">
+                  {form.formState.errors.recorrenciaMeses.message}
+                </p>
+              )}
             </div>
           </div>
 

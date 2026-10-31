@@ -69,9 +69,22 @@ function contato(id: string, nome: string, telefone: string | null, email: strin
   };
 }
 
+/**
+ * Banco de faz-de-conta para a leitura de contato: a ficha de teste não tem
+ * telefone extra (Spec 31 B1). `contacts` e `contact_phones` voltam vazios, e a
+ * cadeia aceita qualquer `select/eq/order` antes do `await` ou do `maybeSingle`.
+ */
+function bancoSemTelefones() {
+  const q: Record<string, unknown> = {};
+  for (const metodo of ["select", "eq", "in", "is", "order"]) q[metodo] = () => q;
+  q.maybeSingle = async () => ({ data: null, error: null });
+  q.then = (ok: (r: unknown) => unknown) => ok({ data: [], error: null });
+  return { from: () => q };
+}
+
 function montar(toolIds: string[], contatoDoTurno?: string) {
   const ator = { type: "ai_agent", id: "ag-1", role: "ai_operator" };
-  const supabase = { from: () => ({}) };
+  const supabase = bancoSemTelefones();
   return pickToolsFromMcp({
     toolIds,
     auth: { organizationId: ORG, role: "ai_operator", scopes: ["mcp:read", "mcp:write"], actor: ator, apiTokenId: "tok-1" },

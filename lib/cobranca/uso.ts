@@ -3,11 +3,23 @@
  *
  * `lerUsoDaOrganizacao` conta como os gatilhos `trg_trava_assentos_do_plano` e
  * `trg_trava_canais_do_plano` contam: membro ativo (`revoked_at` nulo) e não
- * provisório; canal não arquivado que não é `wacalls` (voz não é número de
- * mensagem). Se a régua de um mudar, a do outro muda junto — `uso.test.ts`
- * confere os dois lados.
+ * provisório; canal de mensagem não arquivado QUE OCUPA UMA VAGA. Se a régua de
+ * um mudar, a do outro muda junto — `uso.test.ts` confere os dois lados.
+ *
+ * ⚠️ "Não arquivado e não `wacalls`" não bastava (#3416). A sessão que nasceu de
+ * um QR que ninguém leu fica `FAILED` SEM `phone_number`, e contava como o
+ * número ocupado da empresa: a contagem da tela e a trava do banco diziam que a
+ * única vaga estava em uso por uma conexão que nunca existiu. A linha só ocupa
+ * vaga quando tem número pareado (a queda do transporte não devolve o slot) ou
+ * quando é conexão em curso/`WORKING` sem número gravado ainda — `WORKING` sem
+ * número é atraso do espelho, não ausência de conexão. Fora da conta fica só a
+ * linha MORTA (`FAILED`/`STOPPED`) sem número do canal pareado por QR
+ * (`PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO`): nos outros provedores o número não
+ * identifica a conexão, e a linha sem ele segue ocupando a vaga.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO } from "@/lib/channels/capabilities";
 
 export interface UsoDaOrganizacao {
   assentos: number;
@@ -41,7 +53,11 @@ export async function lerUsoDaOrganizacao(db: SupabaseClient, orgId: string): Pr
       .select("id", { count: "exact", head: true })
       .eq("organization_id", orgId)
       .is("archived_at", null)
-      .neq("provider", "wacalls"),
+      .neq("provider", "wacalls")
+      // #3416: a linha morta SEM número não é número nenhum. `.or` e não dois
+      // filtros em sequência: o PostgREST encadeia com AND, e "tem número E não
+      // está morta" zeraria a contagem de TODO canal pareado.
+      .or(`provider.neq.${PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO},phone_number.not.is.null,status.not.in.(FAILED,STOPPED)`),
   ]);
   if (membros.error || canais.error) return null;
   return { assentos: membros.count ?? 0, canais: canais.count ?? 0 };

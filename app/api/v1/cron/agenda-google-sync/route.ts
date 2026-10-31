@@ -1,26 +1,94 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { refreshCatalog, syncCalendar } from "@/lib/agenda/google/calendar-executor";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
+import { janelaDaRodada, LOTE_DE_CONEXOES } from "@/lib/agenda/google/rodizio-de-conexoes";
+import { ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 export const dynamic = "force-dynamic";
 /** O mesmo prazo que a RPC dá à agenda que falhou (`sync_next_attempt_at` + 15 min). */
 const RECUO_DO_CATALOGO_MS = 15 * 60_000;
+
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O `if (await recursoOcioso(...))` desta rota é saída antecipada da ROTA
+ * INTEIRA: o que vier depois dele não roda em instalação ociosa. Esta lista é a
+ * declaração do que roda ali — `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova, com arquivo e linha, quando o que está de fato
+ * abaixo do portão divergir dela. Passo novo abaixo do portão entra aqui, e só
+ * depois de a pessoa ver que ele NÃO roda na instalação parada, que é o caso
+ * comum. O #3650 mediu o custo de não haver essa cerca: três passos novos na
+ * `historico-import` ficaram fora do sinal do portão e o autor teve de alargá-lo
+ * à mão.
+ *
+ * Em runtime a constante não serve para nada — o `void` existe só para o lint
+ * não acusar variável sem uso.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const db",
+  "const {count}",
+  "const conexoesElegiveis",
+  "const janela",
+  "const {data, error}",
+  "if (error)",
+  "const connections",
+  "const effects",
+  "let remainingCalendars",
+  "for (connection of connections)",
+  "for ([organizationId, quantidade] of effects)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function executar(req: NextRequest) {
   if (!autorizaCron(req))
     return NextResponse.json(
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },
     );
+  // O PISO OCIOSO (#3731): instalação sem conexão Google saudável não tem
+  // calendário a sincronizar, e a rodada de todo minuto ia ao banco (contagem +
+  // leitura das conexões) só para descobrir isso. A saída vem antes das duas,
+  // pelo retrato em memória de lib/cron/piso-ocioso.ts.
+  if (await recursoOcioso("agenda_google")) return ok({ pulado: "recurso_ocioso" });
   const db = createAdminClient();
-  const { data: raw, error } = await db
+  // ─── O RODÍZIO, SEM CARIMBAR NADA (#3695) ─────────────────────────────────
+  //
+  // Até aqui o rodízio ERA o `updated_at` da conexão: a rodada lia
+  // `order=updated_at.asc&limit=25` e carimbava `updated_at` em cada conexão do
+  // lote, sincronizando ou não — o carimbo empurrava a linha para o fim da fila.
+  // Numa instalação OCIOSA isso era um UPDATE por conexão por minuto, para
+  // sempre, e o único valor que mudava era o próprio `updated_at`: WAL, tupla
+  // morta e IO para escrever o mesmo estado (é o que a #3695 mediu).
+  //
+  // Agora o avanço vem do RELÓGIO — uma PÁGINA sobre a ordem estável `id`
+  // (`lib/agenda/google/rodizio-de-conexoes.ts`, que também prova o rodízio com
+  // mais de 25 conexões e a cobertura de todas elas). Sem leitura concluída,
+  // nenhuma linha é escrita.
+  //
+  // A contagem é `head` (nenhuma linha transferida) e SÓ existe para o
+  // deslocamento não passar do fim. Se ela falhar, a rodada lê o começo da fila
+  // como antes: um rodízio sem cobertura é ruim, uma rodada que não lê nada é
+  // pior.
+  const { count: totalDeElegiveis } = await db
     .from("calendar_connections")
-    .select("id,organization_id,user_id,calendar_selection_revision,catalog_retry_at")
+    .select("id", { count: "exact", head: true })
     .eq("status", "healthy")
-    .eq("provider", "google_calendar")
-    .order("updated_at")
-    .limit(25);
+    .eq("provider", "google_calendar");
+  const conexoesElegiveis = () =>
+    db
+      .from("calendar_connections")
+      .select("id,organization_id,user_id,calendar_selection_revision,catalog_retry_at")
+      .eq("status", "healthy")
+      .eq("provider", "google_calendar")
+      .order("id");
+  const janela = janelaDaRodada(totalDeElegiveis, new Date());
+  const { data: raw, error } = janela
+    ? await conexoesElegiveis().range(janela.inicio, janela.fim)
+    : await conexoesElegiveis().limit(LOTE_DE_CONEXOES);
   if (error)
     return NextResponse.json(
       { error: { code: "internal_error", message: "Não foi possível ler as conexões Google." } },
@@ -124,16 +192,25 @@ async function executar(req: NextRequest) {
           if (stampError) throw stampError;
         }
       }
-      await db
-        .from("calendar_connections")
-        .update({
-          updated_at: new Date().toISOString(),
-          ...(complete && completedCalendars > 0
-            ? { last_sync_error: null, last_sync_at: new Date().toISOString() }
-            : {}),
-        })
-        .eq("organization_id", org)
-        .eq("id", connection.id);
+      // SÓ GRAVA O QUE MUDOU (#3695). Este `update` era incondicional: carimbava
+      // `updated_at` em toda conexão do lote a cada rodada para servir de
+      // cursor do rodízio (agora o rodízio é o deslocamento sobre `id`, ver o
+      // topo da rota). Sem leitura concluída nada aqui é verdade — e escrever
+      // "nada aconteceu" é o custo que a #3695 mediu. `last_sync_error` só é
+      // limpo quando alguma agenda terminou de verdade: é o mesmo critério de
+      // antes, agora sem a escrita quando ele não vale.
+      if (complete && completedCalendars > 0) {
+        const { error: stampError } = await db
+          .from("calendar_connections")
+          .update({
+            last_sync_error: null,
+            last_sync_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("organization_id", org)
+          .eq("id", connection.id);
+        if (stampError) throw stampError;
+      }
     } catch {
       await db
         .from("calendar_connections")

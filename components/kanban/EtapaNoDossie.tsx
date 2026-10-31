@@ -15,7 +15,7 @@ import type { Stage } from "@/lib/kanban/types";
  *
  * Quem move é QUEM CHAMA (`onMudar`), não este componente: no quadro é o mesmo
  * caminho do "Mover para…" do card (`aoMoverPelaLista` → `moverPara`), então o
- * card vai para o FIM da etapa, a recusa por campos obrigatórios abre o MESMO
+ * card entra no TOPO da etapa de destino (#3461), a recusa por campos obrigatórios abre o MESMO
  * diálogo (#1536), a trava de `updated_at` é a mesma, e a etapa de PERDA pede o
  * motivo pela MESMA janela do quadro antes do move. Decidir a perda aqui seria
  * uma segunda cópia dessa regra.

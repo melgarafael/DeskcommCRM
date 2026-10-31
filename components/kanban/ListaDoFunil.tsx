@@ -6,8 +6,18 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useLeadsPaginados } from "@/hooks/kanban/useLeadsPaginados";
+import { atalhosDoFunil } from "@/lib/leads/atalhos-do-card";
+import type { LeadFilters } from "@/lib/kanban/filters";
+import {
+  type FiltroForaDaLista,
+  filtrosDaLista,
+  filtrosForaDaLista,
+  paramsDosFiltrosDaLista,
+} from "@/lib/kanban/filtros-da-lista";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { formatValorDoNegocio } from "@/lib/money";
+import { rotuloDaRecorrencia } from "@/lib/leads/valor-recorrente";
+import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 
 import { LeadDossier } from "./LeadDossier";
@@ -21,7 +31,16 @@ interface Props {
   pipeline: Pipeline;
   /** As etapas do quadro: é delas que sai o nome da etapa de cada linha. */
   stages: Stage[];
+  /**
+   * A escolha da barra de filtros (a mesma do quadro, lida da URL). A Lista
+   * aplica na CONSULTA o que sabe (`filtrosDaLista`) e AVISA o que ainda não
+   * sabe (`filtrosForaDaLista`) — #3172, fatia 2.
+   */
+  filtros?: LeadFilters;
 }
+
+/** Sem barra (ou barra limpa): o funil inteiro. Fora do componente para ser estável. */
+const SEM_FILTRO: LeadFilters = {};
 
 /**
  * A VISÃO LISTA DO FUNIL (#3172, fatia 1) — a terceira aba, ao lado do Quadro e
@@ -50,13 +69,16 @@ interface Props {
  * em lote e visões salvas. A ordem é a do quadro (`position_in_stage`, a ordem
  * que a rota aplica), a mesma que o operador vê nas colunas.
  *
- * ⚠️ A BARRA DE FILTROS DA PÁGINA NÃO ALCANÇA ESTA ABA, e é deliberado: ela
- * filtra em memória a lista que o quadro já leu, e aqui não existe essa lista —
- * os filtros vão para a CONSULTA na fatia 2. Filtrar em memória uma página
- * faria a lista mentir com convicção ("nenhum negócio com esta etiqueta"), que
- * é pior do que não filtrar.
+ * ⚠️ A BARRA DE FILTROS CHEGA AQUI PELA CONSULTA, NUNCA EM MEMÓRIA. Filtrar
+ * uma página já lida faria a lista mentir com convicção ("nenhum negócio com
+ * esta etiqueta"). Responsável e Status vão para a rota (fatia 2, primeira
+ * parte); busca, etiqueta, atrasados, motivo e categoria ainda não — e,
+ * enquanto um deles estiver ativo, a faixa de aviso diz isso. Antes desta
+ * parte a barra aparecia com a Lista aberta e não fazia nada: trocar de
+ * responsável mostrava os mesmos negócios, e quem usava concluía que o filtro
+ * estava quebrado.
  */
-export function ListaDoFunil({ pipelineId, pipeline: funil, stages }: Props) {
+export function ListaDoFunil({ pipelineId, pipeline: funil, stages, filtros = SEM_FILTRO }: Props) {
   const t = useT();
   const tag = useTagDeIdioma();
   const { data: members } = useAssignableMembers(true);
@@ -65,9 +87,32 @@ export function ListaDoFunil({ pipelineId, pipeline: funil, stages }: Props) {
     [members],
   );
 
+  const daLista = useMemo(() => filtrosDaLista(filtros), [filtros]);
+  const chaveDoFiltro = paramsDosFiltrosDaLista(daLista);
+  const fora = filtrosForaDaLista(filtros);
+
   const [pagina, setPagina] = useState(1);
+  // FILTRO NOVO É PÁGINA 1. Na página 4 de "todos", trocar para "Responsável:
+  // Ana" pediria a página 4 DELA — que pode nem existir, e a tela diria
+  // "nenhum negócio" para quem tem negócio. Ajuste no render, o mesmo padrão
+  // do `?visao=` da página do funil.
+  const [filtroDaPagina, setFiltroDaPagina] = useState(chaveDoFiltro);
+  if (chaveDoFiltro !== filtroDaPagina) {
+    setFiltroDaPagina(chaveDoFiltro);
+    setPagina(1);
+  }
   const [dossieId, setDossieId] = useState<string | null>(null);
-  const { data, isLoading, error } = useLeadsPaginados(pipelineId, pagina);
+  const { data, isLoading, error } = useLeadsPaginados(pipelineId, pagina, daLista);
+
+  /** O nome do filtro como a BARRA o chama — quem leu "Tag" lá reconhece aqui. */
+  const nomeDoFiltro = (f: FiltroForaDaLista): string =>
+    ({
+      busca: t("Busca"),
+      etiqueta: t("Tag"),
+      atrasados: t("Apenas atrasados"),
+      motivo: t("Motivo"),
+      categoria: t("Categoria"),
+    })[f];
 
   const leads = data?.leads ?? [];
   const leadDoDossie = leads.find((l) => l.id === dossieId) ?? null;
@@ -89,8 +134,40 @@ export function ListaDoFunil({ pipelineId, pipeline: funil, stages }: Props) {
 
   const nomeDaEtapa = (stageId: string) => stages.find((s) => s.id === stageId)?.name ?? "—";
 
+  /**
+   * O valor ÚNICO da linha, na moeda do negócio (a organização é a reserva) e
+   * sem centavos — a mesma régua da coluna de valor desde a fatia 1 da #3172.
+   */
+  const valorUnico = (l: Lead): string | null =>
+    l.value_cents === null || l.value_cents === undefined
+      ? null
+      : formatValorDoNegocio(l.value_cents, l.currency ?? "BRL", { semCentavos: true });
+
+  /**
+   * A MENSALIDADE na MESMA célula (fatia 1 da #3602), em linha própria: a
+   * coluna é estreita e "R$ 3.000 + R$ 500/mês" numa linha só empurraria a
+   * tabela. Os dois valores aparecem, nunca a soma.
+   */
+  const recorrente = (l: Lead): string | null =>
+    rotuloDaRecorrencia(l.recurring_value_cents, l.recurring_period, l.currency ?? "BRL", {
+      semCentavos: true,
+      sufixo: t("/mês"),
+    });
+
   return (
     <div className="flex flex-1 flex-col gap-3" data-testid="lista-do-funil">
+      {fora.length > 0 && (
+        <div
+          role="status"
+          data-testid="lista-filtros-fora"
+          className="rounded-md border border-warning-fg/30 bg-warning-bg px-3 py-2 text-sm text-warning-fg"
+        >
+          {t("Na Lista, estes filtros ainda não valem: {filtros}. No Quadro eles funcionam.").replace(
+            "{filtros}",
+            fora.map(nomeDoFiltro).join(", "),
+          )}
+        </div>
+      )}
       {error ? (
         // Erro do banco NÃO vira "nenhum negócio": dizer que o funil está vazio
         // quando não se sabe ler é a resposta que o operador acredita.
@@ -103,7 +180,7 @@ export function ListaDoFunil({ pipelineId, pipeline: funil, stages }: Props) {
         </div>
       ) : leads.length === 0 ? (
         <div className="rounded-md border p-6 text-center text-sm text-muted-foreground">
-          {t("Nenhum negócio nesta página.")}
+          {chaveDoFiltro ? t("Nenhum negócio com este filtro.") : t("Nenhum negócio nesta página.")}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
@@ -145,11 +222,13 @@ export function ListaDoFunil({ pipelineId, pipeline: funil, stages }: Props) {
                   </td>
                   <td className="p-3 text-muted-foreground">{nomeDaEtapa(l.stage_id)}</td>
                   <td className="p-3 text-right tabular-nums">
-                    {l.value_cents === null || l.value_cents === undefined
-                      ? "—"
-                      : formatValorDoNegocio(l.value_cents, l.currency ?? "BRL", {
-                          semCentavos: true,
-                        })}
+                    {valorUnico(l) ?? (recorrente(l) ? "" : "—")}
+                    {recorrente(l) && (
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        {valorUnico(l) ? "+ " : ""}
+                        {recorrente(l)}
+                      </span>
+                    )}
                   </td>
                   <td className="p-3 text-muted-foreground">
                     {l.last_activity_at
@@ -203,6 +282,8 @@ export function ListaDoFunil({ pipelineId, pipeline: funil, stages }: Props) {
           fieldDefs={campoDefs}
           stageName={nomeDaEtapa(leadDoDossie.stage_id)}
           ownerNames={ownerNames}
+          // Os atalhos do card (#3487): o funil já está em mão nesta tela.
+          atalhos={atalhosDoFunil(funil.settings)}
         />
       )}
     </div>

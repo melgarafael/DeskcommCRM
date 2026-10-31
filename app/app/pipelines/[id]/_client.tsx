@@ -1,8 +1,10 @@
 "use client";
 import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
+import { useDensidadeDoQuadro } from "@/hooks/kanban/useDensidadeDoQuadro";
 
 function formatError(err: unknown, t: (texto: string) => string): string {
   if (err instanceof Error) return err.message;
@@ -136,11 +138,40 @@ export function PipelinePageClient({
   const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(
     pipelineId,
     searchParams.get("lead"),
-    { enabled: visao !== "lista" },
+    // Funil arquivado só tem o quadro (#1298): com `?visao=lista` na URL a lista
+    // não é desenhada, então a consulta do quadro não pode ficar desligada pela
+    // visão CRUA — a tela cairia em "Carregando…" para sempre. O funil do
+    // servidor já diz se está arquivado antes de o quadro chegar.
+    { enabled: visao !== "lista" || funilInicial.is_archived === true },
   );
   const router = useRouter();
   const pathname = usePathname();
-  const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
+  /**
+   * ⚠️ O FILTRO PEDIDO VALE ANTES DE A URL CHEGAR NELE.
+   *
+   * `router.replace` só muda o `useSearchParams` depois da ida ao servidor
+   * (o payload RSC da página). Lendo o filtro só da URL, o segundo clique feito
+   * nessa janela partia do filtro VELHO: desmarcar a etiqueta A e marcar a B
+   * virava "A e B", e o quadro ficava vazio. Medido no e2e (#1208, CI de
+   * 30/10): o RSC levou 118 ms e o segundo clique veio 43 ms depois — numa VPS
+   * lenta a janela é de quem clica, não só do robô.
+   *
+   * Então o filtro pedido vale até a URL mudar. O `router.replace` seguinte
+   * DESCARTA o anterior ainda em voo (`actionQueue.pending.discarded` no Next
+   * 16), então a URL nunca para num pedido intermediário: quando ela muda, ou é
+   * o último pedido, ou é navegação de fora (voltar, link) — e a URL manda.
+   */
+  const [pedido, setPedido] = useState<LeadFilters | null>(null);
+  const urlAtual = searchParams.toString();
+  const [urlAnterior, setUrlAnterior] = useState(urlAtual);
+  if (urlAtual !== urlAnterior) {
+    setUrlAnterior(urlAtual);
+    setPedido(null);
+  }
+  const filters = useMemo(
+    () => pedido ?? filtersFromParams(searchParams),
+    [pedido, searchParams],
+  );
   const setFilters = useCallback(
     (next: LeadFilters) => {
       const p = new URLSearchParams(filtersToParams(next));
@@ -154,6 +185,7 @@ export function PipelinePageClient({
       const visaoPedida = searchParams.get("visao");
       if (visaoPedida) p.set("visao", visaoPedida);
       const qs = p.toString();
+      setPedido(next);
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
     [router, pathname, searchParams],
@@ -179,6 +211,12 @@ export function PipelinePageClient({
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
+  /**
+   * A densidade dos cards do quadro (issue #3461, item 2). Preferência de quem
+   * olha, gravada no navegador — ver `useDensidadeDoQuadro` para por que não é
+   * coluna do funil nem parâmetro de URL.
+   */
+  const { compacta: cardsCompactos, alternar: alternarDensidade } = useDensidadeDoQuadro();
 
   /**
    * Motivo e categoria da perda (#1537): a categoria NÃO vem no lead — ela é
@@ -202,6 +240,27 @@ export function PipelinePageClient({
     () => [...new Set((data?.leads ?? []).flatMap((l) => l.tags))].sort(),
     [data?.leads],
   );
+
+  /**
+   * FUNIL ARQUIVADO ABRE PARA OLHAR (#1298, item 1).
+   *
+   * A gaveta de Funis leva o nome do funil arquivado para cá — antes o único
+   * caminho era desarquivar, abrir e arquivar de novo: três escritas e duas
+   * linhas de auditoria para uma leitura (e a segunda escrita é a que se
+   * esquece). Abrir para OLHAR só é honesto se abrir não escrever: com
+   * `is_archived` no payload do quadro, esta tela desliga as escritas que ela
+   * mesma oferece — criar negócio, arrastar card, menu de ações, seleção em
+   * lote, renomear etapa e dossiê.
+   */
+  // O funil da leitura do servidor já diz se está arquivado: sem ele, o
+  // "Novo Lead" e a `?visao=lista` apareceriam até o quadro carregar.
+  const arquivado = (data?.pipeline ?? funilInicial).is_archived === true;
+  /**
+   * Funil arquivado só tem o quadro em leitura: nem `?visao=lista` escapa. A
+   * Lista e o Calendário oferecem escrita de negócio, e um parâmetro colado na
+   * URL não pode reabrir o que a tela acabou de fechar.
+   */
+  const visaoEfetiva: Visao = arquivado ? "quadro" : visao;
   const nomeAtual = data?.pipeline.name ?? initialName;
   // Um funil só = nada para trocar: o seletor seria ruído permanente.
   const podeTrocar = funis.length > 1;
@@ -304,63 +363,102 @@ export function PipelinePageClient({
           passar pelo quadro.
         */}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
-            <button
-              type="button"
-              data-testid="visao-quadro"
-              aria-pressed={visao === "quadro"}
-              onClick={() => mudarVisao("quadro")}
-              className={cn(
-                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                visao === "quadro"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
+          {/* A DENSIDADE DOS CARDS (issue #3461, item 2) mora AO LADO das abas
+              da visão, e só no Quadro: é a mesma família de escolha ("como eu
+              olho este funil"), mas ela não muda o que se vê — muda quanto cabe.
+              Um interruptor (`aria-pressed`) e não um par de botões: são dois
+              estados e o nome do controle é o estado que ele LIGA, que é a
+              forma que o leitor de tela anuncia sem inventar vocabulário. */}
+          {visao === "quadro" && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={cardsCompactos}
+              title={t("Cards compactos")}
+              data-testid="densidade-do-quadro"
+              onClick={alternarDensidade}
             >
-              {t("Quadro")}
-            </button>
-            <button
-              type="button"
-              data-testid="visao-lista"
-              aria-pressed={visao === "lista"}
-              onClick={() => mudarVisao("lista")}
-              className={cn(
-                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                visao === "lista"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t("Lista")}
-            </button>
-            <button
-              type="button"
-              data-testid="visao-calendario"
-              aria-pressed={visao === "calendario"}
-              onClick={() => mudarVisao("calendario")}
-              className={cn(
-                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                visao === "calendario"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t("Calendário")}
-            </button>
-          </div>
+              {t("Compacta")}
+            </Button>
+          )}
+          {/* Funil arquivado abre só no quadro, e o quadro é leitura (#1298):
+              a Lista e o Calendário têm ações de negócio, e oferecê-las num
+              funil que não recebe mais escrita seria a mesma promessa falsa
+              que o "Novo Lead" apagado. Por isso as abas nem aparecem. */}
+          {!arquivado && (
+            <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
+              <button
+                type="button"
+                data-testid="visao-quadro"
+                aria-pressed={visao === "quadro"}
+                onClick={() => mudarVisao("quadro")}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  visao === "quadro"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t("Quadro")}
+              </button>
+              <button
+                type="button"
+                data-testid="visao-lista"
+                aria-pressed={visao === "lista"}
+                onClick={() => mudarVisao("lista")}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  visao === "lista"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t("Lista")}
+              </button>
+              <button
+                type="button"
+                data-testid="visao-calendario"
+                aria-pressed={visao === "calendario"}
+                onClick={() => mudarVisao("calendario")}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  visao === "calendario"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t("Calendário")}
+              </button>
+            </div>
+          )}
           {/* O portão do diálogo é a EXISTÊNCIA DE ETAPA, não a de quadro: numa
               tela aberta direto na Lista (#3172, item 4 do CR) não há quadro, e
               um botão apagado ao lado de uma lista que abriu seria dizer que a
               aba não funciona. As etapas vêm da leitura leve. */}
-          <Button
-            onClick={() => setNewOpen(true)}
-            disabled={etapasIniciais.length === 0}
-            className="shrink-0"
-          >
-            <Plus size={16} className="mr-2" /> {t("Novo Lead")}
-          </Button>
+          {!arquivado && (
+            <Button
+              onClick={() => setNewOpen(true)}
+              disabled={etapasIniciais.length === 0}
+              className="shrink-0"
+            >
+              <Plus size={16} className="mr-2" /> {t("Novo Lead")}
+            </Button>
+          )}
         </div>
       </header>
+      {arquivado && (
+        <p
+          className="rounded-md border border-border bg-surface-muted/40 p-3 text-sm leading-relaxed text-text-muted"
+          data-testid="funil-arquivado-aviso"
+        >
+          {t(
+            "Este funil está arquivado: o quadro abre em leitura, e nada aqui grava até você tirá-lo do arquivo em Funis.",
+          )}{" "}
+          <Link href="/app/kanban" className="underline" data-testid="funil-arquivado-ir-para-funis">
+            {t("Funis")}
+          </Link>
+        </p>
+      )}
       {etapasIniciais.length > 0 && (
         <NewLeadDialog
           open={newOpen}
@@ -386,7 +484,7 @@ export function PipelinePageClient({
         leads={data?.leads ?? []}
         settings={data?.pipeline.settings}
       />
-      {visao === "lista" ? (
+      {visaoEfetiva === "lista" ? (
         /**
          * ⭐ A LISTA NÃO ESPERA O QUADRO (#3172, item 4 do CR) — e é por isso
          * que este ramo vem ANTES dos do quadro.
@@ -401,12 +499,17 @@ export function PipelinePageClient({
          * nenhum, do server component): nenhum `data` do quadro é consultado
          * aqui, e por isso o quadro pode estar carregando, ter falhado ou nem
          * ter sido pedido — a lista é a mesma. Também NÃO recebe
-         * `filteredLeads`: ela pagina no banco a partir da página 1, e o filtro
-         * em memória da barra não tem o que filtrar antes de a página chegar
-         * (fatia 2 leva os filtros para a consulta — ver o cabeçalho de
-         * `ListaDoFunil`).
+         * `filteredLeads`: ela pagina no banco, e filtrar em memória uma página
+         * esconderia os negócios das seguintes. Recebe a ESCOLHA da barra
+         * (`filters`), e a leva para a consulta (#3172, fatia 2 — ver o
+         * cabeçalho de `ListaDoFunil`).
          */
-        <ListaDoFunil pipelineId={pipelineId} pipeline={funilInicial} stages={etapasIniciais} />
+        <ListaDoFunil
+          pipelineId={pipelineId}
+          pipeline={funilInicial}
+          stages={etapasIniciais}
+          filtros={filters}
+        />
       ) : error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           {t("Não consegui carregar este funil:")} {formatError(error, t)}
@@ -415,7 +518,7 @@ export function PipelinePageClient({
         <div className="flex flex-1 animate-pulse items-center justify-center text-muted-foreground">
           {t("Carregando…")}
         </div>
-      ) : visao === "calendario" ? (
+      ) : visaoEfetiva === "calendario" ? (
         // A MESMA lista filtrada do quadro: as duas abas olham o mesmo funil,
         // e discordar sobre quem está nele seria pior do que não ter filtro.
         <CalendarioDoFunil
@@ -434,17 +537,21 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
-          podeRenomearEtapa={ROLE_RANK[role] >= ROLE_RANK.manager}
+          podeRenomearEtapa={!arquivado && ROLE_RANK[role] >= ROLE_RANK.manager}
+          denso={cardsCompactos}
+          somenteLeitura={arquivado}
         />
       )}
-      <BulkActionBar
-        selectedIds={selectedIds}
-        stages={data?.stages ?? []}
-        pipelineId={pipelineId}
-        vocabulary={data?.pipeline.vocabulary ?? null}
-        tagsExistentes={tagsDoQuadro}
-        onClear={() => setSelectedIds([])}
-      />
+      {!arquivado && (
+        <BulkActionBar
+          selectedIds={selectedIds}
+          stages={data?.stages ?? []}
+          pipelineId={pipelineId}
+          vocabulary={data?.pipeline.vocabulary ?? null}
+          tagsExistentes={tagsDoQuadro}
+          onClear={() => setSelectedIds([])}
+        />
+      )}
     </div>
   );
 }

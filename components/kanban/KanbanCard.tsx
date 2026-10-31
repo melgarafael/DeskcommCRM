@@ -4,6 +4,7 @@ import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
+import { rotuloDaRecorrencia } from "@/lib/leads/valor-recorrente";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
@@ -14,6 +15,7 @@ import { ConversaSlot } from "./ConversaSlot";
 import { ScoreSlot } from "./ScoreSlot";
 import { OwnerBadge } from "./OwnerBadge";
 import { ContatoNoCard } from "./ContatoNoCard";
+import { ArquivosNoCard } from "./ArquivosNoCard";
 import { TarefasNoCard } from "./TarefasNoCard";
 
 /** Os dois gestos de seleção que o card sabe relatar. */
@@ -50,6 +52,23 @@ interface KanbanCardProps {
   /** Repassados ao menu de ações ("Mover para…"). */
   etapas?: Stage[];
   onMoverPara?: (lead: Lead, stageId: string) => void;
+  /**
+   * Densidade COMPACTA (issue #3461, item 2): cabe mais contato na mesma tela.
+   *
+   * O que muda é o ORÇAMENTO de altura, não o conteúdo: o título passa de duas
+   * linhas para uma (com o texto inteiro no `title` e no dossiê), os respiros
+   * encolhem e a última mensagem e o bloco de contato saem do card — os dois
+   * continuam inteiros no dossiê (`ConversaNoDossie` e `ContatoDoNegocio`, que
+   * abrem com o mesmo clique). Valor, dono, selo de tarefas, tempo na etapa e a
+   * faixa do agente continuam aqui: são o que se lê de relance para decidir.
+   */
+  denso?: boolean;
+  /**
+   * Quadro de funil arquivado (#1298): o card é só leitura. Sem arraste, sem
+   * menu de ações, sem caixa de seleção e sem abrir o dossiê (que tem ações
+   * de escrita próprias).
+   */
+  somenteLeitura?: boolean;
 }
 
 function formatValor(cents: number | null, currency: string | null): string | null {
@@ -83,9 +102,25 @@ export function KanbanCard({
   onOpen,
   etapas,
   onMoverPara,
+  denso = false,
+  somenteLeitura = false,
 }: KanbanCardProps) {
   const t = useT();
   const value = formatValor(card.valueCents, card.currency);
+  /**
+   * A MENSALIDADE, ao lado do valor único (fatia 1 da #3602): o card escreve
+   * "R$ 3.000 + R$ 500/mês". Os dois números aparecem — nunca a soma, que é
+   * exatamente o que a issue pediu para não fazer — e o negócio de valor único
+   * fica com a linha de sempre (o segundo trecho só existe quando há
+   * recorrência). `semCentavos` acompanha o valor único: o card nunca mostrou
+   * centavos, e a linha tem altura fixa.
+   */
+  const recorrente = rotuloDaRecorrencia(
+    card.recurringValueCents,
+    card.recurringPeriod,
+    card.currency ?? MOEDA_PADRAO,
+    { semCentavos: true, sufixo: t("/mês") },
+  );
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
 
@@ -128,7 +163,7 @@ export function KanbanCard({
   const handleClick = (e: MouseEvent<HTMLDivElement>) => decidirClique(e);
 
   return (
-    <Draggable draggableId={card.id} index={index}>
+    <Draggable draggableId={card.id} index={index} isDragDisabled={somenteLeitura}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
@@ -143,9 +178,13 @@ export function KanbanCard({
           onClick={handleClick}
           // Tags saem do card (Lei A): ficam a um hover, sem ocupar altura.
           title={card.tags.length > 0 ? `Tags: ${card.tags.join(", ")}` : undefined}
+          // `data-densidade` é o observável da densidade: o teste de tela mede
+          // o card, não o estado do React.
+          data-densidade={denso ? "compacta" : "confortavel"}
           className={cn(
             "group relative overflow-hidden rounded-md border border-border bg-surface",
-            "py-2.5 pl-3 pr-3 shadow-xs transition-colors",
+            denso ? "py-1.5 pl-2.5 pr-2" : "py-2.5 pl-3 pr-3",
+            "shadow-xs transition-colors",
             "hover:border-border-strong",
             snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
             isSelected && "ring-2 ring-accent",
@@ -186,27 +225,31 @@ export function KanbanCard({
                   opacidade, nunca por `hidden`. `focus:opacity-100` no próprio
                   input: uma caixa invisível e tabulável seria armadilha de
                   teclado. */}
-              <input
-                type="checkbox"
-                checked={Boolean(isSelected)}
-                aria-label={`${t("Selecionar")}: ${card.title}`}
-                onClick={(e) => {
-                  // O card inteiro tem onClick (abre o dossiê): sem parar a
-                  // propagação, marcar a caixa abriria o dossiê por cima.
-                  e.stopPropagation();
-                  onSelect?.(card.id, e.shiftKey ? "intervalo" : "alterna");
-                }}
-                onChange={() => {
-                  /* estado vem de `isSelected`; quem decide é o onClick acima */
-                }}
-                className={cn(
-                  "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
-                  "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
-                  isSelected || isSelecting
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100",
-                )}
-              />
+              {/* No funil arquivado a caixa some de vez: seleção só existe
+                  para a ação em lote, e escrever ali é o que o arquivo proíbe (#1298). */}
+              {!somenteLeitura && (
+                <input
+                  type="checkbox"
+                  checked={Boolean(isSelected)}
+                  aria-label={`${t("Selecionar")}: ${card.title}`}
+                  onClick={(e) => {
+                    // O card inteiro tem onClick (abre o dossiê): sem parar a
+                    // propagação, marcar a caixa abriria o dossiê por cima.
+                    e.stopPropagation();
+                    onSelect?.(card.id, e.shiftKey ? "intervalo" : "alterna");
+                  }}
+                  onChange={() => {
+                    /* estado vem de `isSelected`; quem decide é o onClick acima */
+                  }}
+                  className={cn(
+                    "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
+                    "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
+                    isSelected || isSelecting
+                      ? "opacity-100"
+                      : "opacity-0 group-hover:opacity-100",
+                  )}
+                />
+              )}
               {card.canonicalTag && (
                 <span
                   className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
@@ -224,7 +267,15 @@ export function KanbanCard({
                   acessibilidade; deixar só onKeyDown daria uma ação que existe
                   e NÃO É DESCOBERTA por leitor de tela. O título como button
                   atende mouse, teclado e leitor sem desfazer a decisão antiga. */}
-              <h3 className="line-clamp-2 h-10 text-sm font-medium leading-5 text-text">
+              <h3
+                // Compacto: UMA linha, com o texto inteiro no `title` (e no
+                // dossiê). O dado não some — some a segunda linha.
+                title={denso ? card.title : undefined}
+                className={cn(
+                  "text-sm font-medium leading-5 text-text",
+                  denso ? "line-clamp-1 h-5" : "line-clamp-2 h-10",
+                )}
+              >
                 <button
                   type="button"
                   onClick={(e) => {
@@ -241,26 +292,48 @@ export function KanbanCard({
                 </button>
               </h3>
             </div>
-            <KanbanCardActions
-              lead={lead}
-              pipelineId={pipelineId}
-              etapas={etapas}
-              onMoverPara={onMoverPara}
-            />
+            {!somenteLeitura && (
+              <KanbanCardActions
+                lead={lead}
+                pipelineId={pipelineId}
+                etapas={etapas}
+                onMoverPara={onMoverPara}
+              />
+            )}
           </div>
 
-          {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe. */}
+          {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe.
+              `card-valor` é o observável do teste: o MESMO elemento carrega o
+              valor único e a mensalidade, para nenhuma tela de teste achar que
+              "os dois aparecem" olhando dois lugares diferentes. */}
           <p
+            data-testid="card-valor"
             className={cn(
-              "mt-1 h-5 text-xs font-medium leading-5 tabular-nums",
-              value ? "text-text" : "text-text-muted",
+              "flex items-baseline gap-1 font-medium tabular-nums",
+              denso ? "mt-0.5 h-4 text-[11px] leading-4" : "mt-1 h-5 text-xs leading-5",
+              value || recorrente ? "text-text" : "text-text-muted",
             )}
+            title={recorrente ? `${value ?? ""} + ${recorrente}`.trim() : undefined}
           >
-            {value ?? "—"}
+            {(value || recorrente) && (
+              <span className="truncate">{value ?? t("Sem valor único")}</span>
+            )}
+            {recorrente && (
+              <span className="shrink-0 text-text-muted">
+                {value ? "+ " : ""}
+                {recorrente}
+              </span>
+            )}
+            {!value && !recorrente && "—"}
           </p>
 
           {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
-          <div className="mt-1.5 flex h-6 items-center gap-2 text-xs">
+          <div
+            className={cn(
+              "flex items-center gap-2 text-xs",
+              denso ? "mt-1 h-5" : "mt-1.5 h-6",
+            )}
+          >
             {state.slot.type === "awaiting" && (
               // A proposta do agente é a ÚNICA linha do card com ação: é o
               // ponto onde a decisão do humano entra. Sem os botões aqui, o
@@ -300,19 +373,44 @@ export function KanbanCard({
 
           {/* A última mensagem, com atalho para o inbox. Fica ANTES do rodapé
               de dono/tempo porque é conteúdo do negócio, não metadado do card —
-              e some por inteiro quando não há conversa. */}
-          <ConversaSlot
-            conversa={lead.conversa}
-            contactId={lead.contact_id}
-            phone={lead.contact_phone}
-          />
+              e some por inteiro quando não há conversa.
 
-          {/* Telefone, e-mail e links do contato — some por inteiro quando o
-              negócio não tem nada disso, como a conversa acima. */}
-          <ContatoNoCard lead={lead} />
+              ⚠️ NO COMPACTO ela SAI DO CARD (issue #3461, item 2), e é decisão
+              declarada, não perda silenciosa: as duas linhas variáveis do card
+              (esta e o contato abaixo) são as que fazem a altura depender do
+              dado, e densidade com altura variável não densidade — é o mesmo
+              card de antes com outro nome. As duas continuam inteiras no
+              DOSSIÊ (`ConversaNoDossie`, `ContatoDoNegocio`), que abre com o
+              mesmo clique no card. O que fica no compacto é o que se lê de
+              relance para decidir: título, valor, faixa do agente, dono,
+              tarefas e tempo na etapa. */}
+          {!denso && (
+            <>
+              <ConversaSlot
+                conversa={lead.conversa}
+                contactId={lead.contact_id}
+                phone={lead.contact_phone}
+              />
+
+              {/* Telefone, e-mail e links do contato — some por inteiro quando o
+                  negócio não tem nada disso, como a conversa acima. */}
+              <ContatoNoCard lead={lead} />
+            </>
+          )}
+
+          {/* Os campos `file` do funil (#2829): contagem + o documento clicável.
+              Fica junto do contato, entre o conteúdo do negócio e o rodapé de
+              dono/tempo. Some por inteiro quando o funil não declara campo de
+              arquivo — quem não usa o recurso não vê card diferente. */}
+          <ArquivosNoCard lead={lead} />
 
           {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio */}
-          <div className="mt-1 flex h-6 items-center justify-between gap-2">
+          <div
+            className={cn(
+              "flex items-center justify-between gap-2",
+              denso ? "mt-1 h-5" : "mt-1 h-6",
+            )}
+          >
             <div className="flex min-w-0 items-center gap-2">
               <OwnerBadge
                 ownerKind={card.owner.kind}

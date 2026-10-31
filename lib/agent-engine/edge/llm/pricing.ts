@@ -53,9 +53,12 @@ interface Preco {
   output: number;
   cacheRead: number;
   /** 1.25× a entrada — TTL de 5 minutos. */
-  cacheWrite5m: number;
+  cacheWrite5m?: number;
   /** 2× a entrada — TTL de 1 hora, a doutrina de caching (CLAUDE.md regra 15). */
-  cacheWrite1h: number;
+  cacheWrite1h?: number;
+  /** OpenAI: campos próprios, nunca inferidos do TTL Anthropic 5m/1h. */
+  cacheWrite30m?: number;
+  cacheWrite12h?: number;
 }
 
 /** USD por MILHÃO de tokens, por id EXATO de modelo (o sufixo de data é tolerado). */
@@ -84,16 +87,18 @@ const USD_PER_MTOK: Record<string, Preco> = {
 
   // OpenAI — gpt-4o, gpt-4o-mini e linhas 5.x e 6 do catálogo (issue #1478). Valores da
   // tabela Standard de developers.openai.com/api/docs/pricing, conferida em 23/09/2026
-  // (linha 6 em 11/10/2026).
+  // (linha 6 em 11/10/2026; gpt-6.1-terra em 27/10/2026).
   // Cache de leitura: 0.5× a entrada no gpt-4o; 0.1× nas linhas 5.x e 6, exceto o
-  // gpt-6.1-sol (0.05×); os `-pro` e o snapshot gpt-4o-2024-05-13 não têm desconto
+  // gpt-6.1-sol e o gpt-6.1-terra (0.05×); os `-pro` e o snapshot gpt-4o-2024-05-13 não têm desconto
   // (cacheRead = entrada).
   // Gravação de cache: as linhas 5.6 e 6 cobram 1.25× a entrada; nas demais é 1×.
-  // A OpenAI não distingue TTL na gravação, então 5m e 1h têm o mesmo valor.
+  // Linhas históricas preservadas; Terra6.1 usa tarifas próprias 30m/12h.
+  // Fonte: developers.openai.com/api/docs/guides/prompt-caching, 28/10/2026.
   // Fora da tabela: a faixa de contexto longo (> 272K tokens, preço 2×) da 5.4/5.5/5.6,
   // e a da linha 6 (2× a entrada e o cache, 1.5× a saída).
   'gpt-6-astra': { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 12.5 },
   'gpt-6.1-sol': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 2.5 },
+  'gpt-6.1-terra': { input: 1, output: 5, cacheRead: 0.05, cacheWrite30m: 1.25, cacheWrite12h: 2.5 },
   'gpt-6-luna': { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.125 },
   'gpt-4o-mini': { input: 0.15, output: 0.6, cacheRead: 0.075, cacheWrite5m: 0.15, cacheWrite1h: 0.15 },
   'gpt-4o': { input: 2.5, output: 10, cacheRead: 1.25, cacheWrite5m: 2.5, cacheWrite1h: 2.5 },
@@ -181,6 +186,8 @@ export interface TokenUsage {
    * centavo.
    */
   cacheWrite1hTokens?: number;
+  /** OpenAI: parcela explicitamente gravada por 12h; ausente = padrão 30m. */
+  cacheWrite12hTokens?: number;
 }
 
 /**
@@ -277,22 +284,29 @@ export function costCents(
     return null;
   }
   const noCacheInput = Math.max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens);
+  const longoTerra = chaveDoModelo(model) === 'gpt-6.1-terra' && usage.inputTokens > 272_000;
+  const fatorEntrada = longoTerra ? 2 : 1;
+  const fatorSaida = longoTerra ? 1.5 : 1;
   const usd =
-    (noCacheInput * p.input +
+    ((noCacheInput * p.input +
       usage.cacheReadTokens * p.cacheRead +
-      custoDaGravacao(p, usage, cacheTtl) +
-      usage.outputTokens * p.output) /
+      custoDaGravacao(p, usage, cacheTtl)) * fatorEntrada +
+      usage.outputTokens * p.output * fatorSaida) /
     1_000_000;
   return usd * 100;
 }
 
 /** A gravação de cache em USD × milhão de tokens: dividida por TTL quando o provedor disse. */
 function custoDaGravacao(p: Preco, usage: TokenUsage, cacheTtl: CacheTtl): number {
+  if (p.cacheWrite30m !== undefined && p.cacheWrite12h !== undefined) {
+    const longo = Math.min(Math.max(0, usage.cacheWrite12hTokens ?? 0), usage.cacheWriteTokens);
+    return (usage.cacheWriteTokens - longo) * p.cacheWrite30m + longo * p.cacheWrite12h;
+  }
   if (usage.cacheWrite1hTokens === undefined) {
-    return usage.cacheWriteTokens * (cacheTtl === '5m' ? p.cacheWrite5m : p.cacheWrite1h);
+    return usage.cacheWriteTokens * (cacheTtl === '5m' ? p.cacheWrite5m! : p.cacheWrite1h!);
   }
   const umaHora = Math.min(Math.max(0, usage.cacheWrite1hTokens), usage.cacheWriteTokens);
-  return umaHora * p.cacheWrite1h + (usage.cacheWriteTokens - umaHora) * p.cacheWrite5m;
+  return umaHora * p.cacheWrite1h! + (usage.cacheWriteTokens - umaHora) * p.cacheWrite5m!;
 }
 
 /**
@@ -360,4 +374,63 @@ export function costCentsComVirada(
     '1h',
     em,
   );
+}
+
+/** SDK usage de UMA requisição. O total de um tool loop não determina a faixa. */
+interface UsoDePassoTerra {
+  inputTokens?: number;
+  outputTokens?: number;
+  inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number };
+  raw?: unknown;
+}
+
+/**
+ * OpenAI Responses usa implicit cache com TTL padrão 30m. O motor não solicita
+ * 12h nem breakpoints OpenAI: nunca inferir isso do knob Anthropic 5m/1h.
+ * O SDK instalado pode omitir cache_write_tokens na normalização; o usage cru
+ * documentado conserva a informação. Somamos custos por passo, não os contextos.
+ */
+export function custoTerraPorPassos(model: string, result: {
+  usage: UsoDePassoTerra;
+  steps?: ReadonlyArray<{ usage?: UsoDePassoTerra }>;
+}): number | undefined {
+  if (chaveDoModelo(model) !== 'gpt-6.1-terra') return undefined;
+  const passos = result.steps?.length ? result.steps.map(s => s.usage) : [result.usage];
+  return passos.reduce((total, u) => {
+    const raw = u?.raw as { input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } } | undefined;
+    return total + (costCents(model, {
+      inputTokens: u?.inputTokens ?? 0,
+      outputTokens: u?.outputTokens ?? 0,
+      cacheReadTokens: raw?.input_tokens_details?.cached_tokens ?? u?.inputTokenDetails?.cacheReadTokens ?? 0,
+      cacheWriteTokens: raw?.input_tokens_details?.cache_write_tokens ?? u?.inputTokenDetails?.cacheWriteTokens ?? 0,
+    }) ?? 0);
+  }, 0);
+}
+
+/**
+ * Síntese de voz (ElevenLabs) é cobrada por CARACTERE, não por token — unidade
+ * diferente de tudo acima, por isso uma função própria em vez de forçar
+ * `TokenUsage`.
+ *
+ * Fonte: https://elevenlabs.io/pricing (conferida 2026-10-29). A página pública
+ * não divulga USD/crédito direto — só plano em USD + créditos/mês — e os
+ * planos NÃO convergem para uma taxa única: Creator (US$11 / 121k créditos)
+ * destoa dos demais, provavelmente por desconto de lançamento/anual, enquanto
+ * Starter, Pro, Scale e Business concordam entre si em ≈US$0,000165/crédito.
+ * É ESSA taxa — a que bate entre quatro planos independentes, não a que destoa
+ * de um — que esta tabela usa. 1 caractere = 1 crédito no modelo padrão
+ * (`eleven_multilingual_v2`); modelos "Flash/Turbo" custam metade do crédito
+ * por caractere, mas este produto não expõe escolha de modelo de voz ainda —
+ * quando expuser, este arquivo precisa de uma linha por modelo, não uma
+ * constante só.
+ *
+ * ⚠️ Preço de API de terceiro muda sem aviso e esta tabela não se atualiza
+ * sozinha — quem revisar a cobrança real de uma instalação deve CONFERIR a
+ * página antes de confiar neste número, não só confiar no código.
+ */
+const USD_POR_CREDITO_ELEVENLABS = 0.000165;
+
+/** Custo em CENTS de sintetizar `caracteres` de texto em voz — nunca null: é a única tarifa que este arquivo conhece para voz hoje. */
+export function custoDeVozCents(caracteres: number): number {
+  return Math.max(0, caracteres) * USD_POR_CREDITO_ELEVENLABS * 100;
 }

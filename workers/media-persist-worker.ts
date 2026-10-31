@@ -123,12 +123,15 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     // O worker não pergunta QUAL canal é — o invariante 1 proíbe e o
     // `lint:channels` reprova. Ele pede a sessão, pede o adapter e testa a
     // presença do método.
-    const { data: sessao } = await admin
+    const { data: sessao, error: sessionErr } = await admin
       .from("channel_sessions")
       .select(`provider, ${CHANNEL_SESSION_REF_COLUMNS}`)
       .eq("organization_id", msg.organization_id)
       .eq("id", msg.channel_session_id)
       .maybeSingle();
+    // Leitura que falhou não prova ausência de suporte a mídia. O catch mantém
+    // as tentativas do dreno e só marca failed quando elas se esgotam.
+    if (sessionErr) throw new Error(`session lookup failed: ${sessionErr.message}`);
 
     const adapter = getAdapter(
       ((sessao?.provider as string) ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider,

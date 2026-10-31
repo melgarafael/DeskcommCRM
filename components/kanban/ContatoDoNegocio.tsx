@@ -17,6 +17,7 @@ import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
 import { useContatosRelacionados } from "@/hooks/leads/useContatosRelacionados";
 import {
   useAdicionarParticipante,
+  useAdicionarPeloTelefone,
   useRemoverParticipante,
 } from "@/hooks/leads/useParticipantesDoNegocio";
 import type { ContatoRelacionado } from "@/app/api/v1/leads/[id]/contatos-relacionados/route";
@@ -168,13 +169,145 @@ function PessoasRelacionadas({ leadId }: { leadId: string | null }) {
               <span className="min-w-0 truncate">{pessoa.nome ?? "—"}</span>
               {pessoa.papel && <span className="text-text-muted">({pessoa.papel})</span>}
               {pessoa.anonimizado && <span className="text-text-muted">{t("Anonimizado")}</span>}
+              {pessoa.telefone && (
+                <span className="text-text-muted tabular-nums">{pessoa.telefone}</span>
+              )}
+              {pessoa.conversa_id && (
+                <Link
+                  href={`/app/inbox?id=${pessoa.conversa_id}`}
+                  aria-label={`${t("Abrir conversa com")} ${pessoa.nome ?? pessoa.telefone ?? ""}`.trim()}
+                  className="text-accent underline-offset-2 hover:underline"
+                >
+                  {t("Conversa")}
+                </Link>
+              )}
               <RemoverParticipante leadId={leadId} pessoa={pessoa} />
             </li>
           ))}
         </ul>
       )}
       <AdicionarParticipante leadId={leadId} />
+      <AdicionarPeloTelefone leadId={leadId} />
     </div>
+  );
+}
+
+/**
+ * "+ telefone" (#3669, fatia 1): o cliente B2B fala por vários números — o
+ * dono, o comprador, o fixo da loja — e cada número é um contato com a própria
+ * conversa. Ligar o número ao negócio põe a pessoa na lista acima; a partir daí
+ * a mensagem dela não abre outro card (`fn_nascer_lead_da_conversa`, 9045) e a
+ * ligação dela cai neste negócio (`emitAgentActivityForContact`).
+ *
+ * Mesmo desenho do "Adicionar participante": fechado por padrão, e é a
+ * montagem do formulário que permite a escrita. A diferença é a porta de
+ * entrada: aqui a vendedora tem o NÚMERO, não um contato já cadastrado para
+ * buscar — o número que aparece no identificador de chamadas, o que o cliente
+ * passou por mensagem.
+ */
+function AdicionarPeloTelefone({ leadId }: { leadId: string }) {
+  const t = useT();
+  const [aberto, setAberto] = useState(false);
+  if (aberto) {
+    return <FormularioDoTelefone leadId={leadId} onFechar={() => setAberto(false)} />;
+  }
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="h-7 px-2 text-xs text-text-muted hover:text-text"
+      data-testid="adicionar-pelo-telefone"
+      onClick={() => setAberto(true)}
+    >
+      {t("+ telefone")}
+    </Button>
+  );
+}
+
+function FormularioDoTelefone({ leadId, onFechar }: { leadId: string; onFechar: () => void }) {
+  const t = useT();
+  const [telefone, setTelefone] = useState("");
+  const [nome, setNome] = useState("");
+  const [papel, setPapel] = useState("");
+  const ligar = useAdicionarPeloTelefone(leadId);
+
+  async function salvar(e: FormEvent) {
+    e.preventDefault();
+    if (!telefone.trim()) {
+      toast.error(t("Digite o telefone."));
+      return;
+    }
+    try {
+      const r = await ligar.mutateAsync({
+        telefone: telefone.trim(),
+        nome: nome.trim() || null,
+        papel: papel.trim() || null,
+      });
+      toast.success(
+        r.jaExistia
+          ? t("O contato que já tinha este número foi ligado ao negócio.")
+          : t("Telefone ligado ao negócio."),
+      );
+      onFechar();
+    } catch {
+      // `useAdicionarPeloTelefone` já mostra o erro da API (telefone inválido,
+      // contato principal, sem permissão); aqui só não deixar a rejeição
+      // escapar como erro não tratado.
+    }
+  }
+
+  return (
+    <form
+      onSubmit={salvar}
+      className="space-y-2 rounded-md border border-border p-2"
+      data-testid="formulario-do-telefone"
+    >
+      <div className="space-y-1">
+        <Label htmlFor="telefone-da-pessoa" className="text-xs">
+          {t("Telefone")}
+        </Label>
+        <Input
+          id="telefone-da-pessoa"
+          type="tel"
+          inputMode="tel"
+          value={telefone}
+          onChange={(e) => setTelefone(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="nome-da-pessoa" className="text-xs">
+          {t("Nome (opcional)")}
+        </Label>
+        <Input id="nome-da-pessoa" value={nome} onChange={(e) => setNome(e.target.value)} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="papel-do-telefone" className="text-xs">
+          {t("Papel")}
+        </Label>
+        <Input
+          id="papel-do-telefone"
+          value={papel}
+          maxLength={40}
+          placeholder={t("Comprador, loja…")}
+          onChange={(e) => setPapel(e.target.value)}
+        />
+      </div>
+      <div className="flex gap-1">
+        <Button type="submit" size="sm" className="h-7 px-2 text-xs" disabled={ligar.isPending}>
+          {ligar.isPending ? t("Ligando…") : t("Ligar ao negócio")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-[11px] text-text-muted"
+          onClick={onFechar}
+        >
+          {t("Cancelar")}
+        </Button>
+      </div>
+    </form>
   );
 }
 

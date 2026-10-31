@@ -7,6 +7,7 @@ const messageRow = {
   id: "msg1",
   organization_id: "org1",
   conversation_id: "conv1",
+  channel_session_id: "channel1",
   media_url: "http://localhost:3030/api/files/abc.jpg" as string | null,
   media_mime: "image/jpeg",
   media_storage_path: null as string | null,
@@ -20,6 +21,8 @@ const conversationRow = { is_group: false };
 // `conversations.is_group` que falha — o worker precisa fechar FECHADO
 // (não deriva) em vez de assumir `is_group: false` por omissão.
 let conversationReadError: { message: string } | null = null;
+let sessionReadError: { message: string } | null = null;
+let sessionExists = true;
 const loggerWarnMock = vi.fn();
 
 vi.mock("@/lib/logger", () => ({
@@ -48,8 +51,11 @@ vi.mock("@/lib/supabase/admin", () => ({
             }),
           };
         }
-        const linha = tabela === "channel_sessions" ? sessionRow : messageRow;
-        const resolvido = { maybeSingle: async () => ({ data: linha, error: null }) };
+        const resolvido = {
+          maybeSingle: async () => tabela === "channel_sessions"
+            ? { data: sessionReadError || !sessionExists ? null : sessionRow, error: sessionReadError }
+            : { data: messageRow, error: null },
+        };
         return { eq: () => ({ ...resolvido, eq: () => resolvido }) };
       },
       update: (patch: Record<string, unknown>) => {
@@ -114,8 +120,10 @@ describe("persistMessageMedia", () => {
     messageRow.metadata = { raw_type: "image" };
     conversationRow.is_group = false;
     conversationReadError = null;
+    sessionReadError = null;
+    sessionExists = true;
     loggerWarnMock.mockReset();
-    vi.mocked(fetchWahaMedia).mockResolvedValue({
+    vi.mocked(fetchWahaMedia).mockReset().mockResolvedValue({
       buffer: Buffer.from([1, 2, 3]),
       mime: "image/jpeg",
     });
@@ -231,6 +239,64 @@ describe("persistMessageMedia", () => {
     const result = await persistMessageMedia(eventRow(1));
     expect(result.status).toBe("error");
     expect(updateEqMock).not.toHaveBeenCalled();
+  });
+
+  it("falha ao ler a sessão permite retry sem declarar que o canal não tem mídia", async () => {
+    sessionReadError = { message: "connection reset ao consultar a sessão" };
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result).toMatchObject({ status: "error" });
+    expect(result.detail).toContain(sessionReadError.message);
+    expect(updateEqMock).not.toHaveBeenCalled();
+    expect(fetchWahaMedia).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("última falha ao ler a sessão marca failed antes de o dreno desistir", async () => {
+    sessionReadError = { message: "connection reset ao consultar a sessão" };
+    const result = await persistMessageMedia(eventRow(4));
+
+    expect(result.status).toBe("error");
+    expect(updateEqMock).toHaveBeenCalledWith(expect.objectContaining({
+      media_derived_status: "failed",
+      metadata: expect.objectContaining({
+        media_status: "failed",
+        media_derived_motivo: expect.stringContaining(sessionReadError.message),
+      }),
+    }));
+    expect(fetchWahaMedia).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("sessão ausente sem erro continua sendo canal sem mídia de entrada", async () => {
+    sessionExists = false;
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result).toMatchObject({ status: "skipped", detail: "canal_sem_midia_de_entrada" });
+    expect(updateEqMock).toHaveBeenCalledWith(expect.objectContaining({ media_derived_status: "skipped" }));
+    expect(fetchWahaMedia).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("a tentativa seguinte persiste a mídia quando a leitura da sessão se recupera", async () => {
+    sessionReadError = { message: "connection reset ao consultar a sessão" };
+    const primeira = await persistMessageMedia(eventRow());
+    const escritasDuranteFalha = updateEqMock.mock.calls.slice();
+    sessionReadError = null;
+    const segunda = await persistMessageMedia(eventRow(1));
+
+    expect(segunda.status).toBe("ok");
+    expect(fetchWahaMedia).toHaveBeenCalledTimes(1);
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("emit_event", expect.objectContaining({
+      p_event_type: "media.derive_requested",
+      p_entity_id: "msg1",
+    }));
+    expect(primeira.status).toBe("error");
+    expect(escritasDuranteFalha).toEqual([]);
   });
 
   it("marca failed quando o download falha na última tentativa (drain dead-letra em seguida)", async () => {

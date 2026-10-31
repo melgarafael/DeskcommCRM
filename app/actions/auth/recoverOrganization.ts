@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { ensureTenantForUser } from "@/lib/auth/provision";
@@ -150,6 +151,7 @@ export async function recoverOrganization(name: string, planoId?: string): Promi
       // (`decide.ts`): a escolha fica guardada nela, pela sessão da própria pessoa.
       if (plano.data) {
         const { error: erroDoPlano } = await supabase.auth.updateUser({ data: comPlano });
+        invalidarUsuario(authUser.id); // #3696: o metadata da sessão vai para o cache curto
         if (erroDoPlano) throw new Error(`plano do pedido não gravado: ${erroDoPlano.message}`);
       }
       const pedido = await createRegistrationRequest(authUser.id, parsed.data);

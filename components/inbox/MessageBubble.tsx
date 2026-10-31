@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
+import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { CitationButton } from "@/components/ai/CitationButton";
@@ -237,7 +238,16 @@ export function MessageBubble({
       // o mesmo erro de #1046.
       return emNomeDe.token_name ? `${nome} · ${t("via")} ${emNomeDe.token_name}` : nome;
     }
-    if (message.sent_via === "ai") return "IA";
+    if (message.sent_via === "ai") {
+      // #3649: o nome do agente vem GRAVADO na linha, como o de `sent_on_behalf`.
+      // Só `ai_actor_name`: é o campo que o handler grava DEPOIS de
+      // `input.metadata`, então o cliente não o forja; outro apelido em
+      // `metadata` seria entrada do cliente. Sem nome (linha antiga), "IA".
+      // "IA" passa por `t()`; o nome do agente sai como cadastrado (#1046).
+      const gravado = message.metadata?.ai_actor_name;
+      const nome = typeof gravado === "string" ? gravado.trim() : "";
+      return nome ? `${t("IA")} · ${nome}` : "IA";
+    }
     // A REGRA falou, e não a IA: texto fixo de automação, follow-up ou lembrete
     // de agenda (#652). O ramo passou a existir porque o valor passou a ser
     // gravado — antes dele, um rótulo aqui seria promessa sem dado atrás.
@@ -264,6 +274,14 @@ export function MessageBubble({
   // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
+  // #3566 — AS MENÇÕES do grupo. Em grupo o WhatsApp escreve `@<lid>` no texto,
+  // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
+  // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
+  // ocorrência e pelo PRÓPRIO lid — menção repetida resolve cada uma pelo seu, e
+  // dois contatos chamados "João" não trocam de lugar. Sem menção conhecida, o
+  // texto sai idêntico (o número que já estava lá é a informação disponível).
+  const mencoes = lerMencoesDeGrupo(message.metadata);
+  const corpo = textoComMencoesResolvidas(message.body, mencoes);
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
@@ -444,7 +462,7 @@ export function MessageBubble({
         )}
         {senderLabel && (
           <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
-            {senderLabel === "IA" ? (
+            {message.sent_via === "ai" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
             {senderLabel && t(senderLabel)}
@@ -504,7 +522,7 @@ export function MessageBubble({
 
             {!hasMedia && mediaExpirada && (
               <div className={cn(message.body && "mb-1")}>
-                <MediaUnavailable kind={avisoDeExpiracao} />
+                <MediaUnavailable detalhe={avisoDeExpiracao} />
               </div>
             )}
 
@@ -517,7 +535,7 @@ export function MessageBubble({
             {localizacao && <LocationCard localizacao={localizacao} />}
 
             {message.body && !isContact && !localizacao && (
-              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
             )}
           </>
         )}
