@@ -4494,6 +4494,19 @@ async function executarTurnoDoAgente(
               });
             },
           };
+          // #3725 — a régua do fail-safe de caso e o resumo do caso saem UMA vez
+          // aqui: a conversa e a candidata não mudam entre o 1º veto e o
+          // auto-abre-caso, e o porquê de cada um está nos módulos
+          // (`guardrails/failsafe-do-caso.ts`, `escalacao/resumo-do-caso.ts`).
+          const podeAbrirCasoNoFailsafe = deveAbrirCasoDoFailsafe({
+            mensagens: effectiveContext.messages,
+            corpo: body,
+            alvosExtras: agentConfig?.handoffKeywords ?? [],
+          });
+          const resumoDoFailsafe = montarResumoDoCaso(
+            [...effectiveContext.messages, { direction: 'outbound', body }],
+            'a IA prometeu humano sem caso aberto (fail-safe do guardrail)',
+          );
           let chain = await runBeforeSend(beforeSendArgs);
           if (
             chain.status === 'vetoed' &&
@@ -4506,37 +4519,18 @@ async function executarTurnoDoAgente(
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
             // abre o caso OU reformula sem prometer humano). Persistiu (2ª vez): o SISTEMA
             // abre um caso mínimo e libera o envio — nunca deixa a promessa passar sem caso.
+            // #3725: o auto-abre-caso exige pedido explícito do cliente ou promessa
+            // explícita de humano (`podeAbrirCasoNoFailsafe`); sem isso o veto ensina.
             casePromiseVetoCount += 1;
             if (casePromiseVetoCount < 2) {
               return { ok: false, error: { code: chain.code, message: chain.message } };
             }
-            // ═══ #3725: ABRIR CASO HUMANO EXIGE ALGUÉM TER PEDIDO UM HUMANO ═══
-            //
-            // O defeito medido: o cliente respondeu SÓ "Não" a uma pergunta de
-            // horário, a IA escreveu "sem problema, nossa equipe te responde outro
-            // dia" — promessa de RETOMADA — e o fail-safe abriu caso humano. O
-            // cliente então lia "passei seu pedido para um atendente humano" sem ter
-            // pedido atendente nenhum.
-            //
-            // A régua tem duas fontes, em OU, e mora em `guardrails/failsafe-do-caso`:
-            // pedido EXPLÍCITO do cliente (`detectHumanHandoffRequest`, o mesmo
-            // detector determinístico do handoff G1) ou promessa EXPLÍCITA de
-            // envolver alguém agora (`detectHumanHandoffPromise`, sem a família do
-            // RETORNO, que é assunto de `schedule_followup`).
-            //
-            // Sem nenhuma das duas, o veto continua de pé (a promessa não sai) e o
-            // modelo recebe o erro-de-ensino para reformular — o que NÃO acontece é
-            // abrir caso humano e mandar o cliente esperar por alguém que ninguém
-            // chamou. O `warn` é a medição: quantas vezes o fail-safe recusou abrir.
-            if (
-              !deveAbrirCasoDoFailsafe({
-                mensagens: effectiveContext.messages,
-                corpo: body,
-                alvosExtras: agentConfig?.handoffKeywords ?? [],
-              })
-            ) {
+            // #3725: sem pedido explícito do cliente nem promessa explícita de
+            // humano, o caso NÃO abre — o veto segue ensinando o modelo. A régua
+            // inteira (e o porquê) está em `guardrails/failsafe-do-caso.ts`.
+            if (!podeAbrirCasoNoFailsafe) {
               runLog.warn(
-                'fail-safe de caso: sem pedido explícito do cliente e sem promessa explícita de humano — caso NÃO aberto',
+                'fail-safe de caso: sem pedido explícito nem promessa explícita — caso NÃO aberto',
                 { vetos: casePromiseVetoCount },
               );
               return { ok: false, error: { code: chain.code, message: chain.message } };
@@ -4550,14 +4544,7 @@ async function executarTurnoDoAgente(
               },
               {
                 title: 'Atendimento que precisa de um humano',
-                // #3725: o resumo é da CONVERSA (últimas falas, alternando papéis,
-                // com o motivo no fim) — antes era `body`, a mensagem que a IA
-                // acabou de tentar enviar, e quem abria a Central via uma frase
-                // solta do robô sem o que o cliente havia dito.
-                summary: montarResumoDoCaso(
-                  [...effectiveContext.messages, { direction: 'outbound', body }],
-                  'a IA prometeu humano sem caso aberto (fail-safe do guardrail)',
-                ),
+                summary: resumoDoFailsafe,
                 blocker:
                   'Aberto automaticamente: a IA prometeu envolver um humano e não abriu o caso (fail-safe do guardrail).',
                 source: 'guardrail_autofallback',
