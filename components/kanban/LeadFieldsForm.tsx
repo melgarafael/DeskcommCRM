@@ -88,6 +88,22 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     lead.custom_fields ?? {},
   );
 
+  /**
+   * As chaves que a ETAPA EM QUE O NEGÓCIO ESTÁ exige (issue #3036).
+   *
+   * É a mesma pergunta do servidor (`camposExigidosNoDestino`) feita sobre os
+   * `fieldDefs` que o dossiê já tem em mãos — uma chamada de rede a mais para
+   * reler o settings que está aqui seria a segunda cópia da regra. A lista só
+   * serve para o editor NÃO esconder um campo que o servidor vai cobrar: quem
+   * arrasta o card para essa etapa recebe o 422, e quem abre a ficha no card
+   * precisa ver o campo e a razão de ele estar ali.
+   */
+  const exigidosNestaEtapa = new Set(
+    fieldDefs
+      .filter((campo) => campo.obrigatorio_em?.etapas?.includes(lead.stage_id))
+      .map((campo) => campo.key),
+  );
+
   const form = useForm<FormShape>({
     defaultValues: {
       title: lead.title,
@@ -307,6 +323,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
               onChange={setCustomFields}
               mode="lead"
               leadId={lead.id}
+              exigidosNoDestino={exigidosNestaEtapa}
             />
           </div>
         )}
