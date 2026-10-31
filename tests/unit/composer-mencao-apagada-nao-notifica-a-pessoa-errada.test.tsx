@@ -32,6 +32,8 @@ const { membros } = vi.hoisted(() => ({
     { user_id: "ana-lima-0002", role: "agent", full_name: "Ana Lima" },
     { user_id: "so-ana-0003", role: "agent", full_name: "Ana" },
     { user_id: "outra-ana-0004", role: "agent", full_name: "Ana" },
+    // Uma pessoa de rótulo DIFERENTE: é o controle de "apagou uma, sobrou a outra".
+    { user_id: "carlos-0003", role: "agent", full_name: "Carlos Dias" },
   ],
 }));
 
@@ -56,6 +58,7 @@ vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
 }));
 
 import { Composer } from "@/components/inbox/Composer";
+import { idsDeMencaoEstrutural } from "@/lib/notifications/mentions";
 
 function abrirModoNota() {
   const qc = new QueryClient();
@@ -172,6 +175,58 @@ describe("menção apagada não notifica a pessoa errada", () => {
     expect(enviado.body).toBe(
       "fala com @[Ana Lima](mencao:ana-lima-0001) e @[Ana Lima](mencao:ana-lima-0002) sobre o orçamento",
     );
+  });
+
+  it("⭐ apagar a PRIMEIRA de duas menções homônimas: a lista fica com a SEGUNDA, e é ela que recebe", async () => {
+    // O resíduo (a) da issue, o que sobrou depois da poda por presença: aqui o
+    // texto tem DUAS `@Ana Lima` legítimas e a pessoa apaga a primeira. Presença
+    // não distingue uma da outra — as duas escolhas continuam "achadas" no
+    // texto —, e o `embutirMencoes` consumia a ocorrência que sobrou com a
+    // escolha da ESQUERDA: o aviso ia para quem tinha sido apagado.
+    abrirModoNota();
+    await digitar("fala com @an");
+    await escolherNaLista(0); // pessoa 1, na 1ª ocorrência
+    await digitar("fala com @Ana Lima e @an");
+    await escolherNaLista(1); // pessoa 2, na 2ª ocorrência
+
+    // O gesto: apaga a PRIMEIRA menção inteira (e o espaço dela).
+    await digitar("fala com e @Ana Lima sobre o orçamento");
+    const enviado = await enviarNota();
+
+    expect(idsDeMencaoEstrutural(enviado.body), "o aviso foi para quem foi APAGADO").toEqual([
+      "ana-lima-0002",
+    ]);
+    expect(enviado.body).not.toContain("ana-lima-0001");
+  });
+
+  it("apagar a única menção: a nova gravação não leva token nenhum (ninguém é avisado)", async () => {
+    abrirModoNota();
+    await digitar("fala com @an");
+    await escolherNaLista(0);
+    await digitar("fala com ");
+
+    const enviado = await enviarNota();
+
+    expect(enviado.body).toBe("fala com");
+    expect(idsDeMencaoEstrutural(enviado.body)).toEqual([]);
+    expect(enviado.body).not.toContain("mencao:");
+  });
+
+  it("duas pessoas diferentes, uma apagada: a lista fica só com a que ficou no texto", async () => {
+    abrirModoNota();
+    await digitar("fala com @an");
+    await escolherNaLista(0); // Ana Lima (pessoa 1)
+    await digitar("fala com @Ana Lima e @ca");
+    const lista = await screen.findByRole("listbox", { name: /atendentes para mencionar/i });
+    fireEvent.click(within(lista).getAllByRole("option", { name: /carlos/i })[0]!);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    // Apaga a Ana Lima; o Carlos Dias continua no texto.
+    const enviadoBody = "fala com @Carlos Dias sobre o orçamento";
+    await digitar(enviadoBody);
+    const enviado = await enviarNota();
+
+    expect(idsDeMencaoEstrutural(enviado.body)).toEqual(["carlos-0003"]);
   });
 
   it("digitar DURANTE o envio e o envio falhar: o retry ainda leva o id da escolha", async () => {
