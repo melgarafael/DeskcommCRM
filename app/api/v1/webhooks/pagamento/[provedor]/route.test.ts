@@ -263,6 +263,78 @@ describe("webhook do pagamento do cliente final", () => {
     expect(h.banco.cadeias).toEqual([]);
   });
 
+  // ─── O link criado pelo PAINEL (medido em 31/10/2026) ────────────────────
+  //
+  // O mesmo `paid`, com o mesmo corpo, porém SEM `event_type` e SEM
+  // `invoice_type` — o painel manda a forma do exemplo da ajuda dele. Com a
+  // leitura anterior (só o campo declarado) o evento virava "" e a rota
+  // respondia 200 `{ignorado:true}`: pagamento recebido, nada marcado, e o
+  // provedor não reentrega porque recebeu 200. É a pior falha possível aqui,
+  // porque é silenciosa dos dois lados.
+  const avisoDoPainel = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      items: ITENS_REAIS,
+      amount: 100,
+      order_nsu: "uuid-gerado-pelo-provedor",
+      paid_amount: 100,
+      receipt_url: "https://recibo.infinitepay.io/uuid",
+      installments: 1,
+      invoice_slug: "slug-da-cobranca",
+      capture_method: "pix",
+      transaction_nsu: "nsu-do-recibo",
+      ...extra,
+    });
+
+  it("⭐ aviso do PAINEL (paid SEM event_type): confirma o pagamento UMA vez", async () => {
+    m.linhas = [pendente({ external_id: "slug-da-cobranca" })];
+    m.mensagem = {
+      id: MSG,
+      metadata: {
+        pagamento: {
+          provedor: "infinitepay",
+          id: "slug-da-cobranca",
+          valor: 100,
+          moeda: "BRL",
+          status: "pendente",
+          recebimento_id: REC,
+        },
+      },
+    };
+
+    const r = await entregar({ corpo: avisoDoPainel(), query: SEGREDO_NA_URL });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { data: unknown }).data).toMatchObject({ status: "paga" });
+
+    const updates = escritas().filter((c) => c.tabela === "pagamento_recebimentos");
+    expect(updates).toHaveLength(1);
+    expect(h.auditorias.filter((a) => a.action === "pagamento.confirmado")).toHaveLength(1);
+  });
+
+  it("⭐ aviso do PAINEL repetido: 200 `duplicado` e nenhuma escrita", async () => {
+    m.linhas = [
+      pendente({ external_id: "slug-da-cobranca", status: "paga", pago_em: new Date().toISOString() }),
+    ];
+    const r = await entregar({ corpo: avisoDoPainel(), query: SEGREDO_NA_URL });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { data: unknown }).data).toMatchObject({ duplicado: true });
+    expect(escritas()).toEqual([]);
+  });
+
+  it("aviso SEM evento declarado e SEM marcador de pagamento continua ignorado", async () => {
+    // Corpo que não traz evento e nem os marcadores que só o `paid` tem:
+    // ausência de informação NÃO pode virar "paga".
+    const corpo = JSON.stringify({
+      items: ITENS_REAIS,
+      amount: 100,
+      order_nsu: "uuid-gerado-pelo-provedor",
+      invoice_slug: "slug-da-cobranca",
+    });
+    const r = await entregar({ corpo, query: SEGREDO_NA_URL });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { data: unknown }).data).toMatchObject({ ignorado: true, evento: null });
+    expect(escritas()).toEqual([]);
+  });
+
   it("⭐ assinatura VÁLIDA: 200, marca paga UMA vez e move o negócio", async () => {
     const r = await entregar({ headers: { "x-webhook-token": "segredo-de-teste-com-32-caracteres" } });
     expect(r.status).toBe(200);

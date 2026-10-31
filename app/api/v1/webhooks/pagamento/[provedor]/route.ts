@@ -88,6 +88,11 @@ const avisoSchema = z
     order_nsu: z.string().min(1).max(256).optional(),
     invoice_type: z.string().min(1).max(64).optional(),
     capture_method: z.string().min(1).max(32).optional(),
+    // O `paid` do link criado pelo PAINEL chega SEM `event_type` e SEM
+    // `invoice_type`, mas com estes dois (medido em 31/10/2026). Declará-los é
+    // documentar a forma; a inferência do evento é que usa.
+    paid_amount: z.number().optional(),
+    receipt_url: z.string().max(512).optional(),
     // Forma genérica que outros provedores usam (e a que já existia aqui).
     id: z.string().min(1).max(256).optional(),
     event: z.string().min(1).max(64).optional(),
@@ -165,9 +170,16 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     return fail("validation_failed", "Aviso inválido.", 400, { requestId });
   }
 
-  const evento = normalizar(
-    aviso.data.event_type ?? aviso.data.event ?? aviso.data.type ?? aviso.data.status ?? "",
-  );
+  const evento = eventoDoAviso(aviso.data);
+  if (evento === "paid" && eventoDeclarado(aviso.data) === "") {
+    // O link criado pelo PAINEL manda o `paid` sem dizer que é `paid`. Registrar
+    // isto é o que separa "aceitamos" de "adivinhamos sem contar a ninguém".
+    logger.info("[pagamentos.webhook] evento inferido pela forma do corpo", {
+      provedor,
+      inferido: "paid",
+      marcadores: aviso.data.transaction_nsu ? "transaction_nsu" : "receipt_url",
+    });
+  }
   /**
    * O identificador do recebimento é o `invoice_slug` — e isso é MEDIÇÃO, não
    * preferência: o `order_nsu` que mandamos ao criar o link NÃO volta no aviso
@@ -254,4 +266,42 @@ export async function POST(req: NextRequest, ctx: Contexto) {
 
 function normalizar(evento: string): string {
   return evento.trim().toLowerCase();
+}
+
+/** O evento como o provedor DECLAROU no corpo ("" quando não declarou nenhum). */
+function eventoDeclarado(dados: {
+  event_type?: string;
+  event?: string;
+  type?: string;
+  status?: string;
+}): string {
+  return normalizar(dados.event_type ?? dados.event ?? dados.type ?? dados.status ?? "");
+}
+
+/**
+ * O evento do aviso, com a inferência do link criado pelo PAINEL.
+ *
+ * MEDIÇÃO (31/10/2026, dois links do painel e dois da API): o link criado pela
+ * API manda `event_type` em todo aviso. O link criado pelo PAINEL manda o mesmo
+ * `paid`, com o mesmo corpo, mas SEM `event_type` e SEM `invoice_type`. Com a
+ * leitura anterior (só o campo declarado) esse aviso caía em `ignorado` e o
+ * pagamento nunca era marcado — falha silenciosa, porque o provedor recebia 200.
+ *
+ * A inferência olha apenas marcadores que SÓ existem no `paid`: o `created` e o
+ * `settled` trazem somente `amount`, e o `paid` traz `transaction_nsu` e
+ * `receipt_url`. Corpo sem evento declarado E sem esses marcadores continua
+ * ignorado: ausência de informação não é prova de pagamento.
+ */
+function eventoDoAviso(dados: {
+  event_type?: string;
+  event?: string;
+  type?: string;
+  status?: string;
+  transaction_nsu?: string;
+  receipt_url?: string;
+}): string {
+  const declarado = eventoDeclarado(dados);
+  if (declarado !== "") return declarado;
+  if (dados.transaction_nsu || dados.receipt_url) return "paid";
+  return "";
 }
