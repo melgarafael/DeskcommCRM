@@ -39,7 +39,7 @@ import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
 import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
 
-export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
+export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai" | "groups";
 
 /**
  * A faixa na ORDEM DO TRABALHO (#2498): primeiro o que o robô conduz, depois o
@@ -66,6 +66,7 @@ const INBOX_TABS: { value: InboxTab; label: string }[] = [
   // separada dela porque são passados diferentes (#923): fechada é atendimento
   // encerrado, arquivada é o que saiu da fila de trabalho sem ser destruído.
   { value: "archived", label: "Arquivadas" },
+  { value: "groups", label: "Grupos" },
 ];
 
 /**
@@ -128,7 +129,8 @@ interface Props {
 }
 
 /** As três abas de DONO (redesign kvgroup), na ordem do documento. */
-const ABAS_DE_DONO: InboxTab[] = ["mine", "unassigned", "all"];
+// "Grupos" (kvgroup): só as conversas de grupo, de qualquer dono.
+const ABAS_DE_DONO: InboxTab[] = ["mine", "unassigned", "all", "groups"];
 
 const STATUS_DA_LISTA: { value: StatusDaLista; label: string }[] = [
   { value: "abertas", label: "Abertas" },

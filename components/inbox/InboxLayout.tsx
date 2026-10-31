@@ -246,7 +246,7 @@ export function filtroDaLista(
   automaticoDaOrg?: boolean,
 ): Partial<ConversationsFilters> {
   if (status === "abertas") {
-    if (tab === "all") return { exclude_finished: true };
+    if (tab === "all" || tab === "groups") return { exclude_finished: true };
     return tabToFilter(tab, automaticoDaOrg);
   }
   const doBanco = status === "fechadas" ? "closed" : "archived";
@@ -255,7 +255,7 @@ export function filtroDaLista(
   return { status: doBanco };
 }
 
-const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archived", "ai"];
+const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archived", "ai", "groups"];
 
 /** Chave do modo foco (lista oculta), por navegador. */
 const CHAVE_LISTA_OCULTA = "kv-inbox-lista-oculta";
@@ -576,7 +576,8 @@ export function InboxLayout({
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
-      is_group: filterValue.onlyGroups || undefined,
+      // A aba Grupos e a visão Grupos do submenu pedem o mesmo filtro.
+      is_group: filterValue.onlyGroups || filterValue.tab === "groups" || undefined,
     }),
     [
       filterValue.tab,
