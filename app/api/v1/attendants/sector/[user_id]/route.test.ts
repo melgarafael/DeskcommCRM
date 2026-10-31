@@ -43,6 +43,14 @@ function mockAdmin(respostas: Record<string, { data: unknown; error: unknown }>)
         upsert: (v: unknown) => ((chamada.op = "upsert"), (chamada.valores = v), q),
         eq: (c: string, v: unknown) => (chamada.filtros.push([c, v]), q),
         is: (c: string, v: unknown) => (chamada.filtros.push([c, v]), q),
+        // (9062) O vínculo virou CONJUNTO: a rota confere as filas pedidas com
+        // `.in("id", …)` e remove o que sobrou com `.not("sector_id","in",…)`.
+        // Sem estes dois no dublê, o teste reprova por falta do método — e não
+        // por defeito da rota.
+        in: (c: string, v: unknown) => (chamada.filtros.push([c, v]), q),
+        not: (c: string, op: string, v: unknown) => (
+          chamada.filtros.push([`not.${c}`, `${op}${v}`]), q
+        ),
         maybeSingle: async () => resposta(),
         then: (resolve: (r: unknown) => void) => resolve(resposta()),
       };
