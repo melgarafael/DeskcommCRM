@@ -59,8 +59,8 @@
         {
           "id": "p2",
           "titulo": "Para que serve",
-          "texto": "Um fluxo de atendimento é um roteiro de perguntas que a IA faz ao cliente durante a conversa, uma de cada vez, como nome, CPF e convênio. Ela entende a resposta e guarda o dado na ficha do cliente. É diferente de um Follow-up: o Follow-up retoma a conversa com quem parou de responder, e o fluxo de atendimento conduz a conversa que está acontecendo. \"Novo fluxo de atendimento\" cria um fluxo do zero. \"Importar fluxo\" traz um fluxo que alguém exportou num arquivo.",
-          "dica": "Só gerente ou administrador vê os botões desta tela. Quem é atendente e abre o endereço da tela vê só a lista: não cria, não muda e não abre o construtor.",
+          "texto": "Um fluxo de atendimento é um roteiro de perguntas que a IA faz ao cliente durante a conversa, uma de cada vez, como nome, CPF e convênio. Ela entende a resposta e guarda o dado na ficha do cliente. É diferente de um Follow-up: o Follow-up retoma uma conversa que esfriou, e o fluxo de atendimento conduz a conversa que está acontecendo. \"Novo fluxo de atendimento\" cria um fluxo do zero. \"Importar fluxo\" traz um fluxo que alguém exportou num arquivo.",
+          "dica": "Só gerente ou administrador vê os botões desta tela. Quem é atendente consegue abrir a tela pelo endereço e ver a lista, mas sem os botões, e não entra no construtor.",
           "rota": "/app/ai/atendimento",
           "antes": [],
           "destaques": [
@@ -122,7 +122,7 @@
           "id": "p4",
           "titulo": "O cartão de um fluxo",
           "texto": "Cada fluxo é um cartão, e os alterados por último aparecem primeiro. No alto ficam o nome e o selo da situação. Em \"Versão\", a palavra \"publicada\" quer dizer que o fluxo já foi publicado ao menos uma vez; um traço quer dizer que nunca foi. Embaixo fica a data da última alteração.",
-          "dica": "O cartão também mostra \"Handoff\", que vem da tela de Follow-ups. Num fluxo de atendimento ele não muda nada: o roteiro para quando uma pessoa da equipe assume a conversa.",
+          "dica": "O cartão também mostra \"Handoff\", herdado dos Follow-ups. Num fluxo de atendimento esse valor não muda nada: o roteiro para sempre que uma pessoa da equipe assume a conversa.",
           "antes": [
             {
               "acao": "click",
@@ -166,7 +166,7 @@
         {
           "id": "p5",
           "titulo": "Ativo, Rascunho e Desativado",
-          "texto": "O selo diz a situação do fluxo. \"Ativo\": publicado, e a IA já pode usar o roteiro nas conversas. \"Rascunho\": ainda não foi publicado, e a IA não usa. \"Desativado\": foi publicado, mas alguém o tirou do ar. Aí a IA para de usar o roteiro na hora, e quem estava no meio das perguntas fica parado.",
+          "texto": "O selo diz a situação do fluxo. \"Ativo\": publicado, e a IA já pode usar o roteiro nas conversas. \"Rascunho\": ainda não foi publicado, e a IA não usa. \"Desativado\": foi publicado, mas alguém o tirou do ar. Aí a IA para de usar o roteiro na hora, e quem estava no meio das perguntas fica parado. Para pô-lo de volta no ar, abra o fluxo e clique em \"Publicar\".",
           "antes": [],
           "destaques": [
             {
@@ -241,7 +241,8 @@
           ],
           "clicar": {
             "css": "li:has(h3[title=\"Cadastro da primeira consulta\"]) h3"
-          }
+          },
+          "dica": "Se a cópia não aparecer logo na lista, recarregue a página."
         }
       ]
     },
@@ -446,8 +447,8 @@
         {
           "id": "p5",
           "titulo": "Pôr as peças e ligar",
-          "texto": "Cada clique põe uma caixa no desenho. Monte nesta ordem: um \"Gatilho\" (vira a caixa \"Início do fluxo\"), uma \"Pergunta\" para cada dado e um \"Fim\". Depois ligue as caixas: arraste da bolinha de baixo de uma caixa até a bolinha de cima da caixa seguinte. O roteiro é uma linha só, do Início ao Fim, sem desvios.",
-          "dica": "Enquanto aparece \"Alterações não salvas\", o desenho ainda não foi guardado. Clique em \"Salvar\", na barra de cima, antes de sair da tela.",
+          "texto": "Cada clique põe uma caixa no desenho. O roteiro precisa de um \"Gatilho\" (vira a caixa \"Início do fluxo\"), de uma \"Pergunta\" para cada dado e de um \"Fim\". Depois ligue as caixas: arraste da bolinha de baixo de uma caixa até a bolinha de cima da caixa seguinte. O roteiro é uma linha só, do Início ao Fim, sem desvios. O botão \"Organizar\" arruma as caixas de cima para baixo.",
+          "dica": "Enquanto aparece \"Alterações não salvas\", o desenho ainda não foi guardado: clique em \"Salvar\", na barra de cima, antes de sair da tela. A palavra \"Esgotado\" embaixo de um Fim novo não tem efeito num roteiro.",
           "antes": [
             {
               "acao": "click",
@@ -523,7 +524,7 @@
         {
           "id": "p1",
           "titulo": "Um roteiro pronto",
-          "texto": "Este é o fluxo \"Cadastro da primeira consulta\", já montado. Ele começa no \"Início\", segue pelas perguntas (nome completo, CPF, data de nascimento, convênio e especialidade) e termina no \"Fim\". A palavra \"Sempre\" nas linhas quer dizer que o roteiro segue sempre para a caixa seguinte. Embaixo do nome de cada pergunta aparece se ela é obrigatória ou opcional.",
+          "texto": "Este é o fluxo \"Cadastro da primeira consulta\", já montado. Ele começa no \"Início\", segue pelas perguntas (nome completo, CPF, convênio, data de nascimento e especialidade) e termina no \"Fim\". A palavra \"Sempre\" nas linhas quer dizer que o roteiro segue sempre para a caixa seguinte. Embaixo do nome de cada pergunta aparece se ela é obrigatória ou opcional.",
           "rota": "/app/ai/atendimento/d1120000-0000-4000-8000-000000000001",
           "antes": [
             {
@@ -568,7 +569,7 @@
           "id": "p2",
           "titulo": "Quando o roteiro começa",
           "texto": "Clique no \"Início\" para dizer quando o roteiro começa. Em \"Palavras-gatilho (separe por vírgula)\", escreva palavras separadas por vírgula: quando a mensagem do cliente tiver uma delas, o roteiro começa sozinho. Maiúsculas e acentos não importam. Em \"Começar quando o card entrar na etapa\", marque etapas do funil: quando o card do cliente entra numa delas, o roteiro começa na próxima mensagem dele.",
-          "dica": "Há um terceiro jeito: em Agente de IA › Ver tudo em IA › Roteadores, cada intenção tem o campo \"Fluxo de atendimento (opcional)\". O roteiro só roda em conversa que a IA está atendendo.",
+          "dica": "Há um terceiro jeito: em Agente de IA › Ver tudo em IA › Roteadores, cada intenção tem o campo \"Fluxo de atendimento (opcional)\". O roteiro só roda em conversa que a IA está atendendo. Não repita a mesma palavra-gatilho em dois roteiros: se empatarem, nenhum começa.",
           "antes": [
             {
               "acao": "click",
@@ -647,7 +648,7 @@
         {
           "id": "p4",
           "titulo": "Configurar uma pergunta",
-          "texto": "Clique numa pergunta para abrir os detalhes dela. \"Pergunta (o que a IA deve perguntar)\" diz qual dado pedir; o mesmo texto aparece como título da resposta na ficha do cliente. \"Chave do campo (onde a resposta é guardada)\" é o nome curto onde a resposta fica guardada: minúsculas, sem espaço. \"Tipo da resposta\" diz que dado esperar; o tipo \"CPF (confere o dígito)\" confere o dígito verificador. Com \"Obrigatória\" ligada, o roteiro só se dá por concluído quando o cliente responde ou as tentativas acabam.",
+          "texto": "Clique numa pergunta para abrir os detalhes dela. \"Rótulo\" é só o nome da caixa no desenho. \"Pergunta (o que a IA deve perguntar)\" diz qual dado pedir; o mesmo texto aparece como título da resposta na ficha do cliente. \"Chave do campo (onde a resposta é guardada)\" é o nome curto onde a resposta fica guardada: minúsculas, sem espaço. \"Tipo da resposta\" diz que dado esperar; o tipo \"CPF (confere o dígito)\" confere o dígito verificador. Com \"Obrigatória\" ligada, o roteiro só termina quando o cliente responde ou as tentativas acabam.",
           "antes": [
             {
               "acao": "click",
@@ -660,6 +661,13 @@
               "alvo": {
                 "rotulo": "Chave do campo (onde a resposta é guardada)",
                 "exato": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "Home",
+              "alvo": {
+                "testid": "publish-button"
               }
             }
           ],
@@ -702,15 +710,7 @@
           "id": "p5",
           "titulo": "Correção e texto sugerido",
           "texto": "Com \"Permitir correção\" ligada, se o cliente mudar de ideia, a resposta nova substitui a anterior. No CPF ela está desligada: vale o primeiro valor. Em \"Texto sugerido (opcional)\" você escreve como gostaria que a pergunta fosse feita; a IA pode adaptar ao tom da conversa.",
-          "antes": [
-            {
-              "acao": "rolar",
-              "alvo": {
-                "rotulo": "Texto sugerido (opcional)",
-                "exato": true
-              }
-            }
-          ],
+          "antes": [],
           "destaques": [
             {
               "alvo": {
@@ -736,7 +736,7 @@
         {
           "id": "p6",
           "titulo": "Pergunta com opções",
-          "texto": "No convênio, o tipo é \"Escolha numa lista\". Aí aparece \"Opções (separe por vírgula)\", com as respostas aceitas: aqui, Particular, Unimed, Bradesco Saúde, SulAmérica e Amil.",
+          "texto": "No convênio, o tipo é \"Escolha numa lista\". Aí aparece \"Opções (separe por vírgula)\", com as respostas aceitas: aqui, Particular, Unimed, Bradesco Saúde, SulAmérica e Amil. O painel aberto esconde as caixas da direita do desenho, como o \"Fim\". Para ver todas, clique no botão de enquadrar, o ícone de quatro cantos embaixo, à esquerda do desenho.",
           "antes": [
             {
               "acao": "click",
@@ -749,6 +749,13 @@
               "alvo": {
                 "rotulo": "Opções (separe por vírgula)",
                 "exato": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "Home",
+              "alvo": {
+                "testid": "publish-button"
               }
             }
           ],
@@ -768,18 +775,35 @@
               },
               "rotulo": "As opções",
               "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": ".react-flow__controls-fitview"
+              },
+              "rotulo": "Enquadrar o desenho",
+              "tipo": "seta"
             }
           ],
           "clicar": {
-            "testid": "node-card-fim"
+            "css": ".react-flow__controls-fitview"
           }
         },
         {
           "id": "p7",
           "titulo": "O que fazer ao concluir",
-          "texto": "No \"Fim\", escolha em \"Ao concluir, o que fazer\" o que acontece quando o cliente responde tudo: \"Nada (só encerra)\", \"Devolver à IA\", \"Chamar uma skill\" ou \"Iniciar outro fluxo de atendimento\". Aqui é \"Devolver à IA\", com uma orientação: oferecer os horários livres e confirmar o agendamento.",
+          "texto": "Agora o desenho inteiro cabe ao lado do painel. Clique no \"Fim\" e escolha em \"Ao concluir, o que fazer\" o que acontece quando o roteiro termina: \"Nada (só encerra)\", \"Devolver à IA\", \"Chamar uma skill\" ou \"Iniciar outro fluxo de atendimento\". Aqui é \"Devolver à IA\", com uma orientação: oferecer os horários livres e confirmar o agendamento.",
           "dica": "Tudo o que você muda aqui vale para o rascunho. Para guardar, clique em \"Salvar\"; para valer nas conversas, clique em \"Publicar\".",
           "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": ".react-flow__controls-fitview"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            },
             {
               "acao": "click",
               "alvo": {
@@ -795,6 +819,13 @@
             }
           ],
           "destaques": [
+            {
+              "alvo": {
+                "testid": "node-card-fim"
+              },
+              "rotulo": "O Fim",
+              "tipo": "numero"
+            },
             {
               "alvo": {
                 "rotulo": "Ao concluir, o que fazer",
@@ -878,7 +909,7 @@
         {
           "id": "p2",
           "titulo": "Publicado",
-          "texto": "Ao publicar, o sistema confere o roteiro: ele precisa ser uma linha só, do Início ao Fim, e cada pergunta precisa de uma chave diferente. Se faltar algo, a caixa com problema fica com borda vermelha, com o motivo escrito nela, e nada é publicado. Deu certo: o selo vira \"Ativo\" e a IA já pode usar o roteiro. \"Desativar\" tira o fluxo do ar. \"Rollback\" volta para a versão publicada anterior, por isso só libera depois da segunda publicação.",
+          "texto": "Ao publicar, o sistema confere o roteiro: ele precisa ser uma linha só, do Início ao Fim, e cada pergunta precisa de uma chave diferente, entre outras regras. Se algo estiver errado, nada é publicado e a caixa com problema fica com borda vermelha, com o motivo escrito nela. Deu certo: o selo vira \"Ativo\" e a IA já pode usar o roteiro. \"Desativar\" tira o fluxo do ar; para voltar, clique em \"Publicar\" de novo. \"Rollback\" volta para a versão publicada anterior, por isso só libera depois da segunda publicação.",
           "antes": [
             {
               "acao": "click",
@@ -926,7 +957,7 @@
         {
           "id": "p3",
           "titulo": "As respostas na ficha do cliente",
-          "texto": "O que o cliente responde fica na ficha dele. Abra o cliente em Contatos: na aba \"Visão geral\", o quadro \"Respostas dos roteiros de atendimento\" mostra cada roteiro, a situação e cada pergunta com a resposta. A Juliana está no meio do \"Cadastro da primeira consulta\": já disse o nome, o convênio e a especialidade. CPF e data de nascimento ainda aparecem como \"não respondido\".",
+          "texto": "O que o cliente responde fica na ficha dele. Abra o cliente em Contatos: na aba \"Visão geral\", o quadro \"Respostas dos roteiros de atendimento\" mostra cada roteiro, a situação e cada pergunta com a resposta. No exemplo, a Juliana está no meio do \"Cadastro da primeira consulta\": a ficha já tem o nome completo, o convênio e a especialidade, e CPF e data de nascimento aparecem como \"não respondido\".",
           "dica": "O que o cliente já respondeu não é perguntado de novo, em nenhum roteiro.",
           "rota": "/app/contacts/be200000-0000-4000-8000-000000000003",
           "antes": [

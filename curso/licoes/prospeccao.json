@@ -16,7 +16,8 @@
         "abordar empresas no whatsapp",
         "lista de empresas para vender",
         "campanha de prospecção",
-        "captar clientes novos"
+        "captar clientes novos",
+        "empresa não abordada"
       ],
       "passos": [
         {
@@ -46,7 +47,7 @@
         {
           "id": "p2",
           "titulo": "Para que serve",
-          "texto": "A Prospecção serve para achar empresas e começar uma conversa com elas pelo WhatsApp, com a ajuda de um agente de IA. A tela segue três etapas: \"1. Encontrar empresas\" é a busca; \"2. Preparar a abordagem\" define quem conversa e como; \"3. Acompanhar resultados\", mais abaixo, mostra cada empresa. Ao abrir, a tela mostra a campanha mais recente.",
+          "texto": "A Prospecção serve para achar empresas e começar uma conversa com elas pelo WhatsApp, com a ajuda de um agente de IA. A tela segue três etapas: \"1. Encontrar empresas\" é a busca; \"2. Preparar a abordagem\", que aparece quando a busca termina e some depois que a campanha é iniciada, define quem conversa e como; \"3. Acompanhar resultados\", mais abaixo, mostra cada empresa. Ao abrir, a tela mostra a campanha mais recente.",
           "dica": "Quem responde segue a conversa no Inbox, como qualquer outro contato.",
           "rota": "/app/prospecting",
           "antes": [],
@@ -83,7 +84,7 @@
         {
           "id": "p3",
           "titulo": "Suas campanhas",
-          "texto": "Cada busca vira uma campanha na lista \"Suas campanhas\", com o segmento e a região no nome. Embaixo do nome aparecem a situação e quantas empresas a busca trouxe: \"Preparar campanha\" (nada foi enviado ainda), \"Em andamento\" (enviando), \"Pausada\" ou \"Abordagens concluídas\". A campanha aberta fica com a borda colorida. Clique na campanha dos escritórios de contabilidade para abri-la.",
+          "texto": "Cada busca vira uma campanha na lista \"Suas campanhas\", com o segmento e a região no nome. Embaixo do nome aparecem a situação e quantas empresas a busca trouxe: \"Preparar campanha\" (ainda não iniciada), \"Em andamento\" (enviando aos poucos), \"Pausada\" ou \"Abordagens concluídas\" (a fila acabou). A campanha aberta fica com a borda colorida. Clique na campanha dos escritórios de contabilidade para abri-la.",
           "antes": [
             {
               "acao": "rolar",
@@ -132,7 +133,7 @@
         {
           "id": "p4",
           "titulo": "Os números da campanha",
-          "texto": "O quadro do alto mostra a situação da busca, quanto ela custou na Apify e a situação da campanha (\"Pausada\"). Os números contam empresas: \"Encontrados\" é tudo o que a busca trouxe e \"Na fila\" espera a vez da primeira mensagem. \"Responderam\" já escreveram de volta. \"Pediram para parar\" estão bloqueados para novas mensagens. \"Qualificados\" chegaram à etapa do funil que você marcou como de qualificados. \"Score médio\" é a média do Score das empresas, que você vai conhecer na lição sobre escolher as empresas.",
+          "texto": "O quadro do alto mostra a situação da busca, quanto ela custou na Apify e a situação da campanha (\"Pausada\"). Os números contam empresas: \"Encontrados\" é tudo o que a busca trouxe e \"Na fila\" espera a vez da primeira mensagem. \"Responderam\" já escreveram de volta. \"Pediram para parar\" estão bloqueados para novas mensagens. \"Qualificados\" estão na etapa do funil que você marcou como de qualificados. \"Score médio\" é a média do Score das empresas, que você vai conhecer na lição sobre escolher as empresas.",
           "antes": [
             {
               "acao": "click",
@@ -189,7 +190,7 @@
         {
           "id": "p5",
           "titulo": "A tabela de empresas",
-          "texto": "Em \"3. Acompanhar resultados\", cada linha é uma empresa: nome, segmento e telefone; endereço, site, nota e avaliações no Google; a situação em \"Progresso\"; e a análise em \"Auditoria\". Em \"Progresso\" a empresa passa por \"Encontrado\", \"Na fila\", \"Preparando abordagem\" e \"Abordado\" e, depois, \"Respondeu\" e \"Qualificado\". Quando aparece \"Não abordado\", o motivo vem logo abaixo, como \"Sem telefone brasileiro válido.\".",
+          "texto": "Em \"3. Acompanhar resultados\", cada linha é uma empresa: nome, segmento e telefone; endereço, site, nota e avaliações no Google; a situação em \"Progresso\"; e a análise em \"Auditoria\". Em \"Progresso\" a empresa passa por \"Encontrado\", \"Na fila\", \"Preparando abordagem\" e \"Abordado\" e, depois, \"Respondeu\" e \"Qualificado\".",
           "dica": "Quando a empresa já tem conversa, a última coluna, \"Conversa\", mostra o link \"Abrir no Inbox\". Numa tela do tamanho desta foto ela fica escondida à direita: role a tabela para o lado.",
           "antes": [
             {
@@ -246,6 +247,74 @@
               },
               "rotulo": "Score, site e prévia",
               "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Quem fica sem mensagem",
+          "texto": "Nem toda empresa recebe mensagem. \"Não abordado\" quer dizer que ela saiu da fila, e o motivo aparece logo abaixo. Aqui, a \"Contabilidade Santa Cruz\" não tem telefone, e o motivo é \"Sem telefone brasileiro válido.\". Outros motivos são \"Contato já existe no CRM; atendimento preservado.\" e \"Não selecionada pelo operador.\", quando você desmarca a empresa. Se um envio falhar, a situação vira \"Revisar falha\", também com o motivo embaixo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^escritórios de contabilidade",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar ritmo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "row",
+                "nome": "Contabilidade Santa Cruz"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Não abordado",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Contabilidade Santa Cruz"
+                }
+              },
+              "rotulo": "Saiu da fila",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Sem telefone brasileiro válido.",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Contabilidade Santa Cruz"
+                }
+              },
+              "rotulo": "O motivo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Sem telefone",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Contabilidade Santa Cruz"
+                }
+              },
+              "rotulo": "Sem número",
+              "tipo": "caixa"
             }
           ]
         }
@@ -472,7 +541,7 @@
           "id": "p5",
           "titulo": "As opções e o botão de buscar",
           "texto": "As três opções vêm marcadas. \"Enriquecer com e-mails comerciais e redes encontradas no site\" pede à busca os contatos publicados no site de cada empresa. \"Avaliar o site de cada empresa automaticamente\" faz o sistema abrir cada site e anotar o que encontrou, sem gastar IA. \"Gerar a prévia da mensagem automaticamente\" faz a IA escrever um rascunho da primeira mensagem para cada empresa marcada e consome crédito de IA; ela só funciona com a avaliação do site ligada. Clique em \"Buscar empresas\".",
-          "dica": "Nenhuma mensagem sai nesta etapa. A busca aparece em \"Suas campanhas\" como uma campanha nova; enquanto ela roda, a tela se atualiza sozinha, e no fim a campanha mostra \"Busca concluída\" e as empresas encontradas. Se nenhuma campanha anterior tem agente, a prévia automática espera a campanha ter um, e a linha mostra \"Prévia: escolha o agente na etapa 2\".",
+          "dica": "Nenhuma mensagem sai nesta etapa. A busca vira uma campanha nova em \"Suas campanhas\", e a tela se atualiza sozinha até aparecer \"Busca concluída\" com as empresas. Enquanto o site de uma empresa espera a avaliação, a linha mostra \"A verificar\"; o botão \"Verificar agora\" adianta isso. Como a busca nova ainda não tem agente, a prévia é escrita pelo agente da campanha anterior mais recente, se ele ainda estiver ativo; se não houver nenhum, a linha mostra \"Prévia: escolha o agente na etapa 2\".",
           "antes": [
             {
               "acao": "fill",
@@ -554,7 +623,7 @@
         {
           "id": "p1",
           "titulo": "Leia cada empresa",
-          "texto": "Com a busca concluída, a campanha fica em \"Preparar campanha\" e cada empresa aparece como \"Encontrado\". Na coluna \"Auditoria\", o \"Score\" soma três sinais: a nota no Google, o número de avaliações e a situação do site. Embaixo vem o resumo do site, como \"Site com problemas\", \"Sem site próprio\" ou \"Site em ordem\", e, por último, o começo da prévia: o rascunho da primeira mensagem que a IA preparou.",
+          "texto": "Com a busca concluída, a campanha fica em \"Preparar campanha\" e cada empresa aparece como \"Encontrado\". Na coluna \"Auditoria\", o \"Score\" soma três sinais: a nota no Google, o número de avaliações e a situação do site; ao lado vem o que mais pesou, como \"nota alta + site com problemas\". Embaixo aparecem o resumo do site, como \"Site com problemas\", \"Sem site próprio\" ou \"Site em ordem\", e o começo da prévia: o rascunho da primeira mensagem que a IA preparou. Em \"Ordenar\", escolha \"Score\" para ver primeiro as empresas com mais pontos.",
           "dica": "O Score foi pensado para quem vende site ou automação. Com a oferta \"Site profissional\", empresa sem site ou com site ruim ganha mais pontos do que empresa com o site em ordem. Se a sua oferta é outra, use o Score só como uma pista.",
           "rota": "/app/prospecting",
           "antes": [
@@ -597,6 +666,14 @@
               },
               "rotulo": "Prévia da mensagem",
               "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Ordenar",
+                "exato": true
+              },
+              "rotulo": "Recentes ou Score",
+              "tipo": "seta"
             }
           ],
           "clicar": {
@@ -612,7 +689,7 @@
         {
           "id": "p2",
           "titulo": "A auditoria completa",
-          "texto": "Clique em \"Ver detalhes\" para abrir a \"Auditoria do site\" da empresa: os problemas encontrados, o que o site já tem, o que falta e uma sugestão de estratégia de abordagem, pensada para quem vende site ou automação. \"Reanalisar site\" abre o site de novo na hora. \"Prévia da abordagem\" pede à IA uma prévia nova, que fica guardada no lugar da anterior e consome crédito de IA. Para fechar, clique no X, no alto da janela, ou fora dela.",
+          "texto": "Clique em \"Ver detalhes\" para abrir a \"Auditoria do site\" da empresa: os problemas encontrados, o que o site já tem, o que falta e uma sugestão de estratégia de abordagem, com objeções comuns e respostas, pensada para quem vende site ou automação. \"Reanalisar site\" abre o site de novo na hora; depois disso, a prévia antiga deixa de valer. \"Prévia da abordagem\" pede à IA uma prévia nova, que fica guardada no lugar da anterior e consome crédito de IA. Para fechar, clique no X do canto de cima da janela ou fora dela.",
           "antes": [
             {
               "acao": "click",
@@ -792,7 +869,7 @@
         {
           "id": "p1",
           "titulo": "Quem vai conversar",
-          "texto": "Em \"2. Preparar a abordagem\" você escolhe o agente de IA que manda a primeira mensagem e atende as respostas. Há dois caminhos. \"Configurar por conversa\" abre um assistente que pergunta o que você oferece e o que quer descobrir, monta um agente novo e deixa você testá-lo em \"Testar como cliente\" antes de publicar. \"Usar agente existente / configurar manualmente\" usa um agente que você já publicou. A clínica vai usar a Bia, que já atende o WhatsApp.",
+          "texto": "Em \"2. Preparar a abordagem\" você escolhe o agente de IA que manda a primeira mensagem e atende as respostas. Há dois caminhos. \"Configurar por conversa\" abre um assistente de IA que pergunta o que você oferece e o que quer descobrir, monta um agente novo e deixa você testá-lo em \"Testar como cliente\" antes de publicar. \"Usar agente existente / configurar manualmente\" usa um agente que você já publicou. A clínica vai usar a Bia, que já atende o WhatsApp.",
           "rota": "/app/prospecting",
           "antes": [],
           "destaques": [
@@ -924,7 +1001,7 @@
         {
           "id": "p3",
           "titulo": "A oferta e quando qualificar",
-          "texto": "Em \"O que a IA deve oferecer e como iniciar\", explique a oferta e o objetivo da primeira conversa; o texto se soma às instruções do agente nas conversas desta campanha. Em \"Quando considerar o cliente qualificado\", diga o que precisa ficar confirmado. \"O que esta campanha vende\" tem três opções fixas: site profissional, automação do atendimento e automações com N8N. Elas mudam o Score e a estratégia sugerida, e pelo menos uma fica marcada; como nenhuma é a oferta da clínica, ela deixa a que já vem.",
+          "texto": "Em \"O que a IA deve oferecer e como iniciar\", explique a oferta e o objetivo da primeira conversa; o texto se soma às instruções do agente nas conversas desta campanha. Em \"Quando considerar o cliente qualificado\", diga o que precisa ficar confirmado: a IA usa isso para decidir quando mover o negócio para a \"Etapa de qualificados\". \"O que esta campanha vende\" tem três opções fixas: site profissional, automação do atendimento e automações com N8N. Elas mudam o Score e a estratégia sugerida, e pelo menos uma fica marcada.",
           "antes": [
             {
               "acao": "click",
@@ -977,12 +1054,13 @@
               "rotulo": "Opções fixas",
               "tipo": "caixa"
             }
-          ]
+          ],
+          "dica": "Atenção: com a opção de parar \"Na primeira mensagem (recomendado)\", a estratégia sugerida, que fala de site ou automação, também vai para a IA escrever a primeira mensagem. Como nenhuma das três é a oferta da clínica, ela deixa a que já vem e, mais abaixo, escolhe uma primeira mensagem que só cumprimenta."
         },
         {
           "id": "p4",
           "titulo": "Ritmo e entrada no funil",
-          "texto": "\"Máximo em 24 horas\" (de 1 a 50) e \"Intervalo mínimo (minutos)\" (de 5 a 1440) são o ritmo da campanha: no máximo tantas abordagens a cada 24 horas, com pelo menos tantos minutos entre uma e outra. Aqui a clínica usa 10 por dia, com 30 minutos de intervalo. Em \"Quando a empresa entra no funil\", a opção recomendada só cria o contato, o negócio e a conversa quando a empresa recebe a primeira mensagem; \"Todas ao iniciar\" cria tudo para a fila inteira assim que você inicia.",
+          "texto": "\"Máximo em 24 horas\" (de 1 a 50) e \"Intervalo mínimo (minutos)\" (de 5 a 1440) são o ritmo da campanha: no máximo tantas abordagens a cada 24 horas, com pelo menos tantos minutos entre uma e outra. Aqui a clínica usa 10 por dia, com 30 minutos de intervalo. Em \"Quando a empresa entra no funil\", a opção recomendada só cria o contato, o negócio e a conversa quando chega a vez de a empresa receber a primeira mensagem; \"Todas ao iniciar\" cria tudo para a fila inteira assim que você inicia.",
           "antes": [
             {
               "acao": "click",
@@ -1032,8 +1110,8 @@
         {
           "id": "p5",
           "titulo": "A saída, a base legal e o início",
-          "texto": "Em \"Quando oferecer a opção de parar de receber\", a recomendada já põe na primeira mensagem como parar de receber. A clínica escolhe \"Atrasar para a 2ª mensagem\": a primeira só cumprimenta e confirma se é a empresa certa, sem oferta, e a instrução para parar vai na seguinte. Em \"Referência da avaliação de legítimo interesse\", informe o documento real que justifica abordar essas empresas; ele não é o consentimento delas. Clique em \"Iniciar abordagens com IA\".",
-          "dica": "Antes de começar, o sistema confere o agente (publicado no número escolhido, com a ferramenta de mover negócios e acesso ao funil), a conexão e as etapas; se algo faltar, aparece o aviso e nada começa. Só uma campanha fica em andamento por vez, e a primeira abordagem é preparada depois de um minuto.",
+          "texto": "Em \"Quando oferecer a opção de parar de receber\", a recomendada já põe na primeira mensagem como parar de receber. A clínica escolhe \"Atrasar para a 2ª mensagem\": a primeira só cumprimenta e confirma se é a empresa certa, sem oferta nem estratégia de venda, e a instrução para parar vai na seguinte. Em \"Referência da avaliação de legítimo interesse\", informe o documento real que justifica abordar essas empresas; ele não é o consentimento delas. Clique em \"Iniciar abordagens com IA\".",
+          "dica": "Antes de começar, o sistema confere o agente (publicado, com a ferramenta de mover negócios e acesso ao funil, e atendendo o número escolhido, direto ou pelo roteador), a conexão e as etapas; se algo faltar, aparece o aviso e nada começa. Só uma campanha fica em andamento por vez, e a primeira abordagem é preparada depois de um minuto.",
           "antes": [
             {
               "acao": "click",
@@ -1098,7 +1176,7 @@
           "id": "p6",
           "titulo": "Pausar e retomar",
           "texto": "Depois de iniciada, a campanha mostra o ritmo e os botões de controle. Enquanto envia (\"Em andamento\"), aparece \"Pausar abordagens\". Pausada, como esta, ela mostra \"Editar ritmo\" e \"Retomar fila\". Com a campanha pausada, você também pode marcar e desmarcar na tabela as empresas que ainda estão na fila. Clique em \"Editar ritmo\".",
-          "dica": "Uma mensagem que já estava saindo no momento da pausa ainda pode ser enviada.",
+          "dica": "Uma mensagem que já estava saindo no momento da pausa ainda pode ser enviada. O sistema também pausa a campanha sozinho quando algo impede todos os envios, como a conexão desconectada: o motivo aparece em destaque no quadro da campanha, e \"Retomar fila\" confere tudo de novo antes de voltar.",
           "rota": "/app/prospecting",
           "antes": [
             {

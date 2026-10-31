@@ -5,7 +5,7 @@
  * mostrar ("Entregue", "Não saiu" com o motivo, "Cancelado").
  *
  * Grava como o motor grava: a configuração numa linha por organização
- * (`config_aviso_de_caso`, upsert pelo service role, porque o RPC da tela exige
+ * (`config_aviso_de_caso`, gravada pelo service role, porque o RPC da tela exige
  * `auth.uid()`), e cada entrega em `entregas_de_aviso_de_caso` apontando para um
  * caso em `agent_cases`. Os casos daqui nascem JÁ ENCERRADOS: o gatilho de
  * abertura só emite evento para caso aberto, e o contador "Casos" do menu só
@@ -14,9 +14,9 @@
  * O contador de mensagens ignoradas também é semeado: é ele que faz a tela
  * mostrar o quadro "As respostas para este número são ignoradas de propósito".
  *
- * Idempotente: a configuração é por upsert e os casos (com as entregas, em
- * cascata) são apagados e recriados pelos ids fixos desta semente. A base apaga
- * as conversas, o que também leva estes casos junto.
+ * Idempotente: `limpar()` apaga a configuração da organização e os casos pelos
+ * ids fixos desta semente (entregas e eventos vão junto, em cascata), e tudo é
+ * recriado. A base apaga as conversas, o que também leva estes casos junto.
  */
 import { type Contexto, conversaId, ha, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";

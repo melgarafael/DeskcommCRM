@@ -44,7 +44,7 @@
           "titulo": "Para que serve",
           "rota": "/app/ai/memory",
           "texto": "O agente de IA é o atendente virtual que conversa com os pacientes. A \"Memória da IA\" guarda as regras e os aprendizados que TODOS os agentes de IA da clínica seguem. Ela não é a configuração de um agente só: o que está aqui vale para todos de uma vez. Antes de cada resposta, o agente lê o que está em vigor nesta tela.",
-          "dica": "O que vale para um agente só, como o jeito de falar da recepção, fica na tela daquele agente, em \"Agentes\". Aqui ficam as regras comuns, escritas uma vez só.",
+          "dica": "O que vale para um agente só, como as instruções e o modelo dele, fica na tela daquele agente, em \"Agentes\". Aqui ficam as regras comuns, escritas uma vez só.",
           "destaques": [
             {
               "alvo": { "css": "header:has(> h1)" },
@@ -77,7 +77,7 @@
         {
           "id": "p4",
           "titulo": "O histórico de versões",
-          "texto": "Cada vez que alguém publica o documento, nasce uma versão nova, com número, data e hora. A anterior não é apagada: fica guardada em \"Histórico de versões\". O selo \"ativa\" marca a versão que os agentes estão lendo. Clicar numa versão mostra o texto dela.",
+          "texto": "Cada vez que um administrador publica o documento, nasce uma versão nova, com número, data e hora. A anterior não é apagada: fica guardada em \"Histórico de versões\". O selo \"ativa\" marca a versão que os agentes estão lendo. Clicar numa versão mostra o texto dela.",
           "dica": "Como voltar a um texto antigo está na lição \"Voltar a uma versão anterior\".",
           "destaques": [
             {
@@ -100,7 +100,7 @@
         {
           "id": "p5",
           "titulo": "Os aprendizados",
-          "texto": "O segundo quadro, \"Aprendizados\", guarda fatos e correções pontuais, um por item, como o estacionamento conveniado. Cada item tem um título, um selo de origem, a data em que entrou e, embaixo, o texto que o agente lê. Os agentes levam em conta todos os aprendizados ativos, junto com o documento.",
+          "texto": "O segundo quadro, \"Aprendizados\", guarda fatos e correções pontuais, um por item, como o estacionamento conveniado. Cada item tem um título, um selo de origem, a data em que entrou e, embaixo, o texto. Os agentes leem o título e o texto de todos os aprendizados ativos, junto com o documento.",
           "destaques": [
             {
               "alvo": { "role": "button", "nome": "Novo aprendizado", "exato": true },
@@ -118,7 +118,7 @@
           "id": "p6",
           "titulo": "De onde veio cada aprendizado",
           "texto": "O selo ao lado do título diz quem escreveu o aprendizado. \"manual\": alguém da equipe escreveu nesta tela. \"aprendido automaticamente\": o sistema revisou conversas reais, sugeriu o aprendizado, e um administrador aprovou a sugestão. \"anotado pelo agente\": um agente de IA anotou sozinho, durante o trabalho.",
-          "dica": "As sugestões automáticas não aparecem nesta tela: elas esperam na aba \"Propostas\" da tela de um agente e só viram aprendizado quando um administrador clica em \"Aplicar como memória da org\". Nesse caso, o título é o começo do próprio texto. O agente só anota sozinho quando tem ligada a ferramenta \"Anotar uma regra aprendida\".",
+          "dica": "As sugestões automáticas não aparecem nesta tela: elas esperam na aba \"Propostas\", dentro da tela de qualquer agente (em \"Agentes\"), e só viram aprendizado quando um administrador clica em \"Aplicar como memória da org\". Nesse caso, o título é o começo do próprio texto. O agente só anota sozinho quando tem ligada a ferramenta \"Anotar uma regra aprendida\".",
           "destaques": [
             {
               "alvo": { "texto": "manual", "exato": true },
@@ -158,7 +158,7 @@
           "id": "p1",
           "titulo": "O que escrever aqui",
           "rota": "/app/ai/memory",
-          "texto": "Tudo o que está neste quadro vai junto em cada resposta do agente. Por isso, guarde aqui só regras curtas que valem para qualquer atendimento: endereço, horário, o que nunca prometer. Uma regra por linha, em frases diretas. Material longo, como perguntas frequentes ou o preparo de exames, fica melhor em \"Conhecimento\", onde o agente procura o trecho que tem a ver com a pergunta.",
+          "texto": "Tudo o que está neste quadro vai junto em cada resposta do agente. Por isso, guarde aqui só regras curtas que valem para qualquer atendimento: endereço, horário, o que nunca prometer. Uma regra por linha, em frases diretas. Material longo, como perguntas frequentes ou o preparo de exames, fica melhor em \"Conhecimento\": ali o agente busca só o trecho que tem a ver com a pergunta, nos materiais ligados a ele.",
           "dica": "Só o administrador publica. Um gerente também abre esta tela e consegue escrever no quadro, mas o botão \"Publicar versão\" fica apagado, com o aviso \"Somente admins podem publicar uma nova versão.\".",
           "destaques": [
             {
@@ -294,7 +294,7 @@
         {
           "id": "p3",
           "titulo": "Conferir e publicar",
-          "texto": "O texto da v1 é copiado para o quadro, e a janela fecha. Por enquanto nada mudou para os agentes: o selo ainda diz \"v2 ativa\", e um aviso rápido lembra de clicar em \"Publicar versão\" para confirmar. Confira o texto, ajuste se quiser e publique. Ele entra como uma versão nova, a v3. A v2 continua no histórico: nenhuma versão é apagada.",
+          "texto": "O texto da v1 é copiado para o quadro, e a janela fecha. Por enquanto nada mudou para os agentes: o selo ainda diz \"v2 ativa\", e um aviso rápido lembra de clicar em \"Publicar versão\" para confirmar. Confira o texto, ajuste se quiser e publique: ele entra como uma versão nova, com o próximo número (aqui, a v3). A v2 continua no histórico: nenhuma versão é apagada.",
           "dica": "Restaurar a versão que já está ativa só traz de volta o texto dela. Como ele é igual ao que já vale, o botão \"Publicar versão\" fica apagado.",
           "antes": [
             { "acao": "click", "alvo": { "role": "button", "nome": "Restaurar como nova versão", "exato": true } },

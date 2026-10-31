@@ -18,9 +18,15 @@
  *    nulo, que acenderia o aviso de "medição incompleta" no card;
  *  - os turnos na fila (`job_queue`, kind `inbound_turn`, já `done`: nenhum
  *    worker os pega);
- *  - duas passagens para uma pessoa hoje (`event_log` `ai.handoff_triggered`,
- *    já `done`), nas conversas da Mariana e do Roberto, as duas em que o
- *    cliente pediu gente na base — é o que o card "Passaram para uma pessoa" lê.
+ *  - duas passagens para uma pessoa (`event_log` `ai.handoff_triggered`, já
+ *    `done`) nas conversas da Mariana (que pediu para falar com uma pessoa) e
+ *    do Roberto (que já está com a equipe) — é o que o card "Passaram para uma
+ *    pessoa" e o gráfico "Quanto foi para uma pessoa (%)" leem. Cada passagem
+ *    fica um minuto depois da última mensagem do cliente NAQUELA conversa da
+ *    base: o gráfico divide as passagens de um dia pelas mensagens de clientes
+ *    do MESMO dia (UTC), e uma passagem num dia sem mensagem some do gráfico
+ *    enquanto o card a conta — o que acontecia quando a base tinha sido semeada
+ *    noutro dia que a semente.
  *
  * O ORÇAMENTO: a base não tem linha em `ai_budgets`. A semente cria a linha da
  * Clínica em "Só acompanhar", sem limite (é o ponto de partida das lições), ANTES
@@ -35,7 +41,7 @@
  * por isso nada passa por `demo()`.
  */
 import { costCents } from "../../lib/agent-engine/edge/llm/pricing";
-import { type Contexto, contatoId, conversaId, semErro } from "../semear-demonstracao";
+import { type Contexto, contatoId, conversaId, exigir, semErro } from "../semear-demonstracao";
 
 const chamadaId = (n: number) => `d1230000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const turnoId = (n: number) => `d1230100-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -234,13 +240,31 @@ export async function semear(c: Contexto) {
   for (let i = 0; i < chamadas.length; i += 400)
     semErro(await db.from("llm_calls").insert(chamadas.slice(i, i + 400)), "chamadas de IA do mês");
 
-  // ---------- as duas passagens para uma pessoa de hoje (as conversas em que o cliente pediu gente) ----------
+  // ---------- as duas passagens para uma pessoa (Mariana pediu gente; Roberto já está com a equipe) ----------
+  // Um minuto depois da última mensagem do cliente na conversa (nunca no futuro). Sem mensagem
+  // do cliente, cai no horário relativo de antes.
+  const passagemEm = async (conversa: number, minutosAtras: number) => {
+    const [ultima] = exigir(
+      await db
+        .from("messages")
+        .select("created_at")
+        .eq("organization_id", org)
+        .eq("conversation_id", conversaId(conversa))
+        .eq("direction", "inbound")
+        .order("created_at", { ascending: false })
+        .limit(1),
+      `última mensagem do cliente na conversa ${conversa}`,
+    ) as Array<{ created_at: string }>;
+    const em = ultima ? new Date(ultima.created_at).getTime() + MIN : agora - minutosAtras * MIN;
+    return new Date(Math.min(em, agora)).toISOString();
+  };
+  const passagens = [
+    { n: 1, conversa: 1, em: await passagemEm(1, 37), motivo: "requested_human" },
+    { n: 2, conversa: 2, em: await passagemEm(2, 11), motivo: "requested_human" },
+  ];
   semErro(
     await db.from("event_log").insert(
-      [
-        { n: 1, conversa: 1, minutos: 37, motivo: "requested_human" },
-        { n: 2, conversa: 2, minutos: 11, motivo: "requested_human" },
-      ].map((p) => ({
+      passagens.map((p) => ({
         id: passagemId(p.n),
         organization_id: org,
         event_type: "ai.handoff_triggered",
@@ -256,7 +280,7 @@ export async function semear(c: Contexto) {
         metadata: { source: "handoff-orchestrator" },
         // já consumido: nenhum worker reage a esta passagem semeada
         status: "done",
-        created_at: new Date(agora - p.minutos * MIN).toISOString(),
+        created_at: p.em,
       })),
     ),
     "passagens para uma pessoa",

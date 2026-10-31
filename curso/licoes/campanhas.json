@@ -24,7 +24,7 @@
           "titulo": "Onde fica a tela",
           "rota": "/app/crm",
           "texto": "Campanhas não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Campanhas\". O caminho completo é: CRM › Ver tudo em CRM › Campanhas.",
-          "dica": "Só gerente ou administrador consegue usar as campanhas. Se o cartão não aparecer, a empresa pode estar usando o \"Perfil de interface\" \"Simplificada\", que mostra menos áreas: quem administra muda isso em Configurações › Organização.",
+          "dica": "Só gerente ou administrador usa as campanhas. Para os outros papéis, o cartão aparece, mas a tela só mostra o aviso \"Erro ao carregar as campanhas\". Se o cartão nem aparecer, a interface pode estar enxuta, como no \"Perfil de interface\" \"Simplificada\". Quem administra muda isso em Configurações › Organização, para a empresa toda, ou em Configurações › Equipe, na coluna \"Interface\", para cada pessoa.",
           "destaques": [
             {
               "alvo": {
@@ -55,7 +55,7 @@
           "id": "p2",
           "titulo": "O que é uma campanha",
           "rota": "/app/campaigns",
-          "texto": "Uma campanha manda a mesma mensagem de WhatsApp para uma lista de contatos que você escolhe, como \"os pacientes do pilates\". Num número conectado pelo QR Code, as mensagens saem aos poucos, no máximo uma por minuto: é isso que protege o número de ser bloqueado pelo WhatsApp. Cada linha é uma campanha. Embaixo do nome aparece para quantos contatos ela fala e quantos ficaram de fora. À direita vem uma data, que muda com a situação: quando a campanha foi criada, quando começou ou quando terminou.",
+          "texto": "Uma campanha manda a mesma mensagem de WhatsApp para uma lista de contatos que você escolhe, como \"os pacientes do pilates\". Num número conectado pelo QR Code, as mensagens saem aos poucos, no máximo uma por minuto: é isso que protege o número de ser bloqueado pelo WhatsApp. Cada linha é uma campanha. Embaixo do nome aparece quantos contatos estão na lista e quantos ficaram de fora; se a lista ainda não foi montada, aparece \"lista ainda não preparada\". À direita vem uma data, que muda com a situação: quando a campanha foi criada, quando começou ou quando terminou.",
           "destaques": [
             {
               "alvo": {
@@ -220,8 +220,8 @@
         {
           "id": "p6",
           "titulo": "Até quando uma resposta conta",
-          "texto": "A tela \"Configuração de campanhas\" começa por \"Padrões desta organização\". O campo \"Contar como resposta até (horas depois do envio)\" diz por quanto tempo uma mensagem do contato conta como resposta à campanha. Ele vem com 72 horas, ou seja, três dias. O que chega depois disso é tratado como conversa nova. A mudança vale para as respostas que chegarem dali em diante, inclusive de campanhas que já foram enviadas. Para gravar, clique em \"Salvar padrões\".",
-          "dica": "Os campos de ritmo desta parte ficam guardados, mas por enquanto a tela \"Nova campanha\" não os preenche sozinha: ajuste o ritmo em cada campanha, na parte \"Ritmo desta campanha\".",
+          "texto": "A tela \"Configuração de campanhas\" começa por \"Padrões desta organização\". O campo \"Contar como resposta até (horas depois do envio)\" diz por quanto tempo uma mensagem do contato conta como resposta à campanha. Ele vem com 72 horas, ou seja, três dias. O que chega depois disso continua aparecendo na Inbox normalmente, mas não conta como resposta da campanha. A mudança vale para as respostas que chegarem dali em diante, inclusive de campanhas que já foram enviadas. Para gravar, clique em \"Salvar padrões\".",
+          "dica": "A tela diz que toda campanha nova nasce com os campos de ritmo desta parte, mas por enquanto não é assim: eles ficam guardados, e a tela \"Nova campanha\" começa com o ritmo em branco. Ajuste o ritmo em cada campanha, na parte \"Ritmo desta campanha\".",
           "antes": [
             {
               "acao": "click",
@@ -560,7 +560,7 @@
         {
           "id": "p6",
           "titulo": "Quem atende e o ritmo",
-          "texto": "Em \"Quem responder\" dá para escolher em que funil nasce o negócio de quem responder a esta campanha e qual agente de IA atende essa resposta. Em branco, vale o de sempre: o negócio nasce no funil do número e quem atende é o agente publicado nele. Em \"Ritmo desta campanha\", deixe em branco para usar o ritmo do número, que fica em Conexões › Proteção de envio. O que você puser aqui só pode deixar a campanha mais devagar. Com tudo pronto, clique em \"Salvar rascunho\".",
+          "texto": "Em \"Quem responder\" dá para escolher em que funil nasce o negócio de quem responder a esta campanha e qual agente de IA atende essa resposta. Isso só vale para conversas que nascem da campanha: quem já conversava com a clínica continua com quem o atendia. Em branco, vale o de sempre: o negócio nasce no funil do número e quem atende é o agente publicado nele. Em \"Ritmo desta campanha\", deixe em branco para usar o ritmo do número, que fica em Conexões › Proteção de envio. O que você puser aqui só pode deixar a campanha mais devagar. Com tudo pronto, clique em \"Salvar rascunho\".",
           "antes": [
             {
               "acao": "rolar",
@@ -750,7 +750,7 @@
         {
           "id": "p3",
           "titulo": "A lista pronta",
-          "texto": "Ao clicar em \"Preparar lista\", o sistema procura os contatos do público e confere, um por um, quem pode receber. A campanha passa a \"Pronta para iniciar\", e \"Na lista\" mostra quantos vão receber: aqui, 3. Nenhuma mensagem saiu ainda. Os botões também mudaram: agora aparecem \"Enviar teste\" e \"Iniciar envio\".",
+          "texto": "Ao clicar em \"Preparar lista\", o sistema procura os contatos do público e confere, um por um, quem pode receber. A campanha passa a \"Pronta para iniciar\", e \"Na lista\" mostra quantos vão receber. Nenhuma mensagem saiu ainda. Os botões também mudaram: agora aparecem \"Enviar teste\" e \"Iniciar envio\", e \"Editar\" sumiu.",
           "antes": [
             {
               "acao": "click",
@@ -822,14 +822,6 @@
           "destaques": [
             {
               "alvo": {
-                "texto": "Sem telefone no cadastro",
-                "exato": true
-              },
-              "rotulo": "Sem telefone",
-              "tipo": "caixa"
-            },
-            {
-              "alvo": {
                 "texto": "Pediu para não receber mensagens",
                 "exato": true
               },
@@ -842,6 +834,15 @@
                 "exato": true
               },
               "rotulo": "Lista de exclusão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Já está em outra campanha ainda não concluída",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Em outra campanha",
               "tipo": "caixa"
             },
             {
@@ -914,7 +915,7 @@
         {
           "id": "p6",
           "titulo": "Começar o envio",
-          "texto": "Quando estiver tudo certo, clique em \"Iniciar envio\". A tela pergunta antes quantas pessoas vão receber e avisa que o envio segue o ritmo do número e pode levar horas. Só ao clicar em \"Confirmar\" as mensagens começam a sair, e a campanha passa a \"Enviando\". \"Voltar\" desiste sem enviar nada.",
+          "texto": "Quando estiver tudo certo, clique em \"Iniciar envio\". A tela pede confirmação antes: mostra para quantas pessoas vai enviar e avisa que o envio segue o ritmo do número e pode levar horas. Só ao clicar em \"Confirmar\" a campanha passa a \"Enviando\" e as mensagens começam a sair. \"Voltar\" desiste sem enviar nada.",
           "antes": [
             {
               "acao": "click",
@@ -1010,7 +1011,7 @@
         {
           "id": "p2",
           "titulo": "Os números da campanha",
-          "texto": "Os quatro quadros resumem o envio. \"Na lista\": quantos vão receber. \"Enviadas\": quantas já saíram. \"Entregues\": quantas chegaram ao celular da pessoa. \"Responderam\": quantos responderam dentro do prazo definido em \"Configuração\" (72 horas, se ninguém mudou). Em \"Progresso\", a barra mostra quanto da lista já foi feito; embaixo aparecem quantas mensagens ainda não foram enviadas, quantas falharam e quantos pediram para parar. Enquanto a campanha está enviando, os números se atualizam sozinhos a cada 10 segundos.",
+          "texto": "Os quatro quadros resumem o envio. \"Na lista\": quantos entraram na lista para receber. \"Enviadas\": quantas já saíram. \"Entregues\": quantas chegaram ao celular da pessoa. \"Responderam\": quantos responderam dentro do prazo definido em \"Configuração\" (72 horas, se ninguém mudou). Em \"Progresso\", a barra mostra quanto da lista já foi feito; embaixo aparecem quantas mensagens ainda não foram enviadas, quantas falharam e quantos pediram para parar. Enquanto a campanha está enviando, os números se atualizam sozinhos a cada 10 segundos.",
           "antes": [
             {
               "acao": "click",
@@ -1057,7 +1058,7 @@
         {
           "id": "p3",
           "titulo": "Quem respondeu",
-          "texto": "Em \"Quem está na lista\", cada pessoa aparece com a situação dela: \"Na fila\" (ainda vai receber), \"Enviada\", \"Entregue\", \"Lida\", \"Respondeu\" ou o motivo de ter ficado de fora. O seletor ao lado do título filtra a lista. Aqui escolhemos \"Responderam\" e sobrou o Pedro. A resposta dele chega na Inbox, como qualquer mensagem.",
+          "texto": "Em \"Quem está na lista\", cada pessoa aparece com a situação dela: \"Na fila\" (ainda vai receber), \"Enviada\", \"Entregue\", \"Lida\", \"Respondeu\", \"Falhou\" ou o motivo de ter ficado de fora. O seletor ao lado do título filtra a lista. Aqui escolhemos \"Responderam\" e sobrou o Pedro. A resposta dele chega na Inbox, como qualquer mensagem.",
           "antes": [
             {
               "acao": "selecionar",
@@ -1137,7 +1138,7 @@
         {
           "id": "p5",
           "titulo": "Pausar e retomar",
-          "texto": "Para parar o envio por um tempo, clique em \"Pausar\", no alto. A campanha fica \"Pausada\" e ninguém mais recebe até alguém clicar em \"Retomar\". Uma mensagem que já estava saindo na hora da pausa ainda pode chegar. Para desistir de vez, use \"Cancelar campanha\": a tela pede confirmação, e depois quem ainda não recebeu não recebe mais e a campanha não volta a rodar.",
+          "texto": "Para parar o envio por um tempo, clique em \"Pausar\", no alto; aqui já clicamos. A campanha fica \"Pausada\" e ninguém mais recebe até alguém clicar em \"Retomar\". Uma mensagem que já estava saindo na hora da pausa ainda pode chegar. Para desistir de vez, use \"Cancelar campanha\": a tela pede confirmação, e depois quem ainda não recebeu não recebe mais e a campanha não volta a rodar.",
           "antes": [
             {
               "acao": "click",
@@ -1189,7 +1190,7 @@
           "id": "p6",
           "titulo": "Mandar de novo com Duplicar",
           "rota": "/app/campaigns",
-          "texto": "Uma campanha \"Concluída\" não envia de novo. Para repetir a ideia, abra a campanha e clique em \"Duplicar\". A cópia nasce como \"Rascunho\", com a mesma mensagem, o mesmo público e o mesmo ritmo, mas sem a lista e sem os números da campanha antiga.",
+          "texto": "Uma campanha \"Concluída\" não envia de novo. Para repetir a ideia, abra a campanha e clique em \"Duplicar\". A cópia nasce como \"Rascunho\", com o mesmo número, a mesma mensagem, o mesmo público e o mesmo ritmo. Não vão para a cópia a lista e os resultados da campanha antiga, nem o funil e o agente escolhidos em \"Quem responder\".",
           "antes": [
             {
               "acao": "click",

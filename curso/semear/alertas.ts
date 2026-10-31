@@ -27,11 +27,25 @@
  * Idempotente: apaga só os avisos com os ids daqui e recria. O gatilho
  * `trg_aviso_da_central_criado` anuncia cada aviso no event_log; com o worker
  * parado, nada vai ao celular de ninguém.
+ *
+ * Exporta `limpar`, que a base chama antes de QUALQUER aula: sem isso os quatro
+ * avisos abertos sobreviveriam ao reset (agent_inbox_items não tem FK para as
+ * conversas) e o sino mostraria "4" nas fotos de todo módulo seguinte, e o
+ * lembrete ficaria em 4 horas depois da última lição.
  */
 import { type Contexto, conversaId, ha, ontemAs, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 
 const avisoId = (n: number) => `d1190000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+/** Os seis avisos da semente (n = 1..6, um por linha de AVISOS). */
+const IDS_DOS_AVISOS = [1, 2, 3, 4, 5, 6].map(avisoId);
+
+/** O padrão do produto (migration 0766): ligado, a cada 24 horas, três avisos por espera. */
+const LEMBRETE_DE_FABRICA = {
+  lembrete_caso_ligado: true,
+  lembrete_caso_intervalo_horas: 24,
+  lembrete_caso_teto: 3,
+};
 
 type Aviso = {
   n: number;
@@ -43,6 +57,22 @@ type Aviso = {
   em: string;
   resolvido?: string;
 };
+
+/**
+ * Apaga só os avisos desta semente e devolve o lembrete de caso parado ao padrão.
+ * Sem `demo()` aqui: a base chama `limpar` antes de toda aula, também em espanhol.
+ */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
+  semErro(
+    await db.from("agent_inbox_items").delete().eq("organization_id", org).in("id", IDS_DOS_AVISOS),
+    "limpar avisos da Central",
+  );
+  semErro(
+    await db.from("organizations").update(LEMBRETE_DE_FABRICA).eq("id", org),
+    "lembrete de caso parado no padrão",
+  );
+}
 
 export async function semear(c: Contexto) {
   const { db, org, sessao } = c;
@@ -118,17 +148,11 @@ export async function semear(c: Contexto) {
     },
   ];
 
-  semErro(
-    await db
-      .from("agent_inbox_items")
-      .delete()
-      .eq("organization_id", org)
-      .in(
-        "id",
-        AVISOS.map((a) => avisoId(a.n)),
-      ),
-    "limpar avisos da Central",
-  );
+  if (AVISOS.some((a) => !IDS_DOS_AVISOS.includes(avisoId(a.n)))) {
+    throw new Error("alertas: aviso fora de IDS_DOS_AVISOS — o limpar não o alcançaria");
+  }
+  // apaga os próprios avisos e devolve o lembrete ao padrão antes de recriar
+  await limpar(c);
   semErro(
     await db.from("agent_inbox_items").insert(
       AVISOS.map((a) => ({
@@ -146,14 +170,5 @@ export async function semear(c: Contexto) {
       })),
     ),
     "avisos da Central",
-  );
-
-  // o padrão do produto (migration 0766): ligado, a cada 24 horas, três avisos por espera
-  semErro(
-    await db
-      .from("organizations")
-      .update({ lembrete_caso_ligado: true, lembrete_caso_intervalo_horas: 24, lembrete_caso_teto: 3 })
-      .eq("id", org),
-    "lembrete de caso parado no padrão",
   );
 }

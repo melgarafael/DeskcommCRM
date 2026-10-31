@@ -19,8 +19,11 @@
  *
  * As lições instalam `objecao-preco`, editam `preparo-primeira-consulta` e adotam a
  * versão nova de `agendamento` pela tela — cada uma grava versão nova com id
- * aleatório. Por isso a limpeza apaga, desta organização, os ponteiros e as versões
- * com esses nomes (ninguém mais semeia skill: a base não tem skill instalada).
+ * aleatório. Por isso `limpar` apaga, desta organização, os ponteiros e as versões
+ * com esses nomes (ninguém mais semeia skill: a base não tem skill instalada). A base
+ * chama `limpar` antes de QUALQUER aula: skill instalada que sobrasse daqui mudaria a
+ * foto de outro módulo (o seletor do nó "Skill" de Fluxos de atendimento, o painel de
+ * evolução da IA) e o índice de skills que a Bia recebe no prompt.
  * `skill_versions` é imutável para UPDATE, mas DELETE é permitido (o trigger só veta
  * UPDATE); nenhuma versão da organização aponta para outra da organização, então o
  * `on delete set null` de `forked_from_version_id` não toca linha nenhuma.
@@ -28,7 +31,7 @@
  * As linhas de PLATAFORMA (organization_id NULL) só são lidas, nunca escritas.
  */
 import { type Contexto, exigir, ha, semErro } from "../semear-demonstracao";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 
 const versaoId = (n: number) => `d1180000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const DIA = 24 * 60;
@@ -60,28 +63,42 @@ const CORPO_PREPARO = [
   "- Não dê orientação de saúde: isso é com o profissional, na consulta.",
 ];
 
-const PALAVRAS_PREPARO = [
-  "primeira consulta",
-  "primeira vez",
-  "o que levar",
-  "o que preciso levar",
-  "carteirinha",
-  "convênio",
-];
+/**
+ * Palavras-chave como UMA frase do catálogo de espanhol, separada por ", " depois de
+ * traduzida: uma entrada por palavra solta ("encaixe", "convênio"…) trocaria também o
+ * que OUTRA aula digita (a busca da Inbox do admin digita "encaixe").
+ */
+const PALAVRAS_PREPARO =
+  "primeira consulta, primeira vez, o que levar, o que preciso levar, carteirinha, convênio";
 
 /** Palavras-chave que a clínica acrescentou à sua cópia de `agendamento`. */
-const PALAVRAS_DA_CLINICA = ["avaliação", "encaixe"];
+const PALAVRAS_DA_CLINICA = "avaliação, encaixe";
+
+const lista = (frase: string) => demo(frase).split(", ");
 
 type Matcher = { any_keywords: string[]; probe_keywords?: string[]; any_tags?: string[] };
-type VersaoDePlataforma = { id: string; description: string; body: string; matcher: Matcher; created_at: string };
+type VersaoDePlataforma = {
+  id: string;
+  description: string;
+  body: string;
+  matcher: Matcher;
+  created_at: string;
+};
 
-export async function semear(c: Contexto) {
+/** Só as skills que este módulo semeia ou que as lições gravam pela tela, desta organização. */
+export async function limpar(c: Contexto) {
   const { db, org } = c;
-  const preparo = demo(PREPARO_PT);
-
-  // 1) Limpeza: só as skills que este módulo semeia ou que as lições gravam pela tela.
-  //    O nome em PT e o traduzido entram os dois, para a troca de idioma não deixar resto.
-  const NOMES = [...new Set([AGENDAMENTO, OBJECAO, PREPARO_PT, preparo])];
+  // O nome em PT e o traduzido entram os dois, sem `demo()`: a base chama `limpar` antes
+  // de toda aula, e um `demo()` sem tradução no catálogo lançaria e derrubaria a aula de
+  // outro módulo.
+  const NOMES = [
+    ...new Set([
+      AGENDAMENTO,
+      OBJECAO,
+      PREPARO_PT,
+      traducaoDaDemonstracao(PREPARO_PT) ?? PREPARO_PT,
+    ]),
+  ];
   semErro(
     await db.from("skill_pointers").delete().eq("organization_id", org).in("name", NOMES),
     "apagar ponteiros de skill da organização",
@@ -90,11 +107,24 @@ export async function semear(c: Contexto) {
     await db.from("skill_versions").delete().eq("organization_id", org).in("name", NOMES),
     "apagar versões de skill da organização",
   );
+}
+
+export async function semear(c: Contexto) {
+  const { db, org } = c;
+  const preparo = demo(PREPARO_PT);
+
+  // 1) Limpeza: a mesma que a base faz antes de qualquer aula.
+  await limpar(c);
 
   // 2) A versão de plataforma ATUAL de `agendamento` e uma ANTERIOR a ela (o baseline
   //    grava as três publicações do catálogo; só a última recebe o ponteiro).
   const ponteiro = exigir(
-    await db.from("skill_pointers").select("version_id").is("organization_id", null).eq("name", AGENDAMENTO).maybeSingle(),
+    await db
+      .from("skill_pointers")
+      .select("version_id")
+      .is("organization_id", null)
+      .eq("name", AGENDAMENTO)
+      .maybeSingle(),
     "ponteiro de plataforma de agendamento",
   ) as { version_id: string };
   const versoes = exigir(
@@ -114,13 +144,18 @@ export async function semear(c: Contexto) {
   }
   // A lição de instalar precisa de `objecao-preco` no catálogo: sem ela, falha aqui, alto.
   exigir(
-    await db.from("skill_pointers").select("name").is("organization_id", null).eq("name", OBJECAO).maybeSingle(),
+    await db
+      .from("skill_pointers")
+      .select("name")
+      .is("organization_id", null)
+      .eq("name", OBJECAO)
+      .maybeSingle(),
     "ponteiro de plataforma de objecao-preco",
   );
 
   // 3) `agendamento`: a cópia instalada (texto da versão antiga do catálogo) e a edição
   //    da clínica, que acrescentou palavras-chave. O ponteiro aponta para a edição.
-  const palavrasDaClinica = PALAVRAS_DA_CLINICA.map((p) => demo(p));
+  const palavrasDaClinica = lista(PALAVRAS_DA_CLINICA);
   const instalada = ha(60 * DIA);
   const editada = ha(15 * DIA);
   semErro(
@@ -142,7 +177,10 @@ export async function semear(c: Contexto) {
         name: AGENDAMENTO,
         description: antiga.description,
         body: antiga.body,
-        matcher: { ...antiga.matcher, any_keywords: [...antiga.matcher.any_keywords, ...palavrasDaClinica] },
+        matcher: {
+          ...antiga.matcher,
+          any_keywords: [...antiga.matcher.any_keywords, ...palavrasDaClinica],
+        },
         manifest: [],
         forked_from_version_id: antiga.id,
         created_at: editada,
@@ -156,7 +194,7 @@ export async function semear(c: Contexto) {
           "Orienta o paciente sobre como se preparar para a primeira consulta: o que levar, a que horas chegar e o que não precisa fazer.",
         ),
         body: CORPO_PREPARO.map((linha) => (linha === "" ? "" : demo(linha))).join("\n") + "\n",
-        matcher: { any_keywords: PALAVRAS_PREPARO.map((p) => demo(p)), any_tags: [ETIQUETA_DA_BASE] },
+        matcher: { any_keywords: lista(PALAVRAS_PREPARO), any_tags: [ETIQUETA_DA_BASE] },
         manifest: [],
         forked_from_version_id: null,
         created_at: ha(25 * DIA),

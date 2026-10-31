@@ -24,7 +24,7 @@
           "titulo": "Empresas mora em Ver tudo em CRM",
           "rota": "/app/crm",
           "texto": "Empresas é o cadastro das empresas com quem você faz negócio: o nome, o CNPJ, o endereço e as pessoas que decidem lá dentro. Na Clínica Bem Viver, são as empresas que contratam programas de saúde para os funcionários. Para chegar, abra \"Ver tudo em CRM\", no grupo \"CRM\" do menu lateral, e clique no cartão \"Empresas\", na parte \"O dia a dia da venda\". O caminho é CRM › Ver tudo em CRM › Empresas.",
-          "dica": "O cartão só aparece quando quem administra o servidor liga \"Empresas e pessoas (venda para empresas)\" em Admin › Recursos opcionais. Desligado, a tela some para todo mundo. Ligado, toda a equipe vê a lista, inclusive quem tem o papel \"Somente leitura\".",
+          "dica": "O cartão só aparece quando quem administra o servidor liga \"Empresas e pessoas (venda para empresas)\" em Admin › Recursos opcionais. Desligado, a tela some para todo mundo. Ligado, qualquer papel pode abrir a lista, inclusive \"Somente leitura\".",
           "antes": [],
           "destaques": [
             {
@@ -104,7 +104,8 @@
         {
           "id": "p4",
           "titulo": "Achar uma empresa pela busca",
-          "texto": "No campo \"Buscar por nome ou CNPJ\", digite um pedaço do nome fantasia, da razão social ou do CNPJ, com ou sem os pontos. A lista se filtra sozinha enquanto você digita, sem precisar apertar Enter. Aqui, \"Ribeiro\" achou o escritório de contabilidade. Para ver todas de novo, apague o que digitou.",
+          "texto": "No campo \"Buscar por nome ou CNPJ\", digite um pedaço do nome fantasia, da razão social ou do CNPJ. O CNPJ pode ir com a pontuação, como aparece na lista, ou só com os números. A lista se filtra sozinha enquanto você digita, sem precisar apertar Enter. Aqui, \"Ribeiro\" achou o escritório de contabilidade. Para ver todas de novo, apague o que digitou.",
+          "dica": "Quando a busca não acha nada, a lista mostra \"Nenhuma empresa ainda.\". Isso não quer dizer que o cadastro está vazio: só que nenhuma empresa bate com o que você digitou.",
           "antes": [
             { "acao": "fill", "alvo": { "placeholder": "Buscar por nome ou CNPJ" }, "valor": "Ribeiro" },
             { "acao": "esperar", "ms": 1500 },
@@ -189,13 +190,15 @@
         {
           "id": "p3",
           "titulo": "Consultar CNPJ preenche para você",
-          "texto": "Se você tem o CNPJ, digite-o e clique em \"Consultar CNPJ\", que só acende depois que há algo no campo. O número vai para a BrasilAPI, que devolve os dados públicos da empresa, e a janela preenche razão social, nome fantasia, endereço, e-mail e telefone. Nada é gravado nessa hora: confira os campos e só então clique em \"Criar\". Se esse CNPJ já estiver na sua lista de empresas, aparece um aviso, e o \"Criar\" é recusado se você insistir.",
-          "dica": "Ao criar uma empresa com CNPJ, o sistema também consulta a BrasilAPI sozinho, logo depois, para completar a situação, o porte e a atividade da empresa. Consultar CNPJ é só para gerente ou administrador, como o cadastro.",
-          "antes": [],
+          "texto": "Se você tem o CNPJ, digite-o no campo \"CNPJ\": o botão \"Consultar CNPJ\", apagado enquanto o campo está vazio, acende. Ao clicar nele, o número vai para a BrasilAPI, que devolve os dados públicos da empresa, e a janela preenche razão social, nome fantasia, endereço, e-mail e telefone. Nada é gravado nessa hora: confira os campos e só então clique em \"Criar\". Se a consulta não der certo, o motivo aparece em vermelho e você pode preencher à mão.",
+          "dica": "Se a consulta der certo e esse CNPJ já estiver na sua lista de empresas, aparece um aviso, e o \"Criar\" é recusado se você insistir. Ao criar uma empresa com CNPJ, o sistema consulta a BrasilAPI sozinho logo em seguida e, se der certo, grava os dados públicos por cima do que foi digitado, inclusive nome, endereço, e-mail e telefone. Consultar CNPJ é só para gerente ou administrador, como o cadastro.",
+          "antes": [
+            { "acao": "fill", "alvo": { "placeholder": "00.000.000/0000-00" }, "valor": "41.830.627/0001-57" }
+          ],
           "destaques": [
             {
               "alvo": { "placeholder": "00.000.000/0000-00" },
-              "rotulo": "Digite o CNPJ",
+              "rotulo": "CNPJ digitado",
               "tipo": "caixa"
             },
             {
@@ -208,8 +211,9 @@
         {
           "id": "p4",
           "titulo": "Cadastrar sem o CNPJ",
-          "texto": "Sem o CNPJ em mãos, dá para criar só com o nome e completar depois. Aqui a clínica cadastra a academia do bairro, que fechou um programa de ginástica para os funcionários: \"Nome fantasia\", e-mail, telefone, cidade e UF. O CNPJ fica em branco. Clique em \"Criar\".",
+          "texto": "Sem o CNPJ em mãos, deixe o campo \"CNPJ\" vazio: dá para criar só com o nome e completar depois. Aqui a clínica cadastra uma academia de ginástica que quer contratar o programa de saúde para os professores: \"Nome fantasia\", \"E-mail\", \"Telefone\", \"Cidade\" e \"UF\". Clique em \"Criar\".",
           "antes": [
+            { "acao": "fill", "alvo": { "placeholder": "00.000.000/0000-00" }, "valor": "" },
             { "acao": "fill", "alvo": { "css": "[role='dialog'] div:has(> label:text-is('Nome fantasia')) > input" }, "valor": "Academia Corpo em Movimento" },
             { "acao": "fill", "alvo": { "css": "[role='dialog'] div:has(> label:text-is('E-mail')) > input" }, "valor": "contato.corpoemmovimento@exemplo.com.br" },
             { "acao": "fill", "alvo": { "css": "[role='dialog'] div:has(> label:text-is('Telefone')) > input" }, "valor": "+55 11 98765-1206" },
@@ -238,7 +242,7 @@
         {
           "id": "p5",
           "titulo": "A empresa nova na lista",
-          "texto": "A janela fecha e a academia aparece no alto da lista, porque foi a última a mudar. A \"Razão social\" e o \"CNPJ\" ficam com um traço, e a \"Situação\" mostra \"pending\": sem CNPJ, não há o que consultar. Quando tiver o número, abra a ficha da empresa e use \"Editar empresa\" para completá-lo.",
+          "texto": "A janela fecha e a academia aparece no alto da lista, porque foi a última a mudar. A \"Razão social\" e o \"CNPJ\" ficam com um traço, e a \"Situação\" mostra \"pending\": sem CNPJ, não há o que consultar. Quando tiver o número, abra a ficha da empresa, use \"Editar empresa\" para completá-lo e depois \"Enriquecer CNPJ\" para buscar os dados públicos.",
           "antes": [
             { "acao": "click", "alvo": { "role": "button", "nome": "Criar", "exato": true } },
             { "acao": "aguardar", "alvo": { "role": "link", "nome": "Academia Corpo em Movimento", "exato": true } }
@@ -319,7 +323,7 @@
         {
           "id": "p3",
           "titulo": "Pessoas e telefones",
-          "texto": "\"Pessoas / decisores\" lista quem trabalha na empresa e fala com você, com o cargo ao lado. Clicar no nome abre a ficha da pessoa. \"Telefones\" mostra os números dessas pessoas, que também estão em Contatos; clicar no número abre o contato. Esta tela não liga uma pessoa à empresa: pelas telas do sistema, o vínculo nasce na importação de planilha, pelo cartão \"Importações\" de \"Ver tudo em CRM\".",
+          "texto": "\"Pessoas / decisores\" lista quem trabalha na empresa e fala com você, com o cargo ao lado. Clicar no nome abre a ficha da pessoa. \"Telefones\" mostra os números dessas pessoas, que também estão em Contatos; clicar no número abre o contato. Esta tela não liga uma pessoa à empresa: pelas telas do sistema, o vínculo nasce na importação de planilha, pelo cartão \"Importações\" de \"Ver tudo em CRM\". Agora, para corrigir o cadastro da empresa, clique em \"Editar empresa\".",
           "dica": "Importações é só para gerente ou administrador. Ali você manda uma planilha com empresa, pessoa, cargo e telefone, e o sistema liga tudo.",
           "antes": [],
           "destaques": [
@@ -332,6 +336,11 @@
               "alvo": { "css": "main div:has(> h2:text-is('Telefones'))" },
               "rotulo": "Telefones dessas pessoas",
               "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Editar empresa", "exato": true },
+              "rotulo": "Corrigir o cadastro",
+              "tipo": "seta"
             }
           ],
           "clicar": { "role": "button", "nome": "Editar empresa", "exato": true }
@@ -389,7 +398,7 @@
               "tipo": "seta"
             },
             {
-              "alvo": { "texto": "Enriquecimento", "exato": true },
+              "alvo": { "css": "main dt:text-is('Enriquecimento') + dd" },
               "rotulo": "Resultado da consulta",
               "tipo": "caixa"
             }
@@ -461,7 +470,7 @@
           "id": "p3",
           "titulo": "Exclusão recusada",
           "texto": "Como a Luciana está ligada ao escritório, aparece em vermelho o motivo: há pessoa vinculada a esta empresa, e é preciso remover o vínculo antes. Nada foi apagado. A trava existe para não perder quem decide na empresa e o cargo de cada um. Clique em \"Cancelar\" para fechar a janela.",
-          "dica": "Hoje nenhuma tela do sistema desfaz o vínculo entre uma pessoa e uma empresa. Por isso uma empresa com pessoas ligadas continua no cadastro.",
+          "dica": "Hoje nenhuma tela do sistema desfaz o vínculo entre uma pessoa e uma empresa. Por isso, uma empresa com pessoas ligadas não pode ser excluída pela tela.",
           "antes": [
             { "acao": "click", "alvo": { "role": "button", "nome": "Excluir", "exato": true, "dentro": { "role": "dialog" } } },
             { "acao": "aguardar", "alvo": { "role": "alert", "dentro": { "role": "dialog" } } }

@@ -79,7 +79,7 @@
         {
           "id": "p3",
           "titulo": "O que cada coluna conta",
-          "texto": "Cada linha da lista é um lote. \"Arquivo\" é o nome da planilha. Clicando nele você abre o lote. \"Status\" aparece em inglês, como o sistema grava: \"completed\" quer dizer que a importação terminou. \"Linhas\" é quantas linhas a planilha tinha, sem contar a primeira, a dos nomes das colunas. \"Sucesso\" é quantas entraram. \"Conflitos\" é quantas traziam um telefone que já é de outra pessoa. \"Falhas\" é quantas não puderam entrar. \"Data\" é quando a planilha foi importada.",
+          "texto": "Cada linha da lista é um lote. \"Arquivo\" é o nome da planilha. Clicando nele você abre o lote. \"Status\" aparece em inglês, como o sistema grava: \"completed\" quer dizer que a importação terminou. Enquanto ela ainda roda, aparece \"processing\". \"Linhas\" é quantas linhas com dados a planilha tinha, sem contar a primeira, a dos nomes das colunas. Linhas totalmente em branco são puladas e não entram na conta. \"Sucesso\" é quantas entraram. \"Conflitos\" é quantas traziam um telefone que já é de outra pessoa. \"Falhas\" é quantas não puderam entrar. \"Data\" é quando a planilha foi importada.",
           "antes": [],
           "destaques": [
             {
@@ -140,7 +140,7 @@
           "id": "p1",
           "titulo": "Como montar a planilha",
           "rota": "/app/imports",
-          "texto": "A planilha pode ser CSV ou Excel (.xlsx). A primeira linha precisa trazer o nome de cada coluna, porque é pelo nome que o sistema reconhece cada uma: \"Empresa\" (ou \"Razão social\" e \"Nome fantasia\"), \"CNPJ\", \"Nome\" (ou \"Pessoa\", \"Contato\", \"Decisor\"), \"Cargo\", \"Telefone\" (ou \"Celular\", \"WhatsApp\") e \"E-mail\". Maiúsculas e minúsculas não importam. Coluna com outro nome não é usada. Cada linha seguinte traz, em geral, uma pessoa e a empresa dela.",
+          "texto": "A planilha pode ser CSV ou Excel (.xlsx). A primeira linha precisa trazer o nome de cada coluna, porque é pelo nome que o sistema reconhece cada uma: \"Empresa\" (ou \"Razão social\" e \"Nome fantasia\"), \"CNPJ\", \"Nome\" (ou \"Pessoa\", \"Contato\", \"Decisor\"), \"Cargo\", \"Telefone\" (ou \"Celular\", \"WhatsApp\") e \"E-mail\". Maiúsculas e minúsculas não importam, mas o nome precisa ser um destes. Coluna com outro nome não é usada. Cada linha seguinte traz, em geral, uma pessoa e a empresa dela.",
           "dica": "A planilha pode ter até 2.000 linhas e 2 MB. Do Excel, só a primeira aba é lida. O formato antigo \".xls\" não é aceito: salve como \".xlsx\" ou \".csv\".",
           "antes": [],
           "destaques": [
@@ -184,8 +184,8 @@
         {
           "id": "p3",
           "titulo": "Importar e ler o resumo",
-          "texto": "Com o arquivo escolhido, o botão \"Importar\" deixa de ficar apagado. Clique nele. Enquanto o sistema lê a planilha, linha por linha, o botão mostra \"Importando…\". No fim, aparece embaixo do botão um resumo como \"Lote processado: 3 ok, 1 conflitos, 2 falhas.\", e o lote novo entra no alto da lista, como o \"empresas-parceiras-outubro.csv\" da foto.",
-          "dica": "Se o arquivo não servir, o mesmo lugar mostra o motivo, como \"Formato não suportado — envie .csv ou .xlsx.\" ou \"Preciso de cabeçalho e ao menos uma linha de dados.\", e nada é importado.",
+          "texto": "Com o arquivo escolhido, o botão \"Importar\" deixa de ficar apagado. Clique nele. A importação começa na hora, sem prévia nem pergunta de confirmação. Enquanto o sistema lê a planilha, linha por linha, o botão mostra \"Importando…\". No fim, aparece embaixo do botão um resumo como \"Lote processado: 3 ok, 1 conflitos, 2 falhas.\", e o lote novo entra no alto da lista, como o \"empresas-parceiras-outubro.csv\" da foto. Na foto o botão ainda está apagado só porque nenhum arquivo foi escolhido.",
+          "dica": "Confira a planilha antes de clicar: esta tela não tem botão para desfazer um lote, e o que ele cadastrou fica. Se o arquivo não servir, o mesmo lugar embaixo do botão mostra o motivo, como \"Formato não suportado — envie .csv ou .xlsx.\" ou \"Preciso de cabeçalho e ao menos uma linha de dados.\", e nada é importado.",
           "antes": [],
           "destaques": [
             {
@@ -216,8 +216,8 @@
           "id": "p4",
           "titulo": "Onde os dados aparecem",
           "rota": "/app/people",
-          "texto": "Para cada linha, o sistema cadastra a empresa, cadastra a pessoa ligada a ela como quem decide, com o cargo da planilha, e guarda o telefone como um contato dessa pessoa. Linhas com o mesmo CNPJ ficam na mesma empresa. Sem CNPJ, linhas com o mesmo nome de empresa na mesma planilha também. Se o CNPJ já estava cadastrado, a pessoa entra na empresa que já existe. Se o telefone já era de um contato, o sistema aproveita esse contato em vez de repetir o número. Se ele já for de outra pessoa, a linha vira conflito. Depois, as empresas aparecem em \"Empresas\", as pessoas em \"Pessoas\", como a Fernanda e o Rogério da foto, e os telefones em \"Contatos\". Nenhum negócio é criado no funil.",
-          "dica": "Quando o CNPJ é de uma empresa nova, o sistema busca depois, sozinho, os dados públicos dela na BrasilAPI, como a razão social e o endereço.",
+          "texto": "Para cada linha, o sistema cadastra a empresa, cadastra a pessoa ligada a ela como quem decide, com o cargo da planilha, e guarda o telefone como um contato dessa pessoa. Linhas com o mesmo CNPJ ficam na mesma empresa. Sem CNPJ, linhas com o mesmo nome de empresa na mesma planilha também. Se o CNPJ já estava cadastrado, a pessoa entra na empresa que já existe. Se o telefone já era de um contato sem pessoa ligada, o sistema aproveita esse contato e o liga à pessoa, em vez de repetir o número. Se ele já for de outra pessoa, a linha vira conflito. Depois, as empresas aparecem em \"Empresas\", as pessoas em \"Pessoas\" e os telefones em \"Contatos\". Na foto estão a Fernanda e o Rogério. Ele veio sem e-mail na planilha e por isso aparece com um traço. Nenhum negócio é criado no funil.",
+          "dica": "Quando o CNPJ é de uma empresa nova, o sistema consulta depois, sozinho, os dados públicos dela num serviço gratuito de consulta de CNPJ (a BrasilAPI), como a razão social, a situação na Receita e o endereço. Para isso o servidor precisa de acesso à internet. Empresa sem CNPJ não passa por essa consulta.",
           "antes": [],
           "destaques": [
             {
@@ -279,8 +279,8 @@
         {
           "id": "p2",
           "titulo": "Uma linha para cada linha da planilha",
-          "texto": "No alto ficam o nome do arquivo e o resumo: o status do lote e quantas linhas ficaram certas, quantas deram conflito e quantas falharam. A tabela tem uma linha para cada linha da planilha. \"#\" é o número da linha na planilha: a 2 é a primeira depois da linha dos nomes das colunas. \"Status\" diz o que aconteceu, em inglês: \"success\" (entrou), \"conflict\" (conflito) ou \"failed\" (falhou). \"Erro\" diz o motivo. As colunas \"Company\", \"Person\" e \"Contact\" mostram o começo do código interno da empresa, da pessoa e do contato que a linha cadastrou ou usou. Um traço quer dizer que a linha não chegou até ali.",
-          "dica": "Linhas com o mesmo código em \"Company\" estão na mesma empresa, como a 2 e a 3.",
+          "texto": "No alto ficam o nome do arquivo e o resumo: o status do lote e quantas linhas ficaram certas, quantas deram conflito e quantas falharam. A tabela tem uma linha para cada linha da planilha. \"#\" é o número da linha na planilha: a 2 é a primeira depois da linha dos nomes das colunas. \"Status\" diz o que aconteceu, em inglês: \"success\" (entrou), \"conflict\" (conflito) ou \"failed\" (falhou). \"Erro\" diz o motivo. As colunas \"Company\", \"Person\" e \"Contact\" mostram o começo do código interno da empresa, da pessoa e do contato que a linha cadastrou ou usou. Um traço quer dizer que a linha não tem aquilo: a linha 4 veio sem telefone, então não tem contato, e as linhas que falharam ficam sem os três.",
+          "dica": "Linhas com o mesmo código em \"Company\" estão na mesma empresa, como a 2 e a 3. Se a planilha tiver linhas totalmente em branco no meio, elas são puladas, e o número em \"#\" deixa de bater com o da planilha.",
           "antes": [
             {
               "acao": "click",
@@ -337,7 +337,7 @@
         {
           "id": "p3",
           "titulo": "As linhas que falharam",
-          "texto": "Os motivos de falha mais comuns são três, e uma linha que falha por um deles não cadastra nada: nem empresa, nem pessoa, nem contato. \"CNPJ inválido.\": o número não fecha a conta dos dígitos do CNPJ, quase sempre por erro de digitação ou dígito faltando. \"Telefone inválido.\": falta o DDD ou faltam dígitos; escreva com DDD, como (11) 98765-4321. \"Linha vazia — sem empresa, pessoa ou telefone.\": a linha não trazia nada que servisse. Corrija essas linhas na planilha e importe uma planilha só com elas. Para ver só os conflitos, marque \"Só conflitos\", logo acima da tabela.",
+          "texto": "Uma linha falha, em geral, por um destes três motivos, e aí não cadastra nada: nem empresa, nem pessoa, nem contato. \"CNPJ inválido.\": o número não tem 14 dígitos ou os dois últimos, que conferem os outros, não batem. Em geral é erro de digitação. O CNPJ novo, com letras, ainda não é aceito e também cai aqui. \"Telefone inválido.\": falta o DDD ou faltam dígitos; escreva com DDD, como (11) 98765-4321. \"Linha vazia — sem empresa, pessoa ou telefone.\": a linha não trazia nada que servisse. Corrija essas linhas na planilha e importe uma planilha só com elas. Para ver só os conflitos, marque \"Só conflitos\", logo acima da tabela.",
           "dica": "Não importe a planilha inteira de novo. Cada importação cadastra as pessoas outra vez, e as empresas sem CNPJ também. E os telefones que já têm dono viram conflito.",
           "antes": [],
           "destaques": [
@@ -375,7 +375,7 @@
         {
           "id": "p4",
           "titulo": "Só os conflitos",
-          "texto": "Com \"Só conflitos\" marcado, a tabela mostra só as linhas com conflito. Conflito quer dizer que o telefone da linha já é de outra pessoa cadastrada. Aqui, o número da linha 5 já era do Sérgio Tavares, que entrou com a planilha \"decisores-feira-de-saude.xlsx\". A importação não troca o dono de um telefone. A empresa e a pessoa da linha foram cadastradas mesmo assim, mas a pessoa ficou sem esse número, que continua com o Sérgio. Confira com o cliente qual é o número certo.",
+          "texto": "Com \"Só conflitos\" marcado, a tabela mostra só as linhas com conflito. Conflito quer dizer que o telefone da linha já é de outra pessoa cadastrada. Aqui, o número da linha 5 já era do Sérgio Tavares, que entrou com a planilha \"decisores-feira-de-saude.xlsx\". Por isso \"Contact\" mostra o código do contato do Sérgio, e não um contato novo. A importação não troca o dono de um telefone. A empresa e a pessoa da linha foram cadastradas mesmo assim, mas a pessoa ficou sem esse número, que continua com o Sérgio. Nenhuma tela passa o número para outra pessoa: o conflito fica registrado aqui para você conferir com a empresa qual é o número certo.",
           "antes": [
             {
               "acao": "click",

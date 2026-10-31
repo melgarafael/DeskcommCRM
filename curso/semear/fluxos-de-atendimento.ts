@@ -22,11 +22,19 @@
  * por responder. As chaves são só as deste roteiro; as outras chaves da ficha
  * ficam como estão (mescla, nunca substitui).
  *
- * Idempotente: apaga os roteiros com os ids daqui e os que as lições criam pela
- * tela (pelo nome); versões e execuções vão em cascata.
+ * Idempotente: `limpar` apaga os roteiros com os ids daqui, os que as lições
+ * criam pela tela e as cópias de "Duplicar" (pelo nome, nos dois idiomas);
+ * versões e execuções vão em cascata. A base chama `limpar` antes de QUALQUER
+ * aula, então nenhum roteiro desta semente sobra para outro módulo, e `semear`
+ * recria. A ficha da Juliana e a chave do módulo não precisam de limpeza: a base
+ * recria os contatos e devolve `platform_config` ao estado de fábrica.
+ *
+ * O desenho do roteiro semeado põe Início, Nome, CPF e Convênio na coluna da
+ * esquerda: com o painel de uma caixa aberto, o construtor esconde a coluna da
+ * direita, e a aula clica no CPF e no Convênio com o painel aberto.
  */
 import { type Contexto, contatoId, conversaId, exigir, ha, semErro } from "../semear-demonstracao";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 
 const fluxoId = (n: number) => `d1120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const execucaoId = (n: number) => `d1120100-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -108,6 +116,19 @@ function grafo(perguntas: Pergunta[], fim: Fim, ajustes: Ajustes) {
 const CONVENIOS = () => [demo("Particular"), "Unimed", "Bradesco Saúde", "SulAmérica", "Amil"];
 const ESPECIALIDADES = ["Fisioterapia", "Nutrição", "Psicologia", "Clínica geral"];
 
+/** O nome em PT e, se o catálogo já tiver, em ES — sem `demo()`, que lança quando falta tradução. */
+const nosDoisIdiomas = (nomes: readonly string[]) => nomes.flatMap((n) => [n, traducaoDaDemonstracao(n) ?? n]);
+
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
+  semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).in("id", [1, 2, 3].map(fluxoId)), "limpar roteiros");
+  const criadas = nosDoisIdiomas(CRIADAS_NAS_LICOES);
+  semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).in("name", criadas), "limpar roteiros das lições");
+  for (const nome of new Set([...criadas, ...nosDoisIdiomas(SEMEADOS)])) {
+    semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).like("name", `${nome} (%`), "limpar cópias");
+  }
+}
+
 export async function semear(c: Contexto) {
   const { db, org, pessoa } = c;
 
@@ -121,12 +142,7 @@ export async function semear(c: Contexto) {
   );
 
   // ---------- limpa o que é deste módulo ----------
-  semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).in("id", [1, 2, 3].map(fluxoId)), "limpar roteiros");
-  const criadas = CRIADAS_NAS_LICOES.map(demo);
-  semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).in("name", criadas), "limpar roteiros das lições");
-  for (const nome of [...criadas, ...SEMEADOS.map(demo)]) {
-    semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).like("name", `${nome} (%`), "limpar cópias");
-  }
+  await limpar(c);
 
   // ---------- os três roteiros ----------
   const convenios = CONVENIOS();
@@ -135,8 +151,8 @@ export async function semear(c: Contexto) {
     [
       { id: "nome", rotulo: demo("Nome completo"), key: "nome_completo", label: demo("Nome completo"), type: "text", required: true, question: demo("Para fazer o seu cadastro, qual é o seu nome completo?") },
       { id: "cpf", rotulo: "CPF", key: "cpf", label: "CPF", type: "cpf", required: true, permite_correcao: false, question: demo("Pode me informar o seu CPF? Ele vai na ficha da consulta.") },
-      { id: "nascimento", rotulo: demo("Data de nascimento"), key: "data_nascimento", label: demo("Data de nascimento"), type: "date", required: true },
       { id: "convenio", rotulo: demo("Convênio"), key: "convenio", label: demo("Convênio"), type: "select", required: true, options: convenios, question: demo("A consulta vai ser pelo convênio ou particular?") },
+      { id: "nascimento", rotulo: demo("Data de nascimento"), key: "data_nascimento", label: demo("Data de nascimento"), type: "date", required: true },
       { id: "especialidade", rotulo: demo("Especialidade"), key: "especialidade", label: demo("Especialidade desejada"), type: "select", required: true, options: especialidades },
     ],
     {
@@ -211,7 +227,7 @@ export async function semear(c: Contexto) {
     await db.from("followup_enrollments").insert({
       id: execucaoId(1), organization_id: org, pointer_id: fluxoId(1), version_id: versaoDe[1], agent_id: c.agenteId,
       contact_id: contatoId(JULIANA), conversation_id: conversaId(JULIANA), current_node_id: "cpf", status: "coletando",
-      next_eval_at: null, steps_taken: 2, started_at: ha(95), updated_at: ha(90),
+      next_eval_at: null, steps_taken: 2, started_at: ha(92), updated_at: ha(90),
     }),
     "roteiro da Juliana",
   );

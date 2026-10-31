@@ -46,7 +46,7 @@
         {
           "id": "p2",
           "titulo": "A lista de propostas",
-          "texto": "Cada linha é uma proposta. \"Número\" é o número dela, \"Título\" é o nome que o paciente lê, \"Status\" diz em que pé ela está e \"Valor\" é a soma dos itens que já têm preço. Para abrir uma proposta, clique no título. Abaixo das que esperam revisão, as mais novas vêm primeiro.",
+          "texto": "Cada linha é uma proposta. \"Número\" é o número dela, \"Título\" é o nome que o paciente lê, \"Status\" diz em que pé ela está e \"Valor\" é a soma dos itens que já têm preço, com os descontos. Para abrir uma proposta, clique no título. Abaixo das que esperam revisão, as mais novas vêm primeiro.",
           "antes": [
             {
               "acao": "click",
@@ -133,7 +133,7 @@
           "id": "p4",
           "titulo": "Número e situação",
           "texto": "O número só nasce quando a proposta é enviada. Antes disso, a coluna \"Número\" mostra \"Rascunho\". Depois, os quatro primeiros dígitos são a sequência do ano, vem o ano e, no fim, a versão: \"v1\" é a primeira. Na coluna \"Status\", \"Enviada\" espera a resposta do paciente, e \"Aceita\" e \"Recusada\" são as respostas que você registra.",
-          "dica": "Outras situações que podem aparecer: \"Vencida\" (a validade passou sem resposta), \"Cancelada\" (o rascunho foi descartado) e \"Substituída\" (uma versão nova foi enviada no lugar desta).",
+          "dica": "Outras situações que podem aparecer: \"Enviando\" (a proposta está na fila do WhatsApp e sai assim que o número conectar), \"Vencida\" (a validade passou sem resposta), \"Cancelada\" (o rascunho foi descartado) e \"Substituída\" (uma versão nova foi enviada no lugar desta).",
           "antes": [],
           "destaques": [
             {
@@ -257,7 +257,8 @@
           "clicar": {
             "role": "combobox",
             "nome": "Negócio (Lead)"
-          }
+          },
+          "dica": "Atalho: na ficha do negócio, aberta pelo card no funil, a seção \"Propostas\" tem o link \"Nova proposta\", que abre esta tela com o negócio já escolhido. Esse link aparece só para gerente ou administrador."
         },
         {
           "id": "p3",
@@ -375,7 +376,7 @@
         {
           "id": "p6",
           "titulo": "O rascunho no editor",
-          "texto": "A proposta foi gravada como rascunho, ainda sem número, e o editor abriu. O próximo passo é escolher o modelo, que é o texto pronto da proposta, na lista \"Ou escolha outro modelo\". Depois vêm os itens e os preços. A próxima aula mostra esse caminho completo num rascunho feito pela IA.",
+          "texto": "A proposta foi gravada como rascunho, ainda sem número, e o editor abriu. O próximo passo é escolher o modelo, que é o texto pronto da proposta, na lista \"Ou escolha outro modelo\". Depois vêm os itens e os preços, com \"+ Item à mão\". \"Condições\", \"Válido até\", \"Prazo (dias úteis)\" e \"Forma de pagamento\" podem ser mudados até o envio, e a mudança só fica gravada quando você clica em \"Salvar\", no fim da tela. A próxima aula mostra esse caminho completo num rascunho feito pela IA.",
           "antes": [
             {
               "acao": "click",
@@ -512,7 +513,7 @@
         {
           "id": "p3",
           "titulo": "O documento e o que falta",
-          "texto": "Com o modelo confirmado, aparece o documento: as partes do texto, já com o nome da paciente e o que a IA anotou da conversa. O quadro amarelo \"Não é possível enviar\" diz quantas coisas ainda faltam e quais são. Cada parte também pode ser reescrita na própria caixa, com \"Salvar seção\".",
+          "texto": "Com o modelo confirmado, aparece o documento: as partes do texto, já com o nome da paciente e o que a IA anotou da conversa. O quadro amarelo \"Não é possível enviar\" diz quantos campos do documento ainda faltam e quais são. Cada parte também pode ser reescrita na própria caixa, com \"Salvar seção\".",
           "antes": [
             {
               "acao": "click",
@@ -601,7 +602,7 @@
         {
           "id": "p5",
           "titulo": "Documento completo",
-          "texto": "O quadro amarelo sumiu e o texto entrou na parte \"O que está incluído\" do documento: agora nada falta nele. Para mudar uma frase de qualquer parte, edite a caixa dela e clique em \"Salvar seção\", logo abaixo.",
+          "texto": "O quadro amarelo sumiu e o texto entrou na parte \"O que está incluído\" do documento. Atenção: esse quadro só confere o texto do documento. O item sem preço, mais abaixo, ainda impede o envio, e é o próximo passo.",
           "antes": [
             {
               "acao": "click",
@@ -630,7 +631,7 @@
           "id": "p6",
           "titulo": "Dar preço ao que está a definir",
           "texto": "Agora os itens. O \"Plano alimentar personalizado\" está \"A definir\": a IA deixou esse item sem preço. Digite o valor em \"Preço unit.\", aqui 150 reais, e clique em \"Salvar\". O subtotal e o \"Total\" mudam na hora, mas só ficam gravados depois de salvar.",
-          "dica": "Para incluir itens, use \"+ Item à mão\" ou \"Buscar produto no catálogo…\". Um item do catálogo vem com o preço cadastrado em Produtos, e esse preço não se muda aqui.",
+          "dica": "Para incluir itens, use \"+ Item à mão\" ou \"Buscar produto no catálogo…\". Um item do catálogo vem com o preço cadastrado em Produtos, e esse preço não se muda aqui. Quando a IA está disponível, o quadro \"Assistente\" aceita pedidos com as suas palavras, como \"dá 10% de desconto na consulta\": \"Gerar\" mostra o que mudaria, e nada muda antes de você clicar em \"Aplicar\".",
           "antes": [
             {
               "acao": "fill",
@@ -679,8 +680,8 @@
         {
           "id": "p7",
           "titulo": "Pronta para enviar",
-          "texto": "\"Ver como o cliente recebe\" abre numa aba nova o PDF da proposta, sem enviar nada. \"Enviar ao cliente\" dá o número à proposta e manda o PDF na conversa de WhatsApp do paciente. O envio é recusado se faltar modelo, preço ou alguma parte do documento. \"Descartar rascunho\" pergunta antes e muda a proposta para \"Cancelada\". Neste curso, nada é enviado.",
-          "dica": "Só gerente ou administrador envia ou descarta. Ao enviar, o valor do negócio passa a ser o total da proposta.",
+          "texto": "\"Ver como o cliente recebe\" abre numa aba nova o PDF da proposta, sem enviar nada. \"Enviar ao cliente\" dá o número à proposta e manda o PDF na conversa de WhatsApp do paciente. O envio é recusado se a proposta não tiver itens, ou se faltar preço, modelo ou alguma parte do documento, e também fora do horário de envio configurado para o número de WhatsApp. \"Descartar rascunho\" pergunta antes e muda a proposta para \"Cancelada\". Neste curso, nada é enviado.",
+          "dica": "Só gerente ou administrador envia ou descarta. Se houver mudança não salva, \"Enviar ao cliente\" salva antes de enviar. Ao enviar, o valor do negócio passa a ser o total da proposta.",
           "antes": [
             {
               "acao": "click",
@@ -744,7 +745,7 @@
         {
           "id": "p1",
           "titulo": "Abrir a proposta enviada",
-          "texto": "A Fernanda respondeu no WhatsApp que aceita o plano alimentar. A resposta dela não muda a proposta sozinha: é você quem registra. Clique no título da proposta que está \"Enviada\".",
+          "texto": "Digamos que a Fernanda respondeu no WhatsApp que aceita o plano alimentar. A resposta dela não muda a proposta sozinha: é você quem registra. Clique no título da proposta que está \"Enviada\".",
           "rota": "/app/proposals",
           "antes": [],
           "destaques": [
@@ -781,8 +782,8 @@
         {
           "id": "p2",
           "titulo": "As três ações da proposta enviada",
-          "texto": "Uma proposta enviada não se edita mais: os campos ficam cinza. No fim da tela há três ações. \"Marcar como aceita\" e \"Marcar como recusada\" registram a resposta; a recusa abre uma janelinha do navegador para você anotar o motivo, e fica registrada mesmo se você fechar a janelinha sem escrever. \"Revisar esta proposta\" cria uma nova versão em rascunho, com o mesmo número e tudo copiado, para mudar preço ou itens.",
-          "dica": "A nova versão é com gerente ou administrador, e só sai se o negócio não tiver outro rascunho aberto. A versão anterior continua \"Enviada\" até a nova ser enviada; aí ela vira \"Substituída\".",
+          "texto": "Uma proposta enviada não se edita mais: os campos ficam cinza. No fim da tela há três ações. \"Marcar como aceita\" e \"Marcar como recusada\" registram a resposta do paciente. A recusa abre uma janelinha do navegador para você anotar o motivo, se quiser. Cuidado: \"Cancelar\" nessa janelinha não desiste, e a recusa fica registrada do mesmo jeito, só que sem motivo. \"Revisar esta proposta\" cria uma nova versão em rascunho, com o mesmo número, copiando título, condições, validade, itens e documento, para você mudar preço ou itens.",
+          "dica": "Aceita e recusada podem ser marcadas a partir do papel \"Atendente\". A nova versão é com gerente ou administrador, e só sai se o negócio não tiver outro rascunho aberto. A versão anterior continua \"Enviada\" até a nova ser enviada; aí ela vira \"Substituída\".",
           "antes": [
             {
               "acao": "click",
@@ -869,7 +870,7 @@
         {
           "id": "p4",
           "titulo": "Aceita na lista",
-          "texto": "De volta à lista, a proposta aparece como \"Aceita\". Se a validade de uma proposta enviada passar sem resposta, uma rotina diária do sistema a muda para \"Vencida\" e avisa a equipe.",
+          "texto": "De volta à lista, a proposta aparece como \"Aceita\". Se a validade de uma proposta enviada passar sem resposta, uma rotina diária do sistema a muda para \"Vencida\" e abre um aviso em \"Alertas\".",
           "rota": "/app/proposals",
           "antes": [],
           "destaques": [

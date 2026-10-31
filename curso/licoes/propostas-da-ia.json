@@ -2,7 +2,7 @@
   "id": "propostas-da-ia",
   "titulo": "Propostas",
   "tela": "/app/ai/proposals",
-  "resumo": "Os próximos passos que a IA sugere para cada negócio, como \"enviar o lembrete da consulta\", esperando alguém da equipe aprovar ou ignorar. Não são propostas comerciais nem orçamentos para o cliente.",
+  "resumo": "Os próximos passos que a IA sugere para os negócios em aberto, como \"enviar o lembrete da consulta\", esperando alguém da equipe aprovar ou ignorar. Não são propostas comerciais nem orçamentos para o cliente.",
   "licoes": [
     {
       "id": "propostas-da-ia-conhecendo-a-tela",
@@ -23,8 +23,8 @@
           "id": "p1",
           "titulo": "Propostas fica no hub de IA",
           "rota": "/app/ai",
-          "texto": "A tela Propostas não tem atalho próprio no menu lateral. No grupo \"Agente de IA\", clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" fica o cartão \"Propostas\". O caminho é: Agente de IA › Ver tudo em IA › Propostas. É ali que ficam os próximos passos que a IA, que atende os seus clientes, sugere para cada negócio, esperando uma decisão da equipe.",
-          "dica": "A frase do cartão fala em \"melhorias que a IA sugere para si mesma\", mas esta tela mostra os próximos passos dos negócios. As melhorias do próprio agente ficam em outro lugar: em \"Agentes\", abra o agente e vá à aba \"Propostas\". E as propostas comerciais, os orçamentos que você manda ao cliente, são outra tela, em \"Ver tudo em CRM\", que só aparece quando o recurso \"Proposta comercial da empresa\" está ligado.",
+          "texto": "A tela Propostas não tem atalho próprio no menu lateral. No grupo \"Agente de IA\", clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" fica o cartão \"Propostas\". O caminho é: Agente de IA › Ver tudo em IA › Propostas. É ali que ficam os próximos passos que a IA, que atende os seus clientes, sugere para os negócios em aberto, esperando uma decisão da equipe.",
+          "dica": "Atenção: a frase do cartão fala em \"melhorias que a IA sugere para si mesma\", mas esta tela mostra os próximos passos dos negócios. As melhorias do próprio agente ficam em \"Agentes\": abra o agente e vá à aba \"Propostas\". E os orçamentos que você manda ao cliente são outra tela, também chamada \"Propostas\", em \"Ver tudo em CRM\", que só aparece com as propostas comerciais ligadas.",
           "destaques": [
             {
               "alvo": {
@@ -56,6 +56,7 @@
           "titulo": "O que é uma sugestão de próximo passo",
           "rota": "/app/ai/proposals",
           "texto": "Enquanto conversa com um cliente, a IA pode anotar qual deveria ser o próximo passo daquele atendimento, como \"enviar o lembrete da fisioterapia\". Essa anotação é uma sugestão e espera alguém da equipe decidir. Aqui você vê juntas as sugestões dos negócios abertos, sem abrir o funil cartão por cartão. A aba \"Aguardando decisão\" mostra as que esperam alguém, e o número entre parênteses conta quantas são. A aba \"Já decididas\" guarda as que alguém já aprovou ou ignorou.",
+          "dica": "Quando nada espera decisão, a aba mostra \"Nenhuma proposta esperando você\". É o que você vê numa instalação nova, antes de a IA atender os primeiros clientes.",
           "destaques": [
             {
               "alvo": {
@@ -158,7 +159,6 @@
         {
           "id": "p5",
           "titulo": "O histórico em Já decididas",
-          "texto": "A aba \"Já decididas\" mostra as últimas 50 decisões, da mais recente para a mais antiga. Cada linha diz se a sugestão foi \"Aprovada\" ou \"Ignorada\", de qual negócio era, quem decidiu e quando. Embaixo vem o texto que a IA tinha sugerido. Ignorar também ganha a sua etiqueta, como aprovar: recusar também é uma decisão, e fica registrada.",
           "antes": [
             {
               "acao": "click",
@@ -176,6 +176,7 @@
               }
             }
           ],
+          "texto": "A aba \"Já decididas\" mostra as últimas 50 decisões, da mais recente para a mais antiga. Cada linha diz se a sugestão foi \"Aprovada\" ou \"Ignorada\", de qual negócio era, quem decidiu e quando. Embaixo vem o texto que a IA tinha sugerido. Ignorar também ganha a sua etiqueta, como aprovar: recusar também é uma decisão, e fica registrada.",
           "destaques": [
             {
               "alvo": {
@@ -252,8 +253,6 @@
         {
           "id": "p2",
           "titulo": "A sugestão saiu da lista",
-          "texto": "A sugestão aprovada saiu da aba, e o número entre parênteses diminuiu. Ela também some do cartão do negócio no funil. Aprovar não mandou nada ao cliente: ficou gravado que a equipe concorda com esse passo. Quando a IA voltar a atender esse cliente, ela recebe essa decisão junto com o resto do atendimento.",
-          "dica": "Se o passo depende de alguém da equipe, como uma ligação, crie uma tarefa em \"Tarefas\" para não esquecer.",
           "antes": [
             {
               "acao": "click",
@@ -272,6 +271,8 @@
               }
             }
           ],
+          "texto": "A sugestão aprovada saiu da aba, e o número entre parênteses diminuiu. Ela também some do cartão do negócio no funil. Aprovar não mandou nada ao cliente: ficou gravado que a equipe concorda com esse passo. Quando a IA voltar a atender esse cliente, ela recebe essa decisão junto com o resto do atendimento.",
+          "dica": "Aprovar não faz o passo acontecer sozinho. Se ele depende de alguém da equipe, como uma ligação, crie uma tarefa em \"Tarefas\" para não esquecer.",
           "destaques": [
             {
               "alvo": {
@@ -301,7 +302,6 @@
         {
           "id": "p3",
           "titulo": "Ignorar também é uma decisão",
-          "texto": "A IA sugeriu oferecer 20% de desconto à Patrícia. Se a clínica não dá esse desconto, clique em \"Ignorar\". A sugestão sai da lista do mesmo jeito, e a recusa fica gravada. Quando a IA voltar a atender a Patrícia, ela fica sabendo que a equipe recusou essa sugestão.",
           "antes": [
             {
               "acao": "click",
@@ -320,6 +320,7 @@
               }
             }
           ],
+          "texto": "A IA sugeriu oferecer 20% de desconto à Patrícia. Se a clínica não dá esse desconto, clique em \"Ignorar\". A sugestão sai da lista do mesmo jeito, e a recusa fica gravada. Quando a IA voltar a atender a Patrícia, ela fica sabendo que a equipe recusou essa sugestão.",
           "destaques": [
             {
               "alvo": {
@@ -349,8 +350,6 @@
         {
           "id": "p4",
           "titulo": "As duas decisões no histórico",
-          "texto": "Em \"Já decididas\", as duas decisões que você acabou de tomar aparecem no topo: \"Ignorada\" para o pilates da Patrícia e \"Aprovada\" para a fisioterapia do Henrique, com o seu nome e a hora. A decisão também fica registrada na linha do tempo do negócio.",
-          "dica": "Não existe botão para desfazer uma decisão. Por isso vale ler com calma antes de clicar.",
           "antes": [
             {
               "acao": "click",
@@ -367,6 +366,8 @@
               }
             }
           ],
+          "texto": "Em \"Já decididas\", as duas decisões que você acabou de tomar aparecem no topo: \"Ignorada\" para o pilates da Patrícia e \"Aprovada\" para a fisioterapia do Henrique, com o seu nome e quando. A decisão também fica registrada na linha do tempo do negócio.",
+          "dica": "Não existe botão para desfazer uma decisão. Por isso vale ler com calma antes de clicar.",
           "destaques": [
             {
               "alvo": {
@@ -390,7 +391,7 @@
                   "css": "li:has-text('Fisioterapia do joelho')"
                 }
               },
-              "rotulo": "Seu nome e a hora",
+              "rotulo": "Seu nome e quando",
               "tipo": "seta"
             }
           ]
@@ -430,7 +431,7 @@
               }
             }
           ],
-          "texto": "A mesma sugestão também aparece no cartão do negócio, no quadro do funil. Abra \"Funis\" e o funil \"Pacientes\". No cartão \"Fisioterapia do joelho\", a linha que começa com \"Propõe:\" é a sugestão da IA, com os botões \"Aprovar\" e \"Ignorar\" ao lado. Cartões com sugestão esperando também ganham uma faixa colorida na borda esquerda. O texto pode aparecer cortado no cartão; a tela Propostas mostra o texto inteiro.",
+          "texto": "A mesma sugestão também aparece no cartão do negócio, no quadro do funil. Abra \"Funis\" e o funil \"Pacientes\". No cartão \"Fisioterapia do joelho\", a linha que começa com \"Propõe:\" é a sugestão da IA, com os botões \"Aprovar\" e \"Ignorar\" ao lado. Cartões com sugestão esperando também ganham uma faixa fina na borda esquerda, na cor principal do sistema. O texto pode aparecer cortado no cartão; a tela Propostas mostra o texto inteiro.",
           "destaques": [
             {
               "alvo": {
@@ -460,7 +461,6 @@
         {
           "id": "p2",
           "titulo": "Decidida no cartão",
-          "texto": "Depois de clicar em \"Aprovar\" no cartão, a linha \"Propõe:\" e os botões somem. O cartão pode mudar de posição dentro da coluna, mas o negócio continua na mesma etapa: aprovar não muda a etapa do negócio. A decisão é a mesma da tela Propostas e fica gravada com o seu nome e a hora.",
           "antes": [
             {
               "acao": "click",
@@ -475,6 +475,7 @@
               "ms": 2000
             }
           ],
+          "texto": "Depois de clicar em \"Aprovar\" no cartão, a linha \"Propõe:\" e os botões somem. O negócio continua na mesma coluna: aprovar não muda a etapa. A decisão é a mesma da tela Propostas e fica gravada com o seu nome e a hora.",
           "destaques": [
             {
               "alvo": {
@@ -508,7 +509,7 @@
             }
           ],
           "texto": "De volta à tela Propostas, a sugestão do Henrique saiu de \"Aguardando decisão\" e aparece em \"Já decididas\" como \"Aprovada\". Decidir no cartão ou nesta tela dá no mesmo: a sugestão sai dos dois lugares.",
-          "dica": "Se o cliente tem mais de um negócio aberto e não dá para saber de qual é a sugestão, ela não entra nesta lista nem em cartão nenhum. Ao abrir o funil, o sistema cria um aviso na Central de avisos para alguém da equipe escolher o negócio. Cliente sem negócio aberto também não tem sugestão listada aqui.",
+          "dica": "Quando o cliente tem mais de um negócio aberto, a sugestão em geral vai para o que teve movimento mais recente. Se não der para saber de qual é, ela não aparece nesta lista nem em cartão nenhum: quando alguém abre o quadro de um funil onde está um desses negócios, o sistema cria um aviso em \"Alertas\" pedindo que a equipe confira os negócios do cliente. Cliente sem nenhum negócio aberto também não tem sugestão listada aqui.",
           "destaques": [
             {
               "alvo": {

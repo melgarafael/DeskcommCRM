@@ -23,7 +23,7 @@
           "id": "p1",
           "titulo": "Onde fica a tela",
           "rota": "/app/ai",
-          "texto": "Skills não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Ensinar o agente\" está o cartão \"Skills\". O caminho completo é: Agente de IA › Ver tudo em IA › Skills.",
+          "texto": "No menu lateral padrão, Skills não aparece. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Ensinar o agente\" está o cartão \"Skills\". O caminho completo é: Agente de IA › Ver tudo em IA › Skills.",
           "dica": "Só gerente ou administrador vê este cartão. Para um atendente, ou para quem só tem permissão de leitura, ele não aparece, e o endereço da tela leva à página \"403 — Sem permissão\".",
           "destaques": [
             {
@@ -56,7 +56,7 @@
           "titulo": "O que é uma skill",
           "rota": "/app/ai/skills",
           "texto": "Uma skill é um manual curto de como agir numa situação específica, como marcar um horário ou explicar o preparo para a primeira consulta. O agente de IA sempre sabe que a skill existe, pelo nome e pela descrição. O passo a passo completo entra na conversa quando o assunto aparece: quando o cliente escreve uma das palavras-chave da skill, ou quando a conversa ou o contato tem uma etiqueta escolhida. Assim o agente não precisa carregar todos os manuais em toda resposta. A tela tem duas partes: \"Skills instaladas\", as que a sua empresa instalou ou enviou, e \"Catálogo\", as prontas da plataforma.",
-          "dica": "Uma skill vale para todos os agentes de IA da empresa. Esta tela não tem como ligar uma skill só para um agente.",
+          "dica": "Uma skill vale para todos os agentes de IA da empresa. Esta tela não tem como ligar uma skill só para um agente. Se a instalação tiver o módulo \"Fluxos de atendimento\" ligado, um passo de fluxo também pode puxar uma skill instalada, mesmo sem palavra-chave.",
           "destaques": [
             {
               "alvo": {
@@ -243,7 +243,7 @@
         {
           "id": "p3",
           "titulo": "Desinstalar",
-          "texto": "\"Desinstalar\" apaga na hora a cópia da sua empresa, sem pedir confirmação. Numa skill \"do catálogo\", como esta, a versão da plataforma volta a valer para os agentes, como antes de instalar. Numa skill \"manual\", o agente deixa de usá-la, a não ser que ela tenha o mesmo nome de uma skill do catálogo: aí volta a valer a do catálogo.",
+          "texto": "\"Desinstalar\" tira de uso na hora a cópia da sua empresa, sem pedir confirmação. Numa skill \"do catálogo\", como esta, a versão da plataforma volta a valer para os agentes, como antes de instalar. Numa skill \"manual\", o agente deixa de usá-la, a não ser que ela tenha o mesmo nome de uma skill do catálogo: aí volta a valer a do catálogo.",
           "dica": "As versões da cópia não são apagadas: se você instalar a mesma skill de novo, elas voltam a aparecer no \"Histórico de versões\", em \"Editar\".",
           "destaques": [
             {

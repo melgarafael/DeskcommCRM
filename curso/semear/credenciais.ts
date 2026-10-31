@@ -28,12 +28,15 @@
  *    catálogo (`ai_models`): o seletor do classificador dos Roteadores
  *    (`lib/ai/classifier-models.ts`) continua sem opção, como aquela aula diz.
  *  - Nenhuma do Jev (TypeSafe): o cartão do Jev em Provedores muda com ela.
- * O que NÃO dá para evitar: a tela Provedores esconde o aviso "Você ainda não
- * cadastrou a chave..." quando existe QUALQUER chave ativa. A bancada apaga estas
- * linhas depois de fotografar (ver o resultado do módulo).
+ * O que NÃO dá para evitar com a escolha de provedor: a tela Provedores esconde o
+ * aviso "Você ainda não cadastrou a chave..." quando existe QUALQUER chave ativa.
+ * Por isso a semente exporta `limpar`: a base (`semear-demonstracao.ts`) o chama
+ * antes de QUALQUER aula, e as chaves daqui só existem durante as aulas deste
+ * módulo.
  *
  * Idempotente: apaga só as próprias linhas (ids fixos) e recria — a lição que
- * renomeia uma chave volta ao nome original na próxima rodada. Nenhuma versão de
+ * renomeia uma chave volta ao nome original na próxima rodada. As lições não
+ * criam linha nenhuma (o "Salvar e validar" é só do simulador). Nenhuma versão de
  * agente aponta para estas chaves (a Bia usa a chave da instalação), então o
  * apagar não esbarra na FK `ON DELETE RESTRICT`.
  */
@@ -42,7 +45,8 @@ import { createCipheriv, randomBytes } from "node:crypto";
 import { type Contexto, ha, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 
-const credencialId =(n: number) => `d1140000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const credencialId = (n: number) => `d1140000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const IDS_DO_MODULO = [1, 2, 3].map(credencialId);
 const DIA = 24 * 60;
 
 const bytea = (b: Buffer) => `\\x${b.toString("hex")}`;
@@ -61,13 +65,21 @@ function cifrada(chave: string) {
   };
 }
 
-export async function semear(c: Contexto) {
-  const { db, org, pessoa } = c;
-  const ids = [1, 2, 3].map(credencialId);
+/**
+ * Apaga só as chaves deste módulo (ids fixos). Sem `demo()` aqui: a base chama
+ * `limpar` antes de toda aula, em qualquer idioma, e não pode depender do catálogo.
+ */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
   semErro(
-    await db.from("ai_provider_credentials").delete().eq("organization_id", org).in("id", ids),
+    await db.from("ai_provider_credentials").delete().eq("organization_id", org).in("id", IDS_DO_MODULO),
     "limpar as chaves do curso",
   );
+}
+
+export async function semear(c: Contexto) {
+  const { db, org, pessoa } = c;
+  await limpar(c);
 
   const CHAVES = [
     {

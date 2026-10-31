@@ -24,7 +24,8 @@
  *    contato assim que a organização tem um contato pessoal (outra semente cria
  *    um).
  *
- * Idempotente: apaga só as próprias linhas (ids fixos) e recria. As lições não
+ * Idempotente: apaga só as próprias linhas (ids fixos, prefixo d1060000) e
+ * recria; `limpar` faz a mesma limpeza antes de qualquer aula. As lições não
  * gravam nada: a de "Nova ligação" preenche o número mas não clica em ligar.
  */
 import { type Contexto, contatoId, ha, ontemAs, semErro } from "../semear-demonstracao";
@@ -130,10 +131,21 @@ const CHAMADAS: Chamada[] = [
 
 const mais = (iso: string, segundos: number) => new Date(Date.parse(iso) + segundos * 1000).toISOString();
 
-export async function semear(c: Contexto) {
+/**
+ * Chamada antes de QUALQUER aula (limparSementesDeModulo): as seis ligações não
+ * ficam na base depois da aula de Chamadas. A base apaga e recria os contatos a
+ * cada aula, e `voice_calls.contact_id` é `on delete set null` — sem esta
+ * limpeza, as linhas sobravam órfãs de contato no banco das outras aulas.
+ */
+export async function limpar(c: Contexto) {
   const { db, org } = c;
   const ids = CHAMADAS.map((x) => chamadaId(x.n));
   semErro(await db.from("voice_calls").delete().eq("organization_id", org).in("id", ids), "limpar chamadas");
+}
+
+export async function semear(c: Contexto) {
+  const { db, org } = c;
+  await limpar(c);
 
   const linhas = CHAMADAS.map((x) => {
     const atendida = x.atendidaApos !== undefined ? mais(x.inicio, x.atendidaApos) : null;

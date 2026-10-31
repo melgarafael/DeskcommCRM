@@ -5,7 +5,7 @@
  * seletor da ação "Aplicar um plano de tarefas ao negócio", no editor de
  * automações, fica vazio. Por isso a clínica ganha dois planos prontos: um com
  * todos os passos no dono do negócio e outro com passos de uma pessoa fixa
- * (a Ana, da recepção), para as lições mostrarem as duas formas de "Atribuir a".
+ * (a Ana Ribeiro), para as lições mostrarem as duas formas de "Atribuir a".
  *
  * ═══ Onde o plano mora ═══
  *

@@ -109,7 +109,8 @@
               "rotulo": "Vezes que aconteceu",
               "tipo": "numero"
             }
-          ]
+          ],
+          "dica": "Se no lugar da frase aparecer só um nome técnico, como \"conteudo_bloqueado\", é um tipo de falha que esta tela ainda não explica. Nesse caso, ache a execução na lista e abra a mensagem técnica dela."
         },
         {
           "id": "p4",
@@ -161,7 +162,7 @@
         {
           "id": "p5",
           "titulo": "Por que este modelo",
-          "texto": "No fim da última linha, depois da hora, o cartão diz quem escolheu o modelo. \"Definido na versão publicada do agente.\" quer dizer que o modelo vem do próprio agente, configurado na tela Agentes. Em tarefas curtas de classificação, como \"Identificar a etapa do lead\", aparece \"Modelo mais econômico do mesmo provedor\": quando ninguém escolheu um modelo para a tarefa, o sistema usa o mais barato da mesma empresa de IA, porque a tarefa é simples.",
+          "texto": "No fim da última linha, depois da hora, o cartão diz quem escolheu o modelo. \"Definido na versão publicada do agente.\" quer dizer que o modelo vem do próprio agente, configurado na tela Agentes. Em duas tarefas curtas, \"Identificar a etapa do lead\" e \"Barrar tentativa de manipulação\", pode aparecer \"Modelo mais econômico do mesmo provedor\": quando ninguém escolheu um modelo para elas, o sistema usa o modelo mais barato da mesma empresa de IA, porque a tarefa é simples.",
           "dica": "Para escolher você mesmo o modelo de uma tarefa como esta, use a tela Provedores (Agente de IA › Ver tudo em IA › Provedores). Depois disso, as execuções dessa tarefa passam a dizer \"Escolhido por você no painel de provedores.\".",
           "destaques": [
             {
@@ -202,7 +203,7 @@
           "id": "p1",
           "titulo": "Uma execução que falhou",
           "rota": "/app/ai/runs",
-          "texto": "Quando a chamada à IA falha, o cartão ganha a borda vermelha e o selo \"falhou\" ao lado do nome da tarefa. Ele não mostra tokens nem custo. No lugar, vem a explicação da falha. Repare que as execuções mais novas, acima desta, já deram certo: o problema foi resolvido depois.",
+          "texto": "Quando a chamada à IA falha, o cartão ganha a borda vermelha e o selo \"falhou\" ao lado do nome da tarefa. Ele não mostra tokens, tempo nem custo. No lugar, vem a explicação da falha. Repare que as execuções mais novas, acima desta, já deram certo: sinal de que o problema foi resolvido depois.",
           "antes": [
             {
               "acao": "rolar",
@@ -235,8 +236,8 @@
         {
           "id": "p2",
           "titulo": "O que aconteceu e o que fazer",
-          "texto": "A explicação vem em duas partes, sempre nesta ordem. \"O que aconteceu:\" conta o efeito para o seu cliente: aqui, ele mandou mensagem e ficou sem resposta. \"O que fazer:\" diz o conserto: aqui, o provedor de IA não aceitou a chave, e o caminho é conferir a chave na tela Credenciais (Agente de IA › Ver tudo em IA › Credenciais), porque chaves podem ser revogadas ou vencer.",
-          "dica": "Em algumas falhas a linha \"O que aconteceu:\" não aparece. É quando a falha não fez falta a ninguém: outra IA cobriu a falha na hora, ou a IA que falhou só estava observando.",
+          "texto": "A explicação vem em duas partes, sempre nesta ordem. \"O que aconteceu:\" diz o que essa falha causa no atendimento: aqui, o cliente manda mensagem e ninguém responde. \"O que fazer:\" diz o conserto: aqui, o provedor de IA não aceitou a chave, e o caminho é conferir a chave na tela Credenciais (Agente de IA › Ver tudo em IA › Credenciais), porque chaves podem ser revogadas ou vencer.",
+          "dica": "Em algumas falhas a linha \"O que aconteceu:\" não aparece. Isso acontece, por exemplo, quando outra IA cobriu a falha na hora ou quando a IA que falhou só estava observando: ninguém ficou sem resposta.",
           "destaques": [
             {
               "alvo": {
@@ -281,7 +282,7 @@
         {
           "id": "p3",
           "titulo": "A mensagem técnica do provedor",
-          "texto": "Por último, escondida, fica a mensagem original do provedor de IA, quase sempre em inglês. Clique em \"Mensagem técnica do provedor\" para abrir. Ela serve a quem for investigar ou ao suporte. Aqui, \"invalid x-api-key\" quer dizer \"chave inválida\", e o \"código 401\" é a recusa por falta de autorização.",
+          "texto": "Por último, escondida, fica a mensagem original do provedor de IA, muitas vezes em inglês. Clique em \"Mensagem técnica do provedor\" para abrir. Ela serve a quem for investigar ou ao suporte. Aqui, \"invalid x-api-key\" quer dizer \"chave inválida\", e o \"código 401\" é a recusa por falta de autorização.",
           "dica": "Ao gravar essa mensagem, o sistema tira dela chaves e dados pessoais que o provedor tenha devolvido, e corta textos muito longos.",
           "antes": [
             {
@@ -350,7 +351,7 @@
         {
           "id": "p5",
           "titulo": "Uma parada de propósito",
-          "texto": "Esta falha foi de propósito. Em \"Uso e orçamento\", no mesmo hub, a empresa pode definir um limite mensal de gasto com a IA e escolher parar a IA ao chegar nele. Quando o gasto do mês chega ao limite, o sistema recusa as chamadas antes de elas saírem para o provedor, e o cliente fica sem resposta. Para a IA voltar, aumente o limite, desligue a parada ou espere o mês virar.",
+          "texto": "Esta falha foi de propósito. Em \"Uso e orçamento\", no mesmo hub, o administrador pode definir um limite mensal de gasto com a IA e escolher parar a IA ao chegar nele. Quando o gasto do mês chega ao limite, o sistema recusa as chamadas antes de elas saírem para o provedor, e o cliente fica sem resposta. Para a IA voltar, aumente o limite, desligue a parada ou espere o mês virar.",
           "antes": [
             {
               "acao": "rolar",
@@ -380,7 +381,8 @@
               "rotulo": "Parou no limite do mês",
               "tipo": "caixa"
             }
-          ]
+          ],
+          "dica": "Se a sua empresa usa o sistema num plano de um revendedor, esta mesma falha também aparece quando acaba o uso de IA incluído no plano. Nesse caso, quem resolve não é o limite de \"Uso e orçamento\": a mensagem técnica traz o caminho, que é trocar de plano, cadastrar uma chave de IA própria ou esperar o mês virar."
         }
       ]
     },
@@ -458,7 +460,7 @@
         {
           "id": "p3",
           "titulo": "Voltar a ver tudo",
-          "texto": "Para ver de novo todas as execuções, clique outra vez no mesmo botão. O filtro também não fica guardado: ao sair da tela e voltar, a lista abre completa.",
+          "texto": "Para ver de novo todas as execuções, clique outra vez no mesmo botão. O filtro não fica guardado: ao sair da tela e voltar, a lista abre completa.",
           "dica": "Quando a lista tem execuções do Jev, o extra de decisões rápidas da tela Provedores, aparece ao lado o botão \"Só o Jev\". O link \"Ver as decisões do Jev\", no cartão do Jev em Provedores, abre esta tela já com esse filtro.",
           "antes": [],
           "destaques": [
@@ -537,7 +539,7 @@
           "id": "p1",
           "titulo": "O link \"Roteamento\"",
           "rota": "/app/ai/runs",
-          "texto": "No alto da tela, ao lado de \"Execuções\", fica o link \"Roteamento\". Ele interessa a quem usa Roteadores, a tela que escolhe qual agente atende cada conversa (Agente de IA › Ver tudo em IA › Roteadores). Clique nele.",
+          "texto": "No alto da tela, ao lado de \"Execuções\", fica o link \"Roteamento\". Ele interessa a quem usa roteadores, que escolhem qual agente atende cada conversa e são montados na tela Roteadores (Agente de IA › Ver tudo em IA › Roteadores). Clique nele.",
           "destaques": [
             {
               "alvo": {
@@ -558,7 +560,7 @@
         {
           "id": "p2",
           "titulo": "Resultados do roteamento",
-          "texto": "A aba \"Resultados do roteamento\" mostra as escolhas que os roteadores fizeram: para cada mensagem, a intenção escolhida e quem decidiu, a IA de sempre ou o Jev, o extra de decisões rápidas da tela Provedores. Os filtros do alto escolhem o período (7, 30 ou 90 dias), o modo, o roteador, o modelo do Jev e quantas mensagens anteriores a IA de sempre leu para decidir.",
+          "texto": "A página \"Resultados do roteamento\" lista as escolhas que os roteadores fizeram: para cada mensagem, a intenção escolhida e quem decidiu. Quem decide é a \"IA de sempre\" (o \"Modelo do classificador\" escolhido na tela do roteador) ou o Jev, o extra de decisões rápidas da tela Provedores. Os filtros do alto escolhem o período (7, 30 ou 90 dias), o modo, o roteador, o modelo do Jev e quantas mensagens anteriores a IA de sempre leu para decidir.",
           "antes": [
             {
               "acao": "click",
@@ -610,7 +612,7 @@
         {
           "id": "p3",
           "titulo": "Os números e a lista",
-          "texto": "Os cartões resumem o período: \"Decisões examinadas\" conta as decisões (até as 500 mais recentes), \"Custo conhecido\" soma o que elas custaram, quando o preço de cada uma é conhecido, e \"Tempo total do roteamento\" mostra o tempo típico de uma decisão. Embaixo vem a lista das decisões, cada uma com o link \"Abrir conversa\" quando há conversa ligada. Nela, o administrador marca em \"Revisão\" se cada escolha estava \"Correto\" ou \"Incorreto\". Enquanto nenhum roteador tiver escolhido agente no período, a lista avisa \"Ainda não há decisões de roteamento nesses filtros.\", como nesta clínica.",
+          "texto": "Os cartões resumem o período: \"Decisões examinadas\" conta as decisões (até as 500 mais recentes), \"Custo conhecido\" soma o que custaram as decisões com preço completo, e \"Tempo total do roteamento\" mostra o tempo típico de uma decisão. Embaixo vem a lista das decisões, cada uma com o link \"Abrir conversa\" quando há conversa ligada. Só o administrador vê nela o campo \"Revisão\", onde marca se a escolha estava \"Correto\" ou \"Incorreto\" e, se incorreta, qual agente deveria ter atendido. Enquanto nenhum roteador tiver decidido nada no período, a lista avisa \"Ainda não há decisões de roteamento nesses filtros.\", como nesta clínica.",
           "dica": "Para voltar à lista de execuções, clique em \"Execuções\", no alto.",
           "antes": [],
           "destaques": [

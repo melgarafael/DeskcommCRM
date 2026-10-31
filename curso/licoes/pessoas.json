@@ -76,7 +76,7 @@
           "id": "p3",
           "titulo": "Achar uma pessoa pela busca",
           "texto": "No campo \"Buscar por nome ou e-mail\", digite um pedaço do nome ou do e-mail. A lista se filtra sozinha enquanto você digita, sem precisar apertar Enter. Aqui, \"alvorada\" achou as duas pessoas do Supermercados Alvorada, porque o e-mail delas tem essa palavra. Para ver todas de novo, apague o que digitou.",
-          "dica": "Maiúscula ou minúscula não faz diferença, mas no nome o acento faz: \"Joao\", sem acento, não acha o nome \"João\". Se nada combinar, a tabela mostra \"Nenhuma pessoa ainda.\": isso só quer dizer que a busca não achou ninguém.",
+          "dica": "Maiúscula ou minúscula não faz diferença, mas no nome o acento faz: \"Joao\", sem acento, não acha o nome \"João\". Se nada combinar, a tabela mostra \"Nenhuma pessoa ainda.\". Aqui, isso quer dizer que a busca não achou ninguém, e não que a lista esteja vazia.",
           "antes": [
             { "acao": "fill", "alvo": { "placeholder": "Buscar por nome ou e-mail" }, "valor": "alvorada" },
             { "acao": "esperar", "ms": 1500 },
@@ -160,7 +160,7 @@
           "id": "p3",
           "titulo": "Preencher e criar",
           "texto": "Aqui a clínica anota a Cláudia Moreira, nova analista de RH da Escola de Idiomas Fala Mundo, que vai cuidar do programa de saúde dos professores. Digite o nome completo e o e-mail e clique em \"Criar\".",
-          "dica": "Confira o e-mail antes de criar. Um e-mail em formato errado, como sem o \"@\", é recusado: a janela continua aberta e nada é gravado, sem mensagem explicando o motivo.",
+          "dica": "Confira o nome e o e-mail antes de criar: depois, nenhuma tela corrige nem exclui a pessoa. Um e-mail em formato errado, como sem o \"@\", é recusado: a janela continua aberta e nada é gravado, sem mensagem explicando o motivo.",
           "antes": [
             { "acao": "fill", "alvo": { "css": "[role='dialog'] div:has(> label:text-is('Nome completo')) > input" }, "valor": "Cláudia Moreira" },
             { "acao": "fill", "alvo": { "css": "[role='dialog'] div:has(> label:text-is('E-mail')) > input", "literal": true }, "valor": "claudia.moreira@falamundo.exemplo.com.br" }
@@ -209,8 +209,8 @@
         {
           "id": "p5",
           "titulo": "Sem empresa e sem telefone",
-          "texto": "A ficha da Cláudia mostra \"Sem vínculo empresarial.\" e \"Nenhum telefone vinculado.\". A janela \"Nova pessoa\" só grava o nome e o e-mail: ela não liga a pessoa a uma empresa nem a um telefone, e nenhuma tela faz isso depois. Quem já nasce ligada a empresa, cargo e telefone é a pessoa que entra pela importação de planilha, no cartão \"Importações\" de \"Ver tudo em CRM\".",
-          "dica": "Por isso, se você já tem a empresa e o telefone, prefira a importação. Ela não completa uma pessoa que já existe: importar alguém cadastrado aqui cria uma segunda pessoa com o mesmo nome. Importações é só para gerente ou administrador. E não há botão para editar nem para excluir uma pessoa.",
+          "texto": "A ficha da Cláudia mostra \"Sem vínculo empresarial.\" e \"Nenhum telefone vinculado.\". A janela \"Nova pessoa\" só grava o nome e o e-mail: ela não liga a pessoa a uma empresa nem a um telefone, e nenhuma tela faz isso depois. Quem já nasce ligada a empresa, cargo e telefone é a pessoa que entra pela importação de planilha, quando a planilha traz essas colunas. A importação fica no cartão \"Importações\" de \"Ver tudo em CRM\".",
+          "dica": "Por isso, se você já tem a empresa e o telefone, prefira a importação. Mas ela não completa uma pessoa que já está na lista: importar alguém já cadastrado cria uma segunda pessoa com o mesmo nome. Importações é só para gerente ou administrador.",
           "antes": [
             { "acao": "click", "alvo": { "role": "link", "nome": "Cláudia Moreira", "exato": true } },
             { "acao": "aguardar", "alvo": { "role": "heading", "nome": "Cláudia Moreira", "exato": true } }

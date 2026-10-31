@@ -40,7 +40,13 @@
  * Idempotente: apaga TODAS as comandas da organização (as tabelas só existem por
  * causa deste módulo, e as lições criam comandas novas pela tela) com os
  * lançamentos e pontos ligados a elas, e recria as próprias linhas pelos ids
- * fixos. Os serviços voltam por upsert; os atendimentos são apagados e recriados.
+ * fixos.
+ *
+ * `limpar` (chamado pela base antes de QUALQUER aula) tira tudo isso do banco:
+ * sem ele, os três serviços e os três atendimentos desta semente apareceriam nas
+ * fotos de Agenda e de Tipos de agendamento, e as comandas finalizadas entrariam
+ * no Faturamento. As tabelas da provisionadora continuam (não há como desfazê-las
+ * sem desinstalar), mas vazias e sem a linha do módulo.
  */
 import pg from "pg";
 
@@ -71,11 +77,17 @@ const diasAtrasAs = (dias: number, h: number, m: number) =>
 /** A data (AAAA-MM-DD) de um instante, no fuso de São Paulo. */
 const dataSP = (iso: string) => new Date(new Date(iso).getTime() - 3 * 60 * MIN).toISOString().slice(0, 10);
 
+/** As tabelas da comanda existem? (Só depois da provisionadora; numa bancada nova, não.) */
+async function tabelasExistem(c: Contexto): Promise<boolean> {
+  const sonda = await c.db.from("sales").select("id").limit(1);
+  if (!sonda.error) return true;
+  if (sonda.error.code === "PGRST205") return false;
+  throw new Error(`conferir a tabela da comanda: ${sonda.error.message}`);
+}
+
 /** Garante as tabelas do módulo. Só abre conexão direta quando elas ainda não existem. */
 async function provisionarSePreciso(c: Contexto) {
-  const sonda = await c.db.from("sales").select("id").limit(1);
-  if (!sonda.error) return;
-  if (sonda.error.code !== "PGRST205") throw new Error(`conferir a tabela da comanda: ${sonda.error.message}`);
+  if (await tabelasExistem(c)) return;
 
   const cli = new pg.Client({ connectionString: exigirBancoLocal(process.env.SUPABASE_DB_URL) });
   await cli.connect();
@@ -95,6 +107,53 @@ async function provisionarSePreciso(c: Contexto) {
     await new Promise((ok) => setTimeout(ok, 500));
   }
   throw new Error("as tabelas da comanda não apareceram na API depois da provisionadora");
+}
+
+/** Tira do banco tudo o que esta semente e as lições dela criam. Roda antes de qualquer aula. */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
+
+  if (await tabelasExistem(c)) {
+    // ---------- as comandas (as da semente e as que as lições criam) ----------
+    const comandas = exigir(
+      await db.from("sales").select("id").eq("organization_id", org),
+      "comandas atuais",
+    ) as Array<{ id: string }>;
+    const ids = comandas.map((x) => x.id);
+    if (ids.length) {
+      // O contra-lançamento do estorno aponta para o original com `on delete
+      // restrict`: ele sai primeiro.
+      semErro(
+        await db.from("financial_entries").delete().eq("organization_id", org).in("sale_id", ids).not("reverses_entry_id", "is", null),
+        "limpar estornos das comandas",
+      );
+      semErro(
+        await db.from("financial_entries").delete().eq("organization_id", org).in("sale_id", ids),
+        "limpar lançamentos das comandas",
+      );
+      semErro(
+        await db.from("loyalty_ledger").delete().eq("organization_id", org).in("sale_id", ids),
+        "limpar pontos das comandas",
+      );
+      // Itens e comissões caem em cascata.
+      semErro(await db.from("sales").delete().eq("organization_id", org).in("id", ids), "limpar comandas");
+    }
+    semErro(
+      await db.from("loyalty_ledger").delete().eq("organization_id", org).in("id", [PONTO(1), PONTO(2)]),
+      "limpar pontos da semente",
+    );
+  }
+
+  // ---------- os atendimentos e os serviços da semente ----------
+  // Sem comanda nenhuma, nada mais prende os serviços (`sale_items` é `restrict`).
+  semErro(
+    await db.from("calendar_appointments").delete().eq("organization_id", org).in("id", [1, 2, 3].map(ATENDIMENTO)),
+    "limpar atendimentos sem comanda",
+  );
+  semErro(
+    await db.from("calendar_event_types").delete().eq("organization_id", org).in("id", Object.values(TIPO)),
+    "limpar serviços da comanda",
+  );
 }
 
 export async function semear(c: Contexto) {
@@ -120,36 +179,10 @@ export async function semear(c: Contexto) {
   // ---------- contas e formas de pagamento: as do Financeiro ----------
   await semearFinanceiro(c);
 
-  // ---------- limpa as comandas (as da semente e as que as lições criam) ----------
-  const comandas = exigir(
-    await db.from("sales").select("id").eq("organization_id", org),
-    "comandas atuais",
-  ) as Array<{ id: string }>;
-  const ids = comandas.map((x) => x.id);
-  if (ids.length) {
-    // O contra-lançamento do estorno aponta para o original com `on delete
-    // restrict`: ele sai primeiro.
-    semErro(
-      await db.from("financial_entries").delete().eq("organization_id", org).in("sale_id", ids).not("reverses_entry_id", "is", null),
-      "limpar estornos das comandas",
-    );
-    semErro(
-      await db.from("financial_entries").delete().eq("organization_id", org).in("sale_id", ids),
-      "limpar lançamentos das comandas",
-    );
-    semErro(
-      await db.from("loyalty_ledger").delete().eq("organization_id", org).in("sale_id", ids),
-      "limpar pontos das comandas",
-    );
-    // Itens e comissões caem em cascata.
-    semErro(await db.from("sales").delete().eq("organization_id", org).in("id", ids), "limpar comandas");
-  }
-  semErro(
-    await db.from("loyalty_ledger").delete().eq("organization_id", org).in("id", [PONTO(1), PONTO(2)]),
-    "limpar pontos da semente",
-  );
+  // ---------- limpa as comandas, os atendimentos e os serviços (a mesma limpeza da base) ----------
+  await limpar(c);
 
-  // ---------- os serviços que a comanda oferece ----------
+  // ---------- os serviços que a comanda oferece (apagados pelo `limpar` acima) ----------
   const ENDERECO = "Rua das Acácias, 120 — 3º andar";
   semErro(
     await db.from("calendar_event_types").upsert(
@@ -161,7 +194,7 @@ export async function semear(c: Contexto) {
         ...t,
         organization_id: org,
         location_kind: "in_person",
-        location_details: `${ENDERECO}, sala 1`,
+        location_details: demo(`${ENDERECO}, sala 1`),
         reminder_enabled: false,
         is_active: true,
       })),
@@ -177,10 +210,6 @@ export async function semear(c: Contexto) {
     { n: 3, tipo: TIPO.acupuntura, titulo: "Sessão de acupuntura — Pedro Henrique Lima", comeca: ontemAs(15, 0), dur: 40, status: "confirmed", dono: pessoa.ana },
   ];
   semErro(
-    await db.from("calendar_appointments").delete().eq("organization_id", org).in("id", ATENDIMENTOS.map((a) => ATENDIMENTO(a.n))),
-    "limpar atendimentos sem comanda",
-  );
-  semErro(
     await db.from("calendar_appointments").insert(
       ATENDIMENTOS.map((a) => ({
         id: ATENDIMENTO(a.n),
@@ -193,7 +222,7 @@ export async function semear(c: Contexto) {
         status: a.status,
         owner_user_id: a.dono,
         location_kind: "in_person",
-        location_details: `${ENDERECO}, sala 1`,
+        location_details: demo(`${ENDERECO}, sala 1`),
         created_by_kind: "user",
         created_by_user_id: pessoa.helena,
         source: "ui",

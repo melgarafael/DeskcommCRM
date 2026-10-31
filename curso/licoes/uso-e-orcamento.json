@@ -389,7 +389,7 @@
               }
             }
           ],
-          "texto": "A janela fecha e aparece a mensagem \"Orçamento atualizado\". O cartão passa a mostrar o gasto ao lado do limite (\"gastos de US$ 20,00\"), a porcentagem já usada e o combinado: \"Avisamos ao passar de 80% do limite. A IA não para.\" Quando o gasto do mês chegar a esse ponto, o sistema abre um aviso na Central de avisos, a tela \"Alertas\" do hub de IA. A IA continua respondendo normalmente.",
+          "texto": "A janela fecha e aparece, por alguns segundos, a mensagem \"Orçamento atualizado\". O cartão passa a mostrar o gasto ao lado do limite (\"gastos de US$ 20,00\"), a porcentagem já usada e o combinado: \"Avisamos ao passar de 80% do limite. A IA não para.\" Quando o gasto do mês chegar a esse ponto, o sistema abre um aviso na Central de avisos, a tela \"Alertas\" do hub de IA. A IA continua respondendo normalmente.",
           "dica": "Se quem administra a instalação desligou a proteção de gasto (em Recursos opcionais › Comportamento, no Admin), o cartão mostra uma faixa amarela dizendo que a escolha daqui não vale até ela ser religada.",
           "destaques": [
             {
@@ -540,7 +540,7 @@
           "destaques": [
             {
               "alvo": {
-                "css": "div:has(> label > input[type=checkbox])"
+                "css": "[role=dialog] div:has(> label > input[type=checkbox])"
               },
               "rotulo": "Espera de 72 horas",
               "tipo": "caixa"
@@ -581,6 +581,7 @@
             }
           ],
           "texto": "O cartão agora diz quando a parada começa a valer: \"A parada começa a valer em\", com o dia e a hora, e \"Até lá, só avisamos.\" Depois desse prazo, se o gasto do mês chegar no limite, a IA para de responder, um aviso abre na Central de avisos e o cartão ganha o selo vermelho \"IA parada por gasto\". Se o gasto passar do limite e a IA não estiver parada, o selo é \"Passou do limite\".",
+          "dica": "O sistema sempre avisa antes de parar. Se o gasto pular o ponto do aviso e chegar direto no limite, a primeira chamada só abre o aviso; a IA para a partir da chamada seguinte.",
           "destaques": [
             {
               "alvo": {
@@ -823,7 +824,7 @@
           "id": "p6",
           "titulo": "Escolher o período",
           "texto": "Para ver outro período, escolha as datas em \"De\" e \"Até\". Sem datas, a tela mostra os últimos 30 dias. Com só \"De\", ela vai dessa data até hoje. A tela mostra no máximo 90 dias de uma vez: num período maior, ela fica com os últimos 90 dias do período.",
-          "dica": "O texto embaixo do título continua dizendo \"nos últimos 30 dias\" mesmo com outras datas escolhidas. O que vale é o período dos filtros.",
+          "dica": "O texto embaixo do título continua dizendo \"nos últimos 30 dias\" mesmo com outras datas escolhidas: o que vale é o período dos filtros. E os dias seguem o relógio UTC; no horário de Brasília, o dia da tela vira às 21h.",
           "destaques": [
             {
               "alvo": {

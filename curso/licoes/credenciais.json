@@ -47,7 +47,7 @@
           "titulo": "O que é uma chave de IA",
           "rota": "/app/ai/credentials",
           "texto": "Os agentes usam uma inteligência artificial contratada de uma empresa, chamada provedor, como a Anthropic (Claude) ou a OpenAI (GPT). A conta nesse provedor é sua: você contrata direto com ele, e a cobrança vai para essa conta. Para o sistema usar a sua conta, o provedor entrega uma chave: um código longo, que funciona como uma senha. Você cola a chave aqui. Ela fica guardada criptografada e nunca mais aparece inteira na tela, nem para você.",
-          "dica": "A chave colocada durante a instalação do sistema não aparece nesta lista, mas os agentes podem usá-la: no editor do agente ela aparece como \"A chave desta instalação\".",
+          "dica": "Se quem instalou o sistema colocou uma chave de IA na instalação, essa chave não aparece nesta lista, mas os agentes podem usá-la: no editor do agente ela aparece como \"A chave desta instalação\".",
           "destaques": [
             {
               "alvo": {
@@ -103,7 +103,7 @@
         {
           "id": "p4",
           "titulo": "Modelos, uso e os botões do cartão",
-          "texto": "\"Modelos\" conta quantos modelos de IA o provedor liberou para essa chave na última conferência. \"Em uso por\" conta quantas versões de agente estão ligadas a ela, contando rascunhos e versões antigas; o agente escolhe a chave no campo \"Chave de acesso\" do editor dele. Embaixo ficam três botões: o lápis edita a chave, as setas em círculo testam a chave de novo e a lixeira exclui.",
+          "texto": "\"Modelos\" conta quantos modelos de IA o provedor liberou para essa chave na última conferência; se a chave não passou na conferência, aparece um traço. \"Em uso por\" conta quantas versões de agente estão ligadas a ela, contando rascunhos e versões antigas; o agente escolhe a chave no campo \"Chave de acesso\" do editor dele. Embaixo ficam três botões: o lápis edita a chave, as setas em círculo testam a chave de novo e a lixeira exclui.",
           "dica": "O gerente vê esta tela só para consultar: para ele não aparecem \"Adicionar credencial\" nem os botões dos cartões. Cadastrar, editar, testar de novo e excluir são tarefas do administrador.",
           "destaques": [
             {
@@ -190,7 +190,7 @@
         {
           "id": "p2",
           "titulo": "Inválida: a conferência falhou",
-          "texto": "\"Inválida\", em vermelho, quer dizer que a conferência falhou. A frase vermelha embaixo do nome diz o motivo. Aqui o provedor recusou a chave: por exemplo, ela foi copiada pela metade ou apagada no site do provedor. O link \"Onde pegar a chave\" abre a página do provedor onde se cria uma chave nova. Depois, troque a chave pelo lápis, como mostra a lição \"Trocar, renomear ou excluir uma chave\".",
+          "texto": "\"Inválida\", em vermelho, quer dizer que a conferência falhou. A frase vermelha embaixo do nome diz o motivo. Aqui o provedor recusou a chave: por exemplo, ela foi copiada pela metade ou apagada no site do provedor. Quando o problema é a própria chave, a frase traz o link \"Onde pegar a chave\", que abre a página do provedor onde se cria uma chave nova. Depois, troque a chave pelo lápis, como mostra a lição \"Trocar, renomear ou excluir uma chave\".",
           "dica": "Nem sempre a culpa é da chave. Se o provedor estiver fora do ar, ou se este servidor não conseguir falar com ele, a frase diz isso e pede para testar de novo mais tarde.",
           "destaques": [
             {
@@ -228,7 +228,8 @@
         {
           "id": "p3",
           "titulo": "Não validada: a conferência não terminou",
-          "texto": "Logo depois de salva, a chave aparece como \"Validando…\" enquanto o sistema confere com o provedor, e a tela se atualiza sozinha. Se o resultado não chega em dois minutos, o selo vira \"Não validada\": a conferência foi interrompida no meio. Clique nas setas em círculo, \"Revalidar credencial\", para testar a chave de novo na hora. O resultado aparece no selo.",
+          "texto": "Logo depois de salva, a chave aparece como \"Validando…\" enquanto o sistema confere com o provedor, e a tela se atualiza sozinha. Se o resultado não chega em dois minutos, o selo vira \"Não validada\": a conferência não terminou. Clique nas setas em círculo, \"Revalidar credencial\", para testar a chave de novo na hora. O resultado aparece no selo.",
+          "dica": "Depois de trocar a chave de um cartão que já existia, o selo também fica \"Não validada\" por alguns segundos, enquanto a chave nova é conferida.",
           "destaques": [
             {
               "alvo": {
@@ -546,7 +547,7 @@
         {
           "id": "p2",
           "titulo": "Colar a chave nova",
-          "texto": "Cole a chave nova em \"Nova chave (opcional)\" e clique em \"Salvar\". Trocar a chave por aqui mantém os agentes ligados a ela: no próximo atendimento eles já usam a nova. Depois de salvar, o sistema confere a chave nova com o provedor, e o selo do cartão mostra o resultado.",
+          "texto": "Cole a chave nova em \"Nova chave (opcional)\" e clique em \"Salvar\". Trocar a chave por aqui mantém os agentes ligados a ela: não é preciso mexer em agente nenhum. Depois de salvar, o sistema confere a chave nova com o provedor, e o selo do cartão mostra o resultado. Quando o selo fica \"Validada\", os agentes já usam a chave nova no próximo atendimento.",
           "dica": "Se uma chave vazou, crie outra no site do provedor, troque aqui e depois apague a antiga lá no provedor.",
           "antes": [
             {
@@ -737,7 +738,7 @@
           "id": "p5",
           "titulo": "Excluir uma chave",
           "texto": "A lixeira, \"Excluir credencial\", apaga a chave do sistema. Antes, uma janela pede confirmação: \"Remover\" apaga de vez, e \"Cancelar\" desiste. Não dá para desfazer.",
-          "dica": "Uma chave ligada a alguma versão de agente não pode ser excluída: com \"Em uso por\" maior que zero, a lixeira fica apagada, e passar o mouse sobre ela mostra o motivo. Para trocar essa chave, use o lápis.",
+          "dica": "Uma chave ligada a alguma versão de agente não pode ser excluída: com \"Em uso por\" maior que zero, a lixeira fica apagada, e passar o mouse sobre ela mostra o motivo. Para trocar essa chave, use o lápis. A chave do Jev não fica travada: se o Jev estiver ligado e usando essa chave, a janela de confirmação explica o que muda.",
           "antes": [
             {
               "acao": "click",

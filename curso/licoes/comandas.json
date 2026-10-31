@@ -56,7 +56,7 @@
           "id": "p2",
           "titulo": "A lista de comandas",
           "texto": "À esquerda fica a lista de comandas, da mais nova para a mais antiga. Cada linha mostra o número da comanda, a situação e o valor. O número é seguido: cada comanda nova recebe o próximo. Em cima, \"Nova comanda\" abre uma comanda em branco. À direita aparece a comanda que você escolher. Enquanto nenhuma está escolhida, ali fica escrito \"Escolha uma comanda à esquerda.\".",
-          "dica": "A lista mostra as 50 comandas mais recentes. Quem só tem permissão de leitura vê as comandas, mas não vê \"Nova comanda\" nem os campos de lançar e de fechar a conta.",
+          "dica": "A lista mostra as 50 comandas mais recentes. Quem tem o papel \"Somente leitura\" vê as comandas, mas não vê \"Nova comanda\", os campos de lançar e de fechar a conta, nem os atendimentos sem comanda.",
           "antes": [
             {
               "acao": "click",
@@ -221,7 +221,7 @@
           "titulo": "Abrir uma comanda nova",
           "rota": "/app/comandas",
           "texto": "Quando o cliente chega, clique em \"Nova comanda\". A comanda nasce aberta, com o próximo número, e já aparece escolhida à direita. Ela nasce sem cliente, por isso não mostra pontos de fidelidade.",
-          "dica": "Atendentes, gerentes e administradores abrem e lançam comandas. Quem só tem permissão de leitura não vê este botão.",
+          "dica": "Atendentes, gerentes e administradores abrem e lançam comandas; quem tem o papel \"Somente leitura\" não vê este botão. Esta tela não tem onde escolher o cliente da comanda. Ela já nasce com cliente em dois casos: quando sai do \"Faturar\" dos atendimentos sem comanda e o atendimento tem contato; ou quando um negócio é ganho num funil que tem ligada a opção \"Abrir comanda ao ganhar um negócio neste funil\", em CRM › Ver tudo em CRM › Etapas do funil. Nesse caso a comanda nasce com o valor e o contato do negócio.",
           "antes": [],
           "destaques": [
             {
@@ -555,7 +555,7 @@
         {
           "id": "p2",
           "titulo": "Forma de pagamento sem conta",
-          "texto": "Cada forma de pagamento diz em que conta o dinheiro cai, como a conta do banco ou o caixa da recepção. Se a forma escolhida ainda não tem conta, aparece logo embaixo o aviso \"Esta forma de pagamento ainda não tem conta de destino. Defina em Configurações › Financeiro.\". Com essa forma, o sistema recusa a finalização. Defina a conta em Configurações › Financeiro ou escolha outra forma.",
+          "texto": "Cada forma de pagamento diz em que conta o dinheiro cai, como a conta do banco ou o caixa da recepção. Se a forma escolhida ainda não tem conta, aparece logo embaixo o aviso \"Esta forma de pagamento ainda não tem conta de destino. Defina em Configurações › Financeiro.\". O botão \"Finalizar\" continua disponível, mas, com essa forma, o sistema recusa a finalização e a comanda continua aberta. Defina a conta em Configurações › Financeiro ou escolha outra forma.",
           "antes": [
             {
               "acao": "selecionar",
@@ -749,7 +749,7 @@
         {
           "id": "p7",
           "titulo": "Cancelar uma comanda aberta",
-          "texto": "Comanda aberta por engano não se apaga: cancela-se. Abra a comanda, aqui a #5, e clique em \"Cancelar comanda\". O cancelamento acontece na hora, sem pergunta de confirmação e sem cobrar nada. A comanda fica na lista como \"Cancelada\", com R$ 0,00, e não aceita mais itens nem pagamento.",
+          "texto": "Comanda aberta por engano não se apaga: você a cancela. Abra a comanda, aqui a #5, e clique em \"Cancelar comanda\". O cancelamento acontece na hora, sem pergunta de confirmação e sem cobrar nada. A comanda fica na lista como \"Cancelada\", com R$ 0,00. Os itens continuam à vista, mas ela não aceita mais itens nem pagamento.",
           "antes": [
             {
               "acao": "click",
@@ -822,7 +822,8 @@
           "id": "p1",
           "titulo": "A lista para conferir",
           "rota": "/app/comandas",
-          "texto": "Quando ninguém abre a comanda de um atendimento, ele fica em \"Atendimentos sem comanda\". Nada vem marcado: você confere cada linha e marca só o que vai cobrar. A linha mostra o serviço, a data e o preço padrão do serviço. O \"Retorno de nutrição\" não tem preço cadastrado, por isso não dá para marcá-lo. Para cobrá-lo, abra uma comanda à mão ou cadastre o preço do serviço em Configurações › Tipos de agendamento.",
+          "texto": "Os atendimentos da Agenda que já aconteceram e ainda não viraram comanda ficam em \"Atendimentos sem comanda\". Nada vem marcado: você confere cada linha e marca só o que vai cobrar. A linha mostra o serviço, a data e o preço padrão do serviço. O \"Retorno de nutrição\" não tem preço cadastrado, por isso não dá para marcá-lo. Para cobrá-lo por aqui, cadastre o preço do serviço em Configurações › Tipos de agendamento.",
+          "dica": "Uma comanda aberta em \"Nova comanda\" não fica ligada ao atendimento. Se você cobrar o atendimento por ela, a linha continua nesta lista, e alguém pode cobrá-lo de novo depois.",
           "antes": [],
           "destaques": [
             {

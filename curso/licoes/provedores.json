@@ -2,7 +2,7 @@
   "id": "provedores",
   "titulo": "Provedores",
   "tela": "/app/ai/providers",
-  "resumo": "Onde você vê qual inteligência artificial faz cada tarefa do sistema, troca o modelo de todas de uma vez ou de uma por uma, e conhece os extras Jev e Mapas.",
+  "resumo": "Onde você vê qual inteligência artificial faz cada tarefa do sistema, troca o modelo padrão ou o de uma tarefa só, e conhece os extras Jev e Mapas.",
   "licoes": [
     {
       "id": "conhecendo-os-provedores",
@@ -64,13 +64,13 @@
         {
           "id": "p3",
           "titulo": "O modelo padrão",
-          "texto": "O cartão \"Modelo padrão\" mostra o provedor e o modelo que a empresa usa por padrão. Eles valem em toda tarefa que mostra \"Usando o padrão da organização.\", e a frase do cartão conta quantas tarefas estão assim hoje. Algumas tarefas não seguem o padrão, porque precisam de um modelo especialista, de áudio ou de busca no seu material: a frase no fim do cartão diz quais são.",
+          "texto": "O cartão \"Modelo padrão\" mostra o provedor e o modelo que a empresa usa quando ninguém escolheu outro. Ele vale para as tarefas que mostram \"Usando o padrão da organização.\", e a frase do cartão conta quantas estão assim hoje. A exceção são as tarefas com o selo \"fixo\", que o sistema resolve sozinho. A frase no fim do cartão cita as de áudio e as de busca no seu material.",
           "destaques": [
             {
               "alvo": {
                 "testid": "cartao-do-padrao"
               },
-              "rotulo": "Vale para quase tudo",
+              "rotulo": "O padrão da empresa",
               "tipo": "caixa"
             },
             {
@@ -92,7 +92,7 @@
         {
           "id": "p4",
           "titulo": "As tarefas em grupos",
-          "texto": "Mais abaixo, as tarefas aparecem em seis grupos, pelo que fazem: \"Atender o cliente\", \"Entender a conversa\", \"Proteger a operação\", \"Lembrar e buscar\", \"Ver e ouvir\" e \"Melhorar e testar\". Cada grupo traz uma frase explicando o que ele faz e, em \"Usando:\", os modelos que as tarefas dele usam hoje. Se alguma tarefa do grupo precisar de atenção, aparece um aviso em amarelo. O botão \"Configuração avançada\" abre as tarefas do grupo uma por uma. A tela chama cada tarefa de \"ponto\".",
+          "texto": "Mais abaixo, as tarefas aparecem em seis grupos, pelo que fazem: \"Atender o cliente\", \"Melhorar e testar\", \"Entender a conversa\", \"Proteger a operação\", \"Lembrar e buscar\" e \"Ver e ouvir\". Cada grupo traz uma frase explicando o que ele faz e, em \"Usando:\", os modelos que as tarefas dele usam hoje. Se alguma tarefa do grupo precisar de atenção, aparece um aviso em amarelo. O botão \"Configuração avançada\" abre as tarefas do grupo uma por uma. A tela chama cada tarefa de \"ponto\".",
           "destaques": [
             {
               "alvo": {
@@ -167,7 +167,7 @@
           "id": "p2",
           "titulo": "Escolher o modelo e salvar",
           "rota": "/app/ai/providers",
-          "texto": "Em \"Modelo\", escolha a versão. Aqui, a clínica de exemplo escolheu \"Claude Haiku 5.5\", da mesma empresa. O botão \"Salvar padrão\" só acende depois que você muda alguma coisa. Ao salvar, todas as tarefas que mostram \"Usando o padrão da organização.\" passam a usar o modelo novo de uma vez.",
+          "texto": "Em \"Modelo\", escolha a versão. Aqui, a clínica de exemplo escolheu \"Claude Haiku 5.5\", da mesma empresa. O botão \"Salvar padrão\" só aparece para o administrador e só acende depois que você muda alguma coisa. Ao salvar, o modelo novo passa a valer de uma vez em todas as tarefas que seguem o padrão.",
           "antes": [
             {
               "acao": "click",
@@ -208,7 +208,7 @@
           "id": "p3",
           "titulo": "Quem não segue o padrão",
           "rota": "/app/ai/providers",
-          "texto": "Nem toda tarefa acompanha o modelo padrão. Quando há um agente publicado, as tarefas que conversam com o cliente seguem o modelo escolhido nele. As de áudio e de busca no seu material precisam de um modelo especialista: a frase no fim do cartão lista quais são, e o cartão de cada uma, em \"Configuração avançada\", explica como ela funciona. E a tarefa que você configurar uma por uma, como mostra a próxima lição, fica com a sua escolha.",
+          "texto": "Nem toda tarefa acompanha o modelo padrão. Com um agente publicado, as tarefas do próprio agente usam o modelo escolhido nele, e várias tarefas de apoio, como \"Resumir a conversa longa\", herdam esse modelo: o cartão delas diz \"Herdado de quem disparou a chamada\". As tarefas com o selo \"fixo\" o sistema resolve sozinho, como as de áudio e de busca no seu material, que a frase no fim do cartão lista. E a tarefa que você configurar uma por uma, como mostra a próxima lição, fica com a sua escolha.",
           "destaques": [
             {
               "alvo": {
@@ -240,7 +240,7 @@
           "id": "p1",
           "titulo": "Abrir as tarefas de um grupo",
           "rota": "/app/ai/providers",
-          "texto": "Cada grupo esconde as suas tarefas até você pedir. Para ver uma por uma, clique em \"Configuração avançada\" no grupo. O número entre parênteses diz quantas tarefas (\"pontos\") o grupo tem. Neste exemplo, abrimos o grupo \"Ver e ouvir\", que cuida das imagens e dos áudios que o cliente manda.",
+          "texto": "Cada grupo esconde as suas tarefas até você pedir. Para ver uma por uma, clique em \"Configuração avançada\" no grupo; para fechar, o mesmo botão vira \"Ocultar\". O número entre parênteses diz quantas tarefas (\"pontos\") o grupo tem. Neste exemplo, abrimos o grupo \"Ver e ouvir\", que cuida das imagens e dos áudios que o cliente manda. Em \"Usando:\", \"não definido\" quer dizer que uma tarefa do grupo está sem modelo: aqui, a de áudio.",
           "destaques": [
             {
               "alvo": {
@@ -266,7 +266,7 @@
         {
           "id": "p2",
           "titulo": "O cartão de uma tarefa",
-          "texto": "Cada tarefa tem um cartão. No alto ficam o nome dela e o que ela faz. À direita, o modelo em uso e o porquê: \"Usando o padrão da organização.\" quer dizer que ela segue o Modelo padrão. A faixa \"Se falhar:\" conta o que você vai notar no dia a dia se essa tarefa parar de funcionar. Algumas tarefas têm o selo \"precisa de ferramentas\": nelas só serve um modelo que saiba usar as ferramentas do CRM, e o sistema recusa os outros na hora de salvar.",
+          "texto": "Cada tarefa tem um cartão. No alto ficam o nome dela e o que ela faz. À direita, o modelo em uso e o porquê: \"Usando o padrão da organização.\" quer dizer que ela segue o Modelo padrão. A faixa \"Se falhar:\" conta o que você vai notar no dia a dia se essa tarefa parar de funcionar. Algumas tarefas têm o selo \"precisa de ferramentas\": nelas só serve um modelo que saiba usar as ferramentas do CRM. Na lista de modelos, os que não sabem aparecem com \"sem ferramentas\", e o sistema os recusa na hora de salvar.",
           "antes": [
             {
               "acao": "click",
@@ -304,12 +304,12 @@
               "tipo": "numero"
             }
           ],
-          "dica": "Outras explicações que aparecem à direita: \"Escolhido por você no painel de provedores.\", \"Definido na versão publicada do agente.\" e \"Modelo mais econômico do mesmo provedor\", usada em classificações curtas, que não precisam do modelo do agente."
+          "dica": "Outras explicações que aparecem à direita: \"Escolhido por você no painel de provedores.\"; \"Definido na versão publicada do agente.\"; \"Herdado de quem disparou a chamada\", quando a tarefa usa o modelo do agente que a chamou; e \"Modelo mais econômico do mesmo provedor\", nas classificações curtas, que não precisam do modelo do agente."
         },
         {
           "id": "p3",
           "titulo": "Tarefas com o selo \"fixo\"",
-          "texto": "Tarefas com o selo \"fixo\" não têm escolha nesta tela: o sistema decide sozinho, e o cartão explica por quê. É o caso de \"Ouvir o áudio do cliente\". O áudio vira texto pelo serviço de transcrição da instalação, por uma chave da OpenAI ou pelo próprio modelo de conversa, quando ele entende áudio. À direita, o cartão diz qual desses caminhos está valendo ou, como nesta clínica, o que está faltando.",
+          "texto": "Tarefas com o selo \"fixo\" não têm escolha nesta tela: o sistema decide sozinho, e o texto no fim do cartão explica por quê. Nelas, vale esse texto, mesmo quando a coluna da direita diz \"Usando o padrão da organização.\". É o caso de \"Ouvir o áudio do cliente\". O áudio vira texto pelo serviço de transcrição da instalação, por uma chave da OpenAI ou pelo próprio modelo de conversa, quando ele entende áudio. À direita, o cartão diz qual desses caminhos está valendo ou, como nesta clínica, o que está faltando.",
           "antes": [],
           "destaques": [
             {
@@ -391,12 +391,13 @@
           ],
           "clicar": {
             "testid": "salvar-visao_de_imagem"
-          }
+          },
+          "dica": "Com um provedor compatível com a OpenAI, como o \"Provedor personalizado\", aparece também o campo \"Endereço próprio (opcional)\", para apontar a tarefa para outro endereço. Em branco, vale o endereço oficial do provedor."
         },
         {
           "id": "p5",
           "titulo": "A escolha ficou gravada",
-          "texto": "Pronto: à direita aparece o modelo novo, e a explicação muda para \"Escolhido por você no painel de provedores.\". A partir daqui, esta tarefa fica com a sua escolha, mesmo que o Modelo padrão mude depois. A tela não tem botão para voltar a seguir o padrão: para mudar de novo, escolha outro modelo e clique em \"Salvar\".",
+          "texto": "Pronto: à direita aparece o modelo novo, pelo nome técnico, e a explicação muda para \"Escolhido por você no painel de provedores.\". A partir daqui, esta tarefa fica com a sua escolha, mesmo que o Modelo padrão mude depois. A tela não tem botão para voltar a seguir o padrão: para mudar de novo, escolha outro modelo e clique em \"Salvar\".",
           "antes": [
             {
               "acao": "click",
@@ -426,7 +427,7 @@
           "id": "p6",
           "titulo": "As tarefas do agente",
           "rota": "/app/ai/providers",
-          "texto": "No grupo \"Atender o cliente\", as tarefas que conversam com o cliente, como \"Responder o cliente\", não têm campos aqui quando há um agente publicado. Elas usam o modelo escolhido no próprio agente, na versão publicada. O cartão avisa isso e traz o link \"Configurar no agente\", que abre a tela Agentes. Enquanto nenhum agente estiver publicado, esses cartões mostram os campos como os outros.",
+          "texto": "No grupo \"Atender o cliente\", as três tarefas do próprio agente (\"Testar ou revisar resposta\", \"Responder o cliente\" e \"Trabalhar o funil\") não têm campos aqui quando há um agente publicado. Elas usam o modelo escolhido no próprio agente, na versão publicada. O cartão avisa isso e traz o link \"Configurar no agente\", que abre a tela Agentes. Enquanto nenhum agente estiver publicado, esses cartões mostram os campos como os outros.",
           "antes": [
             {
               "acao": "click",
@@ -513,8 +514,8 @@
         {
           "id": "p2",
           "titulo": "De onde vem a chave do Jev",
-          "texto": "Em \"De onde o Jev responde\", escolha por onde ele trabalha: \"TypeSafe AI (chave própria)\", com uma chave só dele, ou \"OpenRouter (reaproveita a credencial OpenRouter)\", que usa a chave da OpenRouter que a empresa já tenha cadastrado em \"Credenciais\". Pela TypeSafe, clique em \"Pegar a chave na TypeSafe\" para abrir o site deles: lá você cria uma conta e põe crédito, porque cada mensagem que o Jev avalia é cobrada pela TypeSafe. Depois, clique em \"Colar a chave\".",
-          "dica": "Só o administrador cola a chave e liga o Jev. O gerente vê o cartão, mas sem esses botões.",
+          "texto": "Em \"De onde o Jev responde\", escolha por onde ele trabalha: \"TypeSafe AI (chave própria)\", com uma chave só dele, ou \"OpenRouter (reaproveita a credencial OpenRouter)\", que usa a chave da OpenRouter que a empresa já cadastrou em \"Credenciais\". A troca para a OpenRouter só é aceita se essa chave já passou no teste. Pela TypeSafe, clique em \"Pegar a chave na TypeSafe\" para abrir o site deles: lá você cria uma conta e põe crédito, porque cada mensagem que o Jev avalia é cobrada pela TypeSafe. Depois, clique em \"Colar a chave\".",
+          "dica": "Só o administrador escolhe a origem, cola a chave e liga o Jev. O gerente vê o cartão, mas, no lugar de \"Colar a chave\", lê que só quem administra a empresa pode fazer isso.",
           "destaques": [
             {
               "alvo": {
@@ -602,7 +603,7 @@
           "titulo": "Mapas: a rua no lugar das coordenadas",
           "rota": "/app/ai/providers",
           "texto": "O cartão \"Mapas (Google)\" é outro extra. Quando o cliente manda a localização pelo WhatsApp, o sistema consulta o Google e o agente lê a rua e a cidade aproximadas, em vez de só as coordenadas. Sem chave, nada muda, e o selo mostra \"Sem chave\". Para ligar, crie no Google Cloud uma chave com a Geocoding API habilitada, cole em \"Chave da Geocoding API\" e clique em \"Salvar chave\". \"Testar\" faz uma consulta de verdade ao Google e mostra o endereço que voltou ou o motivo da falha. Com o campo vazio e nenhuma chave gravada, os dois botões ficam apagados.",
-          "dica": "Depois de gravada, a chave nunca volta inteira: o selo mostra só os quatro últimos caracteres, e aparece o botão \"Remover chave\".",
+          "dica": "Gravar e testar a chave de Mapas é só do administrador. Depois de gravada, a chave nunca volta inteira: o selo mostra só os quatro últimos caracteres, e aparece o botão \"Remover chave\".",
           "destaques": [
             {
               "alvo": {

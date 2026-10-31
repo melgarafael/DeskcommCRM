@@ -24,7 +24,7 @@
  * as lições criam pela tela, pelo nome) e recria.
  */
 import { type Contexto, ha, semErro } from "../semear-demonstracao";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 import { normalizePersonName } from "../../lib/crm-b2b/normalize";
 
 const empresaId = (n: number) => `d1030000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -209,18 +209,14 @@ const TELEFONES = [
 
 const textoOuNulo = (t: string | null) => (t === null ? null : demo(t));
 
-export async function semear(c: Contexto) {
-  const { db, org, pessoa } = c;
-
-  semErro(
-    await db.from("platform_config").upsert(
-      { chave: "MODULO_CRM_B2B", valor: "ligado", eh_segredo: false, semeado_do_env: false, updated_by: pessoa.helena },
-      { onConflict: "chave" },
-    ),
-    "ligar o módulo Empresas e pessoas",
-  );
-
-  // ---------- limpar (telefones antes das pessoas; vínculos caem em cascata com a empresa) ----------
+/**
+ * Limpeza chamada antes de QUALQUER aula (limparSementesDeModulo): estas
+ * empresas, pessoas e telefones não sobram na tela de outro módulo — Pessoas,
+ * Contatos e Importações mostram as mesmas tabelas.
+ */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
+  // telefones antes das pessoas; vínculos antes das empresas (também cairiam em cascata)
   semErro(
     await db.from("contacts").delete().eq("organization_id", org).in("id", TELEFONES.map((t) => telefoneId(t.n))),
     "limpar telefones do módulo",
@@ -237,11 +233,29 @@ export async function semear(c: Contexto) {
     await db.from("companies").delete().eq("organization_id", org).in("id", EMPRESAS.map((e) => empresaId(e.n))),
     "limpar empresas do módulo",
   );
-  const criadas = CRIADAS_NAS_LICOES.map((n) => demo(n));
   semErro(
-    await db.from("companies").delete().eq("organization_id", org).in("trade_name", criadas),
+    await db
+      .from("companies")
+      .delete()
+      .eq("organization_id", org)
+      // sem `demo`: a base chama `limpar` antes de toda aula, e um nome sem tradução não pode derrubá-la
+      .in("trade_name", CRIADAS_NAS_LICOES.flatMap((n) => [n, traducaoDaDemonstracao(n) ?? n])),
     "limpar empresas criadas nas lições",
   );
+}
+
+export async function semear(c: Contexto) {
+  const { db, org, pessoa } = c;
+
+  semErro(
+    await db.from("platform_config").upsert(
+      { chave: "MODULO_CRM_B2B", valor: "ligado", eh_segredo: false, semeado_do_env: false, updated_by: pessoa.helena },
+      { onConflict: "chave" },
+    ),
+    "ligar o módulo Empresas e pessoas",
+  );
+
+  await limpar(c);
 
   // ---------- empresas ----------
   semErro(

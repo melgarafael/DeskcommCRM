@@ -9,6 +9,11 @@
  * essa linha para a lição partir do ponto herdando o padrão
  * ("Usando o padrão da organização.").
  *
+ * `limpar` é exportada porque a base a chama antes de QUALQUER aula: a escolha
+ * gravada por uma rodada interrompida da lição não pode sobrar para a foto de
+ * outro módulo (ela muda o "Usando:" do grupo "Ver e ouvir" e a contagem do
+ * Modelo padrão).
+ *
  * O "Modelo padrão" (organizations.settings.llm), o Jev e a chave de Mapas NÃO
  * são gravados pelas lições: o padrão vale para todas as telas e é devolvido ao
  * estado de fábrica pela base; o Jev e o "Testar" de Mapas chamariam serviços de
@@ -21,7 +26,7 @@ import { type Contexto, semErro } from "../semear-demonstracao";
 /** Pontos cuja escolha as lições gravam pela tela. */
 const CRIADAS_NAS_LICOES = ["visao_de_imagem"];
 
-export async function semear(c: Contexto) {
+export async function limpar(c: Contexto) {
   const { db, org } = c;
   semErro(
     await db
@@ -31,4 +36,8 @@ export async function semear(c: Contexto) {
       .in("purpose", CRIADAS_NAS_LICOES),
     "limpar a escolha de modelo gravada pelas lições de Provedores",
   );
+}
+
+export async function semear(c: Contexto) {
+  await limpar(c);
 }

@@ -150,6 +150,11 @@ export async function semear(c: Contexto) {
           value_cents: p.reais * 100,
           currency: "BRL",
           status: "open",
+          // Posição PRÓPRIA e distinta, no fim da coluna, como a criação pela tela
+          // grava (MAX + 1000). Com o padrão (1000 para todos) o quadro empata e,
+          // quando a decisão carimba `last_activity_at`, o cartão troca de lugar
+          // na foto — coisa que numa instalação de verdade não acontece.
+          position_in_stage: 20000 + p.n * 1000,
         };
       }),
     ),

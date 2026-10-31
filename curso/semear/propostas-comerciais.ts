@@ -18,7 +18,8 @@
  * Nada é enviado: as enviadas nascem aqui já como `enviada`, sem mensagem.
  * Idempotente: apaga as próprias propostas (ids fixos), as que as lições criam
  * pela tela (pelo título) e as novas versões das próprias (substitui_id), com o
- * registro que elas deixam na linha do tempo do negócio, e recria.
+ * registro que elas deixam na linha do tempo do negócio, e recria. A mesma
+ * limpeza é exportada como `limpar`, que a base chama antes de qualquer aula.
  */
 import { type Contexto, conversaId, contatoId, exigir, ha, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
@@ -62,6 +63,64 @@ type Proposta = {
   decididaHa?: number;
   motivo?: string;
 };
+
+/** As propostas desta semente — ids fixos, os mesmos `n` da lista PROPOSTAS. */
+const IDS_DAS_PROPOSTAS = [1, 2, 3, 4].map(propostaId);
+
+/**
+ * Apaga o que este módulo põe no banco: as próprias propostas, as que as lições
+ * criam pela tela (pelo título) e as novas versões das próprias (substitui_id),
+ * com o registro que elas deixam na linha do tempo. Só linhas deste módulo.
+ */
+async function apagarAsDoModulo({ db, org }: Contexto) {
+  const daLicao = exigir(
+    await db
+      .from("crm_proposals")
+      .select("id")
+      .eq("organization_id", org)
+      .in(
+        "titulo",
+        CRIADAS_NAS_LICOES.map((t) => demo(t)),
+      ),
+    "propostas das lições",
+  ) as Array<{ id: string }>;
+  const versoes = exigir(
+    await db
+      .from("crm_proposals")
+      .select("id")
+      .eq("organization_id", org)
+      .in("substitui_id", IDS_DAS_PROPOSTAS),
+    "novas versões",
+  ) as Array<{ id: string }>;
+  const derivadas = [...daLicao.map((p) => p.id), ...versoes.map((p) => p.id)];
+  semErro(
+    await db
+      .from("crm_lead_activities")
+      .delete()
+      .eq("organization_id", org)
+      .eq("source_module", "proposals")
+      .in("source_id", [...IDS_DAS_PROPOSTAS, ...derivadas]),
+    "limpar linha do tempo das propostas",
+  );
+  // as versões apontam para as próprias (substitui_id): saem primeiro
+  semErro(
+    await db.from("crm_proposals").delete().eq("organization_id", org).in("id", derivadas),
+    "limpar propostas das lições",
+  );
+  semErro(
+    await db.from("crm_proposals").delete().eq("organization_id", org).in("id", IDS_DAS_PROPOSTAS),
+    "limpar propostas",
+  );
+}
+
+/**
+ * Chamada pela base antes de QUALQUER aula (`limparSementesDeModulo`). Sem ela as
+ * propostas daqui sobreviviam à base — `lead_id` e `contact_id` são ON DELETE SET
+ * NULL — e ficavam órfãs no banco de todas as outras aulas.
+ */
+export async function limpar(c: Contexto) {
+  await apagarAsDoModulo(c);
+}
 
 export async function semear(c: Contexto) {
   const { db, org, pessoa, agenteId } = c;
@@ -210,45 +269,9 @@ export async function semear(c: Contexto) {
   ];
 
   // --- limpeza: as próprias, as que as lições criam e as novas versões das próprias ---
-  const ids = PROPOSTAS.map((p) => propostaId(p.n));
-  const daLicao = exigir(
-    await db
-      .from("crm_proposals")
-      .select("id")
-      .eq("organization_id", org)
-      .in(
-        "titulo",
-        CRIADAS_NAS_LICOES.map((t) => demo(t)),
-      ),
-    "propostas das lições",
-  ) as Array<{ id: string }>;
-  const versoes = exigir(
-    await db.from("crm_proposals").select("id").eq("organization_id", org).in("substitui_id", ids),
-    "novas versões",
-  ) as Array<{ id: string }>;
-  const apagar = [...ids, ...daLicao.map((p) => p.id), ...versoes.map((p) => p.id)];
-  semErro(
-    await db
-      .from("crm_lead_activities")
-      .delete()
-      .eq("organization_id", org)
-      .eq("source_module", "proposals")
-      .in("source_id", apagar),
-    "limpar linha do tempo das propostas",
-  );
-  // as versões apontam para as próprias (substitui_id): saem primeiro
-  semErro(
-    await db
-      .from("crm_proposals")
-      .delete()
-      .eq("organization_id", org)
-      .in("id", [...daLicao.map((p) => p.id), ...versoes.map((p) => p.id)]),
-    "limpar propostas das lições",
-  );
-  semErro(
-    await db.from("crm_proposals").delete().eq("organization_id", org).in("id", ids),
-    "limpar propostas",
-  );
+  if (PROPOSTAS.some((p) => !IDS_DAS_PROPOSTAS.includes(propostaId(p.n))))
+    throw new Error("proposta da semente fora de IDS_DAS_PROPOSTAS: a limpeza não a alcançaria");
+  await apagarAsDoModulo(c);
 
   // --- recria ---
   let item = 0;

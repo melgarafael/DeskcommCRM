@@ -24,10 +24,18 @@
  *
  * Idempotente: apaga só as próprias linhas (ids fixos d1220000-…) e recria,
  * com horários relativos à hora em que roda — elas ficam no alto da lista.
+ *
+ * `limpar` é chamada pela base antes de QUALQUER aula (ver
+ * `limparSementesDeModulo` em `semear-demonstracao.ts`): sem ela estas dez
+ * execuções sobravam no banco e apareciam nas telas de outros módulos que leem
+ * `llm_calls` (Uso e orçamento, por exemplo). Apagar não mexe no orçamento: o
+ * gatilho `trg_llm_calls_budget` só age no insert.
  */
 import { type Contexto, exigir, ha, ontemAs, semErro } from "../semear-demonstracao";
 
 const execucaoId = (n: number) => `d1220000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+/** A faixa inteira do prefixo: apaga também linhas de versões antigas desta semente. */
+const FAIXA = ["d1220000-0000-0000-0000-000000000000", "d1220000-ffff-ffff-ffff-ffffffffffff"] as const;
 
 /** Preço por milhão de tokens, em US$ (lib/agent-engine/edge/llm/pricing.ts), virado em centavos. */
 const PRECO = {
@@ -73,11 +81,18 @@ const LINHAS: Linha[] = [
   { n: 10, em: ontemAs(18, 40), purpose: "agent_turn", model: "claude-sonnet-4-6", origem: "agente_publicado", erro: { codigo: "orcamento_esgotado", mensagem: MENSAGEM_DO_VETO, http: null, ms: 9 } },
 ];
 
+/** Limpeza chamada antes de QUALQUER aula: estas execuções não sobram na tela de outro módulo. */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
+  semErro(
+    await db.from("llm_calls").delete().eq("organization_id", org).gte("id", FAIXA[0]).lte("id", FAIXA[1]),
+    "limpar execuções",
+  );
+}
+
 export async function semear(c: Contexto) {
   const { db, org } = c;
-  const ids = LINHAS.map((l) => execucaoId(l.n));
-
-  semErro(await db.from("llm_calls").delete().eq("organization_id", org).in("id", ids), "limpar execuções");
+  await limpar(c);
 
   // Para desfazer o efeito do gatilho de orçamento no fim (ver o cabeçalho).
   const antes = exigir(

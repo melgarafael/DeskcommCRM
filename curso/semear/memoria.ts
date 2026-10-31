@@ -14,13 +14,17 @@
  * Sem proposta de origem (`proposal_id` nulo): a tela não a mostra.
  *
  * Idempotente: apaga só as próprias linhas (ids fixos d1170000-… e d1170100-…,
- * a versão que a lição publica, pelo conteúdo, e o aprendizado que a lição cria,
- * pelo título) e recria. O ponteiro da memória é um por organização e só esta
- * tela o move; ele é apagado antes das versões porque a chave estrangeira não
- * deixa apagar a versão ativa, e recriado apontando para a v2.
+ * a versão que uma lição publique, pelo conteúdo, e o aprendizado que a lição
+ * cria, pelo título) e recria. O ponteiro da memória é um por organização e só
+ * esta tela o move; ele é apagado antes das versões porque a chave estrangeira
+ * não deixa apagar a versão ativa, e recriado apontando para a v2.
+ *
+ * A limpeza procura o texto nos DOIS idiomas, sempre (`traducaoDaDemonstracao`
+ * não depende do idioma da rodada): uma rodada em PT depois de uma em ES
+ * deixaria a v3 em espanhol no histórico, e a lição de publicar criaria a v4.
  */
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
-import { type Contexto, ha, semErro } from "../semear-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
+import { type Contexto, exigir, ha, semErro } from "../semear-demonstracao";
 
 const DIAS = 24 * 60;
 const id = (bloco: string, n: number) => `${bloco}-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -51,8 +55,10 @@ const CRIADAS_NAS_LICOES = ["Retorno em até 30 dias não é cobrado"];
 /** Como `applyProposal` titula o aprendizado aprovado de uma proposta. */
 const tituloDaProposta = (texto: string) => (texto.length > 80 ? `${texto.slice(0, 77)}...` : texto);
 
-/** O texto em PT e no idioma da captura: a rodada anterior pode ter sido no outro idioma. */
-const nosDoisIdiomas = (textos: string[]) => [...new Set([...textos, ...textos.map((t) => demo(t))])];
+/** O texto em PT e em ES, qualquer que seja o idioma desta rodada: a anterior pode ter sido no outro. */
+const nosDoisIdiomas = (textos: string[]) => [
+  ...new Set(textos.flatMap((t) => [t, traducaoDaDemonstracao(t) ?? t])),
+];
 
 export async function semear(c: Contexto) {
   const { db, org, pessoa } = c;
@@ -67,10 +73,23 @@ export async function semear(c: Contexto) {
     await db.from("org_memory_versions").delete().eq("organization_id", org).in("id", VERSOES.map((v) => versaoId(v.n))),
     "limpar versões da memória",
   );
-  semErro(
-    await db.from("org_memory_versions").delete().eq("organization_id", org).in("content", nosDoisIdiomas([DOCUMENTO_DA_LICAO])),
-    "limpar versão publicada na lição",
-  );
+  // Versão que uma lição publicou (o texto digitado, ou o da v1/v2 restaurado): só este
+  // módulo escreve estes textos. Filtra aqui, e não num `in("content", …)`: seis textos
+  // longos, codificados na URL, podem passar do tamanho que o gateway aceita.
+  const textosDoModulo = new Set(nosDoisIdiomas([DOCUMENTO_V1, DOCUMENTO_V2, DOCUMENTO_DA_LICAO]));
+  const publicadasNaLicao = (
+    exigir(
+      await db.from("org_memory_versions").select("id, content").eq("organization_id", org),
+      "versões da memória",
+    ) as Array<{ id: string; content: string }>
+  )
+    .filter((v) => textosDoModulo.has(v.content))
+    .map((v) => v.id);
+  if (publicadasNaLicao.length)
+    semErro(
+      await db.from("org_memory_versions").delete().eq("organization_id", org).in("id", publicadasNaLicao),
+      "limpar versão publicada na lição",
+    );
   semErro(
     await db.from("org_memory_versions").insert(
       VERSOES.map((v) => ({

@@ -2,7 +2,7 @@
   "id": "planos-de-tarefa",
   "titulo": "Planos de tarefa",
   "tela": "/app/tasks/planos",
-  "resumo": "Sequências de tarefas que se repetem, montadas uma vez só: uma automação aplica o plano a cada negócio e ninguém esquece o próximo passo.",
+  "resumo": "Sequências de tarefas que se repetem, montadas uma vez só: uma automação aplica o plano ao negócio e cada passo vira uma tarefa, com prazo e responsável.",
   "licoes": [
     {
       "id": "planos-conhecendo-a-tela",
@@ -24,7 +24,7 @@
           "titulo": "Onde fica a tela",
           "rota": "/app/crm",
           "texto": "Planos de tarefa não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Planos de tarefa\". O caminho completo é: CRM › Ver tudo em CRM › Planos de tarefa.",
-          "dica": "Se o cartão não aparecer, a interface da empresa ou a sua foi enxugada: com o \"Perfil de interface\" \"Simplificada\", ele some. Quem administra muda isso em Configurações › Organização.",
+          "dica": "Se o cartão não aparecer, a área foi escondida da navegação: no \"Perfil de interface\" \"Simplificada\", ele some. Quem administra escolhe as áreas visíveis da empresa em Configurações › Organização, no quadro \"Menu lateral\", e as de cada pessoa em \"Equipe\".",
           "antes": [],
           "destaques": [
             {
@@ -316,7 +316,7 @@
         {
           "id": "p5",
           "titulo": "Mais um passo",
-          "texto": "Clique em \"Adicionar passo\" para pôr outra tarefa na sequência. Aqui, o passo 2 é conferir se o paciente confirmou o retorno, três dias depois do passo 1, e ele vai sempre para a Ana Ribeiro, da recepção. Um plano pode ter até 30 passos. \"Remover passo\" tira um passo da lista.",
+          "texto": "Clique em \"Adicionar passo\" para pôr outra tarefa na sequência. Aqui, o passo 2 é conferir se o paciente confirmou o retorno, três dias depois do passo 1, e ele vai sempre para a Ana Ribeiro, escolhida pelo nome. Um plano pode ter até 30 passos. \"Remover passo\" tira um passo da lista.",
           "antes": [
             {
               "acao": "click",
@@ -391,7 +391,7 @@
         {
           "id": "p6",
           "titulo": "Salvar",
-          "texto": "Confira e clique em \"Salvar plano\". Se faltar o nome do plano ou o título de algum passo, nada é salvo e aparece um aviso vermelho no alto da tela, acima do formulário. \"Cancelar\" fecha o formulário sem guardar nada.",
+          "texto": "Confira e clique em \"Salvar plano\". Se faltar o nome do plano ou o título de algum passo, ou se um prazo não for um número inteiro de 0 a 365 dias, nada é salvo e aparece um aviso vermelho no alto da tela, acima do formulário. \"Cancelar\" fecha o formulário sem guardar nada.",
           "antes": [],
           "destaques": [
             {
@@ -721,7 +721,7 @@
           "id": "p1",
           "titulo": "Onde o plano é aplicado",
           "rota": "/app/webhooks?aba=automacoes",
-          "texto": "O plano vira tarefas por meio de uma automação: uma regra do tipo \"quando acontecer isto, faça aquilo\". As automações ficam no menu \"Webhooks\", aba \"Automações\". Clique em \"Nova automação\".",
+          "texto": "O plano vira tarefas por meio de uma automação: uma regra do tipo \"quando acontecer isto, faça aquilo\". As automações ficam no grupo \"Canais\" do menu, em \"Webhooks\", aba \"Automações\". Clique em \"Nova automação\".",
           "dica": "Só gerente ou administrador vê o menu \"Webhooks\".",
           "antes": [],
           "destaques": [

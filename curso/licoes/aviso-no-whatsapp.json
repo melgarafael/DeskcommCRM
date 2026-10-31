@@ -42,7 +42,7 @@
         {
           "id": "p2",
           "titulo": "Para que serve",
-          "texto": "Quando a IA que atende os clientes (nesta clínica, a Bia) esbarra em algo que só uma pessoa resolve, como um desconto ou um encaixe na agenda, ela abre um caso. Esta tela faz esse caso chegar como mensagem no WhatsApp de alguém da equipe. A mensagem traz o tipo do assunto, o primeiro nome do cliente, o que ele precisa, por que a IA travou e um link para abrir o atendimento. Repare que o menu lateral passa a marcar \"Casos\".",
+          "texto": "Quando a IA que atende os clientes (nesta clínica, a Bia) esbarra em algo que só uma pessoa resolve, como um desconto ou um encaixe na agenda, ela pode abrir um caso, se o assistente tiver essa permissão. Esta tela faz esse caso chegar como mensagem no WhatsApp de alguém da equipe. A mensagem traz o tipo e o assunto do caso, o primeiro nome do cliente, o que ele precisa, por que a IA travou e um link para abrir o atendimento. Repare que o menu lateral passa a marcar \"Casos\".",
           "dica": "O aviso sai uma vez só, quando o caso é aberto. Se o cliente responder e o caso voltar a esperar a equipe, não sai outro aviso: acompanhe pela Central de alertas.",
           "antes": [
             { "acao": "click", "alvo": { "role": "link", "nome": "^Aviso no WhatsApp ", "regex": true } },
@@ -64,7 +64,7 @@
         {
           "id": "p3",
           "titulo": "Os quadros do alto",
-          "texto": "Antes do formulário, a tela lista o que pode atrapalhar o aviso. Quadro vermelho trava o aviso: ele mostra algo que precisa ser resolvido antes de o aviso poder ser ligado. Quadro cinza é um alerta ou uma informação: o aviso pode sair, mas vale ler. Cada quadro é explicado na lição \"Quando o aviso não chega\".",
+          "texto": "Antes do formulário, a tela lista o que pode atrapalhar o aviso. Quadro vermelho trava o aviso: enquanto ele estiver ali, a chave que liga o aviso não destrava. Quadro cinza não trava nada, mas vale ler: alguns só informam, e outros explicam por que nenhum aviso vai sair. Cada quadro é explicado na lição \"Quando o aviso não chega\".",
           "antes": [],
           "destaques": [
             {
@@ -74,7 +74,7 @@
             },
             {
               "alvo": { "testid": "alerta-conexao_atende_clientes" },
-              "rotulo": "Cinza: alerta",
+              "rotulo": "Cinza: vale ler",
               "tipo": "caixa"
             }
           ]
@@ -373,7 +373,7 @@
         {
           "id": "p6",
           "titulo": "Um aviso que não saiu",
-          "texto": "Quando a linha diz \"Não saiu\" ou \"Cancelado\", a frase de baixo explica o motivo. O aviso mais novo não saiu pelo mesmo motivo do quadro vermelho do alto. Outro não saiu porque a conexão estava fora do ar. O cancelado ficou mais de 24 horas sem conseguir sair. Nesses casos, abra o atendimento pelo link e resolva por ali. A lista é o registro do sistema: ela não some quando alguém resolve um alerta.",
+          "texto": "Quando a linha diz \"Não saiu\" ou \"Cancelado\", a frase de baixo explica o motivo. O aviso mais novo não saiu pelo mesmo motivo do quadro vermelho do alto. Outro não saiu porque a conexão estava fora do ar. O cancelado ficou mais de 24 horas sem conseguir sair. Nesses casos, abra o atendimento pelo link e resolva por ali. Na maioria dessas falhas, a Central de alertas também recebe um aviso, mas é esta lista que guarda o registro: ela não some quando alguém resolve um alerta.",
           "antes": [
             { "acao": "rolar", "alvo": { "testid": "lista-de-entregas" } }
           ],
@@ -432,7 +432,7 @@
         {
           "id": "p2",
           "titulo": "Os dois comandos",
-          "texto": "Depois de salvar, o quadro do alto muda para \"Mensagens comuns deste número são ignoradas\" e ensina os dois comandos. Cada aviso passa a trazer o ID do caso e os modelos prontos. RESPONDER, o ID e a sua orientação: a IA usa o que você escreveu para continuar o atendimento, sem você falar direto com o cliente. PERGUNTAR, o ID e a pergunta: a IA esclarece isso com o cliente. Qualquer outra mensagem desse número continua ignorada.",
+          "texto": "Depois de salvar, cada aviso passa a trazer o ID do caso e os modelos prontos dos dois comandos. RESPONDER, o ID e a sua orientação: a IA usa o que você escreveu para continuar o atendimento, sem você falar direto com o cliente. PERGUNTAR, o ID e a pergunta: a IA esclarece isso com o cliente. Qualquer outra mensagem desse número continua ignorada. Como esse número mandou mensagens nos últimos 7 dias, o quadro do alto também muda para \"Mensagens comuns deste número são ignoradas\" e passa a ensinar os comandos.",
           "antes": [
             { "acao": "click", "alvo": { "role": "button", "nome": "Salvar", "exato": true } },
             { "acao": "aguardar", "alvo": { "texto": "Mensagens comuns deste número são ignoradas", "exato": true } }
@@ -448,7 +448,7 @@
         {
           "id": "p3",
           "titulo": "Desligar ou remover",
-          "texto": "Para parar de receber avisos há dois caminhos. Desligar a chave \"Receber avisos no WhatsApp\" e salvar pausa os avisos e guarda o número, que continua sendo da equipe: o que ele mandar segue ignorado. Aqui a chave está travada pelo quadro vermelho do alto. Já \"Remover destinatário\" apaga a configuração e devolve o número: o que ele mandar volta a virar atendimento no Inbox.",
+          "texto": "Para parar de receber avisos há dois caminhos. Desligar a chave \"Receber avisos no WhatsApp\" e salvar pausa os avisos e guarda o número, que continua sendo da equipe: o que ele mandar continua sem virar atendimento. Aqui a chave está travada pelo quadro vermelho do alto, e não dá para mexer nela. Já \"Remover destinatário\" apaga a configuração e devolve o número: o que ele mandar volta a virar atendimento no Inbox.",
           "antes": [],
           "destaques": [
             {

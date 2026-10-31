@@ -19,13 +19,16 @@
  * campanha ainda não concluída". A Juliana não está em nenhuma viva.
  *
  * Contatos são os da base (ids fixos de `contatoId`), só referenciados: a semente
- * nunca altera contato, conversa ou negócio. Idempotente: apaga as próprias
- * linhas (ids fixos + nomes que as lições criam pela tela) e recria.
+ * nunca altera contato, conversa ou negócio. Idempotente: `limpar` apaga as
+ * próprias linhas (ids fixos + nomes que as lições criam pela tela, nos dois
+ * idiomas) e `semear` recria. A base chama `limpar` antes de QUALQUER aula: sem
+ * isso, a campanha "Enviando" e os rascunhos criados aqui ficavam no banco
+ * depois desta aula.
  */
 import { createHash } from "node:crypto";
 
 import { type Contexto, contatoId, ha, semErro } from "../semear-demonstracao";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 
 const campanhaId = (n: number) => `d1020000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const destinatarioId = (n: number) => `d1020100-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -79,17 +82,27 @@ type Destinatario = {
   saiu?: number;
 };
 
-export async function semear(c: Contexto) {
-  const { db, org, pessoa, sessao } = c;
+/** O nome em PT e, quando já existe, em ES — sem `demo()`, que lança sem tradução. */
+const nosDoisIdiomas = (nome: string) => [nome, traducaoDaDemonstracao(nome)].filter((n): n is string => !!n);
 
-  // ---------- limpeza: só as linhas deste módulo ----------
-  const meusIds = [1, 2, 3, 4, 5].map(campanhaId);
+/**
+ * Só as linhas deste módulo. Os nomes saem nos DOIS idiomas: a rodada em espanhol
+ * roda no mesmo banco que a em português, e o rascunho que a lição criou em PT
+ * apareceria na lista da foto em ES. Destinatários saem junto com a campanha
+ * (`campaign_recipients.campaign_id` é `on delete cascade`).
+ */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
   const criadas = [
-    ...CRIADAS_NAS_LICOES.map((n) => demo(n)),
-    // "Duplicar" grava o nome com " (cópia)" (lib/campanhas/acoes.ts → duplicarAcao)
-    ...Object.values(NOMES).map((n) => `${demo(n)} (cópia)`),
+    ...CRIADAS_NAS_LICOES.flatMap(nosDoisIdiomas),
+    // "Duplicar" grava o nome com " (cópia)" em português, em qualquer idioma
+    // (lib/campanhas/acoes.ts → duplicarAcao)
+    ...Object.values(NOMES).flatMap(nosDoisIdiomas).map((n) => `${n} (cópia)`),
   ];
-  semErro(await db.from("campaigns").delete().eq("organization_id", org).in("id", meusIds), "limpar campanhas");
+  semErro(
+    await db.from("campaigns").delete().eq("organization_id", org).in("id", [1, 2, 3, 4, 5].map(campanhaId)),
+    "limpar campanhas",
+  );
   semErro(await db.from("campaigns").delete().eq("organization_id", org).in("name", criadas), "limpar campanhas das lições");
   semErro(
     await db.from("campaign_suppressions").delete().eq("organization_id", org).in("id", [1, 2].map(exclusaoId)),
@@ -99,6 +112,11 @@ export async function semear(c: Contexto) {
     await db.from("campaign_templates").delete().eq("organization_id", org).in("id", [1].map(textoId)),
     "limpar textos salvos",
   );
+}
+
+export async function semear(c: Contexto) {
+  const { db, org, pessoa, sessao } = c;
+  await limpar(c);
 
   // ---------- campanhas ----------
   const base = {
