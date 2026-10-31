@@ -24,7 +24,18 @@
  *    preferido: quando o provedor passar a assinar, o modo 1 assume sem que a
  *    rota mude.
  *
- * ⚠️ FAIL CLOSED nos dois: cabeçalho presente e errado NÃO cai para o outro
+ * 3. `url_token` — o segredo vai no CAMINHO/QUERY da URL do aviso
+ *    (`...?t=<segredo>`), não em cabeçalho. Existe por MEDIÇÃO, não por gosto:
+ *    em 31/10/2026 um aviso real da InfinitePay foi capturado e ele **não vem
+ *    assinado** — nenhum cabeçalho nem campo do corpo traz assinatura, HMAC ou
+ *    token (`x-webhook-timestamp` é só uma data). Como a URL é configurada por
+ *    nós ao criar o link, o segredo nela é a única prova de origem que o
+ *    provedor nos deixa ter. É o modo mais fraco dos três e o texto do PR diz
+ *    isso: quem descobrir a URL pode forjar um `paid`. O que segura o dano é o
+ *    conjunto — segredo longo (>=16), o único `(org, provedor, external_id)`,
+ *    o compare-and-set da confirmação e a auditoria de quem confirmou.
+ *
+ * ⚠️ FAIL CLOSED nos três: cabeçalho presente e errado NÃO cai para o outro
  * modo. Se `X-Assinatura` veio e não confere, o veredito é inválida — aceitar o
  * token em seguida seria deixar quem forjou a assinatura escolher o caminho mais
  * fraco.
@@ -38,8 +49,14 @@ import { TOLERANCIA_DO_AVISO_S } from "./vocabulario";
 
 export const CABECALHO_DA_ASSINATURA = "x-assinatura";
 export const CABECALHO_DO_TOKEN = "x-webhook-token";
+/**
+ * O parâmetro de query onde o segredo pode vir quando o provedor não manda
+ * cabeçalho nenhum (medido na InfinitePay em 31/10). Quem cria o link configura
+ * a URL — então o segredo viaja nela.
+ */
+export const PARAMETRO_DO_TOKEN_NA_URL = "t";
 
-export type ModoDeAssinatura = "hmac" | "token";
+export type ModoDeAssinatura = "hmac" | "token" | "url_token";
 
 export type VereditoDaAssinatura =
   | { ok: true; modo: ModoDeAssinatura }
@@ -57,6 +74,7 @@ export function verificarAssinatura(
   headers: Headers,
   segredo: string,
   agora: Date,
+  tokenNaUrl: string | null = null,
 ): VereditoDaAssinatura {
   if (!segredo) return INVALIDA;
 
@@ -64,15 +82,26 @@ export function verificarAssinatura(
   if (cabecalho !== null) return verificarHmac(cabecalho, corpoCru, segredo, agora);
 
   const token = headers.get(CABECALHO_DO_TOKEN);
-  if (token !== null) {
-    // Hash dos dois lados: `timingSafeEqual` exige buffers do MESMO tamanho, e
-    // comparar o comprimento antes já contaria ao atacante quanto ele acertou.
-    const recebido = createHash("sha256").update(token, "utf8").digest();
-    const esperado = createHash("sha256").update(segredo, "utf8").digest();
-    return timingSafeEqual(recebido, esperado) ? { ok: true, modo: "token" } : INVALIDA;
-  }
+  if (token !== null) return compararToken(token, segredo, "token");
+
+  // Sem cabeçalho nenhum: é o provedor que NÃO assina (medido na InfinitePay em
+  // 31/10). A prova de origem passa a ser o segredo que viaja na URL que nós
+  // configuramos. Ausente também é recusa — nunca "aceita por falta de prova".
+  if (tokenNaUrl !== null) return compararToken(tokenNaUrl, segredo, "url_token");
 
   return { ok: false, motivo: "sem_assinatura" };
+}
+
+function compararToken(
+  recebido: string,
+  segredo: string,
+  modo: "token" | "url_token",
+): VereditoDaAssinatura {
+  // Hash dos dois lados: `timingSafeEqual` exige buffers do MESMO tamanho, e
+  // comparar o comprimento antes já contaria ao atacante quanto ele acertou.
+  const a = createHash("sha256").update(recebido, "utf8").digest();
+  const b = createHash("sha256").update(segredo, "utf8").digest();
+  return timingSafeEqual(a, b) ? { ok: true, modo } : INVALIDA;
 }
 
 function verificarHmac(

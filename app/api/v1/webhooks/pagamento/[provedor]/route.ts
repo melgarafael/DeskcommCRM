@@ -11,9 +11,12 @@
  *    some para sempre, com o log dizendo "recebido". Falhar alto é o único
  *    desfecho honesto.
  * 3. Corpo grande demais → 413, antes de ler o corpo inteiro.
- * 4. ASSINATURA, sobre o corpo CRU → 401. É o item que a issue #3509 chama de
- *    "não pode ficar para depois": sem ela, um POST de qualquer pessoa marca
- *    pagamento e move negócio.
+ * 4. PROVA DE ORIGEM, sobre o corpo CRU → 401. É o item que a issue #3509 chama
+ *    de "não pode ficar para depois": sem ela, um POST de qualquer pessoa marca
+ *    pagamento e move negócio. Três formas, na ordem: HMAC (provedor que
+ *    assina), token em cabeçalho, e — medido na InfinitePay em 31/10/2026 —
+ *    **segredo na URL** (`?t=...`), porque o aviso dela não vem assinado nem
+ *    traz token em cabeçalho nenhum. Ver `lib/pagamentos/assinatura.ts`.
  * 5. Rosca de recusas por IP (o balde de quem não se autenticou) → 429.
  * 6. Só então o corpo é interpretado, e ainda assim o único efeito é
  *    `confirmarPagamento`, que é compare-and-set.
@@ -22,9 +25,19 @@
  *
  * Não relê o pagamento na API do provedor (`payment_check`): isso exige
  * credencial, que este degrau não tem. É a diferença declarada para o desenho
- * da issue — aqui a confiança vem da ASSINATURA, não da releitura. Quando a
+ * da issue — aqui a confiança vem da prova de origem, não da releitura. Quando a
  * credencial existir, a releitura entra ANTES do compare-and-set e esta rota
  * não muda de forma.
+ *
+ * ─── O que o aviso real da InfinitePay ensinou (31/10/2026) ────────────────
+ *
+ * Captura feita por terceiro com conta real, R$ 1,00 por Pix: (a) o aviso NÃO é
+ * assinado; (b) o `order_nsu` que mandamos na criação não volta — o provedor
+ * manda um UUID dele; (c) `settled` pode chegar ANTES de `paid`; (d) só o
+ * `paid` traz `transaction_nsu`, `paid_amount`, `installments`,
+ * `capture_method` e `receipt_url`. Por isso: o segredo pode vir na URL, a
+ * chave da idempotência é o `invoice_slug`, e `settled` conta como pago — a
+ * ordem não é garantida, e o compare-and-set garante o efeito único.
  *
  * Evento desconhecido → 200 e nada muda. Id desconhecido → 200 e nada muda: não
  * é erro do provedor (pode ser pagamento de outra instalação), e a conciliação
@@ -40,7 +53,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { logger } from "@/lib/logger";
-import { verificarAssinatura } from "@/lib/pagamentos/assinatura";
+import { PARAMETRO_DO_TOKEN_NA_URL, verificarAssinatura } from "@/lib/pagamentos/assinatura";
 import { confirmarPagamento } from "@/lib/pagamentos/confirmar";
 import { configuracaoDoRecebimento } from "@/lib/pagamentos/configuracao";
 import {
@@ -66,6 +79,16 @@ const RECUSAS_POR_MINUTO = 120;
  */
 const avisoSchema = z
   .object({
+    // Forma real medida na InfinitePay em 31/10/2026 (aviso de R$ 1,00 por Pix):
+    // `event_type` + `invoice_slug` no corpo, `order_nsu` gerado POR ELES (o que
+    // mandamos na criação não volta) e `transaction_nsu` só no `paid`.
+    event_type: z.string().min(1).max(64).optional(),
+    invoice_slug: z.string().min(1).max(256).optional(),
+    transaction_nsu: z.string().min(1).max(256).optional(),
+    order_nsu: z.string().min(1).max(256).optional(),
+    invoice_type: z.string().min(1).max(64).optional(),
+    capture_method: z.string().min(1).max(32).optional(),
+    // Forma genérica que outros provedores usam (e a que já existia aqui).
     id: z.string().min(1).max(256).optional(),
     event: z.string().min(1).max(64).optional(),
     type: z.string().min(1).max(64).optional(),
@@ -105,7 +128,13 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     return fail("payload_too_large", "Aviso grande demais.", 413, { requestId });
   }
 
-  const veredito = verificarAssinatura(corpo, req.headers, segredo, new Date());
+  const veredito = verificarAssinatura(
+    corpo,
+    req.headers,
+    segredo,
+    new Date(),
+    req.nextUrl.searchParams.get(PARAMETRO_DO_TOKEN_NA_URL),
+  );
   if (!veredito.ok) {
     // O balde é o IP de quem NÃO se autenticou. Sem proxy à frente, é um balde
     // só — e só recusas o dividem, então não bloqueia ninguém de verdade.
@@ -136,8 +165,24 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     return fail("validation_failed", "Aviso inválido.", 400, { requestId });
   }
 
-  const evento = normalizar(aviso.data.event ?? aviso.data.type ?? aviso.data.status ?? "");
-  const externalId = (aviso.data.data?.id ?? aviso.data.id ?? "").trim();
+  const evento = normalizar(
+    aviso.data.event_type ?? aviso.data.event ?? aviso.data.type ?? aviso.data.status ?? "",
+  );
+  /**
+   * O identificador do recebimento é o `invoice_slug` — e isso é MEDIÇÃO, não
+   * preferência: o `order_nsu` que mandamos ao criar o link NÃO volta no aviso
+   * (o provedor manda um UUID dele), e o `invoice_slug` é o único campo estável
+   * entre os três avisos do mesmo pagamento (`created`, `settled`, `paid`).
+   * `transaction_nsu` só existe no `paid`, então serve de reserva, nunca de
+   * chave primária da idempotência.
+   */
+  const externalId = (
+    aviso.data.invoice_slug ??
+    aviso.data.transaction_nsu ??
+    aviso.data.data?.id ??
+    aviso.data.id ??
+    ""
+  ).trim();
 
   if (evento === "" || !(EVENTOS_QUE_PAGAM as readonly string[]).includes(evento)) {
     // Inclui os eventos de encerramento: estorno e cancelamento são fatia

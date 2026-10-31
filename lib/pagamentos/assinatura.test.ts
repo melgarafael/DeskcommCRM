@@ -85,6 +85,36 @@ describe("assinatura do aviso de pagamento", () => {
     });
   });
 
+  // ── `url_token`: o provedor que NÃO assina (medido na InfinitePay, 31/10) ──
+
+  it("segredo na URL correto, sem cabeçalho nenhum: aceita e diz que foi url_token", () => {
+    expect(verificarAssinatura(CORPO, cabecalhos({}), SEGREDO, AGORA, SEGREDO)).toEqual({
+      ok: true,
+      modo: "url_token",
+    });
+  });
+
+  it("⭐ segredo na URL errado: inválida (nunca `sem_assinatura`, que viraria 401 por outro motivo)", () => {
+    expect(verificarAssinatura(CORPO, cabecalhos({}), SEGREDO, AGORA, `${SEGREDO}x`)).toEqual({
+      ok: false,
+      motivo: "assinatura_invalida",
+    });
+  });
+
+  it("⭐ FAIL CLOSED com URL: assinatura HMAC presente e errada NÃO cai para o segredo da URL", () => {
+    // O ataque: manda `X-Assinatura` quebrada e a URL com o segredo certo,
+    // apostando que a rota desiste do primeiro caminho e aceita o segundo.
+    const h = cabecalhos({ [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, "segredo-errado", AGORA) });
+    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA, SEGREDO)).toEqual({
+      ok: false,
+      motivo: "assinatura_invalida",
+    });
+  });
+
+  it("segredo na URL vazio não vale como prova (string vazia ≠ ausência)", () => {
+    expect(verificarAssinatura(CORPO, cabecalhos({}), SEGREDO, AGORA, "").ok).toBe(false);
+  });
+
   it("segredo vazio: inválida, nunca `sem_assinatura` (defeito de chamada falha fechado)", () => {
     const h = cabecalhos({ [CABECALHO_DO_TOKEN]: "" });
     expect(verificarAssinatura(CORPO, h, "", AGORA).ok).toBe(false);

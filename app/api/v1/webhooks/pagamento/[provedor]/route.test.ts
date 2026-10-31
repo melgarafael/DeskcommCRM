@@ -80,10 +80,10 @@ function responder(c: Cadeia): Resposta {
   return {};
 }
 
-const entregar = (opcoes: { provedor?: string; corpo?: string; headers?: Record<string, string> } = {}) => {
+const entregar = (opcoes: { provedor?: string; corpo?: string; headers?: Record<string, string>; query?: string } = {}) => {
   const provedor = opcoes.provedor ?? "infinitepay";
   return POST(
-    new NextRequest(`http://localhost/api/v1/webhooks/pagamento/${provedor}`, {
+    new NextRequest(`http://localhost/api/v1/webhooks/pagamento/${provedor}${opcoes.query ?? ""}`, {
       method: "POST",
       body: opcoes.corpo ?? CORPO,
       headers: { "x-forwarded-for": "10.0.0.1", ...(opcoes.headers ?? {}) },
@@ -156,6 +156,111 @@ describe("webhook do pagamento do cliente final", () => {
     const r = await entregar();
     expect(r.status).toBe(401);
     expect(escritas()).toEqual([]);
+  });
+
+  // ─── O aviso REAL da InfinitePay, capturado em 31/10/2026 ────────────────
+  //
+  // Forma verbatim do que o provedor manda (R$ 1,00 por Pix): sem assinatura em
+  // cabeçalho nenhum, `order_nsu` gerado por ELE (o que mandamos não volta) e
+  // `settled` chegando ANTES de `paid`. Estes testes existem porque o desenho
+  // anterior só sabia ler `id`/`data.id` e exigia cabeçalho de assinatura: com
+  // o payload real ele respondia 400 e 401 — ou seja, nenhum aviso entraria.
+  const ITENS_REAIS = [
+    {
+      price: 100,
+      quantity: 1,
+      image_url: null,
+      description: "Teste de integracao",
+      product_reference: null,
+    },
+  ];
+  const avisoReal = (evento: string, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      items: ITENS_REAIS,
+      amount: 100,
+      order_nsu: "uuid-gerado-pelo-provedor",
+      event_type: evento,
+      invoice_slug: "slug-da-cobranca",
+      invoice_type: "external_checkout",
+      ...extra,
+    });
+  const SEGREDO_NA_URL = "?t=segredo-de-teste-com-32-caracteres";
+
+  it("⭐ aviso real SEM segredo na URL e sem cabeçalho: 401 e nada muda", async () => {
+    const r = await entregar({ corpo: avisoReal("paid", { paid_amount: 100 }) });
+    expect(r.status).toBe(401);
+    expect(escritas()).toEqual([]);
+  });
+
+  it("⭐ aviso real com segredo na URL ERRADO: 401 e nada muda", async () => {
+    const r = await entregar({
+      corpo: avisoReal("paid", { paid_amount: 100 }),
+      query: "?t=segredo-errado-com-32-caracteres",
+    });
+    expect(r.status).toBe(401);
+    expect(escritas()).toEqual([]);
+  });
+
+  it("⭐ FAIL CLOSED: HMAC presente e errado NÃO cai para o segredo correto da URL", async () => {
+    const r = await entregar({
+      corpo: avisoReal("paid", { paid_amount: 100 }),
+      query: SEGREDO_NA_URL,
+      headers: { "x-assinatura": assinarParaTeste(CORPO, "outro-segredo-qualquer-32-chars", new Date()) },
+    });
+    expect(r.status).toBe(401);
+    expect(escritas()).toEqual([]);
+  });
+
+  it("⭐ `settled` chega ANTES de `paid` e confirma UMA vez, pelo `invoice_slug`", async () => {
+    // O `order_nsu` do aviso ("uuid-gerado-pelo-provedor") NÃO é o id da linha:
+    // se a rota usasse ele, o desfecho seria `desconhecido`. Achar a linha prova
+    // que a chave é o `invoice_slug`.
+    m.linhas = [pendente({ external_id: "slug-da-cobranca" })];
+    m.mensagem = {
+      id: MSG,
+      metadata: {
+        pagamento: {
+          provedor: "infinitepay",
+          id: "slug-da-cobranca",
+          valor: 100,
+          moeda: "BRL",
+          status: "pendente",
+          recebimento_id: REC,
+        },
+      },
+    };
+
+    const r = await entregar({ corpo: avisoReal("settled"), query: SEGREDO_NA_URL });
+    expect(r.status).toBe(200);
+    const corpo = (await r.json()) as { data: { status?: string; negocios?: string; negocio?: string } };
+    expect(corpo.data.status).toBe("paga");
+
+    const updates = escritas().filter((c) => c.tabela === "pagamento_recebimentos");
+    expect(updates).toHaveLength(1);
+  });
+
+  it("⭐ o `paid` que chega DEPOIS do `settled` é duplicado: nenhuma escrita", async () => {
+    m.linhas = [pendente({ external_id: "slug-da-cobranca", status: "paga", pago_em: new Date().toISOString() })];
+    const r = await entregar({
+      corpo: avisoReal("paid", {
+        paid_amount: 100,
+        receipt_url: "https://recibo.infinitepay.io/uuid",
+        installments: 1,
+        capture_method: "pix",
+        transaction_nsu: "nsu-do-recibo",
+      }),
+      query: SEGREDO_NA_URL,
+    });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { data: unknown }).data).toMatchObject({ duplicado: true });
+    expect(escritas()).toEqual([]);
+  });
+
+  it("aviso real de `created`: 200 `ignorado` e nada muda (não é pagamento)", async () => {
+    const r = await entregar({ corpo: avisoReal("created"), query: SEGREDO_NA_URL });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { data: unknown }).data).toMatchObject({ ignorado: true, evento: "created" });
+    expect(h.banco.cadeias).toEqual([]);
   });
 
   it("⭐ assinatura VÁLIDA: 200, marca paga UMA vez e move o negócio", async () => {
