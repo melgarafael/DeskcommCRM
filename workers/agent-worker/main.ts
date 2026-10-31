@@ -313,7 +313,7 @@ export async function startWorker(
 
   // Handlers do event_log (mídia, branding, follow-up…) no ritmo do worker.
   // Antes disto eles só rodavam pelo cron `event-log-drain`, 1×/min: a cadeia
-  // persist→derive de um áudio levava 103-188s contra os 45s que o drain do
+  // persist→derive de um áudio levava 103-188s contra os 120s que o drain do
   // turno espera, e o agente respondia "não consigo ouvir" com a transcrição
   // pronta segundos depois. O cron continua como rede de segurança — o claim
   // otimista do `drainEventLog` torna os dois seguros em paralelo.
@@ -321,6 +321,8 @@ export async function startWorker(
     {
       intervalMs: env.EVENT_LOG_DRAIN_INTERVAL_MS,
       idleIntervalMs: env.EVENT_LOG_DRAIN_IDLE_INTERVAL_MS,
+      idleMaxMs: env.EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS,
+      staleSweepMs: env.EVENT_LOG_DRAIN_STALE_SWEEP_MS,
       batchSize: env.EVENT_LOG_DRAIN_BATCH_SIZE,
     },
     log,

@@ -5,6 +5,12 @@ import { TIPOS_DERIVAVEIS } from '@/lib/messaging/media/derivable';
 
 import { drainTick } from './drain';
 
+// O acordar é observado por dublê: o que este arquivo prova é QUE o drain do
+// turno acorda o laço do event_log no ponto certo, não a mecânica do sinal (ela
+// tem teste próprio, com relógio falso, em `tests/unit/sinal-de-trabalho-do-laco`).
+const { acordarLacoDeEventLog } = vi.hoisted(() => ({ acordarLacoDeEventLog: vi.fn() }));
+vi.mock('@/lib/event-log/sinal-de-trabalho', () => ({ acordarLacoDeEventLog }));
+
 const knobs = { batchSize: 10, intervalMs: 0, idleIntervalMs: 0, debounceMs: 0, reapTimeoutMs: 60000 };
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never;
 const event = {
@@ -100,6 +106,30 @@ it('áudio ainda sem transcrição: turno é ADIADO, sem enfileirar job', async 
   expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
   expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
   expect(calls.some((s) => s.includes("status = 'done'"))).toBe(false);
+});
+
+it('áudio ainda sem transcrição ACORDA o laço do event_log — o teste é o primeiro que o recuo de 60s punia', async () => {
+  // Sem este acordar, o laço que roda persist→derive dorme até 60s e o turno
+  // paga o teto do recuo inteiro antes da primeira resposta; 60+86s de um áudio
+  // lento estoura o teto de 120s e o cliente ouve "não consegui ouvir".
+  acordarLacoDeEventLog.mockClear();
+  process.env.__ESPERA__ = '1000';
+  await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, []), knobs, log);
+  expect(acordarLacoDeEventLog).toHaveBeenCalledOnce();
+});
+
+it('áudio JÁ transcrito NÃO acorda o laço — não há derivação pendente', async () => {
+  acordarLacoDeEventLog.mockClear();
+  process.env.__ESPERA__ = '1000';
+  await drainTick(poolFalso({ type: 'audio', media_derived_status: 'ready' }, []), knobs, log);
+  expect(acordarLacoDeEventLog).not.toHaveBeenCalled();
+});
+
+it('derivação travada além do teto NÃO acorda o laço — o turno já seguiu sem o texto', async () => {
+  acordarLacoDeEventLog.mockClear();
+  process.env.__ESPERA__ = '150000';
+  await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, []), knobs, log);
+  expect(acordarLacoDeEventLog).not.toHaveBeenCalled();
 });
 
 it('áudio JÁ transcrito: turno segue normalmente', async () => {

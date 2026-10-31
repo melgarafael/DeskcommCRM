@@ -142,6 +142,17 @@ const envSchema = z.object({
   // `event-log-drain` (1×/min) — ver o cabeçalho de lib/event-log/drain-loop.ts.
   EVENT_LOG_DRAIN_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   EVENT_LOG_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  // Teto do recuo do ocioso (#3693). O laço não fica em 10s para sempre: 10s →
+  // 20s → 30s e para aqui. Sem teto, uma instalação sem uso passaria a
+  // esperar horas entre ticks — e um evento que chegasse esperaria junto.
+  // 30s e não 60s é decisão do dono (doc 242, opção B): corta a maior parte das
+  // consultas vazias sem deixar automação e aviso ao atendente com cara de
+  // "travou". Preso por `lib/agent-engine/env.test.ts`.
+  EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  // De quanto em quanto tempo, no MÁXIMO, o laço procura evento preso em
+  // `processing`. A varredura procura linhas 10 min atrasadas: fazê-la a cada
+  // tick (2s) era consulta ao PostgREST sem chance de achar nada novo.
+  EVENT_LOG_DRAIN_STALE_SWEEP_MS: z.coerce.number().int().positive().default(60_000),
   EVENT_LOG_DRAIN_BATCH_SIZE: z.coerce.number().int().positive().default(50),
   // Coalescência de rajada inbound: mensagens do MESMO contato dentro desta
   // janela viram UM job (responder em rajada é gatilho de ban). 0 = sem debounce.
