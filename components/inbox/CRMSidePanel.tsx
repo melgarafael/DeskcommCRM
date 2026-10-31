@@ -18,12 +18,13 @@ import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { format } from "date-fns";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight } from "@/lib/ui/icons";
+import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, CalendarPlus, ArrowSquareOut, X } from "@/lib/ui/icons";
+import { AvatarComCanal } from "./AvatarComCanal";
+import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
@@ -37,6 +38,7 @@ import { FollowupDoContato } from "./FollowupDoContato";
 import { DialogoDosModulos } from "./DialogoDosModulos";
 import {
   modulosPadrao,
+  ROTULO_DO_MODULO,
   type IdModuloDaLateral,
   type ModuloDaLateral,
 } from "@/lib/inbox/modulos-da-lateral";
@@ -71,6 +73,8 @@ interface Props {
    * `Sheet` do Inbox não o passa.
    */
   onAlternarRecolhido?: () => void;
+  /** Fecha o painel (redesign kvgroup): o ✕ do cabeçalho "Contato". */
+  onFechar?: () => void;
   /**
    * Os módulos que ESTA pessoa escolheu mostrar, na ordem dela (#3008), já
    * lidos no servidor (`app/app/inbox/page.tsx`) para o primeiro paint sair
@@ -762,9 +766,35 @@ export function CRMSidePanel({
   conversation,
   recolhido = false,
   onAlternarRecolhido,
+  onFechar,
   modulosIniciais,
 }: Props) {
   const { user, activeOrg } = useAuth();
+  /**
+   * O ACORDEÃO (redesign kvgroup, seção 7): uma seção aberta por vez, e a
+   * última aberta é lembrada por navegador. `null` = nenhuma escolhida ainda,
+   * e aí abre a primeira que tiver conteúdo.
+   */
+  const [secaoAberta, setSecaoAberta] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const salva = window.localStorage.getItem("kv-painel-secao");
+      if (salva) setSecaoAberta(salva);
+    } catch {
+      // Storage bloqueado — vale o padrão.
+    }
+  }, []);
+  const abrirSecao = useCallback((id: string) => {
+    setSecaoAberta((atual) => {
+      const proxima = atual === id ? "__nenhuma__" : id;
+      try {
+        window.localStorage.setItem("kv-painel-secao", proxima);
+      } catch {
+        // Vale nesta sessão.
+      }
+      return proxima;
+    });
+  }, []);
   const readonly = user.support?.access_mode === "support_readonly";
   // Criar tarefa é `agent`+ (a rota cobra `requireRole("agent")`): a MESMA régua
   // da tela de Tarefas (`app/app/tasks/page.tsx`). `readonly` sozinho deixava o
@@ -1031,60 +1061,68 @@ export function CRMSidePanel({
    */
   const conteudo: Record<IdModuloDaLateral, ReactNode> = {
     contato: (
-      <section data-testid="inbox-contato">
-        <h3 className="text-xs font-semibold text-text">
-          {t("Contato")}
-        </h3>
-        <Card className="mt-2 space-y-2 p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="font-medium">{displayName}</div>
-            {/*
-              O TIPO DO CONTATO (issue 3005, fatia 1): lido da COLUNA
-              (`contacts.contact_type`, migration 0763), nunca da etiqueta
-              `fornecedor` — mesma régua do selo "Pessoal" da ficha: remover a
-              tag não pode apagar o que o banco diz. Só o fornecedor ganha selo
-              porque cliente é o padrão; um selo em toda conversa não informa nada.
-            */}
-            {contact?.contact_type === "fornecedor" && (
-              <Badge variant="secondary">{t("Fornecedor")}</Badge>
-            )}
-          </div>
-          {contact?.phone_number && (
-            <div className="text-xs text-muted-foreground">{phoneForDisplay(contact.phone_number)}</div>
+      <section data-testid="inbox-contato" className="flex flex-col items-center gap-1 px-4 pt-4 pb-3 text-center">
+        <AvatarComCanal
+          contato={contact}
+          nome={displayName}
+          reserva={contact?.phone_number ?? "??"}
+          canal={conversation.channel_sessions}
+          rotuloDoCanal={rotuloDoCanalDaConversa(conversation.channel_sessions, t)}
+          tamanho={48}
+        />
+        <div className="mt-1 flex max-w-full flex-wrap items-center justify-center gap-2">
+          <div className="truncate text-base font-semibold">{displayName}</div>
+          {/* O TIPO DO CONTATO (issue 3005): lido da COLUNA, nunca da etiqueta. */}
+          {contact?.contact_type === "fornecedor" && (
+            <Badge variant="secondary">{t("Fornecedor")}</Badge>
           )}
-          {/*
-            OS ATALHOS DO CARD (#3487), logo abaixo do telefone — que é o dado
-            que eles usam. `tel:` aqui é o caso (a) da issue: um clique disca no
-            softphone do PABX, em vez de copiar o número e colar. Sem atalho
-            configurado no funil, nada aparece; o espaçamento da `Card` não muda.
-          */}
-          <AtalhosDoNegocio
-            atalhos={negocioAtivo?.atalhos}
-            lead={negocioAtivo}
-            contactId={contactId}
-          />
-          <div className="flex flex-wrap gap-2 pt-1">
-            {contactId&&conversation?<Link className="underline" href={`/app/agenda?contato=${contactId}&conversa=${conversation.id}`}>{t("Marcar compromisso")}</Link>:null}
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-11 px-2 text-xs lg:h-7"
-              disabled={readonly || !contactId || (leadDialogOpen && defaultPipeline.isLoading)}
-              onClick={() => setLeadDialogOpen(true)}
-            >
-              <Users size={12} className="mr-1" weight="regular" aria-hidden />
-              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo Lead")}
-            </Button>
-            {contactId && (
-              <Button asChild size="sm" variant="ghost" className="h-11 px-2 text-xs lg:h-7">
-                <Link href={`/app/contacts/${contactId}`}>
-                  {t("Ver contato")}
-                  <ArrowRight size={12} className="ml-1" weight="regular" aria-hidden />
-                </Link>
-              </Button>
-            )}
+        </div>
+        {contact?.phone_number && (
+          <div className="text-[13px] text-text-muted">{phoneForDisplay(contact.phone_number)}</div>
+        )}
+        {rotuloDoCanalDaConversa(conversation.channel_sessions, t) && (
+          <div className="text-xs text-[var(--kv-text-faint)]">
+            {rotuloDoCanalDaConversa(conversation.channel_sessions, t)}
           </div>
-        </Card>
+        )}
+        {/* OS ATALHOS DO CARD (#3487): `tel:` e afins do funil. */}
+        <AtalhosDoNegocio
+          atalhos={negocioAtivo?.atalhos}
+          lead={negocioAtivo}
+          contactId={contactId}
+        />
+        <div className="mt-2 flex gap-2">
+          {contactId && (
+            <Link
+              href={`/app/agenda?contato=${contactId}&conversa=${conversation.id}`}
+              aria-label={t("Marcar compromisso")}
+              title={t("Marcar compromisso")}
+              className="flex h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-border-strong text-text-muted transition-colors hover:bg-[var(--kv-hover)] hover:text-text"
+            >
+              <CalendarPlus size={16} aria-hidden />
+            </Link>
+          )}
+          <button
+            type="button"
+            aria-label={t("Novo Lead")}
+            title={leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo Lead")}
+            disabled={readonly || !contactId || (leadDialogOpen && defaultPipeline.isLoading)}
+            onClick={() => setLeadDialogOpen(true)}
+            className="flex h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-border-strong text-text-muted transition-colors hover:bg-[var(--kv-hover)] hover:text-text disabled:opacity-50"
+          >
+            <Users size={16} aria-hidden />
+          </button>
+          {contactId && (
+            <Link
+              href={`/app/contacts/${contactId}`}
+              aria-label={t("Ver contato")}
+              title={t("Ver contato")}
+              className="flex h-[34px] w-[34px] items-center justify-center rounded-[7px] border border-border-strong text-text-muted transition-colors hover:bg-[var(--kv-hover)] hover:text-text"
+            >
+              <ArrowSquareOut size={16} aria-hidden />
+            </Link>
+          )}
+        </div>
       </section>
     ),
 
@@ -1132,7 +1170,7 @@ export function CRMSidePanel({
        não vê o bloco em vez de levar 403. */
     carteira: contactId && podeVerCarteira ? (
       <section data-testid="inbox-bloco-carteira">
-        <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg?.role ?? null} />
+        <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg?.role ?? null} compacto />
       </section>
     ) : null,
 
@@ -1402,24 +1440,37 @@ export function CRMSidePanel({
     ),
   };
 
-  return (
-    <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
-      {/* A FAIXA DO ALTO (#3004/#3008): o recolher do painel, no mesmo lugar do
-          recolher do menu da esquerda, e o botão que abre a personalização da
-          lateral. `sticky` para não rolar para fora com o conteúdo, e o
-          `-mx-4 -mt-4` esticam a faixa até as bordas do painel cancelando o
-          padding do `<aside>`.
+  /**
+   * Módulos com conteúdo, na ordem e visibilidade escolhidas (#3008). O
+   * Contato é o bloco fixo do alto; os outros viram seções do acordeão.
+   */
+  const visiveis = modulos.filter((modulo) => modulo.visivel && conteudo[modulo.id] != null);
+  const secoes = visiveis.filter((modulo) => modulo.id !== "contato");
+  const secaoEfetiva =
+    secaoAberta && secoes.some((m) => m.id === secaoAberta)
+      ? secaoAberta
+      : secaoAberta === "__nenhuma__"
+        ? null
+        : (secoes[0]?.id ?? null);
 
-          A faixa existe MESMO sem `onAlternarRecolhido` (o `Sheet` do celular,
-          que já tem o próprio gesto de fechar): é por ela que o painel do
-          celular chega à personalização. Sem o controle de recolher, o espaço
-          dele fica com um vazio — o botão de módulos não muda de lugar. */}
+  return (
+    <aside className="flex h-full flex-col overflow-y-auto border-l border-border bg-[var(--kv-sidebar)]">
       <div
-        className="sticky top-0 z-10 -mx-4 -mt-4 flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-4 py-1"
+        className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-[var(--kv-sidebar)] px-4"
         data-testid="inbox-cabecalho-do-painel"
       >
-        <DialogoDosModulos modulos={modulos} onSalvos={setModulos} />
-        {onAlternarRecolhido ? (
+        <span className="text-sm font-semibold">{t("Contato")}</span>
+        {onFechar ? (
+          <button
+            type="button"
+            onClick={onFechar}
+            aria-label={t("Fechar painel do contato")}
+            title={t("Fechar painel do contato")}
+            className="flex h-7 w-7 items-center justify-center rounded-[6px] text-text-muted transition-colors hover:bg-[var(--kv-hover)] hover:text-text"
+          >
+            <X size={16} aria-hidden />
+          </button>
+        ) : onAlternarRecolhido ? (
           <BotaoDeRecolherDoPainel recolhido={false} onAlternar={onAlternarRecolhido} />
         ) : (
           <span aria-hidden />
@@ -1449,13 +1500,48 @@ export function CRMSidePanel({
           pilha do `<aside>` como ela era — o `gap-4` continua valendo entre os
           módulos, sem um `div` a mais para o layout negociar —, e o
           `data-modulo` deixa a tela e os testes nomearem o bloco. */}
-      {modulos
-        .filter((modulo) => modulo.visivel)
-        .map((modulo) => (
-          <div key={modulo.id} data-modulo={modulo.id} className="contents">
-            {conteudo[modulo.id]}
+      {visiveis.some((m) => m.id === "contato") && (
+        <div data-modulo="contato">{conteudo.contato}</div>
+      )}
+      {secoes.map((modulo) => {
+        const aberta = secaoEfetiva === modulo.id;
+        const corpoId = `painel-secao-${modulo.id}`;
+        return (
+          <div key={modulo.id} data-modulo={modulo.id} className="border-t border-border">
+            <h3>
+              <button
+                type="button"
+                onClick={() => abrirSecao(modulo.id)}
+                aria-expanded={aberta}
+                aria-controls={corpoId}
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-[13px] font-semibold text-text transition-colors hover:bg-[var(--kv-hover)]"
+              >
+                {t(ROTULO_DO_MODULO[modulo.id])}
+                <CaretDown
+                  size={12}
+                  aria-hidden
+                  className={cn("shrink-0 text-text-muted transition-transform", aberta && "rotate-180")}
+                />
+              </button>
+            </h3>
+            {/* Fechada, a seção fica MONTADA e escondida: os dados carregam como
+                antes (a lateral inteira montada) e abrir é instantâneo. */}
+            {/* O título do módulo já está no cabeçalho da seção: o `h3` de
+                abertura do próprio bloco some para não aparecer duas vezes. */}
+            <div
+              id={corpoId}
+              hidden={!aberta}
+              className="space-y-3 px-4 pb-4 text-[13px] [&>section>h3:first-child]:hidden [&>section>div:first-child>h3:first-child]:hidden"
+            >
+              {conteudo[modulo.id]}
+            </div>
           </div>
-        ))}
+        );
+      })}
+      {/* "Personalizar painel": quais seções aparecem e em que ordem (#3008). */}
+      <div className="border-t border-border px-4 py-3">
+        <DialogoDosModulos modulos={modulos} onSalvos={setModulos} />
+      </div>
     </aside>
   );
 }

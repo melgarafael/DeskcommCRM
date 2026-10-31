@@ -79,6 +79,12 @@ vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => nu
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
+vi.mock("@/hooks/inbox/useSnoozeConversation", () => ({
+  useSnoozeConversation: () => ({
+    snooze: { mutate: vi.fn(), isPending: false },
+    cancel: { mutate: vi.fn(), isPending: false },
+  }),
+}));
 vi.mock("@/components/voice/DialButton", () => ({ DialButton: () => null }));
 vi.mock("@/components/inbox/VideoCallButton", () => ({ VideoCallButton: () => null }));
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({

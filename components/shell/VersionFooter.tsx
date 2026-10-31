@@ -15,10 +15,17 @@ import { cn } from "@/lib/utils";
 export function VersionFooter({
   collapsed,
   onNavigate,
+  soAlerta = false,
 }: {
   collapsed: boolean;
   /** Fecha a gaveta do mobile — é o único Link do drawer que não a recebia. */
   onNavigate?: () => void;
+  /**
+   * Só o aviso de versão nova, sem a linha da versão instalada (redesign
+   * kvgroup): a versão mora no menu do usuário, e o aviso continua fixo na
+   * barra lateral para quem pode atualizar.
+   */
+  soAlerta?: boolean;
 }) {
   const t = useT();
   const { data } = useSystemVersion();
@@ -46,12 +53,12 @@ export function VersionFooter({
       )}
     </p>
   );
-  if (!alerta) return instalada;
+  if (!alerta) return soAlerta ? null : instalada;
 
   const novo = data.latest_version?.replace(/^v/i, "") ?? "";
   return (
     <div>
-      {instalada}
+      {!soAlerta && instalada}
       <Link
         href="/app/settings/atualizacao"
         onClick={onNavigate}

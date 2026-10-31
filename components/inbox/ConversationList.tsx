@@ -5,8 +5,8 @@ import { useT } from "@/hooks/i18n/useT";
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Check } from "@/lib/ui/icons";
 import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { useMarcarComoExemplo } from "@/hooks/inbox/useMarcarComoExemplo";
@@ -60,10 +60,10 @@ export function ConversationList({
   onLimparFiltros,
   selecionados,
   onAlternarSelecao,
-  onSelecionarTodosVisiveis,
   podeMarcarExemplo = false,
 }: Props) {
   const t = useT();
+  const { user } = useAuth();
   // Só mostra POR ONDE a conversa entrou quando há mais de um número. Com um
   // só, o rótulo seria a mesma palavra em toda linha — ruído que ensina o olho
   // a ignorar a área onde vivem os avisos que importam.
@@ -222,32 +222,9 @@ export function ConversationList({
             {t("Só entram na inbox os grupos ligados em Conexões › Grupos, e cada um aparece aqui a partir da primeira mensagem recebida depois de ligar (o histórico anterior não entra).")}
           </p>
         )}
-        {/* Cabeça da seleção em lote (#2484, F1): marca de uma vez tudo o que
-            está na tela. Some com a lista vazia — oferecer "selecionar todas"
-            quando não há nenhuma é botão de mentira. */}
-        {onAlternarSelecao && items.length > 0 && (
-          <div className="flex items-center gap-2 border-b border-border/70 px-3 py-1.5">
-            <button
-              type="button"
-              role="checkbox"
-              aria-checked={
-                selecionados
-                  ? items.every((c) => selecionados.has(c.id))
-                  : false
-              }
-              aria-label={t("Selecionar todas as conversas visíveis")}
-              title={t("Selecionar todas")}
-              data-testid="selecionar-todas-visiveis"
-              onClick={onSelecionarTodosVisiveis}
-              className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-muted-foreground bg-background transition-colors hover:bg-surface-elevated focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              {selecionados && items.every((c) => selecionados.has(c.id)) && (
-                <Check size={12} weight="bold" aria-hidden />
-              )}
-            </button>
-            <span className="text-xs text-text-muted">{t("Selecionar todas")}</span>
-          </div>
-        )}
+        {/* A linha fixa "Selecionar todas" saiu (redesign kvgroup): o gesto
+            mora na barra de ações em lote, que aparece com a 1ª marcada. */}
+        <div className="h-1" aria-hidden />
         {items.map((c, i) => (
           <ConversationListItem
             key={c.id}
@@ -262,6 +239,8 @@ export function ConversationList({
             selecionado={selecionados?.has(c.id)}
             onAlternarSelecao={onAlternarSelecao}
             onAlternarExemplo={podeMarcarExemplo ? alternarExemplo : undefined}
+            emSelecao={(selecionados?.size ?? 0) > 0}
+            usuarioAtualId={user.id}
           />
         ))}
         {q.hasNextPage && (

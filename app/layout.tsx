@@ -49,12 +49,12 @@ const atkinson = localFont({
   variable: "--font-atkinson",
 });
 
-// Fonte do tema neutro (escuro, estilo shadcn): vem antes da Atkinson em
+// Fonte do tema neutro (redesign do Inbox): vem antes da Atkinson em
 // `--font-sans` (globals.css). A Atkinson segue como reserva.
-const geist = localFont({
-  src: [{ path: "./fonts/geist-100-900-latin.woff2", weight: "100 900", style: "normal" }],
+const inter = localFont({
+  src: [{ path: "./fonts/inter-100-900-latin.woff2", weight: "100 900", style: "normal" }],
   display: "swap",
-  variable: "--font-geist",
+  variable: "--font-inter",
 });
 
 const plexMono = localFont({
@@ -345,7 +345,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       lang="pt-BR"
       data-theme="dark"
       suppressHydrationWarning
-      className={`${geist.variable} ${atkinson.variable} ${plexMono.variable}`}
+      className={`${inter.variable} ${atkinson.variable} ${plexMono.variable}`}
     >
       <head>
         {/* Primeiro de tudo: a cor da instalação, antes do CSS e do script de tema. */}

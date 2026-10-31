@@ -29,7 +29,13 @@ import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilt
 import { ChatThread } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
-import { BotaoIniciarConversa } from "./PainelIniciarConversa";
+import { IniciarConversaDialog } from "./PainelIniciarConversa";
+import {
+  CHAVES_DA_VISAO,
+  filtrosDaVisao,
+  statusDaLista,
+  type StatusDaLista,
+} from "@/lib/inbox/visao-do-inbox";
 import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
 import type { ModuloDaLateral } from "@/lib/inbox/modulos-da-lateral";
@@ -43,7 +49,7 @@ import { OpenConversationProvider } from "@/hooks/notifications/OpenConversation
 // ADR-05: ícone de feature sai do mapa canônico, nunca do pacote direto.
 import { CaretLeft, ChatCircle, IdentificationCard, MagnifyingGlass, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { togglePainelDoContato } from "@/app/actions/inbox/togglePainelDoContato";
@@ -227,7 +233,32 @@ export function tabToFilter(
   }
 }
 
+/**
+ * O FILTRO DA LISTA no modelo do redesign (kvgroup): aba de DONO + STATUS.
+ *
+ * Abertas: as abas de antes, com uma diferença — "Todas" deixa de incluir as
+ * encerradas, porque elas agora têm o seletor de status. Fechadas/Arquivadas:
+ * o status do seletor, recortado pela aba (minhas, sem dono, todas).
+ */
+export function filtroDaLista(
+  tab: InboxTab,
+  status: StatusDaLista,
+  automaticoDaOrg?: boolean,
+): Partial<ConversationsFilters> {
+  if (status === "abertas") {
+    if (tab === "all") return { exclude_finished: true };
+    return tabToFilter(tab, automaticoDaOrg);
+  }
+  const doBanco = status === "fechadas" ? "closed" : "archived";
+  if (tab === "mine") return { status: doBanco, assigned_to: "me" };
+  if (tab === "unassigned") return { status: doBanco, assigned_to: "unassigned" };
+  return { status: doBanco };
+}
+
 const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archived", "ai"];
+
+/** Chave do modo foco (lista oculta), por navegador. */
+const CHAVE_LISTA_OCULTA = "kv-inbox-lista-oculta";
 
 /**
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
@@ -250,16 +281,6 @@ function armazenamentoDoNavegador(): Storage | null {
   }
 }
 
-/**
- * A LARGURA DO TRILHO DO PAINEL RECOLHIDO (issue #3004).
- *
- * Recolher o painel do contato não é só escondê-lo: a conversa recebe a largura
- * que ele ocupava. O que fica é um trilho estreito com o botão de expandir — sem
- * ele o painel sumiria sem porta de volta. É o mesmo desenho do recolher do menu
- * da esquerda (`Sidebar`, o trilho de `w-16`), só que em 44px: aqui não há
- * rótulo nem contador, só o controle.
- */
-const LARGURA_DO_TRILHO_DO_PAINEL = "2.75rem";
 
 interface InboxLayoutProps {
   initialSelectedId?: string | null;
@@ -297,7 +318,18 @@ export function InboxLayout({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = parseFilterParam(searchParams.get("filter"));
+  const abaNaUrl = parseFilterParam(searchParams.get("filter"));
+  // `?filter=closed`/`archived` eram abas; hoje são STATUS (`statusDaLista`
+  // as reconhece), e a aba de dono desses links antigos é "Todas".
+  const tab: InboxTab = abaNaUrl === "closed" || abaNaUrl === "archived" ? "all" : abaNaUrl;
+  const status = statusDaLista(searchParams);
+  /**
+   * A VISÃO escolhida no submenu do Inbox (barra lateral): `?view=`,
+   * `?channel=`, `?tag=`. `null` quando a URL não escolhe nenhuma — aí valem
+   * os filtros lembrados por organização, como antes.
+   */
+  const visaoDaUrl = filtrosDaVisao(searchParams);
+  const chaveDaVisao = CHAVES_DA_VISAO.map((chave) => searchParams.get(chave) ?? "").join("|");
   const idNaUrl = searchParams.get("id");
   /**
    * `?tag=` é o destino do link de cada linha do relatório Por etiqueta
@@ -318,16 +350,19 @@ export function InboxLayout({
     onlyUnread: false,
     onlyGroups: false,
     ...(tagNaUrl ? { tag: tagNaUrl } : {}),
+    ...(visaoDaUrl ?? {}),
   });
   // Lidos depois da hidratação: o servidor não enxerga o localStorage.
   const [orgDosFiltros, setOrgDosFiltros] = useState<string | null>(null);
   useEffect(() => {
     if (!orgId) return;
+    // Visão escolhida na URL vence o que estava lembrado (redesign kvgroup).
+    const naUrl = filtrosDaVisao(new URLSearchParams(window.location.search));
     const lembrados = lerFiltrosLembrados(armazenamentoDoNavegador(), orgId);
     setAux((atual) => ({
       ...atual,
-      channel_session_id: lembrados.channel_session_id,
-      onlyUnread: lembrados.onlyUnread ?? false,
+      channel_session_id: naUrl ? naUrl.channel_session_id : lembrados.channel_session_id,
+      onlyUnread: naUrl ? naUrl.onlyUnread : (lembrados.onlyUnread ?? false),
     }));
     // O contexto acompanha o estado restaurado no PRÓXIMO render. Uma ref
     // marcada aqui liberaria o efeito de gravação com os filtros anteriores.
@@ -340,6 +375,17 @@ export function InboxLayout({
       onlyUnread: aux.onlyUnread,
     });
   }, [orgId, orgDosFiltros, aux.channel_session_id, aux.onlyUnread]);
+  // Clicar numa visão do submenu troca a URL sem recarregar a tela: a visão
+  // nova substitui os filtros auxiliares (busca e atendente ficam).
+  const ultimaVisao = useRef(chaveDaVisao);
+  useEffect(() => {
+    if (ultimaVisao.current === chaveDaVisao) return;
+    ultimaVisao.current = chaveDaVisao;
+    if (!visaoDaUrl) return;
+    setAux((atual) => ({ ...atual, ...visaoDaUrl, tagMode: undefined }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a chave resume a visão
+  }, [chaveDaVisao]);
+
   const filterValue: InboxFiltersValue = {
     tab,
     ...aux,
@@ -348,22 +394,84 @@ export function InboxLayout({
   };
   const setFilterValue = useCallback(
     (next: InboxFiltersValue) => {
-      if (next.tab !== tab) {
+      if (next.tab !== tab || abaNaUrl !== tab) {
         const params = new URLSearchParams(searchParams);
         params.set("filter", next.tab);
+        // O status dos links antigos (`?filter=closed`) não se perde na troca.
+        if (status !== "abertas") params.set("status", status);
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       }
       const { tab: _t, ...rest } = next;
       setAux(rest);
     },
-    [tab, searchParams, router, pathname],
+    [tab, abaNaUrl, status, searchParams, router, pathname],
+  );
+
+  /** O seletor de status (redesign kvgroup): escreve `?status=` na URL. */
+  const mudarStatus = useCallback(
+    (proximo: StatusDaLista) => {
+      const params = new URLSearchParams(searchParams);
+      if (proximo === "abertas") params.delete("status");
+      else params.set("status", proximo);
+      const filtro = params.get("filter");
+      if (filtro === "closed" || filtro === "archived") params.set("filter", "all");
+      // "Com agente de IA" é uma visão das ABERTAS.
+      if (filtro === "ai" && proximo !== "abertas") params.set("filter", "all");
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
   );
 
   // Desliga só os AUXILIARES e mantém a aba: a aba é onde a pessoa está, e
   // limpá-la junto a tiraria do lugar sem ela ter pedido.
   const limparFiltrosAuxiliares = useCallback(() => {
     setFilterValue({ tab, search: "", onlyUnread: false, onlyGroups: false });
-  }, [tab, setFilterValue]);
+    // A visão da URL sai junto, senão o submenu continuaria apontando para ela.
+    if (CHAVES_DA_VISAO.some((chave) => searchParams.get(chave) !== null)) {
+      const params = new URLSearchParams(searchParams);
+      for (const chave of CHAVES_DA_VISAO) params.delete(chave);
+      ultimaVisao.current = "||";
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [tab, setFilterValue, searchParams, router, pathname]);
+
+  /**
+   * "Iniciar conversa" (redesign kvgroup): o botão grande saiu; o diálogo é
+   * aberto pelo ícone do cabeçalho da lista ou pelo lápis da barra lateral,
+   * que chega aqui como `?iniciar=1` (o parâmetro sai da URL ao abrir).
+   */
+  const podeIniciarConversa = usePermission("inbox.claim");
+  const [iniciarAberto, setIniciarAberto] = useState(false);
+  useEffect(() => {
+    if (searchParams.get("iniciar") !== "1") return;
+    if (podeIniciarConversa) setIniciarAberto(true);
+    const params = new URLSearchParams(searchParams);
+    params.delete("iniciar");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [searchParams, podeIniciarConversa, router, pathname]);
+
+  /**
+   * MODO FOCO (redesign kvgroup, seção 9): a lista some e a conversa fica com a
+   * largura. Lembrado por navegador. Só a partir do `md` — no celular a regra
+   * já é uma coluna por vez.
+   */
+  const [listaOculta, setListaOculta] = useState(false);
+  useEffect(() => {
+    try {
+      setListaOculta(window.localStorage.getItem(CHAVE_LISTA_OCULTA) === "1");
+    } catch {
+      // Storage bloqueado — a lista fica visível, que é o padrão.
+    }
+  }, []);
+  const alternarLista = useCallback((oculta: boolean) => {
+    setListaOculta(oculta);
+    try {
+      window.localStorage.setItem(CHAVE_LISTA_OCULTA, oculta ? "1" : "0");
+    } catch {
+      // Vale nesta sessão; só não sobrevive a um F5.
+    }
+  }, []);
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? idNaUrl);
   const ultimoIdNaUrl = useRef(idNaUrl);
@@ -452,10 +560,11 @@ export function InboxLayout({
 
   const filters: ConversationsFilters = useMemo(
     () => ({
-      ...tabToFilter(filterValue.tab, automaticoDaOrg),
+      ...filtroDaLista(filterValue.tab, status, automaticoDaOrg),
       // O atendente escolhido pelo gerente. A aba Minhas já traz `assigned_to=me`,
       // e esse valor da aba vence (o seletor nem aparece ali).
-      assigned_to: tabToFilter(filterValue.tab, automaticoDaOrg).assigned_to ?? filterValue.assigned_to,
+      assigned_to:
+        filtroDaLista(filterValue.tab, status, automaticoDaOrg).assigned_to ?? filterValue.assigned_to,
       // A tela NÃO pede o que a rota recusa: o hook trata falha com
       // `showApiError`, então digitar a primeira letra de qualquer busca faria
       // piscar um erro na cara de quem digita. A regra é a MESMA que o schema
@@ -471,6 +580,7 @@ export function InboxLayout({
     }),
     [
       filterValue.tab,
+      status,
       automaticoDaOrg,
       filterValue.assigned_to,
       filterValue.search,
@@ -505,7 +615,8 @@ export function InboxLayout({
    * Falha ou permissão ausente não travam a tela: aí `isLoading` é falso, a
    * consulta sai com a convenção de sempre e nada fica esperando para sempre.
    */
-  const filaEsperaOFatoDaOrg = filterValue.tab === "unassigned" && automaticoCarregando;
+  const filaEsperaOFatoDaOrg =
+    filterValue.tab === "unassigned" && status === "abertas" && automaticoCarregando;
 
   // We need the selected conversation object for header / composer / side panel.
   // Source it from the same query the list uses to avoid an extra request.
@@ -778,14 +889,15 @@ export function InboxLayout({
   const estiloDaGrade: CSSProperties | undefined =
     faixa && larguras
       ? {
-          gridTemplateColumns: painelRecolhido && faixa.temFicha
-            ? // Recolhido: a ficha sai da conta e o trilho do painel entra no
-              // lugar dela. A largura AJUSTADA da ficha não se perde — ela volta
-              // inteira quando o painel reabre.
-              `${larguras.lista}px minmax(0,1fr) ${LARGURA_DO_TRILHO_DO_PAINEL}`
-            : faixa.temFicha
-              ? `${larguras.lista}px minmax(0,1fr) ${larguras.ficha}px`
-              : `${larguras.lista}px minmax(0,1fr)`,
+          // Recolhido, a ficha sai da conta (sem trilho, redesign kvgroup). A
+          // largura AJUSTADA dela não se perde — volta inteira ao reabrir.
+          gridTemplateColumns: [
+            listaOculta ? null : `${larguras.lista}px`,
+            "minmax(0,1fr)",
+            faixa.temFicha && !painelRecolhido ? `${larguras.ficha}px` : null,
+          ]
+            .filter(Boolean)
+            .join(" "),
         }
       : undefined;
 
@@ -897,14 +1009,21 @@ export function InboxLayout({
     <div
       ref={gradeRef}
       className={cn(
-        "grid relative h-[calc(100dvh-var(--faixas-de-cima,0px)-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[300px_1fr]",
-        // Recolhido (issue #3004), a terceira trilha vira o trilho estreito do
-        // botão de expandir e a conversa fica com o que era da ficha. Duas
-        // listas em vez de uma classe com valor em variável: o Tailwind precisa
-        // do literal para gerar o CSS.
-        painelRecolhido
-          ? "xl:grid-cols-[272px_1fr_2.75rem] 2xl:grid-cols-[300px_1fr_2.75rem]"
-          : "xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]",
+        // `h-full`: a casca dá ao Inbox a altura exata da tela (redesign
+        // kvgroup — sem barra de cima no computador e sem margem), e as colunas
+        // rolam por dentro.
+        "grid relative h-full w-full grid-cols-1",
+        // Redesign kvgroup: o painel recolhido NÃO deixa trilho — some e a
+        // conversa fica com a largura (o botão de reabrir mora no cabeçalho da
+        // conversa). E a lista pode sumir (modo foco). Listas literais porque o
+        // Tailwind precisa do literal para gerar o CSS.
+        listaOculta
+          ? painelRecolhido
+            ? "md:grid-cols-[minmax(0,1fr)]"
+            : "md:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_296px] 2xl:grid-cols-[minmax(0,1fr)_320px]"
+          : painelRecolhido
+            ? "md:grid-cols-[300px_1fr] 2xl:grid-cols-[340px_1fr]"
+            : "md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_296px] 2xl:grid-cols-[340px_1fr_320px]",
       )}
       style={estiloDaGrade}
       /*
@@ -948,23 +1067,37 @@ export function InboxLayout({
         className={cn(
           "h-full min-h-0 flex-col border-r border-border md:flex",
           colunas.lista,
+          listaOculta && "md:hidden",
         )}
       >
-        <BotaoIniciarConversa />
-        <InboxFilters value={filterValue} onChange={setFilterValue} />
-        {podeAgirEmLote && (
-          <BarraDeAcoesEmLote
-            quantidade={selecao.quantidade}
-            pendente={lote.isPending}
-            onFechar={() => rodarLote("close")}
-            onArquivar={() => rodarLote("archive")}
-            onMarcarComoLida={() => rodarLote("mark-read")}
-            onPausarIa={() => rodarLote("pause-ai")}
-            onDevolverAoAutomatico={() => rodarLote("reactivate-bot")}
-            onTransferir={(toUserId, reason) => rodarLote("transfer", toUserId, reason)}
-            onLimpar={selecao.limpar}
-          />
-        )}
+        <InboxFilters
+          value={filterValue}
+          onChange={setFilterValue}
+          status={status}
+          onStatusChange={mudarStatus}
+          onIniciarConversa={podeIniciarConversa ? () => setIniciarAberto(true) : undefined}
+          onOcultarLista={() => alternarLista(true)}
+          barraDeLote={
+            podeAgirEmLote && selecao.quantidade > 0 ? (
+              <BarraDeAcoesEmLote
+                quantidade={selecao.quantidade}
+                pendente={lote.isPending}
+                onFechar={() => rodarLote("close")}
+                onArquivar={() => rodarLote("archive")}
+                onMarcarComoLida={() => rodarLote("mark-read")}
+                onPausarIa={() => rodarLote("pause-ai")}
+                onDevolverAoAutomatico={() => rodarLote("reactivate-bot")}
+                onTransferir={(toUserId, reason) => rodarLote("transfer", toUserId, reason)}
+                onLimpar={selecao.limpar}
+                onSelecionarTodas={() =>
+                  selecao.selecionarTodos(
+                    (listQ.data?.pages.flatMap((p) => p.data) ?? []).map((c) => c.id),
+                  )
+                }
+              />
+            ) : undefined
+          }
+        />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
             listQuery={listQ}
@@ -1027,21 +1160,15 @@ export function InboxLayout({
             </Button>
             <div className="flex-1" />
             {selectedConversation && (
-              <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-1 px-2 xl:hidden">
-                    <IdentificationCard size={16} />
-                    {t("Ficha")}
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
-                  <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
-                  <CRMSidePanel
-                    conversation={selectedConversation}
-                    modulosIniciais={modulosDaLateral}
-                  />
-                </SheetContent>
-              </Sheet>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 px-2 xl:hidden"
+                onClick={() => setFichaAberta(true)}
+              >
+                <IdentificationCard size={16} />
+                {t("Ficha")}
+              </Button>
             )}
           </div>
         )}
@@ -1060,6 +1187,14 @@ export function InboxLayout({
               }
               buscaAberta={buscaAberta}
               botaoBuscaRef={botaoBuscaRef}
+              // Painel do contato e modo foco (redesign kvgroup). Abaixo do `xl`
+              // não há coluna para o painel: o ícone abre a gaveta.
+              painelAberto={faixa?.temFicha ? !painelRecolhido : fichaAberta}
+              onAlternarPainel={() =>
+                faixa?.temFicha ? alternarPainelDoContato() : setFichaAberta((v) => !v)
+              }
+              listaOculta={listaOculta}
+              onMostrarLista={() => alternarLista(false)}
             />
             {buscaAberta && (
               <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
@@ -1166,22 +1301,47 @@ export function InboxLayout({
             {t("Conversa não encontrada ou fora do seu acesso.")}
           </div>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+          <div className="relative flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            {listaOculta && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute top-3 left-3 gap-1 max-md:hidden"
+                onClick={() => alternarLista(false)}
+              >
+                <CaretLeft size={14} aria-hidden />
+                {t("Lista")}
+              </Button>
+            )}
             <ChatCircle size={36} weight="thin" className="text-text-subtle" aria-hidden />
             <p className="text-sm font-medium text-text-muted">{t("Selecione uma conversa")}</p>
-            <p className="text-xs text-text-muted">{t("Ou navegue com J e K")}</p>
+            <p className="text-xs text-text-muted">
+              {t("Ou navegue com J e K")} · {t("⌘K abre o menu de comandos")}
+            </p>
           </div>
         )}
       </div>
 
-      <div className="hidden h-full min-h-0 min-w-0 xl:block">
-        <CRMSidePanel
-          conversation={selectedConversation}
-          recolhido={painelRecolhido}
-          onAlternarRecolhido={alternarPainelDoContato}
-          modulosIniciais={modulosDaLateral}
-        />
-      </div>
+      {!painelRecolhido && (
+        <div className="hidden h-full min-h-0 min-w-0 xl:block">
+          <CRMSidePanel
+            conversation={selectedConversation}
+            onFechar={alternarPainelDoContato}
+            modulosIniciais={modulosDaLateral}
+          />
+        </div>
+      )}
+      {/* Abaixo do `xl` o painel abre por cima, como gaveta (redesign kvgroup,
+          seção 11) — pelo ícone do cabeçalho ou pelo "Ficha" do celular. */}
+      {selectedConversation && (
+        <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
+          <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
+            <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
+            <CRMSidePanel conversation={selectedConversation} modulosIniciais={modulosDaLateral} />
+          </SheetContent>
+        </Sheet>
+      )}
+      <IniciarConversaDialog open={iniciarAberto} onOpenChange={setIniciarAberto} />
 
       {/*
         AS DUAS DIVISÓRIAS (#2579) — só a partir do `md`, quando as colunas
@@ -1196,6 +1356,7 @@ export function InboxLayout({
       */}
       {efetivas && (
         <>
+          {!listaOculta && (
           <span
             role="separator"
             aria-orientation="vertical"
@@ -1217,6 +1378,7 @@ export function InboxLayout({
               className="w-px bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary"
             />
           </span>
+          )}
           {faixa?.temFicha && !painelRecolhido && (
             <span
               role="separator"

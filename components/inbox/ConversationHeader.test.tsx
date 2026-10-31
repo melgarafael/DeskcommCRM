@@ -54,6 +54,12 @@ vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
+vi.mock("@/hooks/inbox/useSnoozeConversation", () => ({
+  useSnoozeConversation: () => ({
+    snooze: { mutate: vi.fn(), isPending: false },
+    cancel: { mutate: vi.fn(), isPending: false },
+  }),
+}));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 // O atendimento conjunto (#2542) tem arquivo de teste próprio; este arquivo mede
 // a barra de ações, e o componente novo lê react-query (exigiria provider).

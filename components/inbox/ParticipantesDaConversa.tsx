@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -68,6 +68,12 @@ interface Props {
   podeConvidar: boolean;
   atendenteId?: string;
   somenteLeitura?: boolean;
+  /**
+   * Redesign kvgroup: o "Convidar" mora no menu ⋮ do cabeçalho. Cada incremento
+   * abre o diálogo de convite; `semBotaoDeConvidar` esconde o botão daqui.
+   */
+  pedidoDeConvite?: number;
+  semBotaoDeConvidar?: boolean;
 }
 
 /** Iniciais para o fallback do avatar: sem nome, cai no `?` — nunca no vazio. */
@@ -82,7 +88,7 @@ function iniciais(nome: string | null | undefined): string {
   return `${primeira}${ultima}`.toUpperCase();
 }
 
-export function ParticipantesDaConversa({ conversationId, podeConvidar, atendenteId, somenteLeitura = false }: Props) {
+export function ParticipantesDaConversa({ conversationId, podeConvidar, atendenteId, somenteLeitura = false, pedidoDeConvite, semBotaoDeConvidar = false }: Props) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
   const [alvo, setAlvo] = useState("");
@@ -94,6 +100,14 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
   // gate de QUEM pode pedir a lista mora no hook (`inbox.participantes.view`),
   // não aqui — `podeConvidar` é a régua do BOTÃO, e usá-la aqui tiraria a lista
   // do convidado.
+  const ultimoPedido = useRef(pedidoDeConvite);
+  useEffect(() => {
+    if (pedidoDeConvite === undefined || pedidoDeConvite === ultimoPedido.current) return;
+    ultimoPedido.current = pedidoDeConvite;
+    setErro(null);
+    setAberto(true);
+  }, [pedidoDeConvite]);
+
   const participantes = useParticipantesDaConversa(conversationId, true);
   const convidar = useConvidarParticipante(conversationId);
   const remover = useRemoverParticipante(conversationId);
@@ -186,7 +200,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
         </div>
       )}
 
-      {podeConvidar && !somenteLeitura && (
+      {podeConvidar && !somenteLeitura && !semBotaoDeConvidar && (
         <Button
           size="sm"
           variant="outline"

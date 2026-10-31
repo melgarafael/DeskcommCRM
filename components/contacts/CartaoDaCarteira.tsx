@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,12 @@ interface Props {
   contactId: string;
   /** Papel do usuário ativo — só `manager`+ muda (regra: quem muda é gerente+). */
   papelDoUsuario: string | null | undefined;
+  /**
+   * Corpo de acordeão no painel do Inbox (redesign kvgroup, seção 7): sem o
+   * cartão, e SALVA AO TROCAR — o botão "Salvar carteira" sai. A ficha completa
+   * do contato continua com o cartão e o botão.
+   */
+  compacto?: boolean;
 }
 
 /**
@@ -39,7 +46,7 @@ interface Props {
  * lista que preenche o seletor). Duas razões: uma fonte de nomes só, e a lista
  * já está em cache quando o seletor abre.
  */
-export function CartaoDaCarteira({ contactId, papelDoUsuario }: Props) {
+export function CartaoDaCarteira({ contactId, papelDoUsuario, compacto = false }: Props) {
   const t = useT();
   const podeMudar = Boolean(papelDoUsuario && ROLE_RANK[papelDoUsuario as keyof typeof ROLE_RANK] >= ROLE_RANK.manager);
   const carteira = useCarteiraDoContato(contactId, true);
@@ -67,6 +74,58 @@ export function CartaoDaCarteira({ contactId, papelDoUsuario }: Props) {
 
   // Erro de leitura não é "sem dono": afirmar ausência sem ter lido seria mentir.
   if (carteira.isError) return null;
+
+  if (compacto) {
+    return (
+      <div className="space-y-1.5" data-testid="carteira-do-contato">
+        <Label htmlFor="carteira-dono" className="text-xs font-normal text-text-muted">
+          {t("Vendedor dono")}
+        </Label>
+        {!carteira.data ? (
+          <Skeleton className="h-8 w-full" />
+        ) : podeMudar ? (
+          <select
+            id="carteira-dono"
+            className="h-8 w-full rounded-[7px] border border-border-strong bg-[var(--kv-surface)] px-2 text-[13px]"
+            value={selecionado}
+            disabled={definir.isPending}
+            data-testid="carteira-seletor"
+            onChange={(e) => {
+              const valor = e.target.value;
+              setSelecionado(valor);
+              const limpo = valor === "__sem_dono__" ? null : valor;
+              if (limpo === donoAtual) return;
+              definir.mutate(limpo, {
+                onSuccess: () => toast.success(t("Carteira salva")),
+                onError: () => setSelecionado(donoAtual ?? "__sem_dono__"),
+              });
+            }}
+          >
+            <option value="__sem_dono__">{t("Sem vendedor dono")}</option>
+            {(membros.data ?? []).map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {m.full_name ?? `${t("Atendente")} ${m.user_id.slice(0, 8)}`}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="text-[13px]" data-testid={donoAtual ? "carteira-dono" : "carteira-vazio"}>
+            {donoAtual ? (nomeDoDono ?? t("Membro da equipe")) : t("Sem vendedor dono")}
+          </p>
+        )}
+        {donoAtual && carteira.data && !conta && (
+          <Badge variant="warning" data-testid="carteira-dono-inativo">
+            {t("Não conta: saiu da equipe ou só lê")}
+          </Badge>
+        )}
+        <p className="text-xs text-text-muted">
+          {podeMudar
+            ? t("Salva ao trocar. Sem dono, o atendimento segue o fluxo padrão.")
+            : t("Sem dono, o atendimento segue o fluxo padrão.")}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <Card className="p-4" data-testid="carteira-do-contato">

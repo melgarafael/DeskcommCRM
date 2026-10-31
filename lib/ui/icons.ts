@@ -165,4 +165,10 @@ export {
   // erro de compilação na primeira tela que precisasse dos dois.
   ShoppingCart,
   LinkSimple as LinkIcon,
+  // redesign do Inbox (kvgroup)
+  DotsThreeVertical,
+  SidebarSimple,
+  User,
+  SlidersHorizontal,
+  PaperPlaneRight,
 } from "@phosphor-icons/react/dist/ssr";

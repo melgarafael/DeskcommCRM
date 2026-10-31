@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
+import { cn } from "@/lib/utils";
 
-export function TenantSwitcher() {
+export function TenantSwitcher({ className }: { className?: string } = {}) {
   const t = useT();
   const user = useUser();
   const active = useActiveOrg();
@@ -66,7 +67,7 @@ export function TenantSwitcher() {
           variant="ghost"
           size="sm"
           disabled={isPending || !!user.support}
-          className="gap-2"
+          className={cn("gap-2", className)}
           aria-label={`${t("Organização")}: ${active?.name ?? t("Selecionar org")}`}
           title={user.support ? "Saia do acompanhamento para trocar de organização" : undefined}
           data-testid="tenant-switcher"

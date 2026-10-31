@@ -478,19 +478,39 @@ html[data-theme="light"] body:has([data-marca-org]) {
   --color-accent-hover: #27272a;
   --color-accent-soft: #f4f4f5;
   --ring: #a1a1aa;
+  /* Tokens do redesign do Inbox (kvgroup). Prefixo próprio: usados por classe
+     arbitrária (`bg-[var(--kv-surface-2)]`), sem entrar na ponte `@theme`. */
+  --kv-sidebar: #fafafa;
+  --kv-surface: #ffffff;
+  --kv-surface-2: #f4f4f5;
+  --kv-surface-selected: #f4f4f5;
+  --kv-hover: #f4f4f5;
+  --kv-text-faint: #71717a;
+  --kv-primary-bg: #18181b;
+  --kv-primary-fg: #fafafa;
+  --kv-danger: #e5484d;
+  --kv-danger-text: #dc2626;
+  --kv-online: #16a34a;
+  --kv-whatsapp: #25d366;
+  --kv-instagram: #e1306c;
+  --kv-note-bg: #fefce8;
+  --kv-note-border: #e3c766;
+  --kv-composer-bg: #ffffff;
+  --kv-shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.12);
 }
 
 :root:root:root[data-theme="dark"],
 html[data-theme="dark"] body:has([data-marca-org]) {
-  --color-bg: #09090b;
+  /* Valores do documento de redesign do Inbox (seção 3). */
+  --color-bg: #0b0b0c;
   --color-surface: #0f0f11;
-  --color-surface-elevated: #27272a;
+  --color-surface-elevated: #17171a;
   --color-overlay: rgba(0, 0, 0, 0.8);
-  --color-text: #fafafa;
-  --color-text-muted: #a1a1aa;
-  --color-text-subtle: #71717a;
-  --color-border: #27272a;
-  --color-border-strong: #3f3f46;
+  --color-text: #ececee;
+  --color-text-muted: #a0a0a8;
+  --color-text-subtle: #8a8a92;
+  --color-border: #27272b;
+  --color-border-strong: #2e2e33;
   --color-neutral-50: #fafafa;
   --color-neutral-100: #f4f4f5;
   --color-neutral-200: #e4e4e7;
@@ -502,12 +522,30 @@ html[data-theme="dark"] body:has([data-marca-org]) {
   --color-neutral-800: #27272a;
   --color-neutral-900: #18181b;
   --color-neutral-950: #09090b;
-  --color-accent: #fafafa;
-  --color-accent-fg: #18181b;
+  --color-accent: #f2f2f2;
+  --color-accent-fg: #0b0b0c;
   --color-accent-hover: #e4e4e7;
-  --color-accent-soft: rgba(250, 250, 250, 0.08);
+  --color-accent-soft: #1a1a1e;
   --ring: #d4d4d8;
+  --kv-sidebar: #0f0f11;
+  --kv-surface: #17171a;
+  --kv-surface-2: #1f1f23;
+  --kv-surface-selected: #1a1a1e;
+  --kv-hover: #1a1a1e;
+  --kv-text-faint: #8a8a92;
+  --kv-primary-bg: #f2f2f2;
+  --kv-primary-fg: #0b0b0c;
+  --kv-danger: #e5484d;
+  --kv-danger-text: #ff8b8b;
+  --kv-online: #3fb950;
+  --kv-whatsapp: #25d366;
+  --kv-instagram: #e1306c;
+  --kv-note-bg: #1b1810;
+  --kv-note-border: #5a4a1e;
+  --kv-composer-bg: #121214;
+  --kv-shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
+
 
 /* ─────────────────────────────────────────────────────────────────────────
    Ponte token → utilitário (o que era `theme.extend` no `tailwind.config.ts`).
@@ -616,7 +654,7 @@ html[data-theme="dark"] body:has([data-marca-org]) {
 
   /* Tipografia */
   --font-sans:
-    var(--font-geist), var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    var(--font-inter), var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Espaçamento. Os valores são px LITERAIS (`--space-6` = 24px), não rem — e

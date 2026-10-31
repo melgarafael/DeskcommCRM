@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { BarraInferior } from "@/components/shell/BarraInferior";
@@ -11,6 +12,29 @@ import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
 import { ensureNotifyServiceWorker } from "@/lib/notifications/service_worker";
 import { estiloDaReserva, useOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
+import { cn } from "@/lib/utils";
+
+/**
+ * CELULAR OU COMPUTADOR (redesign kvgroup) — `null` antes de montar.
+ *
+ * A barra superior saiu do computador: o que ela tinha (organização, busca,
+ * sino, idioma, tema, usuário) mora agora na barra lateral. No celular ela
+ * continua. As duas carregam atalhos de teclado (⌘K, ⌘⇧L) e o som da Central;
+ * montadas juntas, cada atalho dispararia duas vezes. Então só uma fica montada.
+ * Antes de montar (servidor e primeira pintura) as duas existem, escondidas
+ * pelo CSS como sempre foi — nada pisca.
+ */
+function useEhCelular(): boolean | null {
+  const [celular, setCelular] = useState<boolean | null>(null);
+  useEffect(() => {
+    const consulta = window.matchMedia("(max-width: 767.98px)");
+    const medir = () => setCelular(consulta.matches);
+    medir();
+    consulta.addEventListener("change", medir);
+    return () => consulta.removeEventListener("change", medir);
+  }, []);
+  return celular;
+}
 
 interface AppShellProps {
   sidebarCollapsed: boolean;
@@ -48,6 +72,11 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
   // o `p-6` inteiro é rodapé. Com o painel de chamada na tela, é ele que
   // decide a faixa que o conteúdo perde, e ninguém mais mede isso por fora.
   const ocupacaoDoRodape = useOcupacaoDoRodape();
+  const celular = useEhCelular();
+  // O Inbox ocupa a tela inteira, sem margem e sem rolagem de página (redesign
+  // kvgroup, seção 2): as colunas rolam por dentro.
+  const pathname = usePathname();
+  const telaCheia = pathname === "/app/inbox" || pathname.startsWith("/app/inbox/");
   return (
     /*
       `min-h-dvh`, e não `min-h-screen`: `100vh` no celular é a janela com a
@@ -65,9 +94,11 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
     */
     <div className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] w-full bg-background">
       <BarraDeProgressoNavegacao />
-      <div className="hidden md:block">
-        <Sidebar collapsed={sidebarCollapsed} />
-      </div>
+      {celular !== true && (
+        <div className="hidden md:block">
+          <Sidebar collapsed={sidebarCollapsed} />
+        </div>
+      )}
       {/*
         `min-w-0` é o que permite a coluna de conteúdo ENCOLHER. Um flex item
         nasce com `min-width: auto`, ou seja, nunca fica menor que o conteúdo —
@@ -87,8 +118,19 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
         SEGUNDA medida da mesma coisa — a que discordava e deixava a barra por
         cima da lista.
       */}
-      <div className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] min-w-0 flex-1 flex-col">
-        <TopBar />
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col",
+          telaCheia
+            ? "h-[calc(100dvh-var(--faixas-de-cima,0px))]"
+            : "min-h-[calc(100dvh-var(--faixas-de-cima,0px))]",
+        )}
+      >
+        {celular !== false && (
+          <div className="sticky top-[var(--faixas-de-cima,0px)] z-20 md:hidden">
+            <TopBar />
+          </div>
+        )}
         {/*
           O RODAPÉ DESCONTA O QUE AS PEÇAS FIXAS OCUPAM (issue #1305).
 
@@ -110,7 +152,10 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
           peça fixa quem cobre isso é o terceiro termo do `max()` do contrato.
         */}
         <main
-          className="flex-1 overflow-auto p-4 pb-area-segura sm:p-6"
+          className={cn(
+            "flex-1",
+            telaCheia ? "min-h-0 overflow-hidden" : "overflow-auto p-4 pb-area-segura sm:p-6",
+          )}
           style={estiloDaReserva(ocupacaoDoRodape)}
           data-rodape-ocupado={ocupacaoDoRodape}
         >

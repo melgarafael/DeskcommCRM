@@ -2,22 +2,30 @@
 import Link from "next/link";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear } from "@/lib/ui/icons";
+import { Suspense, useEffect, useState, useTransition } from "react";
+import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear, PencilSimple } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
-import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
 import { ContadorDeCasos } from "@/components/shell/ContadorDeCasos";
 import { ContadorDaFila } from "@/components/shell/ContadorDaFila";
 import { VersionFooter } from "@/components/shell/VersionFooter";
+import { RodapeDoUsuario } from "@/components/shell/RodapeDoUsuario";
+import { SearchTrigger } from "@/components/shell/SearchTrigger";
+import { SubmenuDoInbox } from "@/components/shell/SubmenuDoInbox";
+import { TenantSwitcher } from "@/components/shell/TenantSwitcher";
 import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
 import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
 import { usePrefetchPorIntencao } from "@/hooks/navigation/prefetchPorIntencao";
 
-const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
+const CHAVE_SUBMENU_DO_INBOX = "kv-submenu-inbox";
+
+/** Rótulo de grupo do menu (redesign kvgroup, seção 4.2). */
+const ROTULO_DE_GRUPO =
+  "px-2.5 pb-1 text-[11px] font-semibold tracking-[0.06em] text-[var(--kv-text-faint)] uppercase";
 
 interface SidebarContentProps {
   collapsed: boolean;
@@ -64,33 +72,29 @@ export function SidebarContent({
   const rodape = todos.find((g) => g.group.id === GRUPO_NO_RODAPE)?.group.hub;
 
   /**
-   * Grupo fechado é preferência POR NAVEGADOR, não por conta: começa vazio (tudo
-   * aberto) em toda renderização — servidor, primeira pintura do cliente e nos
-   * testes, que nunca clicam em nada — e só muda depois do mount, se o
-   * `localStorage` tiver algo salvo. Guardar o CONJUNTO DOS FECHADOS, e não dos
-   * abertos, é o que faz "sem preferência salva" já significar "tudo aberto".
+   * O SUBMENU DO INBOX (redesign kvgroup): aberto por padrão quando a rota é
+   * do Inbox; a escolha de abrir/fechar é lembrada por navegador. `null` = sem
+   * preferência salva, e aí quem decide é a rota.
    */
-  const [gruposFechados, setGruposFechados] = useState<Set<string>>(() => new Set());
+  const naInbox = pathname === "/app/inbox" || pathname.startsWith("/app/inbox/");
+  const [submenuSalvo, setSubmenuSalvo] = useState<boolean | null>(null);
   useEffect(() => {
     try {
-      const salvo = window.localStorage.getItem(CHAVE_GRUPOS_FECHADOS);
-      if (salvo) setGruposFechados(new Set(JSON.parse(salvo) as string[]));
+      const salvo = window.localStorage.getItem(CHAVE_SUBMENU_DO_INBOX);
+      if (salvo === "1" || salvo === "0") setSubmenuSalvo(salvo === "1");
     } catch {
-      // Storage bloqueado (aba privada) — fica tudo aberto, que é o padrão.
+      // Storage bloqueado (aba privada) — vale o padrão da rota.
     }
   }, []);
-  function toggleGrupo(id: string) {
-    setGruposFechados((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      try {
-        window.localStorage.setItem(CHAVE_GRUPOS_FECHADOS, JSON.stringify([...next]));
-      } catch {
-        // Clique continua funcionando nesta sessão; só não sobrevive a um F5.
-      }
-      return next;
-    });
+  const submenuAberto = submenuSalvo ?? naInbox;
+  function alternarSubmenu() {
+    const proximo = !submenuAberto;
+    setSubmenuSalvo(proximo);
+    try {
+      window.localStorage.setItem(CHAVE_SUBMENU_DO_INBOX, proximo ? "1" : "0");
+    } catch {
+      // Clique continua funcionando nesta sessão; só não sobrevive a um F5.
+    }
   }
 
   const brand = useMarcaDaInstalacao();
@@ -137,7 +141,7 @@ export function SidebarContent({
     <>
       <div
         className={cn(
-          "flex h-14 items-center border-b px-4",
+          "flex h-12 items-center px-3",
           collapsed ? "justify-center" : "justify-start",
         )}
       >
@@ -251,6 +255,21 @@ export function SidebarContent({
         </div>
       )}
       {/*
+        O QUE MORAVA NA BARRA SUPERIOR (redesign kvgroup, seção 4.1): o seletor
+        de organização, a busca ⌘K e o "Nova conversa". Só na barra do
+        computador — no celular a barra de cima continua existindo e é ela que
+        mostra estes controles (a gaveta não os repete).
+      */}
+      {showCollapseControl && (
+        <div className={cn("space-y-1.5 px-2 pb-1", collapsed && "flex flex-col items-center")}>
+          {!collapsed && <TenantSwitcher className="w-full justify-start" />}
+          <div className={cn("flex items-center gap-1.5", collapsed && "flex-col")}>
+            <SearchTrigger variante={collapsed ? "icone" : "lateral"} />
+            <BotaoNovaConversa onNavigate={onNavigate} />
+          </div>
+        </div>
+      )}
+      {/*
         A DENSIDADE É MEDIDA, NÃO ESTÉTICA.
 
         O e2e `navegacao.spec.ts` exige que o menu inteiro caiba em 1280×900 sem
@@ -295,50 +314,48 @@ export function SidebarContent({
         o PR: cada linha custa 32px (28px de altura + 4px de `space-y-1`), e
         trocar N destinos do menu por um único link de hub devolve (N-1)×32px.
       */}
-      <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
+      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3" aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
-          // Recolhido o sidebar inteiro (rail de 64px), o grupo sempre mostra
-          // seus itens — não há onde desenhar cabeçalho nem seta para fechá-lo.
-          const aberto = collapsed || !gruposFechados.has(group.id);
           return (
-            <div key={group.id} className="space-y-1">
+            <div key={group.id} className="space-y-0.5">
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
-                  Vira um filete separador, que preserva o agrupamento sem texto. */}
+                  Vira um filete separador, que preserva o agrupamento sem texto.
+                  Aberto (redesign kvgroup), o rótulo não recolhe mais o grupo —
+                  menos cliques — e, quando o grupo tem hub, é ele a porta do
+                  antigo "Ver tudo em …", que saiu da lista. */}
               {collapsed ? (
                 <div aria-hidden className="mx-2 border-t first:hidden" />
-              ) : (
+              ) : group.hub ? (
                 <h2 id={tituloId}>
-                  <button
-                    type="button"
-                    onClick={() => toggleGrupo(group.id)}
-                    aria-expanded={aberto}
-                    className="flex w-full items-center justify-between rounded-md px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                  <Link
+                    href={group.hub.href}
+                    {...intencao(group.hub.href)}
+                    onClick={onNavigate}
+                    title={t(group.hub.label)}
+                    aria-current={pathname === group.hub.href ? "page" : undefined}
+                    className={cn(ROTULO_DE_GRUPO, "block rounded-[6px] transition-colors hover:text-text")}
                   >
                     {t(group.label)}
-                    <CaretDown
-                      size={12}
-                      weight="bold"
-                      className={cn(
-                        "shrink-0 text-text-subtle transition-transform",
-                        !aberto && "-rotate-90",
-                      )}
-                      aria-hidden
-                    />
-                  </button>
+                  </Link>
+                </h2>
+              ) : (
+                <h2 id={tituloId} className={ROTULO_DE_GRUPO}>
+                  {t(group.label)}
                 </h2>
               )}
-              {aberto && (
-                <ul
-                  aria-labelledby={collapsed ? undefined : tituloId}
-                  aria-label={collapsed ? t(group.label) : undefined}
-                  className="space-y-1"
-                >
-                  {items.map((item) => {
-                    const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-                    const Icon = item.icon;
-                    return (
-                      <li key={item.href}>
+              <ul
+                aria-labelledby={collapsed ? undefined : tituloId}
+                aria-label={collapsed ? t(group.label) : undefined}
+                className="space-y-0.5"
+              >
+                {items.map((item) => {
+                  const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                  const Icon = item.icon;
+                  const comSubmenu = item.href === "/app/inbox" && !collapsed;
+                  return (
+                    <li key={item.href}>
+                      <div className="relative flex items-center">
                         <Link
                           href={item.href}
                           {...intencao(item.href)}
@@ -346,14 +363,14 @@ export function SidebarContent({
                           aria-current={isActive ? "page" : undefined}
                           onClick={onNavigate}
                           className={cn(
-                            "relative flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+                            "relative flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-[7px] px-2.5 text-sm transition-colors",
                             isActive
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                              ? "bg-[var(--kv-surface-selected)] font-semibold text-text"
+                              : "text-text-muted hover:bg-[var(--kv-hover)] hover:text-text",
                             collapsed && "justify-center px-2",
                           )}
                         >
-                          <Icon size={18} weight={isActive ? "fill" : "regular"} aria-hidden />
+                          <Icon size={16} weight={isActive ? "fill" : "regular"} aria-hidden />
                           {!collapsed && <span className="truncate">{t(item.label)}</span>}
                           {item.healthDot && (
                             <ConnectionHealthDot
@@ -362,38 +379,58 @@ export function SidebarContent({
                           )}
                           {item.contador === "casos" && <ContadorDeCasos compacto={collapsed} />}
                           {item.contador === "fila" && <ContadorDaFila compacto={collapsed} />}
+                          {comSubmenu && <span className="w-5 shrink-0" aria-hidden />}
                         </Link>
-                      </li>
-                    );
-                  })}
-                  {group.hub && (
-                    <li>
-                      <Link
-                        href={group.hub.href}
-                        {...intencao(group.hub.href)}
-                        title={collapsed ? t(group.hub.label) : undefined}
-                        aria-current={pathname === group.hub.href ? "page" : undefined}
-                        onClick={onNavigate}
-                        className={cn(
-                          "flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
-                          pathname === group.hub.href
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                          collapsed && "justify-center px-2",
+                        {comSubmenu && (
+                          <button
+                            type="button"
+                            onClick={alternarSubmenu}
+                            aria-expanded={submenuAberto}
+                            aria-label={t("Visões do Inbox")}
+                            className="absolute right-1 flex h-6 w-6 items-center justify-center rounded-[5px] text-text-muted transition-colors hover:bg-[var(--kv-surface-2)] hover:text-text"
+                          >
+                            <CaretDown
+                              size={12}
+                              aria-hidden
+                              className={cn("transition-transform", !submenuAberto && "-rotate-90")}
+                            />
+                          </button>
                         )}
-                      >
-                        <ArrowRight size={18} aria-hidden />
-                        {!collapsed && <span className="truncate">{t(group.hub.label)}</span>}
-                      </Link>
+                      </div>
+                      {comSubmenu && submenuAberto && (
+                        // `useSearchParams` pede fronteira de Suspense na casca.
+                        <Suspense fallback={null}>
+                          <SubmenuDoInbox onNavigate={onNavigate} />
+                        </Suspense>
+                      )}
                     </li>
-                  )}
-                </ul>
-              )}
+                  );
+                })}
+                {collapsed && group.hub && (
+                  <li>
+                    <Link
+                      href={group.hub.href}
+                      {...intencao(group.hub.href)}
+                      title={t(group.hub.label)}
+                      aria-current={pathname === group.hub.href ? "page" : undefined}
+                      onClick={onNavigate}
+                      className={cn(
+                        "flex h-[34px] items-center justify-center rounded-[7px] px-2 transition-colors",
+                        pathname === group.hub.href
+                          ? "bg-[var(--kv-surface-selected)] text-text"
+                          : "text-text-muted hover:bg-[var(--kv-hover)] hover:text-text",
+                      )}
+                    >
+                      <ArrowRight size={16} aria-hidden />
+                    </Link>
+                  </li>
+                )}
+              </ul>
             </div>
           );
         })}
       </nav>
-      <div className="border-t p-2">
+      <div className="space-y-1 border-t p-2">
         {rodape && (
           <Link
             href={rodape.href}
@@ -402,20 +439,51 @@ export function SidebarContent({
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
-              "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              "flex h-[34px] items-center gap-2.5 rounded-[7px] px-2.5 text-sm transition-colors",
               pathname.startsWith(rodape.href)
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                ? "bg-[var(--kv-surface-selected)] font-semibold text-text"
+                : "text-text-muted hover:bg-[var(--kv-hover)] hover:text-text",
               collapsed && "justify-center px-2",
             )}
           >
-            <Gear size={18} aria-hidden />
+            <Gear size={16} aria-hidden />
             {!collapsed && <span className="truncate">{t(rodape.label)}</span>}
           </Link>
         )}
-        <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
+        {showCollapseControl ? (
+          <>
+            {/* A versão instalada mora no menu da pessoa (redesign kvgroup);
+                aqui fica só o aviso de versão nova, para quem pode atualizar. */}
+            <VersionFooter collapsed={collapsed} onNavigate={onNavigate} soAlerta />
+            <RodapeDoUsuario collapsed={collapsed} onNavigate={onNavigate} />
+          </>
+        ) : (
+          <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
+        )}
       </div>
     </>
+  );
+}
+
+/**
+ * "Nova conversa" (redesign kvgroup): o lápis ao lado da busca abre o MESMO
+ * fluxo do antigo botão grande "Iniciar conversa" — pela URL, porque o diálogo
+ * mora no Inbox (`InboxLayout` lê `?iniciar=1`). Mesma permissão do botão.
+ */
+function BotaoNovaConversa({ onNavigate }: { onNavigate?: () => void }) {
+  const t = useT();
+  const podeIniciar = usePermission("inbox.claim");
+  if (!podeIniciar) return null;
+  return (
+    <Link
+      href="/app/inbox?iniciar=1"
+      onClick={onNavigate}
+      aria-label={t("Nova conversa")}
+      title={t("Nova conversa")}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] border border-border-strong bg-[var(--kv-surface)] text-text-muted transition-colors hover:text-text"
+    >
+      <PencilSimple size={15} aria-hidden />
+    </Link>
   );
 }
 
@@ -509,7 +577,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         // `duration-base` em vez do `duration-200` literal: 200ms é o mesmo
         // número, mas vindo de `--duration-base`. A Lei de movimento fecha a
         // tabela de durações, e número solto é o que a faz apodrecer.
-        "sticky top-[var(--faixas-de-cima,0px)] z-30 flex h-[calc(100dvh-var(--faixas-de-cima,0px))] shrink-0 flex-col border-r bg-card transition-[width] duration-base",
+        "sticky top-[var(--faixas-de-cima,0px)] z-30 flex h-[calc(100dvh-var(--faixas-de-cima,0px))] shrink-0 flex-col border-r bg-[var(--kv-sidebar)] transition-[width] duration-base",
         collapsed ? "w-16" : "w-60",
       )}
     >

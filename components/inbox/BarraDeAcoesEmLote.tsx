@@ -44,6 +44,11 @@ interface Props {
   /** Abre o diálogo de destino e devolve `(to_user_id, reason)`. */
   onTransferir: (toUserId: string, reason?: string) => void;
   onLimpar: () => void;
+  /**
+   * Marca todas as conversas carregadas (redesign kvgroup): a linha fixa
+   * "Selecionar todas" saiu da lista e o gesto passou a morar nesta barra.
+   */
+  onSelecionarTodas?: () => void;
 }
 
 /**
@@ -72,6 +77,7 @@ export function BarraDeAcoesEmLote({
   onDevolverAoAutomatico,
   onTransferir,
   onLimpar,
+  onSelecionarTodas,
 }: Props) {
   const t = useT();
   const [transferirAberto, setTransferirAberto] = useState(false);
@@ -95,7 +101,7 @@ export function BarraDeAcoesEmLote({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5 border-b border-border bg-surface-elevated px-3 py-2"
+      className="flex min-h-12 flex-wrap items-center gap-1.5 bg-surface-elevated px-3 py-2"
       role="toolbar"
       aria-label={t("Ações em lote")}
       data-testid="barra-de-acoes-em-lote"
@@ -105,6 +111,16 @@ export function BarraDeAcoesEmLote({
           ? t("1 conversa selecionada")
           : `${quantidade} ${t("conversas selecionadas")}`}
       </span>
+      {onSelecionarTodas && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onSelecionarTodas}
+          data-testid="selecionar-todas-visiveis"
+        >
+          {t("Selecionar todas")}
+        </Button>
+      )}
       <Button
         size="sm"
         variant="outline"
