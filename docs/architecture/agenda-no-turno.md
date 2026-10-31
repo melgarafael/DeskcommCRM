@@ -14,9 +14,23 @@ flowchart LR
     Fechamento --> Resumo[lead_checkpoints]
     Resumo --> Proximo[Próximo turno]
     Banco --> Proximo
+    Banco --> Revisor[Revisor semântico antes do envio e follow-up]
+    Revisor --> Envio[Confirmação fiel ou veto visível na execução]
 ```
 
 ## Contratos
+
+- Antes da revisão semântica de cada mensagem, o turno consulta novamente
+  `compromissosDoContato`, sempre por organização e contato. O classificador recebe
+  data, hora, fuso, estado, canal e estado do link em `agendamentos`, separados
+  das evidências comerciais. A chave de memoização inclui essa fotografia:
+  reservar, remarcar ou cancelar não reutiliza um veredito anterior à operação.
+  `confirmed` comprova a reserva; `pending` não comprova aprovação. Nenhum dos
+  dois autoriza preço, gratuidade ou promessa de resultado.
+  O follow-up usa a mesma leitura. Não há nova configuração nem efeito de
+  escrita; os vetos continuam nos `before_send_traces` e na execução visível
+  pela Inbox. A releitura e a chave de memoização fazem o estado novo da
+  agenda alterar a próxima revisão, em vez de conservar um veto desatualizado.
 
 - `compromissos-do-contato.ts` mantém o recorte por organização, contato,
   compromissos não cancelados e término futuro. Exibe a hora local com o fuso

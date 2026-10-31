@@ -31,6 +31,7 @@
 import type { Queryable } from "../queue/queue";
 import { isoLocalComOffset, rotuloLocal } from "@/lib/tempo/agora";
 import { FUSO_PADRAO, fusoValido } from "@/lib/tempo/fusos";
+import type { EvidenciaDeAgendamento } from "../guardrails/promise/semantic";
 
 export interface CompromissoDoContato {
   id: string;
@@ -41,6 +42,7 @@ export interface CompromissoDoContato {
   status: string;
   meeting_state?: string;
   meeting_url?: string | null;
+  location_kind?: string;
 }
 
 /** Quantos compromissos futuros cabem no bloco antes de ele passar a truncar. */
@@ -60,7 +62,7 @@ export async function compromissosDoContato(
   agora: Date,
 ): Promise<CompromissoDoContato[]> {
   const { rows } = await db.query<CompromissoDoContato>(
-    `select id, title, starts_at, ends_at, time_zone, status, meeting_state, meeting_url
+    `select id, title, starts_at, ends_at, time_zone, status, meeting_state, meeting_url, location_kind
        from calendar_appointments
       where organization_id = $1
         and contact_id = $2
@@ -112,4 +114,24 @@ export async function buildCompromissosBlock(
   agora: Date,
 ): Promise<string> {
   return renderCompromissos(await compromissosDoContato(db, organizationId, contactId, agora));
+}
+
+/** Só campos operacionais: títulos e notas livres não autorizam uma promessa. */
+export async function evidenciasDeAgendamento(
+  db: Queryable,
+  organizationId: string,
+  contactId: string,
+  agora: Date,
+): Promise<EvidenciaDeAgendamento[]> {
+  const compromissos = await compromissosDoContato(db, organizationId, contactId, agora);
+  return compromissos.slice(0, MAXIMO_DE_COMPROMISSOS_NO_BLOCO).map((c) => ({
+    id: c.id,
+    starts_at: new Date(c.starts_at).toISOString(),
+    ends_at: c.ends_at ? new Date(c.ends_at).toISOString() : null,
+    time_zone: c.time_zone ?? null,
+    status: c.status,
+    location_kind: c.location_kind ?? null,
+    meeting_state: c.meeting_state ?? null,
+    meeting_url: c.meeting_state === "ready" ? c.meeting_url ?? null : null,
+  }));
 }

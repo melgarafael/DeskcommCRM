@@ -31,6 +31,29 @@ import type { EvidenciaComercial } from "./evidencias-comerciais";
 import type { ContextoDaRevisao } from "./contexto-da-revisao";
 import { detectHumanPromise } from "../human-promise";
 
+export interface EvidenciaDeAgendamento {
+  id: string;
+  starts_at: string;
+  ends_at: string | null;
+  time_zone: string | null;
+  status: string;
+  location_kind: string | null;
+  meeting_state: string | null;
+  meeting_url: string | null;
+}
+
+const INSTRUCAO_AGENDA =
+  "\n## Evidências operacionais da agenda\n" +
+  "agendamentos contém registros atuais do banco, consultados pelo servidor para este contato " +
+  "e organização. Eles comprovam somente a reserva descrita: confirmed permite confirmar " +
+  "data, hora, duração e canal correspondentes; pending permite informar horário separado, " +
+  "mas NÃO confirmado. Outros estados não comprovam confirmação. Não confunda confirmação " +
+  "da reserva com publicação no Google ou envio de convite. Um link só está pronto quando " +
+  "meeting_state=ready e meeting_url está preenchido. Resumo antigo ou fala da conversa " +
+  "não prevalecem sobre estes registros atuais. Não vete uma confirmação fiel por faltar " +
+  "comprovação na base comercial. A reserva não autoriza gratuidade, descontos, garantia " +
+  "de resultado nem dispensar condições comerciais. Continue avaliando a mensagem inteira.\n";
+
 /** Veredito binário do classificador. suspectPhrase = null quando isPromise = false. */
 export interface PromiseClassification {
   isPromise: boolean;
@@ -275,6 +298,7 @@ export async function classifyPromise(
     commercialEvidence?: readonly EvidenciaComercial[];
     /** Conversa curada pelo servidor, nunca autorização comercial. */
     conversationContext?: ContextoDaRevisao;
+    appointmentEvidence?: readonly EvidenciaDeAgendamento[];
   },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<PromiseClassification> {
@@ -288,14 +312,17 @@ export async function classifyPromise(
       purpose: "promise_semantic",
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
-      ...(args.commercialEvidence?.length ? { system: INSTRUCAO_COM_EVIDENCIAS } : {}),
-      messages: args.commercialEvidence?.length
+      ...(args.commercialEvidence?.length || args.appointmentEvidence?.length
+        ? { system: INSTRUCAO_COM_EVIDENCIAS + INSTRUCAO_AGENDA }
+        : {}),
+      messages: args.commercialEvidence?.length || args.appointmentEvidence?.length
         ? [
             {
               role: "user",
               content: JSON.stringify({
                 mensagem: args.candidate,
-                evidencias: args.commercialEvidence,
+                evidencias: args.commercialEvidence ?? [],
+                ...(args.appointmentEvidence?.length ? { agendamentos: args.appointmentEvidence } : {}),
                 ...(args.conversationContext ? { contexto_conversa: args.conversationContext } : {}),
               }),
             },

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const seam = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("../../edge/llm/run-model-call", () => ({ runModelCall: seam.call }));
-import { classifyPromise } from "./semantic";
+import { classifyPromise, memoizarPorCandidata, type EvidenciaDeAgendamento } from "./semantic";
 import type pg from "pg";
 import type { LlmEdgeConfig } from "../../edge/llm/run-model-call";
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -32,5 +32,45 @@ describe("contexto via seam do revisor, sem confundi-lo com fonte comercial", ()
     if (!request) throw new Error("O seam não foi chamado");
     expect(request.messages[0].content).toContain("Bom dia.");
     expect(request.messages[0].content).not.toContain("contexto_conversa");
+  });
+
+  it.each(["confirmed", "pending"])("leva reserva %s mesmo sem material comercial", async (status) => {
+    const reserva: EvidenciaDeAgendamento = {
+      id: "reserva-do-contato",
+      starts_at: "2026-10-21T18:00:00.000Z",
+      ends_at: "2026-10-21T18:30:00.000Z",
+      time_zone: "America/Sao_Paulo",
+      status,
+      location_kind: "whatsapp",
+      meeting_state: null,
+      meeting_url: null,
+    };
+    await classifyPromise(db, cfg, { tenantId: "tenant-a" }, {
+      candidate: "Seu diagnóstico está confirmado hoje às 15h por WhatsApp.",
+      appointmentEvidence: [reserva],
+    }, { log });
+    const request = seam.call.mock.calls[0]?.[2];
+    expect(JSON.parse(request.messages[0].content)).toMatchObject({
+      evidencias: [],
+      agendamentos: [reserva],
+    });
+    expect(request.system).toContain("pending permite informar horário separado");
+    expect(request.system).toContain("A reserva não autoriza gratuidade");
+    expect(request.system).toContain("confirmed permite confirmar");
+  });
+
+  it("não reutiliza o veto anterior à criação ou ao cancelamento da reserva", async () => {
+    let agenda = "[]";
+    const classificar = vi.fn(async () => ({ isPromise: true, suspectPhrase: null, prometeuRetornoHumano: false, retornoSoDoAssistente: false }));
+    const memo = memoizarPorCandidata(classificar, () => agenda);
+    await memo("Confirmado hoje às 15h.");
+    await memo("Confirmado hoje às 15h.");
+    expect(classificar).toHaveBeenCalledTimes(1);
+    agenda = '[{"status":"confirmed"}]';
+    await memo("Confirmado hoje às 15h.");
+    expect(classificar).toHaveBeenCalledTimes(2);
+    agenda = '[{"status":"cancelled"}]';
+    await memo("Confirmado hoje às 15h.");
+    expect(classificar).toHaveBeenCalledTimes(3);
   });
 });
