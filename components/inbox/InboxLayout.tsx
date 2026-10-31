@@ -1153,6 +1153,11 @@ export function InboxLayout({
               // A barra de recursos lembra o recolhimento POR usuário (#3282);
               // o id vem do `AuthProvider` daqui, não de dentro do compositor.
               usuarioId={user.id}
+              // #3732: a recusa do envio pode dizer que a conversa continua em
+              // outra conversa do MESMO contato, no número de quem responde —
+              // e o botão da faixa abre essa conversa. É a mesma seleção que a
+              // faixa do número fora do ar e o cabeçalho já usam.
+              onAbrirConversa={handleSelect}
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}

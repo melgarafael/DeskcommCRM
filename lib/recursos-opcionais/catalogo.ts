@@ -58,6 +58,13 @@ export interface FontesDeEstado {
   settings: Record<string, unknown> | null;
   /** Detecção dos recursos do servidor, por `id`. Ausente/`null` = não detectado. */
   servidor: Readonly<Record<string, boolean | null>>;
+  /**
+   * A telefonia está em uso NESTA organização (#1290) — o mesmo sinal que decide
+   * o item Chamadas no menu (`lib/telefonia/em-uso.ts`): o tronco SIP salvo.
+   * `null` = não lido. Booleano porque a leitura compartilhada falha fechada e
+   * não distingue "desligada" de "não li" — igual a `modulosLigados()`.
+   */
+  telefonia: boolean | null;
 }
 
 export interface RecursoOpcional {
@@ -614,6 +621,25 @@ const DA_EMPRESA: RecursoOpcional[] = [
     padrao: "desligado",
     quemDecide: "admin",
     href: "/app/extensions",
+  },
+  {
+    /**
+     * O par da empresa para a telefonia (#1290), no molde de
+     * `propostas_da_empresa`: `telefonia_sip` é o profile do servidor, que o app
+     * não lê; ESTA linha é o que a empresa fez — salvou o tronco em
+     * `/app/settings/voip-trunk`. É o mesmo sinal que o menu lê para mostrar (ou
+     * esconder) Chamadas: uma régua, dois lugares.
+     */
+    id: "telefonia_da_empresa",
+    nome: "Telefonia da empresa",
+    oQueFaz:
+      "Com o servidor preparado para telefonia, a empresa salva o tronco SIP da operadora e passa a ver as ligações em Chamadas.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/voip-trunk",
+    capacidade: "telefonia",
+    ler: (f) => (f.telefonia === null ? "nao_lido" : f.telefonia ? "ligado" : "desligado"),
   },
   {
     id: "propostas_da_empresa",

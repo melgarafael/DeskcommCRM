@@ -49,6 +49,18 @@ beforeEach(() => {
 });
 
 describe("portão do piso ocioso", () => {
+  it("o sinal do histórico também olha a recuperação de queda (Spec 32), não só a importação rodando", async () => {
+    // Sem isto a rota sairia antes de abrir a recuperação: uma queda do número numa
+    // instalação sem importação alguma nunca recuperaria nada.
+    const db = banco(TUDO_VAZIO);
+    await recursoTemTrabalho("historico", 1_000, db.portao);
+    const sql = (db.consultas[0] ?? "").replace(/\s+/g, " ");
+    expect(sql).toContain("importacoes_de_historico where status in ('rodando', 'aguardando')");
+    expect(sql).toContain("event_type = 'channel_session.status_changed'");
+    expect(sql).toContain("payload ->> 'from_status' = 'WORKING'");
+    expect(sql).toContain("kind in ('recuperacao_da_queda', 'cliente_sem_resposta_na_queda')");
+  });
+
   it("uma consulta responde pelos cinco recursos", async () => {
     const db = banco(TUDO_VAZIO);
     const respostas = await Promise.all(

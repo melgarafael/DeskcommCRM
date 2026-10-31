@@ -438,9 +438,26 @@ export function PainelDeMarcacao({
    * esta função, para os dois não voltarem a divergir (ver o bloco acima).
    */
   const dadosDoMesEmTela = mesCarregado === undefined || (mesCarregado !== null && isSameMonth(mesCarregado, mes));
-  /** Tem horário publicado — a única fonte de `data-disponivel` e da abertura. */
+  /**
+   * Um horário no PASSADO não é agendável — mesmo que ainda esteja na lista.
+   *
+   * A consulta devolveu esse horário quando ele ainda dava; a lista não é
+   * recalculada enquanto a tela está aberta (`agoraDaAbertura` é congelado na
+   * abertura, de propósito: o relógio não entra na chave do React Query por
+   * milissegundo). Passada a hora, o instante continua na resposta e mentiria
+   * duas vezes: acenderia o dia e deixaria a abertura achar que o mês tem vaga.
+   *
+   * ⚠️ O aviso mínimo (60 min) é do MOTOR e o painel não o conhece. Quem chega
+   * com consulta fresca já recebe a lista sem os horários de dentro do aviso;
+   * o que o painel acrescenta — e é o que faltava — é largar o que o relógio
+   * já passou e parar de decidir por uma sobra morta.
+   */
+  const agendavel = (h: HorarioLivre): boolean => new Date(h.instante).getTime() > agora.getTime();
+  /** Tem horário publicado E ainda agendável — a única fonte de `data-disponivel`. */
   const temHorario = (d: Date): boolean =>
-    dadosDoMesEmTela && isSameMonth(d, mes) && (horariosPorDia[format(d, "yyyy-MM-dd")]?.length ?? 0) > 0;
+    dadosDoMesEmTela &&
+    isSameMonth(d, mes) &&
+    (horariosPorDia[format(d, "yyyy-MM-dd")] ?? []).some(agendavel);
   const diaClicavel = (d: Date): boolean =>
     temHorario(d) || (isSameMonth(d, mes) && encaixeLigado && d.getTime() >= inicioDeHoje);
 
@@ -463,6 +480,14 @@ export function PainelDeMarcacao({
    * desse primeiro tipo a gastava ("sem jornada, fica") e a do tipo escolhido,
    * com outubro esgotado, chegava sem decidir nada: o mês morto de volta, em
    * 9 specs do e2e às 16h45 de sexta 30/10/2026.
+   *
+   * E só uma resposta que DECIDE gasta a decisão (#3777, @paulolimajr77):
+   * resposta sem jornada ou com erro deixa a decisão pendente. No MESMO tipo a
+   * consulta é refeita — a duração entra na chave dela, e uma falha pode passar
+   * —, e a resposta seguinte, com jornada e o mês esgotado, ainda precisa
+   * poder levar ao mês seguinte. Quem navega pelas setas decide por si: a
+   * decisão pendente não sobrevive a elas (senão a resposta que chega depois
+   * jogaria a pessoa de volta ao mês seguinte contra a volta à mão).
    */
   // Ajuste de estado DURANTE o render, não num efeito: o mês morto nem chega a
   // ser pintado (https://react.dev/learn/you-might-not-need-an-effect).
@@ -473,15 +498,132 @@ export function PainelDeMarcacao({
   const chaveDoTipo = tipoId ?? tipo;
   const [aberturaDecidida, setAberturaDecidida] = React.useState(false);
   const [tipoDaDecisao, setTipoDaDecisao] = React.useState(chaveDoTipo);
-  if (tipoDaDecisao !== chaveDoTipo) {
+  /**
+   * O TETO DOS SALTOS AUTOMÁTICOS.
+   *
+   * O painel só conhece um mês por vez (a consulta acompanha o mês em tela),
+   * então "existe vaga adiante?" é uma pergunta que ele só responde andando —
+   * e, sem teto, um tipo cuja jornada não abre buraco nenhum faria a tela
+   * correr os meses para sempre. Esgotado o teto, a tela FICA no mês em que
+   * parou e o aviso de "nenhum horário livre" assume: é a resposta verdadeira.
+   */
+  const SALTOS_AUTOMATICOS_MAXIMOS = 3;
+  const [saltosAutomaticos, setSaltosAutomaticos] = React.useState(0);
+  /** O mês em tela foi escolhido pelo PAINEL (abertura ou salto), não à mão. */
+  const [saltoDoPainel, setSaltoDoPainel] = React.useState(false);
+  /**
+   * O MÊS QUE ESTA VISITA VIU COM VAGA — a testemunha de "ele acabou agora".
+   *
+   * Distingue os dois jeitos de estar num mês sem vaga: (a) ele tinha vaga
+   * enquanto a pessoa olhava para ele e o relógio comeu o resto do dia — este
+   * reabre a decisão; (b) ele já estava morto quando a pessoa voltou à mão para
+   * ele (o encaixe de hoje) — este fica onde ela o pôs, sem ricochete. Sem a
+   * testemunha, o caso (b) era indistinguível do (a), e o "mês anterior" do
+   * encaixe devolveria a pessoa para o mês seguinte na mesma hora.
+   *
+   * Ela é do mês EM TELA e morre na navegação à mão: sair do mês e voltar é
+   * uma escolha nova da pessoa, que não é revista.
+   */
+  const [mesVistoComVaga, setMesVistoComVaga] = React.useState<number | null>(null);
+
+  const trocouDeTipo = tipoDaDecisao !== chaveDoTipo;
+  if (trocouDeTipo) {
     setTipoDaDecisao(chaveDoTipo);
-    setAberturaDecidida(!isSameMonth(mes, ancora));
+    setAberturaDecidida(!isSameMonth(mes, ancora) && !saltoDoPainel);
+    setSaltosAutomaticos(0);
+    setMesVistoComVaga(null);
   }
-  const aberturaCarregada = mesCarregado != null && dadosDoMesEmTela && isSameMonth(mes, ancora);
-  if (tipoDaDecisao === chaveDoTipo && !aberturaDecidida && aberturaCarregada && !instanteInicial) {
+
+  /**
+   * O salto é o MESMO da abertura (`startOfMonth(addDays(..., 32))`), agora com
+   * contagem: devolve `false` quando o teto já foi gasto, e aí a tela fica.
+   */
+  const saltarParaOMesSeguinte = (): boolean => {
+    if (saltosAutomaticos >= SALTOS_AUTOMATICOS_MAXIMOS) return false;
+    setSaltosAutomaticos(saltosAutomaticos + 1);
+    setSaltoDoPainel(true);
+    setAberturaDecidida(false);
+    setMes(startOfMonth(addDays(startOfMonth(mes), 32)));
+    return true;
+  };
+
+  /**
+   * NAVEGAR À MÃO ENCERRA A DECISÃO AUTOMÁTICA.
+   *
+   * Quem escolhe o mês é a pessoa: a escolha dela não é revista (nem quando o
+   * mês escolhido já está morto — é justamente o encaixe de hoje que a leva de
+   * volta). O único caminho que ainda mexe no mês por conta própria é o do mês
+   * que esta visita viu com vaga e o relógio esgotou.
+   */
+  const irParaOMes = (dias: number) => {
+    setMes((m) => startOfMonth(addDays(startOfMonth(m), dias)));
     setAberturaDecidida(true);
-    if (publicouHorarios && !erroAoCarregar && !semanas.flat().some(temHorario)) {
-      setMes(startOfMonth(addDays(startOfMonth(mes), 32)));
+    setSaltoDoPainel(false);
+    setSaltosAutomaticos(0);
+    setMesVistoComVaga(null);
+  };
+
+  const mesTemHorario = semanas.flat().some(temHorario);
+  const dadosDoMesDeAgora = mesCarregado != null && dadosDoMesEmTela;
+  /**
+   * A ABERTURA PERGUNTA PELO RESTO DA JANELA, NÃO PELO INSTANTE.
+   *
+   * A pergunta antiga era "existe vaga NESTE mês?" — e ela é feita com os
+   * dados já carregados, uma vez por tipo. Enquanto o mês tem um único horário
+   * publicado, a resposta é "sim" para sempre, mesmo que ele já tenha passado:
+   * às 16:28 de sexta 30/10/2026 outubro ainda trazia 17:30, a tela ficou nele,
+   * e vinte minutos depois o mês inteiro estava morto — sem um dia clicável e
+   * sem revisão (issue #3774). `temHorario` agora só conta horário AGENDÁVEL, e
+   * a pergunta vira "existe horário agendável no que resta deste mês?".
+   *
+   * A decisão segue aberta enquanto o mês em tela for escolha do PAINEL: um mês
+   * vazio faz o painel andar para o próximo, até achar vaga ou gastar o teto.
+   */
+  const decidindoAgora =
+    tipoDaDecisao === chaveDoTipo &&
+    !trocouDeTipo &&
+    !aberturaDecidida &&
+    dadosDoMesDeAgora &&
+    !instanteInicial &&
+    (isSameMonth(mes, ancora) || saltoDoPainel);
+  if (decidindoAgora) {
+    if (mesTemHorario) {
+      setAberturaDecidida(true);
+      setSaltoDoPainel(false);
+    } else if (publicouHorarios && !erroAoCarregar) {
+      // `false` = o teto já foi gasto: a tela fica onde está.
+      if (!saltarParaOMesSeguinte()) setAberturaDecidida(true);
+    }
+    // Sem jornada publicada (ou com erro na consulta) a resposta não decide
+    // nada: a decisão fica PENDENTE (#3777) e a próxima resposta do mesmo tipo,
+    // com jornada, ainda pode levar ao mês seguinte. O aviso aparece enquanto isso.
+  }
+
+  /**
+   * O MÊS ACABA COM A TELA ABERTA.
+   *
+   * 30/10/2026, sexta: às 16:28 o painel ainda enxergava 17:00 e 17:30 e por
+   * isso ficou em outubro; vinte minutos depois os dois caíram dentro do aviso
+   * mínimo, outubro ficou sem um dia clicável — e a decisão, tomada uma vez, não
+   * era revista. A tela ficou 20 s parada em "outubro de 2026" no trace do e2e
+   * (issue #3774), e é o que qualquer pessoa vê abrindo o painel de manhã e
+   * voltando a ele depois das 16:30.
+   *
+   * Reabre SÓ o mês que esta visita viu com vaga e agora não tem nenhuma: quem
+   * voltou à mão para um mês já morto continua nele (o motivo de voltar é o
+   * encaixe de hoje), e quem foi para o mês seguinte à mão não é trazido de
+   * volta. O salto é o MESMO da abertura, com o mesmo teto.
+   */
+  const mesEmTelaFoiVistoComVaga = mesVistoComVaga === mes.getTime();
+  if (!decidindoAgora && !trocouDeTipo && dadosDoMesDeAgora) {
+    if (mesTemHorario && !mesEmTelaFoiVistoComVaga) {
+      setMesVistoComVaga(mes.getTime());
+      if (saltosAutomaticos !== 0) setSaltosAutomaticos(0);
+    } else if (!mesTemHorario && mesEmTelaFoiVistoComVaga) {
+      setMesVistoComVaga(null);
+      // Um mês adiante pode dar vaga; sem vaga em nenhum (ou com o teto gasto)
+      // a tela fica onde está e o aviso de "nenhum horário livre" diz a verdade.
+      if (publicouHorarios && !erroAoCarregar) saltarParaOMesSeguinte();
     }
   }
 
@@ -835,7 +977,7 @@ export function PainelDeMarcacao({
               size="icon"
               aria-label={t("Mês anterior")}
               data-testid="mes-anterior"
-              onClick={() => setMes((m) => startOfMonth(addDays(startOfMonth(m), -1)))}
+              onClick={() => irParaOMes(-1)}
             >
               <CaretLeft size={16} weight="bold" aria-hidden />
             </Button>
@@ -844,7 +986,7 @@ export function PainelDeMarcacao({
               size="icon"
               aria-label={t("Próximo mês")}
               data-testid="mes-seguinte"
-              onClick={() => setMes((m) => startOfMonth(addDays(startOfMonth(m), 32)))}
+              onClick={() => irParaOMes(32)}
             >
               <CaretRight size={16} weight="bold" aria-hidden />
             </Button>

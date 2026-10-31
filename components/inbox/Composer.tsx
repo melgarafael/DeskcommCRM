@@ -48,6 +48,7 @@ import {
 } from "@/lib/inbox/rascunho-sugerido";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { avisoDaContinua } from "@/lib/channels/numero-do-atendente";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { mimeDaMidia, type MidiaDeTemplate } from "@/lib/templates/midias";
 import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
@@ -151,6 +152,15 @@ interface Props {
    * de auth só por causa de uma preferência de tela.
    */
   usuarioId?: string | null;
+  /**
+   * Abre OUTRA conversa do mesmo contato (#3732).
+   *
+   * A recusa do envio pode dizer que a conversa continua em outra conversa —
+   * a do número de quem está respondendo. Sem esta porta a pessoa leria a frase
+   * e teria que procurar a conversa na lista; com ela, a caixa de resposta trava
+   * e o botão leva direto para lá.
+   */
+  onAbrirConversa?: (id: string) => void;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
@@ -171,6 +181,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     onCancelarResposta,
     rascunho = null,
     usuarioId = null,
+    onAbrirConversa,
   },
   ref,
 ) {
@@ -247,6 +258,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [mencoes, setMencoes] = useState<MencaoEscolhida[]>([]);
   const [mencaoDispensada, setMencaoDispensada] = useState(false);
   const [mencaoIndice, setMencaoIndice] = useState(0);
+  /**
+   * A CONVERSA QUE CONTINUA (#3732) — a recusa do envio com destino.
+   *
+   * Guarda a conversa em que a recusa aconteceu junto com o aviso: o compositor
+   * NÃO é remontado ao trocar de conversa sem rascunho (a `key` do
+   * `InboxLayout`), e um aviso da conversa anterior travaria a caixa da
+   * seguinte. Com o id aqui, a faixa só vale para a conversa que a produziu.
+   */
+  const [continua, setContinua] = useState<{
+    conversationId: string;
+    conversaId: string;
+    modelo: string;
+    nome: string | null;
+  } | null>(null);
+  const continuaAqui = continua?.conversationId === conversationId ? continua : null;
   useEffect(() => {
     onDraftChange?.(text, mode);
   }, [text, mode, onDraftChange]);
@@ -317,7 +343,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // até a API voltar impedia digitar a próxima mensagem com o campo ainda cheio.
   // `aguardandoAssumir` (#3012) entra AQUI, no mesmo lugar: um termo a mais na
   // trava de sempre, nunca um desabilitar paralelo que pudesse divergir dela.
-  const isDisabled = disabled || !!blockedReason || upload.isPending || aguardandoAssumir;
+  const isDisabled =
+    disabled || !!blockedReason || upload.isPending || aguardandoAssumir || continuaAqui !== null;
   // A janela só alcança o que SAI. Em modo nota o composer segue liberado: a
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
@@ -502,11 +529,22 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           // próxima frase sair citando algo que o atendente já respondeu.
           onCancelarResposta?.();
           consumirRascunhoEnviado();
+          // #3732: a trava da conversa que continua cai quando o envio volta a
+          // ser aceito (o número mudou, ou alguém mexeu na conversa).
+          setContinua(null);
           requestAnimationFrame(() => autoresize());
         },
         // Do upstream, e fica: sem isto o texto some quando o envio falha, e
         // quem escreveu um parágrafo o perde sem ter como recuperá-lo.
-        onError: restoreOnError,
+        //
+        // #3732: e quando a recusa é "esta conversa está no número de outro
+        // atendente", a faixa diz PARA ONDE IR e trava a caixa — a frase
+        // sozinha mandava transferir uma conversa que já é de quem está aqui.
+        onError: (erro) => {
+          restoreOnError();
+          const aviso = erro instanceof ApiError ? avisoDaContinua(erro.code, erro.details) : null;
+          if (aviso) setContinua({ conversationId, ...aviso });
+        },
       },
     );
   }
@@ -925,6 +963,29 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-sm border-2 border-dashed border-primary bg-primary/10 px-3 text-center text-xs font-medium text-primary"
           >
             {t("Solte o arquivo para anexar")}
+          </div>
+        )}
+        {/* A CONVERSA CONTINUA EM OUTRO NÚMERO (#3732) — a faixa que diz PARA
+            ONDE IR. Ela nasce da recusa do envio (409 do número de outro
+            atendente) e só aparece quando o servidor apontou a conversa que
+            continua: a frase de antes mandava transferir uma conversa que já é
+            de quem está tentando responder. Com a faixa de pé, a caixa fica
+            travada (é o `isDisabled` de sempre) e o botão leva à conversa nova,
+            onde a resposta sai. */}
+        {continuaAqui && (
+          <div
+            role="status"
+            data-testid="conversa-continua-em-outro-numero"
+            className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-sm border border-warning/40 bg-warning-bg px-3 py-2 text-xs"
+          >
+            <span>{t(continuaAqui.modelo).replace("{nome}", continuaAqui.nome ?? "")}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onAbrirConversa?.(continuaAqui.conversaId)}
+            >
+              {t("Abrir a conversa")}
+            </Button>
           </div>
         )}
         {/* O BLOCO DA ASSISTÊNCIA SÓ COM SUGESTÃO (issue #3027): sem rascunho

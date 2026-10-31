@@ -15,6 +15,7 @@ import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
 import { midpoint } from "@/lib/kanban/fractional-indexing";
 import { posicaoNoFimDaEtapa, proximoNaEtapaInteira } from "@/lib/kanban/vizinho-na-etapa";
+import { compararNaEtapa, posicaoNoTopoDaEtapa } from "@/lib/kanban/entrada-na-etapa";
 import { decideMotivoDaPerda } from "@/lib/leads/motivo-da-perda";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
@@ -50,6 +51,8 @@ interface KanbanBoardProps {
    * então o cabeçalho fica só leitura para eles.
    */
   podeRenomearEtapa?: boolean;
+  /** Densidade compacta dos cards (issue #3461, item 2), escolhida na página. */
+  denso?: boolean;
   /**
    * Quadro de funil ARQUIVADO (#1298): abre para OLHAR, e nada aqui grava —
    * sem arrastar card, sem menu de ações, sem seleção em lote e sem dossiê.
@@ -65,9 +68,12 @@ function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> 
     const bucket = map.get(lead.stage_id);
     if (bucket) bucket.push(lead);
   }
-  // Already ordered by position_in_stage at fetch time, but be defensive.
+  // A rota já devolve `position_in_stage, id` — este sort repete a MESMA régua
+  // (com o desempate por `id`) para a tela não depender da ordem de chegada:
+  // sem o desempate, dois cards empatados trocavam de lugar a cada render
+  // (#3461).
   for (const list of map.values()) {
-    list.sort((a, b) => a.position_in_stage - b.position_in_stage);
+    list.sort(compararNaEtapa);
   }
   return map;
 }
@@ -100,6 +106,7 @@ export function KanbanBoard({
   onSelectionChange,
   leadInicial,
   podeRenomearEtapa = false,
+  denso = false,
   somenteLeitura = false,
 }: KanbanBoardProps) {
   const t = useT();
@@ -237,18 +244,19 @@ export function KanbanBoard({
     [data, moveCard],
   );
 
-  // O menu não tem ponto de soltura: o card vai para o fim da etapa INTEIRA
-  // (cache do quadro, sem o filtro da página — #2545).
+  // O menu não tem ponto de soltura. Quem CHEGA a outra etapa entra no TOPO,
+  // a mesma regra do `moveLeadHandler` sem posição (#3461); a mesma etapa é
+  // reordenação e segue para o fim. As duas pontas leem a etapa INTEIRA (cache
+  // do quadro, sem o filtro da página — #2545).
   const aoMoverPelaLista = useCallback(
     (lead: Lead, stageId: string) => {
       const funil = qc.getQueryData<BoardData>(chaveDoQuadro(pipelineId))?.leads ?? data?.leads ?? [];
+      const etapa = funil.filter((l) => l.stage_id === stageId);
       moverPara({
         leadId: lead.id,
         stageId,
-        positionInStage: posicaoNoFimDaEtapa(
-          funil.filter((l) => l.stage_id === stageId),
-          lead.id,
-        ),
+        positionInStage:
+          stageId === lead.stage_id ? posicaoNoFimDaEtapa(etapa, lead.id) : posicaoNoTopoDaEtapa(etapa, lead.id),
         expectedUpdatedAt: lead.updated_at,
       });
     },
@@ -396,6 +404,7 @@ export function KanbanBoard({
               onMoverPara={aoMoverPelaLista}
               podeRenomear={podeRenomearEtapa}
               onRenomear={(nome) => renameStage.mutate({ stageId: stage.id, name: nome })}
+              denso={denso}
               somenteLeitura={somenteLeitura}
             />
           ))}

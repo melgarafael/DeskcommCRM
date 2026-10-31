@@ -126,6 +126,18 @@ export type InboxKind =
   // dois dispara pela MESMA lista (`lib/tarefas/preferencia-de-lembrete.ts`).
   | 'task_due'
   | 'task_overdue'
+  // (migration 9033, Spec 32) Dois avisos da recuperação das conversas da queda.
+  // `recuperacao_da_queda` é o resumo da conexão (um aberto por conexão, atualizado
+  // numa queda nova). `cliente_sem_resposta_na_queda` é um por conversa cujo cliente
+  // escreveu enquanto o número estava fora e ninguém respondeu. Os dois têm índice
+  // único parcial de aberto, e é o banco que fecha a corrida.
+  | 'recuperacao_da_queda'
+  | 'cliente_sem_resposta_na_queda'
+  // (migration 9027, issue #3371) A conta da assinatura do ChatGPT desconectou
+  // e a renovação foi recusada: 107 turnos com 401 no cliente Obralivre, ~26 h
+  // sem resposta e a Central vazia. UM item por incidente (índice único
+  // parcial), fechado sozinho quando o login volta pela tela de Credenciais.
+  | 'assinatura_desconectada'
   | 'other';
 
 export interface InboxItemRow {

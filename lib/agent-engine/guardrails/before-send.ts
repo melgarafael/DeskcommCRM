@@ -15,8 +15,10 @@ import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agen
  * atendimento; (4) spinning (F2-12); (5) promise determinística (F4-01); (6) promise
  * semântica (F4-02); (6.5) case promise — anti-alucinação de casos humanos (spec 15 §10.2,
  * Wave 4); (6.7) internal_vocabulary — vazamento de vocabulário interno ao cliente
- * (`docs/doctrine/separacao-fala-e-operacao.md`); (6.95) registro_sem_efeito — "já registrei
- * seu interesse" só sai com a escrita de registro tendo produzido efeito no turno (#3333);
+ * (`docs/doctrine/separacao-fala-e-operacao.md`); (6.93) horario_da_agenda — dia+horário
+ * escrito ao cliente só sai se a agenda o devolveu neste turno (#3596); (6.95)
+ * registro_sem_efeito — "já registrei seu interesse" só sai com a escrita de registro tendo
+ * produzido efeito no turno (#3333);
  * (7) disclosure
  * (F4-05). A ordem é código-constante DE PROPÓSITO, não config de
  * runtime: "stop primeiro" é invariante de segurança (regra dura nº 2) e mudar a ordem sem
@@ -88,6 +90,7 @@ import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
 // segundo caminho de envio que não passa pelo gate de elegibilidade, e é ele que
 // barra o texto FIXO do worker e o modelo aprovado.
 import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
+import { avaliarHorarios, type HorariosDaAgenda } from './horario-da-agenda';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
@@ -313,6 +316,11 @@ export interface GateContext {
    * site, que é quem monta as tools).
    */
   agenda?: { active: boolean; ferramentas: readonly string[]; toolCalledThisTurn: boolean };
+  /**
+   * Arma o `horarioDaAgendaGate`: o que as tools de agenda DEVOLVERAM neste turno (não só
+   * se foram chamadas). Ausente = no-op. Ver `horario-da-agenda.ts`.
+   */
+  horariosDaAgenda?: HorariosDaAgenda;
   /**
    * Retorno marcado pelo próprio assistente, para o `casePromiseGate` (#1873). Ausente =
    * nenhum alívio: o gate exige caso como sempre, e o veto não cita follow-up.
@@ -889,6 +897,21 @@ export const agendaStallGate: Gate = {
 };
 
 /**
+ * Gate de HORÁRIO SEM FONTE — todo dia+horário escrito ao cliente veio da agenda neste
+ * turno, e "está agendada" só sai depois de a marcação gravar. Regra pura em
+ * `horario-da-agenda.ts`; aqui só a ligação com a cadeia. Posição 6.93: logo depois do
+ * `agendaStallGate` (a família da agenda fica junta) e antes do `registroSemEfeitoGate` e do
+ * `disclosureGate` — precisa ver o texto do MODELO, antes de o disclosure emendar o corpo.
+ */
+export const horarioDaAgendaGate: Gate = {
+  name: 'horario_da_agenda',
+  evaluate: (ctx) => {
+    const v = avaliarHorarios(ctx.body, ctx.now, ctx.horariosDaAgenda);
+    return v.pass ? { pass: true } : { pass: false, code: v.code, reason: v.reason };
+  },
+};
+
+/**
  * Gate 6.95 — REGISTRO AFIRMADO SEM EFEITO (#3333): sem nenhum efeito confirmado
  * da ferramenta neste turno, a afirmação correspondente é recusada. O coletor
  * agrega nomes de ferramentas; não vincula a fala a um objeto específico.
@@ -923,7 +946,8 @@ export const agendaStallGate: Gate = {
  *    conferência humana. É o que a própria mensagem de `EscritaDoNegocioSemDesfechoError` já
  *    manda o modelo fazer.
  *
- * Posição 6.95 de `BEFORE_SEND_GATES`: DEPOIS do `agendaStallGate` e ANTES do
+ * Posição 6.95 de `BEFORE_SEND_GATES`: DEPOIS do `agendaStallGate` e do
+ * `horarioDaAgendaGate` (que também só lê o texto do modelo), e ANTES do
  * `disclosureGate`, pela mesma razão dele — o disclosure pode EMENDAR o corpo, e este gate
  * precisa julgar o texto do MODELO.
  */
@@ -1150,7 +1174,9 @@ const spinningGate: Gate = {
 // v10: restrição comercial explícita da organização, antes de qualquer emenda do corpo.
 // v11 (#3333): afirmar que o interesse foi registrado só sai com a escrita de registro tendo
 // PRODUZIDO EFEITO no turno (gate `registro_sem_efeito`, lendo o predicado único do efeito).
-export const BEFORE_SEND_CHAIN_VERSION = 11;
+// v12 (#3596): insere `horarioDaAgendaGate` entre `agenda_stall` e `registro_sem_efeito` —
+// dia+horário escrito ao cliente só sai se uma ferramenta de agenda o devolveu neste turno.
+export const BEFORE_SEND_CHAIN_VERSION = 12;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1202,6 +1228,9 @@ export const factualClaimGate: Gate = {
  *         câncer escritos pelo modelo; só arma com a camada `afirmacao_clinica` ligada;
  *   (6.9) agenda_stall — "vou verificar/confirmar horário" sem ter chamado a ferramenta de
  *         agenda neste turno; antes do disclosure pelo mesmo motivo do internal_vocabulary;
+ *   (6.93) horario_da_agenda — dia+horário citado que nenhuma ferramenta de agenda devolveu
+ *         neste turno, ou "está agendado" sem a marcação ter gravado (#3596);
+ *   (6.95) registro_sem_efeito — "já registrei" sem a escrita de registro ter efeito (#3333);
  *   (8) disclosure — 1ª mensagem se apresenta como assistente virtual (F4-05).
  * (O anti-jailbreak F4-04 é INBOUND advisório, não gate de before_send — não entra aqui.)
  */
@@ -1219,6 +1248,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   clinicalClaimGate,
   commercialRestrictionGate,
   agendaStallGate,
+  horarioDaAgendaGate,
   registroSemEfeitoGate,
   disclosureGate,
 ];
@@ -1371,6 +1401,8 @@ export interface RunBeforeSendArgs {
    * no-op (retrocompatível com todo caller que não conhece agenda, ex.: `followup-turn.ts`).
    */
   agenda?: GateContext['agenda'];
+  /** Ver `GateContext.horariosDaAgenda`. Ausente = gate no-op. */
+  horariosDaAgenda?: GateContext['horariosDaAgenda'];
   /** Ver `GateContext.followup`. Ausente = o `casePromiseGate` não alivia nada. */
   followup?: GateContext['followup'];
   /** Coletor do mesmo turno: sem efeito confirmado, não afirmar registro. */
@@ -1709,6 +1741,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
       commercialRestrictionEnforced: restricaoComercial,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
+      ...(args.horariosDaAgenda !== undefined ? { horariosDaAgenda: args.horariosDaAgenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
       ...(args.registro !== undefined ? { registro: args.registro } : {}),
     };

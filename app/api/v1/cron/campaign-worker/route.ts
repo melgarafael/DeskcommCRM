@@ -27,6 +27,29 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O `if (await recursoOcioso(...))` desta rota é saída antecipada da ROTA
+ * INTEIRA: o que vier depois dele não roda em instalação ociosa. Esta lista é a
+ * declaração do que roda ali — `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova, com arquivo e linha, quando o que está de fato
+ * abaixo do portão divergir dela. Passo novo abaixo do portão entra aqui, e só
+ * depois de a pessoa ver que ele NÃO roda na instalação parada, que é o caso
+ * comum. O #3650 mediu o custo de não haver essa cerca: três passos novos na
+ * `historico-import` ficaram fora do sinal do portão e o autor teve de alargá-lo
+ * à mão.
+ *
+ * Em runtime a constante não serve para nada — o `void` existe só para o lint
+ * não acusar variável sem uso.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const r",
+  "if (r.enviadas > 0 || r.pulados > 0 || r.concluidas > 0 || r.promovidas > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 

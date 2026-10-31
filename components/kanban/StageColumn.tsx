@@ -40,6 +40,8 @@ interface StageColumnProps {
   /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
   podeRenomear?: boolean;
   onRenomear?: (nome: string) => void;
+  /** Densidade dos cards (issue #3461, item 2) — atravessa como `pulses`. */
+  denso?: boolean;
   /**
    * Quadro de um funil ARQUIVADO (#1298): abre para OLHAR, e nada aqui grava.
    * Sem arraste, sem menu de ações de card, sem seleção (a barra em lote é
@@ -64,6 +66,7 @@ export function StageColumn({
   onMoverPara,
   podeRenomear = false,
   onRenomear,
+  denso = false,
   somenteLeitura = false,
 }: StageColumnProps) {
   const t = useT();
@@ -284,6 +287,7 @@ export function StageColumn({
                 onOpen={somenteLeitura ? undefined : onOpen}
                 etapas={etapas}
                 onMoverPara={onMoverPara}
+                denso={denso}
                 somenteLeitura={somenteLeitura}
               />
             ))}

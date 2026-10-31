@@ -89,7 +89,14 @@ export function ReassignDialog({
   const options = (members.data ?? []).filter((m) => m.user_id !== user.id);
   // #3642 (doc 237, 2-A): avisar ANTES de confirmar quando a conversa vai trocar
   // de número — o vendedor novo fala de um número que o cliente ainda não conhece.
-  const numeroNovo = useNumeroDaTransferencia(conversationId, toUserId, open).data ?? null;
+  //
+  // #3732: e avisar também quando o número NÃO vai mudar. Antes, `numero: null`
+  // não dizia nada: quem transferia ficava sem saber que o destino não tem
+  // número conectado (ou que o contato já tem conversa no número dele) e que a
+  // conversa continua onde está. Só quando a prévia respondeu — enquanto carrega,
+  // nenhum dos dois avisos aparece (o `null` do "ainda não sei" não é resposta).
+  const previaDoNumero = useNumeroDaTransferencia(conversationId, toUserId, open);
+  const numeroNovo = previaDoNumero.data ?? null;
   const destino = options.find((m) => m.user_id === toUserId);
   const numeros = numero ? outrosNumerosDoContato(sessoes, numero.channelSessionId) : [];
   const temAbaNumero = numero != null && numeros.length > 0;
@@ -210,6 +217,13 @@ export function ReassignDialog({
                 {t("A conversa vai continuar pelo número de {nome} ({numero}).")
                   .replace("{nome}", rotuloDoMembro(destino, t))
                   .replace("{numero}", numeroNovo.phone_number?.trim() || nomeDoCanal(numeroNovo, t))}
+              </p>
+            )}
+            {!numeroNovo && destino && previaDoNumero.isSuccess && (
+              <p className="text-xs text-muted-foreground" role="status" data-testid="aviso-numero-atual-da-transferencia">
+                {t(
+                  "A conversa continua no número em que está: o destino não tem número conectado do mesmo canal, ou o contato já tem conversa no número dele.",
+                )}
               </p>
             )}
           </div>

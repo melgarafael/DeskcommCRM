@@ -3,7 +3,7 @@
  *
  * Cobre, pela TELA, num banco montado só do `supabase/baseline.sql`:
  *  · #935/#938 — os TRÊS caminhos para a etapa de perda (menu, arrasto, lote)
- *  · "Mover para…" no menu do card, no TOQUE: área de 44px, fim da etapa, janela do motivo
+ *  · "Mover para…" no menu do card, no TOQUE: área de 44px, topo da etapa, janela do motivo
  *  · "Outro" com e sem detalhe
  *  · #911 — excluir pelo menu do próprio card, no desktop e no TOQUE
  *  · #948 — tag em lote oferecendo as tags que já existem
@@ -480,7 +480,7 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
     registra(`#911 toque · documento 390px: scrollWidth=${pagina.scrollWidth} clientWidth=${pagina.clientWidth} transborda=${pagina.transborda}`);
   });
 
-  test("Mover para… pelo menu do card: área de 44px, fim da etapa inteira e janela do motivo", async ({ page }) => {
+  test("Mover para… pelo menu do card: área de 44px, topo da etapa inteira e janela do motivo", async ({ page }) => {
     // Funil próprio, semeado e limpo aqui: os vizinhos do bloco usam o deles.
     const { data: funil, error } = await admin
       .from("crm_pipelines")
@@ -588,9 +588,9 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
       const r = await resposta;
       registra(`mover toque · Contato → POST /move = ${r.status()} · enviado = ${r.request().postData()}`);
       expect(r.status()).toBe(200);
-      // O card entra no FIM da etapa, depois da âncora.
+      // O card CHEGA à etapa: entra no TOPO, acima da âncora (#3461).
       await expect(
-        page.locator(`[data-rfd-droppable-id="${et.Contato}"] [role="group"][aria-label^="Lead:"]`).last(),
+        page.locator(`[data-rfd-droppable-id="${et.Contato}"] [role="group"][aria-label^="Lead:"]`).first(),
       ).toHaveAttribute("aria-label", `Lead: Mover ${ST}`, { timeout: 15_000 });
       const { data: noContato } = await admin
         .from("crm_leads")
@@ -599,8 +599,8 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
         .single();
       registra(`mover toque · banco depois de Contato = ${JSON.stringify(noContato)}`);
       expect((noContato as { stage_id: string }).stage_id).toBe(et.Contato);
-      expect((noContato as { position_in_stage: number }).position_in_stage).toBeGreaterThan(5000);
-      await captura(page, "mover-03-no-fim-do-contato");
+      expect((noContato as { position_in_stage: number }).position_in_stage).toBeLessThan(5000);
+      await captura(page, "mover-03-no-topo-do-contato");
 
       const moves: string[] = [];
       page.on("request", (req) => {

@@ -88,7 +88,13 @@ const TETO_DA_LEITURA_MS = 2_000;
  *   candidatos que a rodada promove (`draft -> running`), então "só running"
  *   deixaria a promoção sem tick.
  * - `campaigns`: `scheduled` é a fila que o worker promove para `running`.
- * - `importacoes_de_historico`: o único status que esta rota anda.
+ * - `historico` (a rota anda a importação de histórico E as recuperações de queda
+ *   do número, Spec 32): importação `rodando` ou `aguardando` (a recuperação nasce
+ *   `aguardando`); saída de `WORKING` nos últimos 8 dias no `event_log` (7 de olhar
+ *   para trás + 1 de folga, as constantes de `lib/channels/historico/quedas.ts`) —
+ *   é o que abre uma recuperação; e aviso aberto da queda, que a rota fecha quando o
+ *   cliente é respondido. O predicado é mais LARGO que o trabalho (uma queda já
+ *   recuperada mantém a rota ligada por 8 dias): o lado seguro, como o do push.
  * - `calendar_connections`: só conexão saudável sincroniza; `google_calendar` é
  *   o único valor que o CHECK da coluna aceita. Vale para o SYNC, que filtra
  *   `healthy` na rota.
@@ -113,8 +119,21 @@ select
   exists (
     select 1 from campaigns where status in ('running', 'scheduled')
   ) as campanhas,
-  exists (
-    select 1 from importacoes_de_historico where status = 'rodando'
+  (
+    exists (
+      select 1 from importacoes_de_historico where status in ('rodando', 'aguardando')
+    )
+    or exists (
+      select 1 from event_log
+       where event_type = 'channel_session.status_changed'
+         and payload ->> 'from_status' = 'WORKING'
+         and created_at > now() - interval '8 days'
+    )
+    or exists (
+      select 1 from agent_inbox_items
+       where status = 'open'
+         and kind in ('recuperacao_da_queda', 'cliente_sem_resposta_na_queda')
+    )
   ) as historico,
   exists (
     select 1 from calendar_connections

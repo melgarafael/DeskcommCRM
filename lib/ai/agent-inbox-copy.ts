@@ -119,6 +119,16 @@ export const KIND_LABEL = {
   // ainda dá tempo de concluir ou se já é o vencimento que aconteceu.
   task_due: "Uma tarefa está perto do vencimento",
   task_overdue: "Uma tarefa venceu sem conclusão",
+  // Diz o que a CONEXÃO fez e o que ficou para trás, não o mecanismo da
+  // recuperação. O resultado (quantas mensagens, por que parou) fica no corpo.
+  recuperacao_da_queda: "A conexão voltou de uma queda — recuperação das conversas",
+  // Diz o que o CLIENTE viveu: escreveu, o número estava fora, e ninguém respondeu.
+  cliente_sem_resposta_na_queda: "Um cliente escreveu enquanto o número estava fora e ainda não teve resposta",
+  // Diz o que o CLIENTE vive: a conta que respondia por assinatura do ChatGPT
+  // foi recusada e a IA parou. "Token expirado" é vocabulário de quem instalou;
+  // "parou de responder" é o que faz quem lê a Central agir — e a ação é uma
+  // só, reconectar em Credenciais.
+  assinatura_desconectada: "A conta do ChatGPT desconectou — a IA parou de responder",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 
@@ -194,3 +204,76 @@ export function copyDaPromessaSemDono(
 
   return { title, body: traduzir(CORPO[porque], idioma) };
 }
+
+/**
+ * Os textos da recuperação das conversas da queda (Spec 32, seção 4).
+ *
+ * Um motivo por texto, e o motivo é o que o administrador precisa saber para
+ * agir: a conta recuperou, parou no meio, ou nem começou e por quê. O título vai
+ * para a linha do aviso; o corpo, com os números e as datas já formatados pelo
+ * chamador (é lá que mora o fuso), vai para a coluna `body`.
+ *
+ * Como os avisos de `canal_pausado`, o texto é gravado em português e lido como
+ * veio: não passa por `t()` na escrita. A tradução de rótulo mora em `KIND_LABEL`.
+ */
+export type MotivoDoResumoDaRecuperacao =
+  | "concluida"
+  | "erro"
+  | "numero_mudou"
+  | "numero_nao_confirmado"
+  | "acervo_desligado";
+
+export interface DadosDoResumoDaRecuperacao {
+  mensagens?: number;
+  conversas?: number;
+  /** Início da janela, já formatado (ex.: "20/10/2026 08:00"). */
+  desde?: string;
+  /** Fim da janela, já formatado. */
+  ate?: string;
+  /** O erro já resumido para uma frase (`resumirErroDaImportacao`). */
+  erro?: string;
+}
+
+const TITULO_DO_RESUMO: Record<MotivoDoResumoDaRecuperacao, string> = {
+  concluida: "Conversas da queda recuperadas",
+  erro: "A recuperação das conversas da queda parou",
+  // Os três motivos que não recuperaram nada dizem o mesmo fato ao administrador.
+  // O que muda é o porquê, e esse vai no corpo.
+  numero_mudou: "As conversas da queda não foram recuperadas",
+  numero_nao_confirmado: "As conversas da queda não foram recuperadas",
+  acervo_desligado: "As conversas da queda não foram recuperadas",
+};
+
+/**
+ * O título e o corpo do resumo da recuperação, por motivo.
+ *
+ * Os motivos "número mudou" e "número não confirmado" existem para o mesmo
+ * cuidado: a recuperação traria mensagens de OUTRO aparelho, ou de um número que
+ * ninguém conferiu. Por isso o texto diz o motivo e não promete nada do conteúdo.
+ */
+export function copyDoResumoDaRecuperacao(
+  motivo: MotivoDoResumoDaRecuperacao,
+  dados: DadosDoResumoDaRecuperacao,
+): { title: string; body: string } {
+  const CORPO: Record<MotivoDoResumoDaRecuperacao, string> = {
+    concluida:
+      `Recuperamos ${dados.mensagens ?? 0} mensagens de ${dados.conversas ?? 0} conversas do período em que o número ficou fora (${dados.desde ?? ""} a ${dados.ate ?? ""}).`,
+    erro:
+      `A recuperação das conversas da queda parou: ${dados.erro ?? "motivo não registrado"}. Veja em Conexões.`,
+    numero_mudou:
+      "O número da conexão mudou na reconexão. As conversas do período fora do ar não foram recuperadas, para não trazer mensagens de outro aparelho.",
+    numero_nao_confirmado:
+      "Não conseguimos confirmar o número da conexão depois da volta. As conversas do período fora do ar não foram recuperadas.",
+    acervo_desligado:
+      "A conexão voltou, mas \"Guardar o histórico\" está desligado nela: não há como recuperar as conversas do período fora do ar.",
+  };
+  return { title: TITULO_DO_RESUMO[motivo], body: CORPO[motivo] };
+}
+
+/** O título do aviso por cliente sem resposta: a conversa é a referência, e o nome do cliente não entra (sem PII). */
+export const TITULO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
+  "Cliente escreveu na queda e ainda não teve resposta";
+
+/** O corpo do mesmo aviso. Não traz nome, número nem trecho de mensagem. */
+export const CORPO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
+  "Este cliente escreveu enquanto o número estava fora do ar e ainda não teve resposta.";

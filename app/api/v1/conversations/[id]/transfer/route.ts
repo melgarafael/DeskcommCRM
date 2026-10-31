@@ -165,6 +165,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // sumia justamente para quem vai continuar o atendimento. O `reason` da
   // atividade é coberto pela cascata de anonimização da LGPD, que é o que
   // permite texto escrito por humano sobre um cliente morar ali.
+  //
+  // #3732: e a troca de número entra na MESMA linha. O #3658 gravava o par
+  // antigo/novo só na auditoria da rota — o histórico da conversa, que é onde
+  // quem atende olha, não dizia nada. Quando o número muda, a linha diz por qual
+  // número a conversa continua, com o nome de quem atende; o par vai no payload
+  // para a auditoria da atividade não depender de cruzar tabela.
+  const trocouDeNumero =
+    numeroAnterior !== undefined && numeroAnterior !== conv.channel_session_id;
+  const continuacao = trocouDeNumero
+    ? `Continua pelo número de ${conv.assigned_to_user_name?.trim() || "outro atendente"}`
+    : null;
   await registrarTrocaDeComando({
     supabase,
     organizationId: conv.organization_id,
@@ -174,10 +185,21 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     actor: { type: "user", id: user.id, role: authz.org.role },
     // Canônico em português: quem traduz é a LEITURA (`t(item.reason)`). Ver o
     // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
-    motivo: input.reason?.trim()
-      ? `Transferiu a conversa: ${input.reason.trim()}`
-      : "Transferiu a conversa para outro atendente",
-    payload: { to_user_id: input.to_user_id },
+    motivo: [
+      input.reason?.trim()
+        ? `Transferiu a conversa: ${input.reason.trim()}`
+        : "Transferiu a conversa para outro atendente",
+      ...(continuacao ? [continuacao] : []),
+    ].join(" · "),
+    payload: {
+      to_user_id: input.to_user_id,
+      ...(continuacao
+        ? {
+            numero_anterior: numeroAnterior,
+            numero_novo: conv.channel_session_id,
+          }
+        : {}),
+    },
   });
 
   return ok(conv, { requestId });

@@ -236,9 +236,32 @@ export { conditionSchema } from "@/lib/automation/conditions";
  * do rodízio têm só `{ user_id }` e continuam válidas sem migração de dados. O
  * union discriminado (e não `z.union`) mantém o caminho do erro no campo
  * (`fila`, `user_id`), que é o que a tela usa para dizer o que corrigir.
+ *
+ * ─── As duas opções da #3514, e por que são OPT-IN ────────────────────────
+ *
+ * `contato` passa também a carteira do cliente (`contacts.carteira_user_id`) e
+ * `conversas` passa as conversas ABERTAS do contato para o novo responsável —
+ * a passagem SDR → Closer. As duas são `optional()` e o executor só as lê com
+ * `=== true`: payload gravado antes desta mudança (sem as chaves) continua
+ * válido e continua fazendo SÓ o que fazia. Nenhuma automação existente passa a
+ * mover conversa porque o schema ganhou um campo.
+ *
+ * No rodízio elas não entram NESTA entrega, e não por acaso: a vez é decidida
+ * dentro de `fn_automation_rodizio_atribuir`, que grava o dono do negócio na
+ * MESMA transação em que registra a escolha. Passar cliente e conversas ali
+ * seria uma SEGUNDA passada, com um destinatário que o banco escolheu e que a
+ * ação só conhece depois do commit — desenho que merece issue própria em vez de
+ * vir de carona nesta.
  */
 export const configDoAtribuirSchema = z.discriminatedUnion("modo", [
-  z.object({ modo: z.literal("fixo").optional(), user_id: z.string().uuid() }),
+  z.object({
+    modo: z.literal("fixo").optional(),
+    user_id: z.string().uuid(),
+    /** #3514 — o cliente vai junto com o negócio? Desligado por padrão. */
+    contato: z.boolean().optional(),
+    /** #3514 — as conversas abertas do cliente vão junto? Desligado por padrão. */
+    conversas: z.boolean().optional(),
+  }),
   z.object({
     modo: z.literal("rodizio"),
     fila: z

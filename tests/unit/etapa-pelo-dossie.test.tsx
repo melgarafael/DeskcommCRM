@@ -22,7 +22,7 @@ import type { Lead } from "@/lib/types/leads";
  * O seletor não move nada sozinho: ele chama `onMudar`, e o quadro liga esse fio
  * ao MESMO caminho do "Mover para…" do card (`aoMoverPelaLista` → `moverPara`).
  * Por isso a segunda metade deste arquivo renderiza o QUADRO de verdade e mede o
- * move que sai no fio: fim da etapa inteira, `updated_at` do card, a janela do
+ * move que sai no fio: topo da etapa inteira, `updated_at` do card, a janela do
  * motivo antes da perda e a janela de campos na recusa — as mesmas regras de
  * `mover-etapa-pelo-menu.test.tsx`.
  */
@@ -183,8 +183,8 @@ function lead(id: string, stageId: string, pos: number): Lead {
 const ETAPAS = [etapa("s-1", "Entrada", 0), etapa("s-2", "Contato", 1), etapa("s-3", "Perdido", 2, { is_lost: true })];
 const MOVIDO = lead("l-1", "s-1", 1000);
 const VISIVEL_NO_CONTATO = lead("l-2", "s-2", 1000);
-// Escondido pelo filtro da página: está só no cache do quadro e define o fim da etapa (#2545).
-const ESCONDIDO_NO_CONTATO = lead("l-3", "s-2", 5000);
+// Escondido pelo filtro da página: está só no cache do quadro e define o topo da etapa (#2545, #3461).
+const ESCONDIDO_NO_CONTATO = lead("l-3", "s-2", -5000);
 
 let qc: QueryClient;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -232,7 +232,7 @@ describe("o quadro move pelo dossiê com a regra do Mover para…", () => {
     vi.unstubAllGlobals();
   });
 
-  it("vai para o FIM da etapa inteira (cache do quadro), com o updated_at do card", async () => {
+  it("entra no TOPO da etapa inteira (cache do quadro), com o updated_at do card", async () => {
     const user = userEvent.setup();
     await abrirDossieDoMovido(user);
     await user.click(screen.getByRole("button", { name: "dossiê → Contato" }));
@@ -240,7 +240,7 @@ describe("o quadro move pelo dossiê com a regra do Mover para…", () => {
     await waitFor(() => expect(movesEnviados()).toHaveLength(1));
     expect(movesEnviados()[0]).toEqual({
       url: `/api/v1/leads/${MOVIDO.id}/move`,
-      corpo: { stage_id: "s-2", position_in_stage: 6000, expected_updated_at: UPDATED_AT },
+      corpo: { stage_id: "s-2", position_in_stage: -6000, expected_updated_at: UPDATED_AT },
     });
   });
 

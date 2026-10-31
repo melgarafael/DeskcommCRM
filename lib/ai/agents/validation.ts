@@ -221,6 +221,12 @@ const versionShapeSchema = z
     // Todos com `.default(...)`, e é o que mantém retrocompatível: agent e
     // version que já existem, e qualquer payload que não conheça o papel,
     // seguem válidos e leem o papel como DESLIGADO.
+    // ── Voz (Fase 6b/7 do plano de voz) ─────────────────────────────────────
+    // Default FALSE/'espelhar' preserva toda versão existente — a mesma
+    // doutrina de `operator_enabled` logo abaixo: feature que gasta dinheiro
+    // não se liga por acidente.
+    voz_enabled: z.boolean().default(false),
+    voz_quando: z.enum(["nunca", "espelhar", "sempre"]).default("espelhar"),
     operator_enabled: z.boolean().default(false),
     // `.nullable()` e não opcional: null é o valor que SIGNIFICA "herda o modelo
     // do Conversador". Omitir seria indistinguível de "ainda não decidi".
@@ -299,6 +305,8 @@ export const versionPatchSchema = versionShapeSchema
     operator_tool_ids: versionShapeSchema.shape.operator_tool_ids.removeDefault(),
     pipeline_ids: versionShapeSchema.shape.pipeline_ids.removeDefault(),
     knowledge_source_ids: versionShapeSchema.shape.knowledge_source_ids.removeDefault(),
+    voz_enabled: versionShapeSchema.shape.voz_enabled.removeDefault(),
+    voz_quando: versionShapeSchema.shape.voz_quando.removeDefault(),
   })
   .partial();
 

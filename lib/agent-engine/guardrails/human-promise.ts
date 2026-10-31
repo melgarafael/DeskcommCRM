@@ -90,6 +90,17 @@ function buildPatterns(target: string): RegExp[] {
       `\\b(?:est[aá]|ficou|fica|segue)\\b${gap(10)}\\bem\\b\\s+an[aá]lise\\b${gap(20)}` +
         `\\b(?:com|pela|pelo|do|da|na|no)\\b${gap(10)}\\b${target}\\b`,
     ),
+    // (2d) REPASSE ALEGADO SEM OBJETO, frase inteira: "Já encaminhei!", "Pronto, encaminhado!".
+    //      Sem objeto, o que foi repassado é o pedido do cliente — a alegação de que alguém
+    //      já foi acionado, ainda que o alvo só apareça na pergunta seguinte ("Quer que eu
+    //      avise a equipe?"), onde nenhuma regra o alcança. Ancorada no começo da frase:
+    //      "Já te encaminhei o link." tem objeto e "Seu pedido foi encaminhado." tem sujeito,
+    //      e nenhum dos dois casa. Não depende de `target`.
+    new RegExp(
+      `(?:^|[.!?\\n]\\s*)(?:(?:pronto|ok|certo|feito|perfeito)\\s*[,!]?\\s*)?(?:(?:eu\\s+)?(?:ja\\s+)?` +
+        `(?:encaminhei|repassei|transferi|acionei|escalei)|(?:ja\\s+)?(?:encaminhad|repassad|transferid|acionad|escalad)[oa])` +
+        `(?:\\s+(?:aqui|agora|internamente))?\\s*(?:[.!]|$)`,
+    ),
     // (3) deferir a TERCEIROS via subjuntivo 3ª pessoa do plural: "assim que liberarem eu te aviso".
     //     Não depende de `target` — não repetido no alvo estendido.
     new RegExp(

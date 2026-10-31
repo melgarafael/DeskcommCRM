@@ -243,7 +243,7 @@ it('coalescência exclui job em hold (held_run_after) — sessão morta não seq
   });
   await drainTick({ query } as unknown as pg.Pool, debounceKnobs, log);
 
-  const coalescencia = calls.find((s) => s.includes('select id from job_queue'));
+  const coalescencia = calls.find((s) => s.includes('select id, payload from job_queue'));
   expect(coalescencia, 'a query de coalescência deveria ter rodado').toBeTruthy();
   expect(coalescencia).toContain('held_run_after');
   // Sem o job em hold como falso-positivo, o turno segue e enfileira um job novo.
@@ -500,4 +500,105 @@ it('#2729: grupo só passa pela guarda do engine quando a chave por grupo libera
 
   const individual = await chamadas({ is_group: false, ia_responde: null });
   expect(individual.some((s) => s.includes('tem_agente'))).toBe(true);
+});
+
+// ── #3383: a janela mudou e o job adiado não pode continuar dormindo ───────
+
+/** Terça, 22h11 em São Paulo — fora da janela 7h–22h, dentro de 0h–24h. */
+const AGORA_DA_JANELA = new Date('2026-07-28T01:11:00Z');
+const ABRIDO_PELA_JANELA = {
+  adiado_por_janela: { tipo: 'resposta', abertura: '2026-07-29T10:00:00.000Z', janela: '7h-22h' },
+};
+
+/**
+ * Pool falso que responde o caminho INTEIRO do drain — inclusive a leitura de
+ * knobs (`loadChannelKnobs`, reconhecida por `k.resposta_start_hour`) e as
+ * duas escritas possíveis na fila: acordar o adiado (`update job_queue`) e
+ * enfileirar o turno da mensagem nova (`insert into job_queue`).
+ */
+function poolDaJanela(
+  resposta: [number, number],
+  candidato: { id: string; payload: unknown } | null,
+): { pool: pg.Pool; chamadas: string[] } {
+  const chamadas: string[] = [];
+  const query = vi.fn().mockImplementation((sql: string) => {
+    chamadas.push(sql);
+    if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(0)] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false, ia_responde: null }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes('media_derived_status')) return { rows: [] };
+    if (sql.includes('k.resposta_start_hour')) {
+      return {
+        rows: [
+          {
+            resposta_start_hour: resposta[0],
+            resposta_end_hour: resposta[1],
+            timezone: 'America/Sao_Paulo',
+            org_timezone: null,
+          },
+        ],
+      };
+    }
+    if (sql.includes('select id, payload from job_queue')) return { rows: candidato ? [candidato] : [] };
+    if (sql.includes('update job_queue')) return { rows: [{ id: candidato?.id }], rowCount: 1 };
+    if (sql.includes('insert into job_queue')) return { rows: [{ id: 'job-novo' }] };
+    return { rows: [] };
+  });
+  return { pool: { query } as unknown as pg.Pool, chamadas };
+}
+
+it('#3383 cenário A: janela aberta para 0h–24h — a mensagem nova NÃO entra no job adiado e ele acorda', async () => {
+  process.env.__ESPERA__ = '0';
+  const { pool, chamadas } = poolDaJanela([0, 24], { id: 'job-adiado', payload: ABRIDO_PELA_JANELA });
+  const logLocal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  await drainTick(pool, { ...knobs, debounceMs: 500, clock: () => AGORA_DA_JANELA }, logLocal as never);
+
+  // O adiado é acordado na MESMA linha — sem insert, sem segundo turno.
+  const acordar = chamadas.find((s) => s.includes('update job_queue'));
+  expect(acordar, 'o job adiado tinha de ser acordado para não dormir até o horário velho').toBeTruthy();
+  expect(acordar).toContain('run_after = now()');
+  expect(acordar, 'idempotência: só pendente e só futuro — running nunca re-arma').toContain("status = 'pending'");
+  expect(acordar).toContain('run_after > now()');
+  expect(acordar).toContain('adiado_por_janela');
+  // A mensagem das 22h40 enfileira o PRÓPrio turno, em vez de entrar no adiado.
+  expect(chamadas.some((s) => s.includes('insert into job_queue')), 'mensagem nova ganha job próprio').toBe(true);
+  expect(
+    logLocal.info.mock.calls.some((c) => String(c[0]).includes('não recebe carona')),
+    'o drain tem de registrar a recusa da carona',
+  ).toBe(true);
+});
+
+it('#3383 cenário B: 22h11 com janela 7h–22h fechada — a mensagem continua de carona (regressão zero)', async () => {
+  process.env.__ESPERA__ = '0';
+  const { pool, chamadas } = poolDaJanela([7, 22], { id: 'job-adiado', payload: ABRIDO_PELA_JANELA });
+  const logLocal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  await drainTick(pool, { ...knobs, debounceMs: 500, clock: () => AGORA_DA_JANELA }, logLocal as never);
+
+  // Ninguém acorda o adiado: ele segue para a abertura de sempre…
+  expect(chamadas.some((s) => s.includes('update job_queue')), 'janela fechada = ninguém mexe no job').toBe(false);
+  // …e a mensagem viaja de carona nele, sem turno novo (o de hoje, byte a byte).
+  expect(chamadas.some((s) => s.includes('insert into job_queue')), 'sem job novo: a mensagem é carona').toBe(false);
+  expect(
+    logLocal.info.mock.calls.some((c) => String(c[0]).includes('rajada coalescida em job pendente')),
+  ).toBe(true);
+});
+
+it('#3383: a abertura da janela não desmonta a coalescência normal — só o ADIADO é solto', async () => {
+  process.env.__ESPERA__ = '0';
+  const { pool, chamadas } = poolDaJanela([0, 24], {
+    id: 'job-de-debounce',
+    payload: { conversation_id: '11111111-1111-4111-8111-111111111111' },
+  });
+  const logLocal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  await drainTick(pool, { ...knobs, debounceMs: 500, clock: () => AGORA_DA_JANELA }, logLocal as never);
+
+  expect(chamadas.some((s) => s.includes('update job_queue')), 'job sem rastro de adiamento não é acordado').toBe(false);
+  expect(chamadas.some((s) => s.includes('insert into job_queue')), 'mensagens juntas seguem virando UM job').toBe(false);
+  expect(
+    logLocal.info.mock.calls.some((c) => String(c[0]).includes('rajada coalescida em job pendente')),
+  ).toBe(true);
 });
