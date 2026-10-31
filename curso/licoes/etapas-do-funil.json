@@ -56,7 +56,7 @@
           "id": "p2",
           "titulo": "Um cartão para cada funil",
           "rota": "/app/settings/tenant/pipelines",
-          "texto": "Um funil é o caminho que o cliente faz até fechar, dividido em etapas. Cada etapa vira uma coluna no quadro do funil. Esta tela mostra um cartão para cada funil ativo da empresa. A Clínica Bem Viver tem dois: \"Pacientes\", aqui no alto, e \"Pilates\", mais abaixo. Nas próximas lições você mexe no \"Pilates\", para não mudar o funil principal.",
+          "texto": "Um funil é o caminho que o cliente faz até fechar, dividido em etapas. Cada etapa vira uma coluna no quadro do funil. Esta tela mostra um cartão para cada funil ativo da empresa. A Clínica Bem Viver tem dois: \"Pacientes\", aqui no alto, e \"Pilates\", mais abaixo. Nos exemplos deste curso, as mudanças são feitas no \"Pilates\".",
           "dica": "Funil arquivado não aparece aqui. Para criar ou arquivar um funil inteiro, use a tela Funis, no menu CRM.",
           "antes": [],
           "destaques": [
@@ -185,7 +185,7 @@
         {
           "id": "p6",
           "titulo": "Esfriando e aviso para a equipe",
-          "texto": "Embaixo de cada etapa ficam mais dois ajustes. \"Janela de esfriando\" é quanto tempo um negócio pode ficar parado na coluna, sem conversa nem mudança, antes de aparecer como esfriando no quadro e no Radar. Vazio vale 24 horas; em \"Aula experimental feita\" são 2 dias. Com a chave \"Avisar a equipe na Central\" ligada, todo negócio que entra na coluna abre um aviso na Central de avisos, o sino do alto da tela.",
+          "texto": "Embaixo de cada etapa ficam mais dois ajustes. \"Janela de esfriando\" é quanto tempo um negócio pode ficar na coluna sem nenhuma atividade nova antes de o quadro marcá-lo como esfriando e ele entrar no Radar. Vazio vale 24 horas; em \"Aula experimental feita\" são 2 dias. Com a chave \"Avisar a equipe na Central\" ligada, cada negócio que é levado para a coluna abre um aviso na Central de avisos, o sino do alto da tela.",
           "dica": "Os dois ajustes são gravados quando você sai do campo ou clica na chave. Não há botão de salvar.",
           "antes": [],
           "destaques": [
@@ -215,7 +215,7 @@
         {
           "id": "p7",
           "titulo": "Para onde o agente leva o cartão",
-          "texto": "Mais abaixo, \"Para onde o card vai em cada passo\" liga o agente de IA às suas colunas. Cada linha é um momento do atendimento, como \"Em negociação\" ou \"Ganho\". Quando o agente chega nesse momento, o cartão do cliente anda sozinho para a etapa escolhida. \"Não mover o card\" também vale: o cartão fica onde está. Depois de mudar, clique em \"Salvar estas escolhas\".",
+          "texto": "Mais abaixo, \"Para onde o card vai em cada passo\" liga o agente de IA às suas colunas. Cada linha é um momento do atendimento, como \"Em negociação\" ou \"Ganho\". Quando o agente chega nesse momento, o cartão do cliente anda sozinho para a etapa escolhida. \"Não mover o card\" também vale: o cartão fica onde está. Depois de mudar, clique em \"Salvar estas escolhas\": o botão só acende quando alguma escolha mudou.",
           "dica": "Na lista de etapas, a frase \"O assistente usa esta etapa para…\" mostra o mesmo vínculo, e \"Mudar isso\" desce até aqui.",
           "antes": [
             {
@@ -297,7 +297,7 @@
           "id": "p2",
           "titulo": "Gravar o nome",
           "texto": "Aperte Enter ou clique fora do campo: o nome é gravado na hora, sem botão de salvar. Se mudar de ideia antes disso, aperte Esc e o nome antigo volta. O nome novo vale em todo lugar: no quadro do funil e também aqui embaixo, em \"Para onde o card vai em cada passo\", onde \"Novo lead\" já aponta para \"Pediu informação\".",
-          "dica": "Duas colunas do mesmo funil não podem ter o mesmo nome. Se tentar, a tela avisa e não grava.",
+          "dica": "Duas colunas do mesmo funil não podem ter o mesmo nome, nem nomes que só mudam no acento ou na letra maiúscula. Se tentar, a tela avisa e não grava.",
           "antes": [
             {
               "acao": "press",
@@ -543,7 +543,7 @@
           "id": "p2",
           "titulo": "A marcação muda de lugar",
           "texto": "Só uma coluna pode ser a de fechamento. Por isso a tela pede confirmação e diz qual coluna perde a marcação: aqui, \"Matrícula feita\". \"Marcar mesmo assim\" muda a marcação de lugar. Na clínica, quem fecha a venda é a matrícula, então clique em \"Cancelar\" e nada muda.",
-          "dica": "Para tirar a marcação de uma coluna, marque outra no lugar: o funil nunca fica sem coluna de fechamento nem sem coluna de perda. Se a coluna for usada pelo agente de IA para outro passo, a tela recusa e mostra o caminho para mudar o agente antes.",
+          "dica": "Para tirar a marcação de uma coluna, marque outra no lugar: o funil nunca fica sem coluna de fechamento nem sem coluna de perda. Se o agente de IA usava a coluna antiga para \"Ganho\" (ou \"Perdido\"), esse vínculo vai junto para a nova. Se a coluna escolhida já é usada pelo agente para outro passo, a tela recusa e mostra o caminho para mudar o agente antes.",
           "antes": [
             {
               "acao": "click",
@@ -606,7 +606,7 @@
         {
           "id": "p3",
           "titulo": "Arquivar uma etapa",
-          "dica": "A coluna de fechamento e a de perda não podem ser arquivadas: marque outra coluna no lugar antes.",
+          "dica": "A coluna de fechamento e a de perda não podem ser arquivadas: marque outra coluna no lugar antes. Se o agente de IA usa a coluna num passo, o painel avisa: depois de arquivar, ele deixa de mover o cartão nesse passo até você escolher outra etapa em \"Para onde o card vai em cada passo\".",
           "texto": "A clínica não usa mais a coluna \"Lista de espera\". Arquivar é o jeito de tirar uma etapa do funil. Clique em \"Arquivar\" na linha dela. A tela explica antes: a coluna sai do quadro e para de receber negócios novos, nada é apagado, mas não dá para trazer a coluna de volta por esta tela.",
           "antes": [
             {
@@ -656,7 +656,7 @@
         {
           "id": "p4",
           "titulo": "Para onde vão os negócios",
-          "texto": "Quando a coluna tem negócios, a tela pergunta para onde eles vão. Aqui são 2 alunos na lista de espera. Clique em \"Escolha a etapa\" e escolha \"Novo\". A lista só oferece colunas comuns: a de fechamento e a de perda ficam de fora, porque mandar os negócios para lá os daria como ganhos ou perdidos.",
+          "texto": "Se a coluna estiver vazia, ela sai do quadro na hora. Quando tem negócios, a tela pergunta para onde eles vão. Aqui são 2 alunos na lista de espera. Clique em \"Escolha a etapa\" e escolha \"Novo\". A lista só oferece colunas comuns: a de fechamento e a de perda ficam de fora, porque mandar os negócios para lá os daria como ganhos ou perdidos.",
           "antes": [
             {
               "acao": "click",
@@ -694,7 +694,7 @@
         {
           "id": "p5",
           "titulo": "Mover e arquivar",
-          "texto": "Com o destino escolhido, o botão vira \"Mover os negócios e arquivar\". Clique nele: os negócios mudam de coluna primeiro, e só depois a etapa sai do funil. Sem escolher o destino, o botão fica apagado.",
+          "texto": "Com o destino escolhido, o botão \"Mover os negócios e arquivar\" acende. Clique nele: os negócios mudam de coluna primeiro, e só depois a etapa sai do funil. Sem escolher o destino, o botão fica apagado.",
           "antes": [
             {
               "acao": "click",
@@ -734,7 +734,8 @@
         {
           "id": "p6",
           "titulo": "A etapa saiu do funil",
-          "texto": "\"Lista de espera\" sumiu da lista e do quadro, e os 2 negócios dela estão agora em \"Novo\", que passou a ter 4. A mudança fica registrada no histórico de cada negócio.",
+          "texto": "\"Lista de espera\" saiu da lista de etapas e do quadro, e as colunas seguintes subiram uma posição: \"Aula experimental marcada\" agora é a 2. Os 2 negócios da \"Lista de espera\" foram para \"Novo\", e a mudança fica registrada no histórico de cada negócio.",
+          "dica": "A frase \"nesta etapa agora\" de \"Novo\" só passa a contar os negócios que chegaram quando você recarrega a página.",
           "antes": [
             {
               "acao": "click",
@@ -757,9 +758,9 @@
             },
             {
               "alvo": {
-                "testid": "tempo-etapa-d1110100-0000-4000-8000-000000000001"
+                "testid": "nome-d1110100-0000-4000-8000-000000000003"
               },
-              "rotulo": "Agora são 4",
+              "rotulo": "Agora é a coluna 2",
               "tipo": "numero"
             }
           ]

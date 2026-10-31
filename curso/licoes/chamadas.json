@@ -1,0 +1,492 @@
+{
+  "id": "chamadas",
+  "titulo": "Chamadas",
+  "tela": "/app/calls",
+  "resumo": "O histórico das ligações de telefone que o agente de IA de voz fez e recebeu, com o resultado de cada uma e, por escrito, o que foi falado.",
+  "licoes": [
+    {
+      "id": "chamadas-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Chamadas",
+      "objetivo": "Achar a tela, entender de onde vêm as ligações e ler cada coluna e cada status da lista.",
+      "papel": "admin",
+      "busca": [
+        "chamadas",
+        "ligações",
+        "histórico de ligações",
+        "telefone",
+        "ligação perdida",
+        "quem ligou",
+        "voz por IA"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Chamadas não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Chamadas\". O caminho completo é: CRM › Ver tudo em CRM › Chamadas.",
+          "dica": "Só gerente ou administrador vê este cartão. Ele também some quando a interface foi enxugada, como no perfil \"Simplificada\". Quem é atendente e abre a tela pelo endereço vê a lista vazia, porque não tem permissão para ver as ligações.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Chamadas ",
+                "regex": true
+              },
+              "rotulo": "Abrir Chamadas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Chamadas ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "rota": "/app/calls",
+          "texto": "Chamadas é o histórico das ligações de telefone da empresa: as que o agente de IA de voz fez para clientes e as que os clientes fizeram para o número da empresa, que é ele quem atende. Cada linha é uma ligação, da mais nova para a mais antiga, e a tela mostra as 50 mais recentes. Tudo depende da telefonia, um recurso opcional que quem cuida do servidor precisa ligar. Sem telefonia, a lista fica vazia, com o aviso \"Nenhuma chamada ainda.\".",
+          "dica": "As ligações recebidas chegam pelo número cadastrado em Conexões, na aba \"Telefone\". As chamadas de voz pelo WhatsApp não entram nesta lista.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Chamadas",
+                "exato": true
+              },
+              "rotulo": "Histórico de ligações",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "table"
+              },
+              "rotulo": "Uma linha por ligação",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que cada coluna mostra",
+          "texto": "\"Data\" é o dia e a hora em que a ligação começou. \"Direção\" diz quem ligou: \"Entrada\" é o cliente ligando para a empresa, e \"Saída\" é a IA ligando para o cliente. \"Quem é\" mostra o número de telefone do cliente. Hoje aparece só o número, mesmo quando ele é de um contato cadastrado. \"Status\" conta como a ligação terminou, e o próximo passo explica cada um. \"Duração\" é o tempo de conversa, em minutos e segundos, contado de quando atenderam até o fim.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Direção",
+                "exato": true
+              },
+              "rotulo": "Entrada ou Saída",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Quem é",
+                "exato": true
+              },
+              "rotulo": "Número do cliente",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Status",
+                "exato": true
+              },
+              "rotulo": "Como terminou",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Duração",
+                "exato": true
+              },
+              "rotulo": "Tempo de conversa",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Os status de uma ligação",
+          "texto": "\"Concluída\": alguém atendeu, houve conversa e a ligação terminou. \"Não atendida\": a IA ligou e a pessoa não atendeu. \"Falhou\": o sistema não conseguiu nem começar a ligação, por exemplo porque a parte de telefone do servidor estava fora do ar. \"Cancelada\": a ligação foi recusada. É o que acontece quando um contato bloqueado liga: o sistema desliga na hora, e a IA não atende.",
+          "dica": "Enquanto a ligação acontece, ela aparece como \"Chamando\" (tocando) e depois \"Em andamento\" (em conversa). A lista não se atualiza sozinha: recarregue a página para ver o status mudar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Concluída",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "5511987650003",
+                  "regex": true
+                }
+              },
+              "rotulo": "Houve conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Não atendida",
+                "exato": true
+              },
+              "rotulo": "Ninguém atendeu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Cancelada",
+                "exato": true
+              },
+              "rotulo": "Recusada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Falhou",
+                "exato": true
+              },
+              "rotulo": "Nem começou",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Quem cuidou da ligação",
+          "texto": "\"Atendido por\" mostra \"IA\" quando a ligação ficou com o agente de IA de voz. Toda ligação pedida pelo botão \"Nova ligação\" fica com a IA, mesmo quando ninguém atende. Quando a IA não chegou a entrar na ligação, a tela mostra \"Humano\", mesmo que nenhuma pessoa tenha atendido. É o caso da ligação recusada. Ligação sem conversa fica com um traço em \"Duração\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Atendido por",
+                "exato": true
+              },
+              "rotulo": "IA ou Humano",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Humano",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "5511987650011",
+                  "regex": true
+                }
+              },
+              "rotulo": "A IA não entrou",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chamadas-ler-a-transcricao",
+      "titulo": "Ler o que foi falado numa ligação",
+      "objetivo": "Abrir uma ligação e entender a transcrição: o que a IA falou, o que o cliente falou e quando não há texto.",
+      "papel": "admin",
+      "busca": [
+        "transcrição da ligação",
+        "o que foi falado",
+        "conversa da ligação",
+        "texto da chamada",
+        "ler ligação",
+        "sem transcrição"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abra uma ligação",
+          "rota": "/app/calls",
+          "texto": "Toda linha da lista abre os detalhes da ligação. Clique na ligação mais recente, uma ligação de entrada que terminou como \"Concluída\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "5511987650003",
+                "regex": true
+              },
+              "rotulo": "Clique na linha",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "row",
+            "nome": "5511987650003",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A transcrição",
+          "texto": "Abre uma janela com a transcrição: a conversa escrita, frase por frase. No topo ficam o número do cliente, o dia e a hora, a direção e o status. Os balões cinza, à esquerda, são o que a IA falou. A tela os marca sempre com o nome \"Iara\", qualquer que seja o nome do seu agente. Os balões coloridos, à direita, são o que o cliente falou, com o número dele em cima.",
+          "dica": "A transcrição é escrita durante a ligação e gravada quando ela termina. A tela mostra só o texto, não o áudio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "row",
+                "nome": "5511987650003",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "^Chamada com",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "^Chamada com",
+                "regex": true
+              },
+              "rotulo": "Com quem foi",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Clínica Bem Viver, aqui é a assistente virtual. Como posso ajudar?"
+              },
+              "rotulo": "O que a IA falou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Às 16h30 é perfeito."
+              },
+              "rotulo": "O que o cliente falou",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quando não se ouviu nada",
+          "texto": "Feche a janela e abra a ligação de saída logo abaixo. Quando o sistema não captou nenhuma palavra numa fala, o balão mostra \"(sem áudio detectado)\". Aqui o cliente atendeu e ficou em silêncio, e a IA perguntou de novo: \"Alô?\".",
+          "dica": "Para fechar a janela, clique no X do canto ou aperte a tecla Esc.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "row",
+                "nome": "5511987650004",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "(sem áudio detectado)",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "(sem áudio detectado)",
+                "exato": true
+              },
+              "rotulo": "Nenhuma palavra captada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Ligação sem conversa",
+          "texto": "Agora abra a ligação \"Não atendida\". Ligação que ninguém atendeu, que falhou ou que foi recusada não tem conversa. Por isso a janela mostra só o topo e o aviso \"Sem transcrição pra esta chamada.\".",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "row",
+                "nome": "5511987650006",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Sem transcrição pra esta chamada.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Sem transcrição pra esta chamada.",
+                "exato": true
+              },
+              "rotulo": "Não houve conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true
+              },
+              "rotulo": "Fechar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chamadas-nova-ligacao",
+      "titulo": "Pedir para a IA ligar para alguém",
+      "objetivo": "Usar o botão \"Nova ligação\" e saber o que precisa estar pronto para a IA conseguir ligar.",
+      "papel": "admin",
+      "busca": [
+        "fazer ligação",
+        "nova ligação",
+        "IA ligar para o cliente",
+        "ligar com IA",
+        "discador",
+        "ligar para paciente",
+        "trunk SIP não configurado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Nova ligação",
+          "rota": "/app/calls",
+          "texto": "\"Nova ligação\" pede ao agente de IA de voz que ligue para um número e conduza a conversa sozinho. Você não fala na ligação: por enquanto, só a IA fala. Clique em \"Nova ligação\".",
+          "dica": "Só gerente ou administrador consegue pedir a ligação.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova ligação",
+                "exato": true
+              },
+              "rotulo": "Pedir uma ligação",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova ligação",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Digite o número",
+          "texto": "Digite no campo \"Número\" o telefone para onde a IA vai ligar. Com o campo vazio, o texto cinza dentro dele mostra um exemplo de como escrever. O botão \"Ligar com IA\" só fica disponível quando o número tem pelo menos 8 caracteres.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova ligação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Número"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Número"
+              },
+              "valor": "+55 11 91234-5678"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Número"
+              },
+              "rotulo": "Telefone do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ligar com IA",
+                "exato": true
+              },
+              "rotulo": "Ligar com IA",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que acontece ao ligar",
+          "texto": "Aqui não vamos clicar em \"Ligar com IA\", porque a ligação seria de verdade. Ao clicar, o sistema confere primeiro a linha de telefone da empresa, cadastrada em Configurações › Trunk SIP. Sem essa linha cadastrada e ativa, e sem uma linha padrão no servidor, aparece um aviso de erro dizendo que nenhum trunk SIP está configurado, e nada é ligado. Com a linha pronta, a janela fecha e a ligação entra na lista como \"Chamando\". Depois ela passa para \"Em andamento\" e termina como \"Concluída\" ou \"Não atendida\".",
+          "dica": "A lista não se atualiza sozinha: recarregue a página para ver o status novo. Se o servidor não conseguir fazer a ligação, aparece uma mensagem de erro e ela fica registrada como \"Falhou\". Hoje, se a empresa tiver algum contato marcado como pessoal, as ligações pedidas por aqui não aparecem na lista.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "A IA liga pra esse número e conduz a chamada — falar você mesmo ainda não está disponível.",
+                "exato": true
+              },
+              "rotulo": "Só a IA fala",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ligar com IA",
+                "exato": true
+              },
+              "rotulo": "Liga de verdade",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

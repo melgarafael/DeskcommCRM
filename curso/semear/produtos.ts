@@ -8,8 +8,9 @@
  * (`<org>/<produto>/<uuid>.png`): é o que o painel "Fotos" e a capa da linha mostram.
  *
  * Idempotente: apaga só as próprias linhas (ids fixos + os códigos que as lições
- * criam pela tela) e recria; as fotos sobem com upsert. A moeda vem da
- * organização, como no cadastro pela tela (`moedaDaOrganizacao`).
+ * criam pela tela) e recria; as fotos sobem com upsert. A mesma limpeza sai como
+ * `limpar`, que a base chama antes de qualquer aula. A moeda vem da organização,
+ * como no cadastro pela tela (`moedaDaOrganizacao`).
  */
 import { deflateSync } from "node:zlib";
 
@@ -171,12 +172,17 @@ const FOTOS_DO_WHEY = [
 
 const centavos = (reais: number) => Math.round(reais * 100);
 
-export async function semear(c: Contexto) {
+const WHEY = produtoId(7);
+const caminhoDaFoto = (org: string, arquivo: string) => `${org}/${WHEY}/${arquivo}`;
+
+/**
+ * Limpeza chamada antes de QUALQUER aula: o catálogo deste módulo não sobra em
+ * outra tela (o seletor de produtos da proposta lê o mesmo catálogo). Apaga só
+ * as próprias linhas — os ids fixos, o código que a lição de cadastro cria pela
+ * tela e as fotos do whey no bucket.
+ */
+export async function limpar(c: Contexto) {
   const { db, org } = c;
-
-  const { data: organizacao } = await db.from("organizations").select("currency").eq("id", org).maybeSingle();
-  const moeda = (organizacao as { currency?: string | null } | null)?.currency || "BRL";
-
   semErro(
     await db.from("catalog_products").delete().eq("organization_id", org).in("id", CATALOGO.map((p) => produtoId(p.n))),
     "limpar produtos do módulo",
@@ -185,14 +191,25 @@ export async function semear(c: Contexto) {
     await db.from("catalog_products").delete().eq("organization_id", org).in("codigo", CRIADAS_NAS_LICOES),
     "limpar produtos criados nas lições",
   );
+  semErro(
+    await db.storage.from("catalog-photos").remove(FOTOS_DO_WHEY.map((f) => caminhoDaFoto(org, f.arquivo))),
+    "limpar fotos do módulo",
+  );
+}
 
-  const whey = produtoId(7);
-  const caminhoDaFoto = (arquivo: string) => `${org}/${whey}/${arquivo}`;
+export async function semear(c: Contexto) {
+  const { db, org } = c;
+
+  const { data: organizacao } = await db.from("organizations").select("currency").eq("id", org).maybeSingle();
+  const moeda = (organizacao as { currency?: string | null } | null)?.currency || "BRL";
+
+  await limpar(c);
+
   for (const { arquivo, frente } of FOTOS_DO_WHEY) {
     semErro(
       await db.storage
         .from("catalog-photos")
-        .upload(caminhoDaFoto(arquivo), poteDeWheyPng(frente), { contentType: "image/png", upsert: true }),
+        .upload(caminhoDaFoto(org, arquivo), poteDeWheyPng(frente), { contentType: "image/png", upsert: true }),
       `subir a foto ${arquivo}`,
     );
   }
@@ -214,7 +231,7 @@ export async function semear(c: Contexto) {
         quantidade: p.estoque ?? 0,
         ativo: p.ativo ?? true,
         origem: "manual",
-        fotos: p.n === 7 ? FOTOS_DO_WHEY.map((f) => caminhoDaFoto(f.arquivo)) : [],
+        fotos: produtoId(p.n) === WHEY ? FOTOS_DO_WHEY.map((f) => caminhoDaFoto(org, f.arquivo)) : [],
       })),
     ),
     "produtos do módulo",

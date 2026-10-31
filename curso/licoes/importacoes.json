@@ -1,0 +1,414 @@
+{
+  "id": "importacoes",
+  "titulo": "Importações",
+  "tela": "/app/imports",
+  "resumo": "Onde você sobe uma planilha (CSV ou Excel) com empresas, as pessoas que decidem nelas e os telefones, para cadastrar tudo de uma vez, e confere linha por linha o que entrou, o que deu conflito e o que falhou.",
+  "licoes": [
+    {
+      "id": "importacoes-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Importações",
+      "objetivo": "Saber para que serve a importação de planilha, onde ela fica e o que a lista de lotes mostra.",
+      "papel": "admin",
+      "busca": [
+        "importar planilha",
+        "importação",
+        "subir planilha",
+        "importar excel",
+        "importar csv",
+        "cadastrar empresas de uma vez",
+        "lote de importação"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Importações mora em Ver tudo em CRM",
+          "rota": "/app/crm",
+          "texto": "Importações é onde você sobe uma planilha com empresas, as pessoas que decidem nelas e os telefones dessas pessoas, para cadastrar tudo de uma vez em vez de digitar um por um. Na Clínica Bem Viver, serve para trazer a lista das empresas que contratam programas de saúde para os funcionários. Para chegar, abra \"Ver tudo em CRM\", no grupo \"CRM\" do menu lateral, e clique no cartão \"Importações\", na parte \"Preparar a venda\". O caminho é CRM › Ver tudo em CRM › Importações.",
+          "dica": "O cartão só aparece quando quem administra o servidor liga \"Empresas e pessoas (venda para empresas)\" em Admin › Recursos opcionais. Desligado, a tela some para todo mundo. Ligado, o cartão aparece para quem tem o papel \"Gerente\" ou \"Administrador\", e só esses dois papéis conseguem importar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Abre o hub do CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Importações",
+                "regex": true
+              },
+              "rotulo": "Cartão Importações",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Importações",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Duas partes: subir a planilha e a lista de lotes",
+          "rota": "/app/imports",
+          "texto": "A tela tem duas partes. No alto fica o quadro para subir a planilha: o campo \"Arquivo\" e o botão \"Importar\". Embaixo fica a lista dos lotes. Um lote é uma planilha que alguém já importou, com o nome do arquivo e a conta do que aconteceu com as linhas dela. O lote mais novo aparece primeiro.",
+          "dica": "A lista mostra os 50 lotes mais recentes.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> div > input[type=file])"
+              },
+              "rotulo": "Subir a planilha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "table"
+              },
+              "rotulo": "Planilhas já importadas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que cada coluna conta",
+          "texto": "Cada linha da lista é um lote. \"Arquivo\" é o nome da planilha. Clicando nele você abre o lote. \"Status\" aparece em inglês, como o sistema grava: \"completed\" quer dizer que a importação terminou. \"Linhas\" é quantas linhas a planilha tinha, sem contar a primeira, a dos nomes das colunas. \"Sucesso\" é quantas entraram. \"Conflitos\" é quantas traziam um telefone que já é de outra pessoa. \"Falhas\" é quantas não puderam entrar. \"Data\" é quando a planilha foi importada.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "empresas-parceiras-outubro.csv"
+              },
+              "rotulo": "O lote mais novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Sucesso",
+                "exato": true
+              },
+              "rotulo": "Entraram",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Conflitos",
+                "exato": true
+              },
+              "rotulo": "Telefone de outra pessoa",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Falhas",
+                "exato": true
+              },
+              "rotulo": "Não entraram",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "importacoes-importar-uma-planilha",
+      "titulo": "Importando uma planilha",
+      "objetivo": "Montar a planilha do jeito que o sistema entende, importar e saber onde os dados aparecem depois.",
+      "papel": "admin",
+      "busca": [
+        "como importar planilha",
+        "modelo de planilha",
+        "colunas da planilha",
+        "importar empresas",
+        "importar telefones",
+        "planilha do excel",
+        "arquivo csv"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Como montar a planilha",
+          "rota": "/app/imports",
+          "texto": "A planilha pode ser CSV ou Excel (.xlsx). A primeira linha precisa trazer o nome de cada coluna, porque é pelo nome que o sistema reconhece cada uma: \"Empresa\" (ou \"Razão social\" e \"Nome fantasia\"), \"CNPJ\", \"Nome\" (ou \"Pessoa\", \"Contato\", \"Decisor\"), \"Cargo\", \"Telefone\" (ou \"Celular\", \"WhatsApp\") e \"E-mail\". Maiúsculas e minúsculas não importam. Coluna com outro nome não é usada. Cada linha seguinte traz, em geral, uma pessoa e a empresa dela.",
+          "dica": "A planilha pode ter até 2.000 linhas e 2 MB. Do Excel, só a primeira aba é lida. O formato antigo \".xls\" não é aceito: salve como \".xlsx\" ou \".csv\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "CSV ou XLSX com empresa, CNPJ, pessoa, cargo, telefone e e-mail.",
+                "exato": true
+              },
+              "rotulo": "O que a planilha pode trazer",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher o arquivo",
+          "texto": "Clique no campo \"Arquivo\" e escolha a planilha no seu computador. O botão \"Importar\" fica apagado até você escolher um arquivo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "input[type=file]"
+              },
+              "rotulo": "Escolha a planilha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Importar",
+                "exato": true
+              },
+              "rotulo": "Apagado até escolher",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "css": "input[type=file]"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Importar e ler o resumo",
+          "texto": "Com o arquivo escolhido, o botão \"Importar\" deixa de ficar apagado. Clique nele. Enquanto o sistema lê a planilha, linha por linha, o botão mostra \"Importando…\". No fim, aparece embaixo do botão um resumo como \"Lote processado: 3 ok, 1 conflitos, 2 falhas.\", e o lote novo entra no alto da lista, como o \"empresas-parceiras-outubro.csv\" da foto.",
+          "dica": "Se o arquivo não servir, o mesmo lugar mostra o motivo, como \"Formato não suportado — envie .csv ou .xlsx.\" ou \"Preciso de cabeçalho e ao menos uma linha de dados.\", e nada é importado.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Importar",
+                "exato": true
+              },
+              "rotulo": "Clique para importar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "empresas-parceiras-outubro.csv"
+              },
+              "rotulo": "O lote entra no alto",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Importar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Onde os dados aparecem",
+          "rota": "/app/people",
+          "texto": "Para cada linha, o sistema cadastra a empresa, cadastra a pessoa ligada a ela como quem decide, com o cargo da planilha, e guarda o telefone como um contato dessa pessoa. Linhas com o mesmo CNPJ ficam na mesma empresa. Sem CNPJ, linhas com o mesmo nome de empresa na mesma planilha também. Se o CNPJ já estava cadastrado, a pessoa entra na empresa que já existe. Se o telefone já era de um contato, o sistema aproveita esse contato em vez de repetir o número. Se ele já for de outra pessoa, a linha vira conflito. Depois, as empresas aparecem em \"Empresas\", as pessoas em \"Pessoas\", como a Fernanda e o Rogério da foto, e os telefones em \"Contatos\". Nenhum negócio é criado no funil.",
+          "dica": "Quando o CNPJ é de uma empresa nova, o sistema busca depois, sozinho, os dados públicos dela na BrasilAPI, como a razão social e o endereço.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Fernanda Lopes"
+              },
+              "rotulo": "Pessoa importada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Rogério Antunes"
+              },
+              "rotulo": "Sem e-mail na planilha",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "importacoes-conferir-um-lote",
+      "titulo": "Conferindo um lote: conflitos e falhas",
+      "objetivo": "Abrir um lote, ver o que aconteceu com cada linha da planilha e saber o que fazer com as falhas e os conflitos.",
+      "papel": "admin",
+      "busca": [
+        "erro na importação",
+        "linha com erro",
+        "conflito na importação",
+        "telefone inválido",
+        "cnpj inválido",
+        "telefone já vinculado a outra pessoa",
+        "ver detalhes da importação"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o lote",
+          "rota": "/app/imports",
+          "texto": "Para ver o que aconteceu com cada linha de uma planilha, clique no nome do arquivo na lista.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "empresas-parceiras-outubro.csv"
+              },
+              "rotulo": "Clique no nome",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "empresas-parceiras-outubro.csv"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma linha para cada linha da planilha",
+          "texto": "No alto ficam o nome do arquivo e o resumo: o status do lote e quantas linhas ficaram certas, quantas deram conflito e quantas falharam. A tabela tem uma linha para cada linha da planilha. \"#\" é o número da linha na planilha: a 2 é a primeira depois da linha dos nomes das colunas. \"Status\" diz o que aconteceu, em inglês: \"success\" (entrou), \"conflict\" (conflito) ou \"failed\" (falhou). \"Erro\" diz o motivo. As colunas \"Company\", \"Person\" e \"Contact\" mostram o começo do código interno da empresa, da pessoa e do contato que a linha cadastrou ou usou. Um traço quer dizer que a linha não chegou até ali.",
+          "dica": "Linhas com o mesmo código em \"Company\" estão na mesma empresa, como a 2 e a 3.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "empresas-parceiras-outubro.csv"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Só conflitos"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "h1 + p"
+              },
+              "rotulo": "Resumo do lote",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "#",
+                "exato": true
+              },
+              "rotulo": "Linha da planilha",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Status",
+                "exato": true
+              },
+              "rotulo": "O que aconteceu",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Erro",
+                "exato": true
+              },
+              "rotulo": "O motivo",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "As linhas que falharam",
+          "texto": "Os motivos de falha mais comuns são três, e uma linha que falha por um deles não cadastra nada: nem empresa, nem pessoa, nem contato. \"CNPJ inválido.\": o número não fecha a conta dos dígitos do CNPJ, quase sempre por erro de digitação ou dígito faltando. \"Telefone inválido.\": falta o DDD ou faltam dígitos; escreva com DDD, como (11) 98765-4321. \"Linha vazia — sem empresa, pessoa ou telefone.\": a linha não trazia nada que servisse. Corrija essas linhas na planilha e importe uma planilha só com elas. Para ver só os conflitos, marque \"Só conflitos\", logo acima da tabela.",
+          "dica": "Não importe a planilha inteira de novo. Cada importação cadastra as pessoas outra vez, e as empresas sem CNPJ também. E os telefones que já têm dono viram conflito.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "CNPJ inválido.",
+                "literal": true
+              },
+              "rotulo": "CNPJ com erro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Telefone inválido.",
+                "literal": true
+              },
+              "rotulo": "Telefone incompleto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Só conflitos"
+              },
+              "rotulo": "Mostra só os conflitos",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "css": "label:has(> input[type=checkbox])"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Só os conflitos",
+          "texto": "Com \"Só conflitos\" marcado, a tabela mostra só as linhas com conflito. Conflito quer dizer que o telefone da linha já é de outra pessoa cadastrada. Aqui, o número da linha 5 já era do Sérgio Tavares, que entrou com a planilha \"decisores-feira-de-saude.xlsx\". A importação não troca o dono de um telefone. A empresa e a pessoa da linha foram cadastradas mesmo assim, mas a pessoa ficou sem esse número, que continua com o Sérgio. Confira com o cliente qual é o número certo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "label:has(> input[type=checkbox])"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Só conflitos"
+              },
+              "rotulo": "Marcado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Telefone já vinculado a outra pessoa.",
+                "literal": true
+              },
+              "rotulo": "Telefone de outra pessoa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,534 @@
+{
+  "id": "propostas-da-ia",
+  "titulo": "Propostas",
+  "tela": "/app/ai/proposals",
+  "resumo": "Os próximos passos que a IA sugere para cada negócio, como \"enviar o lembrete da consulta\", esperando alguém da equipe aprovar ou ignorar. Não são propostas comerciais nem orçamentos para o cliente.",
+  "licoes": [
+    {
+      "id": "propostas-da-ia-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Propostas",
+      "objetivo": "Entender o que são as sugestões de próximo passo da IA, como chegar à tela e como ler cada sugestão.",
+      "papel": "admin",
+      "busca": [
+        "propostas da IA",
+        "sugestões da IA",
+        "próximo passo",
+        "próxima ação",
+        "o que a IA sugeriu",
+        "aprovar sugestão",
+        "decisões pendentes"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Propostas fica no hub de IA",
+          "rota": "/app/ai",
+          "texto": "A tela Propostas não tem atalho próprio no menu lateral. No grupo \"Agente de IA\", clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" fica o cartão \"Propostas\". O caminho é: Agente de IA › Ver tudo em IA › Propostas. É ali que ficam os próximos passos que a IA, que atende os seus clientes, sugere para cada negócio, esperando uma decisão da equipe.",
+          "dica": "A frase do cartão fala em \"melhorias que a IA sugere para si mesma\", mas esta tela mostra os próximos passos dos negócios. As melhorias do próprio agente ficam em outro lugar: em \"Agentes\", abra o agente e vá à aba \"Propostas\". E as propostas comerciais, os orçamentos que você manda ao cliente, são outra tela, em \"Ver tudo em CRM\", que só aparece quando o recurso \"Proposta comercial da empresa\" está ligado.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Acompanhar o agente",
+                "exato": true
+              },
+              "rotulo": "Acompanhar o agente",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Propostas Melhorias",
+                "regex": true
+              },
+              "rotulo": "Abrir Propostas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Propostas Melhorias",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que é uma sugestão de próximo passo",
+          "rota": "/app/ai/proposals",
+          "texto": "Enquanto conversa com um cliente, a IA pode anotar qual deveria ser o próximo passo daquele atendimento, como \"enviar o lembrete da fisioterapia\". Essa anotação é uma sugestão e espera alguém da equipe decidir. Aqui você vê juntas as sugestões dos negócios abertos, sem abrir o funil cartão por cartão. A aba \"Aguardando decisão\" mostra as que esperam alguém, e o número entre parênteses conta quantas são. A aba \"Já decididas\" guarda as que alguém já aprovou ou ignorou.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Propostas",
+                "exato": true
+              },
+              "rotulo": "Título da tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Aguardando decisão",
+                "regex": true
+              },
+              "rotulo": "Esperando você",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Já decididas",
+                "exato": true
+              },
+              "rotulo": "As já decididas",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Lendo uma sugestão",
+          "texto": "Cada bloco é uma sugestão. Na primeira linha vêm o nome do negócio, o cliente e a etapa do funil em que o negócio está. Logo abaixo está o texto da sugestão, escrito pela IA. O \"proposta há 1 dia\" conta o tempo desde a última vez que a IA atualizou as anotações desse cliente. A lista põe no topo a mais antiga, que é a que corre mais risco de ficar esquecida.",
+          "dica": "Cada cliente tem no máximo uma sugestão esperando. Se a IA escrever outra antes de alguém decidir, a nova toma o lugar da antiga.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Avaliação de pilates",
+                "exato": true
+              },
+              "rotulo": "Negócio",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Primeiro contato",
+                "exato": true
+              },
+              "rotulo": "Etapa do funil",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "^proposta há",
+                "regex": true,
+                "dentro": {
+                  "css": "li:has-text('Avaliação de pilates')"
+                }
+              },
+              "rotulo": "Há quanto tempo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Oferecer 20% de desconto se ela fechar o pacote de pilates hoje",
+                "exato": true
+              },
+              "rotulo": "A sugestão da IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Os dois botões: Aprovar e Ignorar",
+          "texto": "Embaixo de cada sugestão há dois botões. \"Aprovar\" quer dizer que a equipe concorda com aquele passo. \"Ignorar\" quer dizer que a equipe não quer seguir por ali. Os dois gravam a decisão, com o seu nome e a hora, e tiram a sugestão desta aba. Nenhum dos dois manda mensagem ao cliente, cria tarefa ou muda o negócio de etapa.",
+          "dica": "Atendentes, gerentes e administradores podem decidir. Quem tem o papel \"Somente leitura\" vê a lista, mas os botões ficam desativados.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+                "exato": true
+              },
+              "rotulo": "Concordo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ignorar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+                "exato": true
+              },
+              "rotulo": "Não seguir",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O histórico em Já decididas",
+          "texto": "A aba \"Já decididas\" mostra as últimas 50 decisões, da mais recente para a mais antiga. Cada linha diz se a sugestão foi \"Aprovada\" ou \"Ignorada\", de qual negócio era, quem decidiu e quando. Embaixo vem o texto que a IA tinha sugerido. Ignorar também ganha a sua etiqueta, como aprovar: recusar também é uma decisão, e fica registrada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Já decididas",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Aprovada",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Aprovada",
+                "exato": true
+              },
+              "rotulo": "Aprovada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Ignorada",
+                "exato": true
+              },
+              "rotulo": "Ignorada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^por Carlos Mendes",
+                "regex": true
+              },
+              "rotulo": "Quem decidiu e quando",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "propostas-da-ia-decidir",
+      "titulo": "Aprovar ou ignorar uma sugestão",
+      "objetivo": "Decidir sobre as sugestões da IA e conferir onde a decisão fica registrada.",
+      "papel": "admin",
+      "busca": [
+        "aprovar proposta da IA",
+        "ignorar proposta da IA",
+        "recusar sugestão",
+        "decidir próximo passo",
+        "histórico de decisões",
+        "desfazer aprovação"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Leia antes de decidir",
+          "rota": "/app/ai/proposals",
+          "texto": "Antes de clicar, leia a sugestão e veja de qual negócio ela é. Aqui a IA sugere enviar ao Henrique, amanhã cedo, o lembrete da fisioterapia de quinta com o endereço da clínica. É um passo que faz sentido. Clique em \"Aprovar\".",
+          "dica": "Se a IA trocar a sugestão enquanto a tela está aberta, o clique não vale: aparece o aviso \"A proposta mudou desde que você a leu. Confira a nova antes de decidir.\" e a lista se atualiza com a sugestão nova.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Fisioterapia do joelho')"
+              },
+              "rotulo": "A sugestão do Henrique",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+                "exato": true
+              },
+              "rotulo": "Clique em Aprovar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Aprovar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A sugestão saiu da lista",
+          "texto": "A sugestão aprovada saiu da aba, e o número entre parênteses diminuiu. Ela também some do cartão do negócio no funil. Aprovar não mandou nada ao cliente: ficou gravado que a equipe concorda com esse passo. Quando a IA voltar a atender esse cliente, ela recebe essa decisão junto com o resto do atendimento.",
+          "dica": "Se o passo depende de alguém da equipe, como uma ligação, crie uma tarefa em \"Tarefas\" para não esquecer.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "tab",
+                "nome": "^Aguardando decisão \\(2\\)",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Aguardando decisão",
+                "regex": true
+              },
+              "rotulo": "Uma a menos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ignorar: Oferecer 20% de desconto se ela fechar o pacote de pilates hoje",
+                "exato": true
+              },
+              "rotulo": "Próxima: ignorar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Ignorar: Oferecer 20% de desconto se ela fechar o pacote de pilates hoje",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Ignorar também é uma decisão",
+          "texto": "A IA sugeriu oferecer 20% de desconto à Patrícia. Se a clínica não dá esse desconto, clique em \"Ignorar\". A sugestão sai da lista do mesmo jeito, e a recusa fica gravada. Quando a IA voltar a atender a Patrícia, ela fica sabendo que a equipe recusou essa sugestão.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ignorar: Oferecer 20% de desconto se ela fechar o pacote de pilates hoje",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "tab",
+                "nome": "^Aguardando decisão \\(1\\)",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Aguardando decisão",
+                "regex": true
+              },
+              "rotulo": "Falta uma",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Já decididas",
+                "exato": true
+              },
+              "rotulo": "Ver as decididas",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "tab",
+            "nome": "Já decididas",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "As duas decisões no histórico",
+          "texto": "Em \"Já decididas\", as duas decisões que você acabou de tomar aparecem no topo: \"Ignorada\" para o pilates da Patrícia e \"Aprovada\" para a fisioterapia do Henrique, com o seu nome e a hora. A decisão também fica registrada na linha do tempo do negócio.",
+          "dica": "Não existe botão para desfazer uma decisão. Por isso vale ler com calma antes de clicar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Já decididas",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "li:has-text('Fisioterapia do joelho')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Avaliação de pilates')"
+              },
+              "rotulo": "Ignorada agora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li:has-text('Fisioterapia do joelho')"
+              },
+              "rotulo": "Aprovada agora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^por Helena Prado",
+                "regex": true,
+                "dentro": {
+                  "css": "li:has-text('Fisioterapia do joelho')"
+                }
+              },
+              "rotulo": "Seu nome e a hora",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "propostas-da-ia-no-funil",
+      "titulo": "A mesma sugestão no cartão do funil",
+      "objetivo": "Saber que a sugestão também aparece no cartão do negócio e que decidir lá ou aqui dá no mesmo.",
+      "papel": "admin",
+      "busca": [
+        "propõe no cartão",
+        "sugestão no funil",
+        "aprovar no quadro",
+        "cartão do negócio",
+        "próxima ação no funil"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A sugestão no cartão do negócio",
+          "rota": "/app/kanban",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Fisioterapia do joelho",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "A mesma sugestão também aparece no cartão do negócio, no quadro do funil. Abra \"Funis\" e o funil \"Pacientes\". No cartão \"Fisioterapia do joelho\", a linha que começa com \"Propõe:\" é a sugestão da IA, com os botões \"Aprovar\" e \"Ignorar\" ao lado. Cartões com sugestão esperando também ganham uma faixa colorida na borda esquerda. O texto pode aparecer cortado no cartão; a tela Propostas mostra o texto inteiro.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Fisioterapia do joelho",
+                "exato": true
+              },
+              "rotulo": "O cartão do negócio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+                "exato": true
+              },
+              "rotulo": "Aprovar no cartão",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Aprovar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Decidida no cartão",
+          "texto": "Depois de clicar em \"Aprovar\" no cartão, a linha \"Propõe:\" e os botões somem. O cartão pode mudar de posição dentro da coluna, mas o negócio continua na mesma etapa: aprovar não muda a etapa do negócio. A decisão é a mesma da tela Propostas e fica gravada com o seu nome e a hora.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar: Enviar amanhã cedo o lembrete da fisioterapia de quinta, com o endereço da clínica",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Fisioterapia do joelho",
+                "exato": true
+              },
+              "rotulo": "Sem sugestão agora",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Na tela Propostas, já está decidida",
+          "rota": "/app/ai/proposals",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Já decididas",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "li:has-text('Fisioterapia do joelho')"
+              }
+            }
+          ],
+          "texto": "De volta à tela Propostas, a sugestão do Henrique saiu de \"Aguardando decisão\" e aparece em \"Já decididas\" como \"Aprovada\". Decidir no cartão ou nesta tela dá no mesmo: a sugestão sai dos dois lugares.",
+          "dica": "Se o cliente tem mais de um negócio aberto e não dá para saber de qual é a sugestão, ela não entra nesta lista nem em cartão nenhum. Ao abrir o funil, o sistema cria um aviso na Central de avisos para alguém da equipe escolher o negócio. Cliente sem negócio aberto também não tem sugestão listada aqui.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Aguardando decisão",
+                "regex": true
+              },
+              "rotulo": "Uma a menos",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "li:has-text('Fisioterapia do joelho')"
+              },
+              "rotulo": "Aprovada no cartão",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

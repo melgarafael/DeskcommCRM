@@ -24,7 +24,7 @@
           "titulo": "Onde fica a tela",
           "rota": "/app/crm",
           "texto": "Produtos não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"Preparar a venda\" está o cartão \"Produtos\". O caminho completo é: CRM › Ver tudo em CRM › Produtos.",
-          "dica": "Com o \"Perfil de interface\" \"Simplificada\", o cartão não aparece; quem administra escolhe as áreas visíveis em Configurações › Organização. Quem é atendente ou só tem permissão de leitura vê o catálogo, mas não consegue alterar.",
+          "dica": "Se o cartão não aparecer, a área foi escondida da navegação: no \"Perfil de interface\" \"Simplificada\", ele some. Quem administra escolhe as áreas visíveis da empresa em Configurações › Organização, no quadro \"Menu lateral\", e as de cada pessoa em \"Equipe\". Quem tem o papel \"Atendente\" ou \"Somente leitura\" vê o catálogo, mas não consegue alterar.",
           "antes": [],
           "destaques": [
             {
@@ -57,7 +57,7 @@
           "titulo": "Para que serve o catálogo",
           "rota": "/app/products",
           "texto": "Produtos é a lista do que a clínica vende, cada um com o seu preço. Entram aqui serviços, como uma consulta ou um pacote de sessões, e itens de prateleira, como um suplemento. Quando um cliente pergunta \"quanto custa?\" no WhatsApp, o atendente de IA procura o produto nesta lista e responde com o preço cadastrado, em vez de chutar um valor.",
-          "dica": "O atendente de IA só consulta esta lista quando a ferramenta \"Procurar produto na loja\" está ligada no agente, em \"Agentes\". Com o catálogo vazio, ele responde que não encontrou o produto.",
+          "dica": "O atendente de IA só consulta esta lista quando a ferramenta \"Procurar produto na loja\" está ligada no agente: em \"Agentes\", abra o agente e procure o quadro \"O que o agente pode fazer\". Se o produto não está no catálogo, ele não acha nada e é orientado a não inventar preço e a dizer que vai confirmar com a equipe.",
           "antes": [],
           "destaques": [
             {
@@ -81,8 +81,8 @@
         {
           "id": "p3",
           "titulo": "O que cada linha mostra",
-          "texto": "Cada linha é um produto. Em cima vem o nome. Embaixo vêm o código, a marca (quando tem) e o estoque. \"12 em estoque\" é quantas unidades a clínica tem. \"Sem controle de estoque\" quer dizer que ninguém conta unidades daquele item, como num pacote de sessões: ele sempre conta como disponível. À direita fica o preço de venda. Se o produto tem foto, a primeira aparece pequena no começo da linha.",
-          "dica": "Com \"0 em estoque\", o produto continua na lista, mas o atendente de IA é avisado de que ele está em falta.",
+          "texto": "Cada linha é um produto. Em cima vem o nome. Embaixo vêm o código, a marca (quando tem) e o estoque. \"12 em estoque\" é quantas unidades a clínica tem. \"sem controle de estoque\" quer dizer que ninguém conta unidades daquele item, como num pacote de sessões: ele sempre conta como disponível. À direita fica o preço de venda. Se o produto tem foto, a primeira aparece pequena no começo da linha.",
+          "dica": "Com \"0 em estoque\", o produto continua na lista, mas o atendente de IA não o oferece como disponível: quando o cliente pede justo ele, a busca avisa que está sem estoque e orienta a não prometer.",
           "antes": [],
           "destaques": [
             {
@@ -112,7 +112,7 @@
           "id": "p4",
           "titulo": "Os comandos do alto da tela",
           "texto": "No alto ficam os comandos. A caixa de busca procura um produto. \"Novo produto\" abre o formulário para cadastrar um item. \"Importar planilha\" traz vários produtos de uma vez, de um arquivo. \"Baixar planilha modelo\" baixa um exemplo de planilha com as colunas certas.",
-          "dica": "Os botões de cadastrar e alterar só aparecem para gerente ou administrador. Quem é atendente vê a lista e a busca, sem os botões.",
+          "dica": "Os botões de cadastrar e alterar e o link da planilha modelo só aparecem para quem tem o papel \"Gerente\" ou \"Administrador\". Quem é \"Atendente\" ou \"Somente leitura\" vê a lista e a busca, sem os botões.",
           "antes": [],
           "destaques": [
             {
@@ -150,7 +150,7 @@
           "titulo": "Procurar um produto",
           "rota": "/app/products?busca=nutri",
           "texto": "Digite um pedaço do nome, do código, da marca ou da categoria. Aqui, \"nutri\" achou a consulta nutricional pelo nome e os dois suplementos pela marca NutriVida. Embaixo da lista, \"1–3 de 3\" diz quantos produtos a busca achou. A tela mostra 50 produtos por vez; quando há mais, aparecem os botões \"Página anterior\" e \"Próxima página\".",
-          "dica": "Com uma letra só, a tela não mostra nada: a busca começa a partir de 2. Para voltar a ver tudo, apague o que escreveu.",
+          "dica": "A busca começa a partir de 2 letras ou números. Com um só, a tela mostra \"Nenhum produto encontrado para essa busca\". Para voltar a ver tudo, apague o que escreveu.",
           "antes": [],
           "destaques": [
             {
@@ -216,7 +216,7 @@
         {
           "id": "p2",
           "titulo": "Código e nome",
-          "texto": "\"Código\" é a identificação do produto na clínica, como a etiqueta da prateleira. Ele não pode se repetir: se já existir um produto com o mesmo código, a tela avisa e não salva. \"Nome\" é como o produto aparece na lista e para o atendente de IA. Escreva do jeito que um cliente pediria.",
+          "texto": "\"Código\" é a identificação do produto na clínica, como a etiqueta da prateleira. Ele não pode se repetir: se já existir um produto com o mesmo código, a tela avisa \"Já existe um produto com esse código.\" e não salva. \"Nome\" é como o produto aparece na lista e para o atendente de IA. Escreva do jeito que um cliente pediria. Os dois são obrigatórios, e o nome precisa de pelo menos 2 letras.",
           "antes": [
             {
               "acao": "click",
@@ -265,7 +265,7 @@
         {
           "id": "p3",
           "titulo": "Marca, categoria e preço",
-          "texto": "\"Marca\" e \"Categoria\" são opcionais e ajudam a achar o produto na busca. Em \"Preço de venda\", escreva o valor do jeito que você já escreve, como 39,90 ou 1.299,90. Esse campo é obrigatório: sem um preço que dê para ler, a tela avisa \"Preço inválido\" e não salva. \"Custo\" é quanto o produto custa para a clínica. Ele é opcional e não aparece para o cliente.",
+          "texto": "\"Marca\" e \"Categoria\" são opcionais e ajudam a achar o produto na busca. Em \"Preço de venda\", escreva o valor do jeito que você já escreve, como 39,90 ou 1.299,90. Esse campo é obrigatório: sem um preço que dê para ler, a tela avisa \"Preço inválido. Escreva assim: 5.499,00\" e não salva. \"Custo\" é quanto o produto custa para a clínica. Ele é opcional e não aparece para o cliente.",
           "antes": [
             {
               "acao": "fill",
@@ -482,13 +482,6 @@
           "destaques": [
             {
               "alvo": {
-                "testid": "edicao-descricao"
-              },
-              "rotulo": "O que o cliente quer saber",
-              "tipo": "caixa"
-            },
-            {
-              "alvo": {
                 "testid": "edicao-preco"
               },
               "rotulo": "Preço novo",
@@ -499,6 +492,13 @@
                 "testid": "edicao-quantidade"
               },
               "rotulo": "Estoque novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "edicao-descricao"
+              },
+              "rotulo": "O que o cliente quer saber",
               "tipo": "caixa"
             }
           ]
@@ -733,7 +733,7 @@
           "id": "p4",
           "titulo": "Trazer os produtos de uma planilha",
           "rota": "/app/products",
-          "texto": "Se a clínica já tem os produtos numa planilha, não precisa cadastrar um por um. Clique em \"Baixar planilha modelo\" para ver as colunas que a tela entende: código, nome, marca, categoria, preço, custo e estoque. Só nome e preço são obrigatórios. A tela também reconhece nomes parecidos, como \"SKU\", \"valor\" ou \"qtd\". No Excel, use \"Salvar como\" e escolha \"CSV UTF-8\". Depois clique em \"Importar planilha\" e escolha o arquivo.",
+          "texto": "Se a clínica já tem os produtos numa planilha, não precisa cadastrar um por um. Clique em \"Baixar planilha modelo\" para ver as colunas que a tela entende: código, nome, marca, categoria, preço, custo e estoque. Só nome e preço são obrigatórios. A tela também reconhece nomes parecidos, como \"SKU\", \"valor\" ou \"qtd\". Ela só aceita arquivo .csv: no Excel, use \"Salvar como\" e escolha \"CSV UTF-8\". Depois clique em \"Importar planilha\" e escolha o arquivo.",
           "antes": [],
           "destaques": [
             {
@@ -755,8 +755,8 @@
         {
           "id": "p5",
           "titulo": "Importar de novo atualiza",
-          "texto": "O código liga cada linha da planilha a um produto. Importar de novo um código que já existe atualiza aquele produto, sem criar outro: é assim que se corrige a lista de preços inteira de uma vez. Se a planilha não tem coluna de código, o nome faz esse papel. A importação não mexe na descrição nem nas fotos, e não reativa um produto desativado.",
-          "dica": "Sem coluna de estoque, os produtos da planilha entram sem controle de estoque. No fim, a tela mostra um resumo: quantos produtos entraram, quantos foram atualizados e quais linhas não entraram, com o motivo.",
+          "texto": "O código liga cada linha da planilha a um produto. Importar de novo um código que já existe, escrito igual, atualiza aquele produto, sem criar outro: é assim que se corrige a lista de preços inteira de uma vez. Se a planilha não tem coluna de código, o nome faz esse papel. A importação não mexe na descrição nem nas fotos, e não reativa um produto desativado. A descrição se escreve pela tela, em \"Editar\".",
+          "dica": "Cuidado com o estoque: sem coluna de estoque, todos os produtos da planilha ficam \"sem controle de estoque\", até os que já existiam com unidades contadas. No fim, a tela mostra um resumo com quantos são \"novos\", quantos foram \"atualizados\" e as \"Linhas que não entraram:\", cada uma com o motivo.",
           "antes": [],
           "destaques": [
             {

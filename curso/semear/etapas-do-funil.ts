@@ -13,9 +13,9 @@
  * apaga pelo nome, ver FUNIS_DAS_LICOES), e uma captura interrompida lá deixaria
  * o endereço "pilates" ocupado.
  *
- * ⚠️ O FUNIL FICA NO BANCO DEPOIS DA ÚLTIMA LIÇÃO: a base não apaga funis. A
- * semente de Funis o remove (mesmo nome), mas um módulo fotografado entre este e
- * o de Funis veria um segundo funil. Ver o registro no resultado do módulo.
+ * A base não apaga funis nem etapas entre as aulas. Por isso o funil sai por
+ * `limpar`, que a base chama antes de QUALQUER aula: sem isso, o "Pilates"
+ * apareceria nas fotos dos módulos fotografados depois deste.
  */
 import { type Contexto, exigir, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
@@ -88,10 +88,13 @@ const ENCERRADOS: Array<{ n: number; nome: string; caminho: number[]; motivo?: s
   { n: 33, nome: "Natália Cunha", caminho: [3, 4, 6], motivo: "no_response", diasAtras: 12 },
 ];
 
-export async function semear(c: Contexto) {
-  const { db, org, pessoa } = c;
-
-  // ---------- limpa o que é desta semente (e um "Pilates" que sobrou de Funis) ----------
+/**
+ * Tira do banco o funil Pilates (negócios → etapas → funil) e os contatos desta
+ * semente. Não passa por `demo()`: roda antes de toda aula, nos dois idiomas, e
+ * "Pilates" é o mesmo nome em português e em espanhol.
+ */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
   const funis = exigir(
     await db.from("crm_pipelines").select("id").eq("organization_id", org).or(`id.eq.${FUNIL_PILATES},name.eq.Pilates,slug.eq.pilates`),
     "funis a limpar",
@@ -106,6 +109,13 @@ export async function semear(c: Contexto) {
     await db.from("contacts").delete().eq("organization_id", org).in("id", CONTATOS.map((x) => contatoId(x.n))),
     "contatos do funil Pilates",
   );
+}
+
+export async function semear(c: Contexto) {
+  const { db, org, pessoa } = c;
+
+  // ---------- limpa o que é desta semente (e um "Pilates" que sobrou de Funis) ----------
+  await limpar(c);
 
   // ---------- o funil ----------
   semErro(

@@ -1,0 +1,654 @@
+{
+  "id": "execucoes",
+  "titulo": "Execuções",
+  "tela": "/app/ai/runs",
+  "resumo": "A lista de tudo o que a inteligência artificial fez na sua empresa e, quando algo falhou, o que o cliente sentiu e o que você precisa fazer.",
+  "licoes": [
+    {
+      "id": "execucoes-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Execuções",
+      "objetivo": "Chegar à tela de Execuções e entender o resumo e o que cada cartão da lista mostra.",
+      "papel": "admin",
+      "busca": [
+        "execuções",
+        "o agente parou de responder",
+        "erro da IA",
+        "falha da inteligência artificial",
+        "histórico da IA",
+        "por que a IA não respondeu",
+        "registro da IA"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Execuções fica no hub de IA",
+          "rota": "/app/ai",
+          "texto": "Execuções não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" está o cartão \"Execuções\". O caminho completo é: Agente de IA › Ver tudo em IA › Execuções.",
+          "dica": "Só o gerente e o administrador veem este cartão e entram nesta tela. O atendente não vê o cartão.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em IA",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Acompanhar o agente",
+                "exato": true
+              },
+              "rotulo": "Acompanhar o agente",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Execuções ",
+                "regex": true
+              },
+              "rotulo": "Abrir Execuções",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Execuções ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve esta tela",
+          "rota": "/app/ai/runs",
+          "texto": "O sistema usa a inteligência artificial (IA) em muitas tarefas: responder o cliente, identificar a etapa do lead no funil, resumir uma conversa longa e outras. Cada vez que uma dessas tarefas chama a IA, fica gravada uma execução, tenha dado certo ou não. Esta tela lista as execuções da mais nova para a mais antiga e explica as falhas. É aqui que você descobre por que o agente parou de responder.",
+          "dica": "A lista traz no máximo as 100 execuções mais recentes e não se atualiza sozinha: para ver as novas, recarregue a página. Nem toda tarefa deixa registro aqui; buscar e indexar o seu material de Conhecimento, por exemplo, não aparecem. Quanto a IA custou no mês fica em outro cartão do hub, \"Uso e orçamento\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Execuções de IA",
+                "exato": true
+              },
+              "rotulo": "A tela de Execuções",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O resumo: está tudo bem?",
+          "texto": "O primeiro cartão responde de cara se está tudo bem. Quando nenhuma execução da lista falhou, ele mostra \"Nenhuma falha\", em verde. Quando alguma falhou, como aqui, ele diz em vermelho quantas falharam e, embaixo, junta as falhas pelo tipo de problema. O número na frente, como \"2×\", diz quantas vezes aquele problema apareceu, e a frase ao lado diz o que fazer.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "resumo"
+              },
+              "rotulo": "Resumo das falhas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "tem-falhas"
+              },
+              "rotulo": "Quantas falharam",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "^\\d+×$",
+                "regex": true,
+                "n": 0,
+                "dentro": {
+                  "testid": "resumo"
+                }
+              },
+              "rotulo": "Vezes que aconteceu",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Uma execução que deu certo",
+          "texto": "Cada cartão da lista é uma execução. No alto, à esquerda, vem a tarefa que a IA fez, como \"Responder o cliente\". À direita, a empresa de IA (o provedor) e o modelo usado. Na linha de baixo vêm três números: o tamanho do trabalho em tokens (os pedacinhos de texto que a IA leu e escreveu), quanto tempo a IA levou, em milissegundos (1000 ms são 1 segundo), e quanto custou, em dólar, a moeda em que o provedor cobra. Por último, a data e a hora.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Responder o cliente",
+                "exato": true,
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "A tarefa",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Anthropic (Claude) · claude-sonnet-4-6",
+                "exato": true,
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Provedor e modelo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": " tokens · ",
+                "regex": true,
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Tokens, tempo e custo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='execucao-d1220000-0000-4000-8000-000000000001'] > p:last-of-type"
+              },
+              "rotulo": "Quando aconteceu",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Por que este modelo",
+          "texto": "No fim da última linha, depois da hora, o cartão diz quem escolheu o modelo. \"Definido na versão publicada do agente.\" quer dizer que o modelo vem do próprio agente, configurado na tela Agentes. Em tarefas curtas de classificação, como \"Identificar a etapa do lead\", aparece \"Modelo mais econômico do mesmo provedor\": quando ninguém escolheu um modelo para a tarefa, o sistema usa o mais barato da mesma empresa de IA, porque a tarefa é simples.",
+          "dica": "Para escolher você mesmo o modelo de uma tarefa como esta, use a tela Provedores (Agente de IA › Ver tudo em IA › Provedores). Depois disso, as execuções dessa tarefa passam a dizer \"Escolhido por você no painel de provedores.\".",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='execucao-d1220000-0000-4000-8000-000000000001'] > p:last-of-type"
+              },
+              "rotulo": "Modelo do agente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='execucao-d1220000-0000-4000-8000-000000000002'] > p:last-of-type"
+              },
+              "rotulo": "Modelo mais barato",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "execucoes-entender-uma-falha",
+      "titulo": "Entender uma falha",
+      "objetivo": "Ler um cartão de falha: o que o cliente sentiu, o que fazer e a mensagem original do provedor de IA.",
+      "papel": "admin",
+      "busca": [
+        "falhou",
+        "o que aconteceu",
+        "o que fazer",
+        "chave recusada",
+        "provedor fora do ar",
+        "mensagem técnica do provedor",
+        "erro 401",
+        "limite de gasto da IA"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Uma execução que falhou",
+          "rota": "/app/ai/runs",
+          "texto": "Quando a chamada à IA falha, o cartão ganha a borda vermelha e o selo \"falhou\" ao lado do nome da tarefa. Ele não mostra tokens nem custo. No lugar, vem a explicação da falha. Repare que as execuções mais novas, acima desta, já deram certo: o problema foi resolvido depois.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+              },
+              "rotulo": "Uma falha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "falhou",
+                "exato": true,
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+                }
+              },
+              "rotulo": "Selo de falha",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que aconteceu e o que fazer",
+          "texto": "A explicação vem em duas partes, sempre nesta ordem. \"O que aconteceu:\" conta o efeito para o seu cliente: aqui, ele mandou mensagem e ficou sem resposta. \"O que fazer:\" diz o conserto: aqui, o provedor de IA não aceitou a chave, e o caminho é conferir a chave na tela Credenciais (Agente de IA › Ver tudo em IA › Credenciais), porque chaves podem ser revogadas ou vencer.",
+          "dica": "Em algumas falhas a linha \"O que aconteceu:\" não aparece. É quando a falha não fez falta a ninguém: outra IA cobriu a falha na hora, ou a IA que falhou só estava observando.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "consequencia",
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+                }
+              },
+              "rotulo": "O efeito no cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "o-que-fazer",
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+                }
+              },
+              "rotulo": "O conserto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Mensagem técnica do provedor",
+                "exato": true,
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+                }
+              },
+              "rotulo": "Detalhe técnico",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "texto": "Mensagem técnica do provedor",
+            "exato": true,
+            "dentro": {
+              "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A mensagem técnica do provedor",
+          "texto": "Por último, escondida, fica a mensagem original do provedor de IA, quase sempre em inglês. Clique em \"Mensagem técnica do provedor\" para abrir. Ela serve a quem for investigar ou ao suporte. Aqui, \"invalid x-api-key\" quer dizer \"chave inválida\", e o \"código 401\" é a recusa por falta de autorização.",
+          "dica": "Ao gravar essa mensagem, o sistema tira dela chaves e dados pessoais que o provedor tenha devolvido, e corta textos muito longos.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Mensagem técnica do provedor",
+                "exato": true,
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000005"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid='execucao-d1220000-0000-4000-8000-000000000005'] pre"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='execucao-d1220000-0000-4000-8000-000000000005'] pre"
+              },
+              "rotulo": "O texto do provedor",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Uma falha que costuma passar sozinha",
+          "texto": "Nem toda falha pede conserto seu. Nesta, o sistema tentou resumir uma conversa longa e o provedor de IA estava fora do ar ou demorou demais (na mensagem técnica, \"Overloaded\" quer dizer \"sobrecarregado\"). O \"O que fazer:\" avisa que isso costuma se resolver sozinho. Se continuar acontecendo, o conselho da tela é trocar de provedor nessa tarefa.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "execucao-d1220000-0000-4000-8000-000000000007"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Resumir a conversa longa",
+                "exato": true,
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000007"
+                }
+              },
+              "rotulo": "A tarefa que falhou",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "o-que-fazer",
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000007"
+                }
+              },
+              "rotulo": "Costuma passar sozinha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Uma parada de propósito",
+          "texto": "Esta falha foi de propósito. Em \"Uso e orçamento\", no mesmo hub, a empresa pode definir um limite mensal de gasto com a IA e escolher parar a IA ao chegar nele. Quando o gasto do mês chega ao limite, o sistema recusa as chamadas antes de elas saírem para o provedor, e o cliente fica sem resposta. Para a IA voltar, aumente o limite, desligue a parada ou espere o mês virar.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "execucao-d1220000-0000-4000-8000-000000000010"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "consequencia",
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000010"
+                }
+              },
+              "rotulo": "O efeito no cliente",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "o-que-fazer",
+                "dentro": {
+                  "testid": "execucao-d1220000-0000-4000-8000-000000000010"
+                }
+              },
+              "rotulo": "Parou no limite do mês",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "execucoes-ver-so-as-falhas",
+      "titulo": "Ver só as falhas",
+      "objetivo": "Filtrar a lista para ver só as execuções que falharam e voltar a ver tudo.",
+      "papel": "admin",
+      "busca": [
+        "ver só as falhas",
+        "filtrar erros",
+        "mostrar só erros",
+        "esconder o que deu certo",
+        "só o jev",
+        "filtro de execuções"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão \"Ver só as falhas\"",
+          "rota": "/app/ai/runs",
+          "texto": "Quando a lista é longa, as falhas se perdem no meio das execuções que deram certo. Para ver só as falhas, clique em \"Ver só as falhas\", logo abaixo do resumo.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "filtro-erros"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "filtro-erros"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Só as falhas na lista",
+          "texto": "Agora a lista mostra só as execuções que falharam, e o botão muda para \"Mostrando só as falhas\", em destaque. O resumo do alto também passa a contar só as falhas. Se nada tiver falhado, a lista avisa \"Nenhuma falha registrada.\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "filtro-erros"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Mostrando só as falhas",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Mostrando só as falhas",
+                "exato": true
+              },
+              "rotulo": "Filtro ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "resumo"
+              },
+              "rotulo": "Conta só as falhas",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Voltar a ver tudo",
+          "texto": "Para ver de novo todas as execuções, clique outra vez no mesmo botão. O filtro também não fica guardado: ao sair da tela e voltar, a lista abre completa.",
+          "dica": "Quando a lista tem execuções do Jev, o extra de decisões rápidas da tela Provedores, aparece ao lado o botão \"Só o Jev\". O link \"Ver as decisões do Jev\", no cartão do Jev em Provedores, abre esta tela já com esse filtro.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Mostrando só as falhas",
+                "exato": true
+              },
+              "rotulo": "Clique de novo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Mostrando só as falhas",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "De volta à lista completa",
+          "texto": "Pronto: o botão volta a dizer \"Ver só as falhas\", e a lista mostra de novo todas as execuções, as que deram certo e as que falharam.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "filtro-erros"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Ver só as falhas",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ver só as falhas",
+                "exato": true
+              },
+              "rotulo": "Filtro desligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "execucao-d1220000-0000-4000-8000-000000000001"
+              },
+              "rotulo": "As que deram certo voltaram",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "execucoes-aba-roteamento",
+      "titulo": "A aba Roteamento",
+      "objetivo": "Saber o que a aba \"Roteamento\" mostra e quando ela ganha linhas.",
+      "papel": "admin",
+      "busca": [
+        "roteamento",
+        "resultados do roteamento",
+        "qual agente atendeu",
+        "decisões do roteador",
+        "comparar jev",
+        "revisar roteamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O link \"Roteamento\"",
+          "rota": "/app/ai/runs",
+          "texto": "No alto da tela, ao lado de \"Execuções\", fica o link \"Roteamento\". Ele interessa a quem usa Roteadores, a tela que escolhe qual agente atende cada conversa (Agente de IA › Ver tudo em IA › Roteadores). Clique nele.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Roteamento",
+                "exato": true
+              },
+              "rotulo": "Abrir o roteamento",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Roteamento",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Resultados do roteamento",
+          "texto": "A aba \"Resultados do roteamento\" mostra as escolhas que os roteadores fizeram: para cada mensagem, a intenção escolhida e quem decidiu, a IA de sempre ou o Jev, o extra de decisões rápidas da tela Provedores. Os filtros do alto escolhem o período (7, 30 ou 90 dias), o modo, o roteador, o modelo do Jev e quantas mensagens anteriores a IA de sempre leu para decidir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Roteamento",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Resultados do roteamento",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Resultados do roteamento",
+                "exato": true
+              },
+              "rotulo": "A aba de roteamento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Período",
+                "exato": true
+              },
+              "rotulo": "Período",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Roteador",
+                "exato": true
+              },
+              "rotulo": "Qual roteador",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os números e a lista",
+          "texto": "Os cartões resumem o período: \"Decisões examinadas\" conta as decisões (até as 500 mais recentes), \"Custo conhecido\" soma o que elas custaram, quando o preço de cada uma é conhecido, e \"Tempo total do roteamento\" mostra o tempo típico de uma decisão. Embaixo vem a lista das decisões, cada uma com o link \"Abrir conversa\" quando há conversa ligada. Nela, o administrador marca em \"Revisão\" se cada escolha estava \"Correto\" ou \"Incorreto\". Enquanto nenhum roteador tiver escolhido agente no período, a lista avisa \"Ainda não há decisões de roteamento nesses filtros.\", como nesta clínica.",
+          "dica": "Para voltar à lista de execuções, clique em \"Execuções\", no alto.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Decisões examinadas",
+                "exato": true
+              },
+              "rotulo": "Quantas decisões",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Custo conhecido",
+                "exato": true
+              },
+              "rotulo": "Quanto custaram",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Tempo total do roteamento",
+                "exato": true
+              },
+              "rotulo": "Quanto demoraram",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Ainda não há decisões de roteamento nesses filtros.",
+                "exato": true
+              },
+              "rotulo": "Sem decisões ainda",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

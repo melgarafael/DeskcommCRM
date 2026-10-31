@@ -16,15 +16,16 @@
  * Nenhum assistente consulta estes materiais (o agente da base não é tocado):
  * o selo "Consultado por" mostra "nenhum assistente ainda".
  *
- * Idempotente: apaga só as próprias linhas (ids fixos d1160000-…, e os materiais
- * que as lições criam pela tela, pelo nome) e recria. Apagar a fonte leva junto,
- * por cascata, os pares de pergunta e resposta, as versões de índice e os trechos.
+ * Idempotente: `limpar` apaga só as próprias linhas (ids fixos d1160000-…, e os
+ * materiais que as lições criam pela tela, pelo nome) e `semear` recria. Apagar a
+ * fonte leva junto, por cascata, os pares de pergunta e resposta, as versões de
+ * índice e os trechos.
  */
 import { createHash } from "node:crypto";
 
 import { chunkText, computeContentHash } from "../../lib/ai/rag/chunker";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
-import { type Contexto, ha, semErro } from "../semear-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
+import { type Contexto, exigir, ha, semErro } from "../semear-demonstracao";
 
 const BUCKET = "ai-policy"; // BUCKET_DE_CONHECIMENTO (lib/ai/rag/ingest/documento.ts)
 const MODELO = "openai/text-embedding-3-small"; // MODELO_DE_EMBEDDING (lib/ai/embeddings/chave.ts)
@@ -105,23 +106,46 @@ function vetor(texto: string): string {
 
 const traduzir = (pares: Par[]) => pares.map((p) => ({ q: demo(p.q), a: demo(p.a) }));
 
+/**
+ * Limpeza chamada antes de QUALQUER aula (curso/semear-demonstracao.ts): o acervo
+ * deste módulo não pode sobrar em outra tela — com ele, a aula de Agentes perde o
+ * aviso "Você ainda não cadastrou nenhum material." (testid `agente-sem-acervo`).
+ * Apaga só as próprias linhas: os ids fixos d1160000-…, os materiais que as lições
+ * criam pela tela (pelo nome, em PT e em ES) e o .md do Storage. Apagar a fonte
+ * leva junto, por cascata, os pares, as versões de índice e os trechos.
+ *
+ * O nome em ES sai de `traducaoDaDemonstracao`, que não lança: esta limpeza roda
+ * antes das aulas de TODOS os módulos, e um texto ainda sem tradução não pode
+ * derrubar a captura dos outros.
+ */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
+  const nomes = [
+    ...new Set(CRIADAS_NAS_LICOES.flatMap((n) => [n, traducaoDaDemonstracao(n)]).filter((n): n is string => !!n)),
+  ];
+  const criadas = (exigir(
+    await db.from("ai_knowledge_sources").select("id, source_metadata").eq("organization_id", org).in("name", nomes),
+    "achar materiais das lições",
+  )) as Array<{ id: string; source_metadata: { blob_path?: string } | null }>;
+  const arquivos = [
+    `${org}/${ARQUIVO_DO_PREPARO}`,
+    ...criadas.map((f) => f.source_metadata?.blob_path).filter((p): p is string => typeof p === "string"),
+  ];
+  semErro(await db.storage.from(BUCKET).remove(arquivos), "limpar arquivos do acervo");
+  semErro(
+    await db
+      .from("ai_knowledge_sources")
+      .delete()
+      .eq("organization_id", org)
+      .in("id", [...[1, 2, 3, 4, 5].map(fonteId), ...criadas.map((f) => f.id)]),
+    "limpar materiais",
+  );
+}
+
 export async function semear(c: Contexto) {
   const { db, org } = c;
 
-  // ---------- limpar: o que as lições criaram e as próprias linhas ----------
-  const criadas = ((await db
-    .from("ai_knowledge_sources")
-    .select("id, source_metadata")
-    .eq("organization_id", org)
-    .in("name", CRIADAS_NAS_LICOES.map(demo))).data ?? []) as Array<{ id: string; source_metadata: { blob_path?: string } | null }>;
-  const arquivosCriados = criadas.map((f) => f.source_metadata?.blob_path).filter((p): p is string => typeof p === "string");
-  if (arquivosCriados.length) await db.storage.from(BUCKET).remove(arquivosCriados);
-  if (criadas.length)
-    semErro(await db.from("ai_knowledge_sources").delete().eq("organization_id", org).in("id", criadas.map((f) => f.id)), "limpar materiais das lições");
-  semErro(
-    await db.from("ai_knowledge_sources").delete().eq("organization_id", org).in("id", [1, 2, 3, 4, 5].map(fonteId)),
-    "limpar materiais",
-  );
+  await limpar(c);
 
   // ---------- o texto colado vira arquivo .md no Storage, como o POST grava ----------
   const caminhoDoPreparo = `${org}/${ARQUIVO_DO_PREPARO}`;

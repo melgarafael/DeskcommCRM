@@ -24,7 +24,7 @@
           "titulo": "Onde fica a tela",
           "rota": "/app/ai",
           "texto": "Conhecimento não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Ensinar o agente\" está o cartão \"Conhecimento\". O caminho completo é: Agente de IA › Ver tudo em IA › Conhecimento.",
-          "dica": "Só gerente ou administrador vê este cartão. Para um atendente, ou para quem só tem permissão de leitura, ele não aparece, e o endereço da tela leva a uma página de acesso negado.",
+          "dica": "Só gerente ou administrador vê este cartão. Para quem tem o papel \"Atendente\" ou \"Somente leitura\", ele não aparece, e o endereço da tela leva à página \"403 — Sem permissão\".",
           "destaques": [
             {
               "alvo": {
@@ -71,7 +71,7 @@
         {
           "id": "p3",
           "titulo": "O aviso da chave",
-          "texto": "Para o agente conseguir procurar no material, o sistema prepara o texto com a ajuda de um serviço de inteligência artificial: a OpenAI, a OpenRouter ou o Google. Isso pede uma chave desse serviço, chamada \"chave de embedding\". Quando a chave está valendo, no lugar deste aviso aparece a frase \"Pronto para preparar material.\" e qual chave está em uso. Nesta clínica o material foi preparado pela OpenAI, e a chave da OpenAI não está mais utilizável. Por isso o aviso com o triângulo: enquanto isso não for resolvido, o agente não consegue consultar o material.",
+          "texto": "Para o agente conseguir procurar no material, o sistema prepara o texto com a ajuda de um serviço de inteligência artificial: a OpenAI, a OpenRouter ou o Google. Isso pede uma chave desse serviço, chamada \"chave de embedding\". Ela pode ser cadastrada pela empresa ou já vir com a instalação. Quando há uma chave valendo, no lugar deste aviso aparece a frase \"Pronto para preparar material.\". Nesta clínica o material foi preparado pela OpenAI, e não há mais chave da OpenAI utilizável. Por isso o aviso com o triângulo: enquanto isso não for resolvido, o agente não consegue consultar o material.",
           "dica": "Uma chave deixa de ser utilizável quando é apagada, desativada ou recusada na conferência com o serviço. Como cadastrar a chave está na lição \"Cadastrar a chave que prepara o material\".",
           "destaques": [
             {
@@ -86,7 +86,7 @@
         {
           "id": "p4",
           "titulo": "O estado da base",
-          "texto": "O quadro \"Estado da base de conhecimento\" faz a conta dos materiais do acervo, sem os arquivados. \"Prontos\" são os que o agente já encontra. \"Com erro\" são os que falharam ao preparar. Quando algum está sendo preparado naquele momento, aparece também \"preparando\". O material que está esperando a chave entra no total, mas não em \"prontos\" nem em \"com erro\". Quando há falha, a linha de baixo, com o triângulo, diz onde ver o motivo.",
+          "texto": "O quadro \"Estado da base de conhecimento\" faz a conta dos materiais do acervo, sem os arquivados. \"prontos\" são os que o agente já encontra. \"com erro\" são os que falharam ao preparar. Quando algum está sendo preparado naquele momento, aparece também \"preparando\". O material que está esperando a chave entra no total, mas não em \"prontos\" nem em \"com erro\". Quando há falha, a linha de baixo, com o triângulo, diz onde ver o motivo.",
           "dica": "Com chave valendo e tudo preparado, o quadro mostra \"tudo pronto\", em verde. Sem nenhum material, o quadro nem aparece.",
           "destaques": [
             {
@@ -130,8 +130,8 @@
         {
           "id": "p6",
           "titulo": "O que cada cartão mostra",
-          "texto": "Cada cartão é um material. No alto vêm o nome e, embaixo, o tipo, como \"Perguntas e respostas\". \"Preparado\" diz há quanto tempo o sistema preparou o material pela última vez, ou \"nunca\". \"Trechos que o agente encontra\" é em quantos pedaços o texto foi dividido para a busca. \"Consultado por\" lista os assistentes que leem este material.",
-          "dica": "\"Nenhum assistente ainda\", em laranja, quer dizer que nenhum assistente marcou este material. Para ligar, abra \"Agentes\", entre no assistente, marque o material em \"O que ele consulta antes de responder\" e publique. Só conta a versão publicada.",
+          "texto": "Cada cartão é um material. No alto vêm o nome e, embaixo, o tipo, como \"Perguntas e respostas\". \"Preparado\" diz há quanto tempo o sistema preparou o material pela última vez, ou \"nunca\"; depois de 30 dias, aparece a data. \"Trechos que o agente encontra\" é em quantos pedaços o texto foi dividido para a busca. \"Consultado por\" lista os assistentes que leem este material.",
+          "dica": "\"nenhum assistente ainda\", em laranja, quer dizer que nenhum assistente marcou este material. Para ligar, abra \"Agentes\", entre no assistente, marque o material em \"O que ele consulta antes de responder\" e publique. Só conta a versão publicada.",
           "destaques": [
             {
               "alvo": {
@@ -212,7 +212,7 @@
           "titulo": "Quem prepara a base",
           "rota": "/app/ai/knowledge/sources",
           "texto": "Dentro do aviso, a linha \"Quem prepara a base\" diz qual serviço preparou o material desta clínica: aqui, a OpenAI. Para resolver sem sair da tela, clique em \"Cadastrar a chave aqui\". O link \"IA › Credenciais\" leva à tela com todas as chaves de IA da empresa.",
-          "dica": "O material já preparado só é encontrado com o mesmo serviço que o preparou. Por isso uma chave de outro serviço não é usada sozinha.",
+          "dica": "O material já preparado só é encontrado com o mesmo serviço que o preparou. Por isso, numa base preparada pela OpenAI, uma chave do Google não é usada sozinha (e vice-versa).",
           "destaques": [
             {
               "alvo": {
@@ -275,8 +275,8 @@
         {
           "id": "p3",
           "titulo": "Colar a chave e salvar",
-          "texto": "No campo \"Chave da OpenAI\", cole a chave que você criou no site do serviço; o endereço aparece logo abaixo do campo, como platform.openai.com/api-keys. A chave é guardada cifrada e nunca aparece de volta na tela. Clique em \"Salvar chave\". O sistema confere a chave com o serviço, o que leva alguns segundos. Quando ela for aceita, o aviso dá lugar a \"Pronto para preparar material.\", com o nome da chave.",
-          "dica": "Com a chave valendo, clique em \"Preparar tudo de novo\" para preparar o material que ficou para trás. \"Cancelar\" fecha o formulário sem guardar nada.",
+          "texto": "No campo \"Chave da OpenAI\", cole a chave que você criou no site do serviço; o endereço aparece logo abaixo do campo, como platform.openai.com/api-keys. A chave é guardada cifrada e nunca aparece de volta na tela. Clique em \"Salvar chave\". O sistema confere a chave com o serviço, o que leva alguns segundos. Quando ela é aceita, o aviso dá lugar a \"Pronto para preparar material.\", com o nome da chave. Se o serviço recusar a chave, o aviso continua.",
+          "dica": "Só administrador consegue salvar a chave: um gerente vê o formulário, mas o sistema recusa o salvamento. Com a chave valendo, clique em \"Preparar tudo de novo\" para preparar já o material que ficou para trás. \"Cancelar\" fecha o formulário sem guardar nada.",
           "destaques": [
             {
               "alvo": {
@@ -334,7 +334,7 @@
         {
           "id": "p2",
           "titulo": "Que tipo de material é",
-          "texto": "Primeiro escolha o tipo. \"Perguntas e respostas\" já vem marcado: são as dúvidas que se repetem, com a resposta pronta. É o formato que o agente usa melhor, porque cada resposta chega inteira. \"Documento\" é um texto corrido, como uma política ou um manual. \"Conversas anteriores\" e \"Catálogo de produtos\" ficam apagados: o sistema os preenche sozinho, e não dá para digitar nada neles.",
+          "texto": "Primeiro escolha o tipo. \"Perguntas e respostas\" já vem marcado: são as dúvidas que se repetem, com a resposta pronta. É o formato que o agente cita melhor, porque cada resposta chega inteira. \"Documento\" é um texto corrido, como uma política ou um manual. \"Conversas anteriores\" e \"Catálogo de produtos\" ficam apagados: quem os alimenta é o próprio sistema, com atendimentos marcados como aproveitáveis e com os produtos sincronizados da loja. Não dá para digitar nada neles.",
           "antes": [
             {
               "acao": "click",
@@ -616,7 +616,7 @@
           "id": "p3",
           "titulo": "O que o agente aprendeu",
           "rota": "/app/ai/knowledge/sources",
-          "texto": "\"Ver o que ele aprendeu\" mostra os trechos que o agente procura antes de responder: os pedaços em que o sistema dividiu o material. Quando o agente erra sobre um assunto, é aqui que se vê o porquê. Ao lado de cada trecho aparece o tamanho dele em tokens, a medida de texto que os serviços de IA usam. O botão só aparece quando o material já tem trechos.",
+          "texto": "\"Ver o que ele aprendeu\", no pé do cartão, mostra os trechos que o agente procura antes de responder: os pedaços em que o sistema dividiu o material. Quando o agente erra sobre um assunto, é aqui que se vê o porquê. Ao lado de cada trecho aparece o tamanho dele em tokens, a medida de texto que os serviços de IA usam. O botão só aparece quando o material já tem trechos.",
           "antes": [
             {
               "acao": "click",
@@ -689,7 +689,7 @@
           "id": "p5",
           "titulo": "Por que não entrou",
           "rota": "/app/ai/knowledge/sources",
-          "texto": "Num material com o selo \"Não entrou\", clique em \"Por que não entrou\" para ver o motivo. Ele vem como o serviço respondeu, às vezes em inglês. Aqui, \"Incorrect API key provided\" quer dizer que a OpenAI recusou a chave. Depois de resolver o motivo, por exemplo cadastrando uma chave que funcione, clique em \"Preparar de novo\" para o sistema tentar outra vez.",
+          "texto": "Num material com o selo \"Não entrou\", clique em \"Por que não entrou\" para ver o motivo. Ele traz a resposta do serviço, às vezes em inglês. Aqui, \"Incorrect API key provided\" quer dizer que a OpenAI recusou a chave. Depois de resolver o motivo, por exemplo cadastrando uma chave que funcione, clique em \"Preparar de novo\" para o sistema tentar outra vez.",
           "dica": "Quando um material não entra, a Central de avisos também recebe um aviso.",
           "antes": [
             {
@@ -747,7 +747,7 @@
         {
           "id": "p7",
           "titulo": "Os arquivados",
-          "texto": "O material sai da grade e entra na lista de arquivados, no fim da tela. Clique nela para ver os nomes. Material arquivado não é apagado, mas também não tem botão para voltar: para usar o conteúdo de novo, cadastre-o outra vez. O nome pode ser repetido.",
+          "texto": "O material sai da grade e entra na lista de arquivados, no fim da tela. Clique nela para ver os nomes. Material arquivado não é apagado, mas também não tem botão para voltar: para usar o conteúdo de novo, cadastre-o outra vez. Pode usar o mesmo nome do arquivado.",
           "antes": [
             {
               "acao": "click",

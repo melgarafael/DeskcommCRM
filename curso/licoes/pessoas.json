@@ -1,0 +1,330 @@
+{
+  "id": "pessoas",
+  "titulo": "Pessoas",
+  "tela": "/app/people",
+  "resumo": "A lista de quem você conhece dentro das empresas com quem faz negócio: o nome, o e-mail, as empresas e os cargos de cada pessoa e os telefones dela.",
+  "licoes": [
+    {
+      "id": "pessoas-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Pessoas",
+      "objetivo": "Encontrar a tela de Pessoas, entender o que a lista mostra e achar uma pessoa pela busca.",
+      "papel": "admin",
+      "busca": [
+        "pessoas",
+        "decisores",
+        "quem decide na empresa",
+        "contatos das empresas",
+        "lista de pessoas",
+        "buscar pessoa por e-mail",
+        "onde fica pessoas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Pessoas mora em Ver tudo em CRM",
+          "rota": "/app/crm",
+          "texto": "Pessoas é a lista de quem você conhece dentro das empresas com quem faz negócio: o nome, o e-mail, as empresas em que a pessoa trabalha e os telefones dela. Na Clínica Bem Viver, são os responsáveis pelos programas de saúde que as empresas contratam para os funcionários. Para chegar, abra \"Ver tudo em CRM\", no grupo \"CRM\" do menu lateral, e clique no cartão \"Pessoas\", na parte \"O dia a dia da venda\". O caminho é CRM › Ver tudo em CRM › Pessoas.",
+          "dica": "O cartão só aparece quando quem administra o servidor liga \"Empresas e pessoas (venda para empresas)\" em Admin › Recursos opcionais. Desligado, a tela some para todo mundo. Ligado, toda a equipe vê a lista, inclusive quem tem o papel \"Somente leitura\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Ver tudo em CRM", "exato": true },
+              "rotulo": "Abre o hub do CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "link", "nome": "^Pessoas ", "regex": true },
+              "rotulo": "Cartão Pessoas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "^Pessoas ", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "A lista de pessoas",
+          "texto": "A tela mostra uma linha por pessoa, e quem teve o cadastro mudado por último fica no alto. As colunas são \"Nome\", \"E-mail\" e \"Atualizado\" (quando o cadastro mudou pela última vez). Um traço \"—\" quer dizer que a pessoa não tem e-mail cadastrado. O subtítulo lembra a diferença para Contatos: aqui fica a pessoa, e cada número de telefone dela é um contato, na tela \"Contatos\". Clique no nome para abrir a ficha da pessoa.",
+          "dica": "A lista mostra as 50 pessoas que mudaram mais recentemente. Se quem você procura não aparece, use a busca.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "link", "nome": "^Pessoas ", "regex": true } },
+            { "acao": "aguardar", "alvo": { "role": "link", "nome": "Renata Figueiredo", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "css": "main table thead tr" },
+              "rotulo": "O que cada coluna mostra",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "—",
+                "exato": true,
+                "dentro": { "role": "row", "nome": "^Simone Albuquerque ", "regex": true }
+              },
+              "rotulo": "Sem e-mail",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "link", "nome": "Renata Figueiredo", "exato": true },
+              "rotulo": "Abre a ficha",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Achar uma pessoa pela busca",
+          "texto": "No campo \"Buscar por nome ou e-mail\", digite um pedaço do nome ou do e-mail. A lista se filtra sozinha enquanto você digita, sem precisar apertar Enter. Aqui, \"alvorada\" achou as duas pessoas do Supermercados Alvorada, porque o e-mail delas tem essa palavra. Para ver todas de novo, apague o que digitou.",
+          "dica": "Maiúscula ou minúscula não faz diferença, mas no nome o acento faz: \"Joao\", sem acento, não acha o nome \"João\". Se nada combinar, a tabela mostra \"Nenhuma pessoa ainda.\": isso só quer dizer que a busca não achou ninguém.",
+          "antes": [
+            { "acao": "fill", "alvo": { "placeholder": "Buscar por nome ou e-mail" }, "valor": "alvorada" },
+            { "acao": "esperar", "ms": 1500 },
+            { "acao": "aguardar", "alvo": { "role": "link", "nome": "Gustavo Pereira", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "placeholder": "Buscar por nome ou e-mail" },
+              "rotulo": "Nome ou e-mail",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "css": "main table tbody" },
+              "rotulo": "Só quem combina",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pessoas-cadastrar",
+      "titulo": "Cadastrando uma pessoa",
+      "objetivo": "Criar uma pessoa pela tela, saber o que é obrigatório e entender o que esse cadastro deixa de fora.",
+      "papel": "admin",
+      "busca": [
+        "nova pessoa",
+        "cadastrar pessoa",
+        "adicionar decisor",
+        "criar pessoa",
+        "cadastrar contato da empresa",
+        "pessoa sem empresa",
+        "ligar pessoa a empresa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Nova pessoa",
+          "rota": "/app/people",
+          "texto": "Para cadastrar uma pessoa, clique em \"Nova pessoa\", no alto à direita da lista.",
+          "dica": "Só quem tem o papel \"Gerente\" ou \"Administrador\" consegue criar. O botão aparece para toda a equipe, mas para os outros papéis o \"Criar\" não grava nada: a janela continua aberta, sem aviso.",
+          "antes": [
+            { "acao": "aguardar", "alvo": { "role": "link", "nome": "Renata Figueiredo", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "button", "nome": "Nova pessoa", "exato": true },
+              "rotulo": "Cadastrar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Nova pessoa", "exato": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que é obrigatório",
+          "texto": "Abre a janela \"Nova pessoa\", com dois campos. \"Nome completo\" é obrigatório: enquanto ele está vazio, o botão \"Criar\" fica apagado. \"E-mail\" é opcional.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Nova pessoa", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "dialog", "nome": "Nova pessoa" } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "css": "[role='dialog'] div:has(> label:text-is('Nome completo')) > input" },
+              "rotulo": "Obrigatório",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "css": "[role='dialog'] div:has(> label:text-is('E-mail')) > input", "literal": true },
+              "rotulo": "Opcional",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Criar", "exato": true },
+              "rotulo": "Apagado sem o nome",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Preencher e criar",
+          "texto": "Aqui a clínica anota a Cláudia Moreira, nova analista de RH da Escola de Idiomas Fala Mundo, que vai cuidar do programa de saúde dos professores. Digite o nome completo e o e-mail e clique em \"Criar\".",
+          "dica": "Confira o e-mail antes de criar. Um e-mail em formato errado, como sem o \"@\", é recusado: a janela continua aberta e nada é gravado, sem mensagem explicando o motivo.",
+          "antes": [
+            { "acao": "fill", "alvo": { "css": "[role='dialog'] div:has(> label:text-is('Nome completo')) > input" }, "valor": "Cláudia Moreira" },
+            { "acao": "fill", "alvo": { "css": "[role='dialog'] div:has(> label:text-is('E-mail')) > input", "literal": true }, "valor": "claudia.moreira@falamundo.exemplo.com.br" }
+          ],
+          "destaques": [
+            {
+              "alvo": { "css": "[role='dialog'] div:has(> label:text-is('Nome completo')) > input" },
+              "rotulo": "Nome da pessoa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "css": "[role='dialog'] div:has(> label:text-is('E-mail')) > input", "literal": true },
+              "rotulo": "E-mail dela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Criar", "exato": true },
+              "rotulo": "Grava a pessoa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Criar", "exato": true }
+        },
+        {
+          "id": "p4",
+          "titulo": "A pessoa nova na lista",
+          "texto": "A janela fecha e a Cláudia aparece no alto da lista, porque foi a última a mudar. Clique no nome dela para abrir a ficha.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Criar", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "link", "nome": "Cláudia Moreira", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "row", "nome": "^Cláudia Moreira ", "regex": true },
+              "rotulo": "Pessoa criada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "link", "nome": "Cláudia Moreira", "exato": true },
+              "rotulo": "Abre a ficha",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "Cláudia Moreira", "exato": true }
+        },
+        {
+          "id": "p5",
+          "titulo": "Sem empresa e sem telefone",
+          "texto": "A ficha da Cláudia mostra \"Sem vínculo empresarial.\" e \"Nenhum telefone vinculado.\". A janela \"Nova pessoa\" só grava o nome e o e-mail: ela não liga a pessoa a uma empresa nem a um telefone, e nenhuma tela faz isso depois. Quem já nasce ligada a empresa, cargo e telefone é a pessoa que entra pela importação de planilha, no cartão \"Importações\" de \"Ver tudo em CRM\".",
+          "dica": "Por isso, se você já tem a empresa e o telefone, prefira a importação. Ela não completa uma pessoa que já existe: importar alguém cadastrado aqui cria uma segunda pessoa com o mesmo nome. Importações é só para gerente ou administrador. E não há botão para editar nem para excluir uma pessoa.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "link", "nome": "Cláudia Moreira", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "heading", "nome": "Cláudia Moreira", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "texto": "Sem vínculo empresarial.", "exato": true },
+              "rotulo": "Nenhuma empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "Nenhum telefone vinculado.", "exato": true },
+              "rotulo": "Nenhum telefone",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pessoas-ficha",
+      "titulo": "A ficha da pessoa",
+      "objetivo": "Abrir uma pessoa e ler as empresas em que ela trabalha, o cargo em cada uma e os telefones dela.",
+      "papel": "admin",
+      "busca": [
+        "ficha da pessoa",
+        "telefones da pessoa",
+        "empresas da pessoa",
+        "cargo do decisor",
+        "pessoa com vários telefones",
+        "pessoa em duas empresas",
+        "editar pessoa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a ficha",
+          "rota": "/app/people",
+          "texto": "Clique no nome de uma pessoa para abrir a ficha dela. Aqui vamos abrir a Renata Figueiredo, gerente de RH do Supermercados Alvorada, que contratou com a clínica o programa de saúde dos funcionários.",
+          "antes": [
+            { "acao": "aguardar", "alvo": { "role": "link", "nome": "Renata Figueiredo", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Renata Figueiredo", "exato": true },
+              "rotulo": "Abre a ficha",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "Renata Figueiredo", "exato": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome, e-mail e empresas",
+          "texto": "No alto ficam o link \"← Pessoas\", que volta para a lista, o nome e o e-mail. O quadro \"Empresas\" lista cada empresa em que a pessoa trabalha, com o cargo dela embaixo. Clicar no nome da empresa abre a ficha da empresa, na tela Empresas.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "link", "nome": "Renata Figueiredo", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "heading", "nome": "Renata Figueiredo", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "css": "main div:has(> h1)" },
+              "rotulo": "Nome, e-mail e volta à lista",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "css": "main div:has(> h2:text-is('Empresas'))" },
+              "rotulo": "Empresa e cargo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "link", "nome": "Supermercados Alvorada", "exato": true },
+              "rotulo": "Abre a empresa",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os telefones da pessoa",
+          "texto": "O quadro \"Telefones (contacts)\" mostra os números da pessoa. \"Contacts\" é \"contatos\" em inglês: cada número é um contato da tela \"Contatos\", e uma pessoa pode ter vários. A Renata tem dois. Clicar num número abre a ficha daquele contato, com os dados e o histórico do número.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": { "css": "main div:has(> h2:text-is('Telefones (contacts)'))" },
+              "rotulo": "Os números dela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "link", "nome": "+5511987651401", "exato": true },
+              "rotulo": "Abre o contato",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Uma pessoa em duas empresas",
+          "rota": "/app/people",
+          "texto": "Uma mesma pessoa pode estar ligada a mais de uma empresa. O Eduardo Matsumoto é sócio da Escola de Idiomas Fala Mundo e diretor da Fala Mundo Kids: o quadro \"Empresas\" mostra as duas, cada uma com o cargo dele lá.",
+          "dica": "A ficha é só para consulta: não há botão para mudar o nome, o e-mail, a empresa ou o cargo, nem para excluir a pessoa.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "link", "nome": "Eduardo Matsumoto", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "heading", "nome": "Eduardo Matsumoto", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "css": "main div:has(> h2:text-is('Empresas'))" },
+              "rotulo": "Duas empresas, dois cargos",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

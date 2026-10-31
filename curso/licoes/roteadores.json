@@ -80,7 +80,7 @@
         {
           "id": "p3",
           "titulo": "O que o cartão mostra",
-          "texto": "Cada cartão é um roteador. No alto vêm o nome e o selo \"ativo\" ou \"inativo\". Ativo quer dizer que ele já decide quem atende as conversas do número. Inativo quer dizer que ele não decide nada: o número segue com o agente publicado nele, como se o roteador não existisse. Embaixo vêm o número de WhatsApp e quantas intenções ele tem. Este ainda está \"inativo\" e \"Sem intenções configuradas\": a clínica vai montar tudo antes de ligar.",
+          "texto": "Cada cartão é um roteador. No alto vêm o nome e o selo \"ativo\" ou \"inativo\". Ativo quer dizer que ele já decide quem atende as conversas do número. Inativo quer dizer que ele não decide nada: o número segue atendido como se o roteador não existisse. Embaixo vêm o número de WhatsApp e quantas intenções ele tem. Este ainda está \"inativo\" e \"Sem intenções configuradas\": a clínica vai montar tudo antes de ligar.",
           "dica": "Um número pode ter vários roteadores guardados, mas só um ativo de cada vez.",
           "destaques": [
             {
@@ -364,7 +364,7 @@
               }
             }
           ],
-          "texto": "Depois de criado, a página do roteador abre sozinha, com o aviso \"Roteador criado — agora escolha as intenções.\". Ele já aparece como \"ativo\", mas ainda não tem intenções nem agente de reserva. Enquanto estiver assim, quem responde o número continua sendo o agente que já estava publicado nele. O próximo passo é cadastrar as intenções, na lição seguinte.",
+          "texto": "Depois de criado, a página do roteador abre sozinha, com o aviso \"Roteador criado — agora escolha as intenções.\". Ele já aparece como \"ativo\", mas ainda não tem intenções nem agente de reserva. O quadro de intenções diz que, sem um agente de reserva, a conversa ficaria sem resposta automática, mas não é o que acontece: enquanto o roteador estiver vazio, o número continua sendo atendido como antes de ele existir. O próximo passo é cadastrar as intenções, na lição seguinte.",
           "destaques": [
             {
               "alvo": {
@@ -469,7 +469,7 @@
               }
             }
           ],
-          "texto": "Em \"Nome da intenção\", escreva um nome curto, como \"Agendar consulta\". Dois assuntos do mesmo roteador não podem ter o mesmo nome. Em \"Agente que atende\", escolha quem assume a conversa quando o cliente quer isso. Nesta clínica de exemplo só existe a Bia. Numa operação com vários agentes, cada intenção aponta para o agente que entende daquele assunto.",
+          "texto": "Em \"Nome da intenção\", escreva um nome curto, como \"Agendar consulta\". Dois assuntos do mesmo roteador não podem ter o mesmo nome. Em \"Agente que atende\", escolha quem assume a conversa quando o cliente quer isso. Nesta clínica de exemplo só existe a Bia. Numa operação com vários agentes, cada intenção aponta para o agente que entende daquele assunto. Repare no aviso em vermelho embaixo do bloco: ainda falta a descrição, e por isso \"Salvar\" está apagado.",
           "dica": "O agente escolhido aqui não precisa de número próprio. Depois de salvar, a tela dele mostra o aviso \"Este agente é acionado pelo roteador\" e, sem número próprio, ele pode ser publicado usando o número do roteador.",
           "destaques": [
             {
@@ -486,6 +486,14 @@
               },
               "rotulo": "Quem atende",
               "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Descreva quando a IA deve escolher esta intenção.",
+                "exato": true
+              },
+              "rotulo": "Ainda falta a descrição",
+              "tipo": "numero"
             }
           ],
           "clicar": {
@@ -506,7 +514,7 @@
               "valor": "O paciente quer marcar, remarcar ou desmarcar uma consulta, sessão ou exame."
             }
           ],
-          "texto": "Em \"Quando escolher esta intenção\", descreva a situação com suas palavras, como explicaria a um atendente novo. É este texto que a IA lê para decidir. Nome, agente e esta descrição são obrigatórios: enquanto faltar um deles, aparece um aviso em vermelho embaixo do bloco e o botão \"Salvar\" fica apagado.",
+          "texto": "Em \"Quando escolher esta intenção\", descreva a situação com suas palavras, como explicaria a um atendente novo. A IA lê esta descrição, junto com o nome e as frases de exemplo, para decidir. Nome, agente e descrição são obrigatórios. Com os três preenchidos, o aviso vermelho some e \"Salvar\" acende.",
           "destaques": [
             {
               "alvo": {
@@ -515,6 +523,15 @@
               },
               "rotulo": "O que a IA lê",
               "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Já pode salvar",
+              "tipo": "numero"
             }
           ],
           "clicar": {
@@ -581,8 +598,8 @@
         {
           "id": "p5",
           "titulo": "Funil de destino",
-          "texto": "\"Funil de destino (opcional)\" serve para quem tem um funil de vendas para cada serviço. Deixando \"Sem destino — só escolher o agente\", o roteador só escolhe quem atende. Escolhendo um funil, quando esta intenção é reconhecida o sistema leva o negócio do cliente para esse funil antes de o agente responder. Aí aparece também o campo \"Etapa de destino\", que já vem em \"Primeira etapa aberta\".",
-          "dica": "Se quem administra o servidor ligou o recurso opcional \"Fluxos de atendimento\", cada intenção ganha ainda o campo \"Fluxo de atendimento (opcional)\": um roteiro de perguntas que começa quando a intenção é reconhecida.",
+          "texto": "\"Funil de destino (opcional)\" serve para quem tem um funil de vendas para cada serviço. Deixando \"Sem destino — só escolher o agente\", o roteador só escolhe quem atende. Escolhendo um funil, quando esta intenção é reconhecida e o cliente tem um negócio aberto, o sistema coloca esse negócio no funil escolhido antes de o agente responder. Aí aparece também o campo \"Etapa de destino\", que já vem em \"Primeira etapa aberta\".",
+          "dica": "Se quem administra o servidor ligou o módulo \"Fluxos de atendimento\" (no Admin, em \"Recursos opcionais\"), cada intenção ganha ainda o campo \"Fluxo de atendimento (opcional)\": um roteiro de perguntas que começa quando a intenção é reconhecida.",
           "destaques": [
             {
               "alvo": {
@@ -656,7 +673,7 @@
           "id": "p1",
           "titulo": "Quando nenhuma intenção serve",
           "rota": "/app/ai/routers/d1130000-0000-4000-8000-000000000001",
-          "texto": "Nem toda mensagem combina com uma intenção, e a IA também pode ficar em dúvida: com menos de 60% de certeza, a escolha dela não vale. Para esses casos existe o \"Agente de fallback\", o agente de reserva: quando a conversa ainda não está com o agente de alguma intenção, é ele quem atende o que não foi reconhecido. Aqui é a Bia. Escolhendo \"Nenhum — responde com o atendimento padrão\", responde o agente publicado no número.",
+          "texto": "Nem toda mensagem combina com uma intenção, e a IA também pode ficar em dúvida: abaixo de 60% de certeza, o mínimo padrão, a escolha dela não vale. Para esses casos existe o \"Agente de fallback\", o agente de reserva: quando a conversa ainda não está com o agente de alguma intenção, é ele quem atende o que não foi reconhecido. Aqui é a Bia. Escolhendo \"Nenhum — responde com o atendimento padrão\", responde quem responderia se o roteador não existisse: normalmente, o agente publicado no número.",
           "dica": "Se a IA que lê as mensagens falhar, por exemplo por falta de crédito na conta do provedor, a conversa continua com o agente da intenção que já a atendia; se ainda não estava com nenhum, vai para o agente de reserva.",
           "destaques": [
             {
@@ -672,7 +689,7 @@
         {
           "id": "p2",
           "titulo": "A IA que lê as mensagens",
-          "texto": "Em \"Modelo que identifica a intenção\" fica a IA que lê cada mensagem e escolhe a intenção. \"Automático — usa o provedor da organização\" deixa o sistema usar a inteligência que a empresa já configurou. Para escolher outro modelo, só aparecem os de provedores com chave cadastrada. Nesta clínica de exemplo não há nenhuma chave de IA utilizável, por isso o campo está travado e o aviso pede para cadastrar uma em Credenciais (Agente de IA › Ver tudo em IA › Credenciais). Em \"Mensagens anteriores para o roteamento\", de 0 a 16, você diz quantas mensagens anteriores da conversa a IA lê junto com a atual: mais mensagens ajudam a entender o contexto, mas podem aumentar o custo e a demora.",
+          "texto": "Em \"Modelo que identifica a intenção\" fica a IA que lê cada mensagem e escolhe a intenção. \"Automático — usa o provedor da organização\" deixa o sistema usar a inteligência que a empresa já configurou. Para escolher outro modelo, só aparecem os de provedores com chave cadastrada, na empresa ou na instalação. Enquanto não houver nenhuma chave de IA utilizável, o campo fica travado em \"Automático\" e o aviso embaixo pede para cadastrar uma em Credenciais (Agente de IA › Ver tudo em IA › Credenciais). Em \"Mensagens anteriores para o roteamento\", de 0 a 16, você diz quantas mensagens anteriores da conversa a IA lê junto com a atual: mais mensagens ajudam a entender o contexto, mas podem aumentar o custo e a demora.",
           "destaques": [
             {
               "alvo": {
@@ -694,8 +711,8 @@
         },
         {
           "id": "p3",
-          "titulo": "Testar antes de valer",
-          "texto": "\"Testar classificação\" mostra o que o roteador faria com uma frase sua, sem mexer em nenhuma conversa real. Você escreve como um cliente escreveria e clica no botão. Aparecem a intenção escolhida, a certeza da IA em porcentagem e o agente que atenderia. Se a certeza ficar abaixo do mínimo, o resultado avisa que, de verdade, a conversa não seguiria aquela intenção. O teste usa a IA de verdade e gasta crédito do provedor. Ele só funciona com o roteador ativo; por isso aparece o aviso \"Ative o roteador para poder testar a classificação.\".",
+          "titulo": "Testar a classificação",
+          "texto": "\"Testar classificação\" mostra o que o roteador faria com uma frase sua, sem mexer em nenhuma conversa real. Você escreve como um cliente escreveria e clica no botão. Aparecem a intenção escolhida, a certeza da IA em porcentagem e o agente que atenderia. Se a certeza ficar abaixo do mínimo, o resultado avisa que, de verdade, a conversa não seguiria aquela intenção. O teste usa o roteador como ele está salvo e só funciona com ele ativo; por isso aqui aparece o aviso \"Ative o roteador para poder testar a classificação.\". Ativo, o roteador já decide as conversas do número: teste logo depois de ligar e salvar. Cada teste usa a IA de verdade e gasta crédito do provedor.",
           "destaques": [
             {
               "alvo": {
@@ -730,7 +747,7 @@
               }
             }
           ],
-          "texto": "Com as intenções prontas, clique na chave do bloco \"Identificação\". O texto muda para \"Ativo — está roteando as conversas deste número\", e a mudança vale depois de clicar em \"Salvar\". A partir daí, cada mensagem nova do número passa pelo roteador. Depois que ele entrega uma conversa a um agente, ela continua com esse agente; só muda se o cliente passar a falar de outro assunto cadastrado, com certeza suficiente. Para desligar, clique na chave de novo e salve: o número volta para o agente publicado nele.",
+          "texto": "Com as intenções prontas e salvas, clique na chave do bloco \"Identificação\". O texto ao lado muda na hora para \"Ativo — está roteando as conversas deste número\", mas nada mudou ainda: o selo do alto continua \"inativo\" até você clicar em \"Salvar\". Depois de salvar, a cada mensagem nova que a IA for responder nesse número, o roteador escolhe o agente. Quando ele entrega uma conversa a um agente, ela continua com esse agente; só muda se o cliente passar a falar de outro assunto cadastrado, com certeza suficiente. Para desligar, clique na chave de novo e salve: o número volta a ser atendido como antes do roteador.",
           "dica": "Se outro roteador já estiver ativo no mesmo número, o sistema recusa ao salvar, com o aviso \"Este número já tem um roteador ativo.\". Desligue o outro primeiro.",
           "destaques": [
             {
@@ -741,6 +758,14 @@
               },
               "rotulo": "Ligado",
               "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "inativo",
+                "exato": true
+              },
+              "rotulo": "Ainda não salvo",
+              "tipo": "numero"
             },
             {
               "alvo": {
@@ -761,6 +786,7 @@
         {
           "id": "p5",
           "titulo": "Excluir um roteador",
+          "rota": "/app/ai/routers/d1130000-0000-4000-8000-000000000001",
           "antes": [
             {
               "acao": "click",
@@ -771,7 +797,7 @@
               }
             }
           ],
-          "texto": "\"Excluir roteador\", no canto de cima, apaga o roteador e todas as intenções dele. Antes, uma janela pede a confirmação. Depois de excluir, o número volta a ser atendido sem roteador, pelo agente publicado nele. Não dá para desfazer. Se quiser só parar o roteador por um tempo, desligue a chave em vez de excluir.",
+          "texto": "\"Excluir roteador\", no canto de cima, apaga o roteador e todas as intenções dele. Antes, uma janela pede a confirmação. Depois de excluir, você volta para a lista, e o número passa a ser atendido como antes do roteador. Não dá para desfazer. Se quiser só parar o roteador por um tempo, desligue a chave e salve, em vez de excluir.",
           "destaques": [
             {
               "alvo": {

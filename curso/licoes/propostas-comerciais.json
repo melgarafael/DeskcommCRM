@@ -1,0 +1,895 @@
+{
+  "id": "propostas-comerciais",
+  "titulo": "Propostas",
+  "tela": "/app/proposals",
+  "resumo": "Onde você cria, revisa e envia os orçamentos dos pacientes, confere o que a IA preparou e registra se o paciente aceitou ou recusou.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela-de-propostas",
+      "titulo": "Conhecendo a tela de Propostas",
+      "objetivo": "Encontrar a tela de Propostas e entender a lista: o que cada coluna mostra e o que quer dizer cada situação.",
+      "papel": "admin",
+      "busca": [
+        "onde ficam as propostas",
+        "orçamento do paciente",
+        "lista de propostas",
+        "proposta comercial",
+        "situação da proposta",
+        "proposta feita pela ia",
+        "proposta aceita"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Propostas mora em Ver tudo em CRM",
+          "texto": "No menu lateral, no grupo \"CRM\", clique em \"Ver tudo em CRM\". Na parte \"Fechar a venda\" está o cartão \"Propostas\". Uma proposta é o orçamento que você monta para um paciente: o que está incluído, quanto custa e até quando vale. Ela chega ao paciente pelo WhatsApp, num arquivo PDF.",
+          "dica": "O cartão só aparece com as propostas ligadas em dois lugares: \"Propostas comerciais\" em Admin › Sistema, por quem administra o servidor, e a chave da empresa em Configurações › Propostas. A aula \"Propostas\", de Configurações, mostra como ligar.",
+          "rota": "/app/crm",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Propostas Rascunhe",
+                "regex": true
+              },
+              "rotulo": "Suas propostas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Propostas Rascunhe",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A lista de propostas",
+          "texto": "Cada linha é uma proposta. \"Número\" é o número dela, \"Título\" é o nome que o paciente lê, \"Status\" diz em que pé ela está e \"Valor\" é a soma dos itens que já têm preço. Para abrir uma proposta, clique no título. Abaixo das que esperam revisão, as mais novas vêm primeiro.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Propostas Rascunhe",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Número",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Número",
+                "exato": true
+              },
+              "rotulo": "1",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Título",
+                "exato": true
+              },
+              "rotulo": "2",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Status",
+                "exato": true
+              },
+              "rotulo": "3",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Valor",
+                "exato": true
+              },
+              "rotulo": "4",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Rascunhos que a IA preparou",
+          "texto": "Quando a IA prepara uma proposta durante a conversa com o paciente, ela aparece marcada \"Aguardando revisão\", sempre no topo da lista. Nada vai para o paciente antes de alguém da equipe revisar e enviar. A equipe também recebe um aviso em \"Alertas\". A aula \"Revisar a proposta que a IA preparou\" mostra como conferir.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Aguardando revisão",
+                "exato": true
+              },
+              "rotulo": "Feita pela IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Acompanhamento nutricional — 3 meses",
+                "exato": true
+              },
+              "rotulo": "Clique para revisar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Número e situação",
+          "texto": "O número só nasce quando a proposta é enviada. Antes disso, a coluna \"Número\" mostra \"Rascunho\". Depois, os quatro primeiros dígitos são a sequência do ano, vem o ano e, no fim, a versão: \"v1\" é a primeira. Na coluna \"Status\", \"Enviada\" espera a resposta do paciente, e \"Aceita\" e \"Recusada\" são as respostas que você registra.",
+          "dica": "Outras situações que podem aparecer: \"Vencida\" (a validade passou sem resposta), \"Cancelada\" (o rascunho foi descartado) e \"Substituída\" (uma versão nova foi enviada no lugar desta).",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "^\\d{4}/\\d{4} v1$",
+                "regex": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Plano alimentar para a recuperação pós-cirúrgica",
+                  "regex": true
+                }
+              },
+              "rotulo": "Sequência, ano e versão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Enviada",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Plano alimentar para a recuperação pós-cirúrgica",
+                  "regex": true
+                }
+              },
+              "rotulo": "Espera resposta",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Aceita",
+                "exato": true
+              },
+              "rotulo": "O paciente aceitou",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Recusada",
+                "exato": true
+              },
+              "rotulo": "O paciente recusou",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "criar-uma-proposta",
+      "titulo": "Criar uma proposta",
+      "objetivo": "Começar uma proposta nova a partir do negócio do paciente e abrir o editor.",
+      "papel": "admin",
+      "busca": [
+        "criar proposta",
+        "fazer orçamento",
+        "nova proposta",
+        "orçamento para paciente",
+        "validade do orçamento",
+        "condições de pagamento da proposta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Nova proposta",
+          "texto": "No alto da lista, clique em \"Nova proposta\". Toda proposta nasce de um negócio do funil, que é o card do paciente. Quem tem o papel \"Somente leitura\" não vê este botão: só consulta a lista.",
+          "rota": "/app/proposals",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Nova proposta",
+                "exato": true
+              },
+              "rotulo": "Começa aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Nova proposta",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher o negócio",
+          "texto": "Em \"Negócio (Lead)\", escolha o negócio do paciente. A proposta fica ligada a esse negócio e ao contato dele, e é na conversa de WhatsApp desse contato que ela será enviada. Só aparecem negócios que têm um contato ligado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Nova proposta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Negócio (Lead)"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Negócio (Lead)"
+              },
+              "rotulo": "Negócio do paciente",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "combobox",
+            "nome": "Negócio (Lead)"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A lista de negócios",
+          "texto": "Cada opção mostra o título do negócio e, depois do último travessão, o nome do paciente. Aqui vamos fazer a proposta de fisioterapia da Fernanda. Quando a lista tem mais de cinco negócios, aparece acima um campo para filtrar por título, nome ou telefone.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Negócio (Lead)"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "^Retorno pós-cirúrgico — Fernanda Oliveira",
+                "regex": true
+              },
+              "rotulo": "Negócio da Fernanda",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "^Retorno pós-cirúrgico — Fernanda Oliveira",
+            "regex": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Título, validade e condições",
+          "texto": "Em \"Título da proposta\", escreva o nome que o paciente vai ler. A \"Validade da proposta\" já vem com a data de daqui a 15 dias; mude se precisar. Em \"Condições de pagamento / Observações\", diga como o paciente pode pagar. Se deixar este campo em branco, a proposta recebe as \"Condições padrão\" de Configurações › Propostas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "^Retorno pós-cirúrgico — Fernanda Oliveira",
+                "regex": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Título da proposta"
+              },
+              "valor": "Pacote de fisioterapia pós-cirúrgica — 10 sessões"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Condições de pagamento / Observações",
+                "exato": true
+              },
+              "valor": "Pagamento em até 3x sem juros no cartão. As 10 sessões valem por 90 dias."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Título da proposta"
+              },
+              "rotulo": "Nome da proposta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Validade da proposta",
+                "exato": true
+              },
+              "rotulo": "Daqui a 15 dias",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Condições de pagamento / Observações",
+                "exato": true
+              },
+              "rotulo": "Como pagar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Criar e abrir o editor",
+          "texto": "Clique em \"Criar e abrir editor\". O botão só acende com o negócio escolhido e o título preenchido. Cada negócio tem um rascunho aberto por vez: se já existir um, aparece um aviso pedindo para continuar nele.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar e abrir editor",
+                "exato": true
+              },
+              "rotulo": "Cria o rascunho",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar e abrir editor",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "O rascunho no editor",
+          "texto": "A proposta foi gravada como rascunho, ainda sem número, e o editor abriu. O próximo passo é escolher o modelo, que é o texto pronto da proposta, na lista \"Ou escolha outro modelo\". Depois vêm os itens e os preços. A próxima aula mostra esse caminho completo num rascunho feito pela IA.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar e abrir editor",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Nenhum modelo escolhido para esta proposta ainda.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Título da proposta",
+                "exato": true
+              },
+              "rotulo": "Rascunho criado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Nenhum modelo escolhido para esta proposta ainda.",
+                "exato": true
+              },
+              "rotulo": "Escolha o modelo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "+ Item à mão",
+                "exato": true
+              },
+              "rotulo": "Itens e preços",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "revisar-a-proposta-da-ia",
+      "titulo": "Revisar a proposta que a IA preparou",
+      "objetivo": "Conferir um rascunho feito pela IA: confirmar o modelo, completar o que falta, dar preço aos itens e deixar a proposta pronta para enviar.",
+      "papel": "admin",
+      "busca": [
+        "revisar proposta da ia",
+        "aguardando revisão",
+        "confirmar modelo da proposta",
+        "item a definir",
+        "preço na proposta",
+        "enviar proposta pelo whatsapp",
+        "não é possível enviar proposta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o rascunho da IA",
+          "texto": "Na lista, clique no título da proposta marcada \"Aguardando revisão\". Aqui é o \"Acompanhamento nutricional — 3 meses\", que a IA preparou para a Mariana.",
+          "rota": "/app/proposals",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Acompanhamento nutricional — 3 meses",
+                "exato": true
+              },
+              "rotulo": "Rascunho da IA",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Acompanhamento nutricional — 3 meses",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O modelo sugerido pela IA",
+          "texto": "A IA já sugeriu um modelo, mas ele só vale depois que alguém confirma. Clique em \"Usar este modelo\" para aceitar a sugestão, ou escolha outro na lista ao lado. Enquanto não houver modelo confirmado, \"Enviar ao cliente\" fica apagado. Os modelos se criam e se ajustam em Configurações › Modelos de proposta.",
+          "dica": "Confirmar o modelo e mexer no documento é com gerente ou administrador. Quem tem o papel \"Atendente\" muda título, condições e itens, mas não o documento.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Acompanhamento nutricional — 3 meses",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar este modelo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "A IA sugeriu o modelo"
+              },
+              "rotulo": "Sugestão da IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Usar este modelo",
+                "exato": true
+              },
+              "rotulo": "Confirma",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Usar este modelo",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "O documento e o que falta",
+          "texto": "Com o modelo confirmado, aparece o documento: as partes do texto, já com o nome da paciente e o que a IA anotou da conversa. O quadro amarelo \"Não é possível enviar\" diz quantas coisas ainda faltam e quais são. Cada parte também pode ser reescrita na própria caixa, com \"Salvar seção\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar este modelo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Modelo do documento",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Modelo do documento",
+                "exato": true
+              },
+              "rotulo": "Modelo confirmado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^Não é possível enviar",
+                "regex": true
+              },
+              "rotulo": "O que falta",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Preencher o que falta",
+          "texto": "Aqui falta dizer \"O que está incluído\". Escreva no campo e clique em \"Preencher\": o texto entra na parte certa do documento. Se a IA estiver disponível, o botão \"Preencher com a conversa\" pede a ela que procure essas respostas na conversa com o paciente e deixa a sugestão no campo, para você conferir antes de clicar em \"Preencher\".",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "O que está incluído",
+                "exato": true,
+                "dentro": {
+                  "role": "alert"
+                }
+              },
+              "valor": "3 consultas mensais, plano alimentar e dúvidas pelo WhatsApp."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "O que está incluído",
+                "exato": true,
+                "dentro": {
+                  "role": "alert"
+                }
+              },
+              "rotulo": "Resposta que faltava",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Preencher",
+                "exato": true
+              },
+              "rotulo": "Grava no documento",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Preencher",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Documento completo",
+          "texto": "O quadro amarelo sumiu e o texto entrou na parte \"O que está incluído\" do documento: agora nada falta nele. Para mudar uma frase de qualquer parte, edite a caixa dela e clique em \"Salvar seção\", logo abaixo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Preencher",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#secao-incluido"
+              },
+              "rotulo": "Texto preenchido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Dar preço ao que está a definir",
+          "texto": "Agora os itens. O \"Plano alimentar personalizado\" está \"A definir\": a IA deixou esse item sem preço. Digite o valor em \"Preço unit.\", aqui 150 reais, e clique em \"Salvar\". O subtotal e o \"Total\" mudam na hora, mas só ficam gravados depois de salvar.",
+          "dica": "Para incluir itens, use \"+ Item à mão\" ou \"Buscar produto no catálogo…\". Um item do catálogo vem com o preço cadastrado em Produtos, e esse preço não se muda aqui.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "A definir",
+                "dentro": {
+                  "role": "row",
+                  "nome": "^Plano alimentar personalizado",
+                  "regex": true
+                }
+              },
+              "valor": "150"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "A definir",
+                "dentro": {
+                  "role": "row",
+                  "nome": "^Plano alimentar personalizado",
+                  "regex": true
+                }
+              },
+              "rotulo": "150 reais",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava os itens",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Pronta para enviar",
+          "texto": "\"Ver como o cliente recebe\" abre numa aba nova o PDF da proposta, sem enviar nada. \"Enviar ao cliente\" dá o número à proposta e manda o PDF na conversa de WhatsApp do paciente. O envio é recusado se faltar modelo, preço ou alguma parte do documento. \"Descartar rascunho\" pergunta antes e muda a proposta para \"Cancelada\". Neste curso, nada é enviado.",
+          "dica": "Só gerente ou administrador envia ou descarta. Ao enviar, o valor do negócio passa a ser o total da proposta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar ao cliente",
+                "exato": true
+              },
+              "rotulo": "Envia pelo WhatsApp",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ver como o cliente recebe",
+                "exato": true
+              },
+              "rotulo": "Prévia do PDF",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Descartar rascunho",
+                "exato": true
+              },
+              "rotulo": "Desiste da proposta",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "registrar-a-resposta-do-paciente",
+      "titulo": "Registrar a resposta do paciente",
+      "objetivo": "Marcar uma proposta enviada como aceita ou recusada e saber quando fazer uma nova versão.",
+      "papel": "admin",
+      "busca": [
+        "paciente aceitou a proposta",
+        "marcar proposta como aceita",
+        "proposta recusada",
+        "nova versão da proposta",
+        "mudar proposta já enviada",
+        "proposta vencida"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a proposta enviada",
+          "texto": "A Fernanda respondeu no WhatsApp que aceita o plano alimentar. A resposta dela não muda a proposta sozinha: é você quem registra. Clique no título da proposta que está \"Enviada\".",
+          "rota": "/app/proposals",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Plano alimentar para a recuperação pós-cirúrgica",
+                "exato": true
+              },
+              "rotulo": "Proposta da Fernanda",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Enviada",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Plano alimentar para a recuperação pós-cirúrgica",
+                  "regex": true
+                }
+              },
+              "rotulo": "Espera resposta",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Plano alimentar para a recuperação pós-cirúrgica",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "As três ações da proposta enviada",
+          "texto": "Uma proposta enviada não se edita mais: os campos ficam cinza. No fim da tela há três ações. \"Marcar como aceita\" e \"Marcar como recusada\" registram a resposta; a recusa abre uma janelinha do navegador para você anotar o motivo, e fica registrada mesmo se você fechar a janelinha sem escrever. \"Revisar esta proposta\" cria uma nova versão em rascunho, com o mesmo número e tudo copiado, para mudar preço ou itens.",
+          "dica": "A nova versão é com gerente ou administrador, e só sai se o negócio não tiver outro rascunho aberto. A versão anterior continua \"Enviada\" até a nova ser enviada; aí ela vira \"Substituída\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Plano alimentar para a recuperação pós-cirúrgica",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar como aceita",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar como aceita",
+                "exato": true
+              },
+              "rotulo": "1",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar como recusada",
+                "exato": true
+              },
+              "rotulo": "2",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Revisar esta proposta",
+                "exato": true
+              },
+              "rotulo": "3",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Marcar como aceita",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Resposta registrada",
+          "texto": "As três ações sumiram, porque a proposta já tem resposta. O aceite fica gravado com a data e com quem marcou, e entra no histórico do negócio. O negócio não muda de etapa sozinho: mova o card no funil quando for a hora.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar como aceita",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ver como o cliente recebe",
+                "exato": true
+              },
+              "rotulo": "Só a prévia ficou",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Aceita na lista",
+          "texto": "De volta à lista, a proposta aparece como \"Aceita\". Se a validade de uma proposta enviada passar sem resposta, uma rotina diária do sistema a muda para \"Vencida\" e avisa a equipe.",
+          "rota": "/app/proposals",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Aceita",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Plano alimentar para a recuperação pós-cirúrgica",
+                  "regex": true
+                }
+              },
+              "rotulo": "Resposta registrada",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

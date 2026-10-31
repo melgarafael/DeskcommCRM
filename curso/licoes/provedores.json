@@ -1,0 +1,640 @@
+{
+  "id": "provedores",
+  "titulo": "Provedores",
+  "tela": "/app/ai/providers",
+  "resumo": "Onde você vê qual inteligência artificial faz cada tarefa do sistema, troca o modelo de todas de uma vez ou de uma por uma, e conhece os extras Jev e Mapas.",
+  "licoes": [
+    {
+      "id": "conhecendo-os-provedores",
+      "titulo": "Conhecendo a tela de Provedores",
+      "objetivo": "Entender o que são provedor e modelo, achar a tela e ler o que ela mostra: o modelo padrão e as tarefas agrupadas pelo que fazem.",
+      "papel": "admin",
+      "busca": [
+        "provedores",
+        "provedor de ia",
+        "qual ia o sistema usa",
+        "modelo de ia",
+        "trocar a ia",
+        "claude",
+        "gpt",
+        "gemini"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Provedores fica no hub de IA",
+          "rota": "/app/ai",
+          "texto": "Provedores não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Montar o agente\" está o cartão \"Provedores\". O caminho completo é: Agente de IA › Ver tudo em IA › Provedores.",
+          "dica": "Só o gerente e o administrador veem este cartão e entram nesta tela. O atendente não vê o cartão.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Provedores ",
+                "regex": true
+              },
+              "rotulo": "Abrir Provedores",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Provedores ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Provedor e modelo",
+          "rota": "/app/ai/providers",
+          "texto": "Provedor é a empresa que fornece a inteligência artificial (IA), como a Anthropic (Claude), a OpenAI (GPT) ou o Google (Gemini). Modelo é a versão escolhida dentro dessa empresa, como \"Claude Sonnet 5\". O sistema usa IA em muitas tarefas: responder o cliente, medir o clima da conversa, ler imagens, buscar no seu material e outras. A frase abaixo do título diz em quantos lugares. Esta tela mostra qual modelo faz cada tarefa e deixa você trocar.",
+          "dica": "Enquanto a empresa não tiver nenhuma chave da IA que conversa cadastrada em \"Credenciais\", aparece abaixo do título um aviso amarelo com o link \"Cadastrar uma chave\". O gerente também entra nesta tela, mas só para consultar: salvar o modelo padrão, salvar a escolha de uma tarefa, ligar o Jev e gravar a chave de Mapas são do administrador.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Provedores de IA",
+                "exato": true
+              },
+              "rotulo": "A tela de Provedores",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O modelo padrão",
+          "texto": "O cartão \"Modelo padrão\" mostra o provedor e o modelo que a empresa usa por padrão. Eles valem em toda tarefa que mostra \"Usando o padrão da organização.\", e a frase do cartão conta quantas tarefas estão assim hoje. Algumas tarefas não seguem o padrão, porque precisam de um modelo especialista, de áudio ou de busca no seu material: a frase no fim do cartão diz quais são.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "cartao-do-padrao"
+              },
+              "rotulo": "Vale para quase tudo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "padrao-provider"
+              },
+              "rotulo": "A empresa de IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "padrao-modelo"
+              },
+              "rotulo": "A versão usada",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "As tarefas em grupos",
+          "texto": "Mais abaixo, as tarefas aparecem em seis grupos, pelo que fazem: \"Atender o cliente\", \"Entender a conversa\", \"Proteger a operação\", \"Lembrar e buscar\", \"Ver e ouvir\" e \"Melhorar e testar\". Cada grupo traz uma frase explicando o que ele faz e, em \"Usando:\", os modelos que as tarefas dele usam hoje. Se alguma tarefa do grupo precisar de atenção, aparece um aviso em amarelo. O botão \"Configuração avançada\" abre as tarefas do grupo uma por uma. A tela chama cada tarefa de \"ponto\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Atender o cliente",
+                "exato": true
+              },
+              "rotulo": "Nome do grupo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Usando:",
+                "exato": true,
+                "dentro": {
+                  "testid": "papel-atender"
+                }
+              },
+              "rotulo": "Modelos em uso",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "avancado-atender"
+              },
+              "rotulo": "Ver tarefa por tarefa",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trocar-o-modelo-padrao",
+      "titulo": "Trocar o modelo padrão",
+      "objetivo": "Escolher outro provedor ou modelo para todas as tarefas que seguem o padrão, de uma vez.",
+      "papel": "admin",
+      "busca": [
+        "modelo padrão",
+        "trocar modelo",
+        "mudar a ia de todas",
+        "trocar provedor",
+        "usar outro modelo",
+        "salvar padrão"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Escolher o provedor",
+          "rota": "/app/ai/providers",
+          "texto": "No cartão \"Modelo padrão\", clique em \"Provedor\" para ver as empresas de IA com que o sistema sabe trabalhar. Antes de trocar de empresa, confira se ela tem chave cadastrada em \"Credenciais\" (ou na instalação do sistema): esta tela não faz essa conferência. Ao trocar de provedor, o campo \"Modelo\" fica vazio, à espera da sua escolha.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "padrao-provider"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "As empresas de IA",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "Se a lista de modelos dessa empresa ainda não foi baixada pelo sistema, o campo \"Modelo\" vira uma caixa para você digitar o nome do modelo do jeito que a empresa de IA o escreve."
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher o modelo e salvar",
+          "rota": "/app/ai/providers",
+          "texto": "Em \"Modelo\", escolha a versão. Aqui, a clínica de exemplo escolheu \"Claude Haiku 5.5\", da mesma empresa. O botão \"Salvar padrão\" só acende depois que você muda alguma coisa. Ao salvar, todas as tarefas que mostram \"Usando o padrão da organização.\" passam a usar o modelo novo de uma vez.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "padrao-modelo"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Claude Haiku 5.5",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "padrao-modelo"
+              },
+              "rotulo": "Modelo escolhido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-padrao"
+              },
+              "rotulo": "Gravar a troca",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-padrao"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Quem não segue o padrão",
+          "rota": "/app/ai/providers",
+          "texto": "Nem toda tarefa acompanha o modelo padrão. Quando há um agente publicado, as tarefas que conversam com o cliente seguem o modelo escolhido nele. As de áudio e de busca no seu material precisam de um modelo especialista: a frase no fim do cartão lista quais são, e o cartão de cada uma, em \"Configuração avançada\", explica como ela funciona. E a tarefa que você configurar uma por uma, como mostra a próxima lição, fica com a sua escolha.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "padrao-especialistas"
+              },
+              "rotulo": "Tarefas especialistas",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "escolher-o-modelo-de-uma-tarefa",
+      "titulo": "Escolher o modelo de uma tarefa",
+      "objetivo": "Abrir as tarefas de um grupo, ler o cartão de cada uma e trocar o modelo de uma tarefa só.",
+      "papel": "admin",
+      "busca": [
+        "configuração avançada",
+        "modelo de uma tarefa",
+        "trocar modelo de um ponto",
+        "ver imagem do cliente",
+        "se falhar",
+        "ponto fixo",
+        "modelo do agente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir as tarefas de um grupo",
+          "rota": "/app/ai/providers",
+          "texto": "Cada grupo esconde as suas tarefas até você pedir. Para ver uma por uma, clique em \"Configuração avançada\" no grupo. O número entre parênteses diz quantas tarefas (\"pontos\") o grupo tem. Neste exemplo, abrimos o grupo \"Ver e ouvir\", que cuida das imagens e dos áudios que o cliente manda.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Ver e ouvir",
+                "exato": true
+              },
+              "rotulo": "O grupo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "avancado-perceber"
+              },
+              "rotulo": "Abrir as tarefas",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "avancado-perceber"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O cartão de uma tarefa",
+          "texto": "Cada tarefa tem um cartão. No alto ficam o nome dela e o que ela faz. À direita, o modelo em uso e o porquê: \"Usando o padrão da organização.\" quer dizer que ela segue o Modelo padrão. A faixa \"Se falhar:\" conta o que você vai notar no dia a dia se essa tarefa parar de funcionar. Algumas tarefas têm o selo \"precisa de ferramentas\": nelas só serve um modelo que saiba usar as ferramentas do CRM, e o sistema recusa os outros na hora de salvar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "avancado-perceber"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Ver a imagem do cliente",
+                "exato": true
+              },
+              "rotulo": "A tarefa",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "origem-visao_de_imagem"
+              },
+              "rotulo": "Por que este modelo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Se falhar:",
+                "exato": true,
+                "dentro": {
+                  "testid": "ponto-visao_de_imagem"
+                }
+              },
+              "rotulo": "O que você notaria",
+              "tipo": "numero"
+            }
+          ],
+          "dica": "Outras explicações que aparecem à direita: \"Escolhido por você no painel de provedores.\", \"Definido na versão publicada do agente.\" e \"Modelo mais econômico do mesmo provedor\", usada em classificações curtas, que não precisam do modelo do agente."
+        },
+        {
+          "id": "p3",
+          "titulo": "Tarefas com o selo \"fixo\"",
+          "texto": "Tarefas com o selo \"fixo\" não têm escolha nesta tela: o sistema decide sozinho, e o cartão explica por quê. É o caso de \"Ouvir o áudio do cliente\". O áudio vira texto pelo serviço de transcrição da instalação, por uma chave da OpenAI ou pelo próprio modelo de conversa, quando ele entende áudio. À direita, o cartão diz qual desses caminhos está valendo ou, como nesta clínica, o que está faltando.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "fixo",
+                "exato": true,
+                "dentro": {
+                  "testid": "ponto-transcricao_de_audio"
+                }
+              },
+              "rotulo": "Não dá para trocar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "origem-transcricao_de_audio"
+              },
+              "rotulo": "O que está faltando",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "razao-fixo-transcricao_de_audio"
+              },
+              "rotulo": "Por que é fixo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Escolher o modelo e salvar",
+          "texto": "Nas tarefas que dá para trocar, o cartão tem três campos. Em \"Provedor\", a empresa de IA. Em \"Modelo\", a versão: aqui escolhemos \"Claude Haiku 5.5\". Em \"Chave\", você pode fixar uma das chaves desse provedor cadastradas em \"Credenciais\"; deixando \"da instalação\", nenhuma chave fica fixada para esta tarefa. Depois, clique em \"Salvar\". Se o modelo não servir para a tarefa, o sistema recusa ou avisa, numa mensagem que explica o motivo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "modelo-visao_de_imagem"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Claude Haiku 5.5",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "provider-visao_de_imagem"
+              },
+              "rotulo": "Empresa de IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "modelo-visao_de_imagem"
+              },
+              "rotulo": "Modelo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "chave-visao_de_imagem"
+              },
+              "rotulo": "Chave (opcional)",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-visao_de_imagem"
+              },
+              "rotulo": "Gravar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-visao_de_imagem"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "A escolha ficou gravada",
+          "texto": "Pronto: à direita aparece o modelo novo, e a explicação muda para \"Escolhido por você no painel de provedores.\". A partir daqui, esta tarefa fica com a sua escolha, mesmo que o Modelo padrão mude depois. A tela não tem botão para voltar a seguir o padrão: para mudar de novo, escolha outro modelo e clique em \"Salvar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-visao_de_imagem"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Escolhido por você no painel de provedores.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "origem-visao_de_imagem"
+              },
+              "rotulo": "Agora é escolha sua",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "As tarefas do agente",
+          "rota": "/app/ai/providers",
+          "texto": "No grupo \"Atender o cliente\", as tarefas que conversam com o cliente, como \"Responder o cliente\", não têm campos aqui quando há um agente publicado. Elas usam o modelo escolhido no próprio agente, na versão publicada. O cartão avisa isso e traz o link \"Configurar no agente\", que abre a tela Agentes. Enquanto nenhum agente estiver publicado, esses cartões mostram os campos como os outros.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "avancado-atender"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "ponto-agent_turn"
+              },
+              "rotulo": "Segue o agente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Configurar no agente",
+                "exato": true,
+                "dentro": {
+                  "testid": "ponto-agent_turn"
+                }
+              },
+              "rotulo": "Trocar no agente",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jev-e-mapas",
+      "titulo": "Os extras: Jev e Mapas",
+      "objetivo": "Entender o que são o Jev e o cartão de Mapas, e o caminho para ligar cada um.",
+      "papel": "admin",
+      "busca": [
+        "jev",
+        "decisões rápidas",
+        "typesafe",
+        "cliente irritado",
+        "mapas",
+        "localização do cliente",
+        "chave do google",
+        "geocoding"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que é o Jev",
+          "rota": "/app/ai/providers",
+          "texto": "O Jev é uma IA à parte, da empresa TypeSafe AI. Ele não conversa com o cliente: toma decisões rápidas e baratas, como perceber se o cliente está irritado, e trabalha junto com a sua IA principal. O selo no canto mostra a situação dele; nesta clínica, \"Desligado\". Para quem é da área da saúde, leia o aviso do cartão: as mensagens que o Jev lê podem conter dado de saúde, que a LGPD trata como sensível. Antes de ligar, confira com quem cuida da LGPD da empresa se o contrato da TypeSafe cobre esse tipo de dado.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Jev — decisões rápidas",
+                "exato": true
+              },
+              "rotulo": "O cartão do Jev",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Desligado",
+                "exato": true,
+                "dentro": {
+                  "testid": "cartao-do-jev"
+                }
+              },
+              "rotulo": "Situação",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "jev-aviso-area-saude"
+              },
+              "rotulo": "Atenção na saúde",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "De onde vem a chave do Jev",
+          "texto": "Em \"De onde o Jev responde\", escolha por onde ele trabalha: \"TypeSafe AI (chave própria)\", com uma chave só dele, ou \"OpenRouter (reaproveita a credencial OpenRouter)\", que usa a chave da OpenRouter que a empresa já tenha cadastrado em \"Credenciais\". Pela TypeSafe, clique em \"Pegar a chave na TypeSafe\" para abrir o site deles: lá você cria uma conta e põe crédito, porque cada mensagem que o Jev avalia é cobrada pela TypeSafe. Depois, clique em \"Colar a chave\".",
+          "dica": "Só o administrador cola a chave e liga o Jev. O gerente vê o cartão, mas sem esses botões.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "De onde o Jev responde"
+              },
+              "rotulo": "TypeSafe ou OpenRouter",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Pegar a chave na TypeSafe",
+                "exato": true
+              },
+              "rotulo": "Criar a conta",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Colar a chave",
+                "exato": true
+              },
+              "rotulo": "Guardar a chave",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Colar a chave",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Colar a chave e ligar",
+          "texto": "Abre a janela \"Adicionar credencial\", já com o provedor \"Jev (TypeSafe AI)\". Cole a chave em \"Chave\" e clique em \"Salvar e validar\". O sistema guarda a chave cifrada e faz um teste com a TypeSafe. Quando a chave passa, o cartão mostra \"Chave conferida com a TypeSafe\" e passa a exibir o que o Jev vai fazer, a caixa para concordar com o envio das mensagens para os Estados Unidos (só na primeira vez) e o botão \"Ligar o Jev\". Se a chave não passar, o cartão explica o motivo e oferece \"Testar de novo\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Colar a chave",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Provedor",
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Já vem escolhido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Chave",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Cole aqui",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar e validar",
+                "exato": true
+              },
+              "rotulo": "Guardar e testar",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Mapas: a rua no lugar das coordenadas",
+          "rota": "/app/ai/providers",
+          "texto": "O cartão \"Mapas (Google)\" é outro extra. Quando o cliente manda a localização pelo WhatsApp, o sistema consulta o Google e o agente lê a rua e a cidade aproximadas, em vez de só as coordenadas. Sem chave, nada muda, e o selo mostra \"Sem chave\". Para ligar, crie no Google Cloud uma chave com a Geocoding API habilitada, cole em \"Chave da Geocoding API\" e clique em \"Salvar chave\". \"Testar\" faz uma consulta de verdade ao Google e mostra o endereço que voltou ou o motivo da falha. Com o campo vazio e nenhuma chave gravada, os dois botões ficam apagados.",
+          "dica": "Depois de gravada, a chave nunca volta inteira: o selo mostra só os quatro últimos caracteres, e aparece o botão \"Remover chave\".",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "mapas-estado"
+              },
+              "rotulo": "Situação da chave",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "rotulo": "Chave da Geocoding API"
+              },
+              "rotulo": "Cole a chave do Google",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "mapas-salvar"
+              },
+              "rotulo": "Gravar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "mapas-testar"
+              },
+              "rotulo": "Conferir no Google",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
