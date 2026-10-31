@@ -11,9 +11,14 @@
  *
  * ─── O que se guarda ───────────────────────────────────────────────────────
  *
- *   - single-server sem SMTP responde `smtp_not_configured` SEM chamar o
- *     GoTrue, e a resposta é a mesma qualquer que seja a resposta dele (200 ou
- *     500): depende da instalação, nunca do e-mail digitado;
+ *   - single-server sem SMTP no CRM **pergunta ao GoTrue** e escuta a resposta
+ *     DELE: é `smtp_not_configured` quando ele diz que não conseguiu enviar
+ *     (`/error sending/i`, a mesma medida do cadastro), e `ok` quando ele
+ *     envia. Este segundo caso é o #3039: o SMTP posto direto no `.env` do
+ *     Supabase sai pelo GoTrue, por um caminho que o app não enxerga, e a
+ *     recusa antecipada de antes bloqueava uma recuperação que funcionaria
+ *     (medição pela tela em
+ *     `components/auth/esqueci-a-senha-e-o-smtp.test.tsx`);
  *   - host sem remetente não é SMTP usável (mesma régua do kit);
  *   - a catraca continua vencendo;
  *   - o banco que FALHA não vira "sem SMTP": segue o caminho de sempre;
@@ -138,28 +143,32 @@ afterEach(() => {
 });
 
 describe("single-server SEM SMTP no CRM", () => {
-  it.each([
-    ["200 (e-mail sem conta)", { error: null }],
-    ["500 (e-mail com conta)", falhaDoGoTrue(500)],
-  ] as const)(
-    "⭐ responde smtp_not_configured sem chamar o GoTrue — GoTrue responderia %s",
-    async (_, resposta) => {
-      estado.resposta = resposta;
-
-      const r = await requestPasswordReset({ email: EMAIL });
-
-      expect(r).toEqual({ ok: false, error: "smtp_not_configured" });
-      expect(estado.chamouGoTrue).toBe(0);
-    },
-  );
-
-  it("host SEM remetente não conta como SMTP (mesma régua do kit)", async () => {
-    estado.banco = { data: { ...LINHA_COM_SMTP, from_email: null }, error: null };
+  it("⭐ o GoTrue que NÃO conseguiu enviar é que vira `smtp_not_configured`", async () => {
+    estado.resposta = falhaDoGoTrue(500);
 
     const r = await requestPasswordReset({ email: EMAIL });
 
     expect(r).toEqual({ ok: false, error: "smtp_not_configured" });
-    expect(estado.chamouGoTrue).toBe(0);
+    expect(estado.chamouGoTrue, "quem responde é o GoTrue, não a instalação").toBe(1);
+  });
+
+  it("⭐ e o GoTrue que ENVIA (SMTP só no `.env` do Supabase) não é recusado — #3039", async () => {
+    estado.resposta = { error: null };
+
+    const r = await requestPasswordReset({ email: EMAIL });
+
+    expect(r).toEqual({ ok: true });
+    expect(estado.chamouGoTrue).toBe(1);
+  });
+
+  it("host SEM remetente não conta como SMTP (mesma régua do kit) — quem decide segue sendo o GoTrue", async () => {
+    estado.banco = { data: { ...LINHA_COM_SMTP, from_email: null }, error: null };
+    estado.resposta = falhaDoGoTrue(500);
+
+    const r = await requestPasswordReset({ email: EMAIL });
+
+    expect(r).toEqual({ ok: false, error: "smtp_not_configured" });
+    expect(estado.chamouGoTrue).toBe(1);
   });
 
   it("a catraca continua vencendo a mensagem nova", async () => {

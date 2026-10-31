@@ -10863,8 +10863,12 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível enviar o e-mail. Tente novamente.": {
     es: "No se pudo enviar el correo. Intenta de nuevo.",
   },
-  "A recuperação de senha não está disponível nesta instalação: sem SMTP configurado não sai e-mail nenhum. Contate o administrador para configurar em /admin/email.": {
-    es: "La recuperación de contraseña no está disponible en esta instalación: sin SMTP configurado no sale ningún correo. Contacta al administrador para configurarlo en /admin/email.",
+  // #3039 — a frase do "esqueci a senha" deixou de ser um absoluto sobre a
+  // instalação: ela só aparece quando o serviço de login respondeu que NÃO
+  // conseguiu enviar. Quem põe o SMTP direto no `.env` do Supabase envia por um
+  // caminho que o app não enxerga, e esse caso não é mais recusado.
+  "A recuperação de senha não está disponível nesta instalação: o serviço de login não conseguiu enviar o e-mail — não há SMTP configurado. Contate o administrador para configurar em /admin/email.": {
+    es: "La recuperación de contraseña no está disponible en esta instalación: el servicio de inicio de sesión no pudo enviar el correo — no hay SMTP configurado. Contacta al administrador para configurarlo en /admin/email.",
   },
   "Verifique seu e-mail": { es: "Revisa tu correo" },
   "Se existir uma conta com esse e-mail, enviamos um link para redefinir a senha.": {

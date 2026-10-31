@@ -47,11 +47,17 @@ export async function requestPasswordReset(
     return { ok: false, error: "rate_limited" };
   }
 
-  // #2755 — decidido ANTES de chamar o GoTrue, sem olhar o que ele responde:
-  // assim a resposta depende só da instalação, nunca do e-mail digitado. A
-  // régua é compartilhada com quem AVISA (o painel de atualização), em
-  // `lib/email/estado.ts`.
-  if (await semSmtpNaInstalacao()) return { ok: false, error: "smtp_not_configured" };
+  // #3039 — a régua da instalação fala do CRM, e continua valendo: sem SMTP
+  // aqui (host E remetente), o GoTrue deste servidor pode não ter por onde
+  // mandar. Mas ela NÃO decide sozinha: quem põe o SMTP direto no `.env` do
+  // Supabase — o arquivo que só o GoTrue lê — faz o e-mail SAIR por um caminho
+  // que o app não enxerga (é o limite que `lib/email/estado.ts` declara). A
+  // resposta pronta aqui recusava uma recuperação que funcionaria: medido em
+  // #3039, com o aviso na tela e nada enviado ao GoTrue. Então a pergunta ao
+  // GoTrue acontece, e quem decide é a resposta DELE: `smtp_not_configured` só
+  // quando ele diz que não conseguiu enviar — a mesma medida do cadastro
+  // (`/error sending/i` em `app/actions/auth/signUp.ts`).
+  const semSmtpNoCrm = await semSmtpNaInstalacao();
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
@@ -74,6 +80,11 @@ export async function requestPasswordReset(
       ip,
       userAgent,
     });
+    // O GoTrue recusou por não conseguir enviar: aí sim "sem SMTP" é verdade —
+    // e a frase da tela diz o que aconteceu, sem afirmar nada sobre instalação
+    // que tem SMTP por outro caminho.
+    if (semSmtpNoCrm && /error sending/i.test(error.message))
+      return { ok: false, error: "smtp_not_configured" };
     return { ok: false, error: "request_failed" };
   }
 
