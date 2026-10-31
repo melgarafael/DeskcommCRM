@@ -114,6 +114,12 @@ const traduzir = (pares: Par[]) => pares.map((p) => ({ q: demo(p.q), a: demo(p.a
  * criam pela tela (pelo nome, em PT e em ES) e o .md do Storage. Apagar a fonte
  * leva junto, por cascata, os pares, as versões de índice e os trechos.
  *
+ * O `knowledge_source.updated` que a tela emite ao criar ou mudar um material
+ * (POST/PATCH de /api/v1/ai/knowledge/sources) não tem chave estrangeira: sem
+ * apagá-lo aqui, cada aula deixaria um evento pendente apontando para um
+ * material que já não existe. Sai antes da fonte, enquanto o id ainda se acha
+ * pelo nome.
+ *
  * O nome em ES sai de `traducaoDaDemonstracao`, que não lança: esta limpeza roda
  * antes das aulas de TODOS os módulos, e um texto ainda sem tradução não pode
  * derrubar a captura dos outros.
@@ -127,19 +133,22 @@ export async function limpar(c: Contexto) {
     await db.from("ai_knowledge_sources").select("id, source_metadata").eq("organization_id", org).in("name", nomes),
     "achar materiais das lições",
   )) as Array<{ id: string; source_metadata: { blob_path?: string } | null }>;
+  const fontes = [...[1, 2, 3, 4, 5].map(fonteId), ...criadas.map((f) => f.id)];
+  semErro(
+    await db
+      .from("event_log")
+      .delete()
+      .eq("organization_id", org)
+      .eq("entity_kind", "ai_knowledge_source")
+      .in("entity_id", fontes),
+    "limpar eventos dos materiais",
+  );
   const arquivos = [
     `${org}/${ARQUIVO_DO_PREPARO}`,
     ...criadas.map((f) => f.source_metadata?.blob_path).filter((p): p is string => typeof p === "string"),
   ];
   semErro(await db.storage.from(BUCKET).remove(arquivos), "limpar arquivos do acervo");
-  semErro(
-    await db
-      .from("ai_knowledge_sources")
-      .delete()
-      .eq("organization_id", org)
-      .in("id", [...[1, 2, 3, 4, 5].map(fonteId), ...criadas.map((f) => f.id)]),
-    "limpar materiais",
-  );
+  semErro(await db.from("ai_knowledge_sources").delete().eq("organization_id", org).in("id", fontes), "limpar materiais");
 }
 
 export async function semear(c: Contexto) {

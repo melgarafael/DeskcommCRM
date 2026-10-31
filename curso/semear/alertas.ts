@@ -24,9 +24,9 @@
  * produto (ligado, a cada 24 horas, três avisos por espera): a última lição
  * troca o intervalo pela tela, e a seguinte precisa começar do padrão.
  *
- * Idempotente: apaga só os avisos com os ids daqui e recria. O gatilho
- * `trg_aviso_da_central_criado` anuncia cada aviso no event_log; com o worker
- * parado, nada vai ao celular de ninguém.
+ * Idempotente: apaga só os avisos com os ids daqui (e os anúncios deles no
+ * event_log) e recria. O gatilho `trg_aviso_da_central_criado` anuncia cada
+ * aviso no event_log; com o worker parado, nada vai ao celular de ninguém.
  *
  * Exporta `limpar`, que a base chama antes de QUALQUER aula: sem isso os quatro
  * avisos abertos sobreviveriam ao reset (agent_inbox_items não tem FK para as
@@ -59,11 +59,30 @@ type Aviso = {
 };
 
 /**
- * Apaga só os avisos desta semente e devolve o lembrete de caso parado ao padrão.
- * Sem `demo()` aqui: a base chama `limpar` antes de toda aula, também em espanhol.
+ * Apaga só o que esta semente e as lições do módulo deixam, e devolve o lembrete
+ * de caso parado ao padrão.
+ *
+ * Os avisos têm id fixo nas duas línguas (o `demo()` muda só o texto), então o id
+ * basta e não há texto a procurar. As lições não criam linha nenhuma pela tela:
+ * "Marcar resolvido" e "Reabrir" só viram o `status` de um aviso daqui, e
+ * "Salvar lembrete" grava as três colunas que voltam ao padrão abaixo.
+ *
+ * O gatilho `trg_aviso_da_central_criado` grava um `central.aviso_criado` no
+ * event_log por aviso; com o worker parado ninguém o consome, e sem esta
+ * deleção cada semeadura deixaria mais seis na fila. Sai antes do aviso, pelo
+ * mesmo id (entity_id).
  */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
+  semErro(
+    await db
+      .from("event_log")
+      .delete()
+      .eq("organization_id", org)
+      .eq("entity_kind", "agent_inbox_item")
+      .in("entity_id", IDS_DOS_AVISOS),
+    "limpar anúncios dos avisos",
+  );
   semErro(
     await db.from("agent_inbox_items").delete().eq("organization_id", org).in("id", IDS_DOS_AVISOS),
     "limpar avisos da Central",
@@ -76,6 +95,9 @@ export async function limpar(c: Contexto) {
 
 export async function semear(c: Contexto) {
   const { db, org, sessao } = c;
+
+  // apaga os próprios avisos (e anúncios) e devolve o lembrete ao padrão antes de recriar
+  await limpar(c);
 
   const AVISOS: Aviso[] = [
     {
@@ -151,8 +173,6 @@ export async function semear(c: Contexto) {
   if (AVISOS.some((a) => !IDS_DOS_AVISOS.includes(avisoId(a.n)))) {
     throw new Error("alertas: aviso fora de IDS_DOS_AVISOS — o limpar não o alcançaria");
   }
-  // apaga os próprios avisos e devolve o lembrete ao padrão antes de recriar
-  await limpar(c);
   semErro(
     await db.from("agent_inbox_items").insert(
       AVISOS.map((a) => ({

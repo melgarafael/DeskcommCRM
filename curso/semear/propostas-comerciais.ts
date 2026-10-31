@@ -16,13 +16,15 @@
  *     nova (a regra é um rascunho aberto por negócio).
  *
  * Nada é enviado: as enviadas nascem aqui já como `enviada`, sem mensagem.
- * Idempotente: apaga as próprias propostas (ids fixos), as que as lições criam
- * pela tela (pelo título) e as novas versões das próprias (substitui_id), com o
- * registro que elas deixam na linha do tempo do negócio, e recria. A mesma
- * limpeza é exportada como `limpar`, que a base chama antes de qualquer aula.
+ * Idempotente: `semear` começa por `limpar` — que a base também chama antes de
+ * qualquer aula — e recria. `limpar` tira as próprias propostas (ids fixos), as
+ * que as lições criam pela tela (pelo título, PT e ES), as novas versões das
+ * próprias (substitui_id), o registro que todas deixam na linha do tempo do
+ * negócio e o contador que a numeração semeada empurrou. O modelo da clínica e
+ * as chaves ligadas são da semente de "Modelos de proposta": ficam com ela.
  */
 import { type Contexto, conversaId, contatoId, exigir, ha, semErro } from "../semear-demonstracao";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 import { semear as semearModelosDeProposta } from "./modelos-de-proposta";
 
 const propostaId = (n: number) => `d1090000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -67,63 +69,79 @@ type Proposta = {
 /** As propostas desta semente — ids fixos, os mesmos `n` da lista PROPOSTAS. */
 const IDS_DAS_PROPOSTAS = [1, 2, 3, 4].map(propostaId);
 
+/** O maior número que a semente dá (`numero` em PROPOSTAS): é até onde ela empurra o contador. */
+const MAIOR_NUMERO_SEMEADO = 3;
+
 /**
- * Apaga o que este módulo põe no banco: as próprias propostas, as que as lições
- * criam pela tela (pelo título) e as novas versões das próprias (substitui_id),
- * com o registro que elas deixam na linha do tempo. Só linhas deste módulo.
+ * Os títulos nos dois idiomas, qualquer que seja o da captura: a bancada é a
+ * mesma, e a proposta deixada pela aula em espanhol sobraria na foto em
+ * português. `traducaoDaDemonstracao` não lança (o `demo` lançaria em ES sem
+ * entrada) — e esta limpeza roda antes das aulas de TODOS os módulos.
  */
-async function apagarAsDoModulo({ db, org }: Contexto) {
-  const daLicao = exigir(
-    await db
+const nosDoisIdiomas = (textos: readonly string[]) => [
+  ...new Set(textos.flatMap((t) => [t, traducaoDaDemonstracao(t) ?? t])),
+];
+
+/**
+ * Chamada pela base antes de QUALQUER aula (`limparSementesDeModulo`) e no começo
+ * de `semear`. Sem ela as propostas daqui sobreviviam à base — `lead_id` e
+ * `contact_id` são ON DELETE SET NULL — e ficavam órfãs no banco das outras aulas.
+ * Só linhas desta semente e das lições dela; sem nada para tirar, não muda nada.
+ */
+export async function limpar({ db, org }: Contexto) {
+  const [daLicao, versoes] = await Promise.all([
+    db
       .from("crm_proposals")
       .select("id")
       .eq("organization_id", org)
-      .in(
-        "titulo",
-        CRIADAS_NAS_LICOES.map((t) => demo(t)),
-      ),
-    "propostas das lições",
-  ) as Array<{ id: string }>;
-  const versoes = exigir(
-    await db
+      .in("titulo", nosDoisIdiomas(CRIADAS_NAS_LICOES)),
+    db
       .from("crm_proposals")
       .select("id")
       .eq("organization_id", org)
       .in("substitui_id", IDS_DAS_PROPOSTAS),
-    "novas versões",
-  ) as Array<{ id: string }>;
-  const derivadas = [...daLicao.map((p) => p.id), ...versoes.map((p) => p.id)];
+  ]);
+  const derivadas = [
+    ...(exigir(daLicao, "propostas das lições") as Array<{ id: string }>),
+    ...(exigir(versoes, "novas versões") as Array<{ id: string }>),
+  ].map((p) => p.id);
+  const todas = [...IDS_DAS_PROPOSTAS, ...derivadas];
+
+  // A linha do tempo aponta para a proposta só por `source_id` (sem FK): sai à
+  // mão, com os ids colhidos antes de as propostas sumirem.
   semErro(
     await db
       .from("crm_lead_activities")
       .delete()
       .eq("organization_id", org)
       .eq("source_module", "proposals")
-      .in("source_id", [...IDS_DAS_PROPOSTAS, ...derivadas]),
+      .in("source_id", todas),
     "limpar linha do tempo das propostas",
   );
-  // as versões apontam para as próprias (substitui_id): saem primeiro
+  // Num DELETE só: o `substitui_id` das versões (ON DELETE SET NULL) não chega a
+  // soltá-las das próprias, e os itens saem junto (FK on delete cascade).
   semErro(
-    await db.from("crm_proposals").delete().eq("organization_id", org).in("id", derivadas),
-    "limpar propostas das lições",
-  );
-  semErro(
-    await db.from("crm_proposals").delete().eq("organization_id", org).in("id", IDS_DAS_PROPOSTAS),
+    await db.from("crm_proposals").delete().eq("organization_id", org).in("id", todas),
     "limpar propostas",
   );
-}
-
-/**
- * Chamada pela base antes de QUALQUER aula (`limparSementesDeModulo`). Sem ela as
- * propostas daqui sobreviviam à base — `lead_id` e `contact_id` são ON DELETE SET
- * NULL — e ficavam órfãs no banco de todas as outras aulas.
- */
-export async function limpar(c: Contexto) {
-  await apagarAsDoModulo(c);
+  // O contador só existe porque a semente o empurrou até os números dela. Até
+  // esse teto ele é da semente e sai; acima, houve envio de verdade, e o D9
+  // (só cresce) manda deixar.
+  semErro(
+    await db
+      .from("crm_proposal_counters")
+      .delete()
+      .eq("organization_id", org)
+      .eq("ano", ANO)
+      .lte("ultimo_numero", MAIOR_NUMERO_SEMEADO),
+    "limpar contador de propostas",
+  );
 }
 
 export async function semear(c: Contexto) {
   const { db, org, pessoa, agenteId } = c;
+
+  await limpar(c);
 
   // Liga Propostas (instalação + empresa) e cria o modelo "Pacote de nutrição — 3 meses".
   await semearModelosDeProposta(c);
@@ -268,10 +286,15 @@ export async function semear(c: Contexto) {
     },
   ];
 
-  // --- limpeza: as próprias, as que as lições criam e as novas versões das próprias ---
+  // A limpeza (`limpar`, lá no começo) trabalha com as constantes do módulo: uma
+  // proposta ou um número fora delas sobraria no banco das outras aulas.
   if (PROPOSTAS.some((p) => !IDS_DAS_PROPOSTAS.includes(propostaId(p.n))))
     throw new Error("proposta da semente fora de IDS_DAS_PROPOSTAS: a limpeza não a alcançaria");
-  await apagarAsDoModulo(c);
+  const maior = Math.max(...PROPOSTAS.map((p) => p.numero ?? 0));
+  if (maior > MAIOR_NUMERO_SEMEADO)
+    throw new Error(
+      "número da semente acima de MAIOR_NUMERO_SEMEADO: a limpeza não alcançaria o contador",
+    );
 
   // --- recria ---
   let item = 0;
@@ -335,7 +358,6 @@ export async function semear(c: Contexto) {
 
   // O contador da numeração só cresce (D9): sem acompanhar os números semeados,
   // um envio de verdade nesta empresa receberia de novo o 0001 do ano.
-  const maior = Math.max(...PROPOSTAS.map((p) => p.numero ?? 0));
   const contador = exigir(
     await db
       .from("crm_proposal_counters")

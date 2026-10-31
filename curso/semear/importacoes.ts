@@ -238,8 +238,11 @@ export async function limpar(c: Contexto) {
 }
 
 export async function semear(c: Contexto) {
+  // primeiro tira o que uma rodada anterior deixou: os ids são fixos e o INSERT colidiria
+  await limpar(c);
   const { db, org, pessoa } = c;
 
+  // ligar o recurso é do semear, nunca do limpar: a base é quem o devolve ao estado de fábrica
   semErro(
     await db.from("platform_config").upsert(
       { chave: "MODULO_CRM_B2B", valor: "ligado", eh_segredo: false, semeado_do_env: false, updated_by: pessoa.helena },
@@ -247,8 +250,6 @@ export async function semear(c: Contexto) {
     ),
     "ligar o módulo Empresas e pessoas",
   );
-
-  await limpar(c);
 
   const quandoDoLote = (n: number) => LOTES.find((l) => l.n === n)!.quando;
 

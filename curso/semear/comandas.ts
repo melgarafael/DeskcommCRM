@@ -37,10 +37,10 @@
  *   os da Agenda: `calendar_appointments.contact_id` é `on delete restrict` e a
  *   base apaga os contatos antes de cada lição. O nome do paciente vai no título.
  *
- * Idempotente: apaga TODAS as comandas da organização (as tabelas só existem por
- * causa deste módulo, e as lições criam comandas novas pela tela) com os
- * lançamentos e pontos ligados a elas, e recria as próprias linhas pelos ids
- * fixos.
+ * Idempotente: começa pelo `limpar`, que apaga TODAS as comandas da organização
+ * (as tabelas só existem por causa deste módulo, e as lições criam comandas novas
+ * pela tela) com os lançamentos e pontos ligados a elas, e recria as próprias
+ * linhas pelos ids fixos.
  *
  * `limpar` (chamado pela base antes de QUALQUER aula) tira tudo isso do banco:
  * sem ele, os três serviços e os três atendimentos desta semente apareceriam nas
@@ -51,7 +51,7 @@
 import pg from "pg";
 
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
-import { type Contexto, contatoId, exigir, ha, ontemAs, semErro } from "../semear-demonstracao";
+import { type Contexto, contatoId, ha, ontemAs, semErro } from "../semear-demonstracao";
 import { exigirBancoLocal } from "../seguranca";
 import { semear as semearFinanceiro } from "./financeiro";
 
@@ -63,6 +63,9 @@ const ATENDIMENTO = (n: number) => id(3, n);
 const ITEM = (n: number) => id(4, n);
 const LANCAMENTO = (n: number) => id(5, n);
 const PONTO = (n: number) => id(6, n);
+/** As linhas da semente que não caem em cascata com a comanda. */
+const LANCAMENTOS = [1, 2].map(LANCAMENTO);
+const PONTOS = [1, 2].map(PONTO);
 
 /** Linhas da semente do módulo "Financeiro" (curso/semear/financeiro.ts). */
 const FIN = (bloco: number, n: number) => `be7f0${bloco}00-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -109,39 +112,49 @@ async function provisionarSePreciso(c: Contexto) {
   throw new Error("as tabelas da comanda não apareceram na API depois da provisionadora");
 }
 
-/** Tira do banco tudo o que esta semente e as lições dela criam. Roda antes de qualquer aula. */
+/**
+ * Tira do banco tudo o que esta semente e as lições dela criam. Roda antes de
+ * qualquer aula (e no começo do `semear`).
+ *
+ * Não precisa de texto, em língua nenhuma: o que a semente grava tem id fixo, e
+ * o que as lições criam pela tela (comanda nova, item avulso, motivo do estorno,
+ * os lançamentos e os pontos da finalização) mora numa comanda ou aponta para
+ * ela. A tabela `sales` só existe por causa deste módulo e só ele grava nela,
+ * então "as comandas da organização" são exatamente as desta semente e das
+ * lições dela — PT ou ES.
+ */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
 
-  if (await tabelasExistem(c)) {
-    // ---------- as comandas (as da semente e as que as lições criam) ----------
-    const comandas = exigir(
-      await db.from("sales").select("id").eq("organization_id", org),
-      "comandas atuais",
-    ) as Array<{ id: string }>;
-    const ids = comandas.map((x) => x.id);
-    if (ids.length) {
-      // O contra-lançamento do estorno aponta para o original com `on delete
-      // restrict`: ele sai primeiro.
-      semErro(
-        await db.from("financial_entries").delete().eq("organization_id", org).in("sale_id", ids).not("reverses_entry_id", "is", null),
-        "limpar estornos das comandas",
-      );
-      semErro(
-        await db.from("financial_entries").delete().eq("organization_id", org).in("sale_id", ids),
-        "limpar lançamentos das comandas",
-      );
-      semErro(
-        await db.from("loyalty_ledger").delete().eq("organization_id", org).in("sale_id", ids),
-        "limpar pontos das comandas",
-      );
-      // Itens e comissões caem em cascata.
-      semErro(await db.from("sales").delete().eq("organization_id", org).in("id", ids), "limpar comandas");
-    }
+  // ---------- as comandas (as da semente e as que as lições criam) ----------
+  // A mesma leitura serve de sonda: numa bancada sem a provisionadora as tabelas
+  // não existem (PGRST205) e não há comanda nenhuma para tirar.
+  const sonda = await db.from("sales").select("id").eq("organization_id", org);
+  if (sonda.error && sonda.error.code !== "PGRST205") throw new Error(`comandas atuais: ${sonda.error.message}`);
+  if (!sonda.error) {
+    const ids = sonda.data.map((x) => x.id as string);
+    // `sale_id` é `on delete set null` nos lançamentos e nos pontos: apagar a
+    // comanda antes deixaria os dois órfãos, contando no Financeiro. Por isso
+    // os da semente também saem pelo id fixo, caso a comanda já tenha ido.
+    const lancamentos = `id.in.(${LANCAMENTOS.join(",")})${ids.length ? `,sale_id.in.(${ids.join(",")})` : ""}`;
+    // O contra-lançamento do estorno aponta para o original com `on delete
+    // restrict`: ele sai primeiro.
     semErro(
-      await db.from("loyalty_ledger").delete().eq("organization_id", org).in("id", [PONTO(1), PONTO(2)]),
-      "limpar pontos da semente",
+      await db.from("financial_entries").delete().eq("organization_id", org).not("reverses_entry_id", "is", null)
+        .or(`${lancamentos},reverses_entry_id.in.(${LANCAMENTOS.join(",")})`),
+      "limpar estornos das comandas",
     );
+    semErro(
+      await db.from("financial_entries").delete().eq("organization_id", org).or(lancamentos),
+      "limpar lançamentos das comandas",
+    );
+    semErro(
+      await db.from("loyalty_ledger").delete().eq("organization_id", org)
+        .or(`id.in.(${PONTOS.join(",")})${ids.length ? `,sale_id.in.(${ids.join(",")})` : ""}`),
+      "limpar pontos das comandas e da semente",
+    );
+    // Itens e comissões caem em cascata.
+    if (ids.length) semErro(await db.from("sales").delete().eq("organization_id", org).in("id", ids), "limpar comandas");
   }
 
   // ---------- os atendimentos e os serviços da semente ----------
@@ -158,6 +171,9 @@ export async function limpar(c: Contexto) {
 
 export async function semear(c: Contexto) {
   const { db, org, pessoa } = c;
+
+  // ---------- começa do zero: comandas, atendimentos e serviços (a mesma limpeza da base) ----------
+  await limpar(c);
 
   // ---------- o módulo Comandas instalado ----------
   await provisionarSePreciso(c);
@@ -179,10 +195,7 @@ export async function semear(c: Contexto) {
   // ---------- contas e formas de pagamento: as do Financeiro ----------
   await semearFinanceiro(c);
 
-  // ---------- limpa as comandas, os atendimentos e os serviços (a mesma limpeza da base) ----------
-  await limpar(c);
-
-  // ---------- os serviços que a comanda oferece (apagados pelo `limpar` acima) ----------
+  // ---------- os serviços que a comanda oferece (apagados pelo `limpar` do começo) ----------
   const ENDERECO = "Rua das Acácias, 120 — 3º andar";
   semErro(
     await db.from("calendar_event_types").upsert(

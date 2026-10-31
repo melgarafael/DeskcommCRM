@@ -26,13 +26,14 @@
  * — o modo em que a primeira mensagem não oferece nada (estrategia-site.ts).
  *
  * Empresas, telefones, sites e e-mails são fictícios (domínios em
- * exemplo.com.br). Idempotente: apaga só as próprias campanhas (as empresas vão
- * junto, em cascata) e recria; a personalização da prospecção
- * (`organizations.settings.prospeccao`) volta a vazio, porque a lição a preenche.
+ * exemplo.com.br). Idempotente: começa pelo `limpar`, que apaga só as próprias
+ * campanhas (as empresas vão junto, em cascata), a chave e a personalização da
+ * prospecção (`organizations.settings.prospeccao`, que volta a vazio porque a
+ * lição a preenche), e recria.
  */
 import pg from "pg";
 
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 import { type Contexto, exigir, ha, semErro } from "../semear-demonstracao";
 import { exigirBancoLocal } from "../seguranca";
 
@@ -300,21 +301,105 @@ const EMPRESAS: Empresa[] = [
   },
 ];
 
-/** Limpeza chamada antes de QUALQUER aula: a prospecção da clínica não sobra em outra tela. */
+/**
+ * A busca que a lição "Configurar e fazer uma busca" pede pela tela. A foto para
+ * antes de "Buscar empresas", mas quem segue a lição até o fim cria a campanha
+ * (com o nome que a tela monta, `${segmento} · ${região}`), e ela apareceria em
+ * "Suas campanhas" nas aulas seguintes.
+ */
+const BUSCA_DA_LICAO = { segmento: "escritórios de arquitetura", regiao: "Moema, São Paulo, SP" };
+
+/**
+ * O texto nos dois idiomas. `traducaoDaDemonstracao` só consulta e não lança: esta
+ * limpeza roda antes de toda aula, em PT e em ES, e precisa achar o que sobrou da outra.
+ */
+const nosDoisIdiomas = (texto: string) => [
+  ...new Set([texto, traducaoDaDemonstracao(texto) ?? texto]),
+];
+
+/** Conexão direta ao Postgres local, que a gravação atômica de `settings` exige. */
+async function noPostgresLocal<T>(url: string, fn: (cli: pg.Client) => Promise<T>): Promise<T> {
+  const cli = new pg.Client({ connectionString: exigirBancoLocal(url) });
+  await cli.connect();
+  try {
+    return await fn(cli);
+  } finally {
+    await cli.end();
+  }
+}
+
+/**
+ * Limpeza chamada antes de QUALQUER aula (curso/semear-demonstracao.ts): a
+ * prospecção da clínica não sobra em outra tela. Apaga só o que é deste módulo:
+ *
+ *  - as duas campanhas da semente, pelo id fixo, e a da busca da lição, pelo nome
+ *    em PT e em ES. As empresas vão junto, em cascata (a única tabela que aponta
+ *    para `prospecting_campaigns`); contato, negócio e conversa de uma empresa
+ *    abordada são da base, que os recria;
+ *  - a chave de busca (`prospecting_settings`, uma linha por organização): a
+ *    semente a grava e "Salvar chave" a regrava;
+ *  - a personalização (`organizations.settings.prospeccao`), que "Salvar
+ *    personalização" grava. A leitura barata decide: sem ela no banco, nada é gravado.
+ */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
   semErro(
     await db.from("prospecting_campaigns").delete().eq("organization_id", org).in("id", CAMPANHAS),
     "limpar campanhas de prospecção",
   );
+  const nomesDaBusca = nosDoisIdiomas(BUSCA_DA_LICAO.segmento).flatMap((segmento) =>
+    nosDoisIdiomas(BUSCA_DA_LICAO.regiao).map((regiao) => `${segmento} · ${regiao}`.slice(0, 120)),
+  );
+  semErro(
+    await db
+      .from("prospecting_campaigns")
+      .delete()
+      .eq("organization_id", org)
+      .in("name", nomesDaBusca),
+    "limpar a busca da lição",
+  );
   semErro(
     await db.from("prospecting_settings").delete().eq("organization_id", org),
     "limpar chave de busca",
   );
+
+  const { prospeccao } = exigir(
+    await db.from("organizations").select("prospeccao:settings->prospeccao").eq("id", org).single(),
+    "personalização da prospecção",
+  ) as { prospeccao: unknown };
+  if (prospeccao === null || prospeccao === undefined) return;
+
+  // Atômico no Postgres local, como em planos-de-tarefa.ts: ler-mudar-gravar `settings`
+  // pelo client apagaria a chave que outra semente gravasse no meio.
+  const url = process.env.SUPABASE_DB_URL;
+  if (url) {
+    await noPostgresLocal(url, async (cli) => {
+      const r = await cli.query(
+        "update public.organizations set settings = coalesce(settings, '{}'::jsonb) - 'prospeccao' where id = $1",
+        [org],
+      );
+      if (r.rowCount !== 1)
+        throw new Error("Postgres direto não corresponde à organização da bancada Supabase");
+    });
+  } else {
+    const linha = exigir(
+      await db.from("organizations").select("settings").eq("id", org).single(),
+      "settings",
+    ) as {
+      settings: Record<string, unknown> | null;
+    };
+    const { prospeccao: _vazia, ...resto } = linha.settings ?? {};
+    void _vazia;
+    semErro(
+      await db.from("organizations").update({ settings: resto }).eq("id", org),
+      "personalização da prospecção",
+    );
+  }
 }
 
 export async function semear(c: Contexto) {
   const { db, org, sessao, agenteId, funil } = c;
+  // Começa do zero: campanhas, chave e personalização deste módulo saem aqui.
   await limpar(c);
 
   // ---------- a chave de busca, cifrada como o `configure` cifra ----------
@@ -332,37 +417,7 @@ export async function semear(c: Contexto) {
     "chave de busca",
   );
 
-  // ---------- personalização vazia: a lição a preenche ----------
-  // Atômico no Postgres local, como em planos-de-tarefa.ts: ler-mudar-gravar `settings`
-  // pelo client apagaria a chave que outra semente gravasse no meio.
-  const url = process.env.SUPABASE_DB_URL;
-  if (url) {
-    const cli = new pg.Client({ connectionString: exigirBancoLocal(url) });
-    await cli.connect();
-    try {
-      const r = await cli.query(
-        "update public.organizations set settings = coalesce(settings, '{}'::jsonb) - 'prospeccao' where id = $1",
-        [org],
-      );
-      if (r.rowCount !== 1)
-        throw new Error("Postgres direto não corresponde à organização da bancada Supabase");
-    } finally {
-      await cli.end();
-    }
-  } else {
-    const linha = exigir(
-      await db.from("organizations").select("settings").eq("id", org).single(),
-      "settings",
-    ) as {
-      settings: Record<string, unknown> | null;
-    };
-    const { prospeccao: _vazia, ...resto } = linha.settings ?? {};
-    void _vazia;
-    semErro(
-      await db.from("organizations").update({ settings: resto }).eq("id", org),
-      "personalização da prospecção",
-    );
-  }
+  // A personalização fica vazia (a lição a preenche): o `limpar` acima já a tirou.
 
   // ---------- campanhas ----------
   const busca = (nicho: string, local: string) => ({

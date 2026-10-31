@@ -20,8 +20,8 @@
  * planilha deixaria. A "Pão Dourado" fica sem pessoa nenhuma: é a que a lição
  * de exclusão consegue apagar.
  *
- * Idempotente: apaga só as próprias linhas (ids fixos `d103…` + as empresas que
- * as lições criam pela tela, pelo nome) e recria.
+ * Idempotente: `limpar` apaga só as próprias linhas (ids fixos `d103…` + as
+ * empresas que as lições criam pela tela, pelo nome) e `semear` recria.
  */
 import { type Contexto, ha, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
@@ -212,7 +212,10 @@ const textoOuNulo = (t: string | null) => (t === null ? null : demo(t));
 /**
  * Limpeza chamada antes de QUALQUER aula (limparSementesDeModulo): estas
  * empresas, pessoas e telefones não sobram na tela de outro módulo — Pessoas,
- * Contatos e Importações mostram as mesmas tabelas.
+ * Contatos e Importações mostram as mesmas tabelas. Também sai a academia que
+ * a lição de cadastro cria pela tela, nas duas línguas. Nada vai para o
+ * Storage, e a criação pela tela só grava `companies` (mais a auditoria, que é
+ * append-only e não é desta semente).
  */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
@@ -245,8 +248,11 @@ export async function limpar(c: Contexto) {
 }
 
 export async function semear(c: Contexto) {
+  // parte do mesmo estado que a limpeza de antes de toda aula deixa
+  await limpar(c);
   const { db, org, pessoa } = c;
 
+  // ligar o recurso é da semente, nunca da limpeza (a base o devolve ao estado de fábrica)
   semErro(
     await db.from("platform_config").upsert(
       { chave: "MODULO_CRM_B2B", valor: "ligado", eh_segredo: false, semeado_do_env: false, updated_by: pessoa.helena },
@@ -254,8 +260,6 @@ export async function semear(c: Contexto) {
     ),
     "ligar o módulo Empresas e pessoas",
   );
-
-  await limpar(c);
 
   // ---------- empresas ----------
   semErro(

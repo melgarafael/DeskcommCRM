@@ -7,21 +7,34 @@
  * de verdade no bucket `catalog-photos`, no caminho que a rota de upload geraria
  * (`<org>/<produto>/<uuid>.png`): é o que o painel "Fotos" e a capa da linha mostram.
  *
- * Idempotente: apaga só as próprias linhas (ids fixos + os códigos que as lições
- * criam pela tela) e recria; as fotos sobem com upsert. A mesma limpeza sai como
- * `limpar`, que a base chama antes de qualquer aula. A moeda vem da organização,
- * como no cadastro pela tela (`moedaDaOrganizacao`).
+ * Idempotente: apaga só as próprias linhas (ids fixos + o que as lições criam
+ * pela tela, por código e por nome nos dois idiomas) e recria; as fotos sobem com
+ * upsert. A mesma limpeza sai como `limpar`, que a base chama antes de qualquer
+ * aula. A moeda vem da organização, como no cadastro pela tela (`moedaDaOrganizacao`).
  */
 import { deflateSync } from "node:zlib";
 
 import { type Contexto, semErro } from "../semear-demonstracao";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 
 const produtoId = (n: number) => `d1070000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const fotoId = (n: number) => `d1070100-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
-/** Códigos que as lições criam pela tela: limpos aqui para cada lição partir do mesmo estado. */
-const CRIADAS_NAS_LICOES = ["FIS-FAIXA"];
+/**
+ * O que as lições criam pela tela (a faixa elástica de "Cadastrar um produto"):
+ * limpo aqui para cada lição partir do mesmo estado. O código não se traduz; o
+ * nome, sim — por isso a limpeza procura pelos dois.
+ */
+const CRIADAS_NAS_LICOES = [{ codigo: "FIS-FAIXA", nome: "Faixa elástica de exercício média" }];
+
+/**
+ * PT e ES sempre, qualquer que seja o idioma da captura: a bancada é a mesma, e
+ * um produto deixado pela aula em espanhol sobraria na foto em português.
+ * `traducaoDaDemonstracao` não lança (o `demo` lançaria em ES sem entrada).
+ */
+const nosDoisIdiomas = (textos: readonly string[]) => [
+  ...new Set(textos.flatMap((t) => [t, traducaoDaDemonstracao(t) ?? t])),
+];
 
 // ---------- fotos: PNG RGB desenhado à mão, sem dependência ----------
 
@@ -177,9 +190,11 @@ const caminhoDaFoto = (org: string, arquivo: string) => `${org}/${WHEY}/${arquiv
 
 /**
  * Limpeza chamada antes de QUALQUER aula: o catálogo deste módulo não sobra em
- * outra tela (o seletor de produtos da proposta lê o mesmo catálogo). Apaga só
- * as próprias linhas — os ids fixos, o código que a lição de cadastro cria pela
- * tela e as fotos do whey no bucket.
+ * outra tela (o seletor de produtos da proposta lê o mesmo catálogo, e a busca da
+ * aula de outro módulo acharia estes itens). Apaga só as próprias linhas — os ids
+ * fixos, o que a lição de cadastro cria pela tela (pelo código e pelo nome, nos
+ * dois idiomas) e as fotos do whey no bucket. Nada referencia o produto com
+ * `restrict`: o item de proposta fica com `product_id` nulo, então a ordem é livre.
  */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
@@ -188,8 +203,20 @@ export async function limpar(c: Contexto) {
     "limpar produtos do módulo",
   );
   semErro(
-    await db.from("catalog_products").delete().eq("organization_id", org).in("codigo", CRIADAS_NAS_LICOES),
-    "limpar produtos criados nas lições",
+    await db
+      .from("catalog_products")
+      .delete()
+      .eq("organization_id", org)
+      .in("codigo", CRIADAS_NAS_LICOES.map((p) => p.codigo)),
+    "limpar produtos criados nas lições (código)",
+  );
+  semErro(
+    await db
+      .from("catalog_products")
+      .delete()
+      .eq("organization_id", org)
+      .in("nome", nosDoisIdiomas(CRIADAS_NAS_LICOES.map((p) => p.nome))),
+    "limpar produtos criados nas lições (nome)",
   );
   semErro(
     await db.storage.from("catalog-photos").remove(FOTOS_DO_WHEY.map((f) => caminhoDaFoto(org, f.arquivo))),
@@ -198,12 +225,11 @@ export async function limpar(c: Contexto) {
 }
 
 export async function semear(c: Contexto) {
+  await limpar(c);
   const { db, org } = c;
 
   const { data: organizacao } = await db.from("organizations").select("currency").eq("id", org).maybeSingle();
   const moeda = (organizacao as { currency?: string | null } | null)?.currency || "BRL";
-
-  await limpar(c);
 
   for (const { arquivo, frente } of FOTOS_DO_WHEY) {
     semErro(

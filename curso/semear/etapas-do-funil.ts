@@ -7,15 +7,22 @@
  * PRÓPRIO, "Pilates", com etapas, negócios abertos e um histórico de negócios
  * encerrados (é dele que sai a "Chance de fechamento" sugerida pela tela).
  *
- * Idempotente: apaga só as próprias linhas (ids fixos com o prefixo d111…) e
- * recria. Apaga também um funil "Pilates" que não seja o daqui: é o nome que a
- * lição "organizar-funis" do módulo Funis cria pela tela (a semente de Funis o
- * apaga pelo nome, ver FUNIS_DAS_LICOES), e uma captura interrompida lá deixaria
- * o endereço "pilates" ocupado.
+ * Idempotente: `semear` começa por `limpar` e recria. `limpar` apaga só as
+ * próprias linhas (ids fixos com o prefixo d111…) e o que as lições fazem pela
+ * tela — que mora todo DENTRO do funil daqui: a etapa criada ("Aguardando
+ * pagamento"), os nomes e a ordem trocados, a etapa arquivada com os negócios
+ * movidos, os motivos de perda gravados no próprio funil. Apagar o funil pelo id
+ * leva tudo isso nas duas línguas, sem procurar texto.
  *
  * A base não apaga funis nem etapas entre as aulas. Por isso o funil sai por
  * `limpar`, que a base chama antes de QUALQUER aula: sem isso, o "Pilates"
  * apareceria nas fotos dos módulos fotografados depois deste.
+ *
+ * O "Pilates" que a lição "organizar-funis" do módulo Funis cria pela tela não
+ * é daqui (é a semente de Funis que o apaga, ver FUNIS_DAS_LICOES), então
+ * `limpar` não o toca. Só `semear` o tira, e só se ele ocupar o nome ou o
+ * endereço "pilates" que o funil daqui precisa — uma captura interrompida lá
+ * faria o insert falhar.
  */
 import { type Contexto, exigir, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
@@ -89,22 +96,28 @@ const ENCERRADOS: Array<{ n: number; nome: string; caminho: number[]; motivo?: s
 ];
 
 /**
- * Tira do banco o funil Pilates (negócios → etapas → funil) e os contatos desta
- * semente. Não passa por `demo()`: roda antes de toda aula, nos dois idiomas, e
- * "Pilates" é o mesmo nome em português e em espanhol.
+ * Apaga um funil inteiro da organização. Negócios primeiro: crm_leads → crm_stages
+ * é ON DELETE RESTRICT (o histórico aponta para a etapa). O histórico de etapas
+ * (crm_lead_activities) e os demais vínculos do negócio caem em cascata.
+ */
+async function apagarFunil(c: Contexto, funil: string) {
+  const { db, org } = c;
+  semErro(await db.from("crm_leads").delete().eq("organization_id", org).eq("pipeline_id", funil), "negócios do funil");
+  semErro(await db.from("crm_stages").delete().eq("organization_id", org).eq("pipeline_id", funil), "etapas do funil");
+  semErro(await db.from("crm_pipelines").delete().eq("organization_id", org).eq("id", funil), "funil");
+}
+
+/**
+ * Tira do banco o que esta semente e as lições do módulo deixam: o funil Pilates
+ * (com tudo o que as lições criaram dentro dele) e os contatos desta semente.
+ * Não passa por `demo()`: nada aqui é procurado por texto, só pelo id fixo — e é
+ * por isso que serve aos dois idiomas. Sem nada no banco, são quatro DELETEs que
+ * não acham linha.
  */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
-  const funis = exigir(
-    await db.from("crm_pipelines").select("id").eq("organization_id", org).or(`id.eq.${FUNIL_PILATES},name.eq.Pilates,slug.eq.pilates`),
-    "funis a limpar",
-  ) as Array<{ id: string }>;
-  for (const f of funis) {
-    // negócios primeiro: crm_leads → crm_stages é ON DELETE RESTRICT (o histórico aponta para a etapa)
-    semErro(await db.from("crm_leads").delete().eq("organization_id", org).eq("pipeline_id", f.id), "negócios do funil Pilates");
-    semErro(await db.from("crm_stages").delete().eq("organization_id", org).eq("pipeline_id", f.id), "etapas do funil Pilates");
-    semErro(await db.from("crm_pipelines").delete().eq("organization_id", org).eq("id", f.id), "funil Pilates");
-  }
+  await apagarFunil(c, FUNIL_PILATES);
+  // por último: crm_leads.contact_id é ON DELETE SET NULL, e antes daria um UPDATE por negócio
   semErro(
     await db.from("contacts").delete().eq("organization_id", org).in("id", CONTATOS.map((x) => contatoId(x.n))),
     "contatos do funil Pilates",
@@ -114,8 +127,19 @@ export async function limpar(c: Contexto) {
 export async function semear(c: Contexto) {
   const { db, org, pessoa } = c;
 
-  // ---------- limpa o que é desta semente (e um "Pilates" que sobrou de Funis) ----------
+  // ---------- limpa o que é desta semente ----------
   await limpar(c);
+
+  // ---------- um "Pilates" do módulo Funis no nome ou no endereço deste ----------
+  const ocupantes = exigir(
+    await db
+      .from("crm_pipelines")
+      .select("id")
+      .eq("organization_id", org)
+      .or(`name.eq.Pilates,name.eq.${demo("Pilates")},slug.eq.pilates`),
+    "funis no lugar do Pilates",
+  ) as Array<{ id: string }>;
+  for (const f of ocupantes) await apagarFunil(c, f.id);
 
   // ---------- o funil ----------
   semErro(

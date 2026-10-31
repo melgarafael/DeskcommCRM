@@ -23,7 +23,10 @@
  */
 import { type Contexto, semErro } from "../semear-demonstracao";
 
-/** Pontos cuja escolha as lições gravam pela tela. */
+/**
+ * Pontos cuja escolha as lições gravam pela tela. O `purpose` é o mesmo em PT e
+ * em ES (não é texto visível), então esta lista cobre as duas línguas.
+ */
 const CRIADAS_NAS_LICOES = ["visao_de_imagem"];
 
 export async function limpar(c: Contexto) {

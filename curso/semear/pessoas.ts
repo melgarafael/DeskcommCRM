@@ -18,11 +18,13 @@
  * grava (`lib/crm-b2b/import-process.ts`): é a única tela que os cria.
  *
  * As empresas têm `updated_at` antigo para ficarem no fim da lista de Empresas,
- * e `limpar` (chamada pela base antes de QUALQUER aula) tira tudo daqui, para
- * nada sobrar nas fotos de outro módulo.
+ * e `limpar` (chamada por `semear-demonstracao.ts` antes de QUALQUER aula, de
+ * qualquer módulo) tira tudo daqui, para nada sobrar nas fotos de outro módulo:
+ * as três empresas entrariam na lista de Empresas, e os três telefones, em Contatos.
  *
  * Idempotente: apaga só as próprias linhas (ids fixos `d104…` + as pessoas que
- * as lições criam pela tela, pelo nome) e recria.
+ * as lições criam pela tela, pelo nome em PT e em ES) e recria. Não há arquivo
+ * no Storage, e a chave do recurso opcional fica com a base e com `semear`.
  */
 import { type Contexto, ha, semErro } from "../semear-demonstracao";
 import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
@@ -66,10 +68,15 @@ const TELEFONES = [
   { n: 3, pessoa: 2, phone_number: "+5511987651403" },
 ];
 
-/** Limpeza chamada antes de QUALQUER aula: estas pessoas e empresas não sobram em outra tela. */
+/**
+ * Limpeza chamada antes de QUALQUER aula: estas pessoas e empresas não sobram em
+ * outra tela. Só filtra por `organization_id` + id fixo ou nome da lição, então
+ * nunca alcança pessoa da base nem de outro módulo; sem nada a apagar, é no-op.
+ */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
-  // telefones antes das pessoas; os vínculos caem em cascata, mas saem pelo id por clareza
+  // telefones antes das pessoas (o `person_id` deles cairia para nulo e o contato
+  // sobraria em Contatos); os vínculos cairiam em cascata, mas saem pelo id por clareza
   semErro(
     await db.from("contacts").delete().eq("organization_id", org).in("id", TELEFONES.map((t) => telefoneId(t.n))),
     "limpar telefones do módulo",
@@ -91,15 +98,19 @@ export async function limpar(c: Contexto) {
       .from("people")
       .delete()
       .eq("organization_id", org)
-      // sem `demo`: a base chama `limpar` antes de toda aula, e um nome sem tradução não pode derrubá-la
+      // PT e ES pelo catálogo, seja qual for a língua desta rodada (a captura ES pode ter deixado o
+      // nome ES); sem `demo`, que lança sem tradução e derrubaria a limpeza de toda aula
       .in("full_name", CRIADAS_NAS_LICOES.flatMap((n) => [n, traducaoDaDemonstracao(n) ?? n])),
     "limpar pessoas criadas nas lições",
   );
 }
 
 export async function semear(c: Contexto) {
+  // parte do zero: tudo o que a semente e as lições deixaram sai antes de recriar
+  await limpar(c);
   const { db, org, pessoa } = c;
 
+  // ligar o recurso é de `semear`, nunca de `limpar`: a base desliga antes de cada aula
   semErro(
     await db.from("platform_config").upsert(
       { chave: "MODULO_CRM_B2B", valor: "ligado", eh_segredo: false, semeado_do_env: false, updated_by: pessoa.helena },
@@ -107,8 +118,6 @@ export async function semear(c: Contexto) {
     ),
     "ligar o módulo Empresas e pessoas",
   );
-
-  await limpar(c);
 
   // ---------- empresas (só o que a ficha da pessoa mostra: o nome) ----------
   semErro(

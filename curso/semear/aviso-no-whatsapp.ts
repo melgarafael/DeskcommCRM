@@ -91,7 +91,14 @@ const CASOS: Caso[] = [
   },
 ];
 
-/** Antes de qualquer aula: tira o aviso de caso e os casos daqui (estado de fábrica). */
+/**
+ * Antes de qualquer aula: tira o aviso de caso e os casos daqui (estado de fábrica).
+ * Casos pelos ids fixos — entregas e eventos caem em cascata. A configuração é
+ * UMA linha por organização (a chave é `organization_id`), e é a mesma que as
+ * aulas gravam e removem pela tela, com rótulo em PT ou em ES: apagá-la pela
+ * organização cobre as duas línguas. O rastro que o salvar deixa em
+ * `api_audit_log` fica: a tabela é append-only, nem o service role apaga.
+ */
 export async function limpar(c: Contexto) {
   semErro(await c.db.from("agent_cases").delete().eq("organization_id", c.org).in("id", IDS_DOS_CASOS), "limpar casos do aviso");
   semErro(await c.db.from("config_aviso_de_caso").delete().eq("organization_id", c.org), "aviso de caso de fábrica");

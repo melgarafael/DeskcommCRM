@@ -24,10 +24,12 @@
  *
  * Idempotente: `limpar` apaga os roteiros com os ids daqui, os que as lições
  * criam pela tela e as cópias de "Duplicar" (pelo nome, nos dois idiomas);
- * versões e execuções vão em cascata. A base chama `limpar` antes de QUALQUER
- * aula, então nenhum roteiro desta semente sobra para outro módulo, e `semear`
- * recria. A ficha da Juliana e a chave do módulo não precisam de limpeza: a base
- * recria os contatos e devolve `platform_config` ao estado de fábrica.
+ * versões, execuções e eventos delas vão em cascata pelo roteiro. Tira também
+ * da ficha da Juliana as três respostas que a semente grava (só a chave com o
+ * valor daqui). A base chama `limpar` antes de QUALQUER aula, então nada desta
+ * semente sobra para outro módulo, e `semear` começa por ele e recria. A chave
+ * do módulo fica de fora de propósito: ligar e desligar recurso opcional é da
+ * base (que devolve `platform_config` ao estado de fábrica) e do `semear`.
  *
  * O desenho do roteiro semeado põe Início, Nome, CPF e Convênio na coluna da
  * esquerda: com o painel de uma caixa aberto, o construtor esconde a coluna da
@@ -48,6 +50,8 @@ const HORA = 60;
 const DIA = 24 * HORA;
 /** O contato da base que tem um roteiro em andamento (Juliana Castro). */
 const JULIANA = 3;
+/** As respostas que a Juliana já deu ao roteiro, em PT: `semear` grava, `limpar` tira. */
+const RESPOSTAS_DA_JULIANA = { nome_completo: "Juliana Castro Ribeiro", convenio: "Unimed", especialidade: "Fisioterapia" };
 
 type Pergunta = {
   id: string;
@@ -121,15 +125,47 @@ const nosDoisIdiomas = (nomes: readonly string[]) => nomes.flatMap((n) => [n, tr
 
 export async function limpar(c: Contexto) {
   const { db, org } = c;
-  semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).in("id", [1, 2, 3].map(fluxoId)), "limpar roteiros");
-  const criadas = nosDoisIdiomas(CRIADAS_NAS_LICOES);
-  semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).in("name", criadas), "limpar roteiros das lições");
-  for (const nome of new Set([...criadas, ...nosDoisIdiomas(SEMEADOS)])) {
-    semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).like("name", `${nome} (%`), "limpar cópias");
+
+  // ---------- os roteiros ----------
+  // Uma leitura decide o resto: `limpar` roda antes de toda aula de todo módulo,
+  // e no caso comum não há roteiro nosso — aí não escreve nada.
+  const roteiros = exigir(
+    await db.from("followup_flow_pointers").select("id, name").eq("organization_id", org),
+    "roteiros da organização",
+  ) as { id: string; name: string }[];
+  const fixos = new Set([1, 2, 3].map(fluxoId));
+  // O nome é único na organização: um roteiro com o nome daqui (de outro id)
+  // travaria o insert do `semear` ou o "Criar fluxo" da lição.
+  const nomes = new Set(nosDoisIdiomas([...CRIADAS_NAS_LICOES, ...SEMEADOS]));
+  // "Duplicar" grava "<nome> (cópia)", "(cópia 2)"… — a raiz com o parêntese basta.
+  const raizes = [...nomes].map((n) => `${n} (`);
+  const nossos = roteiros
+    .filter((r) => fixos.has(r.id) || nomes.has(r.name) || raizes.some((raiz) => r.name.startsWith(raiz)))
+    .map((r) => r.id);
+  // Versões, execuções (a da Juliana inclusive) e eventos vão em cascata pelo roteiro.
+  if (nossos.length > 0) {
+    semErro(await db.from("followup_flow_pointers").delete().eq("organization_id", org).in("id", nossos), "limpar roteiros");
+  }
+
+  // ---------- as respostas da Juliana ----------
+  // A ficha é da base: sai só a chave que ainda tem o valor que a semente gravou.
+  const ficha = await db.from("contacts").select("custom_fields").eq("organization_id", org).eq("id", contatoId(JULIANA)).maybeSingle();
+  semErro(ficha, "ficha da Juliana");
+  const campos = { ...((ficha.data?.custom_fields as Record<string, unknown> | null) ?? {}) };
+  const daSemente = Object.entries(RESPOSTAS_DA_JULIANA).filter(([chave, valor]) => (nosDoisIdiomas([valor]) as unknown[]).includes(campos[chave]));
+  if (daSemente.length > 0) {
+    for (const [chave] of daSemente) delete campos[chave];
+    semErro(
+      await db.from("contacts").update({ custom_fields: campos }).eq("organization_id", org).eq("id", contatoId(JULIANA)),
+      "tirar as respostas da Juliana",
+    );
   }
 }
 
 export async function semear(c: Contexto) {
+  // ---------- limpa o que é deste módulo ----------
+  await limpar(c);
+
   const { db, org, pessoa } = c;
 
   // ---------- liga o módulo da instalação ----------
@@ -140,9 +176,6 @@ export async function semear(c: Contexto) {
     ),
     "ligar o módulo Fluxos de atendimento",
   );
-
-  // ---------- limpa o que é deste módulo ----------
-  await limpar(c);
 
   // ---------- os três roteiros ----------
   const convenios = CONVENIOS();
@@ -216,9 +249,9 @@ export async function semear(c: Contexto) {
   const campos = { ...(ficha.custom_fields ?? {}) };
   delete campos.cpf;
   delete campos.data_nascimento;
-  campos.nome_completo = "Juliana Castro Ribeiro";
-  campos.convenio = "Unimed";
-  campos.especialidade = demo("Fisioterapia");
+  campos.nome_completo = RESPOSTAS_DA_JULIANA.nome_completo;
+  campos.convenio = RESPOSTAS_DA_JULIANA.convenio;
+  campos.especialidade = demo(RESPOSTAS_DA_JULIANA.especialidade);
   semErro(
     await db.from("contacts").update({ custom_fields: campos }).eq("organization_id", org).eq("id", contatoId(JULIANA)),
     "respostas da Juliana",

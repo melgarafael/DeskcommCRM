@@ -20,10 +20,12 @@
  * As lições instalam `objecao-preco`, editam `preparo-primeira-consulta` e adotam a
  * versão nova de `agendamento` pela tela — cada uma grava versão nova com id
  * aleatório. Por isso `limpar` apaga, desta organização, os ponteiros e as versões
- * com esses nomes (ninguém mais semeia skill: a base não tem skill instalada). A base
- * chama `limpar` antes de QUALQUER aula: skill instalada que sobrasse daqui mudaria a
- * foto de outro módulo (o seletor do nó "Skill" de Fluxos de atendimento, o painel de
- * evolução da IA) e o índice de skills que a Bia recebe no prompt.
+ * com esses nomes, em PT e em ES, além das três de id fixo (ninguém mais semeia skill:
+ * a base não tem skill instalada). Nada vai para o Storage: nenhum manifesto, nem do
+ * catálogo, lista arquivo de pacote. A base chama `limpar` antes de QUALQUER aula:
+ * skill instalada que sobrasse daqui mudaria a foto de outro módulo (o seletor do nó
+ * "Skill" de Fluxos de atendimento, o painel de evolução da IA) e o índice de skills
+ * que a Bia recebe no prompt.
  * `skill_versions` é imutável para UPDATE, mas DELETE é permitido (o trigger só veta
  * UPDATE); nenhuma versão da organização aponta para outra da organização, então o
  * `on delete set null` de `forked_from_version_id` não toca linha nenhuma.
@@ -90,7 +92,8 @@ export async function limpar(c: Contexto) {
   const { db, org } = c;
   // O nome em PT e o traduzido entram os dois, sem `demo()`: a base chama `limpar` antes
   // de toda aula, e um `demo()` sem tradução no catálogo lançaria e derrubaria a aula de
-  // outro módulo.
+  // outro módulo. As versões que as lições gravam pela tela (instalar, editar, restaurar,
+  // adotar) têm id aleatório: só o nome as alcança.
   const NOMES = [
     ...new Set([
       AGENDAMENTO,
@@ -98,23 +101,34 @@ export async function limpar(c: Contexto) {
       PREPARO_PT,
       traducaoDaDemonstracao(PREPARO_PT) ?? PREPARO_PT,
     ]),
-  ];
+  ].join(",");
+  // Os ids fixos entram também: se a tradução do nome mudar no catálogo, a cópia gravada
+  // com o nome antigo ainda sai — senão o insert de `semear` colidiria com o id fixo.
+  const IDS = [1, 2, 3].map(versaoId).join(",");
+  // Ponteiro antes da versão: `skill_pointers.version_id` não tem `on delete`.
   semErro(
-    await db.from("skill_pointers").delete().eq("organization_id", org).in("name", NOMES),
+    await db
+      .from("skill_pointers")
+      .delete()
+      .eq("organization_id", org)
+      .or(`name.in.(${NOMES}),version_id.in.(${IDS})`),
     "apagar ponteiros de skill da organização",
   );
   semErro(
-    await db.from("skill_versions").delete().eq("organization_id", org).in("name", NOMES),
+    await db
+      .from("skill_versions")
+      .delete()
+      .eq("organization_id", org)
+      .or(`name.in.(${NOMES}),id.in.(${IDS})`),
     "apagar versões de skill da organização",
   );
 }
 
 export async function semear(c: Contexto) {
-  const { db, org } = c;
-  const preparo = demo(PREPARO_PT);
-
   // 1) Limpeza: a mesma que a base faz antes de qualquer aula.
   await limpar(c);
+  const { db, org } = c;
+  const preparo = demo(PREPARO_PT);
 
   // 2) A versão de plataforma ATUAL de `agendamento` e uma ANTERIOR a ela (o baseline
   //    grava as três publicações do catálogo; só a última recebe o ponteiro).

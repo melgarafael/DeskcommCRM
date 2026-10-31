@@ -13,11 +13,11 @@
  * título é o começo do texto, cortado em 77 caracteres + "..." quando passa de 80.
  * Sem proposta de origem (`proposal_id` nulo): a tela não a mostra.
  *
- * Idempotente: apaga só as próprias linhas (ids fixos d1170000-… e d1170100-…,
- * a versão que uma lição publique, pelo conteúdo, e o aprendizado que a lição
- * cria, pelo título) e recria. O ponteiro da memória é um por organização e só
- * esta tela o move; ele é apagado antes das versões porque a chave estrangeira
- * não deixa apagar a versão ativa, e recriado apontando para a v2.
+ * Idempotente: `limpar` apaga só as próprias linhas (ids fixos d1170000-… e
+ * d1170100-…, a versão que uma lição publique, pelo conteúdo, e o aprendizado que
+ * a lição cria, pelo título) e `semear` recria. O ponteiro da memória é um por
+ * organização; ele é apagado antes das versões porque a chave estrangeira não
+ * deixa apagar a versão ativa, e recriado apontando para a v2.
  *
  * A limpeza procura o texto nos DOIS idiomas, sempre (`traducaoDaDemonstracao`
  * não depende do idioma da rodada): uma rodada em PT depois de uma em ES
@@ -30,6 +30,9 @@ const DIAS = 24 * 60;
 const id = (bloco: string, n: number) => `${bloco}-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const versaoId = (n: number) => id("d1170000", n);
 const aprendizadoId = (n: number) => id("d1170100", n);
+/** Os `n` que `semear` usa: `limpar` apaga por eles sem montar os textos (e sem `demo()`). */
+const IDS_DAS_VERSOES = [1, 2].map(versaoId);
+const IDS_DOS_APRENDIZADOS = [1, 2, 3, 4].map(aprendizadoId);
 
 const DOCUMENTO_V1 = [
   "Você atende pela Clínica Bem Viver, na Rua das Acácias, 120 — 3º andar, Vila Mariana, São Paulo.",
@@ -53,43 +56,82 @@ const DOCUMENTO_DA_LICAO = [
 const CRIADAS_NAS_LICOES = ["Retorno em até 30 dias não é cobrado"];
 
 /** Como `applyProposal` titula o aprendizado aprovado de uma proposta. */
-const tituloDaProposta = (texto: string) => (texto.length > 80 ? `${texto.slice(0, 77)}...` : texto);
+const tituloDaProposta = (texto: string) =>
+  texto.length > 80 ? `${texto.slice(0, 77)}...` : texto;
 
 /** O texto em PT e em ES, qualquer que seja o idioma desta rodada: a anterior pode ter sido no outro. */
 const nosDoisIdiomas = (textos: string[]) => [
   ...new Set(textos.flatMap((t) => [t, traducaoDaDemonstracao(t) ?? t])),
 ];
 
-export async function semear(c: Contexto) {
-  const { db, org, pessoa } = c;
+/**
+ * Só as linhas desta semente e as que as lições gravam pela tela, desta organização.
+ * Sem `demo()`: a base chama `limpar` antes de toda aula, nas duas línguas, e um texto
+ * sem tradução no catálogo lançaria e derrubaria a aula de outro módulo.
+ */
+export async function limpar(c: Contexto) {
+  const { db, org } = c;
 
   // ---------- documento da organização ----------
-  semErro(await db.from("org_memory_pointers").delete().eq("organization_id", org), "limpar ponteiro da memória");
-  const VERSOES = [
-    { n: 1, version_number: 1, content: DOCUMENTO_V1, criadaHa: 34 * DIAS + 185 },
-    { n: 2, version_number: 2, content: DOCUMENTO_V2, criadaHa: 6 * DIAS + 70 },
-  ];
-  semErro(
-    await db.from("org_memory_versions").delete().eq("organization_id", org).in("id", VERSOES.map((v) => versaoId(v.n))),
-    "limpar versões da memória",
-  );
   // Versão que uma lição publicou (o texto digitado, ou o da v1/v2 restaurado): só este
   // módulo escreve estes textos. Filtra aqui, e não num `in("content", …)`: seis textos
   // longos, codificados na URL, podem passar do tamanho que o gateway aceita.
   const textosDoModulo = new Set(nosDoisIdiomas([DOCUMENTO_V1, DOCUMENTO_V2, DOCUMENTO_DA_LICAO]));
-  const publicadasNaLicao = (
+  const versoes = (
     exigir(
       await db.from("org_memory_versions").select("id, content").eq("organization_id", org),
       "versões da memória",
     ) as Array<{ id: string; content: string }>
   )
-    .filter((v) => textosDoModulo.has(v.content))
+    .filter((v) => IDS_DAS_VERSOES.includes(v.id) || textosDoModulo.has(v.content))
     .map((v) => v.id);
-  if (publicadasNaLicao.length)
+  if (versoes.length) {
+    // O ponteiro sai antes, e só quando aponta para uma delas: a chave estrangeira não
+    // deixa apagar a versão ativa. Apontando para outra, ele não é desta semente e fica.
     semErro(
-      await db.from("org_memory_versions").delete().eq("organization_id", org).in("id", publicadasNaLicao),
-      "limpar versão publicada na lição",
+      await db
+        .from("org_memory_pointers")
+        .delete()
+        .eq("organization_id", org)
+        .in("version_id", versoes),
+      "limpar ponteiro da memória",
     );
+    semErro(
+      await db.from("org_memory_versions").delete().eq("organization_id", org).in("id", versoes),
+      "limpar versões da memória",
+    );
+  }
+
+  // ---------- aprendizados ----------
+  // Os da semente pelo id; o que a lição cria pela tela, pelo título nas duas línguas.
+  // O arquivado na lição é um dos da semente: volta ativo quando `semear` o recria.
+  semErro(
+    await db
+      .from("org_memory_entries")
+      .delete()
+      .eq("organization_id", org)
+      .in("id", IDS_DOS_APRENDIZADOS),
+    "limpar aprendizados",
+  );
+  semErro(
+    await db
+      .from("org_memory_entries")
+      .delete()
+      .eq("organization_id", org)
+      .in("title", nosDoisIdiomas(CRIADAS_NAS_LICOES)),
+    "limpar aprendizados das lições",
+  );
+}
+
+export async function semear(c: Contexto) {
+  const { db, org, pessoa } = c;
+  await limpar(c);
+
+  // ---------- documento da organização ----------
+  const VERSOES = [
+    { n: 1, version_number: 1, content: DOCUMENTO_V1, criadaHa: 34 * DIAS + 185 },
+    { n: 2, version_number: 2, content: DOCUMENTO_V2, criadaHa: 6 * DIAS + 70 },
+  ];
   semErro(
     await db.from("org_memory_versions").insert(
       VERSOES.map((v) => ({
@@ -103,10 +145,15 @@ export async function semear(c: Contexto) {
     ),
     "versões da memória",
   );
+  // `upsert`, como `publicarMemoriaDaOrg`: se o ponteiro apontava para uma versão que não
+  // é desta semente, `limpar` o deixou, e a semente o põe na v2 como sempre pôs.
   semErro(
     await db
       .from("org_memory_pointers")
-      .insert({ organization_id: org, version_id: versaoId(2), updated_at: ha(6 * DIAS + 70) }),
+      .upsert(
+        { organization_id: org, version_id: versaoId(2), updated_at: ha(6 * DIAS + 70) },
+        { onConflict: "organization_id" },
+      ),
     "ponteiro da memória",
   );
 
@@ -149,21 +196,15 @@ export async function semear(c: Contexto) {
     {
       n: 4,
       title: demo("Primeira aula de pilates grátis"),
-      body: demo("Durante a promoção de inverno, a primeira aula experimental de pilates não é cobrada."),
+      body: demo(
+        "Durante a promoção de inverno, a primeira aula experimental de pilates não é cobrada.",
+      ),
       source: "manual",
       status: "archived",
       created_by: pessoa.helena,
       criadoHa: 40 * DIAS + 200,
     },
   ];
-  semErro(
-    await db.from("org_memory_entries").delete().eq("organization_id", org).in("id", APRENDIZADOS.map((a) => aprendizadoId(a.n))),
-    "limpar aprendizados",
-  );
-  semErro(
-    await db.from("org_memory_entries").delete().eq("organization_id", org).in("title", nosDoisIdiomas(CRIADAS_NAS_LICOES)),
-    "limpar aprendizados das lições",
-  );
   semErro(
     await db.from("org_memory_entries").insert(
       APRENDIZADOS.map(({ n, criadoHa, ...a }) => ({

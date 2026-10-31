@@ -34,16 +34,17 @@
  * antes de QUALQUER aula, e as chaves daqui só existem durante as aulas deste
  * módulo.
  *
- * Idempotente: apaga só as próprias linhas (ids fixos) e recria — a lição que
- * renomeia uma chave volta ao nome original na próxima rodada. As lições não
- * criam linha nenhuma (o "Salvar e validar" é só do simulador). Nenhuma versão de
+ * Idempotente: `semear` começa pelo `limpar` (só as próprias linhas) e recria —
+ * a lição que renomeia uma chave volta ao nome original na próxima rodada. A
+ * captura não cria linha nenhuma (o "Salvar e validar" só é apontado); a chave
+ * que ele gravaria, se clicado à mão, também sai no `limpar`. Nenhuma versão de
  * agente aponta para estas chaves (a Bia usa a chave da instalação), então o
  * apagar não esbarra na FK `ON DELETE RESTRICT`.
  */
 import { createCipheriv, randomBytes } from "node:crypto";
 
 import { type Contexto, ha, semErro } from "../semear-demonstracao";
-import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
+import { textoDaDemonstracao as demo, traducaoDaDemonstracao } from "../espanhol-demonstracao";
 
 const credencialId = (n: number) => `d1140000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const IDS_DO_MODULO = [1, 2, 3].map(credencialId);
@@ -66,15 +67,37 @@ function cifrada(chave: string) {
 }
 
 /**
- * Apaga só as chaves deste módulo (ids fixos). Sem `demo()` aqui: a base chama
- * `limpar` antes de toda aula, em qualquer idioma, e não pode depender do catálogo.
+ * O que o formulário da aula "Cadastrar uma chave" gravaria se o "Salvar e
+ * validar" fosse clicado (a captura só o aponta, mas quem refaz a aula à mão
+ * clica): uma chave Anthropic, justamente a que tiraria o "Cadastrar credencial
+ * anthropic" do editor da Bia. Renomear não entra aqui — é a linha 3, que sai
+ * pelo id fixo.
+ */
+const CRIADA_NA_LICAO = { provider: "anthropic", label: "Chave do atendimento" };
+
+/**
+ * Apaga só as chaves deste módulo: as da semente pelo id fixo e a da lição pelo
+ * (provedor, nome) nos DOIS idiomas. Sem `demo()` aqui: a base chama `limpar`
+ * antes de toda aula, em qualquer idioma, e o `demo` lança em ES sem entrada no
+ * catálogo; `traducaoDaDemonstracao` só consulta. Nada mais a apagar: as chaves
+ * não sobem arquivo, e o rastro em `api_audit_log` é append-only.
  */
 export async function limpar(c: Contexto) {
   const { db, org } = c;
-  semErro(
-    await db.from("ai_provider_credentials").delete().eq("organization_id", org).in("id", IDS_DO_MODULO),
-    "limpar as chaves do curso",
+  const nomes = [CRIADA_NA_LICAO.label, traducaoDaDemonstracao(CRIADA_NA_LICAO.label)].filter(
+    (n): n is string => !!n,
   );
+  const [daSemente, daLicao] = await Promise.all([
+    db.from("ai_provider_credentials").delete().eq("organization_id", org).in("id", IDS_DO_MODULO),
+    db
+      .from("ai_provider_credentials")
+      .delete()
+      .eq("organization_id", org)
+      .eq("provider", CRIADA_NA_LICAO.provider)
+      .in("label", nomes),
+  ]);
+  semErro(daSemente, "limpar as chaves do curso");
+  semErro(daLicao, "limpar a chave cadastrada na aula");
 }
 
 export async function semear(c: Contexto) {
