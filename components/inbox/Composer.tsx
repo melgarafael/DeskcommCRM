@@ -909,8 +909,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         className={cn(
-          "relative border-t border-border bg-background px-3 py-2",
-          mode === "note" && "border-warning/40 bg-warning-bg",
+          // A caixa do redesign kvgroup (seção 6.3): borda forte, raio 12. Em
+          // "Nota interna" ela muda de cor inteira — é o que evita mandar nota
+          // para o cliente por engano.
+          "relative m-3 mt-2 rounded-[12px] border border-border-strong bg-[var(--kv-composer-bg)] p-2.5",
+          mode === "note" && "border-[var(--kv-note-border)] bg-[var(--kv-note-bg)]",
         )}
       >
         {/* O REALCE DO ARRASTE (#3708) — a única coisa que o operador vê antes
@@ -1015,9 +1018,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             type="button"
             onClick={() => setMode("reply")}
             className={cn(
-              "min-h-11 rounded-full px-3 py-1 text-xs font-medium transition-colors lg:min-h-0 lg:px-2.5",
+              "min-h-11 rounded-[6px] px-3 text-xs font-medium transition-colors lg:h-[26px] lg:min-h-0 lg:px-2.5",
               mode === "reply"
-                ? "bg-accent text-accent-foreground"
+                ? "bg-[var(--kv-surface-2)] text-text"
                 : "text-muted-foreground hover:bg-muted",
             )}
           >
@@ -1027,9 +1030,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             type="button"
             onClick={() => setMode("note")}
             className={cn(
-              "min-h-11 rounded-full px-3 py-1 text-xs font-medium transition-colors lg:min-h-0 lg:px-2.5",
+              "min-h-11 rounded-[6px] px-3 text-xs font-medium transition-colors lg:h-[26px] lg:min-h-0 lg:px-2.5",
               mode === "note"
-                ? "bg-warning text-warning-fg"
+                ? "bg-[var(--kv-note-border)] text-text"
                 : "text-muted-foreground hover:bg-muted",
             )}
           >
@@ -1196,8 +1199,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               // 16px abaixo do `md`: o Safari do iPhone AMPLIA a página ao focar
               // campo com fonte menor, e a conversa sai do quadro. 44px de alvo
               // até o `lg`, como o resto dos botões de toque.
-              "max-h-40 min-h-11 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm lg:min-h-9",
-              "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
+              "max-h-48 min-h-11 flex-1 resize-none rounded-md border border-transparent bg-transparent px-2 py-2 text-base md:text-sm lg:min-h-[4.5rem]",
+              "placeholder:text-muted-foreground focus:ring-0 focus:outline-hidden",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}

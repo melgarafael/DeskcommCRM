@@ -330,14 +330,15 @@ export function MessageBubble({
           isBareSticker
             ? "px-0 py-0"
             : cn(
-                "rounded-2xl px-3 py-2 shadow-sm",
+                // Raio 12px e ponta de 4px do lado de quem falou (redesign kvgroup).
+                "rounded-[12px] px-3.5 py-2.5 leading-[1.55]",
                 temMenu && "pr-8",
                 // A área de toque da seta ocupa 48px. O documento precisa
                 // terminar antes dela, inclusive quando o cartão encolhe.
                 temMenu && cartaoDeDocumentoVisivel && "pointer-coarse:pr-12 pointer-coarse:max-w-[85%]",
                 isOutbound
-                  ? "rounded-br-sm bg-primary text-primary-foreground"
-                  : "rounded-bl-sm bg-muted text-foreground",
+                  ? "rounded-br-[4px] bg-primary text-primary-foreground"
+                  : "rounded-bl-[4px] border border-border bg-accent-soft text-foreground",
               ),
           isFailed && "border border-destructive",
           // Apagada sai das cores da DIREÇÃO e vai para o CINZA: a diferença
