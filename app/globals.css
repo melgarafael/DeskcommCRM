@@ -440,6 +440,76 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+   Tema neutro (kvgroup) — cinza frio no lugar do greige, ação em preto/branco.
+
+   Fica num bloco só, DEPOIS dos temas originais, para o diff com o upstream
+   continuar pequeno: os blocos de cima não foram tocados. Os seletores com
+   `:root:root:root` e `html … body:has([data-marca-org])` existem para vencer
+   os que `lib/branding/css.ts` injeta em tempo de execução
+   (`:root:root[data-theme]` e `[data-theme] body:has([data-marca-org])`):
+   neste tema a cor de AÇÃO é neutra, seja qual for a cor da marca. A marca
+   continua no logo e em `--color-brand`.
+   ───────────────────────────────────────────────────────────────────────── */
+:root:root:root,
+:root:root:root[data-theme="light"],
+html[data-theme="light"] body:has([data-marca-org]) {
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f4f4f5;
+  --color-overlay: rgba(9, 9, 11, 0.5);
+  --color-text: #09090b;
+  --color-text-muted: #71717a;
+  --color-text-subtle: #a1a1aa;
+  --color-border: #e4e4e7;
+  --color-border-strong: #d4d4d8;
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f4f4f5;
+  --color-neutral-200: #e4e4e7;
+  --color-neutral-300: #d4d4d8;
+  --color-neutral-400: #a1a1aa;
+  --color-neutral-500: #71717a;
+  --color-neutral-600: #52525b;
+  --color-neutral-700: #3f3f46;
+  --color-neutral-800: #27272a;
+  --color-neutral-900: #18181b;
+  --color-neutral-950: #09090b;
+  --color-accent: #18181b;
+  --color-accent-fg: #fafafa;
+  --color-accent-hover: #27272a;
+  --color-accent-soft: #f4f4f5;
+  --ring: #a1a1aa;
+}
+
+:root:root:root[data-theme="dark"],
+html[data-theme="dark"] body:has([data-marca-org]) {
+  --color-bg: #09090b;
+  --color-surface: #0f0f11;
+  --color-surface-elevated: #27272a;
+  --color-overlay: rgba(0, 0, 0, 0.8);
+  --color-text: #fafafa;
+  --color-text-muted: #a1a1aa;
+  --color-text-subtle: #71717a;
+  --color-border: #27272a;
+  --color-border-strong: #3f3f46;
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f4f4f5;
+  --color-neutral-200: #e4e4e7;
+  --color-neutral-300: #d4d4d8;
+  --color-neutral-400: #a1a1aa;
+  --color-neutral-500: #71717a;
+  --color-neutral-600: #52525b;
+  --color-neutral-700: #3f3f46;
+  --color-neutral-800: #27272a;
+  --color-neutral-900: #18181b;
+  --color-neutral-950: #09090b;
+  --color-accent: #fafafa;
+  --color-accent-fg: #18181b;
+  --color-accent-hover: #e4e4e7;
+  --color-accent-soft: rgba(250, 250, 250, 0.08);
+  --ring: #d4d4d8;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
    Ponte token → utilitário (o que era `theme.extend` no `tailwind.config.ts`).
 
    `@theme inline` e não `@theme`: com `inline`, o utilitário recebe o
@@ -546,7 +616,7 @@
 
   /* Tipografia */
   --font-sans:
-    var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    var(--font-geist), var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Espaçamento. Os valores são px LITERAIS (`--space-6` = 24px), não rem — e
