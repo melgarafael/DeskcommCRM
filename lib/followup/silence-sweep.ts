@@ -151,7 +151,7 @@ import {
   type NoDeGatilho,
 } from "./agent-followup-gate";
 import { emPausaDeReentrada, type BaseDaPausa, type FatosDaReentrada } from "./pausa-de-reentrada";
-import { contatosQueORetornoSegura } from "./retorno-segura-o-fluxo";
+import { contatosQueORetornoSegura, folgaDepoisDoRetorno } from "./retorno-segura-o-fluxo";
 import { contatosQueSoResponderamAAutomacao, type CandidatoDoSilencio } from "./resposta-a-automacao";
 
 /**
@@ -194,10 +194,10 @@ export interface SilenceSweepDb {
   /**
    * Contatos que o retorno SEGURA — o agendado vivo e o recém-executado (issue
    * #2907): quem tem um "te escrevo no dia 30" a caminho, ou acabou de receber a
-   * mensagem dele, não entra no fluxo de silêncio por cima. Ver
-   * `retorno-segura-o-fluxo.ts`.
+   * mensagem dele, não entra no fluxo de silêncio por cima. `folgaMs` é a do
+   * fluxo que pergunta (`folgaDepoisDoRetorno`). Ver `retorno-segura-o-fluxo.ts`.
    */
-  loadContatosComRetornoVivo(orgId: string): Promise<Set<string>>;
+  loadContatosComRetornoVivo(orgId: string, folgaMs: number): Promise<Set<string>>;
   /**
    * Dos `contactIds`, os que têm uma inscrição ENCERRADA (`completed`,
    * `cancelled`, `dead`) neste fluxo: quando terminou a mais recente e quando o
@@ -388,7 +388,10 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
         cutoffIso,
       );
       const nextEvalAt = clock().toISOString();
-      const comRetorno = await db.loadContatosComRetornoVivo(pointer.organization_id);
+      const comRetorno = await db.loadContatosComRetornoVivo(
+        pointer.organization_id,
+        folgaDepoisDoRetorno(pointer.threshold_minutes),
+      );
       const pausaMinutos = pointer.reentry_pause_minutes ?? 0;
       const encerramentos =
         pausaMinutos > 0
@@ -785,8 +788,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       return vivos;
     },
 
-    loadContatosComRetornoVivo(orgId) {
-      return contatosQueORetornoSegura(admin, orgId);
+    loadContatosComRetornoVivo(orgId, folgaMs) {
+      return contatosQueORetornoSegura(admin, orgId, folgaMs);
     },
 
     async loadTriggerNode(orgId, versionId) {
