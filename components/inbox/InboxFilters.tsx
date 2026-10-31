@@ -130,7 +130,7 @@ interface Props {
 
 /** As três abas de DONO (redesign kvgroup), na ordem do documento. */
 // "Grupos" (kvgroup): só as conversas de grupo, de qualquer dono.
-const ABAS_DE_DONO: InboxTab[] = ["mine", "unassigned", "all", "groups"];
+const ABAS_DE_DONO: InboxTab[] = ["mine", "unassigned", "groups", "all"];
 
 const STATUS_DA_LISTA: { value: StatusDaLista; label: string }[] = [
   { value: "abertas", label: "Abertas" },
