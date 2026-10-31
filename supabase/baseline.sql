@@ -41677,7 +41677,10 @@ create table if not exists public.companies (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint companies_normalized_cnpj_digits
-    check (normalized_cnpj is null or normalized_cnpj ~ '^\d{14}$')
+    -- #3495: 12 posições de dígito ou LETRA maiúscula + 2 dígitos verificadores.
+    -- O CNPJ alfanumérico da Receita (`12.ABC.345/01DE-35`) cabe aqui; o dígito
+    -- em si quem confere é `isValidCnpj`, no código.
+    check (normalized_cnpj is null or normalized_cnpj ~ '^[0-9A-Z]{14}$')
 );
 
 create index if not exists idx_companies_org_updated
@@ -70539,5 +70542,17 @@ create unique index if not exists agent_inbox_recuperacao_da_queda_aberto_unico
 create unique index if not exists agent_inbox_cliente_sem_resposta_na_queda_aberto_unico
   on public.agent_inbox_items (organization_id, kind, ref_id)
   where status = 'open' and kind = 'cliente_sem_resposta_na_queda';
+
+-- ---- CNPJ alfanumérico da Receita em normalized_cnpj (migration 9056, #3495) ----
+-- Espelho idempotente da 9056: `update.sh` re-aplica este arquivo sem
+-- `ON_ERROR_STOP`, então o `drop ... if exists` vem antes do `add`. O corpo
+-- acima (CREATE TABLE) já nasce com a régua nova; este bloco é a cura para quem
+-- instalou antes da 9056. O porquê está no cabeçalho da migration.
+alter table public.companies
+  drop constraint if exists companies_normalized_cnpj_digits;
+
+alter table public.companies
+  add constraint companies_normalized_cnpj_digits
+  check (normalized_cnpj is null or normalized_cnpj ~ '^[0-9A-Z]{14}$');
 
 notify pgrst, 'reload schema';
