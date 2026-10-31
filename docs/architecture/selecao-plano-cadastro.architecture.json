@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Plano oferecido no link de cadastro",
+    "pergunta": "Como sugerir uma escolha sem conceder autoridade à URL?",
+    "resumo": "Oferecidos nativos validam a query; convites prevalecem e Google não perde escolha silenciosamente."
+  },
+  "lanes": [
+    {
+      "id": "entrada",
+      "label": "Entrada pública"
+    },
+    {
+      "id": "regra",
+      "label": "Servidor"
+    },
+    {
+      "id": "tela",
+      "label": "Cadastro nativo"
+    }
+  ],
+  "mainPath": [
+    "link",
+    "selecao",
+    "form"
+  ],
+  "nodes": [
+    {
+      "id": "link",
+      "lane": "entrada",
+      "col": 1,
+      "type": "frontend",
+      "label": "/signup?plano=UUID"
+    },
+    {
+      "id": "oferecidos",
+      "lane": "regra",
+      "col": 1,
+      "type": "backend",
+      "label": "lerCadastroNaTela"
+    },
+    {
+      "id": "selecao",
+      "lane": "regra",
+      "col": 2,
+      "type": "backend",
+      "label": "selecionarPlanoDoLink",
+      "sublabel": "UUID + oferecidos; convite prevalece"
+    },
+    {
+      "id": "form",
+      "lane": "tela",
+      "col": 3,
+      "type": "frontend",
+      "label": "SignupForm",
+      "sublabel": "planoInicial; alerta; escolha por email"
+    },
+    {
+      "id": "action",
+      "lane": "regra",
+      "col": 4,
+      "type": "backend",
+      "label": "signUp existente",
+      "sublabel": "revalida cobranca_plan_id"
+    }
+  ],
+  "edges": [
+    {
+      "from": "link",
+      "to": "selecao",
+      "label": "sugestão"
+    },
+    {
+      "from": "oferecidos",
+      "to": "selecao",
+      "label": "lista nativa"
+    },
+    {
+      "from": "selecao",
+      "to": "form",
+      "label": "seleção ou aviso"
+    },
+    {
+      "from": "form",
+      "to": "action",
+      "label": "validação nativa"
+    }
+  ]
+}
