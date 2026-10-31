@@ -17,6 +17,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { filtrarCandidatosExcluidos } from "@/lib/escalacao/devolucao-ao-rodizio";
 import { logger } from "@/lib/logger";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
   decideRouting,
   resolverRoteamentoPorNumero,
@@ -175,7 +176,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const { data: conv, error: convError } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at",
+      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id",
     )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
@@ -233,7 +234,13 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
    * receber — é o que transforma "setor que agrupa" em "fila que distribui".
    * Sem fila (`null`), tudo abaixo é o comportamento de sempre, byte a byte.
    */
-  const sectorId = strOrNull((conv as { sector_id?: unknown }).sector_id);
+  // (revisão do mantenedor, 31/10) O `sector_id` PRECISA vir no select acima.
+  // Sem ele o cast antigo devolvia sempre `null` e a conversa com fila era
+  // distribuída pelo número — a fila existia e não valia nada.
+  const sectorIdBruto = strOrNull(conv.sector_id);
+  // Módulo `setores` desligado ⇒ a fila não manda: quem desligou o módulo não
+  // espera que a conversa pare de ser distribuída pelo número.
+  const sectorId = sectorIdBruto && (await moduloLigado(admin, "setores")) ? sectorIdBruto : null;
   /**
    * O destino padrão NÃO depende da lista de elegíveis do modo: é entrega
    * direta. Mas ele não pode furar a fila: se a conversa tem fila e o destino
@@ -284,7 +291,12 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     alreadyAssigned,
     eligibles: elegiveis,
     config,
-    defaultAssigneeUserId: efetivo.defaultAssigneeUserId,
+    // (revisão do mantenedor, 31/10) O destino padrão só entra no decide quando
+    // ele PODE receber. `decideRouting` o prefere incondicionalmente (linha 90);
+    // passar o destino padrão barrado pela fila fazia o worker pedir um claim que
+    // o banco recusa com `candidate_not_in_sector` — a conversa girava a cada
+    // minuto, para sempre, sem aviso. Com fila, quem decide é a lista elegível.
+    defaultAssigneeUserId: viaDestinoPadrao ? efetivo.defaultAssigneeUserId : null,
     attempts: event.attempts,
     now,
     motivoDoCaso,

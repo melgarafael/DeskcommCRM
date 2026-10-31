@@ -39,6 +39,7 @@ import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
 import { requireRole } from "@/lib/auth/require-role";
 import { conversationSectorSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -130,7 +131,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       // A conversa já está com a fila gravada; o evento de distribuição é o que
       // faltou, e o próximo ciclo de atribuição a alcança. Não desfazemos a
       // escrita por causa disso — mas o rastro fica.
-      console.error("[conversation.sector] fn_request_channel_routing falhou", erroFila.message);
+      logger.error("conversation.sector: fn_request_channel_routing falhou", { message: erroFila.message });
     } else {
       redistribuiu = true;
     }

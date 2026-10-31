@@ -1,5 +1,5 @@
 ---
-impacto: nada_mudou
+impacto: capacidade_nova
 secao: adicionado
 titulo: Setor de atendimento vira destino: a conversa ganha setor e o setor ganha horário
 ---

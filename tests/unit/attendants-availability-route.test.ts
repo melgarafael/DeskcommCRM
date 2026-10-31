@@ -145,6 +145,11 @@ describe("GET /api/v1/attendants/availability", () => {
     //
     // `sector_ids` ENTROU com os setores (0801) e virou lista na 9062: a coluna "Setor" e o
     // filtro da aba Atendimento leem daqui, sem uma chamada por linha.
+    //
+    // `sector_id` (singular) FICA, mesmo depois do N:N: é o campo que quem já
+    // consome esta resposta lê hoje, e tirá-lo seria quebrar cliente para
+    // entregar recurso novo (revisão do mantenedor, 31/10). Ele carrega o
+    // primeiro setor; o conjunto é `sector_ids`.
     expect(Object.keys(body.data[0] ?? {}).sort()).toEqual(
       [
         "capacity",
@@ -156,6 +161,7 @@ describe("GET /api/v1/attendants/availability", () => {
         "present",
         "role",
         "schedule",
+        "sector_id",
         "sector_ids",
         "updated_at",
         "user_id",

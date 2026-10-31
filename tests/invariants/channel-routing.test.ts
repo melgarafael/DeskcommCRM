@@ -195,6 +195,39 @@ describe("regras por NÚMERO (canal) — issue #2331", () => {
     expect(adapter.errors).toEqual([]);
     expect((await query("select to_user_id from conversation_assignment_events where organization_id=$1 and conversation_id=$2 order by created_at desc limit 1", [org, conv])).rows[0].to_user_id).toBe(bruno);
   });
+
+  it("worker real: a conversa COM setor pertence à fila — o destino padrão do número que não é da fila não a recebe", async () => {
+    // (revisão do mantenedor, 31/10) Este caso existe porque o `select` do
+    // worker não trazia `sector_id` e um cast escondia a falta: a fila era lida
+    // como `null`, o destino padrão do número entregava direto e o horário do
+    // setor nunca era consultado. Aqui o destino padrão é o bruno, que NÃO é da
+    // fila: se a fila for ignorada, ele recebe a conversa e o teste reprova.
+    await disponibilizar(ana);
+    await disponibilizar(bruno);
+    await query("insert into platform_config (chave, valor) values ('MODULO_SETORES','ligado') on conflict (chave) do update set valor='ligado'");
+    const fila = (await query(
+      "insert into attendant_sectors (organization_id, name) values ($1, 'Fila do worker') returning id",
+      [org],
+    )).rows[0].id as string;
+    await query("insert into attendant_sector_members (organization_id, user_id, sector_id) values ($1,$2,$3)", [org, ana, fila]);
+    await query("update organizations set settings=jsonb_set(coalesce(settings,'{}'::jsonb),'{routing}','{\"mode\":\"round_robin\"}') where id=$1", [org]);
+    await policyComRegra([ana, bruno], "round_robin", bruno);
+    // `metadata` também volta ao zero: os casos anteriores deste arquivo deixam
+    // `devolucao_ao_rodizio` no metadata da MESMA conversa, e o worker exclui
+    // quem está nessa lista — a fila pareceria vazia por herança, não por regra.
+    await query("update conversations set sector_id=$1, assigned_to_user_id=null, assignee_kind=null, status='open', metadata='{}'::jsonb where organization_id=$2 and id=$3", [fila, org, conv]);
+    await query("delete from event_log where organization_id=$1 and event_type='conversation.routing_requested'", [org]);
+    await query("select fn_request_channel_routing($1,$2)", [org, conv]);
+    const adapter = routingPgSupabase(pool); vi.mocked(createAdminClient).mockReturnValue(adapter.client as never);
+    const resultado = await runRoutingWorker({ now: new Date() });
+    expect(resultado.outcomes.assigned).toBe(1);
+    expect(adapter.errors).toEqual([]);
+    expect((await query("select assigned_to_user_id from conversations where organization_id=$1 and id=$2", [org, conv])).rows[0].assigned_to_user_id).toBe(ana);
+    // Devolve a instalação ao estado de fábrica: o módulo nasce desligado, e
+    // outro caso deste arquivo não pode herdar o setor ligado.
+    await query("delete from platform_config where chave='MODULO_SETORES'");
+    await query("update conversations set sector_id=null where organization_id=$1 and id=$2", [org, conv]);
+  });
 });
 
 describe("reserva de conexão org-owned", () => {

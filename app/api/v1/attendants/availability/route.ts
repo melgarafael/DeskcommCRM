@@ -103,6 +103,11 @@ export async function GET(_req: NextRequest): Promise<Response> {
         email: null,
         current_load: 0,
         sector_ids: setores.get(r.user_id) ?? [],
+        // Compat (revisão do mantenedor, 31/10): `sector_id` continua saindo
+        // com o primeiro setor, para quem já lê este campo não perder dado. Ele
+        // só perde a graça quando o N:N acrescenta o segundo — e aí o campo
+        // novo (`sector_ids`) é quem manda.
+        sector_id: (setores.get(r.user_id) ?? [])[0] ?? null,
         // Presença DERIVADA aqui, e não no cliente: o prazo do sinal mora em
         // `lib/atendimento/presenca.ts`, e uma tela que recalculasse a conta
         // sozinha passaria a discordar do servidor no dia em que o prazo
@@ -158,6 +163,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
     updated_at: m.atualizadoEm,
     current_load: m.cargaAtual,
     sector_ids: setores.get(m.userId) ?? [],
+    sector_id: (setores.get(m.userId) ?? [])[0] ?? null,
     // Presença: "tem sinal recente" — nunca "está de plantão". Os dois campos
     // andam juntos de propósito, para a tela poder dizer as duas coisas sem
     // confundi-las (o selo de Status lê o plantão; a linha de presença lê isto).
