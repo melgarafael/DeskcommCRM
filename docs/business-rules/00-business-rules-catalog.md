@@ -210,7 +210,8 @@ owner: Rafael Melgaço
 - **Origem**: Sub-PRD 03 §3.7
 - **Tipo**: Default com override
 - **Regra**: GIVEN `channel_session` com `created_at` < 30 dias; WHEN tentativa de envio outbound do dia ultrapassa o limite (default 300); THEN próximo envio é abortado com erro `daily_limit_exceeded`.
-- **Enforcement**: Worker de envio + counter Redis por sessão.
+- **O que conta**: só o que o número INICIA — primeira mensagem, follow-up, prospecção e campanha. A resposta a quem escreveu (turno de resposta, resposta a caso, resposta aprovada no modo assistido, aviso de escalação de resposta e aviso fora do horário) não conta e não é barrada pelo limite; ela segue presa à janela de resposta e ao intervalo entre mensagens. Decisão do dono em 31/10/2026 (doc 246, opção A; migration 9061, `pacing_ledger.resposta`). Prospecção prevalece: abordagem fria nunca é tratada como resposta.
+- **Enforcement**: `decidePacing` (`lib/agent-engine/pacing/engine.ts`) sobre a contagem de `pacing_ledger` em que `resposta = false`.
 - **Override**: Tenant admin com aprovação de super-admin pode aumentar limite — ação auditada com justificativa.
 
 ### W-07 — Janela horária default 7h-22h, domingo LIBERADO

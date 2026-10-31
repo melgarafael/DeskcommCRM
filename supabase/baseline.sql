@@ -70541,3 +70541,15 @@ create unique index if not exists agent_inbox_cliente_sem_resposta_na_queda_aber
   where status = 'open' and kind = 'cliente_sem_resposta_na_queda';
 
 notify pgrst, 'reload schema';
+
+-- ---- pacing_ledger.resposta (migration 9061) ----
+-- Resposta a quem escreveu não gasta nem é barrada pelo teto do dia. O porquê
+-- inteiro está no cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.pacing_ledger
+  add column if not exists resposta boolean not null default false;
+comment on column public.pacing_ledger.resposta is
+  'true = resposta a quem escreveu: vale para o espaçamento, não para o teto do dia (warm-up/daily_message_limit), que conta só disparos (9061).';
+
+notify pgrst, 'reload schema';

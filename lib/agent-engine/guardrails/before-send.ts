@@ -1831,7 +1831,9 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // já foram (ou serão) contabilizados na tentativa original — o ledger F2-06 faz as
     // repetições curto-circuitarem, então re-registrar aqui inflaria o cap.
     if (outcome.kind === 'sent') {
-      await recordSend(client, args.tenantId, args.channelSessionId, args.now);
+      await recordSend(client, args.tenantId, args.channelSessionId, args.now, {
+        resposta: tipoDeEnvio(args.resposta) === 'resposta',
+      });
       // Simetria com o gate desarmado: quem não é julgado pela janela não entra
       // nela. Ver `GateContext.spinningEnforced`.
       if (args.enforceSpinning !== false) {

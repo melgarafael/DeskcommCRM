@@ -11833,6 +11833,7 @@ export type Database = {
           channel_session_id: string;
           id: string;
           organization_id: string;
+          resposta: boolean;
           sent_at: string;
         };
         ComputedFields: never;
@@ -11840,12 +11841,14 @@ export type Database = {
           channel_session_id: string;
           id?: string;
           organization_id: string;
+          resposta?: boolean;
           sent_at?: string;
         };
         Update: {
           channel_session_id?: string;
           id?: string;
           organization_id?: string;
+          resposta?: boolean;
           sent_at?: string;
         };
         Relationships: [
