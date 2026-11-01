@@ -158,10 +158,20 @@ export function ehTemaDeExtensao(valor: unknown): valor is TemaDeExtensao {
  * presente no `/app` SÓ quando a organização escolheu um tema de extensão.
  * Quem não escolheu não tem o marcador, a regra não casa nada, e o token vem
  * do `globals.css` — a tela é idêntica à de hoje.
+ *
+ * O `:root:has(...)` ao lado do `body:has(...)` é a barra de rolagem da PÁGINA
+ * (#3789): o navegador a pinta com o `scrollbar-color` do `<html>`, e o
+ * `<html>` não herda do `<body>` — só com o `body` o tema pintava toda a tela
+ * menos a barra da viewport. O `body` continua no seletor de propósito: é o
+ * ancestral mais próximo do conteúdo, e é ele que dá a precedência sobre um
+ * tema declarado no `<html>`. Guarda: `tests/unit/barra-de-rolagem-do-tema.test.ts`.
  */
 export const ESCOPO_DO_TEMA_DA_ORGANIZACAO = [
-  ["body:has([data-tema-extensao])", "claro"],
-  ['[data-theme="dark"] body:has([data-tema-extensao])', "escuro"],
+  [":root:has([data-tema-extensao]), body:has([data-tema-extensao])", "claro"],
+  [
+    ':root[data-theme="dark"]:has([data-tema-extensao]), [data-theme="dark"] body:has([data-tema-extensao])',
+    "escuro",
+  ],
 ] as const;
 
 /**

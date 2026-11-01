@@ -16,7 +16,9 @@ import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
-import { CURATED_FIELDS, OP_LABELS, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import { CURATED_FIELDS, OP_LABELS, type CuratedField, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import { valorDaCondicaoNaTela } from "@/app/app/webhooks/_components/CondicaoDoContato";
+import { CONDICOES_DO_CONTATO } from "@/lib/automation/conditions";
 import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
 
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao } from "./visual";
@@ -204,12 +206,22 @@ function DescricaoDasCondicoes({ dados, evento }: { dados: Extract<DadosDaCaixa,
   // O grupo do topo não é desenhável: a caixa diz o que é, em vez de mentir.
   if (dados.grupoPreservado) return <>{t("Grupo de condições que este desenho não edita")}</>;
   if (completas.length === 0) return <>{t("Nenhuma condição completa: roda em todo evento")}</>;
-  const campos = CURATED_FIELDS[evento as TriggerEvent] ?? [];
+  // As condições do contato (#3814) valem em qualquer gatilho: o rótulo delas
+  // não está na tabela por evento, e sem esta linha o cartão mostraria o
+  // caminho técnico (`contato.followup_vivo`) para o operador.
+  const campos: CuratedField[] = [
+    ...(CURATED_FIELDS[evento as TriggerEvent] ?? []),
+    ...CONDICOES_DO_CONTATO,
+  ];
   const primeira = completas[0]!;
   const campo = campos.find((c) => c.value === primeira.field);
   const op = t(campo?.lista && primeira.op === "contains" ? "tem a tag" : OP_LABELS[primeira.op as Op]);
   const valor =
-    campo?.kind === "stage" ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value) : primeira.value;
+    campo?.kind === "stage"
+      ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value)
+      : campo?.kind === "sim_nao"
+        ? valorDaCondicaoNaTela(primeira.value, t)
+        : primeira.value;
   // `esta vazio`/`esta preenchido` não pedem valor: a frase termina no operador,
   // sem o trecho do valor — montá-lo dizia « Nome do lead está vazio “” » (#2727).
   const alvo = `${campo ? t(campo.label) : primeira.field} ${op}`;

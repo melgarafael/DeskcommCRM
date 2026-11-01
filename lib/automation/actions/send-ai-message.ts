@@ -1,5 +1,12 @@
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
+import {
+  AgendaPuladoError,
+  MOTIVO_DO_PULO,
+  decidirNoEnvio,
+  lerEscolhaNoEnvio,
+  type EscolhaNoEnvio,
+} from "@/lib/agenda/escolha-no-envio";
 /**
  * Ação `send_ai_message` — "Mensagem escrita pela IA".
  *
@@ -38,12 +45,30 @@ import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 
 const TIPO = "send_ai_message";
 
+/**
+ * #3813 — o pulo por compromisso é `skipped` COM MOTIVO, não falha.
+ *
+ * Devolver `null` para "não é pulo" mantém os dois `catch` deste arquivo (o da
+ * geração do texto e o do envio) com o desfecho que já tinham.
+ */
+function puloPorAgenda(err: unknown): ActionResultDetail | null {
+  if (!(err instanceof AgendaPuladoError)) return null;
+  return {
+    type: TIPO,
+    status: "skipped",
+    detail: { reason: MOTIVO_DO_PULO, appointment_id: err.protection.appointment_id },
+  };
+}
+
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
+  const escolha = lerEscolhaNoEnvio(config);
   const contato = checarGuardasDeContato(ctx);
   if (contato.ok) {
     const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
     if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
-    if (protection.adiar) return protection.reavaliar_em;
+    // #3813 — `enviar`/`nao_enviar` não adiam o evento; só o padrão adia.
+    const decisao = decidirNoEnvio(protection, escolha);
+    if (decisao.acao === "adiar") return decisao.reavaliar_em;
   }
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return null;
@@ -68,6 +93,12 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   const guarda = checarGuardasDeContato(ctx);
   if (!guarda.ok) return { type: TIPO, status: "skipped", detail: { reason: guarda.reason } };
   const contact = guarda.contact;
+
+  // #3813 — a escolha do passo da regra, no MESMO objeto para a guarda daqui e
+  // para a do handler de envio (escolha que vale só na primeira é desfeita pela
+  // segunda).
+  const escolha: EscolhaNoEnvio = lerEscolhaNoEnvio(config);
+  const contextoDeEnvio = { organizationId: ctx.organizationId, contactId: contact.id, escolhaNoEnvio: escolha };
 
   // Esta ação abre um primeiro contato e por isso ainda não tem conversa para
   // passar pelo gate comum. No pré-go-live ela precisa parar AQUI, antes da
@@ -110,7 +141,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   catch (error) { return { type: TIPO, status: "failed", error: mensagemDeErro(error) }; }
   let texto: string;
   try {
-    await assertAgendaEffectSupabase(ctx.admin, { organizationId: ctx.organizationId, contactId: contact.id });
+    await assertAgendaEffectSupabase(ctx.admin, contextoDeEnvio);
     const gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: ctx.organizationId,
       agentId,
@@ -125,6 +156,9 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     }
     texto = gerado.texto;
   } catch (err) {
+    // #3813 — pulo por compromisso (escolha `nao_enviar`) antes da causa genérica.
+    const pulo = puloPorAgenda(err);
+    if (pulo) return pulo;
     // Teto de gasto atingido, credencial inválida, provider fora. A causa vai
     // inteira para o registro do run — é o que a tela mostra a quem pergunta
     // "por que a IA não escreveu?".
@@ -227,7 +261,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       {
         organization_id: ctx.organizationId,
         serviceBoundary: boundary,
-        proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },
+        proactiveContext: contextoDeEnvio,
         // Disparada por regra, ESCRITA pela IA: o carimbo segue a autoria (#652).
         // O `agent_id` é o agente publicado que escreveu (#3373) — sem ele, a
         // assinatura `por_agente` (#3310) não tem como saber quem assina e caía
@@ -256,6 +290,8 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     desfecho.detail = { ...(desfecho.detail ?? {}), texto_gerado: texto };
     return desfecho;
   } catch (err) {
+    const pulo = puloPorAgenda(err);
+    if (pulo) return pulo;
     return {
       type: TIPO,
       status: "failed",

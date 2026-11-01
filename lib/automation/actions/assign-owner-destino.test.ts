@@ -22,6 +22,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "@/lib/automation/types";
 import { getAction } from "@/lib/automation/actions";
 import { createAutomationRuleSchema } from "@/lib/schemas/webhooks";
+import { traduzir } from "@/lib/i18n/dicionario";
 import "@/lib/automation/actions/assign-owner";
 
 const RESPONSAVEL = "11111111-1111-4111-8111-111111111111";
@@ -302,7 +303,11 @@ describe("assign_owner — destino dinâmico (#3804)", () => {
     expect(banco.atualizacoes).toEqual([]);
     expect(r.status).toBe("failed");
     expect(r.error).toBe("sem_destino");
-    // O registro do que foi tentado: é o que a Atividade mostra.
+    // A frase gravada é a que a Atividade traduz: chave do dicionário, com
+    // espanhol. Uma variante dela ficava em português na tela em espanhol.
+    const explicacao = String(r.detail?.explicacao);
+    expect(traduzir(explicacao, "es")).toMatch(/^Nadie pudo recibir este negocio/);
+    // O registro do que foi tentado: fica no detalhe para o suporte.
     expect(r.detail?.descartes).toEqual([
       { elo: "responsavel_do_negocio", motivo: "ausente" },
       { elo: "dono_da_carteira", motivo: "ausente" },

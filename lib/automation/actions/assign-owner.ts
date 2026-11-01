@@ -435,7 +435,7 @@ async function executarDestinoDinamico(
       detail: {
         destino: destino.motivo,
         explicacao:
-          "Ninguém pôde receber: o responsável do negócio e o dono da carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.",
+          "Ninguém pôde receber este negócio: o responsável e a carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.",
         ...(destino.descartes.length > 0 ? { descartes: destino.descartes } : {}),
       },
     };
@@ -448,7 +448,7 @@ async function executarDestinoDinamico(
  * O fallback em RODÍZIO: a vez é decidida por `fn_automation_rodizio_atribuir`
  * (#2041) — trava por regra, histórico e UPDATE do dono na mesma transação. A
  * fila vem do `fallback.fila` da configuração gravada; a função procura as duas
- * formas (migration 9062).
+ * formas (migration 9063).
  *
  * A resposta já diz QUEM foi o escolhido, então as passagens da #3514 rodam
  * DEPOIS, pelo mesmo caminho do modo fixo. No modo `rodizio` puro elas continuam

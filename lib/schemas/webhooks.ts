@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
+import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
 import { conditionsSchema } from "@/lib/automation/conditions";
 import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
@@ -411,6 +412,14 @@ const acoesFixas = [
        * que envelhece se a URL mudar.
        */
       media_url: z.string().url().max(2000).nullish(),
+      /**
+       * #3813 — "Quando o contato tiver horário marcado": `adiar` (padrão, o
+       * comportamento de hoje), `enviar` ou `nao_enviar` (pulo registrado com
+       * motivo). Opcional de propósito: toda regra já gravada não tem a chave e
+       * continua idêntica — sem esta linha o `z.object` abaixo DESCARTA a chave
+       * no save e a tela mostraria uma escolha que não foi gravada.
+       */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   // #2726 — o e-mail como SAÍDA. O transporte não é configuração da regra: ele
@@ -501,6 +510,8 @@ const acoesFixas = [
        * mais que isso está tentando pôr o prompt do agente aqui dentro.
        */
       instruction: z.string().min(1).max(1000),
+      /** #3813 — mesma escolha da irmã `send_whatsapp_message`. */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   z.object({

@@ -76,6 +76,12 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",
+  /* #3813 — a escolha "não enviar" quando o contato tem horário marcado. O pulo
+     é decisão de quem montou a regra/fluxo, não falha: a frase diz o motivo para
+     quem lê a aba Atividade não confundir com erro. Emitido por
+     lib/agenda/escolha-no-envio.ts (MOTIVO_DO_PULO). */
+  compromisso_na_agenda:
+    "O contato tem horário marcado na agenda — esta automação foi configurada para não enviar quando isso acontece.",
   missing_config: "Falta preencher alguma configuração desta ação — abra a automação e revise.",
   fora_da_janela_de_envio:
     "Está fora da janela de envio configurada para esse número. A mensagem sai sozinha quando ela reabrir.",
@@ -288,6 +294,13 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "O domínio do remetente não está verificado na Resend. Verifique o domínio na conta Resend e tente de novo.",
 };
 
+/** Os moldes de `explicacaoDoDestino` (lib/automation/actions/assign-owner.ts), por destino. */
+const MOLDE_DO_DESTINO: Record<string, string> = {
+  responsavel_do_negocio: "Ficou com {nome}, o responsável do negócio.",
+  dono_da_carteira: "Ficou com {nome}, o dono da carteira do cliente.",
+  fallback_fixo: "Nenhum destino do negócio serviu: ficou com {nome}, a pessoa fixa do fallback.",
+};
+
 function explicacaoDe(
   action: AutomationRuleRunActionResult,
   t: (texto: string) => string,
@@ -300,6 +313,12 @@ function explicacaoDe(
     return t("Vez de {nome}, posição {posicao} da fila do rodízio.")
       .replace("{nome}", detail.nome)
       .replace("{posicao}", String(detail.posicao));
+  }
+  // O destino dinâmico (#3804) tem o mesmo problema do rodízio: a frase pronta
+  // leva o nome de quem recebeu. O molde vem de QUAL destino decidiu.
+  const destino = typeof detail.destino === "string" ? detail.destino : null;
+  if (destino && MOLDE_DO_DESTINO[destino] && typeof detail.nome === "string") {
+    return t(MOLDE_DO_DESTINO[destino]).replace("{nome}", detail.nome);
   }
   if (typeof detail.explicacao === "string") return t(detail.explicacao);
   // O motivo chega por DOIS canais: `detail.reason` (quem monta o detalhe) e
