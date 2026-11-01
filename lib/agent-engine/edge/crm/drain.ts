@@ -20,8 +20,10 @@ import { loadConversationAgentConfig } from '../../agent/agent-config';
 import { insertInboxItem } from '../../db/repository';
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
+import { janelaDeRespostaAberta, soltarAdiadoPelaJanela } from '../../pacing/adiados-da-janela';
 import { decidirRajada, debounceEfetivo } from './debounce';
 import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-de-evento-morto';
+import { acordarLacoDeEventLog } from '@/lib/event-log/sinal-de-trabalho';
 import { canalDesativado } from '@/lib/channels/desativado';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
 import { haQuemAtendaASessao } from '@/lib/ai/agents/quem-atende-a-sessao';
@@ -63,6 +65,21 @@ export interface DrainKnobs {
    * testes que não exercitam o gate — o default de 21 dias em ms é aplicado.
    */
   allowlistTtlMs?: number;
+  /**
+   * Relógio da janela de RESPOSTA (#3383). Só é usado na pergunta "a janela
+   * está aberta AGORA?" que o drain faz quando achar um job adiado esperando
+   * carona — e é justamente aí que o teste precisa fixar a hora (22h11 para a
+   * janela 7h–22h fechada) sem depender do relógio de parede do runner.
+   * Ausente = `new Date()`.
+   */
+  clock?: () => Date;
+  /**
+   * Avisa o laço da fila que há job NOVO — corta a soneca dele (#3688). O drain
+   * roda no MESMO worker do laço, então o aviso é uma promessa local, não fila
+   * nem polling. Ausente onde não há laço para acordar (CLI, testes): quem
+   * enfileira não pode depender de existir alguém dormindo.
+   */
+  acordarFila?: () => void;
 }
 
 /** Default de `allowlistTtlMs` (21 dias) para testes que omitem o knob. */
@@ -519,6 +536,22 @@ async function processEvent(
         tipo: midia.type,
         esperando_ha_ms: esperandoHa,
       });
+      // ACORDA o laço do `event_log` — o que roda `media.persist_requested` e
+      // `media.derive_requested`, isto é, quem faz a transcrição acontecer.
+      //
+      // É daqui porque este é o único ponto DENTRO do worker que sabe que a
+      // derivação está pendente: os dois laços sobem no mesmo processo
+      // (`workers/agent-worker/main.ts`), então um `import` basta — sem
+      // LISTEN/NOTIFY, sem conexão nova por worker. O ingest do canal, que
+      // escreve `media.persist_requested`, roda em OUTRO processo (a rota HTTP
+      // do webhook) e continua limitado pelo teto do recuo; acordar de lá é o
+      // que ficaria para um LISTEN/NOTIFY, fora deste PR.
+      //
+      // Sem isto, o laço do event_log dorme até o teto do recuo (30s por
+      // default) e um áudio lento (86s medidos) chega a 116 dos 120s deste
+      // turno; com teto maior passa, e o cliente ouve "não consegui ouvir seu
+      // áudio", o defeito que fez o teto subir de 45s para 120s.
+      acordarLacoDeEventLog();
       return 'adiar';
     }
     log.warn('drain: derivação não concluiu no teto — seguindo sem o texto', {
@@ -537,6 +570,16 @@ async function processEvent(
     pool,
     { organizationId: event.organization_id, contactId: p.contact_id },
     await debounceDoEvento(pool, event, p, knobs.debounceMs, log),
+    Date.now(),
+    // Só é chamada quando o candidato à carona está adiado pela janela (#3383),
+    // uma consulta por mensagem nesse caso — nenhum custo no caminho comum.
+    () =>
+      janelaDeRespostaAberta(pool, {
+        organizationId: event.organization_id,
+        channelSessionId: p.channel_session_id,
+        agora: knobs.clock?.() ?? new Date(),
+        log,
+      }),
   );
   if (rajada.tipo === 'coalescido') {
     log.info('drain: rajada coalescida em job pendente', {
@@ -544,6 +587,31 @@ async function processEvent(
       job_id: rajada.jobId,
     });
     return 'processado';
+  }
+  // #3383 — a janela JÁ ABRIU e este job ainda dormia até o horário antigo:
+  // ele não recebe a mensagem de carona (acima) e não continua adiado. O MESMO
+  // job acorda (`run_after = now()`), sem inserir nada — o turno dele roda uma
+  // vez, e a mensagem nova enfileira o próprio job logo abaixo.
+  //
+  // Falhar aqui NÃO derruba o evento: a mensagem nova continua sendo
+  // enfileirada e respondida; o adiado fica para o próximo acordamento (ou
+  // para a abertura calculada), com o warn dizendo o que não aconteceu.
+  if (rajada.caronaRecusadaEm !== undefined) {
+    let acordado = false;
+    try {
+      acordado = await soltarAdiadoPelaJanela(pool, rajada.caronaRecusadaEm);
+    } catch (err) {
+      log.warn('drain: não consegui acordar o job adiado com a janela aberta', {
+        event_id: event.id,
+        job_id: rajada.caronaRecusadaEm,
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+    }
+    log.info('drain: job adiado pela janela não recebe carona — mensagem enfileirada à parte', {
+      event_id: event.id,
+      job_id: rajada.caronaRecusadaEm,
+      acordado,
+    });
   }
 
   const runAfter = rajada.runAfter;
@@ -561,6 +629,11 @@ async function processEvent(
     ...(runAfter !== undefined ? { runAfter } : {}),
   });
   log.info('drain: job de turno enfileirado', { event_id: event.id, job_id: job.id, deduped });
+  // A soneca do laço da fila sai na hora (#3688): sem este aviso o job esperaria
+  // até o fim do teto do recuo (quando ligado), e é a PRIMEIRA resposta de um lead que escreveu
+  // depois de um período parado que paga a conta. Depois do enfileiramento, e só
+  // nele: avisar antes deixaria o laço consultar o relógio e não ver o job.
+  knobs.acordarFila?.();
   return 'processado';
 }
 

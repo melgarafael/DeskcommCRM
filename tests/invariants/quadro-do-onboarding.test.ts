@@ -59,6 +59,21 @@ describe("0156 · o quadro montado no onboarding", () => {
     expect(linha).toBe("8|0");
   });
 
+  it("o funil semeado e o montado no onboarding chamam o card de Negócio (9080)", () => {
+    // O DEFAULT da coluna era o de loja, e nem o gatilho nem a função gravam
+    // `vocabulary`: numa clínica recém-instalada o quadro dizia "1 Pedido
+    // selecionado". O default neutro vale nos dois caminhos.
+    const vocab = (pipeline: string) =>
+      lastLine(
+        sql(`select concat_ws('|', vocabulary->>'lead', vocabulary->>'deal', vocabulary->>'won', vocabulary->>'lost')
+               from public.crm_pipelines where id = '${pipeline}'::uuid;`),
+      );
+    const { org, pipeline } = criarTenant("inv-9080-vocab");
+    expect(vocab(pipeline)).toBe("Contato|Negócio|Ganho|Perdido");
+    expect(aplicar(org, pipeline)).toContain('"ok": true');
+    expect(vocab(pipeline)).toBe("Contato|Negócio|Ganho|Perdido");
+  });
+
   it("troca o quadro inteiro e ensina o destino de cada coluna", () => {
     const { org, pipeline } = criarTenant("inv-0156-troca");
     expect(aplicar(org, pipeline)).toContain('"ok": true');

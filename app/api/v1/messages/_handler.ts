@@ -30,7 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
-import { audit } from "@/lib/audit";
+import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { assertOrgOperante } from "@/lib/organizacao/operante";
 import {
@@ -55,7 +55,10 @@ import {
 import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
 import {
+  CODIGO_NUMERO_DE_OUTRO,
+  conversaQueContinua,
   MENSAGEM_DO_NUMERO,
+  mensagemDaContinua,
   quadroDoNumero,
   vereditoDoNumero,
 } from "@/lib/channels/numero-do-atendente";
@@ -604,12 +607,43 @@ export async function sendMessageHandler(
     }
     const veredito = vereditoDoNumero(numero.quadro);
     if (!veredito.ok) {
+      // #3732: a recusa diz PARA ONDE IR. No caso que a issue mediu a conversa
+      // já é de quem está tentando responder — ela não pôde seguir o vendedor
+      // porque o contato tem outra conversa no número dele —, e mandar
+      // "transfira para você" de novo seria pedir o que já foi feito. O banco
+      // responde qual conversa continua (`fn_conversa_que_continua`, a MESMA
+      // peça que a adoção da transferência usa); a tela abre essa conversa e
+      // trava a caixa de resposta.
+      //
+      // Service role porque a conversa nova pode estar com outra pessoa: com a
+      // RLS de quem envia a leitura viria vazia justamente no caso em que o
+      // aviso mais importa. Falha aqui não muda a recusa — só o texto dela.
+      const continua =
+        veredito.codigo === CODIGO_NUMERO_DE_OUTRO && isServiceRoleConfigured()
+          ? await conversaQueContinua(createAdminClient(), {
+              organizationId: ctx.organization_id,
+              conversationId: input.conversation_id,
+              userId: ctx.actor.id,
+            })
+          : null;
+
+      // Traduz UMA vez: quando há continuação, a frase vem do modelo já
+      // traduzido (`mensagemDaContinua`), com o nome colado depois.
+      const mensagem = continua
+        ? mensagemDaContinua(continua, (texto) => traduzir(texto, ctx.idioma ?? "pt-BR"))
+        : traduzir(MENSAGEM_DO_NUMERO[veredito.codigo], ctx.idioma ?? "pt-BR");
+
       throw new ApiError(
         409,
         veredito.codigo,
-        { channel_session_id: c.channel_session_id },
+        {
+          channel_session_id: c.channel_session_id,
+          ...(continua
+            ? { conversa_que_continua: { id: continua.id, nome: continua.nome, propria: continua.propria } }
+            : {}),
+        },
         ctx.requestId,
-        traduzir(MENSAGEM_DO_NUMERO[veredito.codigo], ctx.idioma ?? "pt-BR"),
+        mensagem,
       );
     }
   }
@@ -932,6 +966,13 @@ export async function sendMessageHandler(
     media_mime: input.media_mime ?? null,
     media_storage_path: input.media_storage_path ?? null,
     media_size_bytes: input.media_size_bytes ?? null,
+    // Fase 6a do plano de voz: o texto ORIGINAL de uma nota de voz, para a
+    // thread continuar legível depois que `body` deixou de ser o que o
+    // cliente lê. Ver o comentário de `aiVoiceDerivedText` em `HandlerCtx` —
+    // nunca vem do corpo da requisição.
+    ...(ctx.aiVoiceDerivedText
+      ? { media_derived_text: ctx.aiVoiceDerivedText, media_derived_status: "ready" }
+      : {}),
     sent_via: origemDaMensagem(ctx.actor),
     sent_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     // A PESSOA, não o token (#1613). Só chega aqui pelo ctx validado na rota

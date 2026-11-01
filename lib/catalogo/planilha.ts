@@ -1,3 +1,4 @@
+import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
 import { parseCsv } from "@/lib/contacts/csv";
 import { precoParaCentavos } from "@/lib/schemas/produtos";
 
@@ -34,6 +35,27 @@ const COLUNAS: Record<string, readonly string[]> = {
   marca: ["marca", "fabricante"],
   categoria: ["categoria", "tipo", "departamento"],
   quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock"],
+  /**
+   * A FOTO POR URL (#3587). Uma coluna só, com um link — ou até 5 separados por
+   * `|`, na ordem em que o agente deve mandá-los (o primeiro é a capa).
+   *
+   * Uma coluna por foto (`foto 1`, `foto 2`…) seria a segunda verdade sobre a
+   * ORDEM: a planilha não diz qual coluna manda. E a vírgula não serve de
+   * separador porque o CSV do Excel em português já usa `;` e o de outras
+   * regiões usa `,` — `|` é o único que não colide com o arquivo.
+   */
+  fotos: [
+    "foto",
+    "fotos",
+    "imagem",
+    "imagens",
+    "url da foto",
+    "url da imagem",
+    "urls das fotos",
+    "foto url",
+    "imagen",
+    "imagenes",
+  ],
 };
 
 function normalizarCabecalho(texto: string): string {
@@ -117,6 +139,61 @@ function quantidadeDaPlanilha(texto: string): number | null {
   return Number.isInteger(quantidade) && quantidade <= 2_147_483_647 ? quantidade : null;
 }
 
+/** Os esquemas que apontam para um arquivo que o servidor pode buscar. */
+const ESQUEMAS_DE_FOTO = new Set(["http:", "https:"]);
+
+/**
+ * A célula de foto: vazia (não fala nada sobre as fotos do produto) ou uma
+ * lista de links separada por `|`, na ordem da capa.
+ *
+ * A recusa é da LINHA, como a do preço: guardar 3 das 5 fotos deixaria a capa
+ * errada sem ninguém perceber, e o produto com uma foto que ninguém escolheu é
+ * pior que a linha esperando a correção do arquivo.
+ */
+function fotosDaLinha(
+  texto: string,
+  t: (texto: string) => string,
+): { fotos: string[] | null } | { motivo: string } {
+  if (texto === "") return { fotos: null };
+
+  const invalida = (url: string): { motivo: string } => ({
+    motivo: t(
+      'foto não reconhecida ("{url}") — use o endereço completo, começando com http:// ou https://',
+    ).replace("{url}", () => url),
+  });
+
+  const urls = texto
+    .split("|")
+    .map((u) => u.trim())
+    .filter((u) => u !== "");
+
+  if (urls.length > MAXIMO_DE_FOTOS) {
+    return {
+      motivo: t(
+        "a linha traz {quantidade} fotos — o produto aceita até {limite}. Deixe as {limite} primeiras na coluna.",
+      )
+        .replace("{quantidade}", String(urls.length))
+        .replaceAll("{limite}", String(MAXIMO_DE_FOTOS)),
+    };
+  }
+
+  for (const url of urls) {
+    // `new URL` é a régua do que o `fetch` do servidor consegue abrir; esquema
+    // `data:`/`file:`/`ftp:` passaria como string e morreria depois, longe da
+    // linha que o escreveu.
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(url);
+    } catch {
+      parsed = null;
+    }
+    if (!parsed || !ESQUEMAS_DE_FOTO.has(parsed.protocol) || parsed.hostname === "") {
+      return invalida(url);
+    }
+  }
+  return { fotos: urls };
+}
+
 export interface LinhaImportada {
   /** A linha como a pessoa a vê na planilha: 1 é o cabeçalho. */
   linha: number;
@@ -128,6 +205,12 @@ export interface LinhaImportada {
   categoria?: string;
   quantidade: number;
   controla_estoque: boolean;
+  /**
+   * As URLs das fotos, na ordem da planilha — o que a rota BAIXA e guarda em
+   * `catalog-photos`. Ausente quando a planilha não fala de foto: é o que
+   * mantém intacta a foto que a tela gravou.
+   */
+  fotos?: string[];
 }
 
 export interface ErroDaLinha {
@@ -236,6 +319,15 @@ export function lerPlanilha(
       continue;
     }
 
+    // Célula vazia não declara nada sobre a foto: reimportar a lista de preços
+    // não pode apagar a foto que a pessoa subiu pela tela (mesmo cuidado que
+    // `descricao` e `ativo` têm na rota). Quem traz link, manda na foto.
+    const fotos = fotosDaLinha(valor("fotos"), _t);
+    if ("motivo" in fotos) {
+      erros.push({ linha: numeroNaPlanilha, motivo: fotos.motivo });
+      continue;
+    }
+
     // Sem código na planilha, o nome vira a identidade. É o que permite reimportar
     // a mesma planilha atualizando em vez de duplicar — que é o gesto real da
     // loja quando o preço muda. O corte em 60 caracteres fica em
@@ -279,6 +371,7 @@ export function lerPlanilha(
       ...(valor("categoria") ? { categoria: valor("categoria") } : {}),
       quantidade,
       controla_estoque: temColunaEstoque,
+      ...(fotos.fotos ? { fotos: fotos.fotos } : {}),
     });
   }
 

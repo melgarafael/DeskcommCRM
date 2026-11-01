@@ -45,7 +45,7 @@ function disponibilidade(windows: ScheduleWindow[]): AttendantAvailability {
     current_load: 0,
     last_heartbeat_at: null,
     present: false,
-    sector_id: null,
+    sector_ids: [],
   };
 }
 
@@ -54,7 +54,7 @@ type Salvador = (windows: ScheduleWindow[], timezone: string) => Promise<Schedul
 function abrir(windows: ScheduleWindow[], onSave: Salvador) {
   return render(
     <ScheduleDialog
-      attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, sectorId: null, availability: disponibilidade(windows) }}
+      attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, sectorIds: [], availability: disponibilidade(windows) }}
       open
       onOpenChange={vi.fn()}
       onSave={onSave}
@@ -113,7 +113,7 @@ describe("resumo do que foi publicado", () => {
 
     render(
       <ScheduleDialog
-        attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, sectorId: null, availability: disponibilidade([{ dow: 1, start: "08:00", end: "11:30" }, { dow: 1, start: "20:00", end: "22:00" }]) }}
+        attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, sectorIds: [], availability: disponibilidade([{ dow: 1, start: "08:00", end: "11:30" }, { dow: 1, start: "20:00", end: "22:00" }]) }}
         open
         onOpenChange={onOpenChange}
         onSave={onSave}

@@ -34,6 +34,15 @@
  * exceção silenciosa. Gate que nasce vermelho não é adotado; gate que nasce
  * verde por ignorar o passado não protege. O meio-termo é este: congela o que
  * existe, barra o que chegar.
+ *
+ * ## A outra direção, desde a #3697
+ *
+ * O gate cobrava só "assinatura sem publicação". A #3697 mostrou o outro lado:
+ * tabela publicada sem assinatura nenhuma (`ai_agents`, `crm_lead_risk_states`,
+ * `crm_lead_reactivations`) — custo de decodificação por escrita, sem consumidor.
+ * Elas saíram, e `SEM_CONSUMIDOR_CONHECIDO` fecha o contrato dos dois lados: as
+ * três ficam fora da publicação **e** ninguém pode assiná-las. Se alguém
+ * assinar, este arquivo reprova antes de a tela mentir em silêncio.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -52,6 +61,20 @@ const DIVIDA_CONHECIDA: Record<string, string> = {
   crm_pipelines: "assinada pela tela de funis; entrou antes deste gate",
   system_update_runs: "assinada pela tela de atualização; entrou antes deste gate",
   system_version: "assinada pela tela de atualização; entrou antes deste gate",
+};
+
+/**
+ * O inverso da dívida: tabelas que SAÍRAM da publicação porque ninguém as
+ * assina (#3697). A entrada aqui não é permissão para ficarem fora — é a
+ * condição que sustenta a saída. Enquanto estiverem fora, este arquivo exige
+ * que NINGUÉM as assine; no dia em que uma tela abrir canal numa delas, o
+ * teste reprova e a tabela tem que voltar para a publicação. Sem essa ponta,
+ * "tirei da publicação" vira uma verdade que só se sustenta até a próxima tela.
+ */
+const SEM_CONSUMIDOR_CONHECIDO: Record<string, string> = {
+  ai_agents: "a tela de agentes lê por PostgREST; nenhum canal abre nela",
+  crm_lead_risk_states: "o risco é lido junto do negócio; nenhum canal assina",
+  crm_lead_reactivations: "a proposta de reativação é lida pela tela; nenhum canal assina",
 };
 
 /**
@@ -116,10 +139,18 @@ function assinadasNoCodigo(): Map<string, string[]> {
       const completo = path.join(dir, entrada);
       if (statSync(completo).isDirectory()) varrer(completo);
       else if (/\.tsx?$/.test(entrada)) {
+        // Mock de teste não assina nada: `useRealtimeChannel` é mockado em vários
+        // `.test.tsx` com um `table:` de mentira, e contá-lo mediria o mock.
+        if (/\.(test|spec)\.tsx?$/.test(entrada)) continue;
         const fonte = readFileSync(completo, "utf8");
-        // só conta quando há `postgres_changes` no mesmo arquivo: `table:` sozinho
-        // aparece em consulta comum e viraria falso positivo.
-        if (!fonte.includes("postgres_changes")) continue;
+        // Três marcas, e não só o literal `postgres_changes`: a maioria dos
+        // hooks desta base assina por `useRealtimeChannel({ postgresChanges: {
+        // table: "x" } })`, e o literal `postgres_changes` só existe DENTRO do
+        // hook genérico. Medir só o literal enxergava 6 das 10 assinaturas — e
+        // as 4 invisíveis eram justamente as que dependem deste gate
+        // (`conversation_notes`, `conversation_participants`,
+        // `ai_knowledge_sources`, `user_organizations`).
+        if (!/postgres_changes|postgresChanges|useRealtimeChannel/.test(fonte)) continue;
         for (const m of fonte.matchAll(/table:\s*"([a-z_]+)"/g)) {
           const rel = path.relative(RAIZ, completo);
           achadas.set(m[1]!, [...(achadas.get(m[1]!) ?? []), rel]);
@@ -191,6 +222,45 @@ describe("realtime: assinatura sem publicação nunca recebe evento", () => {
 
   it("toda dívida explica onde está", () => {
     for (const [t, motivo] of Object.entries(DIVIDA_CONHECIDA)) {
+      expect(motivo.length, `${t} sem motivo escrito`).toBeGreaterThan(20);
+    }
+  });
+
+  it("as tabelas que saíram da publicação continuam fora dela (#3697)", () => {
+    // O `drop` da 9046 é guardado por `pg_publication_tables`: se o baseline
+    // esquecer o espelho, ou se um `add` posterior ressuscitar uma delas, a
+    // remoção vira meia-verdade — a migration roda, o custo continua.
+    const voltaram = Object.keys(SEM_CONSUMIDOR_CONHECIDO).filter((t) => publicacao.has(t));
+    expect(
+      voltaram,
+      "Estas tabelas foram tiradas da publicação `supabase_realtime` na 9046 porque " +
+        "NINGUÉM as assina, e voltaram. Se a volta é proposital, apague a entrada de " +
+        "`SEM_CONSUMIDOR_CONHECIDO` e escreva o consumidor; se não, o `drop` do baseline " +
+        "não pegou.",
+    ).toEqual([]);
+  });
+
+  it("ninguém assina o que saiu da publicação — é o que sustenta a saída", () => {
+    // A outra ponta do contrato: sair da publicação só é correto enquanto não
+    // houver consumidor. No dia em que uma tela assinar uma destas três, o
+    // canal sobe, o `subscribe()` devolve SUBSCRIBED e nenhum evento chega —
+    // exatamente o defeito mudo que o resto deste arquivo existe para pegar.
+    // Aqui ele é pego ANTES, no teste, em vez de na tela de alguém.
+    const assinadasDeNovo: string[] = [];
+    for (const tabela of Object.keys(SEM_CONSUMIDOR_CONHECIDO)) {
+      const arquivos = assinadas.get(tabela);
+      if (arquivos) assinadasDeNovo.push(`${tabela} — assinada em ${arquivos.join(", ")}`);
+    }
+    expect(
+      assinadasDeNovo,
+      "Esta tabela está FORA da publicação `supabase_realtime` (9046, #3697) e alguém " +
+        "passou a assiná-la. Devolva-a para a publicação numa migration E no baseline — " +
+        "ou desfaça a assinatura. Do jeito que está, o canal sobe e nunca entrega evento.",
+    ).toEqual([]);
+  });
+
+  it("toda tabela removida diz por que saiu", () => {
+    for (const [t, motivo] of Object.entries(SEM_CONSUMIDOR_CONHECIDO)) {
       expect(motivo.length, `${t} sem motivo escrito`).toBeGreaterThan(20);
     }
   });

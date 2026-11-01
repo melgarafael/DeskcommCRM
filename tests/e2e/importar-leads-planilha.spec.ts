@@ -160,7 +160,8 @@ test("CNPJ informado inválido falha pela API antes de criar empresa, pessoa ou 
     const linhas = await admin.from("import_rows").select("status,error").eq("organization_id", creds.org_id).eq("batch_id", batchId);
     expect(linhas.error).toBeNull();
     expect(linhas.data).toHaveLength(2);
-    expect(linhas.data?.every((r) => r.status === "failed" && r.error === "CNPJ inválido.")).toBe(true);
+    expect(linhas.data?.every((r) => r.status === "failed" && r.error ===
+          "CNPJ inválido: confira as 12 posições (dígitos ou letras) e os 2 dígitos verificadores.")).toBe(true);
   } finally {
     if (batchId) expect((await admin.from("import_batches").delete().eq("id", batchId).eq("organization_id", creds.org_id)).error).toBeNull();
     const restaurado = anterior.data

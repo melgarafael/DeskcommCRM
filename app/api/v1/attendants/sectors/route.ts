@@ -29,7 +29,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-const SELECT_COLS = "id, name, description, created_at, updated_at";
+const SELECT_COLS = "id, name, description, schedule, created_at, updated_at";
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -66,11 +66,18 @@ export async function GET(_req: NextRequest): Promise<Response> {
       .map((a) => a.user_id),
   );
   const countBySector = new Map<string, number>();
+  // (9062) N filas por atendente: a lista de ids vem junto do contador, porque a
+  // tela de membros da fila precisa saber QUEM já está nela — antes, um
+  // atendente só podia estar num setor e isso não precisava ser dito.
   for (const m of members.data ?? []) {
     if (!activeUserIds.has(m.user_id)) continue;
     countBySector.set(m.sector_id, (countBySector.get(m.sector_id) ?? 0) + 1);
   }
 
+  // Sem `member_user_ids`: quem lista as filas de uma PESSOA é
+  // `/attendants/availability` (e é de lá que a tabela da Equipe lê). Devolver
+  // aqui também seria o segundo leitor da mesma pergunta — e payload que
+  // ninguém consome é o que o #3697 tirou da publicação em tempo real.
   return ok(
     (sectors.data ?? []).map((s) => ({ ...s, member_count: countBySector.get(s.id) ?? 0 })),
     { requestId },
@@ -104,7 +111,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   const admin = createAdminClient();
   const { data: row, error } = await admin
     .from("attendant_sectors")
-    .insert({ organization_id: authz.org.orgId, name: input.name, description: input.description })
+    .insert({
+      organization_id: authz.org.orgId,
+      name: input.name,
+      description: input.description,
+      // Omitir horário na criação = `{}` no banco = 24/7 (default da coluna).
+      ...(input.schedule ? { schedule: input.schedule } : {}),
+    })
     .select(SELECT_COLS)
     .single();
 

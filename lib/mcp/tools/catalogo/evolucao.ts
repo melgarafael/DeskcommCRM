@@ -56,7 +56,7 @@ export const TOOLS_EVOLUCAO = declararTools([
     category: "read",
     rotulo: "Consultar as regras da empresa",
     explicacao:
-      "Lê as políticas e combinados que valem para todo atendimento, para o assistente seguir a regra da casa em vez de inventar uma.",
+      "Lê as políticas e combinados que valem para todo atendimento, para o assistente seguir a regra da casa em vez de inventar uma. Anotação vencida não volta — o assistente não repete a programação da semana passada.",
     oQueToca: "Regras da empresa",
     risco: "seguro",
     pacotes: ["evoluir", "atender"],
@@ -66,7 +66,7 @@ export const TOOLS_EVOLUCAO = declararTools([
     category: "write",
     rotulo: "Anotar uma regra aprendida",
     explicacao:
-      "Guarda um aprendizado que vale para todos os atendimentos, marcado como escrito pelo assistente para você distinguir do que anotou.",
+      "Guarda um aprendizado que vale para todos os atendimentos, marcado como escrito pelo assistente para você distinguir do que anotou. Pode ter prazo: a anotação com data de validade deixa de ser lida sozinha depois dela.",
     oQueToca: "Regras da empresa",
     risco: "atencao",
     pacotes: ["evoluir"],
