@@ -16,7 +16,9 @@
  * harness): cinco índices da migration 0133 (`fn_atrito_metrics`) existiam no
  * caminho da cadeia e **não** na instalação — o painel de atrito varria cinco
  * tabelas quentes por janela em quem instala do zero. Mais três divergências de
- * ACL: `activate_kb_version` sem `authenticated` na instalação, e
+ * ACL: `activate_kb_version` com `authenticated` só no caminho da cadeia (o
+ * grant da 0010 sobrevivia porque a 0108, que o revoga, não aplica sobre o
+ * baseline — a 9083 reafirma a 0108), e
  * `fn_crm_lead_close_on_stage`/`fn_validate_lost_reason_required` executáveis
  * por PUBLIC (a cadeia revoga em 0426/0513 e o espelho não repetia). Os dois
  * caminhos só empataram depois de o espelho receber esses blocos.
@@ -41,11 +43,11 @@
  *
  * ## O que esta cerca NÃO cobre (declarado, para não parecer cobertura)
  *
- * - **Migração que não roda sobre o estado final.** 606 dos 614 aplicam; as 8
+ * - **Migração que não roda sobre o estado final.** Quase todas aplicam; as
  *   que não aplicam estão declaradas em `MIGRATIONS_QUE_NAO_RODAM` com o motivo
  *   medido, e a lista é cobrada nas DUAS direções: arquivo novo que falhe (ou
  *   conserto que a torne aplicável) deixa o teste vermelho em vez de sumir em
- *   silêncio. O efeito dessas 8 não é medido aqui — o baseline é a fonte para
+ *   silêncio. O efeito delas não é medido aqui — o baseline é a fonte para
  *   elas.
  * - **Tabelas de módulo provisionado** (`sales`, `sale_items`, `commissions`,
  *   `commission_rules`, `loyalty_ledger`): nascem dentro de

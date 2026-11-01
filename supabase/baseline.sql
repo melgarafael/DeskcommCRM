@@ -66648,30 +66648,29 @@ end; $$;
 revoke all on function public.fn_appointment_change_core(uuid,uuid,bigint,jsonb,boolean,jsonb) from public,anon,authenticated;
 notify pgrst,'reload schema';
 
--- ---- EXECUTE das funções de motivo de perda e do activate_kb_version (0010, 0426, 0513) ----
--- Três divergências de ACL entre os dois caminhos, todas com a cadeia mais
--- fechada ou mais completa que o espelho:
---   · `activate_kb_version` recebe `authenticated` em 0010; o dump só traz
---     `service_role`, então a instalação nova negava a ativação de versão da KB
---     a quem não é servidor.
+-- ---- EXECUTE das funções de motivo de perda e do activate_kb_version (0108, 0426, 0513, 9083) ----
+-- Três funções cuja ACL o espelho não repetia:
+--   · `activate_kb_version` fica só com `service_role`, como a 0108 declara.
+--     A 0108 é uma das migrations que não aplicam sobre o baseline (ver
+--     MIGRATIONS_QUE_NAO_RODAM em
+--     tests/invariants/baseline-e-cadeia-chegam-ao-mesmo-schema.test.ts), então
+--     no caminho da cadeia o grant da 0010 sobrevivia; a 9083 reafirma a 0108.
 --   · `fn_crm_lead_close_on_stage` e `fn_validate_lost_reason_required` têm a
---     ACL com `=X` (PUBLIC) no corpo do dump; 0426/0513 revogam de `public,anon`
---     e reconcedem a anon/authenticated/service_role. Sem o espelho, a
---     instalação nova deixava as duas executáveis por PUBLIC — que contém todo
---     papel criado depois, inclusive o da conexão anônima.
+--     ACL com `=X` (PUBLIC) no corpo do dump; 0426/0513 revogam de
+--     `public,anon`. São funções de gatilho — disparo de gatilho não confere
+--     EXECUTE —, então o reconcedido fica com `authenticated, service_role`, sem
+--     `anon`; a 9083 faz o mesmo na cadeia.
 --
--- Este bloco fica ACIMA da VARREDURA anon porque reconcede `anon`, e a regra
--- (tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts) é que nada devolve
--- privilégio a `anon` depois dela. Nenhuma das três funções é SECURITY DEFINER
--- — a varredura só percorre `p.prosecdef` —, então a posição aqui é neutra.
-revoke execute on function public.activate_kb_version(uuid, uuid) from anon;
-grant  execute on function public.activate_kb_version(uuid, uuid) to authenticated, service_role;
+-- Nenhum grant a `anon` neste bloco, então a posição em relação à VARREDURA
+-- anon (tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts) é neutra.
+revoke execute on function public.activate_kb_version(uuid, uuid) from public, anon, authenticated;
+grant  execute on function public.activate_kb_version(uuid, uuid) to service_role;
 
 revoke execute on function public.fn_crm_lead_close_on_stage() from public, anon;
-grant  execute on function public.fn_crm_lead_close_on_stage() to anon, authenticated, service_role;
+grant  execute on function public.fn_crm_lead_close_on_stage() to authenticated, service_role;
 
 revoke execute on function public.fn_validate_lost_reason_required() from public, anon;
-grant  execute on function public.fn_validate_lost_reason_required() to anon, authenticated, service_role;
+grant  execute on function public.fn_validate_lost_reason_required() to authenticated, service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
