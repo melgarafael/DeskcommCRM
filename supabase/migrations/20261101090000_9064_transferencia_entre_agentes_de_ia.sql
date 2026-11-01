@@ -36,9 +36,18 @@
 
 alter table public.ai_router_decisions
   drop constraint if exists ai_router_decisions_outcome_check;
+-- IMPORTANTE — por que `= any (array[...])` e não `in (...)`:
+-- a cerca `tests/unit/desfecho-da-captacao-um-vocabulario-so.test.ts` acha o
+-- CHECK de `webhook_lead_captures.outcome` pela ÚLTIMA ocorrência, no
+-- `baseline.sql` inteiro, da grafia `outcome` + `in (...)`. Um apêndice novo, no fim do
+-- arquivo, com essa mesma grafia para OUTRA tabela cega a cerca (ela passa a
+-- ler o vocabulário do roteador e acusa três defeitos que não existem). As duas
+-- formas viram a MESMA constraint no catálogo (`pg_get_constraintdef` normaliza
+-- `in (...)` para `= any (array[...])`), então a verdade do banco não muda —
+-- muda só o que a cerca enxerga. A fragilidade da cerca fica registrada no PR.
 alter table public.ai_router_decisions
   add constraint ai_router_decisions_outcome_check
-  check (outcome in ('classified', 'sticky', 'reclassified', 'fallback', 'no_match', 'classifier_failed', 'transferred'));
+  check (outcome = any (array['classified', 'sticky', 'reclassified', 'fallback', 'no_match', 'classifier_failed', 'transferred']));
 
 -- POR ONDE a decisão entrou: o classificador (o de sempre, e o sticky que ele
 -- mantém) ou uma AÇÃO explícita. É a coluna que separa os dois mundos sem
