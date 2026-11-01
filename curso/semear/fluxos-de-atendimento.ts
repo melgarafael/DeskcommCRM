@@ -201,7 +201,10 @@ export async function semear(c: Contexto) {
       { id: "exames", rotulo: demo("Traz exames?"), key: "traz_exames", label: demo("Vai trazer exames na consulta?"), type: "boolean", required: true },
     ],
     {},
-    { gatilhos: [demo("retorno"), demo("remarcar")], max_tentativas_pergunta: 2, expira_em_horas: 48 },
+    // Frases, e não "retorno"/"remarcar" soltos: o catálogo ES é global, e uma
+    // palavra solta traduzida aqui traduzia também a etiqueta "retorno" da base
+    // nas aulas de Inbox, Contatos e Extensões, que a mostram sem tradução.
+    { gatilhos: [demo("consulta de retorno"), demo("quero remarcar")], max_tentativas_pergunta: 2, expira_em_horas: 48 },
   );
   const posConsulta = grafo(
     [

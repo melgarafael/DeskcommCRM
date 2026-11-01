@@ -980,8 +980,6 @@
   "marcar consulta": "programar consulta",
   "primeira consulta": "primera consulta",
   "quero agendar": "quiero agendar",
-  "remarcar": "reprogramar",
-  "retorno": "revisión",
   "Atendimento automático parou — assumir a conversa": "La IA pasó la conversación al equipo — asúmela",
   "O cliente pediu para falar com uma pessoa": "El cliente pidió hablar con una persona",
   "O cliente JÁ FOI avisado de que uma pessoa vai assumir.": "El cliente YA fue avisado de que una persona se hará cargo.",
@@ -1073,5 +1071,7 @@
   "Oi, preciso remarcar minha consulta com a nutricionista de sexta.": "Hola, necesito cambiar la fecha de mi consulta con la nutricionista del viernes.",
   "Claro, Fernanda. Tenho horário na segunda às 14h ou na terça às 10h. Algum desses serve?": "Claro, Fernanda. Tengo horario el lunes a las 14:00 o el martes a las 10:00. ¿Te sirve alguno?",
   "Terça às 10h.": "El martes a las 10:00.",
-  "Anotado. A recepção confirma a mudança pelo WhatsApp ainda hoje.": "Anotado. La recepción confirma el cambio por WhatsApp hoy mismo."
+  "Anotado. A recepção confirma a mudança pelo WhatsApp ainda hoje.": "Anotado. La recepción confirma el cambio por WhatsApp hoy mismo.",
+  "consulta de retorno": "consulta de control",
+  "quero remarcar": "quiero reprogramar"
 }
