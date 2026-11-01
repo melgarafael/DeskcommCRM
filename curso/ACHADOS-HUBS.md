@@ -891,3 +891,26 @@ Estes achados saíram da produção das 23 aulas novas do curso, uma por tela do
 - Onde: `app/app/ai/usage/page.tsx:60; lib/navigation/catalogo.ts:737`
 - Evidência: vista na tela
 
+## Achados da recaptura completa do curso (01/11/2026)
+
+A recaptura de todos os 84 módulos em PT, feita depois das aulas novas, achou mais um defeito do produto, um
+limite da bancada e um ponto para revisar. Os dois últimos já foram tratados no curso.
+
+**R1. Meta de vendas: na última noite de cada mês, a meta vai para o mês errado (média).** A tela Configurações ›
+Meta de vendas calcula o mês no servidor, no fuso do processo (UTC no contêiner padrão), e não no mês de quem opera.
+Das 21h às 23h59 do último dia do mês, no horário de São Paulo, o campo "Mês" já vem no mês seguinte, e "Ainda não
+há meta para este mês." consulta o mês seguinte. A meta é gravada nesse mês, e o painel "Meta do mês" do
+Desempenho, que calcula o mês no navegador, continua sem meta.
+- Onde: `app/app/settings/metas/page.tsx:39` (`mesLocal()` no Server Component); o painel calcula em `app/app/metrics/_components/MetricsClient.tsx:67`; o comentário de `lib/metas/periodo.ts` promete o mês do operador.
+- Evidência: vista na tela (a captura de 31/10 às 21h19 em São Paulo falhou nos passos p3 e p5 de "Acompanhando a meta").
+- Conserto sugerido: calcular o mês padrão e buscar a meta atual no cliente, ou usar o fuso da organização nas duas pontas.
+- Efeito no curso: a captura deste módulo não deve rodar nessa janela; fora dela, as aulas são verdadeiras.
+
+**R2. Bancada: as sementes antigas deixavam linhas que mudavam outras aulas.** A semente de Agenda deixava 26
+compromissos que entravam na lista de atendimentos a faturar da aula de Comandas, e a de Webhooks deixava negócios
+que empurravam o cartão de uma jornada para fora da foto. Corrigido no curso: toda semente pode exportar `limpar()`,
+chamado antes de qualquer aula; as 23 sementes novas, a de Agenda e a de Meta de vendas já exportam.
+
+**R3. Tipos de agendamento: destaques muito perto do topo da página.** Os passos `ajustar-um-tipo/p5` e
+`conhecendo-a-tela/p2` medem alvos em y entre 0 e 27, junto do cabeçalho fixo. Passaram na captura; vale conferir
+na foto se a caixa não fica escondida pelo cabeçalho.
