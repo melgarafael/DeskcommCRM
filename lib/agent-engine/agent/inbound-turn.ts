@@ -60,6 +60,8 @@ import {
   type LeadContextMessage,
   type LeadContextResult,
 } from '../edge/crm/get-lead-context';
+import { esperarMidiaDerivavel } from './espera-da-midia';
+import { TETO_DA_ESPERA_DA_DERIVACAO_MS } from '@/lib/messaging/media/derivable';
 import { citationsFromHits, searchKnowledge } from './search-knowledge';
 import type { CrmEdgeConfig } from '../edge/crm/mcp-client';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
@@ -2803,6 +2805,20 @@ async function executarTurnoDoAgente(
   // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
   // compliance continua à frente, sempre).
   //
+  // ─── A MÍDIA QUE CHEGA NO MEIO DO TURNO (#3836) ────────────────────────────
+  //
+  // O drain segura o DESPACHO enquanto há mídia derivável pendente na conversa;
+  // o que chega DEPOIS de o turno começar chegava aqui como o marcador `[audio]`
+  // e o agente respondia "recebi seu áudio, mas não consegui ouvir o conteúdo"
+  // — segundos antes de a transcrição ficar pronta (relato de 01/11/2026:
+  // 09:33:40 o texto dispara o turno, 09:34:10 e 09:34:17 os dois áudios,
+  // 09:34:19 a resposta que diz não ter ouvido).
+  //
+  // Por isso TODA leitura da conversa que alimenta o prompt passa por
+  // `lerContextoDaConversa`, que espera a derivação (com teto) antes de ler. O
+  // prazo nasce UMA vez: a abertura e a releitura do meio do turno dividem o
+  // mesmo orçamento, senão o turno dobraria o tempo até a primeira resposta.
+  //
   // As leituras da abertura correm em QUATRO trilhas paralelas: nenhuma escreve,
   // nenhuma está sob lock ou transação, e a única dependência entre elas — o
   // playbook precisa do contexto de prospecção — fica dentro da mesma trilha.
@@ -2812,6 +2828,48 @@ async function executarTurnoDoAgente(
   // juntos, o pico chega a 32 leituras sobre 10 conexões (default do pg, knob
   // DB_POOL_MAX). O pg enfileira e nenhuma destas leituras segura conexão, então
   // o pior caso é espera de fila no pico, não erro nem deadlock.
+  //
+  const prazoDaMidia = Date.now() + TETO_DA_ESPERA_DA_DERIVACAO_MS;
+  /**
+   * Espera (com teto) a mídia derivável da conversa antes de ler QUALQUER coisa
+   * que vá para o prompt. O prazo é do turno inteiro: esta função pode ser
+   * chamada mais de uma vez, e nenhuma chamada ganha orçamento novo.
+   *
+   * Prévia (sandbox/assistido) nunca espera: ela não responde a ninguém e o
+   * contexto dela já vem de fora.
+   */
+  const esperarMidiaDoTurno = async (): Promise<void> => {
+    if (preview) return;
+    await esperarMidiaDerivavel(pool, {
+      organizationId: tenantId,
+      conversationId: input.conversationId,
+      prazoMs: prazoDaMidia,
+      log: runLog,
+      ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+    });
+  };
+  /**
+   * A leitura da conversa que alimenta o prompt. Existe para que a espera não
+   * possa ser esquecida em um dos pontos de leitura: a abertura, a releitura da
+   * ferramenta de contexto no meio do turno e qualquer leitura futura passam por
+   * aqui.
+   */
+  const lerContextoDaConversa = async (): Promise<LeadContextResult> => {
+    await esperarMidiaDoTurno();
+    return getLeadContext(
+      pool,
+      deps.crmCfg,
+      { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
+      turnContextKnobs,
+    );
+  };
+
+  // E ela roda TAMBÉM antes das trilhas, porque a linha canônica do job
+  // (`loadInboundForJob`) e o histórico logo abaixo são lidos aqui dentro: um
+  // áudio que acabou de chegar tem de chegar aos dois já com o texto, senão a
+  // abertura anuncia ao modelo que o cliente mandou `[audio]`.
+  await esperarMidiaDoTurno();
+
   const [playbook, [skills, inboundDoJob], orgMemory, [previous, leadState]] =
     await Promise.all([
       (async () => {
@@ -2883,12 +2941,7 @@ async function executarTurnoDoAgente(
   const system = blocosResidentes.join('\n\n');
   const openingContext = preview
     ? preview.context
-    : await getLeadContext(
-        pool,
-        deps.crmCfg,
-        { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
-        turnContextKnobs,
-      );
+    : await lerContextoDaConversa();
   if (!openingContext.ok) {
     // Sem contexto não há turno: transiente (CRM fora) OU permanente (lead
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
@@ -3821,14 +3874,12 @@ async function executarTurnoDoAgente(
         | { ok: false; error: { code: string; message: string } }
       > => {
         try {
-          const releitura = preview
-            ? preview.context
-            : await getLeadContext(
-                pool,
-                deps.crmCfg,
-                { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
-                turnContextKnobs,
-              );
+          // A releitura passa pela MESMA espera da abertura (#3836): o áudio que
+          // chegou enquanto o modelo pensava ainda está virando texto, e devolver
+          // `[audio]` aqui faria o agente dizer que não ouviu segundos antes de a
+          // transcrição ficar pronta. O prazo é o mesmo do turno — esta chamada
+          // não ganha um orçamento novo.
+          const releitura = preview ? preview.context : await lerContextoDaConversa();
           // Sem esta linha a projeção da abertura seria decorativa: bastaria o
           // modelo chamar esta ferramenta para receber o contexto CRU de volta,
           // com `lead_id`, `conversation_id` e caminho de mídia. A releitura é a
