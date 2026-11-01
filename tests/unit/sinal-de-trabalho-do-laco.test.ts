@@ -2,7 +2,7 @@
  * O sinal que corta a soneca do laço do `event_log` quando chega trabalho.
  *
  * O que estes testes protegem, em números: o recuo ocioso do laço chega a 60s,
- * e o teto do turno pela derivação é 120s (`TETO_ESPERA_DERIVACAO_MS`). Um áudio
+ * e o teto do turno pela derivação é 120s (`TETO_DA_ESPERA_DA_DERIVACAO_MS`). Um áudio
  * lento — 86s documentados no cabeçalho do `crm/drain.ts` — faz 60+86 > 120, e
  * o cliente ouve "não consegui ouvir seu áudio". Com o corte, o primeiro salto
  * volta a ser o do tick, não o do teto.

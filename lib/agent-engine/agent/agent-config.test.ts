@@ -183,6 +183,107 @@ describe('público do agente — quem atende no mesmo número (#3722)', () => {
     expect(escolha.motivo).toBe('publico_liberou');
   });
 
+/**
+ * O RASTRO da decisão do público (#3722) — "quem foi considerado, e por que
+ * ganhou/perdeu".
+ *
+ * O motivo agregado (`publico_barrou`) diz que NINGUÉM atendeu; não diz QUAL
+ * candidato barrou o contato nem QUAL item do público o barrou. Medido no caso
+ * da issue: com o agente de vendas (`exclude_tags: [cliente ativo]`) e o de
+ * suporte (`include_tags: [cliente ativo]`) no mesmo número, o turno do cliente
+ * com contrato registrava "o suporte respondeu" e nada sobre o vendedor — quem
+ * fosse investigar a reclamação "o vendedor não me respondeu" não tinha, no
+ * log, nem o candidato nem a regra que o barrou.
+ *
+ * A régua devolve o item DECLARADO no público que decidiu (o que o admin
+ * digitou na tela), e a escolha publica a fila inteira com a decisão de cada
+ * candidato — inclusive quem veio depois do vencedor e por isso não chegou a
+ * ser avaliado. Um teste que só olhasse `escolha.config` continuaria verde com
+ * o rastro vazio.
+ */
+  it('nomeia o candidato barrado, a regra e o item que o barrou', async () => {
+    const pool = poolDaSelecao([VENDAS, SUPORTE], { tags: ['Cliente Ativo'], funis: [] });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+
+    expect(escolha.rastro).toBeDefined();
+    expect(escolha.rastro?.escolhidoAgentId).toBe('suporte');
+    expect(escolha.rastro?.contatoAvaliado).toBe(true);
+    // A fila inteira, na ordem de precedência: o vendedor é o 1º (priority 10)
+    // e PERDE; o suporte é o 2º e ganha.
+    const [vendedor, suporte] = escolha.rastro?.candidatos ?? [];
+    expect(vendedor).toMatchObject({
+      agentId: 'vendas',
+      posicao: 0,
+      pausado: false,
+      semPublico: false,
+      decisao: { passa: false, regra: 'barrado_por_etiqueta_excluida', valor: 'cliente ativo' },
+    });
+    expect(suporte).toMatchObject({
+      agentId: 'suporte',
+      posicao: 1,
+      decisao: { passa: true, regra: 'passou' },
+    });
+  });
+
+  it('contato sem a etiqueta: o rastro mostra o vendedor PASSANDO (não é "sem decisão")', async () => {
+    const pool = poolDaSelecao([VENDAS, SUPORTE], { tags: ['prospect'], funis: [] });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+
+    expect(escolha.rastro?.escolhidoAgentId).toBe('vendas');
+    expect(escolha.rastro?.candidatos[0]?.decisao).toEqual({ passa: true, regra: 'passou', valor: null });
+  });
+
+  it('barrado por funil exigido: contato sem card não entra em "só estes funis" e o rastro diz qual', async () => {
+    const pool = poolDaSelecao(
+      [agentRow('so-cliente', { filters: { include_pipeline_ids: ['funil-contrato'] } })],
+      { tags: [], funis: [] },
+    );
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.rastro?.escolhidoAgentId).toBeNull();
+    expect(escolha.rastro?.candidatos[0]?.decisao).toMatchObject({
+      passa: false,
+      regra: 'barrado_por_funil_exigido',
+    });
+  });
+
+  it('quem veio DEPOIS do vencedor não é avaliado — e o rastro não inventa decisão', async () => {
+    const pool = poolDaSelecao(
+      [
+        agentRow('primeiro', { filters: { exclude_tags: ['cliente ativo'] } }, { priority: 30 }),
+        agentRow('segundo', { filters: { include_tags: ['cliente ativo'] } }, { priority: 20 }),
+        agentRow('terceiro', { filters: { include_tags: ['cliente ativo'] } }, { priority: 10 }),
+      ],
+      { tags: ['cliente ativo'], funis: [] },
+    );
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('segundo');
+    expect(escolha.rastro?.candidatos[2]).toMatchObject({
+      agentId: 'terceiro',
+      posicao: 2,
+      semPublico: false,
+      decisao: null, // não chegou a ser avaliado
+    });
+  });
+
+  it('agente SEM público no meio da fila é marcado como tal (não confundir com barrado)', async () => {
+    const pool = poolDaSelecao(
+      [
+        agentRow('com-publico', { filters: { exclude_tags: ['cliente ativo'] } }, { priority: 20 }),
+        agentRow('sem-publico', { filters: { keyword_regex: 'oi' } }, { priority: 10 }),
+      ],
+      { tags: ['cliente ativo'], funis: [] },
+    );
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('sem-publico');
+    expect(escolha.rastro?.candidatos[1]).toMatchObject({ agentId: 'sem-publico', semPublico: true, decisao: null });
+  });
+
+  it('nenhum candidato declarou público: sem rastro (quem não usa o recurso não paga log)', async () => {
+    const pool = poolDaSelecao([agentRow('unico', { filters: { keyword_regex: 'oi' } })]);
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.rastro).toBeUndefined();
+  });
+
   it('ninguém elegível ⇒ config null e motivo `publico_barrou` (o genérico não assume)', async () => {
     const pool = poolDaSelecao(
       [
@@ -192,7 +293,13 @@ describe('público do agente — quem atende no mesmo número (#3722)', () => {
       { tags: ['prospect'], funis: [] },
     );
     const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
-    expect(escolha).toEqual({ config: null, motivo: 'publico_barrou' });
+    expect(escolha).toMatchObject({ config: null, motivo: 'publico_barrou' });
+    // O silêncio também tem rastro: os dois candidatos, cada um com sua regra.
+    expect(escolha.rastro?.escolhidoAgentId).toBeNull();
+    expect(escolha.rastro?.candidatos.map((c) => c.decisao?.regra)).toEqual([
+      'barrado_por_etiqueta_exigida',
+      'barrado_por_etiqueta_excluida',
+    ]);
   });
 
   it('precedência com critérios sobrepostos: vence o PRIMEIRO da ordem de sempre', async () => {
@@ -242,7 +349,10 @@ describe('público do agente — quem atende no mesmo número (#3722)', () => {
 
   it('público configurado e contato ausente: a régua não é aplicada e o motivo diz isso', async () => {
     const escolha = await escolherAgenteDoNumero(poolDaSelecao([VENDAS]), 'org1', NUMERO, null);
-    expect(escolha).toEqual({ config: expect.objectContaining({ agentId: 'vendas' }), motivo: 'sem_contato' });
+    expect(escolha).toMatchObject({ config: expect.objectContaining({ agentId: 'vendas' }), motivo: 'sem_contato' });
+    // O rastro existe (há público declarado) e diz a verdade: NADA foi avaliado.
+    expect(escolha.rastro?.contatoAvaliado).toBe(false);
+    expect(escolha.rastro?.candidatos.every((c) => c.decisao === null)).toBe(true);
   });
 
   it('erro ao ler os dados do contato SOBE (a fila re-tenta o job)', async () => {

@@ -33,6 +33,8 @@
  */
 import type pg from 'pg';
 
+import { DERIVACAO_TERMINADA, TIPOS_DERIVAVEIS } from '@/lib/messaging/media/derivable';
+
 type Queryable = Pick<pg.Pool, 'query'>;
 
 export interface AlvoDoTurno {
@@ -42,20 +44,60 @@ export interface AlvoDoTurno {
   jobId: string;
 }
 
+export interface OpcoesDaAnotacao {
+  /**
+   * A anotação só pode prometer mídia cujo TEXTO já existe (#3845).
+   *
+   * A anotação é uma promessa: "tudo até este carimbo eu vi". Ela é lida pela
+   * régua `ultimaInboundJaRespondida`, que CALA o turno da mensagem nova — então
+   * prometer mais do que se viu faz o cliente receber uma resposta escrita sem o
+   * conteúdo E ficar sem a resposta ao áudio (#3845, medido em
+   * `tests/invariants/midia-tardia-depois-da-leitura.test.ts`).
+   *
+   * A janela que isto fecha é de UM round-trip: entre a última checagem de
+   * derivação do turno (que volta "nada pendente") e este UPDATE, uma mídia pode
+   * ser gravada, e ela entra na conversa sem texto derivado — o turno a lê como
+   * `[audio]`. Era a janela declarada no próprio #3841 ("fica coberto sem texto
+   * — janela rara, aceita; fecha com o UPDATE filtrando `media_derived_status`
+   * se um dia for medida").
+   *
+   * Só vale quando a derivação CONCLUIU: quem chama já sabe que nada estava
+   * pendente na checagem, e o que a filtragem exclui é exatamente o que chegou
+   * depois dela. Na anotação do começo do turno (antes da espera) a filtragem
+   * seria um defeito: a mídia pendente ali SERÁ lida com texto depois da espera,
+   * e não prometê-la faria o turno dela responder de novo.
+   */
+  apenasMidiaComTexto?: boolean;
+}
+
 /**
  * Anota no job a inbound mais nova visível AGORA — chamar antes de o turno ler
  * a conversa. Um statement: o `||` do jsonb não pisa em chave alheia do payload
  * (`held_run_after` do session-watchdog, por exemplo).
  */
-export async function anotarUltimaInboundVista(db: Queryable, alvo: AlvoDoTurno): Promise<void> {
+export async function anotarUltimaInboundVista(
+  db: Queryable,
+  alvo: AlvoDoTurno,
+  opcoes: OpcoesDaAnotacao = {},
+): Promise<void> {
   await db.query(
     `update job_queue
         set payload = payload || jsonb_build_object(
           'ultima_inbound_vista_em',
           (select max(m.created_at) from messages m
-            where m.organization_id = $1 and m.conversation_id = $2 and m.direction = 'inbound'))
+            where m.organization_id = $1 and m.conversation_id = $2 and m.direction = 'inbound'
+              and ($4::boolean is not true or not (
+                m.type = any($5::text[]) and m.media_url is not null
+                and coalesce(m.media_derived_status, '') <> all($6::text[])))))
       where organization_id = $1 and id = $3`,
-    [alvo.organizationId, alvo.conversationId, alvo.jobId],
+    [
+      alvo.organizationId,
+      alvo.conversationId,
+      alvo.jobId,
+      opcoes.apenasMidiaComTexto === true,
+      [...TIPOS_DERIVAVEIS],
+      [...DERIVACAO_TERMINADA],
+    ],
   );
 }
 
