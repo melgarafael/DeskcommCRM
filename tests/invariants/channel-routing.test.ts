@@ -228,6 +228,31 @@ describe("regras por NÚMERO (canal) — issue #2331", () => {
     await query("delete from platform_config where chave='MODULO_SETORES'");
     await query("update conversations set sector_id=null where organization_id=$1 and id=$2", [org, conv]);
   });
+
+  it("worker real: módulo setores DESLIGADO — a fila gravada na conversa não vale e o destino padrão recebe, como na main", async () => {
+    // Quem liga Setores, usa e desliga fica com `sector_id` nas conversas. O
+    // rodízio tem de voltar a ser o de sempre: nem o worker nem o claim podem
+    // seguir barrando quem não é da fila.
+    await disponibilizar(ana);
+    await disponibilizar(bruno);
+    await query("delete from platform_config where chave='MODULO_SETORES'");
+    const fila = (await query(
+      "insert into attendant_sectors (organization_id, name) values ($1, 'Fila desligada') returning id",
+      [org],
+    )).rows[0].id as string;
+    await query("insert into attendant_sector_members (organization_id, user_id, sector_id) values ($1,$2,$3)", [org, ana, fila]);
+    await query("update organizations set settings=jsonb_set(coalesce(settings,'{}'::jsonb),'{routing}','{\"mode\":\"round_robin\"}') where id=$1", [org]);
+    await policyComRegra([ana, bruno], "round_robin", bruno);
+    await query("update conversations set sector_id=$1, assigned_to_user_id=null, assignee_kind=null, status='open', metadata='{}'::jsonb where organization_id=$2 and id=$3", [fila, org, conv]);
+    await query("delete from event_log where organization_id=$1 and event_type='conversation.routing_requested'", [org]);
+    await query("select fn_request_channel_routing($1,$2)", [org, conv]);
+    const adapter = routingPgSupabase(pool); vi.mocked(createAdminClient).mockReturnValue(adapter.client as never);
+    const resultado = await runRoutingWorker({ now: new Date() });
+    expect(resultado.outcomes.assigned).toBe(1);
+    expect(adapter.errors).toEqual([]);
+    expect((await query("select assigned_to_user_id from conversations where organization_id=$1 and id=$2", [org, conv])).rows[0].assigned_to_user_id).toBe(bruno);
+    await query("update conversations set sector_id=null where organization_id=$1 and id=$2", [org, conv]);
+  });
 });
 
 describe("reserva de conexão org-owned", () => {

@@ -30,6 +30,7 @@ import { loadEligibleAttendants, InvalidRoutingSector } from "@/lib/routing/elig
 import { selectRoundRobin } from "@/lib/routing/decide";
 import { getQueuePosition } from "@/lib/routing/queue";
 import { logger } from "@/lib/logger";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import type { McpToolDefinition } from "../types";
 
 const inputShape = {
@@ -160,7 +161,8 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
       // (9062) Com fila na conversa, o escopo é a FILA: o handoff da IA não
       // entrega a quem não atende o setor que a pessoa escolheu. Sem fila, o
       // escopo é o de sempre (o número).
-      const sectorId = (conv as { sector_id?: string | null }).sector_id ?? null;
+      // Módulo `setores` desligado ⇒ a fila não manda (mesma regra do worker).
+      const sectorId = conv.sector_id && (await moduloLigado(ctx.supabase, "setores")) ? conv.sector_id : null;
       let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>>;
       try {
         eligibles = await loadEligibleAttendants(ctx.supabase, ctx.organizationId, now, sectorId

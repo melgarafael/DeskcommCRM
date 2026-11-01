@@ -23430,7 +23430,11 @@ begin
  -- (migration 9062) FILA É DESTINO: com fila na conversa, a distribuição
  -- automática não sai dela. Vale para o worker de rodízio e para o handoff da IA,
  -- que entram por esta função; a atribuição MANUAL não passa aqui de propósito.
+ -- Módulo `setores` desligado ⇒ a fila não manda (mesma leitura de
+ -- lib/instalacao/modulos.ts: só `ligado` liga). Quem liga, usa e desliga não
+ -- fica com a fila velha gravada restringindo o rodízio sem tela que a mostre.
  if c.sector_id is not null
+  and exists(select 1 from public.platform_config pc where pc.chave='MODULO_SETORES' and pc.valor='ligado')
   and not exists(select 1 from public.attendant_sector_members m where m.organization_id=p_org
                   and m.sector_id=c.sector_id and m.user_id=p_user)
  then return 'candidate_not_in_sector';end if;

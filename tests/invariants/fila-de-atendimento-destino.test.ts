@@ -81,6 +81,9 @@ beforeEach(async () => {
     "update user_organizations set revoked_at=null, role='agent' where organization_id=$1 and user_id=any($2)",
     [org, [ana, bruno]],
   );
+  // A fila só manda com o módulo `setores` ligado (o banco nasce de cada
+  // arquivo a partir do molde, então ligar aqui não vaza para outro arquivo).
+  await query("insert into platform_config (chave, valor) values ('MODULO_SETORES','ligado') on conflict (chave) do update set valor='ligado'");
 });
 
 describe("fila de atendimento: o destino e o horário (9062)", () => {
@@ -152,6 +155,21 @@ describe("fila de atendimento: o destino e o horário (9062)", () => {
 
     const r = await query("select assigned_to_user_id from conversations where organization_id=$1 and id=$2", [org, conv]);
     expect(r.rows[0].assigned_to_user_id).toBe(bruno);
+  });
+
+  it("módulo desligado: a fila que ficou gravada na conversa NÃO restringe a distribuição", async () => {
+    // Quem liga Setores, usa e desliga fica com `sector_id` nas conversas e
+    // nenhuma tela que o mostre. Desligado, o claim volta a ser o de sempre.
+    const fila = await criarFila(org, "Financeiro");
+    await query("insert into attendant_sector_members (organization_id,user_id,sector_id) values ($1,$2,$3)", [
+      org,
+      bruno,
+      fila,
+    ]);
+    await prepararConversa(fila);
+    await query("delete from platform_config where chave='MODULO_SETORES'");
+
+    expect(await claim(ana)).toBe("assigned");
   });
 
   it("sem fila, nada muda: a distribuição continua aceitando qualquer elegível", async () => {
