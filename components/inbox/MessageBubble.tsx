@@ -359,7 +359,9 @@ export function MessageBubble({
                   ? "rounded-br-sm bg-primary text-primary-foreground"
                   : "rounded-bl-sm bg-muted text-foreground",
               ),
-          isFailed && "border border-destructive",
+          // O pulo da agenda não é falha: o selo diz isso, e a moldura de erro
+          // diria o contrário (#3850).
+          isFailed && !pulo && "border border-destructive",
           // Apagada sai das cores da DIREÇÃO e vai para o CINZA: a diferença
           // entre o que foi apagado e o que está vivo tem de ser vista de
           // relance, e o fundo é justamente o que diz de quem é a mensagem —

@@ -94,6 +94,8 @@ describe("MessageBubble — pulo da agenda", () => {
 
     const selo = screen.getByTestId("selo-pulada-pela-agenda");
     expect(selo).toHaveTextContent("Pulada pela agenda");
+    // A moldura de erro diria "falhou" enquanto o selo diz "pulada" (#3850).
+    expect(screen.getByTestId("message-bubble")).not.toHaveClass("border-destructive");
     expect(screen.queryByText("Falhou")).toBeNull();
     expect(screen.queryByTestId("motivo-da-falha")).toBeNull();
 
@@ -147,6 +149,7 @@ describe("MessageBubble — pulo da agenda", () => {
     expect(screen.queryByTestId("selo-pulada-pela-agenda")).toBeNull();
     expect(screen.queryByTestId("pulo-da-agenda")).toBeNull();
     expect(screen.getByText("Falhou")).toBeInTheDocument();
+    expect(screen.getByTestId("message-bubble")).toHaveClass("border-destructive");
     expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent(
       "Não conseguimos preparar o arquivo para envio.",
     );
