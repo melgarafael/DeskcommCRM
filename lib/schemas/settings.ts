@@ -905,3 +905,136 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
     ? (settings as Record<string, unknown>).crm : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }
+
+/**
+ * A ENTRADA AUTOMÁTICA NO FUNIL (#3603, fatia 1) — `settings.entrada_automatica_no_funil`.
+ *
+ * A conversa NOVA que nasce no CRM entra sozinha no funil que a organização
+ * escolheu, na etapa que ela escolheu, já vinculada ao contato. Quem aplica é
+ * `lib/leads/entrada-automatica-no-funil.ts`; este bloco é o CONTRATO do jsonb
+ * — e é lido pela tela, pelo serviço e por qualquer script, para não existirem
+ * duas leituras do mesmo valor divergindo (a lição de `entrada-do-inbox.ts`).
+ *
+ * ─── Por que jsonb e não coluna ──────────────────────────────────────────────
+ * A escolha é uma preferência de organização, sem invariante que o banco possa
+ * provar sozinho: `pipeline_id` que aponta para funil de OUTRA organização
+ * passaria por uma FK, e `stage_id` que aponta para etapa de outro funil
+ * passaria também. Quem confere é o serviço, contra o banco, na hora de aplicar
+ * — e essa conferência existe com ou sem coluna nova.
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga (a mesma de `settings.crm.cliente_pela_agenda` e de
+ * `settings.entrada_do_inbox.ativa`): ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO, e desligado é "nenhum negócio nasce" — o controle mais importante
+ * desta fatia, porque é o estado de toda instalação que já existe.
+ *
+ * ⚠️ O VALOR É JSONB ESCRITO POR FORA: script, seed e API antiga não passam pelo
+ * zod de escrita, então cada campo tem `.catch` próprio. Um `stage_id` que não
+ * tem forma de uuid vira `null` e o card cai na primeira etapa do funil
+ * escolhido — nunca impede o funil escolhido de valer.
+ *
+ * Nunca lança: um jsonb torto não pode derrubar o nascimento de um negócio.
+ */
+export const ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE = "entrada_automatica_no_funil";
+
+export const entradaAutomaticaNoFunilSchema = z
+  .object({
+    ativa: z.boolean().catch(false),
+    /** O funil escolhido. `null` com `ativa: true` é configuração incompleta. */
+    pipeline_id: z.uuid().nullable().catch(null),
+    /**
+     * A etapa escolhida DENTRO desse funil. `null` é escolha legítima: entra na
+     * primeira etapa aberta, que é o que o funil já diz pela ordem das colunas.
+     */
+    stage_id: z.uuid().nullable().catch(null),
+  })
+  .catch({ ativa: false, pipeline_id: null, stage_id: null });
+
+export type EntradaAutomaticaNoFunil = z.infer<typeof entradaAutomaticaNoFunilSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function entradaAutomaticaNoFunilDeclarada(settings: unknown): EntradaAutomaticaNoFunil {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return entradaAutomaticaNoFunilSchema.parse(raiz?.[ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE] ?? {});
+}
+
+/**
+ * O FOLLOW-UP POR ETAPA (#3603, fatia 3) — `settings.followup_por_etapa`.
+ *
+ * A tela de Configurações → Entrada e follow-up grava, para CADA etapa do
+ * funil, três decisões: se aquela etapa tem acompanhamento, em quantas horas
+ * ele começa e com que texto. O mapa é indexado por `crm_stages.id` — a mesma
+ * chave que o evento `lead.stage_changed` carrega em `to_stage_id`.
+ *
+ * ─── Por que jsonb, e não uma coluna por etapa ──────────────────────────────
+ * Etapa é uma linha de `crm_stages`: uma coluna aqui seria uma segunda verdade
+ * sobre o mesmo cadastro, e uma tabela nova seria uma migration para guardar
+ * três campos que a tela lê e escreve de uma vez. A escolha desta fatia é a
+ * mesma da entrada automática — `settings` é jsonb e não pede migration.
+ *
+ * ⚠️ A CHAVE É `stage_id` SEM FK, e o banco não tem como garantir que ela
+ * aponta para uma etapa DESTA organização: jsonb não referencia tabela. Quem
+ * confere é a action, contra o banco, na gravação (etapa de outro tenant, de
+ * outro funil, arquivada ou fechada é recusada com nome); e quem lê a tela
+ * cruza a chave com as etapas que existem — chave órfã não vira linha na tela.
+ *
+ * ─── Régua de leitura ──────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga (a mesma de `entrada_automatica_no_funil` e de
+ * `settings.crm.cliente_pela_agenda`): ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO, que é o estado de toda etapa que ninguém configurou.
+ *
+ * `.catch` POR CAMPO porque o jsonb é escrito por fora (script, seed, API
+ * antiga): um `prazo_horas` que veio como texto vira `null` e a etapa continua
+ * na lista, com o campo vazio, em vez de derrubar a tela inteira.
+ *
+ * Nunca lança.
+ */
+export const FOLLOWUP_POR_ETAPA_CHAVE = "followup_por_etapa";
+
+/** O piso e o teto do prazo — 1 h até 30 dias. Valem na tela E na action. */
+export const PRAZO_DE_FOLLOWUP_HORAS_MIN = 1;
+export const PRAZO_DE_FOLLOWUP_HORAS_MAX = 720;
+
+/** O teto do texto do modelo de mensagem. */
+export const MENSAGEM_DE_FOLLOWUP_MAX = 1000;
+
+export const followupDaEtapaSchema = z
+  .object({
+    ativa: z.boolean().catch(false),
+    /** `null` com `ativa: true` é configuração incompleta — a action recusa. */
+    prazo_horas: z
+      .number()
+      .int()
+      .min(PRAZO_DE_FOLLOWUP_HORAS_MIN)
+      .max(PRAZO_DE_FOLLOWUP_HORAS_MAX)
+      .nullable()
+      .catch(null),
+    mensagem: z.string().max(MENSAGEM_DE_FOLLOWUP_MAX).nullable().catch(null),
+  })
+  .catch({ ativa: false, prazo_horas: null, mensagem: null });
+
+export type FollowupDaEtapa = z.infer<typeof followupDaEtapaSchema>;
+
+export const followupPorEtapaSchema = z
+  .record(z.string(), followupDaEtapaSchema)
+  .catch({});
+
+export type FollowupPorEtapa = z.infer<typeof followupPorEtapaSchema>;
+
+/**
+ * O mapa lido de `organizations.settings` — chaves de etapa → regra.
+ *
+ * Devolve TAMBÉM as chaves que não têm forma de uuid: quem consome é uma tela
+ * que procura por id de etapa existente, e uma chave torta não casa com
+ * nenhuma. Filtrar aqui esconderia o dado de quem precisa consertá-lo.
+ */
+export function followupPorEtapaDeclarado(settings: unknown): FollowupPorEtapa {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return followupPorEtapaSchema.parse(raiz?.[FOLLOWUP_POR_ETAPA_CHAVE] ?? {});
+}

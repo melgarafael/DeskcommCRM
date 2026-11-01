@@ -19131,6 +19131,80 @@ export const DICIONARIO: Traducoes = {
   "Setor inexistente nesta organização.": {
     es: "El sector no existe en esta organización.",
   },
+  // ─── #3603 (fatia 3): Configurações → Entrada e follow-up ─────────────────
+  "Entrada e follow-up": { es: "Entrada y seguimiento" },
+  "O funil e a etapa da conversa nova, e o acompanhamento de cada etapa.": {
+    es: "El embudo y la etapa de la conversación nueva, y el seguimiento de cada etapa.",
+  },
+  "O que acontece sozinho quando uma conversa nova chega, e o que a operação espera de cada etapa do funil depois disso.":
+    {
+      es: "Lo que ocurre solo cuando llega una conversación nueva, y lo que la operación espera de cada etapa del embudo después de eso.",
+    },
+  "Entrada automática no funil": { es: "Entrada automática en el embudo" },
+  "Conversa nova entra no funil sozinha": { es: "La conversación nueva entra sola en el embudo" },
+  "Toda conversa nova que nasce pelo CRM — Iniciar conversa, ficha do contato, lembrete de agenda ou de tarefa e a ferramenta de início de conversa do agente — passa a gerar um negócio nesta etapa, vinculada ao contato. Desligada é o comportamento de sempre: nenhum negócio nasce sozinho, e é o estado de quem nunca abriu esta tela.":
+    {
+      es: "Toda conversación nueva que nace por el CRM — Iniciar conversación, ficha del contacto, recordatorio de agenda o de tarea y la herramienta de inicio de conversación del agente — pasa a generar un negocio en esta etapa, vinculado al contacto. Desactivada es el comportamiento de siempre: ningún negocio nace solo, y es el estado de quien nunca abrió esta pantalla.",
+    },
+  "Ligada: cada conversa nova gera um negócio na etapa escolhida abaixo.": {
+    es: "Activada: cada conversación nueva genera un negocio en la etapa elegida abajo.",
+  },
+  "Desligada: a conversa nova não gera negócio nenhum por conta do CRM.": {
+    es: "Desactivada: la conversación nueva no genera ningún negocio por cuenta del CRM.",
+  },
+  "Escolha um funil": { es: "Elige un embudo" },
+  "Primeira etapa aberta do funil": { es: "Primera etapa abierta del embudo" },
+  "A conversa nova entra em «{funil}» → «{etapa}».": {
+    es: "La conversación nueva entra en «{funil}» → «{etapa}».",
+  },
+  "A conversa nova entra na primeira etapa aberta de «{funil}».": {
+    es: "La conversación nueva entra en la primera etapa abierta de «{funil}».",
+  },
+  "Salvar entrada automática": { es: "Guardar entrada automática" },
+  "Entrada automática salva.": { es: "Entrada automática guardada." },
+  "Escolha o funil de destino antes de ligar a entrada automática.": {
+    es: "Elige el embudo de destino antes de activar la entrada automática.",
+  },
+  "Só um gerente ou administrador pode mudar esta opção.": {
+    es: "Solo un gerente o administrador puede cambiar esta opción.",
+  },
+  "Este funil não existe mais nesta empresa. Escolha outro.": {
+    es: "Este embudo ya no existe en esta empresa. Elige otro.",
+  },
+  "Esta etapa não faz parte do funil escolhido. Escolha outra.": {
+    es: "Esta etapa no forma parte del embudo elegido. Elige otra.",
+  },
+  "Não consegui salvar agora. Tente de novo.": { es: "No pude guardar ahora. Inténtalo de nuevo." },
+  "Follow-up por etapa": { es: "Seguimiento por etapa" },
+  "Para cada etapa: se ela tem acompanhamento, em quantas horas ele começa e qual modelo de mensagem a equipe usa. Desligar uma etapa não apaga o prazo nem o texto — religar depois não obriga a escrever tudo de novo.":
+    {
+      es: "Para cada etapa: si tiene seguimiento, en cuántas horas empieza y qué modelo de mensaje usa el equipo. Desactivar una etapa no borra el plazo ni el texto — volver a activarla después no obliga a escribirlo todo de nuevo.",
+    },
+  "Nenhum funil aberto com etapa para acompanhar. Crie um funil primeiro.": {
+    es: "Ningún embudo abierto con etapa para seguir. Crea un embudo primero.",
+  },
+  "Marcada para follow-up": { es: "Marcada para seguimiento" },
+  "Sem follow-up automático": { es: "Sin seguimiento automático" },
+  "Modelo de mensagem da etapa {etapa}": { es: "Modelo de mensaje de la etapa {etapa}" },
+  "O que a equipe escreve se o cliente não responder": {
+    es: "Lo que el equipo escribe si el cliente no responde",
+  },
+  "Prazo (horas)": { es: "Plazo (horas)" },
+  "Salvar follow-up por etapa": { es: "Guardar seguimiento por etapa" },
+  "Follow-up por etapa salvo.": { es: "Seguimiento por etapa guardado." },
+  "Toda etapa ligada precisa de prazo e de modelo de mensagem.": {
+    es: "Toda etapa activada necesita plazo y modelo de mensaje.",
+  },
+  "O prazo máximo de um follow-up é de 720 horas (30 dias).": {
+    es: "El plazo máximo de un seguimiento es de 720 horas (30 días).",
+  },
+  "Uma das etapas mudou enquanto a tela estava aberta. Recarregue.": {
+    es: "Una de las etapas cambió mientras la pantalla estaba abierta. Recarga.",
+  },
+  "O envio continua sendo do fluxo de follow-up de cada etapa, no construtor de fluxos: é lá que o texto é revisado por uma pessoa antes de sair. Esta tela guarda a régua da operação — o que cada etapa espera.":
+    {
+      es: "El envío sigue siendo del flujo de seguimiento de cada etapa, en el constructor de flujos: es allí donde una persona revisa el texto antes de que salga. Esta pantalla guarda la regla de la operación — lo que cada etapa espera.",
+    },
 };
 
 /**
