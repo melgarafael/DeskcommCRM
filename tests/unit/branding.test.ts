@@ -967,6 +967,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Graph API do WhatsApp Cloud — 6 arquivos: envio de template, sincronização de modelos, validação de credencial, conversões e insights. É contrato da Meta, não escolha nossa.",
   },
+  "api.telegram.org": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da Bot API do Telegram (canal nativo do #3440): é para onde `lib/channels/bot/credentials.ts` envia `sendMessage` e registra o webhook. Endpoint padrão fixo de propósito — instalação que não configura nada tem de funcionar —, com override por TELEGRAM_API_BASE_URL para a prova em tela.",
+  },
   "www.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:
