@@ -179,6 +179,61 @@ describe("resolverDestinoDoAtribuir — a cadeia de destinos (#3804)", () => {
   });
 });
 
+describe("resolverDestinoDoAtribuir — o elo da conversa que o aviso do #3803 pede", () => {
+  const DESTINOS_DO_AVISO: Array<"responsavel_da_conversa" | "responsavel_do_negocio" | "dono_da_carteira"> = [
+    "responsavel_da_conversa",
+    "responsavel_do_negocio",
+    "dono_da_carteira",
+  ];
+  const doAviso = { modo: "destino", destinos: DESTINOS_DO_AVISO };
+  const CONVERSA_COM_DONO = { assigned_to_user_id: FIXO, assignee_kind: "human" };
+
+  it("o responsável da conversa vem ANTES do negócio e da carteira", () => {
+    const r = resolverDestinoDoAtribuir(
+      COM_RESPONSAVEL,
+      CONTATO_COM_CARTEIRA,
+      doAviso,
+      [],
+      CONVERSA_COM_DONO,
+    );
+
+    expect(r.user_id).toBe(FIXO);
+    expect(r.motivo).toBe("responsavel_da_conversa");
+    expect(r.descartes).toEqual([]);
+  });
+
+  it("conversa sem dono: a cadeia segue, e o motivo do descarte diz `ausente`", () => {
+    const r = resolverDestinoDoAtribuir(
+      COM_RESPONSAVEL,
+      CONTATO_COM_CARTEIRA,
+      doAviso,
+      [],
+      { assigned_to_user_id: null, assignee_kind: "human" },
+    );
+
+    expect(r.user_id).toBe(X);
+    expect(r.motivo).toBe("responsavel_do_negocio");
+    expect(elosDescartados(r)).toEqual(["responsavel_da_conversa:ausente"]);
+  });
+
+  it("conversa com a IA (`assignee_kind = 'agent'`) não é gente: o elo é descartado como ausente", () => {
+    const r = resolverDestinoDoAtribuir(COM_RESPONSAVEL, CONTATO_COM_CARTEIRA, doAviso, [], {
+      assigned_to_user_id: FIXO,
+      assignee_kind: "agent",
+    });
+
+    expect(r.motivo).toBe("responsavel_do_negocio");
+    expect(elosDescartados(r)).toEqual(["responsavel_da_conversa:ausente"]);
+  });
+
+  it("o vigésimo elo continua valendo quando a conversa nem é passada (chamador do #3804)", () => {
+    // Sem o 5º argumento a cadeia tem só dois elos: o comportamento do #3804 não muda.
+    const semConversa = resolverDestinoDoAtribuir(COM_RESPONSAVEL, CONTATO_COM_CARTEIRA, doAviso);
+    expect(semConversa.motivo).toBe("responsavel_do_negocio");
+    expect(elosDescartados(semConversa)).toEqual(["responsavel_da_conversa:ausente"]);
+  });
+});
+
 describe("resolverDestinoDoAtribuir — os modos de sempre continuam iguais", () => {
   it("pessoa fixa: o id escolhido na regra, motivo 'fixo'", () => {
     const r = resolverDestinoDoAtribuir(COM_RESPONSAVEL, CONTATO_COM_CARTEIRA, {

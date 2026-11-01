@@ -15201,6 +15201,25 @@ export const DICIONARIO: Traducoes = {
     { es: "Conecta un WhatsApp escaneando el código QR en la pantalla de Conexiones. Por ahí saldrán los avisos." },
   "Conexão que envia os avisos":
     { es: "Conexión que envía los avisos" },
+  // ─── Para quem vai o aviso (#3803) ───────────────────────────────────────
+  "Quem recebe os avisos":
+    { es: "Quién recibe los avisos" },
+  "Sempre o número da empresa":
+    { es: "Siempre el número de la empresa" },
+  "Quem está com o atendimento":
+    { es: "Quien está a cargo de la conversación" },
+  "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima.":
+    { es: "El aviso va a quien está a cargo de la conversación; si esa persona no tiene un WhatsApp registrado, a quien es dueño del negocio; luego, al dueño de la cartera del contacto. Si nadie lo tiene, va al número de arriba." },
+  "Todo aviso vai para o número acima, como sempre foi.":
+    { es: "Todos los avisos van al número de arriba, como siempre." },
+  "WhatsApp de cada pessoa da equipe":
+    { es: "WhatsApp de cada persona del equipo" },
+  "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.":
+    { es: "Es este número el que recibe el aviso cuando la persona es la responsable. Sin número, se la saltea: el aviso nunca queda sin destinatario." },
+  "Ainda não há outras pessoas nesta organização.":
+    { es: "Todavía no hay otras personas en esta organización." },
+  "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.":
+    { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba." },
   "Enquanto ninguém puder abrir um caso, nenhum aviso vai sair. Ligue a opção de abrir casos na configuração do assistente.":
     { es: "Mientras nadie pueda abrir casos, no se enviará ningún aviso. Activa la opción de abrir casos en la configuración del asistente." },
   "Enviado para":

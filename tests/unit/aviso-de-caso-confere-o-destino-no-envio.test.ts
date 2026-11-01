@@ -158,7 +158,11 @@ describe("a recusa não é silêncio — o registro do desfecho", () => {
       join(process.cwd(), "lib", "escalacao", "aviso-ao-suporte.ts"),
       "utf8",
     );
-    const i = motor.indexOf("destinoEhDaPropriaOrganizacao(orgId, cfg.telefone_destino)");
+    // A sonda fixa a CHAMADA, não o argumento: desde o #3803 o destino é o
+    // número resolvido (`numeroDoAviso`), e não mais `cfg.telefone_destino` —
+    // fixar a variável aqui reprovaria uma mudança correta e ensinaria a
+    // atualizar a cerca sem pensar, que é como uma cerca deixa de valer.
+    const i = motor.indexOf("destinoEhDaPropriaOrganizacao(orgId, ");
     expect(
       i,
       "o motor deixou de conferir o destino antes de enviar — o laço volta a ser possível",

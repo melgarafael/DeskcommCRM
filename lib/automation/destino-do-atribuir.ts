@@ -11,7 +11,7 @@
  *
  * ─── O CONTRATO (é ele que a #3803 vai reusar) ─────────────────────────────
  *
- *   `resolverDestinoDoAtribuir(negocio, contato, config, recusados?)`
+ *   `resolverDestinoDoAtribuir(negocio, contato, config, recusados?, conversa?)`
  *     → `{ user_id, motivo, descartes }`
  *
  * É uma função PURA: nada de banco, de relógio, de sessão. Tudo que ela sabe do
@@ -42,10 +42,31 @@
  *
  * Nada aqui muda o desfecho de quem não usa o modo novo: as regras gravadas
  * antes desta entrega têm `user_id` e/ou `modo` reconhecidos como sempre.
+ *
+ * ─── O que a #3803 acrescentou, e por que foi só isto ──────────────────────
+ *
+ * O aviso no WhatsApp para o responsável precisa de um elo que a ação de
+ * atribuir não tinha: o **responsável da CONVERSA** (é o vendedor que está com
+ * o cliente agora, antes de qualquer negócio existir). A cadeia do aviso é
+ * `responsavel_da_conversa → responsavel_do_negocio → dono_da_carteira`, e cada
+ * elo devolve um `user_id`; o telefone de quem recebe é outro assunto, de quem
+ * chama. Por isso aqui entraram só o candidato novo e a linha da conversa (5º
+ * argumento, opcional) — a ordem, o descarte, a validação de id e a recusa por
+ * vínculo continuam sendo os MESMOS de todos os chamadores. Duas
+ * implementações da mesma regra divergiriam na primeira correção.
  */
 
-/** Os destinos que a regra pode pedir, na ordem em que são tentados. */
-export type CandidatoDoDestino = "responsavel_do_negocio" | "dono_da_carteira";
+/**
+ * Os destinos que a regra pode pedir, na ordem em que são tentados.
+ *
+ * `responsavel_da_conversa` só serve ao aviso de caso/proposta (#3803): a ação
+ * de atribuir não o pede, mas ela é quem decide — e um elo que só existe numa
+ * das duas cadeias é exatamente a segunda implementação que não deve nascer.
+ */
+export type CandidatoDoDestino =
+  | "responsavel_da_conversa"
+  | "responsavel_do_negocio"
+  | "dono_da_carteira";
 
 /** Qual elo decidiu (ou por que ninguém recebeu). Vai para a Atividade. */
 export type MotivoDoDestino =
@@ -75,6 +96,17 @@ export type DestinoResolvido = {
 export type NegocioDoDestino = { owner_user_id?: unknown; owner_kind?: unknown } | null | undefined;
 /** A linha do contato como `buildContext` a entrega. */
 export type ContatoDoDestino = { carteira_user_id?: unknown } | null | undefined;
+/**
+ * A linha da conversa — o que o aviso do #3803 entrega a mais.
+ *
+ * `assignee_kind = 'agent'` é a IA atendendo: a conversa está "com o agente",
+ * não com uma pessoa, e avisar um robô não existe. Mesma leitura de
+ * `responsavelDoNegocio` para `owner_kind`.
+ */
+export type ConversaDoDestino =
+  | { assigned_to_user_id?: unknown; assignee_kind?: unknown }
+  | null
+  | undefined;
 /** A configuração da ação, como veio do banco (pode ser de outra versão). */
 export type ConfigDoDestino = Record<string, unknown> | null | undefined;
 
@@ -89,7 +121,11 @@ export type ConfigDoDestino = Record<string, unknown> | null | undefined;
  */
 const ID_DE_USUARIO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const CANDIDATOS: readonly string[] = ["responsavel_do_negocio", "dono_da_carteira"];
+const CANDIDATOS: readonly string[] = [
+  "responsavel_da_conversa",
+  "responsavel_do_negocio",
+  "dono_da_carteira",
+];
 
 /** Texto não vazio, ou `null` — o banco devolve nulo, "", ausente e número. */
 function texto(valor: unknown): string | null {
@@ -116,6 +152,13 @@ function responsavelDoNegocio(negocio: NegocioDoDestino): unknown {
   return texto(linha.owner_kind) === "agent" ? null : linha.owner_user_id;
 }
 
+/** O atendente que está com a conversa agora (#3803). */
+function responsavelDaConversa(conversa: ConversaDoDestino): unknown {
+  const linha = registro(conversa);
+  if (!linha) return null;
+  return texto(linha.assignee_kind) === "agent" ? null : linha.assigned_to_user_id;
+}
+
 /** O atendente dono da carteira do contato. */
 function donoDaCarteira(contato: ContatoDoDestino): unknown {
   return registro(contato)?.carteira_user_id ?? null;
@@ -133,6 +176,12 @@ export function resolverDestinoDoAtribuir(
   contato: ContatoDoDestino,
   config: ConfigDoDestino,
   recusados: readonly string[] = [],
+  /**
+   * A conversa que disparou o aviso (#3803). Opcional e no FIM da lista de
+   * propósito: os chamadores do #3804 continuam com quatro argumentos e a
+   * assinatura que já está no main não muda de forma.
+   */
+  conversa: ConversaDoDestino = null,
 ): DestinoResolvido {
   const descartes: Descarte[] = [];
   const recusado = new Set(recusados);
@@ -183,7 +232,12 @@ export function resolverDestinoDoAtribuir(
       // dado gravado, e uma lista com lixo não pode derrubar a automação.
       if (typeof pedido !== "string" || !CANDIDATOS.includes(pedido)) continue;
       const elo = pedido as CandidatoDoDestino;
-      const valor = elo === "responsavel_do_negocio" ? responsavelDoNegocio(negocio) : donoDaCarteira(contato);
+      const valor =
+        elo === "responsavel_da_conversa"
+          ? responsavelDaConversa(conversa)
+          : elo === "responsavel_do_negocio"
+            ? responsavelDoNegocio(negocio)
+            : donoDaCarteira(contato);
       const id = aceitar(elo, valor);
       if (id) return { user_id: id, motivo: elo, descartes };
     }
