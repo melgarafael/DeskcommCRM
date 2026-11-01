@@ -703,8 +703,8 @@ function PipelineEditor({
   // O tipo moeda diz a moeda da organização (« Moeda (EUR) »), não « (BRL) » em duro.
   const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
   const v = pipeline.vocabulary ?? {};
-  const [lead, setLead] = useState(v.lead ?? "Lead");
-  const [deal, setDeal] = useState(v.deal ?? "Deal");
+  const [lead, setLead] = useState(v.lead ?? "Contato");
+  const [deal, setDeal] = useState(v.deal ?? "Negócio");
   const [won, setWon] = useState(v.won ?? "Ganho");
   const [lost, setLost] = useState(v.lost ?? "Perdido");
   const [reasonsText, setReasonsText] = useState(readLostReasons(pipeline.settings).join(", "));
@@ -936,22 +936,25 @@ function PipelineEditor({
   return (
     <div className="space-y-4" data-testid={`editor-${pipeline.id}`}>
       <h3 className="text-sm font-semibold">{t("Vocabulário e campos")}</h3>
+      <p className="text-xs text-muted-foreground">
+        {t("Como este funil chama cada coisa nas telas. Ex.: numa loja, o Negócio pode se chamar Pedido.")}
+      </p>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="space-y-1">
-          <Label className="text-xs">{t("Lead")}</Label>
+          <Label className="text-xs">{t("Contato")}</Label>
           <Input value={lead} onChange={(e) => setLead(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">{t("Deal")}</Label>
+          <Label className="text-xs">{t("Negócio")}</Label>
           <Input value={deal} onChange={(e) => setDeal(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">{t("Won")}</Label>
+          <Label className="text-xs">{t("Ganho")}</Label>
           <Input value={won} onChange={(e) => setWon(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">{t("Lost")}</Label>
+          <Label className="text-xs">{t("Perdido")}</Label>
           <Input value={lost} onChange={(e) => setLost(e.target.value)} />
         </div>
       </div>

@@ -1644,6 +1644,7 @@
   "Todos os fluxos": "All flows",
   "Nenhum item na fila": "No items in the queue",
   "Enrollments ativos e promessas de retorno agendadas pela IA aparecem aqui.": "Active enrollments and follow-up promises scheduled by the AI appear here.",
+  "Como este funil chama cada coisa nas telas. Ex.: numa loja, o Negócio pode se chamar Pedido.": "What this pipeline calls each thing on screen. E.g.: in a store, a Deal can be called an Order.",
   "Contato": "Contact",
   "Fluxo / Promessa": "Flow / Promise",
   "Nó atual / Motivo": "Current node / Reason",

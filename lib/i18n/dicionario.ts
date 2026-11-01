@@ -18315,13 +18315,13 @@ export const DICIONARIO: Traducoes = {
   // abaixo são exclusivas desta fatia.
   // Novas da F3.
   "contatos por chamada.": { es: "contactos por llamada." },
-  // Textos que as telas escreviam crus, fora de t(), e que por isso saíam iguais em todo idioma. Os rótulos do
-  // vocabulário do funil eram inglês em toda língua (Lead, Deal, Won, Lost): a chave é o próprio inglês, para o
-  // português seguir mostrando o mesmo; o atalho de exemplo das respostas rápidas era « oi »; o título de excluir um
-  // fluxo leva o nome entre as aspas do idioma.
-  Deal: { es: "Negocio" },
-  Won: { es: "Ganado" },
-  Lost: { es: "Perdido" },
+  // Textos que as telas escreviam crus, fora de t(), e que por isso saíam iguais em todo idioma: o atalho de exemplo
+  // das respostas rápidas era « oi »; o título de excluir um fluxo leva o nome entre as aspas do idioma. (Os rótulos
+  // do vocabulário do funil, que eram Lead/Deal/Won/Lost em toda língua, agora são Contato/Negócio/Ganho/Perdido —
+  // chaves que já tinham espanhol.)
+  "Como este funil chama cada coisa nas telas. Ex.: numa loja, o Negócio pode se chamar Pedido.": {
+    es: "Cómo llama este embudo a cada cosa en las pantallas. Ej.: en una tienda, el Negocio puede llamarse Pedido.",
+  },
   oi: { es: "hola" },
   "Excluir “{nome}”?": { es: "¿Eliminar “{nome}”?" },
   // O editor de sequência e as automações: textos que as telas escreviam crus (o aviso de número desconectado, os
