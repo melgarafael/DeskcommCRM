@@ -56757,6 +56757,9 @@ end;
 $$;
 revoke all on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) from public, anon;
 grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) to authenticated;
+-- As DUAS sobrecargas antigas saem (#3803): a de 6 argumentos é criada mais
+-- acima neste arquivo e, viva ao lado desta, deixa ambígua a chamada de 6.
+drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean);
 drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean);
 
 -- ---- #3042: desmarcar o exemplo tira do RAG os trechos já aprendidos da conversa (migration 0688) ----

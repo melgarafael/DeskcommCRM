@@ -580,7 +580,11 @@ export async function aplicaAvisoDeCaso(
     caseId: caso.id,
     nomeDoCliente: nome,
     link: linkDoCaso(deps.urlPublica, caso.id),
-    respostaWhatsappHabilitada: cfg.resposta_whatsapp_habilitada,
+    // RESPONDER/PERGUNTAR só é reconhecido quando chega do número interno de
+    // aviso (`resposta-whatsapp-ao-caso.ts`). O celular de um vendedor não é
+    // esse número: ensinar o comando a ele faria a resposta entrar no CRM como
+    // mensagem comum. Para ele, o aviso diz para abrir o link (#3803).
+    respostaWhatsappHabilitada: cfg.resposta_whatsapp_habilitada && destino.origem === "numero_da_empresa",
   });
 
   // ── 14. O transporte ─────────────────────────────────────────────────────
