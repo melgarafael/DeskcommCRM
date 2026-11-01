@@ -1543,6 +1543,23 @@ export const DICIONARIO: Traducoes = {
   "Não iniciada: o atendimento ou a resposta do cliente mudou.": { es: "No iniciada: cambió la atención o la respuesta del cliente." },
   "Sem contato vinculado. Este compromisso não inicia uma recuperação.": { es: "Sin contacto vinculado. Esta cita no inicia una recuperación." },
   "Recuperação iniciada e interrompida porque o cliente respondeu.": { es: "Recuperación iniciada e interrumpida porque el cliente respondió." },
+  // #3848 — o selo da mensagem que o fluxo mandou PULAR por causa da agenda, na
+  // Inbox. O caso não é falha: a escolha do fluxo é não enviar com compromisso
+  // marcado, e o selo diz isso com o motivo medido pela guarda.
+  "Pulada pela agenda": { es: "Omitida por la agenda" },
+  "O contato tem compromisso marcado na agenda — o fluxo está configurado para não enviar quando isso acontece.": {
+    es: "El contacto tiene una cita agendada — el flujo está configurado para no enviar cuando eso ocurre.",
+  },
+  "O contato está na agenda agora — o fluxo está configurado para não enviar quando isso acontece.": {
+    es: "El contacto está en la cita ahora — el flujo está configurado para no enviar cuando eso ocurre.",
+  },
+  "O compromisso do contato já terminou e a presença ainda não foi confirmada — o fluxo está configurado para não enviar quando isso acontece.": {
+    es: "La cita del contacto ya terminó y la asistencia aún no se ha confirmado — el flujo está configurado para no enviar cuando eso ocurre.",
+  },
+  "Compromisso: {titulo}": { es: "Cita: {titulo}" },
+  "Para mandar mesmo assim, mude a escolha do fluxo ou escreva pelo campo de resposta.": {
+    es: "Para enviar de todos modos, cambia la opción del flujo o escribe desde el campo de respuesta.",
+  },
   "Revise o próximo passo.": { es: "Revisa el siguiente paso." },
   "Revisar acompanhamentos": { es: "Revisar seguimientos" },
   "Mensagem do cliente usada como evidência (opcional)": { es: "Mensaje del cliente usado como evidencia (opcional)" },
