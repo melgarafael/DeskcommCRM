@@ -69,6 +69,17 @@ interface Props {
   podeConvidar: boolean;
   atendenteId?: string;
   somenteLeitura?: boolean;
+  /**
+   * O QUE ESTA PEÇA DESENHA (#3003). A barra do cabeçalho passou a mostrar só a
+   * PRESENÇA e a mandar o convite para o menu ⋯ — e são duas coisas de naturezas
+   * diferentes: "quem mais está aqui" é informação e some se for para dentro de
+   * um menu; "convidar" é ação e é justamente o que a barra enxuta tira da
+   * frente. Em vez de recalcular os gates em cada lugar, o mesmo componente
+   * desenha metade em cada um.
+   *
+   * `"completo"` (padrão) desenha as duas, como antes.
+   */
+  modo?: "completo" | "presenca" | "convite";
 }
 
 /** Iniciais para o fallback do avatar: sem nome, cai no `?` — nunca no vazio. */
@@ -83,7 +94,7 @@ function iniciais(nome: string | null | undefined): string {
   return `${primeira}${ultima}`.toUpperCase();
 }
 
-export function ParticipantesDaConversa({ conversationId, podeConvidar, atendenteId, somenteLeitura = false }: Props) {
+export function ParticipantesDaConversa({ conversationId, podeConvidar, atendenteId, somenteLeitura = false, modo = "completo" }: Props) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
   const [alvo, setAlvo] = useState("");
@@ -113,10 +124,19 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
     return membro?.full_name ?? null;
   };
 
-  // Sem poder convidar E sem ninguém na lista, esta peça não desenha nada: um
-  // cabeçalho vazio de "atendimento conjunto" é ruído para quem só foi ler a
-  // conversa.
-  if (!podeConvidar && lista.length === 0) return null;
+  /**
+   * Sem poder convidar E sem ninguém na lista, esta peça não desenha nada: um
+   * cabeçalho vazio de "atendimento conjunto" é ruído para quem só foi ler a
+   * conversa.
+   *
+   * Com o `modo` (#3003) a conta é por PARTE: a instância da barra só desenha
+   * avatar (e sem ninguém na lista não desenha nada, nem uma `div` vazia); a do
+   * menu só desenha o convite. Assim as duas continuam sumindo quando não têm o
+   * que mostrar, em vez de deixar um espaço morto no cabeçalho.
+   */
+  const mostraPresenca = modo !== "convite" && lista.length > 0;
+  const mostraConvite = modo !== "presenca" && podeConvidar && !somenteLeitura;
+  if (!mostraPresenca && !mostraConvite) return null;
 
   async function confirmarConvite() {
     if (!alvo || convidar.isPending) return;
@@ -147,7 +167,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      {lista.length > 0 && (
+      {mostraPresenca && (
         <div
           className="flex items-center"
           data-testid="participantes-do-atendimento"
@@ -187,23 +207,40 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
         </div>
       )}
 
-      {podeConvidar && !somenteLeitura && (
-        <Button
-          size="sm"
-          variant="outline"
-          data-testid="convidar-participante"
-          title={t("Convida um colega para atender junto — o responsável pela conversa não muda.")}
-          onClick={() => {
-            setErro(null);
-            setAberto(true);
-          }}
-        >
-          <UsersThree size={14} aria-hidden className="mr-1" />
-          {t("Convidar")}
-        </Button>
-      )}
+      {mostraConvite &&
+        (modo === "convite" ? (
+          <DropdownMenuItem
+            data-testid="convidar-participante"
+            title={t("Convida um colega para atender junto — o responsável pela conversa não muda.")}
+            // O menu não fecha no clique: o diálogo do convite é FILHO deste
+            // componente, e fechar o menu o desmontaria junto.
+            onSelect={(e) => {
+              e.preventDefault();
+              setErro(null);
+              setAberto(true);
+            }}
+          >
+            <UsersThree size={16} aria-hidden className="mr-2" />
+            {t("Convidar")}
+          </DropdownMenuItem>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="convidar-participante"
+            title={t("Convida um colega para atender junto — o responsável pela conversa não muda.")}
+            onClick={() => {
+              setErro(null);
+              setAberto(true);
+            }}
+          >
+            <UsersThree size={14} aria-hidden className="mr-1" />
+            {t("Convidar")}
+          </Button>
+        ))}
       {erroRemocao && <p role="alert" className="text-xs text-destructive">{erroRemocao}</p>}
 
+      {modo !== "presenca" && (
       <Dialog open={aberto} onOpenChange={setAberto}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -263,6 +300,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      )}
     </div>
   );
 }

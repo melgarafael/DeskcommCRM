@@ -3,6 +3,8 @@ import * as React from "react";
 import { randomId } from "@/lib/random-id";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { CalendarBlank } from "@/lib/ui/icons";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
@@ -19,7 +21,7 @@ const PUBLICATION: Record<string, string> = { not_configured: "Somente no CRM", 
 const field = "rounded-md border border-border bg-surface-elevated p-2 text-base md:text-sm w-full";
 
 /** Reserva pelo escritor normal. Não manda mensagem nem publica um agente. */
-export function ReservarServicoNaConversa({ contactId, conversationId, contactName }: { contactId: string; conversationId: string; contactName: string }) {
+export function ReservarServicoNaConversa({ contactId, conversationId, contactName, comoItemDeMenu = false }: { contactId: string; conversationId: string; contactName: string; comoItemDeMenu?: boolean }) {
   const t = useT(); const locale = useTagDeIdioma();
   const qc = useQueryClient();
   const peopleHint = React.useId();
@@ -44,10 +46,25 @@ export function ReservarServicoNaConversa({ contactId, conversationId, contactNa
     setZone(result.fuso_da_regra);
     setAvailability((result.servico?.availability ?? []).filter((row) => diaLocalISO(new Date(row.starts_at), result.fuso_da_regra) === day));
   }
-  return <><Button size="sm" variant="outline" onClick={() => { setOpen(true); void execute(async () => {
+  /** O gesto de abrir, um só — os dois gatilhos abaixo o compartilham. */
+  const abrir = () => { setOpen(true); void execute(async () => {
     const rows = (await apiClient.get<{ data: Service[] }>("/api/v1/agenda/tipos")).data;
     const valid = rows.filter((r) => r.service_enabled); setServices(valid); if (!typeId && valid[0]) setTypeId(valid[0].id);
-  }); }}>{t("Reservar serviço")}</Button>
+  }); };
+  /**
+   * GUIA CURTA (#3003): o rótulo nomeia o gesto, não a consequência. Reservar
+   * NÃO manda mensagem ao contato nem comprova publicação no Google — é o que
+   * a própria folha avisa depois do clique, e agora antes dele.
+   */
+  const guia = t("Marca um horário na agenda para este contato, sem enviar mensagem a ele.");
+  return <>{comoItemDeMenu
+    ? <DropdownMenuItem data-testid="acao-reservar-servico" title={guia}
+        // O menu não fecha no clique: a folha de reserva é FILHA deste
+        // componente, e fechar o menu a desmontaria junto.
+        onSelect={(e) => { e.preventDefault(); abrir(); }}>
+        <CalendarBlank size={16} aria-hidden className="mr-2" />{t("Reservar serviço")}
+      </DropdownMenuItem>
+    : <Button size="sm" variant="outline" title={guia} data-testid="acao-reservar-servico" onClick={abrir}>{t("Reservar serviço")}</Button>}
     <Sheet open={open} onOpenChange={setOpen}><SheetContent className="overflow-y-auto sm:max-w-lg"><SheetHeader><SheetTitle className="break-words">{services.find((s) => s.id === typeId)?.name ? <>{t("Agendar")} {services.find((s) => s.id === typeId)?.name}</> : t("Reservar serviço")}</SheetTitle></SheetHeader>
       <div className="space-y-4 py-4"><p>{t("Contato responsável:")} {contactName}</p><p className="text-sm text-text-muted">{t("Consultar não reserva. Reservar não envia mensagem nem comprova publicação Google.")}</p>
         {services.length === 0 ? <p>{t("Nenhum serviço com programação ativa. Configure em Configurações da Agenda.")}</p> : <>

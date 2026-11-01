@@ -19131,6 +19131,23 @@ export const DICIONARIO: Traducoes = {
   "Setor inexistente nesta organização.": {
     es: "El sector no existe en esta organización.",
   },
+  // ─── #3003: o menu ⋯ do cabeçalho da conversa e as guias das ações que ele
+  // guardou. O nome acessível do gatilho é "Mais" — que já tem entrada acima
+  // ("Más") — e NUNCA "Mais ações": a catraca `inbox-header-nao-trava` procura
+  // esse nome e reprova se ele existir (decisão do #1625).
+  "Mais ações desta conversa": { es: "Más acciones de esta conversación" },
+  "Liga para o telefone deste contato pelo navegador.": {
+    es: "Llama al teléfono de este contacto desde el navegador.",
+  },
+  "Marca um horário na agenda para este contato, sem enviar mensagem a ele.": {
+    es: "Reserva un horario en la agenda para este contacto, sin enviarle mensaje.",
+  },
+  "Abre uma sala de vídeo e manda o link dela pelo chat desta conversa.": {
+    es: "Abre una sala de video y envía su enlace por el chat de esta conversación.",
+  },
+  "Tira a conversa da fila até o horário escolhido; depois ela volta sozinha.": {
+    es: "Saca la conversación de la cola hasta la hora elegida; después vuelve sola.",
+  },
 };
 
 /**
