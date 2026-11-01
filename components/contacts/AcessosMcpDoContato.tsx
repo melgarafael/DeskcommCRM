@@ -31,6 +31,8 @@ export function AcessosMcpDoContato({ contactId }: { contactId: string }) {
   }, [contactId]);
 
   useEffect(() => {
+    // Carga inicial a partir de server action (sistema externo ao React).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void carregar();
   }, [carregar]);
 

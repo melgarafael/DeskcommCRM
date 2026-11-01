@@ -142,6 +142,8 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
   }, [agentId, t]);
 
   useEffect(() => {
+    // Carga inicial a partir de server action (sistema externo ao React).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void recarregar();
   }, [recarregar]);
 

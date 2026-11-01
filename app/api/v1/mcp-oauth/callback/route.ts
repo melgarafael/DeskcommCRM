@@ -11,7 +11,7 @@
  *
  * Retomada do turno: NÃO reabre o turno nesta fatia. O próximo turno do contato
  * (a próxima mensagem dele) já encontra o token e monta as ferramentas. A
- * decisão e o próximo passo estão em `docs/guias/mcp-oauth-por-contato.md`.
+ * decisão e o próximo passo estão em `docs/integracao/mcp-oauth-por-contato.md`.
  */
 import { NextResponse, type NextRequest } from "next/server";
 

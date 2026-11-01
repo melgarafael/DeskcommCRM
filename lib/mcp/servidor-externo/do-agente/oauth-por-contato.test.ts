@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * OAuth POR CONTATO de servidor MCP externo (migration 9081), ponta a ponta,
  * contra um stub HTTP de verdade que implementa RFC 9728 (recurso protegido),
@@ -8,7 +9,7 @@
  * Cada `describe` prova um requisito verificável do documento da feature
  * (§5 e §8): o número entre colchetes é o item.
  */
-import { createServer, type Server } from "node:http";
+import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
 
@@ -81,12 +82,12 @@ function emitir(usuario: string, escopo: string) {
   return { access_token: at, refresh_token: rt, token_type: "Bearer", expires_in: stub.expiraEmSegundos, scope: escopo };
 }
 
-function json(res: import("node:http").ServerResponse, status: number, corpo: unknown, cab: Record<string, string> = {}) {
+function json(res: ServerResponse, status: number, corpo: unknown, cab: Record<string, string> = {}) {
   res.writeHead(status, { "content-type": "application/json", ...cab });
   res.end(JSON.stringify(corpo));
 }
 
-function rpc(mensagem: any, usuario: string, escopo: string): any {
+function rpc(mensagem: any, usuario: string, _escopo: string): any {
   const { id, method, params } = mensagem;
   if (method === "initialize") {
     return { jsonrpc: "2.0", id, result: { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "casa-stub", version: "1" } } };
