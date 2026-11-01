@@ -37,7 +37,10 @@ import { lerEstadoDoPacing } from "@/lib/agent-engine/pacing/ledger-supabase";
 import { warmupCapFor } from "@/lib/agent-engine/pacing/engine";
 import { logger } from "@/lib/logger";
 
+import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+
 import { mascara } from "./aviso-ao-suporte";
+import { modoDoDestinoDoAviso } from "./destino-do-aviso";
 import {
   avisosDaTela,
   podeLigarOAviso,
@@ -46,6 +49,8 @@ import {
   type ConexaoParaAviso,
   type ConfiguracaoNaTela,
   type FatosDaTelaDeAviso,
+  type MembroDoAvisoNaTela,
+  type ModoDoDestinoNaTela,
 } from "./estado-do-aviso";
 import { medirLacoDoAviso, type CasoParaOLaco, type LacoDoAviso } from "./laco-do-aviso";
 import { urlPublicaUsavel } from "./url-publica";
@@ -71,10 +76,17 @@ export interface ConfigNaResposta {
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
   atualizado_em: string;
+  /** `fixo` ou `responsavel` (#3803). */
+  destino_modo: ModoDoDestinoNaTela;
 }
 
 export interface EstadoDaTelaDeAviso {
   config: ConfigNaResposta | null;
+  /**
+   * A equipe e o WhatsApp de cada um (#3803). A tela mostra quem PODE receber
+   * antes de alguém escolher o modo `responsavel`, e avisa quem está sem número.
+   */
+  equipe: MembroDoAvisoNaTela[];
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -91,6 +103,8 @@ const CASOS_DO_LACO = 100;
 
 interface LinhaDeConfig {
   channel_session_id: string | null;
+  /** Ausente na linha de um banco que ainda não rodou a 9078: lido como `fixo`. */
+  destino_modo: string | null;
   telefone_destino: string;
   rotulo: string | null;
   ligado: boolean;
@@ -120,9 +134,14 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
   ]);
 
   const canalEscolhido = config?.channel_session_id ?? null;
-  const [aquecimento, laco] = await Promise.all([
+  const [aquecimento, laco, equipe] = await Promise.all([
     canalEscolhido ? lerAquecimento(admin, orgId, canalEscolhido, agora) : Promise.resolve(null),
     lerLaco(admin, orgId, agora),
+    // A equipe vem do `admin`: `user_organizations` tem o WhatsApp PESSOAL de
+    // cada um, e a tela é de `admin` da organização — mas a leitura da coluna
+    // fica no client de serviço para não expor número de colega a `manager` por
+    // uma policy que não foi escrita para isso.
+    lerEquipe(admin, orgId),
   ]);
 
   const configNaTela: ConfiguracaoNaTela | null = config
@@ -132,6 +151,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
         rotulo: config.rotulo,
         ligado: config.ligado,
         respostaWhatsappHabilitada: config.resposta_whatsapp_habilitada,
+        destinoModo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
       }
     : null;
 
@@ -161,8 +181,10 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
           ligado: config.ligado,
           resposta_whatsapp_habilitada: config.resposta_whatsapp_habilitada,
           atualizado_em: config.updated_at,
+          destino_modo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
         }
       : null,
+    equipe,
     conexoes,
     avisos: avisosDaTela(fatos),
     pode_ligar: podeLigarOAviso(fatos),
@@ -171,11 +193,51 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
   };
 }
 
+/**
+ * A EQUIPE e o WhatsApp de cada um (#3803) — de onde a cadeia tira o telefone
+ * do responsável.
+ *
+ * A fonte é `user_organizations` (o vínculo, com o número PESSOAL) e não o
+ * perfil do usuário: telefone é por organização, e é a linha do vínculo que já
+ * diz quem é membro ativo. Só membro ativo (`revoked_at is null`) aparece — quem
+ * saiu não recebe aviso, e mostrá-lo na tela prometeria um destino que o envio
+ * nunca escolhe.
+ *
+ * Leitura pelo `admin` porque a coluna é dado pessoal de colega: expor por
+ * policy a `manager` seria uma decisão de privacidade que ninguém tomou.
+ * `organization_id` filtrado À MÃO (o admin bypassa a RLS).
+ *
+ * Falha ABERTA (lista vazia): a tela perde a lista de números, não o resto. O
+ * log é quem distingue "não há equipe" de "não deu para ler".
+ */
+async function lerEquipe(admin: SupabaseClient, orgId: string): Promise<MembroDoAvisoNaTela[]> {
+  const { data, error } = await admin
+    .from("user_organizations")
+    .select("user_id, whatsapp_e164")
+    .eq("organization_id", orgId)
+    .is("revoked_at", null)
+    .order("created_at", { ascending: true })
+    .limit(200);
+  if (error) {
+    logger.warn("[aviso-de-caso] equipe não lida", { organizationId: orgId, causa: error.message });
+    return [];
+  }
+  const linhas = (data ?? []) as Array<{ user_id: string; whatsapp_e164: string | null }>;
+  if (linhas.length === 0) return [];
+  const nomes = await nomesDosAtendentes(linhas.map((l) => l.user_id));
+  return linhas.map((l) => ({
+    user_id: l.user_id,
+    nome: nomes.get(l.user_id) ?? null,
+    // O CHECK da coluna já garante E.164: nada a normalizar aqui.
+    whatsapp: l.whatsapp_e164,
+  }));
+}
+
 async function lerConfig(db: SupabaseClient, orgId: string): Promise<LinhaDeConfig | null> {
   const { data, error } = await db
     .from("config_aviso_de_caso")
     .select(
-      "channel_session_id, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
+      "channel_session_id, destino_modo, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
     )
     .eq("organization_id", orgId)
     .maybeSingle();

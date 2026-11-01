@@ -222,7 +222,7 @@ export function NewLeadDialog({
         motivoDeGanho: null,
         // O arquivo ainda não pode existir (#3433): o anexo é do negócio, e o
         // negócio é o que este formulário vai criar. Sem isto, a etapa que pede
-        // documento deixava o botão "Criar lead" travado para sempre — o campo
+        // documento deixava o botão "Criar negócio" travado para sempre — o campo
         // aparecia como faltando e não havia onde anexar.
         semAnexosAinda: true,
       }).faltando,
@@ -399,7 +399,7 @@ export function NewLeadDialog({
           ) : undefined,
         });
       }
-      toast.success(t("Lead criado"));
+      toast.success(t("Negócio criado"));
       onCreated?.();
       form.reset({
         title: "",
@@ -465,9 +465,9 @@ export function NewLeadDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("Novo Lead")}</DialogTitle>
+          <DialogTitle>{t("Novo negócio")}</DialogTitle>
           <DialogDescription>
-            {t("Crie um lead manualmente neste pipeline.")}
+            {t("Abra um negócio para um contato neste funil.")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -476,7 +476,7 @@ export function NewLeadDialog({
               <SeletorDeContato escolhido={contato} onEscolher={escolherContato} />
               {faltaContato && (
                 <p className="text-xs text-muted-foreground">
-                  {t("Sem contato, este lead não recebe WhatsApp nem entra nas automações.")}
+                  {t("Sem contato, este negócio não recebe WhatsApp nem entra nas automações.")}
                 </p>
               )}
             </>
@@ -694,7 +694,7 @@ export function NewLeadDialog({
               {t("Salvar e iniciar conversa")}
             </Button>
             <Button type="submit" disabled={create.isPending || !stageId}>
-              {create.isPending ? t("Criando…") : t("Criar lead")}
+              {create.isPending ? t("Criando…") : t("Criar negócio")}
             </Button>
           </DialogFooter>
         </form>

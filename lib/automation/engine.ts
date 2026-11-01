@@ -23,7 +23,8 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
-import { evaluateConditions, type Conditions } from "@/lib/automation/conditions";
+import { evaluateConditions, usaFatosDoContato, type Conditions } from "@/lib/automation/conditions";
+import { carregarFatosDoContato } from "@/lib/automation/fatos-do-contato";
 import { hidratarCamposDoFunil } from "@/lib/automation/campos-do-render";
 import { getAction } from "@/lib/automation/actions";
 import { falhaDeExecucaoParaRecibo, resultadosParaRecibo } from "@/lib/automation/resultado-para-recibo";
@@ -36,6 +37,7 @@ import {
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
+import { lerEscolhaNoEnvio } from "@/lib/agenda/escolha-no-envio";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
@@ -171,6 +173,7 @@ async function registrarAdiamento(
   rule: RuleRow,
   actionType: string,
   retryAt: string,
+  puladasPelaAgenda: Map<string, string | null>,
 ): Promise<void> {
   const { error } = await admin.from("automation_rule_runs").insert({
     organization_id: row.organization_id,
@@ -186,6 +189,7 @@ async function registrarAdiamento(
           retry_at: retryAt,
           explicacao:
             "A regra casou e está esperando a janela de envio do número reabrir — nada foi tentado ainda.",
+          ...(puladasPelaAgenda.size ? { pular_por_agenda: Object.fromEntries(puladasPelaAgenda) } : {}),
         },
       },
     ],
@@ -197,6 +201,48 @@ async function registrarAdiamento(
       error: error.message,
     });
   }
+}
+
+/**
+ * AS DECISÕES DE PULAR CONGELADAS NAS ESPERAS DESTE EVENTO.
+ *
+ * Quando uma regra adia o evento, a vizinha `nao_enviar` só executa na volta —
+ * e aí o compromisso pode ter passado (ou sido concluído), a agenda diz "sem
+ * compromisso" e ela ENVIARIA. Por isso a decisão de pular é tomada na
+ * pré-checagem e gravada na linha de espera (`pular_por_agenda`); na volta ela
+ * vale sem reler a agenda. Regra → `appointment_id` do compromisso que decidiu.
+ *
+ * Se a gravação da espera falhou (`registrarAdiamento` não lança), a marca não
+ * existe e a regra reavalia a agenda na volta — o comportamento de antes.
+ */
+async function pulosCongeladosNoEvento(
+  admin: SupabaseClient,
+  row: EventRow,
+): Promise<{ pulos: Map<string, string | null> } | { error: string }> {
+  let query = admin
+    .from("automation_rule_runs")
+    .select("actions_result")
+    .eq("organization_id", row.organization_id)
+    .eq("event_id", row.id)
+    .eq("status", "adiado");
+  // Nenhum run é mais velho que o evento; o limite deixa o índice por (org, created_at) trabalhar.
+  if (row.created_at) query = query.gte("created_at", row.created_at);
+  const { data, error } = await query;
+  if (error) return { error: error.message };
+  const pulos = new Map<string, string | null>();
+  for (const run of (data ?? []) as Array<{ actions_result: Array<{ detail?: { pular_por_agenda?: unknown } }> | null }>) {
+    const marca = run.actions_result?.[0]?.detail?.pular_por_agenda;
+    if (!marca || typeof marca !== "object") continue;
+    for (const [regra, compromisso] of Object.entries(marca)) {
+      pulos.set(regra, typeof compromisso === "string" ? compromisso : null);
+    }
+  }
+  return { pulos };
+}
+
+/** A regra tem um passo que escolheu "não enviar" quando há compromisso (#3813). */
+function regraPulaPelaAgenda(rule: RuleRow): boolean {
+  return (rule.actions ?? []).some((action) => lerEscolhaNoEnvio(action.config) === "nao_enviar");
 }
 
 /** O contato do evento, quando ele existe — direto ou via conversa. */
@@ -519,6 +565,25 @@ export async function runAutomationForEvent(
   // esconderia automação legítima, e é o mesmo desfecho do evento de contato
   // pessoal indisponível.
   const contatoIdDoEvento = (await contatoDoEvento(admin, row)) ?? contatoDoContexto(context);
+
+  // ═══ OS FATOS DO CONTATO, UMA LEITURA POR AVALIAÇÃO (#3814) ═══
+  //
+  // As condições "contato tem follow-up vivo" e "contato tem horário marcado"
+  // não moram no evento: são estado de `followup_enrollments` e de
+  // `calendar_appointments`. A leitura é feita AQUI, uma vez, e entregue pronta
+  // ao avaliador — que continua síncrono. Dentro do laço de regras seria uma
+  // consulta por regra (o N+1 que a condição existe para evitar), e no laço de
+  // condições uma por condição.
+  //
+  // Só se pergunta quando alguma regra casada USA estas condições: uma
+  // instalação sem nenhuma regra assim não ganha duas idas ao banco por evento.
+  // Sem contato resolvível não há o que perguntar — e o avaliador trata a
+  // ausência como "não sei" (falso), nunca como "não tem".
+  const fatosDoContato =
+    contatoIdDoEvento && matched.some((rule) => usaFatosDoContato(rule.conditions ?? []))
+      ? await carregarFatosDoContato(admin, row.organization_id, contatoIdDoEvento)
+      : null;
+
   // A pergunta ao banco é feita UMA vez por regra, antes do filtro (o filtro é
   // síncrono e não pode esperar): quem já rodou para este contato está aqui.
   const jaRodouParaOCntato = new Map<string, boolean>();
@@ -540,7 +605,7 @@ export async function runAutomationForEvent(
     ) {
       return false;
     }
-    if (!evaluateConditions(rule.conditions ?? [], context)) return false;
+    if (!evaluateConditions(rule.conditions ?? [], context, fatosDoContato)) return false;
     if (regraRodaUmaVezPorContato(rule)) {
       if (!contatoIdDoEvento) {
         // FAIL-OPEN: sem contato resolvível a regra segue como hoje e o run
@@ -581,23 +646,53 @@ export async function runAutomationForEvent(
 
   // Pré-checagem de postpone (throttle etc.): all-or-nothing ANTES de executar
   // qualquer ação — reexecução parcial no retry seria pior que atraso.
+  //
+  // O tudo-ou-nada adia também a regra `nao_enviar` vizinha, e ela não pode
+  // decidir só na volta (ver `pulosCongeladosNoEvento`): por isso, depois do
+  // primeiro adiamento, só ela ainda é consultada — as demais seguem como
+  // sempre, sem pergunta nenhuma. A regra adiada por conta própria não congela
+  // nada: sozinha, ela também reavaliaria na volta.
+  let adiamento: { rule: RuleRow; actionType: string; until: string } | null = null;
+  const puladasPelaAgenda = new Map<string, string | null>();
   for (const rule of applicable) {
+    if (adiamento && !regraPulaPelaAgenda(rule)) continue;
+    let adiouAPropria = false;
     for (const action of rule.actions ?? []) {
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
       const until = await executor.postponeUntil(
-        { admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+        {
+          admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id,
+          anotarPuloPelaAgenda: (appointmentId) => puladasPelaAgenda.set(rule.id, appointmentId),
+        },
         action.config ?? {},
       );
       if (until) {
-        // A ESPERA É UM ESTADO, e um estado que ninguém vê é indistinguível de
-        // morte. Sem esta linha o evento sumia até a janela reabrir e a aba
-        // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
-        // nada" e "não rodou" são a mesma tela (migration 0175).
-        await registrarAdiamento(admin, row, rule, action.type, until);
-        return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: until };
+        adiouAPropria = true;
+        adiamento ??= { rule, actionType: action.type, until };
+        break;
       }
     }
+    if (adiouAPropria) puladasPelaAgenda.delete(rule.id);
+  }
+  if (adiamento) {
+    // A ESPERA É UM ESTADO, e um estado que ninguém vê é indistinguível de
+    // morte. Sem esta linha o evento sumia até a janela reabrir e a aba
+    // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
+    // nada" e "não rodou" são a mesma tela (migration 0175).
+    await registrarAdiamento(admin, row, adiamento.rule, adiamento.actionType, adiamento.until, puladasPelaAgenda);
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: adiamento.until };
+  }
+
+  // Só a regra `nao_enviar` pode ter decisão congelada; sem ela, nenhuma leitura
+  // a mais. Falha de leitura é `error` — executar às cegas poderia enviar o que
+  // a regra mandou não enviar. Vem ANTES da reserva: um `error` depois dela
+  // deixaria a chave do contato tomada, e o retry se barraria sozinho.
+  let pulosCongelados = new Map<string, string | null>();
+  if (applicable.some(regraPulaPelaAgenda)) {
+    const lidos = await pulosCongeladosNoEvento(admin, row);
+    if ("error" in lidos) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: lidos.error };
+    pulosCongelados = lidos.pulos;
   }
 
   // ═══ A RESERVA ANTES DE EXECUTAR (#2974) ═══
@@ -669,6 +764,9 @@ export async function runAutomationForEvent(
               requestId: row.id,
               actionIndex: indiceDaAcao,
               ruleActions: rule.actions ?? [],
+              puloCongeladoPelaAgenda: pulosCongelados.has(rule.id)
+                ? { appointment_id: pulosCongelados.get(rule.id) ?? null }
+                : undefined,
             },
             action.config ?? {},
           ),

@@ -94,7 +94,7 @@ export function FileUploadCustomField({
     if (selectedFiles.length === 0) return;
 
     if (!leadId) {
-      toast.error(t("Salve o lead antes de anexar arquivos."));
+      toast.error(t("Salve o negócio antes de anexar arquivos."));
       return;
     }
 

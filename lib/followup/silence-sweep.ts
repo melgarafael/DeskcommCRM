@@ -153,14 +153,13 @@ import {
 import { emPausaDeReentrada, type BaseDaPausa, type FatosDaReentrada } from "./pausa-de-reentrada";
 import { contatosQueORetornoSegura, folgaDepoisDoRetorno } from "./retorno-segura-o-fluxo";
 import { contatosQueSoResponderamAAutomacao, type CandidatoDoSilencio } from "./resposta-a-automacao";
-
 /**
- * Status que ocupam a vaga do índice único `idx_followup_enrollments_one_live`
- * — mesma lista usada em `gatilho-retorno.ts`, `gatilho-caso.ts` e
- * `ceder-turno-ao-retorno.ts` (não há constante exportada compartilhada; cada
- * consumidor já repete a própria cópia).
+ * O predicado do índice único `idx_followup_enrollments_one_live` — a lista e
+ * a leitura moram em `./inscricao-viva`, a MESMA fonte da condição "contato tem
+ * follow-up vivo" da regra de automação. Cópia local aqui faria a varredura e a
+ * regra perguntarem coisas diferentes sobre o mesmo contato.
  */
-const STATUS_VIVOS = ["active", "waiting_reply", "paused_handoff", "paused_manual"] as const;
+import { LOTE_DE_CONTATOS, lerContatosComInscricaoViva, STATUS_VIVOS } from "./inscricao-viva";
 
 export interface SilencePointer {
   id: string;
@@ -504,8 +503,9 @@ type ContactEmbed =
 
 /** Estados em que a inscrição ACABOU — os que contam para a pausa de reentrada. */
 const STATUS_ENCERRADOS = ["completed", "cancelled", "dead"] as const;
-/** Lote do `in(contact_id, …)`: a lista vai na URL do PostgREST. */
-const LOTE_DE_CONTATOS = 100;
+/* `LOTE_DE_CONTATOS` vem de `./inscricao-viva` — o lote é o mesmo da leitura da
+   inscrição viva, e duas constantes seriam duas respostas para "quantos por
+   consulta". */
 /** Teto de linhas por resposta do PostgREST (`max-rows`); páginas maiores voltam cortadas em silêncio. */
 const PAGINA_DE_INSCRICOES = 1000;
 
@@ -773,19 +773,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       return contagem;
     },
 
-    async loadContatosComInscricaoViva(orgId, contactIds) {
-      const vivos = new Set<string>();
-      for (let i = 0; i < contactIds.length; i += LOTE_DE_CONTATOS) {
-        const { data, error } = await admin
-          .from("followup_enrollments")
-          .select("contact_id")
-          .eq("organization_id", orgId)
-          .in("status", [...STATUS_VIVOS])
-          .in("contact_id", contactIds.slice(i, i + LOTE_DE_CONTATOS));
-        if (error) throw new Error(error.message);
-        for (const row of (data ?? []) as Array<{ contact_id: string }>) vivos.add(row.contact_id);
-      }
-      return vivos;
+    // A leitura é a do módulo compartilhado: a mesma pergunta que a condição da
+    // regra faz e que o índice único cobra no INSERT.
+    loadContatosComInscricaoViva(orgId, contactIds) {
+      return lerContatosComInscricaoViva(admin, orgId, contactIds);
     },
 
     loadContatosComRetornoVivo(orgId, folgaMs) {

@@ -41,7 +41,9 @@ import {
 } from "@/lib/automation/aniversario-do-contato";
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
 import {
+  CONDICOES_DO_CONTATO,
   OPERADORES_SEM_VALOR,
+  valorPadraoDoCampo,
   type ConditionNode,
   type ConditionOp,
   type Conditions,
@@ -56,6 +58,7 @@ import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webh
 import { TRIGGER_LABELS, ACTION_LABELS, type TriggerEvent, type ActionType } from "./labels";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
 import { EtapaDeQualquerFunil } from "./EtapaDeQualquerFunil";
+import { ValorDaCondicaoDoContato } from "./CondicaoDoContato";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
@@ -85,7 +88,12 @@ export interface CuratedField {
   value: string;
   label: string;
   op: Op;
-  kind?: "stage";
+  /**
+   * Como o campo pede o valor: `stage` desenha o seletor de etapas; `sim_nao`
+   * é a condição do contato (#3814) — sim/não, com prazo e tipo na de agenda
+   * (`ValorDaCondicaoDoContato`). Ausente = texto livre.
+   */
+  kind?: "stage" | "sim_nao";
   /**
    * O campo guarda uma LISTA (tags). Em lista, `contains` é pertinência — a tag
    * inteira, sem diferenciar caixa (decisão do dono, #956) —, e chamar isso de
@@ -380,7 +388,12 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     });
   }, [open, rule]);
 
-  const curatedFields = triggerEvent ? CURATED_FIELDS[triggerEvent] : [];
+  // As duas condições do contato valem em QUALQUER gatilho: elas perguntam pelo
+  // contato do evento, não pelo evento. Por isso entram depois das do gatilho,
+  // e não na tabela de cada um (que é por tipo de evento).
+  const curatedFields: CuratedField[] = triggerEvent
+    ? [...CURATED_FIELDS[triggerEvent], ...CONDICOES_DO_CONTATO]
+    : [];
   const ehGatilhoDeData = triggerEvent === GATILHO_DE_DATA_DO_FUNIL;
   const ehGatilhoDeTempo =
     triggerEvent === GATILHO_SILENCIO || triggerEvent === GATILHO_ETAPA_PARADA;
@@ -924,7 +937,16 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         value={cond.field}
                         onValueChange={(v) => {
                           const f = curatedFields.find((cf) => cf.value === v);
-                          updateCondition(idx, { field: v, op: f?.op ?? "eq" });
+                          // Condição do contato nasce com um valor que a porta
+                          // aceita ("sim"), senão a linha recém-escolhida seria
+                          // recusada por "escolha sim ou não" antes de a pessoa
+                          // tocar no campo de valor.
+                          const padrao = valorPadraoDoCampo(v, cond.value);
+                          updateCondition(idx, {
+                            field: v,
+                            op: f?.op ?? "eq",
+                            ...(padrao === null ? {} : { value: padrao }),
+                          });
                         }}
                       >
                         <SelectTrigger className="flex-1 basis-40">
@@ -961,6 +983,12 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                     {OPS_SEM_VALOR.has(cond.op) ? null : curated?.kind === "stage" ? (
                       <EtapaDeQualquerFunil
                         value={cond.value}
+                        onChange={(v) => updateCondition(idx, { value: v })}
+                      />
+                    ) : curated?.kind === "sim_nao" ? (
+                      <ValorDaCondicaoDoContato
+                        campo={cond.field}
+                        valor={cond.value}
                         onChange={(v) => updateCondition(idx, { value: v })}
                       />
                     ) : (
