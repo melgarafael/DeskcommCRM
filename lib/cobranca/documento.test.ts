@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeCnpj } from "@/lib/crm-b2b/normalize";
+
 import { documentoDoPagador, exigeDocumento, isValidCnpj, sugestaoDoCadastro } from "./documento";
 
 // Os exemplos canônicos da Receita (sem dono real), montados por partes.
@@ -55,5 +57,27 @@ describe("documento de quem paga (CPF/CNPJ)", () => {
     expect(sugestaoDoCadastro("11.222.333/0001-81")).toBe(CNPJ);
     expect(sugestaoDoCadastro("11.222.333/0001-82")).toBeNull();
     expect(sugestaoDoCadastro(null)).toBeNull();
+  });
+
+  /**
+   * Os dois caminhos, um teste só (#3495). O cadastro de empresa
+   * (`normalizeCnpj`) e a cobrança (`documentoDoPagador`) leem o MESMO CNPJ, e
+   * quando as réguas divergem a empresa é recusada num lugar e aceita no outro.
+   * Aqui a asserção é de IGUALDADE, caso a caso, para a tabela de um não poder
+   * andar sem a do outro.
+   */
+  it.each([
+    "11.222.333/0001-81",
+    CNPJ,
+    "11.222.333/0001-00",
+    "11.222.333/0001-80",
+    "00000000000000",
+    "123",
+    "12.ABC.345/01DE-35",
+    "12abc34501de35",
+    "12ABC34501DEX5",
+    "12ABC34501DE36",
+  ])("o cadastro e a cobrança aceitam/recusam %j do mesmo jeito", (bruto) => {
+    expect(normalizeCnpj(bruto)).toBe(documentoDoPagador(bruto));
   });
 });

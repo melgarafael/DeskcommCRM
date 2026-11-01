@@ -180,7 +180,10 @@ export const crmListHonorariosParcelas: McpToolDefinition<typeof parcelasInputSh
 
     const { data, error } = await ctx.supabase
       .from("honorarios_parcelas")
-      .select("id, numero, vencimento, valor_cents, status")
+      // `currency` vai junto desde o #3379: sem ela o agente cota o valor da
+      // parcela na moeda padrão da instalação, e o cliente ouve o número certo
+      // na unidade errada.
+      .select("id, numero, vencimento, valor_cents, currency, status")
       .eq("organization_id", ctx.organizationId)
       .eq("contrato_id", input.contrato_id)
       .order("numero", { ascending: true });

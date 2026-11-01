@@ -38,7 +38,7 @@ export const followupSaidaDaEtapaHandler: EventHandler = {
         detail:
           `armados=${summary.pointers_armados} inscricoes=${summary.inscricoes_encontradas} ` +
           `canceladas=${summary.canceladas} ja_encerradas=${summary.ja_encerradas} ` +
-          `sem_contato=${summary.sem_contato}`,
+          `sem_contato=${summary.sem_contato} proprio_ator=${summary.proprio_ator}`,
       };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

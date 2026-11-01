@@ -406,3 +406,31 @@ export function custoTerraPorPassos(model: string, result: {
     }) ?? 0);
   }, 0);
 }
+
+/**
+ * Síntese de voz (ElevenLabs) é cobrada por CARACTERE, não por token — unidade
+ * diferente de tudo acima, por isso uma função própria em vez de forçar
+ * `TokenUsage`.
+ *
+ * Fonte: https://elevenlabs.io/pricing (conferida 2026-10-29). A página pública
+ * não divulga USD/crédito direto — só plano em USD + créditos/mês — e os
+ * planos NÃO convergem para uma taxa única: Creator (US$11 / 121k créditos)
+ * destoa dos demais, provavelmente por desconto de lançamento/anual, enquanto
+ * Starter, Pro, Scale e Business concordam entre si em ≈US$0,000165/crédito.
+ * É ESSA taxa — a que bate entre quatro planos independentes, não a que destoa
+ * de um — que esta tabela usa. 1 caractere = 1 crédito no modelo padrão
+ * (`eleven_multilingual_v2`); modelos "Flash/Turbo" custam metade do crédito
+ * por caractere, mas este produto não expõe escolha de modelo de voz ainda —
+ * quando expuser, este arquivo precisa de uma linha por modelo, não uma
+ * constante só.
+ *
+ * ⚠️ Preço de API de terceiro muda sem aviso e esta tabela não se atualiza
+ * sozinha — quem revisar a cobrança real de uma instalação deve CONFERIR a
+ * página antes de confiar neste número, não só confiar no código.
+ */
+const USD_POR_CREDITO_ELEVENLABS = 0.000165;
+
+/** Custo em CENTS de sintetizar `caracteres` de texto em voz — nunca null: é a única tarifa que este arquivo conhece para voz hoje. */
+export function custoDeVozCents(caracteres: number): number {
+  return Math.max(0, caracteres) * USD_POR_CREDITO_ELEVENLABS * 100;
+}

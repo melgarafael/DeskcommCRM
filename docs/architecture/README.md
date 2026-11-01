@@ -16,6 +16,7 @@ ser fonte sem ninguém decidir isso.
 
 | arquivo | escopo |
 |---|---|
+| `atendimento-alerta-humano-nome-informado.architecture.json` | aviso interno por episódio, reserva sem reenvio incerto, nome selecionado pela ferramenta com escopo inbound e ficha vazia; limites da timeline declarados |
 | `catalogo-de-modelos.architecture.json` | descoberta diária de modelos nativos OpenAI/Anthropic via Models.dev, conciliação OpenRouter, seletores e auditoria |
 | `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 | `nomes-internos-das-conexoes.architecture.json` | renomeação interna dos canais — cartões de WhatsApp, parceiro e redes sociais → rota tenant-aware → `channel_sessions.display_name` → cartões e seletores, com auditoria e sem alterar o nome público no provedor |

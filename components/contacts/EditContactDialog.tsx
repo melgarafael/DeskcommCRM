@@ -33,6 +33,7 @@ import {
   type ContactType,
 } from "@/lib/schemas/contacts";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
+import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
@@ -142,6 +143,22 @@ export function EditContactDialog({
   // isso, quem digita e salva sem Enter perde o texto em silêncio (defeito
   // medido na tela do PR #2831).
   const [etiquetaPendente, setEtiquetaPendente] = useState<string | null>(null);
+  // O TEXTO DIGITADO no campo de etiquetas, e a pergunta que ele dispara ao
+  // MESMO vocabulário do Inbox (issue #3144): `GET /api/v1/contact-tags?busca=`
+  // cai na RPC do vocabulário curado, que enxerga a etiqueta de Configurações →
+  // Tags que nenhum contato usa ainda, a que só vive em `crm_leads`/`conversas`,
+  // a que só existe como `add_tag` de uma regra e a que passou do teto de 200 da
+  // lista em uso. Sem ela, quem digita "diam" na ficha não recebe "cliente
+  // diamante" e digita o nome inteiro — ou uma variante dele.
+  const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
+  const buscaNoVocabulario = useContactTagVocabulary(
+    org?.orgId ?? null,
+    buscaDeEtiqueta.trim(),
+  );
+  // A falha da leitura de sugestões vira a frase do Inbox dentro do campo:
+  // silêncio ali leria como "não há etiquetas", e é justamente aí que a pessoa
+  // digita a variante que o seletor existe para evitar.
+  const erroNoVocabulario = buscaNoVocabulario.isError;
 
   useEffect(() => {
     if (open) {
@@ -168,7 +185,12 @@ export function EditContactDialog({
   // fechar por qualquer caminho o descarta, senão o texto de uma edição
   // cancelada entra no próximo Salvar, e um chip removido volta sozinho.
   function mudarAbertura(v: boolean) {
-    if (!v) setEtiquetaPendente(null);
+    if (!v) {
+      setEtiquetaPendente(null);
+      // A busca é do campo, não do contato: fechar não pode deixar a lista
+      // filtrada pelo texto da edição cancelada.
+      setBuscaDeEtiqueta("");
+    }
     onOpenChange(v);
   }
 
@@ -356,6 +378,9 @@ export function EditContactDialog({
               onDefinirCor={
                 podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
               }
+              encontradas={buscaNoVocabulario.data}
+              onDigitar={setBuscaDeEtiqueta}
+              erroNoVocabulario={erroNoVocabulario}
             />
           </div>
           {customFieldDefs.length > 0 && (

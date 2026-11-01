@@ -2,18 +2,58 @@ import { NextResponse, type NextRequest } from "next/server";
 import { refreshCatalog, syncCalendar } from "@/lib/agenda/google/calendar-executor";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { janelaDaRodada, LOTE_DE_CONEXOES } from "@/lib/agenda/google/rodizio-de-conexoes";
+import { ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 export const dynamic = "force-dynamic";
 /** O mesmo prazo que a RPC dá à agenda que falhou (`sync_next_attempt_at` + 15 min). */
 const RECUO_DO_CATALOGO_MS = 15 * 60_000;
+
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O `if (await recursoOcioso(...))` desta rota é saída antecipada da ROTA
+ * INTEIRA: o que vier depois dele não roda em instalação ociosa. Esta lista é a
+ * declaração do que roda ali — `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova, com arquivo e linha, quando o que está de fato
+ * abaixo do portão divergir dela. Passo novo abaixo do portão entra aqui, e só
+ * depois de a pessoa ver que ele NÃO roda na instalação parada, que é o caso
+ * comum. O #3650 mediu o custo de não haver essa cerca: três passos novos na
+ * `historico-import` ficaram fora do sinal do portão e o autor teve de alargá-lo
+ * à mão.
+ *
+ * Em runtime a constante não serve para nada — o `void` existe só para o lint
+ * não acusar variável sem uso.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const db",
+  "const {count}",
+  "const conexoesElegiveis",
+  "const janela",
+  "const {data, error}",
+  "if (error)",
+  "const connections",
+  "const effects",
+  "let remainingCalendars",
+  "for (connection of connections)",
+  "for ([organizationId, quantidade] of effects)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function executar(req: NextRequest) {
   if (!autorizaCron(req))
     return NextResponse.json(
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },
     );
+  // O PISO OCIOSO (#3731): instalação sem conexão Google saudável não tem
+  // calendário a sincronizar, e a rodada de todo minuto ia ao banco (contagem +
+  // leitura das conexões) só para descobrir isso. A saída vem antes das duas,
+  // pelo retrato em memória de lib/cron/piso-ocioso.ts.
+  if (await recursoOcioso("agenda_google")) return ok({ pulado: "recurso_ocioso" });
   const db = createAdminClient();
   // ─── O RODÍZIO, SEM CARIMBAR NADA (#3695) ─────────────────────────────────
   //

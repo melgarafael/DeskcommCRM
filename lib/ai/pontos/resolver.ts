@@ -415,6 +415,33 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
   }
 
   if (ponto?.fixo?.usa) {
+    // 0.1 · Dentro do fixo, um MENU pode existir (ver o tipo em registro.ts).
+    // A escolha do operador entre os itens do menu AINDA vence aqui — não no
+    // degrau 2 — porque este ponto não tem capacidade (`exige.tools`,
+    // `exige.imagem`) para `avisosDeCapacidade` avaliar, e passar por ali
+    // emitiria um aviso sobre ferramentas para um ponto que não as usa.
+    if (ponto.fixo.opcoes && entrada.binding !== null && entrada.binding.is_enabled) {
+      const escolhida = ponto.fixo.opcoes.find(
+        (o) => o.provider === entrada.binding!.provider && o.modelId === entrada.binding!.model_id,
+      );
+      if (escolhida) {
+        return {
+          provider: escolhida.provider,
+          modelId: escolhida.modelId,
+          credentialId: entrada.binding.credential_id,
+          baseUrl: entrada.binding.base_url,
+          origem: "binding",
+          avisos,
+        };
+      }
+      // A linha salva não é mais uma das opções do menu (o produto removeu uma
+      // opção, ou alguém gravou direto pela API). Cair calado no padrão faria
+      // o operador ler "usando X" na tela e o sistema chamar Y — avisar é o
+      // que mantém a leitura e o comportamento no mesmo lugar.
+      avisos.push(
+        `A escolha salva para "${ponto.rotulo}" não é mais uma das opções oferecidas; usando o padrão do produto.`,
+      );
+    }
     return {
       provider: ponto.fixo.usa.provider,
       modelId: ponto.fixo.usa.modelId,

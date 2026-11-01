@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { EventRow } from "@/lib/event-log/dispatcher";
+import { getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
+import { ensureHandlersRegistered } from "@/lib/event-log/register-handlers";
 import type { EnabledFollowupAgent, FollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import {
   EVENTO_DE_ETAPA,
@@ -310,6 +311,43 @@ describe("follow-up por etapa — SAÍDA: sair da etapa cancela o toque pendente
     });
   });
 
+  it("⭐ o próprio fluxo movendo o card NÃO cancela a si mesmo", async () => {
+    // O nó `move_lead` grava `metadata.actor_id = followup:<enrollment>` no
+    // `lead.stage_changed`; sem o corte, o toque morreria por ter sido obedecido.
+    const { summary, reg } = await saida({
+      over: { metadata: { actor_type: "webhook_source", actor_id: `followup:${ENROLLMENT}` } },
+    });
+    expect(summary.matched).toBe(true);
+    expect(summary.inscricoes_encontradas).toBe(1);
+    expect(summary.proprio_ator).toBe(1);
+    expect(summary.canceladas).toBe(0);
+    expect(reg.canceladas).toHaveLength(0);
+    // nem a proveniência da saída é gravada: nada aconteceu com esta inscrição
+    expect(reg.eventos).toHaveLength(0);
+  });
+
+  it("o ator poupa só a PRÓPRIA inscrição — o outro fluxo do mesmo contato cai", async () => {
+    const { summary, reg } = await saida({
+      pointers: [pointerDaSaida, { id: OUTRO_POINTER, stage_id: ETAPA_MARCADA }],
+      inscricoes: [inscricao(), inscricao({ id: ENROLLMENT_2, pointer_id: OUTRO_POINTER })],
+      over: { metadata: { actor_type: "webhook_source", actor_id: `followup:${ENROLLMENT}` } },
+    });
+    expect(summary.proprio_ator).toBe(1);
+    expect(summary.canceladas).toBe(1);
+    expect(reg.canceladas).toHaveLength(1);
+    expect(reg.canceladas[0]).toMatchObject({ id: ENROLLMENT_2 });
+  });
+
+  it("mão que não é o fluxo (ator humano ou sem metadata) cancela normalmente", async () => {
+    const semAtor = await saida({ over: { metadata: { actor_type: "user" } } });
+    expect(semAtor.summary.canceladas).toBe(1);
+    expect(semAtor.summary.proprio_ator).toBe(0);
+
+    const humano = await saida({ over: { metadata: { actor_type: "user", actor_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" } } });
+    expect(humano.summary.canceladas).toBe(1);
+    expect(humano.summary.proprio_ator).toBe(0);
+  });
+
   it("só consulta as inscrições dos fluxos armados NA etapa de origem", async () => {
     const { reg } = await saida({ inscricoes: [inscricao()] });
     // a consulta de inscrições é restrita aos pointers da etapa de origem
@@ -406,5 +444,90 @@ describe("follow-up por etapa — o ciclo inteiro: entra, sai, e o toque não sa
     const desarmou = await saida({});
     expect(desarmou.summary.canceladas).toBe(1);
     expect(desarmou.reg.canceladas[0]).toMatchObject({ id: ENROLLMENT, patch: { status: "cancelled" } });
+  });
+});
+
+describe("follow-up por etapa — etapa armada → etapa armada: o fluxo da nova etapa assume", () => {
+  /**
+   * O dispatcher roda os consumidores de `lead.stage_changed` em sequência, na
+   * ordem do registro. Este caso usa a ordem REAL (lida do registro, não escrita
+   * à mão) sobre um estado compartilhado pelas duas metades, com um dublê que
+   * imita `idx_followup_enrollments_one_live` (um toque vivo por contato — os
+   * status vivos do índice no baseline). Se o gatilho rodar antes da saída, o
+   * fluxo da etapa de destino bate no índice, o da origem é cancelado em
+   * seguida, e o contato fica sem follow-up nenhum.
+   */
+  const ETAPA_DESTINO = ETAPA_NEUTRA;
+  const POINTER_DESTINO = OUTRO_POINTER;
+  const VIVOS_NO_INDICE = ["active", "waiting_reply", "paused_handoff", "paused_manual"];
+
+  function ordemDoRegistro(): Array<"gatilho" | "saida"> {
+    ensureHandlersRegistered();
+    return getRegisteredHandlers()
+      .filter((h) => h.events.includes(EVENTO_DE_ETAPA))
+      .map((h) => h.key)
+      .filter((k) => k.startsWith("followup-gatilho-etapa") || k.startsWith("followup-saida-da-etapa"))
+      .map((k) => (k.startsWith("followup-saida-da-etapa") ? "saida" : "gatilho"));
+  }
+
+  it("a saída está registrada antes do gatilho de etapa", () => {
+    expect(ordemDoRegistro()).toEqual(["saida", "gatilho"]);
+  });
+
+  it("⭐ card vai da etapa com fluxo A para a etapa com fluxo B: B fica armado", async () => {
+    const inscricoes: Array<{ id: string; pointer_id: string; status: string }> = [
+      { id: ENROLLMENT, pointer_id: POINTER, status: "active" },
+    ];
+    const ev = evento({ payload: { from_stage_id: ETAPA_MARCADA, to_stage_id: ETAPA_DESTINO } });
+
+    const dbEntrada: GatilhoEtapaDb = {
+      async carregaPointersDeEtapa() {
+        return [pointerEntrada, { ...pointerEntrada, id: POINTER_DESTINO, stage_id: ETAPA_DESTINO }];
+      },
+      async carregaContatoDoNegocio() {
+        return CONTATO;
+      },
+      async carregaNoDeGatilho() {
+        return { id: "t1", pedeAgente: false };
+      },
+      async insereEnrollment(input) {
+        if (inscricoes.some((i) => VIVOS_NO_INDICE.includes(i.status))) return { inserted: false, id: null };
+        inscricoes.push({ id: ENROLLMENT_2, pointer_id: input.pointer_id, status: "active" });
+        return { inserted: true, id: ENROLLMENT_2 };
+      },
+      async insereEventoDoEnrollment() {},
+    };
+    const dbSaida: SaidaDaEtapaDb = {
+      async carregaPointersDaEtapa(_org, etapa) {
+        return etapa === ETAPA_MARCADA ? [pointerDaSaida] : [];
+      },
+      async carregaContatoDoNegocio() {
+        return CONTATO;
+      },
+      async carregaInscricoesVivas(_org, _contato, pointerIds) {
+        return inscricoes
+          .filter((i) => pointerIds.includes(i.pointer_id) && i.status === "active")
+          .map((i) => inscricao({ id: i.id, pointer_id: i.pointer_id }));
+      },
+      async insereEventoDoEnrollment() {
+        return { inserted: true };
+      },
+      async cancelaInscricao(id) {
+        const alvo = inscricoes.find((i) => i.id === id);
+        if (!alvo) return false;
+        alvo.status = "cancelled";
+        return true;
+      },
+    };
+
+    const ordem = ordemDoRegistro();
+    expect(ordem).toHaveLength(2);
+    for (const passo of ordem) {
+      if (passo === "saida") await aplicaSaidaDaEtapa({ db: dbSaida, clock: CLOCK }, ev);
+      else await aplicaGatilhoDeEtapa({ db: dbEntrada, gateDb: fakeGate(), clock: CLOCK }, ev);
+    }
+
+    const vivos = inscricoes.filter((i) => VIVOS_NO_INDICE.includes(i.status)).map((i) => i.pointer_id);
+    expect(vivos).toEqual([POINTER_DESTINO]);
   });
 });

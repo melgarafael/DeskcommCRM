@@ -118,8 +118,15 @@ mapeamento automático de colunas, relatório de linhas recusadas e o resto da e
 ```ts
 export const PLANILHA_MAX_LINHAS = 500;          // 10 dias no teto de 50/dia
 export function lerPlanilhaDeProspeccao(sheet: SheetMatrix):
-  { candidatos: Prospect[]; erros: { linha: number; motivo: string }[]; colunasIgnoradas: string[] }
+  { candidatos: { linha: number; prospect: Prospect }[];
+    erros: { linha: number; telefone: string | null; codigo: MotivoDeExclusao; motivo: string;
+             detalhe?: string }[];
+    colunasIgnoradas: string[] }
 ```
+
+> **Mudou depois da revisão do #3724:** o candidato carrega a **linha da planilha** e cada recusa
+> carrega o **código** do motivo (`lib/prospecting/importacao-previa.ts`). Sem os dois, a prévia não
+> consegue dizer *qual* linha do Excel já é contato do CRM nem agrupar as recusas por motivo.
 
 Colunas reconhecidas (comparação sem acento e sem caixa, mesmo padrão de `lib/leads/planilha.ts`;
 inclui formas em espanhol):
@@ -136,8 +143,12 @@ inclui formas em espanhol):
 
 Regras por linha (recusar é a função — nunca chute):
 - sem nome (< 2 caracteres, mesma régua do `createLeadSchema`) → recusada "Sem nome da empresa.";
-- telefone que `normalizeProspectPhone` (agora exportada) não aceita → recusada "Sem telefone válido.";
-- mesmo telefone repetido **dentro do arquivo** → a primeira fica, as outras recusadas "Telefone repetido na planilha (linha N).";
+- telefone em branco → recusada **"Sem telefone."**; telefone preenchido que `normalizeProspectPhone`
+  (agora exportada) não aceita → recusada **"Telefone inválido."** (são dois consertos diferentes na
+  planilha; uma frase só escondia qual dos dois a linha pede);
+- mesmo telefone repetido **dentro do arquivo** → a primeira fica, as outras recusadas com motivo
+  "Telefone repetido na planilha." **e** `detalhe: "linha N"` (o detalhe fica fora da frase porque a
+  tela traduz o motivo pelo dicionário, e uma frase com número dentro nunca está lá);
 - `key` = `planilha:` + telefone E.164 (estável: reimportar o mesmo número bate no `unique` e no gatilho de supressão de LGPD);
 - `maps_url`, `rating`, `reviews` = `null`; textos cortados nos mesmos limites de `normalizeProspect`;
 - linha que excede `PLANILHA_MAX_LINHAS` → arquivo inteiro recusado com a mensagem (não importar "os primeiros 500" em silêncio).
@@ -152,12 +163,29 @@ Dentro de `withProspectingLock(pool, org, …)`, numa transação:
 1. `select` por `(organization_id, request_id)` → se existe, devolve a mesma campanha (idempotência; repetir o envio não cria outra).
 2. `insert into prospecting_campaigns(organization_id, request_id, name, search, search_status, result_count, skipped_count)` com `search_status='succeeded'`, `run_id` nulo, e
    ```json
-   { "origem": "planilha", "name": "...", "niche": "...", "arquivo": "lista.xlsx",
+   { "origem": "importacao", "name": "...", "niche": "...",
      "linhas": 312, "origem_da_lista": "texto do operador",
      "avaliar_site": true, "gerar_previa": true }
    ```
+   > **`origem` é `importacao`** (era `planilha` no rascunho desta spec, e é assim que o #3724 a
+   > nomeia): o que a esteira lê é o fato de a lista ter vindo de fora — csv ou xlsx é detalhe do
+   > arquivo. O nome do arquivo continua **fora** do jsonb (pode conter nome de pessoa);
+   > `arquivo_bytes` substitui o tamanho sem identificar ninguém.
 3. Para cada candidato, o **mesmo** `insert … on conflict do nothing` de `synchronizeSearch`, com o mesmo `vereditoPuro(website)` (spec 24).
-4. `result_count` = inseridos; `skipped_count` = duplicados na organização + recusados pelo gatilho de LGPD (o `on conflict` e o `return null` do gatilho são indistinguíveis por `rowCount`; o relatório diz "já estavam na base ou foram excluídos a pedido do titular", sem separar — não inventar sinal que o banco não dá).
+4. **A classificação roda ANTES do insert, dentro do lock** (`previaDaPlanilha`): telefone que já é
+   contato do CRM (`contacts` + `contact_phones`, nas duas grafias do nono dígito) e telefone
+   suprimido pela LGPD (o MESMO hmac do gatilho `prospecting_refuse_erased`) não chegam a virar
+   candidato e voltam ao operador com o motivo de cada linha. O gatilho do banco continua sendo a
+   segunda barreira — a supressão não pode depender de o operador ter clicado em "conferir".
+   `result_count` = inseridos; `skipped_count` = linhas lidas que não entraram (as recusadas da
+   planilha, as barradas aqui e as que o `unique` recusou na reimportação), a mesma conta que a
+   busca faz com `items.length - inserted`.
+
+   > **Mudou depois da revisão do #3724:** a versão anterior desta spec dizia para não separar
+   > "já era contato" de "excluído a pedido do titular" porque o `rowCount` do `on conflict` e o
+   > `return null` do gatilho eram indistinguíveis. Isso continua verdade **para o insert** — mas a
+   > pergunta pode ser respondida antes dele, e o #3724 exige o motivo escrito: suprimir alguém em
+   > silêncio é justamente o que o operador não pode deixar de ver.
 
 Extrair o laço de inserção de `synchronizeSearch` para uma função comum (`gravarCandidatos(db, org, campaignId, prospects)`) usada pelos dois caminhos, para não nascer a segunda verdade sobre "como um candidato entra".
 
@@ -175,8 +203,12 @@ Arquivo novo `app/api/v1/prospecting/importar/route.ts` (multipart não cabe na 
 - Campos: `file`, `request_id` (uuid), `name` (2–120), `niche` (2–120), `origem_da_lista` (3–500), `avaliar_site`, `gerar_previa` — validados por Zod (`importarPlanilhaSchema` em `lib/prospecting/schema.ts`).
 - Tamanho: `IMPORT_MAX_BYTES` (2 MB) antes de ler o corpo inteiro.
 - Erros no formato `fail()`: `validation_failed` 422 (arquivo/colunas/linhas), `conflict` 409 nunca é preciso (idempotente).
-- Sucesso `ok()` com `{ campaign, inseridos, ja_na_base, recusadas: [{linha, motivo}] (até 100), colunas_ignoradas }`.
-- `audit({ action: "prospecting.changed", metadata: { operation: "importar_planilha", arquivo_bytes, linhas, inseridos, ja_na_base, recusadas, classes_puras } })` — **sem** nome de arquivo nem dado de linha (nome de arquivo pode conter nome de pessoa).
+- `previa` (`"true"`/`"false"`, ausente = importar): com `true` a rota **só confere** — devolve
+  `{ previa: true, entram, recusadas, total_recusadas, total_linhas, resumo, colunas_ignoradas }`,
+  não cria campanha, não audita e não escreve nada.
+- Sucesso `ok()` com `{ campaign_id, inseridos, ja_na_base, recusadas: [{linha, telefone, codigo, motivo, detalhe?}] (até 100), total_recusadas, total_linhas, resumo, colunas_ignoradas, repetida }`.
+- `resumo` = contagem por motivo (`sem_nome`, `sem_telefone`, `telefone_invalido`, `repetido_na_planilha`, `contato_do_crm`, `suprimido_lgpd`), com os zerados presentes — a tela não esconde coluna.
+- `audit({ action: "prospecting.changed", metadata: { operation: "importar_planilha", arquivo_bytes, linhas, inseridos, ja_na_base, recusadas, motivos, classes_puras } })` — **sem** nome de arquivo nem dado de linha (nome de arquivo pode conter nome de pessoa); `motivos` é contagem por motivo, o suficiente para provar que a supressão rodou.
 - Emite `prospecting.changed` como as outras ações (a tela já reage a ele).
 
 ### 3.5 Tela: `/app/prospecting`
@@ -188,7 +220,12 @@ intacto) e **Usar minha planilha**:
 - Texto fixo abaixo: "Aceita .csv ou .xlsx (primeira aba), até 500 empresas. Colunas obrigatórias: nome da empresa e telefone. Quem já é contato do CRM não é abordado. Nenhuma abordagem começa nesta etapa."
 - Link "Baixar modelo" → CSV gerado no navegador com o cabeçalho `empresa;telefone;site;segmento;cidade;email;instagram` e uma linha de exemplo fictícia.
 - **Não depende da chave do provedor**: a aba de planilha fica habilitada com `configured=false` (hoje o botão de busca usa `disabled={!data?.configured}`).
-- Depois de enviar: resumo na própria tela ("312 linhas · 280 entraram · 20 já estavam na base · 12 recusadas") e a lista das recusadas com linha e motivo. A campanha aparece em "Suas campanhas" com o rótulo **"Planilha"** no lugar do estado da busca.
+- Botão **"Conferir a lista antes de importar"** ao lado do de importar: chama a mesma rota com
+  `previa=true` e mostra "N entram · M ficam de fora" com a lista de linhas e motivos, sem criar
+  campanha ("Nada foi importado ainda: a conferência não cria campanha").
+- Depois de enviar: resumo na própria tela ("312 linhas · 280 entraram · 32 ficam de fora") e a
+  lista das que ficaram de fora com linha, motivo e — no telefone repetido — a linha da primeira
+  ocorrência. A campanha aparece em "Suas campanhas" com o rótulo **"Planilha"** no lugar do estado da busca.
 - Strings novas no `lib/i18n/dicionario.ts` (es) e `lib/i18n/traducoes/*.json`, como as atuais.
 
 ### 3.6 Contexto do agente

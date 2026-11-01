@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { SeletorDeIdioma } from "@/components/shell/SeletorDeIdioma";
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { SignOut, ShieldCheck } from "@/lib/ui/icons";
 
 function initials(name: string | null, email: string): string {
@@ -28,6 +29,7 @@ export function UserMenu() {
   const t = useT();
   const user = useUser();
   const { signOut } = useAuth();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   return (
@@ -73,7 +75,49 @@ export function UserMenu() {
           */}
           {user.is_platform_admin && (
             <>
-              <DropdownMenuItem asChild>
+              <DropdownMenuItem
+                asChild
+                /*
+                  ⚠️ QUEM NAVEGA É O `onClick` DAQUI, E NÃO O `<Link>`.
+
+                  Medido no CI do #3608 (run 40791878045, job 123178915982): o
+                  caso "a porta do modo administrador é achável sem digitar URL"
+                  reprovou com a URL em `/app/inbox` — o clique FECHOU o menu
+                  (`data-state="closed"` no trace) e **nenhuma** requisição de
+                  navegação saiu, nem documento nem `_rsc`. Ou seja: o item foi
+                  selecionado e a navegação do `<Link>` se perdeu no meio.
+
+                  O mecanismo é a ORDEM dos handlers: o Next chama o `onClick`
+                  que recebe por prop ANTES do `linkClicked` dele (`next/link`
+                  16.4.2, `app-dir/link.js`), e esse `onClick` aqui é o do Radix,
+                  que termina em `handleSelect` → fecha o menu no meio do MESMO
+                  evento. A navegação do `<Link>` é, portanto, a ÚLTIMA coisa a
+                  rodar, depois de o menu já ter sido fechado — e foi ela que
+                  faltou no CI.
+
+                  Por isso a porta não depende mais dela: não há como provar de
+                  fora por que aquele trecho não rodou; há como não depender.
+                  `preventDefault` faz o Radix PULAR o `onSelect` (que é quem
+                  fecha o menu) e faz o próprio Link desistir no
+                  `if (e.defaultPrevented) return` dele; quem leva ao painel é a
+                  linha seguinte, uma só vez. O `<a href>` continua ali — clique
+                  com ⌘/Ctrl/Shift/Alt ou com o botão do meio não é nosso, e o
+                  navegador abre em aba nova como manda o href.
+                */
+                onClick={(event) => {
+                  if (
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    event.button !== 0
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  router.push("/admin");
+                }}
+              >
                 <Link href="/admin" data-testid="porta-modo-administrador">
                   <ShieldCheck size={16} className="mr-2" aria-hidden />
                   <span className="flex flex-col">

@@ -73,6 +73,29 @@ export const EVENTO_DE_SAIDA = "cancelled_by_stage_change";
 export const MOTIVO_DA_SAIDA = "Lead saiu da etapa do follow-up";
 
 /**
+ * O prefixo com que o PRÓPRIO fluxo se identifica quando move o card.
+ *
+ * O nó `move_lead` existe (#2065) e é o motor quem escreve a etapa: o
+ * `moverLeadNoFunil` do `engine.ts` chama o `moveLeadHandler` com
+ * `actor: { type: "webhook_source", id: `followup:<enrollment>` }`, que vira
+ * `p_metadata.actor_id` no `lead.stage_changed`. Ou seja: um evento de saída de
+ * etapa PODE ter sido causado pela inscrição que ele cancelaria — o toque
+ * morreria por ter sido obedecido, e o fluxo que move o card e depois fala
+ * dele nunca falaria.
+ *
+ * Daí o corte: inscrição cujo id é o ator do evento é POUPADA. Só ela — o
+ * movimento de OUTRA inscrição do mesmo contato (outro fluxo, mesma etapa de
+ * origem) continua cancelando esta, porque o toque desta perdeu a premissa de
+ * verdade.
+ */
+export const PREFIXO_DO_ATOR_DO_FLUXO = "followup:";
+
+/** O id de ator que a inscrição usa quando é ela quem move o card. */
+export function atorDoProprioFluxo(enrollmentId: string): string {
+  return `${PREFIXO_DO_ATOR_DO_FLUXO}${enrollmentId}`;
+}
+
+/**
  * Os status que MORREM com a saída da etapa: os três que ainda tinham um toque
  * por vir. Fora daqui ficam `paused_manual` e `paused_handoff` (pausa de gente),
  * `coletando` (roteiro de atendimento conduzido pelo turno, nunca pelo relógio) e
@@ -130,6 +153,12 @@ export interface SaidaDaEtapaSummary {
   /** Cancelamento concorrente chegou primeiro: nada a fazer, contado e não calado. */
   ja_encerradas: number;
   sem_contato: number;
+  /**
+   * Inscrições poupadas por serem o ATOR do evento — o próprio fluxo movendo o
+   * card. Contado, e não calado: um `matched` com `canceladas:0` sem este número
+   * é indistinguível de "não havia o que cancelar".
+   */
+  proprio_ator: number;
 }
 
 export interface SaidaDaEtapaDeps {
@@ -142,7 +171,15 @@ function textoOuNulo(v: unknown): string | null {
 }
 
 function vazio(): SaidaDaEtapaSummary {
-  return { matched: false, pointers_armados: 0, inscricoes_encontradas: 0, canceladas: 0, ja_encerradas: 0, sem_contato: 0 };
+  return {
+    matched: false,
+    pointers_armados: 0,
+    inscricoes_encontradas: 0,
+    canceladas: 0,
+    ja_encerradas: 0,
+    sem_contato: 0,
+    proprio_ator: 0,
+  };
 }
 
 function patchDeCancelamento(clock: () => Date): EnrollmentPatch {
@@ -199,8 +236,22 @@ export async function aplicaSaidaDaEtapa(
 
   const etapaPorPointer = new Map(armados.map((p) => [p.id, p.stage_id]));
   const patch = patchDeCancelamento(deps.clock);
+  // Quem pediu o movimento, quando o emissor se identifica. `null` = mão humana,
+  // agente, automação, lote ou emissor antigo sem metadata: nada é poupado.
+  const autorDoEvento = textoOuNulo(row.metadata.actor_id);
 
   for (const inscricao of inscricoes) {
+    // O fluxo NÃO cancela a si mesmo. O `move_lead` grava
+    // `metadata.actor_id = followup:<id da inscrição>`; sem este corte, a
+    // inscrição que mandou mover o card apareceria na lista de saída e mataria
+    // o próprio toque — o fluxo "move para X, espera, fala de X" nunca falaria.
+    // O ator é comparado com o id DESTA inscrição, um por um: o movimento de
+    // outro fluxo do mesmo contato continua cancelando esta.
+    if (autorDoEvento !== null && autorDoEvento === atorDoProprioFluxo(inscricao.id)) {
+      summary.proprio_ator += 1;
+      continue;
+    }
+
     // A inscrição PRIMEIRO, a guarda de status depois: um cancelamento
     // concorrente (opt-out, handoff) que chegou antes não é sobrescrito aqui.
     if (!STATUS_QUE_MORREM.includes(inscricao.status)) continue;

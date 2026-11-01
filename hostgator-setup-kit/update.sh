@@ -20,6 +20,7 @@ source "$KIT_DIR/_common.sh"
 # shellcheck source=manutencao.sh
 source "$KIT_DIR/manutencao.sh"
 enter_project
+aviso_rede_do_supabase
 
 # ── 0-. O laço do diagnóstico (#1955) ───────────────────────────────────────
 # Toda execução termina com um arquivo legível — inclusive as que MORREM antes

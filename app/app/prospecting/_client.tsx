@@ -31,6 +31,12 @@ import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
+/** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
+type RecusadaDaLinha = { linha: number; motivo: string; telefone?: string | null; detalhe?: string };
+
+/** `planilha` é o nome que a 1.95.0 gravou nas campanhas importadas antes do #3724. */
+const ehImportada = (origem: string | undefined) => origem === "importacao" || origem === "planilha";
+
 type Campaign = {
   id: string;
   name: string;
@@ -38,7 +44,7 @@ type Campaign = {
   search_status: string;
   error: string | null;
   config: CampaignConfig | null;
-  // `origem: "planilha"` marca a campanha importada de uma lista própria (sem busca no Maps).
+  // `origem: "importacao"` marca a campanha importada de uma lista própria (sem busca no Maps).
   search: ({ niche: string; location?: string; origem?: string } & Record<string, unknown>) | null;
   result_count: number;
   skipped_count: number;
@@ -287,9 +293,14 @@ export function ProspectingClient() {
   const [avaliarSiteLista, setAvaliarSiteLista] = useState(true);
   const [gerarPreviaLista, setGerarPreviaLista] = useState(true);
   const [resumoDaImportacao, setResumoDaImportacao] = useState<string | null>(null);
-  const [recusadasDaImportacao, setRecusadasDaImportacao] = useState<
-    { linha: number; motivo: string }[]
-  >([]);
+  // A prévia (conferir antes de importar) e o resultado da importação compartilham a lista de
+  // recusadas: as duas mostram a mesma coisa, linha e motivo.
+  const [previaDaLista, setPreviaDaLista] = useState<{
+    entram: number;
+    fora: number;
+    total: number;
+  } | null>(null);
+  const [recusadasDaImportacao, setRecusadasDaImportacao] = useState<RecusadaDaLinha[]>([]);
   const [campaignDrafts, setCampaignDrafts] = useState<Record<string, CampaignConfig>>({});
   const [manualCampaigns, setManualCampaigns] = useState<Record<string, boolean>>({});
   const [createdAgents, setCreatedAgents] = useState<{ id: string; name: string }[]>([]);
@@ -421,10 +432,13 @@ export function ProspectingClient() {
     a.click();
     URL.revokeObjectURL(url);
   }
-  async function importarPlanilha() {
+  // Um formulário, dois destinos: `previa=true` só confere e devolve os motivos de cada linha
+  // recusada; sem ela, importa de verdade. Reaproveitar o mesmo corpo é o que garante que a
+  // prévia fala do MESMO arquivo e dos MESMOS campos que o botão de importar vai mandar.
+  function formularioDaLista(somentePrevia: boolean): FormData | null {
     if (!arquivo) {
       setError(t("Escolha o arquivo da planilha."));
-      return;
+      return null;
     }
     // O mesmo arquivo com os mesmos campos reaproveita o `request_id`: reenviar depois de uma
     // falha de rede não cria uma segunda campanha.
@@ -446,11 +460,59 @@ export function ProspectingClient() {
     form.set("origem_da_lista", origemDaLista);
     form.set("avaliar_site", String(avaliarSiteLista));
     form.set("gerar_previa", String(avaliarSiteLista && gerarPreviaLista));
+    form.set("previa", String(somentePrevia));
     form.set("file", arquivo);
+    return form;
+  }
+  async function conferirLista() {
+    const form = formularioDaLista(true);
+    if (!form) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setPreviaDaLista(null);
+    setRecusadasDaImportacao([]);
+    try {
+      const res = await fetch("/api/v1/prospecting/importar", {
+        method: "POST",
+        body: form,
+        credentials: "same-origin",
+      });
+      const corpo = (await res.json().catch(() => null)) as {
+        data?: {
+          previa?: true;
+          entram: number;
+          recusadas: RecusadaDaLinha[];
+          total_recusadas: number;
+          total_linhas: number;
+        };
+        error?: { message?: string; details?: { recusadas?: RecusadaDaLinha[] } };
+      } | null;
+      if (!res.ok || !corpo?.data?.previa) {
+        setError(corpo?.error?.message ?? t("Não foi possível conferir a planilha."));
+        setRecusadasDaImportacao(corpo?.error?.details?.recusadas ?? []);
+        return;
+      }
+      setPreviaDaLista({
+        entram: corpo.data.entram,
+        fora: corpo.data.total_recusadas,
+        total: corpo.data.total_linhas,
+      });
+      setRecusadasDaImportacao(corpo.data.recusadas);
+    } catch {
+      setError(t("Não foi possível conferir a planilha."));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function importarPlanilha() {
+    const form = formularioDaLista(false);
+    if (!form) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     setResumoDaImportacao(null);
+    setPreviaDaLista(null);
     setRecusadasDaImportacao([]);
     try {
       const res = await fetch("/api/v1/prospecting/importar", {
@@ -477,9 +539,11 @@ export function ProspectingClient() {
         return;
       }
       const r = corpo.data;
-      const linhas = r.inseridos + r.ja_na_base + r.total_recusadas;
+      const linhas = r.inseridos + r.total_recusadas;
+      // `ja_na_base` deixou de ser um saco único: cada linha que não entrou tem o motivo logo
+      // abaixo, nesta mesma tela. O resumo só conta.
       setResumoDaImportacao(
-        `${linhas} ${t("linhas")} · ${r.inseridos} ${t("entraram")} · ${r.ja_na_base} ${t("já estavam na base ou foram excluídas a pedido do titular")} · ${r.total_recusadas} ${t("recusadas")}`,
+        `${linhas} ${t("linhas")} · ${r.inseridos} ${t("entraram")} · ${r.total_recusadas} ${t("ficam de fora")}`,
       );
       setRecusadasDaImportacao(r.recusadas);
       setSelected(r.campaign_id);
@@ -1018,10 +1082,33 @@ export function ProspectingClient() {
                   {t("Baixar modelo")}
                 </button>
               </p>
-              {/* Não depende da chave do provedor: a planilha não faz busca paga. */}
-              <Button className="w-full" type="submit" disabled={busy}>
-                {busy ? t("Aguarde…") : t("Importar planilha")}
-              </Button>
+              {/* Não depende da chave do provedor: a planilha não faz busca paga.
+                  Lado a lado só entre sm e lg: a partir de lg o formulário mora na
+                  coluna de 320px e os dois botões juntos passam da borda do cartão. */}
+              <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={conferirLista}
+                  disabled={busy}
+                >
+                  {t("Conferir a lista antes de importar")}
+                </Button>
+                <Button className="w-full" type="submit" disabled={busy}>
+                  {busy ? t("Aguarde…") : t("Importar planilha")}
+                </Button>
+              </div>
+              {previaDaLista && (
+                <div role="status" className="rounded-md bg-muted/40 p-3 text-sm">
+                  <p className="font-medium">
+                    {`${previaDaLista.entram} ${t("entram")} · ${previaDaLista.fora} ${t("ficam de fora")}`}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("Nada foi importado ainda: a conferência não cria campanha.")}
+                  </p>
+                </div>
+              )}
               {resumoDaImportacao && (
                 <p role="status" className="rounded-md bg-muted/40 p-3 text-sm">
                   {resumoDaImportacao}
@@ -1029,11 +1116,12 @@ export function ProspectingClient() {
               )}
               {recusadasDaImportacao.length > 0 && (
                 <div className="text-sm">
-                  <p className="font-medium">{t("Linhas recusadas")}</p>
+                  <p className="font-medium">{t("Linhas que ficam de fora")}</p>
                   <ul className="mt-1 max-h-48 list-disc space-y-1 overflow-y-auto pl-5 text-xs text-muted-foreground">
                     {recusadasDaImportacao.map((r) => (
                       <li key={r.linha}>
                         {t("Linha")} {r.linha}: {t(r.motivo)}
+                        {r.detalhe ? ` (${r.detalhe})` : ""}
                       </li>
                     ))}
                   </ul>
@@ -1063,7 +1151,7 @@ export function ProspectingClient() {
                 >
                   <span className="block text-sm font-medium">{c.name}</span>
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    {c.search?.origem === "planilha" && <>{t("Planilha")} · </>}
+                    {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
                     {t(labels[c.status] ?? c.status)} · {c.result_count} {t("empresas")}
                   </span>
                 </button>
@@ -1089,7 +1177,7 @@ export function ProspectingClient() {
                   <div>
                     <h2 className="text-xl font-semibold">{campaign.name}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {campaign.search?.origem === "planilha"
+                      {ehImportada(campaign.search?.origem)
                         ? t("Planilha")
                         : t(labels[campaign.search_status] ?? campaign.search_status)}
                       {campaign.cost_usd !== null

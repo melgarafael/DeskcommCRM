@@ -133,6 +133,12 @@ export const AUDIT_ACTIONS = [
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
   "conversation.tags_changed",
+  // (migration 9062) Mudar a FILA de uma conversa é decisão auditável: quem
+  // escolheu, de qual fila para qual, e se aquilo disparou redistribuição. Sem
+  // esta ação, mover uma conversa de setor não deixaria rastro — e "por que
+  // esta conversa do comercial foi parar no financeiro?" é pergunta de
+  // operação, não de curiosidade.
+  "conversation.sector_changed",
   // Atendimento conjunto (issue #2542): convidar alguém para a MESMA conversa
   // e tirar o participante são decisões auditáveis, com o `user_id` alvo no
   // metadata. O convidado entra sem herdar o dono — por isso a trilha precisa
@@ -258,6 +264,8 @@ export const AUDIT_ACTIONS = [
   /** Provedor/modelo de um ponto do sistema que usa IA foi trocado no painel. */
   "ai.purpose_binding_updated",
   "ai.org_default_updated",
+  /** Voz da organização (voice_id/model_id do ElevenLabs) trocada no painel — plano de voz, Fase 7. */
+  "ai.voz_settings_updated",
   // Ligar/desligar uma das duas verificações que consultam modelo. Auditável
   // porque muda o que o sistema confere antes de falar com o cliente — e porque
   // custa dinheiro por mensagem.
@@ -478,6 +486,11 @@ export const AUDIT_ACTIONS = [
   // respondendo) porque juntar os dois apagaria justamente quem agiu.
   "ai.case_noted_by_agent",
   "ai.case_closed_by_agent",
+  // (#3810) A pessoa encerrou o caso SEM avisar o cliente — o desfecho que não
+  // manda mensagem nenhuma (status `cancelled`). Separado de `ai.case_replied`
+  // porque nada foi respondido: quem lê a auditoria não pode concluir que o
+  // cliente recebeu alguma coisa.
+  "ai.case_closed_without_reply",
   "pipeline.agent_mapping_updated",
   "pipeline.stage_created",
   "pipeline.stage_updated",
@@ -1299,6 +1312,10 @@ export const AUDIT_ACTIONS = [
   // cliente precisa encontrar o ato administrativo que abriu a porta, e não só
   // as gravações que ela deixou passar.
   "crm.telefone_de_ficha_vazia_alterado",
+  "crm.nome_informado_alterado",
+  // O admin ligou/desligou o aviso das transferências para atendimento humano
+  // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
+  "crm.aviso_de_transferencia_alterado",
   // O admin da plataforma exportou o INVENTÁRIO das instalações em CSV (#2777).
   // É leitura, mas é leitura EM ESCALA DE PLATAFORMA: grava quem, quando, QUANTO
   // saiu, se o teto cortou e QUE filtros valiam — nunca o texto da busca, que é
