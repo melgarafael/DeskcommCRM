@@ -70997,4 +70997,16 @@ alter table public.pacing_ledger
 comment on column public.pacing_ledger.resposta is
   'true = resposta a quem escreveu: vale para o espaçamento, não para o teto do dia (warm-up/daily_message_limit), que conta só disparos (9061).';
 
+-- ---- vocabulário neutro do funil (migration 9080) ----
+-- Funil novo nasce com Contato/Negócio/Ganho/Perdido, não com o vocabulário de
+-- loja do CREATE TABLE acima (doc 249, resposta B). Só o DEFAULT: nenhuma linha
+-- existente é reescrita. Idempotente. O porquê está no cabeçalho da migration.
+alter table public.crm_pipelines
+  alter column vocabulary set default jsonb_build_object(
+    'lead', 'Contato', 'lead_plural', 'Contatos',
+    'deal', 'Negócio', 'deal_plural', 'Negócios',
+    'won', 'Ganho', 'lost', 'Perdido',
+    'stage', 'Etapa', 'stage_plural', 'Etapas'
+  );
+
 notify pgrst, 'reload schema';
