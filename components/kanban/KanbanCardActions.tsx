@@ -117,7 +117,7 @@ export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: Kan
             // direita) é maior que a expansão, então o `overflow-hidden` não a corta.
             className="relative h-7 w-7 shrink-0 max-lg:before:absolute max-lg:before:-inset-2 max-lg:before:content-[''] opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
             onClick={(e) => e.stopPropagation()}
-            aria-label={t("Ações do lead")}
+            aria-label={t("Ações do negócio")}
           >
             <DotsThree size={16} weight="bold" />
           </Button>
