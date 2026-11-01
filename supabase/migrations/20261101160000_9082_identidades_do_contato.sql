@@ -1,4 +1,4 @@
--- manifest: **As identidades do contato (WhatsApp, Instagram, Facebook e e-mail) ganham tabela própria, para que a mesma pessoa seja reconhecida por mais de um caminho (issue #3764, fatia 1).** Tabela tenant-aware nova `contact_identities` (`organization_id`, `contact_id`, `canal`, `identificador`, `criado_em`), com `canal in ('whatsapp','instagram','facebook','email')`, `unique (organization_id, canal, identificador)`, RLS (leitura por organização, escrita a partir de `agent`) e grants próprios. `fn_identificador_canonico(canal, valor)` é a régua ÚNICA da forma gravada — telefone em E.164 pela `fn_telefone_canonico` (9043), e-mail em minúsculas, perfil social sem `@` e em minúsculas —, e `fn_identidades_do_contato_canonica` aplica a régua e confere o tenant do contato em todo `insert`/`update`: sem isso `+55 31 9…` e `+55319…` seriam duas identidades e o índice não seguraria nada. LGPD: a virada de `is_anonymized` apaga as identidades do contato (`trg_identidades_do_contato_anonimizado`), no mesmo desenho de porta única da 0391 — telefone, e-mail e perfil social não têm versão anonimizada que ainda sirva. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (cria função). Prova: `lib/contacts/identidades.test.ts` (biblioteca pura) e `tests/invariants/identidades-do-contato.test.ts` (unique, forma canônica, RLS e anonimização). Fora desta fatia, declarado na issue: feed único por contato no Inbox, resposta pelo canal escolhido com janela de 24 h, IA com histórico unificado e atribuição/carteira por cliente (itens 2 a 5).
+-- manifest: **As identidades do contato (WhatsApp, Instagram, Facebook e e-mail) ganham tabela própria, para que a mesma pessoa seja reconhecida por mais de um caminho (issue #3764, fatia 1).** Tabela tenant-aware nova `contact_identities` (`organization_id`, `contact_id`, `canal`, `identificador`, `criado_em`), com `canal in ('whatsapp','instagram','facebook','email')`, `unique (organization_id, canal, identificador)`, RLS (leitura por organização, escrita a partir de `agent`) e grants próprios. `fn_identificador_canonico(canal, valor)` é a régua ÚNICA da forma gravada — telefone em E.164 pela `fn_telefone_canonico` (9043) mais a decisão de forma que ela não dá (`+55` implícito no número nacional e guarda de 8–15 dígitos, a mesma régua de `normalizePhoneBR`), e-mail em minúsculas, perfil social sem o `@` da frente e em minúsculas —, e `fn_identidades_do_contato_canonica` aplica a régua e confere o tenant do contato em todo `insert`/`update`: sem isso `+55 31 9…` e `+55319…` seriam duas identidades e o índice não seguraria nada. LGPD: a virada de `is_anonymized` apaga as identidades do contato (`trg_identidades_do_contato_anonimizado`), no mesmo desenho de porta única da 0391 — telefone, e-mail e perfil social não têm versão anonimizada que ainda sirva. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (cria função). Prova: `lib/contacts/identidades.test.ts` (biblioteca pura) e `tests/invariants/identidades-do-contato.test.ts` (unique, forma canônica, RLS e anonimização). Fora desta fatia, declarado na issue: feed único por contato no Inbox, resposta pelo canal escolhido com janela de 24 h, IA com histórico unificado e atribuição/carteira por cliente (itens 2 a 5).
 --
 -- 9082 — a mesma pessoa em mais de um caminho: WhatsApp, Instagram, Facebook e e-mail.
 --
@@ -45,11 +45,17 @@
 -- `create or replace`, `drop trigger if exists` + `create`.
 
 -- ── 1. A régua da forma gravada ─────────────────────────────────────────────
--- Telefone reaproveita `fn_telefone_canonico` (9043), que é a mesma regra de
--- `canonicalPhoneBR` (`lib/channels/phone-variants.ts`) — o nono dígito do
--- celular brasileiro. A duplicação lib×SQL é a que a 9043 já aceitou e
+-- Telefone: o nono dígito do celular brasileiro é `fn_telefone_canonico` (9043),
+-- a mesma regra de `canonicalPhoneBR` (`lib/channels/phone-variants.ts`). O que
+-- a 9043 NÃO responde — e esta função precisa responder — é quando o `+55` está
+-- implícito: ela recebe um E.164 que o app já normalizou, e aqui chega o que a
+-- pessoa digitou. Então a decisão de forma (com `+` exige 8–15 dígitos; sem `+`,
+-- 12–13 têm de começar com 55 e 10–11 são DDD + número) mora AQUI, espelhando
+-- `normalizePhoneBR`. A duplicação lib×SQL é a que a 9043 já aceitou e
 -- documentou; a alternativa (normalizar só em TypeScript) deixaria a porta do
--- PostgREST aberta para gravar variante.
+-- PostgREST aberta para gravar variante. As duas réguas são medidas, caso a
+-- caso, em `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`:
+-- divergir aqui é mudo — o app procura uma string e o banco grava outra.
 --
 -- `immutable` e `search_path` vazio: entra numa constraint, e constraint
 -- reconstruída por `pg_restore` não enxerga o `search_path` de ninguém.
@@ -63,6 +69,9 @@ as $$
   with bruto as (
     select btrim(coalesce(p_valor, '')) as v
   ),
+  digitos as (
+    select regexp_replace(b.v, '\D', '', 'g') as d from bruto b
+  ),
   perfil as (
     select nullif(
       regexp_replace(
@@ -75,10 +84,37 @@ as $$
       '') as v
     from bruto
   ),
-  limpo as (select nullif(btrim(perfil.v, '@'), '') as v from perfil)
+  -- Só o `@` da FRENTE sai. `btrim(v, '@')` tirava a cauda também, e `fulano@`
+  -- virava `fulano` — identidade que a lib RECUSA (`perfilDaUrl` só corta o
+  -- prefixo). Divergência em valor inválido é a pior espécie: o banco grava o
+  -- que a tela nunca procuraria.
+  limpo as (select nullif(regexp_replace(perfil.v, '^@+', ''), '') as v from perfil)
   select case
     when b.v = '' then null
-    when p_canal = 'whatsapp' then public.fn_telefone_canonico(b.v)
+
+    -- ── whatsapp: a MESMA decisão de forma de `normalizePhoneBR` ────────────
+    -- Delegar isso à `fn_telefone_canonico` (9043) não dá: ela é a regra do
+    -- NONO DÍGITO sobre um número que JÁ é E.164 — o `contacts.phone_number` a
+    -- recebe depois de o app ter normalizado. Aqui entra o que a pessoa
+    -- digitou (o número do direct, o do formulário, o que o atendente colou),
+    -- então a decisão de quando o `+55` está implícito mora nesta função,
+    -- espelhando `lib/channels/phone-variants.ts`: com `+`, exige 8 a 15
+    -- dígitos; sem `+`, 12 ou 13 dígitos têm de começar com 55, e 10 ou 11 são
+    -- DDD + número brasileiro. Sem a guarda de tamanho, `123` virava `+123` e
+    -- um valor mascarado (`55 31 ****-6398`) virava `+55316398` — identidade
+    -- que nunca mais casa com o número real e ocupa o índice único.
+    -- A concordância das duas réguas, caso a caso, é medida em
+    -- `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`.
+    when p_canal = 'whatsapp' then
+      case
+        when b.v like '+%' then
+          case when d.d ~ '^[0-9]{8,15}$' then public.fn_telefone_canonico(b.v) else null end
+        when length(d.d) in (12, 13) then
+          case when d.d like '55%' then public.fn_telefone_canonico('+' || d.d) else null end
+        when length(d.d) in (10, 11) then public.fn_telefone_canonico('+55' || d.d)
+        else null
+      end
+
     -- A mesma régua de `contacts_email_format`: sem `@` e sem domínio não é
     -- e-mail, e `null` aqui vira recusa no gatilho em vez de identidade torta.
     when p_canal = 'email' then
@@ -89,7 +125,7 @@ as $$
       case when l.v ~ '^[a-z0-9._-]{1,64}$' then l.v else null end
     else null
   end
-  from bruto b, limpo l;
+  from bruto b, digitos d, limpo l;
 $$;
 
 revoke execute on function public.fn_identificador_canonico(text, text) from public, anon;

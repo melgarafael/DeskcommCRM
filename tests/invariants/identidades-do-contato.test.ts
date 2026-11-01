@@ -227,3 +227,81 @@ describe("contact_identities — LGPD", () => {
     ).toContain("identidade_de_ficha_indisponivel");
   });
 });
+
+/**
+ * A JUNÇÃO MANUAL, medida onde ela acontece de verdade: `fn_mesclar_contatos`.
+ *
+ * A biblioteca tem `juntarFichas` (decisão pura de tela), mas quem MOVE os
+ * ponteiros é a função de banco — e é ela que decide o que acontece com
+ * conversas, mensagens, negócios e identidades da ficha absorvida. Ela reponta
+ * toda FK para `contacts` pelo CATÁLOGO (`pg_constraint`), nunca por lista à
+ * mão; este bloco existe para que "o catálogo pega a tabela nova" seja medido, e
+ * não suposto. Sem ele, o `unique (organization_id, canal, identificador)`
+ * poderia transformar a fusão num erro cru de banco (23505) na primeira vez que
+ * duas fichas com a mesma pessoa fossem juntadas — e o defeito só apareceria em
+ * produção, na mão do mantenedor.
+ */
+describe("contact_identities — a junção manual move as identidades", () => {
+  const FICA = "dddddddd-3333-4000-8000-0000000000f1";
+  const ABSORVIDA = "dddddddd-3333-4000-8000-0000000000f2";
+
+  it("a identidade da ficha absorvida vai para a principal e nenhuma sobra na lápide", () => {
+    sql(`
+      insert into public.contacts (id, organization_id, display_name) values
+        ('${FICA}', '${ORG_A}', 'Identidades Fica'),
+        ('${ABSORVIDA}', '${ORG_A}', 'Identidades Absorvida')
+        on conflict (id) do nothing;
+
+      insert into public.contact_identities (organization_id, contact_id, canal, identificador)
+      values
+        ('${ORG_A}', '${FICA}', 'whatsapp', '+5531990000001'),
+        ('${ORG_A}', '${FICA}', 'email', 'junta-fica@invariant.test'),
+        ('${ORG_A}', '${ABSORVIDA}', 'whatsapp', '+5531990000002'),
+        ('${ORG_A}', '${ABSORVIDA}', 'email', 'junta-absorvida@invariant.test'),
+        ('${ORG_A}', '${ABSORVIDA}', 'instagram', '@junta.absorvida')
+      on conflict (organization_id, canal, identificador) do nothing;
+    `);
+    expect(
+      sql(`select count(*) from public.contact_identities where contact_id = '${ABSORVIDA}';`),
+    ).toBe("3");
+
+    // Uma chamada só: a fusão não é idempotente (a segunda acha o secundário
+    // indisponível), então o que interessa vem na mesma linha.
+    const saida = sql(`
+      with m as (
+        select public.fn_mesclar_contatos(
+          '${ORG_A}', '${FICA}', array['${ABSORVIDA}']::uuid[]
+        ) as r
+      )
+      select coalesce(r->'repontado'->>'contact_identities.contact_id', '-')
+             || '|'
+             || coalesce(r->'nao_repontado'->>'contact_identities.contact_id', '-')
+        from m;
+    `).split("\n").pop();
+
+    // Repontou as três, e nenhuma ficou para trás (`nao_repontado` é o que a
+    // tela anuncia como "continuou no cadastro antigo").
+    expect(saida).toBe("3|-");
+
+    expect(
+      sql(`select count(*) from public.contact_identities where contact_id = '${ABSORVIDA}';`),
+    ).toBe("0");
+    expect(
+      sql(`select count(*) from public.contact_identities where contact_id = '${FICA}';`),
+    ).toBe("5");
+
+    // A lápide não aceita identidade nova: quem for vincular a pessoa de novo
+    // tem de achar a ficha viva, senão a duplicata renasce por baixo da fusão.
+    expect(
+      falha(`insert into public.contact_identities (organization_id, contact_id, canal, identificador)
+             values ('${ORG_A}', '${ABSORVIDA}', 'facebook', 'junta.absorvida');`),
+    ).toContain("identidade_de_ficha_indisponivel");
+
+    // E o par movido continua ÚNICO na organização: tentar dá-lo a uma terceira
+    // ficha é 23505, não uma segunda linha.
+    expect(
+      falha(`insert into public.contact_identities (organization_id, contact_id, canal, identificador)
+             values ('${ORG_A}', '${CONTATO_A}', 'instagram', 'junta.absorvida');`),
+    ).toContain("23505");
+  });
+});

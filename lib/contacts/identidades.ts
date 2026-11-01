@@ -19,10 +19,13 @@
  *
  * Nada aqui faz I/O: quem lê e grava é `contact_identities`
  * (migration 9082), e a régua do banco é a MESMA — `fn_identificador_canonico`
- * chama `fn_telefone_canonico` (9043, a regra de `canonicalPhoneBR`). A
- * duplicação lib×SQL já é a da 9043 e é deliberada: normalizar só aqui deixaria
- * a porta do PostgREST aberta para gravar variante, e o `unique
- * (organization_id, canal, identificador)` viraria decorativo.
+ * decide a FORMA (quando o `+55` está implícito, o que é e-mail, o que é perfil)
+ * e chama `fn_telefone_canonico` (9043) para o nono dígito. A duplicação lib×SQL
+ * já é a da 9043 e é deliberada: normalizar só aqui deixaria a porta do
+ * PostgREST aberta para gravar variante, e o `unique
+ * (organization_id, canal, identificador)` viraria decorativo. As duas réguas
+ * são comparadas de verdade em
+ * `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`.
  *
  * ─── Fora de escopo, de propósito ──────────────────────────────────────────
  * Feed único no Inbox, resposta pelo canal escolhido com janela de 24 h, IA
@@ -79,6 +82,17 @@ export interface SugestaoDeVinculo {
  *              pessoa.
  *   facebook   idem, aceitando também o id numérico (PSID) que a página entrega.
  *
+ * ─── A decisão de FORMA do telefone, e de quem ela é ────────────────────────
+ * Com `+`, o número é internacional: 8 a 15 dígitos. Sem `+`, 12 ou 13 dígitos
+ * têm de começar com 55, e 10 ou 11 são DDD + número brasileiro (o `+55`
+ * implícito). Essa decisão é a de `normalizePhoneBR`, e ela mora TAMBÉM em
+ * `fn_identificador_canonico` (migration 9082) — o banco é quem grava, então é
+ * ele que manda, e a lib tem de devolver exatamente o que ele devolveria.
+ * Divergência aqui não dá erro em lugar nenhum: a sugestão de vínculo procura
+ * uma string que a coluna nunca contém, e a pessoa nasce na segunda ficha.
+ * As duas réguas são medidas lado a lado, caso a caso, em
+ * `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`.
+ *
  * `null` em vez de `""`: valor inválido NÃO vira identidade vazia, senão duas
  * fichas "sem identificador" colidiriam no índice.
  */
@@ -122,7 +136,12 @@ export function normalizarIdentificador(
 function perfilDaUrl(texto: string): string {
   return texto
     .replace(/^https?:\/\//i, "")
-    .replace(/^(?:www\.)?(?:instagram\.com|facebook\.com|fb\.com|fb\.me|m\.facebook\.com)\//i, "")
+    // `www.` e `m.` na frente de QUALQUER um dos domínios: o link do celular
+    // (`https://m.instagram.com/fulano`) é o mesmo perfil, e a régua do banco
+    // (`fn_identificador_canonico`) já os tirava — a lib recusava o que o banco
+    // aceitava. Divergência assim não aparece em revisão: as duas regex parecem
+    // iguais escritas em linguagens diferentes.
+    .replace(/^(?:www\.|m\.)?(?:instagram\.com|facebook\.com|fb\.com|fb\.me)\//i, "")
     .replace(/[?#].*$/, "")
     .replace(/\/+$/, "")
     // O `@` que o cliente digita no direct. Vem DEPOIS da URL: `@fulano` não é

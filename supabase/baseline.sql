@@ -66681,6 +66681,9 @@ as $$
   with bruto as (
     select btrim(coalesce(p_valor, '')) as v
   ),
+  digitos as (
+    select regexp_replace(b.v, '\D', '', 'g') as d from bruto b
+  ),
   perfil as (
     select nullif(
       regexp_replace(
@@ -66693,10 +66696,31 @@ as $$
       '') as v
     from bruto
   ),
-  limpo as (select nullif(btrim(perfil.v, '@'), '') as v from perfil)
+  -- Só o `@` da FRENTE sai: `fulano@` não é perfil, e `btrim(v, '@')` gravava
+  -- `fulano` — identidade que a lib recusa (ela só corta o prefixo).
+  limpo as (select nullif(regexp_replace(perfil.v, '^@+', ''), '') as v from perfil)
   select case
     when b.v = '' then null
-    when p_canal = 'whatsapp' then public.fn_telefone_canonico(b.v)
+
+    -- ── whatsapp: a MESMA decisão de forma de `normalizePhoneBR` ────────────
+    -- `fn_telefone_canonico` (9043) só aplica o NONO DÍGITO sobre um número que
+    -- já é E.164; aqui entra o que a pessoa digitou, então a decisão de quando o
+    -- `+55` está implícito mora nesta função, espelhando
+    -- `lib/channels/phone-variants.ts`: com `+`, 8 a 15 dígitos; sem `+`, 12 ou
+    -- 13 têm de começar com 55, e 10 ou 11 são DDD + número brasileiro. Sem a
+    -- guarda de tamanho, `123` virava `+123` e um valor mascarado
+    -- (`55 31 ****-6398`) virava `+55316398`. Concordância medida em
+    -- `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`.
+    when p_canal = 'whatsapp' then
+      case
+        when b.v like '+%' then
+          case when d.d ~ '^[0-9]{8,15}$' then public.fn_telefone_canonico(b.v) else null end
+        when length(d.d) in (12, 13) then
+          case when d.d like '55%' then public.fn_telefone_canonico('+' || d.d) else null end
+        when length(d.d) in (10, 11) then public.fn_telefone_canonico('+55' || d.d)
+        else null
+      end
+
     -- A mesma régua de `contacts_email_format`: sem `@` e sem domínio não é
     -- e-mail, e `null` aqui vira recusa no gatilho em vez de identidade torta.
     when p_canal = 'email' then
@@ -66707,7 +66731,7 @@ as $$
       case when l.v ~ '^[a-z0-9._-]{1,64}$' then l.v else null end
     else null
   end
-  from bruto b, limpo l;
+  from bruto b, digitos d, limpo l;
 $$;
 
 revoke execute on function public.fn_identificador_canonico(text, text) from public, anon;
