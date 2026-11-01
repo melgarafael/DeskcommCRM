@@ -13,7 +13,7 @@
  *
  *  1. o botão novo cria o negócio, abre a conversa do contato vinculado, pede o
  *     `claim` e navega — nesta ordem;
- *  2. "Criar lead" continua NÃO abrindo conversa nenhuma;
+ *  2. "Criar oportunidade" continua NÃO abrindo conversa nenhuma;
  *  3. negócio SEM contato não oferece o caminho: o botão fica desabilitado e
  *     diz por quê — a thread 1:1 é com uma pessoa, e o funil aceita lead sem
  *     nenhuma (automação e importação criam assim de propósito).
@@ -301,15 +301,15 @@ describe("NewLeadDialog · salvar e iniciar conversa (#3483)", () => {
     expect(corpoDo(fetchMock, "/claim")).toEqual({ expected_assignee: null });
   });
 
-  it("'Criar lead' continua sem abrir conversa nenhuma", async () => {
+  it("'Criar oportunidade' continua sem abrir conversa nenhuma", async () => {
     const fetchMock = rotear();
     const user = userEvent.setup();
     montar({ contactId: CONTATO });
 
     await user.type(screen.getByLabelText("Título"), "Joana Prado");
-    await user.click(screen.getByRole("button", { name: "Criar lead" }));
+    await user.click(screen.getByRole("button", { name: "Criar oportunidade" }));
 
-    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Lead criado"));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Oportunidade criada"));
     expect(caminhos(fetchMock)).toEqual(["/api/v1/leads"]);
     expect(pushMock).not.toHaveBeenCalled();
   });
@@ -336,7 +336,7 @@ describe("NewLeadDialog · salvar e iniciar conversa (#3483)", () => {
     await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Sem permissão."));
     // O negócio JÁ foi criado (a recusa é do passo seguinte) e nada é assumido:
     // o caminho novo herda a recusa do Inbox em vez de contorná-la.
-    expect(toastMock.success).toHaveBeenCalledWith("Lead criado");
+    expect(toastMock.success).toHaveBeenCalledWith("Oportunidade criada");
     expect(pushMock).not.toHaveBeenCalled();
   });
 });

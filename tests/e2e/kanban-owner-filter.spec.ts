@@ -195,7 +195,7 @@ test.describe("arrastar o mesmo card duas vezes seguidas (#916)", () => {
   }) => {
     await login(page, creds.users.manager!.email);
     await page.goto(`/app/pipelines/${funilId}`);
-    const card = page.getByRole("group", { name: `Lead: ${TITULO}` });
+    const card = page.getByRole("group", { name: `Oportunidade: ${TITULO}` });
     await expect(card).toBeVisible({ timeout: 60_000 });
 
     // Primeira carga feita: daqui em diante o refetch do quadro demora a voltar.
@@ -205,13 +205,13 @@ test.describe("arrastar o mesmo card duas vezes seguidas (#916)", () => {
     });
 
     expect(await arrastarParaADireita(page, card), "primeiro arrasto").toBe(200);
-    await expect(listaDaEtapa(page, etapas[1]!).getByRole("group", { name: `Lead: ${TITULO}` })).toBeVisible();
+    await expect(listaDaEtapa(page, etapas[1]!).getByRole("group", { name: `Oportunidade: ${TITULO}` })).toBeVisible();
     fs.mkdirSync(EVIDENCIA, { recursive: true });
     await page.screenshot({ path: path.join(EVIDENCIA, "01-depois-do-primeiro.png"), fullPage: true });
 
     // O gesto seguinte, sem recarregar e sem esperar o quadro se atualizar sozinho.
     expect(await arrastarParaADireita(page, card), "segundo arrasto").toBe(200);
-    await expect(listaDaEtapa(page, etapas[2]!).getByRole("group", { name: `Lead: ${TITULO}` })).toBeVisible();
+    await expect(listaDaEtapa(page, etapas[2]!).getByRole("group", { name: `Oportunidade: ${TITULO}` })).toBeVisible();
     await expect(page.getByText(/modificado por outro/i)).toHaveCount(0);
     await page.screenshot({ path: path.join(EVIDENCIA, "02-depois-do-segundo.png"), fullPage: true });
 
@@ -221,7 +221,7 @@ test.describe("arrastar o mesmo card duas vezes seguidas (#916)", () => {
 });
 
 /**
- * #2547 — no modo "Só os seus", o Atendente cria negócio pelo "Novo Lead".
+ * #2547 — no modo "Só os seus", o Atendente cria negócio pelo "Nova oportunidade".
  *
  * Antes, a tela recusava (500 e, desde o #2556, 403 explicado): o negócio nascia
  * sem responsável e ficaria fora do que o Atendente vê. Decisão do mantenedor
@@ -237,7 +237,7 @@ test.describe("Atendente cria negócio no modo 'Só os seus' (#2547)", () => {
   const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const TITULO = `Novo Lead do Atendente ${`${Date.now()}`.slice(-7)}`;
+  const TITULO = `Nova oportunidade do Atendente ${`${Date.now()}`.slice(-7)}`;
   let modoOriginal: unknown = undefined;
 
   async function gravarModo(modo: unknown): Promise<void> {
@@ -261,16 +261,16 @@ test.describe("Atendente cria negócio no modo 'Só os seus' (#2547)", () => {
     await gravarModo(modoOriginal);
   });
 
-  test("o botão 'Novo Lead' cria, e o negócio aparece no quadro do Atendente como dele", async ({ page }) => {
+  test("o botão 'Nova oportunidade' cria, e o negócio aparece no quadro do Atendente como dele", async ({ page }) => {
     await login(page, creds.users.agent!.email);
     await page.goto(`/app/pipelines/${creds.kanban!.pipeline_id}`);
 
-    await page.getByRole("button", { name: "Novo Lead", exact: true }).click();
+    await page.getByRole("button", { name: "Nova oportunidade", exact: true }).click();
     await page.locator("#title").fill(TITULO);
     const resposta = page.waitForResponse(
       (r) => r.url().endsWith("/api/v1/leads") && r.request().method() === "POST",
     );
-    await page.getByRole("button", { name: "Criar lead" }).click();
+    await page.getByRole("button", { name: "Criar oportunidade" }).click();
     expect((await resposta).status(), "a criação não pode ser recusada").toBe(201);
 
     await expect(page.getByRole("heading", { name: TITULO })).toBeVisible({ timeout: 30_000 });

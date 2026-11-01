@@ -230,7 +230,7 @@ describe("painel do inbox — demandas abertas", () => {
     renderPainel();
 
     const secao = await screen.findByTestId("inbox-demandas");
-    const leads = screen.getByText("Leads recentes");
+    const leads = screen.getByText("Oportunidades recentes");
     // `compareDocumentPosition` mede a ordem no documento, não a aparência —
     // medida por ferramenta, nunca a olho.
     const posicao = secao.compareDocumentPosition(leads);

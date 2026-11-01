@@ -418,8 +418,8 @@ for (const origem of ["contato", "negocio"] as const) {
         await login(page, `cadastro-atendente-${marcador}@invariant.test`);
         await page.goto(origem === "contato" ? "/app/contacts" : `/app/pipelines/${funil}`);
         if (origem === "negocio") {
-          await page.getByRole("button", { name: "Novo Lead", exact: true }).click();
-          const negocio = page.getByRole("dialog", { name: "Novo Lead", exact: true });
+          await page.getByRole("button", { name: "Nova oportunidade", exact: true }).click();
+          const negocio = page.getByRole("dialog", { name: "Nova oportunidade", exact: true });
           await negocio.getByLabel("Título", { exact: true }).fill(titulo);
           await negocio.getByLabel("Descrição", { exact: true }).fill(descricao);
           await negocio.getByLabel(/^Valor \(/).fill("123,45");
@@ -457,7 +457,7 @@ for (const origem of ["contato", "negocio"] as const) {
 
         let negocioId: string | null = null;
         if (origem === "negocio") {
-          const negocio = page.getByRole("dialog", { name: "Novo Lead", exact: true });
+          const negocio = page.getByRole("dialog", { name: "Nova oportunidade", exact: true });
           await expect(negocio.getByLabel("Título", { exact: true })).toHaveValue(titulo);
           await expect(negocio.getByLabel("Descrição", { exact: true })).toHaveValue(descricao);
           await expect(negocio.getByLabel(/^Valor \(/)).toHaveValue("123,45");

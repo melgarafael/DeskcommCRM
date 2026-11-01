@@ -91,7 +91,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await user.click(await screen.findByRole("menuitem", { name: "Excluir" }));
 
     expect(await screen.findByText('Excluir "Proposta da ACME"?')).toBeTruthy();
@@ -114,7 +114,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await user.click(await screen.findByRole("menuitem", { name: "Excluir" }));
     await screen.findByText('Excluir "Proposta da ACME"?');
 
@@ -126,7 +126,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await user.click(await screen.findByRole("menuitem", { name: "Excluir" }));
     await screen.findByText('Excluir "Proposta da ACME"?');
 
@@ -137,7 +137,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await user.click(await screen.findByRole("menuitem", { name: "Excluir" }));
     await screen.findByText('Excluir "Proposta da ACME"?');
 
@@ -151,7 +151,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await user.click(await screen.findByRole("menuitem", { name: "Excluir" }));
     await screen.findByText('Excluir "Proposta da ACME"?');
 
@@ -175,7 +175,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await user.click(await screen.findByRole("menuitem", { name: "Excluir" }));
     await screen.findByText('Excluir "Proposta da ACME"?');
     abrirDossie.mockReset();
@@ -203,7 +203,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await screen.findByRole("menuitem", { name: "Editar" });
     expect(screen.queryByRole("menuitem", { name: "Excluir" })).toBeNull();
   });
@@ -213,7 +213,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     await screen.findByRole("menuitem", { name: "Editar" });
     expect(screen.queryByRole("menuitem", { name: "Levar para outro funil" })).toBeNull();
   });
@@ -222,7 +222,7 @@ describe("menu do card — Excluir", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
     expect(
       await screen.findByRole("menuitem", { name: "Levar para outro funil" }),
     ).toBeTruthy();
@@ -230,7 +230,7 @@ describe("menu do card — Excluir", () => {
 
   it("o botão do menu não depende de hover: no toque ele fica visível", () => {
     renderMenu();
-    const botao = screen.getByRole("button", { name: "Ações do lead" });
+    const botao = screen.getByRole("button", { name: "Ações da oportunidade" });
     // Mesmo padrão de `components/inbox/MessageBubble.tsx`: visível por padrão,
     // escondido até o hover só onde existe hover.
     expect(botao.className).toContain("[@media(hover:hover)]:opacity-0");

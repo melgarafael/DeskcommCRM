@@ -147,9 +147,9 @@ function montar(visiveis: Lead[] = [MOVIDO, VISIVEL_NO_CONTATO]) {
 }
 
 async function abrirMenuDoMovido(user: ReturnType<typeof userEvent.setup>, alvo: Lead = MOVIDO) {
-  const card = screen.getByRole("group", { name: `Lead: ${alvo.title}` });
+  const card = screen.getByRole("group", { name: `Oportunidade: ${alvo.title}` });
   const botao = Array.from(card.querySelectorAll("button")).find(
-    (b) => b.getAttribute("aria-label") === "Ações do lead",
+    (b) => b.getAttribute("aria-label") === "Ações da oportunidade",
   )!;
   await user.click(botao);
   await screen.findByRole("menuitem", { name: "Editar" });

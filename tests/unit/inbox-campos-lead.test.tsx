@@ -176,17 +176,17 @@ describe("painel do inbox — campos do lead", () => {
 describe("painel do inbox — o botão diz o que faz (issue #908)", () => {
   // "Lead" era lido como "ver o lead deste contato", mas abre o diálogo que
   // CRIA um novo; o lead existente se edita em "Leads recentes", logo abaixo.
-  it("o botão que abre o Novo Lead se chama 'Novo Lead' — e abre o Novo Lead", async () => {
+  it("o botão que abre o Nova oportunidade se chama 'Nova oportunidade' — e abre o Nova oportunidade", async () => {
     get.mockResolvedValue({ data: RESPOSTA });
     renderPainel();
 
-    const botao = await screen.findByRole("button", { name: "Novo Lead" });
+    const botao = await screen.findByRole("button", { name: "Nova oportunidade" });
     expect(screen.queryByRole("button", { name: "Lead" })).toBeNull();
 
     // O rótulo sozinho não diz de QUEM ele é: sem o clique, trocá-lo com o do
     // editor de tags mantinha o caso verde.
     await userEvent.click(botao);
-    expect(await screen.findByRole("dialog", { name: "Novo Lead" })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Nova oportunidade" })).toBeTruthy();
   });
 });
 

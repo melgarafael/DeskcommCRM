@@ -170,7 +170,7 @@ async function mostrar(
       .filter({ hasText: `${estado.empresa} · ${textoDaDemonstracao("oportunidades")}` })
       .click();
     const cartao = page.getByRole("group", {
-      name: `${textoDaInterface("Lead")}: ${estado.titulo}`,
+      name: `${textoDaInterface("Oportunidade")}: ${estado.titulo}`,
       exact: true,
     });
     await cartao.waitFor({ state: "visible" });
@@ -186,7 +186,7 @@ async function mostrar(
         .waitFor({ state: "visible", timeout: 15_000 });
       return { role: "dialog" };
     }
-    return { role: "group", nome: `${textoDaInterface("Lead")}: ${estado.titulo}`, exato: true };
+    return { role: "group", nome: `${textoDaInterface("Oportunidade")}: ${estado.titulo}`, exato: true };
   }
   if (superficie === "caso") {
     await page.goto(`${base}/app/ai/cases`);

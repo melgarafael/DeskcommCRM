@@ -71,9 +71,9 @@ async function pickAgent(): Promise<{ id: string; name: string; version: number 
 async function openOwnerMenu(page: Page, title: string): Promise<void> {
   const { card } = await cardLocator(page, title);
   await card.hover();
-  const trigger = card.getByRole("button", { name: "Ações do lead" });
+  const trigger = card.getByRole("button", { name: "Ações da oportunidade" });
   if ((await trigger.count()) === 0) {
-    throw new Error(`[cenário] card "${title}" sem botão "Ações do lead"`);
+    throw new Error(`[cenário] card "${title}" sem botão "Ações da oportunidade"`);
   }
   await trigger.click();
   const sub = page.getByRole("menuitem", { name: "Responsável" });
@@ -323,7 +323,7 @@ async function main(): Promise<void> {
   await gotoBoard(viewerPage);
   const { card: viewerCard } = await cardLocator(viewerPage, LEAD);
   await viewerCard.hover();
-  const viewerTrigger = viewerCard.getByRole("button", { name: "Ações do lead" });
+  const viewerTrigger = viewerCard.getByRole("button", { name: "Ações da oportunidade" });
   let submenuVisivel = false;
   if ((await viewerTrigger.count()) > 0) {
     await viewerTrigger.click();

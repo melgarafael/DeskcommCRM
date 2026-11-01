@@ -2,7 +2,7 @@
  * QA VISUAL DO LOTE 12 — O PAINEL DO CONTATO NO INBOX.
  *
  *  · #909 — o botão que cria o lead tem o MESMO nome do diálogo que abre
- *  · #944 — "Leads recentes" diz Funil · Etapa, e o desfecho é Ganho/Perdido
+ *  · #944 — "Oportunidades recentes" diz Funil · Etapa, e o desfecho é Ganho/Perdido
  *           (NUNCA o vocabulário do funil, que numa clínica diria "Pago")
  *  · #946 — sugestão de tags do contato, com caixa mista e duplicata
  *  · L12.G2.1 — GET /api/v1/contact-tags responde 200 numa org com contato
@@ -195,7 +195,7 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     registra(`#944 · GET /crm-summary = ${rr.status()}`);
 
     // ── #909: o rótulo do botão é o TÍTULO do diálogo que ele abre ─────────
-    const botao = page.getByRole("button", { name: "Novo Lead" });
+    const botao = page.getByRole("button", { name: "Nova oportunidade" });
     await expect(botao).toBeVisible({ timeout: 30_000 });
     registra(`#909 · rótulo do botão = "${await botao.innerText()}"`);
     await captura(page, "909-01-painel-com-botao-novo-lead");
@@ -204,16 +204,16 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     await expect(dialogo).toBeVisible();
     const titulo = await dialogo.getByRole("heading").first().innerText();
     registra(`#909 · título do diálogo = "${titulo}"`);
-    expect(titulo.trim()).toBe("Novo Lead");
+    expect(titulo.trim()).toBe("Nova oportunidade");
     await captura(page, "909-02-dialogo-mesmo-nome");
     await page.keyboard.press("Escape");
     await expect(dialogo).toHaveCount(0);
 
     // ── #944: Funil · Etapa e o desfecho pelas PALAVRAS FIXAS ─────────────
     const secao = page.locator('[data-testid="inbox-campos-lead"]');
-    await expect(secao.getByText("Leads recentes")).toBeVisible();
+    await expect(secao.getByText("Oportunidades recentes")).toBeVisible();
     const texto = await secao.innerText();
-    registra(`#944 · seção "Leads recentes" = ${JSON.stringify(texto)}`);
+    registra(`#944 · seção "Oportunidades recentes" = ${JSON.stringify(texto)}`);
 
     expect(texto, "o lead do funil ARQUIVADO não pode aparecer").not.toContain(`Fantasma ${SUFIXO}`);
     expect(texto).toContain(`Funil de Vendas Consultivas B2B Enterprise ${SUFIXO} · Proposta enviada ao comitê`);

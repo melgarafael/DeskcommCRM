@@ -115,7 +115,7 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
 
     // Estado de partida, pela tela.
     await page.goto(`/app/pipelines/${origemId}`);
-    await expect(page.getByRole("group", { name: `Lead: Negócio ${S}` })).toBeVisible({
+    await expect(page.getByRole("group", { name: `Oportunidade: Negócio ${S}` })).toBeVisible({
       timeout: 60_000,
     });
     await captura(page, "936-01-origem-antes");
@@ -131,7 +131,7 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
 
     // ── O DESTINO, pela tela ──────────────────────────────────────────────
     await page.goto(`/app/pipelines/${destinoId}`);
-    const cardNovo = page.getByRole("group", { name: `Lead: Negócio ${S}` });
+    const cardNovo = page.getByRole("group", { name: `Oportunidade: Negócio ${S}` });
     await expect(cardNovo).toBeVisible({ timeout: 60_000 });
     await captura(page, "936-02-destino-com-o-card");
 
@@ -188,7 +188,7 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
     expect(JSON.stringify(origem)).toContain(destinoId);
 
     // Abrir o card da origem pela tela, para ver a linha do tempo com os olhos.
-    const cardVelho = page.getByRole("group", { name: `Lead: Negócio ${S}` }).first();
+    const cardVelho = page.getByRole("group", { name: `Oportunidade: Negócio ${S}` }).first();
     if (await cardVelho.count()) {
       await cardVelho.click();
       // Mesma corrida do clone: espera a linha do tempo da origem contar para
@@ -247,10 +247,10 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
 
     await login(page, c.users.agent!.email, c.password);
     await page.goto(`/app/pipelines/${origemId}`);
-    const card = page.getByRole("group", { name: `Lead: ${titulo}` });
+    const card = page.getByRole("group", { name: `Oportunidade: ${titulo}` });
     await expect(card).toBeVisible({ timeout: 60_000 });
 
-    await card.getByRole("button", { name: "Ações do lead" }).click();
+    await card.getByRole("button", { name: "Ações da oportunidade" }).click();
     await page.getByRole("menuitem", { name: "Levar para outro funil" }).click();
     const janela = page.getByRole("dialog", { name: "Levar para outro funil" });
     await expect(janela).toBeVisible();
@@ -289,7 +289,7 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
 
     // Efeito na TELA do destino: o card está lá.
     await page.goto(`/app/pipelines/${destinoId}`);
-    await expect(page.getByRole("group", { name: `Lead: ${titulo}` })).toBeVisible({
+    await expect(page.getByRole("group", { name: `Oportunidade: ${titulo}` })).toBeVisible({
       timeout: 60_000,
     });
     await captura(page, "1578-02-card-no-destino");

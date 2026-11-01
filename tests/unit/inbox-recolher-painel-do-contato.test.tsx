@@ -232,7 +232,7 @@ describe("Inbox — recolher o painel do contato (#3004)", () => {
 
     // O conteúdo do painel sumiu — não é uma seção interna, é o painel todo.
     expect(screen.queryByTestId("inbox-demandas")).toBeNull();
-    expect(screen.queryByText("Leads recentes")).toBeNull();
+    expect(screen.queryByText("Oportunidades recentes")).toBeNull();
     // E ficou o trilho, com a porta de volta.
     expect(screen.getByTestId("inbox-painel-recolhido")).toBeInTheDocument();
     expect(botaoExpandir()).toBeInTheDocument();

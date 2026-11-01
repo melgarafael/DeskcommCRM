@@ -1026,7 +1026,7 @@ export function CRMSidePanel({
    *
    * O `NewLeadDialog` fica FORA do mapa, montado sempre, porque o botão que o
    * abre mora no módulo Contato: se ele morasse junto do enriquecimento,
-   * esconder "Sobre a empresa" faria o "Novo Lead" parar de abrir qualquer
+   * esconder "Sobre a empresa" faria a "Nova oportunidade" parar de abrir qualquer
    * coisa — defeito que só apareceria na lateral de quem configurou.
    */
   const conteudo: Record<IdModuloDaLateral, ReactNode> = {
@@ -1073,7 +1073,7 @@ export function CRMSidePanel({
               onClick={() => setLeadDialogOpen(true)}
             >
               <Users size={12} className="mr-1" weight="regular" aria-hidden />
-              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo Lead")}
+              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Nova oportunidade")}
             </Button>
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-11 px-2 text-xs lg:h-7">
@@ -1280,7 +1280,7 @@ export function CRMSidePanel({
     leads: (
       <section data-testid="inbox-campos-lead">
         <h3 className="text-xs font-semibold text-text">
-          {t("Leads recentes")}
+          {t("Oportunidades recentes")}
         </h3>
         {sectionsLoading ? (
           <Skeleton className="mt-2 h-14 w-full" />
@@ -1294,7 +1294,11 @@ export function CRMSidePanel({
             onTrocouDeNegocio={aoTrocarDeNegocio}
           /></fieldset>
         ) : (
-          <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio={t("Sem oportunidades.")}
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
       </section>
     ),

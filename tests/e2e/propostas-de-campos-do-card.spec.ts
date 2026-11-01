@@ -129,7 +129,7 @@ async function cenario(page: Page, valor = "1,234") {
 
 async function abrir(page: Page, titulo: string): Promise<Locator> {
   await page.goto(`/app/pipelines/${pipelineId}`);
-  const card = page.getByRole("group", { name: `Lead: ${titulo}` });
+  const card = page.getByRole("group", { name: `Oportunidade: ${titulo}` });
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: titulo, exact: true }).click();
   const dialog = page.getByRole("dialog");

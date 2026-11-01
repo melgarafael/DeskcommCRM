@@ -190,7 +190,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
       // O que acabou de gravar vira a nova régua: o segundo salvamento não
       // reenvia o primeiro, e uma limpeza alheia no intervalo não é atropelada.
       setCamposCarregados({ ...customFields });
-      toast.success(t("Lead atualizado"));
+      toast.success(t("Oportunidade atualizada"));
       onSaved?.();
     } catch {
       // toast already shown

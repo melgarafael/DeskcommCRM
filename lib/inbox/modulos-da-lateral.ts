@@ -103,7 +103,7 @@ export const ROTULO_DO_MODULO: Record<IdModuloDaLateral, string> = {
   followup: "Follow-up",
   memoria: "Memória do contato",
   roteiros: "Respostas dos roteiros de atendimento",
-  leads: "Leads recentes",
+  leads: "Oportunidades recentes",
   compras: "Últimas compras",
   pedidos: "Pedidos recentes",
   atividade: "Atividade",
