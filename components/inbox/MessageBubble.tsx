@@ -276,10 +276,8 @@ export function MessageBubble({
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
   // A COR DO PARTICIPANTE (kvgroup): como no WhatsApp do celular, cada pessoa
-  // do grupo tem uma cor fixa, que pinta o nome e o balão dela. Apagada e
-  // figurinha solta ficam fora — a apagada tem o cinza próprio.
+  // do grupo tem uma cor fixa, e ela pinta só o NOME — o balão fica cinza.
   const corDoRemetente = remetente ? corDoParticipante(remetente) : null;
-  const balaoColorido = corDoRemetente !== null && !apagada && !isBareSticker;
   // #3566 — AS MENÇÕES do grupo. Em grupo o WhatsApp escreve `@<lid>` no texto,
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
@@ -344,11 +342,13 @@ export function MessageBubble({
                 // terminar antes dela, inclusive quando o cartão encolhe.
                 temMenu && cartaoDeDocumentoVisivel && "pointer-coarse:pr-12 pointer-coarse:max-w-[85%]",
                 isOutbound
-                  ? "rounded-br-[4px] bg-primary text-primary-foreground"
+                  ? // O VERDE DO WHATSAPP (kvgroup) para o que sai daqui. Troca o
+                    // par de tokens SÓ dentro do balão: tudo o que lá dentro usa
+                    // `primary`/`primary-foreground` (hora, checks, citação,
+                    // menu) acompanha o verde sem ficar ilegível.
+                    "rounded-br-[4px] bg-primary text-primary-foreground [--color-accent:#d9fdd3] [--color-accent-fg:#111b21] dark:[--color-accent:#005c4b] dark:[--color-accent-fg:#e9edef]"
                   : "rounded-bl-[4px] border border-border bg-accent-soft text-foreground",
               ),
-          balaoColorido &&
-            "border-[color:color-mix(in_srgb,var(--cor-participante)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--cor-participante)_14%,var(--color-bg))]",
           isFailed && "border border-destructive",
           // Apagada sai das cores da DIREÇÃO e vai para o CINZA: a diferença
           // entre o que foi apagado e o que está vivo tem de ser vista de
