@@ -1,7 +1,7 @@
 import type { PipelineVocabulary } from "./types";
 
 const DEFAULTS: Required<PipelineVocabulary> = {
-  lead: "Lead",
+  lead: "Contato",
   deal: "Negócio",
   won: "Ganho",
   lost: "Perdido",
