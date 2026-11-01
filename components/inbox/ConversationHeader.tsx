@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -45,7 +45,7 @@ import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
-import { ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
+import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -129,6 +129,12 @@ export function ConversationHeader({
   const [devolverAoFechar, setDevolverAoFechar] = useState(true);
   const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
+  // O diálogo do convite é do CABEÇALHO, não do item do menu (#3003): um
+  // `dialog` modal dentro de um `menu` modal deixa a página inteira aria-hidden
+  // enquanto o menu está aberto, e o que vem depois do convite — o avatar de
+  // quem entrou, por exemplo — fica invisível para leitores de tela e para o
+  // e2e. Aqui o item só levanta a bandeira e o menu fecha como qualquer outro.
+  const [conviteAberto, setConviteAberto] = useState(false);
 
   const c = conversation.contacts ?? null;
   /**
@@ -617,13 +623,19 @@ export function ConversationHeader({
               comoItemDeMenu
             />
             {/* ATENDIMENTO CONJUNTO (#2542): o convite é ação, a presença é
-                informação — a presença ficou na barra (`modo="presenca"`). */}
-            <ParticipantesDaConversa
-              conversationId={conversation.id}
-              podeConvidar={podeConvidar}
-              atendenteId={user.id}
-              modo="convite"
-            />
+                informação — a presença ficou na barra (`modo="presenca"`) e o
+                convite vira item daqui. O diálogo NÃO mora dentro do menu: ver
+                `DialogoDeConvite`, montado no fim deste componente. */}
+            {podeConvidar && (
+              <DropdownMenuItem
+                data-testid="convidar-participante"
+                title={t("Convida um colega para atender junto — o responsável pela conversa não muda.")}
+                onSelect={() => setConviteAberto(true)}
+              >
+                <UsersThree size={16} aria-hidden className="mr-2" />
+                {t("Convidar")}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             {podePausar && (
               <DropdownMenuItem
@@ -726,6 +738,14 @@ export function ConversationHeader({
               }
             : undefined
         }
+      />
+      {/* O diálogo do convite, FORA do menu ⋯ (ver `DialogoDeConvite`): ele é
+          modal, e modal dentro de modal esconde a página de quem usa leitor de
+          tela. O item do menu só levanta `conviteAberto`. */}
+      <DialogoDeConvite
+        conversationId={conversation.id}
+        aberto={conviteAberto}
+        onAbertoChange={setConviteAberto}
       />
       <AlertDialog open={confirmFecharOpen} onOpenChange={setConfirmFecharOpen}>
         <AlertDialogContent>

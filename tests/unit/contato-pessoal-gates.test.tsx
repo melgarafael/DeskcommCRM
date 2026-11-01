@@ -72,6 +72,10 @@ vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 // participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O cabeçalho agora monta o diálogo de convite FORA do menu (o menu precisa
+  // fechar antes, senão o Radix modal esconde o botão de presença da árvore de
+  // acessibilidade). Este arquivo isola o botão pessoal: o diálogo é dublê.
+  DialogoDeConvite: () => null,
 }));
 // A reserva tem sua própria prova autenticada; este gate isola o botão pessoal.
 vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ReservarServicoNaConversa: () => null }));
@@ -80,6 +84,10 @@ vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ReservarServic
 // participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O cabeçalho agora monta o diálogo de convite FORA do menu (o menu precisa
+  // fechar antes, senão o Radix modal esconde o botão de presença da árvore de
+  // acessibilidade). Este arquivo isola o botão pessoal: o diálogo é dublê.
+  DialogoDeConvite: () => null,
 }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({

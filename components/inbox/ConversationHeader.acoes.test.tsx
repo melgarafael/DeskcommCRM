@@ -83,6 +83,9 @@ vi.mock("@/components/voice/DialButton", () => ({ DialButton: () => null }));
 vi.mock("@/components/inbox/VideoCallButton", () => ({ VideoCallButton: () => null }));
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O diálogo do convite deixou de morar dentro do menu ⋯ (#3003) e passou a
+  // ser montado pelo cabeçalho: os dois nomes precisam existir no dublê.
+  DialogoDeConvite: () => null,
 }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({
   SnoozeButton: () => <button type="button">Lembrar</button>,

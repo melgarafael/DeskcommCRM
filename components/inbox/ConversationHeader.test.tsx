@@ -59,6 +59,9 @@ vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 // a barra de ações, e o componente novo lê react-query (exigiria provider).
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O diálogo do convite deixou de morar dentro do menu ⋯ (#3003) e passou a
+  // ser montado pelo cabeçalho: os dois nomes precisam existir no dublê.
+  DialogoDeConvite: () => null,
 }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
