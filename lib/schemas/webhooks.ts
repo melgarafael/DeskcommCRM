@@ -726,6 +726,42 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
    * sistemas.
    */
   reuse_open_lead_on_capture: z.boolean().optional(),
+  /**
+   * A PÁGINA da Meta que esta fonte representa (issue #3768, migration 9081).
+   *
+   * É a chave de ROTEAMENTO do aviso: a plataforma tem UMA URL de destino para o
+   * objeto page, então o token do path não distingue de quem é o lead — a página
+   * distingue. `null` limpa a reivindicação e devolve a fonte ao modo "recebo o
+   * que chegar na minha URL".
+   *
+   * `string` de dígitos e não `number`: id de página da plataforma passa de
+   * 2^53 em alguns casos, e virar número perderia precisão em silêncio.
+   */
+  meta_page_id: z
+    .string()
+    .regex(/^\d{1,32}$/, "O id da página é só de dígitos.")
+    .nullish(),
+  /**
+   * O token de PÁGINA, em texto claro, só nesta entrada (issue #3768).
+   *
+   * Write-only, como `secret`: a leitura da fonte devolve `has_meta_page_token`.
+   * Ele é cifrado por `encryptWebhookSecret` antes de tocar a coluna, e sem a
+   * chave mestra de cifra o PATCH RECUSA em vez de degradar para texto claro.
+   * `null` remove o token.
+   *
+   * O mínimo é 32 porque o que a plataforma emite é bem maior: um valor curto
+   * aqui é quase sempre um id de página ou um token truncado ao copiar.
+   */
+  meta_page_token: z.string().min(32).max(1000).nullish(),
+  /**
+   * A opção da fatia 1-bis: quando o aviso chega sem as respostas (o normal),
+   * buscar as respostas na Graph API com o token da página.
+   *
+   * Nasce DESLIGADA por DEFAULT na coluna (migration 9081), pelo critério da doc
+   * 235: no núcleo, desligada por padrão, quem administra liga. Ligar sem token
+   * é recusado na rota do PATCH — a opção não promete o que não pode cumprir.
+   */
+  meta_lead_retrieval: z.boolean().optional(),
 });
 
 export const createAutomationRuleSchema = z
