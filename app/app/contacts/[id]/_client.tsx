@@ -56,6 +56,7 @@ import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
 import type { Contact } from "@/lib/types/contacts";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
+import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
 interface Props {
@@ -676,7 +677,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         </TabsContent>
 
         {isAdmin && (
-          <TabsContent value="lgpd" className="mt-4">
+          <TabsContent value="lgpd" className="mt-4 space-y-4">
+            {/* Acessos OAuth do contato a servidores MCP externos (9081). */}
+            <AcessosMcpDoContato contactId={contactId} />
             <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>

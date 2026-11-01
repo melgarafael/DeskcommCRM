@@ -1216,6 +1216,16 @@ export const AUDIT_ACTIONS = [
   // por isso vai com `organization_id` e `resource_id` = uuid da org. A CHAVE
   // do servidor nunca entra aqui: o metadata traz endpoint e forma.
   "org.mcp_externo_registrado",
+  // Servidores MCP POR AGENTE (migration 9081). Cadastro, edição e remoção na
+  // tela do agente (metadata: servidor, modo, host — nunca chave, segredo nem
+  // token); a autorização de um contato pelo callback público (metadata:
+  // servidor, escopos); a revogação (manual pela ficha, no encerramento da
+  // conversa, por LGPD ou porque o servidor saiu), com o motivo.
+  "agent.mcp_servidor_salvo",
+  "agent.mcp_servidor_removido",
+  "contact.mcp_acesso_autorizado",
+  "contact.mcp_acesso_recusado",
+  "contact.mcp_acesso_revogado",
   // #1639, fatia do login: o código colado em /admin/sistema virou tokens e foi
   // guardado cifrado. Sem esta linha, "quem conectou a assinatura, e quando"
   // ficaria sem rastro — e é a conta que passa a pagar as chamadas.
