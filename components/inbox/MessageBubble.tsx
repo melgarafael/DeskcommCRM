@@ -4,7 +4,8 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, ArrowBendUpRight, CaretDown, Check, Checks, Clock, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { corDoParticipante } from "@/lib/messaging/cor-do-participante";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
@@ -274,6 +275,11 @@ export function MessageBubble({
   // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
+  // A COR DO PARTICIPANTE (kvgroup): como no WhatsApp do celular, cada pessoa
+  // do grupo tem uma cor fixa, que pinta o nome e o balão dela. Apagada e
+  // figurinha solta ficam fora — a apagada tem o cinza próprio.
+  const corDoRemetente = remetente ? corDoParticipante(remetente) : null;
+  const balaoColorido = corDoRemetente !== null && !apagada && !isBareSticker;
   // #3566 — AS MENÇÕES do grupo. Em grupo o WhatsApp escreve `@<lid>` no texto,
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
@@ -325,6 +331,7 @@ export function MessageBubble({
         // classe utilitária entrava na conta — foi assim que o painel flutuante
         // fez a spec achar que havia mensagem onde não havia (issue #1318).
         data-testid="message-bubble"
+        style={corDoRemetente ? ({ "--cor-participante": corDoRemetente } as CSSProperties) : undefined}
         className={cn(
           "relative max-w-[75%] min-w-0 text-sm",
           isBareSticker
@@ -340,6 +347,8 @@ export function MessageBubble({
                   ? "rounded-br-[4px] bg-primary text-primary-foreground"
                   : "rounded-bl-[4px] border border-border bg-accent-soft text-foreground",
               ),
+          balaoColorido &&
+            "border-[color:color-mix(in_srgb,var(--cor-participante)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--cor-participante)_14%,var(--color-bg))]",
           isFailed && "border border-destructive",
           // Apagada sai das cores da DIREÇÃO e vai para o CINZA: a diferença
           // entre o que foi apagado e o que está vivo tem de ser vista de
@@ -457,7 +466,15 @@ export function MessageBubble({
           </div>
         )}
         {remetente && (
-          <p className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+          <p
+            className={cn(
+              "mb-0.5 text-[11px] font-medium text-muted-foreground",
+              corDoRemetente &&
+                !apagada &&
+                "font-semibold text-[color:color-mix(in_srgb,var(--cor-participante)_72%,black)] dark:text-[color:var(--cor-participante)]",
+            )}
+            data-cor-participante={corDoRemetente ?? undefined}
+          >
             {rotuloDoRemetente(remetente)}
           </p>
         )}
