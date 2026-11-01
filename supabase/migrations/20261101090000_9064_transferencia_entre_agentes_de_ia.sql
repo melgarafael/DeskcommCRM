@@ -34,8 +34,6 @@
 -- `origem = 'classificador'`, que é a verdade — todas nasceram do classificador
 -- ou do sticky dele), nenhuma linha reescrita.
 
-alter table public.ai_router_decisions
-  drop constraint if exists ai_router_decisions_outcome_check;
 -- IMPORTANTE — por que `= any (array[...])` e não `in (...)`:
 -- a cerca `tests/unit/desfecho-da-captacao-um-vocabulario-so.test.ts` acha o
 -- CHECK de `webhook_lead_captures.outcome` pela ÚLTIMA ocorrência, no
@@ -45,6 +43,14 @@ alter table public.ai_router_decisions
 -- formas viram a MESMA constraint no catálogo (`pg_get_constraintdef` normaliza
 -- `in (...)` para `= any (array[...])`), então a verdade do banco não muda —
 -- muda só o que a cerca enxerga. A fragilidade da cerca fica registrada no PR.
+--
+-- O comentário fica ACIMA do `drop`, não entre ele e o `add`: a cerca
+-- `tests/unit/baseline-reaplicavel.test.ts` exige o `drop constraint if exists`
+-- do MESMO nome nas 10 linhas anteriores ao `add`, e comentário no meio da
+-- janela conta como falta de guarda (o `update.sh` do clone erraria
+-- 'already exists').
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_outcome_check;
 alter table public.ai_router_decisions
   add constraint ai_router_decisions_outcome_check
   check (outcome = any (array['classified', 'sticky', 'reclassified', 'fallback', 'no_match', 'classifier_failed', 'transferred']));
