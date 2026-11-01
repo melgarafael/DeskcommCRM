@@ -14,9 +14,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, ArrowRight, MagnifyingGlass } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -38,7 +45,7 @@ import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
-import { ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
+import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -122,6 +129,12 @@ export function ConversationHeader({
   const [devolverAoFechar, setDevolverAoFechar] = useState(true);
   const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
+  // O diálogo do convite é do CABEÇALHO, não do item do menu (#3003): um
+  // `dialog` modal dentro de um `menu` modal deixa a página inteira aria-hidden
+  // enquanto o menu está aberto, e o que vem depois do convite — o avatar de
+  // quem entrou, por exemplo — fica invisível para leitores de tela e para o
+  // e2e. Aqui o item só levanta a bandeira e o menu fecha como qualquer outro.
+  const [conviteAberto, setConviteAberto] = useState(false);
 
   const c = conversation.contacts ?? null;
   /**
@@ -143,6 +156,22 @@ export function ConversationHeader({
   const status = conversation.status;
   const isMineAssigned = conversation.assigned_to_user_id === user.id;
   const isOpen = status === "open" || conversation.assigned_to_user_id == null;
+  /**
+   * "ASSUMIR" NÃO SE OFERECE A QUEM JÁ É O DONO (#3003).
+   *
+   * A condição era `isOpen`, e com a conversa JÁ assumida por mim ela é
+   * verdadeira (status `open`) — então o cabeçalho desenhava "Assumir" e
+   * "Liberar" lado a lado, dois botões para o mesmo slot, sendo o primeiro um
+   * no-op: `fn_conversation_assign` com `expected_assignee` igual ao dono não
+   * muda nada. É exatamente a pergunta da issue ("o que acontece se eu clicar
+   * aqui?") respondida com "nada".
+   *
+   * O #3012 continua de pé e é o que a condição preserva: com a conversa SEM
+   * dono o botão existe (é a saída da trava do compositor), e com ela assumida
+   * por OUTRA pessoa também (é o gesto de reatribuir). O que sai é só o botão
+   * que não faz nada.
+   */
+  const podeAssumir = isOpen && !isMineAssigned;
 
   // Marcar/desmarcar pessoal (spec 21, etapa 15 — botão no cabeçalho).
   //
@@ -373,57 +402,31 @@ export function ConversationHeader({
             onClick={onBuscar}
             aria-label={t("Buscar nesta conversa")}
             title={t("Buscar nesta conversa")}
+            data-testid="buscar-na-conversa"
             aria-expanded={buscaAberta}
           >
             <MagnifyingGlass size={16} aria-hidden />
           </Button>
         )}
-        {/* A chamada usa o telefone da ficha, mesmo quando o contato chegou por
-            outro canal. Grupos não representam uma pessoa para ligar. */}
-        {!conversation.is_group && c?.id && (
-          <DialButton contactId={c.id} hasPhone={!!c.phone_number} />
-        )}
-        {!conversation.is_group && c?.id && activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
-          <ReservarServicoNaConversa key={`${activeOrg.orgId}:${conversation.id}`} contactId={c.id} conversationId={conversation.id} contactName={displayName}/>
-        )}
-        {/* Videochamada (#2440): sem JITSI_SERVER_URL este botão não renderiza,
-            então ele não ocupa lugar nem na instalação que não oferece a feature.
-            A sala é aleatória por chamada (#2441) — não depende de telefone,
-            só do link ir pelo chat.
-
-            `provider`/`lastInboundAt`, `bloqueio` e `encerrada` vêm para o
-            botão seguir a MESMA régua do composer: janela de 24h (a rota não
-            barra quem envia da tela — vira 131047 silencioso, #1614), a trava
-            de contato e a de conversa encerrada. Os textos saem da mesma função
-            do composer (lib/inbox/motivo-do-envio-bloqueado.ts); encerrada só
-            desabilita, sem texto, como o composer faz. `supportReadonly` fica
-            de fora: ele mora no `user`, que este componente não recebe. */}
-        <VideoCallButton
-          conversationId={conversation.id}
-          provider={conversation.channel_sessions?.provider ?? null}
-          lastInboundAt={conversation.last_inbound_at}
-          bloqueio={motivoDoContato(c, t)}
-          encerrada={status === "closed"}
-        />
-        {/* ATENDIMENTO CONJUNTO (#2542): quem participa desta conversa, e a
-            porta para convidar mais um. Fica na barra de ações, junto das
-            outras ações do cabeçalho, e ANTES de "Assumir" porque ela responde
-            à pergunta que a barra faz primeiro: "quem mais está aqui comigo?".
-            O componente só desenha o botão para quem a rota aceitaria (dono ou
-            gestor+) e não desenha NADA quando não há participante nem permissão
-            de convidar — nenhum espaço vazio no cabeçalho de quem só foi ler. */}
+        {/* QUEM MAIS ESTÁ AQUI (#2542) fica na BARRA, e só a PRESENÇA (#3003).
+            Os avatares são informação — "quem mais está comigo nesta conversa?"
+            —, e informação dentro de um menu deixa de ser lida. O convite é
+            AÇÃO e mudou de lugar: mora no ⋯ (`modo="convite"`), com ícone e
+            nome, como as outras ações secundárias. */}
         <ParticipantesDaConversa
           conversationId={conversation.id}
           podeConvidar={podeConvidar}
           atendenteId={user.id}
+          modo="presenca"
         />
-        {isOpen && (
+        {podeAssumir && (
           <Button
             size="sm"
             variant="default"
             // No celular, a ação que a pessoa veio fazer abre a fileira — sem
             // rolar para achá-la. Só CSS: a ordem do DOM não muda.
             className="max-md:order-first"
+            data-testid="acao-assumir"
             disabled={claim.isPending}
             // O rótulo NÃO muda (é contrato: `inbox-header-nao-trava` e o
             // dicionário de espanhol o citam). O que faltava era a consequência
@@ -445,6 +448,7 @@ export function ConversationHeader({
             size="sm"
             variant="outline"
             className="max-md:order-first"
+            data-testid="acao-liberar"
             disabled={release.isPending}
             // GUIA CURTA (#3003): o rótulo diz o GESTO, não a consequência. "Liberar"
             // não conta para onde a conversa vai — de volta ao automático ou para a
@@ -500,25 +504,11 @@ export function ConversationHeader({
             {retomar.isPending ? t("Devolvendo...") : t("Devolver ao automático")}
           </Button>
         )}
-        {podePausar && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pausar.isPending}
-            data-testid="pausar-o-automatico"
-            // `podePausar` já exige dono != null, então este botão NUNCA aparece
-            // sem dono — prometer "você assume" aqui seria prometer o que a rota
-            // não faz: com dono, ela só cala, nunca rouba a conversa de quem a tem.
-            title={t("O atendimento automático para nesta conversa. O dono não muda.")}
-            onClick={() => pausar.mutate({ conversation_id: conversation.id })}
-          >
-            {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
-          </Button>
-        )}
         {!encerrada && (
           <Button
             size="sm"
             variant="outline"
+            data-testid="acao-transferir"
             // GUIA CURTA (#3003): "Transferir" não diz PARA QUEM. A aba Número do
             // diálogo é a outra metade da resposta — mas ela aparece quando a org
             // tem outro número com telefone, inclusive fora do ar (com a opção
@@ -531,15 +521,10 @@ export function ConversationHeader({
           </Button>
         )}
         {!encerrada && (
-          <SnoozeButton
-            conversationId={conversation.id}
-            snoozeUntil={conversation.snooze_until ?? null}
-          />
-        )}
-        {!encerrada && (
           <Button
             size="sm"
             variant="outline"
+            data-testid="acao-fechar"
             disabled={close.isPending}
             // GUIA CURTA (#3003): "Fechar" sozinho não distingue encerrar de
             // arquivar — que é o clique errado relatado na issue. A guia diz o que
@@ -554,89 +539,178 @@ export function ConversationHeader({
             {t("Fechar")}
           </Button>
         )}
-        {encerrada && <Button size="sm" variant="outline" disabled={reopen.isPending}
+        {encerrada && <Button size="sm" variant="outline" data-testid="acao-reabrir" disabled={reopen.isPending}
           // GUIA CURTA (#3003): o par de "Fechar" precisa da mesma clareza — o
           // rótulo não diz que a conversa volta a ser atendida.
           title={t("Reabre o atendimento desta conversa, que estava encerrada.")}
           onClick={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>
           {t("Reabrir")}
         </Button>}
-        {/* ARQUIVAR (#923): tira da frente sem destruir.
-            A conversa já arquivada não mostra o botão — arquivar duas vezes não
-            é um gesto que exista, e o botão só reapareceria como um clique que
-            não muda nada. Fechada E resolvida mostram: são exatamente as que se
-            quer mandar para o arquivo depois de encerradas, e é o caminho que
-            faz a aba "Arquivadas" deixar de ser uma pasta morta.
-            A permissão é a mesma de fechar (a rota `/conversations/[id]` é
-            `requireSupportWrite`): quem pode encerrar, pode arquivar. */}
-        {status !== "archived" && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={arquivar.isPending}
-            // GUIA CURTA (#3003): "Arquivar" parece "guardar e pronto", e não é —
-            // numa conversa ainda aberta ele ENCERRA o atendimento (o diálogo de
-            // confirmação diz isso com todas as letras, e a guia diz antes dele).
-            // Ela NÃO some do inbox: sai da Fila e de Minhas, e segue em Todas e
-            // em Arquivadas (`tabToFilter` em InboxLayout).
-            title={t("Guarda a conversa na aba Arquivadas. Se ainda estiver aberta, o atendimento é encerrado.")}
-            onClick={() => setConfirmArquivarOpen(true)}
-          >
-            {arquivar.isPending ? t("Arquivando...") : t("Arquivar")}
-          </Button>
-        )}
-        {/* PESSOAL (spec 21, etapa 15): marcar tira a conversa do inbox na
-            hora; desmarcar relista. O `data-testid` é contrato do e2e da
-            spec (`contato-pessoal-sai-da-operacao.spec.ts`). */}
-        {podeMarcarPessoal && c?.id && !ehPessoal && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={marcarPessoal.isPending}
-            data-testid="marcar-pessoal"
-            title={t("Tira este contato da operação: a conversa sai do inbox.")}
-            onClick={() => setConfirmPessoalOpen(true)}
-          >
-            {t("Marcar como pessoal")}
-          </Button>
-        )}
-        {podeMarcarPessoal && c?.id && ehPessoal && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={desmarcarPessoal.isPending}
-            data-testid="desmarcar-pessoal"
-            title={t("Devolve este contato à operação: a conversa volta ao inbox.")}
-            onClick={() => desmarcarPessoal.mutate()}
-          >
-            {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
-          </Button>
-        )}
-        {/* `xl:hidden` porque a partir de 1280px o painel lateral de CRM entra
-            na tela — e ele já tem um "Ver contato", para o MESMO contato, a um
-            palmo de distância. Duas portas idênticas na mesma tela não são
-            redundância inofensiva: são a linha a mais que empurrava a barra de
-            ações para uma segunda fileira justo na largura mais apertada.
-            Medido: sem a duplicata, os botões voltam a caber em UMA linha em
-            1280px.
+        {/* ─── O MENU ⋯ (#3003): o que NÃO é do dia a dia ──────────────────────
+            A issue relata a confusão de quem está começando: a barra oferecia
+            doze controles ao mesmo tempo e nenhum deles respondia "o que
+            acontece se eu clicar aqui?". Agora a barra guarda as ações de todo
+            atendimento — responder (assumir/devolver), transferir e encerrar —
+            e o resto mora aqui, com ícone, nome e a MESMA guia de uma linha
+            que os botões visíveis têm.
 
-            Abaixo de 1280 o painel não existe, e aí esta é a única porta para o
-            contato — por isso a condição é a mesma do painel, e não um valor
-            escolhido à parte. Não é esconder ação; é não repeti-la. */}
-        {c?.id && (
-          <Button asChild size="sm" variant="ghost" className="xl:hidden">
-            <Link
-              href={`/app/contacts/${c.id}`}
-              className="flex items-center gap-1"
-              // GUIA CURTA (#3003): o rótulo promete "contato" e entrega uma
-              // página inteira; a guia diz qual.
-              title={t("Abre a ficha completa deste contato.")}
+            O QUE ESTE MENU NÃO PODE FAZER: esconder ação. Cada item mantém a
+            condição que já o governava (o `podePausar`, o `status !==
+            "archived"`, o gate de `podeMarcarPessoal`, o `null` que o
+            `VideoCallButton` devolve sem servidor) — nada aqui é recalculado
+            pela barra, senão a regra viveria em dois lugares e divergiria na
+            primeira mudança. `tests/unit/inbox-barra-enxuta-3003.test.tsx`
+            falha se uma ação sair da tela sem estar aqui, e falha de novo se
+            sair daqui sem estar na tela.
+
+            O `aria-label` é "Mais" — nunca "Mais ações", que a catraca
+            `inbox-header-nao-trava` procura e proíbe desde o #1625. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="w-8 px-0"
+              aria-label={t("Mais")}
+              title={t("Mais ações desta conversa")}
+              data-testid="menu-de-acoes"
             >
-              {t("Ver contato")}
-              <ArrowRight size={12} weight="regular" aria-hidden />
-            </Link>
-          </Button>
-        )}
+              <DotsThree size={16} weight="bold" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64" data-testid="menu-de-acoes-conteudo">
+            {/* Por onde entrar em contato com a pessoa. Era `xl:hidden` na barra
+                porque a partir de 1280px o painel de CRM tem um "Ver contato"
+                próprio; dentro do menu a duplicata não custa fileira nenhuma,
+                então o item aparece em qualquer largura. */}
+            {c?.id && (
+              <DropdownMenuItem asChild>
+                <Link
+                  href={`/app/contacts/${c.id}`}
+                  className="flex w-full items-center gap-2"
+                  data-testid="acao-ver-contato"
+                  // GUIA CURTA (#3003): o rótulo promete "contato" e entrega uma
+                  // página inteira; a guia diz qual.
+                  title={t("Abre a ficha completa deste contato.")}
+                >
+                  <UserCircle size={16} aria-hidden />
+                  {t("Ver contato")}
+                </Link>
+              </DropdownMenuItem>
+            )}
+            {/* A chamada usa o telefone da ficha, mesmo quando o contato chegou
+                por outro canal. Grupos não representam uma pessoa para ligar. */}
+            {!conversation.is_group && c?.id && (
+              <DialButton contactId={c.id} hasPhone={!!c.phone_number} comoItemDeMenu />
+            )}
+            {!conversation.is_group && c?.id && activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
+              <ReservarServicoNaConversa
+                key={`${activeOrg.orgId}:${conversation.id}`}
+                contactId={c.id}
+                conversationId={conversation.id}
+                contactName={displayName}
+                comoItemDeMenu
+              />
+            )}
+            {/* Vídeo: sem JITSI_SERVER_URL o componente devolve `null` e o item
+                não existe — o menu não promete o que a instalação não tem. */}
+            <VideoCallButton
+              conversationId={conversation.id}
+              provider={conversation.channel_sessions?.provider ?? null}
+              lastInboundAt={conversation.last_inbound_at}
+              bloqueio={motivoDoContato(c, t)}
+              encerrada={status === "closed"}
+              comoItemDeMenu
+            />
+            {/* ATENDIMENTO CONJUNTO (#2542): o convite é ação, a presença é
+                informação — a presença ficou na barra (`modo="presenca"`) e o
+                convite vira item daqui. O diálogo NÃO mora dentro do menu: ver
+                `DialogoDeConvite`, montado no fim deste componente. */}
+            {podeConvidar && (
+              <DropdownMenuItem
+                data-testid="convidar-participante"
+                title={t("Convida um colega para atender junto — o responsável pela conversa não muda.")}
+                onSelect={() => setConviteAberto(true)}
+              >
+                <UsersThree size={16} aria-hidden className="mr-2" />
+                {t("Convidar")}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            {podePausar && (
+              <DropdownMenuItem
+                data-testid="pausar-o-automatico"
+                disabled={pausar.isPending}
+                // `podePausar` já exige dono != null, então este botão NUNCA aparece
+                // sem dono — prometer "você assume" aqui seria prometer o que a rota
+                // não faz: com dono, ela só cala, nunca rouba a conversa de quem a tem.
+                title={t("O atendimento automático para nesta conversa. O dono não muda.")}
+                onSelect={() => pausar.mutate({ conversation_id: conversation.id })}
+              >
+                <Pause size={16} aria-hidden className="mr-2" />
+                {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
+              </DropdownMenuItem>
+            )}
+            {!encerrada && (
+              <SnoozeButton
+                conversationId={conversation.id}
+                snoozeUntil={conversation.snooze_until ?? null}
+                modo="submenu"
+              />
+            )}
+            <DropdownMenuSeparator />
+            {/* ARQUIVAR (#923): tira da frente sem destruir.
+                A conversa já arquivada não mostra o item — arquivar duas vezes
+                não é um gesto que exista, e o item só reapareceria como um
+                clique que não muda nada. Fechada E resolvida mostram: são
+                exatamente as que se quer mandar para o arquivo depois de
+                encerradas, e é o caminho que faz a aba "Arquivadas" deixar de
+                ser uma pasta morta.
+                A permissão é a mesma de fechar (a rota `/conversations/[id]` é
+                `requireSupportWrite`): quem pode encerrar, pode arquivar. */}
+            {status !== "archived" && (
+              <DropdownMenuItem
+                data-testid="acao-arquivar"
+                disabled={arquivar.isPending}
+                // GUIA CURTA (#3003): "Arquivar" parece "guardar e pronto", e não é —
+                // numa conversa ainda aberta ele ENCERRA o atendimento (o diálogo de
+                // confirmação diz isso com todas as letras, e a guia diz antes dele).
+                // Ela NÃO some do inbox: sai da Fila e de Minhas, e segue em Todas e
+                // em Arquivadas (`tabToFilter` em InboxLayout).
+                title={t("Guarda a conversa na aba Arquivadas. Se ainda estiver aberta, o atendimento é encerrado.")}
+                onSelect={() => setConfirmArquivarOpen(true)}
+              >
+                <Archive size={16} aria-hidden className="mr-2" />
+                {arquivar.isPending ? t("Arquivando...") : t("Arquivar")}
+              </DropdownMenuItem>
+            )}
+            {/* PESSOAL (spec 21, etapa 15): marcar tira a conversa do inbox na
+                hora; desmarcar relista. O `data-testid` é contrato do e2e da
+                spec (`contato-pessoal-sai-da-operacao.spec.ts`). */}
+            {podeMarcarPessoal && c?.id && !ehPessoal && (
+              <DropdownMenuItem
+                data-testid="marcar-pessoal"
+                disabled={marcarPessoal.isPending}
+                title={t("Tira este contato da operação: a conversa sai do inbox.")}
+                onSelect={() => setConfirmPessoalOpen(true)}
+              >
+                <EyeSlash size={16} aria-hidden className="mr-2" />
+                {t("Marcar como pessoal")}
+              </DropdownMenuItem>
+            )}
+            {podeMarcarPessoal && c?.id && ehPessoal && (
+              <DropdownMenuItem
+                data-testid="desmarcar-pessoal"
+                disabled={desmarcarPessoal.isPending}
+                title={t("Devolve este contato à operação: a conversa volta ao inbox.")}
+                onSelect={() => desmarcarPessoal.mutate()}
+              >
+                <EyeSlash size={16} aria-hidden className="mr-2" />
+                {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
         {/* O aviso pertence à operação automática. Abaixo da barra ele não
             alarga a ficha do contato nem muda a posição dos botões.
@@ -664,6 +738,14 @@ export function ConversationHeader({
               }
             : undefined
         }
+      />
+      {/* O diálogo do convite, FORA do menu ⋯ (ver `DialogoDeConvite`): ele é
+          modal, e modal dentro de modal esconde a página de quem usa leitor de
+          tela. O item do menu só levanta `conviteAberto`. */}
+      <DialogoDeConvite
+        conversationId={conversation.id}
+        aberto={conviteAberto}
+        onAbertoChange={setConviteAberto}
       />
       <AlertDialog open={confirmFecharOpen} onOpenChange={setConfirmFecharOpen}>
         <AlertDialogContent>

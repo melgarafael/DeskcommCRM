@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ConversationHeader } from "./ConversationHeader";
@@ -83,6 +83,9 @@ vi.mock("@/components/voice/DialButton", () => ({ DialButton: () => null }));
 vi.mock("@/components/inbox/VideoCallButton", () => ({ VideoCallButton: () => null }));
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O diálogo do convite deixou de morar dentro do menu ⋯ (#3003) e passou a
+  // ser montado pelo cabeçalho: os dois nomes precisam existir no dublê.
+  DialogoDeConvite: () => null,
 }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({
   SnoozeButton: () => <button type="button">Lembrar</button>,
@@ -139,8 +142,6 @@ interface Cenario {
   /** Sobrescreve `estado.auth`. */
   auth?: typeof estado.auth;
   automaticoDaOrg?: boolean | undefined;
-  /** Rótulo de uma ação (ou de qualquer texto) que ancora a barra neste cenário. */
-  ancora: string;
   /** O conjunto EXATO de ações que este cenário oferece. */
   esperadas: string[];
   comBusca?: boolean;
@@ -158,9 +159,9 @@ const CENARIO_MAIS_COMPLETO: Cenario = {
     assignee_kind: "user",
     bot_silenced_until: new Date(Date.now() + 10 * 60_000).toISOString(),
   },
-  ancora: "Liberar",
   esperadas: [
-    "Assumir",
+    // Sem "Assumir": desde o #3003 o cabeçalho não oferece assumir a conversa
+    // que já é sua — era um no-op ao lado de "Liberar" (dois botões, um slot).
     "Liberar",
     "Devolver ao automático",
     "Transferir",
@@ -175,7 +176,6 @@ const CENARIO_MAIS_COMPLETO: Cenario = {
 const CENARIOS: Cenario[] = [
   {
     nome: "aberta e sem dono — a fila",
-    ancora: "Assumir",
     comBusca: true,
     esperadas: [
       "Buscar nesta conversa",
@@ -192,7 +192,6 @@ const CENARIOS: Cenario[] = [
   {
     nome: "com dono e o automático de pé — pausar é gesto PRÓPRIO aqui",
     conversa: { assigned_to_user_id: "u2", assignee_kind: "user" },
-    ancora: "Pausar o automático",
     esperadas: [
       "Assumir",
       "Pausar o automático",
@@ -207,20 +206,17 @@ const CENARIOS: Cenario[] = [
   {
     nome: "encerrada — o par Fechar/Reabrir vira Reabrir",
     conversa: { status: "closed" },
-    ancora: "Reabrir",
     esperadas: ["Assumir", "Reabrir", "Arquivar", "Marcar como pessoal", "Ver contato"],
   },
   {
     nome: "arquivada — arquivar de novo não é gesto que exista",
     conversa: { status: "archived" },
-    ancora: "Reabrir",
     esperadas: ["Assumir", "Reabrir", "Marcar como pessoal", "Ver contato"],
   },
   {
     nome: "contato marcado como pessoal — o par inverte",
     contato: { is_personal: true },
     auth: { user: { id: "u1", support: null, is_platform_admin: true } },
-    ancora: "Desmarcar pessoal",
     esperadas: [
       "Assumir",
       "Transferir",
@@ -262,31 +258,62 @@ function montar(cenario: Cenario) {
   );
 }
 
-/** A barra de ações — ancorada por rótulo, nunca por índice fixo (contrato da catraca). */
-function barraDeAcoes(ancora: string): HTMLElement {
-  const botao = screen.getByText(ancora).closest("button");
-  expect(botao, `a âncora "${ancora}" não renderizou um botão`).toBeTruthy();
-  const barra = (botao as HTMLElement).parentElement;
+/**
+ * A BARRA DE AÇÕES, ancorada no gatilho do ⋯ — nunca por índice, nunca por
+ * rótulo (#3003).
+ *
+ * Ela era ancorada em `getByText(ancora).closest("button").parentElement`, com a
+ * âncora escolhida por cenário. Isso deixou de funcionar quando as ações
+ * secundárias passaram a morar no menu: "Pausar o automático" não está mais no
+ * DOM com o menu fechado. A âncora nova é o gatilho do ⋯, que existe em TODO
+ * estado — é justamente o que garante que nenhuma ação fique sem casa.
+ */
+function barraDeAcoes(): HTMLElement {
+  const barra = screen.getByTestId("menu-de-acoes").parentElement;
   expect(barra, "a barra de ações não renderizou").toBeTruthy();
   return barra as HTMLElement;
 }
 
-/** "Esta ação está alcançável nesta barra?" — por texto (botão) ou por nome acessível (ícone). */
-function naBarra(barra: HTMLElement, rotulo: string): boolean {
-  return (
-    within(barra).queryAllByText(rotulo).length > 0 ||
-    within(barra).queryByRole("button", { name: rotulo }) !== null ||
-    within(barra).queryByRole("link", { name: rotulo }) !== null
+/** Abre o ⋯ (Radix abre no `pointerdown`) e devolve o conteúdo portalizado. */
+async function abrirOMenu(): Promise<HTMLElement> {
+  fireEvent.pointerDown(screen.getByTestId("menu-de-acoes"), {
+    button: 0,
+    ctrlKey: false,
+    pointerId: 1,
+  });
+  const conteudo = await screen.findByTestId("menu-de-acoes-conteudo");
+  expect(conteudo, "o menu ⋯ não abriu").toBeTruthy();
+  return conteudo;
+}
+
+/**
+ * "Esta ação está alcançável no cabeçalho?" — na BARRA ou no MENU ⋯.
+ *
+ * A pergunta mudou de "está na barra?" para "está na tela?", e a paridade não
+ * afrouxou: os conjuntos esperados por cenário continuam EXATOS, com a mesma
+ * contagem de antes. O que saiu da barra tem de estar no menu — e o caso "o menu
+ * ⋯ não é opcional" (`tests/unit/inbox-barra-enxuta-3003.test.tsx`) é quem cobra
+ * que o menu exista.
+ */
+function naArea(rotulo: string): boolean {
+  if (screen.queryAllByText(rotulo).length > 0) return true;
+  // Ícone (a busca): o nome acessível está em `aria-label`, e ele é lido direto
+  // do DOM de propósito. Com o menu ⋯ aberto o Radix é MODAL e marca
+  // `aria-hidden` nos irmãos (`hideOthers`), então `getByRole` — que ignora a
+  // árvore escondida — não enxergaria o botão da busca. A ação está lá, e o que
+  // este arquivo mede é se ela está NA TELA.
+  return Array.from(document.querySelectorAll<HTMLElement>("[aria-label]")).some(
+    (el) => el.getAttribute("aria-label")?.trim() === rotulo,
   );
 }
 
 describe("#3003 — paridade: nenhuma ação da barra desaparece", () => {
   for (const cenario of CENARIOS) {
-    it(`${cenario.nome}: continua oferecendo exatamente ${cenario.esperadas.length} ações`, () => {
+    it(`${cenario.nome}: continua oferecendo exatamente ${cenario.esperadas.length} ações`, async () => {
       montar(cenario);
-      const barra = barraDeAcoes(cenario.ancora);
+      await abrirOMenu();
 
-      const presentes = INVENTARIO.filter((rotulo) => naBarra(barra, rotulo));
+      const presentes = INVENTARIO.filter((rotulo) => naArea(rotulo));
       expect(
         [...presentes].sort(),
         `o conjunto de ações do cenário "${cenario.nome}" mudou — ação a menos (ou a mais) quebra a paridade do #3003`,
@@ -294,12 +321,12 @@ describe("#3003 — paridade: nenhuma ação da barra desaparece", () => {
     });
   }
 
-  it("a união dos cenários cobre TODA ação do inventário — é aqui que a ação removida do componente reprova", () => {
+  it("a união dos cenários cobre TODA ação do inventário — é aqui que a ação removida do componente reprova", async () => {
     const vistas = new Set<string>();
     for (const cenario of CENARIOS) {
       const { unmount } = montar(cenario);
-      const barra = barraDeAcoes(cenario.ancora);
-      for (const rotulo of INVENTARIO) if (naBarra(barra, rotulo)) vistas.add(rotulo);
+      await abrirOMenu();
+      for (const rotulo of INVENTARIO) if (naArea(rotulo)) vistas.add(rotulo);
       unmount();
     }
 
@@ -314,11 +341,16 @@ describe("#3003 — paridade: nenhuma ação da barra desaparece", () => {
 
 describe("#3003 — guia curta: todo botão da barra diz o que faz", () => {
   for (const cenario of CENARIOS) {
-    it(`${cenario.nome}: nome acessível e guia, em cada botão`, () => {
+    it(`${cenario.nome}: nome acessível e guia, em cada botão`, async () => {
       montar(cenario);
-      const barra = barraDeAcoes(cenario.ancora);
-
-      const alvos = Array.from(barra.querySelectorAll<HTMLElement>("button, a[href]"));
+      const barra = barraDeAcoes();
+      // A barra E o menu: desde o #3003 os itens secundários são `menuitem` num
+      // portal, não `button` na barra — e a guia é cobrada dos dois jeitos.
+      const menu = await abrirOMenu();
+      const alvos = [
+        ...Array.from(barra.querySelectorAll<HTMLElement>("button, a[href]")),
+        ...Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"], a[href]')),
+      ];
       expect(alvos.length, "a barra não renderizou botão nenhum").toBeGreaterThan(0);
 
       for (const el of alvos) {
@@ -341,8 +373,11 @@ describe("#3003 — guia curta: todo botão da barra diz o que faz", () => {
 
   it("a guia não renomeou nenhum botão — o nome acessível continua sendo o rótulo visível", () => {
     montar(CENARIO_MAIS_COMPLETO);
-    const barra = barraDeAcoes("Liberar");
-    for (const rotulo of ["Assumir", "Liberar", "Devolver ao automático", "Transferir", "Fechar"]) {
+    const barra = barraDeAcoes();
+    // "Assumir" saiu desta lista porque ele deixou de ser oferecido a quem já é
+    // o dono (#3003): neste cenário a conversa é MINHA, e o botão era um no-op.
+    // O rótulo dele continua vigiado no cenário "aberta e sem dono", acima.
+    for (const rotulo of ["Liberar", "Devolver ao automático", "Transferir", "Fechar"]) {
       const botao = within(barra).getByRole("button", { name: rotulo });
       expect(botao.textContent?.trim()).toBe(rotulo);
     }
@@ -379,7 +414,7 @@ describe("#3003 — a guia de Liberar não promete o automático quando ele não
 
   for (const caso of casos) {
     it(caso.nome, () => {
-      montar({ nome: caso.nome, ancora: "Liberar", esperadas: [], ...caso.cenario });
+      montar({ nome: caso.nome, esperadas: [], ...caso.cenario });
       expect(screen.getByRole("button", { name: "Liberar" }).getAttribute("title")).toBe(caso.guia);
     });
   }

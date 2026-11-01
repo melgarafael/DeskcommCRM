@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -59,6 +59,9 @@ vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 // a barra de ações, e o componente novo lê react-query (exigiria provider).
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O diálogo do convite deixou de morar dentro do menu ⋯ (#3003) e passou a
+  // ser montado pelo cabeçalho: os dois nomes precisam existir no dublê.
+  DialogoDeConvite: () => null,
 }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
@@ -95,6 +98,20 @@ function conversa(status: string): ConversationWithContact {
     contacts: null,
     channel_sessions: null,
   } as unknown as ConversationWithContact;
+}
+
+/**
+ * Abre o menu ⋯ (#3003): "Chamar", "Arquivar" e "Marcar como pessoal" deixaram a
+ * barra e moram nele. Radix abre no `pointerdown`, então o clique do userEvent
+ * seria um caminho diferente do real — o `fireEvent` é o mesmo gesto da tela.
+ */
+async function abrirOMenu(): Promise<HTMLElement> {
+  fireEvent.pointerDown(screen.getByTestId("menu-de-acoes"), {
+    button: 0,
+    ctrlKey: false,
+    pointerId: 1,
+  });
+  return await screen.findByTestId("menu-de-acoes-conteudo");
 }
 
 beforeEach(() => {
@@ -153,11 +170,12 @@ describe("ConversationHeader — chamada de voz na Inbox", () => {
     };
     render(<ConversationHeader conversation={atual} />);
 
-    await user.click(screen.getByRole("button", { name: "Chamar" }));
+    await abrirOMenu();
+    await user.click(screen.getByTestId("acao-chamar"));
     expect(startCall).toHaveBeenCalledWith("contato-1");
   });
 
-  it("não oferece chamada individual para um grupo", () => {
+  it("não oferece chamada individual para um grupo", async () => {
     const atual = conversa("open");
     atual.is_group = true;
     atual.contacts = {
@@ -171,7 +189,9 @@ describe("ConversationHeader — chamada de voz na Inbox", () => {
       is_anonymized: false,
     };
     render(<ConversationHeader conversation={atual} />);
-    expect(screen.queryByRole("button", { name: "Chamar" })).toBeNull();
+    // No menu, e não na barra: o guarda de grupo continua sendo do `DialButton`.
+    const menu = await abrirOMenu();
+    expect(within(menu).queryByTestId("acao-chamar")).toBeNull();
   });
 });
 
@@ -205,7 +225,8 @@ describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
     const user = userEvent.setup();
     render(<ConversationHeader conversation={conversa("open")} />);
 
-    await user.click(screen.getByRole("button", { name: "Arquivar" }));
+    await abrirOMenu();
+    await user.click(screen.getByTestId("acao-arquivar"));
 
     const dialogo = await screen.findByRole("alertdialog");
     expect(within(dialogo).getByText("Arquivar esta conversa?")).toBeTruthy();
@@ -228,7 +249,8 @@ describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
     const user = userEvent.setup();
     render(<ConversationHeader conversation={conversa("closed")} />);
 
-    await user.click(screen.getByRole("button", { name: "Arquivar" }));
+    await abrirOMenu();
+    await user.click(screen.getByTestId("acao-arquivar"));
 
     const dialogo = await screen.findByRole("alertdialog");
     expect(within(dialogo).getByText("Arquivar esta conversa?")).toBeTruthy();

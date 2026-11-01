@@ -69,6 +69,18 @@ interface Props {
   podeConvidar: boolean;
   atendenteId?: string;
   somenteLeitura?: boolean;
+  /**
+   * O QUE ESTA PEÇA DESENHA (#3003). A barra do cabeçalho passou a mostrar só a
+   * PRESENÇA e a mandar o convite para o menu ⋯ — e são duas coisas de naturezas
+   * diferentes: "quem mais está aqui" é informação e some se for para dentro de
+   * um menu; "convidar" é ação e é justamente o que a barra enxuta tira da
+   * frente.
+   *
+   * `"completo"` (padrão) desenha as duas, como antes — é a forma usada pelas
+   * telas que ainda querem o botão ao lado dos avatares. `"presenca"` desenha só
+   * os avatares, e é o modo da barra.
+   */
+  modo?: "completo" | "presenca";
 }
 
 /** Iniciais para o fallback do avatar: sem nome, cai no `?` — nunca no vazio. */
@@ -83,40 +95,39 @@ function iniciais(nome: string | null | undefined): string {
   return `${primeira}${ultima}`.toUpperCase();
 }
 
-export function ParticipantesDaConversa({ conversationId, podeConvidar, atendenteId, somenteLeitura = false }: Props) {
+interface PropsDoDialogo {
+  conversationId: string;
+  aberto: boolean;
+  onAbertoChange: (aberto: boolean) => void;
+}
+
+/**
+ * O DIÁLOGO do convite — e por que ele é uma peça separada do menu ⋯ (#3003).
+ *
+ * A primeira versão da barra enxuta punha este diálogo DENTRO do conteúdo do
+ * menu, e o `onSelect` do item chamava `preventDefault()` para o menu não fechar
+ * e não desmontar o diálogo junto. O defeito apareceu no e2e de atendimento
+ * conjunto: com o menu aberto, o Radix é MODAL e marca `aria-hidden` em todo o
+ * resto da página — então, depois do convite, `getByRole` não enxergava mais nem
+ * o avatar de quem entrou, nem a barra. Um `dialog` modal dentro de um `menu`
+ * modal é dois donos do foco discutindo.
+ *
+ * Agora quem abre o diálogo é o CABEÇALHO: o item do menu só levanta a bandeira
+ * e o menu fecha como qualquer outro. O diálogo vive fora dele, montado o tempo
+ * todo — a mesma peça que a barra ao lado dos avatares usava.
+ */
+export function DialogoDeConvite({ conversationId, aberto, onAbertoChange }: PropsDoDialogo) {
   const t = useT();
-  const [aberto, setAberto] = useState(false);
   const [alvo, setAlvo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
-  const [erroRemocao, setErroRemocao] = useState<string | null>(null);
 
-  // A lista é lida sempre: quem participa interessa a quem vê a conversa, tenha
-  // ele o poder de convidar ou não (o dono tem; o próprio convidado também). O
-  // gate de QUEM pode pedir a lista mora no hook (`inbox.participantes.view`),
-  // não aqui — `podeConvidar` é a régua do BOTÃO, e usá-la aqui tiraria a lista
-  // do convidado.
   const participantes = useParticipantesDaConversa(conversationId, true);
   const convidar = useConvidarParticipante(conversationId);
-  const remover = useRemoverParticipante(conversationId);
-  const lista = participantes.data ?? [];
-  // O diretório de pessoas serve a DOIS propósitos: nomear os avatares da lista
-  // (que já está na tela) e popular o seletor. Por isso ele é buscado quando há
-  // QUALQUER um dos dois — e não só com o diálogo aberto como no "Transferir".
-  // Um avatar sem nome é um retângulo com "Atendente u2" dentro: a lista do
-  // cabeçalho nasceria ilegível até alguém abrir o convite uma vez. A consulta é
-  // a MESMA chave do `ReassignDialog` (`["team","assignable"]`, `staleTime` 60s),
-  // então isto custa uma requisição por sessão, não uma por conversa.
-  const membros = useAssignableMembers(podeConvidar || lista.length > 0);
-  const idsQueParticipam = new Set(lista.map((p) => p.user_id));
-  const nomeDe = (userId: string) => {
-    const membro = (membros.data ?? []).find((m) => m.user_id === userId);
-    return membro?.full_name ?? null;
-  };
-
-  // Sem poder convidar E sem ninguém na lista, esta peça não desenha nada: um
-  // cabeçalho vazio de "atendimento conjunto" é ruído para quem só foi ler a
-  // conversa.
-  if (!podeConvidar && lista.length === 0) return null;
+  // O diretório de pessoas é buscado com o diálogo ABERTO: ele serve ao seletor,
+  // e é a MESMA chave do `ReassignDialog` (`["team","assignable"]`, `staleTime`
+  // 60s), então custa uma requisição por sessão, não uma por conversa.
+  const membros = useAssignableMembers(aberto);
+  const idsQueParticipam = new Set((participantes.data ?? []).map((p) => p.user_id));
 
   async function confirmarConvite() {
     if (!alvo || convidar.isPending) return;
@@ -125,7 +136,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
       await convidar.mutateAsync(alvo);
       // Fechar e limpar só no SUCESSO: no erro o diálogo fica aberto com a
       // mensagem, senão a pessoa teria de reabrir e reescolher para tentar de novo.
-      setAberto(false);
+      onAbertoChange(false);
       setAlvo("");
     } catch (err) {
       setErro(
@@ -135,6 +146,112 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
       );
     }
   }
+
+  return (
+    <Dialog
+      open={aberto}
+      onOpenChange={(proximo) => {
+        if (!proximo) setErro(null);
+        onAbertoChange(proximo);
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("Convidar colega")}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "O convidado passa a ver esta conversa e as mensagens dela, e pode responder junto. O responsável pela conversa continua o mesmo.",
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="convite-participante">{t("Convidar para atender junto")}</Label>
+          <Select value={alvo} onValueChange={setAlvo}>
+            <SelectTrigger id="convite-participante" className="w-full" data-testid="select-colega">
+              <SelectValue
+                placeholder={membros.isLoading ? t("Carregando colegas…") : t("Escolha o colega")}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {(membros.data ?? []).map((m) => {
+                const jaParticipa = idsQueParticipam.has(m.user_id);
+                return (
+                  <SelectItem key={m.user_id} value={m.user_id} disabled={jaParticipa}>
+                    {rotuloDoMembro(m, t)}
+                    {jaParticipa && (
+                      <span className="ml-1 text-muted-foreground">· {t("Já participa")}</span>
+                    )}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          {!membros.isLoading && (membros.data ?? []).length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              {t("Nenhum outro atendente disponível nesta organização.")}
+            </p>
+          )}
+          {erro !== null && (
+            <p className="text-xs text-destructive" role="alert">
+              {erro}
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onAbertoChange(false)}>
+            {t("Cancelar")}
+          </Button>
+          <Button
+            disabled={!alvo || convidar.isPending}
+            onClick={confirmarConvite}
+            data-testid="confirmar-convite"
+          >
+            {convidar.isPending ? t("Convidando…") : t("Convidar")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function ParticipantesDaConversa({ conversationId, podeConvidar, atendenteId, somenteLeitura = false, modo = "completo" }: Props) {
+  const t = useT();
+  const [aberto, setAberto] = useState(false);
+  const [erroRemocao, setErroRemocao] = useState<string | null>(null);
+
+  // A lista é lida sempre: quem participa interessa a quem vê a conversa, tenha
+  // ele o poder de convidar ou não (o dono tem; o próprio convidado também). O
+  // gate de QUEM pode pedir a lista mora no hook (`inbox.participantes.view`),
+  // não aqui — `podeConvidar` é a régua do BOTÃO, e usá-la aqui tiraria a lista
+  // do convidado.
+  const participantes = useParticipantesDaConversa(conversationId, true);
+  const remover = useRemoverParticipante(conversationId);
+  const lista = participantes.data ?? [];
+  // O diretório de pessoas também serve aos avatares: um avatar sem nome é um
+  // retângulo com "Atendente u2" dentro, e a lista do cabeçalho nasceria
+  // ilegível. A consulta é a MESMA chave do `ReassignDialog`, então isto custa
+  // uma requisição por sessão, não uma por conversa.
+  const membros = useAssignableMembers(podeConvidar || lista.length > 0);
+  const nomeDe = (userId: string) => {
+    const membro = (membros.data ?? []).find((m) => m.user_id === userId);
+    return membro?.full_name ?? null;
+  };
+
+  /**
+   * Sem poder convidar E sem ninguém na lista, esta peça não desenha nada: um
+   * cabeçalho vazio de "atendimento conjunto" é ruído para quem só foi ler a
+   * conversa.
+   *
+   * Com o `modo` (#3003) a conta é por PARTE: a instância da barra só desenha
+   * avatar (e sem ninguém na lista não desenha nada, nem uma `div` vazia); o
+   * botão do convite só existe no `"completo"`. Assim as duas continuam sumindo
+   * quando não têm o que mostrar, em vez de deixar um espaço morto no cabeçalho.
+   */
+  const mostraPresenca = lista.length > 0;
+  const mostraConvite = modo === "completo" && podeConvidar && !somenteLeitura;
+  if (!mostraPresenca && !mostraConvite) return null;
 
   async function removerColega(userId: string) {
     setErroRemocao(null);
@@ -147,7 +264,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      {lista.length > 0 && (
+      {mostraPresenca && (
         <div
           className="flex items-center"
           data-testid="participantes-do-atendimento"
@@ -187,16 +304,13 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
         </div>
       )}
 
-      {podeConvidar && !somenteLeitura && (
+      {mostraConvite && (
         <Button
           size="sm"
           variant="outline"
           data-testid="convidar-participante"
           title={t("Convida um colega para atender junto — o responsável pela conversa não muda.")}
-          onClick={() => {
-            setErro(null);
-            setAberto(true);
-          }}
+          onClick={() => setAberto(true)}
         >
           <UsersThree size={14} aria-hidden className="mr-1" />
           {t("Convidar")}
@@ -204,65 +318,13 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
       )}
       {erroRemocao && <p role="alert" className="text-xs text-destructive">{erroRemocao}</p>}
 
-      <Dialog open={aberto} onOpenChange={setAberto}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("Convidar colega")}</DialogTitle>
-            <DialogDescription>
-              {t(
-                "O convidado passa a ver esta conversa e as mensagens dela, e pode responder junto. O responsável pela conversa continua o mesmo.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="convite-participante">{t("Convidar para atender junto")}</Label>
-            <Select value={alvo} onValueChange={setAlvo}>
-              <SelectTrigger id="convite-participante" className="w-full" data-testid="select-colega">
-                <SelectValue
-                  placeholder={membros.isLoading ? t("Carregando colegas…") : t("Escolha o colega")}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {(membros.data ?? []).map((m) => {
-                  const jaParticipa = idsQueParticipam.has(m.user_id);
-                  return (
-                    <SelectItem key={m.user_id} value={m.user_id} disabled={jaParticipa}>
-                      {rotuloDoMembro(m, t)}
-                      {jaParticipa && (
-                        <span className="ml-1 text-muted-foreground">· {t("Já participa")}</span>
-                      )}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-            {!membros.isLoading && (membros.data ?? []).length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                {t("Nenhum outro atendente disponível nesta organização.")}
-              </p>
-            )}
-            {erro !== null && (
-              <p className="text-xs text-destructive" role="alert">
-                {erro}
-              </p>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setAberto(false)}>
-              {t("Cancelar")}
-            </Button>
-            <Button
-              disabled={!alvo || convidar.isPending}
-              onClick={confirmarConvite}
-              data-testid="confirmar-convite"
-            >
-              {convidar.isPending ? t("Convidando…") : t("Convidar")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {mostraConvite && (
+        <DialogoDeConvite
+          conversationId={conversationId}
+          aberto={aberto}
+          onAbertoChange={setAberto}
+        />
+      )}
     </div>
   );
 }

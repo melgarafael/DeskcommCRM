@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ConversationHeader } from "@/components/inbox/ConversationHeader";
@@ -86,10 +86,27 @@ function renderHeader(conv = conversation) {
 
 // A barra é quem segura os botões, não um índice fixo: desde o #1625 o
 // `children[1]` do header é a coluna que empilha a barra e o selo do automático.
+//
+// Desde o #3003 a âncora é o gatilho do menu ⋯, e não o rótulo "Transferir":
+// ela precisa existir em TODO estado do cabeçalho (é o que garante que nenhuma
+// ação secundária fique sem casa), enquanto os rótulos entram e saem com o
+// estado da conversa.
 function barraDeAcoes() {
-  const barra = screen.getByText("Transferir").closest("button")?.parentElement;
+  const barra = screen.getByTestId("menu-de-acoes").parentElement;
   expect(barra, "a barra de ações não renderizou").toBeTruthy();
   return barra as HTMLElement;
+}
+
+/** Abre o ⋯ (Radix abre no `pointerdown`) e devolve o conteúdo portalizado. */
+function abrirOMenu(): HTMLElement {
+  fireEvent.pointerDown(screen.getByTestId("menu-de-acoes"), {
+    button: 0,
+    ctrlKey: false,
+    pointerId: 1,
+  });
+  const conteudo = screen.getByTestId("menu-de-acoes-conteudo");
+  expect(conteudo, "o menu ⋯ não abriu").toBeTruthy();
+  return conteudo;
 }
 
 describe("header do inbox — não trava a largura da tela", () => {
@@ -152,11 +169,39 @@ describe("header do inbox — não trava a largura da tela", () => {
     const linhaDoNome = screen.getByRole("heading", { name: "Fulana" }).parentElement as HTMLElement;
     expect(linhaDoNome.contains(selo), "o selo voltou para a linha do nome").toBe(false);
 
+    // ─── A RÉGUA MUDOU DE LUGAR, NÃO DE TAMANHO (#3003) ────────────────────
+    //
+    // Este caso dizia "as seis ações estão DENTRO da barra" e proibia um menu.
+    // Desde o #3003 a decisão do dono na issue é a inversa — a barra guarda as
+    // ações de todo atendimento e o resto mora no ⋯ —, então o que se mede
+    // aqui é o que o caso sempre quis proteger: NENHUMA AÇÃO SOME. Cada um dos
+    // seis rótulos continua alcançável no cabeçalho, e as que saíram da barra
+    // têm de estar no menu (não basta não estarem em lugar nenhum).
+    //
+    // O menu NÃO pode se chamar "Mais ações": o nome acessível é "Mais", e o
+    // `getByRole` abaixo continua sendo a catraca disso.
+    const menu = abrirOMenu();
     for (const rotulo of ["Liberar", "Devolver ao automático", "Transferir", "Lembrar", "Fechar", "Arquivar"]) {
-      const botao = screen.getByRole("button", { name: rotulo });
-      expect(barra.contains(botao), `a ação "${rotulo}" saiu da barra`).toBe(true);
+      expect(
+        screen.queryAllByText(rotulo).length,
+        `a ação "${rotulo}" sumiu do cabeçalho — nem na barra, nem no menu`,
+      ).toBeGreaterThan(0);
     }
-    expect(screen.queryByRole("button", { name: "Mais ações" }), "ação de quem atende escondida num menu").toBeNull();
+    // As do dia a dia seguem à vista...
+    for (const rotulo of ["Liberar", "Devolver ao automático", "Transferir", "Fechar"]) {
+      expect(
+        within(barra).queryAllByText(rotulo).length,
+        `a ação "${rotulo}" saiu da barra sem ser do dia a dia`,
+      ).toBeGreaterThan(0);
+    }
+    // ...e as secundárias estão no menu, com nome.
+    for (const rotulo of ["Lembrar", "Arquivar"]) {
+      expect(
+        within(menu).queryAllByText(rotulo).length,
+        `"${rotulo}" saiu da barra e não está no menu: ação de quem atende escondida`,
+      ).toBeGreaterThan(0);
+    }
+    expect(screen.queryByRole("button", { name: "Mais ações" }), "o gatilho do menu não pode se chamar 'Mais ações'").toBeNull();
   });
 
   it("no celular a barra é UMA fileira que rola, não três ou quatro que comem a conversa", () => {
@@ -193,18 +238,21 @@ describe("header do inbox — não trava a largura da tela", () => {
     expect(telefone.className.split(/\s+/)).toContain("max-md:hidden");
   });
 
-  it('"Ver contato" existe no DOM e só se cala onde há outra porta', () => {
+  it('"Ver contato" existe no DOM — agora no menu ⋯, em qualquer largura', () => {
     renderHeader();
-    // Ele NÃO sai do markup: some por CSS a partir de `xl`, exatamente a largura
-    // em que o painel lateral entra na tela com um "Ver contato" próprio. A
-    // distinção importa — remover do DOM tiraria a ação de quem usa 1024px, que
-    // é onde o painel não existe e esta é a única porta para o contato.
-    const link = screen.getByText("Ver contato").closest("a, button") as HTMLElement;
+    // Ele NÃO sai do markup, e a razão original continua valendo: abaixo de
+    // 1280px o painel lateral não existe, e esta é a única porta para o contato.
+    //
+    // O que mudou (#3003) é ONDE ele mora. Era um botão `xl:hidden` na barra,
+    // escondido por CSS a partir de 1280px para não duplicar o "Ver contato" do
+    // painel. No menu a duplicata não custa fileira nenhuma, então o item
+    // aparece em qualquer largura — e deixou de precisar de `xl:hidden`. O que
+    // este caso vigia agora é o que de fato importa: a porta existe, abre a
+    // ficha certa, e tem guia.
+    const menu = abrirOMenu();
+    const link = within(menu).getByText("Ver contato").closest("a") as HTMLElement;
     expect(link, "o link para o contato sumiu do markup").toBeTruthy();
-    const classes = `${link.className} ${link.parentElement?.className ?? ""}`;
-    expect(
-      classes,
-      "sem `xl:hidden`, a duplicata volta e o header ganha uma segunda linha em 1280px",
-    ).toContain("xl:hidden");
+    expect(link.getAttribute("href")).toBe("/app/contacts/ct-1");
+    expect(link.getAttribute("title")?.trim(), "a porta para o contato está sem guia").toBeTruthy();
   });
 });

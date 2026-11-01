@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -72,6 +72,10 @@ vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 // participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O cabeçalho agora monta o diálogo de convite FORA do menu (o menu precisa
+  // fechar antes, senão o Radix modal esconde o botão de presença da árvore de
+  // acessibilidade). Este arquivo isola o botão pessoal: o diálogo é dublê.
+  DialogoDeConvite: () => null,
 }));
 // A reserva tem sua própria prova autenticada; este gate isola o botão pessoal.
 vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ReservarServicoNaConversa: () => null }));
@@ -80,6 +84,10 @@ vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ReservarServic
 // participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O cabeçalho agora monta o diálogo de convite FORA do menu (o menu precisa
+  // fechar antes, senão o Radix modal esconde o botão de presença da árvore de
+  // acessibilidade). Este arquivo isola o botão pessoal: o diálogo é dublê.
+  DialogoDeConvite: () => null,
 }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
@@ -136,36 +144,58 @@ beforeEach(() => {
   desmarcarMutate.mockReset();
 });
 
+/**
+ * O botão pessoal mora no menu ⋯ desde o #3003: a barra ficou com as ações de
+ * todo atendimento e o par marcar/desmarcar foi para lá, com ícone, nome e
+ * guia. O GATE não mudou de lugar nenhum — continua sendo o mesmo
+ * `podeMarcarPessoal` do componente —, então o que este arquivo passa a fazer é
+ * olhar DENTRO do menu. Fechado, o menu não renderiza item nenhum: procurar o
+ * testid com ele fechado passaria por ausência, e ausência é exatamente o que
+ * os casos "não vê" querem provar. Abrir em todos é o que mantém a distinção.
+ */
+async function abrirOMenu(): Promise<HTMLElement> {
+  fireEvent.pointerDown(screen.getByTestId("menu-de-acoes"), {
+    button: 0,
+    ctrlKey: false,
+    pointerId: 1,
+  });
+  return await screen.findByTestId("menu-de-acoes-conteudo");
+}
+
 describe("gate do botão pessoal no cabeçalho", () => {
-  it("atendente não vê nem marcar nem desmarcar", () => {
+  it("atendente não vê nem marcar nem desmarcar", async () => {
     papel.atual = "agent";
     const { unmount } = render(<ConversationHeader conversation={conversa(false)} />);
-    expect(screen.queryByTestId("marcar-pessoal")).toBeNull();
-    expect(screen.queryByTestId("desmarcar-pessoal")).toBeNull();
+    const menu = await abrirOMenu();
+    expect(within(menu).queryByTestId("marcar-pessoal")).toBeNull();
+    expect(within(menu).queryByTestId("desmarcar-pessoal")).toBeNull();
     unmount();
   });
 
-  it("gerente vê marcar no contato normal", () => {
+  it("gerente vê marcar no contato normal", async () => {
     papel.atual = "manager";
     const { unmount } = render(<ConversationHeader conversation={conversa(false)} />);
-    expect(screen.getByTestId("marcar-pessoal")).toBeTruthy();
-    expect(screen.queryByTestId("desmarcar-pessoal")).toBeNull();
+    const menu = await abrirOMenu();
+    expect(within(menu).getByTestId("marcar-pessoal")).toBeTruthy();
+    expect(within(menu).queryByTestId("desmarcar-pessoal")).toBeNull();
     unmount();
   });
 
-  it("gerente vê desmarcar (e não marcar) no contato pessoal", () => {
+  it("gerente vê desmarcar (e não marcar) no contato pessoal", async () => {
     papel.atual = "manager";
     const { unmount } = render(<ConversationHeader conversation={conversa(true)} />);
-    expect(screen.getByTestId("desmarcar-pessoal")).toBeTruthy();
-    expect(screen.queryByTestId("marcar-pessoal")).toBeNull();
+    const menu = await abrirOMenu();
+    expect(within(menu).getByTestId("desmarcar-pessoal")).toBeTruthy();
+    expect(within(menu).queryByTestId("marcar-pessoal")).toBeNull();
     unmount();
   });
 
-  it("sem contato, sem botão para ninguém", () => {
+  it("sem contato, sem botão para ninguém", async () => {
     papel.atual = "manager";
     const { unmount } = render(<ConversationHeader conversation={conversa(null)} />);
-    expect(screen.queryByTestId("marcar-pessoal")).toBeNull();
-    expect(screen.queryByTestId("desmarcar-pessoal")).toBeNull();
+    const menu = await abrirOMenu();
+    expect(within(menu).queryByTestId("marcar-pessoal")).toBeNull();
+    expect(within(menu).queryByTestId("desmarcar-pessoal")).toBeNull();
     unmount();
   });
 
@@ -173,7 +203,8 @@ describe("gate do botão pessoal no cabeçalho", () => {
     papel.atual = "manager";
     const user = userEvent.setup();
     const { unmount } = render(<ConversationHeader conversation={conversa(false)} />);
-    await user.click(screen.getByTestId("marcar-pessoal"));
+    const menu = await abrirOMenu();
+    await user.click(within(menu).getByTestId("marcar-pessoal"));
     expect(marcarMutate).not.toHaveBeenCalled();
     expect(await screen.findByText("Marcar este contato como pessoal?")).toBeTruthy();
     unmount();
@@ -183,7 +214,8 @@ describe("gate do botão pessoal no cabeçalho", () => {
     papel.atual = "manager";
     const user = userEvent.setup();
     const { unmount } = render(<ConversationHeader conversation={conversa(true)} />);
-    await user.click(screen.getByTestId("desmarcar-pessoal"));
+    const menu = await abrirOMenu();
+    await user.click(within(menu).getByTestId("desmarcar-pessoal"));
     expect(desmarcarMutate).toHaveBeenCalledTimes(1);
     unmount();
   });
