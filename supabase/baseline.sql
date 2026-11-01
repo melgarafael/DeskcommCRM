@@ -23427,6 +23427,17 @@ begin
  if found and p_user is distinct from v_default
   and not exists(select 1 from public.channel_routing_responsibles r where r.organization_id=p_org and r.policy_id=v_policy_id and r.user_id=p_user)
  then return 'candidate_not_allowed';end if;
+ -- (migration 9062) FILA É DESTINO: com fila na conversa, a distribuição
+ -- automática não sai dela. Vale para o worker de rodízio e para o handoff da IA,
+ -- que entram por esta função; a atribuição MANUAL não passa aqui de propósito.
+ -- Módulo `setores` desligado ⇒ a fila não manda (mesma leitura de
+ -- lib/instalacao/modulos.ts: só `ligado` liga). Quem liga, usa e desliga não
+ -- fica com a fila velha gravada restringindo o rodízio sem tela que a mostre.
+ if c.sector_id is not null
+  and exists(select 1 from public.platform_config pc where pc.chave='MODULO_SETORES' and pc.valor='ligado')
+  and not exists(select 1 from public.attendant_sector_members m where m.organization_id=p_org
+                  and m.sector_id=c.sector_id and m.user_id=p_user)
+ then return 'candidate_not_in_sector';end if;
  select * into availability from public.attendant_availability where organization_id=p_org and user_id=p_user for share;
  if not found or not availability.is_available or (p_schedule is not null and availability.schedule is distinct from p_schedule)
  then return 'capacity_changed';end if;
@@ -70428,6 +70439,73 @@ comment on table public.attendant_sectors is
   'Setores de atendimento da organização (migration 0801). Nome único por organização (lower/btrim). Escrita só pelas rotas /api/v1/attendants/sectors (manager+).';
 comment on table public.attendant_sector_members is
   'Vínculo atendente → setor (migration 0801). Um setor por atendente: PK (organization_id, user_id). Apagar o setor solta os atendentes.';
+
+notify pgrst, 'reload schema';
+
+-- ---- fila de atendimento: destino, horário e N:N (migration 9062) ----
+-- manifest: conversations.sector_id (FK composta com a organização, on delete set null (sector_id)), attendant_sectors.schedule e N atendentes por fila; fn_channel_routing_claim recusa candidato fora da fila
+--
+-- Espelho da 9062. `on delete set null (sector_id)` usa a lista de colunas da
+-- FK (Postgres 15+): sem ela o padrão anularia `organization_id` também e apagar
+-- a fila estouraria not-null em toda conversa dela.
+alter table public.conversations add column if not exists sector_id uuid;
+
+do $mig$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'conversations_sector_fk'
+       and conrelid = 'public.conversations'::regclass
+  ) then
+    alter table public.conversations
+      add constraint conversations_sector_fk
+      foreign key (organization_id, sector_id)
+      references public.attendant_sectors (organization_id, id)
+      on delete set null (sector_id);
+  end if;
+end;
+$mig$;
+
+comment on column public.conversations.sector_id is
+  'Fila de atendimento da conversa (migration 9062). NULL = sem fila, o comportamento de sempre. FK composta com a organização; apagar a fila solta a conversa e não apaga histórico. Governa a distribuição automática (fn_channel_routing_claim), não a atribuição manual.';
+
+create index if not exists conversations_org_sector_awaiting
+  on public.conversations (organization_id, sector_id, awaiting_since)
+  where sector_id is not null;
+
+alter table public.attendant_sectors
+  add column if not exists schedule jsonb not null default '{}'::jsonb;
+
+comment on column public.attendant_sectors.schedule is
+  'Horário de funcionamento da fila (migration 9062): { timezone, windows: [{ dow, start, end }] }, o MESMO shape de attendant_availability.schedule. {} = 24/7 — janela existe para restringir. Lido por isWithinSchedule em lib/routing/eligibility.ts; escrita só pela rota PATCH /api/v1/attendants/sectors/[id] (manager+).';
+
+do $mig$
+begin
+  if exists (
+    select 1 from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+     where t.relname = 'attendant_sector_members'
+       and c.contype = 'p'
+       and pg_get_constraintdef(c.oid) not like '%sector_id%'
+  ) then
+    alter table public.attendant_sector_members
+      drop constraint attendant_sector_members_pkey;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+     where t.relname = 'attendant_sector_members'
+       and c.contype = 'p'
+  ) then
+    alter table public.attendant_sector_members
+      add primary key (organization_id, user_id, sector_id);
+  end if;
+end;
+$mig$;
+
+comment on table public.attendant_sector_members is
+  'Vínculo atendente → fila (migrations 0801 e 9062). N filas por atendente: PK (organization_id, user_id, sector_id). Apagar a fila solta os atendentes dela.';
 
 notify pgrst, 'reload schema';
 

@@ -2537,6 +2537,7 @@ export type Database = {
           id: string;
           name: string;
           organization_id: string;
+          schedule: Json;
           updated_at: string;
         };
         ComputedFields: never;
@@ -2546,6 +2547,7 @@ export type Database = {
           id?: string;
           name: string;
           organization_id: string;
+          schedule?: Json;
           updated_at?: string;
         };
         Update: {
@@ -2554,6 +2556,7 @@ export type Database = {
           id?: string;
           name?: string;
           organization_id?: string;
+          schedule?: Json;
           updated_at?: string;
         };
         Relationships: [
@@ -6389,6 +6392,7 @@ export type Database = {
           provider_conversation_id: string | null;
           rag_review_status: string | null;
           reply_context_revision: number;
+          sector_id: string | null;
           service_closed_at: string | null;
           service_revision: number;
           service_started_at: string | null;
@@ -6437,6 +6441,7 @@ export type Database = {
           provider_conversation_id?: string | null;
           rag_review_status?: string | null;
           reply_context_revision?: number;
+          sector_id?: string | null;
           service_closed_at?: string | null;
           service_revision?: number;
           service_started_at?: string | null;
@@ -6482,6 +6487,7 @@ export type Database = {
           provider_conversation_id?: string | null;
           rag_review_status?: string | null;
           reply_context_revision?: number;
+          sector_id?: string | null;
           service_closed_at?: string | null;
           service_revision?: number;
           service_started_at?: string | null;
@@ -15256,6 +15262,7 @@ export type Database = {
           provider_conversation_id: string | null;
           rag_review_status: string | null;
           reply_context_revision: number;
+          sector_id: string | null;
           service_closed_at: string | null;
           service_revision: number;
           service_started_at: string | null;
@@ -16093,6 +16100,7 @@ export type Database = {
           provider_conversation_id: string | null;
           rag_review_status: string | null;
           reply_context_revision: number;
+          sector_id: string | null;
           service_closed_at: string | null;
           service_revision: number;
           service_started_at: string | null;

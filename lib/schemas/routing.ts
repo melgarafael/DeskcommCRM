@@ -306,6 +306,11 @@ export const sectorCreateSchema = z
       .nullable()
       .optional()
       .transform((v) => (v ? v : null)),
+    /**
+     * Horário da FILA (migration 9062). O MESMO shape da jornada do atendente —
+     * um formato por pergunta, não dois. Omitir = `{}` no banco = 24/7.
+     */
+    schedule: availabilityScheduleSchema.optional(),
   })
   .strict();
 export type SectorCreate = z.infer<typeof sectorCreateSchema>;
@@ -319,19 +324,40 @@ export const sectorPatchSchema = z
       .max(SETOR_DESCRICAO_MAX)
       .nullable()
       .transform((v) => (v ? v : null)),
+    /** Horário da fila (migration 9062): casa com `isWithinSchedule`. */
+    schedule: availabilityScheduleSchema,
   })
   .partial()
   .strict()
   .refine((v) => Object.keys(v).length > 0, {
-    message: "Informe ao menos um campo (name ou description).",
+    message: "Informe ao menos um campo (name, description ou schedule).",
   });
 export type SectorPatch = z.infer<typeof sectorPatchSchema>;
 
-/** PUT do setor de um atendente. `null` = tirar do setor ("sem setor"). */
+/**
+ * PUT das filas de um atendente (migration 9062). Lista VAZIA = sem fila.
+ *
+ * Era `{ sector_id }` — um setor por pessoa, que era o que a PK de 0801
+ * permitia. Com N:N, o corpo passa a ser o CONJUNTO: a rota substitui os
+ * vínculos da pessoa pela lista recebida, numa transação só. Lista vazia é
+ * intenção explícita ("esta pessoa não atende fila nenhuma"), não erro.
+ */
 export const sectorAssignmentSchema = z
-  .object({ sector_id: z.string().uuid().nullable() })
+  .object({ sector_ids: z.array(z.string().uuid()).max(50) })
   .strict();
 export type SectorAssignment = z.infer<typeof sectorAssignmentSchema>;
+
+/**
+ * PUT da fila de uma conversa (migration 9062) — o DESTINO.
+ *
+ * `null` = tirar da fila (volta ao comportamento de sempre). A fila tem de ser
+ * da mesma organização: a FK composta do banco recusa o contrário, e a rota
+ * confere antes para devolver 422 em vez de 500.
+ */
+export const conversationSectorSchema = z
+  .object({ sector_id: z.string().uuid().nullable() })
+  .strict();
+export type ConversationSector = z.infer<typeof conversationSectorSchema>;
 
 /**
  * Corpo do PATCH de `/api/v1/settings/routing/channels` (regras POR NÚMERO,
