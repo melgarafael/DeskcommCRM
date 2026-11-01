@@ -71076,4 +71076,59 @@ revoke all on public.ai_provider_credentials_safe from anon;
 revoke all on public.ai_agent_versions from anon;
 revoke all on public.ai_agent_runs from anon;
 
+-- ---- passagem explícita entre agentes de IA na trilha do roteador (migration 9064, #3770) ----
+-- `transferred` é o desfecho da AÇÃO pedida — distinto de `reclassified`, que é
+-- o classificador trocando o agente. `origem` separa os dois mundos; `motivo` é
+-- vocabulário FECHADO porque a tabela tem contrato de "sem PII" desde a 0085
+-- (o par TypeScript é `MOTIVOS_DA_TRANSFERENCIA_DE_AGENTE`, em
+-- `lib/agent-engine/agent/transferir-agente.ts`).
+--
+-- Idempotente nas duas pontas: `add column if not exists` para a base que já
+-- existe e `drop constraint if exists` + `add` porque o CHECK do dump nasceu sem
+-- nome (o Postgres o batiza de `ai_router_decisions_outcome_check`, o MESMO nome
+-- que a constraint daqui). Não cria função, então pode ficar depois da
+-- VARREDURA anon, como o bloco da 9061 logo acima.
+-- IMPORTANTE — por que `= any (array[...])` e não `in (...)`:
+-- a cerca `tests/unit/desfecho-da-captacao-um-vocabulario-so.test.ts` acha o
+-- CHECK de `webhook_lead_captures.outcome` pela ÚLTIMA ocorrência, no
+-- `baseline.sql` inteiro, da grafia `outcome` + `in (...)`. Um apêndice novo, no fim do
+-- arquivo, com essa mesma grafia para OUTRA tabela cega a cerca (ela passa a
+-- ler o vocabulário do roteador e acusa três defeitos que não existem). As duas
+-- formas viram a MESMA constraint no catálogo (`pg_get_constraintdef` normaliza
+-- `in (...)` para `= any (array[...])`), então a verdade do banco não muda —
+-- muda só o que a cerca enxerga. A fragilidade da cerca fica registrada no PR.
+--
+-- O comentário fica ACIMA do `drop`, não entre ele e o `add`: a cerca
+-- `tests/unit/baseline-reaplicavel.test.ts` exige o `drop constraint if exists`
+-- do MESMO nome nas 10 linhas anteriores ao `add`, e comentário no meio da
+-- janela conta como falta de guarda (o `update.sh` do clone erraria
+-- 'already exists').
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_outcome_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_outcome_check
+  check (outcome = any (array['classified', 'sticky', 'reclassified', 'fallback', 'no_match', 'classifier_failed', 'transferred']));
+
+alter table public.ai_router_decisions
+  add column if not exists origem text not null default 'classificador';
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_origem_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_origem_check
+  check (origem in ('classificador', 'acao'));
+
+alter table public.ai_router_decisions
+  add column if not exists agente_anterior_id uuid references ai_agents(id) on delete set null;
+
+alter table public.ai_router_decisions
+  add column if not exists motivo text;
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_motivo_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_motivo_check
+  check (motivo is null or motivo in ('pedido_do_agente', 'pedido_do_operador', 'regra_de_automacao'));
+
+alter table public.ai_router_decisions
+  add column if not exists solicitado_por uuid;
+
 notify pgrst, 'reload schema';

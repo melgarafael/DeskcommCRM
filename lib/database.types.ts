@@ -2027,6 +2027,7 @@ export type Database = {
       };
       ai_router_decisions: {
         Row: {
+          agente_anterior_id: string | null;
           agent_id: string | null;
           confidence: number | null;
           conversation_id: string | null;
@@ -2034,12 +2035,16 @@ export type Database = {
           id: string;
           intent_name: string | null;
           job_id: string | null;
+          motivo: string | null;
           organization_id: string;
+          origem: string;
           outcome: string;
           router_id: string | null;
+          solicitado_por: string | null;
         };
         ComputedFields: never;
         Insert: {
+          agente_anterior_id?: string | null;
           agent_id?: string | null;
           confidence?: number | null;
           conversation_id?: string | null;
@@ -2047,11 +2052,15 @@ export type Database = {
           id?: string;
           intent_name?: string | null;
           job_id?: string | null;
+          motivo?: string | null;
           organization_id: string;
+          origem?: string;
           outcome: string;
           router_id?: string | null;
+          solicitado_por?: string | null;
         };
         Update: {
+          agente_anterior_id?: string | null;
           agent_id?: string | null;
           confidence?: number | null;
           conversation_id?: string | null;
@@ -2059,9 +2068,12 @@ export type Database = {
           id?: string;
           intent_name?: string | null;
           job_id?: string | null;
+          motivo?: string | null;
           organization_id?: string;
+          origem?: string;
           outcome?: string;
           router_id?: string | null;
+          solicitado_por?: string | null;
         };
         Relationships: [
           {
