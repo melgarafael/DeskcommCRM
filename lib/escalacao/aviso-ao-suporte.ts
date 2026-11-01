@@ -340,7 +340,7 @@ async function destinoDoEnvio(
   contactId: string | null,
 ): Promise<DestinoDoAviso> {
   return resolveDestinoDoEnvio({
-    config: cfg as unknown as Record<string, unknown>,
+    config: { destino_modo: cfg.destino_modo, telefone_destino: cfg.telefone_destino },
     organizationId: orgId,
     conversationId,
     contactId,

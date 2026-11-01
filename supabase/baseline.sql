@@ -56609,6 +56609,8 @@ declare
   v_item jsonb;
   v_uid uuid;
   v_numero text;
+  v_digitos_do_membro text;
+  v_variantes_do_membro text[];
 begin
   -- Papel + suporte, nesta ordem e na MESMA transação da escrita. `auth.uid()`
   -- nulo é o caminho do service role: quem escreve configuração é gente.
@@ -56713,6 +56715,32 @@ begin
         v_numero := '+' || regexp_replace(v_numero, '\D', '', 'g');
         if v_numero !~ '^\+[1-9][0-9]{7,14}$' then
           raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+        end if;
+        -- No modo `responsavel` este número É o destino do aviso. Um número
+        -- conectado desta organização abriria por aqui o mesmo laço
+        -- robô-com-robô que a guarda do número da empresa fecha: mesma conta
+        -- (conexão ativa, as duas grafias do nono dígito) e mesmo código.
+        v_digitos_do_membro := regexp_replace(v_numero, '\D', '', 'g');
+        v_variantes_do_membro := array[v_digitos_do_membro];
+        if v_digitos_do_membro like '55%' then
+          if length(v_digitos_do_membro) = 13
+             and substring(v_digitos_do_membro from 5 for 1) = '9'
+             and substring(v_digitos_do_membro from 6 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || substring(v_digitos_do_membro from 6));
+          elsif length(v_digitos_do_membro) = 12
+             and substring(v_digitos_do_membro from 5 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || '9' || substring(v_digitos_do_membro from 5));
+          end if;
+        end if;
+        if exists (
+             select 1 from public.channel_sessions s
+              where s.organization_id = p_org
+                and s.archived_at is null
+                and s.phone_number is not null
+                and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes_do_membro)) then
+          raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
         end if;
       end if;
       update public.user_organizations uo

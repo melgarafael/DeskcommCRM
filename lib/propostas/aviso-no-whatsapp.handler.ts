@@ -37,7 +37,7 @@ export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
             carregaConfig: (orgId) => doCaso.carregaConfig(orgId),
             // O MESMO adapter do aviso de caso: a #3803 resolve o destino pela
             // mesma função nas duas rotas (conversa → negócio → carteira).
-            carregaMundoDoAviso: (pedido) => doCaso.carregaMundoDoAviso!(pedido),
+            carregaMundoDoAviso: doCaso.carregaMundoDoAviso,
             async carregaProposta(orgId, propostaId) {
               const { data } = await admin
                 .from("crm_proposals")
@@ -75,6 +75,7 @@ export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
               return nomeDoContato(data as { name: string | null; display_name: string | null } | null);
             },
             carregaCanal: (orgId, canalId) => doCaso.carregaCanal(orgId, canalId),
+            destinoEhDaPropriaOrganizacao: (orgId, telefone) => doCaso.destinoEhDaPropriaOrganizacao(orgId, telefone),
             registraJidDoAviso: (orgId, jid) => doCaso.registraJidDoAviso(orgId, jid),
             marcaDaOrganizacao: (orgId) => doCaso.marcaDaOrganizacao(orgId),
           },
