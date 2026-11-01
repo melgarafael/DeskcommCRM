@@ -8,6 +8,7 @@ import {
 } from "@/lib/ai/replies/delivery";
 import { assertMeetingDeliverySupabase } from "@/lib/agenda/meet-delivery";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import { AgendaPuladoError } from "@/lib/agenda/escolha-no-envio";
 import { assertAgendaEffectSupabase, guardAgendaEffect } from "@/lib/agenda/efeito";
 import { mesmaFronteira, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
@@ -1404,7 +1405,7 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
       }
     } catch (err) {
-      if (err instanceof StaleServiceBoundaryError || err instanceof AgendaDeferredError || err instanceof ApprovedReplyReceiptPersistenceError) throw err;
+      if (err instanceof StaleServiceBoundaryError || err instanceof AgendaDeferredError || err instanceof AgendaPuladoError || err instanceof ApprovedReplyReceiptPersistenceError) throw err;
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
       // canal — a URL assinada é montada antes de qualquer coisa tocar o adapter.
